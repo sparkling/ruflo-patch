@@ -1,0 +1,40 @@
+{
+  "name": "@ruflo/patch",
+  "version": "0.1.0",
+  "description": "Runtime patches for ruflo and related packages (@claude-flow/cli, ruvector, ruv-swarm)",
+  "scripts": {
+    "preflight": "node scripts/preflight.mjs",
+    "preflight:check": "node scripts/preflight.mjs --check",
+    "prepublishOnly": "npm run preflight && npm test",
+    "test": "node scripts/test-runner.mjs",
+    "test:fast": "node scripts/test-runner.mjs",
+    "upstream-log": "node scripts/upstream-log.mjs"
+  },
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "bin": {
+    "ruflo-patch": "bin/ruflo-patch.mjs"
+  },
+  "files": [
+    "bin",
+    "lib",
+    "patch",
+    "scripts",
+    "patch-all.sh",
+    "check-patches.sh",
+    "repair-post-init.sh"
+  ],
+  "keywords": [
+    "ruflo",
+    "@claude-flow/cli",
+    "patch",
+    "hotfix",
+    "ruvector",
+    "ruv-swarm"
+  ],
+  "packageManager": "npm@10"
+}

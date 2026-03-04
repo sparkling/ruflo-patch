@@ -1,0 +1,50 @@
+# Runtime state
+.claude-flow/
+.swarm/
+.entire/
+.codex/
+CLAUDE.local.md
+
+# Runtime databases
+*.db
+*.db-shm
+*.db-wal
+*.rvf
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Node
+node_modules/
+
+# npm packaging artifacts
+npm/dist/
+package/
+*.tgz
+**/vendor/*.tgz
+**/vendor/*.sha256
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# ruvector runtime state
+.ruvector/
+
+# Helper backups
+.claude/helpers.backup.*/
+
+# Test output logs
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
