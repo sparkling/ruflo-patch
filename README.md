@@ -162,6 +162,7 @@ Patches are organized by prefix into categories:
 | SG | Settings Generator |
 | UI | Display & Cosmetic |
 | WM | Wiring / Memory Integration |
+| MC | MCP Configuration |
 | DOC | Documentation |
 
 ## Init-Script Patches
