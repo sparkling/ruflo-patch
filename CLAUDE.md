@@ -10,6 +10,7 @@
 - Never continuously check status after spawning a swarm — wait for results
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
+- ALWAYS commit often — after every meaningful change (new patch, new ADR, config update, test fix). Do not accumulate uncommitted work across multiple tasks
 
 ## File Organization
 

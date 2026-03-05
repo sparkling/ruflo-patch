@@ -477,7 +477,7 @@ class EmbeddingService {
         console.log('[Embedding] Initialized: agentic-flow OptimizedEmbedder (ONNX)');
       } else {
         this.useAgenticFlow = false;
-        console.log('[Embedding] agentic-flow not found, using fallback hash embeddings');
+        console.warn('[RUFLO-FALLBACK] FB-002-13: agentic-flow not found, using hash fallback embeddings');
       }
 
       this.initialized = true;
@@ -504,7 +504,7 @@ class EmbeddingService {
         // Use agentic-flow OptimizedEmbedder
         embedding = await this.embedder.embed(text.slice(0, 500));
       } catch (e) {
-        console.log(`[Embedding] ONNX failed, using fallback: ${e.message}`);
+        console.warn(`[RUFLO-FALLBACK] FB-002-14: ONNX embed failed, using hash fallback`, JSON.stringify({error: e.message}));
         embedding = this._fallbackEmbed(text);
       }
     } else {
@@ -526,7 +526,7 @@ class EmbeddingService {
       try {
         return await this.embedder.embedBatch(texts.map(t => t.slice(0, 500)));
       } catch (e) {
-        // Fallback to sequential
+        console.warn('[RUFLO-FALLBACK] FB-002-15: embedBatch failed, falling back to sequential', JSON.stringify({error: e.message, batchSize: texts.length}));
         return Promise.all(texts.map(t => this.embed(t)));
       }
     }

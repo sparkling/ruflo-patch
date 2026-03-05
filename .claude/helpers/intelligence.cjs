@@ -48,7 +48,7 @@ function ensureDataDir() {
 function readJSON(filePath) {
   try {
     if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch { /* corrupt file — start fresh */ }
+  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-01: readJSON failed for ' + filePath, JSON.stringify({error: String(e)})); }
   return null;
 }
 
@@ -87,7 +87,7 @@ function sessionGet(key) {
     if (!fs.existsSync(SESSION_FILE)) return null;
     const session = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8'));
     return key ? (session.context || {})[key] : session.context;
-  } catch { return null; }
+  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-02: sessionGet failed for key=' + key, JSON.stringify({error: String(e)})); return null; }
 }
 
 function sessionSet(key, value) {
@@ -101,7 +101,7 @@ function sessionSet(key, value) {
     session.context[key] = value;
     session.updatedAt = new Date().toISOString();
     fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2), 'utf-8');
-  } catch { /* best effort */ }
+  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-03: sessionSet failed for key=' + key, JSON.stringify({error: String(e)})); }
 }
 
 // ── PageRank ─────────────────────────────────────────────────────────────────
@@ -246,7 +246,7 @@ function bootstrapFromMemoryFiles() {
             parseMemoryDir(memDir, entries);
           }
         }
-      } catch { /* skip */ }
+      } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-04: bootstrap projectDirs scan failed', JSON.stringify({base, error: String(e)})); }
     } else if (fs.existsSync(base)) {
       parseMemoryDir(base, entries);
     }
@@ -284,7 +284,7 @@ function parseMemoryDir(dir, entries) {
         });
       }
     }
-  } catch { /* skip unreadable dirs */ }
+  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-05: parseMemoryDir failed', JSON.stringify({dir, error: String(e)})); }
 }
 
 // ── Exported functions ───────────────────────────────────────────────────────
@@ -531,7 +531,7 @@ function consolidate() {
         if (insight.file) {
           editCounts[insight.file] = (editCounts[insight.file] || 0) + 1;
         }
-      } catch { /* skip malformed */ }
+      } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-06: malformed insight line', JSON.stringify({line, error: String(e)})); }
     }
 
     // Create entries for frequently-edited files (3+ edits)

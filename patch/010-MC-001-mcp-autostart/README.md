@@ -20,6 +20,10 @@ UI to control this — so the safe fix is to strip it entirely.
 
 - `dist/src/init/mcp-generator.js` — stop spreading autoStart into claude-flow entry
 
+## ADR
+
+[ADR-0001](../../docs/adr/0001-remove-mcp-autostart-false.md)
+
 ## Ops
 
 1 op in fix.py

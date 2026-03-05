@@ -53,3 +53,4 @@ This relies on Claude Code's default behavior (absent key = auto-start) rather t
 - **Patch directory**: `patch/010-MC-001-mcp-autostart/`
 - **Target file**: `dist/src/init/mcp-generator.js`
 - **Sentinel**: `absent "autoStart: config.autoStart" init/mcp-generator.js`
+- **Patch**: `patch/010-MC-001-mcp-autostart/`

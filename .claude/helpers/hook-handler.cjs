@@ -72,7 +72,7 @@ const handlers = {
         '  - Method: keyword',
         '  - Backend: keyword matching',
         `  - Latency: ${(Math.random() * 0.5 + 0.1).toFixed(3)}ms`,
-        '  - Matched Pattern: keyword-fallback',
+        '  - Matched Pattern: keyword-fallback [RUFLO-FALLBACK] FB-002-16: keyword-fallback routing active',
         '',
         'Semantic Matches:',
         '  bugfix-task: 15.0%',

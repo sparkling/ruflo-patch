@@ -78,6 +78,8 @@ CONF = commands + "/config.js" if commands else ""
 HOOKS_CMD = commands + "/hooks.js" if commands else ""
 NEURAL = commands + "/neural.js" if commands else ""
 EMB_TOOLS = base + "/mcp-tools/embeddings-tools.js" if base else ""
+AF_BRIDGE = base + "/services/agentic-flow-bridge.js" if base else ""
+SEMANTIC_ROUTER = base + "/ruvector/semantic-router.js" if base else ""
 
 # Init module
 init = base + "/init" if base else ""

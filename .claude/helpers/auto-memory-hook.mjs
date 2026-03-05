@@ -51,7 +51,7 @@ class JsonFileBackend {
         if (Array.isArray(data)) {
           for (const entry of data) this.entries.set(entry.id, entry);
         }
-      } catch { /* start fresh */ }
+      } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-07: JsonFileBackend parse failed', JSON.stringify({file: this.filePath, error: String(e)})); }
     }
   }
 
@@ -122,7 +122,7 @@ class JsonFileBackend {
   _persist() {
     try {
       writeFileSync(this.filePath, JSON.stringify([...this.entries.values()], null, 2), 'utf-8');
-    } catch { /* best effort */ }
+    } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-08: _persist failed', JSON.stringify({file: this.filePath, error: String(e)})); }
   }
 }
 
@@ -136,20 +136,20 @@ async function loadMemoryPackage() {
   if (existsSync(localDist)) {
     try {
       return await import(`file://${localDist}`);
-    } catch { /* fall through */ }
+    } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-09: loadMemoryPackage local dist import failed', JSON.stringify({path: localDist, error: String(e)})); }
   }
 
   // Strategy 2: npm installed @claude-flow/memory
   try {
     return await import('@claude-flow/memory');
-  } catch { /* fall through */ }
+  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-10: loadMemoryPackage npm import failed', JSON.stringify({error: String(e)})); }
 
   // Strategy 3: Installed via @claude-flow/cli which includes memory
   const cliMemory = join(PROJECT_ROOT, 'node_modules/@claude-flow/memory/dist/index.js');
   if (existsSync(cliMemory)) {
     try {
       return await import(`file://${cliMemory}`);
-    } catch { /* fall through */ }
+    } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-11: loadMemoryPackage cli memory import failed', JSON.stringify({path: cliMemory, error: String(e)})); }
   }
 
   return null;
@@ -187,7 +187,8 @@ function readConfig() {
     if (asEnabled !== undefined) defaults.agentScopes.enabled = asEnabled;
 
     return defaults;
-  } catch {
+  } catch (e) {
+    console.warn('[RUFLO-FALLBACK] FB-002-12: readConfig YAML parse failed', JSON.stringify({error: String(e)}));
     return defaults;
   }
 }

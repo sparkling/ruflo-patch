@@ -21,7 +21,6 @@ Runtime patches for `ruflo` (latest), `ruvector`, and `ruv-swarm`.
 - ONE defect directory and ONE fix.py per defect
 - ALWAYS verify with `bash check-patches.sh` after applying
 - ALWAYS run `npm run preflight` before staging
-- ALWAYS commit often
 
 ## Target Packages
 
@@ -37,12 +36,17 @@ Runtime patches for `ruflo` (latest), `ruvector`, and `ruv-swarm`.
 | Prefix | Category | Count |
 |--------|----------|-------|
 | MC | MCP Configuration | 1 |
+| FB | Fallback Instrumentation | 4 |
 
-## All 1 Defects
+## All 5 Defects
 
 | ID | GitHub Issue | Severity |
 |----|-------------|----------|
 | MC-001 | MCP claude-flow server fails to start due to autoStart: false | High |
+| FB-001 | Instrument upstream fallback paths with debug logging | High |
+| FB-002 | Instrument local helper fallback code paths with debug logging | Enhancement |
+| FB-003 | Create ControllerRegistry shim for memory-bridge.js | Critical |
+| FB-004 | Lower search threshold for hash-based embeddings | Medium |
 <!-- GENERATED:defect-tables:end -->
 
 ## Creating a New Defect
