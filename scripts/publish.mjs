@@ -419,10 +419,9 @@ async function main() {
 }
 
 // Run CLI if this is the main module
-const isMainModule =
-  typeof process !== 'undefined' &&
-  process.argv[1] &&
-  import.meta.url.endsWith(process.argv[1].replace(/\\/g, '/'));
+import { fileURLToPath } from 'node:url';
+const __filename = fileURLToPath(import.meta.url);
+const isMainModule = process.argv[1] && resolve(process.argv[1]) === __filename;
 
 if (isMainModule) {
   main().catch((err) => {

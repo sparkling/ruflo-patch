@@ -204,11 +204,22 @@ copy_source() {
 
   # Copy the primary upstream repo (ruflo) as the base
   cp -a "${UPSTREAM_DIR_RUFLO}/." "${TEMP_DIR}/"
-
-  # Remove .git from temp copy — we do not need version control in the build dir
   rm -rf "${TEMP_DIR}/.git"
 
-  log "Source copied to temp directory"
+  # Copy cross-repo packages into the build dir (ADR-0014 Level 1)
+  # agentic-flow repo provides agentdb and agentic-flow packages
+  cp -a "${UPSTREAM_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/" 2>/dev/null || {
+    mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow"
+    cp -a "${UPSTREAM_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/"
+  }
+  rm -rf "${TEMP_DIR}/cross-repo/agentic-flow/.git"
+
+  # ruv-FANN repo provides ruv-swarm package
+  mkdir -p "${TEMP_DIR}/cross-repo/ruv-FANN"
+  cp -a "${UPSTREAM_DIR_FANN}/." "${TEMP_DIR}/cross-repo/ruv-FANN/"
+  rm -rf "${TEMP_DIR}/cross-repo/ruv-FANN/.git"
+
+  log "Source copied to temp directory (3 repos merged)"
 }
 
 # ---------------------------------------------------------------------------
@@ -294,10 +305,14 @@ compute_version() {
 
 run_publish() {
   # Write .npmrc with auth token into temp dir
-  echo "//registry.npmjs.org/:_authToken=\${NPM_TOKEN}" > "${TEMP_DIR}/.npmrc"
+  # Copy the user's .npmrc (contains auth token) into the build dir
+  cp "${HOME}/.npmrc" "${TEMP_DIR}/.npmrc" 2>/dev/null || {
+    # Fallback: write from NPM_TOKEN env var (set by systemd EnvironmentFile)
+    echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN:-}" > "${TEMP_DIR}/.npmrc"
+  }
 
   log "Publishing version ${BUILD_VERSION}"
-  node "${SCRIPT_DIR}/publish.mjs" "${TEMP_DIR}"
+  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" --version "${BUILD_VERSION}"
   log "Publish complete"
 }
 
