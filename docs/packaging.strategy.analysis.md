@@ -563,12 +563,15 @@ The build runs on this server (32 cores, 200GB RAM). No external CI. A systemd t
 ```
 systemd timer (every 6 hours)
   -> scripts/sync-and-build.sh
-      -> git ls-remote (check each upstream repo for new commits)
-      -> if no changes: exit
-      -> git pull (clean fork, zero conflicts)
+      -> check for changes:
+          -> git ls-remote each upstream repo (compare to last-built commit)
+          -> git -C ruflo-patch log --oneline LAST_BUILD..HEAD -- patch/ (local patch changes)
+      -> if nothing changed: exit
+      -> git pull upstream forks (clean, zero conflicts)
+      -> git -C ruflo-patch pull (get latest patches)
       -> copy to temp dir
       -> codemod: rename @claude-flow/* -> @claude-flow-patch/*
-      -> apply enhancement patches (FB-001, FB-002, MC-001)
+      -> apply enhancement patches from ruflo-patch/patch/
       -> pnpm install && pnpm build
       -> npm test
       -> if tests fail: gh issue create (you get email notification)
@@ -587,14 +590,16 @@ Manual:     npm dist-tag add ruflo-patch@3.5.2-patch.2 latest   # promote to @la
 
 The flow:
 
-1. **Timer fires every 6 hours** — checks upstream for new commits
-2. **New commits found** — pulls, codemods, patches, builds, tests
+1. **Timer fires every 6 hours** — checks upstream repos AND this repo's `patch/` directory for changes
+2. **Changes found** (upstream commits OR new/updated patches) — pulls, codemods, patches, builds, tests
 3. **Tests pass** — publishes to npm as `prerelease`, creates GitHub prerelease
 4. **GitHub sends you an email** — prerelease notifications are on by default
 5. **You review at your convenience** — check changelog, optionally test with `npx ruflo-patch@prerelease`
 6. **You promote** — `npm dist-tag add ruflo-patch@X.Y.Z-patch.N latest` (2 seconds)
 
 If tests fail, a GitHub Issue is created instead. You get an email, investigate the failure, update patches if needed, and re-trigger manually.
+
+**When you push a new patch**: just `git push`. The next timer run (within 6 hours) detects the change and rebuilds automatically. If you want it faster, run the script manually: `./scripts/sync-and-build.sh`.
 
 ### What Triggers a New Build
 
@@ -603,8 +608,10 @@ If tests fail, a GitHub Issue is created instead. You get an email, investigate 
 | Upstream push to `ruvnet/ruflo` | `git ls-remote` HEAD changed | Full rebuild |
 | Upstream push to `ruvnet/agentic-flow` | `git ls-remote` HEAD changed | Full rebuild |
 | Upstream push to `ruvnet/ruv-FANN` | `git ls-remote` HEAD changed | Full rebuild |
-| We update a patch in this repo | Manual trigger | Full rebuild |
+| We push new/updated patches | `git log LAST_BUILD..HEAD -- patch/` has commits | Full rebuild |
+| We push build pipeline changes | `git log LAST_BUILD..HEAD -- scripts/` has commits | Full rebuild |
 | No changes anywhere | Timer exits early | Nothing |
+| Manual trigger | `./scripts/sync-and-build.sh` | Full rebuild (bypass timer) |
 
 Note: `ruvnet/ruvector` is not monitored — we use the published `@ruvector/*` packages from public npm as-is.
 
