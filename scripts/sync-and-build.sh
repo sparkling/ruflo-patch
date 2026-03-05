@@ -33,7 +33,7 @@ TEMP_DIR=""  # set in create_temp_dir, cleaned up on exit
 # ---------------------------------------------------------------------------
 
 log() {
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" >&2
 }
 
 log_error() {

@@ -1,4 +1,5 @@
 # Runtime state
+scripts/.last-build-state
 .claude-flow/
 .swarm/
 .entire/

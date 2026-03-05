@@ -6,9 +6,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=claude
-WorkingDirectory=/home/claude/src/ruflo
+WorkingDirectory=/home/claude/src/ruflo-patch
 EnvironmentFile=/home/claude/.config/ruflo/secrets.env
-ExecStart=/home/claude/src/ruflo/scripts/sync-and-build.sh
+ExecStart=/home/claude/src/ruflo-patch/scripts/sync-and-build.sh
 TimeoutStartSec=3600
 MemoryMax=32G
 CPUQuota=800%
