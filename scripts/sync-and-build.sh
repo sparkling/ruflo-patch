@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync-and-build.sh — Main build pipeline for ruflo-patch.
+# sync-and-build.sh — Main build pipeline for ruflo.
 # Triggered by systemd timer (ruflo-sync.timer) every 6 hours,
 # or manually via: ./scripts/sync-and-build.sh
 #
@@ -100,7 +100,7 @@ save_state() {
   local new_iteration="$6"
 
   cat > "${STATE_FILE}" <<EOF
-# ruflo-patch build state — written by sync-and-build.sh
+# ruflo build state — written by sync-and-build.sh
 # Last updated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 RUFLO_HEAD=${new_ruflo_head}
 AGENTIC_HEAD=${new_agentic_head}
@@ -195,7 +195,7 @@ pull_upstream() {
 # ---------------------------------------------------------------------------
 
 create_temp_dir() {
-  TEMP_DIR=$(mktemp -d /tmp/ruflo-patch-build-XXXXX)
+  TEMP_DIR=$(mktemp -d /tmp/ruflo-build-XXXXX)
   log "Created temp directory: ${TEMP_DIR}"
 }
 
@@ -322,18 +322,18 @@ create_github_notification() {
 
 Install:
 \`\`\`bash
-npm install ruflo-patch@${BUILD_VERSION}
+npm install ruflo@${BUILD_VERSION}
 \`\`\`
 
 Promote to latest:
 \`\`\`bash
-npm dist-tag add ruflo-patch@${BUILD_VERSION} latest
+npm dist-tag add ruflo@${BUILD_VERSION} latest
 \`\`\`"
 
   log "Creating GitHub prerelease: ${tag}"
   gh release create "${tag}" \
-    --repo "$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo 'ruvnet/ruflo-patch')" \
-    --title "ruflo-patch ${BUILD_VERSION}" \
+    --repo "$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo 'ruvnet/ruflo')" \
+    --title "ruflo ${BUILD_VERSION}" \
     --notes "${body}" \
     --prerelease \
     --target "$(git -C "${PROJECT_DIR}" rev-parse HEAD)" \
@@ -353,7 +353,7 @@ create_failure_issue() {
   local exit_code="$2"
 
   local title="Build failure in phase: ${phase}"
-  local body="The automated ruflo-patch build failed.
+  local body="The automated ruflo build failed.
 
 **Phase**: ${phase}
 **Exit code**: ${exit_code}
@@ -396,7 +396,7 @@ run_phase() {
 
 main() {
   log "=========================================="
-  log "ruflo-patch sync-and-build starting"
+  log "ruflo sync-and-build starting"
   log "=========================================="
 
   # Phase 1: Load state

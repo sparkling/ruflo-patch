@@ -8,7 +8,7 @@ Caret `^0.2.3` only matches `>=0.2.3 <0.3.0` and cannot resolve `2.5.1`.
 
 ## Fix
 Replace `"@ruvector/ruvllm": "^0.2.3"` with `"@ruvector/ruvllm": "^2.5.1"` in
-the agentic-flow package.json (post-codemod: `@claude-flow-patch/agentic-flow`).
+the agentic-flow package.json (post-codemod: `@sparkleideas/agentic-flow`).
 
 ## Files Patched
 - agentic-flow/package.json

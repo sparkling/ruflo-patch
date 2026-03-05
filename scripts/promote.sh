@@ -47,20 +47,20 @@ SCOPED_PACKAGES=(
   cli claude-flow
 )
 
-TOTAL=$(( ${#SCOPED_PACKAGES[@]} + 1 ))  # +1 for @sparkleideas/ruflo-patch root
+TOTAL=$(( ${#SCOPED_PACKAGES[@]} + 1 ))  # +1 for @sparkleideas/ruflo root
 
 # ---------- Verify version exists on npm ----------
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Verifying @sparkleideas/ruflo-patch@${VERSION} exists on npm ..."
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Verifying @sparkleideas/ruflo@${VERSION} exists on npm ..."
 
 if [[ "$DRY_RUN" == true ]]; then
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [dry-run] npm view @sparkleideas/ruflo-patch@${VERSION} version"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [dry-run] npm view @sparkleideas/ruflo@${VERSION} version"
 else
-  if ! npm view "@sparkleideas/ruflo-patch@${VERSION}" version >/dev/null 2>&1; then
-    echo "Error: @sparkleideas/ruflo-patch@${VERSION} not found on npm."
+  if ! npm view "@sparkleideas/ruflo@${VERSION}" version >/dev/null 2>&1; then
+    echo "Error: @sparkleideas/ruflo@${VERSION} not found on npm."
     echo "Publish it first, then promote."
     exit 1
   fi
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Found @sparkleideas/ruflo-patch@${VERSION} on npm."
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Found @sparkleideas/ruflo@${VERSION} on npm."
 fi
 
 # ---------- Show previous version ----------
@@ -77,7 +77,7 @@ echo ""
 echo "Promotion plan"
 echo "  Version        : $VERSION"
 echo "  Previous       : $PREV_VERSION"
-echo "  Packages       : $TOTAL (@sparkleideas/ruflo-patch + ${#SCOPED_PACKAGES[@]} scoped)"
+echo "  Packages       : $TOTAL (@sparkleideas/ruflo + ${#SCOPED_PACKAGES[@]} scoped)"
 echo "  Dry run        : $DRY_RUN"
 echo ""
 
@@ -120,7 +120,7 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Promoting ${VERSION} to @latest"
 echo ""
 
 # Root package
-run_dist_tag "@sparkleideas/ruflo-patch@${VERSION}"
+run_dist_tag "@sparkleideas/ruflo@${VERSION}"
 
 # Scoped packages
 for pkg in "${SCOPED_PACKAGES[@]}"; do
@@ -145,6 +145,6 @@ else
   echo ""
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Promotion complete."
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Updated $STATE_FILE -> ${VERSION}"
-  echo "Verify: npm view @sparkleideas/ruflo-patch dist-tags"
-  echo "Verify: npx @sparkleideas/ruflo-patch@latest --version"
+  echo "Verify: npm view @sparkleideas/ruflo dist-tags"
+  echo "Verify: npx @sparkleideas/ruflo@latest --version"
 fi

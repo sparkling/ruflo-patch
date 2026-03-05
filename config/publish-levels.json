@@ -53,7 +53,7 @@
       "packages": [
         "@sparkleideas/cli",
         "@sparkleideas/claude-flow",
-        "@sparkleideas/ruflo-patch"
+        "@sparkleideas/ruflo"
       ]
     }
   ],

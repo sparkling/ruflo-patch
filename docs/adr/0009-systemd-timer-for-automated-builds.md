@@ -8,7 +8,7 @@ Accepted
 
 ### Specification (SPARC-S)
 
-The ruflo-patch build pipeline needs to run automatically to keep packages current with upstream changes across multiple repos (`ruvnet/ruflo`, `ruvnet/agentic-flow`, `ruvnet/ruv-FANN`). The build server has 32 cores and 200GB RAM — more powerful than any hosted CI runner. The pipeline is a single linear sequence: poll upstream, pull, codemod, patch, build, test, publish, notify.
+The ruflo build pipeline needs to run automatically to keep packages current with upstream changes across multiple repos (`ruvnet/ruflo`, `ruvnet/agentic-flow`, `ruvnet/ruv-FANN`). The build server has 32 cores and 200GB RAM — more powerful than any hosted CI runner. The pipeline is a single linear sequence: poll upstream, pull, codemod, patch, build, test, publish, notify.
 
 The requirements are:
 - Run every 6 hours unattended
@@ -52,16 +52,16 @@ WantedBy=timers.target
 ```ini
 # /etc/systemd/system/ruflo-sync.service
 [Unit]
-Description=Sync and build ruflo-patch from upstream
+Description=Sync and build ruflo from upstream
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=claude
-WorkingDirectory=/home/claude/src/ruflo-patch
-EnvironmentFile=/home/claude/.config/ruflo-patch/secrets.env
-ExecStart=/home/claude/src/ruflo-patch/scripts/sync-and-build.sh
+WorkingDirectory=/home/claude/src/ruflo
+EnvironmentFile=/home/claude/.config/ruflo/secrets.env
+ExecStart=/home/claude/src/ruflo/scripts/sync-and-build.sh
 CPUQuota=800%
 TimeoutStartSec=3600
 MemoryMax=32G

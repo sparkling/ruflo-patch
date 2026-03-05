@@ -2,7 +2,7 @@
 # Note: This file is concatenated with lib/common.py by patch-all.sh.
 # All common.py variables (patch, SRC_*, etc.) are already in scope.
 
-PROJECT_ROOT = os.environ.get("PROJECT_ROOT", "/home/claude/src/ruflo-patch")
+PROJECT_ROOT = os.environ.get("PROJECT_ROOT", "/home/claude/src/ruflo")
 LOCAL_INTEL = os.path.join(PROJECT_ROOT, ".claude", "helpers", "intelligence.cjs")
 LOCAL_AUTO_MEM = os.path.join(PROJECT_ROOT, ".claude", "helpers", "auto-memory-hook.mjs")
 LOCAL_LEARNING = os.path.join(PROJECT_ROOT, ".claude", "helpers", "learning-service.mjs")

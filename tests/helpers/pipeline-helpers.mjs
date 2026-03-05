@@ -4,7 +4,7 @@
 // and directly testable without git or npm calls.
 
 /**
- * Compute the ruflo-patch version string.
+ * Compute the ruflo version string.
  * ADR-0012: format is "{upstreamVersion}-patch.{N}"
  * Iteration resets to 1 when upstream version changes.
  *

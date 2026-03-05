@@ -40,7 +40,7 @@ This relies on Claude Code's default behavior (absent key = auto-start) rather t
 
 ### Negative
 
-- Projects initialized before the patch still have `"autoStart": false` in their `.mcp.json` and must be fixed manually or via `ruflo-patch repair`.
+- Projects initialized before the patch still have `"autoStart": false` in their `.mcp.json` and must be fixed manually or via `ruflo repair`.
 - If a user intentionally wants `autoStart: false`, they must add it manually after init. However, the init wizard never offered this option, so no existing workflow is broken.
 
 ### Neutral

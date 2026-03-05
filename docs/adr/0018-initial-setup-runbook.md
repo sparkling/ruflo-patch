@@ -8,7 +8,7 @@ Accepted
 
 ### Specification (SPARC-S)
 
-The ruflo-patch build pipeline requires one-time setup: GitHub forks, an npm scope, authentication tokens, systemd units, and local state files. No ADR documented this setup, leaving it as tribal knowledge. If the build server is lost, a new maintainer would need to reconstruct the entire environment from scratch with no guide.
+The ruflo build pipeline requires one-time setup: GitHub forks, an npm scope, authentication tokens, systemd units, and local state files. No ADR documented this setup, leaving it as tribal knowledge. If the build server is lost, a new maintainer would need to reconstruct the entire environment from scratch with no guide.
 
 The bus factor is 1 (sole maintainer, sole server). Disaster recovery requires that every setup step be documented, version-controlled, and repeatable. Secret management must be explicit -- where tokens are stored, how they are loaded into the build, and how they are rotated.
 
@@ -31,12 +31,12 @@ STEP 2 — GitHub forks:
   git clone <your-fork-of-ruv-FANN> /home/claude/src/upstream/ruv-FANN
 
 STEP 3 — npm scope:
-  npm org create claude-flow-patch
+  npm org create sparkleideas
   npm token create --type=automation  # bypasses 2FA
   STORE token in secrets.env
 
 STEP 4 — Secrets file:
-  mkdir -p /home/claude/.config/ruflo-patch
+  mkdir -p /home/claude/.config/ruflo
   WRITE secrets.env with NPM_TOKEN and GH_TOKEN
   chmod 600 secrets.env
 
@@ -50,10 +50,10 @@ STEP 6 — Initial state:
 
 STEP 7 — First build:
   ./scripts/sync-and-build.sh
-  npm dist-tag add ruflo-patch@{VERSION} latest  # first publish bootstrap
+  npm dist-tag add ruflo@{VERSION} latest  # first publish bootstrap
 
 STEP 8 — Verify:
-  npx ruflo-patch --version
+  npx ruflo --version
 ```
 
 ## Decision
@@ -110,7 +110,7 @@ npm token create --type=automation
 All secrets are stored in a single file with restricted permissions:
 
 ```
-/home/claude/.config/ruflo-patch/secrets.env
+/home/claude/.config/ruflo/secrets.env
 ```
 
 Contents:
@@ -120,7 +120,7 @@ NPM_TOKEN=npm_xxxxx
 GH_TOKEN=ghp_xxxxx
 ```
 
-Permissions: `chmod 600 /home/claude/.config/ruflo-patch/secrets.env`, owned by the `claude` user. The directory itself is `chmod 700`.
+Permissions: `chmod 600 /home/claude/.config/ruflo/secrets.env`, owned by the `claude` user. The directory itself is `chmod 700`.
 
 The systemd service loads this file via `EnvironmentFile=`. The build script reads `NPM_TOKEN` for `npm publish` and `GH_TOKEN` for `gh release create` and `gh issue create`. No secrets are passed as command-line arguments (which would be visible in `/proc`).
 
@@ -150,16 +150,16 @@ WantedBy=timers.target
 ```ini
 # /etc/systemd/system/ruflo-sync.service
 [Unit]
-Description=Sync and build ruflo-patch from upstream
+Description=Sync and build ruflo from upstream
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=claude
-WorkingDirectory=/home/claude/src/ruflo-patch
-EnvironmentFile=/home/claude/.config/ruflo-patch/secrets.env
-ExecStart=/home/claude/src/ruflo-patch/scripts/sync-and-build.sh
+WorkingDirectory=/home/claude/src/ruflo
+EnvironmentFile=/home/claude/.config/ruflo/secrets.env
+ExecStart=/home/claude/src/ruflo/scripts/sync-and-build.sh
 TimeoutStartSec=3600
 MemoryMax=32G
 CPUQuota=800%
@@ -177,12 +177,12 @@ sudo systemctl enable --now ruflo-sync.timer
 Create the build state file so the first run has a baseline to compare against:
 
 ```bash
-mkdir -p /home/claude/src/ruflo-patch/scripts
-cat > /home/claude/src/ruflo-patch/scripts/.last-build-state <<EOF
+mkdir -p /home/claude/src/ruflo/scripts
+cat > /home/claude/src/ruflo/scripts/.last-build-state <<EOF
 RUFLO_HEAD=$(git -C /home/claude/src/upstream/ruflo rev-parse HEAD)
 AGENTIC_HEAD=$(git -C /home/claude/src/upstream/agentic-flow rev-parse HEAD)
 FANN_HEAD=$(git -C /home/claude/src/upstream/ruv-FANN rev-parse HEAD)
-PATCH_HEAD=$(git -C /home/claude/src/ruflo-patch rev-parse HEAD)
+PATCH_HEAD=$(git -C /home/claude/src/ruflo rev-parse HEAD)
 LAST_VERSION=0.0.0-patch.0
 PATCH_ITERATION=0
 EOF
@@ -207,8 +207,8 @@ All subsequent publishes use `--tag prerelease` as specified in ADR-0010.
 Verify the publish succeeded:
 
 ```bash
-npx ruflo-patch --version   # should print the published version
-npm view ruflo-patch dist-tags   # should show latest
+npx ruflo --version   # should print the published version
+npm view ruflo dist-tags   # should show latest
 ```
 
 ### Considered Alternatives
@@ -254,6 +254,6 @@ Acceptance criteria:
 - [ ] systemd service includes `After=network-online.target`, `TimeoutStartSec=3600`, `MemoryMax=32G`
 - [ ] `EnvironmentFile` is the sole mechanism for providing secrets to the build
 - [ ] First build completes successfully and publishes to npm
-- [ ] `npx ruflo-patch --version` returns the expected version after first build
+- [ ] `npx ruflo --version` returns the expected version after first build
 - [ ] Secret rotation can be performed without service downtime
 - [ ] `.last-build-state` is created with valid upstream HEADs

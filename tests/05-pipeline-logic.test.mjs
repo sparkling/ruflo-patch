@@ -279,13 +279,13 @@ describe('getPublishTag (ADR-0015)', () => {
       err.code = 'E404';
       throw err;
     };
-    const tag = await getPublishTag(npmViewE404, 'ruflo-patch');
+    const tag = await getPublishTag(npmViewE404, 'ruflo');
     assert.equal(tag, null);
   });
 
   it('npm view returns a version -> returns "prerelease"', async () => {
     const npmViewOk = async () => '3.5.2-patch.1';
-    const tag = await getPublishTag(npmViewOk, 'ruflo-patch');
+    const tag = await getPublishTag(npmViewOk, 'ruflo');
     assert.equal(tag, 'prerelease');
   });
 
@@ -296,7 +296,7 @@ describe('getPublishTag (ADR-0015)', () => {
       throw err;
     };
     await assert.rejects(
-      () => getPublishTag(npmViewNetErr, 'ruflo-patch'),
+      () => getPublishTag(npmViewNetErr, 'ruflo'),
       (err) => {
         assert.equal(err.code, 'ETIMEDOUT');
         return true;
@@ -311,7 +311,7 @@ describe('getPublishTag (ADR-0015)', () => {
       throw err;
     };
     await assert.rejects(
-      () => getPublishTag(npmViewConnRefused, 'ruflo-patch'),
+      () => getPublishTag(npmViewConnRefused, 'ruflo'),
       (err) => {
         assert.equal(err.code, 'ECONNREFUSED');
         return true;
@@ -324,7 +324,7 @@ describe('getPublishTag (ADR-0015)', () => {
       throw new Error('something unexpected');
     };
     await assert.rejects(
-      () => getPublishTag(npmViewGenericErr, 'ruflo-patch'),
+      () => getPublishTag(npmViewGenericErr, 'ruflo'),
       /something unexpected/,
     );
   });

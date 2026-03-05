@@ -1,5 +1,5 @@
 # common.py — shared patch infrastructure
-# Provides patch()/patch_all() + path variables for ruflo-patch.
+# Provides patch()/patch_all() + path variables for ruflo.
 
 import sys, os, re
 

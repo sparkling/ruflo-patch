@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/test-integration.sh — 9-phase integration test for ruflo-patch.
+# scripts/test-integration.sh — 9-phase integration test for ruflo.
 #
 # Runs the full build pipeline against real upstream code, publishing to a
 # local Verdaccio registry. See ADR-0020 (testing-strategy) for details.
@@ -309,7 +309,7 @@ packages:
   '@sparkleideas/*':
     access: \$all
     publish: \$all
-  'ruflo-patch':
+  'ruflo':
     access: \$all
     publish: \$all
   '**':
@@ -763,7 +763,7 @@ phase_install() {
   local start
   start=$(now_ns)
 
-  phase_log "8" "Install - verifying ruflo-patch installs from Verdaccio"
+  phase_log "8" "Install - verifying ruflo installs from Verdaccio"
 
   # Create a minimal package.json in the install temp dir
   cat > "${TEMP_INSTALL}/package.json" <<IEOF
@@ -779,11 +779,11 @@ IEOF
 
   local install_output
   local install_exit=0
-  install_output=$(cd "${TEMP_INSTALL}" && npm install ruflo-patch@0.0.0-test.1 \
+  install_output=$(cd "${TEMP_INSTALL}" && npm install ruflo@0.0.0-test.1 \
     --registry "http://localhost:${VERDACCIO_PORT}" 2>&1) || install_exit=$?
 
   if [[ $install_exit -ne 0 ]]; then
-    log_error "npm install ruflo-patch failed with exit code ${install_exit}"
+    log_error "npm install ruflo failed with exit code ${install_exit}"
     echo "$install_output" >&2
     local end
     end=$(now_ns)
@@ -792,10 +792,10 @@ IEOF
   fi
 
   # Verify the package is in node_modules
-  if [[ -d "${TEMP_INSTALL}/node_modules/ruflo-patch" ]]; then
-    phase_log "8" "ruflo-patch installed successfully in node_modules"
+  if [[ -d "${TEMP_INSTALL}/node_modules/ruflo" ]]; then
+    phase_log "8" "ruflo installed successfully in node_modules"
   else
-    log_error "ruflo-patch not found in node_modules after install"
+    log_error "ruflo not found in node_modules after install"
     local end
     end=$(now_ns)
     record_phase "install" "false" "$(elapsed_ms "$start" "$end")" "Package not in node_modules"
@@ -804,7 +804,7 @@ IEOF
 
   local end
   end=$(now_ns)
-  record_phase "install" "true" "$(elapsed_ms "$start" "$end")" "ruflo-patch@0.0.0-test.1 installed successfully"
+  record_phase "install" "true" "$(elapsed_ms "$start" "$end")" "ruflo@0.0.0-test.1 installed successfully"
   phase_log "8" "Install complete ($(elapsed_ms "$start" "$end")ms)"
 }
 
@@ -871,7 +871,7 @@ main() {
   overall_start=$(now_ns)
 
   log "=========================================="
-  log "ruflo-patch integration test starting"
+  log "ruflo integration test starting"
   log "=========================================="
 
   check_prerequisites

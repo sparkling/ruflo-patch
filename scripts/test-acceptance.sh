@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # scripts/test-acceptance.sh -- Layer 3 acceptance tests (ADR-0020)
 #
-# Validates the end-user experience by running ruflo-patch commands
+# Validates the end-user experience by running ruflo commands
 # against published packages (local Verdaccio or real npm).
 #
 # Usage:
@@ -50,7 +50,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-PKG="ruflo-patch${VERSION}"
+PKG="ruflo${VERSION}"
 
 # ── Cleanup trap ────────────────────────────────────────────────────
 cleanup() {

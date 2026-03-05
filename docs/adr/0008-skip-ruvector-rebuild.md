@@ -44,7 +44,7 @@ RESULT:
 
 Do NOT rebuild ruvector packages. Depend on the published `@ruvector/*` packages from public npm. Do not rename them.
 
-Our rebuilt `@sparkleideas/*` packages list `@ruvector/*` as standard npm dependencies. When a user installs `ruflo-patch`, npm resolves `@ruvector/*` from public npm automatically. No special configuration is needed.
+Our rebuilt `@sparkleideas/*` packages list `@ruvector/*` as standard npm dependencies. When a user installs `ruflo`, npm resolves `@ruvector/*` from public npm automatically. No special configuration is needed.
 
 ### Rationale
 
@@ -96,7 +96,7 @@ Our rebuilt `@sparkleideas/*` packages list `@ruvector/*` as standard npm depend
 
 ### Completion (SPARC-C)
 
-- [ ] `@ruvector/*` packages resolve correctly from public npm when `ruflo-patch` is installed
+- [ ] `@ruvector/*` packages resolve correctly from public npm when `ruflo` is installed
 - [ ] No Rust toolchain is required to run the build pipeline
 - [ ] Codemod does not rename any `@ruvector/*` references in source files
 - [ ] `package.json` files in rebuilt packages list `@ruvector/*` with pinned or narrow version ranges

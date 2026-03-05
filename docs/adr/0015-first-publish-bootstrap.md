@@ -12,11 +12,11 @@ ADR-0010 establishes a prerelease publish gate: automated builds publish with `n
 
 The review report (C1) identified a critical bootstrap problem: on the first-ever publish of a package, `npm publish --tag prerelease` sets only the `prerelease` dist-tag. It does NOT set `latest`. This means:
 
-- `npx ruflo-patch` resolves `@latest` -- which does not exist -- and returns a 404
-- `npm install ruflo-patch` fails with `ETARGET` because no version matches the default `latest` range
-- `npm install ruflo-patch@prerelease` works, but no user will know to type that
+- `npx ruflo` resolves `@latest` -- which does not exist -- and returns a 404
+- `npm install ruflo` fails with `ETARGET` because no version matches the default `latest` range
+- `npm install ruflo@prerelease` works, but no user will know to type that
 
-Every package in the `@sparkleideas` scope and the `ruflo-patch` package itself will be published for the first time. All 26 packages hit this problem simultaneously.
+Every package in the `@sparkleideas` scope and the `ruflo` package itself will be published for the first time. All 26 packages hit this problem simultaneously.
 
 ### Pseudocode (SPARC-P)
 
@@ -101,7 +101,7 @@ All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prer
 
 ### Considered Alternatives
 
-1. **Always publish with `--tag prerelease`, then manually run `npm dist-tag add` for every package** -- Rejected. The first publish requires 26 manual `npm dist-tag add` commands (one per package) plus the `ruflo-patch` top-level package. This is error-prone -- missing a single package means `npm install` fails for any consumer that transitively depends on it. The bootstrap detection automates this entirely.
+1. **Always publish with `--tag prerelease`, then manually run `npm dist-tag add` for every package** -- Rejected. The first publish requires 26 manual `npm dist-tag add` commands (one per package) plus the `ruflo` top-level package. This is error-prone -- missing a single package means `npm install` fails for any consumer that transitively depends on it. The bootstrap detection automates this entirely.
 
 2. **Publish with `--tag latest` explicitly on first run** -- Rejected as unnecessary. `npm publish` with no `--tag` flag defaults to `latest`. Explicitly passing `--tag latest` achieves the same result but introduces a flag that could accidentally be left in place for subsequent runs, bypassing the prerelease gate. The absence of `--tag` is the clearest signal that this is a first-publish.
 
@@ -136,8 +136,8 @@ All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prer
 - [ ] Never-published packages use `npm publish` with no `--tag` flag (sets `latest` automatically)
 - [ ] Already-published packages use `npm publish --tag prerelease` (ADR-0010 gate)
 - [ ] Script distinguishes npm `E404` (package not found) from network errors
-- [ ] After first full publish, `npm view ruflo-patch version` returns a version
-- [ ] After first full publish, `npx ruflo-patch --version` succeeds
+- [ ] After first full publish, `npm view ruflo version` returns a version
+- [ ] After first full publish, `npx ruflo --version` succeeds
 - [ ] After first full publish, all 26 packages have a `latest` dist-tag
 - [ ] Subsequent builds use `--tag prerelease` for all packages (bootstrap detection returns prerelease)
 - [ ] Partial bootstrap scenario tested: publish 5 packages, stop, re-run -- remaining 21 get first-publish, 5 get prerelease

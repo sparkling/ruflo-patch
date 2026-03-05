@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Scope-rename codemod for the ruflo-patch build pipeline.
+ * Scope-rename codemod for the ruflo build pipeline.
  *
  * Transforms a cloned upstream source tree, renaming all @claude-flow/*
  * references to @sparkleideas/* and handling unscoped package mappings.
@@ -26,7 +26,7 @@ const SCOPED_PREFIX_TO = '@sparkleideas/';
 /** Unscoped exact-name mappings (used in package.json name/dep key transforms). */
 const UNSCOPED_MAP = {
   'claude-flow': '@sparkleideas/claude-flow',
-  'ruflo': '@sparkleideas/ruflo-patch',
+  'ruflo': '@sparkleideas/ruflo',
   'agentdb': '@sparkleideas/agentdb',
   'agentic-flow': '@sparkleideas/agentic-flow',
   'ruv-swarm': '@sparkleideas/ruv-swarm',
@@ -152,7 +152,7 @@ const UNSCOPED_RES = [
   { re: /(?<![@/\w-])agentdb(?![\w-])/g, to: '@sparkleideas/agentdb' },
   { re: /(?<![@/\w-])agentic-flow(?![\w-])/g, to: '@sparkleideas/agentic-flow' },
   { re: /(?<![@/\w-])ruv-swarm(?![\w-])/g, to: '@sparkleideas/ruv-swarm' },
-  { re: /(?<![@/\w-])ruflo(?![\w-])/g, to: '@sparkleideas/ruflo-patch' },
+  { re: /(?<![@/\w-])ruflo(?![\w-])/g, to: '@sparkleideas/ruflo' },
 ];
 
 /**

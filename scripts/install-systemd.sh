@@ -13,7 +13,7 @@ TIMER_SRC="$REPO_DIR/config/ruflo-sync.timer"
 SERVICE_SRC="$REPO_DIR/config/ruflo-sync.service"
 SYSTEMD_DIR="/etc/systemd/system"
 
-SECRETS_DIR="/home/claude/.config/ruflo-patch"
+SECRETS_DIR="/home/claude/.config/ruflo"
 SECRETS_FILE="$SECRETS_DIR/secrets.env"
 
 # ── 1. Check for root privileges ────────────────────────────────────────────
@@ -57,7 +57,7 @@ if [[ ! -f "$SECRETS_FILE" ]]; then
     NEEDS_SECRETS=true
     echo "WARNING: $SECRETS_FILE does not exist. Creating template..."
     cat > "$SECRETS_FILE" <<'TMPL'
-# ruflo-patch secrets — loaded by ruflo-sync.service via EnvironmentFile=
+# ruflo secrets — loaded by ruflo-sync.service via EnvironmentFile=
 # Replace placeholder values with real tokens before enabling the timer.
 #
 # npm automation token (bypasses 2FA): npm token create --type=automation

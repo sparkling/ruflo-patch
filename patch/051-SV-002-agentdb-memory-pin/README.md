@@ -7,11 +7,11 @@
 The current npm latest is `3.0.0-alpha.10`.
 
 ## Fix
-Replace the exact pin with `"@claude-flow-patch/agentdb": "^3.0.0-alpha.10"` in
+Replace the exact pin with `"@sparkleideas/agentdb": "^3.0.0-alpha.10"` in
 the memory package.json (post-codemod target).
 
 ## Files Patched
-- @claude-flow/memory/package.json (post-codemod: @claude-flow-patch/memory)
+- @claude-flow/memory/package.json (post-codemod: @sparkleideas/memory)
 
 ## Ops
 1 op in fix.py

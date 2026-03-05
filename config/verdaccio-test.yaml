@@ -1,10 +1,10 @@
 storage: ./storage
 uplinks: {}
 packages:
-  '@claude-flow-patch/*':
+  '@sparkleideas/*':
     access: $all
     publish: $all
-  'ruflo-patch':
+  'ruflo':
     access: $all
     publish: $all
   '**':

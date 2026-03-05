@@ -60,7 +60,7 @@ export const LEVELS = [
   [
     '@sparkleideas/cli',
     '@sparkleideas/claude-flow',
-    '@sparkleideas/ruflo-patch',
+    '@sparkleideas/ruflo',
   ],
 ];
 

@@ -1,5 +1,5 @@
 {
-  "description": "Package name mappings from upstream to ruflo-patch (ADR-0006, scoped to @sparkleideas)",
+  "description": "Package name mappings from upstream to ruflo (ADR-0006, scoped to @sparkleideas)",
   "scopePrefix": {
     "from": "@claude-flow/",
     "to": "@sparkleideas/"
@@ -28,7 +28,7 @@
   },
   "unscoped": {
     "claude-flow": "@sparkleideas/claude-flow",
-    "ruflo": "@sparkleideas/ruflo-patch",
+    "ruflo": "@sparkleideas/ruflo",
     "agentdb": "@sparkleideas/agentdb",
     "agentic-flow": "@sparkleideas/agentic-flow",
     "ruv-swarm": "@sparkleideas/ruv-swarm"

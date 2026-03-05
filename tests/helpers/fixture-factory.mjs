@@ -10,7 +10,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(__dirname, '..', 'fixtures', 'cli', 'dist', 'src');
 
 export function createFixture() {
-  const tmp = mkdtempSync(join(tmpdir(), 'ruflo-patch-test-'));
+  const tmp = mkdtempSync(join(tmpdir(), 'ruflo-test-'));
   const base = join(tmp, 'dist', 'src');
   try {
     cpSync(FIXTURES, base, { recursive: true });

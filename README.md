@@ -1,17 +1,17 @@
-# ruflo-patch
+# ruflo
 
-[![npm version](https://img.shields.io/npm/v/@sparkleideas/ruflo-patch)](https://www.npmjs.com/package/@sparkleideas/ruflo-patch)
-[![license](https://img.shields.io/npm/l/@sparkleideas/ruflo-patch)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@sparkleideas/ruflo)](https://www.npmjs.com/package/@sparkleideas/ruflo)
+[![license](https://img.shields.io/npm/l/@sparkleideas/ruflo)](LICENSE)
 
 **Drop-in replacement for `ruflo` / `@claude-flow/cli` with 933+ unpublished upstream commits, bug fixes, and working dependency resolution.**
 
-The upstream [ruvnet/ruflo](https://github.com/ruvnet/ruflo) ecosystem (48+ npm packages) is severely stale — 60% of `@claude-flow/*` packages haven't been published since January 2026, `ruflo` is 933 commits behind its source, and maintainers are unresponsive. `ruflo-patch` forks, rebuilds, patches, and republishes the entire ecosystem under the `@sparkleideas` scope so you get current code from a single `npx` command.
+The upstream [ruvnet/ruflo](https://github.com/ruvnet/ruflo) ecosystem (48+ npm packages) is severely stale — 60% of `@claude-flow/*` packages haven't been published since January 2026, `ruflo` is 933 commits behind its source, and maintainers are unresponsive. `ruflo` forks, rebuilds, patches, and republishes the entire ecosystem under the `@sparkleideas` scope so you get current code from a single `npx` command.
 
 ```bash
-npx ruflo-patch init
+npx ruflo init
 ```
 
-Same CLI, same commands, same flags — just swap `ruflo` for `ruflo-patch`. If upstream catches up, switch back with a one-word change.
+Same CLI, same commands, same flags — just swap `ruflo` for `ruflo`. If upstream catches up, switch back with a one-word change.
 
 ---
 
@@ -40,26 +40,26 @@ Same CLI, same commands, same flags — just swap `ruflo` for `ruflo-patch`. If 
 
 ```bash
 # Run directly (no install needed)
-npx @sparkleideas/ruflo-patch init
+npx @sparkleideas/ruflo init
 
 # Or install globally
-npm install -g @sparkleideas/ruflo-patch
+npm install -g @sparkleideas/ruflo
 ```
 
 All commands work exactly like `ruflo`:
 
 ```bash
-ruflo-patch agent spawn -t coder          # spawn an agent
-ruflo-patch memory search --query "auth"  # search memory
-ruflo-patch mcp start                     # start MCP server
-ruflo-patch doctor                        # diagnose issues
+ruflo agent spawn -t coder          # spawn an agent
+ruflo memory search --query "auth"  # search memory
+ruflo mcp start                     # start MCP server
+ruflo doctor                        # diagnose issues
 ```
 
 ---
 
 ## What You Get
 
-| Feature | `ruflo` (upstream) | `ruflo-patch` |
+| Feature | `ruflo` (upstream) | `ruflo` |
 |---------|-------------------|---------------|
 | Source commits | 933 behind | Current with upstream HEAD |
 | `@claude-flow/*` packages | Last published Jan 2026 | Rebuilt from source every 6 hours |
@@ -128,7 +128,7 @@ All patches and fixes are baked into the published packages — no runtime patch
 
 ### Commands
 
-Replace `ruflo` with `ruflo-patch`:
+Replace `ruflo` with `ruflo`:
 
 ```bash
 # Before
@@ -137,9 +137,9 @@ npx ruflo agent spawn -t coder
 npx @claude-flow/cli@latest mcp start
 
 # After
-npx @sparkleideas/ruflo-patch init
-npx @sparkleideas/ruflo-patch agent spawn -t coder
-npx @sparkleideas/ruflo-patch mcp start
+npx @sparkleideas/ruflo init
+npx @sparkleideas/ruflo agent spawn -t coder
+npx @sparkleideas/ruflo mcp start
 ```
 
 ### package.json
@@ -147,7 +147,7 @@ npx @sparkleideas/ruflo-patch mcp start
 ```diff
   "dependencies": {
 -   "claude-flow": "^3.5.2"
-+   "@sparkleideas/ruflo-patch": "^3.5.2-patch.1"
++   "@sparkleideas/ruflo": "^3.5.2-patch.1"
   }
 ```
 
@@ -161,7 +161,7 @@ Update your `.claude/settings.json`:
       "claude-flow": {
         "command": "npx",
 -       "args": ["-y", "@claude-flow/cli@latest", "mcp", "start"]
-+       "args": ["-y", "@sparkleideas/ruflo-patch", "mcp", "start"]
++       "args": ["-y", "@sparkleideas/ruflo", "mcp", "start"]
       }
     }
   }
@@ -171,16 +171,16 @@ Update your `.claude/settings.json`:
 
 ## Runtime Patches (Legacy)
 
-> Most users should use `npx ruflo-patch` instead — it includes all fixes permanently. Runtime patches are only needed if you must stay on the upstream `ruflo` package for compatibility reasons.
+> Most users should use `npx ruflo` instead — it includes all fixes permanently. Runtime patches are only needed if you must stay on the upstream `ruflo` package for compatibility reasons.
 
 This repo also maintains runtime patches that can be applied directly to the upstream `ruflo` npx cache. These are fragile (wiped on cache updates) but useful as a stopgap.
 
 ### CLI Commands
 
 ```
-ruflo-patch apply  [--global] [--target <dir>]   Apply all patches
-ruflo-patch check  [--global] [--target <dir>]   Verify patches are applied
-ruflo-patch repair [--target <dir>]              Repair post-init helpers
+ruflo apply  [--global] [--target <dir>]   Apply all patches
+ruflo check  [--global] [--target <dir>]   Verify patches are applied
+ruflo repair [--target <dir>]              Repair post-init helpers
 ```
 
 ### Patch Inventory
@@ -206,7 +206,7 @@ npx cache updates wipe patches. Auto-detect and reapply with a Claude Code hook:
 {
   "hooks": {
     "session_start": [
-      { "command": "ruflo-patch check --global", "timeout": 30000 }
+      { "command": "ruflo check --global", "timeout": 30000 }
     ]
   }
 }
@@ -224,7 +224,7 @@ The build is orchestrated by `scripts/sync-and-build.sh` and runs these phases:
 2. **Check upstream** — `git ls-remote` against 3 repos (one HTTP request each)
 3. **Check local** — `git log` for changes to `patch/` or `scripts/`
 4. **Pull upstream** — `git fetch && git reset --hard origin/main` on each fork
-5. **Copy to temp** — Clean copy to `/tmp/ruflo-patch-build-*`
+5. **Copy to temp** — Clean copy to `/tmp/ruflo-build-*`
 6. **Codemod** — `@claude-flow/*` → `@sparkleideas/*` (see `scripts/codemod.mjs`)
 7. **Apply patches** — All `patch/*/fix.py` scripts via `patch-all.sh`
 8. **Build** — `pnpm install && pnpm build`
@@ -271,7 +271,7 @@ sudo systemctl start ruflo-sync.service
 systemctl list-timers ruflo-sync*
 ```
 
-The service runs as the `claude` user with resource limits (`CPUQuota=800%`, `MemoryMax=32G`, `TimeoutStartSec=3600`). Secrets (`NPM_TOKEN`, `GH_TOKEN`) are loaded from `/home/claude/.config/ruflo-patch/secrets.env`.
+The service runs as the `claude` user with resource limits (`CPUQuota=800%`, `MemoryMax=32G`, `TimeoutStartSec=3600`). Secrets (`NPM_TOKEN`, `GH_TOKEN`) are loaded from `/home/claude/.config/ruflo/secrets.env`.
 
 ### Publishing and Promotion
 
@@ -279,12 +279,12 @@ Automated builds publish to the `prerelease` dist-tag. Users on `@latest` are un
 
 ```bash
 # Review the prerelease
-npx ruflo-patch@prerelease --version
+npx ruflo@prerelease --version
 
 # Promote to @latest
 npm run promote
 # or manually:
-npm dist-tag add @sparkleideas/ruflo-patch@3.5.2-patch.1 latest
+npm dist-tag add @sparkleideas/ruflo@3.5.2-patch.1 latest
 ```
 
 **Version scheme**: `{upstream_version}-patch.{N}` — e.g., `3.5.2-patch.3` means the 3rd build from upstream `3.5.2`. The iteration resets to 1 when upstream bumps.
@@ -301,7 +301,7 @@ npm run rollback
 bash scripts/rollback.sh 3.5.2-patch.1
 ```
 
-This reassigns the `latest` dist-tag for `ruflo-patch` and all 24 `@sparkleideas/*` packages. Takes effect immediately — no propagation delay.
+This reassigns the `latest` dist-tag for `ruflo` and all 24 `@sparkleideas/*` packages. Takes effect immediately — no propagation delay.
 
 ### Testing
 
@@ -321,8 +321,8 @@ Unit tests run with `node:test` (no dependencies). Integration tests use an isol
 ## Project Structure
 
 ```
-ruflo-patch/
-├── bin/ruflo-patch.mjs              CLI entry point
+ruflo/
+├── bin/ruflo.mjs              CLI entry point
 ├── patch-all.sh                     Apply all patches (discovers patch/*/fix.py)
 ├── check-patches.sh                 Sentinel verification, auto-reapplies if wiped
 ├── repair-post-init.sh              Rehydrate .claude/helpers post-init

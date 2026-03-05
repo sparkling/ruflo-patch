@@ -15,7 +15,7 @@ ADR-0005 establishes that the build-step rename transforms ~4,136 files per buil
 - **Config files**: `tsconfig.json` paths, jest config, `.npmrc`
 - **Asymmetric mappings**: scoped `@claude-flow/X` becomes `@sparkleideas/X`, but unscoped packages require different rules:
   - `claude-flow` becomes `@sparkleideas/claude-flow`
-  - `ruflo` becomes `ruflo-patch`
+  - `ruflo` becomes `ruflo`
   - `agentdb` becomes `@sparkleideas/agentdb`
   - `agentic-flow` becomes `@sparkleideas/agentic-flow`
   - `ruv-swarm` becomes `@sparkleideas/ruv-swarm`
@@ -65,7 +65,7 @@ FUNCTION transformSourceFile(file):
 FUNCTION applyNameMapping(name):
   IF name starts with "@claude-flow/": return name.replace("@claude-flow/", "@sparkleideas/")
   IF name == "claude-flow": return "@sparkleideas/claude-flow"
-  IF name == "ruflo": return "ruflo-patch"
+  IF name == "ruflo": return "ruflo"
   IF name == "agentdb": return "@sparkleideas/agentdb"
   IF name == "agentic-flow": return "@sparkleideas/agentic-flow"
   IF name == "ruv-swarm": return "@sparkleideas/ruv-swarm"
@@ -117,8 +117,8 @@ For unscoped packages, use word-boundary matching with negative lookbehind to av
 // Replace "ruv-swarm" but NOT already scoped
 /(?<![@/\w-])ruv-swarm(?![\w-])/g -> "@sparkleideas/ruv-swarm"
 
-// Replace "ruflo" but NOT "ruflo-patch"
-/(?<![@/\w-])ruflo(?![\w-])/g -> "ruflo-patch"
+// Replace "ruflo" but NOT "ruflo"
+/(?<![@/\w-])ruflo(?![\w-])/g -> "ruflo"
 ```
 
 **What NOT to transform:**

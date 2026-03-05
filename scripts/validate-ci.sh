@@ -52,11 +52,11 @@ warn_check "Service unit exists" \
 echo ""
 echo "=== Secrets ==="
 check "Secrets file exists" \
-  "test -f ~/.config/ruflo-patch/secrets.env"
+  "test -f ~/.config/ruflo/secrets.env"
 check "Secrets file perms are 600" \
-  "test \$(stat -c %a ~/.config/ruflo-patch/secrets.env) = 600"
+  "test \$(stat -c %a ~/.config/ruflo/secrets.env) = 600"
 check "Secrets directory perms are 700" \
-  "test \$(stat -c %a ~/.config/ruflo-patch) = 700"
+  "test \$(stat -c %a ~/.config/ruflo) = 700"
 
 echo ""
 echo "=== Upstream clones ==="

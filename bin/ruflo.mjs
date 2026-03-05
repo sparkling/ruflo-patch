@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// bin/ruflo-patch.mjs — CLI entry point for ruflo-patch
+// bin/ruflo.mjs — CLI entry point for ruflo
 //
 // Usage:
-//   ruflo-patch apply [--global] [--target <dir>]
-//   ruflo-patch check [--global] [--target <dir>]
-//   ruflo-patch repair [--target <dir>]
-//   ruflo-patch --help
+//   ruflo apply [--global] [--target <dir>]
+//   ruflo check [--global] [--target <dir>]
+//   ruflo repair [--target <dir>]
+//   ruflo --help
 
 import { execSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
@@ -39,13 +39,13 @@ switch (command) {
   case '--help':
   case '-h':
   case undefined:
-    console.log(`ruflo-patch — Runtime patches for ruflo and related packages
+    console.log(`ruflo — Runtime patches for ruflo and related packages
 
 Usage:
-  ruflo-patch apply [--global] [--target <dir>]   Apply all patches
-  ruflo-patch check [--global] [--target <dir>]   Verify patches are applied
-  ruflo-patch repair [--target <dir>]             Repair post-init helpers
-  ruflo-patch --help                              Show this help
+  ruflo apply [--global] [--target <dir>]   Apply all patches
+  ruflo check [--global] [--target <dir>]   Verify patches are applied
+  ruflo repair [--target <dir>]             Repair post-init helpers
+  ruflo --help                              Show this help
 
 Options:
   --global           Patch all global installs (npx cache + npm global)
@@ -55,6 +55,6 @@ If neither flag is given, --global is assumed.`);
     break;
   default:
     console.error(`Unknown command: ${command}`);
-    console.error('Run: ruflo-patch --help');
+    console.error('Run: ruflo --help');
     process.exit(1);
 }

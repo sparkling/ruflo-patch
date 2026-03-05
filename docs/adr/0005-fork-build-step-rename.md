@@ -37,7 +37,7 @@ ON build trigger:
   RUN codemod on temp copy:
     FOR each package.json: rename @claude-flow/* -> @sparkleideas/*
     FOR each .ts/.js file: rewrite import/require references
-  APPLY enhancement patches from ruflo-patch/patch/
+  APPLY enhancement patches from ruflo/patch/
   pnpm install && pnpm build
   npm test
   IF tests pass: npm publish --tag prerelease
@@ -78,7 +78,7 @@ The pipeline is: `git pull` (0 conflicts) -> copy to temp -> codemod -> patches 
 **Positive:**
 
 - Zero merge conflicts on upstream sync -- the fork is a clean mirror with no modifications
-- Public distribution via standard npm toolchain -- anyone can `npm install ruflo-patch`
+- Public distribution via standard npm toolchain -- anyone can `npm install ruflo`
 - Enhancement patches (FB-001, FB-002) are baked into published packages -- no runtime patching
 - Build pipeline is Node.js-only (no Rust toolchain) because ruvector packages are used as-is from public npm
 - Automated builds via systemd timer (every 6 hours) with prerelease gating
@@ -109,7 +109,7 @@ The pipeline is: `git pull` (0 conflicts) -> copy to temp -> codemod -> patches 
 - [ ] npm scope `@sparkleideas` registered
 - [ ] Scope-rename codemod implemented and tested against current upstream HEAD
 - [ ] Build pipeline integrates codemod + patches + TypeScript build + npm publish
-- [ ] `npx ruflo-patch init` works end-to-end with published packages
+- [ ] `npx ruflo init` works end-to-end with published packages
 - [ ] systemd timer configured for automated builds every 6 hours
 - [ ] Prerelease publish gate verified (auto-publish to `prerelease` tag, manual promotion to `latest`)
 - [ ] `git pull` on fork produces zero merge conflicts after upstream pushes new commits

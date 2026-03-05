@@ -1,5 +1,5 @@
 {
-  "name": "@sparkleideas/ruflo-patch",
+  "name": "@sparkleideas/ruflo",
   "version": "0.1.0",
   "description": "Drop-in replacement for ruflo/@claude-flow/cli — rebuilt from source with bug fixes and current upstream commits",
   "scripts": {
@@ -29,7 +29,7 @@
     "node": ">=20"
   },
   "bin": {
-    "ruflo-patch": "bin/ruflo-patch.mjs"
+    "ruflo": "bin/ruflo.mjs"
   },
   "files": [
     "bin",

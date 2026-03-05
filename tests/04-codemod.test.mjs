@@ -69,7 +69,7 @@ describe('codemod: package.json transform', () => {
     assert.ok(!result.peerDependencies['@claude-flow/core'], 'old peer dep removed');
 
     // optionalDependencies
-    assert.ok(result.optionalDependencies['@sparkleideas/ruflo-patch'], 'optional dep renamed');
+    assert.ok(result.optionalDependencies['@sparkleideas/ruflo'], 'optional dep renamed');
     assert.ok(!result.optionalDependencies['ruflo'], 'old optional dep removed');
 
     // bin
@@ -107,7 +107,7 @@ describe('codemod: source file transform', () => {
     const result = readFileSync(join(tmp, 'source.js'), 'utf8');
     assert.ok(result.includes("from '@sparkleideas/memory'"), 'scoped import transformed');
     assert.ok(result.includes("require('@sparkleideas/claude-flow')"), 'unscoped claude-flow require transformed');
-    assert.ok(result.includes("require('@sparkleideas/ruflo-patch')"), 'ruflo require transformed');
+    assert.ok(result.includes("require('@sparkleideas/ruflo')"), 'ruflo require transformed');
     assert.ok(result.includes("require('@sparkleideas/agentdb')"), 'agentdb require transformed');
     assert.ok(result.includes("from '@sparkleideas/core/utils'"), 'scoped deep import transformed');
     assert.ok(result.includes("require('@sparkleideas/agentic-flow')"), 'agentic-flow require transformed');
@@ -130,12 +130,12 @@ describe('codemod: ordering — scoped before unscoped', () => {
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'mixed.js'), 'utf8');
-    // Scoped must become @sparkleideas/memory (not @claude-flow-patch-patch/memory or similar)
+    // Scoped must become @sparkleideas/memory (not @sparkleideas-patch/memory or similar)
     assert.ok(result.includes("'@sparkleideas/memory'"), 'scoped transformed correctly');
     // Unscoped must become @sparkleideas/claude-flow
     assert.ok(result.includes("'@sparkleideas/claude-flow'"), 'unscoped transformed correctly');
     // Must NOT contain double-patched strings
-    assert.ok(!result.includes('@claude-flow-patch-patch'), 'no double-replacement');
+    assert.ok(!result.includes('@sparkleideas-patch'), 'no double-replacement');
     assert.ok(!result.includes('@sparkleideas/patch'), 'no corruption of already-transformed');
   });
 });
@@ -268,14 +268,14 @@ describe('codemod: unscoped word boundaries', () => {
     assert.ok(result.includes("require('@sparkleideas/agentdb')"), 'bare agentdb must be transformed');
   });
 
-  it('does not transform @sparkleideas/ruflo-patch further', async () => {
+  it('does not transform @sparkleideas/ruflo further', async () => {
     tmp = makeTmpDir();
-    const source = "const x = require('@sparkleideas/ruflo-patch');\n";
+    const source = "const x = require('@sparkleideas/ruflo');\n";
     writeFileSync(join(tmp, 'ruflo.js'), source);
 
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'ruflo.js'), 'utf8');
-    assert.equal(result, source, '@sparkleideas/ruflo-patch must not be double-transformed');
+    assert.equal(result, source, '@sparkleideas/ruflo must not be double-transformed');
   });
 });

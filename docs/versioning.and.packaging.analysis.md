@@ -417,7 +417,7 @@ The same pattern repeats across the ecosystem:
 
 ---
 
-## 15. Relationship to ruflo-patch
+## 15. Relationship to ruflo
 
 Our patches exist because of the sub-package publishing gap:
 

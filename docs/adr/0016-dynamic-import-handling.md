@@ -97,5 +97,5 @@ Acceptance criteria:
 - [ ] The audit manifest documents each site as "handled by codemod" or "requires targeted patch"
 - [ ] Every site marked "requires targeted patch" has a corresponding patch in `patch/`
 - [ ] `memory-bridge.js` dynamic import of `@claude-flow/memory` is confirmed handled (either by codemod or patch)
-- [ ] Running the built packages with `npx ruflo-patch` does not produce `MODULE_NOT_FOUND` errors for any `@claude-flow/*` package
+- [ ] Running the built packages with `npx ruflo` does not produce `MODULE_NOT_FOUND` errors for any `@claude-flow/*` package
 - [ ] The audit script is documented in the build pipeline so it is re-run on major upstream changes

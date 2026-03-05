@@ -8,13 +8,13 @@ Accepted
 
 ### Specification (SPARC-S)
 
-The ruflo-patch build pipeline spans 13 scripts, 3 config files, and 7 patch directories. The review report (O5) identified that no ADR specifies which tests to run, how to validate the pipeline end-to-end, or how to handle flaky upstream tests. Without a testing strategy, confidence in the pipeline depends on manual spot-checks, and regressions go undetected until a broken package is published.
+The ruflo build pipeline spans 13 scripts, 3 config files, and 7 patch directories. The review report (O5) identified that no ADR specifies which tests to run, how to validate the pipeline end-to-end, or how to handle flaky upstream tests. Without a testing strategy, confidence in the pipeline depends on manual spot-checks, and regressions go undetected until a broken package is published.
 
 The testing challenge has three distinct layers:
 
 1. **Unit tests** -- Do individual components (codemod, version computation, publish ordering) behave correctly in isolation?
 2. **Integration tests** -- Does the full pipeline (clone → codemod → patch → build → publish) produce working packages?
-3. **Acceptance tests** -- Can a user actually `npx ruflo-patch init` and get a working environment?
+3. **Acceptance tests** -- Can a user actually `npx ruflo init` and get a working environment?
 
 Each layer requires different infrastructure. Unit tests need nothing external. Integration tests need upstream source code. Acceptance tests need published packages (or a local registry simulating npm).
 
@@ -46,9 +46,9 @@ LAYER 2 — Integration tests (scripts/test-integration.sh):
 
 LAYER 3 — Acceptance tests (scripts/test-acceptance.sh):
   REQUIRE: packages published (Verdaccio or npm)
-  Step 1: npx ruflo-patch@<registry> init (in clean temp dir)
+  Step 1: npx ruflo@<registry> init (in clean temp dir)
   Step 2: Verify generated files exist (.claude/*, CLAUDE.md, etc.)
-  Step 3: npx ruflo-patch@<registry> doctor --fix
+  Step 3: npx ruflo@<registry> doctor --fix
   Step 4: Verify MCP config references @sparkleideas/*
   -> Run: bash scripts/test-acceptance.sh [--registry <url>]
   -> Requires published packages, ~2 min
@@ -97,7 +97,7 @@ A single script (`scripts/test-integration.sh`) that validates the full build pi
 | 5. Build | `pnpm install && pnpm build` in temp dir | TypeScript compiles with renamed imports |
 | 6. Upstream tests | `pnpm test` in temp dir (allow exit code != 0) | Upstream tests mostly pass; log failures for review |
 | 7. Publish | `node scripts/publish.mjs --build-dir $TEMP --version test-0.0.1-patch.1 --registry http://localhost:$PORT` | ADR-0014: all 26 packages publish in topological order |
-| 8. Install | `npm install ruflo-patch --registry http://localhost:$PORT` in a fresh temp dir | Full dependency tree resolves |
+| 8. Install | `npm install ruflo --registry http://localhost:$PORT` in a fresh temp dir | Full dependency tree resolves |
 | 9. Cleanup | Kill Verdaccio, remove temp dirs | No leaked processes or disk |
 
 **When to run**: Before first publish (Stage A validation). After major pipeline changes. Optionally on a weekly timer as a regression check.
@@ -113,17 +113,17 @@ The integration test script captures upstream test output but does NOT fail on u
 
 **Layer 3: Acceptance Tests**
 
-A script (`scripts/test-acceptance.sh`) that validates the end-user experience by running `ruflo-patch` commands against published packages (either local Verdaccio or real npm).
+A script (`scripts/test-acceptance.sh`) that validates the end-user experience by running `ruflo` commands against published packages (either local Verdaccio or real npm).
 
 **Test cases**:
 
 | # | Command | Validates |
 |---|---------|-----------|
-| A1 | `npx ruflo-patch --version` | Package resolves and executes |
-| A2 | `npx ruflo-patch init` (in temp dir) | Init routine generates expected files |
+| A1 | `npx ruflo --version` | Package resolves and executes |
+| A2 | `npx ruflo init` (in temp dir) | Init routine generates expected files |
 | A3 | Verify `.claude/settings.json` exists | File generation works |
 | A4 | Verify CLAUDE.md references `@sparkleideas` (not `@claude-flow`) | Codemod applied correctly to init templates |
-| A5 | `npx ruflo-patch doctor --fix` | Doctor command runs without MODULE_NOT_FOUND errors |
+| A5 | `npx ruflo doctor --fix` | Doctor command runs without MODULE_NOT_FOUND errors |
 | A6 | Verify MCP config in `.mcp.json` | ADR-0001 (MC-001): `autoStart: false` removed |
 
 **When to run**: After first publish to npm. After each promotion to `@latest`. Can be run against Verdaccio output from Layer 2.
@@ -193,7 +193,7 @@ cat > "$TEMP_DIR/.test-manifest.json" <<EOF
   "ruflo_head": "$(git -C ~/src/upstream/ruflo rev-parse HEAD)",
   "agentic_flow_head": "$(git -C ~/src/upstream/agentic-flow rev-parse HEAD)",
   "ruv_fann_head": "$(git -C ~/src/upstream/ruv-FANN rev-parse HEAD)",
-  "ruflo_patch_head": "$(git -C ~/src/ruflo-patch rev-parse HEAD)",
+  "ruflo_patch_head": "$(git -C ~/src/ruflo rev-parse HEAD)",
   "node_version": "$(node --version)",
   "pnpm_version": "$(pnpm --version)",
   "platform": "$(uname -srm)"
@@ -262,7 +262,7 @@ packages:
   '@sparkleideas/*':
     access: $all
     publish: $all
-  'ruflo-patch':
+  'ruflo':
     access: $all
     publish: $all
   '**':
@@ -325,8 +325,8 @@ check "Timer unit exists"    "systemctl cat ruflo-sync.timer"
 check "Timer is enabled"     "systemctl is-enabled ruflo-sync.timer"
 check "Timer is active"      "systemctl is-active ruflo-sync.timer"
 check "Service unit exists"  "systemctl cat ruflo-sync.service"
-check "Secrets file exists"  "test -f ~/.config/ruflo-patch/secrets.env"
-check "Secrets file perms"   "test $(stat -c %a ~/.config/ruflo-patch/secrets.env) = 600"
+check "Secrets file exists"  "test -f ~/.config/ruflo/secrets.env"
+check "Secrets file perms"   "test $(stat -c %a ~/.config/ruflo/secrets.env) = 600"
 check "State file exists"    "test -f scripts/.last-build-state"
 check "Upstream clones exist" "test -d ~/src/upstream/ruflo/.git"
 check "Node >= 20"           "node -e 'process.exit(+process.versions.node.split(\".\")[0] >= 20 ? 0 : 1)'"
@@ -366,7 +366,7 @@ This script is idempotent and non-destructive — it reads state but changes not
 - Integration tests require ~10 minutes and upstream clones (~2GB disk). Not suitable for rapid iteration during development
 - Verdaccio must be installed separately (`npm i -g verdaccio`). One more prerequisite for the build server
 - The known-failures baseline must be maintained as upstream evolves -- new test failures need triage (is it our fault or upstream's?)
-- Acceptance tests depend on `ruflo-patch init` behavior, which is upstream code we don't control. If upstream changes the init flow, these tests break
+- Acceptance tests depend on `ruflo init` behavior, which is upstream code we don't control. If upstream changes the init flow, these tests break
 
 **Edge cases:**
 
@@ -384,7 +384,7 @@ Acceptance criteria:
 - [ ] Integration test uses Verdaccio (no real npm publish during testing)
 - [ ] Integration test verifies zero `@claude-flow/` references after codemod (excluding `@sparkleideas`)
 - [ ] Integration test verifies all 26 packages publish successfully to Verdaccio
-- [ ] Integration test verifies `npm install ruflo-patch` resolves the full dependency tree from Verdaccio
+- [ ] Integration test verifies `npm install ruflo` resolves the full dependency tree from Verdaccio
 - [ ] `scripts/test-acceptance.sh` exists and validates end-user commands
 - [ ] `config/known-test-failures.txt` exists (may be empty initially)
 - [ ] Upstream test failures are logged but do not block the integration test

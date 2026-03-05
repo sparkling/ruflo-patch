@@ -77,7 +77,7 @@ The state file is updated only after a successful publish. If the build fails, t
 1. **Only watch upstream, require manual trigger for patch changes** — Rejected. Easy to forget after pushing a patch. Creates drift between pushed patches and published packages. Defeats the automation goal — you'd need to remember to SSH in after every `git push`.
 2. **Separate pipelines for upstream vs local** — Rejected. Unnecessary complexity. Both trigger sources result in the same build steps (codemod, patch, build, test, publish). Two pipelines means two sets of failure modes, two notification paths, and potential race conditions if both trigger simultaneously.
 3. **File watcher (inotify) on patch/ directory** — Rejected. Does not work reliably for `git push` — files change atomically during merge operations. More fragile than `git log`. Also requires a long-running daemon, unlike the timer-based approach.
-4. **Webhook from GitHub on push to ruflo-patch** — Rejected. Adds external dependency (GitHub must be able to reach our server). Requires exposing an HTTP endpoint. Solves only the local trigger — still need polling for upstream repos we don't control.
+4. **Webhook from GitHub on push to ruflo** — Rejected. Adds external dependency (GitHub must be able to reach our server). Requires exposing an HTTP endpoint. Solves only the local trigger — still need polling for upstream repos we don't control.
 
 ## Consequences
 

@@ -14,7 +14,7 @@ The upstream ruvnet ecosystem contains 2 RED semver conflicts (documented in the
 
 2. **`agentdb`**: `@claude-flow/memory` pins `2.0.0-alpha.3.7` (an exact version). `agentic-flow@2.0.7` specifies `^2.0.0-alpha.2.20`. The npm latest for `agentdb` is `3.0.0-alpha.10`. Neither the pin nor the caret range accepts `3.0.0-alpha.10`. The pin does not even exist on npm (the closest published version is `2.0.0-alpha.3.21`).
 
-If left unpatched, these conflicts cause `npm install` or `pnpm install` to either fail outright (strict mode) or install incompatible versions that crash at runtime. This defeats the purpose of ruflo-patch as a working drop-in replacement.
+If left unpatched, these conflicts cause `npm install` or `pnpm install` to either fail outright (strict mode) or install incompatible versions that crash at runtime. This defeats the purpose of ruflo as a working drop-in replacement.
 
 This addresses review issue S3 from the ADR review report.
 
@@ -57,11 +57,11 @@ The specific version numbers in the patches (`^2.5.1`, `^3.0.0-alpha.10`) must b
 
 ### Considered Alternatives
 
-1. **Accept the breakage and let npm warn or fail** -- Rejected. Users would encounter install failures or runtime crashes on first use. This directly contradicts the goal of ruflo-patch as a working drop-in replacement. Upstream has lived with these conflicts because the root `claude-flow` package bundles its own dist files and never triggers the conflicting resolution paths at install time. Our build actually resolves the full dependency tree, so the conflicts surface.
+1. **Accept the breakage and let npm warn or fail** -- Rejected. Users would encounter install failures or runtime crashes on first use. This directly contradicts the goal of ruflo as a working drop-in replacement. Upstream has lived with these conflicts because the root `claude-flow` package bundles its own dist files and never triggers the conflicting resolution paths at install time. Our build actually resolves the full dependency tree, so the conflicts surface.
 
 2. **Ignore and hope npm deduplication resolves it** -- Rejected. npm deduplication works by hoisting compatible versions. These ranges are mathematically incompatible -- no single version of `@ruvector/ruvllm` satisfies both `^0.2.3` and `>=2.5.1`, and no single version of `agentdb` satisfies both `2.0.0-alpha.3.7` (exact) and `>=3.0.0-alpha.10`. Deduplication cannot resolve what arithmetic cannot.
 
-3. **Pin exact versions using pnpm `overrides` in the workspace root** -- Considered but rejected as primary approach. pnpm overrides work at install time but do not fix the published `package.json` files. When a user installs `ruflo-patch`, their package manager sees the original (broken) ranges in the transitive dependencies. The fix must be in the published source, not in our build-time workspace configuration. However, pnpm overrides may be used as a belt-and-suspenders backup during the build itself.
+3. **Pin exact versions using pnpm `overrides` in the workspace root** -- Considered but rejected as primary approach. pnpm overrides work at install time but do not fix the published `package.json` files. When a user installs `ruflo`, their package manager sees the original (broken) ranges in the transitive dependencies. The fix must be in the published source, not in our build-time workspace configuration. However, pnpm overrides may be used as a belt-and-suspenders backup during the build itself.
 
 4. **Remove the conflicting dependencies entirely** -- Rejected. `agentdb` is a core dependency of the memory system. `@ruvector/ruvllm` is used by `agentic-flow` for LLM routing. Removing them would break functionality.
 
@@ -71,7 +71,7 @@ The specific version numbers in the patches (`^2.5.1`, `^3.0.0-alpha.10`) must b
 
 **Positive:**
 
-- Users can `npm install ruflo-patch` without encountering semver resolution failures
+- Users can `npm install ruflo` without encountering semver resolution failures
 - The fix is minimal -- changing version range strings in `package.json` files, not modifying application logic
 - The patches follow the existing `patch/` infrastructure, so they benefit from sentinel verification and idempotency checks
 - When upstream eventually fixes their own version ranges, the patches become no-ops (the codemod rewrites the file, the patch finds its target string is already correct, and skips)

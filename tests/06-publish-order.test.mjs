@@ -62,7 +62,7 @@ const KNOWN_DEPS = {
   // Level 5 — root packages (transitive deps not enumerated here)
   '@sparkleideas/cli': [],
   '@sparkleideas/claude-flow': [],
-  '@sparkleideas/ruflo-patch': [],
+  '@sparkleideas/ruflo': [],
 };
 
 // ── Helpers ──
@@ -128,7 +128,7 @@ describe('Topological publish order (ADR-0014)', () => {
       const expected = [
         '@sparkleideas/cli',
         '@sparkleideas/claude-flow',
-        '@sparkleideas/ruflo-patch',
+        '@sparkleideas/ruflo',
       ];
       assert.deepStrictEqual(level5, expected);
     });
@@ -514,7 +514,7 @@ describe('Topological publish order (ADR-0014)', () => {
       );
     });
 
-    it('Level 5 contains cli, claude-flow, ruflo-patch', () => {
+    it('Level 5 contains cli, claude-flow, ruflo', () => {
       const level5 = LEVELS[4];
       assert.ok(
         level5.includes('@sparkleideas/cli'),
@@ -525,8 +525,8 @@ describe('Topological publish order (ADR-0014)', () => {
         'claude-flow should be at level 5'
       );
       assert.ok(
-        level5.includes('@sparkleideas/ruflo-patch'),
-        'ruflo-patch should be at level 5'
+        level5.includes('@sparkleideas/ruflo'),
+        'ruflo should be at level 5'
       );
     });
 

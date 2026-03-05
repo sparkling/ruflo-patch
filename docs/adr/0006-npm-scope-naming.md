@@ -19,7 +19,7 @@ The upstream ecosystem uses multiple naming conventions:
 - `ruv-swarm` -- unscoped package from `ruvnet/ruv-FANN`
 - `@ruvector/*` -- scoped packages from `ruvnet/ruvector` (not renamed; see ADR-0008)
 
-Our repo is called `ruflo-patch`. `ruflo` is a thin wrapper around `claude-flow`. The scope must clearly signal "this is a patched fork of the claude-flow ecosystem."
+Our repo is called `ruflo`. `ruflo` is a thin wrapper around `claude-flow`. The scope must clearly signal "this is a patched fork of the claude-flow ecosystem."
 
 ### Pseudocode (SPARC-P)
 
@@ -32,7 +32,7 @@ MAPPING:
   agentdb               -> @sparkleideas/agentdb
   agentic-flow          -> @sparkleideas/agentic-flow
   ruv-swarm             -> @sparkleideas/ruv-swarm
-  ruflo                 -> ruflo-patch (top-level, unscoped)
+  ruflo                 -> ruflo (top-level, unscoped)
 
 NOT RENAMED:
   ruvector              -> ruvector (use published)
@@ -57,7 +57,7 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 | `agentdb` | `@sparkleideas/agentdb` | Brought under scope for consistency |
 | `agentic-flow` | `@sparkleideas/agentic-flow` | Same |
 | `ruv-swarm` | `@sparkleideas/ruv-swarm` | Same |
-| `ruflo` | `ruflo-patch` | Top-level entry point, stays unscoped |
+| `ruflo` | `ruflo` | Top-level entry point, stays unscoped |
 
 **Not renamed (use published versions from public npm):**
 
@@ -68,7 +68,7 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 
 ### Considered Alternatives
 
-1. **`@ruflo-patch`** -- Rejected. `ruflo` is a wrapper around `claude-flow`, not the core ecosystem. Naming the scope after the wrapper creates a mismatch: `@ruflo-patch/memory` implies "ruflo's memory" when it is actually "claude-flow's memory, patched." The scope should reflect the core package naming.
+1. **`@ruflo`** -- Rejected. `ruflo` is a wrapper around `claude-flow`, not the core ecosystem. Naming the scope after the wrapper creates a mismatch: `@ruflo/memory` implies "ruflo's memory" when it is actually "claude-flow's memory, patched." The scope should reflect the core package naming.
 
 2. **`@ruflo`** -- Rejected. Too close to the upstream `ruflo` package name. Creates confusion about whether `@ruflo/cli` is an official upstream package or our fork.
 
@@ -84,7 +84,7 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 
 - Immediately recognizable relationship: seeing `@sparkleideas/memory` tells you it is a patched version of `@claude-flow/memory`
 - The codemod is a straightforward string replacement: `@claude-flow/` becomes `@sparkleideas/`
-- Users never type the scoped names directly -- they use `ruflo-patch` which depends on `@sparkleideas/*` internally
+- Users never type the scoped names directly -- they use `ruflo` which depends on `@sparkleideas/*` internally
 - npm scope registration is a one-time operation
 
 **Negative:**
@@ -95,7 +95,7 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 **Trade-offs and edge cases:**
 
 - Unscoped upstream packages (`agentdb`, `agentic-flow`, `ruv-swarm`) become scoped under `@sparkleideas`. This is intentional -- it groups all our packages under one scope for discoverability and namespace cleanliness.
-- The top-level `ruflo-patch` stays unscoped because it is the user-facing CLI entry point. Users type `npx ruflo-patch`, not `npx @sparkleideas/ruflo`.
+- The top-level `ruflo` stays unscoped because it is the user-facing CLI entry point. Users type `npx ruflo`, not `npx @sparkleideas/ruflo`.
 - `claude-flow` (unscoped upstream) becomes `@sparkleideas/claude-flow` (scoped). The codemod must handle this asymmetric mapping.
 
 **Neutral:**
@@ -108,5 +108,5 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 - [ ] npm scope `@sparkleideas` registered on npmjs.com
 - [ ] Codemod handles all mappings in the table above, including the asymmetric `claude-flow` -> `@sparkleideas/claude-flow` case
 - [ ] `npm view @sparkleideas/cli` resolves after first publish
-- [ ] `ruflo-patch` package.json lists `@sparkleideas/*` dependencies, not `@claude-flow/*`
+- [ ] `ruflo` package.json lists `@sparkleideas/*` dependencies, not `@claude-flow/*`
 - [ ] No `@ruvector/*` packages are renamed or republished

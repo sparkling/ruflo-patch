@@ -20,10 +20,10 @@ All three reviewers agree the core architecture is sound:
 
 | # | Issue | Found By | Affected ADRs |
 |---|-------|----------|---------------|
-| **C1** | **First npm publish bootstrap**: `npm publish --tag prerelease` on first-ever publish does NOT set `latest` tag. `npx ruflo-patch` would 404 until manually fixed. | Technical | 0010, 0012 |
+| **C1** | **First npm publish bootstrap**: `npm publish --tag prerelease` on first-ever publish does NOT set `latest` tag. `npx ruflo` would 404 until manually fixed. | Technical | 0010, 0012 |
 | **C2** | **Dynamic imports**: Code constructing `@claude-flow/` + variable at runtime won't be caught by the codemod. Results in `MODULE_NOT_FOUND` crashes. No ADR defines how to find or handle these. | Technical, End User | 0005, 0007 |
 | **C3** | **Topological publish order**: 23 packages across 5 dependency levels must publish bottom-up. No ADR specifies the order or handles partial failures. | Technical, Maintainer | 0005 |
-| **C4** | **Codemod not specified**: The "key asset" has no implementation ADR -- no tool choice, no edge case handling, no file extension list. Asymmetric mappings (unscoped `claude-flow` -> `@claude-flow-patch/claude-flow`) need word-boundary matching to avoid corrupting `@claude-flow-patch`. | Maintainer, Technical | 0005, 0006 |
+| **C4** | **Codemod not specified**: The "key asset" has no implementation ADR -- no tool choice, no edge case handling, no file extension list. Asymmetric mappings (unscoped `claude-flow` -> `@sparkleideas/claude-flow`) need word-boundary matching to avoid corrupting `@sparkleideas`. | Maintainer, Technical | 0005, 0006 |
 | **C5** | **Secret management**: Zero mention of where npm/GitHub tokens are stored, how they're provided to the build, or how they're rotated. | Maintainer | 0009, 0010 |
 
 ---
@@ -32,11 +32,11 @@ All three reviewers agree the core architecture is sound:
 
 | # | Issue | Found By | Affected ADRs |
 |---|-------|----------|---------------|
-| **S1** | **Strategy doc contradicts ADR-0006**: Doc says `ruflo -> @claude-flow-patch/ruflo`, ADR says `ruflo -> ruflo-patch` (unscoped). ADR should be authoritative. | Technical, End User | 0006 |
+| **S1** | **Strategy doc contradicts ADR-0006**: Doc says `ruflo -> @sparkleideas/ruflo`, ADR says `ruflo -> ruflo` (unscoped). ADR should be authoritative. | Technical, End User | 0006 |
 | **S2** | **Version numbering across repos**: ADR-0012 says `{upstream_version}-patch.{N}` but upstream repos have different versions (ruflo 3.5.2, agentdb 3.0.0-alpha, agentic-flow 2.0.7). Using ruflo's version for all packages is misleading. | Maintainer, Technical | 0012 |
 | **S3** | **Inherited RED semver conflicts**: `@ruvector/ruvllm ^0.2.3` vs `2.5.1` will cause npm resolution failures. No ADR addresses whether to patch the ranges or accept the breakage. | Technical | 0008 |
 | **S4** | **No migration guide for existing users**: Users with existing projects have MCP configs, CLAUDE.md files, shell scripts, and AgentDB data referencing `@claude-flow/cli`. No document covers migration. | End User | 0007 |
-| **S5** | **No rollback procedure**: If a promoted `@latest` is broken, no ADR documents `npm dist-tag add ruflo-patch@<old> latest` as a procedure. | Maintainer | 0010 |
+| **S5** | **No rollback procedure**: If a promoted `@latest` is broken, no ADR documents `npm dist-tag add ruflo@<old> latest` as a procedure. | Maintainer | 0010 |
 | **S6** | **Ruvector API compatibility gap**: Upstream HEAD (933 commits ahead) may call ruvector APIs added after the last ruvector npm publish. Rebuilt packages could fail at runtime. | End User, Technical | 0008 |
 
 ---
@@ -73,7 +73,7 @@ All three reviewers agree the core architecture is sound:
 
 | Document A | Document B | Contradiction |
 |-----------|-----------|---------------|
-| Strategy doc section 6 | ADR-0006 | `ruflo` mapping: `@claude-flow-patch/ruflo` vs `ruflo-patch` (unscoped) |
+| Strategy doc section 6 | ADR-0006 | `ruflo` mapping: `@sparkleideas/ruflo` vs `ruflo` (unscoped) |
 | ADR-0007 | Patches MC-001/FB-001/FB-002 | ADR says "no changes beyond scope rename" but patches ARE changes |
 | ADR-0009 edge cases | ADR-0009 unit file | Recommends `TimeoutStartSec=3600` but unit file doesn't include it |
 | Strategy doc section 10 | ADR-0008 | Effort estimate: "~2 weeks" vs "~1 week" |

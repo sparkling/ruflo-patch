@@ -52,7 +52,7 @@ DEFINE LEVELS = [
   // Level 5: root packages
   ["@sparkleideas/cli",
    "@sparkleideas/claude-flow",
-   "ruflo-patch"]
+   "ruflo"]
 ]
 
 FUNCTION publishAll(levels, tag):
@@ -124,7 +124,7 @@ The build script publishes packages in a strict topological order derived from t
 |---------|-----------------|
 | `@sparkleideas/cli` | Everything above (direct and transitive) |
 | `@sparkleideas/claude-flow` | `@sparkleideas/cli` (wrapper) |
-| `ruflo-patch` | `@sparkleideas/claude-flow` (top-level wrapper) |
+| `ruflo` | `@sparkleideas/claude-flow` (top-level wrapper) |
 
 **Partial failure handling:**
 
@@ -153,7 +153,7 @@ const LEVELS = [
    '@sparkleideas/deployment', '@sparkleideas/swarm', '@sparkleideas/security',
    '@sparkleideas/performance', '@sparkleideas/testing'],
   // Level 5
-  ['@sparkleideas/cli', '@sparkleideas/claude-flow', 'ruflo-patch'],
+  ['@sparkleideas/cli', '@sparkleideas/claude-flow', 'ruflo'],
 ];
 
 async function publishAll(tag) {
@@ -220,6 +220,6 @@ async function publishAll(tag) {
 - [ ] GitHub Issue is created on failure with package name, level, and error output
 - [ ] Level assignments verified against current upstream dependency tree
 - [ ] Cross-repo packages (agentdb, agentic-flow, ruv-swarm) are at level 1 and publish first
-- [ ] Root packages (cli, claude-flow, ruflo-patch) are at level 5 and publish last
+- [ ] Root packages (cli, claude-flow, ruflo) are at level 5 and publish last
 - [ ] End-to-end test: publish all packages to a local Verdaccio instance in topological order
 - [ ] Total publish time under 2 minutes (26 packages x ~4s each including delay)

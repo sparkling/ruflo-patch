@@ -8,7 +8,7 @@ Accepted
 
 ### Specification (SPARC-S)
 
-When the automated build pipeline (ADR-0009) produces a new version of ruflo-patch, it must decide what to do with it. Publishing directly to npm `@latest` means every user gets the new version immediately — including versions built from potentially broken upstream HEAD or failed patch applications. Publishing nothing defeats the purpose of automation.
+When the automated build pipeline (ADR-0009) produces a new version of ruflo, it must decide what to do with it. Publishing directly to npm `@latest` means every user gets the new version immediately — including versions built from potentially broken upstream HEAD or failed patch applications. Publishing nothing defeats the purpose of automation.
 
 The goal is to automate the build-test-publish cycle while retaining human review before users on `@latest` are affected. The notification mechanism must be passive (email) rather than active (checking a dashboard).
 
@@ -25,7 +25,7 @@ ELSE:
 
 # Later, human reviews at their convenience:
 IF satisfied:
-  npm dist-tag add ruflo-patch@{VERSION} latest   # 2 seconds
+  npm dist-tag add ruflo@{VERSION} latest   # 2 seconds
 ```
 
 ## Decision
@@ -40,7 +40,7 @@ The flow:
 2. `npm publish --tag prerelease` — users on `@latest` are unaffected
 3. `gh release create --prerelease` — GitHub emails you
 4. You review at your convenience
-5. `npm dist-tag add ruflo-patch@X.Y.Z-patch.N latest` — 2 seconds
+5. `npm dist-tag add ruflo@X.Y.Z-patch.N latest` — 2 seconds
 
 If tests fail:
 
@@ -48,7 +48,7 @@ If tests fail:
 2. You investigate, update patches if needed
 3. Re-trigger build manually or wait for next timer run
 
-Users can opt into prereleases explicitly: `npx ruflo-patch@prerelease`.
+Users can opt into prereleases explicitly: `npx ruflo@prerelease`.
 
 ### Considered Alternatives
 
@@ -75,7 +75,7 @@ The above list of rejected alternatives is exhaustive.
 
 - Users on `@latest` only receive versions explicitly approved by a human
 - The approval step is minimal friction: one npm command, 2 seconds
-- You can test prereleases yourself before promoting: `npx ruflo-patch@prerelease`
+- You can test prereleases yourself before promoting: `npx ruflo@prerelease`
 - GitHub prerelease emails are enabled by default for repo watchers — no notification setup required
 - If you're away for days or weeks, builds accumulate as prereleases harmlessly. Nothing breaks for existing users on `@latest`
 - Failed builds create GitHub Issues, which also trigger email — same passive notification channel for both success and failure
@@ -97,10 +97,10 @@ The above list of rejected alternatives is exhaustive.
 Acceptance criteria:
 
 - [ ] `npm publish --tag prerelease` publishes successfully without affecting `@latest`
-- [ ] `npm dist-tag ls ruflo-patch` shows both `latest` and `prerelease` tags
+- [ ] `npm dist-tag ls ruflo` shows both `latest` and `prerelease` tags
 - [ ] `gh release create --prerelease` creates a visible (non-draft) prerelease on GitHub
 - [ ] GitHub sends email notification for the prerelease
-- [ ] `npm dist-tag add ruflo-patch@X.Y.Z-patch.N latest` promotes correctly
-- [ ] `npx ruflo-patch@prerelease` installs the prerelease version
-- [ ] `npx ruflo-patch@latest` is unaffected by prerelease publishes
+- [ ] `npm dist-tag add ruflo@X.Y.Z-patch.N latest` promotes correctly
+- [ ] `npx ruflo@prerelease` installs the prerelease version
+- [ ] `npx ruflo@latest` is unaffected by prerelease publishes
 - [ ] Failed builds create GitHub Issues with diagnostic information
