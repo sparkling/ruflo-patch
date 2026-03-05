@@ -317,19 +317,41 @@ Only Approach 1 (Fork + Republish) absolutely requires ruvector rebuilds, becaus
 
 ## 4. Comparative Matrix
 
-| # | Approach | Effort | npx? | All 48? | Fragility | Public Dist? |
-|---|----------|--------|------|---------|-----------|-------------|
-| 1 | Fork + Republish | Huge (4-6 wk) | Yes | Yes | Low | **Yes (npm)** |
-| 2 | Local Build + link | Large (1-2 d) | No | Yes | High | No |
-| 3 | Expanded Patches | Large (8-15 d) | Yes | Partial | Very High | No |
-| 4 | **Verdaccio Registry** | **Med (6-12 h)** | **Yes** | **Yes** | **Low** | **Partial** |
-| 5 | Git Subtree Mega-Repo | Large | No | Yes | Medium | No |
-| 6 | esbuild Fat Bundle | Med-Large | No | Partial | Medium | Possible |
-| 7 | npm pack Tarballs | Medium | No | Yes | Medium | **Yes (tarballs)** |
-| 8 | pnpm overrides | Small-Med | Partial | Targeted | Medium | No |
-| 9 | Nix Flake | Large | No | Yes | Low | **Yes (flake)** |
-| 10 | Docker Container | Medium | No | Yes | Low | **Yes (image)** |
-| 11 | npx Cache Snapshot | Small | Yes | Yes | Very High | No |
+| # | Approach | Effort | npx? | All 48? | Fragility | Public? | Update Ease |
+|---|----------|--------|------|---------|-----------|---------|-------------|
+| 1 | Fork + Republish | Huge (4-6 wk) | Yes | Yes | Low | **Yes** | **Poor** |
+| 2 | Local Build + link | Large (1-2 d) | No | Yes | High | No | Good |
+| 3 | Expanded Patches | Large (8-15 d) | Yes | Partial | Very High | No | **Very Poor** |
+| 4 | **Verdaccio Registry** | **Med (6-12 h)** | **Yes** | **Yes** | **Low** | No | **Good** |
+| 5 | Git Subtree Mega-Repo | Large | No | Yes | Medium | No | Medium |
+| 6 | esbuild Fat Bundle | Med-Large | No | Partial | Medium | Possible | Good |
+| 7 | npm pack Tarballs | Medium | No | Yes | Medium | **Yes** | **Good** |
+| 8 | pnpm overrides | Small-Med | Partial | Targeted | Medium | No | Good |
+| 9 | Nix Flake | Large | No | Yes | Low | **Yes** | Good |
+| 10 | Docker Container | Medium | No | Yes | Low | **Yes** | Good |
+| 11 | npx Cache Snapshot | Small | Yes | Yes | Very High | No | Poor |
+
+### Update Ease — Detailed Breakdown
+
+When upstream pushes new commits, how much work does each approach require to incorporate them?
+
+| # | Approach | Update Mechanism | Time per Sync | What Breaks |
+|---|----------|-----------------|---------------|-------------|
+| 1 | Fork + Republish | `git fetch upstream && merge` | **Hours** — thousands of merge conflicts on renamed files | Every upstream change to any file with imports |
+| 2 | Local Build + link | `git pull && rebuild` | 15-45 min | Build breakage at HEAD |
+| 3 | Expanded Patches | Rewrite patches against new base | **Hours-days** — patches break on any changed line | Every upstream change to patched files |
+| 4 | Verdaccio | `git pull && rebuild && npm publish` | 30 min | Build breakage at HEAD |
+| 5 | Git Subtree Mega-Repo | `git subtree pull` per repo | 30-60 min — subtree merges are messy | Workspace config changes |
+| 6 | esbuild Fat Bundle | `git pull && rebundle` | Minutes | New dynamic imports or native deps |
+| 7 | npm pack Tarballs | `git pull && rebuild && npm pack` | 30 min | Build breakage at HEAD |
+| 8 | pnpm overrides | `git pull && rebuild` | 15 min | Build breakage at HEAD |
+| 9 | Nix Flake | `nix flake update` | Minutes (cached) | Nix derivation breakage |
+| 10 | Docker Container | `docker build` | 15-30 min | Dockerfile assumptions |
+| 11 | npx Cache Snapshot | Rebuild + re-snapshot | 30 min, but fragile | npm cache format, auto-overwrites |
+
+**Critical insight**: Approaches that **don't modify source files** (2, 4, 6, 7, 8, 9, 10) have clean `git pull` with zero merge conflicts. Approaches that **commit changes into the fork** (1, 3) create ongoing merge pain proportional to how many files were modified.
+
+Approach 1 (Fork + Republish) modifies ~4,136 files for the scope rename. Every upstream merge will conflict on any of those files that upstream also changed. With 933 unpublished commits and active development, this means **hundreds to thousands of merge conflicts per sync**. This is the worst update story of any approach despite being the best for public distribution.
 
 ---
 
@@ -359,36 +381,89 @@ This makes the two approaches **mutually exclusive solutions to the same problem
 
 **Sequencing (not hybrid)**: You could use Verdaccio *now* (6-12 hours) to get a working local setup immediately, then tackle the scope rename *later* for public npm. This is sequencing, not a hybrid — Verdaccio becomes unnecessary once the public packages exist.
 
-### Hive-Mind Consensus Ranking
+### The Merge Conflict Problem with Fork + Republish
+
+Approach 1 has the best public distribution story but the **worst update story**. If you commit the scope rename directly into your fork, every `git merge upstream/main` will conflict on any file that both you (for the rename) and upstream (for new features) touched. With ~4,136 renamed files and an active upstream (933+ commits), this means:
+
+- First sync: hundreds of merge conflicts
+- Every subsequent sync: more conflicts, compounding over time
+- Eventually the fork becomes unmergeable and you are maintaining a permanent hard fork
+
+This is the central tension of the entire analysis: **the only approach that enables public npm distribution is also the hardest to keep current**.
+
+### Solution: Rename as a Build Step, Not a Commit
+
+The merge conflict problem disappears if you **never commit the renamed files**. Instead:
+
+1. Fork the repos and keep them as **clean mirrors** of upstream (no modifications)
+2. `git pull` syncs cleanly — zero conflicts, ever
+3. A **build script** performs the scope rename on-the-fly:
+   - Copies source to a temp directory
+   - Runs a codemod to rewrite all package names and imports
+   - Builds the TypeScript
+   - Publishes to npm under the new scope
+4. The rename logic lives in your build tooling, not in the source tree
+
+This gives you the update ease of Verdaccio (clean `git pull`) with the public distribution of Fork + Republish:
+
+| | Naive Fork (rename committed) | Build-Step Rename | Verdaccio |
+|---|---|---|---|
+| Files modified in fork | ~4,136 | **0** | 0 |
+| Merge conflicts on sync | Hundreds-thousands | **0** | 0 |
+| Public npm distribution | Yes | **Yes** | No |
+| Update mechanism | Painful merge | **`git pull && ./build-and-publish.sh`** | `git pull && rebuild && publish` |
+| Time per sync | Hours | **30 min** | 30 min |
+
+The build-step rename is essentially **Approach 4 (Verdaccio) plus Approach 1 (Republish)** done right — the fork stays clean, the rename is ephemeral, and the output goes to public npm.
+
+### Revised Consensus Ranking
 
 **For public distribution (our goal):**
 
-1. **Fork + Republish to npm** (Approach 1, scoped to TypeScript only) — the only approach that gives public `npx`/`npm install` access. Skip ruvector (keep published versions). Effort: ~1-2 weeks.
-2. **npm pack Tarballs via GitHub Releases** (Approach 7) — lower effort alternative. Build from source, `npm pack`, attach `.tgz` files to GitHub Releases. Recipients install with `npm install <url>`. No scope rename needed. Effort: 1-2 days.
+1. **Fork + Build-Step Rename + npm Publish** — clean fork mirrors upstream, build script applies scope rename on-the-fly, publishes to npm. Combines best update ease with public distribution. Effort: ~1 week initial (build the codemod + publish pipeline), 30 min per sync.
+2. **npm pack Tarballs via GitHub Releases** (Approach 7) — lower effort alternative. Build from source, `npm pack`, attach `.tgz` files to GitHub Releases. Recipients install with `npm install <url>`. No scope rename needed if distributing as tarballs. Effort: 1-2 days.
 3. **Docker image** (Approach 10) — pre-built container with everything working. Effort: medium.
 
-**For immediate local use while working on public release:**
+**For immediate local use while building the pipeline:**
 
-1. **Verdaccio** (Approach 4) — zero code changes, working in hours. Use as a bridge while the scope rename is in progress.
-2. **pnpm overrides** (Approach 8) — override only the 12 stale packages to local builds. No infrastructure.
+1. **Verdaccio** (Approach 4) — zero code changes, working in hours. Use as a bridge.
+2. **pnpm overrides** (Approach 8) — override only the 12 stale packages. No infrastructure.
 
 ---
 
 ## 6. Public Distribution Strategy
 
-Since all upstream repos are MIT-licensed and we want to share publicly, **npm under a new scope is the primary distribution channel**:
+Since all upstream repos are MIT-licensed and we want to share publicly, **npm under a new scope is the primary distribution channel**, using the build-step rename approach:
 
 | Channel | How Users Install | Effort | Reach |
 |---------|------------------|--------|-------|
-| **npm under new scope** | `npx @ruflo-patch/cli@latest` | 1-2 weeks | Widest — standard npm toolchain |
+| **npm under new scope** | `npx @ruflo-patch/cli@latest` | ~1 week | Widest — standard npm toolchain |
 | **GitHub Releases (tarballs)** | `npm install https://github.com/.../releases/download/v1/pkg.tgz` | 1-2 days | GitHub users |
 | **Docker image** | `docker run ghcr.io/ruflo-patch/cli` | Medium | Container users |
 
-The scope rename is a large but **scriptable** task — a codemod across the forked repos using `sed`, `jscodeshift`, or similar. The ~4,136 files break down as:
+### The Codemod
+
+The scope rename is a **build-time codemod**, not a committed change. It runs as part of the publish pipeline:
+
+```
+git pull (clean fork)  -->  copy to temp dir  -->  codemod renames  -->  build  -->  npm publish
+```
+
+The ~4,136 files break down as:
 - ~261 `package.json` files (name, dependencies, peerDependencies, optionalDependencies fields)
 - ~3,875 JS/TS source files (import/require statements)
 
-This can be largely automated. The manual work is resolving edge cases: dynamic imports, string interpolation in package names, build tool configs (napi-rs, pnpm workspace, publish scripts).
+The codemod is a script using `sed`, `jscodeshift`, or a custom Node.js transform. It maps:
+- `@claude-flow/*` -> `@ruflo-patch/*`
+- `claude-flow` -> `@ruflo-patch/claude-flow`
+- `ruflo` -> `@ruflo-patch/ruflo`
+- `agentdb` -> `@ruflo-patch/agentdb`
+- `agentic-flow` -> `@ruflo-patch/agentic-flow`
+- `ruv-swarm` -> `@ruflo-patch/ruv-swarm`
+
+Packages we do NOT rename (depend on published versions):
+- `ruvector`, `@ruvector/*` — relatively current, Rust rebuild not needed
+- Third-party deps (`better-sqlite3`, `ws`, `uuid`, etc.) — obviously unchanged
 
 ---
 
@@ -431,13 +506,15 @@ The patch system transitions from "compensating for publishing gaps" to "adding 
 
 ## 9. Recommended Implementation Order
 
-1. **Now**: Optionally set up Verdaccio for immediate local use (6-12 hours) — skip if you want to go straight to public release
-2. **Week 1**: Fork repos, register npm scope (`@ruflo-patch`), script the scope rename codemod
-3. **Week 1-2**: Build TypeScript packages from source, publish to npm under new scope (skip ruvector — depend on published versions)
-4. **Week 2+**: Automate the rebuild + republish pipeline, set up upstream change detection
-5. **Ongoing**: ruflo-patch continues for our own enhancement patches on top of the current codebase
+1. **Day 1**: Fork all repos as clean mirrors, register npm scope (`@ruflo-patch`)
+2. **Day 1-2**: Optionally set up Verdaccio for immediate local use while building the pipeline
+3. **Days 2-5**: Write the scope-rename codemod (the core reusable asset)
+4. **Days 5-7**: Wire up the full pipeline: `git pull` -> codemod -> build -> publish
+5. **Week 2**: Test end-to-end, publish first batch to npm, verify `npx @ruflo-patch/cli@latest`
+6. **Ongoing**: `git pull && ./build-and-publish.sh` on each upstream sync (~30 min)
+7. **Ongoing**: ruflo-patch continues for our own enhancement patches on top
 
-If using Verdaccio as a bridge: it becomes unnecessary once the public npm packages are available. Uninstall and remove the `.npmrc` registry override.
+The codemod is the key deliverable — once it works reliably, every upstream sync is a clean `git pull` followed by an automated build-and-publish. No merge conflicts, ever.
 
 ---
 
@@ -447,12 +524,13 @@ If using Verdaccio as a bridge: it becomes unnecessary once the public npm packa
 |--------|-------|
 | Approaches evaluated | 11 |
 | Architects consulted | 5 |
-| Recommended approach (public) | Fork + Republish to npm under new scope |
-| Recommended approach (local bridge) | Verdaccio (optional, while rename is in progress) |
+| Recommended approach | Fork + Build-Step Rename + npm Publish |
+| Key innovation | Rename at build time, not in committed source — zero merge conflicts |
 | Packages needing scope rename (TypeScript) | ~26 |
 | Packages skippable (use published ruvector) | ~22 |
-| Files needing import rewrite | ~4,136 (scriptable) |
-| Estimated effort (public npm release) | 1-2 weeks |
-| Estimated effort (Verdaccio local only) | 6-12 hours |
-| Ongoing maintenance | 30 min per upstream sync cycle |
+| Files the codemod transforms | ~4,136 (per build, never committed) |
+| Estimated effort (pipeline + first publish) | ~1 week |
+| Estimated effort (Verdaccio bridge, optional) | 6-12 hours |
+| Ongoing time per upstream sync | ~30 min |
+| Merge conflicts per sync | 0 (fork is a clean mirror) |
 | License risk | None (all MIT) |
