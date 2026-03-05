@@ -13,14 +13,14 @@ ADR-0005 establishes that the build-step rename transforms ~4,136 files per buil
 - **package.json fields**: `name`, `dependencies`, `peerDependencies`, `optionalDependencies`, `bin`, `exports`
 - **JS/TS/MJS/CJS source files**: `import`/`require` statements
 - **Config files**: `tsconfig.json` paths, jest config, `.npmrc`
-- **Asymmetric mappings**: scoped `@claude-flow/X` becomes `@claude-flow-patch/X`, but unscoped packages require different rules:
-  - `claude-flow` becomes `@claude-flow-patch/claude-flow`
+- **Asymmetric mappings**: scoped `@claude-flow/X` becomes `@sparkleideas/X`, but unscoped packages require different rules:
+  - `claude-flow` becomes `@sparkleideas/claude-flow`
   - `ruflo` becomes `ruflo-patch`
-  - `agentdb` becomes `@claude-flow-patch/agentdb`
-  - `agentic-flow` becomes `@claude-flow-patch/agentic-flow`
-  - `ruv-swarm` becomes `@claude-flow-patch/ruv-swarm`
+  - `agentdb` becomes `@sparkleideas/agentdb`
+  - `agentic-flow` becomes `@sparkleideas/agentic-flow`
+  - `ruv-swarm` becomes `@sparkleideas/ruv-swarm`
 - **Must NOT rename**: `@ruvector/*`, `ruvector`, third-party dependencies
-- **Must NOT corrupt**: `@claude-flow-patch` (contains the substring `claude-flow` -- ordering matters)
+- **Must NOT corrupt**: `@sparkleideas` (contains the substring `claude-flow` -- ordering matters)
 
 The review report (C4) identified that no ADR specifies the codemod tool choice, edge case handling, file extension list, or transformation rules. This ADR fills that gap.
 
@@ -56,19 +56,19 @@ FUNCTION transformSourceFile(file):
   // Phase 1: Replace scoped packages FIRST
   content = content.replace(
     /@claude-flow\/(?!patch)/g,     // negative lookahead: skip @claude-flow/patch
-    "@claude-flow-patch/"
+    "@sparkleideas/"
   )
   // Phase 2: Replace unscoped packages with word-boundary matching
   content = replaceUnscoped(content, UNSCOPED_MAPPINGS)
   write(file, content)
 
 FUNCTION applyNameMapping(name):
-  IF name starts with "@claude-flow/": return name.replace("@claude-flow/", "@claude-flow-patch/")
-  IF name == "claude-flow": return "@claude-flow-patch/claude-flow"
+  IF name starts with "@claude-flow/": return name.replace("@claude-flow/", "@sparkleideas/")
+  IF name == "claude-flow": return "@sparkleideas/claude-flow"
   IF name == "ruflo": return "ruflo-patch"
-  IF name == "agentdb": return "@claude-flow-patch/agentdb"
-  IF name == "agentic-flow": return "@claude-flow-patch/agentic-flow"
-  IF name == "ruv-swarm": return "@claude-flow-patch/ruv-swarm"
+  IF name == "agentdb": return "@sparkleideas/agentdb"
+  IF name == "agentic-flow": return "@sparkleideas/agentic-flow"
+  IF name == "ruv-swarm": return "@sparkleideas/ruv-swarm"
   return name  // unchanged (third-party, @ruvector/*, etc.)
 ```
 
@@ -99,23 +99,23 @@ Does NOT modify: `version`, `description`, `repository`, `homepage`, `bugs`, `sc
 
 Processes files with extensions: `.js`, `.ts`, `.mjs`, `.cjs`, `.json` (non-package.json), `.d.ts`, `.d.mts`.
 
-**Ordering rule**: Replace `@claude-flow/` BEFORE replacing bare `claude-flow`. This prevents double-replacement. The scoped replacement uses a negative lookahead `(?!patch)` to skip strings that already contain `@claude-flow-patch/`.
+**Ordering rule**: Replace `@claude-flow/` BEFORE replacing bare `claude-flow`. This prevents double-replacement. The scoped replacement uses a negative lookahead `(?!patch)` to skip strings that already contain `@sparkleideas/`.
 
 For unscoped packages, use word-boundary matching with negative lookbehind to avoid partial matches:
 
 ```javascript
-// Replace "claude-flow" but NOT "@claude-flow" or "@claude-flow-patch/claude-flow"
+// Replace "claude-flow" but NOT "@claude-flow" or "@sparkleideas/claude-flow"
 // The scoped form is already handled by Phase 1
-/(?<![@/\w-])claude-flow(?![\w-]*-patch)/g -> "@claude-flow-patch/claude-flow"
+/(?<![@/\w-])claude-flow(?![\w-]*-patch)/g -> "@sparkleideas/claude-flow"
 
 // Replace "agentdb" but NOT "agentdb-onnx" or similar
-/(?<![@/\w-])agentdb(?![\w-])/g -> "@claude-flow-patch/agentdb"
+/(?<![@/\w-])agentdb(?![\w-])/g -> "@sparkleideas/agentdb"
 
 // Replace "agentic-flow" but NOT already scoped
-/(?<![@/\w-])agentic-flow(?![\w-])/g -> "@claude-flow-patch/agentic-flow"
+/(?<![@/\w-])agentic-flow(?![\w-])/g -> "@sparkleideas/agentic-flow"
 
 // Replace "ruv-swarm" but NOT already scoped
-/(?<![@/\w-])ruv-swarm(?![\w-])/g -> "@claude-flow-patch/ruv-swarm"
+/(?<![@/\w-])ruv-swarm(?![\w-])/g -> "@sparkleideas/ruv-swarm"
 
 // Replace "ruflo" but NOT "ruflo-patch"
 /(?<![@/\w-])ruflo(?![\w-])/g -> "ruflo-patch"
@@ -151,7 +151,7 @@ The script uses an allowlist of file extensions rather than a denylist. Only fil
 
 - JSON-aware phase prevents corruption of `package.json` structure (preserves formatting, handles nested fields correctly)
 - Regex ordering (scoped before unscoped) eliminates the double-replacement class of bugs entirely
-- Negative lookahead on `@claude-flow-patch` means re-running the codemod is idempotent
+- Negative lookahead on `@sparkleideas` means re-running the codemod is idempotent
 - Allowlist of file extensions prevents accidental transformation of binary files or git objects
 - Node.js implementation requires no additional toolchain -- matches the build pipeline language
 
@@ -163,8 +163,8 @@ The script uses an allowlist of file extensions rather than a denylist. Only fil
 
 **Trade-offs and edge cases:**
 
-- **Template literals**: `\`@claude-flow/${name}\`` will have the `@claude-flow/` prefix transformed to `@claude-flow-patch/`. The variable portion is untouched. This is correct for static prefixes but does not help when the entire package name is computed at runtime (see review issue C2 -- dynamic imports are a separate concern).
-- **Comments**: Package names in comments will be transformed. This is harmless and actually helpful -- comments referencing `@claude-flow/memory` will correctly show `@claude-flow-patch/memory` in the published package.
+- **Template literals**: `\`@claude-flow/${name}\`` will have the `@claude-flow/` prefix transformed to `@sparkleideas/`. The variable portion is untouched. This is correct for static prefixes but does not help when the entire package name is computed at runtime (see review issue C2 -- dynamic imports are a separate concern).
+- **Comments**: Package names in comments will be transformed. This is harmless and actually helpful -- comments referencing `@claude-flow/memory` will correctly show `@sparkleideas/memory` in the published package.
 - **Test fixtures**: Test files that assert on package names must be transformed, or the assertions will fail. The codemod processes `.test.ts`, `.spec.ts`, and files in `__tests__/` directories. Test fixtures containing expected output strings are transformed alongside the code under test, keeping them in sync.
 - **`pnpm-workspace.yaml`**: This file lists workspace package globs. It must be transformed if package directory names change, but in practice directory names do not change (only the `name` field inside `package.json` changes). The file is left as-is unless directory names are part of the mapping.
 - **`pnpm-lock.yaml`**: Delete this file after the codemod runs. Run `pnpm install` to regenerate it with the new package names. Transforming a lockfile in-place is fragile and unnecessary.
@@ -176,7 +176,7 @@ The script uses an allowlist of file extensions rather than a denylist. Only fil
 - [ ] package.json transform handles all 6 fields (name, deps, peer, optional, bin, exports)
 - [ ] Source file transform handles all allowed extensions (.js, .ts, .mjs, .cjs, .json, .d.ts, .d.mts)
 - [ ] Scoped replacement runs before unscoped replacement (ordering verified by test)
-- [ ] Negative lookahead prevents corruption of already-transformed `@claude-flow-patch/` strings
+- [ ] Negative lookahead prevents corruption of already-transformed `@sparkleideas/` strings
 - [ ] Word-boundary matching prevents partial matches on unscoped package names
 - [ ] `@ruvector/*` and `ruvector` references are NOT transformed (verified by test)
 - [ ] URLs, LICENSE files, `.git/`, and `node_modules/` are excluded

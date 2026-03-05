@@ -25,14 +25,14 @@ ON discovery of broken @latest:
 
   # Step 2: Reassign @latest to the known-good version
   npm dist-tag add ruflo-patch@${GOOD_VERSION} latest
-  FOR each pkg IN @claude-flow-patch/* packages:
-    npm dist-tag add @claude-flow-patch/${pkg}@${GOOD_VERSION} latest
+  FOR each pkg IN @sparkleideas/* packages:
+    npm dist-tag add @sparkleideas/${pkg}@${GOOD_VERSION} latest
 
   # Step 3: Optionally remove the broken version
   IF within 72 hours of publish:
     npm unpublish ruflo-patch@${BAD_VERSION}
-    FOR each pkg IN @claude-flow-patch/* packages:
-      npm unpublish @claude-flow-patch/${pkg}@${BAD_VERSION}
+    FOR each pkg IN @sparkleideas/* packages:
+      npm unpublish @sparkleideas/${pkg}@${BAD_VERSION}
   ELSE:
     npm deprecate ruflo-patch@${BAD_VERSION} "Known broken, use @latest"
 
@@ -79,7 +79,7 @@ npm dist-tag add ruflo-patch@${GOOD_VERSION} latest
 for pkg in cli memory shared hooks neural guidance mcp embeddings \
            codex aidefence claims plugins providers deployment \
            swarm security performance testing integration browser; do
-  npm dist-tag add @claude-flow-patch/${pkg}@${GOOD_VERSION} latest
+  npm dist-tag add @sparkleideas/${pkg}@${GOOD_VERSION} latest
 done
 ```
 
@@ -87,7 +87,7 @@ This takes effect immediately. Users who run `npx ruflo-patch@latest` after this
 
 **Phase 3: Optionally remove or deprecate the broken version.**
 
-- **Within 72 hours of publish**: `npm unpublish ruflo-patch@${BAD_VERSION}` removes the version entirely. This must be done for every `@claude-flow-patch/*` package at the same version. After unpublish, the version number cannot be reused for 24 hours.
+- **Within 72 hours of publish**: `npm unpublish ruflo-patch@${BAD_VERSION}` removes the version entirely. This must be done for every `@sparkleideas/*` package at the same version. After unpublish, the version number cannot be reused for 24 hours.
 - **After 72 hours**: npm does not allow unpublish. Instead, deprecate the version with a message: `npm deprecate ruflo-patch@${BAD_VERSION} "Known broken -- use ruflo-patch@latest"`. This prints a warning on install but does not prevent it.
 - **If the version is merely suboptimal (not broken)**: Do nothing. Leave it as an orphan version that nobody gets because `latest` no longer points to it. Users who pinned to the exact version continue to get it, which may be acceptable.
 
@@ -112,8 +112,8 @@ npm dist-tag add "ruflo-patch@${GOOD_VERSION}" latest
 for pkg in cli memory shared hooks neural guidance mcp embeddings \
            codex aidefence claims plugins providers deployment \
            swarm security performance testing integration browser; do
-  echo "  @claude-flow-patch/${pkg}@${GOOD_VERSION}"
-  npm dist-tag add "@claude-flow-patch/${pkg}@${GOOD_VERSION}" latest
+  echo "  @sparkleideas/${pkg}@${GOOD_VERSION}"
+  npm dist-tag add "@sparkleideas/${pkg}@${GOOD_VERSION}" latest
 done
 
 echo "Rollback complete. Verify with: npx ruflo-patch@latest --version"
@@ -154,14 +154,14 @@ echo "Rollback complete. Verify with: npx ruflo-patch@latest --version"
 **Negative:**
 
 - The broken version remains installable by exact version (`npm install ruflo-patch@3.5.2-patch.2`) unless explicitly unpublished or deprecated. This is acceptable -- users who pin exact versions accept the risk
-- Rolling back all `@claude-flow-patch/*` packages requires iterating through the package list. If the list changes (new packages added), the rollback script must be updated
+- Rolling back all `@sparkleideas/*` packages requires iterating through the package list. If the list changes (new packages added), the rollback script must be updated
 - If `.last-promoted-version` is not maintained (e.g., a manual promotion bypasses the script), the rollback target is unknown and must be determined manually from npm version history
 
 **Edge cases:**
 
 - If the broken version is the first-ever version (no previous version to roll back to), the only option is `npm unpublish` (within 72 hours) or rapid fix-forward. This scenario is mitigated by the first-publish bootstrap procedure (ADR-0018) which includes manual verification before the first build enters the automated pipeline
 - If `npm dist-tag add` fails (network error, expired token), retry. Dist-tag operations are idempotent -- running the same command twice has no adverse effect
-- If different `@claude-flow-patch/*` packages were published at different versions (e.g., partial publish failure), rollback to a version where all packages were in sync. The build script publishes all packages at the same version (ADR-0012), so this should not occur under normal operation
+- If different `@sparkleideas/*` packages were published at different versions (e.g., partial publish failure), rollback to a version where all packages were in sync. The build script publishes all packages at the same version (ADR-0012), so this should not occur under normal operation
 - npm caches dist-tag resolution for a short period. Users who install within seconds of the rollback may still get the broken version from their local npm cache. Running `npm cache clean --force` resolves this, but most users will not need to -- the cache TTL is short
 
 ### Completion (SPARC-C)
@@ -169,7 +169,7 @@ echo "Rollback complete. Verify with: npx ruflo-patch@latest --version"
 Acceptance criteria:
 
 - [ ] `scripts/.last-promoted-version` is updated atomically on every promotion to `@latest`
-- [ ] `scripts/rollback.sh` exists and reassigns `latest` for `ruflo-patch` and all `@claude-flow-patch/*` packages
+- [ ] `scripts/rollback.sh` exists and reassigns `latest` for `ruflo-patch` and all `@sparkleideas/*` packages
 - [ ] Running `rollback.sh` with a valid version argument completes in under 60 seconds
 - [ ] After rollback, `npm view ruflo-patch dist-tags` shows `latest` pointing to the rollback target
 - [ ] After rollback, `npx ruflo-patch@latest --version` returns the rollback target version

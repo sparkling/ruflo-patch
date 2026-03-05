@@ -3,7 +3,7 @@
  * Scope-rename codemod for the ruflo-patch build pipeline.
  *
  * Transforms a cloned upstream source tree, renaming all @claude-flow/*
- * references to @claude-flow-patch/* and handling unscoped package mappings.
+ * references to @sparkleideas/* and handling unscoped package mappings.
  *
  * See ADR-0013 (codemod-implementation) and ADR-0006 (npm-scope-naming).
  *
@@ -21,15 +21,15 @@ import { join, extname, basename } from 'node:path';
 // -- Package mapping (inline; switchable to config/package-map.json) ----------
 
 const SCOPED_PREFIX_FROM = '@claude-flow/';
-const SCOPED_PREFIX_TO = '@claude-flow-patch/';
+const SCOPED_PREFIX_TO = '@sparkleideas/';
 
 /** Unscoped exact-name mappings (used in package.json name/dep key transforms). */
 const UNSCOPED_MAP = {
-  'claude-flow': '@claude-flow-patch/claude-flow',
-  'ruflo': 'ruflo-patch',
-  'agentdb': '@claude-flow-patch/agentdb',
-  'agentic-flow': '@claude-flow-patch/agentic-flow',
-  'ruv-swarm': '@claude-flow-patch/ruv-swarm',
+  'claude-flow': '@sparkleideas/claude-flow',
+  'ruflo': '@sparkleideas/ruflo-patch',
+  'agentdb': '@sparkleideas/agentdb',
+  'agentic-flow': '@sparkleideas/agentic-flow',
+  'ruv-swarm': '@sparkleideas/ruv-swarm',
 };
 
 // -- File filters -------------------------------------------------------------
@@ -61,7 +61,7 @@ function effectiveExt(filename) {
  * Returns the mapped name, or the original if no mapping applies.
  */
 function applyNameMapping(name) {
-  if (name.startsWith(SCOPED_PREFIX_TO)) return name; // already transformed
+  if (name.startsWith('@sparkleideas/')) return name; // already transformed
   if (name.startsWith(SCOPED_PREFIX_FROM)) {
     return SCOPED_PREFIX_TO + name.slice(SCOPED_PREFIX_FROM.length);
   }
@@ -140,19 +140,19 @@ function renameObjectKeys(obj) {
 
 // -- Phase 2: Source file regex transform --------------------------------------
 
-// Step 1: Scoped replacement -- @claude-flow/ -> @claude-flow-patch/
-// Negative lookahead: skip if already @claude-flow-patch/
-const SCOPED_RE = /@claude-flow\/(?!patch)/g;
+// Step 1: Scoped replacement -- @claude-flow/ -> @sparkleideas/
+// Only match @claude-flow/ that is NOT already part of @sparkleideas/
+const SCOPED_RE = /@claude-flow\//g;
 
 // Step 2: Unscoped replacements with word-boundary guards.
 // Negative lookbehind prevents matching inside scoped names or hyphenated words.
 // Negative lookahead prevents matching already-transformed or hyphenated continuations.
 const UNSCOPED_RES = [
-  { re: /(?<![@/\w-])claude-flow(?![\w-]*-patch)/g, to: '@claude-flow-patch/claude-flow' },
-  { re: /(?<![@/\w-])agentdb(?![\w-])/g, to: '@claude-flow-patch/agentdb' },
-  { re: /(?<![@/\w-])agentic-flow(?![\w-])/g, to: '@claude-flow-patch/agentic-flow' },
-  { re: /(?<![@/\w-])ruv-swarm(?![\w-])/g, to: '@claude-flow-patch/ruv-swarm' },
-  { re: /(?<![@/\w-])ruflo(?![\w-])/g, to: 'ruflo-patch' },
+  { re: /(?<![@/\w-])claude-flow(?![\w-])/g, to: '@sparkleideas/claude-flow' },
+  { re: /(?<![@/\w-])agentdb(?![\w-])/g, to: '@sparkleideas/agentdb' },
+  { re: /(?<![@/\w-])agentic-flow(?![\w-])/g, to: '@sparkleideas/agentic-flow' },
+  { re: /(?<![@/\w-])ruv-swarm(?![\w-])/g, to: '@sparkleideas/ruv-swarm' },
+  { re: /(?<![@/\w-])ruflo(?![\w-])/g, to: '@sparkleideas/ruflo-patch' },
 ];
 
 /**

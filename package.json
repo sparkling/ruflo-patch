@@ -1,7 +1,7 @@
 {
-  "name": "@ruflo/patch",
+  "name": "@sparkleideas/ruflo-patch",
   "version": "0.1.0",
-  "description": "Runtime patches for ruflo and related packages (@claude-flow/cli, ruvector, ruv-swarm)",
+  "description": "Drop-in replacement for ruflo/@claude-flow/cli — rebuilt from source with bug fixes and current upstream commits",
   "scripts": {
     "preflight": "node scripts/preflight.mjs",
     "preflight:check": "node scripts/preflight.mjs --check",

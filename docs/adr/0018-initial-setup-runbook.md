@@ -99,7 +99,7 @@ git remote add upstream https://github.com/ruvnet/ruflo.git
 
 **3. npm Scope**
 
-Register the `@claude-flow-patch` organization on npmjs.com. This requires an npm account with a verified email. Create an automation token (which bypasses 2FA for CI use):
+Register the `@sparkleideas` organization on npmjs.com. This requires an npm account with a verified email. Create an automation token (which bypasses 2FA for CI use):
 
 ```bash
 npm token create --type=automation
@@ -240,7 +240,7 @@ npm view ruflo-patch dist-tags   # should show latest
 
 **Edge cases:**
 
-- If the npm `@claude-flow-patch` org is deleted or the owning account is lost, a new org must be registered and all packages republished under it. Package names on npm are globally unique; if the org name is taken, a different scope must be chosen, requiring updates to the codemod mapping
+- If the npm `@sparkleideas` org is deleted or the owning account is lost, a new org must be registered and all packages republished under it. Package names on npm are globally unique; if the org name is taken, a different scope must be chosen, requiring updates to the codemod mapping
 - If GitHub forks are deleted, re-forking is trivial (`gh repo fork`), but the local clones must be re-pointed to the new fork URLs
 - If the build server changes architecture (e.g., x86 to ARM), `better-sqlite3` and any native addons must be rebuilt. The build script handles this via `pnpm install` which triggers native compilation
 

@@ -5,55 +5,55 @@
       "level": 1,
       "description": "Depends only on @ruvector/* (public npm)",
       "packages": [
-        "@claude-flow-patch/agentdb",
-        "@claude-flow-patch/agentic-flow",
-        "@claude-flow-patch/ruv-swarm"
+        "@sparkleideas/agentdb",
+        "@sparkleideas/agentic-flow",
+        "@sparkleideas/ruv-swarm"
       ]
     },
     {
       "level": 2,
       "description": "Depends on Level 1",
       "packages": [
-        "@claude-flow-patch/shared",
-        "@claude-flow-patch/memory",
-        "@claude-flow-patch/embeddings",
-        "@claude-flow-patch/codex",
-        "@claude-flow-patch/aidefence"
+        "@sparkleideas/shared",
+        "@sparkleideas/memory",
+        "@sparkleideas/embeddings",
+        "@sparkleideas/codex",
+        "@sparkleideas/aidefence"
       ]
     },
     {
       "level": 3,
       "description": "Depends on Level 2",
       "packages": [
-        "@claude-flow-patch/neural",
-        "@claude-flow-patch/hooks",
-        "@claude-flow-patch/browser",
-        "@claude-flow-patch/plugins",
-        "@claude-flow-patch/providers",
-        "@claude-flow-patch/claims"
+        "@sparkleideas/neural",
+        "@sparkleideas/hooks",
+        "@sparkleideas/browser",
+        "@sparkleideas/plugins",
+        "@sparkleideas/providers",
+        "@sparkleideas/claims"
       ]
     },
     {
       "level": 4,
       "description": "Depends on Level 3",
       "packages": [
-        "@claude-flow-patch/guidance",
-        "@claude-flow-patch/mcp",
-        "@claude-flow-patch/integration",
-        "@claude-flow-patch/deployment",
-        "@claude-flow-patch/swarm",
-        "@claude-flow-patch/security",
-        "@claude-flow-patch/performance",
-        "@claude-flow-patch/testing"
+        "@sparkleideas/guidance",
+        "@sparkleideas/mcp",
+        "@sparkleideas/integration",
+        "@sparkleideas/deployment",
+        "@sparkleideas/swarm",
+        "@sparkleideas/security",
+        "@sparkleideas/performance",
+        "@sparkleideas/testing"
       ]
     },
     {
       "level": 5,
       "description": "Root packages",
       "packages": [
-        "@claude-flow-patch/cli",
-        "@claude-flow-patch/claude-flow",
-        "ruflo-patch"
+        "@sparkleideas/cli",
+        "@sparkleideas/claude-flow",
+        "@sparkleideas/ruflo-patch"
       ]
     }
   ],

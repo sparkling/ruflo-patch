@@ -49,7 +49,7 @@ LAYER 3 — Acceptance tests (scripts/test-acceptance.sh):
   Step 1: npx ruflo-patch@<registry> init (in clean temp dir)
   Step 2: Verify generated files exist (.claude/*, CLAUDE.md, etc.)
   Step 3: npx ruflo-patch@<registry> doctor --fix
-  Step 4: Verify MCP config references @claude-flow-patch/*
+  Step 4: Verify MCP config references @sparkleideas/*
   -> Run: bash scripts/test-acceptance.sh [--registry <url>]
   -> Requires published packages, ~2 min
 ```
@@ -92,7 +92,7 @@ A single script (`scripts/test-integration.sh`) that validates the full build pi
 |-------|------|-----------|
 | 1. Setup | Start Verdaccio on a random port, create temp dir | Infrastructure |
 | 2. Clone | Copy upstream source to temp dir (exclude `.git`) | Source availability |
-| 3. Codemod | Run `node scripts/codemod.mjs $TEMP` | ADR-0013: zero `@claude-flow/` references remain (excluding `@claude-flow-patch`) |
+| 3. Codemod | Run `node scripts/codemod.mjs $TEMP` | ADR-0013: zero `@claude-flow/` references remain (excluding `@sparkleideas`) |
 | 4. Patch | Run `bash patch-all.sh --target $TEMP` | ADR-0017: semver patches apply, all sentinels present |
 | 5. Build | `pnpm install && pnpm build` in temp dir | TypeScript compiles with renamed imports |
 | 6. Upstream tests | `pnpm test` in temp dir (allow exit code != 0) | Upstream tests mostly pass; log failures for review |
@@ -122,7 +122,7 @@ A script (`scripts/test-acceptance.sh`) that validates the end-user experience b
 | A1 | `npx ruflo-patch --version` | Package resolves and executes |
 | A2 | `npx ruflo-patch init` (in temp dir) | Init routine generates expected files |
 | A3 | Verify `.claude/settings.json` exists | File generation works |
-| A4 | Verify CLAUDE.md references `@claude-flow-patch` (not `@claude-flow`) | Codemod applied correctly to init templates |
+| A4 | Verify CLAUDE.md references `@sparkleideas` (not `@claude-flow`) | Codemod applied correctly to init templates |
 | A5 | `npx ruflo-patch doctor --fix` | Doctor command runs without MODULE_NOT_FOUND errors |
 | A6 | Verify MCP config in `.mcp.json` | ADR-0001 (MC-001): `autoStart: false` removed |
 
@@ -259,7 +259,7 @@ The ephemeral Verdaccio instance uses an explicit configuration file (not `/dev/
 storage: ./storage          # relative to temp dir, cleaned up on exit
 uplinks: {}                 # NO proxy to real npm — fully isolated
 packages:
-  '@claude-flow-patch/*':
+  '@sparkleideas/*':
     access: $all
     publish: $all
   'ruflo-patch':
@@ -382,7 +382,7 @@ Acceptance criteria:
 - [ ] `npm test` runs all 78+ unit tests and exits 0
 - [ ] `scripts/test-integration.sh` exists and runs the full 9-phase integration test
 - [ ] Integration test uses Verdaccio (no real npm publish during testing)
-- [ ] Integration test verifies zero `@claude-flow/` references after codemod (excluding `@claude-flow-patch`)
+- [ ] Integration test verifies zero `@claude-flow/` references after codemod (excluding `@sparkleideas`)
 - [ ] Integration test verifies all 26 packages publish successfully to Verdaccio
 - [ ] Integration test verifies `npm install ruflo-patch` resolves the full dependency tree from Verdaccio
 - [ ] `scripts/test-acceptance.sh` exists and validates end-user commands

@@ -306,7 +306,7 @@ phase_setup() {
 storage: ${VERDACCIO_HOME}/storage
 uplinks: {}
 packages:
-  '@claude-flow-patch/*':
+  '@sparkleideas/*':
     access: \$all
     publish: \$all
   'ruflo-patch':
@@ -479,12 +479,12 @@ phase_codemod() {
     phase_log "3" "  $line"
   done
 
-  # Verify: zero @claude-flow/ references remain (excluding @claude-flow-patch and node_modules)
+  # Verify: zero @claude-flow/ references remain (excluding @sparkleideas and node_modules)
   local residuals
   residuals=$(grep -r '@claude-flow/' "${TEMP_BUILD}" \
     --include='*.js' --include='*.ts' --include='*.mjs' --include='*.cjs' \
     -l 2>/dev/null \
-    | grep -v '@claude-flow-patch' \
+    | grep -v '@sparkleideas' \
     | grep -v node_modules \
     || true)
 

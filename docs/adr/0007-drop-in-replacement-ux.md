@@ -8,7 +8,7 @@ Accepted
 
 ### Specification (SPARC-S)
 
-ADR-0005 and ADR-0006 establish that we will fork, rebuild, and publish the upstream ecosystem under the `@claude-flow-patch` scope. This ADR decides how end users interact with the result.
+ADR-0005 and ADR-0006 establish that we will fork, rebuild, and publish the upstream ecosystem under the `@sparkleideas` scope. This ADR decides how end users interact with the result.
 
 The upstream user experience is:
 
@@ -103,7 +103,7 @@ EXAMPLE:
 
 **Trade-offs and edge cases:**
 
-- Projects that hard-code `@claude-flow/cli` in generated files (e.g., `init` writes MCP config referencing `@claude-flow/cli`) need the generated output to reference `@claude-flow-patch/cli` instead. The codemod handles this in the build, so `ruflo-patch init` generates correct references automatically.
+- Projects that hard-code `@claude-flow/cli` in generated files (e.g., `init` writes MCP config referencing `@claude-flow/cli`) need the generated output to reference `@sparkleideas/cli` instead. The codemod handles this in the build, so `ruflo-patch init` generates correct references automatically.
 - `repair-post-init.sh` currently copies helpers from the npx cache of `@claude-flow/cli`. With `ruflo-patch`, it copies from `ruflo-patch`'s cache location. The script must be updated to discover the correct cache path.
 - If a user has both `ruflo` and `ruflo-patch` installed, they operate independently. There is no conflict because they use different package names and different npx cache locations.
 

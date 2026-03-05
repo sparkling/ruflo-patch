@@ -26,43 +26,43 @@ const TOTAL_PACKAGES = LEVELS.flat().length;
 // and the validation test allows deps at level <= N.
 const KNOWN_DEPS = {
   // Level 1 — no internal deps
-  '@claude-flow-patch/agentdb': [],
-  '@claude-flow-patch/agentic-flow': [],
-  '@claude-flow-patch/ruv-swarm': [],
+  '@sparkleideas/agentdb': [],
+  '@sparkleideas/agentic-flow': [],
+  '@sparkleideas/ruv-swarm': [],
   // Level 2
-  '@claude-flow-patch/shared': [],
-  '@claude-flow-patch/memory': ['@claude-flow-patch/agentdb'],
-  '@claude-flow-patch/embeddings': [],
-  '@claude-flow-patch/codex': [],
-  '@claude-flow-patch/aidefence': [],
+  '@sparkleideas/shared': [],
+  '@sparkleideas/memory': ['@sparkleideas/agentdb'],
+  '@sparkleideas/embeddings': [],
+  '@sparkleideas/codex': [],
+  '@sparkleideas/aidefence': [],
   // Level 3
-  '@claude-flow-patch/neural': ['@claude-flow-patch/memory'],
-  '@claude-flow-patch/hooks': [
-    '@claude-flow-patch/memory',
-    '@claude-flow-patch/neural',
-    '@claude-flow-patch/shared',
+  '@sparkleideas/neural': ['@sparkleideas/memory'],
+  '@sparkleideas/hooks': [
+    '@sparkleideas/memory',
+    '@sparkleideas/neural',
+    '@sparkleideas/shared',
   ],
-  '@claude-flow-patch/browser': [],
-  '@claude-flow-patch/plugins': [],
-  '@claude-flow-patch/providers': [],
-  '@claude-flow-patch/claims': [],
+  '@sparkleideas/browser': [],
+  '@sparkleideas/plugins': [],
+  '@sparkleideas/providers': [],
+  '@sparkleideas/claims': [],
   // Level 4
-  '@claude-flow-patch/guidance': [
-    '@claude-flow-patch/hooks',
-    '@claude-flow-patch/memory',
-    '@claude-flow-patch/shared',
+  '@sparkleideas/guidance': [
+    '@sparkleideas/hooks',
+    '@sparkleideas/memory',
+    '@sparkleideas/shared',
   ],
-  '@claude-flow-patch/mcp': ['@claude-flow-patch/shared'],
-  '@claude-flow-patch/integration': ['@claude-flow-patch/shared'],
-  '@claude-flow-patch/deployment': ['@claude-flow-patch/shared'],
-  '@claude-flow-patch/swarm': ['@claude-flow-patch/shared'],
-  '@claude-flow-patch/security': ['@claude-flow-patch/shared'],
-  '@claude-flow-patch/performance': ['@claude-flow-patch/shared'],
-  '@claude-flow-patch/testing': ['@claude-flow-patch/shared'],
+  '@sparkleideas/mcp': ['@sparkleideas/shared'],
+  '@sparkleideas/integration': ['@sparkleideas/shared'],
+  '@sparkleideas/deployment': ['@sparkleideas/shared'],
+  '@sparkleideas/swarm': ['@sparkleideas/shared'],
+  '@sparkleideas/security': ['@sparkleideas/shared'],
+  '@sparkleideas/performance': ['@sparkleideas/shared'],
+  '@sparkleideas/testing': ['@sparkleideas/shared'],
   // Level 5 — root packages (transitive deps not enumerated here)
-  '@claude-flow-patch/cli': [],
-  '@claude-flow-patch/claude-flow': [],
-  'ruflo-patch': [],
+  '@sparkleideas/cli': [],
+  '@sparkleideas/claude-flow': [],
+  '@sparkleideas/ruflo-patch': [],
 };
 
 // ── Helpers ──
@@ -126,9 +126,9 @@ describe('Topological publish order (ADR-0014)', () => {
     it('Level 5 contains only root packages', () => {
       const level5 = LEVELS[4];
       const expected = [
-        '@claude-flow-patch/cli',
-        '@claude-flow-patch/claude-flow',
-        'ruflo-patch',
+        '@sparkleideas/cli',
+        '@sparkleideas/claude-flow',
+        '@sparkleideas/ruflo-patch',
       ];
       assert.deepStrictEqual(level5, expected);
     });
@@ -437,7 +437,7 @@ describe('Topological publish order (ADR-0014)', () => {
 
     it('dry-run does not modify package.json version fields', async () => {
       const tmp = createFakeBuildDir();
-      const firstPkg = LEVELS[0][0]; // @claude-flow-patch/agentdb
+      const firstPkg = LEVELS[0][0]; // @sparkleideas/agentdb
       const parts = firstPkg.split('/');
       const pkgJsonPath = join(tmp, ...parts, 'package.json');
 
@@ -501,15 +501,15 @@ describe('Topological publish order (ADR-0014)', () => {
     it('Level 1 contains agentdb, agentic-flow, ruv-swarm', () => {
       const level1 = LEVELS[0];
       assert.ok(
-        level1.includes('@claude-flow-patch/agentdb'),
+        level1.includes('@sparkleideas/agentdb'),
         'agentdb should be at level 1'
       );
       assert.ok(
-        level1.includes('@claude-flow-patch/agentic-flow'),
+        level1.includes('@sparkleideas/agentic-flow'),
         'agentic-flow should be at level 1'
       );
       assert.ok(
-        level1.includes('@claude-flow-patch/ruv-swarm'),
+        level1.includes('@sparkleideas/ruv-swarm'),
         'ruv-swarm should be at level 1'
       );
     });
@@ -517,31 +517,31 @@ describe('Topological publish order (ADR-0014)', () => {
     it('Level 5 contains cli, claude-flow, ruflo-patch', () => {
       const level5 = LEVELS[4];
       assert.ok(
-        level5.includes('@claude-flow-patch/cli'),
+        level5.includes('@sparkleideas/cli'),
         'cli should be at level 5'
       );
       assert.ok(
-        level5.includes('@claude-flow-patch/claude-flow'),
+        level5.includes('@sparkleideas/claude-flow'),
         'claude-flow should be at level 5'
       );
       assert.ok(
-        level5.includes('ruflo-patch'),
+        level5.includes('@sparkleideas/ruflo-patch'),
         'ruflo-patch should be at level 5'
       );
     });
 
-    it('@claude-flow-patch/memory is at level 2', () => {
+    it('@sparkleideas/memory is at level 2', () => {
       const level2 = LEVELS[1];
       assert.ok(
-        level2.includes('@claude-flow-patch/memory'),
+        level2.includes('@sparkleideas/memory'),
         'memory should be at level 2'
       );
     });
 
-    it('@claude-flow-patch/neural is at level 3', () => {
+    it('@sparkleideas/neural is at level 3', () => {
       const level3 = LEVELS[2];
       assert.ok(
-        level3.includes('@claude-flow-patch/neural'),
+        level3.includes('@sparkleideas/neural'),
         'neural should be at level 3'
       );
     });

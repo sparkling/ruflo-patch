@@ -35,7 +35,7 @@ ON build trigger:
   git pull upstream (0 conflicts — fork is unmodified)
   COPY source tree to temp directory
   RUN codemod on temp copy:
-    FOR each package.json: rename @claude-flow/* -> @claude-flow-patch/*
+    FOR each package.json: rename @claude-flow/* -> @sparkleideas/*
     FOR each .ts/.js file: rewrite import/require references
   APPLY enhancement patches from ruflo-patch/patch/
   pnpm install && pnpm build
@@ -48,7 +48,7 @@ ON build trigger:
 
 ### Architecture (SPARC-A)
 
-Fork upstream repos as clean mirrors. Apply scope rename (`@claude-flow/*` to `@claude-flow-patch/*`) as a build-time codemod, never committed to the fork. Build TypeScript packages from source. Publish to npm under the `@claude-flow-patch` scope.
+Fork upstream repos as clean mirrors. Apply scope rename (`@claude-flow/*` to `@sparkleideas/*`) as a build-time codemod, never committed to the fork. Build TypeScript packages from source. Publish to npm under the `@sparkleideas` scope.
 
 The codemod is the key asset. It transforms ~4,136 files per build:
 
@@ -106,7 +106,7 @@ The pipeline is: `git pull` (0 conflicts) -> copy to temp -> codemod -> patches 
 ### Completion (SPARC-C)
 
 - [ ] Upstream repos forked as clean mirrors on GitHub
-- [ ] npm scope `@claude-flow-patch` registered
+- [ ] npm scope `@sparkleideas` registered
 - [ ] Scope-rename codemod implemented and tested against current upstream HEAD
 - [ ] Build pipeline integrates codemod + patches + TypeScript build + npm publish
 - [ ] `npx ruflo-patch init` works end-to-end with published packages

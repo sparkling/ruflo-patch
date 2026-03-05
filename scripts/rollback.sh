@@ -59,13 +59,13 @@ SCOPED_PACKAGES=(
   cli claude-flow
 )
 
-TOTAL=$(( ${#SCOPED_PACKAGES[@]} + 1 ))  # +1 for ruflo-patch root
+TOTAL=$(( ${#SCOPED_PACKAGES[@]} + 1 ))  # +1 for @sparkleideas/ruflo-patch root
 
 # ---------- Summary ----------
 echo ""
 echo "Rollback plan"
 echo "  Target version : $GOOD_VERSION"
-echo "  Packages       : $TOTAL (ruflo-patch + ${#SCOPED_PACKAGES[@]} scoped)"
+echo "  Packages       : $TOTAL (@sparkleideas/ruflo-patch + ${#SCOPED_PACKAGES[@]} scoped)"
 echo "  Dry run        : $DRY_RUN"
 echo ""
 
@@ -108,11 +108,11 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Rolling back @latest to ${GOOD_VERSION}
 echo ""
 
 # Root package
-run_dist_tag "ruflo-patch@${GOOD_VERSION}"
+run_dist_tag "@sparkleideas/ruflo-patch@${GOOD_VERSION}"
 
 # Scoped packages
 for pkg in "${SCOPED_PACKAGES[@]}"; do
-  run_dist_tag "@claude-flow-patch/${pkg}@${GOOD_VERSION}"
+  run_dist_tag "@sparkleideas/${pkg}@${GOOD_VERSION}"
 done
 
 # ---------- Summary ----------
@@ -125,6 +125,6 @@ elif [[ "$FAILURES" -gt 0 ]]; then
   exit 1
 else
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Rollback complete."
-  echo "Verify: npm view ruflo-patch dist-tags"
-  echo "Verify: npx ruflo-patch@latest --version"
+  echo "Verify: npm view @sparkleideas/ruflo-patch dist-tags"
+  echo "Verify: npx @sparkleideas/ruflo-patch@latest --version"
 fi

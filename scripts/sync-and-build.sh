@@ -216,7 +216,7 @@ copy_source() {
 # ---------------------------------------------------------------------------
 
 run_codemod() {
-  log "Running codemod: @claude-flow/* -> @claude-flow-patch/*"
+  log "Running codemod: @claude-flow/* -> @sparkleideas/*"
   node "${SCRIPT_DIR}/codemod.mjs" "${TEMP_DIR}"
   log "Codemod complete"
 }

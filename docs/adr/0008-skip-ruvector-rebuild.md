@@ -22,7 +22,7 @@ Building ruvector from source requires:
 - Cross-compilation targets for all 7 platforms
 - 2-4 hours for a full first build
 
-The build pipeline defined in ADR-0005 rebuilds upstream TypeScript packages and publishes them under `@claude-flow-patch`. This ADR decides whether ruvector packages should be included in that rebuild.
+The build pipeline defined in ADR-0005 rebuilds upstream TypeScript packages and publishes them under `@sparkleideas`. This ADR decides whether ruvector packages should be included in that rebuild.
 
 ### Pseudocode (SPARC-P)
 
@@ -31,11 +31,11 @@ FOR each upstream package:
   IF package is in @ruvector/* scope:
     SKIP — depend on published version from public npm
   ELSE IF package is TypeScript (@claude-flow/*, agentdb, agentic-flow, ruv-swarm):
-    REBUILD — apply codemod, build, publish under @claude-flow-patch/*
+    REBUILD — apply codemod, build, publish under @sparkleideas/*
 
 RESULT:
   package.json dependencies reference @ruvector/* from public npm
-  package.json dependencies reference @claude-flow-patch/* from our builds
+  package.json dependencies reference @sparkleideas/* from our builds
 ```
 
 ## Decision
@@ -44,7 +44,7 @@ RESULT:
 
 Do NOT rebuild ruvector packages. Depend on the published `@ruvector/*` packages from public npm. Do not rename them.
 
-Our rebuilt `@claude-flow-patch/*` packages list `@ruvector/*` as standard npm dependencies. When a user installs `ruflo-patch`, npm resolves `@ruvector/*` from public npm automatically. No special configuration is needed.
+Our rebuilt `@sparkleideas/*` packages list `@ruvector/*` as standard npm dependencies. When a user installs `ruflo-patch`, npm resolves `@ruvector/*` from public npm automatically. No special configuration is needed.
 
 ### Rationale
 

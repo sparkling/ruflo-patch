@@ -165,12 +165,12 @@ test_a4_scope_check() {
   local output passed="false"
   if [[ -f "$TEMP_DIR/CLAUDE.md" ]]; then
     local matches
-    matches=$(grep -c '@claude-flow-patch' "$TEMP_DIR/CLAUDE.md" 2>/dev/null || echo "0")
+    matches=$(grep -c '@sparkleideas' "$TEMP_DIR/CLAUDE.md" 2>/dev/null || echo "0")
     if [[ "$matches" -ge 1 ]]; then
       passed="true"
-      output="Found $matches @claude-flow-patch references in CLAUDE.md"
+      output="Found $matches @sparkleideas references in CLAUDE.md"
     else
-      output="No @claude-flow-patch references found in CLAUDE.md"
+      output="No @sparkleideas references found in CLAUDE.md"
       output="$output\nHead of CLAUDE.md:\n$(head -20 "$TEMP_DIR/CLAUDE.md" 2>/dev/null)"
     fi
   else

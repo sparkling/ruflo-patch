@@ -1,11 +1,11 @@
 # ruflo-patch
 
-[![npm version](https://img.shields.io/npm/v/ruflo-patch)](https://www.npmjs.com/package/ruflo-patch)
-[![license](https://img.shields.io/npm/l/ruflo-patch)](LICENSE)
+[![npm version](https://img.shields.io/npm/v/@sparkleideas/ruflo-patch)](https://www.npmjs.com/package/@sparkleideas/ruflo-patch)
+[![license](https://img.shields.io/npm/l/@sparkleideas/ruflo-patch)](LICENSE)
 
 **Drop-in replacement for `ruflo` / `@claude-flow/cli` with 933+ unpublished upstream commits, bug fixes, and working dependency resolution.**
 
-The upstream [ruvnet/ruflo](https://github.com/ruvnet/ruflo) ecosystem (48+ npm packages) is severely stale — 60% of `@claude-flow/*` packages haven't been published since January 2026, `ruflo` is 933 commits behind its source, and maintainers are unresponsive. `ruflo-patch` forks, rebuilds, patches, and republishes the entire ecosystem under the `@claude-flow-patch` scope so you get current code from a single `npx` command.
+The upstream [ruvnet/ruflo](https://github.com/ruvnet/ruflo) ecosystem (48+ npm packages) is severely stale — 60% of `@claude-flow/*` packages haven't been published since January 2026, `ruflo` is 933 commits behind its source, and maintainers are unresponsive. `ruflo-patch` forks, rebuilds, patches, and republishes the entire ecosystem under the `@sparkleideas` scope so you get current code from a single `npx` command.
 
 ```bash
 npx ruflo-patch init
@@ -40,11 +40,10 @@ Same CLI, same commands, same flags — just swap `ruflo` for `ruflo-patch`. If 
 
 ```bash
 # Run directly (no install needed)
-npx ruflo-patch init
+npx @sparkleideas/ruflo-patch init
 
 # Or install globally
-npm install -g ruflo-patch
-ruflo-patch init
+npm install -g @sparkleideas/ruflo-patch
 ```
 
 All commands work exactly like `ruflo`:
@@ -71,7 +70,7 @@ ruflo-patch doctor                        # diagnose issues
 | Semver conflicts (`@ruvector/ruvllm`, `agentdb`) | Broken install | Resolved |
 | `npm install` | Fails on dependency conflicts | Clean install |
 
-**26 packages** are rebuilt and published under the `@claude-flow-patch` scope across 5 dependency levels. The `@ruvector/*` packages are used as-is from public npm (they're current).
+**26 packages** are rebuilt and published under the `@sparkleideas` scope across 5 dependency levels. The `@ruvector/*` packages are used as-is from public npm (they're current).
 
 ---
 
@@ -96,7 +95,7 @@ ruflo-patch doctor                        # diagnose issues
 │                 ▼                                     │
 │         ┌────────────────┐                           │
 │         │  Codemod        │  @claude-flow/* →         │
-│         │  (build-time)   │  @claude-flow-patch/*    │
+│         │  (build-time)   │  @sparkleideas/*    │
 │         └───────┬────────┘                           │
 │                 ▼                                     │
 │         ┌────────────────┐                           │
@@ -115,7 +114,7 @@ ruflo-patch doctor                        # diagnose issues
 └─────────────────────────────────────────────────────┘
 ```
 
-**Key design choice**: The scope rename (`@claude-flow/*` → `@claude-flow-patch/*`) is a **build-time codemod**, never committed to the fork. This means `git pull` on the fork always produces zero merge conflicts, regardless of how much upstream changes.
+**Key design choice**: The scope rename (`@claude-flow/*` → `@sparkleideas/*`) is a **build-time codemod**, never committed to the fork. This means `git pull` on the fork always produces zero merge conflicts, regardless of how much upstream changes.
 
 The codemod transforms ~4,136 files per build:
 - ~261 `package.json` files (name, dependencies, peerDependencies)
@@ -138,9 +137,9 @@ npx ruflo agent spawn -t coder
 npx @claude-flow/cli@latest mcp start
 
 # After
-npx ruflo-patch init
-npx ruflo-patch agent spawn -t coder
-npx ruflo-patch mcp start
+npx @sparkleideas/ruflo-patch init
+npx @sparkleideas/ruflo-patch agent spawn -t coder
+npx @sparkleideas/ruflo-patch mcp start
 ```
 
 ### package.json
@@ -148,7 +147,7 @@ npx ruflo-patch mcp start
 ```diff
   "dependencies": {
 -   "claude-flow": "^3.5.2"
-+   "ruflo-patch": "^3.5.2-patch.1"
++   "@sparkleideas/ruflo-patch": "^3.5.2-patch.1"
   }
 ```
 
@@ -162,7 +161,7 @@ Update your `.claude/settings.json`:
       "claude-flow": {
         "command": "npx",
 -       "args": ["-y", "@claude-flow/cli@latest", "mcp", "start"]
-+       "args": ["-y", "ruflo-patch", "mcp", "start"]
++       "args": ["-y", "@sparkleideas/ruflo-patch", "mcp", "start"]
       }
     }
   }
@@ -226,7 +225,7 @@ The build is orchestrated by `scripts/sync-and-build.sh` and runs these phases:
 3. **Check local** — `git log` for changes to `patch/` or `scripts/`
 4. **Pull upstream** — `git fetch && git reset --hard origin/main` on each fork
 5. **Copy to temp** — Clean copy to `/tmp/ruflo-patch-build-*`
-6. **Codemod** — `@claude-flow/*` → `@claude-flow-patch/*` (see `scripts/codemod.mjs`)
+6. **Codemod** — `@claude-flow/*` → `@sparkleideas/*` (see `scripts/codemod.mjs`)
 7. **Apply patches** — All `patch/*/fix.py` scripts via `patch-all.sh`
 8. **Build** — `pnpm install && pnpm build`
 9. **Test** — `npm test`
@@ -285,7 +284,7 @@ npx ruflo-patch@prerelease --version
 # Promote to @latest
 npm run promote
 # or manually:
-npm dist-tag add ruflo-patch@3.5.2-patch.1 latest
+npm dist-tag add @sparkleideas/ruflo-patch@3.5.2-patch.1 latest
 ```
 
 **Version scheme**: `{upstream_version}-patch.{N}` — e.g., `3.5.2-patch.3` means the 3rd build from upstream `3.5.2`. The iteration resets to 1 when upstream bumps.
@@ -302,7 +301,7 @@ npm run rollback
 bash scripts/rollback.sh 3.5.2-patch.1
 ```
 
-This reassigns the `latest` dist-tag for `ruflo-patch` and all 24 `@claude-flow-patch/*` packages. Takes effect immediately — no propagation delay.
+This reassigns the `latest` dist-tag for `ruflo-patch` and all 24 `@sparkleideas/*` packages. Takes effect immediately — no propagation delay.
 
 ### Testing
 
@@ -334,7 +333,7 @@ ruflo-patch/
 │   └── categories.json              Defect prefix → label mapping
 ├── scripts/
 │   ├── sync-and-build.sh            Main build pipeline orchestrator
-│   ├── codemod.mjs                  Scope-rename codemod (@claude-flow → @claude-flow-patch)
+│   ├── codemod.mjs                  Scope-rename codemod (@claude-flow → @sparkleideas)
 │   ├── publish.mjs                  Topological publisher (5 levels, 26 packages)
 │   ├── promote.sh                   Promote prerelease to @latest
 │   ├── rollback.sh                  Roll back @latest to previous version
@@ -378,7 +377,7 @@ All major decisions are documented as ADRs in `docs/adr/`:
 | [0002](docs/adr/0002-fallback-instrumentation.md) | Fallback instrumentation | FB-001/002 patch rationale |
 | [0004](docs/adr/0004-search-threshold-for-hash-embeddings.md) | Search threshold for hash embeddings | FB-004 threshold fix |
 | [0005](docs/adr/0005-fork-build-step-rename.md) | Fork + build-step rename | Core strategy: fork, codemod, publish |
-| [0006](docs/adr/0006-npm-scope-naming.md) | npm scope naming | Why `@claude-flow-patch` |
+| [0006](docs/adr/0006-npm-scope-naming.md) | npm scope naming | `@sparkleideas` scope (updated from ADR) |
 | [0007](docs/adr/0007-drop-in-replacement-ux.md) | Drop-in replacement UX | One-word swap migration |
 | [0008](docs/adr/0008-skip-ruvector-rebuild.md) | Skip ruvector rebuild | Node.js-only build (no Rust) |
 | [0009](docs/adr/0009-systemd-timer-for-automated-builds.md) | systemd timer | 6-hour automated builds |

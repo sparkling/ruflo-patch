@@ -24,43 +24,43 @@ const execFile = promisify(execFileCb);
 export const LEVELS = [
   // Level 1: depends only on external @ruvector/* (public npm)
   [
-    '@claude-flow-patch/agentdb',
-    '@claude-flow-patch/agentic-flow',
-    '@claude-flow-patch/ruv-swarm',
+    '@sparkleideas/agentdb',
+    '@sparkleideas/agentic-flow',
+    '@sparkleideas/ruv-swarm',
   ],
   // Level 2: depends on Level 1
   [
-    '@claude-flow-patch/shared',
-    '@claude-flow-patch/memory',
-    '@claude-flow-patch/embeddings',
-    '@claude-flow-patch/codex',
-    '@claude-flow-patch/aidefence',
+    '@sparkleideas/shared',
+    '@sparkleideas/memory',
+    '@sparkleideas/embeddings',
+    '@sparkleideas/codex',
+    '@sparkleideas/aidefence',
   ],
   // Level 3: depends on Level 2
   [
-    '@claude-flow-patch/neural',
-    '@claude-flow-patch/hooks',
-    '@claude-flow-patch/browser',
-    '@claude-flow-patch/plugins',
-    '@claude-flow-patch/providers',
-    '@claude-flow-patch/claims',
+    '@sparkleideas/neural',
+    '@sparkleideas/hooks',
+    '@sparkleideas/browser',
+    '@sparkleideas/plugins',
+    '@sparkleideas/providers',
+    '@sparkleideas/claims',
   ],
   // Level 4: depends on Level 3
   [
-    '@claude-flow-patch/guidance',
-    '@claude-flow-patch/mcp',
-    '@claude-flow-patch/integration',
-    '@claude-flow-patch/deployment',
-    '@claude-flow-patch/swarm',
-    '@claude-flow-patch/security',
-    '@claude-flow-patch/performance',
-    '@claude-flow-patch/testing',
+    '@sparkleideas/guidance',
+    '@sparkleideas/mcp',
+    '@sparkleideas/integration',
+    '@sparkleideas/deployment',
+    '@sparkleideas/swarm',
+    '@sparkleideas/security',
+    '@sparkleideas/performance',
+    '@sparkleideas/testing',
   ],
   // Level 5: root packages
   [
-    '@claude-flow-patch/cli',
-    '@claude-flow-patch/claude-flow',
-    'ruflo-patch',
+    '@sparkleideas/cli',
+    '@sparkleideas/claude-flow',
+    '@sparkleideas/ruflo-patch',
   ],
 ];
 
@@ -361,9 +361,9 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
 function deriveVersion(pkgName, upstreamVersion, primaryVersion) {
   // Packages that track their own upstream version (not the primary ruflo repo)
   const crossRepoPackages = new Set([
-    '@claude-flow-patch/agentdb',
-    '@claude-flow-patch/agentic-flow',
-    '@claude-flow-patch/ruv-swarm',
+    '@sparkleideas/agentdb',
+    '@sparkleideas/agentic-flow',
+    '@sparkleideas/ruv-swarm',
   ]);
 
   if (!crossRepoPackages.has(pkgName)) {

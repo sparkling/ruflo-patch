@@ -16,7 +16,7 @@ The review report (C1) identified a critical bootstrap problem: on the first-eve
 - `npm install ruflo-patch` fails with `ETARGET` because no version matches the default `latest` range
 - `npm install ruflo-patch@prerelease` works, but no user will know to type that
 
-Every package in the `@claude-flow-patch` scope and the `ruflo-patch` package itself will be published for the first time. All 26 packages hit this problem simultaneously.
+Every package in the `@sparkleideas` scope and the `ruflo-patch` package itself will be published for the first time. All 26 packages hit this problem simultaneously.
 
 ### Pseudocode (SPARC-P)
 
@@ -127,7 +127,7 @@ All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prer
 **Trade-offs and edge cases:**
 
 - **npm view returns E404 for unpublished packages**: This is the expected behavior. The script checks the exit code, not the output format. Both `npm view <pkg> version` (single version) and `npm view <pkg> versions` (array) return E404 for non-existent packages.
-- **Scoped packages require scope access**: `npm publish` for `@claude-flow-patch/*` packages requires that the npm account has publish access to the `@claude-flow-patch` scope. This is a one-time setup step (register the scope on npmjs.com) and is not repeated per package.
+- **Scoped packages require scope access**: `npm publish` for `@sparkleideas/*` packages requires that the npm account has publish access to the `@sparkleideas` scope. This is a one-time setup step (register the scope on npmjs.com) and is not repeated per package.
 - **Race condition on first run**: If two build processes run simultaneously (unlikely with systemd timer, but possible with manual trigger), both may detect a package as "never published" and attempt first-publish. The second `npm publish` will fail with `EPUBLISHCONFLICT` (version already exists). This is a benign failure -- the package is already published by the first process. The retry logic in the publish loop handles this gracefully.
 
 ### Completion (SPARC-C)

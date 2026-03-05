@@ -20,38 +20,38 @@ DEFINE LEVELS = [
   // ruvector, @ruvector/* are consumed as-is
 
   // Level 1: depends only on @ruvector/* (public npm)
-  ["@claude-flow-patch/agentdb",
-   "@claude-flow-patch/agentic-flow",
-   "@claude-flow-patch/ruv-swarm"],
+  ["@sparkleideas/agentdb",
+   "@sparkleideas/agentic-flow",
+   "@sparkleideas/ruv-swarm"],
 
   // Level 2: depends on Level 1
-  ["@claude-flow-patch/shared",
-   "@claude-flow-patch/memory",
-   "@claude-flow-patch/embeddings",
-   "@claude-flow-patch/codex",
-   "@claude-flow-patch/aidefence"],
+  ["@sparkleideas/shared",
+   "@sparkleideas/memory",
+   "@sparkleideas/embeddings",
+   "@sparkleideas/codex",
+   "@sparkleideas/aidefence"],
 
   // Level 3: depends on Level 2
-  ["@claude-flow-patch/neural",
-   "@claude-flow-patch/hooks",
-   "@claude-flow-patch/browser",
-   "@claude-flow-patch/plugins",
-   "@claude-flow-patch/providers",
-   "@claude-flow-patch/claims"],
+  ["@sparkleideas/neural",
+   "@sparkleideas/hooks",
+   "@sparkleideas/browser",
+   "@sparkleideas/plugins",
+   "@sparkleideas/providers",
+   "@sparkleideas/claims"],
 
   // Level 4: depends on Level 3
-  ["@claude-flow-patch/guidance",
-   "@claude-flow-patch/mcp",
-   "@claude-flow-patch/integration",
-   "@claude-flow-patch/deployment",
-   "@claude-flow-patch/swarm",
-   "@claude-flow-patch/security",
-   "@claude-flow-patch/performance",
-   "@claude-flow-patch/testing"],
+  ["@sparkleideas/guidance",
+   "@sparkleideas/mcp",
+   "@sparkleideas/integration",
+   "@sparkleideas/deployment",
+   "@sparkleideas/swarm",
+   "@sparkleideas/security",
+   "@sparkleideas/performance",
+   "@sparkleideas/testing"],
 
   // Level 5: root packages
-  ["@claude-flow-patch/cli",
-   "@claude-flow-patch/claude-flow",
+  ["@sparkleideas/cli",
+   "@sparkleideas/claude-flow",
    "ruflo-patch"]
 ]
 
@@ -80,51 +80,51 @@ The build script publishes packages in a strict topological order derived from t
 
 | Package | Key Dependencies |
 |---------|-----------------|
-| `@claude-flow-patch/agentdb` | `ruvector`, `@ruvector/core`, `@ruvector/graph-transformer` |
-| `@claude-flow-patch/agentic-flow` | `@ruvector/core`, `@ruvector/router`, `@ruvector/ruvllm` |
-| `@claude-flow-patch/ruv-swarm` | `better-sqlite3`, `ws`, `uuid` (no ruvnet deps) |
+| `@sparkleideas/agentdb` | `ruvector`, `@ruvector/core`, `@ruvector/graph-transformer` |
+| `@sparkleideas/agentic-flow` | `@ruvector/core`, `@ruvector/router`, `@ruvector/ruvllm` |
+| `@sparkleideas/ruv-swarm` | `better-sqlite3`, `ws`, `uuid` (no ruvnet deps) |
 
 **Level 2 -- Depends on Level 1:**
 
 | Package | Key Dependencies |
 |---------|-----------------|
-| `@claude-flow-patch/shared` | None within our scope (utility package) |
-| `@claude-flow-patch/memory` | `@claude-flow-patch/agentdb` |
-| `@claude-flow-patch/embeddings` | None within our scope |
-| `@claude-flow-patch/codex` | None within our scope |
-| `@claude-flow-patch/aidefence` | None within our scope |
+| `@sparkleideas/shared` | None within our scope (utility package) |
+| `@sparkleideas/memory` | `@sparkleideas/agentdb` |
+| `@sparkleideas/embeddings` | None within our scope |
+| `@sparkleideas/codex` | None within our scope |
+| `@sparkleideas/aidefence` | None within our scope |
 
 **Level 3 -- Depends on Level 2:**
 
 | Package | Key Dependencies |
 |---------|-----------------|
-| `@claude-flow-patch/neural` | `@claude-flow-patch/memory`, `@ruvector/sona` |
-| `@claude-flow-patch/hooks` | `@claude-flow-patch/memory`, `@claude-flow-patch/neural`, `@claude-flow-patch/shared` |
-| `@claude-flow-patch/browser` | None within our scope |
-| `@claude-flow-patch/plugins` | None within our scope |
-| `@claude-flow-patch/providers` | None within our scope |
-| `@claude-flow-patch/claims` | None within our scope |
+| `@sparkleideas/neural` | `@sparkleideas/memory`, `@ruvector/sona` |
+| `@sparkleideas/hooks` | `@sparkleideas/memory`, `@sparkleideas/neural`, `@sparkleideas/shared` |
+| `@sparkleideas/browser` | None within our scope |
+| `@sparkleideas/plugins` | None within our scope |
+| `@sparkleideas/providers` | None within our scope |
+| `@sparkleideas/claims` | None within our scope |
 
 **Level 4 -- Depends on Level 3:**
 
 | Package | Key Dependencies |
 |---------|-----------------|
-| `@claude-flow-patch/guidance` | `@claude-flow-patch/hooks`, `@claude-flow-patch/memory`, `@claude-flow-patch/shared` |
-| `@claude-flow-patch/mcp` | `@claude-flow-patch/shared` |
-| `@claude-flow-patch/integration` | `@claude-flow-patch/shared` |
-| `@claude-flow-patch/deployment` | `@claude-flow-patch/shared` |
-| `@claude-flow-patch/swarm` | `@claude-flow-patch/shared` |
-| `@claude-flow-patch/security` | `@claude-flow-patch/shared` |
-| `@claude-flow-patch/performance` | `@claude-flow-patch/shared` |
-| `@claude-flow-patch/testing` | `@claude-flow-patch/shared` |
+| `@sparkleideas/guidance` | `@sparkleideas/hooks`, `@sparkleideas/memory`, `@sparkleideas/shared` |
+| `@sparkleideas/mcp` | `@sparkleideas/shared` |
+| `@sparkleideas/integration` | `@sparkleideas/shared` |
+| `@sparkleideas/deployment` | `@sparkleideas/shared` |
+| `@sparkleideas/swarm` | `@sparkleideas/shared` |
+| `@sparkleideas/security` | `@sparkleideas/shared` |
+| `@sparkleideas/performance` | `@sparkleideas/shared` |
+| `@sparkleideas/testing` | `@sparkleideas/shared` |
 
 **Level 5 -- Root packages:**
 
 | Package | Key Dependencies |
 |---------|-----------------|
-| `@claude-flow-patch/cli` | Everything above (direct and transitive) |
-| `@claude-flow-patch/claude-flow` | `@claude-flow-patch/cli` (wrapper) |
-| `ruflo-patch` | `@claude-flow-patch/claude-flow` (top-level wrapper) |
+| `@sparkleideas/cli` | Everything above (direct and transitive) |
+| `@sparkleideas/claude-flow` | `@sparkleideas/cli` (wrapper) |
+| `ruflo-patch` | `@sparkleideas/claude-flow` (top-level wrapper) |
 
 **Partial failure handling:**
 
@@ -141,19 +141,19 @@ A 2-second delay is inserted between each `npm publish` call. With ~26 packages,
 ```javascript
 const LEVELS = [
   // Level 1
-  ['@claude-flow-patch/agentdb', '@claude-flow-patch/agentic-flow', '@claude-flow-patch/ruv-swarm'],
+  ['@sparkleideas/agentdb', '@sparkleideas/agentic-flow', '@sparkleideas/ruv-swarm'],
   // Level 2
-  ['@claude-flow-patch/shared', '@claude-flow-patch/memory', '@claude-flow-patch/embeddings',
-   '@claude-flow-patch/codex', '@claude-flow-patch/aidefence'],
+  ['@sparkleideas/shared', '@sparkleideas/memory', '@sparkleideas/embeddings',
+   '@sparkleideas/codex', '@sparkleideas/aidefence'],
   // Level 3
-  ['@claude-flow-patch/neural', '@claude-flow-patch/hooks', '@claude-flow-patch/browser',
-   '@claude-flow-patch/plugins', '@claude-flow-patch/providers', '@claude-flow-patch/claims'],
+  ['@sparkleideas/neural', '@sparkleideas/hooks', '@sparkleideas/browser',
+   '@sparkleideas/plugins', '@sparkleideas/providers', '@sparkleideas/claims'],
   // Level 4
-  ['@claude-flow-patch/guidance', '@claude-flow-patch/mcp', '@claude-flow-patch/integration',
-   '@claude-flow-patch/deployment', '@claude-flow-patch/swarm', '@claude-flow-patch/security',
-   '@claude-flow-patch/performance', '@claude-flow-patch/testing'],
+  ['@sparkleideas/guidance', '@sparkleideas/mcp', '@sparkleideas/integration',
+   '@sparkleideas/deployment', '@sparkleideas/swarm', '@sparkleideas/security',
+   '@sparkleideas/performance', '@sparkleideas/testing'],
   // Level 5
-  ['@claude-flow-patch/cli', '@claude-flow-patch/claude-flow', 'ruflo-patch'],
+  ['@sparkleideas/cli', '@sparkleideas/claude-flow', 'ruflo-patch'],
 ];
 
 async function publishAll(tag) {
@@ -208,7 +208,7 @@ async function publishAll(tag) {
 
 **Trade-offs and edge cases:**
 
-- **Cross-repo ordering**: `@claude-flow-patch/agentdb` (from `ruvnet/agentic-flow`) must publish before `@claude-flow-patch/memory` (from `ruvnet/ruflo`). The build script must build and publish packages from multiple upstream repos in a single orchestrated run, not per-repo.
+- **Cross-repo ordering**: `@sparkleideas/agentdb` (from `ruvnet/agentic-flow`) must publish before `@sparkleideas/memory` (from `ruvnet/ruflo`). The build script must build and publish packages from multiple upstream repos in a single orchestrated run, not per-repo.
 - **Optional dependencies**: Many `@claude-flow/*` packages list others as `optionalDependencies`. npm does not fail if an optional dependency is missing from the registry. However, publishing bottom-up ensures optional deps are available if they exist in our scope.
 - **Orphaned prereleases**: If level 3 publishes 4 of 6 packages before the 5th fails, those 4 are on npm under the `prerelease` tag. They are installable but their level 3 siblings and all level 4-5 packages are missing. Users on `@latest` see the previous complete set. The orphaned prereleases are harmless and will be superseded by the next successful build.
 

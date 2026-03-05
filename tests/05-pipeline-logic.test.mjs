@@ -335,7 +335,7 @@ describe('getPublishTag (ADR-0015)', () => {
       receivedName = name;
       return '1.0.0';
     };
-    await getPublishTag(spy, '@claude-flow-patch/cli');
-    assert.equal(receivedName, '@claude-flow-patch/cli');
+    await getPublishTag(spy, '@sparkleideas/cli');
+    assert.equal(receivedName, '@sparkleideas/cli');
   });
 });
