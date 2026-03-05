@@ -8,7 +8,19 @@
     "prepublishOnly": "npm run preflight && npm test",
     "test": "node scripts/test-runner.mjs",
     "test:fast": "node scripts/test-runner.mjs",
-    "upstream-log": "node scripts/upstream-log.mjs"
+    "upstream-log": "node scripts/upstream-log.mjs",
+    "codemod": "node scripts/codemod.mjs",
+    "publish:all": "node scripts/publish.mjs",
+    "publish:dry-run": "node scripts/publish.mjs --dry-run",
+    "build:sync": "bash scripts/sync-and-build.sh",
+    "promote": "bash scripts/promote.sh",
+    "rollback": "bash scripts/rollback.sh",
+    "audit:imports": "bash scripts/audit-dynamic-imports.sh",
+    "systemd:install": "sudo bash scripts/install-systemd.sh"
+  },
+  "config": {
+    "packageMap": "config/package-map.json",
+    "publishLevels": "config/publish-levels.json"
   },
   "private": false,
   "license": "MIT",
@@ -24,6 +36,7 @@
     "lib",
     "patch",
     "scripts",
+    "config",
     "patch-all.sh",
     "check-patches.sh",
     "repair-post-init.sh"

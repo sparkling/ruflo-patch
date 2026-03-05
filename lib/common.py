@@ -103,6 +103,9 @@ HYBRID_BACKEND = os.path.join(_cf_scope, "memory", "dist", "hybrid-backend.js") 
 CACHE_MANAGER = os.path.join(_cf_scope, "memory", "dist", "cache-manager.js") if _cf_scope else ""
 SQLJS_BACKEND = os.path.join(_cf_scope, "memory", "dist", "sqljs-backend.js") if _cf_scope else ""
 MEMORY_PKG_JSON = os.path.join(_cf_scope, "memory", "package.json") if _cf_scope else ""
+AGENTIC_FLOW_PKG_JSON = os.environ.get("AGENTIC_FLOW_PKG_JSON", "")
+if not AGENTIC_FLOW_PKG_JSON and _cf_scope:
+    AGENTIC_FLOW_PKG_JSON = os.path.join(_cf_scope, "agentic-flow", "package.json")
 SRC_HOOK_HANDLER = os.path.join(_pkg_root, ".claude", "helpers", "hook-handler.cjs") if _pkg_root else ""
 SRC_INTELLIGENCE_CJS = os.path.join(_pkg_root, ".claude", "helpers", "intelligence.cjs") if _pkg_root else ""
 SRC_AUTO_MEMORY_HOOK = os.path.join(_pkg_root, ".claude", "helpers", "auto-memory-hook.mjs") if _pkg_root else ""

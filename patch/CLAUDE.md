@@ -36,17 +36,20 @@ Runtime patches for `ruflo` (latest), `ruvector`, and `ruv-swarm`.
 | Prefix | Category | Count |
 |--------|----------|-------|
 | MC | MCP Configuration | 1 |
-| FB | Fallback Instrumentation | 4 |
+| FB | Fallback Instrumentation | 3 |
+| SV | Semver Conflict Resolution | 3 |
 
-## All 5 Defects
+## All 7 Defects
 
 | ID | GitHub Issue | Severity |
 |----|-------------|----------|
 | MC-001 | MCP claude-flow server fails to start due to autoStart: false | High |
 | FB-001 | Instrument upstream fallback paths with debug logging | High |
 | FB-002 | Instrument local helper fallback code paths with debug logging | Enhancement |
-| FB-003 | Create ControllerRegistry shim for memory-bridge.js | Critical |
 | FB-004 | Lower search threshold for hash-based embeddings | Medium |
+| SV-001 | Fix @ruvector/ruvllm semver range in agentic-flow | Critical |
+| SV-002 | Fix agentdb pin in @claude-flow/memory | Critical |
+| SV-003 | Fix agentdb range in agentic-flow | Critical |
 <!-- GENERATED:defect-tables:end -->
 
 ## Creating a New Defect

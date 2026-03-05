@@ -1,0 +1,61 @@
+{
+  "description": "Topological publish order (ADR-0014). Packages within a level have no mutual dependencies.",
+  "levels": [
+    {
+      "level": 1,
+      "description": "Depends only on @ruvector/* (public npm)",
+      "packages": [
+        "@claude-flow-patch/agentdb",
+        "@claude-flow-patch/agentic-flow",
+        "@claude-flow-patch/ruv-swarm"
+      ]
+    },
+    {
+      "level": 2,
+      "description": "Depends on Level 1",
+      "packages": [
+        "@claude-flow-patch/shared",
+        "@claude-flow-patch/memory",
+        "@claude-flow-patch/embeddings",
+        "@claude-flow-patch/codex",
+        "@claude-flow-patch/aidefence"
+      ]
+    },
+    {
+      "level": 3,
+      "description": "Depends on Level 2",
+      "packages": [
+        "@claude-flow-patch/neural",
+        "@claude-flow-patch/hooks",
+        "@claude-flow-patch/browser",
+        "@claude-flow-patch/plugins",
+        "@claude-flow-patch/providers",
+        "@claude-flow-patch/claims"
+      ]
+    },
+    {
+      "level": 4,
+      "description": "Depends on Level 3",
+      "packages": [
+        "@claude-flow-patch/guidance",
+        "@claude-flow-patch/mcp",
+        "@claude-flow-patch/integration",
+        "@claude-flow-patch/deployment",
+        "@claude-flow-patch/swarm",
+        "@claude-flow-patch/security",
+        "@claude-flow-patch/performance",
+        "@claude-flow-patch/testing"
+      ]
+    },
+    {
+      "level": 5,
+      "description": "Root packages",
+      "packages": [
+        "@claude-flow-patch/cli",
+        "@claude-flow-patch/claude-flow",
+        "ruflo-patch"
+      ]
+    }
+  ],
+  "rateLimitMs": 2000
+}

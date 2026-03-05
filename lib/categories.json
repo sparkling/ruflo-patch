@@ -1,4 +1,5 @@
 {
   "MC": "MCP Configuration",
-  "FB": "Fallback Instrumentation"
+  "FB": "Fallback Instrumentation",
+  "SV": "Semver Conflict Resolution"
 }

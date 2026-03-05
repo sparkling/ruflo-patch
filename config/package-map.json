@@ -1,0 +1,83 @@
+{
+  "description": "Package name mappings from upstream to ruflo-patch (ADR-0006)",
+  "scopePrefix": {
+    "from": "@claude-flow/",
+    "to": "@claude-flow-patch/"
+  },
+  "scoped": {
+    "@claude-flow/cli": "@claude-flow-patch/cli",
+    "@claude-flow/memory": "@claude-flow-patch/memory",
+    "@claude-flow/hooks": "@claude-flow-patch/hooks",
+    "@claude-flow/neural": "@claude-flow-patch/neural",
+    "@claude-flow/shared": "@claude-flow-patch/shared",
+    "@claude-flow/embeddings": "@claude-flow-patch/embeddings",
+    "@claude-flow/codex": "@claude-flow-patch/codex",
+    "@claude-flow/aidefence": "@claude-flow-patch/aidefence",
+    "@claude-flow/browser": "@claude-flow-patch/browser",
+    "@claude-flow/plugins": "@claude-flow-patch/plugins",
+    "@claude-flow/providers": "@claude-flow-patch/providers",
+    "@claude-flow/claims": "@claude-flow-patch/claims",
+    "@claude-flow/guidance": "@claude-flow-patch/guidance",
+    "@claude-flow/mcp": "@claude-flow-patch/mcp",
+    "@claude-flow/integration": "@claude-flow-patch/integration",
+    "@claude-flow/deployment": "@claude-flow-patch/deployment",
+    "@claude-flow/swarm": "@claude-flow-patch/swarm",
+    "@claude-flow/security": "@claude-flow-patch/security",
+    "@claude-flow/performance": "@claude-flow-patch/performance",
+    "@claude-flow/testing": "@claude-flow-patch/testing"
+  },
+  "unscoped": {
+    "claude-flow": "@claude-flow-patch/claude-flow",
+    "ruflo": "ruflo-patch",
+    "agentdb": "@claude-flow-patch/agentdb",
+    "agentic-flow": "@claude-flow-patch/agentic-flow",
+    "ruv-swarm": "@claude-flow-patch/ruv-swarm"
+  },
+  "excluded": [
+    "ruvector",
+    "@ruvector/core",
+    "@ruvector/router",
+    "@ruvector/graph-transformer",
+    "@ruvector/ruvllm",
+    "@ruvector/sona",
+    "@ruvector/memory",
+    "@ruvector/embeddings"
+  ],
+  "upstreamRepos": {
+    "ruvnet/ruflo": {
+      "packages": [
+        "ruflo",
+        "claude-flow",
+        "@claude-flow/cli",
+        "@claude-flow/memory",
+        "@claude-flow/hooks",
+        "@claude-flow/neural",
+        "@claude-flow/shared",
+        "@claude-flow/embeddings",
+        "@claude-flow/codex",
+        "@claude-flow/aidefence",
+        "@claude-flow/browser",
+        "@claude-flow/plugins",
+        "@claude-flow/providers",
+        "@claude-flow/claims",
+        "@claude-flow/guidance",
+        "@claude-flow/mcp",
+        "@claude-flow/integration",
+        "@claude-flow/deployment",
+        "@claude-flow/swarm",
+        "@claude-flow/security",
+        "@claude-flow/performance",
+        "@claude-flow/testing"
+      ],
+      "clonePath": "/home/claude/src/upstream/ruflo"
+    },
+    "ruvnet/agentic-flow": {
+      "packages": ["agentdb", "agentic-flow"],
+      "clonePath": "/home/claude/src/upstream/agentic-flow"
+    },
+    "ruvnet/ruv-FANN": {
+      "packages": ["ruv-swarm"],
+      "clonePath": "/home/claude/src/upstream/ruv-FANN"
+    }
+  }
+}
