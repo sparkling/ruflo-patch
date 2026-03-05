@@ -11,7 +11,7 @@ The upstream [ruvnet/ruflo](https://github.com/ruvnet/ruflo) ecosystem (48+ npm 
 npx ruflo init
 ```
 
-Same CLI, same commands, same flags — just swap `ruflo` for `ruflo`. If upstream catches up, switch back with a one-word change.
+Same CLI, same commands, same flags — just swap `ruflo` for `@sparkleideas/ruflo`. If upstream catches up, switch back with a one-word change.
 
 ---
 
@@ -49,10 +49,10 @@ npm install -g @sparkleideas/ruflo
 All commands work exactly like `ruflo`:
 
 ```bash
-ruflo agent spawn -t coder          # spawn an agent
-ruflo memory search --query "auth"  # search memory
-ruflo mcp start                     # start MCP server
-ruflo doctor                        # diagnose issues
+npx @sparkleideas/ruflo agent spawn -t coder          # spawn an agent
+npx @sparkleideas/ruflo memory search --query "auth"  # search memory
+npx @sparkleideas/ruflo mcp start                     # start MCP server
+npx @sparkleideas/ruflo doctor                        # diagnose issues
 ```
 
 ---
@@ -70,7 +70,7 @@ ruflo doctor                        # diagnose issues
 | Semver conflicts (`@ruvector/ruvllm`, `agentdb`) | Broken install | Resolved |
 | `npm install` | Fails on dependency conflicts | Clean install |
 
-**26 packages** are rebuilt and published under the `@sparkleideas` scope across 5 dependency levels. The `@ruvector/*` packages are used as-is from public npm (they're current).
+**25 packages** are rebuilt and published under the `@sparkleideas` scope across 5 dependency levels. The `@ruvector/*` packages are used as-is from public npm (they're current).
 
 ---
 
@@ -128,7 +128,7 @@ All patches and fixes are baked into the published packages — no runtime patch
 
 ### Commands
 
-Replace `ruflo` with `ruflo`:
+Replace `ruflo` with `@sparkleideas/ruflo`:
 
 ```bash
 # Before
@@ -230,7 +230,7 @@ The build is orchestrated by `scripts/sync-and-build.sh` and runs these phases:
 8. **Build** — `pnpm install && pnpm build`
 9. **Test** — `npm test`
 10. **Compute version** — `{upstream_version}-patch.{N}` (resets N on upstream bump)
-11. **Publish** — 26 packages across 5 dependency levels, bottom-up with 2s rate-limit
+11. **Publish** — 24 upstream packages across 5 dependency levels, bottom-up with 2s rate-limit
 12. **Notify** — GitHub prerelease (triggers email)
 13. **Save state** — Only after successful publish
 
@@ -334,7 +334,7 @@ ruflo/
 ├── scripts/
 │   ├── sync-and-build.sh            Main build pipeline orchestrator
 │   ├── codemod.mjs                  Scope-rename codemod (@claude-flow → @sparkleideas)
-│   ├── publish.mjs                  Topological publisher (5 levels, 26 packages)
+│   ├── publish.mjs                  Topological publisher (5 levels, 24 upstream packages)
 │   ├── promote.sh                   Promote prerelease to @latest
 │   ├── rollback.sh                  Roll back @latest to previous version
 │   ├── test-runner.mjs              Unit test runner
@@ -346,7 +346,7 @@ ruflo/
 │   ├── preflight.mjs                Pre-commit consistency check
 │   └── upstream-log.mjs             Show recent upstream releases
 ├── config/
-│   ├── package-map.json             Package name mappings (26 packages)
+│   ├── package-map.json             Package name mappings (25 packages)
 │   ├── publish-levels.json          Topological publish order (5 levels)
 │   ├── ruflo-sync.timer             systemd timer unit
 │   ├── ruflo-sync.service           systemd service unit
