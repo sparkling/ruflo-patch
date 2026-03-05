@@ -1,286 +1,413 @@
-# @ruflo/patch
+# ruflo-patch
 
-Community runtime patches for [`ruflo`](https://www.npmjs.com/package/ruflo) (wraps `@claude-flow/cli`), [`ruvector`](https://www.npmjs.com/package/ruvector), and [`ruv-swarm`](https://www.npmjs.com/package/ruv-swarm).
+[![npm version](https://img.shields.io/npm/v/ruflo-patch)](https://www.npmjs.com/package/ruflo-patch)
+[![license](https://img.shields.io/npm/l/ruflo-patch)](LICENSE)
 
-These patches fix bugs and wire up unactivated subsystems in the upstream packages via idempotent Python scripts that perform targeted string replacements on npx-cached source files. Each patch targets a specific GitHub issue, ships its own `fix.py`, sentinel check, and documentation.
+**Drop-in replacement for `ruflo` / `@claude-flow/cli` with 933+ unpublished upstream commits, bug fixes, and working dependency resolution.**
 
-## Contents
+The upstream [ruvnet/ruflo](https://github.com/ruvnet/ruflo) ecosystem (48+ npm packages) is severely stale — 60% of `@claude-flow/*` packages haven't been published since January 2026, `ruflo` is 933 commits behind its source, and maintainers are unresponsive. `ruflo-patch` forks, rebuilds, patches, and republishes the entire ecosystem under the `@claude-flow-patch` scope so you get current code from a single `npx` command.
+
+```bash
+npx ruflo-patch init
+```
+
+Same CLI, same commands, same flags — just swap `ruflo` for `ruflo-patch`. If upstream catches up, switch back with a one-word change.
+
+---
+
+## Table of Contents
 
 - [Quick Start](#quick-start)
-- [CLI Commands](#cli-commands)
+- [What You Get](#what-you-get)
 - [How It Works](#how-it-works)
-- [Patch Structure](#patch-structure)
-- [Target Packages](#target-packages)
-- [Init-Script Patches](#init-script-patches)
-- [Auto-Reapply on Update](#auto-reapply-on-update)
-- [Scripts](#scripts)
-- [Compatibility](#compatibility)
+- [Migrating from ruflo](#migrating-from-ruflo)
+- [Runtime Patches (Legacy)](#runtime-patches-legacy)
+- [For Maintainers](#for-maintainers)
+  - [Build Pipeline](#build-pipeline)
+  - [npm Scripts](#npm-scripts)
+  - [Automated Builds](#automated-builds)
+  - [Publishing and Promotion](#publishing-and-promotion)
+  - [Rollback](#rollback)
+  - [Testing](#testing)
+- [Project Structure](#project-structure)
+- [Architecture Decisions](#architecture-decisions)
+- [Requirements](#requirements)
+- [License](#license)
+
+---
 
 ## Quick Start
 
-**Patch before init.** Several patches fix the init/generator scripts. If you run `claude-flow init` before patching, the generated `.claude/helpers/` files will be stubs with no learning, no PageRank, and no-op feedback. Always patch first:
-
 ```bash
-# 1. Patch first -- fixes the init generators
-npx --yes @ruflo/patch apply --global
+# Run directly (no install needed)
+npx ruflo-patch init
 
-# 2. Then init (or re-init if already initialized)
-npx @claude-flow/cli@latest init            # fresh project
-npx @claude-flow/cli@latest init upgrade    # existing project
-
-# 3. Verify
-npx --yes @ruflo/patch check
+# Or install globally
+npm install -g ruflo-patch
+ruflo-patch init
 ```
 
-If you already initialized before patching:
+All commands work exactly like `ruflo`:
 
 ```bash
-npx --yes @ruflo/patch repair --target /path/to/project
+ruflo-patch agent spawn -t coder          # spawn an agent
+ruflo-patch memory search --query "auth"  # search memory
+ruflo-patch mcp start                     # start MCP server
+ruflo-patch doctor                        # diagnose issues
 ```
 
-## Requirements
+---
 
-- Node.js >= 20
-- Python 3.6+
-- Bash
+## What You Get
 
-## Install
+| Feature | `ruflo` (upstream) | `ruflo-patch` |
+|---------|-------------------|---------------|
+| Source commits | 933 behind | Current with upstream HEAD |
+| `@claude-flow/*` packages | Last published Jan 2026 | Rebuilt from source every 6 hours |
+| MCP autostart fix (MC-001) | Broken | Fixed |
+| Fallback instrumentation (FB-001/002) | Missing | Included |
+| Memory ControllerRegistry shim (FB-003) | Missing | Included |
+| Hash embedding threshold fix (FB-004) | Missing | Included |
+| Semver conflicts (`@ruvector/ruvllm`, `agentdb`) | Broken install | Resolved |
+| `npm install` | Fails on dependency conflicts | Clean install |
+
+**26 packages** are rebuilt and published under the `@claude-flow-patch` scope across 5 dependency levels. The `@ruvector/*` packages are used as-is from public npm (they're current).
+
+---
+
+## How It Works
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  Build Pipeline                      │
+│                                                      │
+│  ┌──────────┐   ┌──────────┐   ┌──────────┐        │
+│  │ ruvnet/  │   │ ruvnet/  │   │ ruvnet/  │        │
+│  │ ruflo    │   │ agentic- │   │ ruv-FANN │        │
+│  │ (fork)   │   │ flow     │   │ (fork)   │        │
+│  └────┬─────┘   └────┬─────┘   └────┬─────┘        │
+│       │              │              │               │
+│       └──────────┬───┘──────────────┘               │
+│                  ▼                                    │
+│         ┌────────────────┐                           │
+│         │  git pull       │  Zero merge conflicts    │
+│         │  (clean mirror) │  — forks are unmodified  │
+│         └───────┬────────┘                           │
+│                 ▼                                     │
+│         ┌────────────────┐                           │
+│         │  Codemod        │  @claude-flow/* →         │
+│         │  (build-time)   │  @claude-flow-patch/*    │
+│         └───────┬────────┘                           │
+│                 ▼                                     │
+│         ┌────────────────┐                           │
+│         │  Apply patches  │  MC-001, FB-001–004,     │
+│         │                 │  SV-001–003              │
+│         └───────┬────────┘                           │
+│                 ▼                                     │
+│         ┌────────────────┐                           │
+│         │  pnpm build     │  TypeScript → JS         │
+│         └───────┬────────┘                           │
+│                 ▼                                     │
+│         ┌────────────────┐                           │
+│         │  npm publish    │  26 packages,            │
+│         │  --tag prerelease│ 5 levels, bottom-up     │
+│         └────────────────┘                           │
+└─────────────────────────────────────────────────────┘
+```
+
+**Key design choice**: The scope rename (`@claude-flow/*` → `@claude-flow-patch/*`) is a **build-time codemod**, never committed to the fork. This means `git pull` on the fork always produces zero merge conflicts, regardless of how much upstream changes.
+
+The codemod transforms ~4,136 files per build:
+- ~261 `package.json` files (name, dependencies, peerDependencies)
+- ~3,875 JS/TS source files (import/require statements)
+
+All patches and fixes are baked into the published packages — no runtime patching needed.
+
+---
+
+## Migrating from ruflo
+
+### Commands
+
+Replace `ruflo` with `ruflo-patch`:
 
 ```bash
-npm install -g @ruflo/patch
+# Before
+npx ruflo init
+npx ruflo agent spawn -t coder
+npx @claude-flow/cli@latest mcp start
+
+# After
+npx ruflo-patch init
+npx ruflo-patch agent spawn -t coder
+npx ruflo-patch mcp start
 ```
 
-Or run directly with npx (no install required):
+### package.json
 
-```bash
-npx @ruflo/patch apply
+```diff
+  "dependencies": {
+-   "claude-flow": "^3.5.2"
++   "ruflo-patch": "^3.5.2-patch.1"
+  }
 ```
 
-## CLI Commands
+### MCP / Claude Code Configuration
+
+Update your `.claude/settings.json`:
+
+```diff
+  {
+    "mcpServers": {
+      "claude-flow": {
+        "command": "npx",
+-       "args": ["-y", "@claude-flow/cli@latest", "mcp", "start"]
++       "args": ["-y", "ruflo-patch", "mcp", "start"]
+      }
+    }
+  }
+```
+
+---
+
+## Runtime Patches (Legacy)
+
+> Most users should use `npx ruflo-patch` instead — it includes all fixes permanently. Runtime patches are only needed if you must stay on the upstream `ruflo` package for compatibility reasons.
+
+This repo also maintains runtime patches that can be applied directly to the upstream `ruflo` npx cache. These are fragile (wiped on cache updates) but useful as a stopgap.
+
+### CLI Commands
 
 ```
 ruflo-patch apply  [--global] [--target <dir>]   Apply all patches
 ruflo-patch check  [--global] [--target <dir>]   Verify patches are applied
 ruflo-patch repair [--target <dir>]              Repair post-init helpers
-ruflo-patch --help                               Show help
 ```
 
-### Target Options
+### Patch Inventory
 
-| Flag | Target | When to use |
-|------|--------|-------------|
-| *(none)* | Global npx cache (default) | Most common -- patches the npx cache |
-| `--global` | `~/.npm/_npx/*/node_modules/` | Explicit global-only |
-| `--target <dir>` | `<dir>/node_modules/` | Project with a local install |
-| `--global --target <dir>` | Both locations | Covers both invocation paths |
+| ID | Patch | Description |
+|----|-------|-------------|
+| MC-001 | `010-MC-001-mcp-autostart` | Removes `autoStart: false` from MCP entry in init generator |
+| FB-001 | `020-FB-001-fallback-instrumentation` | 10 ops instrumenting upstream fallback paths with logging |
+| FB-002 | `021-FB-002-local-helper-instrumentation` | 16 ops instrumenting local helper fallback paths |
+| FB-003 | `030-FB-003-controller-registry-shim` | Injects ControllerRegistry class into @claude-flow/memory |
+| FB-004 | `040-FB-004-search-threshold-for-hash-embeddings` | Lowers search threshold from 0.3→0.1 for hash embeddings |
+| SV-001 | `050-SV-001-ruvllm-semver-fix` | Fixes `@ruvector/ruvllm ^0.2.3` → `^2.5.1` |
+| SV-002 | `051-SV-002-agentdb-memory-pin` | Fixes agentdb pin `2.0.0-alpha.3.7` → `^3.0.0-alpha.10` |
+| SV-003 | `052-SV-003-agentdb-agentic-range` | Fixes agentdb range `^2.0.0-alpha.2.20` → `^3.0.0-alpha.10` |
 
-`npx ruflo` uses local `node_modules` if present, otherwise the global npx cache.
+Each patch is idempotent — safe to run multiple times. Adding a new patch requires no changes to any script; just create the directory with `README.md`, `fix.py`, and `sentinel`.
 
-### Examples
+### Auto-Reapply
 
-```bash
-# Patch all global installs
-ruflo-patch apply
+npx cache updates wipe patches. Auto-detect and reapply with a Claude Code hook:
 
-# Patch a specific project
-ruflo-patch apply --target ~/my-project
-
-# Patch both global and local
-ruflo-patch apply --global --target ~/my-project
-
-# Verify patches are still applied after an npm install
-ruflo-patch check
-
-# Repair helper files in a project initialized before patching
-ruflo-patch repair --target ~/my-project
-```
-
-## How It Works
-
-1. **Discovery** (`lib/discover.sh`) scans the npx cache and npm global prefix for `@claude-flow/cli`, `ruvector`, and `ruv-swarm` installations. Handles direct installs, umbrella layouts, and deduplicates by realpath.
-2. **Patching** (`patch-all.sh`) concatenates `lib/common.py` with every `patch/*/fix.py` (sorted by numeric execution-order prefix via `sort -V`) and runs them as a single Python process against each discovered install.
-3. **Verification** (`check-patches.sh`) reads `patch/*/sentinel` files and confirms each patch is still present. If any sentinel fails, it auto-runs `patch-all.sh` to reapply.
-4. **Repair** (`repair-post-init.sh`) rehydrates `.claude/helpers` in projects that were initialized before patches were applied.
-
-All patches use `patch()` / `patch_all()` helpers that are idempotent -- safe to run multiple times. Re-running produces "0 applied, N already present".
-
-## Patch Structure
-
-Each defect lives in its own directory under `patch/`:
-
-```
-patch/{ORDER}-{PREFIX}-{NNN}-{slug}/
-  README.md    # Root cause, fix description, severity, GitHub link
-  fix.py       # patch()/patch_all() calls (idempotent)
-  sentinel     # Verification directives for check-patches.sh
-```
-
-- **ORDER**: Numeric execution-order prefix (e.g. `010`, `370`, `1210`). Spaced by 10 to allow insertions. Controls dependency ordering.
-- **PREFIX-NNN**: Defect ID tied to a GitHub issue (e.g. `HW-001`, `WM-028`)
-- **slug**: Lowercase-kebab-case summary
-
-### Sentinel Directives
-
-Each `sentinel` file declares how `check-patches.sh` verifies the patch:
-
-| Directive | Meaning |
-|-----------|---------|
-| `grep "pattern" file` | Pass if pattern is found in file (standard check) |
-| `absent "pattern" file` | Pass if pattern is **not** found (removal check) |
-| `none` | No sentinel -- skip verification |
-| `package: ruvector` | Gate on optional package; skipped if not installed |
-
-Adding a new patch requires no edits to any script -- just create the directory with `README.md`, `fix.py`, and `sentinel`.
-
-## Target Packages
-
-| Package | Install | Patched files | Env var |
-|---------|---------|---------------|---------|
-| `ruflo` (wraps `@claude-flow/cli`) | `npx ruflo` | `~/.npm/_npx/*/node_modules/@claude-flow/cli/dist/src/` | `BASE` |
-| `ruvector` | (bundled) | `~/.npm/_npx/*/node_modules/ruvector/bin/cli.js` | `RUVECTOR_CLI` |
-| `ruv-swarm` | (bundled) | `~/.npm/_npx/*/node_modules/ruv-swarm/` | `RUV_SWARM_ROOT` |
-
-`BASE` is set by `patch-all.sh`. All path variables in `lib/common.py` derive from it.
-
-## Defect Categories
-
-Patches are organized by prefix into categories:
-
-| Prefix | Category |
-|--------|----------|
-| CF | Config & Doctor |
-| DM | Daemon & Workers |
-| EM | Embeddings & HNSW |
-| GV | Ghost Vectors |
-| HK | Hooks |
-| HW | Headless Worker |
-| IN | Intelligence |
-| MM | Memory Management |
-| NS | Memory Namespace |
-| RS | ruv-swarm |
-| RV | RuVector Intelligence |
-| SG | Settings Generator |
-| UI | Display & Cosmetic |
-| WM | Wiring / Memory Integration |
-| MC | MCP Configuration |
-| DOC | Documentation |
-
-## Init-Script Patches
-
-Several patches target the **init/generator scripts** (`executor.js`, `settings-generator.js`, `helpers-generator.js`). These fix the code that *generates* your `.claude/` project files -- but applying patches does **not** update files already generated in your project.
-
-If your project was initialized before patching:
-
-**Option A: Run `repair`** (recommended)
-
-```bash
-ruflo-patch apply --global
-ruflo-patch repair --target .
-```
-
-**Option B: Re-run init upgrade** (regenerates from patched scripts)
-
-```bash
-ruflo-patch apply --global
-npx @claude-flow/cli@latest init upgrade --force
-```
-
-Caution: Option B may overwrite other customizations in `.claude/`.
-
-## Auto-Reapply on Update
-
-When `npx` fetches a new version of `@claude-flow/cli`, it replaces cached files and wipes all patches. Use one of these approaches to auto-detect and reapply.
-
-### Claude Code Hook (recommended for AI agents)
-
-Add to your project's `.claude/settings.json`:
-
-```jsonc
+```json
 {
   "hooks": {
     "session_start": [
-      {
-        "command": "ruflo-patch check --global",
-        "timeout": 30000
-      }
+      { "command": "ruflo-patch check --global", "timeout": 30000 }
     ]
   }
 }
 ```
 
-### Cron (headless environments)
+---
 
-```bash
-*/5 * * * * ruflo-patch check --global >> /tmp/patch-sentinel.log 2>&1
-```
+## For Maintainers
 
-### npm postinstall
+### Build Pipeline
 
-```jsonc
-{
-  "scripts": {
-    "postinstall": "npx --yes @ruflo/patch apply --target ."
-  }
-}
-```
+The build is orchestrated by `scripts/sync-and-build.sh` and runs these phases:
 
-`check-patches.sh` is fast and idempotent -- under 2 seconds when patches are intact. If any sentinel fails, it reapplies automatically.
+1. **Load state** — Read last-built commit hashes from `scripts/.last-build-state`
+2. **Check upstream** — `git ls-remote` against 3 repos (one HTTP request each)
+3. **Check local** — `git log` for changes to `patch/` or `scripts/`
+4. **Pull upstream** — `git fetch && git reset --hard origin/main` on each fork
+5. **Copy to temp** — Clean copy to `/tmp/ruflo-patch-build-*`
+6. **Codemod** — `@claude-flow/*` → `@claude-flow-patch/*` (see `scripts/codemod.mjs`)
+7. **Apply patches** — All `patch/*/fix.py` scripts via `patch-all.sh`
+8. **Build** — `pnpm install && pnpm build`
+9. **Test** — `npm test`
+10. **Compute version** — `{upstream_version}-patch.{N}` (resets N on upstream bump)
+11. **Publish** — 26 packages across 5 dependency levels, bottom-up with 2s rate-limit
+12. **Notify** — GitHub prerelease (triggers email)
+13. **Save state** — Only after successful publish
 
-## Repository Structure
+If any phase fails, a GitHub Issue is created automatically. State is never updated on failure, so the next run retries.
 
-```
-ruflo-patch/
-  bin/ruflo-patch.mjs      CLI entry point
-  patch-all.sh             Apply all patches (globs patch/*/fix.py dynamically)
-  check-patches.sh         Sentinel: reads patch/*/sentinel files dynamically
-  repair-post-init.sh      Post-init helper repair
-  lib/
-    common.py              Shared patch()/patch_all() helpers + path variables
-    discover.mjs           Dynamic patch discovery (single source of truth)
-    discover.sh            Bash install discovery (npx cache, global prefix)
-    categories.json        Prefix-to-label mapping
-  scripts/
-    preflight.mjs          Pre-commit sync: doc tables, versions
-    test-runner.mjs        Test runner with skip threshold enforcement
-    upstream-log.mjs       Show recent upstream releases
-  patch/
-    {NNN}-{ID}-{slug}/     One directory per defect
-      README.md            Defect report
-      fix.py               Idempotent patch script
-      sentinel             Verification directives
-  tests/                   node:test test suites
-```
-
-## Scripts
+### npm Scripts
 
 | Command | Description |
 |---------|-------------|
-| `npm test` | Run test suite |
+| `npm test` | Run unit test suite (78 tests) |
 | `npm run preflight` | Sync generated doc tables and validate consistency |
-| `npm run preflight:check` | CI mode -- exits 1 if anything is out of date |
+| `npm run preflight:check` | CI mode — exits 1 if out of date |
+| `npm run codemod` | Run scope-rename codemod standalone |
+| `npm run publish:all` | Run topological publisher |
+| `npm run publish:dry-run` | Dry-run publish (no npm writes) |
+| `npm run build:sync` | Full build pipeline (sync-and-build.sh) |
+| `npm run promote` | Promote a prerelease to `@latest` |
+| `npm run rollback` | Roll back `@latest` to previous version |
+| `npm run audit:imports` | Audit dynamic imports for codemod coverage |
 | `npm run upstream-log` | Show recent upstream releases |
+| `npm run systemd:install` | Install systemd timer and service units |
 
-## Environment Variables
+### Automated Builds
 
-| Variable | Description |
-|----------|-------------|
-| `PATCH_INCLUDE` | Regex to include only matching patch directories |
-| `PATCH_EXCLUDE` | Regex to exclude matching patch directories |
+A systemd timer runs `sync-and-build.sh` every 6 hours:
 
-## Key Design Decisions
+```bash
+# Install (one-time)
+sudo npm run systemd:install
 
-- **Zero-maintenance discovery**: `patch-all.sh`, `check-patches.sh`, and doc generation all discover patches dynamically -- no hardcoded lists.
-- **Idempotent**: `patch()` checks if the replacement string is already present before modifying.
-- **Non-destructive**: Patches only modify the npx cache, never the npm registry package.
-- **Platform-aware**: macOS-specific patches auto-skip on Linux.
-- **Sentinel-guarded**: `check-patches.sh` detects cache wipes and auto-reapplies.
+# View build logs
+journalctl -u ruflo-sync
 
-## Compatibility
+# Trigger manually
+sudo systemctl start ruflo-sync.service
 
-- Tested against `ruflo@latest` (wraps `@claude-flow/cli`)
-- Requires Python 3.6+ and Bash
-- Works on Linux and macOS
+# Check timer status
+systemctl list-timers ruflo-sync*
+```
+
+The service runs as the `claude` user with resource limits (`CPUQuota=800%`, `MemoryMax=32G`, `TimeoutStartSec=3600`). Secrets (`NPM_TOKEN`, `GH_TOKEN`) are loaded from `/home/claude/.config/ruflo-patch/secrets.env`.
+
+### Publishing and Promotion
+
+Automated builds publish to the `prerelease` dist-tag. Users on `@latest` are unaffected until you explicitly promote:
+
+```bash
+# Review the prerelease
+npx ruflo-patch@prerelease --version
+
+# Promote to @latest
+npm run promote
+# or manually:
+npm dist-tag add ruflo-patch@3.5.2-patch.1 latest
+```
+
+**Version scheme**: `{upstream_version}-patch.{N}` — e.g., `3.5.2-patch.3` means the 3rd build from upstream `3.5.2`. The iteration resets to 1 when upstream bumps.
+
+### Rollback
+
+If a promoted version is broken:
+
+```bash
+# Roll back @latest to the previous known-good version
+npm run rollback
+
+# Or with a specific version
+bash scripts/rollback.sh 3.5.2-patch.1
+```
+
+This reassigns the `latest` dist-tag for `ruflo-patch` and all 24 `@claude-flow-patch/*` packages. Takes effect immediately — no propagation delay.
+
+### Testing
+
+Three layers of testing:
+
+| Layer | What | How to run |
+|-------|------|------------|
+| **Unit** | 78 tests — codemod, pipeline logic, publish order, patches | `npm test` |
+| **Integration** | 9-phase build pipeline against local Verdaccio | `bash scripts/test-integration.sh` |
+| **Acceptance** | End-user commands (init, version, doctor, MCP) | `bash scripts/test-acceptance.sh` |
+| **CI Validation** | Health check (env, systemd, secrets, upstream clones) | `bash scripts/validate-ci.sh` |
+
+Unit tests run with `node:test` (no dependencies). Integration tests use an isolated Verdaccio instance with no npm proxy (`uplinks: {}`).
+
+---
+
+## Project Structure
+
+```
+ruflo-patch/
+├── bin/ruflo-patch.mjs              CLI entry point
+├── patch-all.sh                     Apply all patches (discovers patch/*/fix.py)
+├── check-patches.sh                 Sentinel verification, auto-reapplies if wiped
+├── repair-post-init.sh              Rehydrate .claude/helpers post-init
+├── lib/
+│   ├── common.py                    patch()/patch_all() helpers + path variables
+│   ├── discover.mjs                 Dynamic patch discovery
+│   ├── discover.sh                  Bash install discovery (npx cache, global prefix)
+│   └── categories.json              Defect prefix → label mapping
+├── scripts/
+│   ├── sync-and-build.sh            Main build pipeline orchestrator
+│   ├── codemod.mjs                  Scope-rename codemod (@claude-flow → @claude-flow-patch)
+│   ├── publish.mjs                  Topological publisher (5 levels, 26 packages)
+│   ├── promote.sh                   Promote prerelease to @latest
+│   ├── rollback.sh                  Roll back @latest to previous version
+│   ├── test-runner.mjs              Unit test runner
+│   ├── test-integration.sh          9-phase integration tests with Verdaccio
+│   ├── test-acceptance.sh           End-user acceptance tests
+│   ├── validate-ci.sh               CI environment health check
+│   ├── audit-dynamic-imports.sh     Dynamic import inventory
+│   ├── install-systemd.sh           systemd unit installer
+│   ├── preflight.mjs                Pre-commit consistency check
+│   └── upstream-log.mjs             Show recent upstream releases
+├── config/
+│   ├── package-map.json             Package name mappings (26 packages)
+│   ├── publish-levels.json          Topological publish order (5 levels)
+│   ├── ruflo-sync.timer             systemd timer unit
+│   ├── ruflo-sync.service           systemd service unit
+│   └── verdaccio-test.yaml          Isolated Verdaccio config for tests
+├── patch/
+│   ├── 010-MC-001-mcp-autostart/    MCP autostart fix
+│   ├── 020-FB-001-fallback-*/       Fallback instrumentation (10 ops)
+│   ├── 021-FB-002-local-helper-*/   Helper instrumentation (16 ops)
+│   ├── 030-FB-003-controller-*/     ControllerRegistry shim
+│   ├── 040-FB-004-search-*/         Hash embedding threshold fix
+│   ├── 050-SV-001-ruvllm-*/         @ruvector/ruvllm semver fix
+│   ├── 051-SV-002-agentdb-*/        agentdb memory pin fix
+│   └── 052-SV-003-agentdb-*/        agentdb agentic range fix
+├── tests/                           Unit tests (node:test)
+├── docs/adr/                        Architecture Decision Records
+└── .tool-versions                   nodejs 20.18.1, pnpm 9.15.4, python 3.12.8
+```
+
+---
+
+## Architecture Decisions
+
+All major decisions are documented as ADRs in `docs/adr/`:
+
+| ADR | Title | Summary |
+|-----|-------|---------|
+| [0001](docs/adr/0001-remove-mcp-autostart-false.md) | Remove MCP autostart false | MC-001 patch rationale |
+| [0002](docs/adr/0002-fallback-instrumentation.md) | Fallback instrumentation | FB-001/002 patch rationale |
+| [0004](docs/adr/0004-search-threshold-for-hash-embeddings.md) | Search threshold for hash embeddings | FB-004 threshold fix |
+| [0005](docs/adr/0005-fork-build-step-rename.md) | Fork + build-step rename | Core strategy: fork, codemod, publish |
+| [0006](docs/adr/0006-npm-scope-naming.md) | npm scope naming | Why `@claude-flow-patch` |
+| [0007](docs/adr/0007-drop-in-replacement-ux.md) | Drop-in replacement UX | One-word swap migration |
+| [0008](docs/adr/0008-skip-ruvector-rebuild.md) | Skip ruvector rebuild | Node.js-only build (no Rust) |
+| [0009](docs/adr/0009-systemd-timer-for-automated-builds.md) | systemd timer | 6-hour automated builds |
+| [0010](docs/adr/0010-prerelease-publish-gate.md) | Prerelease publish gate | Auto-publish to prerelease, manual promote |
+| [0011](docs/adr/0011-dual-build-trigger.md) | Dual build trigger | Upstream + local change detection |
+| [0012](docs/adr/0012-version-numbering-scheme.md) | Version numbering | `{upstream}-patch.{N}` format |
+| [0013](docs/adr/0013-codemod-implementation.md) | Codemod implementation | 2-phase transform, ordering rules |
+| [0014](docs/adr/0014-topological-publish-order.md) | Topological publish order | 5-level bottom-up with rate limiting |
+| [0015](docs/adr/0015-first-publish-bootstrap.md) | First-publish bootstrap | Auto-detect never-published packages |
+| [0016](docs/adr/0016-dynamic-import-handling.md) | Dynamic import handling | 3-layer audit + patch strategy |
+| [0017](docs/adr/0017-inherited-semver-conflict-resolution.md) | Semver conflict resolution | Fix inherited `@ruvector/ruvllm` + `agentdb` ranges |
+| [0018](docs/adr/0018-initial-setup-runbook.md) | Initial setup runbook | Server setup, secrets, disaster recovery |
+| [0019](docs/adr/0019-rollback-procedure.md) | Rollback procedure | Dist-tag reassignment, not unpublish |
+| [0020](docs/adr/0020-testing-strategy.md) | Testing strategy | 3-layer testing + reproducibility framework |
+
+---
+
+## Requirements
+
+- **Node.js** >= 20
+- **Python** >= 3.8 (for runtime patch scripts)
+- **Bash** (Linux or macOS)
+- **pnpm** >= 8 (build pipeline only)
+- **gh** CLI (build pipeline only — for GitHub releases and issues)
+
+End users only need Node.js. The Python and pnpm requirements are for maintainers running the build pipeline or applying runtime patches.
+
+---
 
 ## License
 
-MIT
+MIT — same as upstream. Original LICENSE and copyright notices are preserved in every republished package.
