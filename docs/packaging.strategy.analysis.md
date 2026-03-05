@@ -494,44 +494,45 @@ All source repos use MIT license:
 
 ### The Role of This Repo
 
-`ruflo-patch` is the **orchestrator** — a single package that prepares a fully working, up-to-date claude-flow environment for the end user. It is not a choice between patching and replacing. It does both, as one seamless operation.
-
-When the user runs `ruflo-patch`, it:
-
-1. **Installs** the rebuilt `@claude-flow-patch/*` packages (latest upstream code under our scope)
-2. **Applies** our enhancements on top (instrumentation, bug fixes, config tweaks)
-3. **Configures** the environment (MCP settings, CLI aliases, etc.)
-
-The user runs one command and gets everything. No modes, no choices.
+`ruflo-patch` is a **drop-in replacement for `ruflo`**. It is the patched version of ruflo, rebuilt from the latest upstream source with our enhancements baked in. Same CLI, same commands, same flags — just swap the package name.
 
 ### End User Experience
 
 ```bash
-npx ruflo-patch
+# Instead of:  npx ruflo init
+npx ruflo-patch init
+
+# Instead of:  npx claude-flow agent spawn -t coder
+npx ruflo-patch agent spawn -t coder
+
+# Instead of:  npx claude-flow memory search --query "auth"
+npx ruflo-patch memory search --query "auth"
 ```
 
-That's it. After this:
-- `@claude-flow-patch/cli` is installed with the latest upstream code
-- Our enhancements (FB-001/002 instrumentation, MC-001 autoStart fix, etc.) are baked in
-- MCP is configured to use `@claude-flow-patch/cli` instead of `@claude-flow/cli`
-- Everything works
+MCP configuration:
+```json
+"command": "npx",
+"args": ["-y", "ruflo-patch", "mcp", "start"]
+```
+
+The user replaces one word and gets the latest upstream code plus our enhancements. No setup step, no configuration, no second command.
 
 ### What Lives Where
 
 | Component | Where | What It Does |
 |-----------|-------|-------------|
-| `ruflo-patch` (this repo) | npm as `ruflo-patch` | Orchestrator — the thing users run |
-| `@claude-flow-patch/*` | npm under `@claude-flow-patch` scope | The rebuilt packages with latest upstream code |
-| Upstream forks | GitHub (clean mirrors) | Source for the build pipeline |
-| Codemod + build pipeline | `scripts/` in this repo | Transforms and publishes `@claude-flow-patch/*` |
-| Enhancement patches | `patch/` in this repo | Our additions (instrumentation, fixes) baked into builds |
+| `ruflo-patch` | npm as `ruflo-patch` | The package users install and run — drop-in replacement for `ruflo` |
+| `@claude-flow-patch/*` | npm under `@claude-flow-patch` scope | Internal dependencies of `ruflo-patch` (users never type these) |
+| Upstream forks | GitHub (clean mirrors, no modifications) | Source for the build pipeline |
+| Build pipeline | `scripts/` in this repo | Codemod + patch + build + publish |
+| Enhancement patches | `patch/` in this repo | Our additions, baked into builds |
 
 ### How Patches Integrate
 
-The existing patches no longer target the npx cache at runtime. Instead, they are **applied during the build pipeline** before publishing to npm:
+Patches are **applied during the build** before publishing to npm. The published packages already contain all fixes — there is no runtime patching step.
 
 ```
-git pull (clean fork) -> codemod renames -> apply patches -> build -> npm publish
+git pull (clean fork) -> codemod renames -> apply patches -> build -> publish to npm
 ```
 
 | Patch | Disposition |
@@ -542,35 +543,141 @@ git pull (clean fork) -> codemod renames -> apply patches -> build -> npm publis
 | FB-003 (ControllerRegistry shim) | Dropped — fixed in upstream HEAD |
 | FB-004 (search threshold) | Dropped — fixed in upstream HEAD |
 
-The published `@claude-flow-patch/*` packages already contain all fixes. The end user never runs `patch-all.sh` — they just install and use.
-
-### Naming Alignment
+### Naming
 
 | Thing | Name | Relationship |
 |-------|------|-------------|
-| Upstream package | `claude-flow` / `ruflo` | The original |
-| This repo | `ruflo-patch` | Patches/rebuilds ruflo |
-| Our npm scope | `@claude-flow-patch/*` | Patched version of `@claude-flow/*` |
-| Orchestrator package | `ruflo-patch` on npm | Entry point users run |
-
-`ruflo-patch` patches ruflo. The output of that patching is `@claude-flow-patch/*`. The names are consistent: this repo is the tool, the scope is the product.
+| Upstream packages | `ruflo` / `claude-flow` / `@claude-flow/*` | The originals (stale) |
+| Our package | `ruflo-patch` | Drop-in replacement for `ruflo` |
+| Our internal scope | `@claude-flow-patch/*` | Internal deps (users never see these) |
+| This repo | `ruflo-patch` | Source, build pipeline, and patches |
 
 ---
 
-## 9. Recommended Implementation Order
+## 9. Keeping Current with Upstream
 
-1. **Day 1**: Fork all repos as clean mirrors, register npm scope (`@claude-flow-patch`)
-2. **Days 2-5**: Write the scope-rename codemod and patch integration into the build pipeline
-3. **Days 5-7**: Build and publish `@claude-flow-patch/*` packages to npm
-4. **Week 2**: Build the `ruflo-patch` orchestrator (the `npx ruflo-patch` entry point that installs + configures everything)
-5. **Week 2**: Test end-to-end: `npx ruflo-patch` on a clean machine produces a working environment
-6. **Ongoing**: `git pull && ./build-and-publish.sh` on each upstream sync (~30 min)
+### Build Pipeline
 
-The pipeline is: **upstream sync -> codemod -> patches -> build -> publish `@claude-flow-patch/*` -> update `ruflo-patch` orchestrator version**.
+The build runs on this server (32 cores, 200GB RAM). No external CI. A systemd timer triggers a bash script that does everything:
+
+```
+systemd timer (every 6 hours)
+  -> scripts/sync-and-build.sh
+      -> git ls-remote (check each upstream repo for new commits)
+      -> if no changes: exit
+      -> git pull (clean fork, zero conflicts)
+      -> copy to temp dir
+      -> codemod: rename @claude-flow/* -> @claude-flow-patch/*
+      -> apply enhancement patches (FB-001, FB-002, MC-001)
+      -> pnpm install && pnpm build
+      -> npm test
+      -> if tests fail: gh issue create (you get email notification)
+      -> if tests pass: npm publish --tag prerelease
+      -> gh release create --prerelease (you get email notification)
+```
+
+### Publish Gate: Prerelease + Promotion
+
+Builds publish to npm automatically but under the `prerelease` dist-tag — not `latest`. Users on `@latest` are unaffected until you explicitly promote.
+
+```
+Automated:  npm publish --tag prerelease     # available as ruflo-patch@prerelease
+Manual:     npm dist-tag add ruflo-patch@3.5.2-patch.2 latest   # promote to @latest
+```
+
+The flow:
+
+1. **Timer fires every 6 hours** — checks upstream for new commits
+2. **New commits found** — pulls, codemods, patches, builds, tests
+3. **Tests pass** — publishes to npm as `prerelease`, creates GitHub prerelease
+4. **GitHub sends you an email** — prerelease notifications are on by default
+5. **You review at your convenience** — check changelog, optionally test with `npx ruflo-patch@prerelease`
+6. **You promote** — `npm dist-tag add ruflo-patch@X.Y.Z-patch.N latest` (2 seconds)
+
+If tests fail, a GitHub Issue is created instead. You get an email, investigate the failure, update patches if needed, and re-trigger manually.
+
+### What Triggers a New Build
+
+| Event | Detection | Action |
+|-------|-----------|--------|
+| Upstream push to `ruvnet/ruflo` | `git ls-remote` HEAD changed | Full rebuild |
+| Upstream push to `ruvnet/agentic-flow` | `git ls-remote` HEAD changed | Full rebuild |
+| Upstream push to `ruvnet/ruv-FANN` | `git ls-remote` HEAD changed | Full rebuild |
+| We update a patch in this repo | Manual trigger | Full rebuild |
+| No changes anywhere | Timer exits early | Nothing |
+
+Note: `ruvnet/ruvector` is not monitored — we use the published `@ruvector/*` packages from public npm as-is.
+
+### Patch Breakage Detection
+
+When upstream changes code that our patches target, the patch can't find its target string. The build script detects this and:
+
+1. Fails the build (does not publish)
+2. Opens a GitHub Issue with: which patch broke, what the old target was, what the file looks like now
+3. You update the patch and re-trigger
+
+The existing `sentinel` system verifies each patch took effect post-build.
+
+### Version Numbering
+
+Our versions track upstream:
+
+```
+upstream:  claude-flow@3.5.2
+ours:      ruflo-patch@3.5.2-patch.1
+                              ^^^^^^^ our patch iteration
+```
+
+- Upstream bumps to `3.5.3` → we publish `ruflo-patch@3.5.3-patch.1`
+- We update a patch → we publish `ruflo-patch@3.5.2-patch.2`
+
+### systemd Configuration
+
+```ini
+# /etc/systemd/system/ruflo-sync.timer
+[Unit]
+Description=Check upstream ruflo repos for changes
+
+[Timer]
+OnCalendar=*-*-* 00/6:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```ini
+# /etc/systemd/system/ruflo-sync.service
+[Unit]
+Description=Sync and build ruflo-patch from upstream
+
+[Service]
+Type=oneshot
+User=claude
+WorkingDirectory=/home/claude/src/ruflo-patch
+ExecStart=/home/claude/src/ruflo-patch/scripts/sync-and-build.sh
+CPUQuota=800%
+```
+
+```bash
+systemctl enable --now ruflo-sync.timer
+journalctl -u ruflo-sync     # view build logs
+```
 
 ---
 
-## 10. Summary Statistics
+## 10. Recommended Implementation Order
+
+1. **Day 1**: Fork repos as clean mirrors, register npm scope (`@claude-flow-patch`)
+2. **Days 2-5**: Write the scope-rename codemod and integrate patches into the build pipeline
+3. **Days 5-7**: Build and publish first version to npm, test `npx ruflo-patch init` end-to-end
+4. **Week 2**: Set up systemd timer, test the automated poll → build → prerelease flow
+5. **Week 2**: Test the full cycle: upstream change → email notification → review → promote
+6. **Ongoing**: Review prereleases as they arrive by email, promote with one command
+
+---
+
+## 11. Summary Statistics
 
 | Metric | Value |
 |--------|-------|
@@ -578,13 +685,17 @@ The pipeline is: **upstream sync -> codemod -> patches -> build -> publish `@cla
 | Architects consulted | 5 |
 | Recommended approach | Fork + Build-Step Rename + npm Publish |
 | Key innovation | Rename at build time, not in committed source — zero merge conflicts |
-| User experience | `npx ruflo-patch` — single command, everything configured |
+| User experience | `npx ruflo-patch init` — drop-in replacement, same CLI |
+| Build infrastructure | systemd timer on local server (32 cores, 200GB RAM) |
+| Upstream poll frequency | Every 6 hours |
+| Publish gate | Prerelease on npm + GitHub prerelease email notification |
+| Promotion | `npm dist-tag add ruflo-patch@X.Y.Z-patch.N latest` (2 seconds) |
 | Packages needing scope rename (TypeScript) | ~26 |
 | Packages skippable (use published ruvector) | ~22 |
-| Files the codemod transforms | ~4,136 (per build, never committed) |
+| Files the codemod transforms per build | ~4,136 (never committed) |
 | Enhancement patches baked into builds | 3 (MC-001, FB-001, FB-002) |
 | Patches dropped (fixed in HEAD) | 2 (FB-003, FB-004) |
 | Estimated effort (pipeline + first publish) | ~2 weeks |
-| Ongoing time per upstream sync | ~30 min |
+| Ongoing effort per upstream sync | 0 (automated build) + 2 min (review + promote) |
 | Merge conflicts per sync | 0 (fork is a clean mirror) |
 | License risk | None (all MIT) |
