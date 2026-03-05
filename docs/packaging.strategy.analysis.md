@@ -490,33 +490,83 @@ All source repos use MIT license:
 
 ---
 
-## 8. Relationship to Existing ruflo-patch
+## 8. What `ruflo-patch` Becomes
 
-The current patch system (MC-001, FB-001/002/003/004) remains valuable regardless of which approach is chosen:
+### The Role of This Repo
 
-| Patch | Still Needed? | Why |
-|-------|--------------|-----|
-| MC-001 (MCP autoStart) | Maybe | Independent CLI bug — check if fixed in HEAD |
-| FB-001 (fallback instrumentation) | Yes | Our diagnostic logging, not an upstream fix |
-| FB-002 (local helper instrumentation) | Yes | Our diagnostic logging |
-| FB-003 (ControllerRegistry shim) | No (if building from HEAD) | ADR-053 fix exists in source |
-| FB-004 (search threshold) | No (if building from HEAD) | Dynamic thresholds in source |
+`ruflo-patch` is the **orchestrator** — a single package that prepares a fully working, up-to-date claude-flow environment for the end user. It is not a choice between patching and replacing. It does both, as one seamless operation.
 
-The patch system transitions from "compensating for publishing gaps" to "adding our own enhancements on top of a current codebase."
+When the user runs `ruflo-patch`, it:
+
+1. **Installs** the rebuilt `@claude-flow-patch/*` packages (latest upstream code under our scope)
+2. **Applies** our enhancements on top (instrumentation, bug fixes, config tweaks)
+3. **Configures** the environment (MCP settings, CLI aliases, etc.)
+
+The user runs one command and gets everything. No modes, no choices.
+
+### End User Experience
+
+```bash
+npx ruflo-patch
+```
+
+That's it. After this:
+- `@claude-flow-patch/cli` is installed with the latest upstream code
+- Our enhancements (FB-001/002 instrumentation, MC-001 autoStart fix, etc.) are baked in
+- MCP is configured to use `@claude-flow-patch/cli` instead of `@claude-flow/cli`
+- Everything works
+
+### What Lives Where
+
+| Component | Where | What It Does |
+|-----------|-------|-------------|
+| `ruflo-patch` (this repo) | npm as `ruflo-patch` | Orchestrator — the thing users run |
+| `@claude-flow-patch/*` | npm under `@claude-flow-patch` scope | The rebuilt packages with latest upstream code |
+| Upstream forks | GitHub (clean mirrors) | Source for the build pipeline |
+| Codemod + build pipeline | `scripts/` in this repo | Transforms and publishes `@claude-flow-patch/*` |
+| Enhancement patches | `patch/` in this repo | Our additions (instrumentation, fixes) baked into builds |
+
+### How Patches Integrate
+
+The existing patches no longer target the npx cache at runtime. Instead, they are **applied during the build pipeline** before publishing to npm:
+
+```
+git pull (clean fork) -> codemod renames -> apply patches -> build -> npm publish
+```
+
+| Patch | Disposition |
+|-------|------------|
+| MC-001 (MCP autoStart) | Applied during build if not fixed in HEAD |
+| FB-001 (fallback instrumentation) | Applied during build — our enhancement |
+| FB-002 (local helper instrumentation) | Applied during build — our enhancement |
+| FB-003 (ControllerRegistry shim) | Dropped — fixed in upstream HEAD |
+| FB-004 (search threshold) | Dropped — fixed in upstream HEAD |
+
+The published `@claude-flow-patch/*` packages already contain all fixes. The end user never runs `patch-all.sh` — they just install and use.
+
+### Naming Alignment
+
+| Thing | Name | Relationship |
+|-------|------|-------------|
+| Upstream package | `claude-flow` / `ruflo` | The original |
+| This repo | `ruflo-patch` | Patches/rebuilds ruflo |
+| Our npm scope | `@claude-flow-patch/*` | Patched version of `@claude-flow/*` |
+| Orchestrator package | `ruflo-patch` on npm | Entry point users run |
+
+`ruflo-patch` patches ruflo. The output of that patching is `@claude-flow-patch/*`. The names are consistent: this repo is the tool, the scope is the product.
 
 ---
 
 ## 9. Recommended Implementation Order
 
 1. **Day 1**: Fork all repos as clean mirrors, register npm scope (`@claude-flow-patch`)
-2. **Day 1-2**: Optionally set up Verdaccio for immediate local use while building the pipeline
-3. **Days 2-5**: Write the scope-rename codemod (the core reusable asset)
-4. **Days 5-7**: Wire up the full pipeline: `git pull` -> codemod -> build -> publish
-5. **Week 2**: Test end-to-end, publish first batch to npm, verify `npx @claude-flow-patch/cli@latest`
+2. **Days 2-5**: Write the scope-rename codemod and patch integration into the build pipeline
+3. **Days 5-7**: Build and publish `@claude-flow-patch/*` packages to npm
+4. **Week 2**: Build the `ruflo-patch` orchestrator (the `npx ruflo-patch` entry point that installs + configures everything)
+5. **Week 2**: Test end-to-end: `npx ruflo-patch` on a clean machine produces a working environment
 6. **Ongoing**: `git pull && ./build-and-publish.sh` on each upstream sync (~30 min)
-7. **Ongoing**: ruflo-patch continues for our own enhancement patches on top
 
-The codemod is the key deliverable — once it works reliably, every upstream sync is a clean `git pull` followed by an automated build-and-publish. No merge conflicts, ever.
+The pipeline is: **upstream sync -> codemod -> patches -> build -> publish `@claude-flow-patch/*` -> update `ruflo-patch` orchestrator version**.
 
 ---
 
@@ -528,11 +578,13 @@ The codemod is the key deliverable — once it works reliably, every upstream sy
 | Architects consulted | 5 |
 | Recommended approach | Fork + Build-Step Rename + npm Publish |
 | Key innovation | Rename at build time, not in committed source — zero merge conflicts |
+| User experience | `npx ruflo-patch` — single command, everything configured |
 | Packages needing scope rename (TypeScript) | ~26 |
 | Packages skippable (use published ruvector) | ~22 |
 | Files the codemod transforms | ~4,136 (per build, never committed) |
-| Estimated effort (pipeline + first publish) | ~1 week |
-| Estimated effort (Verdaccio bridge, optional) | 6-12 hours |
+| Enhancement patches baked into builds | 3 (MC-001, FB-001, FB-002) |
+| Patches dropped (fixed in HEAD) | 2 (FB-003, FB-004) |
+| Estimated effort (pipeline + first publish) | ~2 weeks |
 | Ongoing time per upstream sync | ~30 min |
 | Merge conflicts per sync | 0 (fork is a clean mirror) |
 | License risk | None (all MIT) |
