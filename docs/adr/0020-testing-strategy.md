@@ -177,6 +177,168 @@ These are documented as a manual checklist, not automated tests. Automating syst
 
 6. **End-to-end tests against real npm** -- Rejected as a regular practice. Publishing test versions to real npm pollutes the version history and risks confusing users. Verdaccio provides an identical npm API locally. Real npm is only tested during the actual first publish (Stage B) and subsequent promotions.
 
+### Reproducibility
+
+Every test run must be reproducible — given the same inputs, it produces the same result. This requires controlling six dimensions:
+
+**1. Pinned upstream commits**
+
+The integration test records the exact upstream commit SHAs at the start of each run in a manifest file:
+
+```bash
+# scripts/test-integration.sh writes this at the start of each run
+cat > "$TEMP_DIR/.test-manifest.json" <<EOF
+{
+  "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "ruflo_head": "$(git -C ~/src/upstream/ruflo rev-parse HEAD)",
+  "agentic_flow_head": "$(git -C ~/src/upstream/agentic-flow rev-parse HEAD)",
+  "ruv_fann_head": "$(git -C ~/src/upstream/ruv-FANN rev-parse HEAD)",
+  "ruflo_patch_head": "$(git -C ~/src/ruflo-patch rev-parse HEAD)",
+  "node_version": "$(node --version)",
+  "pnpm_version": "$(pnpm --version)",
+  "platform": "$(uname -srm)"
+}
+EOF
+```
+
+To reproduce a specific run, check out the recorded SHAs:
+
+```bash
+git -C ~/src/upstream/ruflo checkout <ruflo_head>
+git -C ~/src/upstream/agentic-flow checkout <agentic_flow_head>
+git -C ~/src/upstream/ruv-FANN checkout <ruv_fann_head>
+bash scripts/test-integration.sh
+```
+
+The manifest is saved alongside the test results (see point 5 below).
+
+**2. Frozen upstream snapshots**
+
+For deterministic CI-like testing independent of network access, the integration test supports a `--snapshot` mode:
+
+```bash
+# Create a snapshot (one-time, after verifying a good state)
+bash scripts/test-integration.sh --create-snapshot ~/snapshots/2026-03-05
+
+# Run tests against a frozen snapshot (no git fetch, no network)
+bash scripts/test-integration.sh --snapshot ~/snapshots/2026-03-05
+```
+
+A snapshot is a directory containing tarballed source trees at known-good commits. It can be committed to a separate repo or stored on the build server. This decouples test reproducibility from upstream availability.
+
+**3. Environment specification**
+
+The integration test validates prerequisites and records them in the manifest:
+
+| Dependency | Minimum Version | Checked By |
+|-----------|----------------|------------|
+| Node.js | >= 20.0.0 | `node --version` |
+| pnpm | >= 8.0.0 | `pnpm --version` |
+| Python | >= 3.8 | `python3 --version` |
+| Verdaccio | >= 5.0.0 | `verdaccio --version` |
+| git | >= 2.30 | `git --version` |
+| jq | any | `jq --version` |
+
+If any prerequisite is missing or below the minimum version, the test exits with a clear message before starting any work. The manifest records the exact versions used, so a failure can be correlated with environment differences.
+
+For strict reproducibility across machines, a `.tool-versions` file (compatible with `asdf` or `mise`) pins the runtime versions:
+
+```
+# .tool-versions
+nodejs 20.18.1
+pnpm 9.15.4
+python 3.12.8
+```
+
+**4. Deterministic Verdaccio configuration**
+
+The ephemeral Verdaccio instance uses an explicit configuration file (not `/dev/null`) to control behavior:
+
+```yaml
+# config/verdaccio-test.yaml
+storage: ./storage          # relative to temp dir, cleaned up on exit
+uplinks: {}                 # NO proxy to real npm — fully isolated
+packages:
+  '@claude-flow-patch/*':
+    access: $all
+    publish: $all
+  'ruflo-patch':
+    access: $all
+    publish: $all
+  '**':
+    access: $all
+    publish: $all
+auth:
+  htpasswd:
+    file: ./htpasswd        # auto-created
+    max_users: 10
+log: { type: file, path: ./verdaccio.log, level: warn }
+```
+
+Key properties:
+- `uplinks: {}` — no proxy to public npm. If a dependency isn't published to this Verdaccio, the install fails loudly rather than silently fetching from npm. This catches missing packages in our publish order.
+- Explicit `storage` path — cleaned up by the test script's trap handler.
+- `log` to file — captured alongside test results for debugging.
+
+**5. Structured test output and artifacts**
+
+All three layers produce machine-readable output for comparison across runs:
+
+```
+test-results/
+  <timestamp>/
+    .test-manifest.json       # environment + commit SHAs
+    unit-results.tap           # Layer 1: TAP format from node:test
+    integration-log.txt        # Layer 2: full script output
+    integration-phases.json    # Layer 2: per-phase pass/fail + timing
+    codemod-residuals.txt      # Layer 2: any @claude-flow/ references that survived
+    upstream-test-failures.txt # Layer 2: failures from upstream test suite
+    publish-summary.json       # Layer 2: publish.mjs JSON output
+    verdaccio.log              # Layer 2: registry log
+    acceptance-results.json    # Layer 3: per-test pass/fail
+```
+
+The test scripts write to `test-results/<ISO-timestamp>/`. Results are `.gitignore`d but persist on the build server for historical comparison. A simple diff between two `integration-phases.json` files shows which phases regressed.
+
+Unit tests already output TAP format via `node:test`'s `--test-reporter=tap` flag. The test runner is updated to write TAP output to the results directory in addition to the console.
+
+**6. Reproducible CI validation**
+
+The systemd timer validation (currently a manual checklist) is partially automatable using a helper script that performs read-only checks:
+
+```bash
+# scripts/validate-ci.sh — non-destructive CI health check
+#!/usr/bin/env bash
+set -euo pipefail
+
+PASS=0; FAIL=0
+
+check() {
+  if eval "$2" >/dev/null 2>&1; then
+    echo "PASS: $1"; ((PASS++))
+  else
+    echo "FAIL: $1"; ((FAIL++))
+  fi
+}
+
+check "Timer unit exists"    "systemctl cat ruflo-sync.timer"
+check "Timer is enabled"     "systemctl is-enabled ruflo-sync.timer"
+check "Timer is active"      "systemctl is-active ruflo-sync.timer"
+check "Service unit exists"  "systemctl cat ruflo-sync.service"
+check "Secrets file exists"  "test -f ~/.config/ruflo-patch/secrets.env"
+check "Secrets file perms"   "test $(stat -c %a ~/.config/ruflo-patch/secrets.env) = 600"
+check "State file exists"    "test -f scripts/.last-build-state"
+check "Upstream clones exist" "test -d ~/src/upstream/ruflo/.git"
+check "Node >= 20"           "node -e 'process.exit(+process.versions.node.split(\".\")[0] >= 20 ? 0 : 1)'"
+check "pnpm available"       "pnpm --version"
+
+echo ""
+echo "$PASS passed, $FAIL failed"
+exit $FAIL
+```
+
+This script is idempotent and non-destructive — it reads state but changes nothing. Run it after setup, after reboots, or as a periodic health check.
+
 ### Cross-References
 
 - ADR-0009: systemd timer (the CI mechanism being tested)
@@ -229,3 +391,14 @@ Acceptance criteria:
 - [ ] The build pipeline (`sync-and-build.sh`) runs `npm test` as a gate before publishing
 - [ ] systemd timer validation checklist is documented in this ADR
 - [ ] Integration test cleans up all temp directories and Verdaccio processes on exit (including on failure via trap)
+
+Reproducibility criteria:
+
+- [ ] Integration test writes `.test-manifest.json` with exact commit SHAs, tool versions, and platform
+- [ ] `--snapshot` mode creates and replays frozen upstream tarballs for offline reproducibility
+- [ ] `.tool-versions` file pins Node.js, pnpm, and Python versions
+- [ ] `config/verdaccio-test.yaml` exists with `uplinks: {}` (fully isolated, no proxy to real npm)
+- [ ] Test results are written to `test-results/<timestamp>/` with structured output (TAP, JSON)
+- [ ] `scripts/validate-ci.sh` exists and performs non-destructive CI health checks
+- [ ] Unit tests produce TAP output in addition to console output
+- [ ] Two runs against the same snapshot + same tool versions produce identical pass/fail results
