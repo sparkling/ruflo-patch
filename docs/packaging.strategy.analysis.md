@@ -333,40 +333,62 @@ Only Approach 1 (Fork + Republish) absolutely requires ruvector rebuilds, becaus
 
 ---
 
-## 5. Hive-Mind Consensus Ranking
+## 5. The Core Tradeoff: Verdaccio vs npm Republish
 
-### 1st: Verdaccio Private Registry (Approach 4)
+The 11 approaches collapse into two real choices, depending on the goal:
 
-The clear winner for local use. Zero code changes, full npx compatibility, lowest effort-to-value ratio. Can skip the ruvector Rust build entirely by proxying those packages through to public npm.
+### Why not both? Why not a hybrid?
 
-For **public distribution**, Verdaccio alone is insufficient — it is a local/team tool. Combine with Approach 7 (npm pack tarballs) or Approach 1 (fork + republish under new scope) for public sharing.
+Verdaccio's sole advantage is **avoiding the ~4,136-file import rewrite**. It achieves this by publishing packages under their **original names** (`@claude-flow/memory`, `agentdb`, etc.) to a local registry that shadows public npm. Since the names don't change, zero source files need editing.
 
-### 2nd: Verdaccio + Fork Hybrid (Approaches 4 + 1)
+But you can't publish `@claude-flow/memory` to **public** npm — you don't own that scope. Public npm requires a new scope (e.g., `@ruflo-patch/memory`), which means rewriting all cross-references anyway.
 
-Use Verdaccio locally for development. For public distribution, maintain a fork under a new npm scope with only the TypeScript packages renamed (skip the 42 ruvector platform binaries — depend on the published versions). This cuts the Fork + Republish effort from 4-6 weeks to ~1 week by:
-- Keeping `@ruvector/*` and `ruvector` as-is (depend on public npm versions)
-- Only renaming the ~20 `@claude-flow/*` packages + `agentdb` + `agentic-flow` + `ruv-swarm`
-- Skipping the Rust cross-compilation pipeline entirely
+This makes the two approaches **mutually exclusive solutions to the same problem**, not complementary layers:
 
-### 3rd: npm pack Tarballs (Approach 7)
+| | Verdaccio (local registry) | npm Republish (new scope) |
+|---|---|---|
+| Package names | Keep originals | Must rename |
+| Files to rewrite | **0** | **~4,136** |
+| Who can use it | Only you / your team | Anyone with `npm install` |
+| Infrastructure | Must run a service | None |
+| `npx` compatible | Yes (via `.npmrc`) | Yes (new scope name) |
 
-Build from source, pack into `.tgz` files, distribute via GitHub Releases or a shared directory. Recipients install with `npm install ./package.tgz`. Standard, portable, no infrastructure needed.
+**If you want public distribution**: go straight to fork + republish under a new npm scope. Verdaccio adds nothing — the rename work is required regardless, and once done, you install from public npm like everyone else.
+
+**If you only need local use**: Verdaccio saves weeks of effort by skipping the rename entirely. But the result is private — not shareable via npm.
+
+**Sequencing (not hybrid)**: You could use Verdaccio *now* (6-12 hours) to get a working local setup immediately, then tackle the scope rename *later* for public npm. This is sequencing, not a hybrid — Verdaccio becomes unnecessary once the public packages exist.
+
+### Hive-Mind Consensus Ranking
+
+**For public distribution (our goal):**
+
+1. **Fork + Republish to npm** (Approach 1, scoped to TypeScript only) — the only approach that gives public `npx`/`npm install` access. Skip ruvector (keep published versions). Effort: ~1-2 weeks.
+2. **npm pack Tarballs via GitHub Releases** (Approach 7) — lower effort alternative. Build from source, `npm pack`, attach `.tgz` files to GitHub Releases. Recipients install with `npm install <url>`. No scope rename needed. Effort: 1-2 days.
+3. **Docker image** (Approach 10) — pre-built container with everything working. Effort: medium.
+
+**For immediate local use while working on public release:**
+
+1. **Verdaccio** (Approach 4) — zero code changes, working in hours. Use as a bridge while the scope rename is in progress.
+2. **pnpm overrides** (Approach 8) — override only the 12 stale packages to local builds. No infrastructure.
 
 ---
 
 ## 6. Public Distribution Strategy
 
-Since all upstream repos are MIT-licensed and we want to share publicly:
+Since all upstream repos are MIT-licensed and we want to share publicly, **npm under a new scope is the primary distribution channel**:
 
-| Distribution Channel | Works With | Effort | Audience |
-|---------------------|-----------|--------|----------|
-| **npm under new scope** (e.g., `@ruflo-patch/*`) | `npx`, `npm install` | Medium-High | npm users worldwide |
-| **GitHub Releases** (tarballs) | `npm install <url>` | Low | GitHub followers |
-| **Docker Hub / ghcr.io** (pre-built image) | `docker run` | Medium | Container users |
-| **Verdaccio storage export** (tarball of registry) | Self-hosted Verdaccio | Low | Power users |
-| **Nix flake** | `nix run` | High | Nix users |
+| Channel | How Users Install | Effort | Reach |
+|---------|------------------|--------|-------|
+| **npm under new scope** | `npx @ruflo-patch/cli@latest` | 1-2 weeks | Widest — standard npm toolchain |
+| **GitHub Releases (tarballs)** | `npm install https://github.com/.../releases/download/v1/pkg.tgz` | 1-2 days | GitHub users |
+| **Docker image** | `docker run ghcr.io/ruflo-patch/cli` | Medium | Container users |
 
-The most impactful public distribution is **npm under a new scope** because it integrates with the standard toolchain everyone already uses. The Verdaccio approach provides the development workflow; the fork + republish provides the distribution mechanism.
+The scope rename is a large but **scriptable** task — a codemod across the forked repos using `sed`, `jscodeshift`, or similar. The ~4,136 files break down as:
+- ~261 `package.json` files (name, dependencies, peerDependencies, optionalDependencies fields)
+- ~3,875 JS/TS source files (import/require statements)
+
+This can be largely automated. The manual work is resolving edge cases: dynamic imports, string interpolation in package names, build tool configs (napi-rs, pnpm workspace, publish scripts).
 
 ---
 
@@ -409,11 +431,13 @@ The patch system transitions from "compensating for publishing gaps" to "adding 
 
 ## 9. Recommended Implementation Order
 
-1. **Now**: Set up Verdaccio locally for immediate development use
-2. **Week 1**: Clone repos, build TypeScript packages, publish to Verdaccio
-3. **Week 1-2**: Register npm scope, begin selective fork + republish for public distribution
-4. **Week 2+**: Script the rebuild pipeline, automate upstream sync detection
-5. **Ongoing**: ruflo-patch continues for enhancement patches; Verdaccio provides the current codebase
+1. **Now**: Optionally set up Verdaccio for immediate local use (6-12 hours) — skip if you want to go straight to public release
+2. **Week 1**: Fork repos, register npm scope (`@ruflo-patch`), script the scope rename codemod
+3. **Week 1-2**: Build TypeScript packages from source, publish to npm under new scope (skip ruvector — depend on published versions)
+4. **Week 2+**: Automate the rebuild + republish pipeline, set up upstream change detection
+5. **Ongoing**: ruflo-patch continues for our own enhancement patches on top of the current codebase
+
+If using Verdaccio as a bridge: it becomes unnecessary once the public npm packages are available. Uninstall and remove the `.npmrc` registry override.
 
 ---
 
@@ -423,11 +447,12 @@ The patch system transitions from "compensating for publishing gaps" to "adding 
 |--------|-------|
 | Approaches evaluated | 11 |
 | Architects consulted | 5 |
-| Recommended approach (local) | Verdaccio Private Registry |
-| Recommended approach (public) | Verdaccio + Fork Hybrid |
-| Packages needing rebuild (TypeScript only) | ~26 |
-| Packages skippable (use published) | ~22 (ruvector ecosystem) |
-| Estimated initial effort (Verdaccio) | 6-12 hours |
-| Estimated initial effort (+ public fork) | 1-2 weeks |
-| Ongoing maintenance | 30 min per sync cycle |
+| Recommended approach (public) | Fork + Republish to npm under new scope |
+| Recommended approach (local bridge) | Verdaccio (optional, while rename is in progress) |
+| Packages needing scope rename (TypeScript) | ~26 |
+| Packages skippable (use published ruvector) | ~22 |
+| Files needing import rewrite | ~4,136 (scriptable) |
+| Estimated effort (public npm release) | 1-2 weeks |
+| Estimated effort (Verdaccio local only) | 6-12 hours |
+| Ongoing maintenance | 30 min per upstream sync cycle |
 | License risk | None (all MIT) |
