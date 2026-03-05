@@ -110,7 +110,7 @@ EXAMPLE:
 **Neutral:**
 
 - The CLI binary name in `ruflo-patch`'s `package.json` `bin` field can be set to both `ruflo-patch` and `claude-flow-patch` for flexibility, though `ruflo-patch` is the primary entry point
-- No changes to the underlying CLI code beyond the scope rename handled by the codemod (ADR-0005)
+- No changes to the underlying CLI code beyond the scope rename handled by the codemod (ADR-0005) and the enhancement patches documented in ADR-0005 (MC-001 autoStart fix, FB-001/FB-002 fallback instrumentation)
 
 ### Completion (SPARC-C)
 

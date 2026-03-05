@@ -53,13 +53,18 @@ WantedBy=timers.target
 # /etc/systemd/system/ruflo-sync.service
 [Unit]
 Description=Sync and build ruflo-patch from upstream
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot
 User=claude
 WorkingDirectory=/home/claude/src/ruflo-patch
+EnvironmentFile=/home/claude/.config/ruflo-patch/secrets.env
 ExecStart=/home/claude/src/ruflo-patch/scripts/sync-and-build.sh
 CPUQuota=800%
+TimeoutStartSec=3600
+MemoryMax=32G
 ```
 
 Activation:
@@ -69,7 +74,7 @@ systemctl enable --now ruflo-sync.timer
 journalctl -u ruflo-sync     # view build logs
 ```
 
-The bash script (`scripts/sync-and-build.sh`) handles the entire pipeline: polling upstream with `git ls-remote`, pulling, running the codemod, applying patches, building, testing, publishing to npm under the `prerelease` tag, and creating a GitHub prerelease for notification. See ADR-0010 for the publish gate and ADR-0011 for the dual trigger mechanism.
+The bash script (`scripts/sync-and-build.sh`) handles the entire pipeline: polling upstream with `git ls-remote`, pulling, running the codemod, applying patches, building, testing, publishing to npm under the `prerelease` tag, and creating a GitHub prerelease for notification. See ADR-0010 for the publish gate, ADR-0011 for the dual trigger mechanism, and ADR-0018 for initial setup including secret management and disaster recovery.
 
 ### Considered Alternatives
 
@@ -103,7 +108,7 @@ The bash script (`scripts/sync-and-build.sh`) handles the entire pipeline: polli
 **Edge cases:**
 
 - If the build script hangs (e.g., network timeout during `git ls-remote`), systemd does not enforce a timeout by default. The service unit should include `TimeoutStartSec=3600` to kill builds that exceed 1 hour
-- If multiple timer events queue while a build is running, systemd will only run one instance at a time (oneshot services are not re-entrant). Queued events are collapsed into a single run
+- If multiple timer events queue while a build is running, systemd will only run one instance at a time (oneshot services are not re-entrant). Queued events are collapsed into a single run. This means no additional lock file or concurrent run prevention mechanism is needed — `Type=oneshot` combined with the timer naturally prevents overlapping runs
 
 ### Completion (SPARC-C)
 

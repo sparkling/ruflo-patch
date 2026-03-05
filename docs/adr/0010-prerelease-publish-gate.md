@@ -58,6 +58,11 @@ Users can opt into prereleases explicitly: `npx ruflo-patch@prerelease`.
 4. **Scheduled batch (weekly)** — Rejected. Up to 7 days stale. No review of individual changes — a week of upstream commits get batched into one untested lump. Misses the point of frequent polling.
 5. **GitHub draft release as gate** — Rejected. GitHub does NOT send email notifications for draft releases. You would never see the notification unless you actively checked the releases page — exactly the "active monitoring" pattern we want to avoid.
 
+### Cross-References
+
+- See ADR-0015 for first-publish bootstrap (the first publish uses `--tag latest`, not prerelease)
+- See ADR-0019 for rollback procedure when a promoted version is broken
+
 ### Considered Alternatives
 
 The above list of rejected alternatives is exhaustive.

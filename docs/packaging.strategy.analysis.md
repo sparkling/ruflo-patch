@@ -456,7 +456,7 @@ The ~4,136 files break down as:
 The codemod is a script using `sed`, `jscodeshift`, or a custom Node.js transform. It maps:
 - `@claude-flow/*` -> `@claude-flow-patch/*` (e.g., `@claude-flow/memory` -> `@claude-flow-patch/memory`)
 - `claude-flow` -> `@claude-flow-patch/claude-flow`
-- `ruflo` -> `@claude-flow-patch/ruflo` (wrapper stays consistent)
+- `ruflo` -> `ruflo-patch` (top-level entry point, unscoped — see ADR-0006)
 - `agentdb` -> `@claude-flow-patch/agentdb`
 - `agentic-flow` -> `@claude-flow-patch/agentic-flow`
 - `ruv-swarm` -> `@claude-flow-patch/ruv-swarm`

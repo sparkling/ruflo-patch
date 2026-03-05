@@ -93,7 +93,20 @@ The build script reads the upstream version from the source `package.json` and t
 
 - If upstream re-tags or force-pushes a version (changes the code at `3.5.2` without bumping), our `git ls-remote` detects the change and triggers a rebuild. We publish `3.5.2-patch.N+1` even though the upstream "version" didn't change — this is correct behavior, the content changed
 - If we need to unpublish a bad version, `npm unpublish ruflo-patch@3.5.2-patch.2` removes exactly that version. The previous `3.5.2-patch.1` remains available
-- The internal `@claude-flow-patch/*` scope packages use the same versioning scheme, keeping all packages in the ecosystem version-aligned
+- Internal `@claude-flow-patch/*` scope packages use the same `{upstream_version}-patch.{N}` scheme, but each package tracks **its own upstream version** (see Cross-Repo Versioning below)
+
+**Cross-repo versioning:**
+
+The ruflo-patch ecosystem rebuilds packages from multiple upstream repos that have independent version numbers:
+
+| Upstream Repo | Upstream Version | Our Package | Our Version |
+|---------------|-----------------|-------------|-------------|
+| `ruvnet/ruflo` | 3.5.2 | `ruflo-patch` | `3.5.2-patch.1` |
+| `ruvnet/ruflo` | 3.5.2 | `@claude-flow-patch/cli` | `3.5.2-patch.1` |
+| `ruvnet/agentic-flow` | 3.0.0-alpha.10 | `@claude-flow-patch/agentdb` | `3.0.0-alpha.10-patch.1` |
+| `ruvnet/ruv-FANN` | 2.0.7 | `@claude-flow-patch/ruv-swarm` | `2.0.7-patch.1` |
+
+The top-level `ruflo-patch` package version tracks the upstream `claude-flow`/`ruflo` version (the primary package). Internal `@claude-flow-patch/*` packages that come from other repos (`agentdb`, `agentic-flow`, `ruv-swarm`) use **their own upstream version** with the `-patch.N` suffix. This avoids the misleading situation where, for example, `@claude-flow-patch/agentdb` gets version `3.5.2-patch.1` when its upstream `agentdb` is actually at `3.0.0-alpha.10`
 
 ### Completion (SPARC-C)
 
@@ -106,4 +119,5 @@ Acceptance criteria:
 - [ ] `npm view ruflo-patch versions` shows correctly ordered versions
 - [ ] `npm install ruflo-patch@3.5.2-patch.1` installs the exact specified version
 - [ ] `npm install ruflo-patch@latest` installs the promoted version, not the highest semver
-- [ ] Internal `@claude-flow-patch/*` packages use the same version as the top-level `ruflo-patch`
+- [ ] Internal `@claude-flow-patch/*` packages from the `ruflo` repo use the same version as `ruflo-patch`
+- [ ] Internal `@claude-flow-patch/*` packages from other repos track their own upstream version with `-patch.N`
