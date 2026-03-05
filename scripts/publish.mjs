@@ -57,10 +57,11 @@ export const LEVELS = [
     '@sparkleideas/testing',
   ],
   // Level 5: root packages
+  // Note: @sparkleideas/ruflo is published separately from the local repo
+  // (it's our wrapper package, not an upstream package)
   [
     '@sparkleideas/cli',
     '@sparkleideas/claude-flow',
-    '@sparkleideas/ruflo',
   ],
 ];
 
@@ -288,9 +289,15 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
         });
       } else {
         // Build npm publish args
-        const publishArgs = ['publish', '--access', 'public'];
-        if (tag) {
-          publishArgs.push('--tag', tag);
+        // --ignore-scripts prevents prepublishOnly from re-running build steps
+        // (tsc, etc.) that may fail outside the monorepo workspace context
+        const publishArgs = ['publish', '--access', 'public', '--ignore-scripts'];
+        // npm requires --tag for any version with a prerelease identifier (contains '-')
+        // For first-publish packages (tag is null), use 'prerelease' if the version
+        // has a prerelease suffix, otherwise omit --tag to set 'latest'
+        const effectiveTag = tag ?? (effectiveVersion.includes('-') ? 'prerelease' : null);
+        if (effectiveTag) {
+          publishArgs.push('--tag', effectiveTag);
         }
 
         try {
@@ -308,21 +315,36 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
             version: effectiveVersion,
           });
         } catch (err) {
-          const errorOutput = [
-            `Exit code: ${err.code}`,
-            `stdout: ${err.stdout || '(empty)'}`,
-            `stderr: ${err.stderr || '(empty)'}`,
-          ].join('\n');
+          const stderr = err.stderr || '';
+          // Treat "already published" as a skip, not a failure
+          if (
+            stderr.includes('cannot publish over previously published version') ||
+            stderr.includes('You cannot publish over the previously published versions')
+          ) {
+            console.log(`    already published — skipping`);
+            published.push({
+              name: pkgName,
+              level: levelNumber,
+              tag: effectiveTag ?? 'latest',
+              version: effectiveVersion,
+            });
+          } else {
+            const errorOutput = [
+              `Exit code: ${err.code}`,
+              `stdout: ${err.stdout || '(empty)'}`,
+              `stderr: ${stderr || '(empty)'}`,
+            ].join('\n');
 
-          console.error(`  FAILED: ${pkgName}`);
-          console.error(`    ${errorOutput}`);
+            console.error(`  FAILED: ${pkgName}`);
+            console.error(`    ${errorOutput}`);
 
-          await createFailureIssue(pkgName, levelNumber, errorOutput);
+            await createFailureIssue(pkgName, levelNumber, errorOutput);
 
-          return {
-            published,
-            failed: { package: pkgName, level: levelNumber, error: errorOutput },
-          };
+            return {
+              published,
+              failed: { package: pkgName, level: levelNumber, error: errorOutput },
+            };
+          }
         }
       }
 
