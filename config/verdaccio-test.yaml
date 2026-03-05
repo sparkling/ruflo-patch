@@ -1,0 +1,20 @@
+storage: ./storage
+uplinks: {}
+packages:
+  '@claude-flow-patch/*':
+    access: $all
+    publish: $all
+  'ruflo-patch':
+    access: $all
+    publish: $all
+  '**':
+    access: $all
+    publish: $all
+auth:
+  htpasswd:
+    file: ./htpasswd
+    max_users: 10
+log:
+  type: file
+  path: ./verdaccio.log
+  level: warn

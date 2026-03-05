@@ -48,3 +48,6 @@ logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Test results (ADR-0020)
+test-results/

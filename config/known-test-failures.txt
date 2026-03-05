@@ -1,0 +1,11 @@
+# known-test-failures.txt — Upstream test failures expected after scope rename
+#
+# Format: one test name per line (as reported by the test runner)
+# Lines starting with # are comments
+# Blank lines are ignored
+#
+# When the integration test encounters failures not listed here,
+# it flags them as NEW and logs a warning.
+#
+# To update: run scripts/test-integration.sh, review new failures,
+# add legitimate scope-rename-caused failures here.
