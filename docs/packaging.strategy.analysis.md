@@ -27,7 +27,7 @@ We have no write access to these repos or npm packages. We need a way to use the
 
 ### Approach 1: Fork + Republish (New npm Scope)
 
-Fork all 7 repos, republish every package under a new scope (e.g., `@ruflo-patch/cli`), rewriting all internal cross-references.
+Fork all 7 repos, republish every package under a new scope (e.g., `@claude-flow-patch/cli`), rewriting all internal cross-references.
 
 **Steps**:
 1. Create GitHub org and npm scope
@@ -363,7 +363,7 @@ The 11 approaches collapse into two real choices, depending on the goal:
 
 Verdaccio's sole advantage is **avoiding the ~4,136-file import rewrite**. It achieves this by publishing packages under their **original names** (`@claude-flow/memory`, `agentdb`, etc.) to a local registry that shadows public npm. Since the names don't change, zero source files need editing.
 
-But you can't publish `@claude-flow/memory` to **public** npm — you don't own that scope. Public npm requires a new scope (e.g., `@ruflo-patch/memory`), which means rewriting all cross-references anyway.
+But you can't publish `@claude-flow/memory` to **public** npm — you don't own that scope. Public npm requires a new scope (e.g., `@claude-flow-patch/memory`), which means rewriting all cross-references anyway.
 
 This makes the two approaches **mutually exclusive solutions to the same problem**, not complementary layers:
 
@@ -437,7 +437,7 @@ Since all upstream repos are MIT-licensed and we want to share publicly, **npm u
 
 | Channel | How Users Install | Effort | Reach |
 |---------|------------------|--------|-------|
-| **npm under new scope** | `npx @ruflo-patch/cli@latest` | ~1 week | Widest — standard npm toolchain |
+| **npm under new scope** | `npx @claude-flow-patch/cli@latest` | ~1 week | Widest — standard npm toolchain |
 | **GitHub Releases (tarballs)** | `npm install https://github.com/.../releases/download/v1/pkg.tgz` | 1-2 days | GitHub users |
 | **Docker image** | `docker run ghcr.io/ruflo-patch/cli` | Medium | Container users |
 
@@ -454,12 +454,14 @@ The ~4,136 files break down as:
 - ~3,875 JS/TS source files (import/require statements)
 
 The codemod is a script using `sed`, `jscodeshift`, or a custom Node.js transform. It maps:
-- `@claude-flow/*` -> `@ruflo-patch/*`
-- `claude-flow` -> `@ruflo-patch/claude-flow`
-- `ruflo` -> `@ruflo-patch/ruflo`
-- `agentdb` -> `@ruflo-patch/agentdb`
-- `agentic-flow` -> `@ruflo-patch/agentic-flow`
-- `ruv-swarm` -> `@ruflo-patch/ruv-swarm`
+- `@claude-flow/*` -> `@claude-flow-patch/*` (e.g., `@claude-flow/memory` -> `@claude-flow-patch/memory`)
+- `claude-flow` -> `@claude-flow-patch/claude-flow`
+- `ruflo` -> `@claude-flow-patch/ruflo` (wrapper stays consistent)
+- `agentdb` -> `@claude-flow-patch/agentdb`
+- `agentic-flow` -> `@claude-flow-patch/agentic-flow`
+- `ruv-swarm` -> `@claude-flow-patch/ruv-swarm`
+
+The `@claude-flow-patch` scope mirrors the upstream `@claude-flow` scope with `-patch` appended, making it immediately recognizable as a patched fork of the same ecosystem.
 
 Packages we do NOT rename (depend on published versions):
 - `ruvector`, `@ruvector/*` — relatively current, Rust rebuild not needed
@@ -506,11 +508,11 @@ The patch system transitions from "compensating for publishing gaps" to "adding 
 
 ## 9. Recommended Implementation Order
 
-1. **Day 1**: Fork all repos as clean mirrors, register npm scope (`@ruflo-patch`)
+1. **Day 1**: Fork all repos as clean mirrors, register npm scope (`@claude-flow-patch`)
 2. **Day 1-2**: Optionally set up Verdaccio for immediate local use while building the pipeline
 3. **Days 2-5**: Write the scope-rename codemod (the core reusable asset)
 4. **Days 5-7**: Wire up the full pipeline: `git pull` -> codemod -> build -> publish
-5. **Week 2**: Test end-to-end, publish first batch to npm, verify `npx @ruflo-patch/cli@latest`
+5. **Week 2**: Test end-to-end, publish first batch to npm, verify `npx @claude-flow-patch/cli@latest`
 6. **Ongoing**: `git pull && ./build-and-publish.sh` on each upstream sync (~30 min)
 7. **Ongoing**: ruflo-patch continues for our own enhancement patches on top
 
