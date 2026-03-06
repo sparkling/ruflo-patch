@@ -7,6 +7,56 @@ Comprehensive catalog of source-only packages across the three upstream reposito
 
 ---
 
+## Table of Contents
+
+### ruflo — Core Libraries
+
+| # | Package | Description | Rec. |
+|---|---------|-------------|------|
+| 1 | [@claude-flow/browser](#1-claude-flowbrowser) | Browser automation with 59 MCP tools, PII scanning, AI snapshots | Monitor |
+| 2 | [@claude-flow/claims](#2-claude-flowclaims) | Issue claiming, handoffs, work stealing, load balancing (17 MCP tools) | Monitor |
+| 3 | [@claude-flow/codex](#3-claude-flowcodex) | OpenAI Codex CLI adapter, dual-platform agent definitions | Skip |
+| 4 | [@claude-flow/deployment](#4-claude-flowdeployment) | Release management, changelog generation, npm publishing | Skip |
+| 5 | [@claude-flow/embeddings](#5-claude-flowembeddings) | Multi-provider embeddings (OpenAI, ONNX, Transformers.js), 75x faster | Monitor |
+| 6 | [@claude-flow/integration](#6-claude-flowintegration) | Deep agentic-flow bridge, Flash Attention (2.49x-7.47x speedup) | Monitor |
+| 7 | [@claude-flow/neural](#7-claude-flowneural) | SONA learning, 9 RL algorithms, LoRA, EWC++ memory preservation | Monitor |
+| 8 | [@claude-flow/performance](#8-claude-flowperformance) | Benchmarking, Flash Attention validation, regression detection | Skip |
+| 9 | [@claude-flow/plugins](#9-claude-flowplugins) | Plugin SDK — all 14 plugins depend on this for MCP tool registration | **Integrate** |
+| 10 | [@claude-flow/providers](#10-claude-flowproviders) | Multi-LLM provider system (6+ providers), failover, cost optimization | Monitor |
+| 11 | [@claude-flow/security](#11-claude-flowsecurity) | CVE fixes, input validation, path security, bcrypt, Zod schemas | Monitor |
+| 12 | [@claude-flow/swarm](#12-claude-flowswarm) | Unified swarm coordination, 4 topologies, Raft/Byzantine/Gossip consensus | Monitor |
+| 13 | [@claude-flow/testing](#13-claude-flowtesting) | TDD London School framework, Vitest fixtures, mock services | Skip |
+
+### ruflo — Plugins
+
+| | | | |
+|---|---|---|---|
+| — | [14 plugins (summary table)](#plugins-14-packages) | QE, code intel, cognitive, finance, healthcare, legal, neural, perf, etc. | Mixed |
+
+### agentic-flow
+
+| # | Package | Description | Rec. |
+|---|---------|-------------|------|
+| 14 | [agent-booster](#14-agent-booster) | WASM code editor, 350x faster than LLM, ADR-026 Tier 1 handler | **Integrate** |
+| 15 | [agentdb-onnx](#15-agentdb-onnx) | AgentDB with ONNX embeddings, GPU-accelerated, 100% local inference | Monitor |
+| 16 | [agentic-llm](#16-agentic-llm) | Python/Docker Phi-4 fine-tuning with CUDA, LoRA, Cloud Run | Skip |
+| 17 | [nova-medicina](#17-nova-medicina) | Medical triage AI with anti-hallucination, multi-model consensus | Skip |
+| 18 | [research-swarm](#18-research-swarm) | GOAP-based research agents, SQLite, 51-layer verification | Skip |
+| 19 | [analysis](#19-analysis-maternal-life-history-trade-off-analysis) | Maternal health trade-off analysis demo with AgentDB | Skip |
+| 20 | [@agentic-flow/benchmarks](#20-agentic-flowbenchmarks) | Performance benchmark suite for v2 targets (vector, spawn, memory) | Skip |
+| 21 | [@agentic-flow/reasoningbank-benchmark](#21-agentic-flowreasoningbank-benchmark) | ReasoningBank 4-phase learning loop benchmarks | Skip |
+| 22 | [@agentic-flow/quic-tests](#22-agentic-flowquic-tests) | QUIC protocol test suite (transport, proxy, E2E) | Skip |
+
+### ruv-FANN
+
+| # | Package | Description | Rec. |
+|---|---------|-------------|------|
+| 23 | [cuda-wasm](#23-cuda-wasm) | CUDA→WebAssembly/WebGPU transpiler, 2.5-4x faster training | Skip |
+| 24 | [neuro-divergent (5 crates)](#24-neuro-divergent-workspace) | Rust neural forecasting library, 27+ models (LSTM, TFT, PatchTST) | Skip |
+| 25 | [opencv-rust (4+ crates)](#25-opencv-rust-workspace) | Pure Rust computer vision, OpenCV 4.x compatible, WASM support | Skip |
+
+---
+
 ## Summary
 
 | Repository | Unpublished | Category Breakdown |
