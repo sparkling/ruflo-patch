@@ -730,6 +730,23 @@ phase_publish() {
   # Set auth in npm config so publish works
   npm config set "//localhost:${VERDACCIO_PORT}/:_authToken" "test-token" 2>/dev/null || true
 
+  # Pre-warm Verdaccio cache with heavy external deps in background.
+  # These are fetched through the npmjs uplink so they're cached by Phase 8.
+  local prewarm_dir
+  prewarm_dir=$(mktemp -d /tmp/ruflo-integ-prewarm-XXXXX)
+  (
+    cd "$prewarm_dir"
+    echo '{"name":"prewarm","version":"1.0.0","private":true}' > package.json
+    echo "registry=http://localhost:${VERDACCIO_PORT}" > .npmrc
+    # Install the heaviest external deps that @sparkleideas/cli will need
+    npm install --ignore-scripts --no-audit --no-fund \
+      better-sqlite3 @noble/ed25519 @noble/hashes \
+      onnxruntime-node ws commander chalk semver \
+      2>/dev/null || true
+    rm -rf "$prewarm_dir"
+  ) &
+  local prewarm_pid=$!
+
   local publish_output
   local publish_exit=0
   publish_output=$(node "${SCRIPT_DIR}/publish.mjs" \
@@ -776,6 +793,12 @@ phase_publish() {
   fi
 
   phase_log "7" "Publish succeeded"
+
+  # Wait for pre-warm to finish (cache is ready for Phase 8)
+  if [[ -n "$prewarm_pid" ]]; then
+    wait "$prewarm_pid" 2>/dev/null || true
+    phase_log "7" "Verdaccio cache pre-warmed"
+  fi
 
   local end
   end=$(now_ns)

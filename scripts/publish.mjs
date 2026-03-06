@@ -367,145 +367,110 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
 
   const published = [];
 
+  // Publish one package. Returns { ok, entry?, error? }.
+  async function publishOne(pkgName, levelNumber) {
+    const pkgDir = packageMap.get(pkgName);
+    if (!pkgDir) {
+      const errorMsg = `Package directory not found for ${pkgName} in ${resolvedBuildDir}`;
+      console.error(errorMsg);
+      return { ok: false, error: { package: pkgName, level: levelNumber, error: errorMsg } };
+    }
+
+    const pkgJsonPath = join(pkgDir, 'package.json');
+    const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
+    const upstreamVersion = pkgJson.version;
+
+    const lastPublished = publishedVersions[pkgName];
+    const effectiveVersion = nextVersion(upstreamVersion, lastPublished);
+
+    console.log(`  ${pkgName} @ ${effectiveVersion} (upstream: ${upstreamVersion}, last: ${lastPublished || '(none)'})`);
+    if (!dryRun) {
+      stampVersion(pkgDir, effectiveVersion, metadata);
+    }
+
+    const resolveTag = getPublishTagFn || getPublishTag;
+    let tag;
+    try {
+      tag = await resolveTag(pkgName);
+    } catch (err) {
+      const errorMsg = `Failed to check npm registry for ${pkgName}: ${err.message}`;
+      console.error(`  ERROR: ${errorMsg}`);
+      return { ok: false, error: { package: pkgName, level: levelNumber, error: errorMsg } };
+    }
+
+    const tagLabel = tag ?? 'latest (first publish)';
+    console.log(`    tag: ${tagLabel}`);
+
+    if (dryRun) {
+      console.log(`    [dry-run] would run: npm publish${tag ? ` --tag ${tag}` : ''}`);
+      const entry = { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion };
+      publishedVersions[pkgName] = effectiveVersion;
+      return { ok: true, entry };
+    }
+
+    const publishArgs = ['publish', '--access', 'public', '--ignore-scripts'];
+    const effectiveTag = tag ?? (effectiveVersion.includes('-') ? 'prerelease' : null);
+    if (effectiveTag) {
+      publishArgs.push('--tag', effectiveTag);
+    }
+
+    try {
+      const { stdout } = await execFile('npm', publishArgs, {
+        cwd: pkgDir,
+        timeout: 120_000,
+      });
+      if (stdout) console.log(`    ${stdout.trim()}`);
+      publishedVersions[pkgName] = effectiveVersion;
+      return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion } };
+    } catch (err) {
+      const stderr = err.stderr || '';
+      if (
+        stderr.includes('cannot publish over previously published version') ||
+        stderr.includes('You cannot publish over the previously published versions')
+      ) {
+        console.log(`    already published — skipping`);
+        publishedVersions[pkgName] = effectiveVersion;
+        return { ok: true, entry: { name: pkgName, level: levelNumber, tag: effectiveTag ?? 'latest', version: effectiveVersion } };
+      }
+
+      const errorOutput = [
+        `Exit code: ${err.code}`,
+        `stdout: ${err.stdout || '(empty)'}`,
+        `stderr: ${stderr || '(empty)'}`,
+      ].join('\n');
+      console.error(`  FAILED: ${pkgName}`);
+      console.error(`    ${errorOutput}`);
+      return { ok: false, error: { package: pkgName, level: levelNumber, error: errorOutput } };
+    }
+  }
+
+  const effectiveRateLimit = rateLimitMs ?? RATE_LIMIT_MS;
+
   for (const [levelIndex, packages] of LEVELS.entries()) {
     const levelNumber = levelIndex + 1;
     console.log(`\n--- Level ${levelNumber} ---`);
 
-    for (const pkgName of packages) {
-      const pkgDir = packageMap.get(pkgName);
-      if (!pkgDir) {
-        const errorMsg = `Package directory not found for ${pkgName} in ${resolvedBuildDir}`;
-        console.error(errorMsg);
+    // Publish all packages within a level concurrently
+    const results = await Promise.all(
+      packages.map(pkgName => publishOne(pkgName, levelNumber))
+    );
 
-        if (!dryRun) {
-          await createFailureIssue(pkgName, levelNumber, errorMsg);
-        }
-
-        return {
-          published,
-          failed: { package: pkgName, level: levelNumber, error: errorMsg },
-        };
-      }
-
-      // Read the package's own package.json to determine upstream version
-      const pkgJsonPath = join(pkgDir, 'package.json');
-      const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
-      const upstreamVersion = pkgJson.version;
-
-      // Compute next version using per-package tracking
-      const lastPublished = publishedVersions[pkgName];
-      const effectiveVersion = nextVersion(upstreamVersion, lastPublished);
-
-      // Stamp version
-      console.log(`  ${pkgName} @ ${effectiveVersion} (upstream: ${upstreamVersion}, last: ${lastPublished || '(none)'})`);
-      if (!dryRun) {
-        stampVersion(pkgDir, effectiveVersion, metadata);
-      }
-
-      // Determine publish tag (first-publish bootstrap)
-      const resolveTag = getPublishTagFn || getPublishTag;
-      let tag;
-      try {
-        tag = await resolveTag(pkgName);
-      } catch (err) {
-        const errorMsg = `Failed to check npm registry for ${pkgName}: ${err.message}`;
-        console.error(`  ERROR: ${errorMsg}`);
-
-        if (!dryRun) {
-          await createFailureIssue(pkgName, levelNumber, errorMsg);
-        }
-
-        return {
-          published,
-          failed: { package: pkgName, level: levelNumber, error: errorMsg },
-        };
-      }
-
-      const tagLabel = tag ?? 'latest (first publish)';
-      console.log(`    tag: ${tagLabel}`);
-
-      if (dryRun) {
-        console.log(`    [dry-run] would run: npm publish${tag ? ` --tag ${tag}` : ''}`);
-        published.push({
-          name: pkgName,
-          level: levelNumber,
-          tag: tag ?? 'latest',
-          version: effectiveVersion,
-        });
+    // Check results — first failure stops the pipeline
+    for (const result of results) {
+      if (result.ok) {
+        published.push(result.entry);
       } else {
-        // Build npm publish args
-        // --ignore-scripts prevents prepublishOnly from re-running build steps
-        const publishArgs = ['publish', '--access', 'public', '--ignore-scripts'];
-        // npm requires --tag for any version with a prerelease identifier (contains '-')
-        // For first-publish packages (tag is null), use 'prerelease' if the version
-        // has a prerelease suffix, otherwise omit --tag to set 'latest'
-        const effectiveTag = tag ?? (effectiveVersion.includes('-') ? 'prerelease' : null);
-        if (effectiveTag) {
-          publishArgs.push('--tag', effectiveTag);
+        if (!dryRun) {
+          await createFailureIssue(result.error.package, result.error.level, result.error.error);
         }
-
-        try {
-          const { stdout, stderr } = await execFile('npm', publishArgs, {
-            cwd: pkgDir,
-            timeout: 120_000,
-          });
-
-          if (stdout) console.log(`    ${stdout.trim()}`);
-
-          // Update published versions state
-          publishedVersions[pkgName] = effectiveVersion;
-
-          published.push({
-            name: pkgName,
-            level: levelNumber,
-            tag: tag ?? 'latest',
-            version: effectiveVersion,
-          });
-        } catch (err) {
-          const stderr = err.stderr || '';
-          // Treat "already published" as a skip, not a failure
-          if (
-            stderr.includes('cannot publish over previously published version') ||
-            stderr.includes('You cannot publish over the previously published versions')
-          ) {
-            console.log(`    already published — skipping`);
-            // Still record the version
-            publishedVersions[pkgName] = effectiveVersion;
-            published.push({
-              name: pkgName,
-              level: levelNumber,
-              tag: effectiveTag ?? 'latest',
-              version: effectiveVersion,
-            });
-          } else {
-            const errorOutput = [
-              `Exit code: ${err.code}`,
-              `stdout: ${err.stdout || '(empty)'}`,
-              `stderr: ${stderr || '(empty)'}`,
-            ].join('\n');
-
-            console.error(`  FAILED: ${pkgName}`);
-            console.error(`    ${errorOutput}`);
-
-            await createFailureIssue(pkgName, levelNumber, errorOutput);
-
-            return {
-              published,
-              failed: { package: pkgName, level: levelNumber, error: errorOutput },
-            };
-          }
-        }
+        return { published, failed: result.error };
       }
+    }
 
-      // Rate limit buffer (skip after last package)
-      const isLast =
-        levelIndex === LEVELS.length - 1 &&
-        pkgName === packages[packages.length - 1];
-
-      const effectiveRateLimit = rateLimitMs ?? RATE_LIMIT_MS;
-      if (!isLast && !dryRun && effectiveRateLimit > 0) {
-        await sleep(effectiveRateLimit);
-      }
+    // Rate limit between levels (not between packages within a level)
+    const isLastLevel = levelIndex === LEVELS.length - 1;
+    if (!isLastLevel && !dryRun && effectiveRateLimit > 0) {
+      await sleep(effectiveRateLimit);
     }
   }
 
