@@ -1,7 +1,7 @@
 // @tier unit
 // Tests for pipeline logic — version computation, state file handling,
 // change detection, and first-publish bootstrap.
-// ADRs: 0011 (dual build trigger), 0012 (version numbering), 0015 (first-publish).
+// ADRs: 0011 (dual build trigger), 0012 (version numbering — bump-last-segment), 0015 (first-publish).
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -14,57 +14,63 @@ import {
 } from './helpers/pipeline-helpers.mjs';
 
 // ---------------------------------------------------------------------------
-// 1. Version computation (ADR-0012)
+// 1. Version computation (ADR-0012 — bump-last-segment scheme)
 // ---------------------------------------------------------------------------
 
 describe('computeVersion (ADR-0012)', () => {
-  it('first build from upstream 3.5.2 -> 3.5.2-patch.1', () => {
-    const result = computeVersion('3.5.2', null, 0);
-    assert.equal(result.version, '3.5.2-patch.1');
-    assert.equal(result.iteration, 1);
+  it('first build from upstream 3.0.2 -> 3.0.3', () => {
+    const result = computeVersion('3.0.2', null);
+    assert.equal(result.version, '3.0.3');
   });
 
-  it('same upstream, iteration 1 -> 3.5.2-patch.2', () => {
-    const result = computeVersion('3.5.2', '3.5.2', 1);
-    assert.equal(result.version, '3.5.2-patch.2');
-    assert.equal(result.iteration, 2);
+  it('same upstream, last published 3.0.3 -> 3.0.4', () => {
+    const result = computeVersion('3.0.2', '3.0.3');
+    assert.equal(result.version, '3.0.4');
   });
 
-  it('same upstream, iteration 3 -> 3.5.2-patch.4', () => {
-    const result = computeVersion('3.5.2', '3.5.2', 3);
-    assert.equal(result.version, '3.5.2-patch.4');
-    assert.equal(result.iteration, 4);
+  it('upstream bumps past last published -> upstream+1', () => {
+    const result = computeVersion('3.0.5', '3.0.4');
+    assert.equal(result.version, '3.0.6');
   });
 
-  it('given upstream 3.5.2 and iteration 1 -> 3.5.2-patch.1', () => {
-    // Explicitly matches the task requirement wording
-    const result = computeVersion('3.5.2', 'something-else', 99);
-    assert.equal(result.version, '3.5.2-patch.1');
-    assert.equal(result.iteration, 1);
+  it('upstream jumps to equal last published -> bump from max', () => {
+    const result = computeVersion('3.0.5', '3.0.5');
+    assert.equal(result.version, '3.0.6');
   });
 
-  it('given upstream 3.5.2 and iteration 3 -> 3.5.2-patch.3', () => {
-    const result = computeVersion('3.5.2', '3.5.2', 2);
-    assert.equal(result.version, '3.5.2-patch.3');
-    assert.equal(result.iteration, 3);
+  it('first build from upstream 3.5.2 -> 3.5.3', () => {
+    const result = computeVersion('3.5.2', null);
+    assert.equal(result.version, '3.5.3');
   });
 
-  it('upstream changes from 3.5.2 to 3.5.3 -> resets to 3.5.3-patch.1', () => {
-    const result = computeVersion('3.5.3', '3.5.2', 5);
-    assert.equal(result.version, '3.5.3-patch.1');
-    assert.equal(result.iteration, 1);
+  it('upstream changes from 3.5.2 to 3.5.3, last published 3.5.3 -> 3.5.4', () => {
+    const result = computeVersion('3.5.3', '3.5.3');
+    assert.equal(result.version, '3.5.4');
   });
 
-  it('upstream alpha 3.0.0-alpha.10 -> 3.0.0-alpha.10-patch.1', () => {
-    const result = computeVersion('3.0.0-alpha.10', null, 0);
-    assert.equal(result.version, '3.0.0-alpha.10-patch.1');
-    assert.equal(result.iteration, 1);
+  it('upstream alpha 3.0.0-alpha.6 first build -> 3.0.0-alpha.7', () => {
+    const result = computeVersion('3.0.0-alpha.6', null);
+    assert.equal(result.version, '3.0.0-alpha.7');
   });
 
-  it('subsequent build from alpha -> increments normally', () => {
-    const result = computeVersion('3.0.0-alpha.10', '3.0.0-alpha.10', 2);
-    assert.equal(result.version, '3.0.0-alpha.10-patch.3');
-    assert.equal(result.iteration, 3);
+  it('subsequent build from alpha, last published 3.0.0-alpha.7 -> 3.0.0-alpha.8', () => {
+    const result = computeVersion('3.0.0-alpha.6', '3.0.0-alpha.7');
+    assert.equal(result.version, '3.0.0-alpha.8');
+  });
+
+  it('upstream alpha bumps, last published higher -> bump from max', () => {
+    const result = computeVersion('3.0.0-alpha.7', '3.0.0-alpha.8');
+    assert.equal(result.version, '3.0.0-alpha.9');
+  });
+
+  it('upstream 3.1.0-alpha.14 first build -> 3.1.0-alpha.15', () => {
+    const result = computeVersion('3.1.0-alpha.14', null);
+    assert.equal(result.version, '3.1.0-alpha.15');
+  });
+
+  it('upstream 1.0.18 first build -> 1.0.19', () => {
+    const result = computeVersion('1.0.18', null);
+    assert.equal(result.version, '1.0.19');
   });
 });
 
@@ -79,7 +85,7 @@ describe('parseState', () => {
     'RUV_FANN_HEAD=123abc456def',
     'LOCAL_COMMIT=789def012abc',
     'BUILD_TIMESTAMP=2026-03-05T00:00:00Z',
-    'BUILD_VERSION=3.5.2-patch.1',
+    'BUILD_VERSION=3.5.3',
   ].join('\n');
 
   it('parses all fields from valid state file', () => {
@@ -89,7 +95,7 @@ describe('parseState', () => {
     assert.equal(state.ruvFannHead, '123abc456def');
     assert.equal(state.localCommit, '789def012abc');
     assert.equal(state.buildTimestamp, '2026-03-05T00:00:00Z');
-    assert.equal(state.buildVersion, '3.5.2-patch.1');
+    assert.equal(state.buildVersion, '3.5.3');
   });
 
   it('returns null for empty content', () => {
@@ -107,9 +113,9 @@ describe('parseState', () => {
   });
 
   it('handles values containing equals signs', () => {
-    const content = 'BUILD_VERSION=3.5.2-patch.1\nRUFLO_HEAD=abc=def\n';
+    const content = 'BUILD_VERSION=3.5.3\nRUFLO_HEAD=abc=def\n';
     const state = parseState(content);
-    assert.equal(state.buildVersion, '3.5.2-patch.1');
+    assert.equal(state.buildVersion, '3.5.3');
     assert.equal(state.rufloHead, 'abc=def');
   });
 
@@ -137,7 +143,7 @@ describe('serializeState', () => {
       ruvFannHead: 'ccc',
       localCommit: 'ddd',
       buildTimestamp: '2026-03-05T12:00:00Z',
-      buildVersion: '3.5.2-patch.2',
+      buildVersion: '3.5.3',
     };
     const output = serializeState(state);
     assert.ok(output.includes('RUFLO_HEAD=aaa'));
@@ -145,7 +151,7 @@ describe('serializeState', () => {
     assert.ok(output.includes('RUV_FANN_HEAD=ccc'));
     assert.ok(output.includes('LOCAL_COMMIT=ddd'));
     assert.ok(output.includes('BUILD_TIMESTAMP=2026-03-05T12:00:00Z'));
-    assert.ok(output.includes('BUILD_VERSION=3.5.2-patch.2'));
+    assert.ok(output.includes('BUILD_VERSION=3.5.3'));
     assert.ok(output.endsWith('\n'), 'should end with newline');
   });
 
@@ -156,7 +162,7 @@ describe('serializeState', () => {
       ruvFannHead: '789ghi',
       localCommit: 'jkl012',
       buildTimestamp: '2026-03-05T00:00:00Z',
-      buildVersion: '3.5.3-patch.1',
+      buildVersion: '3.5.3',
     };
     const serialized = serializeState(original);
     const reparsed = parseState(serialized);
@@ -170,7 +176,7 @@ describe('serializeState', () => {
       ruvFannHead: 'old_fann',
       localCommit: 'old_local',
       buildTimestamp: '2026-03-04T00:00:00Z',
-      buildVersion: '3.5.2-patch.1',
+      buildVersion: '3.5.3',
     };
     // Simulate a successful build updating the state
     const after = {
@@ -178,13 +184,13 @@ describe('serializeState', () => {
       rufloHead: 'new_ruflo',
       localCommit: 'new_local',
       buildTimestamp: '2026-03-05T12:00:00Z',
-      buildVersion: '3.5.2-patch.2',
+      buildVersion: '3.5.4',
     };
     const serialized = serializeState(after);
     const reparsed = parseState(serialized);
     assert.equal(reparsed.rufloHead, 'new_ruflo');
     assert.equal(reparsed.localCommit, 'new_local');
-    assert.equal(reparsed.buildVersion, '3.5.2-patch.2');
+    assert.equal(reparsed.buildVersion, '3.5.4');
     // Unchanged fields preserved
     assert.equal(reparsed.agenticFlowHead, 'old_af');
     assert.equal(reparsed.ruvFannHead, 'old_fann');
@@ -257,11 +263,6 @@ describe('detectChanges (ADR-0011)', () => {
   });
 
   it('network error on git ls-remote -> caller passes last-known HEAD unchanged, no crash', () => {
-    // When git ls-remote fails, the caller should keep the last-known HEAD
-    // (or an empty string if never fetched). The detectChanges function
-    // itself never calls git — it only compares strings. This test verifies
-    // that passing identical heads (simulating "use last known on error")
-    // results in no build trigger.
     const lastKnownOnError = { ...baseHeads };
     const result = detectChanges(lastKnownOnError, baseHeads);
     assert.equal(result.shouldBuild, false);
@@ -284,7 +285,7 @@ describe('getPublishTag (ADR-0015)', () => {
   });
 
   it('npm view returns a version -> returns "prerelease"', async () => {
-    const npmViewOk = async () => '3.5.2-patch.1';
+    const npmViewOk = async () => '3.0.3';
     const tag = await getPublishTag(npmViewOk, 'ruflo');
     assert.equal(tag, 'prerelease');
   });

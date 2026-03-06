@@ -40,7 +40,7 @@ The flow:
 2. `npm publish --tag prerelease` — users on `@latest` are unaffected
 3. `gh release create --prerelease` — GitHub emails you
 4. You review at your convenience
-5. `npm dist-tag add ruflo@X.Y.Z-patch.N latest` — 2 seconds
+5. `npm dist-tag add ruflo@X.Y.Z latest` — 2 seconds
 
 If tests fail:
 
@@ -100,7 +100,7 @@ Acceptance criteria:
 - [ ] `npm dist-tag ls ruflo` shows both `latest` and `prerelease` tags
 - [ ] `gh release create --prerelease` creates a visible (non-draft) prerelease on GitHub
 - [ ] GitHub sends email notification for the prerelease
-- [ ] `npm dist-tag add ruflo@X.Y.Z-patch.N latest` promotes correctly
+- [ ] `npm dist-tag add ruflo@X.Y.Z latest` promotes correctly
 - [ ] `npx ruflo@prerelease` installs the prerelease version
 - [ ] `npx ruflo@latest` is unaffected by prerelease publishes
 - [ ] Failed builds create GitHub Issues with diagnostic information

@@ -96,7 +96,7 @@ A single script (`scripts/test-integration.sh`) that validates the full build pi
 | 4. Patch | Run `bash patch-all.sh --target $TEMP` | ADR-0017: semver patches apply, all sentinels present |
 | 5. Build | `pnpm install && pnpm build` in temp dir | TypeScript compiles with renamed imports |
 | 6. Upstream tests | `pnpm test` in temp dir (allow exit code != 0) | Upstream tests mostly pass; log failures for review |
-| 7. Publish | `node scripts/publish.mjs --build-dir $TEMP --version test-0.0.1-patch.1 --registry http://localhost:$PORT` | ADR-0014: all 26 packages publish in topological order |
+| 7. Publish | `node scripts/publish.mjs --build-dir $TEMP --version test-0.0.2 --registry http://localhost:$PORT` | ADR-0014: all 26 packages publish in topological order |
 | 8. Install | `npm install ruflo --registry http://localhost:$PORT` in a fresh temp dir | Full dependency tree resolves |
 | 9. Cleanup | Kill Verdaccio, remove temp dirs | No leaked processes or disk |
 

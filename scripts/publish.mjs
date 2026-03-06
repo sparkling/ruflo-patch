@@ -1,18 +1,17 @@
 #!/usr/bin/env node
 // scripts/publish.mjs — Publish all packages in topological order.
 // Implements ADR-0014 (topological order), ADR-0015 (first-publish bootstrap),
-// ADR-0010 (prerelease gate), ADR-0012 (version numbering).
+// ADR-0012 (version numbering — bump-last-segment scheme).
 //
 // Usage:
-//   node scripts/publish.mjs --build-dir ./dist --version 3.5.2-patch.1
-//   node scripts/publish.mjs --build-dir ./dist --version 3.5.2-patch.1 --dry-run
+//   node scripts/publish.mjs --build-dir ./dist
+//   node scripts/publish.mjs --build-dir ./dist --dry-run
 //
 // Exported API:
-//   import { publishAll } from './publish.mjs';
-//   const result = await publishAll('./dist', { version: '3.5.2-patch.1', dryRun: false });
+//   import { publishAll, nextVersion } from './publish.mjs';
 
 import { execFile as execFileCb } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { promisify } from 'node:util';
 import { parseArgs } from 'node:util';
@@ -66,6 +65,120 @@ export const LEVELS = [
 ];
 
 export const RATE_LIMIT_MS = 2000;
+
+// ── Published versions state file ──
+
+const STATE_FILE = resolve(
+  import.meta.url.startsWith('file://')
+    ? new URL('.', import.meta.url).pathname
+    : '.',
+  '..', 'config', 'published-versions.json'
+);
+
+function loadPublishedVersions() {
+  try {
+    return JSON.parse(readFileSync(STATE_FILE, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function savePublishedVersions(versions) {
+  writeFileSync(STATE_FILE, JSON.stringify(versions, null, 2) + '\n');
+}
+
+// ── Version computation (ADR-0012 rewrite) ──
+
+/**
+ * Bump the last numeric segment of a version string by 1.
+ * Works for both stable (3.0.2 -> 3.0.3) and prerelease (3.0.0-alpha.6 -> 3.0.0-alpha.7).
+ *
+ * @param {string} version - A semver version string
+ * @returns {string} The version with its last numeric segment incremented
+ */
+export function bumpLastSegment(version) {
+  // Find the last numeric segment and increment it
+  const match = version.match(/^(.*?)(\d+)$/);
+  if (!match) {
+    throw new Error(`Cannot bump version: no trailing number in "${version}"`);
+  }
+  const prefix = match[1];
+  const num = parseInt(match[2], 10);
+  return `${prefix}${num + 1}`;
+}
+
+/**
+ * Compare two semver version strings.
+ * Returns positive if a > b, negative if a < b, 0 if equal.
+ * Handles prerelease identifiers: 3.0.0-alpha.6 < 3.0.0 < 3.0.1
+ */
+function semverCompare(a, b) {
+  // Split into [core, prerelease]
+  const parseVer = (v) => {
+    const dashIdx = v.indexOf('-');
+    if (dashIdx === -1) return { core: v, pre: null };
+    return { core: v.slice(0, dashIdx), pre: v.slice(dashIdx + 1) };
+  };
+
+  const va = parseVer(a);
+  const vb = parseVer(b);
+
+  // Compare core versions numerically
+  const partsA = va.core.split('.').map(Number);
+  const partsB = vb.core.split('.').map(Number);
+  const len = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < len; i++) {
+    const na = partsA[i] || 0;
+    const nb = partsB[i] || 0;
+    if (na !== nb) return na - nb;
+  }
+
+  // Same core — prerelease < no-prerelease
+  if (va.pre === null && vb.pre === null) return 0;
+  if (va.pre === null) return 1;   // a is stable, b has prerelease -> a > b
+  if (vb.pre === null) return -1;  // b is stable, a has prerelease -> a < b
+
+  // Both have prerelease — compare identifiers
+  const preA = va.pre.split('.');
+  const preB = vb.pre.split('.');
+  const preLen = Math.max(preA.length, preB.length);
+  for (let i = 0; i < preLen; i++) {
+    if (i >= preA.length) return -1; // fewer identifiers = lower precedence
+    if (i >= preB.length) return 1;
+    const isNumA = /^\d+$/.test(preA[i]);
+    const isNumB = /^\d+$/.test(preB[i]);
+    if (isNumA && isNumB) {
+      const diff = parseInt(preA[i], 10) - parseInt(preB[i], 10);
+      if (diff !== 0) return diff;
+    } else if (isNumA !== isNumB) {
+      // numeric < string
+      return isNumA ? -1 : 1;
+    } else {
+      // both strings — lexicographic
+      if (preA[i] < preB[i]) return -1;
+      if (preA[i] > preB[i]) return 1;
+    }
+  }
+  return 0;
+}
+
+/**
+ * Compute the next version for a package.
+ * Formula: bumpLastSegment( max(upstreamVersion, lastPublished) )
+ *
+ * @param {string} upstreamVersion - The version in the package's upstream package.json
+ * @param {string|undefined} lastPublished - The last version we published, or undefined
+ * @returns {string} The next version to publish
+ */
+export function nextVersion(upstreamVersion, lastPublished) {
+  if (!lastPublished) {
+    return bumpLastSegment(upstreamVersion);
+  }
+  const max = semverCompare(upstreamVersion, lastPublished) >= 0
+    ? upstreamVersion
+    : lastPublished;
+  return bumpLastSegment(max);
+}
 
 // ── Package directory resolution ──
 
@@ -152,11 +265,19 @@ async function getPublishTag(packageName) {
 
 /**
  * Update the version field in a package.json file.
+ * Also stamps sparkleideas metadata for traceability.
  */
-function stampVersion(pkgDir, version) {
+function stampVersion(pkgDir, version, metadata) {
   const pkgPath = join(pkgDir, 'package.json');
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
+  const upstreamVersion = pkg.version;
   pkg.version = version;
+  if (metadata) {
+    pkg.sparkleideas = {
+      upstreamVersion,
+      ...metadata,
+    };
+  }
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   return pkg;
 }
@@ -205,22 +326,23 @@ function sleep(ms) {
  *
  * @param {string} buildDir - Root directory containing built package directories
  * @param {object} options
- * @param {string} options.version - Version to stamp on all packages
  * @param {boolean} [options.dryRun=false] - Log actions without publishing
+ * @param {object} [options.metadata] - Metadata to stamp into each package.json
  * @returns {{ published: Array<{name: string, level: number, tag: string|null, version: string}>, failed: null | { package: string, level: number, error: string } }}
  */
-export async function publishAll(buildDir, { version, dryRun = false } = {}) {
+export async function publishAll(buildDir, { dryRun = false, metadata } = {}) {
   if (!buildDir) throw new Error('buildDir is required');
-  if (!version) throw new Error('version is required');
 
   const resolvedBuildDir = resolve(buildDir);
   console.log(`Resolving packages in: ${resolvedBuildDir}`);
-  console.log(`Version: ${version}`);
   console.log(`Dry run: ${dryRun}`);
   console.log('');
 
   const packageMap = buildPackageMap(resolvedBuildDir);
   console.log(`Found ${packageMap.size} packages in build directory`);
+
+  // Load per-package version state
+  const publishedVersions = loadPublishedVersions();
 
   const published = [];
 
@@ -244,18 +366,19 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
         };
       }
 
-      // Read the package's own package.json to determine version
-      // For cross-repo packages, use upstream version from their own package.json
-      // plus patch iteration (ADR-0012)
+      // Read the package's own package.json to determine upstream version
       const pkgJsonPath = join(pkgDir, 'package.json');
       const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
       const upstreamVersion = pkgJson.version;
-      const effectiveVersion = deriveVersion(pkgName, upstreamVersion, version);
+
+      // Compute next version using per-package tracking
+      const lastPublished = publishedVersions[pkgName];
+      const effectiveVersion = nextVersion(upstreamVersion, lastPublished);
 
       // Stamp version
-      console.log(`  ${pkgName} @ ${effectiveVersion}`);
+      console.log(`  ${pkgName} @ ${effectiveVersion} (upstream: ${upstreamVersion}, last: ${lastPublished || '(none)'})`);
       if (!dryRun) {
-        stampVersion(pkgDir, effectiveVersion);
+        stampVersion(pkgDir, effectiveVersion, metadata);
       }
 
       // Determine publish tag (first-publish bootstrap)
@@ -290,7 +413,6 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
       } else {
         // Build npm publish args
         // --ignore-scripts prevents prepublishOnly from re-running build steps
-        // (tsc, etc.) that may fail outside the monorepo workspace context
         const publishArgs = ['publish', '--access', 'public', '--ignore-scripts'];
         // npm requires --tag for any version with a prerelease identifier (contains '-')
         // For first-publish packages (tag is null), use 'prerelease' if the version
@@ -308,6 +430,9 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
 
           if (stdout) console.log(`    ${stdout.trim()}`);
 
+          // Update published versions state
+          publishedVersions[pkgName] = effectiveVersion;
+
           published.push({
             name: pkgName,
             level: levelNumber,
@@ -322,6 +447,8 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
             stderr.includes('You cannot publish over the previously published versions')
           ) {
             console.log(`    already published — skipping`);
+            // Still record the version
+            publishedVersions[pkgName] = effectiveVersion;
             published.push({
               name: pkgName,
               level: levelNumber,
@@ -361,51 +488,14 @@ export async function publishAll(buildDir, { version, dryRun = false } = {}) {
     }
   }
 
+  // Save updated published versions state
+  if (!dryRun) {
+    savePublishedVersions(publishedVersions);
+    console.log(`\nUpdated config/published-versions.json`);
+  }
+
   console.log(`\nPublished ${published.length} packages successfully.`);
   return { published, failed: null };
-}
-
-// ── Version derivation (ADR-0012) ──
-
-/**
- * Determine the effective version for a package.
- *
- * The top-level `version` argument is used directly for packages from the
- * primary upstream repo (ruflo). For packages from other upstream repos
- * (agentdb from agentic-flow, ruv-swarm from ruv-FANN), we derive a version
- * from their own upstream version + the patch iteration extracted from the
- * provided version string.
- *
- * @param {string} pkgName - The npm package name
- * @param {string} upstreamVersion - The version currently in the package's package.json
- * @param {string} primaryVersion - The version passed via CLI (e.g., "3.5.2-patch.1")
- */
-function deriveVersion(pkgName, upstreamVersion, primaryVersion) {
-  // Packages that track their own upstream version (not the primary ruflo repo)
-  const crossRepoPackages = new Set([
-    '@sparkleideas/agentdb',
-    '@sparkleideas/agentic-flow',
-    '@sparkleideas/ruv-swarm',
-  ]);
-
-  if (!crossRepoPackages.has(pkgName)) {
-    // Primary repo packages use the provided version directly
-    return primaryVersion;
-  }
-
-  // Extract patch iteration from primaryVersion (e.g., "3.5.2-patch.3" -> "3")
-  const patchMatch = primaryVersion.match(/-patch\.(\d+)$/);
-  if (!patchMatch) {
-    // No -patch.N suffix -- use primaryVersion as-is (fallback)
-    return primaryVersion;
-  }
-
-  const patchIteration = patchMatch[1];
-
-  // Strip any existing -patch.N suffix from the upstream version
-  const baseUpstream = upstreamVersion.replace(/-patch\.\d+$/, '');
-
-  return `${baseUpstream}-patch.${patchIteration}`;
 }
 
 // ── CLI entry point ──
@@ -414,22 +504,20 @@ async function main() {
   const { values } = parseArgs({
     options: {
       'build-dir': { type: 'string' },
-      version: { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
     },
     strict: true,
   });
 
   const buildDir = values['build-dir'];
-  const version = values.version;
   const dryRun = values['dry-run'];
 
-  if (!buildDir || !version) {
-    console.error('Usage: node scripts/publish.mjs --build-dir <dir> --version <ver> [--dry-run]');
+  if (!buildDir) {
+    console.error('Usage: node scripts/publish.mjs --build-dir <dir> [--dry-run]');
     process.exit(1);
   }
 
-  const result = await publishAll(buildDir, { version, dryRun });
+  const result = await publishAll(buildDir, { dryRun });
 
   // Output JSON summary to stdout
   console.log('\n--- Summary ---');

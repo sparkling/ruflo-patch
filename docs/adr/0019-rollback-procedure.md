@@ -21,7 +21,7 @@ ON discovery of broken @latest:
 
   # Step 1: Identify the last known-good version
   GOOD_VERSION = read from scripts/.last-promoted-version
-  # e.g., "3.5.2-patch.1"
+  # e.g., "3.5.3"
 
   # Step 2: Reassign @latest to the known-good version
   npm dist-tag add ruflo@${GOOD_VERSION} latest
@@ -56,7 +56,7 @@ The build script maintains a file at `scripts/.last-promoted-version` that recor
 Example contents:
 
 ```
-3.5.2-patch.1
+3.5.3
 ```
 
 If this file is missing or corrupt, the rollback target can be determined from npm:
@@ -153,7 +153,7 @@ echo "Rollback complete. Verify with: npx ruflo@latest --version"
 
 **Negative:**
 
-- The broken version remains installable by exact version (`npm install ruflo@3.5.2-patch.2`) unless explicitly unpublished or deprecated. This is acceptable -- users who pin exact versions accept the risk
+- The broken version remains installable by exact version (`npm install ruflo@3.5.4`) unless explicitly unpublished or deprecated. This is acceptable -- users who pin exact versions accept the risk
 - Rolling back all `@sparkleideas/*` packages requires iterating through the package list. If the list changes (new packages added), the rollback script must be updated
 - If `.last-promoted-version` is not maintained (e.g., a manual promotion bypasses the script), the rollback target is unknown and must be determined manually from npm version history
 

@@ -183,8 +183,6 @@ RUFLO_HEAD=$(git -C /home/claude/src/upstream/ruflo rev-parse HEAD)
 AGENTIC_HEAD=$(git -C /home/claude/src/upstream/agentic-flow rev-parse HEAD)
 FANN_HEAD=$(git -C /home/claude/src/upstream/ruv-FANN rev-parse HEAD)
 PATCH_HEAD=$(git -C /home/claude/src/ruflo rev-parse HEAD)
-LAST_VERSION=0.0.0-patch.0
-PATCH_ITERATION=0
 EOF
 ```
 

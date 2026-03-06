@@ -61,7 +61,7 @@ npm run lint
 - NEVER commit .env files or any file containing secrets
 - Always validate user input at system boundaries
 - Always sanitize file paths to prevent directory traversal
-- Run `npx @claude-flow/cli@latest security scan` after security-related changes
+- Run `npx @sparkleideas/cli security scan` after security-related changes
 
 ## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
 
@@ -100,7 +100,7 @@ npm run lint
 - Keep shared memory namespace for all agents
 
 ```bash
-npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
+npx @sparkleideas/cli swarm init --topology hierarchical --max-agents 8 --strategy specialized
 ```
 
 ## Swarm Execution Rules
@@ -129,11 +129,11 @@ npx @claude-flow/cli@latest swarm init --topology hierarchical --max-agents 8 --
 ### Quick CLI Examples
 
 ```bash
-npx @claude-flow/cli@latest init --wizard
-npx @claude-flow/cli@latest agent spawn -t coder --name my-coder
-npx @claude-flow/cli@latest swarm init --v3-mode
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
-npx @claude-flow/cli@latest doctor --fix
+npx @sparkleideas/cli init --wizard
+npx @sparkleideas/cli agent spawn -t coder --name my-coder
+npx @sparkleideas/cli swarm init --v3-mode
+npx @sparkleideas/cli memory search --query "authentication patterns"
+npx @sparkleideas/cli doctor --fix
 ```
 
 ## Available Agents (60+ Types)
@@ -157,24 +157,24 @@ npx @claude-flow/cli@latest doctor --fix
 
 ```bash
 # Store (REQUIRED: --key, --value; OPTIONAL: --namespace, --ttl, --tags)
-npx @claude-flow/cli@latest memory store --key "pattern-auth" --value "JWT with refresh" --namespace patterns
+npx @sparkleideas/cli memory store --key "pattern-auth" --value "JWT with refresh" --namespace patterns
 
 # Search (REQUIRED: --query; OPTIONAL: --namespace, --limit, --threshold)
-npx @claude-flow/cli@latest memory search --query "authentication patterns"
+npx @sparkleideas/cli memory search --query "authentication patterns"
 
 # List (OPTIONAL: --namespace, --limit)
-npx @claude-flow/cli@latest memory list --namespace patterns --limit 10
+npx @sparkleideas/cli memory list --namespace patterns --limit 10
 
 # Retrieve (REQUIRED: --key; OPTIONAL: --namespace)
-npx @claude-flow/cli@latest memory retrieve --key "pattern-auth" --namespace patterns
+npx @sparkleideas/cli memory retrieve --key "pattern-auth" --namespace patterns
 ```
 
 ## Quick Setup
 
 ```bash
-claude mcp add claude-flow -- npx -y @claude-flow/cli@latest
-npx @claude-flow/cli@latest daemon start
-npx @claude-flow/cli@latest doctor --fix
+claude mcp add claude-flow -- npx -y @sparkleideas/cli
+npx @sparkleideas/cli daemon start
+npx @sparkleideas/cli doctor --fix
 ```
 
 ## Claude Code vs CLI Tools

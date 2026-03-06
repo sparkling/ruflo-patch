@@ -67,8 +67,6 @@ load_state() {
   AGENTIC_HEAD=""
   FANN_HEAD=""
   PATCH_HEAD=""
-  LAST_VERSION=""
-  PATCH_ITERATION="0"
 
   if [[ -f "${STATE_FILE}" ]]; then
     log "Loading state from ${STATE_FILE}"
@@ -81,11 +79,9 @@ load_state() {
         AGENTIC_HEAD)     AGENTIC_HEAD="${value}" ;;
         FANN_HEAD)        FANN_HEAD="${value}" ;;
         PATCH_HEAD)       PATCH_HEAD="${value}" ;;
-        LAST_VERSION)     LAST_VERSION="${value}" ;;
-        PATCH_ITERATION)  PATCH_ITERATION="${value}" ;;
       esac
     done < "${STATE_FILE}"
-    log "State loaded: RUFLO_HEAD=${RUFLO_HEAD:0:12}, AGENTIC_HEAD=${AGENTIC_HEAD:0:12}, FANN_HEAD=${FANN_HEAD:0:12}, PATCH_HEAD=${PATCH_HEAD:0:12}, LAST_VERSION=${LAST_VERSION}, PATCH_ITERATION=${PATCH_ITERATION}"
+    log "State loaded: RUFLO_HEAD=${RUFLO_HEAD:0:12}, AGENTIC_HEAD=${AGENTIC_HEAD:0:12}, FANN_HEAD=${FANN_HEAD:0:12}, PATCH_HEAD=${PATCH_HEAD:0:12}"
   else
     log "No state file found — first run"
   fi
@@ -96,8 +92,6 @@ save_state() {
   local new_agentic_head="$2"
   local new_fann_head="$3"
   local new_patch_head="$4"
-  local new_version="$5"
-  local new_iteration="$6"
 
   cat > "${STATE_FILE}" <<EOF
 # ruflo build state — written by sync-and-build.sh
@@ -106,11 +100,9 @@ RUFLO_HEAD=${new_ruflo_head}
 AGENTIC_HEAD=${new_agentic_head}
 FANN_HEAD=${new_fann_head}
 PATCH_HEAD=${new_patch_head}
-LAST_VERSION=${new_version}
-PATCH_ITERATION=${new_iteration}
 EOF
 
-  log "State saved: version=${new_version}, iteration=${new_iteration}"
+  log "State saved"
 }
 
 # ---------------------------------------------------------------------------
@@ -271,9 +263,8 @@ run_tests() {
 
 compute_version() {
   local upstream_version
-  local new_iteration
 
-  # Read upstream version from the source package.json
+  # Read upstream version from the source package.json (CLI package)
   upstream_version=$(node -e "console.log(require('${TEMP_DIR}/package.json').version)")
 
   if [[ -z "${upstream_version}" ]]; then
@@ -281,22 +272,17 @@ compute_version() {
     return 1
   fi
 
-  # Extract the base upstream version from the last build version (strip -patch.N)
-  local last_upstream="${LAST_VERSION%-patch.*}"
+  # Per-package version computation is handled by publish.mjs using
+  # config/published-versions.json. BUILD_VERSION here is used only for
+  # logging and GitHub release tagging — it reflects the CLI package.
+  BUILD_VERSION=$(node -e "
+    import { nextVersion } from '${SCRIPT_DIR}/publish.mjs';
+    import { readFileSync } from 'fs';
+    const pv = JSON.parse(readFileSync('${PROJECT_DIR}/config/published-versions.json', 'utf-8'));
+    console.log(nextVersion('${upstream_version}', pv['@sparkleideas/cli']));
+  ")
 
-  if [[ "${upstream_version}" != "${last_upstream}" ]]; then
-    # Upstream version changed — reset iteration
-    new_iteration=1
-    log "Upstream version changed: ${last_upstream} -> ${upstream_version}, resetting iteration to 1"
-  else
-    # Same upstream version — increment iteration
-    new_iteration=$(( PATCH_ITERATION + 1 ))
-    log "Same upstream version ${upstream_version}, incrementing iteration to ${new_iteration}"
-  fi
-
-  BUILD_VERSION="${upstream_version}-patch.${new_iteration}"
-  BUILD_ITERATION="${new_iteration}"
-  log "Computed version: ${BUILD_VERSION}"
+  log "Computed CLI version: ${BUILD_VERSION} (upstream: ${upstream_version})"
 }
 
 # ---------------------------------------------------------------------------
@@ -311,8 +297,8 @@ run_publish() {
     echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN:-}" > "${TEMP_DIR}/.npmrc"
   }
 
-  log "Publishing version ${BUILD_VERSION}"
-  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" --version "${BUILD_VERSION}"
+  log "Publishing packages (per-package versioning via config/published-versions.json)"
+  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}"
   log "Publish complete"
 }
 
@@ -321,34 +307,48 @@ run_publish() {
 # ---------------------------------------------------------------------------
 
 create_github_notification() {
-  local tag="v${BUILD_VERSION}"
+  local tag="sparkleideas/v${BUILD_VERSION}"
   local current_local_head
   current_local_head=$(git -C "${PROJECT_DIR}" rev-parse HEAD)
+
+  # Read all published package versions for the release body
+  local pkg_versions=""
+  if [[ -f "${PROJECT_DIR}/config/published-versions.json" ]]; then
+    pkg_versions=$(node -e "
+      const pv = JSON.parse(require('fs').readFileSync('${PROJECT_DIR}/config/published-versions.json', 'utf-8'));
+      for (const [name, ver] of Object.entries(pv)) {
+        console.log('- \`' + name + '@' + ver + '\`');
+      }
+    " 2>/dev/null) || true
+  fi
 
   local body
   body="Automated build from upstream + patches.
 
-**Version**: \`${BUILD_VERSION}\`
+**CLI Version**: \`${BUILD_VERSION}\`
 **Upstream ruflo HEAD**: \`${NEW_RUFLO_HEAD:0:12}\`
 **Upstream agentic-flow HEAD**: \`${NEW_AGENTIC_HEAD:0:12}\`
 **Upstream ruv-FANN HEAD**: \`${NEW_FANN_HEAD:0:12}\`
 **Local commit**: \`${current_local_head:0:12}\`
 **Build timestamp**: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
+### Published packages
+${pkg_versions:-_(none)_}
+
 Install:
 \`\`\`bash
-npm install ruflo@${BUILD_VERSION}
+npx @sparkleideas/cli
 \`\`\`
 
 Promote to latest:
 \`\`\`bash
-npm dist-tag add ruflo@${BUILD_VERSION} latest
+npm run promote -- ${BUILD_VERSION}
 \`\`\`"
 
   log "Creating GitHub prerelease: ${tag}"
   gh release create "${tag}" \
     --repo "$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo 'ruvnet/ruflo')" \
-    --title "ruflo ${BUILD_VERSION}" \
+    --title "@sparkleideas/cli ${BUILD_VERSION}" \
     --notes "${body}" \
     --prerelease \
     --target "$(git -C "${PROJECT_DIR}" rev-parse HEAD)" \
@@ -507,9 +507,7 @@ main() {
     "${NEW_RUFLO_HEAD}" \
     "${NEW_AGENTIC_HEAD}" \
     "${NEW_FANN_HEAD}" \
-    "${current_local_head}" \
-    "${BUILD_VERSION}" \
-    "${BUILD_ITERATION}"
+    "${current_local_head}"
 
   log "=========================================="
   log "Build complete: ${BUILD_VERSION}"

@@ -4,26 +4,80 @@
 // and directly testable without git or npm calls.
 
 /**
- * Compute the ruflo version string.
- * ADR-0012: format is "{upstreamVersion}-patch.{N}"
- * Iteration resets to 1 when upstream version changes.
+ * Compute the next version for a package.
+ * ADR-0012 (rewritten): bump the last numeric segment of max(upstream, lastPublished).
  *
- * @param {string} upstreamVersion - Current upstream package version (e.g. "3.5.2")
- * @param {string|null} lastUpstreamVersion - Upstream version from last build, or null
- * @param {number} lastIteration - Patch iteration from last build (0 if none)
- * @returns {{ version: string, iteration: number }}
+ * @param {string} upstreamVersion - Current upstream package version (e.g. "3.0.2")
+ * @param {string|null} lastPublished - Last published version, or null if never published
+ * @returns {{ version: string }}
  */
-export function computeVersion(upstreamVersion, lastUpstreamVersion, lastIteration) {
-  let iteration;
-  if (lastUpstreamVersion == null || upstreamVersion !== lastUpstreamVersion) {
-    iteration = 1;
-  } else {
-    iteration = lastIteration + 1;
-  }
+export function computeVersion(upstreamVersion, lastPublished) {
+  // Import the canonical implementation
+  // For test isolation, we re-implement the logic here
+  const max = !lastPublished ? upstreamVersion
+    : semverCompare(upstreamVersion, lastPublished) >= 0 ? upstreamVersion
+    : lastPublished;
   return {
-    version: `${upstreamVersion}-patch.${iteration}`,
-    iteration,
+    version: bumpLastSegment(max),
   };
+}
+
+/**
+ * Bump the last numeric segment of a version string by 1.
+ */
+function bumpLastSegment(version) {
+  const match = version.match(/^(.*?)(\d+)$/);
+  if (!match) {
+    throw new Error(`Cannot bump version: no trailing number in "${version}"`);
+  }
+  return `${match[1]}${parseInt(match[2], 10) + 1}`;
+}
+
+/**
+ * Compare two semver version strings.
+ */
+function semverCompare(a, b) {
+  const parseVer = (v) => {
+    const dashIdx = v.indexOf('-');
+    if (dashIdx === -1) return { core: v, pre: null };
+    return { core: v.slice(0, dashIdx), pre: v.slice(dashIdx + 1) };
+  };
+
+  const va = parseVer(a);
+  const vb = parseVer(b);
+
+  const partsA = va.core.split('.').map(Number);
+  const partsB = vb.core.split('.').map(Number);
+  const len = Math.max(partsA.length, partsB.length);
+  for (let i = 0; i < len; i++) {
+    const na = partsA[i] || 0;
+    const nb = partsB[i] || 0;
+    if (na !== nb) return na - nb;
+  }
+
+  if (va.pre === null && vb.pre === null) return 0;
+  if (va.pre === null) return 1;
+  if (vb.pre === null) return -1;
+
+  const preA = va.pre.split('.');
+  const preB = vb.pre.split('.');
+  const preLen = Math.max(preA.length, preB.length);
+  for (let i = 0; i < preLen; i++) {
+    if (i >= preA.length) return -1;
+    if (i >= preB.length) return 1;
+    const isNumA = /^\d+$/.test(preA[i]);
+    const isNumB = /^\d+$/.test(preB[i]);
+    if (isNumA && isNumB) {
+      const diff = parseInt(preA[i], 10) - parseInt(preB[i], 10);
+      if (diff !== 0) return diff;
+    } else if (isNumA !== isNumB) {
+      return isNumA ? -1 : 1;
+    } else {
+      if (preA[i] < preB[i]) return -1;
+      if (preA[i] > preB[i]) return 1;
+    }
+  }
+  return 0;
 }
 
 /**

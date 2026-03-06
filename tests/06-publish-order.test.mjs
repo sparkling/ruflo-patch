@@ -62,7 +62,6 @@ const KNOWN_DEPS = {
   // Level 5 — root packages (transitive deps not enumerated here)
   '@sparkleideas/cli': [],
   '@sparkleideas/claude-flow': [],
-  '@sparkleideas/ruflo': [],
 };
 
 // ── Helpers ──
@@ -128,7 +127,6 @@ describe('Topological publish order (ADR-0014)', () => {
       const expected = [
         '@sparkleideas/cli',
         '@sparkleideas/claude-flow',
-        '@sparkleideas/ruflo',
       ];
       assert.deepStrictEqual(level5, expected);
     });
@@ -144,18 +142,18 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (3+5+6+8+3)', () => {
+    it('all expected packages are present across all levels (3+5+6+8+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 specifies: L1=3, L2=5, L3=6, L4=8, L5=3
+      // ADR-0014 specifies: L1=3, L2=5, L3=6, L4=8, L5=2
       assert.equal(LEVELS[0].length, 3, 'Level 1 should have 3 packages');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
       assert.equal(LEVELS[2].length, 6, 'Level 3 should have 6 packages');
       assert.equal(LEVELS[3].length, 8, 'Level 4 should have 8 packages');
-      assert.equal(LEVELS[4].length, 3, 'Level 5 should have 3 packages');
+      assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        25,
-        `Expected 25 packages total, got ${allPackages.length}`
+        24,
+        `Expected 24 packages total, got ${allPackages.length}`
       );
     });
 
@@ -261,7 +259,6 @@ describe('Topological publish order (ADR-0014)', () => {
       // publishAll in dry-run mode will fail on the first Level 2 package
       // because its directory does not exist.
       const result = await publishAll(tmp, {
-        version: '1.0.0-patch.1',
         dryRun: true,
       });
 
@@ -302,7 +299,6 @@ describe('Topological publish order (ADR-0014)', () => {
       }
 
       const result = await publishAll(tmp, {
-        version: '1.0.0-patch.1',
         dryRun: true,
       });
 
@@ -330,7 +326,6 @@ describe('Topological publish order (ADR-0014)', () => {
 
       const start = Date.now();
       const result = await publishAll(tmp, {
-        version: '1.0.0-patch.1',
         dryRun: true,
       });
       const elapsed = Date.now() - start;
@@ -363,7 +358,6 @@ describe('Topological publish order (ADR-0014)', () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        version: '1.0.0-patch.1',
         dryRun: true,
       });
 
@@ -380,27 +374,22 @@ describe('Topological publish order (ADR-0014)', () => {
       rmSync(tmp, { recursive: true, force: true });
     });
 
-    it('first-publish packages get no --tag flag (tag is null -> latest)', async () => {
-      // Verify the code path: when getPublishTag returns null,
-      // the dry-run log should say "npm publish" without --tag.
-      // We test this structurally: tag stored as 'latest' means
-      // the publish command would have no --tag argument.
+    it('tag is either latest or prerelease depending on npm state', async () => {
+      // All @sparkleideas/* packages have been published, so they should
+      // all get 'prerelease' tag. If a package didn't exist on npm,
+      // it would get 'latest' (first-publish bootstrap).
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        version: '1.0.0-patch.1',
         dryRun: true,
       });
 
-      const firstPublishEntries = result.published.filter(
-        (e) => e.tag === 'latest'
-      );
-      // These packages almost certainly do not exist on npm,
-      // so they should all be first-publish (tag=latest).
-      assert.ok(
-        firstPublishEntries.length > 0,
-        'Expected at least some packages to be first-publish (tag=latest)'
-      );
+      for (const entry of result.published) {
+        assert.ok(
+          entry.tag === 'latest' || entry.tag === 'prerelease',
+          `Package ${entry.name} has unexpected tag: ${entry.tag}`
+        );
+      }
 
       rmSync(tmp, { recursive: true, force: true });
     });
@@ -413,7 +402,6 @@ describe('Topological publish order (ADR-0014)', () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        version: '2.0.0-patch.1',
         dryRun: true,
       });
 
@@ -444,7 +432,6 @@ describe('Topological publish order (ADR-0014)', () => {
       const before = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
 
       await publishAll(tmp, {
-        version: '9.9.9-patch.1',
         dryRun: true,
       });
 
@@ -461,15 +448,8 @@ describe('Topological publish order (ADR-0014)', () => {
 
     it('publishAll rejects missing buildDir', async () => {
       await assert.rejects(
-        () => publishAll('', { version: '1.0.0' }),
+        () => publishAll('', {}),
         /buildDir is required/
-      );
-    });
-
-    it('publishAll rejects missing version', async () => {
-      await assert.rejects(
-        () => publishAll('/tmp', {}),
-        /version is required/
       );
     });
 
@@ -477,7 +457,6 @@ describe('Topological publish order (ADR-0014)', () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        version: '1.0.0-patch.1',
         dryRun: true,
       });
 
@@ -514,7 +493,7 @@ describe('Topological publish order (ADR-0014)', () => {
       );
     });
 
-    it('Level 5 contains cli, claude-flow, ruflo', () => {
+    it('Level 5 contains cli and claude-flow', () => {
       const level5 = LEVELS[4];
       assert.ok(
         level5.includes('@sparkleideas/cli'),
@@ -523,10 +502,6 @@ describe('Topological publish order (ADR-0014)', () => {
       assert.ok(
         level5.includes('@sparkleideas/claude-flow'),
         'claude-flow should be at level 5'
-      );
-      assert.ok(
-        level5.includes('@sparkleideas/ruflo'),
-        'ruflo should be at level 5'
       );
     });
 

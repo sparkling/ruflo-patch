@@ -147,7 +147,7 @@ npx @sparkleideas/ruflo mcp start
 ```diff
   "dependencies": {
 -   "claude-flow": "^3.5.2"
-+   "@sparkleideas/ruflo": "^3.5.2-patch.1"
++   "@sparkleideas/cli": "^3.5.3"
   }
 ```
 
@@ -229,7 +229,7 @@ The build is orchestrated by `scripts/sync-and-build.sh` and runs these phases:
 7. **Apply patches** — All `patch/*/fix.py` scripts via `patch-all.sh`
 8. **Build** — `pnpm install && pnpm build`
 9. **Test** — `npm test`
-10. **Compute version** — `{upstream_version}-patch.{N}` (resets N on upstream bump)
+10. **Compute version** — per-package `bump_last_segment(max(upstream, lastPublished))`
 11. **Publish** — 24 upstream packages across 5 dependency levels, bottom-up with 2s rate-limit
 12. **Notify** — GitHub prerelease (triggers email)
 13. **Save state** — Only after successful publish
@@ -284,10 +284,10 @@ npx ruflo@prerelease --version
 # Promote to @latest
 npm run promote
 # or manually:
-npm dist-tag add @sparkleideas/ruflo@3.5.2-patch.1 latest
+npm dist-tag add @sparkleideas/ruflo@3.5.3 latest
 ```
 
-**Version scheme**: `{upstream_version}-patch.{N}` — e.g., `3.5.2-patch.3` means the 3rd build from upstream `3.5.2`. The iteration resets to 1 when upstream bumps.
+**Version scheme**: Each package's version is computed as `bump_last_segment(max(upstream, lastPublished))`. For example, upstream `3.0.2` publishes as `3.0.3`, then `3.0.4` on rebuild. Per-package tracking in `config/published-versions.json`.
 
 ### Rollback
 
@@ -298,7 +298,7 @@ If a promoted version is broken:
 npm run rollback
 
 # Or with a specific version
-bash scripts/rollback.sh 3.5.2-patch.1
+bash scripts/rollback.sh 3.5.3
 ```
 
 This reassigns the `latest` dist-tag for `ruflo` and all 24 `@sparkleideas/*` packages. Takes effect immediately — no propagation delay.

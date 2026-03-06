@@ -585,7 +585,7 @@ Builds publish to npm automatically but under the `prerelease` dist-tag — not 
 
 ```
 Automated:  npm publish --tag prerelease     # available as ruflo@prerelease
-Manual:     npm dist-tag add ruflo@3.5.2-patch.2 latest   # promote to @latest
+Manual:     npm dist-tag add @sparkleideas/ruflo@3.5.3 latest   # promote to @latest
 ```
 
 The flow:
@@ -595,7 +595,7 @@ The flow:
 3. **Tests pass** — publishes to npm as `prerelease`, creates GitHub prerelease
 4. **GitHub sends you an email** — prerelease notifications are on by default
 5. **You review at your convenience** — check changelog, optionally test with `npx ruflo@prerelease`
-6. **You promote** — `npm dist-tag add ruflo@X.Y.Z-patch.N latest` (2 seconds)
+6. **You promote** — `npm dist-tag add @sparkleideas/ruflo@X.Y.Z latest` (2 seconds)
 
 If tests fail, a GitHub Issue is created instead. You get an email, investigate the failure, update patches if needed, and re-trigger manually.
 
@@ -627,16 +627,17 @@ The existing `sentinel` system verifies each patch took effect post-build.
 
 ### Version Numbering
 
-Our versions track upstream:
+Each package's version = `bump_last_segment(max(upstream, lastPublished))`:
 
 ```
-upstream:  claude-flow@3.5.2
-ours:      ruflo@3.5.2-patch.1
-                              ^^^^^^^ our patch iteration
+upstream:  @claude-flow/aidefence@3.0.2
+ours:      @sparkleideas/aidefence@3.0.3
+                                   ^^^^^ upstream + 1
 ```
 
-- Upstream bumps to `3.5.3` → we publish `ruflo@3.5.3-patch.1`
-- We update a patch → we publish `ruflo@3.5.2-patch.2`
+- Upstream bumps to `3.0.3` → we publish `@sparkleideas/aidefence@3.0.4`
+- We rebuild (same upstream) → we publish `@sparkleideas/aidefence@3.0.4` (from max of 3.0.2 and 3.0.3)
+- Per-package tracking in `config/published-versions.json`
 
 ### systemd Configuration
 
@@ -696,7 +697,7 @@ journalctl -u ruflo-sync     # view build logs
 | Build infrastructure | systemd timer on local server (32 cores, 200GB RAM) |
 | Upstream poll frequency | Every 6 hours |
 | Publish gate | Prerelease on npm + GitHub prerelease email notification |
-| Promotion | `npm dist-tag add ruflo@X.Y.Z-patch.N latest` (2 seconds) |
+| Promotion | `npm dist-tag add @sparkleideas/ruflo@X.Y.Z latest` (2 seconds) |
 | Packages needing scope rename (TypeScript) | ~26 |
 | Packages skippable (use published ruvector) | ~22 |
 | Files the codemod transforms per build | ~4,136 (never committed) |
