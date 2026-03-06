@@ -383,7 +383,7 @@ All major decisions are documented as ADRs in `docs/adr/`:
 | [0009](docs/adr/0009-systemd-timer-for-automated-builds.md) | systemd timer | 6-hour automated builds |
 | [0010](docs/adr/0010-prerelease-publish-gate.md) | Prerelease publish gate | Auto-publish to prerelease, manual promote |
 | [0011](docs/adr/0011-dual-build-trigger.md) | Dual build trigger | Upstream + local change detection |
-| [0012](docs/adr/0012-version-numbering-scheme.md) | Version numbering | `{upstream}-patch.{N}` format |
+| [0012](docs/adr/0012-version-numbering-scheme.md) | Version numbering | `bump_last_segment(max(upstream, lastPublished))` scheme |
 | [0013](docs/adr/0013-codemod-implementation.md) | Codemod implementation | 2-phase transform, ordering rules |
 | [0014](docs/adr/0014-topological-publish-order.md) | Topological publish order | 5-level bottom-up with rate limiting |
 | [0015](docs/adr/0015-first-publish-bootstrap.md) | First-publish bootstrap | Auto-detect never-published packages |

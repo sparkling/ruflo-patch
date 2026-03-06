@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Context
 
@@ -63,11 +63,10 @@ The state file format:
 
 ```
 RUFLO_HEAD=abc1234def5678...
-AGENTIC_FLOW_HEAD=def5678abc1234...
-RUV_FANN_HEAD=123abc456def...
-LOCAL_COMMIT=789def012abc...
+AGENTIC_HEAD=def5678abc1234...
+FANN_HEAD=123abc456def...
+PATCH_HEAD=789def012abc...
 BUILD_TIMESTAMP=2026-03-05T00:00:00Z
-BUILD_VERSION=3.5.3
 ```
 
 The state file is updated only after a successful publish. If the build fails, the state is not updated, ensuring the next timer run retries the same changes.
@@ -109,10 +108,10 @@ The state file is updated only after a successful publish. If the build fails, t
 
 Acceptance criteria:
 
-- [ ] `scripts/.last-build-state` is created after the first successful build
-- [ ] Upstream change detection works: manually advancing a stored HEAD hash triggers a rebuild
-- [ ] Local change detection works: committing to `patch/` or `scripts/` triggers a rebuild
-- [ ] No-change case works: running the script twice with no changes exits early on the second run
-- [ ] State file is updated only after successful publish (failed builds leave state unchanged)
-- [ ] Network errors during `git ls-remote` are handled gracefully (logged, not silent)
-- [ ] Manual trigger (`./scripts/sync-and-build.sh`) bypasses the timer and runs immediately
+- [x] `scripts/.last-build-state` is created after the first successful build
+- [x] Upstream change detection works: manually advancing a stored HEAD hash triggers a rebuild
+- [x] Local change detection works: committing to `patch/` or `scripts/` triggers a rebuild
+- [x] No-change case works: running the script twice with no changes exits early on the second run
+- [x] State file is updated only after successful publish (failed builds leave state unchanged)
+- [x] Network errors during `git ls-remote` are handled gracefully (logged, not silent)
+- [x] Manual trigger (`./scripts/sync-and-build.sh`) bypasses the timer and runs immediately

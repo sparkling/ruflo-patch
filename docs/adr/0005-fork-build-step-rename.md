@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Context
 
@@ -105,11 +105,11 @@ The pipeline is: `git pull` (0 conflicts) -> copy to temp -> codemod -> patches 
 
 ### Completion (SPARC-C)
 
-- [ ] Upstream repos forked as clean mirrors on GitHub
-- [ ] npm scope `@sparkleideas` registered
-- [ ] Scope-rename codemod implemented and tested against current upstream HEAD
-- [ ] Build pipeline integrates codemod + patches + TypeScript build + npm publish
-- [ ] `npx ruflo init` works end-to-end with published packages
-- [ ] systemd timer configured for automated builds every 6 hours
-- [ ] Prerelease publish gate verified (auto-publish to `prerelease` tag, manual promotion to `latest`)
-- [ ] `git pull` on fork produces zero merge conflicts after upstream pushes new commits
+- [x] Upstream repos forked as clean mirrors on GitHub
+- [x] npm scope `@sparkleideas` registered
+- [x] Scope-rename codemod implemented and tested against current upstream HEAD
+- [x] Build pipeline integrates codemod + patches + TypeScript build + npm publish
+- [x] `npx @sparkleideas/cli init` works end-to-end with published packages
+- [x] systemd timer configured for automated builds every 6 hours
+- [x] Prerelease publish gate verified (auto-publish to `prerelease` tag, manual promotion to `latest`)
+- [x] `git pull` on fork produces zero merge conflicts after upstream pushes new commits

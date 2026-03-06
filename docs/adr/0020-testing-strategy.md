@@ -379,26 +379,26 @@ This script is idempotent and non-destructive — it reads state but changes not
 
 Acceptance criteria:
 
-- [ ] `npm test` runs all 78+ unit tests and exits 0
-- [ ] `scripts/test-integration.sh` exists and runs the full 9-phase integration test
-- [ ] Integration test uses Verdaccio (no real npm publish during testing)
-- [ ] Integration test verifies zero `@claude-flow/` references after codemod (excluding `@sparkleideas`)
-- [ ] Integration test verifies all 26 packages publish successfully to Verdaccio
-- [ ] Integration test verifies `npm install ruflo` resolves the full dependency tree from Verdaccio
-- [ ] `scripts/test-acceptance.sh` exists and validates end-user commands
+- [x] `npm test` runs all 78+ unit tests and exits 0
+- [x] `scripts/test-integration.sh` exists and runs the full 9-phase integration test
+- [x] Integration test uses Verdaccio (no real npm publish during testing)
+- [x] Integration test verifies zero `@claude-flow/` references after codemod (excluding `@sparkleideas`)
+- [ ] Integration test verifies all 24 packages publish successfully to Verdaccio
+- [ ] Integration test verifies `npm install @sparkleideas/cli` resolves the full dependency tree from Verdaccio
+- [x] `scripts/test-acceptance.sh` exists and validates end-user commands
 - [ ] `config/known-test-failures.txt` exists (may be empty initially)
-- [ ] Upstream test failures are logged but do not block the integration test
-- [ ] The build pipeline (`sync-and-build.sh`) runs `npm test` as a gate before publishing
-- [ ] systemd timer validation checklist is documented in this ADR
-- [ ] Integration test cleans up all temp directories and Verdaccio processes on exit (including on failure via trap)
+- [x] Upstream test failures are logged but do not block the integration test
+- [x] The build pipeline (`sync-and-build.sh`) runs `npm test` as a gate before publishing
+- [x] systemd timer validation checklist is documented in this ADR
+- [x] Integration test cleans up all temp directories and Verdaccio processes on exit (including on failure via trap)
 
 Reproducibility criteria:
 
-- [ ] Integration test writes `.test-manifest.json` with exact commit SHAs, tool versions, and platform
-- [ ] `--snapshot` mode creates and replays frozen upstream tarballs for offline reproducibility
+- [x] Integration test writes `.test-manifest.json` with exact commit SHAs, tool versions, and platform
+- [x] `--snapshot` mode creates and replays frozen upstream tarballs for offline reproducibility
 - [ ] `.tool-versions` file pins Node.js, pnpm, and Python versions
 - [ ] `config/verdaccio-test.yaml` exists with `uplinks: {}` (fully isolated, no proxy to real npm)
-- [ ] Test results are written to `test-results/<timestamp>/` with structured output (TAP, JSON)
-- [ ] `scripts/validate-ci.sh` exists and performs non-destructive CI health checks
-- [ ] Unit tests produce TAP output in addition to console output
+- [x] Test results are written to `test-results/<timestamp>/` with structured output (TAP, JSON)
+- [x] `scripts/validate-ci.sh` exists and performs non-destructive CI health checks
+- [x] Unit tests produce TAP output in addition to console output
 - [ ] Two runs against the same snapshot + same tool versions produce identical pass/fail results

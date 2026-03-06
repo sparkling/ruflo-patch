@@ -8,9 +8,9 @@ Accepted
 
 ### Specification (SPARC-S)
 
-The dependency tree (documented in the versioning and packaging analysis, section 2) has 23 ruvnet packages across 5 dependency levels. Publishing to npm must happen bottom-up: a package cannot be installed if its dependencies have not been published yet. Cross-repo dependencies add complexity -- packages from the `ruvnet/agentic-flow` repo (e.g., `agentdb`, `agentic-flow`) must publish before packages from `ruvnet/ruflo` that depend on them.
+The dependency tree (documented in the versioning and packaging analysis, section 2) has 24 ruvnet packages across 5 dependency levels. Publishing to npm must happen bottom-up: a package cannot be installed if its dependencies have not been published yet. Cross-repo dependencies add complexity -- packages from the `ruvnet/agentic-flow` repo (e.g., `agentdb`, `agentic-flow`) must publish before packages from `ruvnet/ruflo` that depend on them.
 
-The review report (C3) identified that no ADR specifies the publish order or handles partial failures. With ~26 packages to publish, a naive unordered publish will fail when npm cannot resolve unpublished dependencies during the `npm publish` dry-run integrity check.
+The review report (C3) identified that no ADR specifies the publish order or handles partial failures. With ~24 packages to publish, a naive unordered publish will fail when npm cannot resolve unpublished dependencies during the `npm publish` dry-run integrity check.
 
 ### Pseudocode (SPARC-P)
 
@@ -134,7 +134,7 @@ Already-published packages at level N (before the failure) are orphaned prerelea
 
 **npm rate limiting:**
 
-A 2-second delay is inserted between each `npm publish` call. With ~26 packages, the total publish phase takes approximately 52 seconds. This avoids triggering npm's rate limiter, which can return 429 errors and block subsequent publishes for minutes.
+A 2-second delay is inserted between each `npm publish` call. With ~24 packages, the total publish phase takes approximately 48 seconds. This avoids triggering npm's rate limiter, which can return 429 errors and block subsequent publishes for minutes.
 
 **Publish loop pseudocode:**
 
@@ -204,7 +204,7 @@ async function publishAll(tag) {
 
 - If the dependency tree changes upstream (new packages, new cross-dependencies), the level assignments must be updated manually. This is mitigated by the fact that new packages are rare and the tree is relatively stable.
 - Sequential publish with delays means the publish phase takes ~52 seconds. This is acceptable for a build that runs every 6 hours.
-- A failure at level 1 blocks all 26 packages. This is the correct behavior -- partial publishes with missing deps are worse than no publish at all.
+- A failure at level 1 blocks all 24 packages. This is the correct behavior -- partial publishes with missing deps are worse than no publish at all.
 
 **Trade-offs and edge cases:**
 
@@ -214,12 +214,12 @@ async function publishAll(tag) {
 
 ### Completion (SPARC-C)
 
-- [ ] Publish script implements the 5-level topological order
-- [ ] Packages within each level publish sequentially with 2-second delay
-- [ ] Script stops immediately on first publish failure
-- [ ] GitHub Issue is created on failure with package name, level, and error output
-- [ ] Level assignments verified against current upstream dependency tree
-- [ ] Cross-repo packages (agentdb, agentic-flow, ruv-swarm) are at level 1 and publish first
-- [ ] Root packages (cli, claude-flow, ruflo) are at level 5 and publish last
+- [x] Publish script implements the 5-level topological order
+- [x] Packages within each level publish sequentially with 2-second delay
+- [x] Script stops immediately on first publish failure
+- [x] GitHub Issue is created on failure with package name, level, and error output
+- [x] Level assignments verified against current upstream dependency tree
+- [x] Cross-repo packages (agentdb, agentic-flow, ruv-swarm) are at level 1 and publish first
+- [x] Root packages (cli, claude-flow, ruflo) are at level 5 and publish last
 - [ ] End-to-end test: publish all packages to a local Verdaccio instance in topological order
-- [ ] Total publish time under 2 minutes (26 packages x ~4s each including delay)
+- [x] Total publish time under 2 minutes (24 packages x ~4s each including delay)

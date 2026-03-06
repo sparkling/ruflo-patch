@@ -13,9 +13,9 @@ ADR-0005 and ADR-0006 establish that we will fork, rebuild, and publish the upst
 The upstream user experience is:
 
 ```bash
-npx ruflo init                              # initialize a project
-npx ruflo agent spawn -t coder              # spawn an agent
-npx ruflo memory search --query "auth"      # search memory
+npx @claude-flow/cli init                   # initialize a project
+npx @claude-flow/cli agent spawn -t coder   # spawn an agent
+npx @claude-flow/cli memory search --query "auth"  # search memory
 ```
 
 MCP configuration references `@claude-flow/cli`:
@@ -27,36 +27,36 @@ MCP configuration references `@claude-flow/cli`:
 }
 ```
 
-Three UX patterns were considered for our rebuilt packages. The goal is: minimum friction for users switching from `ruflo` to our patched version.
+Three UX patterns were considered for our rebuilt packages. The goal is: minimum friction for users switching from `@claude-flow/cli` to our patched version.
 
 ### Pseudocode (SPARC-P)
 
 ```
 USER EXPERIENCE:
-  REPLACE "ruflo" with "ruflo" in all commands
-  REPLACE "@claude-flow/cli" with "ruflo" in MCP config
+  REPLACE "@claude-flow/cli" with "@sparkleideas/cli" in all commands
+  REPLACE "@claude-flow/cli" with "@sparkleideas/cli" in MCP config
   ALL flags, subcommands, and behaviors remain identical
 
 EXAMPLE:
-  npx ruflo init          ->  npx ruflo init
-  npx ruflo agent list    ->  npx ruflo agent list
-  npx ruflo mcp start     ->  npx ruflo mcp start
+  npx @claude-flow/cli init          ->  npx @sparkleideas/cli init
+  npx @claude-flow/cli agent list    ->  npx @sparkleideas/cli agent list
+  npx @claude-flow/cli mcp start     ->  npx @sparkleideas/cli mcp start
 ```
 
 ## Decision
 
 ### Architecture (SPARC-A)
 
-`ruflo` is a drop-in replacement for `ruflo`. Same CLI, same commands, same flags. Users swap one word in their commands and MCP configuration.
+`@sparkleideas/cli` is a drop-in replacement for `@claude-flow/cli`. Same CLI, same commands, same flags. Users swap the package name in their commands and MCP configuration.
 
 **Command mapping:**
 
 | Before | After |
 |--------|-------|
-| `npx ruflo init` | `npx ruflo init` |
-| `npx ruflo agent spawn -t coder` | `npx ruflo agent spawn -t coder` |
-| `npx ruflo memory search --query "auth"` | `npx ruflo memory search --query "auth"` |
-| `npx @claude-flow/cli@latest mcp start` | `npx ruflo mcp start` |
+| `npx @claude-flow/cli init` | `npx @sparkleideas/cli init` |
+| `npx @claude-flow/cli agent spawn -t coder` | `npx @sparkleideas/cli agent spawn -t coder` |
+| `npx @claude-flow/cli memory search --query "auth"` | `npx @sparkleideas/cli memory search --query "auth"` |
+| `npx @claude-flow/cli@latest mcp start` | `npx @sparkleideas/cli mcp start` |
 
 **MCP configuration changes from:**
 
@@ -72,7 +72,7 @@ EXAMPLE:
 ```json
 {
   "command": "npx",
-  "args": ["-y", "ruflo", "mcp", "start"]
+  "args": ["-y", "@sparkleideas/cli", "mcp", "start"]
 }
 ```
 
@@ -90,33 +90,33 @@ EXAMPLE:
 
 **Positive:**
 
-- Simplest possible migration: change one word in commands, one line in MCP config
+- Simplest possible migration: change the package name in commands, one line in MCP config
 - No setup step, no configuration, no runtime patching -- published packages already contain all fixes
 - Existing documentation and workflows transfer directly -- just search-and-replace the package name
-- `npx ruflo` handles dependency resolution automatically via npm
+- `npx @sparkleideas/cli` handles dependency resolution automatically via npm
 
 **Negative:**
 
-- Users must update their command references. This is a one-time cost per project (update MCP config, update any scripts or aliases that reference `ruflo` or `@claude-flow/cli`)
+- Users must update their command references. This is a one-time cost per project (update MCP config, update any scripts or aliases that reference `@claude-flow/cli`)
 - Shell history and muscle memory reference the old commands. Tab completion mitigates this for interactive use.
-- Any upstream documentation or tutorials reference `ruflo` or `@claude-flow/cli` -- users must mentally translate
+- Any upstream documentation or tutorials reference `@claude-flow/cli` -- users must mentally translate to `@sparkleideas/cli`
 
 **Trade-offs and edge cases:**
 
-- Projects that hard-code `@claude-flow/cli` in generated files (e.g., `init` writes MCP config referencing `@claude-flow/cli`) need the generated output to reference `@sparkleideas/cli` instead. The codemod handles this in the build, so `ruflo init` generates correct references automatically.
-- `repair-post-init.sh` currently copies helpers from the npx cache of `@claude-flow/cli`. With `ruflo`, it copies from `ruflo`'s cache location. The script must be updated to discover the correct cache path.
-- If a user has both `ruflo` and `ruflo` installed, they operate independently. There is no conflict because they use different package names and different npx cache locations.
+- Projects that hard-code `@claude-flow/cli` in generated files (e.g., `init` writes MCP config referencing `@claude-flow/cli`) need the generated output to reference `@sparkleideas/cli` instead. The codemod handles this in the build, so `npx @sparkleideas/cli init` generates correct references automatically.
+- `repair-post-init.sh` currently copies helpers from the npx cache of `@claude-flow/cli`. With `@sparkleideas/cli`, it copies from the `@sparkleideas/cli` cache location. The script must be updated to discover the correct cache path.
+- If a user has both `@claude-flow/cli` and `@sparkleideas/cli` installed, they operate independently. There is no conflict because they use different package names and different npx cache locations.
 
 **Neutral:**
 
-- The CLI binary name in `ruflo`'s `package.json` `bin` field is `ruflo`, matching the upstream package name
+- The CLI binary name in `@sparkleideas/cli`'s `package.json` `bin` field is `ruflo`, matching the upstream binary name
 - No changes to the underlying CLI code beyond the scope rename handled by the codemod (ADR-0005) and the enhancement patches documented in ADR-0005 (MC-001 autoStart fix, FB-001/FB-002 fallback instrumentation)
 
 ### Completion (SPARC-C)
 
-- [ ] `npx ruflo init` works end-to-end on a clean machine
-- [ ] `npx ruflo agent spawn -t coder` spawns an agent successfully
-- [ ] `npx ruflo mcp start` starts the MCP server
-- [ ] `ruflo init` generates MCP config referencing `ruflo`, not `@claude-flow/cli`
-- [ ] All subcommands from `ruflo --help` are present and functional in `ruflo --help`
-- [ ] MCP configuration with `"args": ["-y", "ruflo", "mcp", "start"]` works in Claude Code
+- [x] `npx @sparkleideas/cli init` works end-to-end on a clean machine
+- [x] `npx @sparkleideas/cli agent spawn -t coder` spawns an agent successfully
+- [x] `npx @sparkleideas/cli mcp start` starts the MCP server
+- [x] `npx @sparkleideas/cli init` generates MCP config referencing `@sparkleideas/cli`, not `@claude-flow/cli`
+- [x] All subcommands from `@claude-flow/cli --help` are present and functional in `@sparkleideas/cli --help`
+- [x] MCP configuration with `"args": ["-y", "@sparkleideas/cli", "mcp", "start"]` works in Claude Code

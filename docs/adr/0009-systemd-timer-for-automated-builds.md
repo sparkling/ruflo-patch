@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Context
 
@@ -59,9 +59,9 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 User=claude
-WorkingDirectory=/home/claude/src/ruflo
+WorkingDirectory=/home/claude/src/ruflo-patch
 EnvironmentFile=/home/claude/.config/ruflo/secrets.env
-ExecStart=/home/claude/src/ruflo/scripts/sync-and-build.sh
+ExecStart=/home/claude/src/ruflo-patch/scripts/sync-and-build.sh
 CPUQuota=800%
 TimeoutStartSec=3600
 MemoryMax=32G
@@ -114,10 +114,10 @@ The bash script (`scripts/sync-and-build.sh`) handles the entire pipeline: polli
 
 Acceptance criteria:
 
-- [ ] `ruflo-sync.timer` and `ruflo-sync.service` unit files installed in `/etc/systemd/system/`
-- [ ] `systemctl enable --now ruflo-sync.timer` activates the timer
-- [ ] `systemctl list-timers` shows next scheduled run
-- [ ] `journalctl -u ruflo-sync` captures build output
-- [ ] `systemctl start ruflo-sync.service` triggers an immediate manual build
-- [ ] Build completes without interactive prompts (fully unattended)
-- [ ] `CPUQuota=800%` verified via `systemd-cgtop` during a build
+- [x] `ruflo-sync.timer` and `ruflo-sync.service` unit files installed in `/etc/systemd/system/`
+- [x] `systemctl enable --now ruflo-sync.timer` activates the timer
+- [x] `systemctl list-timers` shows next scheduled run
+- [x] `journalctl -u ruflo-sync` captures build output
+- [x] `systemctl start ruflo-sync.service` triggers an immediate manual build
+- [x] Build completes without interactive prompts (fully unattended)
+- [x] `CPUQuota=800%` verified via `systemd-cgtop` during a build

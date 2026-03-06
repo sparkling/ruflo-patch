@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Context
 
@@ -172,14 +172,14 @@ The script uses an allowlist of file extensions rather than a denylist. Only fil
 
 ### Completion (SPARC-C)
 
-- [ ] Codemod script implemented in Node.js at `scripts/codemod.js`
-- [ ] package.json transform handles all 6 fields (name, deps, peer, optional, bin, exports)
-- [ ] Source file transform handles all allowed extensions (.js, .ts, .mjs, .cjs, .json, .d.ts, .d.mts)
-- [ ] Scoped replacement runs before unscoped replacement (ordering verified by test)
-- [ ] Negative lookahead prevents corruption of already-transformed `@sparkleideas/` strings
-- [ ] Word-boundary matching prevents partial matches on unscoped package names
-- [ ] `@ruvector/*` and `ruvector` references are NOT transformed (verified by test)
-- [ ] URLs, LICENSE files, `.git/`, and `node_modules/` are excluded
-- [ ] `pnpm-lock.yaml` is deleted (not transformed)
-- [ ] Codemod is idempotent -- running twice produces the same output as running once
+- [x] Codemod script implemented in Node.js at `scripts/codemod.mjs`
+- [x] package.json transform handles all 6 fields (name, deps, peer, optional, bin, exports)
+- [x] Source file transform handles all allowed extensions (.js, .ts, .mjs, .cjs, .json, .d.ts, .d.mts)
+- [x] Scoped replacement runs before unscoped replacement (ordering verified by test)
+- [x] Negative lookahead prevents corruption of already-transformed `@sparkleideas/` strings
+- [x] Word-boundary matching prevents partial matches on unscoped package names
+- [x] `@ruvector/*` and `ruvector` references are NOT transformed (verified by test)
+- [x] URLs, LICENSE files, `.git/`, and `node_modules/` are excluded
+- [x] `pnpm-lock.yaml` is deleted (not transformed)
+- [x] Codemod is idempotent -- running twice produces the same output as running once
 - [ ] Integration test: codemod runs against a snapshot of upstream HEAD and the result builds successfully

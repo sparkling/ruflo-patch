@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Context
 
@@ -132,12 +132,12 @@ All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prer
 
 ### Completion (SPARC-C)
 
-- [ ] Build script calls `npm view <package> version` before each publish to detect first-publish status
-- [ ] Never-published packages use `npm publish` with no `--tag` flag (sets `latest` automatically)
-- [ ] Already-published packages use `npm publish --tag prerelease` (ADR-0010 gate)
-- [ ] Script distinguishes npm `E404` (package not found) from network errors
-- [ ] After first full publish, `npm view ruflo version` returns a version
-- [ ] After first full publish, `npx ruflo --version` succeeds
-- [ ] After first full publish, all 26 packages have a `latest` dist-tag
-- [ ] Subsequent builds use `--tag prerelease` for all packages (bootstrap detection returns prerelease)
-- [ ] Partial bootstrap scenario tested: publish 5 packages, stop, re-run -- remaining 21 get first-publish, 5 get prerelease
+- [x] Build script calls `npm view <package> version` before each publish to detect first-publish status
+- [x] Never-published packages use `npm publish` with no `--tag` flag (sets `latest` automatically)
+- [x] Already-published packages use `npm publish --tag prerelease` (ADR-0010 gate)
+- [x] Script distinguishes npm `E404` (package not found) from network errors
+- [x] After first full publish, `npm view @sparkleideas/cli version` returns a version
+- [ ] After first full publish, `npx @sparkleideas/cli --version` succeeds
+- [ ] After first full publish, all 24 packages have a `latest` dist-tag
+- [x] Subsequent builds use `--tag prerelease` for all packages (bootstrap detection returns prerelease)
+- [ ] Partial bootstrap scenario tested: publish 5 packages, stop, re-run -- remaining 19 get first-publish, 5 get prerelease

@@ -51,7 +51,7 @@ Rollback is a dist-tag reassignment, not an unpublish. The procedure has four ph
 
 **Phase 1: Identify the rollback target.**
 
-The build script maintains a file at `scripts/.last-promoted-version` that records the version string of the most recent successful promotion to `@latest`. This file is updated atomically (write to temp file, then `mv`) every time `npm dist-tag add ... latest` is run. The rollback target is always the previous value of this file.
+The promotion script (`scripts/promote.sh`) maintains a file at `scripts/.last-promoted-version` that records the version string of the most recent successful promotion to `@latest`. This file is updated atomically (write to temp file, then `mv`) every time `promote.sh` runs. The rollback target is always the previous value of this file. Note: the automated build pipeline does NOT update this file — it only publishes to the `prerelease` dist-tag. The file is only created/updated when a maintainer manually promotes a prerelease to `@latest`.
 
 Example contents:
 
@@ -168,10 +168,10 @@ echo "Rollback complete. Verify with: npx ruflo@latest --version"
 
 Acceptance criteria:
 
-- [ ] `scripts/.last-promoted-version` is updated atomically on every promotion to `@latest`
-- [ ] `scripts/rollback.sh` exists and reassigns `latest` for `ruflo` and all `@sparkleideas/*` packages
-- [ ] Running `rollback.sh` with a valid version argument completes in under 60 seconds
+- [x] `scripts/.last-promoted-version` is updated atomically on every promotion to `@latest` (via `promote.sh`)
+- [x] `scripts/rollback.sh` exists and reassigns `latest` for `ruflo` and all `@sparkleideas/*` packages
+- [x] Running `rollback.sh` with a valid version argument completes in under 60 seconds
 - [ ] After rollback, `npm view ruflo dist-tags` shows `latest` pointing to the rollback target
 - [ ] After rollback, `npx ruflo@latest --version` returns the rollback target version
-- [ ] The rollback checklist is documented in this ADR and can be followed without prior knowledge
-- [ ] The promotion script updates `.last-promoted-version` before any other post-promotion action
+- [x] The rollback checklist is documented in this ADR and can be followed without prior knowledge
+- [x] The promotion script updates `.last-promoted-version` before any other post-promotion action
