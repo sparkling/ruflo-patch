@@ -170,6 +170,10 @@ const SCOPED_RE = /@claude-flow\//g;
 // keys, or shorthand object keys -- renaming them breaks JavaScript syntax.
 // Only the scoped @claude-flow/ prefix is safe to replace in source files.
 
+// MC-001 fix: Remove `{ autoStart: config.autoStart }` from mcp-generator.js
+// so the MCP server starts by default. Applied at build time.
+const AUTOSTART_RE = /,\s*\{\s*autoStart:\s*config\.autoStart\s*\}/g;
+
 /**
  * Apply scoped regex replacement to source file content.
  * Returns the transformed content (may be identical if no matches).
@@ -178,8 +182,13 @@ const SCOPED_RE = /@claude-flow\//g;
  * Unscoped names (agentdb, claude-flow, etc.) are only renamed in
  * package.json via transformPackageJsonObject().
  */
-function transformSource(content) {
-  return content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
+function transformSource(content, filename) {
+  let result = content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
+  // Apply MC-001 fix to mcp-generator files
+  if (filename === 'mcp-generator.js') {
+    result = result.replace(AUTOSTART_RE, '');
+  }
+  return result;
 }
 
 // -- File walker --------------------------------------------------------------
@@ -255,7 +264,7 @@ export async function transform(tempDir) {
       }
     } else {
       const content = await readFile(filePath, 'utf8');
-      const transformed = transformSource(content);
+      const transformed = transformSource(content, name);
       if (transformed !== content) {
         await writeFile(filePath, transformed, 'utf8');
         stats.filesTransformed++;
