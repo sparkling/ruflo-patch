@@ -360,4 +360,74 @@ describe('codemod: source file transforms', () => {
     const result = readFileSync(join(tmp, 'ruflo.js'), 'utf8');
     assert.equal(result, source, '@sparkleideas/ruflo must not be double-transformed');
   });
+
+  it('removes autoStart from mcp-generator.js (MC-001 build-time fix)', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "CLAUDE_FLOW_MEMORY_BACKEND: options.runtime.memoryBackend,",
+      "        }, { autoStart: config.autoStart });",
+    ].join('\n');
+    writeFileSync(join(tmp, 'mcp-generator.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'mcp-generator.js'), 'utf8');
+    assert.ok(!result.includes('autoStart'), 'autoStart must be removed from mcp-generator.js');
+    assert.ok(result.includes('memoryBackend,'), 'surrounding code must be preserved');
+  });
+
+  it('does NOT remove autoStart from non-mcp-generator files', async () => {
+    tmp = makeTmpDir();
+    const source = "const x = { autoStart: config.autoStart };\n";
+    writeFileSync(join(tmp, 'other.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'other.js'), 'utf8');
+    assert.ok(result.includes('autoStart'), 'autoStart in non-mcp-generator files must be preserved');
+  });
+});
+
+describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('replaces caret, tilde, gte, and exact ranges in dependencies', async () => {
+    tmp = makeTmpDir();
+    const pkg = {
+      name: '@claude-flow/core',
+      version: '3.0.0',
+      dependencies: {
+        '@claude-flow/memory': '^3.0.0',
+        '@claude-flow/cli': '>=2.0.0',
+        '@claude-flow/utils': '~3.1.0',
+        '@claude-flow/hooks': '3.0.0',
+        'lodash': '^4.0.0',
+      },
+    };
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+    assert.equal(result.dependencies['@sparkleideas/memory'], '*', 'caret range -> *');
+    assert.equal(result.dependencies['@sparkleideas/cli'], '*', 'gte range -> *');
+    assert.equal(result.dependencies['@sparkleideas/utils'], '*', 'tilde range -> *');
+    assert.equal(result.dependencies['@sparkleideas/hooks'], '*', 'exact range -> *');
+    assert.equal(result.dependencies['lodash'], '^4.0.0', 'third-party dep untouched');
+  });
+
+  it('does not double-replace already-"*" ranges', async () => {
+    tmp = makeTmpDir();
+    const pkg = {
+      name: '@sparkleideas/core',
+      version: '3.0.0',
+      dependencies: { '@sparkleideas/memory': '*' },
+    };
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    const statsBefore = await transform(tmp);
+    const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+    assert.equal(result.dependencies['@sparkleideas/memory'], '*');
+  });
 });
