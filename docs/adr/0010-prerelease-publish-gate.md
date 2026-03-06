@@ -96,11 +96,11 @@ The above list of rejected alternatives is exhaustive.
 
 Acceptance criteria:
 
-- [ ] `npm publish --tag prerelease` publishes successfully without affecting `@latest`
-- [ ] `npm dist-tag ls ruflo` shows both `latest` and `prerelease` tags
-- [ ] `gh release create --prerelease` creates a visible (non-draft) prerelease on GitHub
-- [ ] GitHub sends email notification for the prerelease
-- [ ] `npm dist-tag add ruflo@X.Y.Z latest` promotes correctly
-- [ ] `npx ruflo@prerelease` installs the prerelease version
-- [ ] `npx ruflo@latest` is unaffected by prerelease publishes
-- [ ] Failed builds create GitHub Issues with diagnostic information
+- [x] `npm publish --tag prerelease` publishes successfully without affecting `@latest`
+- [x] `npm dist-tag ls @sparkleideas/cli` shows both `latest` and `prerelease` tags
+- [x] `gh release create --prerelease` creates a visible (non-draft) prerelease on GitHub
+- [x] GitHub sends email notification for the prerelease
+- [x] `npm dist-tag add @sparkleideas/cli@X.Y.Z latest` promotes correctly
+- [x] `npx @sparkleideas/cli@prerelease` installs the prerelease version
+- [x] `npx @sparkleideas/cli@latest` is unaffected by prerelease publishes
+- [x] Failed builds create GitHub Issues with diagnostic information

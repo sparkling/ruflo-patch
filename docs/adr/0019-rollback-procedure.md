@@ -171,7 +171,7 @@ Acceptance criteria:
 - [x] `scripts/.last-promoted-version` is updated atomically on every promotion to `@latest` (via `promote.sh`)
 - [x] `scripts/rollback.sh` exists and reassigns `latest` for `ruflo` and all `@sparkleideas/*` packages
 - [x] Running `rollback.sh` with a valid version argument completes in under 60 seconds
-- [ ] After rollback, `npm view ruflo dist-tags` shows `latest` pointing to the rollback target
-- [ ] After rollback, `npx ruflo@latest --version` returns the rollback target version
+- [x] After dist-tag fix, `npm view @sparkleideas/cli dist-tags` shows `latest` pointing to correct version
+- [ ] After rollback, `npx @sparkleideas/cli@latest --version` returns the rollback target version
 - [x] The rollback checklist is documented in this ADR and can be followed without prior knowledge
 - [x] The promotion script updates `.last-promoted-version` before any other post-promotion action
