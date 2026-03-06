@@ -240,10 +240,17 @@ apply_patches() {
 
 run_build() {
   log "Installing dependencies in ${TEMP_DIR}"
-  (cd "${TEMP_DIR}" && pnpm install --frozen-lockfile 2>/dev/null || pnpm install)
+  (cd "${TEMP_DIR}" && pnpm install --frozen-lockfile 2>&1) || \
+    (cd "${TEMP_DIR}" && pnpm install --no-frozen-lockfile) || {
+      log_error "pnpm install failed"
+      return 1
+    }
 
   log "Building in ${TEMP_DIR}"
-  (cd "${TEMP_DIR}" && pnpm build)
+  (cd "${TEMP_DIR}" && pnpm build) || {
+    log_error "pnpm build failed"
+    return 1
+  }
   log "Build complete"
 }
 
