@@ -89,7 +89,7 @@ describe('codemod: source file transform', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('transforms import and require patterns correctly', async () => {
+  it('transforms scoped @claude-flow/ imports and leaves unscoped names alone', async () => {
     tmp = makeTmpDir();
     const source = [
       "import { foo } from '@claude-flow/memory';",
@@ -105,13 +105,15 @@ describe('codemod: source file transform', () => {
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'source.js'), 'utf8');
+    // Scoped @claude-flow/ references ARE transformed in source files
     assert.ok(result.includes("from '@sparkleideas/memory'"), 'scoped import transformed');
-    assert.ok(result.includes("require('@sparkleideas/claude-flow')"), 'unscoped claude-flow require transformed');
-    assert.ok(result.includes("require('@sparkleideas/ruflo')"), 'ruflo require transformed');
-    assert.ok(result.includes("require('@sparkleideas/agentdb')"), 'agentdb require transformed');
     assert.ok(result.includes("from '@sparkleideas/core/utils'"), 'scoped deep import transformed');
-    assert.ok(result.includes("require('@sparkleideas/agentic-flow')"), 'agentic-flow require transformed');
-    assert.ok(result.includes("require('@sparkleideas/ruv-swarm')"), 'ruv-swarm require transformed');
+    // Unscoped bare names are NOT transformed in source files (would corrupt JS)
+    assert.ok(result.includes("require('claude-flow')"), 'unscoped claude-flow left alone');
+    assert.ok(result.includes("require('ruflo')"), 'unscoped ruflo left alone');
+    assert.ok(result.includes("require('agentdb')"), 'unscoped agentdb left alone');
+    assert.ok(result.includes("require('agentic-flow')"), 'unscoped agentic-flow left alone');
+    assert.ok(result.includes("require('ruv-swarm')"), 'unscoped ruv-swarm left alone');
   });
 });
 
@@ -130,10 +132,10 @@ describe('codemod: ordering — scoped before unscoped', () => {
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'mixed.js'), 'utf8');
-    // Scoped must become @sparkleideas/memory (not @sparkleideas-patch/memory or similar)
+    // Scoped must become @sparkleideas/memory
     assert.ok(result.includes("'@sparkleideas/memory'"), 'scoped transformed correctly');
-    // Unscoped must become @sparkleideas/claude-flow
-    assert.ok(result.includes("'@sparkleideas/claude-flow'"), 'unscoped transformed correctly');
+    // Unscoped 'claude-flow' must NOT be transformed in source files
+    assert.ok(result.includes("'claude-flow'"), 'unscoped left alone in source');
     // Must NOT contain double-patched strings
     assert.ok(!result.includes('@sparkleideas-patch'), 'no double-replacement');
     assert.ok(!result.includes('@sparkleideas/patch'), 'no corruption of already-transformed');
@@ -220,17 +222,17 @@ describe('codemod: exclusions', () => {
     const gitDir = join(tmp, '.git');
     mkdirSync(gitDir, { recursive: true });
     const gitFile = join(gitDir, 'config.js');
-    const original = "const x = require('claude-flow');\n";
+    const original = "const x = require('@claude-flow/cli');\n";
     writeFileSync(gitFile, original);
 
     // Also add a transformable file to verify codemod still runs
-    writeFileSync(join(tmp, 'app.js'), "const x = require('claude-flow');\n");
+    writeFileSync(join(tmp, 'app.js'), "const x = require('@claude-flow/cli');\n");
 
     await transform(tmp);
 
     assert.equal(readFileSync(gitFile, 'utf8'), original, '.git/ contents must not be transformed');
     const appResult = readFileSync(join(tmp, 'app.js'), 'utf8');
-    assert.ok(appResult.includes('@sparkleideas/claude-flow'), 'non-.git file was transformed');
+    assert.ok(appResult.includes('@sparkleideas/cli'), 'non-.git file was transformed');
   });
 
   it('does not transform files inside node_modules/ directory', async () => {
@@ -238,10 +240,10 @@ describe('codemod: exclusions', () => {
     const nmDir = join(tmp, 'node_modules', 'some-pkg');
     mkdirSync(nmDir, { recursive: true });
     const nmFile = join(nmDir, 'index.js');
-    const original = "const x = require('claude-flow');\n";
+    const original = "const x = require('@claude-flow/cli');\n";
     writeFileSync(nmFile, original);
 
-    writeFileSync(join(tmp, 'app.js'), "const x = require('claude-flow');\n");
+    writeFileSync(join(tmp, 'app.js'), "const x = require('@claude-flow/cli');\n");
 
     await transform(tmp);
 
@@ -312,23 +314,40 @@ describe('codemod: peerDependency version range fixing', () => {
   });
 });
 
-describe('codemod: unscoped word boundaries', () => {
+describe('codemod: source file transforms', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('does not transform agentdb-onnx to @sparkleideas/agentdb-onnx', async () => {
+  it('transforms scoped @claude-flow/ references in source files', async () => {
     tmp = makeTmpDir();
     const source = [
-      "const onnx = require('agentdb-onnx');",
-      "const db = require('agentdb');",
+      "const db = require('@claude-flow/agentdb');",
+      "import { foo } from '@claude-flow/memory';",
     ].join('\n');
-    writeFileSync(join(tmp, 'boundary.js'), source);
+    writeFileSync(join(tmp, 'scoped.js'), source);
 
     await transform(tmp);
 
-    const result = readFileSync(join(tmp, 'boundary.js'), 'utf8');
-    assert.ok(result.includes("require('agentdb-onnx')"), 'agentdb-onnx must NOT be transformed');
-    assert.ok(result.includes("require('@sparkleideas/agentdb')"), 'bare agentdb must be transformed');
+    const result = readFileSync(join(tmp, 'scoped.js'), 'utf8');
+    assert.ok(result.includes("require('@sparkleideas/agentdb')"), 'scoped agentdb must be transformed');
+    assert.ok(result.includes("from '@sparkleideas/memory'"), 'scoped memory must be transformed');
+  });
+
+  it('does NOT transform bare unscoped names in source files (prevents JS corruption)', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "const agentdb = require('agentdb');",
+      "const x = agentdb.query();",
+    ].join('\n');
+    writeFileSync(join(tmp, 'unscoped.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'unscoped.js'), 'utf8');
+    // Bare unscoped names are NOT transformed in source files to avoid
+    // corrupting variable names, property access, etc.
+    assert.ok(result.includes("require('agentdb')"), 'bare agentdb must NOT be transformed in source');
+    assert.ok(result.includes("const agentdb"), 'variable name must be preserved');
   });
 
   it('does not transform @sparkleideas/ruflo further', async () => {
