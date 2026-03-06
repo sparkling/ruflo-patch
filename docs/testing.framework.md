@@ -16,7 +16,7 @@ Operational: preflight, sentinel check, CI health check
 |-------|--------|-------|----------|---------------|------|
 | 1 | `npm test` | 90 | ~0.2s | None | Every commit |
 | 2 | `bash scripts/test-integration.sh` | 9 phases | ~30s (cached) | Verdaccio, upstream clones | Pre-publish, CI |
-| 3 | `bash scripts/test-acceptance.sh` | 8 | ~2 min | Published packages | Post-publish |
+| 3 | `bash scripts/test-acceptance.sh` | 10 | ~2 min | Published packages | Post-publish |
 | — | `npm run preflight` | — | <1s | None | Pre-commit |
 | — | `bash check-patches.sh` | — | <10s | None | Session start |
 | — | `bash scripts/validate-ci.sh` | — | <5s | Various | Ad-hoc |
@@ -268,6 +268,8 @@ Runs real CLI commands against published packages to validate the user experienc
 | A6 | MCP config in `.mcp.json` | MC-001: no `autoStart: false` |
 | A7 | Wrapper proxy test | `@sparkleideas/ruflo` proxies to `@sparkleideas/cli` |
 | A8 | No broken versions resolved | `@latest` does not resolve to prerelease with missing dist/ |
+| A9 | Memory lifecycle | init → store → search → retrieve → verify storage on disk |
+| A10 | Neural training | `neural train --pattern coordination` produces persisted patterns.json |
 
 **Exit code**: Number of failed tests (0 = all pass).
 

@@ -293,6 +293,110 @@ test_a8_no_broken_versions() {
   record_result "A8" "No broken versions resolved" "$passed" "$output" "$duration_ms"
 }
 
+test_a9_memory_lifecycle() {
+  # End-to-end: init memory → store → search → retrieve → verify
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local output="" passed="false"
+
+  # Init memory
+  local init_out
+  init_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes "$PKG" memory init 2>&1) || true
+  if ! echo "$init_out" | grep -qi 'initialized\|verification passed'; then
+    output="Memory init failed:\n$(echo "$init_out" | tail -10)"
+    end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    local duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+    record_result "A9" "Memory lifecycle" "$passed" "$output" "$duration_ms"
+    return
+  fi
+
+  # Store
+  local store_out
+  store_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory store \
+    --key "test-pattern" \
+    --value "Integration test: JWT auth with refresh tokens for stateless APIs" \
+    --namespace test-ns --tags "test,acceptance" 2>&1) || true
+  if ! echo "$store_out" | grep -qi 'stored\|success'; then
+    output="Memory store failed:\n$(echo "$store_out" | tail -10)"
+    end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    local duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+    record_result "A9" "Memory lifecycle" "$passed" "$output" "$duration_ms"
+    return
+  fi
+
+  # Search (semantic)
+  local search_out
+  search_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory search \
+    --query "authentication tokens" --namespace test-ns 2>&1) || true
+  if ! echo "$search_out" | grep -q 'test-pattern'; then
+    output="Memory search did not find stored entry:\n$(echo "$search_out" | tail -10)"
+    end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    local duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+    record_result "A9" "Memory lifecycle" "$passed" "$output" "$duration_ms"
+    return
+  fi
+
+  # Retrieve
+  local retrieve_out
+  retrieve_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory retrieve \
+    --key "test-pattern" --namespace test-ns 2>&1) || true
+  if echo "$retrieve_out" | grep -q 'JWT auth'; then
+    passed="true"
+    output="init ✓ → store ✓ → search found test-pattern ✓ → retrieve value matches ✓"
+  else
+    output="Memory retrieve did not return stored value:\n$(echo "$retrieve_out" | tail -10)"
+  fi
+
+  # Verify storage files exist
+  if [[ "$passed" == "true" ]]; then
+    local db_found="false"
+    for db_path in "$TEMP_DIR/.swarm/memory.db" "$TEMP_DIR/.claude/memory.db"; do
+      if [[ -f "$db_path" ]]; then
+        db_found="true"
+        break
+      fi
+    done
+    if [[ "$db_found" == "false" ]]; then
+      passed="false"
+      output="$output\nWARNING: No memory.db file found on disk"
+    else
+      output="$output\nStorage verified on disk"
+    fi
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local duration_ms=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+  fi
+  record_result "A9" "Memory lifecycle" "$passed" "$output" "$duration_ms"
+}
+
+test_a10_neural_training() {
+  # Train neural patterns and verify output + persistence
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx '$PKG' neural train --pattern coordination"
+  local passed="false"
+  local output="$_OUT"
+  if [[ $_EXIT -eq 0 ]]; then
+    if echo "$_OUT" | grep -qi 'patterns\|training complete\|saved'; then
+      # Verify patterns file was written
+      if [[ -f "$TEMP_DIR/.claude-flow/neural/patterns.json" ]]; then
+        local pattern_count
+        pattern_count=$(python3 -c "import json; print(len(json.load(open('$TEMP_DIR/.claude-flow/neural/patterns.json'))))" 2>/dev/null || echo "0")
+        if [[ "$pattern_count" -gt 0 ]]; then
+          passed="true"
+          output="Neural training complete, $pattern_count patterns persisted to disk"
+        else
+          output="Training ran but patterns.json is empty"
+        fi
+      else
+        output="Training ran but no patterns.json found on disk"
+      fi
+    fi
+  fi
+  record_result "A10" "Neural training" "$passed" "$output" "$_DURATION_MS"
+}
+
 # ── Main ────────────────────────────────────────────────────────────
 echo "Acceptance Tests (ADR-0020 Layer 3)"
 echo "===================================="
@@ -333,6 +437,12 @@ test_a7_wrapper_proxy
 
 echo "Running A8: No broken versions resolved..."
 test_a8_no_broken_versions
+
+echo "Running A9: Memory lifecycle..."
+test_a9_memory_lifecycle
+
+echo "Running A10: Neural training..."
+test_a10_neural_training
 
 # ── Summary ─────────────────────────────────────────────────────────
 echo ""
