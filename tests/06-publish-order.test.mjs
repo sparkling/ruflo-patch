@@ -66,6 +66,9 @@ const KNOWN_DEPS = {
 
 // ── Helpers ──
 
+/** Fast mock for getPublishTag — returns 'prerelease' without network calls. */
+const mockGetPublishTag = async () => 'prerelease';
+
 /** Build a package-name -> level-index lookup from LEVELS. */
 function buildLevelLookup() {
   const lookup = new Map();
@@ -259,7 +262,7 @@ describe('Topological publish order (ADR-0014)', () => {
       // publishAll in dry-run mode will fail on the first Level 2 package
       // because its directory does not exist.
       const result = await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
 
       assert.ok(result.failed, 'Expected failure result');
@@ -299,7 +302,7 @@ describe('Topological publish order (ADR-0014)', () => {
       }
 
       const result = await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
 
       assert.ok(result.failed.package, 'Failed result should have a package name');
@@ -326,7 +329,7 @@ describe('Topological publish order (ADR-0014)', () => {
 
       const start = Date.now();
       const result = await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
       const elapsed = Date.now() - start;
 
@@ -358,7 +361,7 @@ describe('Topological publish order (ADR-0014)', () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
 
       assert.equal(result.failed, null, 'Dry-run should succeed');
@@ -381,7 +384,7 @@ describe('Topological publish order (ADR-0014)', () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
 
       for (const entry of result.published) {
@@ -402,7 +405,7 @@ describe('Topological publish order (ADR-0014)', () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
 
       assert.equal(result.failed, null, 'Dry-run should not fail');
@@ -432,7 +435,7 @@ describe('Topological publish order (ADR-0014)', () => {
       const before = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
 
       await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
 
       const after = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
@@ -457,7 +460,7 @@ describe('Topological publish order (ADR-0014)', () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        dryRun: true,
+        dryRun: true, getPublishTagFn: mockGetPublishTag,
       });
 
       // Verify levels are monotonically non-decreasing

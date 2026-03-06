@@ -104,10 +104,10 @@ function transformPackageJsonObject(json) {
   }
 
   // Fix ALL version ranges for @sparkleideas/* internal packages.
-  // Since all @sparkleideas/* packages are internal and published together,
-  // replace any non-"*" range with "*" to avoid semver resolution failures.
   // Caret ranges like "^2.0.0" don't match prerelease versions (2.0.2-alpha.3),
   // and prerelease ranges like ">=3.0.0-alpha.1" only match the same minor.
+  // Replace with "*" so npm resolves to whatever version is published.
+  // Introduced in bf31c63 to fix ETARGET errors on npm install.
   for (const depField of DEP_FIELDS) {
     if (json[depField] && typeof json[depField] === 'object') {
       for (const [key, value] of Object.entries(json[depField])) {
@@ -166,10 +166,6 @@ const SCOPED_RE = /@claude-flow\//g;
 // keys, or shorthand object keys -- renaming them breaks JavaScript syntax.
 // Only the scoped @claude-flow/ prefix is safe to replace in source files.
 
-// MC-001 fix: Remove `{ autoStart: config.autoStart }` from mcp-generator.js
-// so the MCP server starts by default. Applied at build time.
-const AUTOSTART_RE = /,\s*\{\s*autoStart:\s*config\.autoStart\s*\}/g;
-
 /**
  * Apply scoped regex replacement to source file content.
  * Returns the transformed content (may be identical if no matches).
@@ -177,14 +173,12 @@ const AUTOSTART_RE = /,\s*\{\s*autoStart:\s*config\.autoStart\s*\}/g;
  * NOTE: Only @claude-flow/ -> @sparkleideas/ is applied in source files.
  * Unscoped names (agentdb, claude-flow, etc.) are only renamed in
  * package.json via transformPackageJsonObject().
+ *
+ * Behavioral fixes (MC-001 autoStart, etc.) belong in the patch system
+ * (patch-all.sh), not in the codemod. The codemod only does scope renaming.
  */
-function transformSource(content, filename) {
-  let result = content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
-  // Apply MC-001 fix to mcp-generator files
-  if (filename === 'mcp-generator.js') {
-    result = result.replace(AUTOSTART_RE, '');
-  }
-  return result;
+function transformSource(content) {
+  return content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
 }
 
 // -- File walker --------------------------------------------------------------
@@ -260,7 +254,7 @@ export async function transform(tempDir) {
       }
     } else {
       const content = await readFile(filePath, 'utf8');
-      const transformed = transformSource(content, name);
+      const transformed = transformSource(content);
       if (transformed !== content) {
         await writeFile(filePath, transformed, 'utf8');
         stats.filesTransformed++;

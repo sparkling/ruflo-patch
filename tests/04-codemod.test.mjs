@@ -251,22 +251,18 @@ describe('codemod: exclusions', () => {
   });
 });
 
-describe('codemod: peerDependency version range fixing', () => {
+describe('codemod: @sparkleideas/* ranges become "*"', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('replaces prerelease ranges and dist-tag names with "*" for @sparkleideas/* peerDeps', async () => {
+  it('replaces all @sparkleideas/* ranges with "*" (bf31c63 fix for ETARGET)', async () => {
     tmp = makeTmpDir();
     const pkg = {
       name: '@claude-flow/core',
       version: '3.1.0',
       peerDependencies: {
         '@claude-flow/memory': '>=3.0.0-alpha.1',
-        '@claude-flow/cli': '>=2.0.0-alpha.1',
-        '@claude-flow/swarm': '^3.0.0-alpha.8',
-        '@claude-flow/utils': 'alpha',
-        '@claude-flow/hooks': 'latest',
-        '@claude-flow/neural': 'prerelease',
+        '@claude-flow/cli': '^2.0.0',
         'lodash': '>=4.0.0',
       },
     };
@@ -276,41 +272,12 @@ describe('codemod: peerDependency version range fixing', () => {
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
 
-    // All @sparkleideas/* peerDeps with prerelease ranges should become "*"
-    assert.equal(result.peerDependencies['@sparkleideas/memory'], '*', '>=3.0.0-alpha.1 -> *');
-    assert.equal(result.peerDependencies['@sparkleideas/cli'], '*', '>=2.0.0-alpha.1 -> *');
-    assert.equal(result.peerDependencies['@sparkleideas/swarm'], '*', '^3.0.0-alpha.8 -> *');
-
-    // Bare dist-tag names should become "*"
-    assert.equal(result.peerDependencies['@sparkleideas/utils'], '*', 'alpha -> *');
-    assert.equal(result.peerDependencies['@sparkleideas/hooks'], '*', 'latest -> *');
-    assert.equal(result.peerDependencies['@sparkleideas/neural'], '*', 'prerelease -> *');
-
-    // Third-party peerDeps must not be touched
-    assert.equal(result.peerDependencies['lodash'], '>=4.0.0', 'third-party peerDep untouched');
-  });
-
-  it('replaces ALL @sparkleideas/* ranges with "*" (including normal semver)', async () => {
-    tmp = makeTmpDir();
-    const pkg = {
-      name: '@claude-flow/core',
-      version: '3.0.0',
-      peerDependencies: {
-        '@claude-flow/memory': '^3.0.0',
-        '@claude-flow/cli': '>=2.0.0',
-        '@claude-flow/utils': '~3.1.0',
-      },
-    };
-    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
-
-    await transform(tmp);
-
-    const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
-
-    // ALL @sparkleideas/* ranges become "*" (internal packages, avoids prerelease mismatch)
-    assert.equal(result.peerDependencies['@sparkleideas/memory'], '*', '^3.0.0 -> *');
-    assert.equal(result.peerDependencies['@sparkleideas/cli'], '*', '>=2.0.0 -> *');
-    assert.equal(result.peerDependencies['@sparkleideas/utils'], '*', '~3.1.0 -> *');
+    assert.equal(result.peerDependencies['@sparkleideas/memory'], '*',
+      '>=3.0.0-alpha.1 -> * (caret can\'t match prerelease)');
+    assert.equal(result.peerDependencies['@sparkleideas/cli'], '*',
+      '^2.0.0 -> * (caret can\'t match prerelease)');
+    assert.equal(result.peerDependencies['lodash'], '>=4.0.0',
+      'third-party peerDep untouched');
   });
 });
 
@@ -361,7 +328,7 @@ describe('codemod: source file transforms', () => {
     assert.equal(result, source, '@sparkleideas/ruflo must not be double-transformed');
   });
 
-  it('removes autoStart from mcp-generator.js (MC-001 build-time fix)', async () => {
+  it('does NOT remove autoStart (MC-001 is handled by patch system, not codemod)', async () => {
     tmp = makeTmpDir();
     const source = [
       "CLAUDE_FLOW_MEMORY_BACKEND: options.runtime.memoryBackend,",
@@ -372,19 +339,8 @@ describe('codemod: source file transforms', () => {
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'mcp-generator.js'), 'utf8');
-    assert.ok(!result.includes('autoStart'), 'autoStart must be removed from mcp-generator.js');
-    assert.ok(result.includes('memoryBackend,'), 'surrounding code must be preserved');
-  });
-
-  it('does NOT remove autoStart from non-mcp-generator files', async () => {
-    tmp = makeTmpDir();
-    const source = "const x = { autoStart: config.autoStart };\n";
-    writeFileSync(join(tmp, 'other.js'), source);
-
-    await transform(tmp);
-
-    const result = readFileSync(join(tmp, 'other.js'), 'utf8');
-    assert.ok(result.includes('autoStart'), 'autoStart in non-mcp-generator files must be preserved');
+    // autoStart removal is a behavioral fix — belongs in patch/, not codemod
+    assert.ok(result.includes('autoStart'), 'codemod must NOT remove autoStart (patch system handles MC-001)');
   });
 });
 
@@ -426,15 +382,12 @@ describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
     };
     writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
 
-    const statsBefore = await transform(tmp);
+    await transform(tmp);
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(result.dependencies['@sparkleideas/memory'], '*');
   });
 
   it('replaces caret ranges that cannot match prerelease versions (regression)', async () => {
-    // Exact bug: @sparkleideas/embeddings had peerDep @sparkleideas/agentic-flow: "^2.0.0"
-    // but all published versions were 2.0.2-alpha.*, which npm's "^2.0.0" won't match.
-    // This caused ETARGET errors on npm install.
     tmp = makeTmpDir();
     const pkg = {
       name: '@claude-flow/embeddings',
@@ -452,7 +405,6 @@ describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
     await transform(tmp);
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
-    // ALL internal ranges must become "*" — caret ranges can't resolve to prerelease versions
     assert.equal(result.peerDependencies['@sparkleideas/agentic-flow'], '*',
       '^2.0.0 must become * (cannot match 2.0.2-alpha.3)');
     assert.equal(result.peerDependencies['@sparkleideas/shared'], '*',

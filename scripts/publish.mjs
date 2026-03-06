@@ -11,7 +11,7 @@
 //   import { publishAll, nextVersion } from './publish.mjs';
 
 import { execFile as execFileCb } from 'node:child_process';
-import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, realpathSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 import { promisify } from 'node:util';
 import { parseArgs } from 'node:util';
@@ -280,6 +280,23 @@ function stampVersion(pkgDir, version, metadata) {
       ...metadata,
     };
   }
+
+  // Strip bin entries that reference non-existent files (prevents npm publish errors)
+  if (pkg.bin && typeof pkg.bin === 'object') {
+    for (const [name, binPath] of Object.entries(pkg.bin)) {
+      const resolved = join(pkgDir, binPath);
+      try {
+        statSync(resolved);
+      } catch {
+        console.log(`    stripped missing bin: ${name} -> ${binPath}`);
+        delete pkg.bin[name];
+      }
+    }
+    if (Object.keys(pkg.bin).length === 0) {
+      delete pkg.bin;
+    }
+  }
+
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   return pkg;
 }
@@ -330,9 +347,11 @@ function sleep(ms) {
  * @param {object} options
  * @param {boolean} [options.dryRun=false] - Log actions without publishing
  * @param {object} [options.metadata] - Metadata to stamp into each package.json
+ * @param {function} [options.getPublishTagFn] - Override getPublishTag (for testing)
+ * @param {number} [options.rateLimitMs] - Override RATE_LIMIT_MS (0 for local registries)
  * @returns {{ published: Array<{name: string, level: number, tag: string|null, version: string}>, failed: null | { package: string, level: number, error: string } }}
  */
-export async function publishAll(buildDir, { dryRun = false, metadata } = {}) {
+export async function publishAll(buildDir, { dryRun = false, metadata, getPublishTagFn, rateLimitMs } = {}) {
   if (!buildDir) throw new Error('buildDir is required');
 
   const resolvedBuildDir = resolve(buildDir);
@@ -384,9 +403,10 @@ export async function publishAll(buildDir, { dryRun = false, metadata } = {}) {
       }
 
       // Determine publish tag (first-publish bootstrap)
+      const resolveTag = getPublishTagFn || getPublishTag;
       let tag;
       try {
-        tag = await getPublishTag(pkgName);
+        tag = await resolveTag(pkgName);
       } catch (err) {
         const errorMsg = `Failed to check npm registry for ${pkgName}: ${err.message}`;
         console.error(`  ERROR: ${errorMsg}`);
@@ -482,10 +502,9 @@ export async function publishAll(buildDir, { dryRun = false, metadata } = {}) {
         levelIndex === LEVELS.length - 1 &&
         pkgName === packages[packages.length - 1];
 
-      if (!isLast) {
-        if (!dryRun) {
-          await sleep(RATE_LIMIT_MS);
-        }
+      const effectiveRateLimit = rateLimitMs ?? RATE_LIMIT_MS;
+      if (!isLast && !dryRun && effectiveRateLimit > 0) {
+        await sleep(effectiveRateLimit);
       }
     }
   }
@@ -507,6 +526,7 @@ async function main() {
     options: {
       'build-dir': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
+      'no-rate-limit': { type: 'boolean', default: false },
     },
     strict: true,
   });
@@ -515,11 +535,12 @@ async function main() {
   const dryRun = values['dry-run'];
 
   if (!buildDir) {
-    console.error('Usage: node scripts/publish.mjs --build-dir <dir> [--dry-run]');
+    console.error('Usage: node scripts/publish.mjs --build-dir <dir> [--dry-run] [--no-rate-limit]');
     process.exit(1);
   }
 
-  const result = await publishAll(buildDir, { dryRun });
+  const rateLimitMs = values['no-rate-limit'] ? 0 : undefined;
+  const result = await publishAll(buildDir, { dryRun, rateLimitMs });
 
   // Output JSON summary to stdout
   console.log('\n--- Summary ---');
@@ -533,7 +554,8 @@ async function main() {
 // Run CLI if this is the main module
 import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
-const isMainModule = process.argv[1] && resolve(process.argv[1]) === __filename;
+const isMainModule = process.argv[1] &&
+  realpathSync(resolve(process.argv[1])) === realpathSync(__filename);
 
 if (isMainModule) {
   main().catch((err) => {

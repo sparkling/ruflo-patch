@@ -58,7 +58,11 @@ function runTests(args) {
 }
 
 const t0 = Date.now();
+const concurrency = parseInt(process.env.TEST_CONCURRENCY || '0', 10);
 const args = ['--test', ...allFiles];
+if (concurrency > 0) {
+  args.splice(1, 0, `--test-concurrency=${concurrency}`);
+}
 
 // When saving results, use dual reporters: spec to stdout, TAP to file
 if (saveResults) {
