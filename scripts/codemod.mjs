@@ -164,31 +164,22 @@ function renameObjectKeys(obj) {
 // Only match @claude-flow/ that is NOT already part of @sparkleideas/
 const SCOPED_RE = /@claude-flow\//g;
 
-// Step 2: Unscoped replacements with word-boundary guards.
-// Negative lookbehind prevents matching inside scoped names or hyphenated words.
-// Negative lookahead prevents matching already-transformed or hyphenated continuations.
-const UNSCOPED_RES = [
-  { re: /(?<![@/\w-])claude-flow(?![\w-])/g, to: '@sparkleideas/claude-flow' },
-  { re: /(?<![@/\w-])agentdb(?![\w-])/g, to: '@sparkleideas/agentdb' },
-  { re: /(?<![@/\w-])agentic-flow(?![\w-])/g, to: '@sparkleideas/agentic-flow' },
-  { re: /(?<![@/\w-])ruv-swarm(?![\w-])/g, to: '@sparkleideas/ruv-swarm' },
-  { re: /(?<![@/\w-])ruflo(?![\w-])/g, to: '@sparkleideas/ruflo' },
-];
+// Step 2: Unscoped replacements -- ONLY used for package.json name/dependency
+// transforms (handled separately by transformPackageJsonObject).
+// In source files, bare names like "agentdb" are often variable names, property
+// keys, or shorthand object keys -- renaming them breaks JavaScript syntax.
+// Only the scoped @claude-flow/ prefix is safe to replace in source files.
 
 /**
- * Apply all regex replacements to source file content.
+ * Apply scoped regex replacement to source file content.
  * Returns the transformed content (may be identical if no matches).
+ *
+ * NOTE: Only @claude-flow/ -> @sparkleideas/ is applied in source files.
+ * Unscoped names (agentdb, claude-flow, etc.) are only renamed in
+ * package.json via transformPackageJsonObject().
  */
 function transformSource(content) {
-  // Phase 1: scoped
-  let result = content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
-  // Phase 2: unscoped (order matters less here since they are disjoint,
-  // but we process them in the declared order for determinism)
-  for (const { re, to } of UNSCOPED_RES) {
-    re.lastIndex = 0; // reset stateful regex
-    result = result.replace(re, to);
-  }
-  return result;
+  return content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
 }
 
 // -- File walker --------------------------------------------------------------
