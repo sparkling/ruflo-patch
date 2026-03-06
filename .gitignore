@@ -19,6 +19,7 @@ CLAUDE.local.md
 
 # Node
 node_modules/
+package-lock.json
 
 # npm packaging artifacts
 npm/dist/
@@ -45,6 +46,7 @@ venv/
 
 # Test output logs
 logs/
+verdaccio.log
 
 # OS
 .DS_Store
