@@ -49,5 +49,8 @@
     "ruvector",
     "ruv-swarm"
   ],
-  "packageManager": "npm@10"
+  "packageManager": "npm@10",
+  "devDependencies": {
+    "verdaccio": "^6.2.9"
+  }
 }
