@@ -103,6 +103,22 @@ function transformPackageJsonObject(json) {
     }
   }
 
+  // Fix problematic peerDependency version ranges for @sparkleideas/* packages.
+  // Prerelease semver ranges (e.g. ">=3.0.0-alpha.1") and bare dist-tag names
+  // (e.g. "alpha", "latest") cause ETARGET errors; replace them with "*".
+  if (json.peerDependencies && typeof json.peerDependencies === 'object') {
+    for (const [key, value] of Object.entries(json.peerDependencies)) {
+      if (key.startsWith('@sparkleideas/') && typeof value === 'string') {
+        const isPrerelease = /\d+\.\d+\.\d+-/.test(value);
+        const isDistTag = /^[a-z]+$/i.test(value.trim());
+        if (isPrerelease || isDistTag) {
+          json.peerDependencies[key] = '*';
+          changed = true;
+        }
+      }
+    }
+  }
+
   return changed;
 }
 

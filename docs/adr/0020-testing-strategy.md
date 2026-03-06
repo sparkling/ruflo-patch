@@ -119,11 +119,11 @@ A script (`scripts/test-acceptance.sh`) that validates the end-user experience b
 
 | # | Command | Validates |
 |---|---------|-----------|
-| A1 | `npx ruflo --version` | Package resolves and executes |
-| A2 | `npx ruflo init` (in temp dir) | Init routine generates expected files |
+| A1 | `npx @sparkleideas/cli --version` | Package resolves and executes |
+| A2 | `npx @sparkleideas/cli init` (in temp dir) | Init routine generates expected files |
 | A3 | Verify `.claude/settings.json` exists | File generation works |
 | A4 | Verify CLAUDE.md references `@sparkleideas` (not `@claude-flow`) | Codemod applied correctly to init templates |
-| A5 | `npx ruflo doctor --fix` | Doctor command runs without MODULE_NOT_FOUND errors |
+| A5 | `npx @sparkleideas/cli doctor --fix` | Doctor command runs without MODULE_NOT_FOUND errors |
 | A6 | Verify MCP config in `.mcp.json` | ADR-0001 (MC-001): `autoStart: false` removed |
 
 **When to run**: After first publish to npm. After each promotion to `@latest`. Can be run against Verdaccio output from Layer 2.

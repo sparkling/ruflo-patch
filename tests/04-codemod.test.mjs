@@ -249,6 +249,69 @@ describe('codemod: exclusions', () => {
   });
 });
 
+describe('codemod: peerDependency version range fixing', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('replaces prerelease ranges and dist-tag names with "*" for @sparkleideas/* peerDeps', async () => {
+    tmp = makeTmpDir();
+    const pkg = {
+      name: '@claude-flow/core',
+      version: '3.1.0',
+      peerDependencies: {
+        '@claude-flow/memory': '>=3.0.0-alpha.1',
+        '@claude-flow/cli': '>=2.0.0-alpha.1',
+        '@claude-flow/swarm': '^3.0.0-alpha.8',
+        '@claude-flow/utils': 'alpha',
+        '@claude-flow/hooks': 'latest',
+        '@claude-flow/neural': 'prerelease',
+        'lodash': '>=4.0.0',
+      },
+    };
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+
+    // All @sparkleideas/* peerDeps with prerelease ranges should become "*"
+    assert.equal(result.peerDependencies['@sparkleideas/memory'], '*', '>=3.0.0-alpha.1 -> *');
+    assert.equal(result.peerDependencies['@sparkleideas/cli'], '*', '>=2.0.0-alpha.1 -> *');
+    assert.equal(result.peerDependencies['@sparkleideas/swarm'], '*', '^3.0.0-alpha.8 -> *');
+
+    // Bare dist-tag names should become "*"
+    assert.equal(result.peerDependencies['@sparkleideas/utils'], '*', 'alpha -> *');
+    assert.equal(result.peerDependencies['@sparkleideas/hooks'], '*', 'latest -> *');
+    assert.equal(result.peerDependencies['@sparkleideas/neural'], '*', 'prerelease -> *');
+
+    // Third-party peerDeps must not be touched
+    assert.equal(result.peerDependencies['lodash'], '>=4.0.0', 'third-party peerDep untouched');
+  });
+
+  it('does not replace normal semver ranges for @sparkleideas/* peerDeps', async () => {
+    tmp = makeTmpDir();
+    const pkg = {
+      name: '@claude-flow/core',
+      version: '3.0.0',
+      peerDependencies: {
+        '@claude-flow/memory': '^3.0.0',
+        '@claude-flow/cli': '>=2.0.0',
+        '@claude-flow/utils': '~3.1.0',
+      },
+    };
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+
+    // Normal ranges without prerelease identifiers should be preserved
+    assert.equal(result.peerDependencies['@sparkleideas/memory'], '^3.0.0', '^3.0.0 preserved');
+    assert.equal(result.peerDependencies['@sparkleideas/cli'], '>=2.0.0', '>=2.0.0 preserved');
+    assert.equal(result.peerDependencies['@sparkleideas/utils'], '~3.1.0', '~3.1.0 preserved');
+  });
+});
+
 describe('codemod: unscoped word boundaries', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });

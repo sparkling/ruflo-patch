@@ -5,7 +5,7 @@
 # against published packages (local Verdaccio or real npm).
 #
 # Usage:
-#   bash scripts/test-acceptance.sh [--registry <url>] [--version <ver>]
+#   bash scripts/test-acceptance.sh [--registry <url>] [--version <ver>] [--package <name>]
 #
 # Exit code: number of failed tests (0 = all pass)
 set -uo pipefail
@@ -13,6 +13,7 @@ set -uo pipefail
 # ── Defaults ────────────────────────────────────────────────────────
 REGISTRY="https://registry.npmjs.org"
 VERSION="@latest"
+PACKAGE_NAME="@sparkleideas/cli"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMESTAMP="$(date -u +%Y%m%dT%H%M%SZ)"
@@ -35,12 +36,17 @@ while [[ $# -gt 0 ]]; do
       VERSION="@$2"
       shift 2
       ;;
+    --package)
+      PACKAGE_NAME="$2"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: bash scripts/test-acceptance.sh [--registry <url>] [--version <ver>]"
+      echo "Usage: bash scripts/test-acceptance.sh [--registry <url>] [--version <ver>] [--package <name>]"
       echo ""
       echo "Options:"
-      echo "  --registry <url>  npm registry URL (default: https://registry.npmjs.org)"
-      echo "  --version <ver>   specific version to test (default: @latest)"
+      echo "  --registry <url>    npm registry URL (default: https://registry.npmjs.org)"
+      echo "  --version <ver>     specific version to test (default: @latest)"
+      echo "  --package <name>    package name to test (default: @sparkleideas/cli)"
       exit 0
       ;;
     *)
@@ -50,7 +56,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-PKG="ruflo${VERSION}"
+PKG="${PACKAGE_NAME}${VERSION}"
 
 # ── Cleanup trap ────────────────────────────────────────────────────
 cleanup() {
