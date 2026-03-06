@@ -227,30 +227,31 @@ test_a6_mcp_config() {
 }
 
 test_a7_wrapper_proxy() {
-  # Verify @sparkleideas/ruflo wrapper correctly proxies to @sparkleideas/cli.
-  # Bug: createRequire fails on ESM exports maps; import.meta.resolve is required.
+  # Verify @sparkleideas/ruflo wrapper correctly proxies to @sparkleideas/cli@latest.
+  # The wrapper has zero dependencies — it invokes npx @sparkleideas/cli@latest at runtime.
+  # This test verifies the proxy works and always gets the current CLI version.
   local start_ns end_ns
   start_ns=$(date +%s%N 2>/dev/null || echo 0)
   local output passed="false"
 
-  # Install ruflo wrapper in the temp dir and test the proxy
+  # Test that the wrapper proxies --version to the CLI
   local wrapper_out
-  wrapper_out=$(cd "$TEMP_DIR" && npm install --save @sparkleideas/ruflo@latest 2>&1 && npx ruflo --version 2>&1) || true
+  wrapper_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes @sparkleideas/ruflo@latest --version 2>&1) || true
 
   if echo "$wrapper_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
-    # Now test that a real command proxies through
-    local init_out
-    init_out=$(cd "$TEMP_DIR" && npx ruflo doctor 2>&1) || true
-    if echo "$init_out" | grep -qi 'doctor\|diagnostics\|passed'; then
+    # Test that a real command proxies through to the CLI
+    local doctor_out
+    doctor_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx @sparkleideas/ruflo@latest doctor 2>&1) || true
+    if echo "$doctor_out" | grep -qi 'doctor\|diagnostics\|passed'; then
       passed="true"
-      output="Wrapper proxy works: version and doctor commands succeed"
+      output="Wrapper proxy works: version=$(echo "$wrapper_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
     else
       output="Wrapper --version works but doctor command failed"
-      output="$output\n$init_out"
+      output="$output\n$(echo "$doctor_out" | head -10)"
     fi
   else
     output="Wrapper --version failed or returned no version"
-    output="$output\n$wrapper_out"
+    output="$output\n$(echo "$wrapper_out" | head -10)"
   fi
 
   end_ns=$(date +%s%N 2>/dev/null || echo 0)

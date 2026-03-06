@@ -2,8 +2,12 @@
 // bin/ruflo.mjs — CLI entry point for ruflo
 //
 // Drop-in replacement for ruflo / @claude-flow/cli (ADR-0007).
-// Proxies all commands to @sparkleideas/cli, with additional
-// legacy patch commands (apply, check, repair).
+// Proxies all commands to @sparkleideas/cli@latest via npx, with
+// additional legacy patch commands (apply, check, repair).
+//
+// Zero dependencies on @sparkleideas/cli — always resolves fresh at
+// runtime. This eliminates npx cache staleness, semver range mismatches,
+// and ESM exports map resolution issues.
 
 import { execSync, execFileSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
@@ -76,25 +80,13 @@ if (PATCH_COMMANDS.has(command)) {
   process.exit(0);
 }
 
-// All other commands: proxy to @sparkleideas/cli
+// All other commands: proxy to @sparkleideas/cli@latest via npx.
+// No bundled dependency — always resolves the latest CLI at runtime.
 try {
-  // Resolve the CLI package entry via ESM import.meta.resolve (works with exports maps)
-  const cliEntry = import.meta.resolve('@sparkleideas/cli');
-  const cliSrc = new URL(cliEntry).pathname;
-  // Navigate from dist/src/index.js up to the package root, then to bin/cli.js
-  const cliDir = resolve(dirname(cliSrc), '..', '..');
-  const cliBin = resolve(cliDir, 'bin', 'cli.js');
-
-  // Re-exec with the CLI binary, passing all original args
-  execFileSync(process.execPath, [cliBin, command, ...args], {
+  execFileSync('npx', ['--yes', '@sparkleideas/cli@latest', command, ...args], {
     stdio: 'inherit',
-    env: process.env,
+    env: { ...process.env, npm_config_update_notifier: 'false' },
   });
 } catch (e) {
-  if (e.code === 'ERR_MODULE_NOT_FOUND' || e.code === 'MODULE_NOT_FOUND' || e.code === 'ERR_PACKAGE_PATH_NOT_EXPORTED') {
-    console.error('Error: @sparkleideas/cli not found. Run: npm install @sparkleideas/ruflo');
-    process.exit(1);
-  }
-  // execFileSync throws on non-zero exit
   process.exit(e.status || 1);
 }
