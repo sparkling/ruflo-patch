@@ -2,11 +2,13 @@
 
 ruflo-patch uses a **3-layer testing model** (ADR-0020) with additional operational checks. Each layer targets a different level of confidence and runs at a different cadence.
 
+**Total**: 90 unit tests + 9 integration phases + 10 acceptance tests = **109 automated checks** in ~45s (all layers, cached).
+
 ## Architecture Overview
 
 ```
-Layer 3: Acceptance     ← end-user commands against published packages (~2 min)
-Layer 2: Integration    ← full pipeline: clone → codemod → patch → publish → install (~2 min)
+Layer 3: Acceptance     ← end-user commands against published packages (~15s)
+Layer 2: Integration    ← full pipeline: clone → codemod → patch → publish → install (~30s cached)
 Layer 1: Unit           ← individual functions, no external deps (~0.2s)
 ──────────────────────
 Operational: preflight, sentinel check, CI health check
@@ -16,7 +18,7 @@ Operational: preflight, sentinel check, CI health check
 |-------|--------|-------|----------|---------------|------|
 | 1 | `npm test` | 90 | ~0.2s | None | Every commit |
 | 2 | `bash scripts/test-integration.sh` | 9 phases | ~30s (cached) | Verdaccio, upstream clones | Pre-publish, CI |
-| 3 | `bash scripts/test-acceptance.sh` | 10 | ~2 min | Published packages | Post-publish |
+| 3 | `bash scripts/test-acceptance.sh` | 10 | ~15s | Published packages | Post-publish |
 | — | `npm run preflight` | — | <1s | None | Pre-commit |
 | — | `bash check-patches.sh` | — | <10s | None | Session start |
 | — | `bash scripts/validate-ci.sh` | — | <5s | Various | Ad-hoc |
@@ -271,6 +273,10 @@ Runs real CLI commands against published packages to validate the user experienc
 | A9 | Memory lifecycle | init → store → search → retrieve → verify storage on disk |
 | A10 | Neural training | `neural train --pattern coordination` produces persisted patterns.json |
 
+**A9 Memory lifecycle detail**: Initializes memory database (hybrid backend, HNSW indexing, 384-dim vectors), stores a key-value entry with namespace and tags, performs semantic search to verify the entry ranks first, retrieves by key to confirm value matches, then checks that `memory.db` exists on disk.
+
+**A10 Neural training detail**: Runs `neural train --pattern coordination` which trains 50 epochs of coordination patterns, then verifies `.claude-flow/neural/patterns.json` was written with >0 entries.
+
 **Exit code**: Number of failed tests (0 = all pass).
 
 **Artifacts**: `test-results/<timestamp>/acceptance-results.json` with per-test `{id, name, passed, output, duration_ms}`.
@@ -365,6 +371,45 @@ No external mocking framework. Mocks are created via:
 
 ---
 
+## Performance Optimizations
+
+### Integration Test (~106s → ~30s, 72% faster)
+
+| Optimization | Impact |
+|---|---|
+| **Persistent Verdaccio cache** at `/tmp/ruflo-verdaccio-cache/` | Install: 30s → 12s (external deps cached across runs) |
+| **Parallel clone** — 3 rsync ops run concurrently | Clone: ~2s → 0.6s |
+| **Parallel publish within levels** — `Promise.all` per topological level | Publish: 21s → 12s |
+| **Stale process cleanup** — kills orphaned Verdaccio on startup | Prevents port conflicts |
+| **Faster Verdaccio poll** — 0.2s intervals vs 1s | Setup: -0.8s per check |
+| **`--ignore-scripts --no-audit --no-fund`** on install | Skip native builds + network calls |
+| **`--no-rate-limit`** flag for local Verdaccio | No 2s delay between publishes |
+| **200mb `max_body_size`** | Accommodates agentic-flow (~60MB tarball) |
+
+#### Typical Phase Timing (cached run)
+
+```
+setup:          1.4s ✓  (kill stale procs + start Verdaccio)
+clone:          0.6s ✓  (parallel rsync × 3 repos)
+codemod:        0.7s ✓  (scope rename + residual check)
+patch:          0.03s ✓ (7 patches applied)
+verify:         0.1s ✓  (package structure check)
+upstream-tests: 0.001s ✓ (skipped — advisory)
+publish:       12.3s ✓  (25 packages, parallel within 5 levels)
+install:       12.3s ✓  (npm install, cached external deps)
+cleanup:        0.8s ✓  (results + temp dir cleanup)
+───────────────────────
+total:         ~30s
+```
+
+First run (cold cache) takes ~46s as Verdaccio proxies external deps from npmjs.
+
+### Unit Test Optimization (85s → 84ms, 1000x faster)
+
+`mockGetPublishTag` injection in `06-publish-order.test.mjs` eliminates 216 `npm view` network calls by returning `'prerelease'` synchronously.
+
+---
+
 ## npm Scripts Reference
 
 ```json
@@ -389,9 +434,9 @@ Developer workflow:
   4. git commit
 
 Pre-publish workflow:
-  5. bash scripts/test-integration.sh  ← Layer 2: full pipeline (~106s)
+  5. bash scripts/test-integration.sh  ← Layer 2: full pipeline (~30s cached)
   6. npm publish                       ← triggers prepublishOnly hook
-  7. bash scripts/test-acceptance.sh   ← Layer 3: end-user validation
+  7. bash scripts/test-acceptance.sh   ← Layer 3: end-user validation (~15s)
 
 Session start:
   8. bash check-patches.sh             ← verify/reapply patches
