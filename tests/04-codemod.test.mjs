@@ -290,7 +290,7 @@ describe('codemod: peerDependency version range fixing', () => {
     assert.equal(result.peerDependencies['lodash'], '>=4.0.0', 'third-party peerDep untouched');
   });
 
-  it('does not replace normal semver ranges for @sparkleideas/* peerDeps', async () => {
+  it('replaces ALL @sparkleideas/* ranges with "*" (including normal semver)', async () => {
     tmp = makeTmpDir();
     const pkg = {
       name: '@claude-flow/core',
@@ -307,10 +307,10 @@ describe('codemod: peerDependency version range fixing', () => {
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
 
-    // Normal ranges without prerelease identifiers should be preserved
-    assert.equal(result.peerDependencies['@sparkleideas/memory'], '^3.0.0', '^3.0.0 preserved');
-    assert.equal(result.peerDependencies['@sparkleideas/cli'], '>=2.0.0', '>=2.0.0 preserved');
-    assert.equal(result.peerDependencies['@sparkleideas/utils'], '~3.1.0', '~3.1.0 preserved');
+    // ALL @sparkleideas/* ranges become "*" (internal packages, avoids prerelease mismatch)
+    assert.equal(result.peerDependencies['@sparkleideas/memory'], '*', '^3.0.0 -> *');
+    assert.equal(result.peerDependencies['@sparkleideas/cli'], '*', '>=2.0.0 -> *');
+    assert.equal(result.peerDependencies['@sparkleideas/utils'], '*', '~3.1.0 -> *');
   });
 });
 

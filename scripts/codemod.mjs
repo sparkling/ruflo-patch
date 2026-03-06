@@ -103,21 +103,17 @@ function transformPackageJsonObject(json) {
     }
   }
 
-  // Fix problematic version ranges for @sparkleideas/* internal packages.
-  // Prerelease semver ranges (e.g. ">=3.0.0-alpha.1 <4.0.0-0") and bare
-  // dist-tag names (e.g. "alpha", "latest") cause ETARGET/NO_MATCHING_VERSION
-  // errors because npm semver treats prerelease ranges specially.
-  // Replace them with "*" in ALL dependency fields.
+  // Fix ALL version ranges for @sparkleideas/* internal packages.
+  // Since all @sparkleideas/* packages are internal and published together,
+  // replace any non-"*" range with "*" to avoid semver resolution failures.
+  // Caret ranges like "^2.0.0" don't match prerelease versions (2.0.2-alpha.3),
+  // and prerelease ranges like ">=3.0.0-alpha.1" only match the same minor.
   for (const depField of DEP_FIELDS) {
     if (json[depField] && typeof json[depField] === 'object') {
       for (const [key, value] of Object.entries(json[depField])) {
-        if (key.startsWith('@sparkleideas/') && typeof value === 'string') {
-          const isPrerelease = /\d+\.\d+\.\d+-/.test(value);
-          const isDistTag = /^[a-z]+$/i.test(value.trim());
-          if (isPrerelease || isDistTag) {
-            json[depField][key] = '*';
-            changed = true;
-          }
+        if (key.startsWith('@sparkleideas/') && typeof value === 'string' && value !== '*') {
+          json[depField][key] = '*';
+          changed = true;
         }
       }
     }
