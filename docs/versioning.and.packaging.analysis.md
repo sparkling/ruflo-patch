@@ -1,7 +1,8 @@
 # Versioning & Packaging Analysis: ruvnet Ecosystem
 
-**Date**: 2026-03-05
+**Date**: 2026-03-05 (updated 2026-03-06)
 **Source**: 9-agent swarm analysis (3 discovery + 6 deep-dive) of npm registry, GitHub repos, commits/tags, issues/ADRs, local npx cache, and cross-package dependencies
+**Update**: 4-agent swarm re-analysis on 2026-03-06 checking for upstream changes since initial analysis
 
 ---
 
@@ -98,7 +99,7 @@ ruflo
 
 | Package | Repo Version | npm Version | Status | Last Published | Gap |
 |---------|-------------|-------------|--------|---------------|-----|
-| `@claude-flow/cli` | 3.5.2 | 3.5.2 | In sync | 2026-02-28 | — |
+| `@claude-flow/cli` | 3.5.14 | 3.5.14 | In sync | 2026-03-06 | 12 versions published 2026-03-05/06 (3.5.3→3.5.14 in ~5 hours) |
 | `@claude-flow/memory` | 3.0.0-alpha.11 | 3.0.0-alpha.11 | In sync (stale) | 2026-02-16 | 933 commits unpublished |
 | `@claude-flow/mcp` | 3.0.0-alpha.8 | 3.0.0-alpha.8 | In sync | 2026-01-14 | — |
 | `@claude-flow/neural` | 3.0.0-alpha.7 | 3.0.0-alpha.7 | In sync | 2026-01-23 | — |
@@ -123,12 +124,14 @@ ruflo
 
 **Summary**: 8 in sync, 12 behind (60% stale). Most were bulk-published 2026-01-06 and never updated.
 
+> **2026-03-06 Update**: Only the CLI, claude-flow, and ruflo packages were updated (3.5.2 → 3.5.14, 12 versions in ~5 hours). All sub-packages remain at their January/February versions. Dependency declarations in the CLI are byte-for-byte identical between 3.5.2 and 3.5.14 — these were code-only publishes with no package.json changes.
+
 ### Wrapper Packages
 
 | Package | npm Version | Repo Version | Source | Status |
 |---------|------------|--------------|--------|--------|
-| `claude-flow` | 3.5.2 | 3.5.2 | ruflo root package.json | In sync |
-| `ruflo` | 3.5.2 | 3.5.2 | ruflo/ruflo/ | In sync |
+| `claude-flow` | 3.5.14 | 3.5.14 | ruflo root package.json | In sync (updated 2026-03-06) |
+| `ruflo` | 3.5.14 | 3.5.14 | ruflo/ruflo/ | In sync (updated 2026-03-06) |
 | `coflow` | Not published | 3.1.0-alpha.4 | ruflo/packages/coflow/ | **Never published** |
 
 ---
@@ -286,10 +289,14 @@ ruflo
 
 | Tag | Date | Notes |
 |-----|------|-------|
-| `v3.0.0-alpha.79` | 2026-01-15 | **Latest tag — 933 commits behind HEAD** |
+| `v3.5.14` | 2026-03-06 | **Latest tag** — HEAD has advanced past this |
+| `v3.5.7` | 2026-03-05 | |
+| `v3.5.4` | 2026-03-05 | |
+| `v3.5.3` | 2026-03-05 | |
+| `v3.0.0-alpha.79` | 2026-01-15 | |
 | `v2.7.34` | Late 2025 | Last v2 stable |
 
-**Missing tags**: v3.5.0, v3.5.1, v3.5.2 exist in commit messages but have **NO git tags**.
+**Missing tags**: v3.5.0, v3.5.1, v3.5.2 exist in commit messages but have **NO git tags**. Also missing: v3.5.5, v3.5.6, v3.5.8 through v3.5.13 (6 intermediate releases untagged).
 
 ### ruvector repo
 
@@ -411,9 +418,12 @@ The same pattern repeats across the ecosystem:
 | 2026-02-16 | @claude-flow/memory | 3.0.0-alpha.11 | **Last memory publish** |
 | 2026-02-27 | @claude-flow/cli | 3.5.0 | First stable release |
 | 2026-02-27 | agentic-flow | 3.0.0-alpha.1 | Alpha with dep regressions |
-| 2026-02-28 | @claude-flow/cli | 3.5.2 | **Current CLI latest** |
+| 2026-02-28 | @claude-flow/cli | 3.5.2 | First stable patch |
 | 2026-03-03 | ruvector | 0.2.11 | Latest ruvector |
 | 2026-03-04 | agentdb | 3.0.0-alpha.10 | Latest agentdb |
+| 2026-03-05 | @claude-flow/cli | 3.5.3–3.5.12 | **10 versions in ~5 hours** (code-only, no dep changes) |
+| 2026-03-06 | @claude-flow/cli | 3.5.13–3.5.14 | **Current CLI latest** — published within 10 min of each other |
+| 2026-03-06 | claude-flow, ruflo | 3.5.14 | Wrappers updated simultaneously with CLI |
 
 ---
 
@@ -434,22 +444,38 @@ Our patches exist because of the sub-package publishing gap:
 - **FB-004** compensates for threshold tuned for ONNX embeddings that most installs don't have — a memory republish with dynamic thresholds would make this patch unnecessary
 - **MC-001** is an independent bug in CLI init code — unrelated to publishing drift
 
+> **2026-03-06 Update**: All patches remain necessary. Upstream published 12 new CLI versions (3.5.3–3.5.14) but with zero dependency or sub-package changes. The `@claude-flow/memory` package is still at 3.0.0-alpha.11, ControllerRegistry is still missing (GH #1307 open), and all other known issues persist. Patches should be re-verified against 3.5.14 dist files as the `old` strings in `fix.py` may need updating for any code changes in the new dist output.
+
+### Upstream GitHub Issues (Open, Relevant)
+
+| # | Title | Relevance |
+|---|-------|-----------|
+| 1307 | ControllerRegistry missing from @claude-flow/memory exports | ADR-053 / FB-003 |
+| 1306 | auto-memory-hook.mjs: loadMemoryPackage() can't find globally installed @claude-flow/memory | Memory loading |
+| 1279 | Zero swarms always: ruflo spawn hive-mind --claude | Swarm regression |
+| 1243 | fix: SonaTrajectoryService does not use native @ruvector/sona API correctly | ruvector integration |
+| 1302 | v3.5.5-v3.5.7: Platform parity, branding, stdin timeout (ADR-060) | Release tracking |
+
 ---
 
 ## 16. Summary Statistics
 
-| Metric | Count |
-|--------|-------|
-| Total ruvnet npm packages | 48+ |
-| Packages in dependency tree | 23 |
-| GitHub source repos | 7 |
-| @claude-flow/* packages in sync | 8/20 (40%) |
-| @claude-flow/* packages stale | 12/20 (60%) |
-| @ruvector/* packages stale (>30 days) | 10/22 (45%) |
-| RED version conflicts | 2 |
-| YELLOW version conflicts | 5 |
-| Commits unpublished (ruflo) | 933 |
-| Commits unpublished (agentic-flow) | 540 |
-| Commits unpublished (ruvector) | 172 |
-| Missing git tags | 5+ |
-| Packages never published | 7 (swarm, security, performance, deployment, testing, integration, coflow) |
+| Metric | Original (2026-03-05) | Updated (2026-03-06) |
+|--------|----------------------|---------------------|
+| Total ruvnet npm packages | 48+ | 48+ (unchanged) |
+| Packages in dependency tree | 23 | 23 (unchanged) |
+| GitHub source repos | 7 | 7 (unchanged) |
+| @claude-flow/* packages in sync | 8/20 (40%) | 8/20 (unchanged — CLI bumped but sub-packages still stale) |
+| @claude-flow/* packages stale | 12/20 (60%) | 12/20 (unchanged) |
+| @ruvector/* packages stale (>30 days) | 10/22 (45%) | 10/22 (unchanged) |
+| RED version conflicts | 2 | 2 (unchanged) |
+| YELLOW version conflicts | 5 | 5 (unchanged) |
+| CLI versions published since analysis | — | 12 (3.5.3 → 3.5.14, code-only) |
+| CLI latest version | 3.5.2 | **3.5.14** |
+| CLI package size (files/MB) | ~996/8.8MB | **1,048/9.0MB** |
+| Commits unpublished (agentic-flow) | 540 | 540+ (unchanged) |
+| Commits unpublished (ruvector) | 172 | 172+ (unchanged) |
+| Missing git tags | 5+ | **11+** (v3.5.0-2, v3.5.5-6, v3.5.8-13) |
+| Packages never published | 7 | 7 (coflow still unpublished) |
+| ruv-swarm staleness | 159 days | **177 days** |
+| Known issues fixed upstream | — | **0 of 5** |
