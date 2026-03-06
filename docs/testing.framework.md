@@ -15,7 +15,7 @@ Operational: preflight, sentinel check, CI health check
 | Layer | Script | Tests | Duration | External Deps | When |
 |-------|--------|-------|----------|---------------|------|
 | 1 | `npm test` | 90 | ~0.2s | None | Every commit |
-| 2 | `bash scripts/test-integration.sh` | 9 phases | ~106s | Verdaccio, upstream clones | Pre-publish, CI |
+| 2 | `bash scripts/test-integration.sh` | 9 phases | ~30s (cached) | Verdaccio, upstream clones | Pre-publish, CI |
 | 3 | `bash scripts/test-acceptance.sh` | 8 | ~2 min | Published packages | Post-publish |
 | — | `npm run preflight` | — | <1s | None | Pre-commit |
 | — | `bash check-patches.sh` | — | <10s | None | Session start |
@@ -173,8 +173,8 @@ Validates the full build pipeline end-to-end using a local Verdaccio registry.
 
 | Phase | Function | Timeout | What It Does | Fails On |
 |-------|----------|---------|-------------|----------|
-| 1. Setup | `phase_setup` | 30s | Start Verdaccio on random port (4873-4999), create temp dirs | Verdaccio won't start |
-| 2. Clone | `phase_clone` | 60s | Copy upstream repos (excluding .git) to temp build dir | Missing upstream clone |
+| 1. Setup | `phase_setup` | 30s | Kill stale Verdaccio, start on random port (4873-4999), create temp dirs | Verdaccio won't start |
+| 2. Clone | `phase_clone` | 60s | Parallel rsync of 3 upstream repos (excluding .git) to temp build dir | Missing upstream clone |
 | 3. Codemod | `phase_codemod` | 60s | Run `node scripts/codemod.mjs`, verify zero `@claude-flow/` residuals | Any residual found |
 | 4. Patch | `phase_patch` | 30s | Run `bash patch-all.sh --target`, verify all 7 sentinels | Sentinel check fails |
 | 5. Verify | `phase_build` | 30s | Check pre-built `dist/` exists, count package.json files | CLI package missing |
@@ -185,11 +185,11 @@ Validates the full build pipeline end-to-end using a local Verdaccio registry.
 
 ### Verdaccio Configuration
 
-Generated per-run in a temp directory:
+Config generated per-run, but **storage persists** at `/tmp/ruflo-verdaccio-cache/`:
 
 ```yaml
-storage: <temp>/storage
-max_body_size: 100mb          # agentic-flow is large
+storage: /tmp/ruflo-verdaccio-cache/storage
+max_body_size: 200mb          # agentic-flow is ~60MB
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
@@ -205,6 +205,8 @@ packages:
 
 Auth: htpasswd with test token. `NPM_CONFIG_REGISTRY` env var points npm at Verdaccio.
 
+**Persistent cache**: Only `@sparkleideas/*` storage is cleared between runs. External dep tarballs from npmjs proxy survive, making Phase 8 (install) ~60% faster on subsequent runs (~30s → ~12s).
+
 ### Timeout System
 
 Per-phase watchdog using background processes:
@@ -219,7 +221,7 @@ run_phase_with_timeout(N, phase_fn)
   → no subshell (variables propagate normally)
 ```
 
-Total possible timeout: 520s (~8.7 min). Actual runtime: ~106s.
+Total possible timeout: 520s (~8.7 min). Actual runtime: ~30s (cached), ~46s (cold).
 
 ### CLI Flags
 

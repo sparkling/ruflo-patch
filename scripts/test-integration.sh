@@ -111,8 +111,8 @@ cleanup() {
     log "Cleanup: Verdaccio (PID ${VERDACCIO_PID}) terminated"
   fi
 
-  # Remove temp directories
-  for d in "${TEMP_BUILD}" "${TEMP_INSTALL}" "${VERDACCIO_HOME}"; do
+  # Remove ephemeral temp directories (keep Verdaccio home for cache reuse)
+  for d in "${TEMP_BUILD}" "${TEMP_INSTALL}"; do
     if [[ -n "$d" && -d "$d" ]]; then
       rm -rf "$d"
       log "Cleanup: removed $d"
@@ -335,14 +335,30 @@ phase_setup() {
 
   phase_log "1" "Setup - starting Verdaccio and creating temp dirs"
 
+  # Kill any stale Verdaccio processes from prior runs
+  local stale_count
+  stale_count=$(pgrep -f verdaccio 2>/dev/null | wc -l)
+  if [[ "$stale_count" -gt 0 ]]; then
+    phase_log "1" "Killing ${stale_count} stale Verdaccio process(es)"
+    pkill -f verdaccio 2>/dev/null || true
+    sleep 0.5
+  fi
+
   # Create results directory
   RESULTS_DIR="${PROJECT_DIR}/test-results/${TIMESTAMP}"
   mkdir -p "${RESULTS_DIR}"
 
-  # Create temp directories
+  # Create temp directories (build + install are ephemeral, Verdaccio home is persistent)
   TEMP_BUILD=$(mktemp -d /tmp/ruflo-integ-build-XXXXX)
   TEMP_INSTALL=$(mktemp -d /tmp/ruflo-integ-install-XXXXX)
-  VERDACCIO_HOME=$(mktemp -d /tmp/ruflo-integ-verdaccio-XXXXX)
+  # Verdaccio home persists across runs so external dep cache survives.
+  # Only @sparkleideas/* storage is cleared (our packages change each run).
+  VERDACCIO_HOME="/tmp/ruflo-verdaccio-cache"
+  mkdir -p "${VERDACCIO_HOME}"
+  # Clear only our packages (external dep cache survives across runs)
+  rm -rf "${VERDACCIO_HOME}/storage/@sparkleideas" "${VERDACCIO_HOME}/storage/ruflo" 2>/dev/null || true
+  # Rotate log (keep last run only)
+  : > "${VERDACCIO_HOME}/verdaccio.log" 2>/dev/null || true
 
   phase_log "1" "Temp build dir:    ${TEMP_BUILD}"
   phase_log "1" "Temp install dir:  ${TEMP_INSTALL}"
@@ -356,7 +372,7 @@ phase_setup() {
   local verdaccio_config="${VERDACCIO_HOME}/verdaccio-config.yaml"
   cat > "${verdaccio_config}" <<VEOF
 storage: ${VERDACCIO_HOME}/storage
-max_body_size: 100mb
+max_body_size: 200mb
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
@@ -393,14 +409,14 @@ VEOF
   npx verdaccio --listen "${VERDACCIO_PORT}" --config "${verdaccio_config}" &
   VERDACCIO_PID=$!
 
-  # Wait for Verdaccio to be ready (poll up to 15 seconds)
-  local max_wait=15
-  local waited=0
+  # Wait for Verdaccio to be ready (poll every 0.2s, up to 15 seconds)
+  local max_attempts=75
+  local attempt=0
   while ! curl -s "http://localhost:${VERDACCIO_PORT}/" >/dev/null 2>&1; do
-    sleep 1
-    waited=$((waited + 1))
-    if [[ $waited -ge $max_wait ]]; then
-      log_error "Verdaccio did not start within ${max_wait} seconds"
+    sleep 0.2
+    attempt=$((attempt + 1))
+    if [[ $attempt -ge $max_attempts ]]; then
+      log_error "Verdaccio did not start within 15 seconds"
       return 1
     fi
     # Check if process is still alive
@@ -482,13 +498,26 @@ phase_clone() {
       tar -xzf "$tarpath" -C "${TEMP_BUILD}"
     done
   else
-    # Copy from live upstream clones, excluding .git
+    # Copy from live upstream clones in parallel, excluding .git
+    local clone_pids=()
     for repo_dir in "${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}"; do
       local repo_name
       repo_name="$(basename "$repo_dir")"
-      phase_log "2" "  Copying ${repo_name}..."
-      rsync -a --exclude='.git' "${repo_dir}/" "${TEMP_BUILD}/${repo_name}/"
+      phase_log "2" "  Copying ${repo_name} (background)..."
+      rsync -a --exclude='.git' "${repo_dir}/" "${TEMP_BUILD}/${repo_name}/" &
+      clone_pids+=($!)
     done
+    # Wait for all parallel copies
+    local clone_fail=0
+    for pid in "${clone_pids[@]}"; do
+      wait "$pid" || clone_fail=1
+    done
+    if [[ $clone_fail -ne 0 ]]; then
+      log_error "One or more rsync copies failed"
+      local end; end=$(now_ns)
+      record_phase "clone" "false" "$(elapsed_ms "$start" "$end")" "rsync failed"
+      return 1
+    fi
   fi
 
   # Verify at least the primary upstream was copied
@@ -730,23 +759,6 @@ phase_publish() {
   # Set auth in npm config so publish works
   npm config set "//localhost:${VERDACCIO_PORT}/:_authToken" "test-token" 2>/dev/null || true
 
-  # Pre-warm Verdaccio cache with heavy external deps in background.
-  # These are fetched through the npmjs uplink so they're cached by Phase 8.
-  local prewarm_dir
-  prewarm_dir=$(mktemp -d /tmp/ruflo-integ-prewarm-XXXXX)
-  (
-    cd "$prewarm_dir"
-    echo '{"name":"prewarm","version":"1.0.0","private":true}' > package.json
-    echo "registry=http://localhost:${VERDACCIO_PORT}" > .npmrc
-    # Install the heaviest external deps that @sparkleideas/cli will need
-    npm install --ignore-scripts --no-audit --no-fund \
-      better-sqlite3 @noble/ed25519 @noble/hashes \
-      onnxruntime-node ws commander chalk semver \
-      2>/dev/null || true
-    rm -rf "$prewarm_dir"
-  ) &
-  local prewarm_pid=$!
-
   local publish_output
   local publish_exit=0
   publish_output=$(node "${SCRIPT_DIR}/publish.mjs" \
@@ -794,12 +806,6 @@ phase_publish() {
 
   phase_log "7" "Publish succeeded"
 
-  # Wait for pre-warm to finish (cache is ready for Phase 8)
-  if [[ -n "$prewarm_pid" ]]; then
-    wait "$prewarm_pid" 2>/dev/null || true
-    phase_log "7" "Verdaccio cache pre-warmed"
-  fi
-
   local end
   end=$(now_ns)
   record_phase "publish" "true" "$(elapsed_ms "$start" "$end")" "Published to Verdaccio on port ${VERDACCIO_PORT}"
@@ -831,7 +837,8 @@ IEOF
   local install_output
   local install_exit=0
   install_output=$(cd "${TEMP_INSTALL}" && npm install @sparkleideas/cli \
-    --registry "http://localhost:${VERDACCIO_PORT}" 2>&1) || install_exit=$?
+    --registry "http://localhost:${VERDACCIO_PORT}" \
+    --ignore-scripts --no-audit --no-fund 2>&1) || install_exit=$?
 
   if [[ $install_exit -ne 0 ]]; then
     log_error "npm install @sparkleideas/cli failed with exit code ${install_exit}"
@@ -904,8 +911,8 @@ phase_cleanup() {
     VERDACCIO_PID=""  # Prevent double-kill in trap
   fi
 
-  # Remove temp dirs (trap will also try, but be explicit)
-  for d in "${TEMP_BUILD}" "${TEMP_INSTALL}" "${VERDACCIO_HOME}"; do
+  # Remove ephemeral temp dirs (keep Verdaccio home for cache reuse)
+  for d in "${TEMP_BUILD}" "${TEMP_INSTALL}"; do
     if [[ -n "$d" && -d "$d" ]]; then
       rm -rf "$d"
       phase_log "9" "Removed $d"
@@ -982,7 +989,12 @@ main() {
   local total_ms
   total_ms=$(elapsed_ms "$overall_start" "$overall_end")
 
+  # Print per-phase timing breakdown
   log "=========================================="
+  log "Phase timing breakdown:"
+  echo "${PHASE_RESULTS}" | jq -r '.[] | "  \(.name): \(.duration_ms)ms \(if .pass then "✓" else "✗" end)"' 2>/dev/null || true
+  log "------------------------------------------"
+
   if [[ -n "$phase_failed" ]]; then
     log "INTEGRATION TEST FAILED at phase: ${phase_failed}"
     log "Total time: ${total_ms}ms"
