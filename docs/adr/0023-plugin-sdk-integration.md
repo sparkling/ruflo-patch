@@ -5,84 +5,150 @@
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + MADR
 
+## Context and Problem Statement
+
+Users who run `npx @sparkleideas/cli plugins install --name <plugin>` today receive an error because the Plugin SDK is not available under the `@sparkleideas` scope. The SDK (`@claude-flow/plugins`) is the runtime dependency that every Claude Flow plugin needs to register MCP tools, hooks, and lifecycle events. Without it published as `@sparkleideas/plugins`, the entire plugin subsystem of the CLI is non-functional for end users.
+
+**Before this change:**
+
+```
+$ npx @sparkleideas/cli plugins install --name @claude-flow/plugin-agentic-qe
+Error: Cannot resolve @claude-flow/plugins -- package not found
+```
+
+**After this change:**
+
+```
+$ npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-agentic-qe
+Successfully installed plugin-agentic-qe (SDK resolved from @sparkleideas/plugins)
+```
+
+## Decision Drivers
+
+1. **Plugin commands are broken** -- the CLI ships `plugins list`, `plugins install`, and `plugins remove` commands, but all fail because the SDK they depend on is not published
+2. **All 14 plugins depend on the SDK** -- no plugin can be published or installed without the SDK available in the same scope
+3. **Users cannot build custom plugins** -- the plugin builder API, MCP tool builder, and hook system are inaccessible until the SDK is installable
+4. **Zero build complexity** -- the package ships pre-built JavaScript, requiring no TypeScript compilation
+5. **Zero internal dependencies** -- the SDK depends only on `events` (Node.js built-in), meaning it introduces no new dependency chains for users
+
 ## SPARC Framework
 
 ### Specification
 
-**Problem**: The `@claude-flow/plugins` package (v3.0.0-alpha.7) is the unified Plugin SDK for Claude Flow V3. It provides the plugin builder API, MCP tool builder, hook system, worker plugins, provider pattern, plugin registry, and 8+ export entrypoints. All 14 plugins in the Claude Flow ecosystem depend on this SDK to register their MCP tools and lifecycle hooks. Without `@sparkleideas/plugins` published to npm, no plugin can be installed via `npx @sparkleideas/cli plugins install` -- the CLI command exists but has no SDK to resolve against.
+**Problem**: When a user installs a plugin via the CLI, the plugin's `package.json` declares a dependency on `@claude-flow/plugins`. In the `@sparkleideas` ecosystem, this scope does not exist in npm. The CLI cannot resolve the SDK, and the plugin installation fails. This affects every plugin uniformly -- it is not a per-plugin bug but a missing foundational package.
 
-**Trigger**: The CLI's `plugins install` command already references the Plugin SDK. Any user attempting to install a plugin hits an unresolvable dependency. Publishing the SDK is a prerequisite for all future plugin integration work.
+**Trigger**: Any user attempting `npx @sparkleideas/cli plugins install` for any of the 14 available plugins.
 
 **Success Criteria**:
-1. `@sparkleideas/plugins` published to npm and installable
-2. Package count increases from 24 to 25
-3. No existing `@sparkleideas/*` package breaks
-4. Codemod correctly renames all `@claude-flow/plugins` references to `@sparkleideas/plugins`
-5. All 14 downstream plugins can resolve the SDK after publish
-6. `bash check-patches.sh` and `npm test` continue to pass
+
+1. Users can run `npm install @sparkleideas/plugins` and the package resolves
+2. Users can run `npx @sparkleideas/cli plugins install --name <plugin>` without SDK resolution errors
+3. Users can import plugin builder APIs (`@sparkleideas/plugins/builder`, `@sparkleideas/plugins/mcp`, etc.)
+4. No existing `@sparkleideas/*` package breaks
+5. `bash check-patches.sh` and `npm test` continue to pass
 
 ### Pseudocode
 
+What happens when a user installs a plugin:
+
 ```
-Phase 1: Add to publish pipeline
-  1. Verify @claude-flow/plugins ships pre-built JS (no tsc needed)
-  2. Add @sparkleideas/plugins to LEVELS in publish.mjs at Level 1
-  3. Codemod handles scope rename automatically (@claude-flow/plugins -> @sparkleideas/plugins)
-  4. Update published-versions.json after first publish
-  5. Update package count from 24 -> 25 in tests and documentation
+User runs: npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-agentic-qe
 
-Phase 2: Verify
-  1. Run integration test (Verdaccio dry run)
-  2. Confirm npm install @sparkleideas/plugins resolves
-  3. Confirm node -e "require('@sparkleideas/plugins')" succeeds
-  4. Confirm idempotent re-publish works
+1. CLI receives install command
+2. CLI resolves plugin package from npm registry
+3. Plugin package.json declares: "dependencies": { "@sparkleideas/plugins": "..." }
+4. npm attempts to resolve @sparkleideas/plugins
+   - BEFORE: package does not exist in npm --> FAIL
+   - AFTER:  package exists, resolves to pre-built JS --> OK
+5. Plugin loads SDK:
+   import { PluginBuilder } from '@sparkleideas/plugins/builder'
+   import { MCPToolBuilder } from '@sparkleideas/plugins/mcp'
+   import { HookSystem } from '@sparkleideas/plugins/hooks'
+6. Plugin registers its MCP tools and lifecycle hooks via the SDK
+7. CLI confirms installation success
+```
 
-Phase 3: Unblock plugins
-  AFTER SDK is published:
-    Any of the 14 plugins can be added to the pipeline
-    Each plugin imports from @sparkleideas/plugins
-    Plugin install command in CLI becomes functional
+Implementation steps (from user-impact perspective):
+
+```
+1. Publish @sparkleideas/plugins to npm
+   - Source: v3/@claude-flow/plugins (ships pre-built JS)
+   - Scope rename handled by existing codemod
+   - Package count: 24 -> 25
+
+2. Verify user-facing functionality
+   - npm install @sparkleideas/plugins resolves
+   - All 8+ entrypoints importable (builder, mcp, hooks, worker, provider, registry, types, root)
+   - CLI plugins commands no longer error on SDK resolution
+
+3. Unblock downstream plugins
+   - Each of the 14 plugins can now be individually integrated
+   - Each plugin will need its own scope rename and publish step
 ```
 
 ### Architecture
 
-The Plugin SDK sits at Level 1 of the topological publish order because it has zero internal `@claude-flow/*` dependencies. Its only dependency (`events`) is a Node.js built-in, making it effectively dependency-free.
+The SDK is the foundation layer that all plugins build on. From a user's perspective, the dependency chain works as follows:
 
 ```
-                          @sparkleideas/cli (L5)
-                                  |
-                    @sparkleideas/guidance (L4)
-                                  |
-                     @sparkleideas/hooks (L3)
-                                  |
-                    @sparkleideas/shared (L2)
-                                  |
-         +----------------------------------------------+
-         |          Level 1 (no internal deps)           |
-         |                                               |
-         |  @sparkleideas/agentdb                        |
-         |  @sparkleideas/agentic-flow                   |
-         |  @sparkleideas/ruv-swarm                      |
-         |  @sparkleideas/plugins  <--- NEW (25th pkg)   |
-         +----------------------------------------------+
-                          |
-                   external deps only
-              (events = Node.js built-in)
+User installs a plugin
+        |
+        v
+  @sparkleideas/plugin-*          (the plugin package)
+        |
+        v
+  @sparkleideas/plugins           (the SDK -- THIS ADR)
+        |
+        v
+  events (Node.js built-in)       (effectively zero deps)
 ```
 
-Note: ADR-0014 originally placed `@sparkleideas/plugins` at Level 3. This ADR corrects that placement to Level 1 based on actual dependency analysis -- the package has no `@claude-flow/*` or `@sparkleideas/*` imports, only the Node.js built-in `events` module. The Level 3 placement in ADR-0014 was based on the broader `plugins` directory structure, not the SDK package itself.
-
-**Plugin SDK as foundation for all plugins:**
+The SDK provides 8+ export entrypoints that plugins consume:
 
 ```
-         @sparkleideas/plugins (SDK)        Level 1
-                   |
-    +--------------+--------------+
-    |              |              |         Future (not yet integrated)
-  plugin-A     plugin-B      plugin-C
-  (agentic-qe) (code-intel) (cognitive-kernel)
-    ...14 plugins total...
+@sparkleideas/plugins
+  |-- .               Root entrypoint (main API)
+  |-- ./builder       Plugin builder API (create, configure, validate plugins)
+  |-- ./mcp           MCP tool builder (register tools with the CLI)
+  |-- ./hooks         Hook system (lifecycle events, pre/post task hooks)
+  |-- ./worker        Worker plugin pattern (background tasks)
+  |-- ./provider      Provider pattern (data sources, services)
+  |-- ./registry      Plugin registry (discover, load, manage plugins)
+  |-- ./types         TypeScript type definitions
 ```
+
+Within the published package ecosystem, the SDK sits at the base layer alongside other zero-dependency packages:
+
+```
+    @sparkleideas/cli              User-facing CLI (top of stack)
+            |
+           ...                     Intermediate packages
+            |
+    +------------------------------------------+
+    |        Level 1 (no internal deps)         |
+    |                                           |
+    |  @sparkleideas/agentdb                    |
+    |  @sparkleideas/agentic-flow               |
+    |  @sparkleideas/ruv-swarm                  |
+    |  @sparkleideas/plugins  <-- THIS ADR      |
+    +------------------------------------------+
+                    |
+             external deps only
+         (events = Node.js built-in)
+```
+
+Note: ADR-0014 originally placed this package at Level 3. This ADR corrects that to Level 1 based on actual dependency analysis -- the SDK has no `@claude-flow/*` or `@sparkleideas/*` imports.
+
+**What users get access to once the SDK is published:**
+
+| Entrypoint | User Capability |
+|------------|----------------|
+| `./builder` | Create custom plugins with validation and lifecycle management |
+| `./mcp` | Register new MCP tools that appear in the CLI |
+| `./hooks` | Attach logic to pre-task, post-task, and other lifecycle events |
+| `./worker` | Build background worker plugins for long-running operations |
+| `./provider` | Implement data source and service provider plugins |
+| `./registry` | Programmatically discover and manage installed plugins |
 
 ### Refinement
 
@@ -92,74 +158,71 @@ Note: ADR-0014 originally placed `@sparkleideas/plugins` at Level 3. This ADR co
 |----------|-------|
 | **Upstream package** | `@claude-flow/plugins` |
 | **Upstream version** | `3.0.0-alpha.7` |
-| **Source repo** | `github.com/ruvnet/ruflo` |
-| **Source path** | `v3/@claude-flow/plugins` |
 | **Repackaged as** | `@sparkleideas/plugins` |
-| **Dependencies** | `events` (Node.js built-in, listed as external) |
+| **Source path** | `ruflo/v3/@claude-flow/plugins` |
+| **Dependencies** | `events` (Node.js built-in -- effectively zero external deps) |
 | **Internal deps** | None |
-| **Topological level** | Level 1 |
 | **Build required** | No -- ships pre-built JavaScript |
-| **Export entrypoints** | 8+ (plugin builder, MCP tool builder, hooks, workers, providers, registry, etc.) |
+| **Export entrypoints** | 8+ (builder, mcp, hooks, worker, provider, registry, types, root) |
 | **Downstream dependents** | All 14 Claude Flow plugins |
 
-#### Pre-built Check
+This is a key differentiator from `@claude-flow/teammate-plugin` (ADR-0021), which required TypeScript compilation and was deferred partly for that reason. The Plugin SDK ships ready-to-publish JavaScript.
 
-```
-v3/@claude-flow/plugins/
-+-- package.json    <- main points to JS (no build step)
-+-- *.js / *.mjs    <- pre-built JavaScript shipped
-+-- README.md
-```
-
-The Plugin SDK ships pre-built JavaScript, consistent with all other packages in the pipeline. No TypeScript compilation step is required. This is a key differentiator from `@claude-flow/teammate-plugin` (ADR-0021), which required `tsc` and was deferred partly for that reason.
-
-#### Risk Assessment
+#### Risk Assessment (User-Impact Focus)
 
 | Risk | Likelihood | Impact | Mitigation |
 |------|-----------|--------|------------|
-| Package ships without pre-built JS | Low | High | Verify `main` entry resolves to JS before publish. If missing, defer. |
-| Codemod misses internal scope references | Low | Medium | Plugin SDK has no `@claude-flow/*` imports (only `events`). Codemod only needs to rename `package.json` scope. |
-| Increases package count 24 -> 25 | Certain | Low | Update test assertions and documentation. |
-| Level placement conflict with ADR-0014 | Certain | Low | This ADR supersedes ADR-0014's Level 3 placement for this package with Level 1. |
-| `events` dependency causes install issues | Very Low | Low | `events` is a Node.js built-in. If listed in `package.json`, npm resolves it as a no-op on Node. |
+| Users install SDK but no plugins exist yet | Likely (initially) | Low | SDK is independently useful for custom plugin development. Plugins will follow. |
+| Plugin scope mismatch (`@claude-flow/plugin-*` vs `@sparkleideas/plugin-*`) | Medium | Medium | Codemod renames all scope references. Users must use `@sparkleideas/plugin-*` names. |
+| Entrypoint paths break after scope rename | Low | High | Entrypoints are relative paths (`./builder`, `./mcp`), unaffected by scope rename. |
+| `events` dependency listed in package.json causes confusion | Very Low | Very Low | `events` is a Node.js built-in. npm resolves it as a no-op in Node environments. |
+| Package count increase (24 to 25) breaks assumptions | Certain | Low | Update test assertions and documentation. |
 
 ### Completion
 
-#### Decision Drivers
+## Considered Options
 
-1. **Unblocks plugin ecosystem** -- all 14 plugins depend on this SDK; none can be published without it
-2. **Zero build complexity** -- ships pre-built JS, same as all other 24 packages
-3. **Zero internal dependencies** -- Level 1 placement, no ordering concerns
-4. **CLI already references it** -- `plugins install` command exists but cannot resolve the SDK
-5. **ADR-0021 was deferred partly due to missing plugin infrastructure** -- publishing the SDK addresses that blocker
+### Option A: Integrate Now
 
-#### Considered Options
+Publish `@sparkleideas/plugins` to npm immediately, making the SDK available for users and unblocking all future plugin work.
 
-##### Option A: Integrate Now
+**Pros:**
+- Users get a working plugin subsystem (once individual plugins are also published)
+- Users gain access to the plugin builder API for custom plugin development
+- CLI `plugins` commands stop failing on SDK resolution
+- Zero build complexity -- same integration process as existing packages
+- Unblocks all 14 downstream plugins
 
-Add `@sparkleideas/plugins` to the publish pipeline at Level 1:
+**Cons:**
+- Package count increases from 24 to 25 (test and docs updates needed)
+- SDK is available before any individual plugins are published (SDK without plugins has limited immediate utility for non-developers)
 
-1. Add to `LEVELS` array in `publish.mjs` at Level 1
-2. Codemod handles scope rename
-3. Publish alongside other packages
-4. Update package count from 24 to 25
+### Option B: Defer Until a Plugin Is Ready
 
-**Pros**: Unblocks all future plugin work. Zero additional build complexity. Same integration process as existing Level 1 packages.
-**Cons**: Adds one more package to publish pipeline (minimal impact at ~2s per package).
+Wait until a specific plugin (e.g., `plugin-agentic-qe`) is ready to publish, then publish the SDK as a prerequisite in the same cycle.
 
-##### Option B: Defer Until a Plugin Is Needed
+**Pros:**
+- No work until concrete user demand for a specific plugin
+- SDK and first plugin ship together, giving users immediate end-to-end value
 
-Wait until a specific plugin (e.g., `agentic-qe`, `code-intelligence`) is ready to integrate, then publish the SDK as a prerequisite.
+**Cons:**
+- Users cannot build custom plugins in the interim
+- Creates a two-step integration for the first plugin (SDK + plugin in one cycle adds risk)
+- CLI `plugins` commands remain broken until that cycle
 
-**Pros**: No work until concrete demand.
-**Cons**: Creates a two-step integration for every future plugin (SDK first, then plugin). Delays the first plugin integration by one cycle.
+### Option C: Bundle SDK Into the CLI
 
-##### Option C: Publish SDK Alongside First Plugin
+Instead of publishing the SDK as a separate package, embed it directly in `@sparkleideas/cli`.
 
-Bundle the SDK publish with the first plugin integration, publishing both in the same pipeline run.
+**Pros:**
+- Users do not need to install a separate SDK package
+- Fewer packages to maintain
 
-**Pros**: Single ADR and single pipeline change for SDK + first plugin.
-**Cons**: Conflates two changes. If the plugin has issues, the SDK publish is also blocked. The SDK is independently useful (CLI references it).
+**Cons:**
+- Breaks the plugin architecture -- plugins expect to import from `@sparkleideas/plugins`, not from the CLI
+- All 14 upstream plugins would need rewiring
+- Users building custom plugins lose the standalone SDK import pattern
+- Violates separation of concerns
 
 ## Decision
 
@@ -167,65 +230,69 @@ Bundle the SDK publish with the first plugin integration, publishing both in the
 
 ### Rationale
 
-1. **No build step needed** -- unlike `@claude-flow/teammate-plugin` (ADR-0021), which was deferred because it required TypeScript compilation, the Plugin SDK ships pre-built JavaScript. Integration follows the exact same process as existing Level 1 packages (`agentdb`, `agentic-flow`, `ruv-swarm`).
+1. **Users get working plugin commands** -- the CLI already ships `plugins list`, `plugins install`, and `plugins remove`. These commands currently fail because the SDK is missing. Publishing the SDK is the minimum change needed to unblock the plugin subsystem.
 
-2. **Unblocks the entire plugin ecosystem** -- all 14 plugins import from `@claude-flow/plugins`. Publishing `@sparkleideas/plugins` is a prerequisite for integrating any of them. Deferring the SDK means deferring every plugin.
+2. **Users can build custom plugins** -- the plugin builder API, MCP tool builder, and hook system become accessible to users who want to extend the CLI with their own plugins. This does not require waiting for upstream plugins to be published.
 
-3. **The CLI already expects it** -- the `plugins install` command exists in `@sparkleideas/cli` and references the Plugin SDK. Users attempting plugin installation hit an unresolvable dependency.
+3. **No build step needed** -- unlike `@claude-flow/teammate-plugin` (ADR-0021), which was deferred because it required TypeScript compilation, the Plugin SDK ships pre-built JavaScript. The user-facing package works immediately after scope rename and publish.
 
-4. **Zero internal dependencies** -- the package depends only on `events` (Node.js built-in). It belongs at Level 1 with no ordering constraints relative to other packages.
+4. **Zero new dependencies for users** -- the SDK depends only on `events` (Node.js built-in). Users who install it get no transitive dependency tree, no native modules, no platform-specific binaries.
 
-5. **Minimal pipeline impact** -- adding one package to Level 1 adds approximately 2 seconds to the total publish time. No new failure modes are introduced.
+5. **Prerequisite for all plugins** -- deferring the SDK means deferring every plugin. There is no path to a working plugin ecosystem without this package.
 
-### Implementation Plan
+### What Changes for Users
 
-```bash
-# 1. Add to publish.mjs LEVELS array at Level 1
-# Level 1 (no internal deps):
-['@sparkleideas/agentdb', '@sparkleideas/agentic-flow',
- '@sparkleideas/ruv-swarm', '@sparkleideas/plugins']
-
-# 2. Codemod handles scope rename automatically
-# @claude-flow/plugins -> @sparkleideas/plugins in package.json
-
-# 3. Verify pre-built JS exists
-ls v3/@claude-flow/plugins/*.js  # must resolve
-
-# 4. Update published-versions.json after first publish
-# "@sparkleideas/plugins": "<version>"
-
-# 5. Update package count in tests/documentation: 24 -> 25
-
-# 6. Verify
-bash patch-all.sh --global
-bash check-patches.sh
-npm test
-```
+| Before | After |
+|--------|-------|
+| `npx @sparkleideas/cli plugins install` fails | SDK resolves; plugins can be installed (once individually published) |
+| `npm install @sparkleideas/plugins` fails | Package installs successfully |
+| Custom plugin development impossible | Users can import builder, mcp, hooks APIs |
+| 24 packages in `@sparkleideas` scope | 25 packages |
 
 ### Consequences
 
-**Good:**
-- Unblocks integration of all 14 downstream plugins
-- CLI `plugins install` command becomes functional once plugins are also published
-- Zero additional build complexity (pre-built JS, no TypeScript step)
-- ADR-0021 blocker partially resolved (plugin infrastructure now available)
-- Consistent with existing Level 1 integration pattern
+**Good (user-facing):**
+- CLI `plugins` commands become functional (prerequisite met)
+- Users can create custom plugins using the builder API
+- Users can register custom MCP tools via the SDK
+- Plugin hook system becomes available for lifecycle event handling
+- Path is clear for integrating the 14 upstream plugins one by one
 
-**Bad:**
-- Package count increases from 24 to 25 (test assertions and documentation must update)
-- ADR-0014 Level 3 placement for this package is superseded (minor documentation inconsistency until ADR-0014 is updated)
+**Bad (user-facing):**
+- Initially, the SDK is available but no pre-built plugins are published yet -- users can only build custom plugins until upstream plugins are integrated
+- Users familiar with `@claude-flow/plugins` must use `@sparkleideas/plugins` instead
 
 **Neutral:**
-- The 14 downstream plugins are not yet integrated -- this ADR only covers the SDK
-- Publishing the SDK does not automatically make plugins installable; each plugin needs its own integration step
-- The `events` dependency is a Node.js built-in and has no effect on install resolution
+- Each of the 14 upstream plugins still needs its own integration step -- this ADR only covers the SDK
+- The `events` dependency has no observable effect on user installs
+
+### Required Documentation Updates
+
+When this ADR is implemented, the following documents must be updated:
+
+| Document | Change |
+|----------|--------|
+| `docs/unpublished-sources.md` | Move `@claude-flow/plugins` from unpublished to published; update recommendation from "Integrate" to "Done" |
+| `docs/ruvnet.packages.and.source.location.md` | Add `@sparkleideas/plugins` to Matrix 2 (published packages) with source path and version |
+| `docs/plugin-catalog.md` | Update install commands to reference `@sparkleideas/plugins` as the resolved SDK |
+| `README.md` | Update package count from 24 to 25 (or current count) |
+
+### Required Tests
+
+| Layer | Test | What it validates |
+|-------|------|-------------------|
+| **Unit** | `tests/06-publish-order.test.mjs` | `@sparkleideas/plugins` appears in Level 1 of the LEVELS array |
+| **Integration** | `scripts/test-integration.sh` Phase 8 | Package publishes to Verdaccio and resolves via `npm install` |
+| **Acceptance** | `scripts/test-acceptance.sh` | New test: `test_a11_plugin_sdk()` — verify `import('@sparkleideas/plugins')` resolves, plugin builder API is callable, MCP tool builder returns valid tool definition |
+| **Acceptance** | `scripts/test-acceptance.sh` | New test: `test_a12_plugin_install()` — verify `npx @sparkleideas/cli plugins list` succeeds (SDK found) |
 
 ---
 
 ## References
 
 - Upstream package: `@claude-flow/plugins@3.0.0-alpha.7`
-- Source path: `v3/@claude-flow/plugins`
+- Source path: `ruflo/v3/@claude-flow/plugins`
 - Related: [ADR-0014 Topological Publish Order](0014-topological-publish-order.md) -- defines the 5-level publish hierarchy
 - Related: [ADR-0021 Teammate Plugin Integration](0021-teammate-plugin-integration.md) -- deferred partly due to missing plugin infrastructure
+- Related: [unpublished-sources.md](../unpublished-sources.md)
 - Downstream dependents: 14 plugins (agentic-qe, code-intelligence, cognitive-kernel, devtools, github-integration, memory-optimizer, monitoring, observability, performance-analyzer, prompt-engine, security-scanner, semantic-search, task-orchestrator, workflow-engine)

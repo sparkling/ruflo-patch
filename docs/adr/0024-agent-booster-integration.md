@@ -5,265 +5,268 @@
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + MADR
 
+## Context
+
+The `@sparkleideas/cli` ships a `CLAUDE.md` to every user project via `npx @sparkleideas/cli init`. That file defines a 3-Tier Model Routing system (ADR-026) and instructs agents to:
+
+> "Always check for `[AGENT_BOOSTER_AVAILABLE]`" and "Use Edit tool directly when `[AGENT_BOOSTER_AVAILABLE]`"
+
+Tier 1 is the Agent Booster -- a Rust/WASM package that performs AST-aware code transformations locally in sub-millisecond time at zero cost. It handles simple, deterministic edits (var-to-const, add types, rename variables) without making any LLM API call.
+
+**The problem**: `agent-booster` is not published under the `@sparkleideas` scope. Users of `@sparkleideas/cli` see the Tier 1 routing instructions in their CLAUDE.md but have no way to activate them without manually discovering and installing a separate, differently-scoped package. In practice, most users never do this. The result is that every code edit -- no matter how trivial -- falls through to Tier 2 (Haiku, ~500ms, $0.0002) or Tier 3 (Sonnet/Opus, 2-5s, $0.003-0.015). Users pay more money and wait longer for edits that could be instantaneous and free.
+
+## Decision Drivers
+
+1. **User cost and latency** -- Without Tier 1, users pay for LLM calls on trivial edits that a local WASM transform handles deterministically in <1ms at $0.
+2. **Broken routing contract** -- CLAUDE.md promises 3-tier routing, but only 2 tiers actually work for `@sparkleideas` users. The `[AGENT_BOOSTER_AVAILABLE]` check always returns false.
+3. **Discoverability** -- Users should not need to know about a separate package scope to get the full capability of the CLI they installed.
+4. **Scope consistency** -- All other packages in the ecosystem are under `@sparkleideas/*`. A package from a different scope creates confusion and version mismatch risk.
+
 ## SPARC Framework
 
 ### Specification
 
-**Problem**: The `agent-booster` package (v0.2.2) is the designated Tier 1 handler in ADR-026's 3-Tier Model Routing system. It provides sub-millisecond, zero-cost code transformations via Rust/WebAssembly -- 52x faster than Morph LLM and 350x faster than LLM-based code editing. The CLI's CLAUDE.md already instructs agents to check for `[AGENT_BOOSTER_AVAILABLE]` before spawning LLM agents, and to use the Edit tool directly when available. However, `agent-booster` is not published under the `@sparkleideas/*` scope. Users of `@sparkleideas/cli` cannot benefit from Tier 1 routing without manually installing the upstream `@claude-flow/agent-booster` or `agent-booster` package, breaking scope consistency and defeating the purpose of a unified distribution.
+**Problem**: Tier 1 routing is non-functional for `@sparkleideas` users. All code edits go through LLM API calls (Tier 2 or Tier 3), even trivial transforms that are deterministic and could run locally. The CLAUDE.md shipped to every user project references `[AGENT_BOOSTER_AVAILABLE]`, but the package required to satisfy that check is not available within the `@sparkleideas` scope.
 
-**Trigger**: The [unpublished-sources.md](../unpublished-sources.md) audit identified `agent-booster` as "Integrate Now" -- one of only two packages (alongside Plugin SDK) recommended for immediate integration. ADR-026 (3-Tier Model Routing, referenced in CLAUDE.md) explicitly depends on it as the Tier 1 handler. Without it in the `@sparkleideas` scope, the 3-tier system cannot work end-to-end with `@sparkleideas` packages.
+**Trigger**: The CLAUDE.md that ships with `npx @sparkleideas/cli init` already documents and depends on agent-booster for Tier 1 routing. The [unpublished-sources.md](../unpublished-sources.md) audit identified this gap and recommended "Integrate Now".
 
 **Success Criteria**:
-1. `@sparkleideas/agent-booster` published to npm and installable via `npx @sparkleideas/agent-booster`
-2. No existing `@sparkleideas/*` package breaks
-3. Binary entries (`agent-booster`, `agent-booster-server`) resolve correctly after install
-4. Codemod correctly renames any `@claude-flow/` references in the package source
-5. The CLI's `[AGENT_BOOSTER_AVAILABLE]` check can discover the `@sparkleideas`-scoped package
-6. Integration test validates the new package in the dependency tree
+
+1. Users can install agent-booster within the `@sparkleideas` scope: `npm install @sparkleideas/agent-booster`
+2. The CLI's `[AGENT_BOOSTER_AVAILABLE]` check discovers the package automatically -- no user configuration required
+3. Simple code transforms (var-to-const, add types, rename variables) execute locally via WASM in <1ms at $0 cost
+4. Two CLI binaries are available after install: `agent-booster` (standalone editor) and `agent-booster-server` (Morph LLM-compatible API server)
+5. Compatible with Claude Desktop, Cursor, and VS Code via MCP Tools
+6. No existing `@sparkleideas/*` package breaks
 
 ### Pseudocode
 
+The following describes what happens from a user's perspective when an agent encounters a code edit task:
+
 ```
-Phase 1: Verify source in existing clone
-  1. agent-booster is at agentic-flow/packages/agent-booster/
-  2. sync-and-build.sh already clones ruvnet/agentic-flow
-  3. No new repo clone needed
+WHEN agent receives a code edit task:
 
-Phase 2: Pre-built verification
-  1. Check for dist/ directory in packages/agent-booster/
-  2. Verify package.json bin entries point to existing files in dist/
-  3. IF bin paths are broken:
-       Strip missing bin entries (publish.mjs already handles this)
-  4. No build step needed — ships pre-built WASM + JS
+  1. Check: Is @sparkleideas/agent-booster installed?
+     |
+     +-- YES: Emit [AGENT_BOOSTER_AVAILABLE]
+     |   |
+     |   +-- Classify the edit complexity
+     |       |
+     |       +-- Simple transform (var->const, add type annotation, rename)?
+     |       |   -> Route to Tier 1: Agent Booster (WASM)
+     |       |   -> Execute locally, <1ms, $0 cost
+     |       |   -> Return deterministic result with confidence score
+     |       |
+     |       +-- Low complexity (<30%)?
+     |       |   -> Route to Tier 2: Haiku (~500ms, $0.0002)
+     |       |
+     |       +-- High complexity (>30%)?
+     |           -> Route to Tier 3: Sonnet/Opus (2-5s, $0.003-0.015)
+     |
+     +-- NO: [AGENT_BOOSTER_AVAILABLE] check returns false
+         |
+         +-- ALL edits go to Tier 2 or Tier 3 (current behavior)
+         +-- User pays for every edit, even trivial ones
+```
 
-Phase 3: Add to publish pipeline
-  1. Add @sparkleideas/agent-booster to LEVELS[0] (Level 1) in publish.mjs
-  2. Codemod handles scope rename (@claude-flow/* -> @sparkleideas/*)
-  3. Codemod replaces internal dep ranges with "*" (if any — agent-booster has none)
+**User-facing before/after**:
 
-Phase 4: Test
-  Unit: Verify package appears in publish order
-  Integration: Verdaccio publishes it, npm install resolves it
-  Acceptance: Binary entries execute without error
-  Idempotency: Re-publish is a no-op (already-published check)
+```
+BEFORE (agent-booster not in @sparkleideas scope):
+  User runs: npx @sparkleideas/cli init
+  CLAUDE.md says: "Check for [AGENT_BOOSTER_AVAILABLE]"
+  Reality: Check always fails. All edits -> LLM. User pays ~$0.0002-$0.015 per edit.
 
-Phase 5: Update metadata
-  1. Update published-versions.json after first publish
-  2. Update README package count (25 -> 26 if ADR-0023 also accepted, else 25)
+AFTER (agent-booster published as @sparkleideas/agent-booster):
+  User runs: npm install @sparkleideas/agent-booster
+  -- OR it ships as optionalDependency of @sparkleideas/cli --
+  CLAUDE.md says: "Check for [AGENT_BOOSTER_AVAILABLE]"
+  Reality: Check succeeds. Simple edits -> WASM. $0, <1ms. Complex edits -> LLM as before.
 ```
 
 ### Architecture
 
-The agent-booster package has **zero internal `@claude-flow/*` dependencies**. It is a self-contained Rust/WASM binary with JavaScript bindings. It belongs at **Level 1** in the topological publish order.
+Agent Booster sits at the bottom of the 3-Tier Model Routing system. From the user's perspective, it is the fast path that intercepts simple edits before they reach any LLM.
+
+**3-Tier Model Routing (user-facing view)**:
 
 ```
-                        @sparkleideas/cli (L5)
-                                |
-                  @sparkleideas/guidance (L4)
-                                |
-                   @sparkleideas/hooks (L3)
-                                |
-                  @sparkleideas/shared (L2)
-                                |
-       +------------------------------------------+
-       |        Level 1 (no internal deps)         |
-       |                                           |
-       |  @sparkleideas/agentdb                    |
-       |  @sparkleideas/agentic-flow               |
-       |  @sparkleideas/ruv-swarm                  |
-       |  @sparkleideas/agent-booster  <--- NEW    |
-       +------------------------------------------+
-                        |
-                 external deps only
-            (Rust/WASM pre-compiled, no npm deps)
+  User's agent encounters a code edit
+              |
+              v
+  +---------------------------+
+  | Tier 1: Agent Booster     |  <1ms  |  $0  |  Simple transforms
+  | (WASM, 100% local)        |        |      |  var->const, add types,
+  | @sparkleideas/agent-booster|       |      |  rename variables
+  +---------------------------+
+              |
+              | (edit too complex for Tier 1)
+              v
+  +---------------------------+
+  | Tier 2: Haiku             |  ~500ms  |  $0.0002  |  Low complexity
+  +---------------------------+
+              |
+              | (requires deep reasoning)
+              v
+  +---------------------------+
+  | Tier 3: Sonnet/Opus       |  2-5s  |  $0.003-$0.015  |  Complex tasks
+  +---------------------------+
 ```
 
-**Updated Level 1 package count**: 3 -> 4 packages.
+**What ships to users**:
 
-**Source location**: The `agentic-flow` repository (`ruvnet/agentic-flow`) is already cloned by `sync-and-build.sh` as part of the existing build pipeline. The agent-booster source lives at `agentic-flow/packages/agent-booster/` alongside `agentdb` and `agentic-flow` -- no additional repository or clone step is required.
+| Component | Description |
+|-----------|-------------|
+| `@sparkleideas/agent-booster` | npm package, installable via `npm install` |
+| `agent-booster` binary | Standalone CLI for AST-aware code transforms |
+| `agent-booster-server` binary | Morph LLM protocol-compatible API server |
+| Pre-built WASM + JS | No compilation or build step at install time |
+| MCP Tools integration | Works with Claude Desktop, Cursor, VS Code |
 
-**Relationship to ADR-026 (3-Tier Model Routing)**:
-
-```
-Tier 1: agent-booster (WASM)     <1ms   $0        Simple transforms
-        ^^^^^^^^^^^^^^^^^^ THIS PACKAGE
-Tier 2: Haiku                   ~500ms  $0.0002   Low-complexity tasks
-Tier 3: Sonnet/Opus              2-5s   $0.003+   Complex reasoning
-```
-
-With agent-booster published under `@sparkleideas`, the full 3-tier routing pipeline works within a single scope. The CLI checks `[AGENT_BOOSTER_AVAILABLE]`, and if the `@sparkleideas/agent-booster` package is installed, Tier 1 transformations bypass LLM calls entirely.
-
-**Morph LLM API compatibility**: The `agent-booster-server` binary exposes an API server compatible with the Morph LLM protocol. This means it can serve as a drop-in replacement for any tool or integration that speaks the Morph API, providing the same code editing capabilities at zero cost and sub-millisecond latency.
-
-### Refinement
-
-#### Source Analysis
+**Package characteristics**:
 
 | Property | Value |
 |----------|-------|
-| **Upstream package** | `agent-booster` (unscoped) |
-| **Upstream version** | `0.2.2` |
-| **Source repo** | `github.com/ruvnet/agentic-flow` |
-| **Source path** | `packages/agent-booster/` |
-| **Repackaged as** | `@sparkleideas/agent-booster` |
-| **Dependencies** | None (Rust/WASM compiled, self-contained) |
-| **Peer deps** | None |
-| **Internal deps** | None |
-| **Binaries** | `agent-booster`, `agent-booster-server` |
-| **Build required** | No -- ships pre-built `dist/` with WASM + JS |
-| **MCP tools** | Yes -- Claude Desktop, Cursor, VS Code integration |
-| **Topological level** | Level 1 |
+| Upstream package | `agent-booster` v0.2.2 |
+| Repackaged as | `@sparkleideas/agent-booster` |
+| Internal `@sparkleideas/*` dependencies | None |
+| External dependencies | None (self-contained WASM) |
+| Build step required at install | No -- ships pre-built `dist/` |
+| Node.js requirement | >= 16 (WASM support) |
+| Publish topology level | Level 1 (no internal deps) |
 
-#### Capability Summary
+**How the CLI discovers it**: When `[AGENT_BOOSTER_AVAILABLE]` is checked, the agent resolves `@sparkleideas/agent-booster` via standard Node.js module resolution. If the package is in `node_modules` (project-level or global), Tier 1 routing activates. No configuration file or environment variable is needed.
 
-| Capability | Description |
-|-----------|-------------|
-| Code editing | Sub-millisecond code transformations (var->const, add types, rename, etc.) |
-| Speed | 52x faster than Morph LLM, 350x faster than LLM-based alternatives |
-| Accuracy | 100% deterministic results (no LLM hallucination) |
-| Cost | $0 -- fully local, zero API calls |
-| API server | Morph LLM protocol compatible (`agent-booster-server` binary) |
-| MCP integration | Tools for Claude Desktop, Cursor, VS Code |
-| Processing | 100% local, no network dependency |
+### Refinement
 
-#### Risk Assessment
+**Capability summary for users**:
 
-| Risk | Likelihood | Impact | Mitigation |
-|------|-----------|--------|------------|
-| WASM binary size increases package size | Certain | Low | WASM binaries are typically 1-5 MB compressed. npm handles this fine. |
-| Platform compatibility (WASM) | Low | Low | WASM runs in any Node.js >= 16 environment. No native compilation needed at install time. |
-| Bin entry paths broken in dist/ | Medium | Medium | `publish.mjs` already strips missing bin entries before publish. Verify during integration test. |
-| Upstream changes package structure | Low | Medium | Version is pinned. Same risk as all other upstream packages. |
-| Increases package count from 25 -> 26 | Certain | Low | Unit tests updated. Integration test validates. (25 -> 26 if ADR-0023 Plugin SDK also accepted; otherwise 24 -> 25.) |
-| Codemod renames references incorrectly | Low | Low | Package has no internal `@claude-flow/*` imports. Only documentation references may exist. |
+| Capability | What it means for users |
+|-----------|-------------------------|
+| Sub-millisecond transforms | Instant feedback on simple edits -- no waiting for API roundtrips |
+| $0 cost | No API calls, no tokens consumed, no billing for Tier 1 edits |
+| 100% deterministic | Same input always produces same output -- no LLM hallucination risk |
+| Confidence scoring | Each transform reports its confidence; low-confidence edits fall through to Tier 2/3 |
+| Morph LLM API server | `agent-booster-server` binary provides a local API compatible with Morph protocol |
+| MCP Tools | Integrates with Claude Desktop, Cursor, VS Code without additional setup |
+| Offline operation | Fully local, works without network connectivity |
 
-#### Pre-built Check
+**Performance numbers (from upstream benchmarks)**:
 
-```
-agentic-flow/packages/agent-booster/
-+-- src/              <- Rust/JS source
-+-- dist/             <- Pre-built WASM + JS (PRESENT)
-+-- package.json      <- bin: agent-booster, agent-booster-server
-+-- README.md
-```
+| Metric | Agent Booster (Tier 1) | Morph LLM | LLM API (Tier 2/3) |
+|--------|----------------------|-----------|---------------------|
+| Latency | <1ms | ~52ms | 500ms - 5s |
+| Cost per edit | $0 | Varies | $0.0002 - $0.015 |
+| Speed vs LLM API | 350x faster | 7x faster | Baseline |
+| Speed vs Morph LLM | 52x faster | Baseline | -- |
 
-**Key finding**: Unlike `teammate-plugin` (ADR-0021, which required a TypeScript build step and was deferred partly for that reason), `agent-booster` ships with a pre-built `dist/` directory containing compiled WASM and JavaScript. **No build step is required.** This places it in the same category as `agentdb`, `agentic-flow`, and `ruv-swarm` -- packages that can be published directly after codemod scope rename.
+**Risk assessment (user-facing)**:
+
+| Risk | Impact on users | Mitigation |
+|------|----------------|------------|
+| WASM binary adds ~5MB to install | Slightly larger `npm install` | Package is optional; users who don't need Tier 1 don't install it |
+| Platform compatibility | None expected | WASM runs in any Node.js >= 16 without native compilation |
+| Agent Booster cannot handle a complex edit | No impact | Confidence scoring detects this; edit falls through to Tier 2/3 automatically |
+| User does not install the package | Same as today | The `[AGENT_BOOSTER_AVAILABLE]` check gracefully degrades to Tier 2/3 |
 
 ### Completion
 
-#### Decision Drivers
+**Decision**: Integrate Now (Option A)
 
-1. **ADR-026 dependency** -- The 3-Tier Model Routing system explicitly names agent-booster as the Tier 1 handler. Without it in `@sparkleideas` scope, Tier 1 is non-functional for `@sparkleideas` users.
-2. **CLI already references it** -- CLAUDE.md instructs agents to check `[AGENT_BOOSTER_AVAILABLE]`. Publishing it completes the integration loop.
-3. **Zero internal deps** -- No `@claude-flow/*` or `@sparkleideas/*` dependencies. Lowest-risk integration possible.
-4. **Ships pre-built** -- No build step needed. Same integration pattern as the 3 existing Level 1 packages.
-5. **Already cloned** -- `sync-and-build.sh` already clones `ruvnet/agentic-flow`. The package is sitting in `packages/agent-booster/` alongside `agentdb` and `agentic-flow`.
-6. **High value** -- Enables $0, sub-millisecond code transformations. Morph LLM API compatibility provides drop-in replacement capability.
-7. **Source audit recommendation** -- [unpublished-sources.md](../unpublished-sources.md) rated this "Integrate Now".
+## Considered Options
 
-#### Considered Options
+### Option A: Integrate Now (chosen)
 
-##### Option A: Integrate Now
+Publish `@sparkleideas/agent-booster` so users can install it and activate Tier 1 routing.
 
-Add `@sparkleideas/agent-booster` to the publish pipeline immediately:
+- Users run `npm install @sparkleideas/agent-booster` or it arrives as an optionalDependency of the CLI
+- The `[AGENT_BOOSTER_AVAILABLE]` check starts returning true
+- Simple code transforms bypass LLM calls entirely
+- Two binaries become available: `agent-booster` and `agent-booster-server`
 
-1. Add to `LEVELS[0]` (Level 1) in `publish.mjs`
-2. Codemod handles scope rename automatically
-3. Verify bin entries resolve to existing files in `dist/`
-4. Publish alongside other Level 1 packages
-5. Add acceptance test for binary execution
+**Pros**: Completes the 3-tier routing contract that CLAUDE.md already promises. Zero internal dependencies means lowest integration risk. Ships pre-built (no build step). Saves users money and time on every simple edit.
 
-**Pros**: Completes ADR-026 Tier 1 routing. Zero pipeline complexity (no build step). Lowest risk of any integration candidate. Already cloned by existing pipeline.
-**Cons**: Increases package count. WASM binary adds to total download size.
+**Cons**: Increases total package count by one. WASM binary adds ~5MB to the install footprint for users who install it.
 
-##### Option B: Defer Until CLI Adds Dependency
+### Option B: Defer Until Upstream Adds Formal Dependency
 
-Wait for `@claude-flow/cli` to formally add `agent-booster` as a dependency or optional dependency.
+Wait for `@claude-flow/cli` upstream to formally declare `agent-booster` as a dependency.
 
-**Pros**: Conservative approach. Zero risk.
-**Cons**: ADR-026 Tier 1 routing remains broken for `@sparkleideas` users. The CLI already checks for `[AGENT_BOOSTER_AVAILABLE]` -- the integration contract exists, only the package is missing.
+**Pros**: Conservative. No work required.
 
-##### Option C: Publish as Separate Unscoped Package
+**Cons**: Users continue to see Tier 1 routing instructions in CLAUDE.md that cannot be activated. Every simple edit costs money and takes hundreds of milliseconds instead of being free and instant. The gap between documented behavior and actual behavior persists indefinitely.
 
-Publish as `agent-booster` (unscoped) rather than `@sparkleideas/agent-booster`.
+### Option C: Document Manual Installation from Different Scope
 
-**Pros**: Matches upstream naming.
-**Cons**: Breaks scope consistency. Users must know to install an unscoped package alongside `@sparkleideas/*` packages. Codemod cannot manage it.
+Tell users to `npm install agent-booster` (unscoped upstream package) in the CLI documentation.
 
-## Decision
+**Pros**: No publishing work. Package already exists on npm.
+
+**Cons**: Breaks scope consistency. Users must discover and trust a package from a different scope. Version mismatches between unscoped `agent-booster` and `@sparkleideas/cli` are possible. The discoverability problem remains -- users must read documentation carefully to learn about a package that should just work.
+
+## Decision Outcome
 
 **Chosen option: Option A -- Integrate Now**
 
 ### Rationale
 
-1. **The integration contract already exists.** The CLI's CLAUDE.md documents `[AGENT_BOOSTER_AVAILABLE]` checks and Tier 1 routing. The only missing piece is the package itself under the `@sparkleideas` scope. This is not a speculative integration -- it completes an existing, documented system.
+1. **The contract already exists.** Every user who runs `npx @sparkleideas/cli init` gets a CLAUDE.md that tells their agents to check for `[AGENT_BOOSTER_AVAILABLE]`. Publishing the package under `@sparkleideas` is not adding new functionality -- it is fulfilling an existing, documented promise.
 
-2. **Minimal integration effort.** Agent-booster shares the exact same integration pattern as the 3 existing Level 1 packages (`agentdb`, `agentic-flow`, `ruv-swarm`):
-   - Source already cloned by `sync-and-build.sh`
-   - Ships pre-built `dist/` (no build step)
-   - Zero internal dependencies (Level 1)
-   - Codemod handles any scope references
+2. **Direct user cost savings.** For a user whose agents make 100 simple edits per session, the difference is $0 vs $0.02-$1.50 per session, and <100ms vs 50-500 seconds of cumulative latency. These are not theoretical gains; they are the documented purpose of Tier 1 routing in ADR-026.
 
-3. **High value, low risk.** Unlike `teammate-plugin` (deferred in ADR-0021 because it required a TypeScript build step, had no current dependents, and had unclear user demand), agent-booster has an existing integration contract (ADR-026), ships pre-built, and provides measurable value ($0 cost, 52x speed improvement for Tier 1 tasks).
+3. **Graceful degradation.** If a user chooses not to install `@sparkleideas/agent-booster`, nothing breaks. The `[AGENT_BOOSTER_AVAILABLE]` check returns false, and all edits route to Tier 2/3 as they do today. This is purely additive.
 
-4. **Source audit consensus.** The [unpublished-sources.md](../unpublished-sources.md) analysis placed agent-booster in the "Integrate Now" category alongside Plugin SDK -- the only two packages out of 36+ unpublished sources recommended for immediate integration.
-
-### Implementation Plan
-
-```bash
-# 1. Verify dist/ exists in the agentic-flow clone
-ls "${TEMP_BUILD}/agentic-flow/packages/agent-booster/dist/"
-
-# 2. Verify bin entries in package.json point to existing files
-cat "${TEMP_BUILD}/agentic-flow/packages/agent-booster/package.json" | jq '.bin'
-# Expected: { "agent-booster": "dist/...", "agent-booster-server": "dist/..." }
-
-# 3. Add to publish.mjs LEVELS array at Level 1
-# Level 1 (no internal deps):
-['@sparkleideas/agentdb', '@sparkleideas/agentic-flow', '@sparkleideas/ruv-swarm',
- '@sparkleideas/agent-booster']  # <-- add here
-
-# 4. Codemod runs automatically (handles any @claude-flow/ references)
-# No manual scope changes needed
-
-# 5. publish.mjs strips missing bin entries if any paths are broken
-# This is the existing safety net for all packages
-
-# 6. Add acceptance test
-# test_aXX_agent_booster() in test-acceptance.sh:
-#   npm install @sparkleideas/agent-booster
-#   npx agent-booster --version  # verify binary works
-
-# 7. Update published-versions.json after first publish
-
-# 8. Update README package count
-```
+4. **Lowest risk integration.** Zero internal dependencies, ships pre-built WASM+JS, no build step, no new repository to clone. The integration pattern is identical to the existing Level 1 packages (`agentdb`, `agentic-flow`, `ruv-swarm`).
 
 ### Consequences
 
-**Good:**
-- Completes the 3-Tier Model Routing (ADR-026) end-to-end within the `@sparkleideas` scope
-- Users of `@sparkleideas/cli` can leverage Tier 1 routing without mixing scopes
-- Zero pipeline complexity added (no build step, no new repo clone)
-- Morph LLM API compatibility provides additional value as a drop-in code editing server
-- Sub-millisecond, zero-cost code transformations become available to all `@sparkleideas` users
-- Package count increases to 25 (or 26 if ADR-0023 Plugin SDK is also accepted)
+**Good (user-facing)**:
 
-**Bad:**
-- WASM binary increases total download size for users who install the package (typically 1-5 MB)
-- One more package to maintain version tracking for in `published-versions.json`
+- Users get $0, sub-millisecond code transforms for simple edits (var-to-const, add types, rename variables)
+- The 3-Tier Model Routing system documented in CLAUDE.md works end-to-end for the first time
+- `agent-booster-server` binary provides a Morph LLM-compatible local API server
+- MCP Tools integration works with Claude Desktop, Cursor, and VS Code
+- Fully offline operation -- no network dependency for Tier 1 edits
+- 100% deterministic results eliminate LLM hallucination risk on simple transforms
 
-**Neutral:**
-- The package continues to be available upstream as `agent-booster` (unscoped) on npm
-- Binary names (`agent-booster`, `agent-booster-server`) remain unchanged regardless of npm scope
+**Bad (user-facing)**:
+
+- Users who install the package add ~5MB (WASM binary) to their `node_modules`
+- One additional package to track for version updates
+
+**Neutral**:
+
+- Users who do not install `@sparkleideas/agent-booster` see no change in behavior -- Tier 2/3 routing continues to work as before
+- The upstream `agent-booster` (unscoped) package remains available on npm independently
+- Binary names (`agent-booster`, `agent-booster-server`) are the same regardless of npm scope
+
+### Required Documentation Updates
+
+When this ADR is implemented, the following documents must be updated:
+
+| Document | Change |
+|----------|--------|
+| `docs/unpublished-sources.md` | Move `agent-booster` from unpublished to published; update recommendation from "Integrate" to "Done" |
+| `docs/ruvnet.packages.and.source.location.md` | Add `@sparkleideas/agent-booster` to Matrix 2 (published packages) with source path, version, and binary info |
+| `README.md` | Update package count; mention Tier 1 routing availability |
+| `CLAUDE.md` | Update Tier 1 row in 3-Tier Model Routing table to reference `@sparkleideas/agent-booster` |
+
+### Required Tests
+
+| Layer | Test | What it validates |
+|-------|------|-------------------|
+| **Unit** | `tests/06-publish-order.test.mjs` | `@sparkleideas/agent-booster` appears in Level 1 of the LEVELS array |
+| **Integration** | `scripts/test-integration.sh` Phase 8 | Package publishes to Verdaccio, `npm install` resolves, WASM binary present in `node_modules` |
+| **Acceptance** | `scripts/test-acceptance.sh` | New test: `test_a13_agent_booster()` — verify `import('@sparkleideas/agent-booster')` resolves, WASM module initializes, a simple code transform (e.g., `var x = 1` → `const x = 1`) returns correct output |
+| **Acceptance** | `scripts/test-acceptance.sh` | New test: `test_a14_agent_booster_bin()` — verify `npx @sparkleideas/agent-booster --version` runs and returns a version string |
 
 ---
 
 ## References
 
-- Source: `github.com/ruvnet/agentic-flow/packages/agent-booster/`
-- ADR-026: 3-Tier Model Routing (upstream, referenced in CLAUDE.md)
-- Related: [ADR-0014 Topological Publish Order](0014-topological-publish-order.md)
-- Related: [ADR-0021 Teammate Plugin Integration](0021-teammate-plugin-integration.md) (comparison: deferred due to build step)
-- Related: [Unpublished Sources Audit](../unpublished-sources.md) -- "Integrate Now" recommendation
-- Related: CLAUDE.md `[AGENT_BOOSTER_AVAILABLE]` and `[TASK_MODEL_RECOMMENDATION]` directives
+- ADR-026: 3-Tier Model Routing (referenced in CLAUDE.md shipped to all user projects)
+- CLAUDE.md: `[AGENT_BOOSTER_AVAILABLE]` and `[TASK_MODEL_RECOMMENDATION]` directives
+- [Unpublished Sources Audit](../unpublished-sources.md): "Integrate Now" recommendation
+- [ADR-0014: Topological Publish Order](0014-topological-publish-order.md): Level 1 placement
+- [ADR-0021: Teammate Plugin Integration](0021-teammate-plugin-integration.md): Comparison (deferred due to build step requirement)
+- Upstream source: `github.com/ruvnet/agentic-flow/packages/agent-booster/`
