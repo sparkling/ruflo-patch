@@ -7,26 +7,28 @@
 
 ## Context and Problem Statement
 
-Users who run `npx @sparkleideas/cli plugins install --name <plugin>` today receive an error because the Plugin SDK is not available under the `@sparkleideas` scope. The SDK (`@claude-flow/plugins`) is the runtime dependency that every Claude Flow plugin needs to register MCP tools, hooks, and lifecycle events. Without it published as `@sparkleideas/plugins`, the entire plugin subsystem of the CLI is non-functional for end users.
+Users who want to use Claude Flow plugins with `@sparkleideas/cli` currently cannot, because the Plugin SDK is not published under the `@sparkleideas` scope. The SDK (`@claude-flow/plugins`) is the runtime dependency that every plugin imports to register MCP tools, hooks, and lifecycle events.
 
-**Before this change:**
+Publishing the SDK is a **necessary prerequisite** but **not sufficient** on its own — each plugin must also be individually repackaged (codemod scope rename on its import statements) before it can resolve the SDK. This ADR covers only the SDK; individual plugin integration requires separate work.
+
+**What this ADR enables:**
 
 ```
-$ npx @sparkleideas/cli plugins install --name @claude-flow/plugin-agentic-qe
-Error: Cannot resolve @claude-flow/plugins -- package not found
+$ npm install @sparkleideas/plugins         # SDK becomes installable
+$ node -e "import('@sparkleideas/plugins')" # Builder API accessible
 ```
 
-**After this change:**
+**What still requires further work (per-plugin repackaging):**
 
 ```
 $ npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-agentic-qe
-Successfully installed plugin-agentic-qe (SDK resolved from @sparkleideas/plugins)
+# Only works AFTER plugin-agentic-qe is also repackaged with codemod
 ```
 
 ## Decision Drivers
 
-1. **Plugin commands are broken** -- the CLI ships `plugins list`, `plugins install`, and `plugins remove` commands, but all fail because the SDK they depend on is not published
-2. **All 14 plugins depend on the SDK** -- no plugin can be published or installed without the SDK available in the same scope
+1. **SDK is a prerequisite for all plugins** -- no plugin can work without the SDK in the same scope, because plugins import from `@claude-flow/plugins` (rewritten to `@sparkleideas/plugins` by codemod)
+2. **Each plugin also needs individual repackaging** -- the SDK alone doesn't make plugins installable; each plugin's imports must be codemod-renamed too
 3. **Users cannot build custom plugins** -- the plugin builder API, MCP tool builder, and hook system are inaccessible until the SDK is installable
 4. **Zero build complexity** -- the package ships pre-built JavaScript, requiring no TypeScript compilation
 5. **Zero internal dependencies** -- the SDK depends only on `events` (Node.js built-in), meaning it introduces no new dependency chains for users
@@ -244,7 +246,7 @@ Instead of publishing the SDK as a separate package, embed it directly in `@spar
 
 | Before | After |
 |--------|-------|
-| `npx @sparkleideas/cli plugins install` fails | SDK resolves; plugins can be installed (once individually published) |
+| `npm install @sparkleideas/plugins` fails | SDK installs; custom plugin development possible. Upstream plugins still need individual repackaging. |
 | `npm install @sparkleideas/plugins` fails | Package installs successfully |
 | Custom plugin development impossible | Users can import builder, mcp, hooks APIs |
 | 24 packages in `@sparkleideas` scope | 25 packages |
@@ -252,11 +254,10 @@ Instead of publishing the SDK as a separate package, embed it directly in `@spar
 ### Consequences
 
 **Good (user-facing):**
-- CLI `plugins` commands become functional (prerequisite met)
-- Users can create custom plugins using the builder API
-- Users can register custom MCP tools via the SDK
-- Plugin hook system becomes available for lifecycle event handling
-- Path is clear for integrating the 14 upstream plugins one by one
+- Users can `npm install @sparkleideas/plugins` and build custom plugins using the builder API
+- Users can register custom MCP tools and lifecycle hooks via the SDK
+- Prerequisite met for future plugin repackaging — each plugin can be integrated one by one once the SDK exists in-scope
+- No upstream plugins work yet (each needs its own codemod repackaging), but the foundation is in place
 
 **Bad (user-facing):**
 - Initially, the SDK is available but no pre-built plugins are published yet -- users can only build custom plugins until upstream plugins are integrated
