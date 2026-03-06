@@ -226,6 +226,72 @@ test_a6_mcp_config() {
   record_result "A6" "MCP config" "$passed" "$output" "$duration_ms"
 }
 
+test_a7_wrapper_proxy() {
+  # Verify @sparkleideas/ruflo wrapper correctly proxies to @sparkleideas/cli.
+  # Bug: createRequire fails on ESM exports maps; import.meta.resolve is required.
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local output passed="false"
+
+  # Install ruflo wrapper in the temp dir and test the proxy
+  local wrapper_out
+  wrapper_out=$(cd "$TEMP_DIR" && npm install --save @sparkleideas/ruflo@latest 2>&1 && npx ruflo --version 2>&1) || true
+
+  if echo "$wrapper_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+    # Now test that a real command proxies through
+    local init_out
+    init_out=$(cd "$TEMP_DIR" && npx ruflo doctor 2>&1) || true
+    if echo "$init_out" | grep -qi 'doctor\|diagnostics\|passed'; then
+      passed="true"
+      output="Wrapper proxy works: version and doctor commands succeed"
+    else
+      output="Wrapper --version works but doctor command failed"
+      output="$output\n$init_out"
+    fi
+  else
+    output="Wrapper --version failed or returned no version"
+    output="$output\n$wrapper_out"
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local duration_ms=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+  fi
+  record_result "A7" "Wrapper proxy" "$passed" "$output" "$duration_ms"
+}
+
+test_a8_no_broken_versions() {
+  # Verify that npm resolves @sparkleideas/cli to a working version,
+  # not the broken 3.5.2-patch.1 (which has no dist/ directory).
+  # Bug: "*" range in ruflo wrapper resolved to 3.5.2-patch.1 because
+  # semver 3.5.2 > 3.1.0, picking the broken version over the working one.
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local output passed="false"
+
+  local resolved_version
+  resolved_version=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view @sparkleideas/cli@latest version 2>/dev/null) || true
+
+  if [[ -n "$resolved_version" ]]; then
+    if echo "$resolved_version" | grep -q 'patch'; then
+      output="DANGER: @sparkleideas/cli@latest resolves to $resolved_version (contains -patch suffix)"
+    else
+      passed="true"
+      output="@sparkleideas/cli@latest = $resolved_version (no -patch suffix)"
+    fi
+  else
+    output="Could not resolve @sparkleideas/cli@latest from registry"
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local duration_ms=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+  fi
+  record_result "A8" "No broken versions resolved" "$passed" "$output" "$duration_ms"
+}
+
 # ── Main ────────────────────────────────────────────────────────────
 echo "Acceptance Tests (ADR-0020 Layer 3)"
 echo "===================================="
@@ -260,6 +326,12 @@ test_a5_doctor
 
 echo "Running A6: MCP config..."
 test_a6_mcp_config
+
+echo "Running A7: Wrapper proxy..."
+test_a7_wrapper_proxy
+
+echo "Running A8: No broken versions resolved..."
+test_a8_no_broken_versions
 
 # ── Summary ─────────────────────────────────────────────────────────
 echo ""

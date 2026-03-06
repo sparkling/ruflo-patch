@@ -350,3 +350,35 @@ describe('getPublishTag (ADR-0015)', () => {
     assert.equal(receivedName, '@sparkleideas/cli');
   });
 });
+
+// ---------------------------------------------------------------------------
+// 6. Config safety — published-versions.json must not contain -patch versions
+// ---------------------------------------------------------------------------
+
+describe('published-versions.json safety', () => {
+  it('no version contains "-patch" suffix (would cause semver resolution failures)', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    const versions = JSON.parse(readFileSync(resolve(root, 'config', 'published-versions.json'), 'utf8'));
+
+    for (const [pkg, version] of Object.entries(versions)) {
+      assert.ok(!version.includes('-patch'),
+        `${pkg}@${version} contains "-patch" — this will cause semver resolution failures`);
+    }
+  });
+
+  it('all versions are valid semver', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { resolve, dirname } = await import('node:path');
+    const { fileURLToPath } = await import('node:url');
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    const versions = JSON.parse(readFileSync(resolve(root, 'config', 'published-versions.json'), 'utf8'));
+
+    for (const [pkg, version] of Object.entries(versions)) {
+      assert.match(version, /^\d+\.\d+\.\d+/,
+        `${pkg}@${version} is not valid semver`);
+    }
+  });
+});

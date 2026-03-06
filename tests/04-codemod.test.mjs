@@ -430,4 +430,34 @@ describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(result.dependencies['@sparkleideas/memory'], '*');
   });
+
+  it('replaces caret ranges that cannot match prerelease versions (regression)', async () => {
+    // Exact bug: @sparkleideas/embeddings had peerDep @sparkleideas/agentic-flow: "^2.0.0"
+    // but all published versions were 2.0.2-alpha.*, which npm's "^2.0.0" won't match.
+    // This caused ETARGET errors on npm install.
+    tmp = makeTmpDir();
+    const pkg = {
+      name: '@claude-flow/embeddings',
+      version: '3.0.0-alpha.1',
+      peerDependencies: {
+        '@claude-flow/agentic-flow': '^2.0.0',
+        '@claude-flow/shared': '^3.0.0',
+      },
+      dependencies: {
+        '@claude-flow/agentdb': '^3.0.0-alpha.1',
+      },
+    };
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+    // ALL internal ranges must become "*" — caret ranges can't resolve to prerelease versions
+    assert.equal(result.peerDependencies['@sparkleideas/agentic-flow'], '*',
+      '^2.0.0 must become * (cannot match 2.0.2-alpha.3)');
+    assert.equal(result.peerDependencies['@sparkleideas/shared'], '*',
+      '^3.0.0 must become * (cannot match 3.0.0-alpha.10)');
+    assert.equal(result.dependencies['@sparkleideas/agentdb'], '*',
+      '^3.0.0-alpha.1 must become * (prerelease range)');
+  });
 });
