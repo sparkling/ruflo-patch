@@ -100,7 +100,9 @@ export function bumpLastSegment(version) {
   // Find the last numeric segment and increment it
   const match = version.match(/^(.*?)(\d+)$/);
   if (!match) {
-    throw new Error(`Cannot bump version: no trailing number in "${version}"`);
+    // Version ends with a non-numeric identifier (e.g., "2.0.2-alpha")
+    // Treat as "2.0.2-alpha.0" and bump to "2.0.2-alpha.1"
+    return `${version}.1`;
   }
   const prefix = match[1];
   const num = parseInt(match[2], 10);

@@ -28,7 +28,8 @@ export function computeVersion(upstreamVersion, lastPublished) {
 function bumpLastSegment(version) {
   const match = version.match(/^(.*?)(\d+)$/);
   if (!match) {
-    throw new Error(`Cannot bump version: no trailing number in "${version}"`);
+    // Version ends with a non-numeric identifier (e.g., "2.0.2-alpha")
+    return `${version}.1`;
   }
   return `${match[1]}${parseInt(match[2], 10) + 1}`;
 }

@@ -72,6 +72,16 @@ describe('computeVersion (ADR-0012)', () => {
     const result = computeVersion('1.0.18', null);
     assert.equal(result.version, '1.0.19');
   });
+
+  it('upstream 2.0.2-alpha (no trailing number) -> 2.0.2-alpha.1', () => {
+    const result = computeVersion('2.0.2-alpha', null);
+    assert.equal(result.version, '2.0.2-alpha.1');
+  });
+
+  it('upstream 2.0.2-alpha, last published 2.0.2-alpha.1 -> 2.0.2-alpha.2', () => {
+    const result = computeVersion('2.0.2-alpha', '2.0.2-alpha.1');
+    assert.equal(result.version, '2.0.2-alpha.2');
+  });
 });
 
 // ---------------------------------------------------------------------------
