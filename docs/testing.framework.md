@@ -433,10 +433,15 @@ Developer workflow:
   3. npm run preflight     ← sync doc tables
   4. git commit
 
-Pre-publish workflow:
+Pre-publish workflow (manual):
   5. bash scripts/test-integration.sh  ← Layer 2: full pipeline (~30s cached)
   6. npm publish                       ← triggers prepublishOnly hook
   7. bash scripts/test-acceptance.sh   ← Layer 3: end-user validation (~15s)
+
+Automated CI pipeline (sync-and-build.sh):
+  Phase 9:  codemod acceptance + unit tests + integration test  ← ALL before publish
+  Phase 11: publish to npm                                      ← only if all tests pass
+  Phase 12: post-publish acceptance tests                       ← validates live packages
 
 Session start:
   8. bash check-patches.sh             ← verify/reapply patches
@@ -444,3 +449,17 @@ Session start:
 CI health:
   9. bash scripts/validate-ci.sh       ← non-destructive prereq check
 ```
+
+### CI Test Gate
+
+The automated pipeline (`scripts/sync-and-build.sh`) runs **all test layers before publishing to npm**:
+
+| Phase | Tests | Blocks Publish? |
+|-------|-------|----------------|
+| 9a | Codemod acceptance (`test-codemod-acceptance.mjs`) | Yes — aborts on `@claude-flow/` residuals |
+| 9b | Unit tests (`npm test`, 90 tests) | Yes — aborts on any failure |
+| 9c | Integration test (`test-integration.sh`, 9 phases) | Yes — full Verdaccio dry run catches missing packages, broken deps |
+| 11 | Publish to npm | Only runs if 9a-9c all pass |
+| 12 | Acceptance tests (`test-acceptance.sh`, 10 tests) | No — packages already live, creates GitHub issue on failure |
+
+This ensures that a new upstream `@claude-flow/*` package missing from the publish list will be caught by the integration test's Phase 8 (install + dependency resolution) **before** anything reaches npm.

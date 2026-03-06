@@ -256,15 +256,31 @@ run_build() {
 # ---------------------------------------------------------------------------
 
 run_tests() {
-  # Tests require node_modules (vitest). Since we skip workspace install
-  # (packages are pre-built JS), we run acceptance tests from the patch
-  # repo instead — validating codemod output.
-  log "Running acceptance tests"
+  # ── Layer 0: Codemod acceptance (verify scope rename) ──
+  log "Running codemod acceptance tests"
   node "${SCRIPT_DIR}/test-codemod-acceptance.mjs" "${TEMP_DIR}" || {
-    log_error "Acceptance tests failed"
+    log_error "Codemod acceptance tests failed"
     return 1
   }
-  log "Tests passed"
+  log "Codemod acceptance tests passed"
+
+  # ── Layer 1: Unit tests (90 tests, ~0.2s) ──
+  log "Running unit tests"
+  npm test --prefix "${PROJECT_DIR}" || {
+    log_error "Unit tests failed"
+    return 1
+  }
+  log "Unit tests passed"
+
+  # ── Layer 2: Integration test (full pipeline against local Verdaccio) ──
+  # This catches missing packages, broken deps, and publish failures
+  # BEFORE we publish to real npm.
+  log "Running integration test (local Verdaccio dry run)"
+  bash "${SCRIPT_DIR}/test-integration.sh" || {
+    log_error "Integration test failed — aborting before publish to npm"
+    return 1
+  }
+  log "Integration test passed — safe to publish"
 }
 
 # ---------------------------------------------------------------------------
@@ -506,10 +522,21 @@ main() {
   # Phase 11: Publish
   run_phase "publish" run_publish
 
-  # Phase 12: GitHub prerelease notification
+  # Phase 12: Post-publish acceptance tests (Layer 3)
+  # Validates the real published packages work end-to-end
+  log "Running post-publish acceptance tests"
+  if bash "${SCRIPT_DIR}/test-acceptance.sh"; then
+    log "Acceptance tests passed"
+  else
+    log_error "WARNING: Acceptance tests failed after publish (packages are live)"
+    # Don't abort — packages are already published. Create issue instead.
+    create_failure_issue "post-publish-acceptance" "$?"
+  fi
+
+  # Phase 13: GitHub prerelease notification
   create_github_notification
 
-  # Phase 13: Update state (only after successful publish)
+  # Phase 14: Update state (only after successful publish)
   local current_local_head
   current_local_head=$(git -C "${PROJECT_DIR}" rev-parse HEAD)
 
