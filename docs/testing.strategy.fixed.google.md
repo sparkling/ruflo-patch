@@ -786,6 +786,118 @@ describe('new-feature', () => {
 | **Topological order** | Publish packages in dependency order (leaves first, roots last) |
 | **Hermetic** | Test that creates and destroys its own environment |
 | **Quarantine** | Temporarily skipping a flaky test with a tracking comment |
+| **Incremental build** | Rebuild only packages whose content hash changed + their topological dependents |
+| **Content hash** | SHA-256 of a package directory's file contents after codemod+patch, used for change detection |
+| **Dependency propagation** | If package at Level N changes, all dependents at Levels N+1..5 must rebuild |
+
+---
+
+## 14. Incremental Build Strategy (ADR-0023, Decision 10)
+
+### 14.1 Problem
+
+The pipeline rebuilds all 42+ packages on every run (~3.5 min). Most changes affect 1-5 packages.
+
+### 14.2 Solution: Content-Hash Change Detection
+
+After codemod (Phase 5) and patches (Phase 6), compute SHA-256 of each package directory. Compare against stored hashes in `config/package-checksums.json`. Skip unchanged packages for build and publish.
+
+```
+Phase 5: Codemod (all packages)
+Phase 6: Patches (all packages)
+Phase 6.5: Change Detection (NEW)
+  ┌─────────────────────────────────────────────────────────┐
+  │  For each package directory:                            │
+  │    current_hash = SHA256(sorted file contents)          │
+  │    stored_hash  = package-checksums.json[pkg_name]      │
+  │    if current_hash != stored_hash:                      │
+  │      mark as CHANGED                                    │
+  │                                                         │
+  │  Propagate via topological levels:                      │
+  │    Level N changed → Levels N+1..5 also rebuild         │
+  │                                                         │
+  │  Full rebuild triggers:                                 │
+  │    - codemod.mjs content changed                        │
+  │    - lib/common.py content changed                      │
+  │    - checksums file missing/corrupt                     │
+  │    - --force flag                                       │
+  └─────────────────────────────────────────────────────────┘
+Phase 7: Build (CHANGED packages only)
+Phase 8: Patch post-build (CHANGED packages only)
+```
+
+### 14.3 Upstream Repo to Package Mapping
+
+| Upstream Repo | Packages | Count |
+|---|---|---|
+| `ruflo` | shared, memory, embeddings, codex, aidefence, neural, hooks, browser, plugins, providers, claims, guidance, mcp, integration, deployment, swarm, security, performance, testing, cli, claude-flow | 21 |
+| `agentic-flow` | agentdb, agentic-flow, agent-booster, agentdb-onnx | 4 |
+| `ruv-FANN` | ruv-swarm, cuda-wasm | 2 |
+| Derived (plugins) | 13 plugin-* packages, teammate-plugin, ruvector-upstream | 15 |
+
+### 14.4 Patch to Package Mapping
+
+| Patch | Target Packages | Path Variables Used |
+|---|---|---|
+| MC-001 | cli | MCP_GEN |
+| FB-001 | cli, memory, agentic-flow | MI, MEMORY_BRIDGE, AF_BRIDGE, EMB_TOOLS |
+| FB-002 | cli | (helpers) |
+| FB-004 | cli, memory | MEMORY_BRIDGE, MI, CLI_MEMORY, MCP_MEMORY |
+| SV-001 | agentic-flow | AGENTIC_FLOW_PKG_JSON |
+| SG-003 | cli | INIT_CMD, EXECUTOR |
+
+### 14.5 Dependency Propagation
+
+```
+If shared (L2) changes:
+  → neural, hooks, browser, plugins, providers, claims (L3)
+  → mcp, swarm, guidance, ..., all plugins (L4)
+  → cli, claude-flow (L5)
+  = 36+ packages rebuild
+
+If ruv-swarm (L1) changes:
+  → nothing directly depends on it in source
+  = 1 package rebuilds (+ L5 for safety)
+
+If plugin-prime-radiant (L4) changes:
+  → nothing depends on it
+  = 1 package rebuilds
+```
+
+### 14.6 Verdaccio Cache Strategy
+
+| Mode | Cache Behavior |
+|---|---|
+| **Current (full)** | `rm -rf @sparkleideas/` — clears all, republishes all |
+| **Incremental** | Only clear changed packages + dependents; unchanged packages stay in Verdaccio from previous run |
+| **Fallback** | On install failure, fall back to full clear and retry |
+
+### 14.7 New Files
+
+| File | Purpose |
+|---|---|
+| `scripts/package-hash.mjs` | Compute SHA-256 hashes, diff against stored, propagate changes via LEVELS |
+| `config/package-checksums.json` | Per-package content hashes + meta (codemod hash, patch dir hash) |
+
+### 14.8 Expected Savings
+
+| Change Type | Packages Rebuilt | Time | Savings vs Full |
+|---|---|---|---|
+| Patch fix (typical) | 1-5 | ~1.5 min | ~60% |
+| ruv-FANN upstream | 2 | ~1 min | ~70% |
+| Single plugin change | 1 | ~30s | ~85% |
+| agentic-flow upstream | 2-6 | ~1.5-2 min | ~40-55% |
+| Codemod change | ALL | ~3.5 min | 0% |
+
+### 14.9 Safety
+
+- `--force` always triggers full rebuild (existing behavior preserved)
+- Missing checksums = full rebuild (safe first run)
+- Codemod/patch infrastructure changes = full rebuild
+- Post-publish hash verification catches non-determinism
+- Verdaccio install failure = automatic fallback to full cache clear
+
+**Status**: Design approved. Implementation deferred to separate PR.
 
 ---
 

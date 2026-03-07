@@ -647,6 +647,93 @@ Update `~/.claude/projects/.../memory/MEMORY.md` testing section:
 
 Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the code changes (add RQ to sync-and-build, remove from test-integration). Steps 5-7 are doc updates. All steps after 2 are independent.
 
+#### Decision 10: Incremental Build and Publish
+
+**Problem**: The pipeline rebuilds, re-codemods, re-patches, and republishes all 42+ packages on every run, regardless of what changed. A full build takes ~3.5 minutes. Most changes (patch fixes, single-repo upstream updates) only affect 1-5 packages.
+
+**Solution**: Content-hash-based change detection after codemod+patch, with topological dependency propagation to determine the minimal rebuild set.
+
+**Design principles**:
+
+1. **Post-transform content hashing** -- compute SHA-256 of each package directory after codemod and patches are applied. Compare against stored hashes in `config/package-checksums.json`. Packages with unchanged hashes are skipped for build and publish.
+2. **Topological propagation** -- if package P at Level N has a changed content hash, ALL packages at Levels N+1 through 5 that transitively depend on P must also rebuild. Uses the existing `LEVELS` array in `publish.mjs`.
+3. **Conservative safety** -- full rebuild is triggered automatically when the codemod itself changes, when `lib/common.py` (patch infrastructure) changes, when `config/package-checksums.json` is missing/corrupt, or on first run. The `--force` flag always forces full rebuild.
+4. **Selective Verdaccio cache** -- instead of clearing all `@sparkleideas/*` packages, only clear packages that will be republished. Unchanged packages remain in Verdaccio from the previous run.
+
+**Change detection signals**:
+
+| Signal | Detection | Scope |
+|--------|-----------|-------|
+| Upstream repo change | Per-repo git HEAD in `.last-build-state` | Map repo → packages it provides |
+| Patch change | Content hash of patched files | Map patch → target packages via path variables |
+| Codemod change | Hash of `scripts/codemod.mjs` | ALL packages (full rebuild) |
+| Patch infrastructure | Hash of `lib/common.py` | ALL packages (full rebuild) |
+
+**Upstream repo to package mapping**:
+
+| Upstream Repo | Packages Provided |
+|---|---|
+| `ruflo` | 21 v3 packages (shared, memory, neural, hooks, cli, etc.) |
+| `agentic-flow` | agentdb, agentic-flow, agent-booster, agentdb-onnx |
+| `ruv-FANN` | ruv-swarm, cuda-wasm |
+
+**Patch to package mapping**:
+
+| Patch | Target Packages |
+|---|---|
+| MC-001 | cli |
+| FB-001 | cli, memory, agentic-flow |
+| FB-002 | cli |
+| FB-004 | cli, memory |
+| SV-001 | agentic-flow |
+| SG-003 | cli |
+
+**Dependency propagation rules**:
+
+| Changed Level | Rebuild Cascade |
+|---|---|
+| Level 1 (agentdb, ruv-swarm, etc.) | Levels 2-5 |
+| Level 2 (shared, memory, etc.) | Levels 3-5 |
+| Level 3 (neural, hooks, plugins, etc.) | Levels 4-5 |
+| Level 4 plugins (plugin-*) | Nothing (leaf nodes) |
+| Level 4 non-plugins (mcp, swarm, etc.) | Level 5 only |
+| Level 5 (cli, claude-flow) | Nothing (root nodes) |
+
+**New artifacts**:
+
+- `config/package-checksums.json` -- per-package content hashes, committed alongside `published-versions.json`
+- `scripts/package-hash.mjs` -- hash computation, comparison, and dependency propagation logic
+
+**Implementation changes**:
+
+| File | Change |
+|---|---|
+| `scripts/package-hash.mjs` | New: compute hashes, diff against stored, propagate via LEVELS |
+| `scripts/sync-and-build.sh` | Insert Phase 6.5 (change detection) between patch and build; selective build in Phase 7; selective Verdaccio clear in RQ; add CODEMOD_HEAD to state file |
+| `scripts/publish.mjs` | Add `--packages` filter to skip unchanged packages |
+| `config/package-checksums.json` | New: per-package SHA-256 hashes + meta (codemod hash, patch dir hash) |
+| `scripts/test-integration.sh` | Optional `--incremental` flag for selective Verdaccio cache clear |
+
+**Expected time savings**:
+
+| Scenario | Changed Packages | Full Build | Incremental | Savings |
+|---|---|---|---|---|
+| Patch fix (most common) | 1-5 | ~3.5 min | ~1.5 min | ~60% |
+| ruv-FANN upstream only | 2 | ~3.5 min | ~1 min | ~70% |
+| Single L4 plugin change | 1 | ~3.5 min | ~0.5 min | ~85% |
+| agentic-flow upstream | 2-6 (cascade) | ~3.5 min | ~1.5-2 min | ~40-55% |
+| Codemod change (rare) | ALL | ~3.5 min | ~3.5 min | 0% |
+
+**Safety mechanisms**:
+
+1. `--force` bypasses all change detection (existing flag, unchanged behavior)
+2. Missing/corrupt checksums file triggers full rebuild
+3. Codemod or patch infrastructure changes trigger full rebuild
+4. Hash verification post-publish catches non-determinism
+5. On Verdaccio install failure, fall back to full cache clear and retry
+
+**Status**: Design approved. Implementation deferred to separate PR.
+
 ## Links
 
 - [ADR-0020: Testing Strategy](0020-testing-strategy.md) -- **superseded** by this ADR; all decisions preserved, Release Qualification and formal framework added
