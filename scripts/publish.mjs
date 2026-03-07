@@ -373,7 +373,7 @@ function sleep(ms) {
  * @param {number} [options.rateLimitMs] - Override RATE_LIMIT_MS (0 for local registries)
  * @returns {{ published: Array<{name: string, level: number, tag: string|null, version: string}>, failed: null | { package: string, level: number, error: string } }}
  */
-export async function publishAll(buildDir, { dryRun = false, metadata, getPublishTagFn, rateLimitMs } = {}) {
+export async function publishAll(buildDir, { dryRun = false, metadata, getPublishTagFn, rateLimitMs, packagesFilter } = {}) {
   if (!buildDir) throw new Error('buildDir is required');
 
   const resolvedBuildDir = resolve(buildDir);
@@ -470,11 +470,21 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
   for (const [levelIndex, packages] of LEVELS.entries()) {
     const levelNumber = levelIndex + 1;
     const levelStart = Date.now();
-    console.log(`\n--- Level ${levelNumber} (${packages.length} packages) ---`);
+
+    const levelPackages = packagesFilter
+      ? packages.filter(p => packagesFilter.includes(p))
+      : packages;
+
+    if (levelPackages.length === 0) {
+      console.log(`\n--- Level ${levelNumber} (skipped — no changed packages) ---`);
+      continue;
+    }
+
+    console.log(`\n--- Level ${levelNumber} (${levelPackages.length}/${packages.length} packages) ---`);
 
     // Publish all packages within a level concurrently
     const results = await Promise.all(
-      packages.map(pkgName => publishOne(pkgName, levelNumber))
+      levelPackages.map(pkgName => publishOne(pkgName, levelNumber))
     );
     console.log(`  Level ${levelNumber} completed in ${Date.now() - levelStart}ms`);
 
@@ -515,6 +525,7 @@ async function main() {
       'build-dir': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
       'no-rate-limit': { type: 'boolean', default: false },
+      'packages': { type: 'string' },
     },
     strict: true,
   });
@@ -523,12 +534,13 @@ async function main() {
   const dryRun = values['dry-run'];
 
   if (!buildDir) {
-    console.error('Usage: node scripts/publish.mjs --build-dir <dir> [--dry-run] [--no-rate-limit]');
+    console.error('Usage: node scripts/publish.mjs --build-dir <dir> [--dry-run] [--no-rate-limit] [--packages \'["@sparkleideas/cli"]\']');
     process.exit(1);
   }
 
   const rateLimitMs = values['no-rate-limit'] ? 0 : undefined;
-  const result = await publishAll(buildDir, { dryRun, rateLimitMs });
+  const packagesFilter = values['packages'] ? JSON.parse(values['packages']) : null;
+  const result = await publishAll(buildDir, { dryRun, rateLimitMs, packagesFilter });
 
   // Output JSON summary to stdout
   console.log('\n--- Summary ---');

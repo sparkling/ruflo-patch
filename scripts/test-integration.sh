@@ -11,6 +11,7 @@
 #   bash scripts/test-integration.sh
 #   bash scripts/test-integration.sh --snapshot ~/snapshots/2026-03-05
 #   bash scripts/test-integration.sh --create-snapshot ~/snapshots/2026-03-05
+#   bash scripts/test-integration.sh --incremental
 #
 # Exit code: 0 if all phases pass (upstream test failures do NOT count),
 #            non-zero on any real failure.
@@ -42,6 +43,7 @@ OVERALL_EXIT=0
 # CLI flags
 SNAPSHOT_DIR=""
 CREATE_SNAPSHOT_DIR=""
+INCREMENTAL=false
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -59,12 +61,17 @@ while [[ $# -gt 0 ]]; do
       [[ -z "$CREATE_SNAPSHOT_DIR" ]] && { echo "Error: --create-snapshot requires a directory"; exit 1; }
       shift 2
       ;;
+    --incremental)
+      INCREMENTAL=true
+      shift
+      ;;
     -h|--help)
-      echo "Usage: test-integration.sh [--snapshot <dir>] [--create-snapshot <dir>]"
+      echo "Usage: test-integration.sh [--snapshot <dir>] [--create-snapshot <dir>] [--incremental]"
       echo ""
       echo "Options:"
       echo "  --snapshot <dir>          Use frozen upstream tarballs instead of live clones"
       echo "  --create-snapshot <dir>   Tarball current upstream sources into target dir, then exit"
+      echo "  --incremental             Keep cached @sparkleideas/* packages in Verdaccio"
       exit 0
       ;;
     *)
@@ -174,7 +181,7 @@ start_phase_timer() {
     PHASE_TIMEOUT_PID=""
   fi
 
-  # Background watchdog that logs heartbeats and kills on timeout
+  # Background watchdog that logs heartbeats and SIGKILL-escalates on timeout
   (
     local elapsed=0
     local heartbeat=10
@@ -185,10 +192,13 @@ start_phase_timer() {
         echo "[HEARTBEAT] Phase '${phase_name}': ${elapsed}/${timeout_secs}s elapsed" >&2
       fi
     done
-    echo "[TIMEOUT] Phase '${phase_name}' exceeded ${timeout_secs}s — dumping state and aborting" >&2
+    echo "[TIMEOUT] Phase '${phase_name}' exceeded ${timeout_secs}s — killing process group" >&2
     # Dump process tree for diagnostics
-    ps --forest -o pid,ppid,stat,time,cmd -g $$ 2>/dev/null >&2 || ps -ef 2>/dev/null | grep -E "$$|verdaccio|npm|node" >&2
-    kill -TERM $$ 2>/dev/null
+    ps --forest -o pid,ppid,stat,time,cmd -g $$ 2>/dev/null >&2 || true
+    # SIGTERM first, then SIGKILL the entire process group after 5s
+    kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true
+    sleep 5
+    kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true
   ) &
   PHASE_TIMEOUT_PID=$!
 }
@@ -202,7 +212,9 @@ cancel_phase_timer() {
   fi
 }
 
-# Run a phase function with a timeout. Variables propagate normally (no subshell).
+# Run a phase function with a timeout.
+# Uses background watchdog for heartbeat logging + SIGKILL escalation.
+# The phase runs in the current shell (no subshell) so variables propagate.
 # Usage: run_phase_with_timeout <timeout_secs> <phase_function>
 run_phase_with_timeout() {
   local timeout_secs="$1"
@@ -352,9 +364,16 @@ phase_setup() {
   fi
   phase_log "1" "Global Verdaccio healthy on port ${VERDACCIO_PORT}"
 
-  # Clear only @sparkleideas/* packages (external dep cache persists permanently)
-  rm -rf "${VERDACCIO_STORAGE}/@sparkleideas" "${VERDACCIO_STORAGE}/ruflo" 2>/dev/null || true
-  phase_log "1" "Cleared @sparkleideas/* from Verdaccio storage"
+  # Clear @sparkleideas/* packages (external dep cache persists permanently)
+  if [[ "$INCREMENTAL" == "true" ]]; then
+    log "Incremental mode: keeping cached @sparkleideas/* packages in Verdaccio"
+    # In incremental mode, publish.mjs --packages will only publish changed packages
+    # Unchanged packages remain in Verdaccio from previous run
+  else
+    log "Full mode: clearing all @sparkleideas/* from Verdaccio"
+    rm -rf "${VERDACCIO_STORAGE}/@sparkleideas" "${VERDACCIO_STORAGE}/ruflo" 2>/dev/null || true
+    phase_log "1" "Cleared @sparkleideas/* from Verdaccio storage"
+  fi
 
   # Create results directory
   RESULTS_DIR="${PROJECT_DIR}/test-results/${TIMESTAMP}"
@@ -701,11 +720,20 @@ phase_publish() {
   local publish_output_file="${RESULTS_DIR}/publish-raw-output.txt"
   local publish_exit=0
 
+  # Incremental publish support: if CHANGED_PACKAGES_JSON is set,
+  # pass --packages to publish only changed packages
+  local publish_extra_args=""
+  if [[ "$INCREMENTAL" == "true" && -n "${CHANGED_PACKAGES_JSON:-}" ]]; then
+    publish_extra_args="--packages ${CHANGED_PACKAGES_JSON}"
+    phase_log "7" "Incremental mode: publishing only changed packages"
+  fi
+
   phase_log "7" "Running publish.mjs (streaming output to ${publish_output_file})..."
 
   # Stream output to both file and stderr so heartbeats remain visible
+  # shellcheck disable=SC2086
   node "${SCRIPT_DIR}/publish.mjs" \
-    --build-dir "${build_root}" --no-rate-limit \
+    --build-dir "${build_root}" --no-rate-limit ${publish_extra_args} \
     > >(tee "${publish_output_file}") 2>&1 || publish_exit=$?
 
   local publish_output
@@ -900,11 +928,19 @@ main() {
   log "=========================================="
   log "Phase timeouts: setup=30s clone=60s codemod=60s patch=30s"
   log "                build=30s upstream=10s publish=180s install=120s"
-  log "Global timeout: 600s (10 min)"
+  log "Global timeout: 180s (3 min)"
   log "=========================================="
 
-  # Global timeout — kills everything if total time exceeds 10 minutes
-  ( sleep 600; echo "[GLOBAL TIMEOUT] Integration test exceeded 600s total — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+  # Global timeout — kills everything if total time exceeds 3 minutes
+  # Sends SIGTERM first, then SIGKILL after 5s grace period
+  (
+    sleep 180
+    echo "[GLOBAL TIMEOUT] Integration test exceeded 180s — sending SIGTERM" >&2
+    kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true
+    sleep 5
+    echo "[GLOBAL TIMEOUT] SIGKILL escalation" >&2
+    kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true
+  ) &
   local GLOBAL_TIMEOUT_PID=$!
 
   check_prerequisites

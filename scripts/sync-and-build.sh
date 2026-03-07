@@ -252,6 +252,101 @@ apply_patches() {
 }
 
 # ---------------------------------------------------------------------------
+# Phase 6.5: Change Detection (incremental builds — ADR-0023, Decision 10)
+# ---------------------------------------------------------------------------
+
+# Packages to rebuild. "all" = full build. Set by detect_changes().
+REBUILD_PACKAGES="all"
+
+detect_changes() {
+  local checksums_file="${PROJECT_DIR}/config/package-checksums.json"
+
+  # Full rebuild triggers: --force, missing checksums, codemod change
+  if [[ "${FORCE_BUILD}" == "true" ]]; then
+    log "Change detection: --force flag set — full rebuild"
+    REBUILD_PACKAGES="all"
+    return 0
+  fi
+
+  if [[ ! -f "$checksums_file" ]]; then
+    log "Change detection: no checksums file — full rebuild (first run)"
+    REBUILD_PACKAGES="all"
+    return 0
+  fi
+
+  # Check if codemod or patch infrastructure changed
+  local stored_meta
+  stored_meta=$(node -e "
+    try {
+      const d = JSON.parse(require('fs').readFileSync('${checksums_file}', 'utf-8'));
+      console.log(JSON.stringify({ codemod_hash: d.codemod_hash || '', patch_dir_hash: d.patch_dir_hash || '' }));
+    } catch { console.log('{}'); }
+  " 2>/dev/null) || stored_meta="{}"
+
+  local current_codemod_hash
+  current_codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || current_codemod_hash=""
+  local stored_codemod_hash
+  stored_codemod_hash=$(echo "$stored_meta" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).codemod_hash||'')" 2>/dev/null) || stored_codemod_hash=""
+
+  if [[ "$current_codemod_hash" != "$stored_codemod_hash" ]]; then
+    log "Change detection: codemod.mjs changed — full rebuild"
+    REBUILD_PACKAGES="all"
+    return 0
+  fi
+
+  local current_patch_hash
+  current_patch_hash=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || current_patch_hash=""
+  local stored_patch_hash
+  stored_patch_hash=$(echo "$stored_meta" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).patch_dir_hash||'')" 2>/dev/null) || stored_patch_hash=""
+
+  if [[ "$current_patch_hash" != "$stored_patch_hash" ]]; then
+    log "Change detection: patch infrastructure changed — full rebuild"
+    REBUILD_PACKAGES="all"
+    return 0
+  fi
+
+  # Compute current hashes and diff against stored
+  log "Computing package content hashes..."
+  local hash_output
+  hash_output=$(node "${SCRIPT_DIR}/package-hash.mjs" \
+    --build-dir "${TEMP_DIR}" \
+    --stored-hashes "$checksums_file" \
+    --levels 2>/dev/null) || {
+    log "Change detection: hash computation failed — full rebuild"
+    REBUILD_PACKAGES="all"
+    return 0
+  }
+
+  local changed_count unchanged_count
+  changed_count=$(echo "$hash_output" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.all_rebuild.length)" 2>/dev/null) || changed_count=0
+  unchanged_count=$(echo "$hash_output" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.unchanged.length)" 2>/dev/null) || unchanged_count=0
+
+  if [[ "$changed_count" -eq 0 ]]; then
+    log "Change detection: no packages changed — nothing to rebuild"
+    REBUILD_PACKAGES="[]"
+    return 0
+  fi
+
+  # Extract the all_rebuild array as JSON
+  REBUILD_PACKAGES=$(echo "$hash_output" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(JSON.stringify(d.all_rebuild))" 2>/dev/null) || REBUILD_PACKAGES="all"
+
+  log "Change detection: ${changed_count} packages to rebuild, ${unchanged_count} unchanged"
+  log "Rebuild set: ${REBUILD_PACKAGES}"
+}
+
+# Helper: check if a package name is in the rebuild set
+needs_rebuild() {
+  local pkg_name="$1"
+  if [[ "$REBUILD_PACKAGES" == "all" ]]; then
+    return 0
+  fi
+  echo "$REBUILD_PACKAGES" | node -e "
+    const pkgs=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
+    process.exit(pkgs.includes('@sparkleideas/${pkg_name}') ? 0 : 1)
+  " 2>/dev/null
+}
+
+# ---------------------------------------------------------------------------
 # Phase 7: Build
 # ---------------------------------------------------------------------------
 
@@ -293,11 +388,19 @@ run_build() {
 
   local built=0
   local failed=0
+  local skipped=0
   for pkg_name in "${build_order[@]}"; do
     # Directory names remain @claude-flow/ after codemod (only file contents are renamed)
     local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
     [[ -d "$pkg_dir" ]] || continue
     [[ -f "$pkg_dir/tsconfig.json" ]] || continue
+
+    # Incremental: skip unchanged packages
+    if ! needs_rebuild "$pkg_name"; then
+      skipped=$((skipped + 1))
+      log "  SKIP: ${pkg_name} (unchanged)"
+      continue
+    fi
 
     # Create a standalone tsconfig that doesn't require project references
     # (referenced projects may not be at the expected relative paths after codemod)
@@ -339,7 +442,7 @@ run_build() {
     rm -f "$tmp_tsconfig"
   done
 
-  log "Build complete: ${built} packages built, ${failed} failed"
+  log "Build complete: ${built} built, ${skipped} skipped (unchanged), ${failed} failed"
   if [[ $failed -gt 0 ]]; then
     log_error "Some packages failed to build — published packages may be broken"
   fi
@@ -383,7 +486,7 @@ run_tests() {
   log "Running Release Qualification (functional smoke tests against built packages)"
 
   # RQ global timeout — kill if Layer 3 exceeds 120s (ADR-0023: Medium < 120s)
-  ( sleep 120; log_error "[TIMEOUT] Release Qualification exceeded 120s — aborting"; kill -TERM $$ 2>/dev/null ) &
+  ( sleep 120; log_error "[TIMEOUT] Release Qualification exceeded 120s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
   local rq_timeout_pid=$!
 
   local rq_start_s
@@ -407,15 +510,34 @@ run_tests() {
   fi
   log "Global Verdaccio healthy on port ${rq_port}"
 
-  # Clear only @sparkleideas/* packages (preserve external dep cache)
-  rm -rf "${rq_storage}/@sparkleideas" 2>/dev/null || true
+  # Clear @sparkleideas/* packages from Verdaccio (selective or full)
+  if [[ "$REBUILD_PACKAGES" == "all" || "$REBUILD_PACKAGES" == "[]" ]]; then
+    log "Full mode: clearing all @sparkleideas/* from RQ Verdaccio"
+    rm -rf "${rq_storage}/@sparkleideas" 2>/dev/null || true
+  else
+    log "Incremental mode: clearing only changed packages from RQ Verdaccio"
+    echo "$REBUILD_PACKAGES" | node -e "
+      const fs = require('fs');
+      const pkgs = JSON.parse(fs.readFileSync('/dev/stdin', 'utf8'));
+      for (const pkg of pkgs) {
+        const name = pkg.replace('@sparkleideas/', '');
+        const dir = '${rq_storage}/@sparkleideas/' + name;
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+      }
+    " 2>/dev/null || true
+  fi
 
   # Publish built packages to RQ Verdaccio
   log "Publishing built packages to RQ Verdaccio..."
   # Set auth token (global Verdaccio allows $all publish, but npm may require a token)
   npm config set "//localhost:${rq_port}/:_authToken" "test-token" 2>/dev/null || true
+  local rq_publish_args="--no-rate-limit"
+  if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
+    rq_publish_args="--no-rate-limit --packages '${REBUILD_PACKAGES}'"
+  fi
+  # shellcheck disable=SC2086
   NPM_CONFIG_REGISTRY="http://localhost:${rq_port}" \
-    node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" --no-rate-limit 2>&1 || {
+    node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" ${rq_publish_args} 2>&1 || {
     log_error "Failed to publish to RQ Verdaccio"
     kill "$rq_timeout_pid" 2>/dev/null || true
     rm -rf "$rq_temp"
@@ -601,7 +723,13 @@ run_publish() {
   }
 
   log "Publishing packages (per-package versioning via config/published-versions.json)"
-  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}"
+  local publish_args=""
+  if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
+    publish_args="--packages '${REBUILD_PACKAGES}'"
+    log "Incremental: publishing only changed packages"
+  fi
+  # shellcheck disable=SC2086
+  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" ${publish_args}
   log "Publish complete"
 }
 
@@ -784,7 +912,13 @@ main() {
   # Phase 6: Run codemod
   run_phase "codemod" run_codemod
 
+  # Phase 6.5: Change detection (ADR-0023, Decision 10)
+  # Must run AFTER codemod (hashes include codemod transforms) but BEFORE build
+  # (so we know which packages to skip in TypeScript compilation)
+  run_phase "detect-changes" detect_changes
+
   # Phase 7: Build (must happen before patches — patches target compiled .js in dist/)
+  # Incremental: only builds packages in REBUILD_PACKAGES
   run_phase "build" run_build
 
   # Phase 8: Apply patches (runs against compiled dist/src/*.js files)
@@ -849,6 +983,41 @@ main() {
     "${NEW_AGENTIC_HEAD}" \
     "${NEW_FANN_HEAD}" \
     "${current_local_head}"
+
+  # Save package checksums for incremental builds (ADR-0023, Decision 10)
+  log "Saving package checksums for next incremental build"
+  local codemod_hash patch_dir_hash
+  codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
+  patch_dir_hash=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || patch_dir_hash=""
+  node -e "
+    import { computeAllHashes, saveChecksums } from '${SCRIPT_DIR}/package-hash.mjs';
+    import { readFileSync, readdirSync, statSync } from 'fs';
+    import { resolve, join } from 'path';
+    // Rebuild package map for the build dir
+    const map = new Map();
+    function walk(dir) {
+      try { for (const e of readdirSync(dir)) {
+        if (e === 'node_modules') continue;
+        const f = resolve(dir, e);
+        try { const s = statSync(f);
+          if (s.isDirectory()) walk(f);
+          else if (e === 'package.json') {
+            try { const p = JSON.parse(readFileSync(f, 'utf-8'));
+              if (p.name) map.set(p.name, dir);
+            } catch {}
+          }
+        } catch {}
+      }} catch {}
+    }
+    walk('${TEMP_DIR}');
+    const hashes = computeAllHashes('${TEMP_DIR}', map);
+    saveChecksums('${PROJECT_DIR}/config/package-checksums.json', hashes, {
+      codemod_hash: '${codemod_hash}',
+      patch_dir_hash: '${patch_dir_hash}',
+      generated_at: new Date().toISOString(),
+    });
+    console.log('Checksums saved for ' + Object.keys(hashes).length + ' packages');
+  " 2>&1 || log "WARNING: Failed to save checksums (non-fatal)"
 
   log "=========================================="
   log "Build complete: ${BUILD_VERSION}"
