@@ -2,14 +2,14 @@
 
 ruflo-patch uses a **6-layer testing model** (ADR-0023) with additional operational checks. Each layer targets a different level of confidence and runs at a different cadence.
 
-**Total**: 93 unit + 10 integration phases + 12 RQ + 14 acceptance = **129 automated checks**.
+**Total**: 93 unit + 9 integration phases + 12 RQ + 14 acceptance = **128 automated checks**.
 
 ## Architecture Overview
 
 ```
 Layer 4: Prod Verify    <- 14 tests against real npm, confirmation only (~15s)
-Layer 3: Release Qual   <- 12 RQ tests against Verdaccio install, discovery (~23s)
-Layer 2: Integration    <- full pipeline: clone -> codemod -> patch -> publish -> install (~30s cached)
+Layer 3: Release Qual   <- 12 RQ tests against BUILT Verdaccio install, discovery (~30s)
+Layer 2: Integration    <- pipeline mechanics: clone -> codemod -> patch -> publish -> install (~47s)
 Layer 1: Unit           <- individual functions, no external deps (~0.2s)
 Layer 0: Static         <- codemod acceptance, preflight, sentinels
 Layer -1: Environment   <- validate-ci.sh (advisory)
@@ -21,11 +21,13 @@ Gate 2 (post-publish): Layer 4 must pass before promotion
 | Layer | Script | Tests | Size | Duration | When |
 |-------|--------|-------|------|----------|------|
 | -1 | `bash scripts/validate-ci.sh` | 10 checks | Smoke | <5s | Ad-hoc |
-| 0 | `npm run preflight` + `check-patches.sh` | — | Small | <10s | Pre-commit |
+| 0 | `npm run preflight` + `check-patches.sh` | -- | Small | <10s | Pre-commit |
 | 1 | `npm test` | 93 | Small | ~0.2s | Every commit |
-| 2 | `bash scripts/test-integration.sh` (Ph 1-8) | 8 phases | Medium | ~30s | Pre-publish |
-| 3 | `bash scripts/test-integration.sh` (Ph 9) | 12 RQ | Medium | ~23s | Pre-publish |
+| 2 | `bash scripts/test-integration.sh` | 9 phases | Medium | ~47s | Pre-publish |
+| 3 | `sync-and-build.sh` run_tests() | 12 RQ | Medium | ~30s | Deploy only |
 | 4 | `bash scripts/test-acceptance.sh` | 14 | Large | ~15s | Post-publish |
+
+**Note**: Layer 3 (RQ) runs inside `sync-and-build.sh`, NOT `test-integration.sh`. RQ requires built TypeScript artifacts (`dist/`) that only exist after `sync-and-build.sh` Phase 7. `test-integration.sh` tests pipeline mechanics only.
 
 ---
 
@@ -175,7 +177,7 @@ Tests `scripts/publish.mjs` topological ordering (ADR-0014).
 
 Validates the full build pipeline end-to-end using a local Verdaccio registry.
 
-### 10 Phases
+### 9 Phases
 
 | Phase | Function | Timeout | What It Does | Fails On |
 |-------|----------|---------|-------------|----------|
@@ -183,12 +185,13 @@ Validates the full build pipeline end-to-end using a local Verdaccio registry.
 | 2. Clone | `phase_clone` | 60s | Parallel rsync of 3 upstream repos (excluding .git) to temp build dir | Missing upstream clone |
 | 3. Codemod | `phase_codemod` | 60s | Run `node scripts/codemod.mjs`, verify zero `@claude-flow/` residuals | Any residual found |
 | 4. Patch | `phase_patch` | 30s | Run `bash patch-all.sh --target`, verify all 7 sentinels | Sentinel check fails |
-| 5. Verify | `phase_build` | 30s | Check pre-built `dist/` exists, count package.json files | CLI package missing |
+| 5. Verify | `phase_build` | 30s | Count package.json files, verify structure | CLI package missing |
 | 6. Upstream Tests | `phase_upstream_tests` | 10s | Skipped (we patch pre-built packages) | Never fails (advisory) |
 | 7. Publish | `phase_publish` | 180s | Run `publish.mjs --no-rate-limit` to Verdaccio | publish.mjs exits non-zero |
 | 8. Install | `phase_install` | 120s | `npm install @sparkleideas/cli` from Verdaccio, verify dependency tree | npm install fails or missing deps |
-| 9. Release Qual | `phase_release_qualification` | 120s | Run RQ-1..RQ-12 against Verdaccio install (lib/acceptance-checks.sh) | Any RQ test fails |
-| 10. Cleanup | `phase_cleanup` | — | Save logs, write results JSON, kill Verdaccio, remove temp dirs | Always runs |
+| 9. Cleanup | `phase_cleanup` | -- | Save logs, write results JSON, kill Verdaccio, remove temp dirs | Always runs |
+
+**Note**: `test-integration.sh` does NOT run RQ (Release Qualification). It tests pipeline mechanics only -- packages are published from git clones without `dist/` (no TypeScript build). RQ runs in `sync-and-build.sh` where built artifacts exist.
 
 ### Verdaccio Configuration
 
@@ -257,15 +260,25 @@ Written to `test-results/<timestamp>/`:
 
 ---
 
-## Layer 3: Release Qualification + Layer 4: Production Verification
+## Layer 3: Release Qualification
 
-### `scripts/test-acceptance.sh` — End-User Experience
+**Runner**: `sync-and-build.sh` `run_tests()` function (NOT `test-integration.sh`)
+
+RQ runs 12 functional smoke tests against **built** packages installed from Verdaccio, inside the deployment pipeline. It requires `dist/` directories (TypeScript build output from Phase 7). RQ is a deployment gate, not a standalone test.
+
+**Shared test library**: `lib/acceptance-checks.sh` -- 12 functional test functions used by both Layer 3 (Verdaccio, in `sync-and-build.sh`) and Layer 4 (real npm, in `test-acceptance.sh`). One definition, two contexts.
+
+**Why not in `test-integration.sh`**: The integration test clones from git and publishes without building TypeScript. Packages have no `dist/`, so CLI commands fail with `ERR_MODULE_NOT_FOUND`. RQ exercises the built product -- it belongs where built artifacts exist.
+
+---
+
+## Layer 4: Production Verification
+
+### `scripts/test-acceptance.sh` -- End-User Experience
 
 **Command**: `bash scripts/test-acceptance.sh [--registry <url>] [--version <ver>] [--package <name>]`
 
-Runs real CLI commands against published packages to validate the user experience.
-
-**Shared test library**: `lib/acceptance-checks.sh` — 12 functional test functions used by both Layer 3 (Verdaccio, Phase 9) and Layer 4 (real npm). One definition, two contexts.
+Runs real CLI commands against published packages to validate the user experience. This is **confirmation, not discovery** -- if Layer 3 passed but Layer 4 fails, the root cause is a deployment issue, not a code bug.
 
 | ID | Test | Validates |
 |----|------|-----------|
@@ -400,20 +413,20 @@ No external mocking framework. Mocks are created via:
 #### Typical Phase Timing (cached run)
 
 ```
-setup:          1.4s ✓  (kill stale procs + start Verdaccio)
-clone:          0.6s ✓  (parallel rsync × 3 repos)
-codemod:        0.7s ✓  (scope rename + residual check)
-patch:          0.03s ✓ (7 patches applied)
-verify:         0.1s ✓  (package structure check)
-upstream-tests: 0.001s ✓ (skipped — advisory)
-publish:       12.3s ✓  (25 packages, parallel within 5 levels)
-install:       12.3s ✓  (npm install, cached external deps)
-cleanup:        0.8s ✓  (results + temp dir cleanup)
-───────────────────────
+setup:          1.4s    (kill stale procs + start Verdaccio)
+clone:          0.6s    (parallel rsync x 3 repos)
+codemod:        0.7s    (scope rename + residual check)
+patch:          0.03s   (7 patches applied)
+verify:         0.1s    (package structure check)
+upstream-tests: 0.001s  (skipped -- advisory)
+publish:       12.3s    (25 packages, parallel within 5 levels)
+install:       12.3s    (npm install, cached external deps)
+cleanup:        0.8s    (results + temp dir cleanup)
+------------------------------------------------------------
 total:         ~30s
 ```
 
-First run (cold cache) takes ~46s as Verdaccio proxies external deps from npmjs.
+First run (cold cache) takes ~47s as Verdaccio proxies external deps from npmjs.
 
 ### Unit Test Optimization (85s → 84ms, 1000x faster)
 
@@ -445,12 +458,19 @@ Developer workflow:
   4. git commit
 
 Pre-publish workflow (manual):
-  5. bash scripts/test-integration.sh  <- Layer 2+3: build verify + RQ (~53s cached)
+  5. bash scripts/test-integration.sh  <- Layer 2: pipeline mechanics (~47s)
   6. npm publish                       <- triggers prepublishOnly hook
   7. bash scripts/test-acceptance.sh   <- Layer 4: production verification (~15s)
+  NOTE: Manual workflow skips Layer 3 (RQ). Only sync-and-build.sh runs RQ.
 
 Automated CI pipeline (sync-and-build.sh):
-  Phase 9:  Layers 0-3 (codemod + unit + build verify + RQ)    <- Gate 1 (hard fail)
+  Phase 7:  Build (TypeScript compilation -> dist/)
+  Phase 8:  Patch (against compiled dist/*.js)
+  Phase 9:  Layers 0-3:                                         <- Gate 1 (hard fail)
+              Layer 0: codemod acceptance
+              Layer 1: unit tests (93)
+              Layer 2: test-integration.sh (pipeline mechanics)
+              Layer 3: RQ (12 tests against BUILT packages)
   Phase 11: publish to npm (prerelease tag)                     <- only if Gate 1 passes
   Phase 12: Layer 4 (production verification)                   <- Gate 2 (soft fail)
   Phase 13: promote to @latest                                  <- only if Gate 2 passes
@@ -468,11 +488,13 @@ The automated pipeline (`scripts/sync-and-build.sh`) runs **all test layers befo
 
 | Phase | Tests | Blocks Publish? |
 |-------|-------|----------------|
-| 9a | Codemod acceptance (`test-codemod-acceptance.mjs`) | Yes — aborts on `@claude-flow/` residuals |
-| 9b | Unit tests (`npm test`, 93 tests) | Yes — aborts on any failure |
-| 9c | Integration test (`test-integration.sh`, 10 phases) | Yes — full Verdaccio dry run catches missing packages, broken deps |
-| 9d | Release Qualification (`test-integration.sh` Phase 9, 12 RQ tests) | Yes — functional smoke tests against Verdaccio |
+| 9a | Codemod acceptance (`test-codemod-acceptance.mjs`) | Yes -- aborts on `@claude-flow/` residuals |
+| 9b | Unit tests (`npm test`, 93 tests) | Yes -- aborts on any failure |
+| 9c | Integration test (`test-integration.sh`, 9 phases) | Yes -- Verdaccio dry run catches missing packages, broken deps |
+| 9d | Release Qualification (12 RQ tests against **built** packages) | Yes -- functional smoke tests against Verdaccio |
 | 11 | Publish to npm | Only runs if 9a-9d all pass |
-| 12 | Acceptance tests (`test-acceptance.sh`, 14 tests) | No — packages already live, creates GitHub issue on failure |
+| 12 | Acceptance tests (`test-acceptance.sh`, 14 tests) | No -- packages already live, creates GitHub issue on failure |
+
+**Note**: Phase 9c (`test-integration.sh`) tests pipeline mechanics only -- it does NOT run RQ. Phase 9d (RQ) runs separately in `sync-and-build.sh` against built packages with `dist/`.
 
 This ensures that a new upstream `@claude-flow/*` package missing from the publish list will be caught by the integration test's Phase 8 (install + dependency resolution) **before** anything reaches npm.

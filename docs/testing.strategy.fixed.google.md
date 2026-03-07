@@ -174,10 +174,10 @@ SAVE_TEST_RESULTS=1 npm test # Save TAP + manifest to test-results/
 
 ### 3.4 Layer 2: Build Verification (Medium)
 
-**Purpose**: Validate the full build pipeline end-to-end against a local Verdaccio registry. Answers: "Can we build, publish, and install successfully?"
+**Purpose**: Validate pipeline mechanics end-to-end against a local Verdaccio registry. Answers: "Can we codemod, patch, publish, and install successfully?"
 **Google phase**: Build Verification
 
-**Runner**: `scripts/test-integration.sh` (Phases 1-8)
+**Runner**: `scripts/test-integration.sh` (9 phases: 1-8 + cleanup)
 
 | Phase | Name | Timeout | What It Validates |
 |-------|------|---------|-------------------|
@@ -186,12 +186,13 @@ SAVE_TEST_RESULTS=1 npm test # Save TAP + manifest to test-results/
 | 3 | Codemod | 60s | Scope rename produces zero `@claude-flow/*` residuals |
 | 4 | Patch | 30s | All patches apply; sentinel files verify |
 | 5 | Verify | 30s | Package.json count matches expected (no missing packages) |
-| 6 | Upstream | 10s | Skipped (advisory only — we don't rebuild from source) |
+| 6 | Upstream | 10s | Skipped (advisory only -- we don't rebuild from source) |
 | 7 | Publish | 180s | All packages publish to local Verdaccio; JSON summary |
 | 8 | Install | 120s | `npm install @sparkleideas/cli` resolves all deps from Verdaccio |
+| 9 | Cleanup | -- | Save logs, write results JSON, kill Verdaccio, remove temp dirs |
 
-**What Layer 2 proves**: Packages resolve, dependency tree is complete, no publish errors.
-**What Layer 2 does NOT prove**: Packages actually *work* (that's Layer 3).
+**What Layer 2 proves**: Pipeline mechanics work -- codemod transforms, patches apply, packages resolve, dependency tree is complete.
+**What Layer 2 does NOT prove**: Packages actually *work* (that's Layer 3). `test-integration.sh` does NOT build TypeScript -- packages have no `dist/` directory. This is correct: the integration test validates pipeline logic, not product functionality.
 
 **Properties**:
 - **Isolated Verdaccio**: Random port, fresh config, no shared storage
@@ -220,12 +221,14 @@ packages:
 
 ### 3.5 Layer 3: Release Qualification (Medium)
 
-**Purpose**: Functional smoke tests against Verdaccio-installed packages. Answers: "Do the packages actually work from a user's perspective?" This is the **last gate before publishing to real npm**.
+**Purpose**: Functional smoke tests against **built** packages installed from Verdaccio. Answers: "Do the packages actually work from a user's perspective?" This is the **last gate before publishing to real npm**.
 **Google phase**: Release Qualification
 
-**Runner**: `scripts/test-integration.sh` (Phase 9) — runs inside the same integration test, using the same Verdaccio instance from Layer 2. No additional infrastructure.
+**Runner**: `scripts/sync-and-build.sh` `run_tests()` function -- runs inside the deployment pipeline, after TypeScript build (Phase 7) and patches (Phase 8). RQ requires `dist/` directories that only exist after the build step.
 
-**Test library**: `lib/acceptance-checks.sh` — shared test functions used by both Layer 3 (against Verdaccio) and Layer 4 (against real npm). One test definition, two execution contexts.
+**Why RQ lives in `sync-and-build.sh`, not `test-integration.sh`**: RQ exercises the built product -- it runs CLI commands, imports ESM modules, and tests functional behavior. These operations require compiled TypeScript (`dist/`). `test-integration.sh` clones from git and publishes without building (it tests pipeline mechanics, not product functionality). Putting RQ in a test that cannot produce runnable artifacts violates Google's principle: a test must be able to exercise its subject.
+
+**Test library**: `lib/acceptance-checks.sh` -- shared test functions used by both Layer 3 (against Verdaccio, in `sync-and-build.sh`) and Layer 4 (against real npm, in `test-acceptance.sh`). One test definition, two execution contexts.
 
 | ID | Test | What It Catches Pre-Publish |
 |----|------|----------------------------|
@@ -250,12 +253,15 @@ packages:
 | A16 (plugin install) | Depends on plugin being separately published and resolvable | Layer 4 only |
 
 **Properties**:
-- **Shares Verdaccio** from Layer 2 — no additional setup cost
-- **Runs against the same install dir** from Phase 8 — no re-install
-- **Hard fail** — any RQ failure aborts the pipeline before publish
-- **Estimated duration**: ~23s additional on top of Layer 2
+- **Runs during deployment only** -- RQ requires built artifacts, which only exist in `sync-and-build.sh`
+- **Uses its own Verdaccio** -- publishes built packages, installs into fresh temp dir
+- **Hard fail** -- any RQ failure aborts the pipeline before publish to real npm
+- **Cannot run standalone** -- `test-integration.sh` does NOT run RQ (no `dist/`)
+- **Estimated duration**: ~30s additional in the deployment pipeline
 
-**Key principle**: Layer 3 is where bugs are **discovered**. If a functional defect exists, it is caught here — before any package reaches real npm. Layer 4 (production verification) should never be the first time a bug is found.
+**Key principle**: Layer 3 is where bugs are **discovered**. If a functional defect exists, it is caught here -- before any package reaches real npm. Layer 4 (production verification) should never be the first time a bug is found.
+
+**Separation of concerns**: Development, build, test, and deployment are distinct activities. `test-integration.sh` is a test (validates pipeline logic). `sync-and-build.sh` is a build+deploy pipeline (produces artifacts, qualifies them, ships them). RQ is a deployment gate, not a test phase.
 
 ---
 
@@ -315,53 +321,67 @@ Verdaccio is the cornerstone of pre-deployment validation. It serves as the **st
 ### 4.1 Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│                      sync-and-build.sh                          │
-│                                                                 │
-│  Phase 9: Test                                                  │
-│  ┌────────────────────────────────────────────────────────────┐ │
-│  │  test-integration.sh                                       │ │
-│  │                                                            │ │
-│  │  ┌─────────────┐    ┌───────────────────────────────────┐ │ │
-│  │  │  Build Dir   │───▶│  Local Verdaccio (:4873+)         │ │ │
-│  │  │  (codemod +  │    │  ┌─────────────────────────────┐ │ │ │
-│  │  │   patches)   │    │  │ @sparkleideas/* (local)      │ │ │ │
-│  │  └─────────────┘    │  ├─────────────────────────────┤ │ │ │
-│  │                      │  │ ** (proxy → npmjs)          │ │ │ │
-│  │                      │  └─────────────────────────────┘ │ │ │
-│  │                      └───────────────┬─────────────────┘ │ │
-│  │                                      │                    │ │
-│  │  Layer 2: Build Verification         │                    │ │
-│  │  ┌─────────────┐                    │                    │ │
-│  │  │  npm install │◀───────────────────┘                    │ │
-│  │  │  npm ls      │  "packages install"                     │ │
-│  │  └──────┬──────┘                                         │ │
-│  │         │                                                 │ │
-│  │  Layer 3: Release Qualification                           │ │
-│  │  ┌──────▼──────┐                                         │ │
-│  │  │  --version  │  RQ-1 through RQ-12                     │ │
-│  │  │  init       │  "packages work"                         │ │
-│  │  │  doctor     │  Same install dir, same Verdaccio        │ │
-│  │  │  memory     │  No additional infrastructure            │ │
-│  │  │  neural     │                                          │ │
-│  │  │  imports    │                                          │ │
-│  │  └─────────────┘                                         │ │
-│  └────────────────────────────────────────────────────────────┘ │
-│                                                                 │
-│  ═══════════════════ GATE 1 ═══════════════════════════         │
-│                                                                 │
-│  Phase 11: Publish ──▶ Real npm (only if Gate 1 passes)        │
-│                                                                 │
-│  Layer 4: Production Verification                               │
-│  Phase 12: Acceptance ──▶ test-acceptance.sh (real npm)         │
-│                                                                 │
-│  ═══════════════════ GATE 2 ═══════════════════════════         │
-│                                                                 │
-│  Phase 13: Promote ──▶ @latest (only if Gate 2 passes)         │
-└─────────────────────────────────────────────────────────────────┘
++------------------------------------------------------------------+
+|                      sync-and-build.sh                            |
+|                                                                   |
+|  Phase 7: Build (TypeScript compilation -> dist/)                 |
+|  Phase 8: Patch (against compiled dist/*.js)                      |
+|                                                                   |
+|  Phase 9: Test                                                    |
+|  +--------------------------------------------------------------+ |
+|  |  Layer 0: Codemod acceptance (test-codemod-acceptance.mjs)    | |
+|  |  Layer 1: Unit tests (npm test, 93 tests)                    | |
+|  |                                                               | |
+|  |  Layer 2: Pipeline Mechanics (test-integration.sh)            | |
+|  |  +----------------------------------------------------------+| |
+|  |  | Clones from git (no dist/) -> codemod -> patch -> publish || |
+|  |  | -> install. Tests pipeline logic, NOT product function.   || |
+|  |  +----------------------------------------------------------+| |
+|  |                                                               | |
+|  |  Layer 3: Release Qualification (BUILT packages)              | |
+|  |  +----------------------------------------------------------+| |
+|  |  | Built dir -----> Local Verdaccio (:4873+)                 || |
+|  |  | (with dist/)    +---------------------------+             || |
+|  |  |                 | @sparkleideas/* (local)    |             || |
+|  |  |                 | ** (proxy -> npmjs)        |             || |
+|  |  |                 +-------------+-------------+             || |
+|  |  |                               |                           || |
+|  |  |  npm install <----------------+                           || |
+|  |  |                                                           || |
+|  |  |  RQ-1: --version    RQ-7:  wrapper proxy                 || |
+|  |  |  RQ-2: init         RQ-8:  memory lifecycle              || |
+|  |  |  RQ-3: settings     RQ-9:  neural training               || |
+|  |  |  RQ-4: scope check  RQ-10: agent-booster ESM             || |
+|  |  |  RQ-5: doctor       RQ-11: agent-booster CLI             || |
+|  |  |  RQ-6: MCP config   RQ-12: plugins SDK                   || |
+|  |  |                                                           || |
+|  |  |  "packages WORK" (requires dist/)                        || |
+|  |  +----------------------------------------------------------+| |
+|  +--------------------------------------------------------------+ |
+|                                                                   |
+|  ==================== GATE 1 ============================         |
+|                                                                   |
+|  Phase 11: Publish --> Real npm (only if Gate 1 passes)           |
+|                                                                   |
+|  Layer 4: Production Verification                                 |
+|  Phase 12: Acceptance --> test-acceptance.sh (real npm)            |
+|                                                                   |
+|  ==================== GATE 2 ============================         |
+|                                                                   |
+|  Phase 13: Promote --> @latest (only if Gate 2 passes)            |
++------------------------------------------------------------------+
+
+STANDALONE USE:
+  test-integration.sh  -> Layer 2 only (pipeline mechanics, no RQ)
+  test-acceptance.sh   -> Layer 4 only (post-publish verification)
+  sync-and-build.sh    -> ALL layers (the only way to run Layer 3)
 ```
 
-### 4.2 Verdaccio Lifecycle per Test Run
+### 4.2 Verdaccio Lifecycle
+
+Verdaccio is used in two contexts with the same lifecycle but different inputs:
+
+**In `test-integration.sh` (Layer 2 -- pipeline mechanics)**:
 
 | Step | Action | Detail |
 |------|--------|--------|
@@ -370,12 +390,24 @@ Verdaccio is the cornerstone of pre-deployment validation. It serves as the **st
 | 3 | Generate config | Isolated YAML with auth, uplinks, package rules |
 | 4 | Start daemon | Background process with log capture |
 | 5 | Wait for ready | HTTP health check with retry |
-| 6 | Publish packages | All 42 packages in topological order (Layer 2) |
-| 7 | Install test | `npm install @sparkleideas/cli` from local registry (Layer 2) |
-| 8 | Validate deps | Dep resolution, `npm ls`, package structure (Layer 2) |
-| 9 | Functional smoke | RQ-1 through RQ-12 against installed packages (Layer 3) |
-| 10 | Capture logs | Copy verdaccio.log to results dir |
-| 11 | Kill daemon | Clean shutdown |
+| 6 | Publish packages | All packages from git clone (**no dist/**) |
+| 7 | Install test | `npm install @sparkleideas/cli` from local registry |
+| 8 | Validate deps | Dep resolution, `npm ls`, package structure |
+| 9 | Capture logs | Copy verdaccio.log to results dir |
+| 10 | Kill daemon | Clean shutdown |
+
+**In `sync-and-build.sh` (Layer 3 -- release qualification)**:
+
+| Step | Action | Detail |
+|------|--------|--------|
+| 1-5 | Same as above | Verdaccio starts on random port |
+| 6 | Publish packages | All packages from build dir (**with dist/**) |
+| 7 | Install test | `npm install @sparkleideas/cli` from local registry |
+| 8 | RQ smoke tests | RQ-1 through RQ-12 against installed packages |
+| 9 | Capture logs | Copy verdaccio.log to results dir |
+| 10 | Kill daemon | Clean shutdown |
+
+The critical difference: `sync-and-build.sh` publishes **built** packages (TypeScript compiled to `dist/`), so RQ tests can execute them. `test-integration.sh` publishes from git clones (no `dist/`), so it can only validate structural correctness (packages resolve and install).
 
 ### 4.3 Verdaccio Configuration Rules
 
@@ -394,18 +426,22 @@ Verdaccio is the cornerstone of pre-deployment validation. It serves as the **st
 Functional tests are defined once in `lib/acceptance-checks.sh` and executed in two contexts:
 
 ```
-lib/acceptance-checks.sh          ← shared test functions
-  │
-  ├── test-integration.sh         ← sources it, runs against Verdaccio (Layer 3)
-  │   REGISTRY=http://localhost:$PORT
-  │   Runs as Phase 9 of integration test
-  │   Hard fail: blocks publish
-  │
-  └── test-acceptance.sh          ← sources it, runs against real npm (Layer 4)
+lib/acceptance-checks.sh          <- shared test functions
+  |
+  +-- sync-and-build.sh           <- sources it, runs against Verdaccio (Layer 3)
+  |   REGISTRY=http://localhost:$PORT
+  |   Runs during deployment, after build, before publish to npm
+  |   Hard fail: blocks publish
+  |   Requires: dist/ (built TypeScript)
+  |
+  +-- test-acceptance.sh          <- sources it, runs against real npm (Layer 4)
       REGISTRY=https://registry.npmjs.org
       Runs as Phase 12 of sync-and-build
       Soft fail: blocks promotion
       + adds A8 (dist-tag) and A16 (plugin install)
+
+NOTE: test-integration.sh does NOT source this library.
+      It tests pipeline mechanics only (Layer 2).
 ```
 
 This eliminates duplication. Adding a new functional test to the shared library automatically runs it in both layers unless explicitly excluded.
@@ -427,47 +463,49 @@ Tests gate the pipeline at two checkpoints. Nothing proceeds past a failed gate.
 
 ```
 Developer Workflow:
-  edit → preflight → unit tests → commit
+  edit -> preflight -> unit tests -> commit
 
 Deployment Pipeline (sync-and-build.sh):
-  upstream check → codemod → build → patch
-       │
-       ▼
-  ┌──────────────────────────────────────────┐
-  │  GATE 1: Pre-Publish (hard fail)         │
-  │                                          │
-  │  Layer 0: Codemod acceptance, sentinels  │
-  │  Layer 1: Unit tests (93)                │
-  │  Layer 2: Build verification (Verdaccio) │
-  │  Layer 3: Release qualification (12 RQ)  │  ← NEW
-  │                                          │
-  │  "Packages install AND work"             │
-  └────────────────┬─────────────────────────┘
-                   │ ALL PASS
-                   ▼
-  ┌──────────────────────────────────────────┐
-  │  PUBLISH to real npm                     │
-  │  42 packages, 5 levels                   │
-  │  Tag: prerelease                         │
-  └────────────────┬─────────────────────────┘
-                   │
-                   ▼
-  ┌──────────────────────────────────────────┐
-  │  GATE 2: Post-Publish (soft fail)        │
-  │                                          │
-  │  Layer 4: Production verification (14)   │
-  │                                          │
-  │  "Production matches staging"            │
-  └────────────────┬─────────────────────────┘
-                   │ PASS          │ FAIL
-                   ▼               ▼
-  ┌──────────────────┐   ┌──────────────────┐
-  │  PROMOTE to      │   │  Stay on         │
-  │  @latest         │   │  prerelease      │
-  │                  │   │  GitHub issue     │
-  │                  │   │  (deployment bug, │
-  │                  │   │   not code bug)   │
-  └──────────────────┘   └──────────────────┘
+  upstream check -> codemod -> BUILD (tsc) -> patch
+       |
+       v
+  +------------------------------------------+
+  |  GATE 1: Pre-Publish (hard fail)         |
+  |                                          |
+  |  Layer 0: Codemod acceptance, sentinels  |
+  |  Layer 1: Unit tests (93)                |
+  |  Layer 2: Pipeline mechanics             |
+  |           (test-integration.sh, no RQ)   |
+  |  Layer 3: Release qualification (12 RQ)  |  <- NEW
+  |           (against BUILT packages)       |
+  |                                          |
+  |  "Packages install AND work"             |
+  +--------------------+---------------------+
+                       | ALL PASS
+                       v
+  +------------------------------------------+
+  |  PUBLISH to real npm                     |
+  |  42 packages, 5 levels                   |
+  |  Tag: prerelease                         |
+  +--------------------+---------------------+
+                       |
+                       v
+  +------------------------------------------+
+  |  GATE 2: Post-Publish (soft fail)        |
+  |                                          |
+  |  Layer 4: Production verification (14)   |
+  |                                          |
+  |  "Production matches staging"            |
+  +--------------------+---------------------+
+                       | PASS          | FAIL
+                       v               v
+  +--------------------+   +--------------------+
+  |  PROMOTE to        |   |  Stay on           |
+  |  @latest           |   |  prerelease        |
+  |                    |   |  GitHub issue       |
+  |                    |   |  (deployment bug,   |
+  |                    |   |   not code bug)     |
+  +--------------------+   +--------------------+
 ```
 
 ### 6.2 Failure Semantics
@@ -499,11 +537,13 @@ Every bug caught at Layer 3 (Release Qualification) instead of Layer 4 (Producti
 | Change Type | Required Tests | Command |
 |-------------|---------------|---------|
 | Patch `fix.py` | Unit + preflight + patch-all + check-patches | `npm run preflight && npm test && bash patch-all.sh --global && bash check-patches.sh` |
-| Codemod change | Unit + integration (includes RQ) | `npm test && bash scripts/test-integration.sh` |
-| Pipeline script change | Unit + integration (includes RQ) | `npm test && bash scripts/test-integration.sh` |
-| Deploy to npm | ALL layers (automatic) | `bash scripts/sync-and-build.sh` |
+| Codemod change | Unit + integration (pipeline mechanics) | `npm test && bash scripts/test-integration.sh` |
+| Pipeline script change | Unit + integration (pipeline mechanics) | `npm test && bash scripts/test-integration.sh` |
+| Deploy to npm | ALL layers including RQ (automatic) | `bash scripts/sync-and-build.sh` |
 | Verify live packages | Production verification only | `bash scripts/test-acceptance.sh` |
 | New machine setup | Environment validation | `bash scripts/validate-ci.sh` |
+
+**Important**: `test-integration.sh` does NOT run RQ (Layer 3). RQ requires built TypeScript artifacts that only exist during deployment (`sync-and-build.sh`). Running `test-integration.sh` alone validates Layer 2 (pipeline mechanics). Only `sync-and-build.sh` runs all layers including RQ.
 
 ### 6.5 Automated Schedule
 
@@ -708,7 +748,9 @@ describe('new-feature', () => {
 | Test against real npm pre-publish | Circular dependency; packages don't exist yet | Use Verdaccio for all pre-publish validation |
 | Skip integration tests for "small" changes | Patch interactions are non-obvious | Always run full integration (includes RQ) for patches |
 | Use production verification for bug discovery | Bugs found post-publish already affect users | Catch functional bugs at Layer 3 (Release Qualification) |
-| Duplicate test logic between integration and acceptance | Tests drift apart; one gets updated, other doesn't | Use shared `lib/acceptance-checks.sh` library |
+| Duplicate test logic between RQ and acceptance | Tests drift apart; one gets updated, other doesn't | Use shared `lib/acceptance-checks.sh` library |
+| Put RQ in test-integration.sh | Integration test has no dist/ -- 82% expected failures, pure noise | RQ belongs in sync-and-build.sh where built artifacts exist |
+| Mark expected failures as "advisory" | Normalizes failure, creates alarm fatigue, hides real regressions | Tests pass, fail, or skip. No advisory status. |
 | Add `sleep` in tests | Non-deterministic, wastes time | Use retry with backoff or event-driven waits |
 | Share state between test files | Order-dependent failures | Temp dirs with cleanup per test |
 | Mock everything | Misses real integration bugs | Mock at boundaries only; use fakes for filesystems |
@@ -749,13 +791,16 @@ The six layers serve four distinct Google release engineering phases:
 
 **Critical rule**: Release Qualification (Layer 3) and Production Verification (Layer 4) are *not* the same test running twice. Layer 3 is **discovery** (find bugs before they ship). Layer 4 is **confirmation** (verify prod matches staging). If Layer 3 passes but Layer 4 fails, the bug is in deployment infrastructure, not in code.
 
-`sync-and-build.sh` orchestrates all phases:
-1. Layers 0-3 (Phase 9) → Gate 1 → blocks publish
-2. Publish (Phase 11) → real npm, prerelease tag
-3. Layer 4 (Phase 12) → Gate 2 → blocks promotion
-4. Promote (Phase 13) → `@latest` tag
+**Critical rule**: RQ (Layer 3) lives in `sync-and-build.sh`, NOT `test-integration.sh`. RQ exercises the built product (runs CLI commands, imports ESM modules). Built artifacts (`dist/`) only exist after `sync-and-build.sh` Phase 7 (TypeScript build). `test-integration.sh` tests pipeline mechanics without building -- it structurally cannot run RQ.
 
-Running `test-integration.sh` alone validates Layers 2-3. Running `test-acceptance.sh` alone validates Layer 4. Only `sync-and-build.sh` runs all layers in sequence.
+`sync-and-build.sh` orchestrates all phases:
+1. Build (Phase 7) + Patch (Phase 8) -- produces artifacts with `dist/`
+2. Layers 0-3 (Phase 9) -- Gate 1 -- blocks publish
+3. Publish (Phase 11) -- real npm, prerelease tag
+4. Layer 4 (Phase 12) -- Gate 2 -- blocks promotion
+5. Promote (Phase 13) -- `@latest` tag
+
+Running `test-integration.sh` alone validates Layer 2 (pipeline mechanics). Running `test-acceptance.sh` alone validates Layer 4. Only `sync-and-build.sh` runs all layers including Layer 3 (RQ).
 
 ## Appendix B: Topological Publish Order (ADR-0014)
 
@@ -794,10 +839,11 @@ Per-package versions tracked in `config/published-versions.json` (committed to g
 
 | Metric | Without Layer 3 | With Layer 3 | Delta |
 |--------|----------------|-------------|-------|
-| Integration test duration | ~47s | ~70s | +23s |
+| Deploy pipeline duration | ~3 min | ~3.5 min | +30s |
+| Integration test duration | ~47s | ~47s | 0 (RQ not in integration test) |
 | Acceptance test duration | ~15s | ~15s | 0 |
-| New infrastructure | — | None (shared Verdaccio) | 0 |
-| New scripts | — | 1 (`lib/acceptance-checks.sh`) | +1 file |
+| New infrastructure | -- | None (shared Verdaccio) | 0 |
+| New scripts | -- | 1 (`lib/acceptance-checks.sh`) | +1 file |
 | Bugs caught pre-publish | Structural only | Structural + functional | Significant improvement |
 
-23 seconds of pre-publish testing to prevent deploying broken packages. That's the trade.
+30 seconds of pre-publish testing during deployment to prevent shipping broken packages. That's the trade. The integration test (`test-integration.sh`) is unaffected -- it continues to validate pipeline mechanics in ~47s.
