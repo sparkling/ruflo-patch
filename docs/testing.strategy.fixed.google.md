@@ -103,6 +103,7 @@ Google's release pipeline has four phases. We map them to six layers:
 
 **When to run**: On new machine setup, after OS upgrades, before first deploy.
 **Failure mode**: Non-blocking warnings. Fix before attempting pipeline.
+**Timeout**: 30s (advisory -- does not abort pipeline).
 
 ---
 
@@ -122,6 +123,7 @@ Google's release pipeline has four phases. We map them to six layers:
 - No network access
 - Pure filesystem validation
 - Deterministic and idempotent
+- **Timeout gates**: 10s for preflight, 30s for check-patches (per-step enforcement)
 
 **Commands**:
 ```bash
@@ -155,6 +157,8 @@ bash check-patches.sh                                   # Sentinel verification
 - **Framework**: Node.js built-in `node:test` with `node:assert` (strict)
 - **Style**: BDD (`describe`/`it`) with nested suites
 - **Skip threshold**: Max 8 skipped tests (enforced by test runner)
+- **Timeout**: 60s default (configurable via `TEST_TIMEOUT` env var)
+- **Structured logging**: ISO8601 timestamps and per-suite timing recorded in test manifest
 
 **Test Doubles Strategy** (Google "Test Doubles" guidance):
 - **Fakes**: Temp directories simulate real installs (`createFixture()`)
@@ -181,7 +185,7 @@ SAVE_TEST_RESULTS=1 npm test # Save TAP + manifest to test-results/
 
 | Phase | Name | Timeout | What It Validates |
 |-------|------|---------|-------------------|
-| 1 | Setup | 30s | Verdaccio starts on random port (4873-4999); auth configured |
+| 1 | Setup | 30s | Health check Verdaccio at localhost:4873; clear `@sparkleideas/*` cache |
 | 2 | Clone | 60s | Upstream repos copied to temp dir |
 | 3 | Codemod | 60s | Scope rename produces zero `@claude-flow/*` residuals |
 | 4 | Patch | 30s | All patches apply; sentinel files verify |
@@ -189,20 +193,20 @@ SAVE_TEST_RESULTS=1 npm test # Save TAP + manifest to test-results/
 | 6 | Upstream | 10s | Skipped (advisory only -- we don't rebuild from source) |
 | 7 | Publish | 180s | All packages publish to local Verdaccio; JSON summary |
 | 8 | Install | 120s | `npm install @sparkleideas/cli` resolves all deps from Verdaccio |
-| 9 | Cleanup | -- | Save logs, write results JSON, kill Verdaccio, remove temp dirs |
+| 9 | Cleanup | -- | Save logs, write results JSON, remove temp dirs |
 
 **What Layer 2 proves**: Pipeline mechanics work -- codemod transforms, patches apply, packages resolve, dependency tree is complete.
 **What Layer 2 does NOT prove**: Packages actually *work* (that's Layer 3). `test-integration.sh` does NOT build TypeScript -- packages have no `dist/` directory. This is correct: the integration test validates pipeline logic, not product functionality.
 
 **Properties**:
-- **Isolated Verdaccio**: Random port, fresh config, no shared storage
-- **External dep cache**: `/tmp/ruflo-verdaccio-cache/` persisted for performance
-- **Hermetic per-run**: Only `@sparkleideas/*` packages cleared between runs
+- **Permanent Verdaccio**: systemd user service at `localhost:4873`; scripts health-check it, never start/stop it
+- **External dep cache**: `~/.verdaccio/storage` (permanent, never cleared -- speeds up repeat runs)
+- **Hermetic per-run**: `@sparkleideas/*` packages cleared from storage at the start of each run; external deps persist
 - **Global timeout**: 600s (10 minutes)
 - **Per-phase heartbeat**: Logging every 10s to detect hangs
 - **Deterministic**: Upstream snapshots captured in test manifest
 
-**Verdaccio Configuration**:
+**Verdaccio Configuration** (`~/.verdaccio/config.yaml` -- permanent, not generated per-run):
 ```yaml
 max_body_size: 200mb        # Large packages (ruv-swarm, agentic-flow)
 uplinks:
@@ -254,8 +258,9 @@ packages:
 
 **Properties**:
 - **Runs during deployment only** -- RQ requires built artifacts, which only exist in `sync-and-build.sh`
-- **Uses its own Verdaccio** -- publishes built packages, installs into fresh temp dir
+- **Uses global Verdaccio** -- health-checks the permanent service at `localhost:4873`, clears `@sparkleideas/*`, publishes built packages, installs into fresh temp dir
 - **Hard fail** -- any RQ failure aborts the pipeline before publish to real npm
+- **Timeout**: 120s for the full RQ suite
 - **Cannot run standalone** -- `test-integration.sh` does NOT run RQ (no `dist/`)
 - **Estimated duration**: ~30s additional in the deployment pipeline
 
@@ -303,6 +308,8 @@ packages:
 - **Exit code** = number of failed tests (0 = all pass)
 - **Soft fail**: Failures create GitHub issues but don't un-publish
 - **Idempotent**: Uses temp dirs, cleans up after
+- **Timeout**: 300s global; per-test slow warnings for tests exceeding 30s
+- **Structured logging**: ISO8601 timestamps, per-test timing in results JSON
 
 **Output**: `test-results/{timestamp}/acceptance-results.json`
 
@@ -380,33 +387,29 @@ STANDALONE USE:
 
 ### 4.2 Verdaccio Lifecycle
 
-Verdaccio is used in two contexts with the same lifecycle but different inputs:
+Verdaccio runs as a **permanent systemd user service** (`verdaccio.service`) at `localhost:4873`. Scripts never start or stop Verdaccio -- they health-check it and clear only `@sparkleideas/*` packages before each run. The external dependency cache persists permanently across runs.
 
 **In `test-integration.sh` (Layer 2 -- pipeline mechanics)**:
 
 | Step | Action | Detail |
 |------|--------|--------|
-| 1 | Kill stale | `pkill -f verdaccio` (clean slate) |
-| 2 | Pick port | Random 4873-4999 (avoid conflicts) |
-| 3 | Generate config | Isolated YAML with auth, uplinks, package rules |
-| 4 | Start daemon | Background process with log capture |
-| 5 | Wait for ready | HTTP health check with retry |
-| 6 | Publish packages | All packages from git clone (**no dist/**) |
-| 7 | Install test | `npm install @sparkleideas/cli` from local registry |
-| 8 | Validate deps | Dep resolution, `npm ls`, package structure |
-| 9 | Capture logs | Copy verdaccio.log to results dir |
-| 10 | Kill daemon | Clean shutdown |
+| 1 | Health check | Verify Verdaccio is responding at `localhost:4873` |
+| 2 | Clear cache | Remove `@sparkleideas/*` packages from `~/.verdaccio/storage` |
+| 3 | Publish packages | All packages from git clone (**no dist/**) |
+| 4 | Install test | `npm install @sparkleideas/cli` from local registry |
+| 5 | Validate deps | Dep resolution, `npm ls`, package structure |
+| 6 | Capture logs | Copy verdaccio.log to results dir |
 
 **In `sync-and-build.sh` (Layer 3 -- release qualification)**:
 
 | Step | Action | Detail |
 |------|--------|--------|
-| 1-5 | Same as above | Verdaccio starts on random port |
-| 6 | Publish packages | All packages from build dir (**with dist/**) |
-| 7 | Install test | `npm install @sparkleideas/cli` from local registry |
-| 8 | RQ smoke tests | RQ-1 through RQ-12 against installed packages |
-| 9 | Capture logs | Copy verdaccio.log to results dir |
-| 10 | Kill daemon | Clean shutdown |
+| 1 | Health check | Verify Verdaccio is responding at `localhost:4873` |
+| 2 | Clear cache | Remove `@sparkleideas/*` packages from `~/.verdaccio/storage` |
+| 3 | Publish packages | All packages from build dir (**with dist/**) |
+| 4 | Install test | `npm install @sparkleideas/cli` from local registry |
+| 5 | RQ smoke tests | RQ-1 through RQ-12 against installed packages |
+| 6 | Capture logs | Copy verdaccio.log to results dir |
 
 The critical difference: `sync-and-build.sh` publishes **built** packages (TypeScript compiled to `dist/`), so RQ tests can execute them. `test-integration.sh` publishes from git clones (no `dist/`), so it can only validate structural correctness (packages resolve and install).
 
@@ -416,7 +419,9 @@ The critical difference: `sync-and-build.sh` publishes **built** packages (TypeS
 - **`proxy: npmjs`** uplink for external deps (lodash, better-sqlite3, etc.)
 - **No proxy for `@sparkleideas/*`** — forces local-only resolution
 - **htpasswd auth** — prevents accidental writes
-- **Persistent cache** at `/tmp/ruflo-verdaccio-cache/` — speeds up repeat runs (external deps only)
+- **Permanent storage** at `~/.verdaccio/storage` — external dep cache persists permanently, never cleared; only `@sparkleideas/*` packages are cleared per-run
+- **Verdaccio runs as systemd user service** (`verdaccio.service`), auto-starts on boot
+- **Config** at `~/.verdaccio/config.yaml` (permanent, not generated per-run)
 
 ---
 
@@ -578,7 +583,7 @@ Every bug caught at Layer 3 (Release Qualification) instead of Layer 4 (Producti
 All tests must satisfy:
 
 1. **No shared filesystem state** — use temp directories with cleanup
-2. **No persistent network connections** — Verdaccio starts/stops per run
+2. **No cross-run package leakage** — `@sparkleideas/*` packages cleared from permanent Verdaccio at the start of each run; external dep cache is shared but read-only from the test's perspective
 3. **No host-dependent paths** — use `$TMPDIR` or `/tmp/`
 4. **No time-dependent assertions** — no `sleep` + check patterns
 5. **No order-dependent execution** — each test file runs independently

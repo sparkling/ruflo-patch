@@ -328,35 +328,36 @@ If Gate 2 fails, packages remain on the `prerelease` dist-tag. Users on `@latest
 
 Verdaccio is the **staging environment**. All packages must pass both structural (Layer 2) and functional (Layer 3) validation against Verdaccio before reaching real npm. Verdaccio is not optional infrastructure -- it is architecturally required.
 
+**Verdaccio runs as a permanent systemd user service** at `localhost:4873`. Scripts no longer start or stop Verdaccio -- they health-check it and clear only `@sparkleideas/*` packages at the start of each run. External dependency caches persist permanently across runs, eliminating redundant downloads.
+
 **Verdaccio usage differs by context**:
 
 **In `test-integration.sh` (Layer 2 -- pipeline mechanics test)**:
 
-1. Kill any stale Verdaccio processes
-2. Pick random port (4873-4999) to prevent conflicts
-3. Generate isolated config (auth, uplinks, package rules)
-4. Start daemon with log capture
-5. Wait for ready (HTTP health check with retry)
-6. Publish all packages from git clone (no `dist/`) -- **Layer 2**
-7. Install `@sparkleideas/cli` from local registry -- **Layer 2**
-8. Validate deps (`npm ls`, package structure) -- **Layer 2**
-9. Capture logs, kill daemon, clean up
+1. Health-check Verdaccio at `localhost:4873` (fail if not running)
+2. Clear `@sparkleideas/*` packages from storage (external dep cache untouched)
+3. Publish all packages from git clone (no `dist/`) -- **Layer 2**
+4. Install `@sparkleideas/cli` from local registry -- **Layer 2**
+5. Validate deps (`npm ls`, package structure) -- **Layer 2**
+6. Capture logs, clean up temp dirs (Verdaccio stays running)
 
 **In `sync-and-build.sh` (Layer 3 -- release qualification)**:
 
-1. Start Verdaccio (same lifecycle as above)
-2. Publish **built** packages (with `dist/` from TypeScript build) -- **Layer 2**
-3. Install packages from Verdaccio -- **Layer 2**
-4. Run RQ-1 through RQ-12 against installed packages -- **Layer 3**
-5. Capture logs, kill daemon, clean up
+1. Health-check Verdaccio at `localhost:4873` (fail if not running)
+2. Clear `@sparkleideas/*` packages from storage (external dep cache untouched)
+3. Publish **built** packages (with `dist/` from TypeScript build) -- **Layer 2**
+4. Install packages from Verdaccio -- **Layer 2**
+5. Run RQ-1 through RQ-12 against installed packages -- **Layer 3**
+6. Capture logs, clean up temp dirs (Verdaccio stays running)
 
 The critical difference: `sync-and-build.sh` builds TypeScript (Phase 7) before publishing, so packages have `dist/` and RQ tests can execute them. `test-integration.sh` does not build -- it validates pipeline mechanics only.
 
 **Configuration rules**:
+- Permanent config at `~/.verdaccio/config.yaml`, storage at `~/.verdaccio/storage`
 - `max_body_size: 200mb` (required for large packages like ruv-swarm)
 - `proxy: npmjs` uplink for external deps only
 - No proxy for `@sparkleideas/*` (forces local-only resolution)
-- Persistent external dep cache at `/tmp/ruflo-verdaccio-cache/`
+- External dep cache persists permanently in `~/.verdaccio/storage/` (never cleared)
 - Per-run isolation: only `@sparkleideas/*` packages cleared between runs
 
 #### Decision 5: Hermetic Test Requirements
@@ -366,7 +367,7 @@ All tests must satisfy Google's hermeticity standards:
 | Property | Requirement |
 |----------|------------|
 | No shared filesystem state | Use `mkdtempSync()` with cleanup in `afterEach` |
-| No persistent network | Verdaccio starts/stops per run |
+| No persistent network | Verdaccio is always-on (systemd service); test isolation achieved by clearing `@sparkleideas/*` packages per run |
 | No host-dependent paths | Use `$TMPDIR` or `/tmp/` |
 | No time-dependent assertions | No `sleep` + check patterns |
 | No order-dependent execution | Each test file runs independently |
@@ -518,7 +519,7 @@ The adopted approach (Decision 9) adds Layer 3 (Release Qualification) to run th
 
 #### Option 7: Separate Verdaccio Instance for Release Qualification
 
-**Rejected**. Running Layer 3 against a second Verdaccio instance would add setup time, port management, and complexity for zero benefit. Layer 3 reuses a Verdaccio instance with the built packages already published and installed.
+**Rejected**. Running Layer 3 against a second Verdaccio instance would add setup time, port management, and complexity for zero benefit. A single permanent Verdaccio systemd service at `localhost:4873` is now used by both Layer 2 (`test-integration.sh`) and Layer 3 (`sync-and-build.sh`). Test isolation is achieved by clearing `@sparkleideas/*` packages at the start of each run, not by spinning up separate instances.
 
 #### Option 8: Put RQ in test-integration.sh
 
@@ -554,7 +555,7 @@ RQ belongs in `sync-and-build.sh` where built artifacts exist.
 
 - **Documentation overhead** -- new tests must declare their size and layer, adding friction for contributors
 - **Skip threshold** -- the max-8-skipped enforcement may force premature removal of tests that are difficult to fix but still provide value
-- **Verdaccio dependency** -- Verdaccio is now architecturally required, not optional; if Verdaccio has breaking changes, the integration test pipeline breaks
+- **Verdaccio dependency** -- Verdaccio is now architecturally required as a permanent systemd user service, not optional. This eliminates per-run startup overhead (~5s saved per run) but adds a system dependency: the service must be running before any Layer 2 or Layer 3 test can execute. If the service is down, scripts fail at the health-check step. If Verdaccio has breaking changes, the entire test pipeline breaks
 - **RQ only runs during deployment** -- `test-integration.sh` alone does NOT run RQ. Functional validation requires running the full `sync-and-build.sh` pipeline. This is by design (RQ needs built artifacts) but means developers can't run RQ in isolation
 - **Shared library coupling** -- `lib/acceptance-checks.sh` must work in both Verdaccio and real npm contexts. Tests that depend on registry-specific behavior must be excluded and maintained separately in `test-acceptance.sh`
 
@@ -584,9 +585,9 @@ RQ belongs in `sync-and-build.sh` where built artifacts exist.
 - [x] Cost analysis: +30s deploy time, +1 file, 0 new infrastructure
 - [x] `lib/acceptance-checks.sh` implemented (shared test functions)
 - [x] `test-acceptance.sh` refactored to source shared library
-- [ ] `sync-and-build.sh` run_tests() updated with RQ phase
-- [ ] `qualification-results.json` emitted by sync-and-build.sh
-- [ ] `test-integration.sh` Phase 9 (RQ) removed (revert to 9-phase: 1-8 + cleanup)
+- [x] `sync-and-build.sh` run_tests() updated with RQ phase
+- [x] `qualification-results.json` emitted by sync-and-build.sh
+- [x] `test-integration.sh` Phase 9 (RQ) removed (revert to 9-phase: 1-8 + cleanup)
 
 **Implementation plan**:
 
