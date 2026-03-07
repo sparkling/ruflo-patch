@@ -1,0 +1,396 @@
+#!/usr/bin/env bash
+# lib/acceptance-checks.sh — Shared functional test library (ADR-0023)
+#
+# Defines test functions used by both:
+#   - test-integration.sh Phase 9 (Layer 3: Release Qualification, Verdaccio)
+#   - test-acceptance.sh (Layer 4: Production Verification, real npm)
+#
+# One definition, two execution contexts. Adding a test here
+# automatically runs it in both layers.
+#
+# Contract:
+#   Caller MUST set:  REGISTRY, TEMP_DIR, PKG
+#   Caller MUST define: run_timed (sets _OUT, _EXIT, _DURATION_MS)
+#   Each check_* function sets: _CHECK_PASSED ("true"/"false"), _CHECK_OUTPUT
+#
+# Registry-specific tests (A8 dist-tag, A16 plugin install) are NOT
+# in this library — they live in test-acceptance.sh only.
+
+# --------------------------------------------------------------------------
+# RQ-1 / A1: Version check
+# --------------------------------------------------------------------------
+check_version() {
+  run_timed "NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '$PKG' --version"
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="$_OUT"
+  if [[ $_EXIT -eq 0 && -n "$_OUT" ]]; then
+    if echo "$_OUT" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+      _CHECK_PASSED="true"
+    fi
+  fi
+}
+
+# --------------------------------------------------------------------------
+# RQ-2 / A2: Init
+# --------------------------------------------------------------------------
+check_init() {
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '$PKG' init"
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="$_OUT"
+  if [[ $_EXIT -eq 0 ]]; then
+    _CHECK_PASSED="true"
+  fi
+}
+
+# --------------------------------------------------------------------------
+# RQ-3 / A3: Settings file
+# --------------------------------------------------------------------------
+check_settings_file() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+  if [[ -f "$TEMP_DIR/.claude/settings.json" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="File exists: $TEMP_DIR/.claude/settings.json"
+  else
+    _CHECK_OUTPUT="Missing: $TEMP_DIR/.claude/settings.json"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT\nContents of temp dir:"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(find "$TEMP_DIR" -maxdepth 3 -type f 2>/dev/null | head -20)"
+  fi
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# RQ-4 / A4: Scope check
+# --------------------------------------------------------------------------
+check_scope() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+  if [[ -f "$TEMP_DIR/CLAUDE.md" ]]; then
+    local matches
+    matches=$(grep -c '@sparkleideas' "$TEMP_DIR/CLAUDE.md" 2>/dev/null || echo "0")
+    if [[ "$matches" -ge 1 ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Found $matches @sparkleideas references in CLAUDE.md"
+    else
+      _CHECK_OUTPUT="No @sparkleideas references found in CLAUDE.md"
+      _CHECK_OUTPUT="$_CHECK_OUTPUT\nHead of CLAUDE.md:\n$(head -20 "$TEMP_DIR/CLAUDE.md" 2>/dev/null)"
+    fi
+  else
+    _CHECK_OUTPUT="Missing: $TEMP_DIR/CLAUDE.md"
+  fi
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# RQ-5 / A5: Doctor
+# --------------------------------------------------------------------------
+check_doctor() {
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '$PKG' doctor --fix"
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="$_OUT"
+  if [[ $_EXIT -eq 0 ]]; then
+    if ! echo "$_OUT" | grep -q 'MODULE_NOT_FOUND'; then
+      _CHECK_PASSED="true"
+    fi
+  fi
+}
+
+# --------------------------------------------------------------------------
+# RQ-6 / A6: MCP config
+# --------------------------------------------------------------------------
+check_mcp_config() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+  if [[ -f "$TEMP_DIR/.mcp.json" ]]; then
+    if grep -q 'autoStart.*false' "$TEMP_DIR/.mcp.json" 2>/dev/null; then
+      _CHECK_OUTPUT="Found autoStart: false in .mcp.json (MC-001 patch not applied)"
+      _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(cat "$TEMP_DIR/.mcp.json" 2>/dev/null)"
+    else
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="File exists, no autoStart: false found"
+    fi
+  else
+    _CHECK_OUTPUT="Missing: $TEMP_DIR/.mcp.json"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT\nContents of temp dir:"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(find "$TEMP_DIR" -maxdepth 3 -type f 2>/dev/null | head -20)"
+  fi
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# RQ-7 / A7: Wrapper proxy
+# --------------------------------------------------------------------------
+check_wrapper_proxy() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+
+  local wrapper_out
+  wrapper_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes @sparkleideas/ruflo@latest --version 2>&1) || true
+
+  if echo "$wrapper_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+    local doctor_out
+    doctor_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx @sparkleideas/ruflo@latest doctor 2>&1) || true
+    if echo "$doctor_out" | grep -qi 'doctor\|diagnostics\|passed'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Wrapper proxy works: version=$(echo "$wrapper_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
+    else
+      _CHECK_OUTPUT="Wrapper --version works but doctor command failed"
+      _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(echo "$doctor_out" | head -10)"
+    fi
+  else
+    _CHECK_OUTPUT="Wrapper --version failed or returned no version"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(echo "$wrapper_out" | head -10)"
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# RQ-8 / A9: Memory lifecycle
+# --------------------------------------------------------------------------
+check_memory_lifecycle() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Init memory
+  local init_out
+  init_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes "$PKG" memory init 2>&1) || true
+  if ! echo "$init_out" | grep -qi 'initialized\|verification passed'; then
+    _CHECK_OUTPUT="Memory init failed:\n$(echo "$init_out" | tail -10)"
+    end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    _EXIT=0
+    [[ "$start_ns" != "0" && "$end_ns" != "0" ]] && _DURATION_MS=$(( (end_ns - start_ns) / 1000000 )) || _DURATION_MS=0
+    _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Store
+  local store_out
+  store_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory store \
+    --key "test-pattern" \
+    --value "Integration test: JWT auth with refresh tokens for stateless APIs" \
+    --namespace test-ns --tags "test,acceptance" 2>&1) || true
+  if ! echo "$store_out" | grep -qi 'stored\|success'; then
+    _CHECK_OUTPUT="Memory store failed:\n$(echo "$store_out" | tail -10)"
+    end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    _EXIT=0
+    [[ "$start_ns" != "0" && "$end_ns" != "0" ]] && _DURATION_MS=$(( (end_ns - start_ns) / 1000000 )) || _DURATION_MS=0
+    _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Search (semantic)
+  local search_out
+  search_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory search \
+    --query "authentication tokens" --namespace test-ns 2>&1) || true
+  if ! echo "$search_out" | grep -q 'test-pattern'; then
+    _CHECK_OUTPUT="Memory search did not find stored entry:\n$(echo "$search_out" | tail -10)"
+    end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    _EXIT=0
+    [[ "$start_ns" != "0" && "$end_ns" != "0" ]] && _DURATION_MS=$(( (end_ns - start_ns) / 1000000 )) || _DURATION_MS=0
+    _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Retrieve
+  local retrieve_out
+  retrieve_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory retrieve \
+    --key "test-pattern" --namespace test-ns 2>&1) || true
+  if echo "$retrieve_out" | grep -q 'JWT auth'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="init > store > search found test-pattern > retrieve value matches"
+  else
+    _CHECK_OUTPUT="Memory retrieve did not return stored value:\n$(echo "$retrieve_out" | tail -10)"
+  fi
+
+  # Verify storage files exist
+  if [[ "$_CHECK_PASSED" == "true" ]]; then
+    local db_found="false"
+    for db_path in "$TEMP_DIR/.swarm/memory.db" "$TEMP_DIR/.claude/memory.db"; do
+      if [[ -f "$db_path" ]]; then
+        db_found="true"
+        break
+      fi
+    done
+    if [[ "$db_found" == "false" ]]; then
+      _CHECK_PASSED="false"
+      _CHECK_OUTPUT="$_CHECK_OUTPUT\nWARNING: No memory.db file found on disk"
+    else
+      _CHECK_OUTPUT="$_CHECK_OUTPUT\nStorage verified on disk"
+    fi
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# RQ-9 / A10: Neural training
+# --------------------------------------------------------------------------
+check_neural_training() {
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx '$PKG' neural train --pattern coordination"
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="$_OUT"
+  if [[ $_EXIT -eq 0 ]]; then
+    if echo "$_OUT" | grep -qi 'patterns\|training complete\|saved'; then
+      if [[ -f "$TEMP_DIR/.claude-flow/neural/patterns.json" ]]; then
+        local pattern_count
+        pattern_count=$(python3 -c "import json; print(len(json.load(open('$TEMP_DIR/.claude-flow/neural/patterns.json'))))" 2>/dev/null || echo "0")
+        if [[ "$pattern_count" -gt 0 ]]; then
+          _CHECK_PASSED="true"
+          _CHECK_OUTPUT="Neural training complete, $pattern_count patterns persisted to disk"
+        else
+          _CHECK_OUTPUT="Training ran but patterns.json is empty"
+        fi
+      else
+        _CHECK_OUTPUT="Training ran but no patterns.json found on disk"
+      fi
+    fi
+  fi
+}
+
+# --------------------------------------------------------------------------
+# RQ-10 / A13: Agent Booster ESM import
+# --------------------------------------------------------------------------
+check_agent_booster_esm() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+
+  local import_out
+  import_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node -e "
+    import('@sparkleideas/agent-booster')
+      .then(m => { console.log('IMPORT_OK'); console.log(Object.keys(m).join(',')); })
+      .catch(e => { console.log('IMPORT_FAIL: ' + e.message); process.exit(1); })
+  " 2>&1) || true
+
+  if echo "$import_out" | grep -q 'IMPORT_OK'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="agent-booster module imported successfully: $(echo "$import_out" | tail -1)"
+  else
+    _CHECK_OUTPUT="Failed to import @sparkleideas/agent-booster: $(echo "$import_out" | head -5)"
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# RQ-11 / A14: Agent Booster binary
+# --------------------------------------------------------------------------
+check_agent_booster_bin() {
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes @sparkleideas/agent-booster --version"
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="$_OUT"
+  if [[ $_EXIT -eq 0 && -n "$_OUT" ]]; then
+    if echo "$_OUT" | grep -qE '[0-9]+\.[0-9]+'; then
+      _CHECK_PASSED="true"
+    fi
+  fi
+}
+
+# --------------------------------------------------------------------------
+# RQ-12 / A15: Plugins SDK import
+# --------------------------------------------------------------------------
+check_plugins_sdk() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+
+  local import_out
+  import_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node -e "
+    import('@sparkleideas/plugins')
+      .then(m => { console.log('IMPORT_OK'); console.log(Object.keys(m).join(',')); })
+      .catch(e => { console.log('IMPORT_FAIL: ' + e.message); process.exit(1); })
+  " 2>&1) || true
+
+  if echo "$import_out" | grep -q 'IMPORT_OK'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="plugins SDK imported: $(echo "$import_out" | tail -1)"
+  else
+    _CHECK_OUTPUT="Failed to import @sparkleideas/plugins: $(echo "$import_out" | head -5)"
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# Run all shared checks. Caller provides run_check() wrapper.
+#
+# Usage:
+#   run_check "RQ-1" "Version check" check_version
+#   run_check "RQ-2" "Init" check_init
+#   ... etc
+#
+# The run_check function must be defined by the caller. It should:
+#   1. Call the check function
+#   2. Read _CHECK_PASSED, _CHECK_OUTPUT, _OUT, _EXIT, _DURATION_MS
+#   3. Record the result in its own format
+# --------------------------------------------------------------------------
+run_all_shared_checks() {
+  run_check "RQ-1"  "Version check"       check_version
+  run_check "RQ-2"  "Init"                check_init
+  run_check "RQ-3"  "Settings file"       check_settings_file
+  run_check "RQ-4"  "Scope check"         check_scope
+  run_check "RQ-5"  "Doctor"              check_doctor
+  run_check "RQ-6"  "MCP config"          check_mcp_config
+  run_check "RQ-7"  "Wrapper proxy"       check_wrapper_proxy
+  run_check "RQ-8"  "Memory lifecycle"    check_memory_lifecycle
+  run_check "RQ-9"  "Neural training"     check_neural_training
+  run_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
+  run_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
+  run_check "RQ-12" "Plugins SDK"         check_plugins_sdk
+}

@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# scripts/test-integration.sh — 9-phase integration test for ruflo.
+# scripts/test-integration.sh — 10-phase integration test for ruflo.
 #
 # Runs the full build pipeline against real upstream code, publishing to a
-# local Verdaccio registry. See ADR-0020 (testing-strategy) for details.
+# local Verdaccio registry. See ADR-0023 (google-testing-framework) for details.
+#
+# Phases 1-8: Layer 2 (Build Verification)
+# Phase 9:    Layer 3 (Release Qualification — functional smoke tests)
+# Phase 10:   Cleanup
 #
 # Usage:
 #   bash scripts/test-integration.sh
@@ -87,7 +91,7 @@ log_error() {
 phase_log() {
   local phase_num="$1"
   shift
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [Phase ${phase_num}/9] $*"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [Phase ${phase_num}/10] $*"
 }
 
 # ---------------------------------------------------------------------------
@@ -917,26 +921,163 @@ IEOF
 }
 
 # ---------------------------------------------------------------------------
-# Phase 9: Cleanup
+# Phase 9: Release Qualification (ADR-0023 Layer 3)
+# ---------------------------------------------------------------------------
+
+phase_release_qualification() {
+  local start
+  start=$(now_ns)
+
+  phase_log "9" "Release Qualification - functional smoke tests against Verdaccio install"
+
+  # Source the shared test library
+  local checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
+  if [[ ! -f "$checks_lib" ]]; then
+    log_error "Shared test library not found: $checks_lib"
+    local end; end=$(now_ns)
+    record_phase "release-qualification" "false" "$(elapsed_ms "$start" "$end")" "Missing lib/acceptance-checks.sh"
+    return 1
+  fi
+  # shellcheck source=../lib/acceptance-checks.sh
+  source "$checks_lib"
+
+  # Set up environment for shared checks
+  REGISTRY="http://localhost:${VERDACCIO_PORT}"
+  PKG="@sparkleideas/cli"
+
+  # Create a fresh temp dir for RQ tests (init, doctor, etc.)
+  local rq_temp
+  rq_temp=$(mktemp -d /tmp/ruflo-rq-XXXXX)
+  TEMP_DIR="$rq_temp"
+
+  # Install CLI into the RQ temp dir so npx resolves locally
+  phase_log "9" "Installing @sparkleideas/cli into RQ temp dir..."
+  (cd "$rq_temp" && cat > package.json <<'RQEOF'
+{"name":"ruflo-rq-test","version":"1.0.0","private":true}
+RQEOF
+  echo "registry=http://localhost:${VERDACCIO_PORT}" > .npmrc
+  npm install @sparkleideas/cli @sparkleideas/ruflo @sparkleideas/agent-booster @sparkleideas/plugins \
+    --registry "http://localhost:${VERDACCIO_PORT}" \
+    --ignore-scripts --no-audit --no-fund 2>&1) || {
+    log_error "Failed to install packages for RQ tests"
+    rm -rf "$rq_temp"
+    local end; end=$(now_ns)
+    record_phase "release-qualification" "false" "$(elapsed_ms "$start" "$end")" "npm install for RQ failed"
+    return 1
+  }
+
+  # RQ result tracking
+  local rq_pass=0
+  local rq_fail=0
+  local rq_total=0
+  local rq_results_json="[]"
+
+  # run_timed is already used by test-acceptance.sh; define it here for the shared library
+  run_timed() {
+    local t_start t_end
+    t_start=$(date +%s%N 2>/dev/null || echo 0)
+    _OUT="$(eval "$@" 2>&1)" || true
+    _EXIT=${PIPESTATUS[0]:-$?}
+    t_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$t_start" == "0" || "$t_end" == "0" ]]; then
+      _DURATION_MS=0
+    else
+      _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
+    fi
+  }
+
+  # run_check wraps each shared check function for Phase 9 tracking
+  run_check() {
+    local id="$1" name="$2" fn="$3"
+    rq_total=$((rq_total + 1))
+    phase_log "9" "  Running $id: $name..."
+    "$fn"
+    local escaped_output
+    escaped_output=$(printf '%s' "${_CHECK_OUTPUT:-$_OUT}" | head -c 2048 | python3 -c '
+import sys, json
+data = sys.stdin.read()
+print(json.dumps(data), end="")
+' 2>/dev/null || echo '""')
+
+    if [[ "$_CHECK_PASSED" == "true" ]]; then
+      rq_pass=$((rq_pass + 1))
+      phase_log "9" "  PASS  $id: $name"
+    else
+      rq_fail=$((rq_fail + 1))
+      phase_log "9" "  FAIL  $id: $name"
+      echo "${_CHECK_OUTPUT:-$_OUT}" | head -5 | while IFS= read -r line; do
+        phase_log "9" "        $line"
+      done
+    fi
+
+    local entry
+    entry=$(printf '{"id":"%s","name":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
+      "$id" "$name" "$_CHECK_PASSED" "$escaped_output" "${_DURATION_MS:-0}")
+    if [[ "$rq_results_json" == "[]" ]]; then
+      rq_results_json="[$entry]"
+    else
+      rq_results_json="${rq_results_json%]}, $entry]"
+    fi
+  }
+
+  # Run all shared checks
+  run_all_shared_checks
+
+  # Write qualification-results.json
+  cat > "${RESULTS_DIR}/qualification-results.json" <<RQJSON
+{
+  "timestamp": "${TIMESTAMP}",
+  "registry": "${REGISTRY}",
+  "layer": 3,
+  "gate": 1,
+  "tests": ${rq_results_json},
+  "summary": {
+    "total": ${rq_total},
+    "passed": ${rq_pass},
+    "failed": ${rq_fail}
+  }
+}
+RQJSON
+
+  # Clean up RQ temp dir
+  rm -rf "$rq_temp"
+
+  phase_log "9" "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
+
+  local end
+  end=$(now_ns)
+
+  if [[ $rq_fail -gt 0 ]]; then
+    record_phase "release-qualification" "false" "$(elapsed_ms "$start" "$end")" "${rq_fail}/${rq_total} RQ tests failed"
+    phase_log "9" "RELEASE QUALIFICATION FAILED — ${rq_fail} functional test(s) failed"
+    return 1
+  fi
+
+  record_phase "release-qualification" "true" "$(elapsed_ms "$start" "$end")" "${rq_pass}/${rq_total} RQ tests passed"
+  phase_log "9" "Release Qualification complete ($(elapsed_ms "$start" "$end")ms)"
+}
+
+# ---------------------------------------------------------------------------
+# Phase 10: Cleanup
 # ---------------------------------------------------------------------------
 
 phase_cleanup() {
   local start
   start=$(now_ns)
 
-  phase_log "9" "Cleanup - copying Verdaccio log and writing final results"
+  phase_log "10" "Cleanup - copying Verdaccio log and writing final results"
 
   # Copy Verdaccio log to results
   if [[ -f "${VERDACCIO_HOME}/verdaccio.log" ]]; then
     cp "${VERDACCIO_HOME}/verdaccio.log" "${RESULTS_DIR}/verdaccio.log"
-    phase_log "9" "Verdaccio log saved to ${RESULTS_DIR}/verdaccio.log"
+    phase_log "10" "Verdaccio log saved to ${RESULTS_DIR}/verdaccio.log"
   else
     echo "(no verdaccio log found)" > "${RESULTS_DIR}/verdaccio.log"
   fi
 
   # Write integration-phases.json
   echo "${PHASE_RESULTS}" | jq '.' > "${RESULTS_DIR}/integration-phases.json"
-  phase_log "9" "Phase results written to ${RESULTS_DIR}/integration-phases.json"
+  phase_log "10" "Phase results written to ${RESULTS_DIR}/integration-phases.json"
 
   # Copy manifest to results (it was written in phase 1)
   # Already exists at ${RESULTS_DIR}/.test-manifest.json
@@ -945,7 +1086,7 @@ phase_cleanup() {
   if [[ -n "${VERDACCIO_PID}" ]]; then
     kill "${VERDACCIO_PID}" 2>/dev/null || true
     wait "${VERDACCIO_PID}" 2>/dev/null || true
-    phase_log "9" "Verdaccio stopped"
+    phase_log "10" "Verdaccio stopped"
     VERDACCIO_PID=""  # Prevent double-kill in trap
   fi
 
@@ -953,7 +1094,7 @@ phase_cleanup() {
   for d in "${TEMP_BUILD}" "${TEMP_INSTALL}"; do
     if [[ -n "$d" && -d "$d" ]]; then
       rm -rf "$d"
-      phase_log "9" "Removed $d"
+      phase_log "10" "Removed $d"
     fi
   done
   # Clear vars so trap handler skips them
@@ -964,7 +1105,7 @@ phase_cleanup() {
   local end
   end=$(now_ns)
   record_phase "cleanup" "true" "$(elapsed_ms "$start" "$end")" "All resources released"
-  phase_log "9" "Cleanup complete ($(elapsed_ms "$start" "$end")ms)"
+  phase_log "10" "Cleanup complete ($(elapsed_ms "$start" "$end")ms)"
 
   # Re-write phases JSON with cleanup included
   echo "${PHASE_RESULTS}" | jq '.' > "${RESULTS_DIR}/integration-phases.json"
@@ -982,7 +1123,7 @@ main() {
   log "ruflo integration test starting"
   log "=========================================="
   log "Phase timeouts: setup=30s clone=60s codemod=60s patch=30s"
-  log "                build=30s upstream=10s publish=180s install=120s"
+  log "                build=30s upstream=10s publish=180s install=120s rq=120s"
   log "Global timeout: 600s (10 min)"
   log "=========================================="
 
@@ -1027,7 +1168,12 @@ main() {
     run_phase_with_timeout 120 phase_install || phase_failed="install"
   fi
 
-  # Phase 9 always runs (cleanup)
+  # Phase 9: Release Qualification (ADR-0023 Layer 3)
+  if [[ -z "$phase_failed" ]]; then
+    run_phase_with_timeout 120 phase_release_qualification || phase_failed="release-qualification"
+  fi
+
+  # Phase 10 always runs (cleanup)
   phase_cleanup
 
   # Cancel global timeout
