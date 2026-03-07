@@ -9,13 +9,15 @@ npx @sparkleideas/cli plugins install --name <plugin-name>
 
 **Install command (upstream):**
 ```bash
-npx @claude-flow/cli plugins install --name <plugin-name>
+npx @sparkleideas/cli plugins install --name <plugin-name>
 ```
 
 **List installed plugins:**
 ```bash
 npx @sparkleideas/cli plugins list
 ```
+
+> **Note:** All plugins are now available under the `@sparkleideas/*` scope (ADR-0022).
 
 ---
 
@@ -42,11 +44,11 @@ npx @sparkleideas/cli plugins list
 
 ## 1. Agentic QE
 
-**Package:** `@claude-flow/plugin-agentic-qe`
+**Package:** `@sparkleideas/plugin-agentic-qe`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-agentic-qe
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-agentic-qe
 ```
 
 AI-powered quality engineering that writes tests, finds bugs, and breaks things (safely) so your users don't have to. This plugin adds 58 AI agents to Claude Flow that handle all aspects of software quality. It writes unit tests, integration tests, E2E tests, and chaos tests automatically. It finds coverage gaps, showing exactly which code paths aren't tested. It includes ML-based defect prediction from code patterns, security scanning to find vulnerabilities, secrets, and compliance issues, and chaos engineering to test system resilience safely.
@@ -65,11 +67,11 @@ The plugin supports a full TDD workflow — give it a requirement and it runs th
 
 ## 2. Code Intelligence
 
-**Package:** `@claude-flow/plugin-code-intelligence`
+**Package:** `@sparkleideas/plugin-code-intelligence`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-code-intelligence
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-code-intelligence
 ```
 
 A comprehensive code intelligence plugin combining graph neural networks for code structure analysis with ultra-fast vector search for semantic code similarity. It enables dead code detection, API surface analysis, refactoring impact prediction, and architectural drift monitoring while integrating seamlessly with existing IDE workflows.
@@ -89,11 +91,11 @@ The semantic code search finds similar code across the entire codebase using nat
 
 ## 3. Cognitive Kernel
 
-**Package:** `@claude-flow/plugin-cognitive-kernel`
+**Package:** `@sparkleideas/plugin-cognitive-kernel`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-cognitive-kernel
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-cognitive-kernel
 ```
 
 A cutting-edge cognitive augmentation plugin combining the Cognitum Gate Kernel with SONA self-optimizing architecture to provide LLMs with enhanced cognitive capabilities. It enables dynamic working memory, attention control mechanisms, meta-cognitive self-monitoring, and cognitive scaffolding while maintaining low latency through WASM acceleration.
@@ -113,11 +115,11 @@ Working memory management uses Miller's number (7 slots) with configurable capac
 
 ## 4. Financial Risk
 
-**Package:** `@claude-flow/plugin-financial-risk`
+**Package:** `@sparkleideas/plugin-financial-risk`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-financial-risk
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-financial-risk
 ```
 
 A high-performance financial risk analysis plugin combining sparse inference for efficient market signal processing with graph neural networks for transaction network analysis. It enables real-time anomaly detection, portfolio risk scoring, and automated compliance reporting while maintaining the explainability required by financial regulators (SEC, FINRA, Basel III).
@@ -137,11 +139,11 @@ Portfolio risk analysis calculates VaR, CVaR, Sharpe ratio, Sortino ratio, and m
 
 ## 5. Gastown Bridge
 
-**Package:** `@claude-flow/plugin-gastown-bridge`
+**Package:** `@sparkleideas/plugin-gastown-bridge`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-gastown-bridge
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-gastown-bridge
 ```
 
 WASM-accelerated bridge to Steve Yegge's Gas Town multi-agent orchestrator. Gas Town is a 75,000-line Go codebase that implements battle-tested concepts for durable workflow execution: Beads (git-backed issue tracking with graph semantics), Formulas (TOML-defined workflows), Convoys (work-order tracking for "slung" work between agents), GUPP (crash-resilient execution), and Molecules/Wisps (chained work units for resumable workflows).
@@ -159,17 +161,15 @@ The plugin also provides bidirectional sync between Gas Town's Beads and Claude 
 
 **WASM speedups:** Formula parse 352x, variable cooking 350x, DAG sort 150x, HNSW search 1,000x-12,500x
 
-**Note:** This plugin is an `optionalDependency` of `@claude-flow/cli` and is a candidate for integration into the `@sparkleideas` scope (see [ADR-0022](adr/0022-full-ecosystem-repackaging.md) and [package matrix](ruvnet.packages.and.source.location.md)).
-
 ---
 
 ## 6. Healthcare Clinical
 
-**Package:** `@claude-flow/plugin-healthcare-clinical`
+**Package:** `@sparkleideas/plugin-healthcare-clinical`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-healthcare-clinical
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-healthcare-clinical
 ```
 
 A HIPAA-compliant clinical decision support plugin that combines ultra-fast vector search for medical literature retrieval with graph neural networks for patient pathway analysis. It enables semantic search across medical records, drug interaction detection, and evidence-based treatment recommendations while maintaining strict data privacy through on-device WASM processing — no patient data leaves the local machine.
@@ -189,11 +189,11 @@ Patient similarity search finds comparable clinical cases based on diagnoses (IC
 
 ## 7. Hyperbolic Reasoning
 
-**Package:** `@claude-flow/plugin-hyperbolic-reasoning`
+**Package:** `@sparkleideas/plugin-hyperbolic-reasoning`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-hyperbolic-reasoning
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-hyperbolic-reasoning
 ```
 
 An exotic reasoning plugin implementing hyperbolic neural networks for superior hierarchical understanding. Hyperbolic space (specifically the Poincare ball model) naturally represents tree-like and hierarchical structures with exponentially more capacity than Euclidean space — a property that makes it ideal for modeling taxonomies, organizational hierarchies, file system structures, and code dependency trees.
@@ -212,11 +212,11 @@ The plugin enables efficient representation of tree structures through Poincare 
 
 ## 8. Legal Contracts
 
-**Package:** `@claude-flow/plugin-legal-contracts`
+**Package:** `@sparkleideas/plugin-legal-contracts`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-legal-contracts
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-legal-contracts
 ```
 
 A comprehensive legal contract analysis plugin combining hyperbolic embeddings for legal ontology navigation with fast vector search for clause similarity. It enables automated clause extraction, risk scoring, obligation tracking, and regulatory compliance checking while maintaining attorney-client privilege through on-device processing — no contract text is sent to external services.
@@ -236,11 +236,11 @@ Clause extraction identifies and classifies contract clauses by type (indemnific
 
 ## 9. Neural Coordination
 
-**Package:** `@claude-flow/plugin-neural-coordination`
+**Package:** `@sparkleideas/plugin-neural-coordination`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-neural-coordination
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-neural-coordination
 ```
 
 A cutting-edge multi-agent coordination plugin combining the SONA self-optimizing neural architecture with graph neural networks for agent communication topology optimization. It enables emergent protocol development, neural consensus mechanisms, collective memory formation, and adaptive swarm behavior while maintaining interpretability of agent interactions.
@@ -260,11 +260,11 @@ Neural consensus allows agents with different preference weights to negotiate de
 
 ## 10. Performance Optimizer
 
-**Package:** `@claude-flow/plugin-performance-optimizer`
+**Package:** `@sparkleideas/plugin-performance-optimizer`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-performance-optimizer
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-performance-optimizer
 ```
 
 A comprehensive performance optimization plugin combining sparse inference for efficient trace analysis with graph neural networks for dependency chain optimization. It enables intelligent bottleneck detection, memory leak identification, N+1 query detection, and bundle size optimization while providing explainable recommendations based on historical performance patterns.
@@ -284,11 +284,11 @@ Bottleneck detection uses GNN-based dependency analysis on trace data (OpenTelem
 
 ## 11. Prime Radiant
 
-**Package:** `@claude-flow/plugin-prime-radiant`
+**Package:** `@sparkleideas/plugin-prime-radiant`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-prime-radiant
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-prime-radiant
 ```
 
 Mathematical AI that catches contradictions, verifies consensus, and prevents hallucinations before they cause problems. This plugin brings advanced mathematical techniques to Claude Flow for ensuring AI reliability: coherence checking detects when information contradicts itself before storing it, consensus verification mathematically verifies that multiple agents actually agree (not just appear to), and hallucination prevention catches inconsistent RAG results before they reach users.
@@ -308,11 +308,11 @@ The coherence checker uses energy-based models where low energy (0.0-0.1) indica
 
 ## 12. Quantum Optimizer
 
-**Package:** `@claude-flow/plugin-quantum-optimizer`
+**Package:** `@sparkleideas/plugin-quantum-optimizer`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-quantum-optimizer
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-quantum-optimizer
 ```
 
 An exotic optimization plugin implementing quantum-inspired algorithms including Quantum Annealing simulation, QAOA (Quantum Approximate Optimization Algorithm) emulation, and Grover-inspired search acceleration. The plugin provides dramatic speedups for dependency resolution, optimal scheduling, and constraint satisfaction while running entirely on classical WASM-accelerated hardware — no quantum computer required.
@@ -333,11 +333,11 @@ Quantum annealing solves combinatorial optimization problems (QUBO, Ising models
 
 ## 13. Teammate Plugin
 
-**Package:** `@claude-flow/teammate-plugin`
+**Package:** `@sparkleideas/teammate-plugin`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/teammate-plugin
+npx @sparkleideas/cli plugins install --name @sparkleideas/teammate-plugin
 ```
 
 **Requires:** Claude Code >= 2.1.19
@@ -356,17 +356,15 @@ When TeammateTool is unavailable (Claude Code < 2.1.19), the plugin degrades gra
 - Session: `teammate/save_session`, `teammate/restore_session`
 - Advanced: `teammate/teleport`, `teammate/remote_sync`
 
-**Note:** Not yet repackaged under `@sparkleideas` scope. See [ADR-0022](adr/0022-full-ecosystem-repackaging.md) for integration status (deferred — requires TypeScript build step).
-
 ---
 
 ## 14. Test Intelligence
 
-**Package:** `@claude-flow/plugin-test-intelligence`
+**Package:** `@sparkleideas/plugin-test-intelligence`
 
 **Install:**
 ```bash
-npx @sparkleideas/cli plugins install --name @claude-flow/plugin-test-intelligence
+npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-test-intelligence
 ```
 
 A comprehensive test intelligence plugin combining reinforcement learning for optimal test selection with graph neural networks for code-to-test mapping. It enables predictive test selection (run only tests likely to fail), flaky test detection, mutation testing optimization, and test coverage gap identification while integrating seamlessly with popular testing frameworks (vitest, jest, mocha, pytest).

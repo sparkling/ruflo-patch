@@ -2,7 +2,7 @@
 
 Comprehensive catalog of source-only packages across the three upstream repositories that are **not** published under the `@sparkleideas/*` scope. Each entry includes a description from its README, integration method, and recommendation.
 
-**Published packages (24)** are documented in [ruvnet.packages.and.source.location.md](ruvnet.packages.and.source.location.md).
+**Published packages (42)** are documented in [ruvnet.packages.and.source.location.md](ruvnet.packages.and.source.location.md).
 **Installable plugins (14)** are documented in [plugin-catalog.md](plugin-catalog.md).
 
 ---
@@ -13,19 +13,19 @@ Comprehensive catalog of source-only packages across the three upstream reposito
 
 | # | Package | Description | Rec. |
 |---|---------|-------------|------|
-| 1 | [@claude-flow/browser](#1-claude-flowbrowser) | Browser automation with 59 MCP tools, PII scanning, AI snapshots | Monitor |
-| 2 | [@claude-flow/claims](#2-claude-flowclaims) | Issue claiming, handoffs, work stealing, load balancing (17 MCP tools) | Monitor |
+| 1 | [@claude-flow/browser](#1-claude-flowbrowser) | Browser automation with 59 MCP tools, PII scanning, AI snapshots | **Done** |
+| 2 | [@claude-flow/claims](#2-claude-flowclaims) | Issue claiming, handoffs, work stealing, load balancing (17 MCP tools) | **Done** |
 | 3 | [@claude-flow/codex](#3-claude-flowcodex) | OpenAI Codex CLI adapter, dual-platform agent definitions | Skip |
-| 4 | [@claude-flow/deployment](#4-claude-flowdeployment) | Release management, changelog generation, npm publishing | Skip |
-| 5 | [@claude-flow/embeddings](#5-claude-flowembeddings) | Multi-provider embeddings (OpenAI, ONNX, Transformers.js), 75x faster | Monitor |
-| 6 | [@claude-flow/integration](#6-claude-flowintegration) | Deep agentic-flow bridge, Flash Attention (2.49x-7.47x speedup) | Monitor |
-| 7 | [@claude-flow/neural](#7-claude-flowneural) | SONA learning, 9 RL algorithms, LoRA, EWC++ memory preservation | Monitor |
-| 8 | [@claude-flow/performance](#8-claude-flowperformance) | Benchmarking, Flash Attention validation, regression detection | Skip |
-| 9 | [@claude-flow/plugins](#9-claude-flowplugins) | Plugin SDK — all 14 plugins depend on this for MCP tool registration | **Integrate** |
-| 10 | [@claude-flow/providers](#10-claude-flowproviders) | Multi-LLM provider system (6+ providers), failover, cost optimization | Monitor |
-| 11 | [@claude-flow/security](#11-claude-flowsecurity) | CVE fixes, input validation, path security, bcrypt, Zod schemas | Monitor |
-| 12 | [@claude-flow/swarm](#12-claude-flowswarm) | Unified swarm coordination, 4 topologies, Raft/Byzantine/Gossip consensus | Monitor |
-| 13 | [@claude-flow/testing](#13-claude-flowtesting) | TDD London School framework, Vitest fixtures, mock services | Skip |
+| 4 | [@claude-flow/deployment](#4-claude-flowdeployment) | Release management, changelog generation, npm publishing | **Done** |
+| 5 | [@claude-flow/embeddings](#5-claude-flowembeddings) | Multi-provider embeddings (OpenAI, ONNX, Transformers.js), 75x faster | **Done** |
+| 6 | [@claude-flow/integration](#6-claude-flowintegration) | Deep agentic-flow bridge, Flash Attention (2.49x-7.47x speedup) | **Done** |
+| 7 | [@claude-flow/neural](#7-claude-flowneural) | SONA learning, 9 RL algorithms, LoRA, EWC++ memory preservation | **Done** |
+| 8 | [@claude-flow/performance](#8-claude-flowperformance) | Benchmarking, Flash Attention validation, regression detection | **Done** |
+| 9 | [@claude-flow/plugins](#9-claude-flowplugins) | Plugin SDK — all 14 plugins depend on this for MCP tool registration | **Done** |
+| 10 | [@claude-flow/providers](#10-claude-flowproviders) | Multi-LLM provider system (6+ providers), failover, cost optimization | **Done** |
+| 11 | [@claude-flow/security](#11-claude-flowsecurity) | CVE fixes, input validation, path security, bcrypt, Zod schemas | **Done** |
+| 12 | [@claude-flow/swarm](#12-claude-flowswarm) | Unified swarm coordination, 4 topologies, Raft/Byzantine/Gossip consensus | **Done** |
+| 13 | [@claude-flow/testing](#13-claude-flowtesting) | TDD London School framework, Vitest fixtures, mock services | **Done** |
 
 ### ruflo — Plugins
 
@@ -37,8 +37,8 @@ Comprehensive catalog of source-only packages across the three upstream reposito
 
 | # | Package | Description | Rec. |
 |---|---------|-------------|------|
-| 14 | [agent-booster](#14-agent-booster) | WASM code editor, 350x faster than LLM, ADR-026 Tier 1 handler | **Integrate** |
-| 15 | [agentdb-onnx](#15-agentdb-onnx) | AgentDB with ONNX embeddings, GPU-accelerated, 100% local inference | Monitor |
+| 14 | [agent-booster](#14-agent-booster) | WASM code editor, 350x faster than LLM, ADR-026 Tier 1 handler | **Done** |
+| 15 | [agentdb-onnx](#15-agentdb-onnx) | AgentDB with ONNX embeddings, GPU-accelerated, 100% local inference | **Done** |
 | 16 | [agentic-llm](#16-agentic-llm) | Python/Docker Phi-4 fine-tuning with CUDA, LoRA, Cloud Run | Skip |
 | 17 | [nova-medicina](#17-nova-medicina) | Medical triage AI with anti-hallucination, multi-model consensus | Skip |
 | 18 | [research-swarm](#18-research-swarm) | GOAP-based research agents, SQLite, 51-layer verification | Skip |
@@ -51,7 +51,7 @@ Comprehensive catalog of source-only packages across the three upstream reposito
 
 | # | Package | Description | Rec. |
 |---|---------|-------------|------|
-| 23 | [cuda-wasm](#23-cuda-wasm) | CUDA→WebAssembly/WebGPU transpiler, 2.5-4x faster training | Skip |
+| 23 | [cuda-wasm](#23-cuda-wasm) | CUDA→WebAssembly/WebGPU transpiler, 2.5-4x faster training | **Done** |
 | 24 | [neuro-divergent (5 crates)](#24-neuro-divergent-workspace) | Rust neural forecasting library, 27+ models (LSTM, TFT, PatchTST) | Skip |
 | 25 | [opencv-rust (4+ crates)](#25-opencv-rust-workspace) | Pure Rust computer vision, OpenCV 4.x compatible, WASM support | Skip |
 
@@ -59,12 +59,12 @@ Comprehensive catalog of source-only packages across the three upstream reposito
 
 ## Summary
 
-| Repository | Unpublished | Category Breakdown |
-|-----------|-------------|-------------------|
-| **ruflo** (`v3/`) | 13 core + 14 plugins | Core libraries, plugins |
-| **agentic-flow** | 9 | Tools, examples, benchmarks |
-| **ruv-FANN** | 3 projects (10 crates) | Rust/WASM libraries |
-| **Total** | **36+ packages** | |
+| Repository | Unpublished | Now Published (ADR-0022) | Category Breakdown |
+|-----------|-------------|--------------------------|-------------------|
+| **ruflo** (`v3/`) | 1 core + 14 plugins | 12 core | Core libraries, plugins |
+| **agentic-flow** | 7 | 2 (agent-booster, agentdb-onnx) | Tools, examples, benchmarks |
+| **ruv-FANN** | 2 projects (9 crates) | 1 (cuda-wasm) | Rust/WASM libraries |
+| **Total** | **21+ packages** | **15 newly published** | |
 
 ---
 
@@ -72,6 +72,7 @@ Comprehensive catalog of source-only packages across the three upstream reposito
 
 | Recommendation | Meaning | Action |
 |---------------|---------|--------|
+| **Done** | Now published under @sparkleideas/* | No further action needed |
 | **Integrate** | Required by published packages or high user value | Add to publish pipeline |
 | **Monitor** | Useful but no current demand or dependency | Watch for upstream changes |
 | **Skip** | Internal tooling, examples, or different ecosystem (Rust/Python) | Do not integrate |
@@ -91,7 +92,7 @@ Comprehensive catalog of source-only packages across the three upstream reposito
 Browser automation for AI agents — integrates agent-browser with Claude Flow swarms. Provides 59 MCP browser tools with security-first design including PII scanning. Features trajectory learning for SONA integration, AI-optimized snapshots that achieve 93% context reduction compared to full DOM snapshots, swarm coordination for parallel browser tasks, and 9 workflow templates for common automation patterns (form filling, data extraction, testing, monitoring). The snapshot system converts complex browser state into structured, token-efficient representations that AI agents can reason about effectively.
 
 **Integration method:** Add to `LEVELS` at Level 2 (depends on agentic-flow). Requires codemod scope rename. No build step needed (ships JS).
-**Recommendation:** **Monitor** — Useful capability but no published package depends on it. Integration adds external dependency on `agent-browser`.
+**Recommendation:** **Done** — Published as @sparkleideas/browser (ADR-0022).
 
 ---
 
@@ -104,7 +105,7 @@ Browser automation for AI agents — integrates agent-browser with Claude Flow s
 Issue claiming and work coordination module for Claude Flow V3. Provides 17 MCP tools for issue claiming, handoffs between humans and agents, work stealing, and load balancing. Enables multiple agents to coordinate on a shared task board without conflicts — agents claim issues before working on them, hand off partially-completed work to other agents, and steal unclaimed work when idle. The load balancing system monitors agent utilization and redistributes work to prevent bottlenecks. Designed for scenarios where a swarm of agents collaborates on a GitHub issue backlog or a shared task queue.
 
 **Integration method:** Add to `LEVELS` at Level 1 (only depends on zod, which is external). Codemod handles scope rename.
-**Recommendation:** **Monitor** — Standalone coordination module. Integrate when `@claude-flow/cli` adds it as a dependency or users request it.
+**Recommendation:** **Done** — Published as @sparkleideas/claims (ADR-0022).
 
 ---
 
@@ -130,7 +131,7 @@ OpenAI Codex CLI adapter for Claude Flow. Enables self-learning multi-agent orch
 Release management, CI/CD, and versioning module. Handles version bumping (semver-aware with prerelease support), changelog generation from conventional commits, git integration (tagging, branching), npm publishing with pre-release validation, and dry-run mode for testing release workflows without side effects. Designed to automate the release pipeline for Claude Flow packages. The validation step checks that all tests pass, dependencies resolve, and the package builds before allowing a publish.
 
 **Integration method:** Add to `LEVELS` at Level 2 (depends on @claude-flow/shared → @sparkleideas/shared). Codemod handles internal dep rename.
-**Recommendation:** **Skip** — We have our own publish pipeline (`publish.mjs`, `sync-and-build.sh`). This module serves upstream's release process, not ours.
+**Recommendation:** **Done** — Published as @sparkleideas/deployment (ADR-0022).
 
 ---
 
@@ -143,7 +144,7 @@ Release management, CI/CD, and versioning module. Handles version bumping (semve
 V3 Embedding Service supporting multiple providers: OpenAI API, Transformers.js (local), Agentic-Flow ONNX (75x faster), and a mock provider for testing. Features auto-install of embedding models on first use, smart fallback when a provider is unavailable, LRU and disk caching for repeated queries, batch processing for bulk embedding operations, document chunking with configurable overlap, and hyperbolic embeddings for hierarchical data. The neural substrate integration connects embeddings to the SONA learning system for pattern-aware similarity search. The ONNX provider delivers 75x faster inference than the default Transformers.js provider.
 
 **Integration method:** Add to `LEVELS` at Level 1 (external deps only). Large dependency: `@xenova/transformers` pulls ~200MB of ONNX models.
-**Recommendation:** **Monitor** — High-value module (embeddings power semantic search). But the large dependency footprint and the fact that the CLI already uses hash embeddings as a lightweight fallback means this is best deferred until users need higher-quality embeddings.
+**Recommendation:** **Done** — Published as @sparkleideas/embeddings (ADR-0022).
 
 ---
 
@@ -156,7 +157,7 @@ V3 Embedding Service supporting multiple providers: OpenAI API, Transformers.js 
 Deep agentic-flow@alpha integration module implementing ADR-001 compliance. Provides a SONA adapter for self-optimizing neural architecture, Flash Attention bridge delivering 2.49x-7.47x speedup, SDK bridge for agentic-flow APIs, feature flags for progressive rollout of new capabilities, runtime detection of available agentic-flow features, and graceful fallback when agentic-flow is not installed. This module is the glue layer between Claude Flow's higher-level orchestration and agentic-flow's lower-level neural/vector infrastructure.
 
 **Integration method:** Add to `LEVELS` at Level 1 (zero required deps). Codemod handles scope rename.
-**Recommendation:** **Monitor** — Important architectural module but currently the CLI works without it. Integrate when Flash Attention or deep SONA integration becomes a user-facing feature.
+**Recommendation:** **Done** — Published as @sparkleideas/integration (ADR-0022).
 
 ---
 
@@ -169,7 +170,7 @@ Deep agentic-flow@alpha integration module implementing ADR-001 compliance. Prov
 Neural module providing SONA learning integration and neural modes. Implements 5 learning modes (supervised, unsupervised, reinforcement, transfer, meta-learning) and 9 reinforcement learning algorithms (Q-Learning, SARSA, Actor-Critic, PPO, DQN, A3C, TD3, SAC, Decision Transformer). Features LoRA integration for parameter-efficient fine-tuning, EWC++ memory preservation to prevent catastrophic forgetting, trajectory tracking for learning from experience, and pattern recognition for recurring code and architecture patterns. The neural modes allow agents to learn from their interactions and improve over time.
 
 **Integration method:** Add to `LEVELS` at Level 3 (depends on @claude-flow/memory → @sparkleideas/memory). Also needs @ruvector/sona (external).
-**Recommendation:** **Monitor** — Core learning infrastructure. The CLI already exposes `neural train` and `neural patterns` commands that work with a simpler implementation. Integrate when the full SONA-backed neural system is needed.
+**Recommendation:** **Done** — Published as @sparkleideas/neural (ADR-0022).
 
 ---
 
@@ -182,7 +183,7 @@ Neural module providing SONA learning integration and neural modes. Implements 5
 Performance module for benchmarking, Flash Attention validation, and optimization. Provides statistical benchmarking with configurable iterations and warmup, memory tracking to detect leaks during benchmarks, auto-calibration that adjusts iteration count for statistical significance, regression detection against baseline measurements, V3 performance target validation (e.g., <10ms vector search, <2ms memory insert), Flash Attention speedup verification, and multiple output formats (JSON, CSV, markdown tables). Useful for CI pipelines that need to gate on performance regressions.
 
 **Integration method:** Add to `LEVELS` at Level 1 (external deps only — @ruvector packages).
-**Recommendation:** **Skip** — Internal performance tooling. Users don't install a benchmarking module; it's for the development team. Our own test pipeline handles performance validation.
+**Recommendation:** **Done** — Published as @sparkleideas/performance (ADR-0022).
 
 ---
 
@@ -195,7 +196,7 @@ Performance module for benchmarking, Flash Attention validation, and optimizatio
 Unified Plugin SDK for Claude Flow V3. Provides the plugin builder API, MCP tool builder for creating new MCP tools within plugins, hook system for intercepting Claude Flow lifecycle events, worker plugins for background task execution, provider pattern for abstracting external services, plugin registry for discovery and loading, and 8+ export entrypoints for granular imports. This is the framework that all `@claude-flow/plugin-*` packages are built on. Without it, plugins can't register their MCP tools or lifecycle hooks.
 
 **Integration method:** Add to `LEVELS` at Level 1 (only depends on `events`). Codemod handles scope rename.
-**Recommendation:** **Integrate** — This is the plugin SDK. If users install any plugin via `npx @sparkleideas/cli plugins install`, this SDK must be available. It's the foundation all 14 plugins depend on. Should be added to the publish pipeline as a prerequisite for plugin support.
+**Recommendation:** **Done** — Published as @sparkleideas/plugins (ADR-0022).
 
 ---
 
@@ -208,7 +209,7 @@ Unified Plugin SDK for Claude Flow V3. Provides the plugin builder API, MCP tool
 Multi-LLM provider system for Claude Flow V3. Supports 6+ LLM providers: Anthropic (Claude), OpenAI (GPT), Google (Gemini), Cohere, Ollama (local), and RuVector. Implements load balancing across providers, automatic failover when a provider is down or rate-limited, request caching to avoid duplicate API calls, cost optimization achieving 85%+ savings through intelligent routing, streaming support for real-time responses, tool calling abstraction across providers, health monitoring with provider status tracking, and cost tracking per request and per provider. Enables multi-model architectures where different agents in a swarm use different LLM providers based on task complexity and cost.
 
 **Integration method:** Add to `LEVELS` at Level 1 (only depends on `events`). Codemod handles scope rename.
-**Recommendation:** **Monitor** — High-value module for multi-model setups. Currently the CLI hardcodes Claude as the provider. Integrate when multi-provider support becomes a user-facing feature or upstream adds it as a dependency.
+**Recommendation:** **Done** — Published as @sparkleideas/providers (ADR-0022).
 
 ---
 
@@ -221,7 +222,7 @@ Multi-LLM provider system for Claude Flow V3. Supports 6+ LLM providers: Anthrop
 Security module implementing CVE fixes, input validation, and path security. Addresses specific CVEs (CVE-2, CVE-3, HIGH-1, HIGH-2) with bcrypt password hashing for stored credentials, cryptographic credential generation, safe command execution that prevents shell injection, path validation to block directory traversal attacks, input validation using Zod schemas at all system boundaries, and secure token generation for API authentication. This module hardens Claude Flow against the OWASP top 10 categories of vulnerabilities.
 
 **Integration method:** Add to `LEVELS` at Level 1 (external deps: bcrypt, zod). Adds native dependency (bcrypt requires node-gyp compilation).
-**Recommendation:** **Monitor** — Security hardening is important but `bcrypt` requires native compilation (node-gyp), which complicates cross-platform installs. Integrate when security audit identifies gaps in the published CLI.
+**Recommendation:** **Done** — Published as @sparkleideas/security (ADR-0022).
 
 ---
 
@@ -234,7 +235,7 @@ Security module implementing CVE fixes, input validation, and path security. Add
 V3 Unified Swarm Coordination Module implementing ADR-003. Provides the UnifiedSwarmCoordinator as the single canonical coordination engine, QueenCoordinator for hive-mind intelligence with emergent behavior, AttentionCoordinator delivering 2.49x-7.47x speedup through Flash Attention, FederationHub for cross-swarm coordination, and three consensus protocols (Raft, Byzantine, Gossip). Supports 4 topology types (hierarchical, mesh, star, ring) and scales to 100+ agents with <100ms coordination latency. This is the core swarm engine that the CLI's `swarm init` command uses.
 
 **Integration method:** Add to `LEVELS` at Level 1 (zero dependencies). Codemod handles scope rename.
-**Recommendation:** **Monitor** — The CLI already bundles swarm coordination inline. This standalone module would be needed if swarm coordination is factored out of the CLI into a separate importable library. Integrate when upstream refactors the CLI to depend on this module.
+**Recommendation:** **Done** — Published as @sparkleideas/swarm (ADR-0022).
 
 ---
 
@@ -247,7 +248,7 @@ V3 Unified Swarm Coordination Module implementing ADR-003. Provides the UnifiedS
 Testing module providing TDD London School framework, test utilities, fixtures, and mock services. Built on Vitest (per ADR-008), it provides London School TDD patterns emphasizing behavior verification over state verification, shared fixtures for agent, swarm, and MCP testing, mock services for external dependencies, and custom Vitest matchers for Claude Flow assertions. Designed as a devDependency for plugin and module authors writing tests against the Claude Flow API.
 
 **Integration method:** Add to `LEVELS` at Level 1 (no required deps). Publish as a devDependency-only package.
-**Recommendation:** **Skip** — Test utilities for upstream developers. End users don't install test frameworks. Our own test pipeline uses its own helpers.
+**Recommendation:** **Done** — Published as @sparkleideas/testing (ADR-0022).
 
 ---
 
@@ -287,7 +288,7 @@ Plugins are already cataloged in detail in [plugin-catalog.md](plugin-catalog.md
 Ultra-fast code editing engine — 52x faster than Morph LLM at $0 cost. A high-performance code transformation engine designed to eliminate the latency and cost bottleneck in AI coding agents. Built in Rust with WebAssembly, it applies code edits 350x faster than LLM-based alternatives while maintaining 100% accuracy. Provides sub-millisecond code transformations, 100% local processing with zero API costs, deterministic results with confidence scoring, MCP tools integration (Claude Desktop, Cursor, VS Code), an API server compatible with the Morph LLM protocol, and a WASM + Rust backend for native speed. The edit operations are AST-aware, meaning they understand code structure rather than treating code as plain text.
 
 **Integration method:** Add to `LEVELS` at Level 1 (no internal deps). Ships pre-built WASM. Provides `agent-booster` and `agent-booster-server` binaries.
-**Recommendation:** **Integrate** — Referenced by ADR-026 (3-Tier Model Routing) as the Tier 1 handler. The CLI already checks for `[AGENT_BOOSTER_AVAILABLE]`. Publishing this under `@sparkleideas/agent-booster` enables the zero-cost code transformation tier.
+**Recommendation:** **Done** — Published as @sparkleideas/agent-booster (ADR-0022).
 
 ---
 
@@ -300,7 +301,7 @@ Ultra-fast code editing engine — 52x faster than Morph LLM at $0 cost. A high-
 AgentDB with optimized ONNX embeddings — 100% local, GPU-accelerated AI agent memory. Extends the base AgentDB with high-quality ONNX-based embeddings instead of hash embeddings. Provides 100% local inference with no API calls and complete data privacy, GPU acceleration via CUDA, DirectML, and CoreML, batch processing that is 3-4x faster than sequential embedding, LRU caching with 80%+ hit rate, model warmup for consistent latency, ReasoningBank integration for pattern storage, and Reflexion Memory for self-improving episodic memory. Supports multiple Xenova embedding models (all-MiniLM-L6-v2, bge-small-en-v1.5, e5-small-v2, etc.) with automatic download on first use.
 
 **Integration method:** Add to `LEVELS` at Level 1 (external deps). Large dependency: `onnxruntime-node` is ~100MB and platform-specific.
-**Recommendation:** **Monitor** — Significant quality upgrade over hash embeddings (cosine similarity 0.6-0.95 vs 0.1-0.28). But the 100MB+ dependency footprint and platform-specific native binaries make it unsuitable for a lightweight CLI install. Better as an optional enhancement users install separately.
+**Recommendation:** **Done** — Published as @sparkleideas/agentdb-onnx (ADR-0022).
 
 ---
 
@@ -411,7 +412,7 @@ Test suite for QUIC protocol implementation. Covers transport layer (connection 
 High-performance CUDA to WebAssembly/WebGPU transpiler with Rust safety. Enables GPU-accelerated computing in browsers and Node.js by transpiling CUDA kernels to WebAssembly and WebGPU shaders. Supports SIMD optimizations, compute kernels, and automatic optimization. Performance benchmarks show 2.5-4x faster training and 3-5x faster inference compared to Python implementations. Includes advanced profiling and automatic kernel optimization. Provides a CLI tool (`cuda-wasm`) for transpilation workflows.
 
 **Integration method:** Publish as `@sparkleideas/cuda-wasm`. Ships compiled WASM.
-**Recommendation:** **Skip** — Specialized GPU transpilation tool. Not a dependency of any Claude Flow package. Users who need CUDA-to-WASM transpilation would use the upstream package directly.
+**Recommendation:** **Done** — Published as @sparkleideas/cuda-wasm (ADR-0022).
 
 ---
 
@@ -462,37 +463,43 @@ Features image processing, feature detection, object detection, video processing
 
 ## Integration Priority Matrix
 
-### Integrate Now (2 packages)
+### Done (15 packages — ADR-0022)
 
-| Package | Rationale | Level | Effort |
-|---------|-----------|-------|--------|
-| `@claude-flow/plugins` (Plugin SDK) | Foundation for all 14 plugins | L1 | Low — zero internal deps, ships JS |
-| `agent-booster` | ADR-026 Tier 1 handler, CLI already checks for it | L1 | Low — ships pre-built WASM |
+All published under `@sparkleideas/*`. No further action needed.
 
-### Integrate When Triggered (2 packages)
+| Package | Published As |
+|---------|-------------|
+| `@claude-flow/browser` | `@sparkleideas/browser` |
+| `@claude-flow/claims` | `@sparkleideas/claims` |
+| `@claude-flow/deployment` | `@sparkleideas/deployment` |
+| `@claude-flow/embeddings` | `@sparkleideas/embeddings` |
+| `@claude-flow/integration` | `@sparkleideas/integration` |
+| `@claude-flow/neural` | `@sparkleideas/neural` |
+| `@claude-flow/performance` | `@sparkleideas/performance` |
+| `@claude-flow/plugins` | `@sparkleideas/plugins` |
+| `@claude-flow/providers` | `@sparkleideas/providers` |
+| `@claude-flow/security` | `@sparkleideas/security` |
+| `@claude-flow/swarm` | `@sparkleideas/swarm` |
+| `@claude-flow/testing` | `@sparkleideas/testing` |
+| `agent-booster` | `@sparkleideas/agent-booster` |
+| `agentdb-onnx` | `@sparkleideas/agentdb-onnx` |
+| `cuda-wasm` | `@sparkleideas/cuda-wasm` |
+
+### Integrate When Triggered (1 package)
 
 | Package | Trigger | Level |
 |---------|---------|-------|
 | `ruvector-upstream` (WASM bridges) | Any plugin integrated that depends on WASM | L1 |
-| `@claude-flow/embeddings` | Users need higher-quality search than hash embeddings | L1 |
 
-### Monitor (11 packages)
+### Monitor (3 packages)
 
 | Package | Watch For |
 |---------|-----------|
-| `@claude-flow/browser` | CLI adds browser automation commands |
-| `@claude-flow/claims` | CLI adds issue claiming features |
-| `@claude-flow/integration` | Flash Attention becomes user-facing |
-| `@claude-flow/neural` | Full SONA learning exposed in CLI |
-| `@claude-flow/providers` | Multi-LLM provider support added to CLI |
-| `@claude-flow/security` | Security audit identifies gaps |
-| `@claude-flow/swarm` | CLI refactors swarm into separate module |
-| `agentdb-onnx` | Users need high-quality local embeddings |
 | `plugin-agentic-qe` | QA automation demand |
 | `plugin-prime-radiant` | Hallucination prevention demand |
 | `teammate-plugin` | See [ADR-0022](adr/0022-full-ecosystem-repackaging.md) |
 
-### Skip (22 packages)
+### Skip (17 packages)
 
 Internal tooling, examples, domain-specific applications, and non-JavaScript ecosystems. No integration path or user demand.
 
@@ -500,7 +507,7 @@ Internal tooling, examples, domain-specific applications, and non-JavaScript eco
 
 ## References
 
-- [Published packages (24)](ruvnet.packages.and.source.location.md)
+- [Published packages (42)](ruvnet.packages.and.source.location.md)
 - [Plugin catalog (14)](plugin-catalog.md)
 - [ADR-0021: Teammate Plugin Integration](adr/0021-teammate-plugin-integration.md)
 - [ADR-0014: Topological Publish Order](adr/0014-topological-publish-order.md)

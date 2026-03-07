@@ -69,8 +69,10 @@ npx @sparkleideas/ruflo doctor                        # diagnose issues
 | Hash embedding threshold fix (FB-004) | Missing | Included |
 | Semver conflicts (`@ruvector/ruvllm`, `agentdb`) | Broken install | Resolved |
 | `npm install` | Fails on dependency conflicts | Clean install |
+| Plugin ecosystem | Not repackaged | 14 plugins under @sparkleideas/* |
+| Tier 1 routing (agent-booster) | Not available | $0, <1ms for simple edits |
 
-**25 packages** are rebuilt and published under the `@sparkleideas` scope across 5 dependency levels. The `@ruvector/*` packages are used as-is from public npm (they're current).
+**42 packages** are rebuilt and published under the `@sparkleideas` scope across 5 dependency levels. The `@ruvector/*` packages are used as-is from public npm (they're current).
 
 ---
 
@@ -108,7 +110,7 @@ npx @sparkleideas/ruflo doctor                        # diagnose issues
 │         └───────┬────────┘                           │
 │                 ▼                                     │
 │         ┌────────────────┐                           │
-│         │  npm publish    │  26 packages,            │
+│         │  npm publish    │  42 packages,            │
 │         │  --tag prerelease│ 5 levels, bottom-up     │
 │         └────────────────┘                           │
 └─────────────────────────────────────────────────────┘

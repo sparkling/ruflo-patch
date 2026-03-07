@@ -30,6 +30,10 @@ const UNSCOPED_MAP = {
   'agentdb': '@sparkleideas/agentdb',
   'agentic-flow': '@sparkleideas/agentic-flow',
   'ruv-swarm': '@sparkleideas/ruv-swarm',
+  // ADR-0022: new unscoped packages
+  'agent-booster': '@sparkleideas/agent-booster',
+  'agentdb-onnx': '@sparkleideas/agentdb-onnx',
+  'cuda-wasm': '@sparkleideas/cuda-wasm',
 };
 
 // -- File filters -------------------------------------------------------------

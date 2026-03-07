@@ -1,6 +1,6 @@
 # ADR-0022: Full Ecosystem Repackaging
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-03-07
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + MADR
@@ -268,6 +268,25 @@ Publish `@sparkleideas/plugins` so upstream `@claude-flow/plugin-*` can be insta
 
 - [x] Add 18 new packages to LEVELS in `scripts/publish.mjs` (commit `060d1c1`)
 - [x] Update `tests/06-publish-order.test.mjs` with new counts and deps (commit `060d1c1`)
+
+*Phase 1 — Standalone packages (Level 1):*
+
+- [x] Add 12 new packages to `LEVELS` array at Level 1 in `scripts/publish.mjs`
+- [x] Unit test: all 12 packages appear in LEVELS array (91 tests pass)
+- [x] Acceptance test: `import('@sparkleideas/plugins')` resolves, `import('@sparkleideas/agent-booster')` resolves and WASM initializes (A13-A16 added)
+
+*Phase 3 — Plugin infrastructure and plugins (Levels 3-4):*
+
+- [x] Add `@sparkleideas/ruvector-upstream` at Level 3 (WASM bridge layer)
+- [x] Add 13 plugin packages at Level 4
+- [x] Add `@sparkleideas/teammate-plugin` at Level 4
+- [x] Unit test: 15 new packages in LEVELS at correct levels (tests pass)
+- [x] Acceptance test: `npx @sparkleideas/cli plugins install --name @sparkleideas/plugin-prime-radiant` works (A16)
+
+*Phase 4 — CUDA/WASM (Level 1):*
+
+- [x] Add `@sparkleideas/cuda-wasm` at Level 1
+- [x] Unit test: package in LEVELS (tests pass)
 
 **Step 3 — Build directory discovery:**
 

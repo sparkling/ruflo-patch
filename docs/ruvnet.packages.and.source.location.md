@@ -2,7 +2,7 @@
 
 Comprehensive map of all packages across the 3 upstream GitHub repositories owned by `ruvnet`, their publish status, and repackaging integration status.
 
-**Last updated**: 2026-03-06
+**Last updated**: 2026-03-07
 
 ---
 
@@ -10,9 +10,9 @@ Comprehensive map of all packages across the 3 upstream GitHub repositories owne
 
 | Repository | GitHub URL | Primary Purpose | Published Packages | Total Packages |
 |-----------|-----------|----------------|-------------------|---------------|
-| **ruflo** | `github.com/ruvnet/ruflo` | CLI monorepo — V3 modular agent orchestration | 22 core + 13 plugins | 60 |
-| **agentic-flow** | `github.com/ruvnet/agentic-flow` | Agent orchestration platform + AgentDB | 2 | 30 |
-| **ruv-FANN** | `github.com/ruvnet/ruv-FANN` | Neural network WASM runtime | 1 | 8 |
+| **ruflo** | `github.com/ruvnet/ruflo` | CLI monorepo — V3 modular agent orchestration | 22 core + 14 plugins + 1 ruvector-upstream | 60 |
+| **agentic-flow** | `github.com/ruvnet/agentic-flow` | Agent orchestration platform + AgentDB | 4 (incl. agent-booster, agentdb-onnx) | 30 |
+| **ruv-FANN** | `github.com/ruvnet/ruv-FANN` | Neural network WASM runtime | 2 (incl. cuda-wasm) | 8 |
 
 ---
 
@@ -90,26 +90,32 @@ Comprehensive map of all packages across the 3 upstream GitHub repositories owne
 | `agentdb` | 3.0.0-alpha.10 | agentic-flow | `packages/agentdb/` | 3.0.0-alpha.6 | L1 |
 | `agentic-flow` | 2.0.7 | agentic-flow | `package.json` (root) | 2.0.2-alpha.5 | L1 |
 | `ruv-swarm` | 1.0.20 | ruv-FANN | `ruv-swarm/npm/` | 1.0.29 | L1 |
+| `agent-booster` | — | agentic-flow | `packages/agent-booster/` | (ADR-0022) | L1 |
+| `agentdb-onnx` | — | agentic-flow | `packages/agentdb-onnx/` | (ADR-0022) | L1 |
+| `cuda-wasm` | — | ruv-FANN | `cuda-wasm/` | (ADR-0022) | L1 |
+| `@claude-flow/ruvector-upstream` | — | ruflo | `v3/plugins/ruvector-upstream/` | (ADR-0022) | L3 |
+| `@claude-flow/plugin-gastown-bridge` | 0.1.3 | ruflo | `v3/plugins/gastown-bridge/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-agentic-qe` | 3.0.0-alpha.4 | ruflo | `v3/plugins/agentic-qe/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-code-intelligence` | 3.0.0-alpha.1 | ruflo | `v3/plugins/code-intelligence/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-cognitive-kernel` | 3.0.0-alpha.1 | ruflo | `v3/plugins/cognitive-kernel/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-financial-risk` | 3.0.0-alpha.1 | ruflo | `v3/plugins/financial-risk/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-healthcare-clinical` | 3.0.0-alpha.1 | ruflo | `v3/plugins/healthcare-clinical/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-hyperbolic-reasoning` | 3.0.0-alpha.1 | ruflo | `v3/plugins/hyperbolic-reasoning/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-legal-contracts` | 3.0.0-alpha.1 | ruflo | `v3/plugins/legal-contracts/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-neural-coordination` | 3.0.0-alpha.1 | ruflo | `v3/plugins/neural-coordination/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-perf-optimizer` | 3.0.0-alpha.1 | ruflo | `v3/plugins/perf-optimizer/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-prime-radiant` | 0.1.5 | ruflo | `v3/plugins/prime-radiant/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-quantum-optimizer` | 3.0.0-alpha.1 | ruflo | `v3/plugins/quantum-optimizer/` | (ADR-0022) | L4 |
+| `@claude-flow/plugin-test-intelligence` | 3.0.0-alpha.1 | ruflo | `v3/plugins/test-intelligence/` | (ADR-0022) | L4 |
+| `@claude-flow/teammate-plugin` | 1.0.0-alpha.1 | ruflo | `v3/plugins/teammate-plugin/` | (ADR-0022) | L4 |
 
 ### Packages Published by ruvnet but NOT Repackaged
 
 | Upstream Package | npm Version | Source Repo | Source Path | Description | Recommendation |
 |-----------------|-------------|------------|-------------|-------------|---------------|
-| `@claude-flow/plugin-gastown-bridge` | 0.1.3 | ruflo | `v3/plugins/gastown-bridge/` | Gas Town orchestrator integration with WASM-accelerated formula parsing | **Integrate** — `@claude-flow/cli` has it as `optionalDependency`. Users get UNMET OPTIONAL DEP warning. |
-| `@claude-flow/plugin-agentic-qe` | 3.0.0-alpha.4 | ruflo | `v3/plugins/agentic-qe/` | Quality Engineering plugin with 51 specialized agents across 12 DDD contexts | **Skip** — standalone plugin, dynamically loaded. No package depends on it. |
-| `@claude-flow/plugin-code-intelligence` | 3.0.0-alpha.1 | ruflo | `v3/plugins/code-intelligence/` | Semantic search, architecture analysis, refactoring impact assessment | **Skip** — standalone plugin, dynamically loaded. |
-| `@claude-flow/plugin-cognitive-kernel` | 3.0.0-alpha.1 | ruflo | `v3/plugins/cognitive-kernel/` | LLM augmentation with working memory, attention control, meta-cognition | **Skip** — standalone plugin, dynamically loaded. |
-| `@claude-flow/plugin-financial-risk` | 3.0.0-alpha.1 | ruflo | `v3/plugins/financial-risk/` | Portfolio risk scoring, anomaly detection, market regime classification using RuVector WASM | **Skip** — domain-specific plugin, no dependents. |
-| `@claude-flow/plugin-healthcare-clinical` | 3.0.0-alpha.1 | ruflo | `v3/plugins/healthcare-clinical/` | HIPAA-compliant clinical decision support with patient similarity search | **Skip** — domain-specific plugin, no dependents. |
-| `@claude-flow/plugin-hyperbolic-reasoning` | 3.0.0-alpha.1 | ruflo | `v3/plugins/hyperbolic-reasoning/` | Poincare ball embeddings, taxonomic reasoning, hierarchical search | **Skip** — standalone plugin, dynamically loaded. |
-| `@claude-flow/plugin-legal-contracts` | 3.0.0-alpha.1 | ruflo | `v3/plugins/legal-contracts/` | Clause extraction, risk assessment, contract comparison, obligation tracking | **Skip** — domain-specific plugin, no dependents. |
-| `@claude-flow/plugin-neural-coordination` | 3.0.0-alpha.1 | ruflo | `v3/plugins/neural-coordination/` | Multi-agent swarm intelligence using SONA, GNN, and attention mechanisms | **Skip** — standalone plugin, dynamically loaded. |
-| `@claude-flow/plugin-perf-optimizer` | 3.0.0-alpha.1 | ruflo | `v3/plugins/perf-optimizer/` | AI-powered bottleneck detection, memory analysis, configuration tuning | **Skip** — standalone plugin, dynamically loaded. |
-| `@claude-flow/plugin-prime-radiant` | 0.1.5 | ruflo | `v3/plugins/prime-radiant/` | Mathematical AI interpretability via sheaf cohomology, spectral analysis, causal inference | **Skip** — research plugin, no dependents. |
-| `@claude-flow/plugin-quantum-optimizer` | 3.0.0-alpha.1 | ruflo | `v3/plugins/quantum-optimizer/` | Simulated annealing, QAOA, Grover search for combinatorial optimization | **Skip** — standalone plugin, dynamically loaded. |
-| `@claude-flow/plugin-test-intelligence` | 3.0.0-alpha.1 | ruflo | `v3/plugins/test-intelligence/` | Predictive test selection, flaky detection, coverage optimization | **Skip** — standalone plugin, dynamically loaded. |
-| `@claude-flow/teammate-plugin` | 1.0.0-alpha.1 | ruflo | `v3/plugins/teammate-plugin/` | Native TeammateTool integration for Claude Code v2.1.19+ multi-agent | **Monitor** — may become a dependency if Claude Code ships TeammateTool broadly. Not currently required by any package. |
 | `ruflo` | 3.5.14 | — | Published separately | Wrapper package — proxies to `@claude-flow/cli` | N/A — we publish `@sparkleideas/ruflo` from our own repo |
+
+> **Note**: All 13 plugin packages, `teammate-plugin`, and `gastown-bridge` were moved to the "Core Packages" table above per ADR-0022 (Full Ecosystem Repackaging).
 
 ---
 
@@ -120,7 +126,7 @@ Comprehensive map of all packages across the 3 upstream GitHub repositories owne
 | Package | Source Path | Description | Recommendation |
 |---------|-----------|-------------|---------------|
 | `@claude-flow/migration` | `v2/src/migration/` | Migration system for V2 → V3 projects | **Skip** — V2 migration utility, no runtime dependency. Not published upstream either. |
-| `@claude-flow/ruvector-upstream` | `v3/plugins/ruvector-upstream/` | RuVector WASM package bridges for plugins | **Skip** — internal bridge, no package depends on it. `@ruvector/*` packages are consumed directly. |
+| ~~`@claude-flow/ruvector-upstream`~~ | `v3/plugins/ruvector-upstream/` | RuVector WASM package bridges for plugins | **Moved to Matrix 2** — now published per ADR-0022 as `@sparkleideas/ruvector-upstream` (L3). |
 | `@claude-flow/v3-monorepo` | `v3/package.json` | Workspace root for V3 monorepo | **Skip** — workspace root, not a distributable package. |
 | `coflow` | `packages/coflow/` | Shorthand CLI wrapper for claude-flow | **Skip** — convenience alias, not part of the dependency tree. |
 | `guidance-kernel` | `v3/@claude-flow/guidance/wasm-pkg/` | Rust WASM kernel for `@claude-flow/guidance` | **Skip** — compiled WASM artifact, bundled into `@claude-flow/guidance` at build time. |
@@ -137,9 +143,9 @@ Comprehensive map of all packages across the 3 upstream GitHub repositories owne
 
 | Package | Source Path | Description | Recommendation |
 |---------|-----------|-------------|---------------|
-| `agent-booster` | `packages/agent-booster/` | Ultra-fast code editing engine (52x faster than Morph LLM) | **Monitor** — valuable optimization. May become a dependency if `agentic-flow` integrates it. Currently standalone. |
+| ~~`agent-booster`~~ | `packages/agent-booster/` | Ultra-fast code editing engine (52x faster than Morph LLM) | **Moved to Matrix 2** — now published per ADR-0022 as `@sparkleideas/agent-booster` (L1). |
 | `agent-booster-cli` | `packages/agent-booster/npm/agent-booster-cli/` | CLI for agent-booster | **Skip** — CLI frontend for agent-booster. |
-| `agentdb-onnx` | `packages/agentdb-onnx/` | AgentDB with optimized ONNX embeddings | **Monitor** — could replace hash embeddings. Not yet a dependency of any published package. |
+| ~~`agentdb-onnx`~~ | `packages/agentdb-onnx/` | AgentDB with optimized ONNX embeddings | **Moved to Matrix 2** — now published per ADR-0022 as `@sparkleideas/agentdb-onnx` (L1). |
 | `agentic-jujutsu` | `packages/agentic-jujutsu/` | Jujutsu VCS integration with quantum-ready architecture | **Skip** — alternative VCS system, not in the dependency tree. Includes WASM builds. |
 | `agentic-flow` (nested) | `agentic-flow/` | Sub-package of main agentic-flow | **Skip** — bundled into root `agentic-flow` via `files` array. Not independently published. |
 | `agentic-flow-quic` | `agentic-flow/wasm/quic/` | QUIC transport layer WASM module | **Skip** — bundled into `agentic-flow` via `files` array. |
@@ -158,7 +164,7 @@ Comprehensive map of all packages across the 3 upstream GitHub repositories owne
 |---------|-----------|-------------|---------------|
 | `@ruv/ruv-swarm-wasm` | `ruv-swarm/npm/wasm-unified/` | Unified WASM bindings for ruv-swarm | **Monitor** — may be needed if `ruv-swarm` starts depending on it for browser support. Currently optional. |
 | `ruv-swarm-wasm` | `ruv-swarm/npm/wasm/` | WASM bindings for ruv-swarm | **Skip** — older WASM package, superseded by `@ruv/ruv-swarm-wasm`. |
-| `cuda-wasm` | `cuda-wasm/` | CUDA-to-WebAssembly/WebGPU transpiler | **Skip** — infrastructure tool, not in the dependency tree. |
+| ~~`cuda-wasm`~~ | `cuda-wasm/` | CUDA-to-WebAssembly/WebGPU transpiler | **Moved to Matrix 2** — now published per ADR-0022 as `@sparkleideas/cuda-wasm` (L1). |
 | `cuda-rust-wasm-basic-vector-ops` | `cuda-wasm/examples/projects/basic-vector-ops/` | CUDA example | **Skip** — example project. |
 | `ruv-swarm-test-app` | `tests/init-test/test-swarm/` | ruv-swarm feature test app | **Skip** — test fixture. |
 | `test-wasm-loading` | `tests/test-wasm-loading/` | WASM loading test | **Skip** — test fixture. |
@@ -168,26 +174,28 @@ Comprehensive map of all packages across the 3 upstream GitHub repositories owne
 
 ## Matrix 4: Integration Recommendations Summary
 
-### Priority: Integrate
+### Priority: Integrate — DONE (ADR-0022)
 
-| Package | Reason | Effort |
-|---------|--------|--------|
-| `@claude-flow/plugin-gastown-bridge` | Listed as `optionalDependency` in `@claude-flow/cli`. Users see UNMET OPTIONAL DEP warning. | Low — add to `LEVELS` L3, no new deps. |
+| Package | Status | Notes |
+|---------|--------|-------|
+| `@claude-flow/plugin-gastown-bridge` | **Integrated** | Now published as `@sparkleideas/plugin-gastown-bridge` (L4). |
+| `@claude-flow/teammate-plugin` | **Integrated** | Now published as `@sparkleideas/teammate-plugin` (L4). |
+| `agent-booster` | **Integrated** | Now published as `@sparkleideas/agent-booster` (L1). |
+| `agentdb-onnx` | **Integrated** | Now published as `@sparkleideas/agentdb-onnx` (L1). |
+| `cuda-wasm` | **Integrated** | Now published as `@sparkleideas/cuda-wasm` (L1). |
+| `@claude-flow/ruvector-upstream` | **Integrated** | Now published as `@sparkleideas/ruvector-upstream` (L3). |
+| 13 plugin packages | **Integrated** | All now published as `@sparkleideas/plugin-*` (L4). |
 
 ### Priority: Monitor
 
 | Package | Trigger for Integration |
 |---------|----------------------|
-| `@claude-flow/teammate-plugin` | Claude Code ships TeammateTool as stable feature and `@claude-flow/cli` adds it as a regular dependency. |
-| `agent-booster` | `agentic-flow` adds `agent-booster` as a dependency (currently standalone). |
-| `agentdb-onnx` | `agentdb` or `@claude-flow/memory` switches from hash embeddings to ONNX. |
 | `@ruv/ruv-swarm-wasm` | `ruv-swarm` adds WASM bindings as a dependency for browser support. |
 
 ### Priority: Skip (No Integration Needed)
 
 | Category | Count | Reason |
 |----------|-------|--------|
-| Plugins (dynamically loaded) | 12 | No package.json dependency — loaded at runtime via plugin system. Users install individually if needed. |
 | Example apps | ~15 | Demo code, not distributable packages. |
 | Test/benchmark suites | ~12 | Development infrastructure. |
 | WASM build artifacts | 5 | Bundled into parent packages at build time. |

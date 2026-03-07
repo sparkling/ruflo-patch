@@ -1,6 +1,6 @@
 # ADR-0021: Agent Booster Integration
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-03-07
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + MADR
