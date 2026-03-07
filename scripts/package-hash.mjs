@@ -143,6 +143,7 @@ async function main() {
     options: {
       'build-dir':     { type: 'string' },
       'stored-hashes': { type: 'string' },
+      'save':          { type: 'boolean', default: false },
       'levels':        { type: 'boolean', default: false },
     },
     strict: true,
@@ -150,13 +151,25 @@ async function main() {
 
   const buildDir = values['build-dir'];
   if (!buildDir) {
-    console.error('Usage: package-hash.mjs --build-dir <dir> [--stored-hashes <path>] [--levels]');
+    console.error('Usage: package-hash.mjs --build-dir <dir> [--stored-hashes <path>] [--save] [--levels]');
     process.exit(1);
   }
 
   const resolvedBuildDir = resolve(buildDir);
   const packageMap = buildPackageMap(resolvedBuildDir);
   const current = computeAllHashes(resolvedBuildDir, packageMap);
+
+  if (values['save']) {
+    saveChecksums(DEFAULT_CHECKSUMS_PATH, current, {
+      generated: new Date().toISOString(),
+      source: 'package-hash.mjs --save',
+      buildDir: resolvedBuildDir,
+    });
+    console.log(`Saved checksums for ${Object.keys(current).length} packages to ${DEFAULT_CHECKSUMS_PATH}`);
+    if (!values['stored-hashes']) {
+      process.exit(0);
+    }
+  }
 
   const output = { changed: [], unchanged: [], all_rebuild: [] };
 

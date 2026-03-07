@@ -191,8 +191,8 @@ SAVE_TEST_RESULTS=1 npm test # Save TAP + manifest to test-results/
 | 4 | Patch | 30s | All patches apply; sentinel files verify |
 | 5 | Verify | 30s | Package.json count matches expected (no missing packages) |
 | 6 | Upstream | 10s | Skipped (advisory only -- we don't rebuild from source) |
-| 7 | Publish | 180s | All packages publish to local Verdaccio; JSON summary |
-| 8 | Install | 120s | `npm install @sparkleideas/cli` resolves all deps from Verdaccio |
+| 7 | Publish | 90s | All packages publish to local Verdaccio; JSON summary |
+| 8 | Install | 60s | `npm install @sparkleideas/cli` resolves all deps from Verdaccio |
 | 9 | Cleanup | -- | Save logs, write results JSON, remove temp dirs |
 
 **What Layer 2 proves**: Pipeline mechanics work -- codemod transforms, patches apply, packages resolve, dependency tree is complete.
@@ -228,9 +228,9 @@ packages:
 **Purpose**: Functional smoke tests against **built** packages installed from Verdaccio. Answers: "Do the packages actually work from a user's perspective?" This is the **last gate before publishing to real npm**.
 **Google phase**: Release Qualification
 
-**Runner**: `scripts/sync-and-build.sh` `run_tests()` function -- runs inside the deployment pipeline, after TypeScript build (Phase 7) and patches (Phase 8). RQ requires `dist/` directories that only exist after the build step.
+**Runner**: `scripts/test-rq.sh` -- standalone script that can run independently with `--build-dir <path>`, or called by `sync-and-build.sh` during deployment. RQ requires `dist/` directories that only exist after the TypeScript build step.
 
-**Why RQ lives in `sync-and-build.sh`, not `test-integration.sh`**: RQ exercises the built product -- it runs CLI commands, imports ESM modules, and tests functional behavior. These operations require compiled TypeScript (`dist/`). `test-integration.sh` clones from git and publishes without building (it tests pipeline mechanics, not product functionality). Putting RQ in a test that cannot produce runnable artifacts violates Google's principle: a test must be able to exercise its subject.
+**Why RQ is a standalone script**: RQ exercises the built product -- it runs CLI commands, imports ESM modules, and tests functional behavior. These operations require compiled TypeScript (`dist/`). Extracting RQ into its own script follows the separation-of-concerns principle (development, build, test, and deployment are distinct activities) while still allowing `sync-and-build.sh` to call it as a deployment gate.
 
 **Test library**: `lib/acceptance-checks.sh` -- shared test functions used by both Layer 3 (against Verdaccio, in `sync-and-build.sh`) and Layer 4 (against real npm, in `test-acceptance.sh`). One test definition, two execution contexts.
 
@@ -257,12 +257,12 @@ packages:
 | A16 (plugin install) | Depends on plugin being separately published and resolvable | Layer 4 only |
 
 **Properties**:
-- **Runs during deployment only** -- RQ requires built artifacts, which only exist in `sync-and-build.sh`
+- **Standalone runner** -- `bash scripts/test-rq.sh --build-dir <path>` can be run independently against any build directory with `dist/`
 - **Uses global Verdaccio** -- health-checks the permanent service at `localhost:4873`, clears `@sparkleideas/*`, publishes built packages, installs into fresh temp dir
 - **Hard fail** -- any RQ failure aborts the pipeline before publish to real npm
-- **Timeout**: 120s for the full RQ suite
-- **Cannot run standalone** -- `test-integration.sh` does NOT run RQ (no `dist/`)
-- **Estimated duration**: ~30s additional in the deployment pipeline
+- **Timeout**: 120s global with SIGTERM→5s→SIGKILL escalation
+- **No side effects** -- uses `--no-save` when publishing to Verdaccio, so `config/published-versions.json` is not mutated
+- **Estimated duration**: ~30s
 
 **Key principle**: Layer 3 is where bugs are **discovered**. If a functional defect exists, it is caught here -- before any package reaches real npm. Layer 4 (production verification) should never be the first time a bug is found.
 
@@ -383,8 +383,9 @@ Verdaccio's persistent storage (`~/.verdaccio/storage`) acts as a package-level 
 
 STANDALONE USE:
   test-integration.sh  -> Layer 2 only (pipeline mechanics, no RQ)
+  test-rq.sh           -> Layer 3 only (requires --build-dir with dist/)
   test-acceptance.sh   -> Layer 4 only (post-publish verification)
-  sync-and-build.sh    -> ALL layers (the only way to run Layer 3)
+  sync-and-build.sh    -> ALL layers (calls test-integration.sh + test-rq.sh)
 ```
 
 ### 4.2 Verdaccio Lifecycle

@@ -141,8 +141,8 @@ Layer 2: BUILD VERIFICATION (Medium)
     Phase 4: Patch    (apply + sentinel verify)       [30s timeout]
     Phase 5: Verify   (package count check)           [30s timeout]
     Phase 6: Upstream (skipped -- advisory only)      [10s timeout]
-    Phase 7: Publish  (all packages to Verdaccio)     [180s timeout]
-    Phase 8: Install  (npm install from Verdaccio)    [120s timeout]
+    Phase 7: Publish  (all packages to Verdaccio)     [90s timeout]
+    Phase 8: Install  (npm install from Verdaccio)    [60s timeout]
     Phase 9: Cleanup  (save logs, remove temp dirs)
   PROVES: "packages resolve and install"
   DOES NOT PROVE: "packages work" (no dist/, no TypeScript build)
@@ -156,7 +156,7 @@ Layer 2: BUILD VERIFICATION (Medium)
 
 Layer 3: RELEASE QUALIFICATION (Medium)                     <- NEW
   CONSTRAINT: < 120s, localhost only, Verdaccio
-  RUNNER: sync-and-build.sh (post-build, pre-publish-to-npm)
+  RUNNER: scripts/test-rq.sh --build-dir <path> (standalone, called by sync-and-build.sh)
   PURPOSE: functional smoke tests against BUILT packages
   REQUIRES: dist/ directories (TypeScript build output from Phase 7)
 
@@ -234,8 +234,9 @@ PIPELINE FLOW:
 
   STANDALONE USE:
     test-integration.sh  -> Layers 2 only (pipeline mechanics, no RQ)
+    test-rq.sh           -> Layer 3 only (requires --build-dir with dist/)
     test-acceptance.sh   -> Layer 4 only (post-publish verification)
-    sync-and-build.sh    -> ALL layers (the only way to run Layer 3)
+    sync-and-build.sh    -> ALL layers (calls test-integration.sh + test-rq.sh)
 
 FAILURE SEMANTICS:
   Layer 2 fails           -> pipeline bug (codemod, patch, publish, deps)
@@ -422,15 +423,16 @@ Results are `.gitignore`d but persist on the build server. The `.test-manifest.j
 
 **Problem**: The integration test (Layer 2) proves packages install and deps resolve, but never runs a single CLI command. The acceptance test (Layer 4) proves packages work, but only runs post-publish. This means functional bugs reach real npm before being detected.
 
-**Solution**: Add a Release Qualification layer (Layer 3) that runs 12 functional smoke tests against **built** packages installed from Verdaccio, before publishing to real npm. This is Google's standard "test in staging before deploying to production" pattern.
+**Solution**: Add a Release Qualification layer (Layer 3) as a standalone script (`scripts/test-rq.sh`) that runs 12 functional smoke tests against **built** packages installed from Verdaccio, before publishing to real npm. This is Google's standard "test in staging before deploying to production" pattern.
 
 **Design principles**:
 
-1. **Runs in the deployment pipeline** -- RQ lives in `sync-and-build.sh`, not `test-integration.sh`. RQ exercises the built product (runs CLI commands, imports ESM modules). Built artifacts (`dist/`) only exist after `sync-and-build.sh` Phase 7 (TypeScript compilation). `test-integration.sh` tests pipeline mechanics without building -- it cannot and should not run RQ.
-2. **Separation of concerns** -- development, build, test, and deployment are distinct activities. `test-integration.sh` is a test (validates pipeline logic). `sync-and-build.sh` is a build+deploy pipeline (produces artifacts, qualifies them, ships them). RQ is a deployment gate, not a test.
-3. **One test definition, two contexts** -- functional tests live in `lib/acceptance-checks.sh`, sourced by both `sync-and-build.sh` (Layer 3, Verdaccio) and `test-acceptance.sh` (Layer 4, real npm). Eliminates duplication.
+1. **Standalone script** -- RQ lives in `scripts/test-rq.sh`, callable independently with `--build-dir <path>` or by `sync-and-build.sh` as a deployment gate. RQ exercises the built product (runs CLI commands, imports ESM modules). Built artifacts (`dist/`) only exist after TypeScript compilation.
+2. **Separation of concerns** -- development, build, test, and deployment are distinct activities. `test-integration.sh` is a test (validates pipeline logic). `test-rq.sh` is a qualification gate (validates product function). `sync-and-build.sh` is a build+deploy pipeline that calls both.
+3. **One test definition, two contexts** -- functional tests live in `lib/acceptance-checks.sh`, sourced by both `test-rq.sh` (Layer 3, Verdaccio) and `test-acceptance.sh` (Layer 4, real npm). Eliminates duplication.
 4. **Hard fail** -- any RQ failure aborts the pipeline. This is pre-publish, so nothing has shipped.
 5. **Layer 4 becomes confirmation** -- if Layer 3 passed in staging but Layer 4 fails in production, the root cause is a deployment issue (CDN lag, dist-tag race), not a code bug.
+6. **No side effects** -- RQ uses `--no-save` when publishing to Verdaccio, so `config/published-versions.json` is not mutated by test runs.
 
 **Release Qualification tests (RQ-1 through RQ-12)**:
 

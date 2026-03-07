@@ -373,7 +373,7 @@ function sleep(ms) {
  * @param {number} [options.rateLimitMs] - Override RATE_LIMIT_MS (0 for local registries)
  * @returns {{ published: Array<{name: string, level: number, tag: string|null, version: string}>, failed: null | { package: string, level: number, error: string } }}
  */
-export async function publishAll(buildDir, { dryRun = false, metadata, getPublishTagFn, rateLimitMs, packagesFilter } = {}) {
+export async function publishAll(buildDir, { dryRun = false, metadata, getPublishTagFn, rateLimitMs, packagesFilter, noSave = false } = {}) {
   if (!buildDir) throw new Error('buildDir is required');
 
   const resolvedBuildDir = resolve(buildDir);
@@ -508,9 +508,11 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
   }
 
   // Save updated published versions state
-  if (!dryRun) {
+  if (!dryRun && !noSave) {
     savePublishedVersions(publishedVersions);
     console.log(`\nUpdated config/published-versions.json`);
+  } else if (noSave) {
+    console.log(`\nSkipped saving config/published-versions.json (--no-save)`);
   }
 
   console.log(`\nPublished ${published.length} packages successfully.`);
@@ -525,6 +527,7 @@ async function main() {
       'build-dir': { type: 'string' },
       'dry-run': { type: 'boolean', default: false },
       'no-rate-limit': { type: 'boolean', default: false },
+      'no-save': { type: 'boolean', default: false },
       'packages': { type: 'string' },
     },
     strict: true,
@@ -539,8 +542,9 @@ async function main() {
   }
 
   const rateLimitMs = values['no-rate-limit'] ? 0 : undefined;
+  const noSave = values['no-save'];
   const packagesFilter = values['packages'] ? JSON.parse(values['packages']) : null;
-  const result = await publishAll(buildDir, { dryRun, rateLimitMs, packagesFilter });
+  const result = await publishAll(buildDir, { dryRun, rateLimitMs, packagesFilter, noSave });
 
   // Output JSON summary to stdout
   console.log('\n--- Summary ---');

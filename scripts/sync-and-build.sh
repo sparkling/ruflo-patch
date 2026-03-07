@@ -61,8 +61,13 @@ log_error() {
 # Cleanup
 # ---------------------------------------------------------------------------
 
+GLOBAL_TIMEOUT_PID=""
+
 cleanup() {
   local exit_code=$?
+  if [[ -n "${GLOBAL_TIMEOUT_PID}" ]]; then
+    kill "${GLOBAL_TIMEOUT_PID}" 2>/dev/null || true
+  fi
   if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" ]]; then
     log "Cleaning up temp directory: ${TEMP_DIR}"
     rm -rf "${TEMP_DIR}"
@@ -358,6 +363,13 @@ run_build() {
   # We install TypeScript locally in the build dir and compile each package
   # individually to avoid workspace dependency resolution issues.
 
+  # Remove all .npmignore and .gitignore files so npm publish uses the "files"
+  # field from package.json exclusively. Upstream .npmignore files exclude
+  # dist/ and wasm/ (build artifacts they don't commit to git), but we build
+  # them and need them included in the published tarball.
+  find "${TEMP_DIR}" -name ".npmignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
+  find "${TEMP_DIR}" -name ".gitignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
+
   local v3_dir="${TEMP_DIR}/v3"
   if [[ ! -d "$v3_dir" ]]; then
     log "No v3/ directory found — skipping TypeScript build"
@@ -442,6 +454,49 @@ run_build() {
     rm -f "$tmp_tsconfig"
   done
 
+  # Build cross-repo packages that have tsconfig.json
+  # These live outside v3/@claude-flow/ but need TypeScript compilation
+  local cross_repo_builds=(
+    "cross-repo/agentic-flow/packages/agent-booster"
+  )
+  for rel_path in "${cross_repo_builds[@]}"; do
+    local pkg_dir="${TEMP_DIR}/${rel_path}"
+    [[ -d "$pkg_dir" && -f "$pkg_dir/tsconfig.json" ]] || continue
+
+    if ! needs_rebuild "agent-booster"; then
+      skipped=$((skipped + 1))
+      log "  SKIP: ${rel_path} (unchanged)"
+      continue
+    fi
+
+    log "  Building cross-repo: ${rel_path}"
+
+    # Build WASM module if this package has a Rust crate (e.g. agent-booster)
+    local crate_dir="$pkg_dir/crates/agent-booster-wasm"
+    if [[ -d "$crate_dir" ]] && command -v wasm-pack &>/dev/null; then
+      log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
+      local wasm_out
+      wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
+        log "WARN: WASM build failed for ${rel_path} (agent-booster ESM import will fail)"
+        echo "$wasm_out" | tail -5 | while IFS= read -r line; do log "  $line"; done
+      }
+      if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
+        # Remove wasm-pack generated package.json and .gitignore — package.json
+        # causes npm to treat wasm/ as a nested package, and .gitignore contains
+        # "*" which makes npm exclude all wasm files from the tarball
+        rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
+        log "  WASM build succeeded"
+      fi
+    fi
+
+    if "$TSC" -p "$pkg_dir/tsconfig.json" --skipLibCheck 2>/dev/null; then
+      built=$((built + 1))
+    else
+      log "WARN: TypeScript build failed for ${rel_path}"
+      failed=$((failed + 1))
+    fi
+  done
+
   log "Build complete: ${built} built, ${skipped} skipped (unchanged), ${failed} failed"
   if [[ $failed -gt 0 ]]; then
     log_error "Some packages failed to build — published packages may be broken"
@@ -473,214 +528,26 @@ run_tests() {
   # This catches missing packages, broken deps, and publish failures
   # BEFORE we publish to real npm.
   log "Running integration test (local Verdaccio dry run)"
-  export CHANGED_PACKAGES_JSON="$REBUILD_PACKAGES"
-  bash "${SCRIPT_DIR}/test-integration.sh" || {
+  bash "${SCRIPT_DIR}/test-integration.sh" --changed-packages "$REBUILD_PACKAGES" || {
     log_error "Integration test failed — aborting before publish to npm"
     return 1
   }
   log "Integration test passed — safe to publish"
 
   # ── Layer 3: Release Qualification (ADR-0023 — functional smoke tests) ──
-  # Publish built packages to a local Verdaccio, install them, and run
-  # RQ-1..RQ-12 to verify packages actually work before publishing to real npm.
-  # This requires dist/ from the TypeScript build (Phase 7).
-  log "Running Release Qualification (functional smoke tests against built packages)"
-
-  # RQ global timeout — kill if Layer 3 exceeds 120s (ADR-0023: Medium < 120s)
-  ( sleep 120; log_error "[TIMEOUT] Release Qualification exceeded 120s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
-  local rq_timeout_pid=$!
-
-  local rq_start_s
-  rq_start_s=$(date +%s)
-
-  local rq_failed=false
-  local rq_temp
-  rq_temp=$(mktemp -d /tmp/ruflo-rq-XXXXX)
-
-  # Use permanent global Verdaccio (systemd user service on port 4873)
-  local rq_port=4873
-  local rq_storage="/home/claude/.verdaccio/storage"
-
-  # Verify global Verdaccio is running
-  if ! curl -sf "http://localhost:${rq_port}/-/ping" >/dev/null 2>&1; then
-    log_error "Global Verdaccio not running on port ${rq_port}"
-    log_error "Start it: systemctl --user start verdaccio"
-    kill "$rq_timeout_pid" 2>/dev/null || true
-    rm -rf "$rq_temp"
-    return 1
-  fi
-  log "Global Verdaccio healthy on port ${rq_port}"
-
-  # Clear @sparkleideas/* packages from Verdaccio (selective or full)
-  if [[ "$REBUILD_PACKAGES" == "all" || "$REBUILD_PACKAGES" == "[]" ]]; then
-    log "Full mode: clearing all @sparkleideas/* from RQ Verdaccio"
-    rm -rf "${rq_storage}/@sparkleideas" 2>/dev/null || true
-  else
-    log "Incremental mode: clearing only changed packages from RQ Verdaccio"
-    echo "$REBUILD_PACKAGES" | node -e "
-      const fs = require('fs');
-      const pkgs = JSON.parse(fs.readFileSync('/dev/stdin', 'utf8'));
-      for (const pkg of pkgs) {
-        const name = pkg.replace('@sparkleideas/', '');
-        const dir = '${rq_storage}/@sparkleideas/' + name;
-        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
-      }
-    " 2>/dev/null || true
-  fi
-
-  # Publish built packages to RQ Verdaccio
-  log "Publishing built packages to RQ Verdaccio..."
-  # Set auth token (global Verdaccio allows $all publish, but npm may require a token)
-  npm config set "//localhost:${rq_port}/:_authToken" "test-token" 2>/dev/null || true
-  local rq_publish_args="--no-rate-limit"
+  # Standalone script that publishes built packages to Verdaccio, installs them,
+  # and runs RQ-1..RQ-12. Requires dist/ from the TypeScript build (Phase 7).
+  log "Running Release Qualification"
+  local rq_args="--build-dir ${TEMP_DIR}"
   if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
-    rq_publish_args="--no-rate-limit --packages '${REBUILD_PACKAGES}'"
+    rq_args="${rq_args} --changed-packages '${REBUILD_PACKAGES}'"
   fi
   # shellcheck disable=SC2086
-  NPM_CONFIG_REGISTRY="http://localhost:${rq_port}" \
-    node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" ${rq_publish_args} 2>&1 || {
-    log_error "Failed to publish to RQ Verdaccio"
-    kill "$rq_timeout_pid" 2>/dev/null || true
-    rm -rf "$rq_temp"
+  bash "${SCRIPT_DIR}/test-rq.sh" ${rq_args} || {
+    log_error "Release Qualification FAILED"
     return 1
   }
-  log "Built packages published to RQ Verdaccio"
-
-  # Install packages into RQ temp dir
-  (cd "$rq_temp" && echo '{"name":"ruflo-rq-test","version":"1.0.0","private":true}' > package.json \
-    && echo "registry=http://localhost:${rq_port}" > .npmrc \
-    && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins \
-       --registry "http://localhost:${rq_port}" \
-       --ignore-scripts --no-audit --no-fund 2>&1) || {
-    log_error "Failed to install packages for RQ"
-    kill "$rq_timeout_pid" 2>/dev/null || true
-    rm -rf "$rq_temp"
-    return 1
-  }
-
-  # Source shared test library and run checks
-  local checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
-  if [[ ! -f "$checks_lib" ]]; then
-    log_error "Shared test library not found: $checks_lib"
-    kill "$rq_timeout_pid" 2>/dev/null || true
-    rm -rf "$rq_temp"
-    return 1
-  fi
-  # shellcheck source=../lib/acceptance-checks.sh
-  source "$checks_lib"
-
-  # Set environment for shared checks (save/restore TEMP_DIR since it holds
-  # the build directory used by later pipeline phases)
-  local rq_saved_temp_dir="$TEMP_DIR"
-  REGISTRY="http://localhost:${rq_port}"
-  PKG="@sparkleideas/cli"
-  TEMP_DIR="$rq_temp"
-
-  # Define run_timed for the shared library
-  run_timed() {
-    local t_start t_end
-    t_start=$(date +%s%N 2>/dev/null || echo 0)
-    _OUT="$(eval "$@" 2>&1)" || true
-    _EXIT=${PIPESTATUS[0]:-$?}
-    t_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$t_start" == "0" || "$t_end" == "0" ]]; then
-      _DURATION_MS=0
-    else
-      _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
-    fi
-  }
-
-  # Run all 12 RQ checks
-  local rq_pass=0 rq_fail=0 rq_total=0
-  local rq_results_json="[]"
-  local rq_timestamp
-  rq_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-  run_rq_check() {
-    local id="$1" name="$2" fn="$3"
-    rq_total=$((rq_total + 1))
-    log "  RQ $id: $name..."
-    local rq_start_ns rq_end_ns rq_dur_ms=0
-    rq_start_ns=$(date +%s%N 2>/dev/null || echo 0)
-    "$fn"
-    rq_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$rq_start_ns" != "0" && "$rq_end_ns" != "0" ]]; then
-      rq_dur_ms=$(( (rq_end_ns - rq_start_ns) / 1000000 ))
-    fi
-    if [[ $rq_dur_ms -gt 15000 ]]; then
-      log "  SLOW  $id: ${rq_dur_ms}ms (threshold: 15000ms)"
-    fi
-    local rq_passed_bool="false"
-    if [[ "$_CHECK_PASSED" == "true" ]]; then
-      rq_pass=$((rq_pass + 1))
-      rq_passed_bool="true"
-      log "  PASS  $id: $name"
-    else
-      rq_fail=$((rq_fail + 1))
-      log "  FAIL  $id: $name"
-      echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do
-        log "        $line"
-      done
-    fi
-    # Append to JSON results array
-    local rq_entry
-    rq_entry=$(printf '{"id":"%s","name":"%s","passed":%s,"duration_ms":%d}' \
-      "$id" "$name" "$rq_passed_bool" "$rq_dur_ms")
-    if [[ "$rq_results_json" == "[]" ]]; then
-      rq_results_json="[$rq_entry]"
-    else
-      rq_results_json="${rq_results_json%]}, $rq_entry]"
-    fi
-  }
-
-  run_rq_check "RQ-1"  "Version check"       check_version
-  run_rq_check "RQ-2"  "Init"                check_init
-  run_rq_check "RQ-3"  "Settings file"       check_settings_file
-  run_rq_check "RQ-4"  "Scope check"         check_scope
-  run_rq_check "RQ-5"  "Doctor"              check_doctor
-  run_rq_check "RQ-6"  "MCP config"          check_mcp_config
-  run_rq_check "RQ-7"  "Wrapper proxy"       check_wrapper_proxy
-  run_rq_check "RQ-8"  "Memory lifecycle"    check_memory_lifecycle
-  run_rq_check "RQ-9"  "Neural training"     check_neural_training
-  run_rq_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
-  run_rq_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
-  run_rq_check "RQ-12" "Plugins SDK"         check_plugins_sdk
-
-  log "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
-
-  # Write qualification-results.json artifact (ADR-0023 Decision 8)
-  local rq_results_dir="${PROJECT_DIR}/test-results"
-  mkdir -p "$rq_results_dir"
-  cat > "$rq_results_dir/qualification-results.json" <<RQJSONEOF
-{
-  "timestamp": "$rq_timestamp",
-  "layer": 3,
-  "registry": "http://localhost:${rq_port}",
-  "total": $rq_total,
-  "passed": $rq_pass,
-  "failed": $rq_fail,
-  "results": $rq_results_json
-}
-RQJSONEOF
-  log "RQ results written to ${rq_results_dir}/qualification-results.json"
-
-  # Cancel the global RQ timeout
-  kill "$rq_timeout_pid" 2>/dev/null || true
-
-  local rq_end_s
-  rq_end_s=$(date +%s)
-  log "Release Qualification completed in $(( rq_end_s - rq_start_s ))s"
-
-  # Restore TEMP_DIR to the build directory for subsequent pipeline phases
-  TEMP_DIR="$rq_saved_temp_dir"
-
-  # Cleanup RQ temp directory (global Verdaccio stays running)
-  rm -rf "$rq_temp"
-
-  if [[ $rq_fail -gt 0 ]]; then
-    log_error "Release Qualification FAILED — ${rq_fail} functional test(s) failed"
-    return 1
-  fi
-  log "Release Qualification passed — all ${rq_total} functional tests pass"
+  log "Release Qualification passed"
 }
 
 # ---------------------------------------------------------------------------
@@ -845,6 +712,10 @@ main() {
   log "=========================================="
   log "ruflo sync-and-build starting"
   log "=========================================="
+
+  # Global timeout — 900s (Google "Large" size ceiling)
+  ( sleep 900; log_error "[TIMEOUT] sync-and-build.sh exceeded 900s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+  GLOBAL_TIMEOUT_PID=$!
 
   # Phase 1: Load state
   load_state

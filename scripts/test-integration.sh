@@ -60,12 +60,17 @@ while [[ $# -gt 0 ]]; do
       [[ -z "$CREATE_SNAPSHOT_DIR" ]] && { echo "Error: --create-snapshot requires a directory"; exit 1; }
       shift 2
       ;;
+    --changed-packages)
+      export CHANGED_PACKAGES_JSON="${2:-}"
+      shift 2
+      ;;
     -h|--help)
-      echo "Usage: test-integration.sh [--snapshot <dir>] [--create-snapshot <dir>]"
+      echo "Usage: test-integration.sh [--snapshot <dir>] [--create-snapshot <dir>] [--changed-packages <json>]"
       echo ""
       echo "Options:"
-      echo "  --snapshot <dir>          Use frozen upstream tarballs instead of live clones"
-      echo "  --create-snapshot <dir>   Tarball current upstream sources into target dir, then exit"
+      echo "  --snapshot <dir>              Use frozen upstream tarballs instead of live clones"
+      echo "  --create-snapshot <dir>       Tarball current upstream sources into target dir, then exit"
+      echo "  --changed-packages <json>     JSON array of changed packages, or \"all\" (default: env \$CHANGED_PACKAGES_JSON)"
       exit 0
       ;;
     *)
@@ -430,6 +435,13 @@ MEOF
 
   phase_log "1" "Manifest written to ${RESULTS_DIR}/.test-manifest.json"
 
+  # Fix Verdaccio search indexer DOCUMENT_ALREADY_EXISTS errors
+  local indexer_file="/usr/lib/node_modules/verdaccio/node_modules/@verdaccio/search-indexer/build/dist.js"
+  if [[ -f "$indexer_file" ]] && ! grep -q "remove5.*before insert" "$indexer_file"; then
+    sudo sed -i 's/await insert6(this\.database, item);/try { await remove5(this.database, name); } catch (_) {} \/\/ upsert: remove before insert\n      await insert6(this.database, item);/' "$indexer_file"
+    phase_log "1" "Patched Verdaccio search indexer for upsert (fixes DOCUMENT_ALREADY_EXISTS)"
+  fi
+
   local end
   end=$(now_ns)
   record_phase "setup" "true" "$(elapsed_ms "$start" "$end")" "Verdaccio on port ${VERDACCIO_PORT}, temp dirs created"
@@ -740,7 +752,7 @@ phase_publish() {
   # Stream output to both file and stderr so heartbeats remain visible
   # shellcheck disable=SC2086
   node "${SCRIPT_DIR}/publish.mjs" \
-    --build-dir "${build_root}" --no-rate-limit ${publish_extra_args} \
+    --build-dir "${build_root}" --no-rate-limit --no-save ${publish_extra_args} \
     > >(tee "${publish_output_file}") 2>&1 || publish_exit=$?
 
   local publish_output
@@ -902,6 +914,14 @@ phase_cleanup() {
   # Copy manifest to results (it was written in phase 1)
   # Already exists at ${RESULTS_DIR}/.test-manifest.json
 
+  # Bootstrap package-checksums.json for incremental builds (if not yet present)
+  local checksums_path="${PROJECT_DIR}/config/package-checksums.json"
+  if [[ ! -f "$checksums_path" && -n "$TEMP_BUILD" && -d "$TEMP_BUILD" ]]; then
+    phase_log "9" "Bootstrapping package-checksums.json from build dir"
+    node "${SCRIPT_DIR}/package-hash.mjs" --build-dir "$TEMP_BUILD" --save 2>&1 || \
+      phase_log "9" "WARNING: Failed to generate package checksums"
+  fi
+
   # Remove ephemeral temp dirs (Verdaccio is a permanent service, not ours to stop)
   for d in "${TEMP_BUILD}" "${TEMP_INSTALL}"; do
     if [[ -n "$d" && -d "$d" ]]; then
@@ -934,7 +954,7 @@ main() {
   log "ruflo integration test starting"
   log "=========================================="
   log "Phase timeouts: setup=30s clone=60s codemod=60s patch=30s"
-  log "                build=30s upstream=10s publish=180s install=120s"
+  log "                build=30s upstream=10s publish=90s install=60s"
   log "Global timeout: 180s (3 min)"
   log "=========================================="
 
@@ -980,11 +1000,11 @@ main() {
   fi
 
   if [[ -z "$phase_failed" ]]; then
-    run_phase_with_timeout 180 phase_publish || phase_failed="publish"
+    run_phase_with_timeout 90 phase_publish || phase_failed="publish"
   fi
 
   if [[ -z "$phase_failed" ]]; then
-    run_phase_with_timeout 120 phase_install || phase_failed="install"
+    run_phase_with_timeout 60 phase_install || phase_failed="install"
   fi
 
   # Phase 9 always runs (cleanup)
