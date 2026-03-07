@@ -1,6 +1,7 @@
 # Runtime state
 scripts/.last-build-state
 .claude-flow/
+.claude/projects/
 .swarm/
 .entire/
 .codex/
