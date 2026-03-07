@@ -397,6 +397,86 @@ test_a10_neural_training() {
   record_result "A10" "Neural training" "$passed" "$output" "$_DURATION_MS"
 }
 
+test_a13_agent_booster() {
+  # Verify @sparkleideas/agent-booster is importable and WASM initializes
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local output passed="false"
+
+  local import_out
+  import_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node -e "
+    import('@sparkleideas/agent-booster')
+      .then(m => { console.log('IMPORT_OK'); console.log(Object.keys(m).join(',')); })
+      .catch(e => { console.log('IMPORT_FAIL: ' + e.message); process.exit(1); })
+  " 2>&1) || true
+
+  if echo "$import_out" | grep -q 'IMPORT_OK'; then
+    passed="true"
+    output="agent-booster module imported successfully: $(echo "$import_out" | tail -1)"
+  else
+    output="Failed to import @sparkleideas/agent-booster: $(echo "$import_out" | head -5)"
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local duration_ms=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+  fi
+  record_result "A13" "Agent booster import" "$passed" "$output" "$duration_ms"
+}
+
+test_a14_agent_booster_bin() {
+  # Verify agent-booster binary runs
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes @sparkleideas/agent-booster --version"
+  local passed="false"
+  if [[ $_EXIT -eq 0 && -n "$_OUT" ]]; then
+    if echo "$_OUT" | grep -qE '[0-9]+\.[0-9]+'; then
+      passed="true"
+    fi
+  fi
+  record_result "A14" "Agent booster binary" "$passed" "$_OUT" "$_DURATION_MS"
+}
+
+test_a15_plugins_sdk() {
+  # Verify @sparkleideas/plugins SDK is importable
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local output passed="false"
+
+  local import_out
+  import_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node -e "
+    import('@sparkleideas/plugins')
+      .then(m => { console.log('IMPORT_OK'); console.log(Object.keys(m).join(',')); })
+      .catch(e => { console.log('IMPORT_FAIL: ' + e.message); process.exit(1); })
+  " 2>&1) || true
+
+  if echo "$import_out" | grep -q 'IMPORT_OK'; then
+    passed="true"
+    output="plugins SDK imported: $(echo "$import_out" | tail -1)"
+  else
+    output="Failed to import @sparkleideas/plugins: $(echo "$import_out" | head -5)"
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local duration_ms=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    duration_ms=$(( (end_ns - start_ns) / 1000000 ))
+  fi
+  record_result "A15" "Plugins SDK import" "$passed" "$output" "$duration_ms"
+}
+
+test_a16_plugin_install() {
+  # Verify plugin install command works
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '$PKG' plugins install --name @sparkleideas/plugin-prime-radiant"
+  local passed="false"
+  if [[ $_EXIT -eq 0 ]]; then
+    if echo "$_OUT" | grep -qi 'install\|success\|prime-radiant'; then
+      passed="true"
+    fi
+  fi
+  record_result "A16" "Plugin install" "$passed" "$_OUT" "$_DURATION_MS"
+}
+
 # ── Main ────────────────────────────────────────────────────────────
 echo "Acceptance Tests (ADR-0020 Layer 3)"
 echo "===================================="
@@ -443,6 +523,18 @@ test_a9_memory_lifecycle
 
 echo "Running A10: Neural training..."
 test_a10_neural_training
+
+echo "Running A13: Agent booster import..."
+test_a13_agent_booster
+
+echo "Running A14: Agent booster binary..."
+test_a14_agent_booster_bin
+
+echo "Running A15: Plugins SDK import..."
+test_a15_plugins_sdk
+
+echo "Running A16: Plugin install..."
+test_a16_plugin_install
 
 # ── Summary ─────────────────────────────────────────────────────────
 echo ""

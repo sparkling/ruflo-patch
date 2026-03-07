@@ -1,6 +1,6 @@
 # ADR-0022: Full Ecosystem Repackaging
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-03-07
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + MADR
@@ -435,7 +435,7 @@ Publish `@sparkleideas/plugins` (the SDK) so that upstream `@claude-flow/plugin-
 
 **Phase 1 -- Foundation (immediate):**
 
-- [ ] Add 12 new packages to `LEVELS` array at Level 1 in `scripts/publish.mjs`
+- [x] Add 12 new packages to `LEVELS` array at Level 1 in `scripts/publish.mjs`
 - [ ] Verify codemod handles scope rename for each package
 - [ ] Add `@sparkleideas/agent-booster` -- verify WASM binary ships in `dist/`
 - [ ] Add `@sparkleideas/plugins` -- verify 8+ export entrypoints resolve

@@ -62,6 +62,27 @@ const KNOWN_DEPS = {
   // Level 5 — root packages (transitive deps not enumerated here)
   '@sparkleideas/cli': [],
   '@sparkleideas/claude-flow': [],
+  // ADR-0021/0022 Phase 1: Level 1 additions
+  '@sparkleideas/agent-booster': [],
+  '@sparkleideas/agentdb-onnx': [],
+  '@sparkleideas/cuda-wasm': [],
+  // ADR-0022 Phase 3: Level 3 addition
+  '@sparkleideas/ruvector-upstream': [],
+  // ADR-0022 Phase 3: Level 4 plugins
+  '@sparkleideas/plugin-gastown-bridge': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-agentic-qe': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-code-intelligence': ['@sparkleideas/plugins', '@sparkleideas/ruvector-upstream'],
+  '@sparkleideas/plugin-cognitive-kernel': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-financial-risk': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-healthcare-clinical': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-hyperbolic-reasoning': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-legal-contracts': ['@sparkleideas/plugins', '@sparkleideas/ruvector-upstream'],
+  '@sparkleideas/plugin-neural-coordination': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-perf-optimizer': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-prime-radiant': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-quantum-optimizer': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-test-intelligence': ['@sparkleideas/plugins'],
+  '@sparkleideas/teammate-plugin': [],
 };
 
 // ── Helpers ──
@@ -145,18 +166,18 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (3+5+6+8+2)', () => {
+    it('all expected packages are present across all levels (6+5+7+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 specifies: L1=3, L2=5, L3=6, L4=8, L5=2
-      assert.equal(LEVELS[0].length, 3, 'Level 1 should have 3 packages');
+      // ADR-0014 + ADR-0021/0022: L1=6, L2=5, L3=7, L4=22, L5=2
+      assert.equal(LEVELS[0].length, 6, 'Level 1 should have 6 packages');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
-      assert.equal(LEVELS[2].length, 6, 'Level 3 should have 6 packages');
-      assert.equal(LEVELS[3].length, 8, 'Level 4 should have 8 packages');
+      assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
+      assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        24,
-        `Expected 24 packages total, got ${allPackages.length}`
+        42,
+        `Expected 42 packages total, got ${allPackages.length}`
       );
     });
 
@@ -494,6 +515,10 @@ describe('Topological publish order (ADR-0014)', () => {
         level1.includes('@sparkleideas/ruv-swarm'),
         'ruv-swarm should be at level 1'
       );
+      assert.ok(
+        level1.includes('@sparkleideas/agent-booster'),
+        'agent-booster should be at level 1'
+      );
     });
 
     it('Level 5 contains cli and claude-flow', () => {
@@ -521,6 +546,18 @@ describe('Topological publish order (ADR-0014)', () => {
       assert.ok(
         level3.includes('@sparkleideas/neural'),
         'neural should be at level 3'
+      );
+    });
+
+    it('plugin packages are at level 4', () => {
+      const level4 = LEVELS[3];
+      assert.ok(
+        level4.includes('@sparkleideas/plugin-prime-radiant'),
+        'plugin-prime-radiant should be at level 4'
+      );
+      assert.ok(
+        level4.includes('@sparkleideas/teammate-plugin'),
+        'teammate-plugin should be at level 4'
       );
     });
   });

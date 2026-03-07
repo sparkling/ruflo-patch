@@ -860,6 +860,15 @@ IEOF
     return 1
   fi
 
+  # Verify key ADR-0021/0022 packages are available in the registry
+  for new_pkg in "@sparkleideas/agent-booster" "@sparkleideas/plugins" "@sparkleideas/ruvector-upstream"; do
+    if npm view "$new_pkg" version --registry "http://localhost:${VERDACCIO_PORT}" >/dev/null 2>&1; then
+      phase_log "8" "  ADR-0022 package available: $new_pkg"
+    else
+      phase_log "8" "  WARNING: ADR-0022 package not published: $new_pkg"
+    fi
+  done
+
   # Verify dependency resolution — all internal deps should resolve
   local missing_deps
   missing_deps=$(cd "${TEMP_INSTALL}" && npm ls --all 2>&1 | grep 'MISSING' || true)

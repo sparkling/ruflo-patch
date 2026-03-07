@@ -383,10 +383,10 @@ Acceptance criteria:
 - [x] `scripts/test-integration.sh` exists and runs the full 9-phase integration test
 - [x] Integration test uses Verdaccio (no real npm publish during testing)
 - [x] Integration test verifies zero `@claude-flow/` references after codemod (excluding `@sparkleideas`)
-- [ ] Integration test verifies all 24 packages publish successfully to Verdaccio
-- [ ] Integration test verifies `npm install @sparkleideas/cli` resolves the full dependency tree from Verdaccio
+- [x] Integration test verifies all 24 packages publish successfully to Verdaccio
+- [x] Integration test verifies `npm install @sparkleideas/cli` resolves the full dependency tree from Verdaccio
 - [x] `scripts/test-acceptance.sh` exists and validates end-user commands
-- [ ] `config/known-test-failures.txt` exists (may be empty initially)
+- [x] `config/known-test-failures.txt` exists (may be empty initially)
 - [x] Upstream test failures are logged but do not block the integration test
 - [x] The build pipeline (`sync-and-build.sh`) runs `npm test` as a gate before publishing
 - [x] systemd timer validation checklist is documented in this ADR
@@ -396,8 +396,8 @@ Reproducibility criteria:
 
 - [x] Integration test writes `.test-manifest.json` with exact commit SHAs, tool versions, and platform
 - [x] `--snapshot` mode creates and replays frozen upstream tarballs for offline reproducibility
-- [ ] `.tool-versions` file pins Node.js, pnpm, and Python versions
-- [ ] `config/verdaccio-test.yaml` exists with `uplinks: {}` (fully isolated, no proxy to real npm)
+- [x] `.tool-versions` file pins Node.js, pnpm, and Python versions
+- [x] `config/verdaccio-test.yaml` exists with `uplinks: {}` (fully isolated, no proxy to real npm)
 - [x] Test results are written to `test-results/<timestamp>/` with structured output (TAP, JSON)
 - [x] `scripts/validate-ci.sh` exists and performs non-destructive CI health checks
 - [x] Unit tests produce TAP output in addition to console output

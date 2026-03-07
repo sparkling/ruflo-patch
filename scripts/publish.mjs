@@ -26,6 +26,11 @@ export const LEVELS = [
     '@sparkleideas/agentdb',
     '@sparkleideas/agentic-flow',
     '@sparkleideas/ruv-swarm',
+    // ADR-0021/0022 Phase 1: no internal deps
+    '@sparkleideas/agent-booster',
+    '@sparkleideas/agentdb-onnx',
+    // ADR-0022 Phase 4: standalone tools
+    '@sparkleideas/cuda-wasm',
   ],
   // Level 2: depends on Level 1
   [
@@ -43,6 +48,8 @@ export const LEVELS = [
     '@sparkleideas/plugins',
     '@sparkleideas/providers',
     '@sparkleideas/claims',
+    // ADR-0022 Phase 3: WASM bridge
+    '@sparkleideas/ruvector-upstream',
   ],
   // Level 4: depends on Level 3
   [
@@ -54,6 +61,21 @@ export const LEVELS = [
     '@sparkleideas/security',
     '@sparkleideas/performance',
     '@sparkleideas/testing',
+    // ADR-0022 Phase 3: plugins (depend on @sparkleideas/plugins SDK)
+    '@sparkleideas/plugin-gastown-bridge',
+    '@sparkleideas/plugin-agentic-qe',
+    '@sparkleideas/plugin-code-intelligence',
+    '@sparkleideas/plugin-cognitive-kernel',
+    '@sparkleideas/plugin-financial-risk',
+    '@sparkleideas/plugin-healthcare-clinical',
+    '@sparkleideas/plugin-hyperbolic-reasoning',
+    '@sparkleideas/plugin-legal-contracts',
+    '@sparkleideas/plugin-neural-coordination',
+    '@sparkleideas/plugin-perf-optimizer',
+    '@sparkleideas/plugin-prime-radiant',
+    '@sparkleideas/plugin-quantum-optimizer',
+    '@sparkleideas/plugin-test-intelligence',
+    '@sparkleideas/teammate-plugin',
   ],
   // Level 5: root packages
   // Note: @sparkleideas/ruflo is published separately from the local repo
