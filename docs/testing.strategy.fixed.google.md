@@ -201,8 +201,8 @@ SAVE_TEST_RESULTS=1 npm test # Save TAP + manifest to test-results/
 **Properties**:
 - **Permanent Verdaccio**: systemd user service at `localhost:4873`; scripts health-check it, never start/stop it
 - **External dep cache**: `~/.verdaccio/storage` (permanent, never cleared -- speeds up repeat runs)
-- **Hermetic per-run**: `@sparkleideas/*` packages cleared from storage at the start of each run; external deps persist
-- **Global timeout**: 600s (10 minutes)
+- **Incremental by default**: Only changed `@sparkleideas/*` packages cleared from storage; unchanged packages persist as build cache; external deps persist permanently
+- **Global timeout**: 180s (3 minutes)
 - **Per-phase heartbeat**: Logging every 10s to detect hangs
 - **Deterministic**: Upstream snapshots captured in test manifest
 
@@ -391,38 +391,26 @@ STANDALONE USE:
 
 Verdaccio runs as a **permanent systemd user service** (`verdaccio.service`) at `localhost:4873`. Scripts never start or stop Verdaccio -- they health-check it and manage its storage selectively. External dependency caches persist permanently across runs.
 
-#### Full Mode (current default)
+#### Full Mode (safety fallback)
 
-Clears all `@sparkleideas/*` packages before each run. Every package is republished.
+Triggered by: `--force`, missing checksums, codemod change, or patch infrastructure change. Clears all `@sparkleideas/*` packages and rebuilds everything.
+
+#### Incremental Mode (default)
+
+Always active. Uses content hashes to skip unchanged packages. Verdaccio's persistent storage is the build cache.
 
 **In `test-integration.sh` (Layer 2 -- pipeline mechanics)**:
 
 | Step | Action | Detail |
 |------|--------|--------|
 | 1 | Health check | Verify Verdaccio is responding at `localhost:4873` |
-| 2 | Clear cache | Remove **all** `@sparkleideas/*` packages from `~/.verdaccio/storage` |
-| 3 | Publish packages | All 42+ packages from git clone (**no dist/**) |
-| 4 | Install test | `npm install @sparkleideas/cli` from local registry |
+| 2 | Selective clear | Clear only **changed** packages from storage (via `CHANGED_PACKAGES_JSON`); unchanged packages persist |
+| 3 | Publish packages | Changed packages from git clone; unchanged already in cache |
+| 4 | Install test | `npm install @sparkleideas/cli` — resolves from cache + fresh publish |
 | 5 | Validate deps | Dep resolution, `npm ls`, package structure |
 | 6 | Capture logs | Copy verdaccio.log to results dir |
 
 **In `sync-and-build.sh` (Layer 3 -- release qualification)**:
-
-| Step | Action | Detail |
-|------|--------|--------|
-| 1 | Health check | Verify Verdaccio is responding at `localhost:4873` |
-| 2 | Clear cache | Remove **all** `@sparkleideas/*` packages from `~/.verdaccio/storage` |
-| 3 | Build packages | TypeScript compilation for all 42+ packages |
-| 4 | Publish packages | All 42+ packages from build dir (**with dist/**) |
-| 5 | Install test | `npm install @sparkleideas/cli` from local registry |
-| 6 | RQ smoke tests | RQ-1 through RQ-12 against installed packages |
-| 7 | Capture logs | Copy verdaccio.log to results dir |
-
-#### Incremental Mode (Decision 10)
-
-Uses content hashes to skip unchanged packages. Verdaccio's persistent storage becomes a build cache.
-
-**In `sync-and-build.sh` (Layer 3 -- incremental)**:
 
 | Step | Action | Detail |
 |------|--------|--------|
@@ -436,8 +424,8 @@ Uses content hashes to skip unchanged packages. Verdaccio's persistent storage b
 | 8 | Save checksums | Update `config/package-checksums.json` with new hashes |
 
 ```
-Full mode:     clear ALL → build ALL → publish ALL → install → test
-Incremental:   detect changes → clear CHANGED → build CHANGED → publish CHANGED → install (rest from cache) → test
+Default:       detect changes → clear CHANGED → build CHANGED → publish CHANGED → install (rest from cache) → test
+Full fallback: clear ALL → build ALL → publish ALL → install → test  (--force, missing checksums, codemod change)
 ```
 
 **Fallback**: If `npm install` fails in incremental mode (stale cache), the pipeline automatically falls back to full mode (clear all, rebuild all).
@@ -614,7 +602,7 @@ Every bug caught at Layer 3 (Release Qualification) instead of Layer 4 (Producti
 All tests must satisfy:
 
 1. **No shared filesystem state** — use temp directories with cleanup
-2. **No cross-run package leakage** — `@sparkleideas/*` packages cleared from permanent Verdaccio at the start of each run; external dep cache is shared but read-only from the test's perspective
+2. **No cross-run package leakage** — only changed `@sparkleideas/*` packages cleared from Verdaccio (incremental default); full clear on safety fallback triggers; external dep cache is shared but read-only from the test's perspective
 3. **No host-dependent paths** — use `$TMPDIR` or `/tmp/`
 4. **No time-dependent assertions** — no `sleep` + check patterns
 5. **No order-dependent execution** — each test file runs independently
@@ -932,7 +920,7 @@ Verdaccio's persistent storage is the build cache. The content hash is the cache
 - Post-publish hash verification catches non-determinism
 - Verdaccio install failure = automatic fallback to full cache clear
 
-**Status**: Design approved. Implementation deferred to separate PR.
+**Status**: Implemented. Incremental builds are the default for all layers.
 
 ---
 

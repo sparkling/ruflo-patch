@@ -714,7 +714,7 @@ Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the cod
 | `scripts/sync-and-build.sh` | Insert Phase 6.5 (change detection) between patch and build; selective build in Phase 7; selective Verdaccio clear in RQ; add CODEMOD_HEAD to state file |
 | `scripts/publish.mjs` | Add `--packages` filter to skip unchanged packages |
 | `config/package-checksums.json` | New: per-package SHA-256 hashes + meta (codemod hash, patch dir hash) |
-| `scripts/test-integration.sh` | Optional `--incremental` flag for selective Verdaccio cache clear |
+| `scripts/test-integration.sh` | Always incremental: selective Verdaccio cache clear via `CHANGED_PACKAGES_JSON` env var |
 
 **Expected time savings**:
 
@@ -734,7 +734,7 @@ Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the cod
 4. Hash verification post-publish catches non-determinism
 5. On Verdaccio install failure, fall back to full cache clear and retry
 
-**Status**: Design approved. Implementation deferred to separate PR.
+**Status**: Implemented. All layers use incremental builds by default.
 
 ## Links
 
