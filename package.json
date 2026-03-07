@@ -15,6 +15,10 @@
     "build:sync": "bash scripts/sync-and-build.sh",
     "promote": "bash scripts/promote.sh",
     "rollback": "bash scripts/rollback.sh",
+    "test:integration": "bash scripts/test-integration.sh",
+    "test:acceptance": "bash scripts/test-acceptance.sh",
+    "test:rq": "bash scripts/sync-and-build.sh --test-only",
+    "validate": "bash scripts/validate-ci.sh",
     "audit:imports": "bash scripts/audit-dynamic-imports.sh",
     "systemd:install": "sudo bash scripts/install-systemd.sh"
   },

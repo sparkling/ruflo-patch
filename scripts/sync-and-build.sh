@@ -862,6 +862,22 @@ main() {
     log "Skipping promotion to @latest — acceptance tests did not pass"
   fi
 
+  # Post-promotion smoke — verify @latest actually works
+  if [[ "$acceptance_passed" == true ]]; then
+    log "Running post-promotion smoke test..."
+    local smoke_cache
+    smoke_cache=$(mktemp -d /tmp/ruflo-smoke-XXXXX)
+    local smoke_out
+    smoke_out=$(NPM_CONFIG_CACHE="$smoke_cache" npx --yes @sparkleideas/cli@latest --version 2>&1) || true
+    rm -rf "$smoke_cache"
+    if echo "$smoke_out" | grep -qE '^[0-9]+\.[0-9]+'; then
+      log "Post-promotion smoke PASSED: @latest = $(echo "$smoke_out" | head -1)"
+    else
+      log_error "Post-promotion smoke FAILED — @latest is broken after promotion"
+      log_error "Output: $(echo "$smoke_out" | head -3)"
+    fi
+  fi
+
   # Phase 14: GitHub release notification
   create_github_notification
 

@@ -246,6 +246,7 @@ run_rq_check "RQ-9"  "Neural training"     check_neural_training
 run_rq_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
 run_rq_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
 run_rq_check "RQ-12" "Plugins SDK"         check_plugins_sdk
+run_rq_check "RQ-13" "@latest resolves"    check_latest_resolves
 
 log "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
 

@@ -161,6 +161,8 @@ run_acceptance_check() {
 
 # ── Registry-specific tests (Layer 4 only) ─────────────────────────
 
+# A0 now uses the shared check_latest_resolves from lib/acceptance-checks.sh
+
 test_a8_no_broken_versions() {
   # Verify that npm resolves @sparkleideas/cli to a working version,
   # not the broken 3.5.2-patch.1 (which has no dist/ directory).
@@ -217,6 +219,10 @@ echo ""
 
 # Create results directory
 mkdir -p "$RESULTS_DIR"
+
+# A0: Unpinned smoke test — exercises exactly what a first-time user does
+echo "Running A0: @latest dist-tag resolves..."
+run_acceptance_check "A0" "@latest dist-tag resolves" check_latest_resolves
 
 # A1 runs independently (no temp dir needed)
 # Use a throwaway temp dir for version check

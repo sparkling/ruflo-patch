@@ -45,37 +45,27 @@
 # Test
 npm test
 
-# Preflight (static analysis)
+# Preflight
 npm run preflight
 
-# Deploy (full pipeline: upstream → codemod → patch → build → publish)
-bash scripts/sync-and-build.sh
+# Integration test (pipeline mechanics, local Verdaccio)
+npm run test:integration
 
-# Test pipeline without publishing
-bash scripts/test-integration.sh
+# Release qualification (build + test, no publish)
+npm run test:rq
+
+# Deploy (full pipeline: upstream → codemod → patch → build → publish)
+npm run build:sync
+
+# Acceptance test (verify live packages on real npm)
+npm run test:acceptance
+
+# Environment validation (smoke)
+npm run validate
 ```
 
 - ALWAYS run tests after making code changes
 - ALWAYS verify build succeeds before committing
-
-### Required tests per change type (ADR-0023, ADR-0024)
-
-| Change | Layers | Commands |
-|--------|--------|----------|
-| Patch fix.py | 0, 1 | `npm run preflight && npm test` |
-| Test script changes | 0, 1 | `npm run preflight && npm test` |
-| Codemod/pipeline script | 0, 1, 2 | above + `bash scripts/test-integration.sh` |
-| sync-and-build.sh / RQ | 0–3 | above + `bash scripts/sync-and-build.sh --test-only` |
-| Deploy to npm | 0–4 | `bash scripts/sync-and-build.sh` |
-| Verify live packages | 4 | `bash scripts/test-acceptance.sh` |
-
-### Patching model (ADR-0024)
-
-- Patches are baked into published `@sparkleideas/*` packages at build time
-- `patch-all.sh --target <dir>` is the only mode (no `--global`)
-- `check-patches.sh --target <dir>` verifies sentinels (no auto-reapply)
-- `repair-post-init.sh` has been removed
-- `bin/ruflo.mjs` no longer has `apply/check/repair` commands
 
 ## Security Rules
 

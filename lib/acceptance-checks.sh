@@ -369,6 +369,34 @@ check_plugins_sdk() {
 }
 
 # --------------------------------------------------------------------------
+# RQ-13 / A0: @latest dist-tag resolves to a working version
+# --------------------------------------------------------------------------
+check_latest_resolves() {
+  _CHECK_PASSED="false"
+
+  # Use a fresh cache so npx doesn't reuse a stale resolution
+  local smoke_cache
+  smoke_cache=$(mktemp -d /tmp/ruflo-latest-check-XXXXX)
+
+  local ver_out
+  ver_out=$(NPM_CONFIG_CACHE="$smoke_cache" NPM_CONFIG_REGISTRY="$REGISTRY" \
+    npx --yes @sparkleideas/cli@latest --version 2>&1) || true
+  rm -rf "$smoke_cache"
+
+  if echo "$ver_out" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="cli@latest = $(echo "$ver_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
+  else
+    _CHECK_OUTPUT="cli@latest failed to run --version (broken dist-tag?)"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(echo "$ver_out" | head -5)"
+  fi
+
+  _EXIT=0
+  _DURATION_MS=0
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
 # Run all shared checks. Caller provides run_check() wrapper.
 #
 # Usage:
@@ -394,4 +422,5 @@ run_all_shared_checks() {
   run_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
   run_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
   run_check "RQ-12" "Plugins SDK"         check_plugins_sdk
+  run_check "RQ-13" "@latest resolves"    check_latest_resolves
 }
