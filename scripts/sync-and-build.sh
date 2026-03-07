@@ -358,6 +358,175 @@ run_tests() {
     return 1
   }
   log "Integration test passed — safe to publish"
+
+  # ── Layer 3: Release Qualification (ADR-0023 — functional smoke tests) ──
+  # Publish built packages to a local Verdaccio, install them, and run
+  # RQ-1..RQ-12 to verify packages actually work before publishing to real npm.
+  # This requires dist/ from the TypeScript build (Phase 7).
+  log "Running Release Qualification (functional smoke tests against built packages)"
+
+  local rq_failed=false
+  local rq_temp
+  rq_temp=$(mktemp -d /tmp/ruflo-rq-XXXXX)
+
+  # Start a temporary Verdaccio for RQ
+  local rq_port
+  rq_port=$((4873 + RANDOM % 127))
+  local rq_verdaccio_home
+  rq_verdaccio_home=$(mktemp -d /tmp/ruflo-rq-verdaccio-XXXXX)
+
+  # Generate minimal Verdaccio config
+  cat > "$rq_verdaccio_home/config.yaml" <<RQVERDACCIO
+storage: ${rq_verdaccio_home}/storage
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/
+packages:
+  '@sparkleideas/*':
+    access: \$all
+    publish: \$all
+    proxy: ''
+  '**':
+    access: \$all
+    publish: \$all
+    proxy: npmjs
+max_body_size: 200mb
+log: { type: file, path: ${rq_verdaccio_home}/verdaccio.log, level: warn }
+RQVERDACCIO
+
+  # Create htpasswd for auth
+  local rq_token
+  rq_token=$(echo -n "rqtest:rqtest" | base64)
+  mkdir -p "$rq_verdaccio_home"
+  echo 'rqtest:$apr1$test$test' > "$rq_verdaccio_home/htpasswd"
+
+  # Start Verdaccio
+  npx verdaccio --config "$rq_verdaccio_home/config.yaml" --listen "http://0.0.0.0:${rq_port}" &
+  local rq_verdaccio_pid=$!
+
+  # Wait for Verdaccio to be ready
+  local rq_ready=false
+  for i in $(seq 1 30); do
+    if curl -sf "http://localhost:${rq_port}/-/ping" >/dev/null 2>&1; then
+      rq_ready=true
+      break
+    fi
+    sleep 0.5
+  done
+
+  if [[ "$rq_ready" != "true" ]]; then
+    log_error "RQ Verdaccio failed to start on port ${rq_port}"
+    kill "$rq_verdaccio_pid" 2>/dev/null || true
+    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    return 1
+  fi
+  log "RQ Verdaccio started on port ${rq_port}"
+
+  # Publish built packages to RQ Verdaccio
+  log "Publishing built packages to RQ Verdaccio..."
+  if ! npm config set "//localhost:${rq_port}/:_authToken" "${rq_token}" 2>/dev/null; then
+    true  # Non-fatal — some npm versions don't support this
+  fi
+  NPM_CONFIG_REGISTRY="http://localhost:${rq_port}" \
+    node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" --no-rate-limit 2>&1 || {
+    log_error "Failed to publish to RQ Verdaccio"
+    kill "$rq_verdaccio_pid" 2>/dev/null || true
+    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    return 1
+  }
+  log "Built packages published to RQ Verdaccio"
+
+  # Install packages into RQ temp dir
+  (cd "$rq_temp" && echo '{"name":"ruflo-rq-test","version":"1.0.0","private":true}' > package.json \
+    && echo "registry=http://localhost:${rq_port}" > .npmrc \
+    && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins \
+       --registry "http://localhost:${rq_port}" \
+       --ignore-scripts --no-audit --no-fund 2>&1) || {
+    log_error "Failed to install packages for RQ"
+    kill "$rq_verdaccio_pid" 2>/dev/null || true
+    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    return 1
+  }
+
+  # Source shared test library and run checks
+  local checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
+  if [[ ! -f "$checks_lib" ]]; then
+    log_error "Shared test library not found: $checks_lib"
+    kill "$rq_verdaccio_pid" 2>/dev/null || true
+    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    return 1
+  fi
+  # shellcheck source=../lib/acceptance-checks.sh
+  source "$checks_lib"
+
+  # Set environment for shared checks (save/restore TEMP_DIR since it holds
+  # the build directory used by later pipeline phases)
+  local rq_saved_temp_dir="$TEMP_DIR"
+  REGISTRY="http://localhost:${rq_port}"
+  PKG="@sparkleideas/cli"
+  TEMP_DIR="$rq_temp"
+
+  # Define run_timed for the shared library
+  run_timed() {
+    local t_start t_end
+    t_start=$(date +%s%N 2>/dev/null || echo 0)
+    _OUT="$(eval "$@" 2>&1)" || true
+    _EXIT=${PIPESTATUS[0]:-$?}
+    t_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$t_start" == "0" || "$t_end" == "0" ]]; then
+      _DURATION_MS=0
+    else
+      _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
+    fi
+  }
+
+  # Run all 12 RQ checks
+  local rq_pass=0 rq_fail=0 rq_total=0
+  run_rq_check() {
+    local id="$1" name="$2" fn="$3"
+    rq_total=$((rq_total + 1))
+    log "  RQ $id: $name..."
+    "$fn"
+    if [[ "$_CHECK_PASSED" == "true" ]]; then
+      rq_pass=$((rq_pass + 1))
+      log "  PASS  $id: $name"
+    else
+      rq_fail=$((rq_fail + 1))
+      log "  FAIL  $id: $name"
+      echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do
+        log "        $line"
+      done
+    fi
+  }
+
+  run_rq_check "RQ-1"  "Version check"       check_version
+  run_rq_check "RQ-2"  "Init"                check_init
+  run_rq_check "RQ-3"  "Settings file"       check_settings_file
+  run_rq_check "RQ-4"  "Scope check"         check_scope
+  run_rq_check "RQ-5"  "Doctor"              check_doctor
+  run_rq_check "RQ-6"  "MCP config"          check_mcp_config
+  run_rq_check "RQ-7"  "Wrapper proxy"       check_wrapper_proxy
+  run_rq_check "RQ-8"  "Memory lifecycle"    check_memory_lifecycle
+  run_rq_check "RQ-9"  "Neural training"     check_neural_training
+  run_rq_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
+  run_rq_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
+  run_rq_check "RQ-12" "Plugins SDK"         check_plugins_sdk
+
+  log "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
+
+  # Restore TEMP_DIR to the build directory for subsequent pipeline phases
+  TEMP_DIR="$rq_saved_temp_dir"
+
+  # Cleanup RQ infrastructure
+  kill "$rq_verdaccio_pid" 2>/dev/null || true
+  wait "$rq_verdaccio_pid" 2>/dev/null || true
+  rm -rf "$rq_temp" "$rq_verdaccio_home"
+
+  if [[ $rq_fail -gt 0 ]]; then
+    log_error "Release Qualification FAILED — ${rq_fail} functional test(s) failed"
+    return 1
+  fi
+  log "Release Qualification passed — all ${rq_total} functional tests pass"
 }
 
 # ---------------------------------------------------------------------------
@@ -599,7 +768,7 @@ main() {
   # Phase 11: Publish
   run_phase "publish" run_publish
 
-  # Phase 12: Post-publish acceptance tests (Layer 3)
+  # Phase 12: Post-publish acceptance tests (Layer 4)
   # Validates the real published packages work end-to-end
   log "Running post-publish acceptance tests"
   local acceptance_passed=false
