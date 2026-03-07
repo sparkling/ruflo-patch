@@ -1,0 +1,803 @@
+# Testing Strategy: Google Test Engineering Standards
+
+**Project**: ruflo-patch (`@sparkleideas/*` packages)
+**Version**: 2.0
+**Date**: 2026-03-07
+**Status**: Approved
+**ADR**: [ADR-0023](adr/0023-google-testing-framework.md)
+
+---
+
+## 1. Philosophy
+
+This testing strategy follows Google's Test Engineering and Release Engineering principles:
+
+1. **Test at the boundaries** — validate inputs/outputs, not implementation details
+2. **Hermetic tests** — each test owns its environment; no shared mutable state
+3. **Deterministic results** — same code = same outcome, regardless of host
+4. **Shift left** — catch defects at the cheapest layer (unit > integration > E2E)
+5. **Test the contract, not the code** — public API stability matters more than internals
+6. **Verdaccio-first deployment** — nothing reaches real npm without passing local registry tests
+7. **Test in staging, verify in production** — staging (Verdaccio) is for discovery; production (npm) is for confirmation
+
+---
+
+## 2. Google Release Engineering Model
+
+Google's release pipeline has four phases. We map them to six layers:
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ PRESUBMIT — "Does the code compile and pass basic contracts?"   │
+│   Layer -1: Environment Validation (advisory)                    │
+│   Layer  0: Static Analysis (Small)                              │
+│   Layer  1: Unit Tests (Small)                                   │
+├──────────────────────────────────────────────────────────────────┤
+│ BUILD VERIFICATION — "Does the pipeline produce valid packages?" │
+│   Layer  2: Build + Publish to Verdaccio (Medium)                │
+├──────────────────────────────────────────────────────────────────┤
+│ RELEASE QUALIFICATION — "Do the packages actually work?"         │
+│   Layer  3: Functional Smoke against Verdaccio install (Medium)  │
+│                                                                  │
+│ ══════════════════════ GATE 1 ═══════════════════════════════    │
+│ All layers pass → publish to npm                                 │
+│ Any layer fails → abort, create issue, DO NOT PUBLISH            │
+├──────────────────────────────────────────────────────────────────┤
+│ PRODUCTION VERIFICATION — "Does production match staging?"       │
+│   Layer  4: Acceptance Tests against real npm (Large)            │
+│                                                                  │
+│ ══════════════════════ GATE 2 ═══════════════════════════════    │
+│ Pass → promote to @latest                                        │
+│ Fail → stay on prerelease, investigate deployment                │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Test Pyramid
+
+```
+                      ┌─────────┐
+                      │ Layer 4 │  Production Verification (post-publish)
+                      │  Large  │  14 tests · real npm · confirmation
+                    ┌─┴─────────┴─┐
+                    │   Layer 3   │  Release Qualification (pre-publish)
+                    │   Medium    │  12 tests · Verdaccio install · discovery
+                  ┌─┴─────────────┴─┐
+                  │    Layer 2      │  Build Verification
+                  │    Medium       │  8 phases · Verdaccio publish + install
+                ┌─┴─────────────────┴─┐
+                │     Layer 1         │  Unit Tests
+                │     Small           │  93 tests · <0.2s
+              ┌─┴─────────────────────┴─┐
+              │      Layer 0            │  Static Analysis
+              │      Small              │  Codemod acceptance · preflight
+            ┌─┴─────────────────────────┴─┐
+            │        Layer -1             │  Environment Validation
+            │        Smoke                │  validate-ci.sh · doctor
+            └─────────────────────────────┘
+```
+
+### Size Definitions (Google Standard)
+
+| Size | Time Limit | Network | External Services | Our Layers |
+|------|-----------|---------|-------------------|------------|
+| **Small** | < 1s | None | None | Layer -1, 0, 1 |
+| **Medium** | < 300s | localhost | Verdaccio only | Layer 2, 3 |
+| **Large** | < 900s | Yes | npm, GitHub | Layer 4 |
+
+---
+
+## 3. Test Categories
+
+### 3.1 Layer -1: Environment Validation (Smoke)
+
+**Purpose**: Confirm the host can run the pipeline at all.
+**Google phase**: Presubmit
+
+| Check | Tool | What It Validates |
+|-------|------|-------------------|
+| Node version | `validate-ci.sh` | Node >= 20 present |
+| Python3 | `validate-ci.sh` | Python3 available for patches |
+| Upstream repos | `validate-ci.sh` | `~/src/upstream/{ruflo,agentic-flow,ruv-FANN}` exist |
+| npm auth | `validate-ci.sh` | `npm whoami` succeeds |
+| systemd timer | `validate-ci.sh` | `ruflo-sync.timer` active (optional) |
+
+**When to run**: On new machine setup, after OS upgrades, before first deploy.
+**Failure mode**: Non-blocking warnings. Fix before attempting pipeline.
+
+---
+
+### 3.2 Layer 0: Static Analysis & Codemod Validation
+
+**Purpose**: Catch structural defects without executing application code.
+**Google phase**: Presubmit
+
+| Test | Runner | Checks | Count |
+|------|--------|--------|-------|
+| Codemod acceptance | `test-codemod-acceptance.mjs` | No `@claude-flow/*` refs remain; all internal deps are `"*"` | 4 rules per package.json |
+| Preflight | `scripts/preflight.mjs` | Doc tables in `patch/CLAUDE.md` are in sync with patch/ directory | 1 consistency check |
+| Sentinel verification | `check-patches.sh` | Each patch's sentinel grep patterns match target files | 1 per active patch (6) |
+
+**Properties**:
+- No subprocess execution of application code
+- No network access
+- Pure filesystem validation
+- Deterministic and idempotent
+
+**Commands**:
+```bash
+node scripts/test-codemod-acceptance.mjs <build-dir>  # Codemod acceptance
+npm run preflight                                       # Pre-commit doc sync
+bash check-patches.sh                                   # Sentinel verification
+```
+
+---
+
+### 3.3 Layer 1: Unit Tests (Small)
+
+**Purpose**: Validate individual functions and patch logic in isolation.
+**Google phase**: Presubmit
+
+| File | Tests | Scope | Key Assertions |
+|------|-------|-------|---------------|
+| `01-common-library.test.mjs` | 9 | `lib/common.py` — patch()/patch_all() helpers | Idempotency, missing file handling, string replacement |
+| `02-discovery.test.mjs` | 2 | `lib/discover.mjs` — patch directory scanning | Export shape, return structure |
+| `03-mc001-mcp-autostart.test.mjs` | 4 | MC-001 patch — autoStart removal | Behavioral correctness, idempotency, context preservation |
+| `04-codemod.test.mjs` | 18 | `scripts/codemod.mjs` — scope rename | Transform accuracy, exclusions, idempotency, dep ranges |
+| `05-pipeline-logic.test.mjs` | 28 | Version computation, state parsing, change detection | ADR-0012 versioning, ADR-0011 state, ADR-0015 publish tags |
+| `06-publish-order.test.mjs` | 23 | Topological publish ordering (ADR-0014) | Level assignments, dep validation, first-publish bootstrap |
+| **Total** | **93** | | |
+
+**Properties**:
+- **Hermetic**: Temp directories with cleanup; no shared state
+- **Fast**: < 0.2s total execution
+- **No network**: All filesystem-local
+- **No external dependencies**: No Verdaccio, no npm, no git operations
+- **Framework**: Node.js built-in `node:test` with `node:assert` (strict)
+- **Style**: BDD (`describe`/`it`) with nested suites
+- **Skip threshold**: Max 8 skipped tests (enforced by test runner)
+
+**Test Doubles Strategy** (Google "Test Doubles" guidance):
+- **Fakes**: Temp directories simulate real installs (`createFixture()`)
+- **Stubs**: `spawnSync('python3', ...)` for patch execution
+- **No mocks in unit layer**: Tests validate real transformations against fixture files
+- **Injected dependencies**: `getPublishTagFn` parameter allows test-controlled npm view
+
+**Commands**:
+```bash
+npm test                    # Run all unit tests
+npm run test:fast           # Same (alias)
+TEST_CONCURRENCY=1 npm test # Serial execution for debugging
+SAVE_TEST_RESULTS=1 npm test # Save TAP + manifest to test-results/
+```
+
+---
+
+### 3.4 Layer 2: Build Verification (Medium)
+
+**Purpose**: Validate the full build pipeline end-to-end against a local Verdaccio registry. Answers: "Can we build, publish, and install successfully?"
+**Google phase**: Build Verification
+
+**Runner**: `scripts/test-integration.sh` (Phases 1-8)
+
+| Phase | Name | Timeout | What It Validates |
+|-------|------|---------|-------------------|
+| 1 | Setup | 30s | Verdaccio starts on random port (4873-4999); auth configured |
+| 2 | Clone | 60s | Upstream repos copied to temp dir |
+| 3 | Codemod | 60s | Scope rename produces zero `@claude-flow/*` residuals |
+| 4 | Patch | 30s | All patches apply; sentinel files verify |
+| 5 | Verify | 30s | Package.json count matches expected (no missing packages) |
+| 6 | Upstream | 10s | Skipped (advisory only — we don't rebuild from source) |
+| 7 | Publish | 180s | All packages publish to local Verdaccio; JSON summary |
+| 8 | Install | 120s | `npm install @sparkleideas/cli` resolves all deps from Verdaccio |
+
+**What Layer 2 proves**: Packages resolve, dependency tree is complete, no publish errors.
+**What Layer 2 does NOT prove**: Packages actually *work* (that's Layer 3).
+
+**Properties**:
+- **Isolated Verdaccio**: Random port, fresh config, no shared storage
+- **External dep cache**: `/tmp/ruflo-verdaccio-cache/` persisted for performance
+- **Hermetic per-run**: Only `@sparkleideas/*` packages cleared between runs
+- **Global timeout**: 600s (10 minutes)
+- **Per-phase heartbeat**: Logging every 10s to detect hangs
+- **Deterministic**: Upstream snapshots captured in test manifest
+
+**Verdaccio Configuration**:
+```yaml
+max_body_size: 200mb        # Large packages (ruv-swarm, agentic-flow)
+uplinks:
+  npmjs:
+    url: https://registry.npmjs.org/  # External dep fallback
+packages:
+  '@sparkleideas/*':
+    access: $all
+    publish: $authenticated
+    proxy: ''                # No upstream proxy for our packages
+  '**':
+    proxy: npmjs             # Everything else from real npm
+```
+
+---
+
+### 3.5 Layer 3: Release Qualification (Medium)
+
+**Purpose**: Functional smoke tests against Verdaccio-installed packages. Answers: "Do the packages actually work from a user's perspective?" This is the **last gate before publishing to real npm**.
+**Google phase**: Release Qualification
+
+**Runner**: `scripts/test-integration.sh` (Phase 9) — runs inside the same integration test, using the same Verdaccio instance from Layer 2. No additional infrastructure.
+
+**Test library**: `lib/acceptance-checks.sh` — shared test functions used by both Layer 3 (against Verdaccio) and Layer 4 (against real npm). One test definition, two execution contexts.
+
+| ID | Test | What It Catches Pre-Publish |
+|----|------|----------------------------|
+| RQ-1 | `--version` | Missing `dist/`, broken entry point, ERR_MODULE_NOT_FOUND |
+| RQ-2 | `init` | Broken init templates, missing generated files |
+| RQ-3 | Settings file | `.claude/settings.json` not generated |
+| RQ-4 | Scope check | `CLAUDE.md` still references `@claude-flow` after codemod |
+| RQ-5 | `doctor --fix` | MODULE_NOT_FOUND in health check command |
+| RQ-6 | MCP config | `autoStart: false` still present (MC-001 patch not applied) |
+| RQ-7 | Wrapper proxy | `@sparkleideas/ruflo` → `@sparkleideas/cli` delegation broken |
+| RQ-8 | Memory lifecycle | init/store/search/retrieve chain fails |
+| RQ-9 | Neural training | patterns.json not generated |
+| RQ-10 | Agent Booster ESM | `@sparkleideas/agent-booster` ESM import fails |
+| RQ-11 | Agent Booster CLI | `npx @sparkleideas/agent-booster --version` fails |
+| RQ-12 | Plugins SDK | `@sparkleideas/plugins` import fails |
+
+**Tests excluded from Release Qualification** (registry-specific, require real npm):
+
+| Excluded | Why | Covered At |
+|----------|-----|------------|
+| A8 (broken version) | Tests `@latest` dist-tag resolution — Verdaccio has no tag history | Layer 4 only |
+| A16 (plugin install) | Depends on plugin being separately published and resolvable | Layer 4 only |
+
+**Properties**:
+- **Shares Verdaccio** from Layer 2 — no additional setup cost
+- **Runs against the same install dir** from Phase 8 — no re-install
+- **Hard fail** — any RQ failure aborts the pipeline before publish
+- **Estimated duration**: ~23s additional on top of Layer 2
+
+**Key principle**: Layer 3 is where bugs are **discovered**. If a functional defect exists, it is caught here — before any package reaches real npm. Layer 4 (production verification) should never be the first time a bug is found.
+
+---
+
+### 3.6 Layer 4: Production Verification (Large)
+
+**Purpose**: Confirm that published packages on real npm match what passed in staging (Verdaccio). Answers: "Does production match staging?"
+**Google phase**: Production Verification
+
+**Runner**: `scripts/test-acceptance.sh`
+
+| ID | Test | What It Validates |
+|----|------|-------------------|
+| A1 | `--version` | CLI loads without ERR_MODULE_NOT_FOUND (catches missing dist/) |
+| A2 | `init` | Project initialization succeeds in temp dir |
+| A3 | Settings file | `.claude/settings.json` exists post-init |
+| A4 | Scope check | `CLAUDE.md` contains `@sparkleideas` references |
+| A5 | `doctor --fix` | Health check runs without MODULE_NOT_FOUND |
+| A6 | MCP config | `.mcp.json` exists; does NOT contain `autoStart: false` (MC-001) |
+| A7 | Wrapper proxy | `@sparkleideas/ruflo` correctly proxies to `@sparkleideas/cli` |
+| A8 | Version format | `@sparkleideas/cli@latest` resolves to non-patch version |
+| A9 | Memory lifecycle | `init` → `store` → `search` (semantic) → `retrieve`; DB file on disk |
+| A10 | Neural training | `neural train --pattern coordination` produces patterns.json |
+| A13 | Agent Booster ESM | `@sparkleideas/agent-booster` ESM import succeeds |
+| A14 | Agent Booster CLI | `npx @sparkleideas/agent-booster --version` returns version |
+| A15 | Plugins SDK | `@sparkleideas/plugins` imports successfully |
+| A16 | Plugin install | `plugins install --name @sparkleideas/plugin-prime-radiant` works |
+
+**Semantics change from v1.0**: Layer 4 tests are **confirmation, not discovery**. If Layer 3 (Release Qualification) passed against Verdaccio but Layer 4 fails against real npm, the root cause is a **deployment or registry issue**, not a code bug.
+
+| Scenario | Root Cause | Action |
+|----------|-----------|--------|
+| Layer 3 fails | Code bug | Fix code, don't publish |
+| Layer 3 passes, Layer 4 fails | Deployment issue (CDN lag, dist-tag race, registry error) | Investigate registry; code is known-good |
+| Both pass | Ship it | Promote to `@latest` |
+
+**Properties**:
+- **Runs against real npm** by default (post-publish validation)
+- **Registry-agnostic**: `--registry <url>` flag for Verdaccio ad-hoc testing
+- **Exit code** = number of failed tests (0 = all pass)
+- **Soft fail**: Failures create GitHub issues but don't un-publish
+- **Idempotent**: Uses temp dirs, cleans up after
+
+**Output**: `test-results/{timestamp}/acceptance-results.json`
+
+**Commands**:
+```bash
+bash scripts/test-acceptance.sh                                    # Against real npm
+bash scripts/test-acceptance.sh --registry http://localhost:4873   # Against Verdaccio
+```
+
+---
+
+## 4. Verdaccio Integration Model
+
+Verdaccio is the cornerstone of pre-deployment validation. It serves as the **staging environment** — functionally identical to real npm but fully isolated. All packages must pass both structural (Layer 2) and functional (Layer 3) validation against Verdaccio before reaching real npm.
+
+### 4.1 Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                      sync-and-build.sh                          │
+│                                                                 │
+│  Phase 9: Test                                                  │
+│  ┌────────────────────────────────────────────────────────────┐ │
+│  │  test-integration.sh                                       │ │
+│  │                                                            │ │
+│  │  ┌─────────────┐    ┌───────────────────────────────────┐ │ │
+│  │  │  Build Dir   │───▶│  Local Verdaccio (:4873+)         │ │ │
+│  │  │  (codemod +  │    │  ┌─────────────────────────────┐ │ │ │
+│  │  │   patches)   │    │  │ @sparkleideas/* (local)      │ │ │ │
+│  │  └─────────────┘    │  ├─────────────────────────────┤ │ │ │
+│  │                      │  │ ** (proxy → npmjs)          │ │ │ │
+│  │                      │  └─────────────────────────────┘ │ │ │
+│  │                      └───────────────┬─────────────────┘ │ │
+│  │                                      │                    │ │
+│  │  Layer 2: Build Verification         │                    │ │
+│  │  ┌─────────────┐                    │                    │ │
+│  │  │  npm install │◀───────────────────┘                    │ │
+│  │  │  npm ls      │  "packages install"                     │ │
+│  │  └──────┬──────┘                                         │ │
+│  │         │                                                 │ │
+│  │  Layer 3: Release Qualification                           │ │
+│  │  ┌──────▼──────┐                                         │ │
+│  │  │  --version  │  RQ-1 through RQ-12                     │ │
+│  │  │  init       │  "packages work"                         │ │
+│  │  │  doctor     │  Same install dir, same Verdaccio        │ │
+│  │  │  memory     │  No additional infrastructure            │ │
+│  │  │  neural     │                                          │ │
+│  │  │  imports    │                                          │ │
+│  │  └─────────────┘                                         │ │
+│  └────────────────────────────────────────────────────────────┘ │
+│                                                                 │
+│  ═══════════════════ GATE 1 ═══════════════════════════         │
+│                                                                 │
+│  Phase 11: Publish ──▶ Real npm (only if Gate 1 passes)        │
+│                                                                 │
+│  Layer 4: Production Verification                               │
+│  Phase 12: Acceptance ──▶ test-acceptance.sh (real npm)         │
+│                                                                 │
+│  ═══════════════════ GATE 2 ═══════════════════════════         │
+│                                                                 │
+│  Phase 13: Promote ──▶ @latest (only if Gate 2 passes)         │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 4.2 Verdaccio Lifecycle per Test Run
+
+| Step | Action | Detail |
+|------|--------|--------|
+| 1 | Kill stale | `pkill -f verdaccio` (clean slate) |
+| 2 | Pick port | Random 4873-4999 (avoid conflicts) |
+| 3 | Generate config | Isolated YAML with auth, uplinks, package rules |
+| 4 | Start daemon | Background process with log capture |
+| 5 | Wait for ready | HTTP health check with retry |
+| 6 | Publish packages | All 42 packages in topological order (Layer 2) |
+| 7 | Install test | `npm install @sparkleideas/cli` from local registry (Layer 2) |
+| 8 | Validate deps | Dep resolution, `npm ls`, package structure (Layer 2) |
+| 9 | Functional smoke | RQ-1 through RQ-12 against installed packages (Layer 3) |
+| 10 | Capture logs | Copy verdaccio.log to results dir |
+| 11 | Kill daemon | Clean shutdown |
+
+### 4.3 Verdaccio Configuration Rules
+
+- **`max_body_size: 200mb`** — required for large packages (ruv-swarm)
+- **`proxy: npmjs`** uplink for external deps (lodash, better-sqlite3, etc.)
+- **No proxy for `@sparkleideas/*`** — forces local-only resolution
+- **htpasswd auth** — prevents accidental writes
+- **Persistent cache** at `/tmp/ruflo-verdaccio-cache/` — speeds up repeat runs (external deps only)
+
+---
+
+## 5. Shared Test Library
+
+### 5.1 Design: One Definition, Two Contexts
+
+Functional tests are defined once in `lib/acceptance-checks.sh` and executed in two contexts:
+
+```
+lib/acceptance-checks.sh          ← shared test functions
+  │
+  ├── test-integration.sh         ← sources it, runs against Verdaccio (Layer 3)
+  │   REGISTRY=http://localhost:$PORT
+  │   Runs as Phase 9 of integration test
+  │   Hard fail: blocks publish
+  │
+  └── test-acceptance.sh          ← sources it, runs against real npm (Layer 4)
+      REGISTRY=https://registry.npmjs.org
+      Runs as Phase 12 of sync-and-build
+      Soft fail: blocks promotion
+      + adds A8 (dist-tag) and A16 (plugin install)
+```
+
+This eliminates duplication. Adding a new functional test to the shared library automatically runs it in both layers unless explicitly excluded.
+
+### 5.2 Adding a New Functional Test
+
+1. Add test function to `lib/acceptance-checks.sh`
+2. The function receives `$REGISTRY`, `$TEMP_DIR`, and `$PKG` from the caller
+3. It runs in both Layer 3 (Verdaccio) and Layer 4 (real npm) by default
+4. If the test is registry-specific (requires dist-tags, CDN propagation), add it to `test-acceptance.sh` only and document why in a comment
+
+---
+
+## 6. Pipeline Integration
+
+### 6.1 Gate Model
+
+Tests gate the pipeline at two checkpoints. Nothing proceeds past a failed gate.
+
+```
+Developer Workflow:
+  edit → preflight → unit tests → commit
+
+Deployment Pipeline (sync-and-build.sh):
+  upstream check → codemod → build → patch
+       │
+       ▼
+  ┌──────────────────────────────────────────┐
+  │  GATE 1: Pre-Publish (hard fail)         │
+  │                                          │
+  │  Layer 0: Codemod acceptance, sentinels  │
+  │  Layer 1: Unit tests (93)                │
+  │  Layer 2: Build verification (Verdaccio) │
+  │  Layer 3: Release qualification (12 RQ)  │  ← NEW
+  │                                          │
+  │  "Packages install AND work"             │
+  └────────────────┬─────────────────────────┘
+                   │ ALL PASS
+                   ▼
+  ┌──────────────────────────────────────────┐
+  │  PUBLISH to real npm                     │
+  │  42 packages, 5 levels                   │
+  │  Tag: prerelease                         │
+  └────────────────┬─────────────────────────┘
+                   │
+                   ▼
+  ┌──────────────────────────────────────────┐
+  │  GATE 2: Post-Publish (soft fail)        │
+  │                                          │
+  │  Layer 4: Production verification (14)   │
+  │                                          │
+  │  "Production matches staging"            │
+  └────────────────┬─────────────────────────┘
+                   │ PASS          │ FAIL
+                   ▼               ▼
+  ┌──────────────────┐   ┌──────────────────┐
+  │  PROMOTE to      │   │  Stay on         │
+  │  @latest         │   │  prerelease      │
+  │                  │   │  GitHub issue     │
+  │                  │   │  (deployment bug, │
+  │                  │   │   not code bug)   │
+  └──────────────────┘   └──────────────────┘
+```
+
+### 6.2 Failure Semantics
+
+The key insight: where a test fails tells you **what kind of bug** you have.
+
+| Failure At | Root Cause | Action |
+|------------|-----------|--------|
+| Layer 0-1 | Logic bug in codemod, patch, or pipeline | Fix code. Re-run `npm test`. |
+| Layer 2 | Build/publish/dependency bug | Check Verdaccio logs. Fix package structure. |
+| Layer 3 | **Functional bug** — packages install but don't work | Fix code. This is the most valuable catch — prevented a broken deploy. |
+| Layer 3 pass, Layer 4 fail | **Deployment issue** — code works in staging but not in prod | Investigate: CDN propagation, dist-tag race, npm registry lag. Code is known-good. |
+
+### 6.3 What Layer 3 Prevents
+
+Every bug caught at Layer 3 (Release Qualification) instead of Layer 4 (Production Verification) is a **prevented deployment of broken packages to real users**.
+
+| Failure Class | Without Layer 3 | With Layer 3 | Impact |
+|---|---|---|---|
+| Missing `dist/` | Users get ERR_MODULE_NOT_FOUND | Caught pre-publish | Prevented broken deploy |
+| Broken `init` | Users can't bootstrap | Caught pre-publish | Prevented broken deploy |
+| MC-001 not applied | MCP servers don't auto-start | Caught pre-publish | Prevented broken deploy |
+| Memory subsystem broken | `memory store` crashes | Caught pre-publish | Prevented broken deploy |
+| Agent booster import | WASM acceleration unavailable | Caught pre-publish | Prevented broken deploy |
+| Dist-tag resolves wrong | Wrong version installed | Still caught at Layer 4 | Registry-specific (can't test in staging) |
+
+### 6.4 When to Run What
+
+| Change Type | Required Tests | Command |
+|-------------|---------------|---------|
+| Patch `fix.py` | Unit + preflight + patch-all + check-patches | `npm run preflight && npm test && bash patch-all.sh --global && bash check-patches.sh` |
+| Codemod change | Unit + integration (includes RQ) | `npm test && bash scripts/test-integration.sh` |
+| Pipeline script change | Unit + integration (includes RQ) | `npm test && bash scripts/test-integration.sh` |
+| Deploy to npm | ALL layers (automatic) | `bash scripts/sync-and-build.sh` |
+| Verify live packages | Production verification only | `bash scripts/test-acceptance.sh` |
+| New machine setup | Environment validation | `bash scripts/validate-ci.sh` |
+
+### 6.5 Automated Schedule
+
+| Trigger | Frequency | Pipeline |
+|---------|-----------|----------|
+| systemd timer | Every 6 hours | Full `sync-and-build.sh` (all layers) |
+| Manual | On demand | Full `sync-and-build.sh` |
+| Pre-commit | Every commit | `npm run preflight` |
+
+---
+
+## 7. Test Properties (Google Standards)
+
+### 7.1 FIRST Principles
+
+| Principle | Layer 0-1 | Layer 2-3 | Layer 4 |
+|-----------|-----------|-----------|---------|
+| **F**ast | < 0.2s | < 300s | < 900s |
+| **I**solated | Temp dirs, no shared state | Isolated Verdaccio instance | Temp install dirs |
+| **R**epeatable | Deterministic | Deterministic (pinned upstreams) | Dependent on npm CDN propagation |
+| **S**elf-validating | Pass/fail exit code | Per-phase JSON results | Per-test JSON results |
+| **T**imely | Run on every change | Run before publish | Run after publish |
+
+### 7.2 Hermetic Test Requirements
+
+All tests must satisfy:
+
+1. **No shared filesystem state** — use temp directories with cleanup
+2. **No persistent network connections** — Verdaccio starts/stops per run
+3. **No host-dependent paths** — use `$TMPDIR` or `/tmp/`
+4. **No time-dependent assertions** — no `sleep` + check patterns
+5. **No order-dependent execution** — each test file runs independently
+6. **Idempotent** — running twice produces the same result
+
+### 7.3 Test Naming Convention
+
+```
+tests/{NN}-{descriptive-name}.test.mjs       # Unit tests
+lib/acceptance-checks.sh                      # Shared functional tests (RQ-* / A*)
+```
+
+- `NN` = two-digit ordering prefix (01-99)
+- Files run in lexicographic order but MUST NOT depend on ordering
+- Names describe the unit under test, not the test behavior
+
+### 7.4 Assertion Style Guide
+
+| Use | For |
+|-----|-----|
+| `assert.equal(actual, expected)` | Strict equality (primitives) |
+| `assert.deepStrictEqual(actual, expected)` | Object/array comparison |
+| `assert.ok(value)` | Truthy checks |
+| `assert.match(string, regex)` | Pattern matching in output |
+| `assert.rejects(asyncFn, errorType)` | Async error paths |
+
+Do NOT use: `assert.deepEqual()` (non-strict), manual `if/throw`, `console.log`-based assertions.
+
+---
+
+## 8. Test Result Artifacts
+
+All test layers produce machine-readable results for observability.
+
+### 8.1 Directory Structure
+
+```
+test-results/
+  {YYYY-MM-DD_HH-MM-SS}/
+    ├── unit-tests.tap              # TAP output from unit tests (Layer 1)
+    ├── .test-manifest.json         # Environment metadata
+    ├── integration-phases.json     # Per-phase timing and pass/fail (Layer 2-3)
+    ├── qualification-results.json  # Per-RQ-test results (Layer 3)
+    ├── publish-summary.json        # Per-package publish results
+    ├── verdaccio.log               # Local registry log
+    ├── codemod-residuals.txt       # Empty if codemod clean (Layer 0)
+    ├── acceptance-results.json     # Per-test results A1-A16 (Layer 4)
+    └── install-raw-output.txt      # npm install output
+```
+
+### 8.2 Manifest Schema
+
+```json
+{
+  "timestamp": "2026-03-07T14:32:15Z",
+  "node_version": "v22.x.x",
+  "platform": "linux-x64",
+  "upstream_heads": {
+    "ruflo": "abc123",
+    "agentic-flow": "def456",
+    "ruv-FANN": "789ghi"
+  },
+  "test_count": 93,
+  "duration_ms": 180,
+  "skip_count": 0
+}
+```
+
+---
+
+## 9. Failure Handling
+
+### 9.1 Failure Modes by Layer
+
+| Layer | Google Phase | Failure Mode | Impact | Recovery |
+|-------|-------------|-------------|--------|----------|
+| 0 (Static) | Presubmit | Hard fail | Pipeline aborts pre-publish | Fix codemod logic |
+| 1 (Unit) | Presubmit | Hard fail | Pipeline aborts pre-publish | Fix failing test or code |
+| 2 (Build) | Build Verification | Hard fail | Pipeline aborts pre-publish | Check Verdaccio logs, dep resolution |
+| 3 (Qualification) | Release Qualification | Hard fail | Pipeline aborts pre-publish | Fix functional bug — **most valuable catch** |
+| 4 (Production) | Production Verification | Soft fail | Packages live but NOT promoted | Investigate deployment; `rollback.sh` if critical |
+
+### 9.2 Rollback Procedure
+
+```bash
+bash scripts/promote.sh --dry-run   # View current state
+bash scripts/rollback.sh            # Emergency rollback to previous version
+bash scripts/rollback.sh <version>  # Manual rollback to specific version
+```
+
+### 9.3 Flaky Test Policy (Google Standard)
+
+- **Quarantine**: Flaky tests get `{ skip: true }` with a tracking comment
+- **Skip threshold**: Max 8 skipped tests enforced by test runner
+- **Fix deadline**: Quarantined tests must be fixed or removed within 2 weeks
+- **No retry loops**: Tests must not use `sleep` + retry patterns
+- **Root cause required**: Every flaky test failure gets a root cause analysis
+
+---
+
+## 10. Coverage Model
+
+### 10.1 What We Measure
+
+| Metric | Target | Current | Tool |
+|--------|--------|---------|------|
+| Unit test count | Growing | 93 | `npm test` |
+| Patch coverage | 100% of active patches | 6/6 | Sentinel checks |
+| Build verification phases | All phases pass | 10/10 | `test-integration.sh` |
+| Release qualification | All RQ tests pass | 12/12 | `test-integration.sh` Phase 9 |
+| Production verification | All acceptance tests pass | 14/14 | `test-acceptance.sh` |
+| Codemod rule coverage | All transform rules | 4/4 | `test-codemod-acceptance.mjs` |
+
+### 10.2 What We Do NOT Measure
+
+- Line-level code coverage (not applicable — we patch upstream, not our own source)
+- Performance benchmarks (out of scope for correctness testing)
+- Visual/UI testing (CLI-only project)
+
+---
+
+## 11. Adding New Tests
+
+### 11.1 New Unit Test (Layer 1)
+
+1. Create `tests/{NN}-{name}.test.mjs` (next available number)
+2. Import from `node:test` and `node:assert`
+3. Use `describe`/`it` structure
+4. Create temp fixtures, clean up in `afterEach`
+5. Run: `npm test`
+6. Verify: skip threshold not exceeded
+
+```javascript
+import { describe, it, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+
+describe('new-feature', () => {
+  let tmp;
+  afterEach(() => tmp && rmSync(tmp, { recursive: true, force: true }));
+
+  it('does the thing', () => {
+    tmp = mkdtempSync(join(tmpdir(), 'test-'));
+    // ... test logic ...
+    assert.equal(actual, expected);
+  });
+});
+```
+
+### 11.2 New Functional Test (Layer 3 + 4)
+
+1. Add test function to `lib/acceptance-checks.sh`
+2. Function receives `$REGISTRY`, `$TEMP_DIR`, `$PKG` from caller
+3. Runs automatically in both Layer 3 (Verdaccio) and Layer 4 (real npm)
+4. If registry-specific (needs dist-tags, CDN), add to `test-acceptance.sh` only with a comment explaining why
+
+### 11.3 New Patch Test (Layer 1)
+
+1. Create unit test in `tests/{NN}-{patch-id}.test.mjs`
+2. Test must validate: apply, idempotency, context preservation
+3. Sentinel file in patch dir must have grep patterns
+4. Sentinel verified by `check-patches.sh`
+
+---
+
+## 12. Anti-Patterns (What NOT to Do)
+
+| Anti-Pattern | Why It's Wrong | Do This Instead |
+|-------------|---------------|-----------------|
+| Run only `npm test` before deploy | Misses build verification, qualification, and production verification | Run `bash scripts/sync-and-build.sh` |
+| Test against real npm pre-publish | Circular dependency; packages don't exist yet | Use Verdaccio for all pre-publish validation |
+| Skip integration tests for "small" changes | Patch interactions are non-obvious | Always run full integration (includes RQ) for patches |
+| Use production verification for bug discovery | Bugs found post-publish already affect users | Catch functional bugs at Layer 3 (Release Qualification) |
+| Duplicate test logic between integration and acceptance | Tests drift apart; one gets updated, other doesn't | Use shared `lib/acceptance-checks.sh` library |
+| Add `sleep` in tests | Non-deterministic, wastes time | Use retry with backoff or event-driven waits |
+| Share state between test files | Order-dependent failures | Temp dirs with cleanup per test |
+| Mock everything | Misses real integration bugs | Mock at boundaries only; use fakes for filesystems |
+| Treat Layer 4 failure as code bug | If Layer 3 passed, it's a deployment issue | Investigate registry/CDN, not code |
+
+---
+
+## 13. Glossary
+
+| Term | Definition |
+|------|-----------|
+| **Gate** | A test checkpoint that must pass before the pipeline proceeds |
+| **Hard fail** | Test failure that aborts the pipeline (Gate 1) |
+| **Soft fail** | Test failure that creates an issue but doesn't un-publish (Gate 2) |
+| **Release Qualification** | Functional smoke tests in staging (Verdaccio) before deploy — the last line of defense |
+| **Production Verification** | Confirmation tests in production (real npm) after deploy — should never discover new bugs |
+| **Sentinel** | Grep pattern in a patch directory that verifies the patch was applied |
+| **Codemod** | Automated source transformation (`@claude-flow/*` → `@sparkleideas/*`) |
+| **Verdaccio** | Local npm registry used as the staging environment |
+| **Staging** | Verdaccio — where bugs are discovered (Layer 2-3) |
+| **Production** | Real npm — where deployment is confirmed (Layer 4) |
+| **Topological order** | Publish packages in dependency order (leaves first, roots last) |
+| **Hermetic** | Test that creates and destroys its own environment |
+| **Quarantine** | Temporarily skipping a flaky test with a tracking comment |
+
+---
+
+## Appendix A: Layer Separation Rationale (ADR-0023)
+
+The six layers serve four distinct Google release engineering phases:
+
+| Google Phase | Our Layers | Environment | Purpose |
+|-------------|-----------|-------------|---------|
+| Presubmit | -1, 0, 1 | Local filesystem | Code correctness |
+| Build Verification | 2 | Verdaccio (publish + install) | Package structure |
+| Release Qualification | 3 | Verdaccio (functional smoke) | Package functionality |
+| Production Verification | 4 | Real npm | Deployment confirmation |
+
+**Critical rule**: Release Qualification (Layer 3) and Production Verification (Layer 4) are *not* the same test running twice. Layer 3 is **discovery** (find bugs before they ship). Layer 4 is **confirmation** (verify prod matches staging). If Layer 3 passes but Layer 4 fails, the bug is in deployment infrastructure, not in code.
+
+`sync-and-build.sh` orchestrates all phases:
+1. Layers 0-3 (Phase 9) → Gate 1 → blocks publish
+2. Publish (Phase 11) → real npm, prerelease tag
+3. Layer 4 (Phase 12) → Gate 2 → blocks promotion
+4. Promote (Phase 13) → `@latest` tag
+
+Running `test-integration.sh` alone validates Layers 2-3. Running `test-acceptance.sh` alone validates Layer 4. Only `sync-and-build.sh` runs all layers in sequence.
+
+## Appendix B: Topological Publish Order (ADR-0014)
+
+```
+Level 1 (no internal deps):
+  agentdb, agentic-flow, ruv-swarm, agent-booster, shared, codex
+
+Level 2:
+  memory, embeddings, aidefence, providers, browser
+
+Level 3:
+  neural, hooks, plugins, claims, guidance
+
+Level 4:
+  mcp, integration, deployment, swarm, security, performance,
+  testing, plugin-prime-radiant, plugin-code-review, ...
+
+Level 5 (root packages):
+  cli, claude-flow
+```
+
+## Appendix C: Version Scheme (ADR-0012)
+
+```
+nextVersion = bumpLastSegment(max(upstream, lastPublished))
+
+Examples:
+  upstream=3.0.2, lastPublished=null     → 3.0.3
+  upstream=3.0.2, lastPublished=3.0.3    → 3.0.4
+  upstream=3.0.0-alpha.6, lastPub=null   → 3.0.0-alpha.7
+```
+
+Per-package versions tracked in `config/published-versions.json` (committed to git).
+
+## Appendix D: Cost of Layer 3
+
+| Metric | Without Layer 3 | With Layer 3 | Delta |
+|--------|----------------|-------------|-------|
+| Integration test duration | ~47s | ~70s | +23s |
+| Acceptance test duration | ~15s | ~15s | 0 |
+| New infrastructure | — | None (shared Verdaccio) | 0 |
+| New scripts | — | 1 (`lib/acceptance-checks.sh`) | +1 file |
+| Bugs caught pre-publish | Structural only | Structural + functional | Significant improvement |
+
+23 seconds of pre-publish testing to prevent deploying broken packages. That's the trade.
