@@ -382,74 +382,42 @@ run_tests() {
   # This requires dist/ from the TypeScript build (Phase 7).
   log "Running Release Qualification (functional smoke tests against built packages)"
 
+  # RQ global timeout — kill if Layer 3 exceeds 120s (ADR-0023: Medium < 120s)
+  ( sleep 120; log_error "[TIMEOUT] Release Qualification exceeded 120s — aborting"; kill -TERM $$ 2>/dev/null ) &
+  local rq_timeout_pid=$!
+
+  local rq_start_s
+  rq_start_s=$(date +%s)
+
   local rq_failed=false
   local rq_temp
   rq_temp=$(mktemp -d /tmp/ruflo-rq-XXXXX)
 
-  # Start a temporary Verdaccio for RQ
-  local rq_port
-  rq_port=$((4873 + RANDOM % 127))
-  local rq_verdaccio_home="/tmp/ruflo-rq-verdaccio-cache"
-  mkdir -p "$rq_verdaccio_home"
-  # Clear only our packages so external deps remain cached across runs
-  rm -rf "$rq_verdaccio_home/storage/@sparkleideas"
-  : > "$rq_verdaccio_home/verdaccio.log" 2>/dev/null || true
+  # Use permanent global Verdaccio (systemd user service on port 4873)
+  local rq_port=4873
+  local rq_storage="/home/claude/.verdaccio/storage"
 
-  # Generate minimal Verdaccio config
-  cat > "$rq_verdaccio_home/config.yaml" <<RQVERDACCIO
-storage: ${rq_verdaccio_home}/storage
-uplinks:
-  npmjs:
-    url: https://registry.npmjs.org/
-packages:
-  '@sparkleideas/*':
-    access: \$all
-    publish: \$all
-    proxy: ''
-  '**':
-    access: \$all
-    publish: \$all
-    proxy: npmjs
-max_body_size: 200mb
-log: { type: file, path: ${rq_verdaccio_home}/verdaccio.log, level: warn }
-RQVERDACCIO
-
-  # Create htpasswd for auth
-  local rq_token
-  rq_token=$(echo -n "rqtest:rqtest" | base64)
-  echo 'rqtest:$apr1$test$test' > "$rq_verdaccio_home/htpasswd"
-
-  # Start Verdaccio
-  npx verdaccio --config "$rq_verdaccio_home/config.yaml" --listen "http://0.0.0.0:${rq_port}" &
-  local rq_verdaccio_pid=$!
-
-  # Wait for Verdaccio to be ready
-  local rq_ready=false
-  for i in $(seq 1 30); do
-    if curl -sf "http://localhost:${rq_port}/-/ping" >/dev/null 2>&1; then
-      rq_ready=true
-      break
-    fi
-    sleep 0.5
-  done
-
-  if [[ "$rq_ready" != "true" ]]; then
-    log_error "RQ Verdaccio failed to start on port ${rq_port}"
-    kill "$rq_verdaccio_pid" 2>/dev/null || true
+  # Verify global Verdaccio is running
+  if ! curl -sf "http://localhost:${rq_port}/-/ping" >/dev/null 2>&1; then
+    log_error "Global Verdaccio not running on port ${rq_port}"
+    log_error "Start it: systemctl --user start verdaccio"
+    kill "$rq_timeout_pid" 2>/dev/null || true
     rm -rf "$rq_temp"
     return 1
   fi
-  log "RQ Verdaccio started on port ${rq_port}"
+  log "Global Verdaccio healthy on port ${rq_port}"
+
+  # Clear only @sparkleideas/* packages (preserve external dep cache)
+  rm -rf "${rq_storage}/@sparkleideas" 2>/dev/null || true
 
   # Publish built packages to RQ Verdaccio
   log "Publishing built packages to RQ Verdaccio..."
-  if ! npm config set "//localhost:${rq_port}/:_authToken" "${rq_token}" 2>/dev/null; then
-    true  # Non-fatal — some npm versions don't support this
-  fi
+  # Set auth token (global Verdaccio allows $all publish, but npm may require a token)
+  npm config set "//localhost:${rq_port}/:_authToken" "test-token" 2>/dev/null || true
   NPM_CONFIG_REGISTRY="http://localhost:${rq_port}" \
     node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" --no-rate-limit 2>&1 || {
     log_error "Failed to publish to RQ Verdaccio"
-    kill "$rq_verdaccio_pid" 2>/dev/null || true
+    kill "$rq_timeout_pid" 2>/dev/null || true
     rm -rf "$rq_temp"
     return 1
   }
@@ -462,7 +430,7 @@ RQVERDACCIO
        --registry "http://localhost:${rq_port}" \
        --ignore-scripts --no-audit --no-fund 2>&1) || {
     log_error "Failed to install packages for RQ"
-    kill "$rq_verdaccio_pid" 2>/dev/null || true
+    kill "$rq_timeout_pid" 2>/dev/null || true
     rm -rf "$rq_temp"
     return 1
   }
@@ -471,7 +439,7 @@ RQVERDACCIO
   local checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
   if [[ ! -f "$checks_lib" ]]; then
     log_error "Shared test library not found: $checks_lib"
-    kill "$rq_verdaccio_pid" 2>/dev/null || true
+    kill "$rq_timeout_pid" 2>/dev/null || true
     rm -rf "$rq_temp"
     return 1
   fi
@@ -514,6 +482,9 @@ RQVERDACCIO
     rq_end_ns=$(date +%s%N 2>/dev/null || echo 0)
     if [[ "$rq_start_ns" != "0" && "$rq_end_ns" != "0" ]]; then
       rq_dur_ms=$(( (rq_end_ns - rq_start_ns) / 1000000 ))
+    fi
+    if [[ $rq_dur_ms -gt 15000 ]]; then
+      log "  SLOW  $id: ${rq_dur_ms}ms (threshold: 15000ms)"
     fi
     local rq_passed_bool="false"
     if [[ "$_CHECK_PASSED" == "true" ]]; then
@@ -569,12 +540,17 @@ RQVERDACCIO
 RQJSONEOF
   log "RQ results written to ${rq_results_dir}/qualification-results.json"
 
+  # Cancel the global RQ timeout
+  kill "$rq_timeout_pid" 2>/dev/null || true
+
+  local rq_end_s
+  rq_end_s=$(date +%s)
+  log "Release Qualification completed in $(( rq_end_s - rq_start_s ))s"
+
   # Restore TEMP_DIR to the build directory for subsequent pipeline phases
   TEMP_DIR="$rq_saved_temp_dir"
 
-  # Cleanup RQ infrastructure
-  kill "$rq_verdaccio_pid" 2>/dev/null || true
-  wait "$rq_verdaccio_pid" 2>/dev/null || true
+  # Cleanup RQ temp directory (global Verdaccio stays running)
   rm -rf "$rq_temp"
 
   if [[ $rq_fail -gt 0 ]]; then

@@ -28,11 +28,10 @@ UPSTREAM_RUFLO="${HOME}/src/upstream/ruflo"
 UPSTREAM_AGENTIC="${HOME}/src/upstream/agentic-flow"
 UPSTREAM_FANN="${HOME}/src/upstream/ruv-FANN"
 
-VERDACCIO_PID=""
-VERDACCIO_PORT=""
+VERDACCIO_PORT=4873
+VERDACCIO_STORAGE="/home/claude/.verdaccio/storage"
 TEMP_BUILD=""
 TEMP_INSTALL=""
-VERDACCIO_HOME=""
 RESULTS_DIR=""
 TIMESTAMP="$(date -u '+%Y-%m-%dT%H%M%SZ')"
 
@@ -107,14 +106,7 @@ cleanup() {
     kill "${PHASE_TIMEOUT_PID}" 2>/dev/null || true
   fi
 
-  # Kill Verdaccio if running
-  if [[ -n "${VERDACCIO_PID}" ]]; then
-    kill "${VERDACCIO_PID}" 2>/dev/null || true
-    wait "${VERDACCIO_PID}" 2>/dev/null || true
-    log "Cleanup: Verdaccio (PID ${VERDACCIO_PID}) terminated"
-  fi
-
-  # Remove ephemeral temp directories (keep Verdaccio home for cache reuse)
+  # Remove ephemeral temp directories
   for d in "${TEMP_BUILD}" "${TEMP_INSTALL}"; do
     if [[ -n "$d" && -d "$d" ]]; then
       rm -rf "$d"
@@ -299,12 +291,12 @@ check_prerequisites() {
     log "Prerequisite OK: pnpm $(pnpm --version)"
   fi
 
-  # verdaccio (use npx to find local devDep or global install)
-  if ! npx verdaccio --version &>/dev/null; then
-    log_error "verdaccio is not available (npm install or npm i -g verdaccio)"
-    fail=1
+  # verdaccio (must be running as a systemd user service on port 4873)
+  if curl -sf "http://localhost:4873/-/ping" >/dev/null 2>&1; then
+    log "Prerequisite OK: verdaccio running on :4873"
   else
-    log "Prerequisite OK: verdaccio $(npx verdaccio --version 2>/dev/null || echo 'installed')"
+    log_error "verdaccio is not running (systemctl --user start verdaccio)"
+    fail=1
   fi
 
   # jq
@@ -350,101 +342,31 @@ phase_setup() {
   local start
   start=$(now_ns)
 
-  phase_log "1" "Setup - starting Verdaccio and creating temp dirs"
+  phase_log "1" "Setup - verifying global Verdaccio and creating temp dirs"
 
-  # Kill any stale Verdaccio processes from prior runs
-  local stale_count
-  stale_count=$(pgrep -f verdaccio 2>/dev/null | wc -l)
-  if [[ "$stale_count" -gt 0 ]]; then
-    phase_log "1" "Killing ${stale_count} stale Verdaccio process(es)"
-    pkill -f verdaccio 2>/dev/null || true
-    sleep 0.5
+  # Verify global Verdaccio is running
+  if ! curl -sf "http://localhost:${VERDACCIO_PORT}/-/ping" >/dev/null 2>&1; then
+    log_error "Global Verdaccio not running on port ${VERDACCIO_PORT}"
+    log_error "Start it: systemctl --user start verdaccio"
+    return 1
   fi
+  phase_log "1" "Global Verdaccio healthy on port ${VERDACCIO_PORT}"
+
+  # Clear only @sparkleideas/* packages (external dep cache persists permanently)
+  rm -rf "${VERDACCIO_STORAGE}/@sparkleideas" "${VERDACCIO_STORAGE}/ruflo" 2>/dev/null || true
+  phase_log "1" "Cleared @sparkleideas/* from Verdaccio storage"
 
   # Create results directory
   RESULTS_DIR="${PROJECT_DIR}/test-results/${TIMESTAMP}"
   mkdir -p "${RESULTS_DIR}"
 
-  # Create temp directories (build + install are ephemeral, Verdaccio home is persistent)
+  # Create temp directories (build + install are ephemeral)
   TEMP_BUILD=$(mktemp -d /tmp/ruflo-integ-build-XXXXX)
   TEMP_INSTALL=$(mktemp -d /tmp/ruflo-integ-install-XXXXX)
-  # Verdaccio home persists across runs so external dep cache survives.
-  # Only @sparkleideas/* storage is cleared (our packages change each run).
-  VERDACCIO_HOME="/tmp/ruflo-verdaccio-cache"
-  mkdir -p "${VERDACCIO_HOME}"
-  # Clear only our packages (external dep cache survives across runs)
-  rm -rf "${VERDACCIO_HOME}/storage/@sparkleideas" "${VERDACCIO_HOME}/storage/ruflo" 2>/dev/null || true
-  # Rotate log (keep last run only)
-  : > "${VERDACCIO_HOME}/verdaccio.log" 2>/dev/null || true
 
   phase_log "1" "Temp build dir:    ${TEMP_BUILD}"
   phase_log "1" "Temp install dir:  ${TEMP_INSTALL}"
-  phase_log "1" "Verdaccio home:    ${VERDACCIO_HOME}"
   phase_log "1" "Results dir:       ${RESULTS_DIR}"
-
-  # Pick a random port
-  VERDACCIO_PORT=$(shuf -i 4873-4999 -n 1)
-
-  # Write Verdaccio config with absolute paths to temp dir
-  local verdaccio_config="${VERDACCIO_HOME}/verdaccio-config.yaml"
-  cat > "${verdaccio_config}" <<VEOF
-storage: ${VERDACCIO_HOME}/storage
-max_body_size: 200mb
-uplinks:
-  npmjs:
-    url: https://registry.npmjs.org/
-packages:
-  '@sparkleideas/*':
-    access: \$all
-    publish: \$all
-  'ruflo':
-    access: \$all
-    publish: \$all
-  '**':
-    access: \$all
-    publish: \$all
-    proxy: npmjs
-auth:
-  htpasswd:
-    file: ${VERDACCIO_HOME}/htpasswd
-    max_users: 10
-log:
-  type: file
-  path: ${VERDACCIO_HOME}/verdaccio.log
-  level: warn
-VEOF
-
-  # If a project-level config template exists, note it but use our generated one
-  # (the ADR specifies uplinks:{} which is critical for isolation)
-  local config_template="${PROJECT_DIR}/config/verdaccio-test.yaml"
-  if [[ -f "$config_template" ]]; then
-    phase_log "1" "Note: project config/verdaccio-test.yaml exists (using generated config for isolation)"
-  fi
-
-  # Start Verdaccio
-  phase_log "1" "Starting Verdaccio on port ${VERDACCIO_PORT}..."
-  npx verdaccio --listen "${VERDACCIO_PORT}" --config "${verdaccio_config}" &
-  VERDACCIO_PID=$!
-
-  # Wait for Verdaccio to be ready (poll every 0.2s, up to 15 seconds)
-  local max_attempts=75
-  local attempt=0
-  while ! curl -s "http://localhost:${VERDACCIO_PORT}/" >/dev/null 2>&1; do
-    sleep 0.2
-    attempt=$((attempt + 1))
-    if [[ $attempt -ge $max_attempts ]]; then
-      log_error "Verdaccio did not start within 15 seconds"
-      return 1
-    fi
-    # Check if process is still alive
-    if ! kill -0 "${VERDACCIO_PID}" 2>/dev/null; then
-      log_error "Verdaccio process died during startup"
-      cat "${VERDACCIO_HOME}/verdaccio.log" 2>/dev/null || true
-      return 1
-    fi
-  done
-
-  phase_log "1" "Verdaccio running (PID ${VERDACCIO_PID}, port ${VERDACCIO_PORT})"
 
   # Write .test-manifest.json
   local ruflo_head agentic_head fann_head
@@ -474,7 +396,7 @@ VEOF
   "ruflo_patch_head": "$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo 'unavailable')",
   "node_version": "$(node --version)",
   "pnpm_version": "$(pnpm --version)",
-  "verdaccio_port": ${VERDACCIO_PORT},
+  "verdaccio_port": 4873,
   "platform": "$(uname -srm)",
   "snapshot_mode": $([ -n "${SNAPSHOT_DIR}" ] && echo "true" || echo "false")
 }
@@ -771,7 +693,7 @@ phase_publish() {
   export NPM_CONFIG_REGISTRY="http://localhost:${VERDACCIO_PORT}"
 
   # Create auth token for Verdaccio
-  echo 'test:{SHA}qUqP5cyxm6YcTAhz05Hph5gvu9M=' > "${VERDACCIO_HOME}/htpasswd"
+  echo 'test:{SHA}qUqP5cyxm6YcTAhz05Hph5gvu9M=' > "/home/claude/.verdaccio/htpasswd"
 
   # Set auth in npm config so publish works
   npm config set "//localhost:${VERDACCIO_PORT}/:_authToken" "test-token" 2>/dev/null || true
@@ -930,8 +852,9 @@ phase_cleanup() {
   phase_log "9" "Cleanup - copying Verdaccio log and writing final results"
 
   # Copy Verdaccio log to results
-  if [[ -f "${VERDACCIO_HOME}/verdaccio.log" ]]; then
-    cp "${VERDACCIO_HOME}/verdaccio.log" "${RESULTS_DIR}/verdaccio.log"
+  local verdaccio_log="/home/claude/.verdaccio/verdaccio.log"
+  if [[ -f "${verdaccio_log}" ]]; then
+    cp "${verdaccio_log}" "${RESULTS_DIR}/verdaccio.log"
     phase_log "9" "Verdaccio log saved to ${RESULTS_DIR}/verdaccio.log"
   else
     echo "(no verdaccio log found)" > "${RESULTS_DIR}/verdaccio.log"
@@ -944,15 +867,7 @@ phase_cleanup() {
   # Copy manifest to results (it was written in phase 1)
   # Already exists at ${RESULTS_DIR}/.test-manifest.json
 
-  # Kill Verdaccio (the trap handler will also do this, but be explicit)
-  if [[ -n "${VERDACCIO_PID}" ]]; then
-    kill "${VERDACCIO_PID}" 2>/dev/null || true
-    wait "${VERDACCIO_PID}" 2>/dev/null || true
-    phase_log "9" "Verdaccio stopped"
-    VERDACCIO_PID=""  # Prevent double-kill in trap
-  fi
-
-  # Remove ephemeral temp dirs (keep Verdaccio home for cache reuse)
+  # Remove ephemeral temp dirs (Verdaccio is a permanent service, not ours to stop)
   for d in "${TEMP_BUILD}" "${TEMP_INSTALL}"; do
     if [[ -n "$d" && -d "$d" ]]; then
       rm -rf "$d"
@@ -962,7 +877,6 @@ phase_cleanup() {
   # Clear vars so trap handler skips them
   TEMP_BUILD=""
   TEMP_INSTALL=""
-  VERDACCIO_HOME=""
 
   local end
   end=$(now_ns)
