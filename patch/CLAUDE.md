@@ -37,21 +37,21 @@ Runtime patches for `ruflo` (latest), `ruvector`, and `ruv-swarm`.
 |--------|----------|-------|
 | MC | MCP Configuration | 1 |
 | FB | Fallback Instrumentation | 3 |
-| SV | Semver Conflict Resolution | 3 (1 active, 2 retired) |
+| SV | Semver Conflict Resolution | 3 |
 | SG | SG | 1 |
 
-## All 8 Defects (6 active, 2 retired)
+## All 8 Defects
 
-| ID | GitHub Issue | Severity | Status |
-|----|-------------|----------|--------|
-| MC-001 | MCP claude-flow server fails to start due to autoStart: false | High | Active |
-| FB-001 | Instrument upstream fallback paths with debug logging | High | Active |
-| FB-002 | Instrument local helper fallback code paths with debug logging | Enhancement | Active |
-| FB-004 | Lower search threshold for hash-based embeddings | Medium | Active |
-| SV-001 | Fix @ruvector/ruvllm semver range in agentic-flow | Critical | Active |
-| SV-002 | Fix agentdb pin in @claude-flow/memory | Critical | **Retired** — codemod uses `*` |
-| SV-003 | Fix agentdb range in agentic-flow | Critical | **Retired** — codemod uses `*` |
-| SG-003 | Init missing helpers for --dual, --minimal, hooks, and upgrade paths | Critical | Active |
+| ID | GitHub Issue | Severity |
+|----|-------------|----------|
+| MC-001 | MCP claude-flow server fails to start due to autoStart: false | High |
+| FB-001 | Instrument upstream fallback paths with debug logging | High |
+| FB-002 | Instrument local helper fallback code paths with debug logging | Enhancement |
+| FB-004 | Lower search threshold for hash-based embeddings | Medium |
+| SV-001 | Fix @ruvector/ruvllm semver range in agentic-flow | Critical |
+| SV-002 | Fix agentdb pin in @claude-flow/memory | Critical |
+| SV-003 | Fix agentdb range in agentic-flow | Critical |
+| SG-003 | Init missing helpers for --dual, --minimal, hooks, and upgrade paths | Critical |
 <!-- GENERATED:defect-tables:end -->
 
 ## Creating a New Defect

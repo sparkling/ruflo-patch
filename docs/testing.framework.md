@@ -1,27 +1,31 @@
 # Testing Framework
 
-ruflo-patch uses a **3-layer testing model** (ADR-0020) with additional operational checks. Each layer targets a different level of confidence and runs at a different cadence.
+ruflo-patch uses a **6-layer testing model** (ADR-0023) with additional operational checks. Each layer targets a different level of confidence and runs at a different cadence.
 
-**Total**: 90 unit tests + 9 integration phases + 10 acceptance tests = **109 automated checks** in ~45s (all layers, cached).
+**Total**: 93 unit + 10 integration phases + 12 RQ + 14 acceptance = **129 automated checks**.
 
 ## Architecture Overview
 
 ```
-Layer 3: Acceptance     ← end-user commands against published packages (~15s)
-Layer 2: Integration    ← full pipeline: clone → codemod → patch → publish → install (~30s cached)
-Layer 1: Unit           ← individual functions, no external deps (~0.2s)
-──────────────────────
-Operational: preflight, sentinel check, CI health check
+Layer 4: Prod Verify    <- 14 tests against real npm, confirmation only (~15s)
+Layer 3: Release Qual   <- 12 RQ tests against Verdaccio install, discovery (~23s)
+Layer 2: Integration    <- full pipeline: clone -> codemod -> patch -> publish -> install (~30s cached)
+Layer 1: Unit           <- individual functions, no external deps (~0.2s)
+Layer 0: Static         <- codemod acceptance, preflight, sentinels
+Layer -1: Environment   <- validate-ci.sh (advisory)
+------------------------------------------------------------
+Gate 1 (pre-publish): Layers 0-3 must pass before publish
+Gate 2 (post-publish): Layer 4 must pass before promotion
 ```
 
-| Layer | Script | Tests | Duration | External Deps | When |
-|-------|--------|-------|----------|---------------|------|
-| 1 | `npm test` | 90 | ~0.2s | None | Every commit |
-| 2 | `bash scripts/test-integration.sh` | 9 phases | ~30s (cached) | Verdaccio, upstream clones | Pre-publish, CI |
-| 3 | `bash scripts/test-acceptance.sh` | 10 | ~15s | Published packages | Post-publish |
-| — | `npm run preflight` | — | <1s | None | Pre-commit |
-| — | `bash check-patches.sh` | — | <10s | None | Session start |
-| — | `bash scripts/validate-ci.sh` | — | <5s | Various | Ad-hoc |
+| Layer | Script | Tests | Size | Duration | When |
+|-------|--------|-------|------|----------|------|
+| -1 | `bash scripts/validate-ci.sh` | 10 checks | Smoke | <5s | Ad-hoc |
+| 0 | `npm run preflight` + `check-patches.sh` | — | Small | <10s | Pre-commit |
+| 1 | `npm test` | 93 | Small | ~0.2s | Every commit |
+| 2 | `bash scripts/test-integration.sh` (Ph 1-8) | 8 phases | Medium | ~30s | Pre-publish |
+| 3 | `bash scripts/test-integration.sh` (Ph 9) | 12 RQ | Medium | ~23s | Pre-publish |
+| 4 | `bash scripts/test-acceptance.sh` | 14 | Large | ~15s | Post-publish |
 
 ---
 
@@ -31,7 +35,7 @@ Operational: preflight, sentinel check, CI health check
 
 **Command**: `npm test`
 
-### Test Suites (6 files, 90 tests)
+### Test Suites (6 files, 93 tests)
 
 #### `01-common-library.test.mjs` — 7 tests
 
@@ -171,7 +175,7 @@ Tests `scripts/publish.mjs` topological ordering (ADR-0014).
 
 Validates the full build pipeline end-to-end using a local Verdaccio registry.
 
-### 9 Phases
+### 10 Phases
 
 | Phase | Function | Timeout | What It Does | Fails On |
 |-------|----------|---------|-------------|----------|
@@ -183,7 +187,8 @@ Validates the full build pipeline end-to-end using a local Verdaccio registry.
 | 6. Upstream Tests | `phase_upstream_tests` | 10s | Skipped (we patch pre-built packages) | Never fails (advisory) |
 | 7. Publish | `phase_publish` | 180s | Run `publish.mjs --no-rate-limit` to Verdaccio | publish.mjs exits non-zero |
 | 8. Install | `phase_install` | 120s | `npm install @sparkleideas/cli` from Verdaccio, verify dependency tree | npm install fails or missing deps |
-| 9. Cleanup | `phase_cleanup` | — | Save logs, write results JSON, kill Verdaccio, remove temp dirs | Always runs |
+| 9. Release Qual | `phase_release_qualification` | 120s | Run RQ-1..RQ-12 against Verdaccio install (lib/acceptance-checks.sh) | Any RQ test fails |
+| 10. Cleanup | `phase_cleanup` | — | Save logs, write results JSON, kill Verdaccio, remove temp dirs | Always runs |
 
 ### Verdaccio Configuration
 
@@ -252,13 +257,15 @@ Written to `test-results/<timestamp>/`:
 
 ---
 
-## Layer 3: Acceptance Tests
+## Layer 3: Release Qualification + Layer 4: Production Verification
 
 ### `scripts/test-acceptance.sh` — End-User Experience
 
 **Command**: `bash scripts/test-acceptance.sh [--registry <url>] [--version <ver>] [--package <name>]`
 
 Runs real CLI commands against published packages to validate the user experience.
+
+**Shared test library**: `lib/acceptance-checks.sh` — 12 functional test functions used by both Layer 3 (Verdaccio, Phase 9) and Layer 4 (real npm). One definition, two contexts.
 
 | ID | Test | Validates |
 |----|------|-----------|
@@ -272,6 +279,10 @@ Runs real CLI commands against published packages to validate the user experienc
 | A8 | No broken versions resolved | `@latest` does not resolve to prerelease with missing dist/ |
 | A9 | Memory lifecycle | init → store → search → retrieve → verify storage on disk |
 | A10 | Neural training | `neural train --pattern coordination` produces persisted patterns.json |
+| A13 | Agent Booster ESM import | `@sparkleideas/agent-booster` module loads |
+| A14 | Agent Booster binary | `npx @sparkleideas/agent-booster --version` |
+| A15 | Plugins SDK import | `@sparkleideas/plugins` module loads |
+| A16 | Plugin install | `plugins install --name @sparkleideas/plugin-prime-radiant` |
 
 **A9 Memory lifecycle detail**: Initializes memory database (hybrid backend, HNSW indexing, 384-dim vectors), stores a key-value entry with namespace and tags, performs semantic search to verify the entry ranks first, retrieves by key to confirm value matches, then checks that `memory.db` exists on disk.
 
@@ -434,14 +445,15 @@ Developer workflow:
   4. git commit
 
 Pre-publish workflow (manual):
-  5. bash scripts/test-integration.sh  ← Layer 2: full pipeline (~30s cached)
-  6. npm publish                       ← triggers prepublishOnly hook
-  7. bash scripts/test-acceptance.sh   ← Layer 3: end-user validation (~15s)
+  5. bash scripts/test-integration.sh  <- Layer 2+3: build verify + RQ (~53s cached)
+  6. npm publish                       <- triggers prepublishOnly hook
+  7. bash scripts/test-acceptance.sh   <- Layer 4: production verification (~15s)
 
 Automated CI pipeline (sync-and-build.sh):
-  Phase 9:  codemod acceptance + unit tests + integration test  ← ALL before publish
-  Phase 11: publish to npm                                      ← only if all tests pass
-  Phase 12: post-publish acceptance tests                       ← validates live packages
+  Phase 9:  Layers 0-3 (codemod + unit + build verify + RQ)    <- Gate 1 (hard fail)
+  Phase 11: publish to npm (prerelease tag)                     <- only if Gate 1 passes
+  Phase 12: Layer 4 (production verification)                   <- Gate 2 (soft fail)
+  Phase 13: promote to @latest                                  <- only if Gate 2 passes
 
 Session start:
   8. bash check-patches.sh             ← verify/reapply patches
@@ -457,9 +469,10 @@ The automated pipeline (`scripts/sync-and-build.sh`) runs **all test layers befo
 | Phase | Tests | Blocks Publish? |
 |-------|-------|----------------|
 | 9a | Codemod acceptance (`test-codemod-acceptance.mjs`) | Yes — aborts on `@claude-flow/` residuals |
-| 9b | Unit tests (`npm test`, 90 tests) | Yes — aborts on any failure |
-| 9c | Integration test (`test-integration.sh`, 9 phases) | Yes — full Verdaccio dry run catches missing packages, broken deps |
-| 11 | Publish to npm | Only runs if 9a-9c all pass |
-| 12 | Acceptance tests (`test-acceptance.sh`, 10 tests) | No — packages already live, creates GitHub issue on failure |
+| 9b | Unit tests (`npm test`, 93 tests) | Yes — aborts on any failure |
+| 9c | Integration test (`test-integration.sh`, 10 phases) | Yes — full Verdaccio dry run catches missing packages, broken deps |
+| 9d | Release Qualification (`test-integration.sh` Phase 9, 12 RQ tests) | Yes — functional smoke tests against Verdaccio |
+| 11 | Publish to npm | Only runs if 9a-9d all pass |
+| 12 | Acceptance tests (`test-acceptance.sh`, 14 tests) | No — packages already live, creates GitHub issue on failure |
 
 This ensures that a new upstream `@claude-flow/*` package missing from the publish list will be caught by the integration test's Phase 8 (install + dependency resolution) **before** anything reaches npm.

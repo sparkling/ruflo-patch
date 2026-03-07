@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Superseded by [ADR-0023](0023-google-testing-framework.md)
 
 ## Context
 
