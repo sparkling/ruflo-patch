@@ -817,9 +817,28 @@ main() {
 
   # Phase 12: Post-publish acceptance tests (Layer 4)
   # Validates the real published packages work end-to-end
-  log "Running post-publish acceptance tests"
+  # Wait for npm CDN to serve the newly published version before testing.
+  # Poll instead of fixed sleep — CDN propagation time varies (5-120s).
+  log "Waiting for npm CDN to propagate ${BUILD_VERSION}..."
+  local cdn_attempts=0
+  local cdn_max=12  # 12 * 10s = 120s max wait
+  while [[ $cdn_attempts -lt $cdn_max ]]; do
+    local cdn_ver
+    cdn_ver=$(npm view @sparkleideas/cli@prerelease version 2>/dev/null) || true
+    if [[ "$cdn_ver" == "$BUILD_VERSION" ]]; then
+      log "CDN propagation confirmed: @sparkleideas/cli@prerelease = ${cdn_ver}"
+      break
+    fi
+    cdn_attempts=$((cdn_attempts + 1))
+    log "  CDN check ${cdn_attempts}/${cdn_max}: got '${cdn_ver:-}', waiting for '${BUILD_VERSION}'..."
+    sleep 10
+  done
+  if [[ $cdn_attempts -ge $cdn_max ]]; then
+    log "WARNING: CDN propagation timed out after ${cdn_max}0s — running acceptance tests anyway"
+  fi
+  log "Running post-publish acceptance tests against version ${BUILD_VERSION}"
   local acceptance_passed=false
-  if bash "${SCRIPT_DIR}/test-acceptance.sh"; then
+  if bash "${SCRIPT_DIR}/test-acceptance.sh" --version "${BUILD_VERSION}"; then
     log "Acceptance tests passed"
     acceptance_passed=true
   else

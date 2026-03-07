@@ -10,6 +10,7 @@
 #
 # Contract:
 #   Caller MUST set:  REGISTRY, TEMP_DIR, PKG
+#   Caller MAY set:   COMPANION_TAG (dist-tag for agent-booster/plugins, e.g. "@prerelease")
 #   Caller MUST define: run_timed (sets _OUT, _EXIT, _DURATION_MS)
 #   Each check_* function sets: _CHECK_PASSED ("true"/"false"), _CHECK_OUTPUT
 #
@@ -325,7 +326,7 @@ check_agent_booster_esm() {
 # RQ-11 / A14: Agent Booster binary
 # --------------------------------------------------------------------------
 check_agent_booster_bin() {
-  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes @sparkleideas/agent-booster --version"
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '@sparkleideas/agent-booster${COMPANION_TAG:-}' --version"
   _CHECK_PASSED="false"
   _CHECK_OUTPUT="$_OUT"
   if [[ $_EXIT -eq 0 && -n "$_OUT" ]]; then

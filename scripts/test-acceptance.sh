@@ -58,6 +58,14 @@ done
 
 PKG="${PACKAGE_NAME}${VERSION}"
 
+# ── Isolated npm/npx cache ────────────────────────────────────────
+# Use a fresh npm cache so npx never resolves stale cached versions.
+# This is the only reliable way to ensure npx fetches the latest from
+# the registry — clearing ~/.npm/_npx is a race condition with npm's
+# internal lock files and index cache.
+ACCEPT_NPX_CACHE=$(mktemp -d /tmp/ruflo-accept-cache-XXXXX)
+export NPM_CONFIG_CACHE="$ACCEPT_NPX_CACHE"
+
 # Global timeout — Layer 4 must complete within 300s (ADR-0023: Large < 900s)
 ( sleep 300; echo "[TIMEOUT] test-acceptance.sh exceeded 300s — sending SIGTERM" >&2; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
@@ -67,6 +75,9 @@ cleanup() {
   kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
     rm -rf "$TEMP_DIR"
+  fi
+  if [[ -n "${ACCEPT_NPX_CACHE:-}" && -d "${ACCEPT_NPX_CACHE:-}" ]]; then
+    rm -rf "$ACCEPT_NPX_CACHE"
   fi
 }
 trap cleanup EXIT INT TERM
@@ -218,6 +229,24 @@ rm -rf "$TEMP_DIR"
 create_temp_dir
 echo "Temp dir:  $TEMP_DIR"
 echo ""
+
+# Install packages needed for import tests (A13, A15) into temp dir.
+# CLI uses the specific version being tested. Agent-booster and plugins
+# have independent version numbers — use the same dist-tag so we test
+# packages from the same publish run (prerelease→prerelease, latest→latest).
+# If a specific version was given (not @latest), use @prerelease for
+# companion packages since they have different version numbers.
+COMPANION_TAG="${VERSION}"
+if [[ "$VERSION" != "@latest" && "$VERSION" =~ ^@[0-9] ]]; then
+  COMPANION_TAG="@prerelease"
+fi
+(cd "$TEMP_DIR" && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
+  && npm install "@sparkleideas/cli${VERSION}" \
+     "@sparkleideas/agent-booster${COMPANION_TAG}" \
+     "@sparkleideas/plugins${COMPANION_TAG}" \
+     --registry "$REGISTRY" --ignore-scripts --no-audit --no-fund 2>&1) || {
+  echo "WARN: Failed to install test packages — A13/A15 may fail" >&2
+}
 
 # Shared checks A2-A7, A9-A10, A13-A15 (from lib/acceptance-checks.sh)
 run_acceptance_check "A2"  "Init"                check_init
