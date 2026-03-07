@@ -15,7 +15,7 @@ CP_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 CP_T0=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
 echo "[$CP_START] Sentinel verification starting"
 
-( sleep 30; echo "[TIMEOUT] check-patches.sh exceeded 30s — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+( sleep 30; echo "[TIMEOUT] check-patches.sh exceeded 30s — sending SIGTERM" >&2; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 CP_TIMEOUT_PID=$!
 
 cp_cleanup() {

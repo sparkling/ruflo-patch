@@ -6,7 +6,7 @@ set -euo pipefail
 # ADR-0023: Google Size Small, < 1s. Global timeout: 30s.
 
 # --- Global timeout guard (30s) ---
-( sleep 30; echo "[TIMEOUT] validate-ci.sh exceeded 30s — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+( sleep 30; echo "[TIMEOUT] validate-ci.sh exceeded 30s — sending SIGTERM" >&2; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 trap 'kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true' EXIT
 

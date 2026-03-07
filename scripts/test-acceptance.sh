@@ -59,7 +59,7 @@ done
 PKG="${PACKAGE_NAME}${VERSION}"
 
 # Global timeout — Layer 4 must complete within 300s (ADR-0023: Large < 900s)
-( sleep 300; echo "[TIMEOUT] test-acceptance.sh exceeded 300s — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+( sleep 300; echo "[TIMEOUT] test-acceptance.sh exceeded 300s — sending SIGTERM" >&2; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup trap ────────────────────────────────────────────────────
