@@ -525,18 +525,35 @@ main() {
   # Phase 12: Post-publish acceptance tests (Layer 3)
   # Validates the real published packages work end-to-end
   log "Running post-publish acceptance tests"
+  local acceptance_passed=false
   if bash "${SCRIPT_DIR}/test-acceptance.sh"; then
     log "Acceptance tests passed"
+    acceptance_passed=true
   else
     log_error "WARNING: Acceptance tests failed after publish (packages are live)"
     # Don't abort — packages are already published. Create issue instead.
     create_failure_issue "post-publish-acceptance" "$?"
   fi
 
-  # Phase 13: GitHub prerelease notification
+  # Phase 13: Auto-promote to @latest (ADR-0010 amendment)
+  # After acceptance tests pass, promote prerelease to @latest so users
+  # on `npx @sparkleideas/cli@latest` get the new version automatically.
+  if [[ "$acceptance_passed" == true ]]; then
+    log "Promoting ${BUILD_VERSION} to @latest"
+    if bash "${SCRIPT_DIR}/promote.sh" --yes "${BUILD_VERSION}"; then
+      log "Promotion to @latest complete"
+    else
+      log_error "WARNING: Promotion to @latest failed (packages remain on prerelease tag)"
+      create_failure_issue "promote-latest" "$?"
+    fi
+  else
+    log "Skipping promotion to @latest — acceptance tests did not pass"
+  fi
+
+  # Phase 14: GitHub release notification
   create_github_notification
 
-  # Phase 14: Update state (only after successful publish)
+  # Phase 15: Update state (only after successful publish)
   local current_local_head
   current_local_head=$(git -C "${PROJECT_DIR}" rev-parse HEAD)
 

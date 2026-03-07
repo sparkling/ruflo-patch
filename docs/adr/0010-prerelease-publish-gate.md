@@ -92,6 +92,28 @@ The above list of rejected alternatives is exhaustive.
 - If a prerelease is bad, you simply don't promote it. No remediation needed — `@latest` users never saw it
 - If npm publish fails (network, auth), the build script should retry once and then fall back to creating a GitHub Issue
 
+### Amendment: Auto-Promote After Acceptance Tests (2026-03-07)
+
+The original design required manual promotion via `npm dist-tag add`. In practice,
+this step was never performed, causing `@latest` to drift behind `@prerelease` indefinitely.
+Users on `npx @sparkleideas/cli@latest` never received updates.
+
+**Change:** `sync-and-build.sh` now auto-promotes to `@latest` after post-publish
+acceptance tests pass. The promotion uses `scripts/promote.sh --yes`, which reads
+per-package versions from `config/published-versions.json` and runs
+`npm dist-tag add <pkg>@<version> latest` for each package.
+
+**Safety:** If acceptance tests fail, promotion is skipped and packages remain on
+the `prerelease` tag only. A GitHub issue is created for investigation.
+
+**Manual override:** `promote.sh` can still be run manually for ad-hoc promotions
+or to retry after a transient failure.
+
+**Bug fix (publish.mjs):** Line 434 previously overrode `getPublishTag()`'s `null`
+return (first-publish) with `'prerelease'` when the version string contained `-`.
+This prevented first-publish from setting `@latest`, violating ADR-0015. Fixed to
+respect the `null` tag from `getPublishTag()` unconditionally.
+
 ### Completion (SPARC-C)
 
 Acceptance criteria:
@@ -104,3 +126,5 @@ Acceptance criteria:
 - [x] `npx @sparkleideas/cli@prerelease` installs the prerelease version
 - [x] `npx @sparkleideas/cli@latest` is unaffected by prerelease publishes
 - [x] Failed builds create GitHub Issues with diagnostic information
+- [x] Auto-promote to `@latest` after acceptance tests pass in sync-and-build.sh
+- [x] First-publish bootstrap correctly sets `@latest` for prerelease versions (ADR-0015 bug fix)

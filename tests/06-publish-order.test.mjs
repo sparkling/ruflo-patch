@@ -419,6 +419,67 @@ describe('Topological publish order (ADR-0014)', () => {
     });
   });
 
+  // ---------- 6b. First-publish tag correctness (ADR-0015 bug fix) ----------
+
+  describe('First-publish tag correctness', () => {
+    it('first-publish packages get tag "latest" even with prerelease versions', async () => {
+      // Mock: all packages are "never published" (first publish)
+      const mockFirstPublish = async () => null;
+      const tmp = createFakeBuildDir();
+
+      // Set prerelease versions in the fake packages (the bug was that
+      // prerelease versions like 3.0.0-alpha.1 got --tag prerelease
+      // even on first publish, preventing @latest from being set)
+      for (const level of LEVELS) {
+        for (const pkgName of level) {
+          const parts = pkgName.startsWith('@') ? pkgName.split('/') : [pkgName];
+          const pkgJsonPath = join(tmp, ...parts, 'package.json');
+          writeFileSync(
+            pkgJsonPath,
+            JSON.stringify({ name: pkgName, version: '3.0.0-alpha.1' }, null, 2) + '\n'
+          );
+        }
+      }
+
+      const result = await publishAll(tmp, {
+        dryRun: true, getPublishTagFn: mockFirstPublish,
+      });
+
+      assert.equal(result.failed, null, 'Dry-run should succeed');
+
+      for (const entry of result.published) {
+        assert.equal(
+          entry.tag,
+          'latest',
+          `First-publish package ${entry.name} should get tag "latest", got "${entry.tag}". ` +
+            'ADR-0015 requires first publish to set @latest regardless of version string.'
+        );
+      }
+
+      rmSync(tmp, { recursive: true, force: true });
+    });
+
+    it('already-published packages get tag "prerelease"', async () => {
+      const tmp = createFakeBuildDir();
+
+      const result = await publishAll(tmp, {
+        dryRun: true, getPublishTagFn: mockGetPublishTag, // returns 'prerelease'
+      });
+
+      assert.equal(result.failed, null, 'Dry-run should succeed');
+
+      for (const entry of result.published) {
+        assert.equal(
+          entry.tag,
+          'prerelease',
+          `Already-published package ${entry.name} should get tag "prerelease", got "${entry.tag}"`
+        );
+      }
+
+      rmSync(tmp, { recursive: true, force: true });
+    });
+  });
+
   // ---------- 7. Dry-run mode ----------
 
   describe('Dry-run mode', () => {

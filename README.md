@@ -197,6 +197,7 @@ ruflo repair [--target <dir>]              Repair post-init helpers
 | SV-001 | `050-SV-001-ruvllm-semver-fix` | Fixes `@ruvector/ruvllm ^0.2.3` → `^2.5.1` |
 | SV-002 | `051-SV-002-agentdb-memory-pin` | Fixes agentdb pin `2.0.0-alpha.3.7` → `^3.0.0-alpha.10` |
 | SV-003 | `052-SV-003-agentdb-agentic-range` | Fixes agentdb range `^2.0.0-alpha.2.20` → `^3.0.0-alpha.10` |
+| SG-003 | `060-SG-003-init-helpers-all-paths` | Fixes missing `.claude/helpers/` for --dual, --minimal, hooks, and upgrade init paths |
 
 Each patch is idempotent — safe to run multiple times. Adding a new patch requires no changes to any script; just create the directory with `README.md`, `fix.py`, and `sentinel`.
 

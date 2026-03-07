@@ -130,6 +130,23 @@ All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prer
 - **Scoped packages require scope access**: `npm publish` for `@sparkleideas/*` packages requires that the npm account has publish access to the `@sparkleideas` scope. This is a one-time setup step (register the scope on npmjs.com) and is not repeated per package.
 - **Race condition on first run**: If two build processes run simultaneously (unlikely with systemd timer, but possible with manual trigger), both may detect a package as "never published" and attempt first-publish. The second `npm publish` will fail with `EPUBLISHCONFLICT` (version already exists). This is a benign failure -- the package is already published by the first process. The retry logic in the publish loop handles this gracefully.
 
+### Bug Fix (2026-03-07)
+
+`publish.mjs` line 434 contained a version-string sniffing override:
+
+```js
+const effectiveTag = tag ?? (effectiveVersion.includes('-') ? 'prerelease' : null);
+```
+
+When `getPublishTag()` returned `null` (first publish), this line checked the version
+string for a `-` (prerelease identifier like `3.0.0-alpha.1`) and substituted
+`'prerelease'`, effectively bypassing the first-publish bootstrap. Since ALL our
+versions are prerelease (`-alpha.N`), every first publish used `--tag prerelease`
+instead of no tag, so `@latest` was never set.
+
+**Fix:** Replace with `if (tag) { publishArgs.push('--tag', tag); }` — when
+`getPublishTag()` returns `null`, respect it unconditionally.
+
 ### Completion (SPARC-C)
 
 - [x] Build script calls `npm view <package> version` before each publish to detect first-publish status
@@ -141,3 +158,4 @@ All 26 packages have a `latest` dist-tag. The bootstrap detection returns `'prer
 - [ ] After first full publish, all 24 packages have a `latest` dist-tag
 - [x] Subsequent builds use `--tag prerelease` for all packages (bootstrap detection returns prerelease)
 - [ ] Partial bootstrap scenario tested: publish 5 packages, stop, re-run -- remaining 19 get first-publish, 5 get prerelease
+- [x] Version-string sniffing override removed — first-publish respects null tag (bug fix 2026-03-07)

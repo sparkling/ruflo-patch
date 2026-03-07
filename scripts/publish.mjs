@@ -431,9 +431,12 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     }
 
     const publishArgs = ['publish', '--access', 'public', '--ignore-scripts'];
-    const effectiveTag = tag ?? (effectiveVersion.includes('-') ? 'prerelease' : null);
-    if (effectiveTag) {
-      publishArgs.push('--tag', effectiveTag);
+    // ADR-0015: when tag is null (first publish), do NOT pass --tag at all.
+    // npm defaults to setting the "latest" dist-tag automatically.
+    // Previously this line sniffed the version string and forced --tag prerelease
+    // for prerelease versions, which broke first-publish bootstrap.
+    if (tag) {
+      publishArgs.push('--tag', tag);
     }
 
     try {
