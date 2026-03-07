@@ -473,12 +473,8 @@ run_tests() {
   # This catches missing packages, broken deps, and publish failures
   # BEFORE we publish to real npm.
   log "Running integration test (local Verdaccio dry run)"
-  local integ_args=()
-  if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
-    integ_args+=(--incremental)
-    export CHANGED_PACKAGES_JSON="$REBUILD_PACKAGES"
-  fi
-  bash "${SCRIPT_DIR}/test-integration.sh" "${integ_args[@]}" || {
+  export CHANGED_PACKAGES_JSON="$REBUILD_PACKAGES"
+  bash "${SCRIPT_DIR}/test-integration.sh" || {
     log_error "Integration test failed — aborting before publish to npm"
     return 1
   }

@@ -43,7 +43,6 @@ OVERALL_EXIT=0
 # CLI flags
 SNAPSHOT_DIR=""
 CREATE_SNAPSHOT_DIR=""
-INCREMENTAL=false
 
 # ---------------------------------------------------------------------------
 # Argument parsing
@@ -61,17 +60,12 @@ while [[ $# -gt 0 ]]; do
       [[ -z "$CREATE_SNAPSHOT_DIR" ]] && { echo "Error: --create-snapshot requires a directory"; exit 1; }
       shift 2
       ;;
-    --incremental)
-      INCREMENTAL=true
-      shift
-      ;;
     -h|--help)
-      echo "Usage: test-integration.sh [--snapshot <dir>] [--create-snapshot <dir>] [--incremental]"
+      echo "Usage: test-integration.sh [--snapshot <dir>] [--create-snapshot <dir>]"
       echo ""
       echo "Options:"
       echo "  --snapshot <dir>          Use frozen upstream tarballs instead of live clones"
       echo "  --create-snapshot <dir>   Tarball current upstream sources into target dir, then exit"
-      echo "  --incremental             Keep cached @sparkleideas/* packages in Verdaccio"
       exit 0
       ;;
     *)
@@ -364,15 +358,28 @@ phase_setup() {
   fi
   phase_log "1" "Global Verdaccio healthy on port ${VERDACCIO_PORT}"
 
-  # Clear @sparkleideas/* packages (external dep cache persists permanently)
-  if [[ "$INCREMENTAL" == "true" ]]; then
-    log "Incremental mode: keeping cached @sparkleideas/* packages in Verdaccio"
-    # In incremental mode, publish.mjs --packages will only publish changed packages
-    # Unchanged packages remain in Verdaccio from previous run
-  else
-    log "Full mode: clearing all @sparkleideas/* from Verdaccio"
+  # Incremental by default: keep cached @sparkleideas/* packages in Verdaccio.
+  # Only clear specific changed packages if CHANGED_PACKAGES_JSON is set,
+  # or clear all if CHANGED_PACKAGES_JSON="all" (full rebuild trigger).
+  if [[ "${CHANGED_PACKAGES_JSON:-}" == "all" ]]; then
+    log "Full rebuild: clearing all @sparkleideas/* from Verdaccio"
     rm -rf "${VERDACCIO_STORAGE}/@sparkleideas" "${VERDACCIO_STORAGE}/ruflo" 2>/dev/null || true
-    phase_log "1" "Cleared @sparkleideas/* from Verdaccio storage"
+    phase_log "1" "Cleared all @sparkleideas/* from Verdaccio storage"
+  elif [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON:-}" != "[]" ]]; then
+    log "Incremental: clearing only changed packages from Verdaccio"
+    echo "$CHANGED_PACKAGES_JSON" | node -e "
+      const fs = require('fs');
+      const pkgs = JSON.parse(fs.readFileSync('/dev/stdin', 'utf8'));
+      for (const pkg of pkgs) {
+        const name = pkg.replace('@sparkleideas/', '');
+        const dir = '${VERDACCIO_STORAGE}/@sparkleideas/' + name;
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch {}
+        process.stderr.write('  cleared: @sparkleideas/' + name + '\n');
+      }
+    " 2>&1 || true
+    phase_log "1" "Cleared changed packages from Verdaccio storage"
+  else
+    log "Incremental: keeping all cached @sparkleideas/* packages in Verdaccio"
   fi
 
   # Create results directory
@@ -720,12 +727,12 @@ phase_publish() {
   local publish_output_file="${RESULTS_DIR}/publish-raw-output.txt"
   local publish_exit=0
 
-  # Incremental publish support: if CHANGED_PACKAGES_JSON is set,
+  # Incremental publish: if CHANGED_PACKAGES_JSON is a JSON array,
   # pass --packages to publish only changed packages
   local publish_extra_args=""
-  if [[ "$INCREMENTAL" == "true" && -n "${CHANGED_PACKAGES_JSON:-}" ]]; then
+  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON:-}" != "all" && "${CHANGED_PACKAGES_JSON:-}" != "[]" ]]; then
     publish_extra_args="--packages ${CHANGED_PACKAGES_JSON}"
-    phase_log "7" "Incremental mode: publishing only changed packages"
+    phase_log "7" "Incremental: publishing only changed packages"
   fi
 
   phase_log "7" "Running publish.mjs (streaming output to ${publish_output_file})..."
