@@ -269,7 +269,7 @@ Plugins are already cataloged in detail in [plugin-catalog.md](plugin-catalog.md
 | `plugin-prime-radiant` | 0.1.5 | zod, WASM (optional) | **Monitor** | Hallucination prevention; high value |
 | `plugin-quantum-optimizer` | 3.0.0-alpha.1 | zod, WASM (optional) | **Skip** | Exotic optimization; niche |
 | `ruvector-upstream` | 3.0.0-alpha.1 | zod, WASM (optional) | **Integrate** | WASM bridge layer all plugins depend on |
-| `teammate-plugin` | 1.0.0-alpha.1 | eventemitter3, bmssp | **Monitor** | See [ADR-0021](adr/0021-teammate-plugin-integration.md) |
+| `teammate-plugin` | 1.0.0-alpha.1 | eventemitter3, bmssp | **Monitor** | See [ADR-0022](adr/0022-full-ecosystem-repackaging.md) |
 | `plugin-test-intelligence` | 3.0.0-alpha.1 | zod | **Monitor** | Predictive test selection; high value for CI |
 
 ---
@@ -490,7 +490,7 @@ Features image processing, feature detection, object detection, video processing
 | `agentdb-onnx` | Users need high-quality local embeddings |
 | `plugin-agentic-qe` | QA automation demand |
 | `plugin-prime-radiant` | Hallucination prevention demand |
-| `teammate-plugin` | See [ADR-0021](adr/0021-teammate-plugin-integration.md) |
+| `teammate-plugin` | See [ADR-0022](adr/0022-full-ecosystem-repackaging.md) |
 
 ### Skip (22 packages)
 

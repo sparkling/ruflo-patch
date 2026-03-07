@@ -159,7 +159,7 @@ The plugin also provides bidirectional sync between Gas Town's Beads and Claude 
 
 **WASM speedups:** Formula parse 352x, variable cooking 350x, DAG sort 150x, HNSW search 1,000x-12,500x
 
-**Note:** This plugin is an `optionalDependency` of `@claude-flow/cli` and is a candidate for integration into the `@sparkleideas` scope (see [ADR-0021](adr/0021-teammate-plugin-integration.md) and [package matrix](ruvnet.packages.and.source.location.md)).
+**Note:** This plugin is an `optionalDependency` of `@claude-flow/cli` and is a candidate for integration into the `@sparkleideas` scope (see [ADR-0022](adr/0022-full-ecosystem-repackaging.md) and [package matrix](ruvnet.packages.and.source.location.md)).
 
 ---
 
@@ -356,7 +356,7 @@ When TeammateTool is unavailable (Claude Code < 2.1.19), the plugin degrades gra
 - Session: `teammate/save_session`, `teammate/restore_session`
 - Advanced: `teammate/teleport`, `teammate/remote_sync`
 
-**Note:** Not yet repackaged under `@sparkleideas` scope. See [ADR-0021](adr/0021-teammate-plugin-integration.md) for integration status (deferred — requires TypeScript build step).
+**Note:** Not yet repackaged under `@sparkleideas` scope. See [ADR-0022](adr/0022-full-ecosystem-repackaging.md) for integration status (deferred — requires TypeScript build step).
 
 ---
 
@@ -412,4 +412,4 @@ All compute-intensive operations are accelerated through Rust-compiled WASM pack
 - Plugin source: [github.com/ruvnet/ruflo/v3/plugins/](https://github.com/ruvnet/ruflo/tree/main/v3/plugins)
 - WASM packages: [github.com/ruvnet/ruvector](https://github.com/ruvnet/ruvector)
 - Repackaging status: [Package Matrix](ruvnet.packages.and.source.location.md)
-- Teammate integration ADR: [ADR-0021](adr/0021-teammate-plugin-integration.md)
+- Teammate integration ADR: [ADR-0022](adr/0022-full-ecosystem-repackaging.md)

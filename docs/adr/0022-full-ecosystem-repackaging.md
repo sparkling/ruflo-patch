@@ -1,4 +1,4 @@
-# ADR-0025: Full Ecosystem Repackaging
+# ADR-0022: Full Ecosystem Repackaging
 
 - **Status**: Proposed
 - **Date**: 2026-03-07
@@ -16,7 +16,7 @@
 3. **Broken feature promises** -- The CLAUDE.md shipped to every user project references capabilities (plugin install, Tier 1 routing, claims, browser automation) that require packages not available in the `@sparkleideas` scope.
 4. **Plugin SDK gap** -- All 14 plugins depend on `@claude-flow/plugins` for MCP tool registration. Without the SDK under `@sparkleideas`, none of the plugins can be installed within the repackaged ecosystem.
 
-**Trigger**: The [unpublished-sources.md](../unpublished-sources.md) audit identified 36+ source-only packages and flagged 2 for immediate integration (plugins SDK, agent-booster) with 11 more on monitor. ADR-0024 proposed integrating agent-booster individually. This ADR takes the comprehensive approach: integrate ALL npm-publishable packages in a phased rollout rather than one-off ADRs per package.
+**Trigger**: The [unpublished-sources.md](../unpublished-sources.md) audit identified 36+ source-only packages and flagged 2 for immediate integration (plugins SDK, agent-booster) with 11 more on monitor. ADR-0021 proposed integrating agent-booster individually. This ADR takes the comprehensive approach: integrate ALL npm-publishable packages in a phased rollout rather than one-off ADRs per package.
 
 **Success Criteria**:
 
@@ -317,7 +317,7 @@ Integrate all remaining npm-publishable packages in a 4-phase rollout. Users get
 
 #### Option B: Incremental Per-Package ADRs
 
-Continue the pattern of ADR-0021 (teammate-plugin) and ADR-0024 (agent-booster) -- one ADR per package, integrated individually when demand arises.
+Continue the pattern of ADR-0021 (agent-booster) -- one ADR per package, integrated individually when demand arises.
 
 **Pros**: Minimal complexity at any given time. Each integration is small and testable.
 
@@ -460,7 +460,7 @@ Publish `@sparkleideas/plugins` (the SDK) so that upstream `@claude-flow/plugin-
 
 - [ ] Add `@sparkleideas/ruvector-upstream` at Level 3 (WASM bridge layer)
 - [ ] Add 13 plugin packages at Level 4
-- [ ] Add `@sparkleideas/teammate-plugin` at Level 4 -- add `tsc` build step per ADR-0021
+- [ ] Add `@sparkleideas/teammate-plugin` at Level 4 -- add `tsc` build step per teammate-plugin TypeScript requirement
 - [ ] Verify `@sparkleideas/plugin-gastown-bridge` -- already published upstream, confirm repackaging works
 - [ ] Unit test: 15 new packages in LEVELS at correct levels
 - [ ] Integration test: all 15 publish to Verdaccio
@@ -529,8 +529,7 @@ Publish `@sparkleideas/plugins` (the SDK) so that upstream `@claude-flow/plugin-
 ## References
 
 - [ADR-0014: Topological Publish Order](0014-topological-publish-order.md) -- existing 5-level publish order
-- [ADR-0021: Teammate Plugin Integration](0021-teammate-plugin-integration.md) -- TypeScript build step requirement
-- [ADR-0024: Agent Booster Integration](0024-agent-booster-integration.md) -- Tier 1 routing, individual integration proposal
+- [ADR-0021: Agent Booster Integration](0021-agent-booster-integration.md) -- Tier 1 routing, individual integration proposal
 - [Unpublished Sources Audit](../unpublished-sources.md) -- comprehensive catalog of all unpublished packages
 - [Plugin Catalog](../plugin-catalog.md) -- detailed descriptions of all 14 plugins
 - [Package and Source Location Map](../ruvnet.packages.and.source.location.md) -- complete package matrix across 3 repos
