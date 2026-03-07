@@ -179,8 +179,22 @@ start_phase_timer() {
     PHASE_TIMEOUT_PID=""
   fi
 
-  # Background watchdog that kills the whole script on timeout
-  ( sleep "$timeout_secs"; echo "[TIMEOUT] Phase '${phase_name}' exceeded ${timeout_secs}s — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+  # Background watchdog that logs heartbeats and kills on timeout
+  (
+    local elapsed=0
+    local heartbeat=10
+    while [[ $elapsed -lt $timeout_secs ]]; do
+      sleep $heartbeat
+      elapsed=$((elapsed + heartbeat))
+      if [[ $elapsed -lt $timeout_secs ]]; then
+        echo "[HEARTBEAT] Phase '${phase_name}': ${elapsed}/${timeout_secs}s elapsed" >&2
+      fi
+    done
+    echo "[TIMEOUT] Phase '${phase_name}' exceeded ${timeout_secs}s — dumping state and aborting" >&2
+    # Dump process tree for diagnostics
+    ps --forest -o pid,ppid,stat,time,cmd -g $$ 2>/dev/null >&2 || ps -ef 2>/dev/null | grep -E "$$|verdaccio|npm|node" >&2
+    kill -TERM $$ 2>/dev/null
+  ) &
   PHASE_TIMEOUT_PID=$!
 }
 
@@ -759,18 +773,23 @@ phase_publish() {
   # Set auth in npm config so publish works
   npm config set "//localhost:${VERDACCIO_PORT}/:_authToken" "test-token" 2>/dev/null || true
 
-  local publish_output
+  local publish_output_file="${RESULTS_DIR}/publish-raw-output.txt"
   local publish_exit=0
-  publish_output=$(node "${SCRIPT_DIR}/publish.mjs" \
-    --build-dir "${build_root}" --no-rate-limit 2>&1) || publish_exit=$?
+
+  phase_log "7" "Running publish.mjs (streaming output to ${publish_output_file})..."
+
+  # Stream output to both file and stderr so heartbeats remain visible
+  node "${SCRIPT_DIR}/publish.mjs" \
+    --build-dir "${build_root}" --no-rate-limit \
+    > >(tee "${publish_output_file}") 2>&1 || publish_exit=$?
+
+  local publish_output
+  publish_output=$(cat "${publish_output_file}")
 
   phase_log "7" "Publish output (last 30 lines):"
-  echo "$publish_output" | tail -30 | while IFS= read -r line; do
+  tail -30 "${publish_output_file}" | while IFS= read -r line; do
     phase_log "7" "  $line"
   done
-
-  # Save raw output for debugging
-  echo "$publish_output" > "${RESULTS_DIR}/publish-raw-output.txt"
 
   # Extract JSON summary (everything after "--- Summary ---")
   # Use grep+sed instead of sed-only to handle edge cases with pipefail
@@ -834,15 +853,25 @@ IEOF
   # Create .npmrc pointing to Verdaccio
   echo "registry=http://localhost:${VERDACCIO_PORT}" > "${TEMP_INSTALL}/.npmrc"
 
-  local install_output
+  local install_output_file="${RESULTS_DIR}/install-raw-output.txt"
   local install_exit=0
-  install_output=$(cd "${TEMP_INSTALL}" && npm install @sparkleideas/cli \
+
+  phase_log "8" "Running npm install @sparkleideas/cli (streaming)..."
+
+  (cd "${TEMP_INSTALL}" && npm install @sparkleideas/cli \
     --registry "http://localhost:${VERDACCIO_PORT}" \
-    --ignore-scripts --no-audit --no-fund 2>&1) || install_exit=$?
+    --ignore-scripts --no-audit --no-fund) \
+    > >(tee "${install_output_file}") 2>&1 || install_exit=$?
+
+  local install_output
+  install_output=$(cat "${install_output_file}")
 
   if [[ $install_exit -ne 0 ]]; then
     log_error "npm install @sparkleideas/cli failed with exit code ${install_exit}"
-    echo "$install_output" >&2
+    phase_log "8" "Install output (last 20 lines):"
+    tail -20 "${install_output_file}" | while IFS= read -r line; do
+      phase_log "8" "  $line"
+    done
     local end
     end=$(now_ns)
     record_phase "install" "false" "$(elapsed_ms "$start" "$end")" "npm install failed: $(truncate_output "$install_output")"
@@ -952,6 +981,14 @@ main() {
   log "=========================================="
   log "ruflo integration test starting"
   log "=========================================="
+  log "Phase timeouts: setup=30s clone=60s codemod=60s patch=30s"
+  log "                build=30s upstream=10s publish=180s install=120s"
+  log "Global timeout: 600s (10 min)"
+  log "=========================================="
+
+  # Global timeout — kills everything if total time exceeds 10 minutes
+  ( sleep 600; echo "[GLOBAL TIMEOUT] Integration test exceeded 600s total — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+  local GLOBAL_TIMEOUT_PID=$!
 
   check_prerequisites
 
@@ -992,6 +1029,10 @@ main() {
 
   # Phase 9 always runs (cleanup)
   phase_cleanup
+
+  # Cancel global timeout
+  kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
+  wait "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
 
   local overall_end
   overall_end=$(now_ns)

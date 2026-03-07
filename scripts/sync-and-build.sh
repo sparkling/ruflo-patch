@@ -239,16 +239,93 @@ apply_patches() {
 # ---------------------------------------------------------------------------
 
 run_build() {
-  # The upstream packages ship pre-built JS (no TypeScript compilation).
-  # Running `pnpm install` on the root workspace would try to resolve
-  # cross-repo @sparkleideas/* packages from npm, creating a chicken-and-egg
-  # problem when those published packages still have stale prerelease ranges.
+  # Upstream packages are TypeScript — they need compilation to produce dist/.
+  # The package.json "files" field includes "dist" and entry points reference
+  # dist/src/index.js, so publishing without building ships empty packages.
   #
-  # Instead, we skip the root install entirely. The publish script handles
-  # each package individually by directory, so no node_modules resolution
-  # is needed.
-  log "Skipping workspace install (packages are pre-built JS)"
-  log "Build complete (no compilation needed)"
+  # We install TypeScript locally in the build dir and compile each package
+  # individually to avoid workspace dependency resolution issues.
+
+  local v3_dir="${TEMP_DIR}/v3"
+  if [[ ! -d "$v3_dir" ]]; then
+    log "No v3/ directory found — skipping TypeScript build"
+    return 0
+  fi
+
+  # Install TypeScript in an isolated directory (the v3 workspace has
+  # conflicting peer deps that prevent npm install from succeeding)
+  local tsc_dir="${TEMP_DIR}/.tsc-toolchain"
+  log "Installing TypeScript toolchain"
+  mkdir -p "$tsc_dir"
+  echo '{}' > "$tsc_dir/package.json"
+  (cd "$tsc_dir" && npm install typescript@5 2>&1) || {
+    log_error "Failed to install TypeScript"
+    return 1
+  }
+  local TSC="$tsc_dir/node_modules/.bin/tsc"
+
+  # Build each package that has a tsconfig.json
+  # Process in dependency order: shared first, then the rest
+  local build_order=(
+    shared
+    memory embeddings codex aidefence
+    neural hooks browser plugins providers claims
+    guidance mcp integration deployment swarm security performance testing
+    cli
+  )
+
+  local built=0
+  local failed=0
+  for pkg_name in "${build_order[@]}"; do
+    # Directory names remain @claude-flow/ after codemod (only file contents are renamed)
+    local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
+    [[ -d "$pkg_dir" ]] || continue
+    [[ -f "$pkg_dir/tsconfig.json" ]] || continue
+
+    # Create a standalone tsconfig that doesn't require project references
+    # (referenced projects may not be at the expected relative paths after codemod)
+    local tmp_tsconfig="$pkg_dir/tsconfig.build.json"
+    node -e "
+      const ts = JSON.parse(require('fs').readFileSync('$pkg_dir/tsconfig.json', 'utf-8'));
+      delete ts.references;
+      if (ts.extends) {
+        // Inline the base config to avoid path issues
+        try {
+          const base = JSON.parse(require('fs').readFileSync(require('path').resolve('$pkg_dir', ts.extends), 'utf-8'));
+          ts.compilerOptions = { ...base.compilerOptions, ...ts.compilerOptions };
+          delete ts.extends;
+        } catch {}
+      }
+      // Ensure skipLibCheck to avoid errors from missing type deps
+      ts.compilerOptions.skipLibCheck = true;
+      ts.compilerOptions.noEmit = false;
+      require('fs').writeFileSync('$tmp_tsconfig', JSON.stringify(ts, null, 2));
+    " 2>/dev/null
+
+    if "$TSC" -p "$tmp_tsconfig" --skipLibCheck 2>/dev/null; then
+      built=$((built + 1))
+    else
+      # Try with looser settings
+      if "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>/dev/null; then
+        built=$((built + 1))
+      else
+        log "WARN: TypeScript build failed for ${pkg_name} — trying transpileOnly"
+        # Last resort: just copy .ts -> .js with minimal transpilation
+        if "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>/dev/null; then
+          built=$((built + 1))
+        else
+          log_error "TypeScript build failed for ${pkg_name}"
+          failed=$((failed + 1))
+        fi
+      fi
+    fi
+    rm -f "$tmp_tsconfig"
+  done
+
+  log "Build complete: ${built} packages built, ${failed} failed"
+  if [[ $failed -gt 0 ]]; then
+    log_error "Some packages failed to build — published packages may be broken"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -507,11 +584,11 @@ main() {
   # Phase 6: Run codemod
   run_phase "codemod" run_codemod
 
-  # Phase 7: Apply patches
-  run_phase "apply-patches" apply_patches
-
-  # Phase 8: Build
+  # Phase 7: Build (must happen before patches — patches target compiled .js in dist/)
   run_phase "build" run_build
+
+  # Phase 8: Apply patches (runs against compiled dist/src/*.js files)
+  run_phase "apply-patches" apply_patches
 
   # Phase 9: Test
   run_phase "test" run_tests

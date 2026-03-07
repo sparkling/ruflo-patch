@@ -431,13 +431,9 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     }
 
     const publishArgs = ['publish', '--access', 'public', '--ignore-scripts'];
-    // ADR-0015: when tag is null (first publish), do NOT pass --tag at all.
-    // npm defaults to setting the "latest" dist-tag automatically.
-    // Previously this line sniffed the version string and forced --tag prerelease
-    // for prerelease versions, which broke first-publish bootstrap.
-    if (tag) {
-      publishArgs.push('--tag', tag);
-    }
+    // ADR-0015: first publish uses --tag latest (npm requires --tag for prerelease
+    // versions). Subsequent publishes use --tag prerelease (ADR-0010 gate).
+    publishArgs.push('--tag', tag ?? 'latest');
 
     try {
       const { stdout } = await execFile('npm', publishArgs, {
@@ -455,7 +451,7 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
       ) {
         console.log(`    already published — skipping`);
         publishedVersions[pkgName] = effectiveVersion;
-        return { ok: true, entry: { name: pkgName, level: levelNumber, tag: effectiveTag ?? 'latest', version: effectiveVersion } };
+        return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion } };
       }
 
       const errorOutput = [
@@ -473,12 +469,14 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
 
   for (const [levelIndex, packages] of LEVELS.entries()) {
     const levelNumber = levelIndex + 1;
-    console.log(`\n--- Level ${levelNumber} ---`);
+    const levelStart = Date.now();
+    console.log(`\n--- Level ${levelNumber} (${packages.length} packages) ---`);
 
     // Publish all packages within a level concurrently
     const results = await Promise.all(
       packages.map(pkgName => publishOne(pkgName, levelNumber))
     );
+    console.log(`  Level ${levelNumber} completed in ${Date.now() - levelStart}ms`);
 
     // Check results — first failure stops the pipeline
     for (const result of results) {

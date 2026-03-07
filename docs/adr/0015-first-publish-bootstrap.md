@@ -144,13 +144,18 @@ string for a `-` (prerelease identifier like `3.0.0-alpha.1`) and substituted
 versions are prerelease (`-alpha.N`), every first publish used `--tag prerelease`
 instead of no tag, so `@latest` was never set.
 
-**Fix:** Replace with `if (tag) { publishArgs.push('--tag', tag); }` — when
+**Fix (v1):** Replace with `if (tag) { publishArgs.push('--tag', tag); }` — when
 `getPublishTag()` returns `null`, respect it unconditionally.
+
+**Fix (v2):** npm 11+ requires `--tag` for prerelease versions (`You must specify a
+tag using --tag when publishing a prerelease version`). Omitting `--tag` fails. The
+correct approach is `publishArgs.push('--tag', tag ?? 'latest')` — first publish
+explicitly passes `--tag latest`, subsequent publishes pass `--tag prerelease`.
 
 ### Completion (SPARC-C)
 
 - [x] Build script calls `npm view <package> version` before each publish to detect first-publish status
-- [x] Never-published packages use `npm publish` with no `--tag` flag (sets `latest` automatically)
+- [x] Never-published packages use `npm publish --tag latest` (npm 11+ requires explicit --tag for prerelease versions)
 - [x] Already-published packages use `npm publish --tag prerelease` (ADR-0010 gate)
 - [x] Script distinguishes npm `E404` (package not found) from network errors
 - [x] After first full publish, `npm view @sparkleideas/cli version` returns a version
@@ -158,4 +163,4 @@ instead of no tag, so `@latest` was never set.
 - [ ] After first full publish, all 24 packages have a `latest` dist-tag
 - [x] Subsequent builds use `--tag prerelease` for all packages (bootstrap detection returns prerelease)
 - [ ] Partial bootstrap scenario tested: publish 5 packages, stop, re-run -- remaining 19 get first-publish, 5 get prerelease
-- [x] Version-string sniffing override removed — first-publish respects null tag (bug fix 2026-03-07)
+- [x] Version-string sniffing override removed — first-publish uses `--tag latest` explicitly (bug fix 2026-03-07)

@@ -152,6 +152,18 @@ discover_all_cf_installs() {
 
 discover_target_installs() {
   local dir="$1"
-  [ -d "$dir/node_modules" ] || return 0
-  _cfp_probe_node_modules "$dir/node_modules"
+
+  # Standard layout: <dir>/node_modules/@claude-flow/cli/dist/src/
+  if [ -d "$dir/node_modules" ]; then
+    _cfp_probe_node_modules "$dir/node_modules"
+  fi
+
+  # Workspace layout: <dir>/v3/@claude-flow/cli/dist/src/
+  # (used by sync-and-build.sh when targeting the temp build directory)
+  local ws_dist_src="$dir/v3/@claude-flow/cli/dist/src"
+  if [ -f "$ws_dist_src/memory/memory-initializer.js" ]; then
+    local version
+    version=$(node -e "try{console.log(JSON.parse(require('fs').readFileSync('$dir/v3/@claude-flow/cli/package.json','utf-8')).version)}catch{console.log('0.0.0')}" 2>/dev/null)
+    printf '%s\t%s\t%s\t%s\t%s\n' "$ws_dist_src" "${version:-0.0.0}" "-" "-" "yes"
+  fi
 }

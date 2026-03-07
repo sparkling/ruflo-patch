@@ -1,10 +1,4 @@
 # SV-003: Fix agentdb range in agentic-flow
-#
-# Original upstream has "agentdb": "^2.0.0-alpha.2.20" which can't resolve
-# across major versions. After codemod scope-rename + wildcard replacement,
-# this becomes "@sparkleideas/agentdb": "*". We pin to a known-good range.
-
-patch("SV-003a: pin agentdb range * -> ^3.0.0-alpha.10 in agentic-flow",
-    AGENTIC_FLOW_PKG_JSON,
-    '"@sparkleideas/agentdb": "*"',
-    '"@sparkleideas/agentdb": "^3.0.0-alpha.10"')
+# RETIRED: The codemod already sets all internal @sparkleideas/* deps to "*",
+# which is the correct range (caret ranges don't match prerelease versions).
+# This patch was contradicting the codemod and breaking acceptance tests.
