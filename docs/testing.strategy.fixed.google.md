@@ -361,6 +361,7 @@ Verdaccio is the cornerstone of pre-deployment validation. It serves as the **st
 |                                                                   |
 |  ==================== GATE 1 ============================         |
 |                                                                   |
+|  Phase 10: Compute version (bumpLastSegment)                      |
 |  Phase 11: Publish --> Real npm (only if Gate 1 passes)           |
 |                                                                   |
 |  Layer 4: Production Verification                                 |
@@ -482,6 +483,11 @@ Deployment Pipeline (sync-and-build.sh):
   |  "Packages install AND work"             |
   +--------------------+---------------------+
                        | ALL PASS
+                       v
+  +------------------------------------------+
+  |  COMPUTE VERSION (bumpLastSegment)       |
+  +--------------------+---------------------+
+                       |
                        v
   +------------------------------------------+
   |  PUBLISH to real npm                     |

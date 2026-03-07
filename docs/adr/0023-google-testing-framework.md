@@ -227,6 +227,7 @@ PIPELINE FLOW:
                          Layer 1: unit tests (93)
                          Layer 2: test-integration.sh (pipeline mechanics)
                          Layer 3: RQ (functional smoke against built packages)
+    s-a-b Phase 10  -> Compute version (bumpLastSegment)
     s-a-b Phase 11  -> Publish to npm (prerelease tag)
     s-a-b Phase 12  -> Layer 4 (post-publish gate)
     s-a-b Phase 13  -> Promote to @latest (only if Layer 4 passes)

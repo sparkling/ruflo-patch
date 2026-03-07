@@ -3,11 +3,28 @@
 # Triggered by systemd timer (ruflo-sync.timer) every 6 hours,
 # or manually via: ./scripts/sync-and-build.sh
 #
+# Flags:
+#   --test-only   Stop after Gate 1 (Layers 0-3 pass). No publish, no deploy.
+#   --force       Build even when no upstream/local changes detected.
+#
 # See: ADR-0009 (systemd timer), ADR-0011 (dual trigger),
 #      ADR-0012 (version numbering), ADR-0015 (first-publish bootstrap),
-#      ADR-0005 (fork + build-step rename)
+#      ADR-0005 (fork + build-step rename), ADR-0023 (test framework)
 
 set -euo pipefail
+
+# ---------------------------------------------------------------------------
+# CLI flags
+# ---------------------------------------------------------------------------
+
+TEST_ONLY=false
+FORCE_BUILD=false
+for arg in "$@"; do
+  case "$arg" in
+    --test-only) TEST_ONLY=true ;;
+    --force)     FORCE_BUILD=true ;;
+  esac
+done
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -372,8 +389,11 @@ run_tests() {
   # Start a temporary Verdaccio for RQ
   local rq_port
   rq_port=$((4873 + RANDOM % 127))
-  local rq_verdaccio_home
-  rq_verdaccio_home=$(mktemp -d /tmp/ruflo-rq-verdaccio-XXXXX)
+  local rq_verdaccio_home="/tmp/ruflo-rq-verdaccio-cache"
+  mkdir -p "$rq_verdaccio_home"
+  # Clear only our packages so external deps remain cached across runs
+  rm -rf "$rq_verdaccio_home/storage/@sparkleideas"
+  : > "$rq_verdaccio_home/verdaccio.log" 2>/dev/null || true
 
   # Generate minimal Verdaccio config
   cat > "$rq_verdaccio_home/config.yaml" <<RQVERDACCIO
@@ -397,7 +417,6 @@ RQVERDACCIO
   # Create htpasswd for auth
   local rq_token
   rq_token=$(echo -n "rqtest:rqtest" | base64)
-  mkdir -p "$rq_verdaccio_home"
   echo 'rqtest:$apr1$test$test' > "$rq_verdaccio_home/htpasswd"
 
   # Start Verdaccio
@@ -417,7 +436,7 @@ RQVERDACCIO
   if [[ "$rq_ready" != "true" ]]; then
     log_error "RQ Verdaccio failed to start on port ${rq_port}"
     kill "$rq_verdaccio_pid" 2>/dev/null || true
-    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    rm -rf "$rq_temp"
     return 1
   fi
   log "RQ Verdaccio started on port ${rq_port}"
@@ -431,7 +450,7 @@ RQVERDACCIO
     node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" --no-rate-limit 2>&1 || {
     log_error "Failed to publish to RQ Verdaccio"
     kill "$rq_verdaccio_pid" 2>/dev/null || true
-    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    rm -rf "$rq_temp"
     return 1
   }
   log "Built packages published to RQ Verdaccio"
@@ -444,7 +463,7 @@ RQVERDACCIO
        --ignore-scripts --no-audit --no-fund 2>&1) || {
     log_error "Failed to install packages for RQ"
     kill "$rq_verdaccio_pid" 2>/dev/null || true
-    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    rm -rf "$rq_temp"
     return 1
   }
 
@@ -453,7 +472,7 @@ RQVERDACCIO
   if [[ ! -f "$checks_lib" ]]; then
     log_error "Shared test library not found: $checks_lib"
     kill "$rq_verdaccio_pid" 2>/dev/null || true
-    rm -rf "$rq_temp" "$rq_verdaccio_home"
+    rm -rf "$rq_temp"
     return 1
   fi
   # shellcheck source=../lib/acceptance-checks.sh
@@ -482,13 +501,24 @@ RQVERDACCIO
 
   # Run all 12 RQ checks
   local rq_pass=0 rq_fail=0 rq_total=0
+  local rq_results_json="[]"
+  local rq_timestamp
+  rq_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   run_rq_check() {
     local id="$1" name="$2" fn="$3"
     rq_total=$((rq_total + 1))
     log "  RQ $id: $name..."
+    local rq_start_ns rq_end_ns rq_dur_ms=0
+    rq_start_ns=$(date +%s%N 2>/dev/null || echo 0)
     "$fn"
+    rq_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$rq_start_ns" != "0" && "$rq_end_ns" != "0" ]]; then
+      rq_dur_ms=$(( (rq_end_ns - rq_start_ns) / 1000000 ))
+    fi
+    local rq_passed_bool="false"
     if [[ "$_CHECK_PASSED" == "true" ]]; then
       rq_pass=$((rq_pass + 1))
+      rq_passed_bool="true"
       log "  PASS  $id: $name"
     else
       rq_fail=$((rq_fail + 1))
@@ -496,6 +526,15 @@ RQVERDACCIO
       echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do
         log "        $line"
       done
+    fi
+    # Append to JSON results array
+    local rq_entry
+    rq_entry=$(printf '{"id":"%s","name":"%s","passed":%s,"duration_ms":%d}' \
+      "$id" "$name" "$rq_passed_bool" "$rq_dur_ms")
+    if [[ "$rq_results_json" == "[]" ]]; then
+      rq_results_json="[$rq_entry]"
+    else
+      rq_results_json="${rq_results_json%]}, $rq_entry]"
     fi
   }
 
@@ -514,13 +553,29 @@ RQVERDACCIO
 
   log "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
 
+  # Write qualification-results.json artifact (ADR-0023 Decision 8)
+  local rq_results_dir="${PROJECT_DIR}/test-results"
+  mkdir -p "$rq_results_dir"
+  cat > "$rq_results_dir/qualification-results.json" <<RQJSONEOF
+{
+  "timestamp": "$rq_timestamp",
+  "layer": 3,
+  "registry": "http://localhost:${rq_port}",
+  "total": $rq_total,
+  "passed": $rq_pass,
+  "failed": $rq_fail,
+  "results": $rq_results_json
+}
+RQJSONEOF
+  log "RQ results written to ${rq_results_dir}/qualification-results.json"
+
   # Restore TEMP_DIR to the build directory for subsequent pipeline phases
   TEMP_DIR="$rq_saved_temp_dir"
 
   # Cleanup RQ infrastructure
   kill "$rq_verdaccio_pid" 2>/dev/null || true
   wait "$rq_verdaccio_pid" 2>/dev/null || true
-  rm -rf "$rq_temp" "$rq_verdaccio_home"
+  rm -rf "$rq_temp"
 
   if [[ $rq_fail -gt 0 ]]; then
     log_error "Release Qualification FAILED — ${rq_fail} functional test(s) failed"
@@ -725,8 +780,8 @@ main() {
   fi
 
   # Decide whether to build
-  if [[ "${upstream_changed}" == "false" && "${local_changed}" == "false" ]]; then
-    log "No changes detected — exiting"
+  if [[ "${upstream_changed}" == "false" && "${local_changed}" == "false" && "${FORCE_BUILD}" == "false" ]]; then
+    log "No changes detected — exiting (use --force to override)"
     exit 0
   fi
 
@@ -759,8 +814,18 @@ main() {
   # Phase 8: Apply patches (runs against compiled dist/src/*.js files)
   run_phase "apply-patches" apply_patches
 
-  # Phase 9: Test
+  # Phase 9: Test (Layers 0-3 — Gate 1)
   run_phase "test" run_tests
+
+  # ═══════════════════ GATE 1 ═══════════════════════════════
+  # All pre-publish tests passed. If --test-only, stop here.
+  if [[ "${TEST_ONLY}" == "true" ]]; then
+    log "=========================================="
+    log "Gate 1 PASSED — all pre-publish tests pass (Layers 0-3)"
+    log "Stopping before publish (--test-only mode)"
+    log "=========================================="
+    exit 0
+  fi
 
   # Phase 10: Compute version
   run_phase "compute-version" compute_version
