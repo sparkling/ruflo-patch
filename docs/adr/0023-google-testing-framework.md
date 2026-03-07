@@ -324,11 +324,13 @@ If Gate 2 fails, packages remain on the `prerelease` dist-tag. Users on `@latest
 | Layer 3 passes, Layer 4 fails | **Deployment issue** -- code works in staging, not in prod | Investigate CDN propagation, dist-tag race, npm lag. Code is known-good |
 | Both pass | Ship it | Promote to `@latest` |
 
-#### Decision 4: Verdaccio-as-Staging Architecture
+#### Decision 4: Verdaccio-as-Staging and Build Cache
 
-Verdaccio is the **staging environment**. All packages must pass both structural (Layer 2) and functional (Layer 3) validation against Verdaccio before reaching real npm. Verdaccio is not optional infrastructure -- it is architecturally required.
+Verdaccio is both the **staging environment** and the **package-level build cache**. All packages must pass both structural (Layer 2) and functional (Layer 3) validation against Verdaccio before reaching real npm. Verdaccio is not optional infrastructure -- it is architecturally required.
 
-**Verdaccio runs as a permanent systemd user service** at `localhost:4873`. Scripts no longer start or stop Verdaccio -- they health-check it and clear only `@sparkleideas/*` packages at the start of each run. External dependency caches persist permanently across runs, eliminating redundant downloads.
+**Verdaccio runs as a permanent systemd user service** at `localhost:4873`. Scripts never start or stop Verdaccio -- they health-check it and manage its storage selectively. External dependency caches persist permanently across runs, eliminating redundant downloads.
+
+**Build cache role (Decision 10)**: Verdaccio's persistent storage (`~/.verdaccio/storage`) acts as a package-level build cache. With incremental builds, unchanged packages are never rebuilt, never republished, and never cleared from storage -- they persist from the previous run. Only changed packages (identified by content hash in `config/package-checksums.json`) and their topological dependents are rebuilt and re-cached. `npm install` during Layer 2/3 resolves the full dependency tree: changed packages from fresh publish, unchanged packages from cache.
 
 **Verdaccio usage differs by context**:
 

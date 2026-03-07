@@ -323,7 +323,9 @@ bash scripts/test-acceptance.sh --registry http://localhost:4873   # Against Ver
 
 ## 4. Verdaccio Integration Model
 
-Verdaccio is the cornerstone of pre-deployment validation. It serves as the **staging environment** — functionally identical to real npm but fully isolated. All packages must pass both structural (Layer 2) and functional (Layer 3) validation against Verdaccio before reaching real npm.
+Verdaccio is the cornerstone of pre-deployment validation. It serves as both a **staging environment** and a **build cache** — functionally identical to real npm but fully isolated. All packages must pass both structural (Layer 2) and functional (Layer 3) validation against Verdaccio before reaching real npm.
+
+Verdaccio's persistent storage (`~/.verdaccio/storage`) acts as a package-level build cache. With incremental builds (Decision 10), unchanged packages are never rebuilt, never republished, and never cleared from Verdaccio. They persist from the previous run. Only changed packages (and their topological dependents) are rebuilt, republished, and re-cached. The content hash in `config/package-checksums.json` is the cache key. This transforms Verdaccio from "clear everything, republish everything" into "update only what changed" — the same principle as incremental compilation.
 
 ### 4.1 Architecture
 
@@ -387,15 +389,19 @@ STANDALONE USE:
 
 ### 4.2 Verdaccio Lifecycle
 
-Verdaccio runs as a **permanent systemd user service** (`verdaccio.service`) at `localhost:4873`. Scripts never start or stop Verdaccio -- they health-check it and clear only `@sparkleideas/*` packages before each run. The external dependency cache persists permanently across runs.
+Verdaccio runs as a **permanent systemd user service** (`verdaccio.service`) at `localhost:4873`. Scripts never start or stop Verdaccio -- they health-check it and manage its storage selectively. External dependency caches persist permanently across runs.
+
+#### Full Mode (current default)
+
+Clears all `@sparkleideas/*` packages before each run. Every package is republished.
 
 **In `test-integration.sh` (Layer 2 -- pipeline mechanics)**:
 
 | Step | Action | Detail |
 |------|--------|--------|
 | 1 | Health check | Verify Verdaccio is responding at `localhost:4873` |
-| 2 | Clear cache | Remove `@sparkleideas/*` packages from `~/.verdaccio/storage` |
-| 3 | Publish packages | All packages from git clone (**no dist/**) |
+| 2 | Clear cache | Remove **all** `@sparkleideas/*` packages from `~/.verdaccio/storage` |
+| 3 | Publish packages | All 42+ packages from git clone (**no dist/**) |
 | 4 | Install test | `npm install @sparkleideas/cli` from local registry |
 | 5 | Validate deps | Dep resolution, `npm ls`, package structure |
 | 6 | Capture logs | Copy verdaccio.log to results dir |
@@ -405,13 +411,38 @@ Verdaccio runs as a **permanent systemd user service** (`verdaccio.service`) at 
 | Step | Action | Detail |
 |------|--------|--------|
 | 1 | Health check | Verify Verdaccio is responding at `localhost:4873` |
-| 2 | Clear cache | Remove `@sparkleideas/*` packages from `~/.verdaccio/storage` |
-| 3 | Publish packages | All packages from build dir (**with dist/**) |
-| 4 | Install test | `npm install @sparkleideas/cli` from local registry |
-| 5 | RQ smoke tests | RQ-1 through RQ-12 against installed packages |
-| 6 | Capture logs | Copy verdaccio.log to results dir |
+| 2 | Clear cache | Remove **all** `@sparkleideas/*` packages from `~/.verdaccio/storage` |
+| 3 | Build packages | TypeScript compilation for all 42+ packages |
+| 4 | Publish packages | All 42+ packages from build dir (**with dist/**) |
+| 5 | Install test | `npm install @sparkleideas/cli` from local registry |
+| 6 | RQ smoke tests | RQ-1 through RQ-12 against installed packages |
+| 7 | Capture logs | Copy verdaccio.log to results dir |
 
-The critical difference: `sync-and-build.sh` publishes **built** packages (TypeScript compiled to `dist/`), so RQ tests can execute them. `test-integration.sh` publishes from git clones (no `dist/`), so it can only validate structural correctness (packages resolve and install).
+#### Incremental Mode (Decision 10)
+
+Uses content hashes to skip unchanged packages. Verdaccio's persistent storage becomes a build cache.
+
+**In `sync-and-build.sh` (Layer 3 -- incremental)**:
+
+| Step | Action | Detail |
+|------|--------|--------|
+| 1 | Health check | Verify Verdaccio is responding at `localhost:4873` |
+| 2 | Change detection | Compare SHA-256 hashes against `config/package-checksums.json` |
+| 3 | Selective clear | Remove only **changed** `@sparkleideas/*` packages from storage |
+| 4 | Build changed | TypeScript compilation for changed packages + dependents only |
+| 5 | Publish changed | Only changed packages to Verdaccio; **unchanged packages already cached from previous run** |
+| 6 | Install test | `npm install @sparkleideas/cli` — resolves changed packages from fresh publish, unchanged from cache |
+| 7 | RQ smoke tests | RQ-1 through RQ-12 (same tests, fewer packages rebuilt) |
+| 8 | Save checksums | Update `config/package-checksums.json` with new hashes |
+
+```
+Full mode:     clear ALL → build ALL → publish ALL → install → test
+Incremental:   detect changes → clear CHANGED → build CHANGED → publish CHANGED → install (rest from cache) → test
+```
+
+**Fallback**: If `npm install` fails in incremental mode (stale cache), the pipeline automatically falls back to full mode (clear all, rebuild all).
+
+The critical difference between Layer 2 and Layer 3: `sync-and-build.sh` publishes **built** packages (TypeScript compiled to `dist/`), so RQ tests can execute them. `test-integration.sh` publishes from git clones (no `dist/`), so it can only validate structural correctness (packages resolve and install).
 
 ### 4.3 Verdaccio Configuration Rules
 
@@ -864,13 +895,17 @@ If plugin-prime-radiant (L4) changes:
   = 1 package rebuilds
 ```
 
-### 14.6 Verdaccio Cache Strategy
+### 14.6 Verdaccio as Build Cache
 
-| Mode | Cache Behavior |
-|---|---|
-| **Current (full)** | `rm -rf @sparkleideas/` — clears all, republishes all |
-| **Incremental** | Only clear changed packages + dependents; unchanged packages stay in Verdaccio from previous run |
-| **Fallback** | On install failure, fall back to full clear and retry |
+Verdaccio's persistent storage is the build cache. The content hash is the cache key.
+
+| Mode | What gets cleared | What gets built | What gets published | Cache hit |
+|---|---|---|---|---|
+| **Full** (current) | All `@sparkleideas/*` | All 42+ packages | All 42+ packages | 0% |
+| **Incremental** | Only changed + dependents | Only changed + dependents | Only changed + dependents | 60-95% |
+| **Fallback** | All (after install failure) | All | All | 0% |
+
+**Key principle**: If a package's content hash hasn't changed since last run, it doesn't need to be rebuilt, doesn't need to be republished, and doesn't need to be cleared from Verdaccio. It's already there, identical to what would be produced. `npm install` resolves it from the cache just as it would from a fresh publish.
 
 ### 14.7 New Files
 
