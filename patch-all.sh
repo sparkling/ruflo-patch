@@ -3,25 +3,17 @@
 # Safe to run multiple times. Each fix.py is idempotent via patch()/patch_all().
 #
 # Usage:
-#   bash patch-all.sh [--global] [--target <dir>]
+#   bash patch-all.sh --target <dir>
 #
 # Options:
-#   --global             Patch all global installs (npx cache + npm global)
-#   --target <dir>       Patch node_modules inside <dir>
-#
-# If neither flag is given, --global is assumed.
+#   --target <dir>       Patch node_modules inside <dir> (required)
 
 set -euo pipefail
 
 # Parse arguments
-DO_GLOBAL=0
 TARGET_DIR=""
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --global)
-      DO_GLOBAL=1
-      shift
-      ;;
     --target)
       TARGET_DIR="${2:-}"
       if [[ -z "$TARGET_DIR" ]]; then
@@ -31,13 +23,10 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     -h|--help)
-      echo "Usage: patch-all.sh [--global] [--target <dir>]"
+      echo "Usage: patch-all.sh --target <dir>"
       echo ""
       echo "Options:"
-      echo "  --global           Patch all global installs (npx cache + npm global)"
-      echo "  --target <dir>     Patch node_modules inside <dir>"
-      echo ""
-      echo "If neither flag is given, --global is assumed."
+      echo "  --target <dir>     Patch node_modules inside <dir> (required)"
       exit 0
       ;;
     *)
@@ -47,9 +36,10 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Default: --global when nothing specified
-if [[ $DO_GLOBAL -eq 0 && -z "$TARGET_DIR" ]]; then
-  DO_GLOBAL=1
+if [[ -z "$TARGET_DIR" ]]; then
+  echo "Error: --target <dir> is required"
+  echo "Usage: patch-all.sh --target <dir>"
+  exit 1
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -58,44 +48,27 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 . "$SCRIPT_DIR/lib/discover.sh"
 
 # ── Collect installs ──
-# Each entry: "SCOPE\tdist_src\tversion\truvector_cli\truv_swarm_root\twritable"
+# Each entry: "dist_src\tversion\truvector_cli\truv_swarm_root\twritable"
 
 INSTALLS=()
 
-if [[ $DO_GLOBAL -eq 1 ]]; then
-  while IFS= read -r line; do
-    [ -n "$line" ] && INSTALLS+=("GLOBAL	$line")
-  done < <(discover_all_cf_installs)
+if [[ ! -d "$TARGET_DIR" ]]; then
+  echo "Error: target directory does not exist: $TARGET_DIR"
+  exit 1
 fi
-
-if [[ -n "$TARGET_DIR" ]]; then
-  if [[ ! -d "$TARGET_DIR" ]]; then
-    echo "Error: target directory does not exist: $TARGET_DIR"
-    exit 1
-  fi
-  TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
-  while IFS= read -r line; do
-    [ -n "$line" ] && INSTALLS+=("TARGET	$line")
-  done < <(discover_target_installs "$TARGET_DIR")
-fi
+TARGET_DIR="$(cd "$TARGET_DIR" && pwd)"
+while IFS= read -r line; do
+  [ -n "$line" ] && INSTALLS+=("TARGET	$line")
+done < <(discover_target_installs "$TARGET_DIR")
 
 # ── Report what we found ──
 
-TARGETS=()
-if [[ $DO_GLOBAL -eq 1 ]]; then TARGETS+=(global); fi
-if [[ -n "$TARGET_DIR" ]]; then TARGETS+=("$TARGET_DIR"); fi
-echo "[PATCHES] Targets: ${TARGETS[*]}"
+echo "[PATCHES] Target: $TARGET_DIR"
 echo ""
 
 if [[ ${#INSTALLS[@]} -eq 0 ]]; then
-  if [[ $DO_GLOBAL -eq 1 ]]; then
-    echo "  Global @claude-flow/cli: not found"
-    echo "  Global ruvector: not found"
-  fi
-  if [[ -n "$TARGET_DIR" ]]; then
-    echo "  Target @claude-flow/cli: not found in $TARGET_DIR"
-    echo "  Target ruvector: not found in $TARGET_DIR"
-  fi
+  echo "  Target @claude-flow/cli: not found in $TARGET_DIR"
+  echo "  Target ruvector: not found in $TARGET_DIR"
   echo ""
   echo "[PATCHES] Complete"
   exit 0

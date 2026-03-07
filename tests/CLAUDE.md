@@ -1,4 +1,4 @@
-# Testing Rules (ADR-0023)
+# Testing Rules (ADR-0023, updated by ADR-0024)
 
 ## MANDATORY: Test before committing
 
@@ -13,10 +13,12 @@
 
 | Change | Required Layers | Commands |
 |--------|----------------|----------|
-| Patch fix.py | 0 + 1 | `npm run preflight` + `bash check-patches.sh` + `npm test` + `bash patch-all.sh --global` |
-| Codemod/pipeline script | 0 + 1 + 2 | `npm run preflight` + `bash check-patches.sh` + `npm test` + `bash scripts/test-integration.sh` |
+| Patch fix.py | 0 + 1 | `npm run preflight && npm test` |
+| Codemod/pipeline script | 0 + 1 + 2 | `npm run preflight && npm test && bash scripts/test-integration.sh` |
+| Test script changes only | 0 + 1 | `npm run preflight && npm test` |
 | sync-and-build.sh / RQ changes | 0 + 1 + 2 + 3 | All of above + `bash scripts/sync-and-build.sh --test-only` (~3.5min, ask user first) |
-| Deploy to npm | 0 + 1 + 2 + 3 + 4 | `bash scripts/sync-and-build.sh` (runs ALL layers) |
+| Pre-publish verification | -1 + 0 + 1 + 2 + 3 | `bash scripts/sync-and-build.sh --test-only` (builds + tests, does NOT publish) |
+| Deploy to npm (full) | -1 to 4 | `bash scripts/sync-and-build.sh` (runs ALL layers) |
 | Verify live packages | 4 | `bash scripts/test-acceptance.sh` |
 
 ## 6-Layer Model
@@ -24,11 +26,15 @@
 | Layer | Name | Size | Runner |
 |-------|------|------|--------|
 | -1 | Environment Validation | Smoke | `bash scripts/validate-ci.sh` |
-| 0 | Static Analysis | Small | `npm run preflight` + `bash check-patches.sh` + `node scripts/test-codemod-acceptance.mjs <dir>` |
+| 0 | Static Analysis | Small | `npm run preflight` + `node scripts/test-codemod-acceptance.mjs <dir>` |
 | 1 | Unit Tests (93) | Small | `npm test` |
 | 2 | Pipeline Mechanics | Medium | `bash scripts/test-integration.sh` |
-| 3 | Release Qualification (12 RQ) | Medium | Inside `sync-and-build.sh` only (requires built artifacts) |
-| 4 | Production Verification (14) | Large | `bash scripts/test-acceptance.sh` |
+| 3 | Release Qualification (13 RQ) | Medium | `bash scripts/sync-and-build.sh --test-only` (requires built artifacts with `dist/`) |
+| 4 | Production Verification (15) | Large | `bash scripts/test-acceptance.sh` |
+
+## How to run Layers -1 through 3 (pre-npm)
+
+`bash scripts/sync-and-build.sh --test-only` — builds, runs all pre-publish layers, does NOT publish to npm.
 
 ## Anti-patterns — DO NOT
 

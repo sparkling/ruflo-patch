@@ -38,8 +38,7 @@
     "scripts",
     "config",
     "patch-all.sh",
-    "check-patches.sh",
-    "repair-post-init.sh"
+    "check-patches.sh"
   ],
   "keywords": [
     "ruflo",

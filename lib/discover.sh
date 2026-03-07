@@ -1,32 +1,10 @@
 #!/bin/bash
-# lib/discover.sh — Shared install discovery for patch-all.sh, check-patches.sh, repair-post-init.sh
+# lib/discover.sh — Shared install discovery for patch-all.sh, check-patches.sh
 #
-# Finds ALL @claude-flow/cli installations across three patterns:
-#   1. Direct npx:   {npx_cache}/{hash}/node_modules/@claude-flow/cli/dist/src/
-#   2. Umbrella npx: {npx_cache}/{hash}/node_modules/claude-flow/v3/@claude-flow/cli/dist/src/
-#   3. Umbrella global: {npm_prefix}/lib/node_modules/claude-flow/v3/@claude-flow/cli/dist/src/
+# Finds @claude-flow/cli installations in a --target directory.
 #
 # Output: tab-separated lines:
 #   dist_src \t version \t ruvector_cli \t ruv_swarm_root \t writable(yes|no)
-
-# ── npx cache roots ──
-
-_cfp_npx_cache_roots() {
-  # Linux / macOS
-  local home_npx="$HOME/.npm/_npx"
-  [ -d "$home_npx" ] && echo "$home_npx"
-
-  # Windows (Git Bash / MSYS2): $LOCALAPPDATA/npm-cache/_npx
-  if [ -n "${LOCALAPPDATA:-}" ]; then
-    local win_npx
-    if command -v cygpath >/dev/null 2>&1; then
-      win_npx="$(cygpath "$LOCALAPPDATA")/npm-cache/_npx"
-    else
-      win_npx="$LOCALAPPDATA/npm-cache/_npx"
-    fi
-    [ -d "$win_npx" ] && echo "$win_npx"
-  fi
-}
 
 # ── Probe a single node_modules directory ──
 # Args: <node_modules_dir>
@@ -94,57 +72,6 @@ _cfp_probe_node_modules() {
     # Use "-" for empty fields to prevent bash IFS collapsing consecutive delimiters
     printf '%s\t%s\t%s\t%s\t%s\n' "$dist_src" "$version" "$rv_cli" "$rs_root" "$writable"
   done
-}
-
-# ── Discover all global installs ──
-# Outputs tab-separated lines (same format as _cfp_probe_node_modules).
-
-discover_all_cf_installs() {
-  local _global_seen=()
-
-  # 1. npx cache directories
-  while IFS= read -r cache_root; do
-    [ -n "$cache_root" ] || continue
-    for hash_dir in "$cache_root"/*/; do
-      [ -d "$hash_dir/node_modules" ] || continue
-      while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        local ds="${line%%	*}"
-        local real
-        real="$(realpath "$ds" 2>/dev/null || echo "$ds")"
-        local dup=0
-        for s in "${_global_seen[@]}"; do
-          [ "$s" = "$real" ] && { dup=1; break; }
-        done
-        [ "$dup" -eq 1 ] && continue
-        _global_seen+=("$real")
-        echo "$line"
-      done < <(_cfp_probe_node_modules "$hash_dir/node_modules")
-    done
-  done < <(_cfp_npx_cache_roots)
-
-  # 2. Global npm prefix
-  local npm_prefix
-  npm_prefix="$(npm config get prefix 2>/dev/null)" || true
-  if [ -n "$npm_prefix" ]; then
-    local prefix_dirs=("$npm_prefix/lib/node_modules" "$npm_prefix/node_modules")
-    for pdir in "${prefix_dirs[@]}"; do
-      [ -d "$pdir" ] || continue
-      while IFS= read -r line; do
-        [ -n "$line" ] || continue
-        local ds="${line%%	*}"
-        local real
-        real="$(realpath "$ds" 2>/dev/null || echo "$ds")"
-        local dup=0
-        for s in "${_global_seen[@]}"; do
-          [ "$s" = "$real" ] && { dup=1; break; }
-        done
-        [ "$dup" -eq 1 ] && continue
-        _global_seen+=("$real")
-        echo "$line"
-      done < <(_cfp_probe_node_modules "$pdir")
-    done
-  fi
 }
 
 # ── Discover installs in a --target directory ──

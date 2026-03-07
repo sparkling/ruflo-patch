@@ -1,12 +1,11 @@
 #!/bin/bash
 # check-patches.sh — Dynamic sentinel checker
 # Reads patch/*/sentinel files to verify patches are still applied.
-# On session start: detects wipes, auto-reapplies, warns user.
 #
 # Usage:
-#   bash check-patches.sh [--global] [--target <dir>]
+#   bash check-patches.sh --target <dir>
 #
-# If neither flag is given, --global is assumed.
+# --target is required.
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -25,18 +24,18 @@ cp_cleanup() {
 trap cp_cleanup EXIT
 
 # ── Parse arguments ──
-DO_GLOBAL=0
 TARGET_DIR=""
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --global) DO_GLOBAL=1; shift ;;
     --target) TARGET_DIR="${2:-}"; shift 2 ;;
     *) shift ;;  # ignore unknown
   esac
 done
 
-if [[ $DO_GLOBAL -eq 0 && -z "$TARGET_DIR" ]]; then
-  DO_GLOBAL=1
+if [[ -z "$TARGET_DIR" ]]; then
+  echo "Error: --target <dir> is required"
+  echo "Usage: check-patches.sh --target <dir>"
+  exit 1
 fi
 
 # ── Shared discovery ──
@@ -45,12 +44,6 @@ fi
 # ── Collect installs ──
 INSTALLS=()
 
-if [[ $DO_GLOBAL -eq 1 ]]; then
-  while IFS= read -r line; do
-    [ -n "$line" ] && INSTALLS+=("$line")
-  done < <(discover_all_cf_installs)
-fi
-
 if [[ -n "$TARGET_DIR" && -d "$TARGET_DIR" ]]; then
   while IFS= read -r line; do
     [ -n "$line" ] && INSTALLS+=("$line")
@@ -58,7 +51,7 @@ if [[ -n "$TARGET_DIR" && -d "$TARGET_DIR" ]]; then
 fi
 
 if [[ ${#INSTALLS[@]} -eq 0 ]]; then
-  echo "[PATCHES] WARN: Cannot find claude-flow CLI files"
+  echo "[PATCHES] WARN: Cannot find claude-flow CLI files in $TARGET_DIR"
   exit 0
 fi
 
@@ -199,25 +192,15 @@ if ! $any_failed; then
   exit 0
 fi
 
-# ── Patches wiped — auto-reapply and warn ──
+# ── Patches not applied — report failure ──
 
 echo ""
 echo "============================================"
-echo "  WARNING: ruflo patches were wiped!"
-echo "  Likely cause: npx cache update (v$VERSION)"
+echo "  ERROR: Sentinel verification failed"
+echo "  Patches missing in: $TARGET_DIR"
 echo "============================================"
 echo ""
-
-if [ -x "$SCRIPT_DIR/patch-all.sh" ]; then
-  REAPPLY_ARGS=()
-  if [[ $DO_GLOBAL -eq 1 ]]; then REAPPLY_ARGS+=(--global); fi
-  if [[ -n "$TARGET_DIR" ]]; then REAPPLY_ARGS+=(--target "$TARGET_DIR"); fi
-  bash "$SCRIPT_DIR/patch-all.sh" "${REAPPLY_ARGS[@]}"
-  echo ""
-  echo "[PATCHES] Auto-reapplied."
-else
-  echo "[PATCHES] ERROR: patch-all.sh not found at $SCRIPT_DIR"
-  echo "[PATCHES] Run manually: bash $SCRIPT_DIR/patch-all.sh"
-fi
+echo "[PATCHES] FAILED: Re-run patch-all.sh --target $TARGET_DIR"
 
 echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Sentinel verification complete (${CP_TOTAL_MS}ms)"
+exit 1

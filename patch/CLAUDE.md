@@ -19,7 +19,7 @@ Runtime patches for `ruflo` (latest), `ruvector`, and `ruv-swarm`.
 - NEVER delete a defect without confirming it is truly obsolete
 - NEVER reuse a defect ID
 - ONE defect directory and ONE fix.py per defect
-- ALWAYS verify with `bash check-patches.sh` after applying
+- ALWAYS verify with `bash check-patches.sh --target <dir>` after applying
 - ALWAYS run `npm run preflight` before staging
 
 ## Target Packages
@@ -117,27 +117,20 @@ Both are idempotent.
 ### Step 5: Update and test
 
 ```bash
-npm run preflight
-bash patch-all.sh --global    # quick local verification only
-bash check-patches.sh
-npm test
+npm run preflight && npm test
 ```
 
 ### Step 6: Deploy
-
-After verifying locally, publish to deploy the fix to end users:
 
 ```bash
 # Full pipeline: pull upstream → codemod → patch → build → publish
 bash scripts/sync-and-build.sh
 ```
 
-The build pipeline (`scripts/sync-and-build.sh`) pulls upstream, copies to a temp dir,
-runs the codemod, applies patches via `patch-all.sh --target <build-dir>`, then publishes
+The build pipeline applies patches via `patch-all.sh --target <build-dir>`, then publishes
 the patched result to npm as `@sparkleideas/*`. Users get fixes via `npx @sparkleideas/cli`.
 
-For testing the pipeline without publishing to real npm, use the integration test which
-publishes to a local Verdaccio registry:
+For testing the pipeline without publishing to real npm:
 
 ```bash
 bash scripts/test-integration.sh
@@ -148,30 +141,20 @@ bash scripts/test-integration.sh
 - [ ] `README.md`, `fix.py`, `sentinel` created
 - [ ] Path variable in `lib/common.py` (if new file)
 - [ ] New prefix in `lib/categories.json` (if new category)
-- [ ] `npm run preflight` passes
-- [ ] `bash patch-all.sh` applies + is idempotent
-- [ ] `bash check-patches.sh` shows OK
-- [ ] `npm test` passes
-- [ ] Publish pipeline run to deploy fix
+- [ ] `npm run preflight && npm test` passes
+- [ ] Commit
+- [ ] Deploy: `bash scripts/sync-and-build.sh`
 
 ## Patch Deployment Model
 
-Patches are **NOT** applied to the npx cache for production use. The correct flow is:
+Patches are baked into published `@sparkleideas/*` packages at build time (ADR-0024).
 
 1. **Author** — create `patch/{ORDER}-{ID}-{slug}/` with `fix.py`, `README.md`, `sentinel`
-2. **Verify** — `patch-all.sh --global` for quick local testing against the npx cache
-3. **Publish** — `bash scripts/sync-and-build.sh` pulls upstream, runs codemod, applies patches
+2. **Test** — `npm run preflight && npm test`
+3. **Deploy** — `bash scripts/sync-and-build.sh` pulls upstream, runs codemod, applies patches
    via `patch-all.sh --target <build-dir>`, then publishes patched packages to npm
 4. **Consume** — users run `npx @sparkleideas/cli` which pulls the published (already-patched) version
 
-`patch-all.sh --global` is a **developer shortcut** for testing patches against the local npx
-cache. It does NOT deploy fixes to end users. Only publishing does that.
-
-`patch-all.sh --target <dir>` is the **build pipeline mode** used by `sync-and-build.sh`
-to apply patches to the build artifact before publishing.
-
 ```
-patch-all.sh modes:
-  --global           → patches local npx cache (dev/debug only)
-  --target <dir>     → patches a build copy (used by publish pipeline)
+patch-all.sh --target <dir>   → patches a build copy (used by publish pipeline)
 ```
