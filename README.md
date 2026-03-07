@@ -307,16 +307,17 @@ This reassigns the `latest` dist-tag for `ruflo` and all 24 `@sparkleideas/*` pa
 
 ### Testing
 
-Three layers of testing:
+Five test types across three layers:
 
-| Layer | What | How to run |
-|-------|------|------------|
-| **Unit** | 78 tests — codemod, pipeline logic, publish order, patches | `npm test` |
-| **Integration** | 9-phase build pipeline against local Verdaccio | `bash scripts/test-integration.sh` |
-| **Acceptance** | End-user commands (init, version, doctor, MCP) | `bash scripts/test-acceptance.sh` |
-| **CI Validation** | Health check (env, systemd, secrets, upstream clones) | `bash scripts/validate-ci.sh` |
+| Layer | Type | What | How to run |
+|-------|------|------|------------|
+| 1 | **Unit** | 93 tests — codemod, pipeline logic, publish order, patches | `npm test` |
+| 1 | **Preflight** | Syncs generated doc tables, validates consistency | `npm run preflight` |
+| 2 | **Integration** | 9-phase build pipeline against local Verdaccio | `bash scripts/test-integration.sh` |
+| 3 | **Acceptance** | 14 end-user tests (init, version, doctor, MCP, memory) | `bash scripts/test-acceptance.sh` |
+| — | **CI Validation** | Health check (env, systemd, secrets, upstream clones) | `bash scripts/validate-ci.sh` |
 
-Unit tests run with `node:test` (no dependencies). Integration tests use an isolated Verdaccio instance with no npm proxy (`uplinks: {}`).
+Acceptance tests run **post-publish** as Phase 12 of `sync-and-build.sh` — they validate the user experience against real npm. Integration tests validate the build pipeline against local Verdaccio. These are separate layers by design (see ADR-0020).
 
 ---
 

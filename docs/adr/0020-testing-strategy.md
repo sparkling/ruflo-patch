@@ -126,7 +126,23 @@ A script (`scripts/test-acceptance.sh`) that validates the end-user experience b
 | A5 | `npx @sparkleideas/cli doctor --fix` | Doctor command runs without MODULE_NOT_FOUND errors |
 | A6 | Verify MCP config in `.mcp.json` | ADR-0001 (MC-001): `autoStart: false` removed |
 
-**When to run**: After first publish to npm. After each promotion to `@latest`. Can be run against Verdaccio output from Layer 2.
+**When to run**: Automatically by `sync-and-build.sh` Phase 12 (post-publish to real npm). After each promotion to `@latest`. Can also be run manually with `--registry` pointing to a local Verdaccio for ad-hoc testing.
+
+**Why acceptance tests are NOT part of the integration test:**
+
+Acceptance tests and integration tests serve different purposes and run at different stages:
+
+| | Integration Test (Layer 2) | Acceptance Test (Layer 3) |
+|--|---------------------------|--------------------------|
+| **Purpose** | Validates the build pipeline | Validates the user experience |
+| **Registry** | Local Verdaccio (ephemeral) | Real npm (or Verdaccio ad-hoc) |
+| **Trigger** | Before publish (can I build?) | After publish (can users use it?) |
+| **Scope** | Codemod, patches, publish order | CLI commands, init, doctor, MCP |
+| **Called by** | `test-integration.sh` standalone | `sync-and-build.sh` Phase 12 |
+
+Merging them would conflate "did the build succeed?" with "does the product work?" — different failure modes, different remediation. The deploy pipeline (`sync-and-build.sh`) is the orchestrator that runs both in sequence: integration first (Phase 11), acceptance after publish (Phase 12). If acceptance fails, promotion to `@latest` is skipped.
+
+**Test A1 (`npx @sparkleideas/cli --version`) is the critical smoke test.** It catches `ERR_MODULE_NOT_FOUND` from missing `dist/` directories — the exact class of bug that cannot be caught by `npm install` alone.
 
 **The Verdaccio bridge**:
 
@@ -368,6 +384,14 @@ This script is idempotent and non-destructive — it reads state but changes not
 - The known-failures baseline must be maintained as upstream evolves -- new test failures need triage (is it our fault or upstream's?)
 - Acceptance tests depend on `ruflo init` behavior, which is upstream code we don't control. If upstream changes the init flow, these tests break
 
+### Amendment (2026-03-07): Layer separation enforced
+
+A published package with missing `dist/src/index.js` passed all integration tests (Layer 2) but failed at runtime with `ERR_MODULE_NOT_FOUND`. The integration test only verified `npm install` succeeded — it never ran the CLI binary. This was caught by a user running `npx @sparkleideas/ruflo init`, not by any automated test.
+
+**Root cause**: The deploy pipeline (`sync-and-build.sh`) was never run end-to-end. The integration test ran in isolation, and the acceptance test (which would have caught this via A1: `--version` check) only runs as part of the deploy pipeline's Phase 12.
+
+**Resolution**: The layer separation is correct by design. The fix is operational: always deploy via `sync-and-build.sh`, which runs integration tests (Phase 11), publishes (Phase 12), runs acceptance tests (Phase 12), and only promotes to `@latest` if acceptance passes. Running `test-integration.sh` alone is insufficient for deployment validation.
+
 **Edge cases:**
 
 - If Verdaccio fails to start (port conflict, missing binary), the integration test script exits with a clear error and does not proceed to publish
@@ -391,6 +415,9 @@ Acceptance criteria:
 - [x] The build pipeline (`sync-and-build.sh`) runs `npm test` as a gate before publishing
 - [x] systemd timer validation checklist is documented in this ADR
 - [x] Integration test cleans up all temp directories and Verdaccio processes on exit (including on failure via trap)
+- [x] `sync-and-build.sh` runs acceptance tests post-publish (Phase 12) — catches ERR_MODULE_NOT_FOUND
+- [x] Acceptance tests remain separate from integration tests (different layers, different triggers)
+- [x] Promotion to `@latest` is gated on acceptance test pass
 
 Reproducibility criteria:
 
