@@ -15,6 +15,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const checkOnly = process.argv.includes('--check');
 
+const TIMEOUT_MS = 10_000;
+const timer = setTimeout(() => {
+  console.error('[TIMEOUT] preflight.mjs exceeded 10s — aborting');
+  process.exit(1);
+}, TIMEOUT_MS);
+timer.unref();
+
+const t0 = Date.now();
+console.log(`[${new Date().toISOString()}] Preflight starting`);
+
 const data = discover();
 const { patches, categories, stats } = data;
 
@@ -89,10 +99,17 @@ function report(changed, label) {
 }
 
 // Sync patch/CLAUDE.md defect tables
-report(
-  replaceMarkerSection(resolve(ROOT, 'patch', 'CLAUDE.md'), 'defect-tables', generateClaudeTables()),
-  'patch/CLAUDE.md (defect tables)'
-);
+{
+  const s0 = Date.now();
+  const changed = replaceMarkerSection(resolve(ROOT, 'patch', 'CLAUDE.md'), 'defect-tables', generateClaudeTables());
+  const sElapsed = Date.now() - s0;
+  console.log(`[${new Date().toISOString()}] Check: patch/CLAUDE.md (defect tables) — ${sElapsed}ms`);
+  report(changed, 'patch/CLAUDE.md (defect tables)');
+}
+
+const elapsed = Date.now() - t0;
+console.log(`[${new Date().toISOString()}] Preflight complete (${elapsed}ms)`);
+clearTimeout(timer);
 
 if (!anyChanged) {
   console.log('All files are up to date.');

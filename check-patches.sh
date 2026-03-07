@@ -10,6 +10,20 @@
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
+# ── Timeout & timing ──
+CP_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+CP_T0=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
+echo "[$CP_START] Sentinel verification starting"
+
+( sleep 30; echo "[TIMEOUT] check-patches.sh exceeded 30s — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+CP_TIMEOUT_PID=$!
+
+cp_cleanup() {
+  kill "$CP_TIMEOUT_PID" 2>/dev/null || true
+  wait "$CP_TIMEOUT_PID" 2>/dev/null || true
+}
+trap cp_cleanup EXIT
+
 # ── Parse arguments ──
 DO_GLOBAL=0
 TARGET_DIR=""
@@ -161,15 +175,26 @@ for entry in "${INSTALLS[@]}"; do
   [ "$rs_root" = "-" ] && rs_root=""
   [ -z "$first_version" ] && first_version="$version"
 
+  CP_INST_T0=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
   if ! check_sentinels_for_install "$dist_src" "$rv_cli" "$rs_root"; then
     any_failed=true
+    CP_INST_T1=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
+    CP_INST_MS=$(( (CP_INST_T1 - CP_INST_T0) / 1000000 ))
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Install check: $dist_src — ${CP_INST_MS}ms (FAILED)"
     break
   fi
+  CP_INST_T1=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
+  CP_INST_MS=$(( (CP_INST_T1 - CP_INST_T0) / 1000000 ))
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Install check: $dist_src — ${CP_INST_MS}ms (OK)"
 done
 
 VERSION="${first_version:-unknown}"
 
+CP_T1=$(date +%s%N 2>/dev/null || echo "$(date +%s)000000000")
+CP_TOTAL_MS=$(( (CP_T1 - CP_T0) / 1000000 ))
+
 if ! $any_failed; then
+  echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Sentinel verification complete (${CP_TOTAL_MS}ms)"
   echo "[PATCHES] OK: All patches verified (v$VERSION)"
   exit 0
 fi
@@ -194,3 +219,5 @@ else
   echo "[PATCHES] ERROR: patch-all.sh not found at $SCRIPT_DIR"
   echo "[PATCHES] Run manually: bash $SCRIPT_DIR/patch-all.sh"
 fi
+
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Sentinel verification complete (${CP_TOTAL_MS}ms)"

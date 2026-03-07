@@ -58,8 +58,13 @@ done
 
 PKG="${PACKAGE_NAME}${VERSION}"
 
+# Global timeout — Layer 4 must complete within 300s (ADR-0023: Large < 900s)
+( sleep 300; echo "[TIMEOUT] test-acceptance.sh exceeded 300s — aborting" >&2; kill -TERM $$ 2>/dev/null ) &
+GLOBAL_TIMEOUT_PID=$!
+
 # ── Cleanup trap ────────────────────────────────────────────────────
 cleanup() {
+  kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR" ]]; then
     rm -rf "$TEMP_DIR"
   fi
@@ -83,6 +88,9 @@ run_timed() {
     _DURATION_MS=0
   else
     _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  fi
+  if [[ $_DURATION_MS -gt 30000 ]]; then
+    echo "  SLOW  $(date -u +%H:%M:%S) — last command took ${_DURATION_MS}ms (threshold: 30s)" >&2
   fi
 }
 
@@ -186,6 +194,9 @@ test_a16_plugin_install() {
 }
 
 # ── Main ────────────────────────────────────────────────────────────
+ACCEPT_T0=$(date +%s%N 2>/dev/null || date +%s)
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Production verification starting"
+echo ""
 echo "Production Verification (ADR-0023 Layer 4)"
 echo "============================================"
 echo "Registry: $REGISTRY"
@@ -231,6 +242,13 @@ echo "Running A16: Plugin install..."
 test_a16_plugin_install
 
 # ── Summary ─────────────────────────────────────────────────────────
+ACCEPT_T1=$(date +%s%N 2>/dev/null || date +%s)
+if [[ "$ACCEPT_T0" =~ ^[0-9]{10,}$ ]]; then
+  TOTAL_MS=$(( (ACCEPT_T1 - ACCEPT_T0) / 1000000 ))
+else
+  TOTAL_MS=$(( ACCEPT_T1 - ACCEPT_T0 ))
+fi
+echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Production verification complete (${TOTAL_MS}ms)"
 echo ""
 echo "------------------------------------"
 echo "Total: $TOTAL_COUNT  Passed: $PASS_COUNT  Failed: $FAIL_COUNT"
@@ -242,6 +260,7 @@ cat > "$RESULTS_DIR/acceptance-results.json" <<JSONEOF
   "timestamp": "$TIMESTAMP",
   "registry": "$REGISTRY",
   "version": "${VERSION#@}",
+  "total_duration_ms": $TOTAL_MS,
   "tests": $TEST_RESULTS_JSON,
   "summary": {
     "total": $TOTAL_COUNT,
