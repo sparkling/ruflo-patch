@@ -192,11 +192,10 @@ ruflo repair [--target <dir>]              Repair post-init helpers
 | MC-001 | `010-MC-001-mcp-autostart` | Removes `autoStart: false` from MCP entry in init generator |
 | FB-001 | `020-FB-001-fallback-instrumentation` | 10 ops instrumenting upstream fallback paths with logging |
 | FB-002 | `021-FB-002-local-helper-instrumentation` | 16 ops instrumenting local helper fallback paths |
-| FB-003 | `030-FB-003-controller-registry-shim` | Injects ControllerRegistry class into @claude-flow/memory |
 | FB-004 | `040-FB-004-search-threshold-for-hash-embeddings` | Lowers search threshold from 0.3→0.1 for hash embeddings |
 | SV-001 | `050-SV-001-ruvllm-semver-fix` | Fixes `@ruvector/ruvllm ^0.2.3` → `^2.5.1` |
-| SV-002 | `051-SV-002-agentdb-memory-pin` | Fixes agentdb pin `2.0.0-alpha.3.7` → `^3.0.0-alpha.10` |
-| SV-003 | `052-SV-003-agentdb-agentic-range` | Fixes agentdb range `^2.0.0-alpha.2.20` → `^3.0.0-alpha.10` |
+| SV-002 | `051-SV-002-agentdb-memory-pin` | **RETIRED** — codemod uses `*` for internal deps |
+| SV-003 | `052-SV-003-agentdb-agentic-range` | **RETIRED** — codemod uses `*` for internal deps |
 | SG-003 | `060-SG-003-init-helpers-all-paths` | Fixes missing `.claude/helpers/` for --dual, --minimal, hooks, and upgrade init paths |
 
 Each patch is idempotent — safe to run multiple times. Adding a new patch requires no changes to any script; just create the directory with `README.md`, `fix.py`, and `sentinel`.
@@ -358,11 +357,11 @@ ruflo/
 │   ├── 010-MC-001-mcp-autostart/    MCP autostart fix
 │   ├── 020-FB-001-fallback-*/       Fallback instrumentation (10 ops)
 │   ├── 021-FB-002-local-helper-*/   Helper instrumentation (16 ops)
-│   ├── 030-FB-003-controller-*/     ControllerRegistry shim
 │   ├── 040-FB-004-search-*/         Hash embedding threshold fix
 │   ├── 050-SV-001-ruvllm-*/         @ruvector/ruvllm semver fix
-│   ├── 051-SV-002-agentdb-*/        agentdb memory pin fix
-│   └── 052-SV-003-agentdb-*/        agentdb agentic range fix
+│   ├── 051-SV-002-agentdb-*/        agentdb memory pin (RETIRED)
+│   ├── 052-SV-003-agentdb-*/        agentdb agentic range (RETIRED)
+│   └── 060-SG-003-init-helpers-*/   Init helpers for all paths
 ├── tests/                           Unit tests (node:test)
 ├── docs/adr/                        Architecture Decision Records
 └── .tool-versions                   nodejs 20.18.1, pnpm 9.15.4, python 3.12.8
