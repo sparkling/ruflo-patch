@@ -382,10 +382,17 @@ run_build() {
   log "Installing TypeScript toolchain"
   mkdir -p "$tsc_dir"
   echo '{}' > "$tsc_dir/package.json"
+  local tsc_install_start
+  tsc_install_start=$(date +%s%N 2>/dev/null || echo 0)
   (cd "$tsc_dir" && npm install typescript@5 2>&1) || {
     log_error "Failed to install TypeScript"
     return 1
   }
+  local tsc_install_end
+  tsc_install_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$tsc_install_start" != "0" && "$tsc_install_end" != "0" ]]; then
+    log "  TypeScript install: $(( (tsc_install_end - tsc_install_start) / 1000000 ))ms"
+  fi
   local TSC="$tsc_dir/node_modules/.bin/tsc"
 
   # Build each package that has a tsconfig.json
@@ -413,6 +420,9 @@ run_build() {
       log "  SKIP: ${pkg_name} (unchanged)"
       continue
     fi
+
+    local pkg_build_start
+    pkg_build_start=$(date +%s%N 2>/dev/null || echo 0)
 
     # Create a standalone tsconfig that doesn't require project references
     # (referenced projects may not be at the expected relative paths after codemod)
@@ -452,6 +462,11 @@ run_build() {
       fi
     fi
     rm -f "$tmp_tsconfig"
+    local pkg_build_end
+    pkg_build_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$pkg_build_start" != "0" && "$pkg_build_end" != "0" ]]; then
+      log "  BUILD: ${pkg_name} $(( (pkg_build_end - pkg_build_start) / 1000000 ))ms"
+    fi
   done
 
   # Build cross-repo packages that have tsconfig.json
@@ -508,36 +523,48 @@ run_build() {
 # ---------------------------------------------------------------------------
 
 run_tests() {
+  local test_start_ns test_end_ns test_ms
+
   # ── Layer 0: Codemod acceptance (verify scope rename) ──
   log "Running codemod acceptance tests"
+  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
   node "${SCRIPT_DIR}/test-codemod-acceptance.mjs" "${TEMP_DIR}" || {
     log_error "Codemod acceptance tests failed"
     return 1
   }
-  log "Codemod acceptance tests passed"
+  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
+  log "Codemod acceptance tests passed (${test_ms}ms)"
 
   # ── Layer 1: Unit tests (90 tests, ~0.2s) ──
   log "Running unit tests"
+  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
   npm test --prefix "${PROJECT_DIR}" || {
     log_error "Unit tests failed"
     return 1
   }
-  log "Unit tests passed"
+  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
+  log "Unit tests passed (${test_ms}ms)"
 
   # ── Layer 2: Integration test (full pipeline against local Verdaccio) ──
   # This catches missing packages, broken deps, and publish failures
   # BEFORE we publish to real npm.
   log "Running integration test (local Verdaccio dry run)"
+  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
   bash "${SCRIPT_DIR}/test-integration.sh" --changed-packages "$REBUILD_PACKAGES" || {
     log_error "Integration test failed — aborting before publish to npm"
     return 1
   }
-  log "Integration test passed — safe to publish"
+  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
+  log "Integration test passed (${test_ms}ms)"
 
   # ── Layer 3: Release Qualification (ADR-0023 — functional smoke tests) ──
   # Standalone script that publishes built packages to Verdaccio, installs them,
-  # and runs RQ-1..RQ-12. Requires dist/ from the TypeScript build (Phase 7).
+  # and runs RQ-1..RQ-14. Requires dist/ from the TypeScript build (Phase 7).
   log "Running Release Qualification"
+  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
   local rq_args="--build-dir ${TEMP_DIR}"
   if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
     rq_args="${rq_args} --changed-packages '${REBUILD_PACKAGES}'"
@@ -547,7 +574,9 @@ run_tests() {
     log_error "Release Qualification FAILED"
     return 1
   }
-  log "Release Qualification passed"
+  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
+  log "Release Qualification passed (${test_ms}ms)"
 }
 
 # ---------------------------------------------------------------------------
@@ -691,17 +720,44 @@ journalctl -u ruflo-sync --since '1 hour ago' --no-pager
 # Run a phase with failure handling
 # ---------------------------------------------------------------------------
 
+# Phase timing accumulator: "name:ms name:ms ..."
+PHASE_TIMINGS=""
+
 run_phase() {
   local phase_name="$1"
   shift
 
   log "=== Phase: ${phase_name} ==="
+  local phase_start_ns
+  phase_start_ns=$(date +%s%N 2>/dev/null || echo 0)
   if ! "$@"; then
     local code=$?
     create_failure_issue "${phase_name}" "${code}"
     log_error "Phase '${phase_name}' failed — aborting (state NOT updated)"
     exit 1
   fi
+  local phase_end_ns
+  phase_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$phase_start_ns" != "0" && "$phase_end_ns" != "0" ]]; then
+    local phase_ms=$(( (phase_end_ns - phase_start_ns) / 1000000 ))
+    log "  Phase '${phase_name}' completed in ${phase_ms}ms"
+    PHASE_TIMINGS="${PHASE_TIMINGS} ${phase_name}:${phase_ms}"
+  fi
+}
+
+print_phase_summary() {
+  log "──────────────────────────────────────────"
+  log "Phase timing summary:"
+  for entry in $PHASE_TIMINGS; do
+    local name="${entry%%:*}"
+    local ms="${entry##*:}"
+    if [[ $ms -ge 1000 ]]; then
+      log "  $(printf '%-25s %6dms (%ds)' "$name" "$ms" "$((ms / 1000))")"
+    else
+      log "  $(printf '%-25s %6dms' "$name" "$ms")"
+    fi
+  done
+  log "──────────────────────────────────────────"
 }
 
 # ---------------------------------------------------------------------------
@@ -723,10 +779,20 @@ main() {
   # Phase 2: Check for upstream changes
   local upstream_changed=false
   local upstream_check_failed=false
+  local check_start_ns
+  check_start_ns=$(date +%s%N 2>/dev/null || echo 0)
 
   NEW_RUFLO_HEAD=$(check_upstream "${UPSTREAM_RUFLO}" "${RUFLO_HEAD}" "ruflo") || upstream_check_failed=true
   NEW_AGENTIC_HEAD=$(check_upstream "${UPSTREAM_AGENTIC}" "${AGENTIC_HEAD}" "agentic-flow") || upstream_check_failed=true
   NEW_FANN_HEAD=$(check_upstream "${UPSTREAM_FANN}" "${FANN_HEAD}" "ruv-FANN") || upstream_check_failed=true
+
+  local check_end_ns
+  check_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$check_start_ns" != "0" && "$check_end_ns" != "0" ]]; then
+    local check_ms=$(( (check_end_ns - check_start_ns) / 1000000 ))
+    log "  Upstream checks completed in ${check_ms}ms"
+    PHASE_TIMINGS="${PHASE_TIMINGS} check-upstream:${check_ms}"
+  fi
 
   if [[ "${NEW_RUFLO_HEAD}" != "${RUFLO_HEAD}" && -n "${NEW_RUFLO_HEAD}" ]]; then
     upstream_changed=true
@@ -802,6 +868,7 @@ main() {
   # ═══════════════════ GATE 1 ═══════════════════════════════
   # All pre-publish tests passed. If --test-only, stop here.
   if [[ "${TEST_ONLY}" == "true" ]]; then
+    print_phase_summary
     log "=========================================="
     log "Gate 1 PASSED — all pre-publish tests pass (Layers 0-3)"
     log "Stopping before publish (--test-only mode)"
@@ -926,6 +993,7 @@ main() {
     console.log('Checksums saved for ' + Object.keys(hashes).length + ' packages');
   " 2>&1 || log "WARNING: Failed to save checksums (non-fatal)"
 
+  print_phase_summary
   log "=========================================="
   log "Build complete: ${BUILD_VERSION}"
   log "=========================================="
