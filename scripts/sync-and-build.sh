@@ -290,7 +290,8 @@ write_build_manifest() {
   "patch_head": "$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)",
   "codemod_hash": "${codemod_hash}",
   "patch_dir_hash": "${patch_dir_hash}",
-  "packages_built": $(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l),
+  "packages_compiled": $(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l),
+  "packages_total": $(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l),
   "rebuild_packages": $(echo "${REBUILD_PACKAGES}" | python3 -c 'import sys,json; d=sys.stdin.read().strip(); print(json.dumps(d) if d in ("all","[]") else d)' 2>/dev/null || echo '"all"')
 }
 MANIFESTEOF
@@ -590,6 +591,13 @@ run_build() {
   done
 
   log "Build complete: ${built} built, ${skipped} skipped (unchanged), ${failed} failed"
+
+  # Summary: count all publishable @sparkleideas packages in the build dir
+  local total_packages compiled_packages pre_built_packages
+  total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
+  compiled_packages=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
+  pre_built_packages=$((total_packages - compiled_packages))
+  log "Build directory contains ${total_packages} publishable packages (${compiled_packages} compiled, ${pre_built_packages} pre-built)"
   if [[ $failed -gt 0 ]]; then
     log_error "Some packages failed to build — published packages may be broken"
   fi
