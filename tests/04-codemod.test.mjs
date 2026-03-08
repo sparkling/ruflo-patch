@@ -251,11 +251,11 @@ describe('codemod: exclusions', () => {
   });
 });
 
-describe('codemod: @sparkleideas/* ranges become "*"', () => {
+describe('codemod: ADR-0027 — @sparkleideas/* ranges preserved (no wildcard)', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('replaces all @sparkleideas/* ranges with "*" (bf31c63 fix for ETARGET)', async () => {
+  it('preserves @sparkleideas/* peerDep ranges after scope rename (ADR-0027)', async () => {
     tmp = makeTmpDir();
     const pkg = {
       name: '@claude-flow/core',
@@ -272,10 +272,11 @@ describe('codemod: @sparkleideas/* ranges become "*"', () => {
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
 
-    assert.equal(result.peerDependencies['@sparkleideas/memory'], '*',
-      '>=3.0.0-alpha.1 -> * (caret can\'t match prerelease)');
-    assert.equal(result.peerDependencies['@sparkleideas/cli'], '*',
-      '^2.0.0 -> * (caret can\'t match prerelease)');
+    // ADR-0027: ranges preserved — fork sets correct versions directly
+    assert.equal(result.peerDependencies['@sparkleideas/memory'], '>=3.0.0-alpha.1',
+      '>=3.0.0-alpha.1 range preserved');
+    assert.equal(result.peerDependencies['@sparkleideas/cli'], '^2.0.0',
+      '^2.0.0 range preserved');
     assert.equal(result.peerDependencies['lodash'], '>=4.0.0',
       'third-party peerDep untouched');
   });
@@ -344,11 +345,11 @@ describe('codemod: source file transforms', () => {
   });
 });
 
-describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
+describe('codemod: ADR-0027 — dependency ranges preserved (no wildcard replacement)', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('replaces caret, tilde, gte, and exact ranges in dependencies', async () => {
+  it('preserves version ranges for @sparkleideas/* deps (ADR-0027)', async () => {
     tmp = makeTmpDir();
     const pkg = {
       name: '@claude-flow/core',
@@ -366,14 +367,15 @@ describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
     await transform(tmp);
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
-    assert.equal(result.dependencies['@sparkleideas/memory'], '*', 'caret range -> *');
-    assert.equal(result.dependencies['@sparkleideas/cli'], '*', 'gte range -> *');
-    assert.equal(result.dependencies['@sparkleideas/utils'], '*', 'tilde range -> *');
-    assert.equal(result.dependencies['@sparkleideas/hooks'], '*', 'exact range -> *');
+    // ADR-0027: ranges are preserved — fork sets correct versions directly
+    assert.equal(result.dependencies['@sparkleideas/memory'], '^3.0.0', 'caret range preserved');
+    assert.equal(result.dependencies['@sparkleideas/cli'], '>=2.0.0', 'gte range preserved');
+    assert.equal(result.dependencies['@sparkleideas/utils'], '~3.1.0', 'tilde range preserved');
+    assert.equal(result.dependencies['@sparkleideas/hooks'], '3.0.0', 'exact range preserved');
     assert.equal(result.dependencies['lodash'], '^4.0.0', 'third-party dep untouched');
   });
 
-  it('does not double-replace already-"*" ranges', async () => {
+  it('leaves already-"*" ranges as-is', async () => {
     tmp = makeTmpDir();
     const pkg = {
       name: '@sparkleideas/core',
@@ -387,7 +389,7 @@ describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
     assert.equal(result.dependencies['@sparkleideas/memory'], '*');
   });
 
-  it('replaces caret ranges that cannot match prerelease versions (regression)', async () => {
+  it('renames scope but preserves prerelease ranges (ADR-0027)', async () => {
     tmp = makeTmpDir();
     const pkg = {
       name: '@claude-flow/embeddings',
@@ -405,11 +407,12 @@ describe('codemod: all @sparkleideas/* dependency ranges become "*"', () => {
     await transform(tmp);
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
-    assert.equal(result.peerDependencies['@sparkleideas/agentic-flow'], '*',
-      '^2.0.0 must become * (cannot match 2.0.2-alpha.3)');
-    assert.equal(result.peerDependencies['@sparkleideas/shared'], '*',
-      '^3.0.0 must become * (cannot match 3.0.0-alpha.10)');
-    assert.equal(result.dependencies['@sparkleideas/agentdb'], '*',
-      '^3.0.0-alpha.1 must become * (prerelease range)');
+    // ADR-0027: scope renamed, but version ranges preserved
+    assert.equal(result.peerDependencies['@sparkleideas/agentic-flow'], '^2.0.0',
+      '^2.0.0 range preserved after scope rename');
+    assert.equal(result.peerDependencies['@sparkleideas/shared'], '^3.0.0',
+      '^3.0.0 range preserved after scope rename');
+    assert.equal(result.dependencies['@sparkleideas/agentdb'], '^3.0.0-alpha.1',
+      'prerelease range preserved after scope rename');
   });
 });

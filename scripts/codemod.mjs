@@ -5,7 +5,8 @@
  * Transforms a cloned upstream source tree, renaming all @claude-flow/*
  * references to @sparkleideas/* and handling unscoped package mappings.
  *
- * See ADR-0013 (codemod-implementation) and ADR-0006 (npm-scope-naming).
+ * See ADR-0013 (codemod-implementation), ADR-0006 (npm-scope-naming),
+ * and ADR-0027 (fork migration — wildcard replacement removed).
  *
  * Usage:
  *   node scripts/codemod.mjs /path/to/temp-dir
@@ -107,21 +108,9 @@ function transformPackageJsonObject(json) {
     }
   }
 
-  // Fix ALL version ranges for @sparkleideas/* internal packages.
-  // Caret ranges like "^2.0.0" don't match prerelease versions (2.0.2-alpha.3),
-  // and prerelease ranges like ">=3.0.0-alpha.1" only match the same minor.
-  // Replace with "*" so npm resolves to whatever version is published.
-  // Introduced in bf31c63 to fix ETARGET errors on npm install.
-  for (const depField of DEP_FIELDS) {
-    if (json[depField] && typeof json[depField] === 'object') {
-      for (const [key, value] of Object.entries(json[depField])) {
-        if (key.startsWith('@sparkleideas/') && typeof value === 'string' && value !== '*') {
-          json[depField][key] = '*';
-          changed = true;
-        }
-      }
-    }
-  }
+  // ADR-0027: Wildcard replacement removed. In the fork model, dependency
+  // ranges are fixed directly in fork package.json files with exact -patch.N
+  // versions. No build-time dep rewriting needed.
 
   return changed;
 }

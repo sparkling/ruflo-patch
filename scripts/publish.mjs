@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 // scripts/publish.mjs — Publish all packages in topological order.
 // Implements ADR-0014 (topological order), ADR-0015 (first-publish bootstrap),
-// ADR-0012 (version numbering — bump-last-segment scheme).
+// ADR-0027 (fork migration — versions come from fork package.json).
 //
 // Usage:
 //   node scripts/publish.mjs --build-dir ./dist
 //   node scripts/publish.mjs --build-dir ./dist --dry-run
 //
 // Exported API:
-//   import { publishAll, nextVersion } from './publish.mjs';
+//   import { publishAll } from './publish.mjs';
 
 import { execFile as execFileCb } from 'node:child_process';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync, realpathSync } from 'node:fs';
@@ -109,100 +109,10 @@ function savePublishedVersions(versions) {
   writeFileSync(STATE_FILE, JSON.stringify(versions, null, 2) + '\n');
 }
 
-// ── Version computation (ADR-0012 rewrite) ──
-
-/**
- * Bump the last numeric segment of a version string by 1.
- * Works for both stable (3.0.2 -> 3.0.3) and prerelease (3.0.0-alpha.6 -> 3.0.0-alpha.7).
- *
- * @param {string} version - A semver version string
- * @returns {string} The version with its last numeric segment incremented
- */
-export function bumpLastSegment(version) {
-  // Find the last numeric segment and increment it
-  const match = version.match(/^(.*?)(\d+)$/);
-  if (!match) {
-    // Version ends with a non-numeric identifier (e.g., "2.0.2-alpha")
-    // Treat as "2.0.2-alpha.0" and bump to "2.0.2-alpha.1"
-    return `${version}.1`;
-  }
-  const prefix = match[1];
-  const num = parseInt(match[2], 10);
-  return `${prefix}${num + 1}`;
-}
-
-/**
- * Compare two semver version strings.
- * Returns positive if a > b, negative if a < b, 0 if equal.
- * Handles prerelease identifiers: 3.0.0-alpha.6 < 3.0.0 < 3.0.1
- */
-function semverCompare(a, b) {
-  // Split into [core, prerelease]
-  const parseVer = (v) => {
-    const dashIdx = v.indexOf('-');
-    if (dashIdx === -1) return { core: v, pre: null };
-    return { core: v.slice(0, dashIdx), pre: v.slice(dashIdx + 1) };
-  };
-
-  const va = parseVer(a);
-  const vb = parseVer(b);
-
-  // Compare core versions numerically
-  const partsA = va.core.split('.').map(Number);
-  const partsB = vb.core.split('.').map(Number);
-  const len = Math.max(partsA.length, partsB.length);
-  for (let i = 0; i < len; i++) {
-    const na = partsA[i] || 0;
-    const nb = partsB[i] || 0;
-    if (na !== nb) return na - nb;
-  }
-
-  // Same core — prerelease < no-prerelease
-  if (va.pre === null && vb.pre === null) return 0;
-  if (va.pre === null) return 1;   // a is stable, b has prerelease -> a > b
-  if (vb.pre === null) return -1;  // b is stable, a has prerelease -> a < b
-
-  // Both have prerelease — compare identifiers
-  const preA = va.pre.split('.');
-  const preB = vb.pre.split('.');
-  const preLen = Math.max(preA.length, preB.length);
-  for (let i = 0; i < preLen; i++) {
-    if (i >= preA.length) return -1; // fewer identifiers = lower precedence
-    if (i >= preB.length) return 1;
-    const isNumA = /^\d+$/.test(preA[i]);
-    const isNumB = /^\d+$/.test(preB[i]);
-    if (isNumA && isNumB) {
-      const diff = parseInt(preA[i], 10) - parseInt(preB[i], 10);
-      if (diff !== 0) return diff;
-    } else if (isNumA !== isNumB) {
-      // numeric < string
-      return isNumA ? -1 : 1;
-    } else {
-      // both strings — lexicographic
-      if (preA[i] < preB[i]) return -1;
-      if (preA[i] > preB[i]) return 1;
-    }
-  }
-  return 0;
-}
-
-/**
- * Compute the next version for a package.
- * Formula: bumpLastSegment( max(upstreamVersion, lastPublished) )
- *
- * @param {string} upstreamVersion - The version in the package's upstream package.json
- * @param {string|undefined} lastPublished - The last version we published, or undefined
- * @returns {string} The next version to publish
- */
-export function nextVersion(upstreamVersion, lastPublished) {
-  if (!lastPublished) {
-    return bumpLastSegment(upstreamVersion);
-  }
-  const max = semverCompare(upstreamVersion, lastPublished) >= 0
-    ? upstreamVersion
-    : lastPublished;
-  return bumpLastSegment(max);
-}
+// ── Version computation ──
+// ADR-0027: bumpLastSegment, semverCompare, nextVersion removed.
+// In the fork model, versions are set directly in fork package.json files
+// by fork-version.mjs. publish.mjs reads the version as-is.
 
 // ── Package directory resolution ──
 
@@ -400,13 +310,12 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
 
     const pkgJsonPath = join(pkgDir, 'package.json');
     const pkgJson = JSON.parse(readFileSync(pkgJsonPath, 'utf-8'));
-    const upstreamVersion = pkgJson.version;
+    // ADR-0027: version is already set correctly in the fork's package.json
+    const effectiveVersion = pkgJson.version;
 
-    const lastPublished = publishedVersions[pkgName];
-    const effectiveVersion = nextVersion(upstreamVersion, lastPublished);
-
-    console.log(`  ${pkgName} @ ${effectiveVersion} (upstream: ${upstreamVersion}, last: ${lastPublished || '(none)'})`);
+    console.log(`  ${pkgName} @ ${effectiveVersion}`);
     if (!dryRun) {
+      // stampVersion still strips missing bin entries and adds sparkleideas metadata
       stampVersion(pkgDir, effectiveVersion, metadata);
     }
 

@@ -1,15 +1,14 @@
 #!/usr/bin/env node
-// scripts/preflight.mjs — Pre-commit/pre-publish consistency check.
-// Syncs: doc tables, defect counts across all files.
-// Source of truth: package.json (version), patch/*/ (defects).
+// scripts/preflight.mjs — Pre-commit/pre-publish consistency checker.
+// Verifies essential files and config exist before proceeding.
 //
 // Usage: node scripts/preflight.mjs [--check]
-//   --check  Exit 1 if anything is out of date (for hooks/CI), don't write.
+//   --check  Exit 1 if anything is missing (for hooks/CI).
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { discover } from '../lib/discover.mjs';
+import { homedir } from 'node:os';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -25,95 +24,74 @@ timer.unref();
 const t0 = Date.now();
 console.log(`[${new Date().toISOString()}] Preflight starting`);
 
-const data = discover();
-const { patches, categories, stats } = data;
+let errors = 0;
+let warnings = 0;
 
-// ── Helpers ──
-
-function replaceMarkerSection(filePath, markerName, newContent) {
-  const beginMarker = `<!-- GENERATED:${markerName}:begin -->`;
-  const endMarker = `<!-- GENERATED:${markerName}:end -->`;
-
-  let text;
-  try {
-    text = readFileSync(filePath, 'utf-8');
-  } catch {
-    return false; // File doesn't exist yet
-  }
-
-  const beginIdx = text.indexOf(beginMarker);
-  const endIdx = text.indexOf(endMarker);
-
-  if (beginIdx < 0 || endIdx < 0) return false;
-
-  const before = text.slice(0, beginIdx + beginMarker.length);
-  const after = text.slice(endIdx);
-  const updated = `${before}\n${newContent}\n${after}`;
-
-  if (updated === text) return false;
-
-  if (!checkOnly) writeFileSync(filePath, updated);
-  return true;
-}
-
-// ── Generate CLAUDE.md defect tables ──
-
-function generateClaudeTables() {
-  const groups = new Map();
-  for (const p of patches) {
-    if (!groups.has(p.prefix)) groups.set(p.prefix, []);
-    groups.get(p.prefix).push(p);
-  }
-
-  const lines = [];
-
-  lines.push('| Prefix | Category | Count |');
-  lines.push('|--------|----------|-------|');
-  for (const [prefix, items] of groups) {
-    const catLabel = categories[prefix] ?? prefix;
-    lines.push(`| ${prefix} | ${catLabel} | ${items.length} |`);
-  }
-
-  lines.push('');
-  lines.push(`## All ${stats.total} Defects`);
-  lines.push('');
-  lines.push('| ID | GitHub Issue | Severity |');
-  lines.push('|----|-------------|----------|');
-  for (const p of patches) {
-    const ghText = p.github ? `${p.github} ${p.title}` : p.title;
-    const ghLink = p.githubUrl ? `[${ghText}](${p.githubUrl})` : ghText;
-    lines.push(`| ${p.id} | ${ghLink} | ${p.severity} |`);
-  }
-
-  return lines.join('\n');
-}
-
-// ── Main ──
-
-let anyChanged = false;
-
-function report(changed, label) {
-  if (!changed) return;
-  anyChanged = true;
-  console.log(checkOnly ? `STALE: ${label}` : `Updated: ${label}`);
-}
-
-// Sync patch/CLAUDE.md defect tables
-{
+function check(label, fn) {
   const s0 = Date.now();
-  const changed = replaceMarkerSection(resolve(ROOT, 'patch', 'CLAUDE.md'), 'defect-tables', generateClaudeTables());
-  const sElapsed = Date.now() - s0;
-  console.log(`[${new Date().toISOString()}] Check: patch/CLAUDE.md (defect tables) — ${sElapsed}ms`);
-  report(changed, 'patch/CLAUDE.md (defect tables)');
+  const result = fn();
+  const elapsed = Date.now() - s0;
+  const status = result === true ? 'OK' : result === 'warn' ? 'WARN' : 'FAIL';
+  console.log(`[${new Date().toISOString()}] Check: ${label} — ${status} (${elapsed}ms)`);
+  if (result === false) errors++;
+  if (result === 'warn') warnings++;
 }
+
+// ── Required files ──
+
+check('config/published-versions.json is valid JSON', () => {
+  const path = resolve(ROOT, 'config', 'published-versions.json');
+  if (!existsSync(path)) {
+    console.error('  Missing: config/published-versions.json');
+    return false;
+  }
+  try {
+    JSON.parse(readFileSync(path, 'utf-8'));
+    return true;
+  } catch (e) {
+    console.error(`  Invalid JSON: ${e.message}`);
+    return false;
+  }
+});
+
+check('scripts/codemod.mjs exists', () => {
+  return existsSync(resolve(ROOT, 'scripts', 'codemod.mjs'));
+});
+
+check('scripts/publish.mjs exists', () => {
+  return existsSync(resolve(ROOT, 'scripts', 'publish.mjs'));
+});
+
+check('scripts/fork-version.mjs exists', () => {
+  return existsSync(resolve(ROOT, 'scripts', 'fork-version.mjs'));
+});
+
+// ── Fork directories (advisory) ──
+
+const forkBase = resolve(homedir(), 'src', 'forks');
+const forkNames = ['ruflo', 'agentic-flow', 'ruv-FANN'];
+
+for (const name of forkNames) {
+  check(`fork dir ~/src/forks/${name}`, () => {
+    if (existsSync(resolve(forkBase, name))) return true;
+    console.warn(`  Warning: fork directory not found — ~/src/forks/${name}`);
+    return 'warn';
+  });
+}
+
+// ── Summary ──
 
 const elapsed = Date.now() - t0;
 console.log(`[${new Date().toISOString()}] Preflight complete (${elapsed}ms)`);
 clearTimeout(timer);
 
-if (!anyChanged) {
-  console.log('All files are up to date.');
-} else if (checkOnly) {
-  console.log('\nFiles are out of date. Run: npm run preflight');
-  process.exit(1);
+if (errors === 0 && warnings === 0) {
+  console.log('All checks passed.');
+} else if (errors === 0) {
+  console.log(`All required checks passed (${warnings} warning(s)).`);
+} else {
+  console.log(`\n${errors} check(s) failed.`);
+  if (checkOnly) {
+    process.exit(1);
+  }
 }

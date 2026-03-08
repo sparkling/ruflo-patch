@@ -1,17 +1,28 @@
 #!/usr/bin/env bash
-# sync-and-build.sh — Main build pipeline for ruflo.
-# Triggered by systemd timer (ruflo-sync.timer) every 6 hours,
-# or manually via: ./scripts/sync-and-build.sh
+# sync-and-build.sh — Fork-based build pipeline for ruflo (ADR-0027).
+#
+# Two stages (Stage 2 is manual GitHub PR review, not in this script):
+#
+#   --publish   Stage 3: Detect merges to fork main, bump versions,
+#               build, test (L0-L3), publish to npm, run L4 acceptance,
+#               promote to @latest on success.
+#
+#   --sync      Stage 1: Fetch upstream, create sync branch, merge,
+#               type-check, build, test (L0-L3). On success create PR
+#               with label "ready". On failure create PR with error label.
+#
+# Stage 3 runs before Stage 1 when both are requested (default).
 #
 # Flags:
-#   --test-only   Stop after Gate 1 (Layers 0-3 pass). No publish, no deploy.
-#   --force       Build even when no upstream/local changes detected.
-#   --build-only  Stop after Phase 8 (build+patch). No tests, no publish.
-#   --pull        Pull upstream repos even in --build-only mode.
+#   --sync        Stage 1 only
+#   --publish     Stage 3 only
+#   --test-only   Stop after tests (no publish)
+#   --force       Build even when no changes detected
+#   --build-only  Stop after build (no tests, no publish)
+#   --pull        Pull upstream repos in --build-only mode
 #
-# See: ADR-0009 (systemd timer), ADR-0011 (dual trigger),
-#      ADR-0012 (version numbering), ADR-0015 (first-publish bootstrap),
-#      ADR-0005 (fork + build-step rename), ADR-0023 (test framework)
+# See: ADR-0027 (fork migration), ADR-0009 (systemd timer),
+#      ADR-0023 (test framework), ADR-0026 (build caching)
 
 set -euo pipefail
 
@@ -19,18 +30,28 @@ set -euo pipefail
 # CLI flags
 # ---------------------------------------------------------------------------
 
+RUN_SYNC=false
+RUN_PUBLISH=false
 TEST_ONLY=false
 FORCE_BUILD=false
 BUILD_ONLY=false
 PULL_UPSTREAM=false
 for arg in "$@"; do
   case "$arg" in
-    --test-only) TEST_ONLY=true ;;
-    --force)     FORCE_BUILD=true ;;
+    --sync)       RUN_SYNC=true ;;
+    --publish)    RUN_PUBLISH=true ;;
+    --test-only)  TEST_ONLY=true ;;
+    --force)      FORCE_BUILD=true ;;
     --build-only) BUILD_ONLY=true ;;
     --pull)       PULL_UPSTREAM=true ;;
   esac
 done
+
+# Default: run both stages
+if [[ "${RUN_SYNC}" == "false" && "${RUN_PUBLISH}" == "false" ]]; then
+  RUN_SYNC=true
+  RUN_PUBLISH=true
+fi
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -41,15 +62,29 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 STATE_FILE="${SCRIPT_DIR}/.last-build-state"
 
+# Fork directories (ADR-0027: source is local forks, not upstream repos)
+FORK_DIR_RUFLO="/home/claude/src/forks/ruflo"
+FORK_DIR_AGENTIC="/home/claude/src/forks/agentic-flow"
+FORK_DIR_FANN="/home/claude/src/forks/ruv-FANN"
+
+FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN")
+FORK_DIRS=("${FORK_DIR_RUFLO}" "${FORK_DIR_AGENTIC}" "${FORK_DIR_FANN}")
+
 UPSTREAM_RUFLO="https://github.com/ruvnet/ruflo.git"
 UPSTREAM_AGENTIC="https://github.com/ruvnet/agentic-flow.git"
 UPSTREAM_FANN="https://github.com/ruvnet/ruv-FANN.git"
 
-UPSTREAM_DIR_RUFLO="/home/claude/src/upstream/ruflo"
-UPSTREAM_DIR_AGENTIC="/home/claude/src/upstream/agentic-flow"
-UPSTREAM_DIR_FANN="/home/claude/src/upstream/ruv-FANN"
+UPSTREAM_URLS=("${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}")
 
 TEMP_DIR=""  # set in create_temp_dir, cleaned up on exit
+
+# Track fork HEAD SHAs for state
+NEW_RUFLO_HEAD=""
+NEW_AGENTIC_HEAD=""
+NEW_FANN_HEAD=""
+
+# Build version (set by read_build_version)
+BUILD_VERSION=""
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -61,6 +96,34 @@ log() {
 
 log_error() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2
+}
+
+# ---------------------------------------------------------------------------
+# Email notification helper
+# ---------------------------------------------------------------------------
+
+send_email() {
+  local subject="$1"
+  local body="$2"
+  local recipient="${RUFLO_NOTIFY_EMAIL:-}"
+
+  if [[ -z "$recipient" ]]; then
+    log "Email notification (no recipient configured): ${subject}"
+    return 0
+  fi
+
+  if command -v sendmail &>/dev/null; then
+    printf "Subject: %s\nFrom: ruflo-build@$(hostname)\nTo: %s\n\n%s\n" \
+      "$subject" "$recipient" "$body" | sendmail "$recipient" 2>/dev/null || {
+      log "WARNING: sendmail failed for: ${subject}"
+    }
+  elif command -v mail &>/dev/null; then
+    echo "$body" | mail -s "$subject" "$recipient" 2>/dev/null || {
+      log "WARNING: mail failed for: ${subject}"
+    }
+  else
+    log "Email notification (no mail command): ${subject}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -94,124 +157,350 @@ load_state() {
   RUFLO_HEAD=""
   AGENTIC_HEAD=""
   FANN_HEAD=""
-  PATCH_HEAD=""
+  UPSTREAM_RUFLO_SHA=""
+  UPSTREAM_AGENTIC_SHA=""
+  UPSTREAM_FANN_SHA=""
 
   if [[ -f "${STATE_FILE}" ]]; then
     log "Loading state from ${STATE_FILE}"
-    # Source the file safely — only accept known variable names
     while IFS='=' read -r key value; do
-      # Skip comments and empty lines
       [[ -z "${key}" || "${key}" =~ ^# ]] && continue
       case "${key}" in
-        RUFLO_HEAD)       RUFLO_HEAD="${value}" ;;
-        AGENTIC_HEAD)     AGENTIC_HEAD="${value}" ;;
-        FANN_HEAD)        FANN_HEAD="${value}" ;;
-        PATCH_HEAD)       PATCH_HEAD="${value}" ;;
+        RUFLO_HEAD)          RUFLO_HEAD="${value}" ;;
+        AGENTIC_HEAD)        AGENTIC_HEAD="${value}" ;;
+        FANN_HEAD)           FANN_HEAD="${value}" ;;
+        UPSTREAM_RUFLO_SHA)  UPSTREAM_RUFLO_SHA="${value}" ;;
+        UPSTREAM_AGENTIC_SHA) UPSTREAM_AGENTIC_SHA="${value}" ;;
+        UPSTREAM_FANN_SHA)   UPSTREAM_FANN_SHA="${value}" ;;
       esac
     done < "${STATE_FILE}"
-    log "State loaded: RUFLO_HEAD=${RUFLO_HEAD:0:12}, AGENTIC_HEAD=${AGENTIC_HEAD:0:12}, FANN_HEAD=${FANN_HEAD:0:12}, PATCH_HEAD=${PATCH_HEAD:0:12}"
+    log "State loaded: RUFLO=${RUFLO_HEAD:0:12}, AGENTIC=${AGENTIC_HEAD:0:12}, FANN=${FANN_HEAD:0:12}"
   else
     log "No state file found — first run"
   fi
 }
 
 save_state() {
-  local new_ruflo_head="$1"
-  local new_agentic_head="$2"
-  local new_fann_head="$3"
-  local new_patch_head="$4"
-
   cat > "${STATE_FILE}" <<EOF
-# ruflo build state — written by sync-and-build.sh
+# ruflo build state — written by sync-and-build.sh (ADR-0027)
 # Last updated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
-RUFLO_HEAD=${new_ruflo_head}
-AGENTIC_HEAD=${new_agentic_head}
-FANN_HEAD=${new_fann_head}
-PATCH_HEAD=${new_patch_head}
+RUFLO_HEAD=${NEW_RUFLO_HEAD:-${RUFLO_HEAD}}
+AGENTIC_HEAD=${NEW_AGENTIC_HEAD:-${AGENTIC_HEAD}}
+FANN_HEAD=${NEW_FANN_HEAD:-${FANN_HEAD}}
+UPSTREAM_RUFLO_SHA=${UPSTREAM_RUFLO_SHA:-}
+UPSTREAM_AGENTIC_SHA=${UPSTREAM_AGENTIC_SHA:-}
+UPSTREAM_FANN_SHA=${UPSTREAM_FANN_SHA:-}
 EOF
-
   log "State saved"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 1: Check for upstream changes
+# Stage 3: Check for merged PRs (origin/main vs local main)
 # ---------------------------------------------------------------------------
 
-check_upstream() {
-  local url="$1"
-  local last_head="$2"
-  local label="$3"
-  local current_head
+check_merged_prs() {
+  # Returns 0 if any fork has new commits merged to main, 1 otherwise.
+  # Updates NEW_*_HEAD variables with current local main SHA.
+  local any_changed=false
 
-  current_head=$(git ls-remote "${url}" HEAD 2>/dev/null | cut -f1) || true
+  for i in "${!FORK_NAMES[@]}"; do
+    local name="${FORK_NAMES[$i]}"
+    local dir="${FORK_DIRS[$i]}"
 
-  if [[ -z "${current_head}" ]]; then
-    log_error "git ls-remote failed for ${label} (${url}) — network error or repo unavailable"
-    # Return empty string to signal check failure, not "no change"
-    echo ""
-    return 1
+    if [[ ! -d "${dir}/.git" ]]; then
+      log_error "Fork directory ${dir} is not a git repo"
+      continue
+    fi
+
+    # Fetch origin to see if anything was merged
+    git -C "${dir}" fetch origin main --quiet 2>/dev/null || {
+      log_error "Failed to fetch origin for ${name}"
+      continue
+    }
+
+    local local_sha origin_sha
+    local_sha=$(git -C "${dir}" rev-parse main 2>/dev/null) || continue
+    origin_sha=$(git -C "${dir}" rev-parse origin/main 2>/dev/null) || continue
+
+    # Store current HEAD for state tracking
+    case "$name" in
+      ruflo)        NEW_RUFLO_HEAD="$local_sha" ;;
+      agentic-flow) NEW_AGENTIC_HEAD="$local_sha" ;;
+      ruv-FANN)     NEW_FANN_HEAD="$local_sha" ;;
+    esac
+
+    if [[ "$local_sha" != "$origin_sha" ]]; then
+      log "New commits on origin/main for ${name}: ${local_sha:0:12} -> ${origin_sha:0:12}"
+      # Fast-forward local main to origin/main
+      git -C "${dir}" checkout main --quiet 2>/dev/null || true
+      if git -C "${dir}" merge --ff-only origin/main 2>/dev/null; then
+        log "Fast-forwarded ${name} main to ${origin_sha:0:12}"
+        case "$name" in
+          ruflo)        NEW_RUFLO_HEAD="$origin_sha" ;;
+          agentic-flow) NEW_AGENTIC_HEAD="$origin_sha" ;;
+          ruv-FANN)     NEW_FANN_HEAD="$origin_sha" ;;
+        esac
+        any_changed=true
+      else
+        log_error "Cannot fast-forward ${name} — manual intervention needed"
+        send_email "[ruflo] FF merge failed for ${name}" \
+          "Fork ${name} cannot fast-forward to origin/main. Manual intervention required."
+      fi
+    else
+      log "No new merges for ${name} (main=${local_sha:0:12})"
+    fi
+  done
+
+  # Compare against last-published state
+  if [[ "${NEW_RUFLO_HEAD}" != "${RUFLO_HEAD}" || \
+        "${NEW_AGENTIC_HEAD}" != "${AGENTIC_HEAD}" || \
+        "${NEW_FANN_HEAD}" != "${FANN_HEAD}" ]]; then
+    any_changed=true
   fi
 
-  if [[ "${current_head}" != "${last_head}" ]]; then
-    log "Upstream change detected in ${label}: ${last_head:0:12} -> ${current_head:0:12}"
-    echo "${current_head}"
+  if [[ "$any_changed" == "true" ]]; then
     return 0
   fi
-
-  echo "${current_head}"
-  return 0
-}
-
-# ---------------------------------------------------------------------------
-# Phase 2: Check for local changes
-# ---------------------------------------------------------------------------
-
-check_local_changes() {
-  local last_commit="$1"
-  local changes
-
-  if [[ -z "${last_commit}" ]]; then
-    # First run — treat everything as changed
-    log "No previous local commit recorded — treating as changed"
-    return 0
-  fi
-
-  changes=$(git -C "${PROJECT_DIR}" log "${last_commit}..HEAD" --oneline -- patch/ scripts/ 2>/dev/null) || true
-
-  if [[ -n "${changes}" ]]; then
-    log "Local changes detected since ${last_commit:0:12}:"
-    echo "${changes}" | while IFS= read -r line; do
-      log "  ${line}"
-    done
-    return 0
-  fi
-
   return 1
 }
 
 # ---------------------------------------------------------------------------
-# Phase 3: Pull upstream repos
+# Stage 3: Bump fork versions, commit, tag, push
 # ---------------------------------------------------------------------------
 
-pull_upstream() {
-  local dir="$1"
-  local label="$2"
+bump_fork_versions() {
+  for i in "${!FORK_NAMES[@]}"; do
+    local name="${FORK_NAMES[$i]}"
+    local dir="${FORK_DIRS[$i]}"
 
-  if [[ ! -d "${dir}/.git" ]]; then
-    log_error "Upstream directory ${dir} is not a git repo"
-    return 1
-  fi
+    [[ -d "${dir}/.git" ]] || continue
 
-  log "Pulling ${label} in ${dir}"
-  git -C "${dir}" fetch --all --prune
-  git -C "${dir}" reset --hard origin/main 2>/dev/null \
-    || git -C "${dir}" reset --hard origin/master 2>/dev/null \
-    || { log_error "Could not reset ${label} to origin/main or origin/master"; return 1; }
-  log "Pulled ${label}: $(git -C "${dir}" rev-parse --short HEAD)"
+    log "Bumping versions in fork: ${name}"
+    local bump_output
+    bump_output=$(node "${SCRIPT_DIR}/fork-version.mjs" bump "${dir}" 2>&1) || {
+      log_error "Version bump failed for ${name}: ${bump_output}"
+      return 1
+    }
+    log "${bump_output}"
+
+    # Commit version bump
+    git -C "${dir}" add -A
+    local has_changes
+    has_changes=$(git -C "${dir}" diff --cached --name-only 2>/dev/null) || true
+    if [[ -n "$has_changes" ]]; then
+      local cli_version
+      cli_version=$(node -e "
+        const pkgs = JSON.parse(require('fs').readFileSync('${dir}/package.json', 'utf8'));
+        console.log(pkgs.version || 'unknown');
+      " 2>/dev/null) || cli_version="unknown"
+
+      git -C "${dir}" commit -m "chore: bump versions to ${cli_version}" --quiet 2>/dev/null || true
+
+      # Tag with version
+      local tag="v${cli_version}"
+      git -C "${dir}" tag -a "$tag" -m "Release ${tag}" 2>/dev/null || {
+        log "Tag ${tag} already exists in ${name} — skipping"
+      }
+
+      # Push commit and tag
+      git -C "${dir}" push origin main --quiet 2>/dev/null || {
+        log_error "Failed to push version bump for ${name}"
+      }
+      git -C "${dir}" push origin "$tag" --quiet 2>/dev/null || true
+
+      log "Version bump committed and pushed for ${name}: ${cli_version}"
+    else
+      log "No version changes in ${name} — skipping commit"
+    fi
+  done
 }
 
 # ---------------------------------------------------------------------------
-# Phase 4: Copy source to temp directory
+# Stage 1: Sync upstream into fork branches
+# ---------------------------------------------------------------------------
+
+sync_upstream() {
+  # Fetch upstream changes and create sync branches.
+  # Returns 0 if any fork has new upstream commits, 1 otherwise.
+  local any_changed=false
+  local timestamp
+  timestamp=$(date -u '+%Y%m%dT%H%M%S')
+  local branch_name="sync/upstream-${timestamp}"
+
+  # Track which forks need syncing
+  declare -a forks_to_sync=()
+
+  for i in "${!FORK_NAMES[@]}"; do
+    local name="${FORK_NAMES[$i]}"
+    local dir="${FORK_DIRS[$i]}"
+
+    [[ -d "${dir}/.git" ]] || continue
+
+    # Add upstream remote if not present
+    if ! git -C "${dir}" remote get-url upstream &>/dev/null; then
+      git -C "${dir}" remote add upstream "${UPSTREAM_URLS[$i]}" 2>/dev/null || true
+    fi
+
+    # Fetch upstream
+    log "Fetching upstream for ${name}"
+    git -C "${dir}" fetch upstream main --quiet 2>/dev/null || {
+      log_error "Failed to fetch upstream for ${name}"
+      continue
+    }
+
+    local upstream_sha last_synced_sha
+    upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || continue
+
+    # Get last-synced SHA from state
+    case "$name" in
+      ruflo)        last_synced_sha="${UPSTREAM_RUFLO_SHA:-}" ;;
+      agentic-flow) last_synced_sha="${UPSTREAM_AGENTIC_SHA:-}" ;;
+      ruv-FANN)     last_synced_sha="${UPSTREAM_FANN_SHA:-}" ;;
+    esac
+
+    if [[ "$upstream_sha" == "$last_synced_sha" ]]; then
+      log "No new upstream commits for ${name} (SHA=${upstream_sha:0:12})"
+      continue
+    fi
+
+    log "New upstream commits for ${name}: ${last_synced_sha:0:12} -> ${upstream_sha:0:12}"
+    forks_to_sync+=("$i")
+    any_changed=true
+  done
+
+  if [[ "$any_changed" == "false" && "$FORCE_BUILD" == "false" ]]; then
+    log "No upstream changes to sync"
+    return 1
+  fi
+
+  # Create sync branches and merge upstream
+  for i in "${forks_to_sync[@]}"; do
+    local name="${FORK_NAMES[$i]}"
+    local dir="${FORK_DIRS[$i]}"
+
+    log "Creating sync branch ${branch_name} in ${name}"
+    git -C "${dir}" checkout main --quiet 2>/dev/null
+    git -C "${dir}" checkout -b "${branch_name}" --quiet 2>/dev/null || {
+      log_error "Failed to create branch ${branch_name} in ${name}"
+      continue
+    }
+
+    # Attempt merge
+    if ! git -C "${dir}" merge --no-edit upstream/main 2>/dev/null; then
+      log_error "Merge conflict in ${name}"
+      git -C "${dir}" merge --abort 2>/dev/null || true
+
+      # Push the branch and create a PR with conflict label
+      git -C "${dir}" checkout main --quiet 2>/dev/null
+      create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
+        "Merge conflict when syncing upstream/main. Manual resolution required."
+
+      send_email "[ruflo] Merge conflict in ${name}" \
+        "Upstream sync for ${name} has merge conflicts.\nBranch: ${branch_name}\nManual resolution required."
+      return 1
+    fi
+
+    log "Merged upstream/main into ${branch_name} for ${name}"
+
+    # Update upstream SHA tracking
+    local upstream_sha
+    upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || true
+    case "$name" in
+      ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
+      agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
+      ruv-FANN)     UPSTREAM_FANN_SHA="$upstream_sha" ;;
+    esac
+  done
+
+  # Type-check each fork on the sync branch
+  for i in "${forks_to_sync[@]}"; do
+    local name="${FORK_NAMES[$i]}"
+    local dir="${FORK_DIRS[$i]}"
+
+    # Only type-check if there's a tsconfig.json
+    if [[ -f "${dir}/tsconfig.json" ]]; then
+      log "Type-checking ${name} on sync branch"
+      local tsc_bin="${dir}/node_modules/.bin/tsc"
+      if [[ ! -x "$tsc_bin" ]]; then
+        # Try npx
+        tsc_bin="npx tsc"
+      fi
+      if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>/dev/null); then
+        log_error "Type-check failed for ${name}"
+
+        create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
+          "TypeScript compilation failed after merging upstream/main."
+
+        send_email "[ruflo] Compile error in ${name} sync" \
+          "TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
+
+        # Switch back to main
+        git -C "${dir}" checkout main --quiet 2>/dev/null
+        return 1
+      fi
+    fi
+  done
+
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Create sync PR on GitHub
+# ---------------------------------------------------------------------------
+
+create_sync_pr() {
+  local dir="$1"
+  local name="$2"
+  local branch="$3"
+  local label="$4"
+  local body="$5"
+
+  # Push the branch
+  git -C "${dir}" push origin "${branch}" --quiet 2>/dev/null || {
+    log_error "Failed to push branch ${branch} for ${name}"
+    return 1
+  }
+
+  # Get repo name from remote
+  local repo_url
+  repo_url=$(git -C "${dir}" remote get-url origin 2>/dev/null) || return 1
+  local repo_slug
+  repo_slug=$(echo "$repo_url" | sed -E 's#.*github\.com[:/]##; s/\.git$//')
+
+  if [[ -z "$repo_slug" ]]; then
+    log_error "Cannot determine GitHub repo slug for ${name}"
+    return 1
+  fi
+
+  local pr_title="Sync upstream: ${branch}"
+  local pr_body="Automated upstream sync.
+
+**Fork**: ${name}
+**Branch**: ${branch}
+**Status**: ${label}
+**Timestamp**: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
+
+${body}"
+
+  log "Creating PR for ${name}: ${pr_title} [${label}]"
+
+  # Create label if it doesn't exist (ignore errors)
+  gh label create "$label" --repo "$repo_slug" --force 2>/dev/null || true
+
+  gh pr create \
+    --repo "$repo_slug" \
+    --head "$branch" \
+    --base main \
+    --title "$pr_title" \
+    --body "$pr_body" \
+    --label "$label" \
+    2>/dev/null || {
+      log_error "Failed to create PR for ${name} (non-fatal)"
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Copy fork sources to temp directory
 # ---------------------------------------------------------------------------
 
 create_temp_dir() {
@@ -226,30 +515,28 @@ create_temp_dir() {
 }
 
 copy_source() {
-  log "Copying upstream source to ${TEMP_DIR}"
+  log "Copying fork source to ${TEMP_DIR}"
 
-  # Copy the primary upstream repo (ruflo) as the base
-  cp -a "${UPSTREAM_DIR_RUFLO}/." "${TEMP_DIR}/"
+  # Copy the primary fork (ruflo) as the base
+  cp -a "${FORK_DIR_RUFLO}/." "${TEMP_DIR}/"
   rm -rf "${TEMP_DIR}/.git"
 
   # Copy cross-repo packages into the build dir (ADR-0014 Level 1)
   # agentic-flow repo provides agentdb and agentic-flow packages
-  cp -a "${UPSTREAM_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/" 2>/dev/null || {
-    mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow"
-    cp -a "${UPSTREAM_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/"
-  }
+  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow"
+  cp -a "${FORK_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/"
   rm -rf "${TEMP_DIR}/cross-repo/agentic-flow/.git"
 
   # ruv-FANN repo provides ruv-swarm package
   mkdir -p "${TEMP_DIR}/cross-repo/ruv-FANN"
-  cp -a "${UPSTREAM_DIR_FANN}/." "${TEMP_DIR}/cross-repo/ruv-FANN/"
+  cp -a "${FORK_DIR_FANN}/." "${TEMP_DIR}/cross-repo/ruv-FANN/"
   rm -rf "${TEMP_DIR}/cross-repo/ruv-FANN/.git"
 
-  log "Source copied to temp directory (3 repos merged)"
+  log "Source copied to temp directory (3 forks merged)"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 5: Run codemod
+# Codemod
 # ---------------------------------------------------------------------------
 
 run_codemod() {
@@ -259,40 +546,26 @@ run_codemod() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 6: Apply patches
-# ---------------------------------------------------------------------------
-
-apply_patches() {
-  log "Applying patches via patch-all.sh --target ${TEMP_DIR}"
-  bash "${PROJECT_DIR}/patch-all.sh" --target "${TEMP_DIR}"
-  log "Patches applied"
-}
-
-# ---------------------------------------------------------------------------
-# Build Manifest (ADR-0026)
+# Build manifest (ADR-0026)
 # ---------------------------------------------------------------------------
 
 STABLE_BUILD_DIR="/tmp/ruflo-build"
 
 write_build_manifest() {
   local manifest="${TEMP_DIR}/.build-manifest.json"
-  local codemod_hash patch_dir_hash
+  local codemod_hash
   codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
-  patch_dir_hash=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || patch_dir_hash=""
 
   cat > "$manifest" <<MANIFESTEOF
 {
-  "version": 1,
+  "version": 2,
   "built_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
   "ruflo_head": "${NEW_RUFLO_HEAD:-}",
   "agentic_head": "${NEW_AGENTIC_HEAD:-}",
   "fann_head": "${NEW_FANN_HEAD:-}",
-  "patch_head": "$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)",
   "codemod_hash": "${codemod_hash}",
-  "patch_dir_hash": "${patch_dir_hash}",
   "packages_compiled": $(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l),
-  "packages_total": $(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l),
-  "rebuild_packages": $(echo "${REBUILD_PACKAGES}" | python3 -c 'import sys,json; d=sys.stdin.read().strip(); print(json.dumps(d) if d in ("all","[]") else d)' 2>/dev/null || echo '"all"')
+  "packages_total": $(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
 }
 MANIFESTEOF
   log "Build manifest written to ${manifest}"
@@ -305,27 +578,22 @@ check_build_freshness() {
     return 1
   fi
 
-  # Read stored values
   local stored
   stored=$(node -e "
     const m = JSON.parse(require('fs').readFileSync('${manifest}', 'utf-8'));
-    console.log([m.ruflo_head, m.agentic_head, m.fann_head, m.codemod_hash, m.patch_dir_hash].join(':'));
+    console.log([m.ruflo_head, m.agentic_head, m.fann_head, m.codemod_hash].join(':'));
   " 2>/dev/null) || { log "Cannot read manifest — will build"; return 1; }
 
-  local stored_ruflo stored_agentic stored_fann stored_codemod stored_patch
-  IFS=':' read -r stored_ruflo stored_agentic stored_fann stored_codemod stored_patch <<< "$stored"
+  local stored_ruflo stored_agentic stored_fann stored_codemod
+  IFS=':' read -r stored_ruflo stored_agentic stored_fann stored_codemod <<< "$stored"
 
-  # Compute current hashes
-  local current_codemod current_patch
+  local current_codemod
   current_codemod=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || current_codemod=""
-  current_patch=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || current_patch=""
 
-  # Compare
   if [[ "${stored_ruflo}" == "${NEW_RUFLO_HEAD}" && \
         "${stored_agentic}" == "${NEW_AGENTIC_HEAD}" && \
         "${stored_fann}" == "${NEW_FANN_HEAD}" && \
-        "${stored_codemod}" == "${current_codemod}" && \
-        "${stored_patch}" == "${current_patch}" ]]; then
+        "${stored_codemod}" == "${current_codemod}" ]]; then
     log "Build is current (manifest matches) — skipping build"
     return 0
   fi
@@ -335,116 +603,11 @@ check_build_freshness() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 6.5: Change Detection (incremental builds — ADR-0023, Decision 10)
-# ---------------------------------------------------------------------------
-
-# Packages to rebuild. "all" = full build. Set by detect_changes().
-REBUILD_PACKAGES="all"
-
-detect_changes() {
-  local checksums_file="${PROJECT_DIR}/config/package-checksums.json"
-
-  # Full rebuild triggers: --force, missing checksums, codemod change
-  if [[ "${FORCE_BUILD}" == "true" ]]; then
-    log "Change detection: --force flag set — full rebuild"
-    REBUILD_PACKAGES="all"
-    return 0
-  fi
-
-  if [[ ! -f "$checksums_file" ]]; then
-    log "Change detection: no checksums file — full rebuild (first run)"
-    REBUILD_PACKAGES="all"
-    return 0
-  fi
-
-  # Check if codemod or patch infrastructure changed
-  local stored_meta
-  stored_meta=$(node -e "
-    try {
-      const d = JSON.parse(require('fs').readFileSync('${checksums_file}', 'utf-8'));
-      console.log(JSON.stringify({ codemod_hash: d.codemod_hash || '', patch_dir_hash: d.patch_dir_hash || '' }));
-    } catch { console.log('{}'); }
-  " 2>/dev/null) || stored_meta="{}"
-
-  local current_codemod_hash
-  current_codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || current_codemod_hash=""
-  local stored_codemod_hash
-  stored_codemod_hash=$(echo "$stored_meta" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).codemod_hash||'')" 2>/dev/null) || stored_codemod_hash=""
-
-  if [[ "$current_codemod_hash" != "$stored_codemod_hash" ]]; then
-    log "Change detection: codemod.mjs changed — full rebuild"
-    REBUILD_PACKAGES="all"
-    return 0
-  fi
-
-  local current_patch_hash
-  current_patch_hash=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || current_patch_hash=""
-  local stored_patch_hash
-  stored_patch_hash=$(echo "$stored_meta" | node -e "process.stdout.write(JSON.parse(require('fs').readFileSync('/dev/stdin','utf8')).patch_dir_hash||'')" 2>/dev/null) || stored_patch_hash=""
-
-  if [[ "$current_patch_hash" != "$stored_patch_hash" ]]; then
-    log "Change detection: patch infrastructure changed — full rebuild"
-    REBUILD_PACKAGES="all"
-    return 0
-  fi
-
-  # Compute current hashes and diff against stored
-  log "Computing package content hashes..."
-  local hash_output
-  hash_output=$(node "${SCRIPT_DIR}/package-hash.mjs" \
-    --build-dir "${TEMP_DIR}" \
-    --stored-hashes "$checksums_file" \
-    --levels 2>/dev/null) || {
-    log "Change detection: hash computation failed — full rebuild"
-    REBUILD_PACKAGES="all"
-    return 0
-  }
-
-  local changed_count unchanged_count
-  changed_count=$(echo "$hash_output" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.all_rebuild.length)" 2>/dev/null) || changed_count=0
-  unchanged_count=$(echo "$hash_output" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(d.unchanged.length)" 2>/dev/null) || unchanged_count=0
-
-  if [[ "$changed_count" -eq 0 ]]; then
-    log "Change detection: no packages changed — nothing to rebuild"
-    REBUILD_PACKAGES="[]"
-    return 0
-  fi
-
-  # Extract the all_rebuild array as JSON
-  REBUILD_PACKAGES=$(echo "$hash_output" | node -e "const d=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));console.log(JSON.stringify(d.all_rebuild))" 2>/dev/null) || REBUILD_PACKAGES="all"
-
-  log "Change detection: ${changed_count} packages to rebuild, ${unchanged_count} unchanged"
-  log "Rebuild set: ${REBUILD_PACKAGES}"
-}
-
-# Helper: check if a package name is in the rebuild set
-needs_rebuild() {
-  local pkg_name="$1"
-  if [[ "$REBUILD_PACKAGES" == "all" ]]; then
-    return 0
-  fi
-  echo "$REBUILD_PACKAGES" | node -e "
-    const pkgs=JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'));
-    process.exit(pkgs.includes('@sparkleideas/${pkg_name}') ? 0 : 1)
-  " 2>/dev/null
-}
-
-# ---------------------------------------------------------------------------
-# Phase 7: Build
+# Build (TypeScript compilation)
 # ---------------------------------------------------------------------------
 
 run_build() {
-  # Upstream packages are TypeScript — they need compilation to produce dist/.
-  # The package.json "files" field includes "dist" and entry points reference
-  # dist/src/index.js, so publishing without building ships empty packages.
-  #
-  # We install TypeScript locally in the build dir and compile each package
-  # individually to avoid workspace dependency resolution issues.
-
-  # Remove all .npmignore and .gitignore files so npm publish uses the "files"
-  # field from package.json exclusively. Upstream .npmignore files exclude
-  # dist/ and wasm/ (build artifacts they don't commit to git), but we build
-  # them and need them included in the published tarball.
+  # Remove .npmignore and .gitignore so npm publish uses "files" from package.json
   find "${TEMP_DIR}" -name ".npmignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
   find "${TEMP_DIR}" -name ".gitignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
 
@@ -454,8 +617,7 @@ run_build() {
     return 0
   fi
 
-  # Install TypeScript in an isolated directory (the v3 workspace has
-  # conflicting peer deps that prevent npm install from succeeding)
+  # Install TypeScript in an isolated directory
   local tsc_dir="${TEMP_DIR}/.tsc-toolchain"
   log "Installing TypeScript toolchain"
   mkdir -p "$tsc_dir"
@@ -473,8 +635,7 @@ run_build() {
   fi
   local TSC="$tsc_dir/node_modules/.bin/tsc"
 
-  # Build each package that has a tsconfig.json
-  # Process in dependency order: shared first, then the rest
+  # Build order: shared first, then the rest
   local build_order=(
     shared
     memory embeddings codex aidefence
@@ -487,36 +648,25 @@ run_build() {
   local failed=0
   local skipped=0
   for pkg_name in "${build_order[@]}"; do
-    # Directory names remain @claude-flow/ after codemod (only file contents are renamed)
     local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
     [[ -d "$pkg_dir" ]] || continue
     [[ -f "$pkg_dir/tsconfig.json" ]] || continue
-
-    # Incremental: skip unchanged packages
-    if ! needs_rebuild "$pkg_name"; then
-      skipped=$((skipped + 1))
-      log "  SKIP: ${pkg_name} (unchanged)"
-      continue
-    fi
 
     local pkg_build_start
     pkg_build_start=$(date +%s%N 2>/dev/null || echo 0)
 
     # Create a standalone tsconfig that doesn't require project references
-    # (referenced projects may not be at the expected relative paths after codemod)
     local tmp_tsconfig="$pkg_dir/tsconfig.build.json"
     node -e "
       const ts = JSON.parse(require('fs').readFileSync('$pkg_dir/tsconfig.json', 'utf-8'));
       delete ts.references;
       if (ts.extends) {
-        // Inline the base config to avoid path issues
         try {
           const base = JSON.parse(require('fs').readFileSync(require('path').resolve('$pkg_dir', ts.extends), 'utf-8'));
           ts.compilerOptions = { ...base.compilerOptions, ...ts.compilerOptions };
           delete ts.extends;
         } catch {}
       }
-      // Ensure skipLibCheck to avoid errors from missing type deps
       ts.compilerOptions.skipLibCheck = true;
       ts.compilerOptions.noEmit = false;
       require('fs').writeFileSync('$tmp_tsconfig', JSON.stringify(ts, null, 2));
@@ -525,12 +675,10 @@ run_build() {
     if "$TSC" -p "$tmp_tsconfig" --skipLibCheck 2>/dev/null; then
       built=$((built + 1))
     else
-      # Try with looser settings
       if "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>/dev/null; then
         built=$((built + 1))
       else
         log "WARN: TypeScript build failed for ${pkg_name} — trying transpileOnly"
-        # Last resort: just copy .ts -> .js with minimal transpilation
         if "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>/dev/null; then
           built=$((built + 1))
         else
@@ -547,8 +695,7 @@ run_build() {
     fi
   done
 
-  # Build cross-repo packages that have tsconfig.json
-  # These live outside v3/@claude-flow/ but need TypeScript compilation
+  # Build cross-repo packages
   local cross_repo_builds=(
     "cross-repo/agentic-flow/packages/agent-booster"
   )
@@ -556,15 +703,9 @@ run_build() {
     local pkg_dir="${TEMP_DIR}/${rel_path}"
     [[ -d "$pkg_dir" && -f "$pkg_dir/tsconfig.json" ]] || continue
 
-    if ! needs_rebuild "agent-booster"; then
-      skipped=$((skipped + 1))
-      log "  SKIP: ${rel_path} (unchanged)"
-      continue
-    fi
-
     log "  Building cross-repo: ${rel_path}"
 
-    # Build WASM module if this package has a Rust crate (e.g. agent-booster)
+    # Build WASM module if this package has a Rust crate
     local crate_dir="$pkg_dir/crates/agent-booster-wasm"
     if [[ -d "$crate_dir" ]] && command -v wasm-pack &>/dev/null; then
       log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
@@ -574,9 +715,6 @@ run_build() {
         echo "$wasm_out" | tail -5 | while IFS= read -r line; do log "  $line"; done
       }
       if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
-        # Remove wasm-pack generated package.json and .gitignore — package.json
-        # causes npm to treat wasm/ as a nested package, and .gitignore contains
-        # "*" which makes npm exclude all wasm files from the tarball
         rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
         log "  WASM build succeeded"
       fi
@@ -590,9 +728,8 @@ run_build() {
     fi
   done
 
-  log "Build complete: ${built} built, ${skipped} skipped (unchanged), ${failed} failed"
+  log "Build complete: ${built} built, ${skipped} skipped, ${failed} failed"
 
-  # Summary: count all publishable @sparkleideas packages in the build dir
   local total_packages compiled_packages pre_built_packages
   total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
   compiled_packages=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
@@ -604,24 +741,13 @@ run_build() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 8: Test
+# Test (Layers 0-3)
 # ---------------------------------------------------------------------------
 
 run_tests() {
   local test_start_ns test_end_ns test_ms
 
-  # ── Layer 0: Codemod acceptance (verify scope rename) ──
-  log "Running codemod acceptance tests"
-  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
-  node "${SCRIPT_DIR}/test-codemod-acceptance.mjs" "${TEMP_DIR}" || {
-    log_error "Codemod acceptance tests failed"
-    return 1
-  }
-  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
-  log "Codemod acceptance tests passed (${test_ms}ms)"
-
-  # ── Layer 1: Unit tests (90 tests, ~0.2s) ──
+  # ── Layer 1: Unit tests ──
   log "Running unit tests"
   test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
   npm test --prefix "${PROJECT_DIR}" || {
@@ -632,12 +758,10 @@ run_tests() {
   test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
   log "Unit tests passed (${test_ms}ms)"
 
-  # ── Layer 2: Integration test (full pipeline against local Verdaccio) ──
-  # This catches missing packages, broken deps, and publish failures
-  # BEFORE we publish to real npm.
+  # ── Layer 2: Integration test (local Verdaccio) ──
   log "Running integration test (local Verdaccio dry run)"
   test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
-  bash "${SCRIPT_DIR}/test-integration.sh" --changed-packages "$REBUILD_PACKAGES" || {
+  bash "${SCRIPT_DIR}/test-integration.sh" || {
     log_error "Integration test failed — aborting before publish to npm"
     return 1
   }
@@ -645,15 +769,10 @@ run_tests() {
   test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
   log "Integration test passed (${test_ms}ms)"
 
-  # ── Layer 3: Release Qualification (ADR-0023 — functional smoke tests) ──
-  # Standalone script that publishes built packages to Verdaccio, installs them,
-  # and runs RQ-1..RQ-14. Requires dist/ from the TypeScript build (Phase 7).
+  # ── Layer 3: Release Qualification ──
   log "Running Release Qualification"
   test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
   local -a rq_args=(--build-dir "${TEMP_DIR}")
-  if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
-    rq_args+=(--changed-packages "$REBUILD_PACKAGES")
-  fi
   bash "${SCRIPT_DIR}/test-rq.sh" "${rq_args[@]}" || {
     log_error "Release Qualification FAILED"
     return 1
@@ -664,65 +783,42 @@ run_tests() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 9: Compute version
+# Read build version from fork package.json
 # ---------------------------------------------------------------------------
 
-compute_version() {
-  local upstream_version
-
-  # Read upstream version from the source package.json (CLI package)
-  upstream_version=$(node -e "console.log(require('${TEMP_DIR}/package.json').version)")
-
-  if [[ -z "${upstream_version}" ]]; then
-    log_error "Could not read upstream version from ${TEMP_DIR}/package.json"
-    return 1
-  fi
-
-  # Per-package version computation is handled by publish.mjs using
-  # config/published-versions.json. BUILD_VERSION here is used only for
-  # logging and GitHub release tagging — it reflects the CLI package.
-  BUILD_VERSION=$(node -e "
-    import { nextVersion } from '${SCRIPT_DIR}/publish.mjs';
-    import { readFileSync } from 'fs';
-    const pv = JSON.parse(readFileSync('${PROJECT_DIR}/config/published-versions.json', 'utf-8'));
-    console.log(nextVersion('${upstream_version}', pv['@sparkleideas/cli']));
-  ")
-
-  log "Computed CLI version: ${BUILD_VERSION} (upstream: ${upstream_version})"
+read_build_version() {
+  BUILD_VERSION=$(node -e "console.log(require('${TEMP_DIR}/package.json').version)" 2>/dev/null) || {
+    log_error "Could not read version from ${TEMP_DIR}/package.json"
+    BUILD_VERSION="0.0.0"
+  }
+  log "Build version: ${BUILD_VERSION}"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 10: Publish
+# Publish
 # ---------------------------------------------------------------------------
 
 run_publish() {
-  # Write .npmrc with auth token into temp dir
-  # Copy the user's .npmrc (contains auth token) into the build dir
+  # Copy .npmrc with auth token into temp dir
   cp "${HOME}/.npmrc" "${TEMP_DIR}/.npmrc" 2>/dev/null || {
-    # Fallback: write from NPM_TOKEN env var (set by systemd EnvironmentFile)
     echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN:-}" > "${TEMP_DIR}/.npmrc"
   }
 
-  log "Publishing packages (per-package versioning via config/published-versions.json)"
+  log "Publishing packages (versions from fork package.json files)"
   local -a publish_args=(--build-dir "${TEMP_DIR}")
-  if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
-    publish_args+=(--packages "$REBUILD_PACKAGES")
-    log "Incremental: publishing only changed packages"
-  fi
   node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}"
   log "Publish complete"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 11: GitHub prerelease notification
+# GitHub release notification
 # ---------------------------------------------------------------------------
 
 create_github_notification() {
   local tag="sparkleideas/v${BUILD_VERSION}"
   local current_local_head
-  current_local_head=$(git -C "${PROJECT_DIR}" rev-parse HEAD)
+  current_local_head=$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo "unknown")
 
-  # Read all published package versions for the release body
   local pkg_versions=""
   if [[ -f "${PROJECT_DIR}/config/published-versions.json" ]]; then
     pkg_versions=$(node -e "
@@ -734,12 +830,12 @@ create_github_notification() {
   fi
 
   local body
-  body="Automated build from upstream + patches.
+  body="Automated build from forks (ADR-0027).
 
 **CLI Version**: \`${BUILD_VERSION}\`
-**Upstream ruflo HEAD**: \`${NEW_RUFLO_HEAD:0:12}\`
-**Upstream agentic-flow HEAD**: \`${NEW_AGENTIC_HEAD:0:12}\`
-**Upstream ruv-FANN HEAD**: \`${NEW_FANN_HEAD:0:12}\`
+**Fork ruflo HEAD**: \`${NEW_RUFLO_HEAD:0:12}\`
+**Fork agentic-flow HEAD**: \`${NEW_AGENTIC_HEAD:0:12}\`
+**Fork ruv-FANN HEAD**: \`${NEW_FANN_HEAD:0:12}\`
 **Local commit**: \`${current_local_head:0:12}\`
 **Build timestamp**: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 
@@ -753,7 +849,7 @@ npx @sparkleideas/cli
 
 Promote to latest:
 \`\`\`bash
-npm run promote -- ${BUILD_VERSION}
+npm run promote
 \`\`\`"
 
   log "Creating GitHub prerelease: ${tag}"
@@ -762,7 +858,7 @@ npm run promote -- ${BUILD_VERSION}
     --title "@sparkleideas/cli ${BUILD_VERSION}" \
     --notes "${body}" \
     --prerelease \
-    --target "$(git -C "${PROJECT_DIR}" rev-parse HEAD)" \
+    --target "$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo HEAD)" \
     2>/dev/null || {
       log_error "Failed to create GitHub prerelease (non-fatal)"
     }
@@ -797,13 +893,14 @@ journalctl -u ruflo-sync --since '1 hour ago' --no-pager
     --body "${body}" \
     --label "build-failure" \
     2>/dev/null || log_error "Could not create GitHub issue (gh CLI failed)"
+
+  send_email "[ruflo] Build failure: ${phase}" "$body"
 }
 
 # ---------------------------------------------------------------------------
-# Run a phase with failure handling
+# Phase runner with timing
 # ---------------------------------------------------------------------------
 
-# Phase timing accumulator: "name:ms name:ms ..."
 PHASE_TIMINGS=""
 
 run_phase() {
@@ -816,7 +913,7 @@ run_phase() {
   if ! "$@"; then
     local code=$?
     create_failure_issue "${phase_name}" "${code}"
-    log_error "Phase '${phase_name}' failed — aborting (state NOT updated)"
+    log_error "Phase '${phase_name}' failed — aborting"
     exit 1
   fi
   local phase_end_ns
@@ -844,162 +941,63 @@ print_phase_summary() {
 }
 
 # ---------------------------------------------------------------------------
-# Main
+# Stage 3: Publish pipeline
 # ---------------------------------------------------------------------------
 
-main() {
-  log "=========================================="
-  log "ruflo sync-and-build starting"
-  log "=========================================="
+run_stage3_publish() {
+  log "────────────────────────────────────────────────"
+  log "Stage 3: Publish (detect merged PRs, build, publish)"
+  log "────────────────────────────────────────────────"
 
-  # Global timeout — 900s (Google "Large" size ceiling)
-  ( sleep 900; log_error "[TIMEOUT] sync-and-build.sh exceeded 900s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
-  GLOBAL_TIMEOUT_PID=$!
-
-  # Phase 1: Load state
-  load_state
-
-  # Phase 2: Check for upstream changes
-  local upstream_changed=false
-  local upstream_check_failed=false
-  local check_start_ns
-  check_start_ns=$(date +%s%N 2>/dev/null || echo 0)
-
-  NEW_RUFLO_HEAD=$(check_upstream "${UPSTREAM_RUFLO}" "${RUFLO_HEAD}" "ruflo") || upstream_check_failed=true
-  NEW_AGENTIC_HEAD=$(check_upstream "${UPSTREAM_AGENTIC}" "${AGENTIC_HEAD}" "agentic-flow") || upstream_check_failed=true
-  NEW_FANN_HEAD=$(check_upstream "${UPSTREAM_FANN}" "${FANN_HEAD}" "ruv-FANN") || upstream_check_failed=true
-
-  local check_end_ns
-  check_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$check_start_ns" != "0" && "$check_end_ns" != "0" ]]; then
-    local check_ms=$(( (check_end_ns - check_start_ns) / 1000000 ))
-    log "  Upstream checks completed in ${check_ms}ms"
-    PHASE_TIMINGS="${PHASE_TIMINGS} check-upstream:${check_ms}"
+  # Check for new merges to fork main branches
+  local has_merges=false
+  if check_merged_prs; then
+    has_merges=true
   fi
 
-  if [[ "${NEW_RUFLO_HEAD}" != "${RUFLO_HEAD}" && -n "${NEW_RUFLO_HEAD}" ]]; then
-    upstream_changed=true
-  fi
-  if [[ "${NEW_AGENTIC_HEAD}" != "${AGENTIC_HEAD}" && -n "${NEW_AGENTIC_HEAD}" ]]; then
-    upstream_changed=true
-  fi
-  if [[ "${NEW_FANN_HEAD}" != "${FANN_HEAD}" && -n "${NEW_FANN_HEAD}" ]]; then
-    upstream_changed=true
+  if [[ "$has_merges" == "false" && "$FORCE_BUILD" == "false" ]]; then
+    log "No new merges detected — skipping publish stage"
+    return 0
   fi
 
-  if [[ "${upstream_changed}" == "true" ]]; then
-    log "Upstream changes detected — will rebuild"
-  elif [[ "${upstream_check_failed}" == "true" ]]; then
-    log "Some upstream checks failed — will check local changes"
-  else
-    log "No upstream changes"
-  fi
+  # Bump versions in forks
+  run_phase "bump-versions" bump_fork_versions
 
-  # Phase 3: Check for local changes
-  local local_changed=false
-  if check_local_changes "${PATCH_HEAD}"; then
-    local_changed=true
-    log "Local changes detected — will rebuild"
-  else
-    log "No local changes"
-  fi
-
-  # Decide whether to build
-  if [[ "${upstream_changed}" == "false" && "${local_changed}" == "false" && "${FORCE_BUILD}" == "false" ]]; then
-    log "No changes detected — exiting (use --force to override)"
-    exit 0
-  fi
-
-  # Freshness check: if build-only and not forced, check manifest
-  if [[ "${BUILD_ONLY}" == "true" && "${FORCE_BUILD}" == "false" ]]; then
-    if check_build_freshness; then
-      print_phase_summary
-      log "=========================================="
-      log "Build is current — nothing to do"
-      log "=========================================="
-      exit 0
-    fi
-  fi
-
-  # Use last known HEADs if upstream checks failed
-  if [[ -z "${NEW_RUFLO_HEAD}" ]]; then
-    NEW_RUFLO_HEAD="${RUFLO_HEAD}"
-  fi
-  if [[ -z "${NEW_AGENTIC_HEAD}" ]]; then
-    NEW_AGENTIC_HEAD="${AGENTIC_HEAD}"
-  fi
-  if [[ -z "${NEW_FANN_HEAD}" ]]; then
-    NEW_FANN_HEAD="${FANN_HEAD}"
-  fi
-
-  # Phase 4: Pull upstream repos (skip if --build-only without --pull)
-  if [[ "${PULL_UPSTREAM}" == "true" || "${BUILD_ONLY}" == "false" ]]; then
-    run_phase "pull-ruflo" pull_upstream "${UPSTREAM_DIR_RUFLO}" "ruflo"
-    run_phase "pull-agentic" pull_upstream "${UPSTREAM_DIR_AGENTIC}" "agentic-flow"
-    run_phase "pull-fann" pull_upstream "${UPSTREAM_DIR_FANN}" "ruv-FANN"
-  else
-    log "Skipping upstream pull (use --pull to force)"
-  fi
-
-  # Phase 5: Copy source to temp directory
+  # Build pipeline: copy -> codemod -> build
   create_temp_dir
   run_phase "copy-source" copy_source
-
-  # Phase 6: Run codemod
   run_phase "codemod" run_codemod
-
-  # Phase 6.5: Change detection (ADR-0023, Decision 10)
-  # Must run AFTER codemod (hashes include codemod transforms) but BEFORE build
-  # (so we know which packages to skip in TypeScript compilation)
-  run_phase "detect-changes" detect_changes
-
-  # Phase 7: Build (must happen before patches — patches target compiled .js in dist/)
-  # Incremental: only builds packages in REBUILD_PACKAGES
   run_phase "build" run_build
-
-  # Phase 8: Apply patches (runs against compiled dist/src/*.js files)
-  run_phase "apply-patches" apply_patches
-
-  # Write build manifest (ADR-0026)
   write_build_manifest
 
-  # If --build-only, stop here (don't run tests or publish)
   if [[ "${BUILD_ONLY}" == "true" ]]; then
     print_phase_summary
-    log "=========================================="
-    log "Build complete (--build-only mode)"
-    log "Build artifacts at: ${TEMP_DIR}"
-    log "=========================================="
-    exit 0
+    log "Build complete (--build-only mode). Artifacts at: ${TEMP_DIR}"
+    return 0
   fi
 
-  # Phase 9: Test (Layers 0-3 — Gate 1)
+  # Test (L0-L3)
   run_phase "test" run_tests
 
-  # ═══════════════════ GATE 1 ═══════════════════════════════
-  # All pre-publish tests passed. If --test-only, stop here.
   if [[ "${TEST_ONLY}" == "true" ]]; then
     print_phase_summary
-    log "=========================================="
-    log "Gate 1 PASSED — all pre-publish tests pass (Layers 0-3)"
-    log "Stopping before publish (--test-only mode)"
-    log "=========================================="
-    exit 0
+    log "Gate 1 PASSED — all pre-publish tests pass (--test-only mode)"
+    return 0
   fi
 
-  # Phase 10: Compute version
-  run_phase "compute-version" compute_version
+  # Read version from fork package.json (no computation needed)
+  read_build_version
 
-  # Phase 11: Publish
+  # Publish to npm
   run_phase "publish" run_publish
 
-  # Phase 12: Post-publish acceptance tests (Layer 4)
-  # Validates the real published packages work end-to-end
-  # Wait for npm CDN to serve the newly published version before testing.
-  # Poll instead of fixed sleep — CDN propagation time varies (5-120s).
+  send_email "[ruflo] Published ${BUILD_VERSION}" \
+    "All packages published to npm as @prerelease.\nVersion: ${BUILD_VERSION}"
+
+  # Post-publish acceptance tests (Layer 4)
   log "Waiting for npm CDN to propagate ${BUILD_VERSION}..."
   local cdn_attempts=0
-  local cdn_max=12  # 12 * 10s = 120s max wait
+  local cdn_max=12
   while [[ $cdn_attempts -lt $cdn_max ]]; do
     local cdn_ver
     cdn_ver=$(npm view @sparkleideas/cli@prerelease version 2>/dev/null) || true
@@ -1014,6 +1012,7 @@ main() {
   if [[ $cdn_attempts -ge $cdn_max ]]; then
     log "WARNING: CDN propagation timed out after ${cdn_max}0s — running acceptance tests anyway"
   fi
+
   log "Running post-publish acceptance tests against version ${BUILD_VERSION}"
   local acceptance_passed=false
   if bash "${SCRIPT_DIR}/test-acceptance.sh" --version "${BUILD_VERSION}"; then
@@ -1021,26 +1020,27 @@ main() {
     acceptance_passed=true
   else
     log_error "WARNING: Acceptance tests failed after publish (packages are live)"
-    # Don't abort — packages are already published. Create issue instead.
     create_failure_issue "post-publish-acceptance" "$?"
+    send_email "[ruflo] Acceptance FAILED for ${BUILD_VERSION}" \
+      "Post-publish acceptance tests failed.\nPackages are live on @prerelease but NOT promoted to @latest."
   fi
 
-  # Phase 13: Auto-promote to @latest (ADR-0010 amendment)
-  # After acceptance tests pass, promote prerelease to @latest so users
-  # on `npx @sparkleideas/cli@latest` get the new version automatically.
+  # Auto-promote to @latest
   if [[ "$acceptance_passed" == true ]]; then
     log "Promoting ${BUILD_VERSION} to @latest"
-    if bash "${SCRIPT_DIR}/promote.sh" --yes "${BUILD_VERSION}"; then
+    if bash "${SCRIPT_DIR}/promote.sh" --yes; then
       log "Promotion to @latest complete"
+      send_email "[ruflo] Promoted ${BUILD_VERSION} to @latest" \
+        "All packages promoted to @latest.\nVersion: ${BUILD_VERSION}"
     else
-      log_error "WARNING: Promotion to @latest failed (packages remain on prerelease tag)"
+      log_error "WARNING: Promotion to @latest failed"
       create_failure_issue "promote-latest" "$?"
     fi
   else
     log "Skipping promotion to @latest — acceptance tests did not pass"
   fi
 
-  # Post-promotion smoke — verify @latest actually works
+  # Post-promotion smoke test
   if [[ "$acceptance_passed" == true ]]; then
     log "Running post-promotion smoke test..."
     local smoke_cache
@@ -1056,57 +1056,162 @@ main() {
     fi
   fi
 
-  # Phase 14: GitHub release notification
+  # GitHub release notification
   create_github_notification
 
-  # Phase 15: Update state (only after successful publish)
-  local current_local_head
-  current_local_head=$(git -C "${PROJECT_DIR}" rev-parse HEAD)
-
-  save_state \
-    "${NEW_RUFLO_HEAD}" \
-    "${NEW_AGENTIC_HEAD}" \
-    "${NEW_FANN_HEAD}" \
-    "${current_local_head}"
-
-  # Save package checksums for incremental builds (ADR-0023, Decision 10)
-  log "Saving package checksums for next incremental build"
-  local codemod_hash patch_dir_hash
-  codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
-  patch_dir_hash=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || patch_dir_hash=""
-  node -e "
-    import { computeAllHashes, saveChecksums } from '${SCRIPT_DIR}/package-hash.mjs';
-    import { readFileSync, readdirSync, statSync } from 'fs';
-    import { resolve, join } from 'path';
-    // Rebuild package map for the build dir
-    const map = new Map();
-    function walk(dir) {
-      try { for (const e of readdirSync(dir)) {
-        if (e === 'node_modules') continue;
-        const f = resolve(dir, e);
-        try { const s = statSync(f);
-          if (s.isDirectory()) walk(f);
-          else if (e === 'package.json') {
-            try { const p = JSON.parse(readFileSync(f, 'utf-8'));
-              if (p.name) map.set(p.name, dir);
-            } catch {}
-          }
-        } catch {}
-      }} catch {}
-    }
-    walk('${TEMP_DIR}');
-    const hashes = computeAllHashes('${TEMP_DIR}', map);
-    saveChecksums('${PROJECT_DIR}/config/package-checksums.json', hashes, {
-      codemod_hash: '${codemod_hash}',
-      patch_dir_hash: '${patch_dir_hash}',
-      generated_at: new Date().toISOString(),
-    });
-    console.log('Checksums saved for ' + Object.keys(hashes).length + ' packages');
-  " 2>&1 || log "WARNING: Failed to save checksums (non-fatal)"
+  # Save state after successful publish
+  save_state
 
   print_phase_summary
+  log "Stage 3 complete: ${BUILD_VERSION}"
+}
+
+# ---------------------------------------------------------------------------
+# Stage 1: Sync upstream pipeline
+# ---------------------------------------------------------------------------
+
+run_stage1_sync() {
+  log "────────────────────────────────────────────────"
+  log "Stage 1: Sync (fetch upstream, create sync branches)"
+  log "────────────────────────────────────────────────"
+
+  # Sync upstream into fork branches
+  if ! sync_upstream; then
+    # sync_upstream returns 1 if no changes or if it already created a
+    # PR for conflict/compile-error
+    log "Upstream sync: no action needed or error handled"
+    return 0
+  fi
+
+  # Build pipeline: copy -> codemod -> build -> test
+  create_temp_dir
+  run_phase "copy-source" copy_source
+  run_phase "codemod" run_codemod
+  run_phase "build" run_build
+
+  if [[ "${BUILD_ONLY}" == "true" ]]; then
+    print_phase_summary
+    log "Sync build complete (--build-only mode). Artifacts at: ${TEMP_DIR}"
+    # Switch forks back to main
+    for dir in "${FORK_DIRS[@]}"; do
+      git -C "${dir}" checkout main --quiet 2>/dev/null || true
+    done
+    return 0
+  fi
+
+  # Test (L0-L3) against the sync branch build
+  local tests_passed=false
+  if run_tests; then
+    tests_passed=true
+  fi
+
+  # Create PRs for each fork that was synced
+  for i in "${!FORK_NAMES[@]}"; do
+    local name="${FORK_NAMES[$i]}"
+    local dir="${FORK_DIRS[$i]}"
+
+    # Check if this fork is on a sync branch
+    local current_branch
+    current_branch=$(git -C "${dir}" branch --show-current 2>/dev/null) || continue
+    [[ "$current_branch" == sync/* ]] || continue
+
+    if [[ "$tests_passed" == "true" ]]; then
+      create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
+        "All tests passed (L0-L3). Ready for review and merge."
+      send_email "[ruflo] Sync PR ready for ${name}" \
+        "Upstream sync for ${name} is ready for review.\nBranch: ${current_branch}\nAll L0-L3 tests passed."
+    else
+      create_sync_pr "${dir}" "${name}" "${current_branch}" "test-failure" \
+        "Tests failed during sync validation. Review required."
+      send_email "[ruflo] Sync test failure for ${name}" \
+        "Upstream sync for ${name} failed tests.\nBranch: ${current_branch}\nManual review required."
+    fi
+
+    # Switch back to main
+    git -C "${dir}" checkout main --quiet 2>/dev/null || true
+  done
+
+  # Save upstream SHA state
+  save_state
+
+  print_phase_summary
+  log "Stage 1 complete"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+main() {
   log "=========================================="
-  log "Build complete: ${BUILD_VERSION}"
+  log "ruflo sync-and-build starting (ADR-0027)"
+  log "  --sync=${RUN_SYNC} --publish=${RUN_PUBLISH}"
+  log "  --test-only=${TEST_ONLY} --force=${FORCE_BUILD}"
+  log "  --build-only=${BUILD_ONLY} --pull=${PULL_UPSTREAM}"
+  log "=========================================="
+
+  # Global timeout — 900s
+  ( sleep 900; log_error "[TIMEOUT] sync-and-build.sh exceeded 900s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+  GLOBAL_TIMEOUT_PID=$!
+
+  # Load previous state
+  load_state
+
+  # --build-only mode: simplified pipeline (copy + codemod + build)
+  if [[ "${BUILD_ONLY}" == "true" ]]; then
+    # Read current fork HEADs
+    for i in "${!FORK_NAMES[@]}"; do
+      local dir="${FORK_DIRS[$i]}"
+      local name="${FORK_NAMES[$i]}"
+      if [[ -d "${dir}/.git" ]]; then
+        if [[ "${PULL_UPSTREAM}" == "true" ]]; then
+          log "Pulling fork: ${name}"
+          git -C "${dir}" fetch origin main --quiet 2>/dev/null || true
+          git -C "${dir}" reset --hard origin/main --quiet 2>/dev/null || true
+        fi
+        local sha
+        sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || sha=""
+        case "$name" in
+          ruflo)        NEW_RUFLO_HEAD="$sha" ;;
+          agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
+          ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+        esac
+      fi
+    done
+
+    # Check freshness unless --force
+    if [[ "${FORCE_BUILD}" == "false" ]] && check_build_freshness; then
+      print_phase_summary
+      log "Build is current — nothing to do"
+      exit 0
+    fi
+
+    create_temp_dir
+    run_phase "copy-source" copy_source
+    run_phase "codemod" run_codemod
+    run_phase "build" run_build
+    write_build_manifest
+
+    print_phase_summary
+    log "=========================================="
+    log "Build complete (--build-only mode)"
+    log "Build artifacts at: ${TEMP_DIR}"
+    log "=========================================="
+    exit 0
+  fi
+
+  # Stage 3 runs first: publish reviewed code
+  if [[ "${RUN_PUBLISH}" == "true" ]]; then
+    run_stage3_publish
+  fi
+
+  # Stage 1 runs second: sync new upstream
+  if [[ "${RUN_SYNC}" == "true" ]]; then
+    run_stage1_sync
+  fi
+
+  log "=========================================="
+  log "ruflo sync-and-build complete"
   log "=========================================="
 }
 

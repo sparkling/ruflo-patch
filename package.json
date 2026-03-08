@@ -12,6 +12,8 @@
     "test:all": "npm run preflight && npm run test:unit && npm run test:integration && npm run test:rq",
     "preflight": "node scripts/preflight.mjs",
     "prepublishOnly": "npm run preflight && npm run test:unit",
+    "sync": "bash scripts/sync-and-build.sh --sync",
+    "publish:fork": "bash scripts/sync-and-build.sh --publish",
     "deploy": "bash scripts/sync-and-build.sh",
     "deploy:dry-run": "bash scripts/sync-and-build.sh --test-only",
     "build:sync": "bash scripts/sync-and-build.sh",
@@ -38,11 +40,8 @@
   "files": [
     "bin",
     "lib",
-    "patch",
     "scripts",
-    "config",
-    "patch-all.sh",
-    "check-patches.sh"
+    "config"
   ],
   "keywords": [
     "ruflo",
