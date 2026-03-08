@@ -226,7 +226,7 @@ The build is orchestrated by `scripts/sync-and-build.sh` and runs these phases:
 2. **Check upstream** — `git ls-remote` against 3 repos (one HTTP request each)
 3. **Check local** — `git log` for changes to `patch/` or `scripts/`
 4. **Pull upstream** — `git fetch && git reset --hard origin/main` on each fork
-5. **Copy to temp** — Clean copy to `/tmp/ruflo-build-*`
+5. **Copy to temp** — Clean copy to `/tmp/ruflo-build` (stable, cached across runs)
 6. **Codemod** — `@claude-flow/*` → `@sparkleideas/*` (see `scripts/codemod.mjs`)
 7. **Apply patches** — All `patch/*/fix.py` scripts via `patch-all.sh`
 8. **Build** — `pnpm install && pnpm build`
@@ -242,15 +242,18 @@ If any phase fails, a GitHub Issue is created automatically. State is never upda
 
 | Command | Description |
 |---------|-------------|
-| `npm test` | Run unit test suite (78 tests) |
-| `npm run preflight` | Sync generated doc tables and validate consistency |
-| `npm run preflight:check` | CI mode — exits 1 if out of date |
-| `npm run codemod` | Run scope-rename codemod standalone |
-| `npm run publish:all` | Run topological publisher |
-| `npm run publish:dry-run` | Dry-run publish (no npm writes) |
-| `npm run build:sync` | Full build pipeline (sync-and-build.sh) |
+| `npm run build` | Build artifacts (cached at /tmp/ruflo-build, skips if fresh) |
+| `npm test` | All local tests: L0 (preflight) + L1 (unit) + L2 (integration) |
+| `npm run test:unit` | Unit tests only (93 tests, 0.2s) |
+| `npm run test:integration` | Pipeline mechanics against local Verdaccio |
+| `npm run test:rq` | Release qualification (14 RQ checks, requires build) |
+| `npm run test:acceptance` | Production verification against real npm |
+| `npm run test:all` | All pre-publish tests (L0-L3) |
+| `npm run deploy` | Full pipeline: build + test + publish + promote |
+| `npm run deploy:dry-run` | Full pipeline, stop before publish |
 | `npm run promote` | Promote a prerelease to `@latest` |
 | `npm run rollback` | Roll back `@latest` to previous version |
+| `npm run preflight` | Sync generated doc tables and validate consistency |
 | `npm run audit:imports` | Audit dynamic imports for codemod coverage |
 | `npm run upstream-log` | Show recent upstream releases |
 | `npm run systemd:install` | Install systemd timer and service units |
@@ -311,10 +314,12 @@ Three layers of testing:
 
 | Layer | What | How to run |
 |-------|------|------------|
-| **Unit** | 78 tests — codemod, pipeline logic, publish order, patches | `npm test` |
-| **Integration** | 9-phase build pipeline against local Verdaccio | `bash scripts/test-integration.sh` |
-| **Acceptance** | End-user commands (init, version, doctor, MCP) | `bash scripts/test-acceptance.sh` |
-| **CI Validation** | Health check (env, systemd, secrets, upstream clones) | `bash scripts/validate-ci.sh` |
+| **Unit (L1)** | 93 tests — codemod, pipeline logic, publish order, patches | `npm run test:unit` |
+| **Integration (L2)** | Pipeline mechanics against local Verdaccio | `npm run test:integration` |
+| **RQ (L3)** | 14 functional checks against built packages | `npm run test:rq` (requires `npm run build`) |
+| **Acceptance (L4)** | End-user commands against real npm | `npm run test:acceptance` |
+| **All local** | L0 + L1 + L2 (safe to commit?) | `npm test` |
+| **All pre-publish** | L0 + L1 + L2 + L3 | `npm run build && npm run test:all` |
 
 Unit tests run with `node:test` (no dependencies). Integration tests use an isolated Verdaccio instance with no npm proxy (`uplinks: {}`).
 
@@ -335,12 +340,14 @@ ruflo/
 │   └── categories.json              Defect prefix → label mapping
 ├── scripts/
 │   ├── sync-and-build.sh            Main build pipeline orchestrator
+│   ├── build.sh                     Standalone build wrapper (ADR-0026)
 │   ├── codemod.mjs                  Scope-rename codemod (@claude-flow → @sparkleideas)
 │   ├── publish.mjs                  Topological publisher (5 levels, 24 upstream packages)
 │   ├── promote.sh                   Promote prerelease to @latest
 │   ├── rollback.sh                  Roll back @latest to previous version
 │   ├── test-runner.mjs              Unit test runner
 │   ├── test-integration.sh          9-phase integration tests with Verdaccio
+│   ├── test-rq.sh                   Release qualification runner (ADR-0023)
 │   ├── test-acceptance.sh           End-user acceptance tests
 │   ├── validate-ci.sh               CI environment health check
 │   ├── audit-dynamic-imports.sh     Dynamic import inventory

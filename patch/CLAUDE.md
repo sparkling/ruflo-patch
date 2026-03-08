@@ -117,14 +117,14 @@ Both are idempotent.
 ### Step 5: Update and test
 
 ```bash
-npm run preflight && npm test
+npm run preflight && npm run test:unit
 ```
 
 ### Step 6: Deploy
 
 ```bash
 # Full pipeline: pull upstream → codemod → patch → build → publish
-npm run build:sync
+npm run deploy
 ```
 
 The build pipeline applies patches via `patch-all.sh --target <build-dir>`, then publishes
@@ -141,17 +141,17 @@ npm run test:integration
 - [ ] `README.md`, `fix.py`, `sentinel` created
 - [ ] Path variable in `lib/common.py` (if new file)
 - [ ] New prefix in `lib/categories.json` (if new category)
-- [ ] `npm run preflight && npm test` passes
+- [ ] `npm run preflight && npm run test:unit` passes
 - [ ] Commit
-- [ ] Deploy: `npm run build:sync`
+- [ ] Deploy: `npm run deploy`
 
 ## Patch Deployment Model
 
 Patches are baked into published `@sparkleideas/*` packages at build time (ADR-0024).
 
 1. **Author** — create `patch/{ORDER}-{ID}-{slug}/` with `fix.py`, `README.md`, `sentinel`
-2. **Test** — `npm run preflight && npm test`
-3. **Deploy** — `npm run build:sync` pulls upstream, runs codemod, applies patches
+2. **Test** — `npm run preflight && npm run test:unit`
+3. **Deploy** — `npm run deploy` pulls upstream, runs codemod, applies patches
    via `patch-all.sh --target <build-dir>`, then publishes patched packages to npm
 4. **Consume** — users run `npx @sparkleideas/cli` which pulls the published (already-patched) version
 

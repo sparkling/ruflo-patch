@@ -39,7 +39,7 @@ while [[ $# -gt 0 ]]; do
       echo "Usage: bash scripts/test-rq.sh --build-dir <path> [--port 4873] [--changed-packages <json|\"all\">]"
       echo ""
       echo "Options:"
-      echo "  --build-dir <path>         Built package directory (required, must contain dist/)"
+      echo "  --build-dir <path>         Built package directory (default: /tmp/ruflo-build)"
       echo "  --port <port>              Verdaccio port (default: 4873)"
       echo "  --changed-packages <json>  JSON array of changed packages, or \"all\" (default: all)"
       exit 0
@@ -52,9 +52,13 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "$BUILD_DIR" ]]; then
-  echo "Error: --build-dir is required" >&2
-  echo "Usage: bash scripts/test-rq.sh --build-dir <path>" >&2
-  exit 1
+  BUILD_DIR="/tmp/ruflo-build"
+  if [[ ! -f "${BUILD_DIR}/.build-manifest.json" ]]; then
+    echo "Error: no build artifacts at ${BUILD_DIR}" >&2
+    echo "Run 'npm run build' first, or pass --build-dir <path>" >&2
+    exit 1
+  fi
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Using cached build at ${BUILD_DIR}" >&2
 fi
 
 # ── Logging ─────────────────────────────────────────────────────────

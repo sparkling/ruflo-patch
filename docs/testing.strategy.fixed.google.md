@@ -60,7 +60,7 @@ Google's release pipeline has four phases. We map them to six layers:
                       │  Large  │  14 tests · real npm · confirmation
                     ┌─┴─────────┴─┐
                     │   Layer 3   │  Release Qualification (pre-publish)
-                    │   Medium    │  12 tests · Verdaccio install · discovery
+                    │   Medium    │  14 tests · Verdaccio install · discovery
                   ┌─┴─────────────┴─┐
                   │    Layer 2      │  Build Verification
                   │    Medium       │  8 phases · Verdaccio publish + install
@@ -260,9 +260,9 @@ packages:
 - **Standalone runner** -- `bash scripts/test-rq.sh --build-dir <path>` can be run independently against any build directory with `dist/`
 - **Uses global Verdaccio** -- health-checks the permanent service at `localhost:4873`, clears `@sparkleideas/*`, publishes built packages, installs into fresh temp dir
 - **Hard fail** -- any RQ failure aborts the pipeline before publish to real npm
-- **Timeout**: 120s global with SIGTERM→5s→SIGKILL escalation
+- **Timeout**: 180s global with SIGTERM→5s→SIGKILL escalation
 - **No side effects** -- uses `--no-save` when publishing to Verdaccio, so `config/published-versions.json` is not mutated
-- **Estimated duration**: ~30s
+- **Estimated duration**: ~17s (standalone against cached build)
 
 **Key principle**: Layer 3 is where bugs are **discovered**. If a functional defect exists, it is caught here -- before any package reaches real npm. Layer 4 (production verification) should never be the first time a bug is found.
 
@@ -381,11 +381,15 @@ Verdaccio's persistent storage (`~/.verdaccio/storage`) acts as a package-level 
 |  Phase 13: Promote --> @latest (only if Gate 2 passes)            |
 +------------------------------------------------------------------+
 
-STANDALONE USE:
-  test-integration.sh  -> Layer 2 only (pipeline mechanics, no RQ)
-  test-rq.sh           -> Layer 3 only (requires --build-dir with dist/)
-  test-acceptance.sh   -> Layer 4 only (post-publish verification)
-  sync-and-build.sh    -> ALL layers (calls test-integration.sh + test-rq.sh)
+STANDALONE USE (ADR-0026):
+  npm run build          -> Build only (cached at /tmp/ruflo-build)
+  npm run test:unit      -> Layer 1 only (unit tests, 0.2s)
+  npm run test:integration -> Layer 2 only (pipeline mechanics)
+  npm run test:rq        -> Layer 3 only (requires npm run build first)
+  npm run test:acceptance -> Layer 4 only (post-publish verification)
+  npm test               -> L0 + L1 + L2 ("safe to commit?")
+  npm run test:all       -> L0 + L1 + L2 + L3 ("safe to publish?")
+  npm run deploy         -> ALL layers (build + test + publish + promote)
 ```
 
 ### 4.2 Verdaccio Lifecycle
@@ -502,7 +506,7 @@ Deployment Pipeline (sync-and-build.sh):
   |  Layer 1: Unit tests (93)                |
   |  Layer 2: Pipeline mechanics             |
   |           (test-integration.sh, no RQ)   |
-  |  Layer 3: Release qualification (12 RQ)  |  <- NEW
+  |  Layer 3: Release qualification (14 RQ)  |
   |           (against BUILT packages)       |
   |                                          |
   |  "Packages install AND work"             |
@@ -567,14 +571,16 @@ Every bug caught at Layer 3 (Release Qualification) instead of Layer 4 (Producti
 
 | Change Type | Required Tests | Command |
 |-------------|---------------|---------|
-| Patch `fix.py` | Unit + preflight + patch-all + check-patches | `npm run preflight && npm test && bash patch-all.sh --global && bash check-patches.sh` |
-| Codemod change | Unit + integration (pipeline mechanics) | `npm test && bash scripts/test-integration.sh` |
-| Pipeline script change | Unit + integration (pipeline mechanics) | `npm test && bash scripts/test-integration.sh` |
-| Deploy to npm | ALL layers including RQ (automatic) | `bash scripts/sync-and-build.sh` |
-| Verify live packages | Production verification only | `bash scripts/test-acceptance.sh` |
-| New machine setup | Environment validation | `bash scripts/validate-ci.sh` |
+| Patch `fix.py` | Preflight + unit | `npm run preflight && npm run test:unit` |
+| Codemod change | All local (L0+L1+L2) | `npm test` |
+| Pipeline script change | All local (L0+L1+L2) | `npm test` |
+| Build/RQ script change | All local + RQ | `npm test && npm run build && npm run test:rq` |
+| Pre-publish verification | All pre-publish (L0-L3) | `npm run build && npm run test:all` |
+| Deploy to npm | ALL layers (automatic) | `npm run deploy` |
+| Verify live packages | Production verification only | `npm run test:acceptance` |
+| New machine setup | Environment validation | `npm run validate` |
 
-**Important**: `test-integration.sh` does NOT run RQ (Layer 3). RQ requires built TypeScript artifacts that only exist during deployment (`sync-and-build.sh`). Running `test-integration.sh` alone validates Layer 2 (pipeline mechanics). Only `sync-and-build.sh` runs all layers including RQ.
+**Important**: Each test layer is independently runnable (ADR-0026). `npm run test:rq` runs standalone against cached build artifacts at `/tmp/ruflo-build`. Run `npm run build` first to create or refresh the cache. `npm run deploy` still runs all layers as a monolithic pipeline.
 
 ### 6.5 Automated Schedule
 

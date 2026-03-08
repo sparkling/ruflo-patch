@@ -6,6 +6,8 @@
 # Flags:
 #   --test-only   Stop after Gate 1 (Layers 0-3 pass). No publish, no deploy.
 #   --force       Build even when no upstream/local changes detected.
+#   --build-only  Stop after Phase 8 (build+patch). No tests, no publish.
+#   --pull        Pull upstream repos even in --build-only mode.
 #
 # See: ADR-0009 (systemd timer), ADR-0011 (dual trigger),
 #      ADR-0012 (version numbering), ADR-0015 (first-publish bootstrap),
@@ -19,10 +21,14 @@ set -euo pipefail
 
 TEST_ONLY=false
 FORCE_BUILD=false
+BUILD_ONLY=false
+PULL_UPSTREAM=false
 for arg in "$@"; do
   case "$arg" in
     --test-only) TEST_ONLY=true ;;
     --force)     FORCE_BUILD=true ;;
+    --build-only) BUILD_ONLY=true ;;
+    --pull)       PULL_UPSTREAM=true ;;
   esac
 done
 
@@ -68,7 +74,7 @@ cleanup() {
   if [[ -n "${GLOBAL_TIMEOUT_PID}" ]]; then
     kill "${GLOBAL_TIMEOUT_PID}" 2>/dev/null || true
   fi
-  if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" ]]; then
+  if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" && "${BUILD_ONLY}" != "true" ]]; then
     log "Cleaning up temp directory: ${TEMP_DIR}"
     rm -rf "${TEMP_DIR}"
   fi
@@ -209,8 +215,14 @@ pull_upstream() {
 # ---------------------------------------------------------------------------
 
 create_temp_dir() {
-  TEMP_DIR=$(mktemp -d /tmp/ruflo-build-XXXXX)
-  log "Created temp directory: ${TEMP_DIR}"
+  if [[ "${BUILD_ONLY}" == "true" ]]; then
+    TEMP_DIR="/tmp/ruflo-build"
+    mkdir -p "${TEMP_DIR}"
+    log "Using stable build directory: ${TEMP_DIR}"
+  else
+    TEMP_DIR=$(mktemp -d /tmp/ruflo-build-XXXXX)
+    log "Created temp directory: ${TEMP_DIR}"
+  fi
 }
 
 copy_source() {
@@ -254,6 +266,71 @@ apply_patches() {
   log "Applying patches via patch-all.sh --target ${TEMP_DIR}"
   bash "${PROJECT_DIR}/patch-all.sh" --target "${TEMP_DIR}"
   log "Patches applied"
+}
+
+# ---------------------------------------------------------------------------
+# Build Manifest (ADR-0026)
+# ---------------------------------------------------------------------------
+
+STABLE_BUILD_DIR="/tmp/ruflo-build"
+
+write_build_manifest() {
+  local manifest="${TEMP_DIR}/.build-manifest.json"
+  local codemod_hash patch_dir_hash
+  codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
+  patch_dir_hash=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || patch_dir_hash=""
+
+  cat > "$manifest" <<MANIFESTEOF
+{
+  "version": 1,
+  "built_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "ruflo_head": "${NEW_RUFLO_HEAD:-}",
+  "agentic_head": "${NEW_AGENTIC_HEAD:-}",
+  "fann_head": "${NEW_FANN_HEAD:-}",
+  "patch_head": "$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo unknown)",
+  "codemod_hash": "${codemod_hash}",
+  "patch_dir_hash": "${patch_dir_hash}",
+  "packages_built": $(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l),
+  "rebuild_packages": $(echo "${REBUILD_PACKAGES}" | python3 -c 'import sys,json; d=sys.stdin.read().strip(); print(json.dumps(d) if d in ("all","[]") else d)' 2>/dev/null || echo '"all"')
+}
+MANIFESTEOF
+  log "Build manifest written to ${manifest}"
+}
+
+check_build_freshness() {
+  local manifest="${STABLE_BUILD_DIR}/.build-manifest.json"
+  if [[ ! -f "$manifest" ]]; then
+    log "No build manifest found — will build"
+    return 1
+  fi
+
+  # Read stored values
+  local stored
+  stored=$(node -e "
+    const m = JSON.parse(require('fs').readFileSync('${manifest}', 'utf-8'));
+    console.log([m.ruflo_head, m.agentic_head, m.fann_head, m.codemod_hash, m.patch_dir_hash].join(':'));
+  " 2>/dev/null) || { log "Cannot read manifest — will build"; return 1; }
+
+  local stored_ruflo stored_agentic stored_fann stored_codemod stored_patch
+  IFS=':' read -r stored_ruflo stored_agentic stored_fann stored_codemod stored_patch <<< "$stored"
+
+  # Compute current hashes
+  local current_codemod current_patch
+  current_codemod=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || current_codemod=""
+  current_patch=$(find "${PROJECT_DIR}/lib/common.py" "${PROJECT_DIR}/patch" -type f 2>/dev/null | sort | xargs sha256sum 2>/dev/null | sha256sum | cut -d' ' -f1) || current_patch=""
+
+  # Compare
+  if [[ "${stored_ruflo}" == "${NEW_RUFLO_HEAD}" && \
+        "${stored_agentic}" == "${NEW_AGENTIC_HEAD}" && \
+        "${stored_fann}" == "${NEW_FANN_HEAD}" && \
+        "${stored_codemod}" == "${current_codemod}" && \
+        "${stored_patch}" == "${current_patch}" ]]; then
+    log "Build is current (manifest matches) — skipping build"
+    return 0
+  fi
+
+  log "Build is stale — will rebuild"
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -565,12 +642,11 @@ run_tests() {
   # and runs RQ-1..RQ-14. Requires dist/ from the TypeScript build (Phase 7).
   log "Running Release Qualification"
   test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
-  local rq_args="--build-dir ${TEMP_DIR}"
+  local -a rq_args=(--build-dir "${TEMP_DIR}")
   if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
-    rq_args="${rq_args} --changed-packages '${REBUILD_PACKAGES}'"
+    rq_args+=(--changed-packages "$REBUILD_PACKAGES")
   fi
-  # shellcheck disable=SC2086
-  bash "${SCRIPT_DIR}/test-rq.sh" ${rq_args} || {
+  bash "${SCRIPT_DIR}/test-rq.sh" "${rq_args[@]}" || {
     log_error "Release Qualification FAILED"
     return 1
   }
@@ -620,13 +696,12 @@ run_publish() {
   }
 
   log "Publishing packages (per-package versioning via config/published-versions.json)"
-  local publish_args=""
+  local -a publish_args=(--build-dir "${TEMP_DIR}")
   if [[ "$REBUILD_PACKAGES" != "all" && "$REBUILD_PACKAGES" != "[]" ]]; then
-    publish_args="--packages '${REBUILD_PACKAGES}'"
+    publish_args+=(--packages "$REBUILD_PACKAGES")
     log "Incremental: publishing only changed packages"
   fi
-  # shellcheck disable=SC2086
-  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${TEMP_DIR}" ${publish_args}
+  node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}"
   log "Publish complete"
 }
 
@@ -827,6 +902,17 @@ main() {
     exit 0
   fi
 
+  # Freshness check: if build-only and not forced, check manifest
+  if [[ "${BUILD_ONLY}" == "true" && "${FORCE_BUILD}" == "false" ]]; then
+    if check_build_freshness; then
+      print_phase_summary
+      log "=========================================="
+      log "Build is current — nothing to do"
+      log "=========================================="
+      exit 0
+    fi
+  fi
+
   # Use last known HEADs if upstream checks failed
   if [[ -z "${NEW_RUFLO_HEAD}" ]]; then
     NEW_RUFLO_HEAD="${RUFLO_HEAD}"
@@ -838,10 +924,14 @@ main() {
     NEW_FANN_HEAD="${FANN_HEAD}"
   fi
 
-  # Phase 4: Pull upstream repos
-  run_phase "pull-ruflo" pull_upstream "${UPSTREAM_DIR_RUFLO}" "ruflo"
-  run_phase "pull-agentic" pull_upstream "${UPSTREAM_DIR_AGENTIC}" "agentic-flow"
-  run_phase "pull-fann" pull_upstream "${UPSTREAM_DIR_FANN}" "ruv-FANN"
+  # Phase 4: Pull upstream repos (skip if --build-only without --pull)
+  if [[ "${PULL_UPSTREAM}" == "true" || "${BUILD_ONLY}" == "false" ]]; then
+    run_phase "pull-ruflo" pull_upstream "${UPSTREAM_DIR_RUFLO}" "ruflo"
+    run_phase "pull-agentic" pull_upstream "${UPSTREAM_DIR_AGENTIC}" "agentic-flow"
+    run_phase "pull-fann" pull_upstream "${UPSTREAM_DIR_FANN}" "ruv-FANN"
+  else
+    log "Skipping upstream pull (use --pull to force)"
+  fi
 
   # Phase 5: Copy source to temp directory
   create_temp_dir
@@ -861,6 +951,19 @@ main() {
 
   # Phase 8: Apply patches (runs against compiled dist/src/*.js files)
   run_phase "apply-patches" apply_patches
+
+  # Write build manifest (ADR-0026)
+  write_build_manifest
+
+  # If --build-only, stop here (don't run tests or publish)
+  if [[ "${BUILD_ONLY}" == "true" ]]; then
+    print_phase_summary
+    log "=========================================="
+    log "Build complete (--build-only mode)"
+    log "Build artifacts at: ${TEMP_DIR}"
+    log "=========================================="
+    exit 0
+  fi
 
   # Phase 9: Test (Layers 0-3 — Gate 1)
   run_phase "test" run_tests

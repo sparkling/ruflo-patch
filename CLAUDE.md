@@ -42,20 +42,29 @@
 ## Build & Test
 
 ```bash
-# Test
+# Build artifacts (cached at /tmp/ruflo-build, skips if fresh)
+npm run build
+
+# All local tests: L0 (preflight) + L1 (unit) + L2 (integration)
 npm test
 
-# Preflight
-npm run preflight
+# Unit tests only (tight inner loop, 0.2s)
+npm run test:unit
 
 # Integration test (pipeline mechanics, local Verdaccio)
 npm run test:integration
 
-# Release qualification (build + test, no publish)
+# Release qualification (14 RQ checks, requires prior build)
 npm run test:rq
 
-# Deploy (full pipeline: upstream → codemod → patch → build → publish)
-npm run build:sync
+# All pre-publish tests: L0 + L1 + L2 + L3
+npm run test:all
+
+# Deploy (full pipeline: build + test + publish + promote)
+npm run deploy
+
+# Dry run (full pipeline, stop before publish)
+npm run deploy:dry-run
 
 # Acceptance test (verify live packages on real npm)
 npm run test:acceptance
