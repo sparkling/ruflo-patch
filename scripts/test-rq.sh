@@ -66,8 +66,8 @@ log_error() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2
 }
 
-# ── Global timeout: 120s with SIGTERM→5s→SIGKILL escalation ────────
-( sleep 120; log_error "[TIMEOUT] test-rq.sh exceeded 120s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+# ── Global timeout: 180s with SIGTERM→5s→SIGKILL escalation ────────
+( sleep 180; log_error "[TIMEOUT] test-rq.sh exceeded 180s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup trap ────────────────────────────────────────────────────
@@ -75,9 +75,6 @@ cleanup() {
   kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
   if [[ -n "$RQ_TEMP" && -d "$RQ_TEMP" ]]; then
     rm -rf "$RQ_TEMP"
-  fi
-  if [[ -n "${RQ_NPX_CACHE:-}" && -d "${RQ_NPX_CACHE:-}" ]]; then
-    rm -rf "$RQ_NPX_CACHE"
   fi
 }
 trap cleanup EXIT INT TERM
@@ -112,13 +109,12 @@ fi
 log "Publishing built packages to Verdaccio..."
 npm config set "//localhost:${RQ_PORT}/:_authToken" "test-token" 2>/dev/null || true
 
-local_publish_args="--no-rate-limit --no-save"
+publish_args=(--no-rate-limit --no-save)
 if [[ "$CHANGED_PACKAGES" != "all" && "$CHANGED_PACKAGES" != "[]" ]]; then
-  local_publish_args="--no-rate-limit --no-save --packages '${CHANGED_PACKAGES}'"
+  publish_args+=(--packages "$CHANGED_PACKAGES")
 fi
-# shellcheck disable=SC2086
 NPM_CONFIG_REGISTRY="http://localhost:${RQ_PORT}" \
-  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${BUILD_DIR}" ${local_publish_args} 2>&1 || {
+  node "${SCRIPT_DIR}/publish.mjs" --build-dir "${BUILD_DIR}" "${publish_args[@]}" 2>&1 || {
   log_error "Failed to publish to Verdaccio"
   exit 1
 }
@@ -132,11 +128,23 @@ if [[ -f "${PROJECT_DIR}/package.json" ]]; then
     npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || log "  wrapper publish skipped (may already exist)"
 fi
 
-# ── Clear npx cache so npx fetches from Verdaccio, not real npm ──
-# npm cache clean only clears HTTP cache; npx has its own resolution cache
-# in ~/.npm/_npx/ that must also be purged for @sparkleideas entries
-npm cache clean --force 2>/dev/null || true
+# ── Selective npm cache clear (ADR-0025) ──────────────────────────
+# Two caches to clear — keep external deps (better-sqlite3, onnxruntime) cached:
+#   _npx/     — npx resolution trees: always clear ALL @sparkleideas (cheap,
+#               prevents 77s hangs from stale real-npm resolution entries)
+#   _cacache/ — HTTP metadata + tarballs: clear only changed packages (expensive)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
+if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
+  grep -rl "sparkleideas" "${HOME}/.npm/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
+else
+  for pkg in $(echo "$CHANGED_PACKAGES" | node -e "
+    JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))
+      .forEach(p => console.log(p.replace('@sparkleideas/','')))
+  " 2>/dev/null); do
+    grep -rl "\"@sparkleideas/${pkg}\"" "${HOME}/.npm/_cacache/index-v5/" 2>/dev/null \
+      | xargs rm -f 2>/dev/null || true
+  done
+fi
 
 # ── Install packages into temp dir ──────────────────────────────────
 RQ_TEMP=$(mktemp -d /tmp/ruflo-rq-XXXXX)
@@ -163,9 +171,24 @@ REGISTRY="http://localhost:${RQ_PORT}"
 PKG="@sparkleideas/cli"
 TEMP_DIR="$RQ_TEMP"
 
-# Use a fresh npm cache for npx to avoid stale entries from real npm.
-# Without this, npx hangs ~77s trying to resolve from cached real-npm entries.
-RQ_NPX_CACHE=$(mktemp -d /tmp/ruflo-rq-npxcache-XXXXX)
+# Use a stable cache dir so external deps persist across runs (ADR-0025).
+# Isolated from ~/.npm to avoid stale real-npm metadata, but NOT deleted on
+# exit so external deps (better-sqlite3, onnxruntime) stay cached.
+RQ_NPX_CACHE="/tmp/ruflo-rq-npxcache"
+mkdir -p "$RQ_NPX_CACHE"
+# Clear @sparkleideas entries from the persistent cache (same selective logic)
+find "$RQ_NPX_CACHE/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
+if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
+  grep -rl "sparkleideas" "$RQ_NPX_CACHE/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
+else
+  for pkg in $(echo "$CHANGED_PACKAGES" | node -e "
+    JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))
+      .forEach(p => console.log(p.replace('@sparkleideas/','')))
+  " 2>/dev/null); do
+    grep -rl "\"@sparkleideas/${pkg}\"" "$RQ_NPX_CACHE/_cacache/index-v5/" 2>/dev/null \
+      | xargs rm -f 2>/dev/null || true
+  done
+fi
 export NPM_CONFIG_CACHE="$RQ_NPX_CACHE"
 
 # Define run_timed for the shared library
@@ -247,6 +270,7 @@ run_rq_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
 run_rq_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
 run_rq_check "RQ-12" "Plugins SDK"         check_plugins_sdk
 run_rq_check "RQ-13" "@latest resolves"    check_latest_resolves
+run_rq_check "RQ-14" "ruflo init --full"   check_ruflo_init_full
 
 log "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
 

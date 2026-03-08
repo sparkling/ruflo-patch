@@ -271,6 +271,7 @@ run_acceptance_check "A10" "Neural training"     check_neural_training
 run_acceptance_check "A13" "Agent booster import" check_agent_booster_esm
 run_acceptance_check "A14" "Agent booster binary" check_agent_booster_bin
 run_acceptance_check "A15" "Plugins SDK import"  check_plugins_sdk
+run_acceptance_check "A17" "ruflo init --full"   check_ruflo_init_full
 
 # Registry-specific test (Layer 4 only)
 echo "Running A16: Plugin install..."

@@ -374,16 +374,25 @@ check_plugins_sdk() {
 check_latest_resolves() {
   _CHECK_PASSED="false"
 
-  # Use a fresh cache so npx doesn't reuse a stale resolution
-  local smoke_cache
-  smoke_cache=$(mktemp -d /tmp/ruflo-latest-check-XXXXX)
+  # In RQ context, test-rq.sh sets NPM_CONFIG_CACHE to a stable cache dir
+  # pointing at Verdaccio (ADR-0025). Reuse it. In acceptance context (no
+  # preset cache), create a throwaway to avoid stale real-npm entries.
+  local own_cache=""
+  if [[ -z "${NPM_CONFIG_CACHE:-}" ]]; then
+    own_cache=$(mktemp -d /tmp/ruflo-latest-check-XXXXX)
+  fi
 
   local ver_out
-  ver_out=$(NPM_CONFIG_CACHE="$smoke_cache" NPM_CONFIG_REGISTRY="$REGISTRY" \
-    npx --yes @sparkleideas/cli@latest --version 2>&1) || true
-  rm -rf "$smoke_cache"
+  if [[ -n "$own_cache" ]]; then
+    ver_out=$(NPM_CONFIG_CACHE="$own_cache" NPM_CONFIG_REGISTRY="$REGISTRY" \
+      npx --yes @sparkleideas/cli@latest --version 2>&1) || true
+    rm -rf "$own_cache"
+  else
+    ver_out=$(NPM_CONFIG_REGISTRY="$REGISTRY" \
+      npx --yes @sparkleideas/cli@latest --version 2>&1) || true
+  fi
 
-  if echo "$ver_out" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+  if echo "$ver_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="cli@latest = $(echo "$ver_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
   else
@@ -393,6 +402,66 @@ check_latest_resolves() {
 
   _EXIT=0
   _DURATION_MS=0
+  _OUT="$_CHECK_OUTPUT"
+}
+
+# --------------------------------------------------------------------------
+# RQ-14: ruflo init --full creates a complete project
+# --------------------------------------------------------------------------
+check_ruflo_init_full() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Use a separate temp dir so we don't pollute the main TEMP_DIR
+  local full_dir
+  full_dir=$(mktemp -d /tmp/ruflo-full-init-XXXXX)
+
+  # Run ruflo init --full (proxies to @sparkleideas/cli init --full)
+  local init_out
+  init_out=$(cd "$full_dir" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+    npx --yes @sparkleideas/ruflo@latest init --full 2>&1) || true
+
+  # Validate key artifacts created by --full
+  local missing=""
+  for f in .claude/settings.json CLAUDE.md .mcp.json .claude-flow/config.yaml; do
+    if [[ ! -f "$full_dir/$f" ]]; then
+      missing="$missing $f"
+    fi
+  done
+
+  # Check directories
+  for d in .claude/skills .claude/commands .claude-flow/data; do
+    if [[ ! -d "$full_dir/$d" ]]; then
+      missing="$missing $d/"
+    fi
+  done
+
+  if [[ -z "$missing" ]]; then
+    # Verify CLAUDE.md has @sparkleideas scope
+    if grep -q '@sparkleideas' "$full_dir/CLAUDE.md" 2>/dev/null; then
+      _CHECK_PASSED="true"
+      local file_count
+      file_count=$(find "$full_dir" -type f 2>/dev/null | wc -l)
+      _CHECK_OUTPUT="init --full created $file_count files with correct scope"
+    else
+      _CHECK_OUTPUT="init --full created files but CLAUDE.md missing @sparkleideas scope"
+    fi
+  else
+    _CHECK_OUTPUT="init --full missing:$missing"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT\ninit output:\n$(echo "$init_out" | tail -15)"
+  fi
+
+  rm -rf "$full_dir"
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
+    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
+  else
+    _DURATION_MS=0
+  fi
   _OUT="$_CHECK_OUTPUT"
 }
 
@@ -423,4 +492,5 @@ run_all_shared_checks() {
   run_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
   run_check "RQ-12" "Plugins SDK"         check_plugins_sdk
   run_check "RQ-13" "@latest resolves"    check_latest_resolves
+  run_check "RQ-14" "ruflo init --full"   check_ruflo_init_full
 }

@@ -124,7 +124,7 @@ npm run preflight && npm test
 
 ```bash
 # Full pipeline: pull upstream → codemod → patch → build → publish
-bash scripts/sync-and-build.sh
+npm run build:sync
 ```
 
 The build pipeline applies patches via `patch-all.sh --target <build-dir>`, then publishes
@@ -133,7 +133,7 @@ the patched result to npm as `@sparkleideas/*`. Users get fixes via `npx @sparkl
 For testing the pipeline without publishing to real npm:
 
 ```bash
-bash scripts/test-integration.sh
+npm run test:integration
 ```
 
 ### Checklist
@@ -143,7 +143,7 @@ bash scripts/test-integration.sh
 - [ ] New prefix in `lib/categories.json` (if new category)
 - [ ] `npm run preflight && npm test` passes
 - [ ] Commit
-- [ ] Deploy: `bash scripts/sync-and-build.sh`
+- [ ] Deploy: `npm run build:sync`
 
 ## Patch Deployment Model
 
@@ -151,7 +151,7 @@ Patches are baked into published `@sparkleideas/*` packages at build time (ADR-0
 
 1. **Author** — create `patch/{ORDER}-{ID}-{slug}/` with `fix.py`, `README.md`, `sentinel`
 2. **Test** — `npm run preflight && npm test`
-3. **Deploy** — `bash scripts/sync-and-build.sh` pulls upstream, runs codemod, applies patches
+3. **Deploy** — `npm run build:sync` pulls upstream, runs codemod, applies patches
    via `patch-all.sh --target <build-dir>`, then publishes patched packages to npm
 4. **Consume** — users run `npx @sparkleideas/cli` which pulls the published (already-patched) version
 
