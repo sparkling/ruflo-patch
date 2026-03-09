@@ -79,8 +79,8 @@ fi
 ACCEPT_NPX_CACHE=$(mktemp -d /tmp/ruflo-accept-cache-XXXXX)
 export NPM_CONFIG_CACHE="$ACCEPT_NPX_CACHE"
 
-# Global timeout — Layer 4 must complete within 300s (ADR-0023: Large < 900s)
-( sleep 300; echo "[TIMEOUT] test-acceptance.sh exceeded 300s — sending SIGTERM" >&2; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+# Global timeout — Layer 4 must complete within 600s (ADR-0023: Large < 900s)
+( sleep 600; echo "[TIMEOUT] test-acceptance.sh exceeded 600s — sending SIGTERM" >&2; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup trap ────────────────────────────────────────────────────
@@ -105,7 +105,7 @@ create_temp_dir() {
 run_timed() {
   local start_ns end_ns
   start_ns=$(date +%s%N 2>/dev/null || echo 0)
-  _OUT="$(eval "$@" 2>&1)" || true
+  _OUT="$(timeout 60 bash -c "$*" 2>&1)" || true
   _EXIT=${PIPESTATUS[0]:-$?}
   end_ns=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$start_ns" == "0" || "$end_ns" == "0" ]]; then

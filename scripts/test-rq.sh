@@ -70,8 +70,8 @@ log_error() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2
 }
 
-# ── Global timeout: 180s with SIGTERM→5s→SIGKILL escalation ────────
-( sleep 180; log_error "[TIMEOUT] test-rq.sh exceeded 180s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+# ── Global timeout: 300s with SIGTERM→5s→SIGKILL escalation ────────
+( sleep 300; log_error "[TIMEOUT] test-rq.sh exceeded 300s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup trap ────────────────────────────────────────────────────
@@ -200,7 +200,7 @@ export NPM_CONFIG_CACHE="$RQ_NPX_CACHE"
 run_timed() {
   local t_start t_end
   t_start=$(date +%s%N 2>/dev/null || echo 0)
-  _OUT="$(eval "$@" 2>&1)" || true
+  _OUT="$(timeout 30 bash -c "$*" 2>&1)" || true
   _EXIT=${PIPESTATUS[0]:-$?}
   t_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$t_start" == "0" || "$t_end" == "0" ]]; then

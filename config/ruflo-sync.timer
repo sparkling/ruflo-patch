@@ -2,7 +2,7 @@
 Description=Check upstream ruflo repos for changes
 
 [Timer]
-OnCalendar=*-*-* *:*:00
+OnCalendar=*-*-* 00/6:00:00
 Persistent=true
 
 [Install]

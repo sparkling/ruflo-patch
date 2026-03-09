@@ -27,7 +27,7 @@
 set -euo pipefail
 
 # ---------------------------------------------------------------------------
-# CLI flags
+# CLI flags (parsed before concurrency guard so --build-only can skip it)
 # ---------------------------------------------------------------------------
 
 RUN_SYNC=false
@@ -51,6 +51,19 @@ done
 if [[ "${RUN_SYNC}" == "false" && "${RUN_PUBLISH}" == "false" ]]; then
   RUN_SYNC=true
   RUN_PUBLISH=true
+fi
+
+# ---------------------------------------------------------------------------
+# Concurrency guard — prevent overlapping runs (ADR-0027)
+# Skipped for --build-only (local build doesn't conflict with pipeline)
+# ---------------------------------------------------------------------------
+if [[ "$BUILD_ONLY" != "true" ]]; then
+  LOCKFILE="/tmp/ruflo-sync-and-build.lock"
+  exec 9>"$LOCKFILE"
+  if ! flock -n 9; then
+    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Another sync-and-build is already running — exiting"
+    exit 0
+  fi
 fi
 
 # ---------------------------------------------------------------------------
