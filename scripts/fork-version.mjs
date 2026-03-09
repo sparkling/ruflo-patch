@@ -159,8 +159,30 @@ async function queryNpmMaxPatch(npmName, baseVersion) {
 }
 
 /**
+ * Check if a specific version exists on npm.
+ *
+ * @param {string} npmName - The @sparkleideas/* package name
+ * @param {string} version - exact version string to check
+ * @returns {Promise<boolean>}
+ */
+async function versionExistsOnNpm(npmName, version) {
+  try {
+    const { stdout } = await execFileAsync('npm', ['view', `${npmName}@${version}`, 'version', '--json'], {
+      timeout: 15_000,
+    });
+    const result = JSON.parse(stdout);
+    return result === version;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * Compute the next safe version for a package, avoiding npm collisions.
- * Takes the max of (local patch N, npm max patch N) and adds 1.
+ *
+ * IDEMPOTENT: If the current version isn't published on npm yet, returns it
+ * unchanged (it was bumped in a previous run that failed before publishing).
+ * Only bumps if the current version already exists on npm.
  *
  * @param {string} currentVersion - current version in fork package.json
  * @param {string} forkName - the package name in the fork
@@ -172,8 +194,17 @@ async function safeNextVersion(currentVersion, forkName) {
   const localN = localMatch ? parseInt(localMatch[1], 10) : 0;
 
   const npmName = toNpmName(forkName);
-  const npmN = await queryNpmMaxPatch(npmName, base);
 
+  // If current version has a -patch.N suffix, check if it's already on npm.
+  // If NOT on npm, keep it — it was bumped but never published (failed run).
+  if (localN > 0) {
+    const exists = await versionExistsOnNpm(npmName, currentVersion);
+    if (!exists) {
+      return currentVersion;  // Idempotent: reuse unpublished version
+    }
+  }
+
+  const npmN = await queryNpmMaxPatch(npmName, base);
   const nextN = Math.max(localN, npmN) + 1;
   return `${base}-patch.${nextN}`;
 }
@@ -185,7 +216,8 @@ async function safeNextVersion(currentVersion, forkName) {
  * in one or more fork directories. Updates versions and internal dependency
  * references across all forks (ADR-0027: exact pinned versions, no wildcards).
  *
- * Queries npm registry to avoid version collisions. Uses max(local, npm) + 1.
+ * Queries npm registry to avoid version collisions. Idempotent: if a version
+ * was bumped but never published, it is reused instead of bumping again.
  *
  * @param {string|string[]} dirs - fork root directory or array of directories
  * @param {object} [opts]

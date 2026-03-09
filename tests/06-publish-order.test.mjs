@@ -65,7 +65,7 @@ const KNOWN_DEPS = {
   // ADR-0021/0022 Phase 1: Level 1 additions
   '@sparkleideas/agent-booster': [],
   '@sparkleideas/agentdb-onnx': [],
-  '@sparkleideas/cuda-wasm': [],
+  // cuda-wasm removed from LEVELS (requires wasm-pack, build often fails)
   // ADR-0022 Phase 3: Level 3 addition
   '@sparkleideas/ruvector-upstream': [],
   // ADR-0022 Phase 3: Level 4 plugins
@@ -168,16 +168,16 @@ describe('Topological publish order (ADR-0014)', () => {
   describe('Package completeness', () => {
     it('all expected packages are present across all levels (6+5+7+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0021/0022: L1=6, L2=5, L3=7, L4=22, L5=2
-      assert.equal(LEVELS[0].length, 6, 'Level 1 should have 6 packages');
+      // ADR-0014 + ADR-0021/0022: L1=5 (cuda-wasm removed), L2=5, L3=7, L4=22, L5=2
+      assert.equal(LEVELS[0].length, 5, 'Level 1 should have 5 packages');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
       assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
       assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        42,
-        `Expected 42 packages total, got ${allPackages.length}`
+        41,
+        `Expected 41 packages total, got ${allPackages.length}`
       );
     });
 

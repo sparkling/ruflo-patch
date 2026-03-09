@@ -29,8 +29,8 @@ export const LEVELS = [
     // ADR-0021/0022 Phase 1: no internal deps
     '@sparkleideas/agent-booster',
     '@sparkleideas/agentdb-onnx',
-    // ADR-0022 Phase 4: standalone tools
-    '@sparkleideas/cuda-wasm',
+    // cuda-wasm removed: requires wasm-pack, build often fails silently,
+    // causing version mismatches. Re-add when WASM build is gated.
   ],
   // Level 2: depends on Level 1
   [

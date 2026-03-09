@@ -795,7 +795,7 @@ run_tests() {
   # ── Layer 2: Integration test (local Verdaccio) ──
   log "Running integration test (local Verdaccio dry run)"
   test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
-  bash "${SCRIPT_DIR}/test-integration.sh" || {
+  CHANGED_PACKAGES_JSON=all bash "${SCRIPT_DIR}/test-integration.sh" || {
     log_error "Integration test failed — aborting before publish to npm"
     return 1
   }
@@ -855,10 +855,32 @@ run_publish() {
   log "Publish complete"
 
   # Publish the local wrapper package (@sparkleideas/ruflo)
+  # Auto-bump wrapper version if current version already exists on npm.
   if [[ -f "${PROJECT_DIR}/package.json" ]]; then
     local wrapper_ver
     wrapper_ver=$(node -e "console.log(require('${PROJECT_DIR}/package.json').version)" 2>/dev/null) || wrapper_ver=""
     if [[ -n "$wrapper_ver" ]]; then
+      # Check if this wrapper version already exists on npm
+      local wrapper_exists
+      wrapper_exists=$(npm view "@sparkleideas/ruflo@${wrapper_ver}" version 2>/dev/null) || wrapper_exists=""
+      if [[ "$wrapper_exists" == "$wrapper_ver" ]]; then
+        # Bump wrapper version using same -patch.N logic
+        local new_wrapper_ver
+        new_wrapper_ver=$(node -e "
+          import { bumpPatchVersion } from '${SCRIPT_DIR}/fork-version.mjs';
+          console.log(bumpPatchVersion('${wrapper_ver}'));
+        " --input-type=module 2>/dev/null) || new_wrapper_ver=""
+        if [[ -n "$new_wrapper_ver" ]]; then
+          log "Auto-bumping wrapper: ${wrapper_ver} -> ${new_wrapper_ver}"
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('${PROJECT_DIR}/package.json', 'utf-8'));
+            pkg.version = '${new_wrapper_ver}';
+            fs.writeFileSync('${PROJECT_DIR}/package.json', JSON.stringify(pkg, null, 2) + '\n');
+          " 2>/dev/null
+          wrapper_ver="$new_wrapper_ver"
+        fi
+      fi
       log "Publishing wrapper package (@sparkleideas/ruflo@${wrapper_ver})"
       npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag prerelease 2>&1 || {
         log "  wrapper publish skipped (may already exist at this version)"
@@ -1042,8 +1064,10 @@ run_stage3_publish() {
       ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
     esac
   done
-  # Save state immediately so a failed build won't re-bump on next run
-  save_state
+  # NOTE: Do NOT save_state here. State is saved ONLY after successful
+  # publish (line ~1145). If build/test/publish fails, the next run will
+  # re-detect the merge and retry with the SAME versions (safeNextVersion
+  # is idempotent — it won't re-bump unpublished versions).
 
   # Build pipeline: copy -> codemod -> build
   create_temp_dir
