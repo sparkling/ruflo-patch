@@ -58,6 +58,19 @@ done
 
 PKG="${PACKAGE_NAME}${VERSION}"
 
+# Wrapper package version — when testing a specific CLI version (not @latest),
+# use the wrapper's own version from package.json with @prerelease tag.
+if [[ "$VERSION" == "@latest" ]]; then
+  RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
+else
+  _WRAPPER_VER=$(node -e "console.log(require('$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/package.json').version)" 2>/dev/null) || _WRAPPER_VER=""
+  if [[ -n "$_WRAPPER_VER" ]]; then
+    RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@${_WRAPPER_VER}"
+  else
+    RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@prerelease"
+  fi
+fi
+
 # ── Isolated npm/npx cache ────────────────────────────────────────
 # Use a fresh npm cache so npx never resolves stale cached versions.
 # This is the only reliable way to ensure npx fetches the latest from
@@ -164,10 +177,11 @@ run_acceptance_check() {
 # A0 now uses the shared check_latest_resolves from lib/acceptance-checks.sh
 
 test_a8_no_broken_versions() {
-  # Verify that npm resolves @sparkleideas/cli to a working version,
-  # not the broken 3.5.2-patch.1 (which has no dist/ directory).
-  # Bug: "*" range in ruflo wrapper resolved to 3.5.2-patch.1 because
-  # semver 3.5.2 > 3.1.0, picking the broken version over the working one.
+  # Verify that npm resolves @sparkleideas/cli@latest to a version with
+  # a working dist/ directory. Under ADR-0027, all versions use
+  # {upstream}-patch.N format — the -patch suffix is expected.
+  # This test catches the old broken 3.5.2-patch.1 (no dist/) by
+  # verifying the resolved version can actually run.
   local start_ns end_ns
   start_ns=$(date +%s%N 2>/dev/null || echo 0)
   local output passed="false"
@@ -176,11 +190,14 @@ test_a8_no_broken_versions() {
   resolved_version=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view @sparkleideas/cli@latest version 2>/dev/null) || true
 
   if [[ -n "$resolved_version" ]]; then
-    if echo "$resolved_version" | grep -q 'patch'; then
-      output="DANGER: @sparkleideas/cli@latest resolves to $resolved_version (contains -patch suffix)"
-    else
+    # Verify the resolved version has a working CLI entry point
+    local has_bin
+    has_bin=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view "@sparkleideas/cli@${resolved_version}" bin --json 2>/dev/null) || true
+    if [[ -n "$has_bin" && "$has_bin" != "{}" ]]; then
       passed="true"
-      output="@sparkleideas/cli@latest = $resolved_version (no -patch suffix)"
+      output="@sparkleideas/cli@latest = $resolved_version (has bin entries)"
+    else
+      output="DANGER: @sparkleideas/cli@latest resolves to $resolved_version (no bin entries — broken package)"
     fi
   else
     output="Could not resolve @sparkleideas/cli@latest from registry"

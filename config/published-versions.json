@@ -40,5 +40,6 @@
   "@sparkleideas/testing": "3.0.0-alpha.6-patch.12",
   "@sparkleideas/swarm": "3.0.0-alpha.6-patch.12",
   "@sparkleideas/claude-flow": "2.7.47",
-  "@sparkleideas/cli": "3.1.0-alpha.14-patch.12"
+  "@sparkleideas/cli": "3.1.0-alpha.14-patch.12",
+  "@sparkleideas/ruflo": "3.1.0-alpha.14-patch.1"
 }

@@ -45,10 +45,14 @@ if (command === '--version' || command === '-V') {
   process.exit(0);
 }
 
-// All commands: proxy to @sparkleideas/cli@latest via npx.
-// No bundled dependency — always resolves the latest CLI at runtime.
+// All commands: proxy to @sparkleideas/cli via npx.
+// No bundled dependency — always resolves the CLI at runtime.
+// RUFLO_CLI_TAG overrides the version tag (default: @latest).
+// Used by acceptance tests to test @prerelease before promotion.
+const cliTag = process.env.RUFLO_CLI_TAG || '@latest';
+const cliPkg = `@sparkleideas/cli${cliTag}`;
 try {
-  execFileSync('npx', ['--yes', '@sparkleideas/cli@latest', command, ...args], {
+  execFileSync('npx', ['--yes', cliPkg, command, ...args], {
     stdio: 'inherit',
     env: { ...process.env, npm_config_update_notifier: 'false' },
   });

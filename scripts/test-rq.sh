@@ -173,6 +173,7 @@ source "$checks_lib"
 # Set environment for shared checks
 REGISTRY="http://localhost:${RQ_PORT}"
 PKG="@sparkleideas/cli"
+RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$RQ_TEMP"
 
 # Use a stable cache dir so external deps persist across runs (ADR-0025).

@@ -152,6 +152,62 @@ Upstream X.Y.W       → reset to X.Y.W-patch.1
 3.0.0-alpha          → 3.0.0-alpha-patch.1, ...
 ```
 
+The "upstream version" is always the `version` field in the sub-package's `package.json` inside the fork, with the `-patch.N` suffix stripped. This is the version upstream set when they last touched that package — NOT the version on the npm registry (which may differ due to tag-to-HEAD drift).
+
+**Complete package-to-source mapping** (44 published packages):
+
+| Published package | Fork | Source `package.json` | Upstream base version |
+|---|---|---|---|
+| **ruflo fork** (36 packages) | | | |
+| `@sparkleideas/cli` | ruflo | `v3/@claude-flow/cli/` | `3.1.0-alpha.14` |
+| `@sparkleideas/aidefence` | ruflo | `v3/@claude-flow/aidefence/` | `3.0.2` |
+| `@sparkleideas/codex` | ruflo | `v3/@claude-flow/codex/` | `3.0.0-alpha.9` |
+| `@sparkleideas/embeddings` | ruflo | `v3/@claude-flow/embeddings/` | `3.0.0-alpha.12` |
+| `@sparkleideas/shared` | ruflo | `v3/@claude-flow/shared/` | `3.0.0-alpha.6` |
+| `@sparkleideas/memory` | ruflo | `v3/@claude-flow/memory/` | `3.0.0-alpha.6` |
+| `@sparkleideas/providers` | ruflo | `v3/@claude-flow/providers/` | `3.0.0-alpha.6` |
+| `@sparkleideas/hooks` | ruflo | `v3/@claude-flow/hooks/` | `3.0.0-alpha.7` |
+| `@sparkleideas/browser` | ruflo | `v3/@claude-flow/browser/` | `3.0.0-alpha.2` |
+| `@sparkleideas/neural` | ruflo | `v3/@claude-flow/neural/` | `3.0.0-alpha.7` |
+| `@sparkleideas/claims` | ruflo | `v3/@claude-flow/claims/` | `3.0.0-alpha.8` |
+| `@sparkleideas/plugins` | ruflo | `v3/@claude-flow/plugins/` | `3.0.0-alpha.7` |
+| `@sparkleideas/deployment` | ruflo | `v3/@claude-flow/deployment/` | `3.0.0-alpha.7` |
+| `@sparkleideas/security` | ruflo | `v3/@claude-flow/security/` | `3.0.0-alpha.6` |
+| `@sparkleideas/integration` | ruflo | `v3/@claude-flow/integration/` | `3.0.0` |
+| `@sparkleideas/performance` | ruflo | `v3/@claude-flow/performance/` | `3.0.0-alpha.6` |
+| `@sparkleideas/guidance` | ruflo | `v3/@claude-flow/guidance/` | `3.0.0-alpha.1` |
+| `@sparkleideas/mcp` | ruflo | `v3/@claude-flow/mcp/` | `3.0.0-alpha.8` |
+| `@sparkleideas/testing` | ruflo | `v3/@claude-flow/testing/` | `3.0.0-alpha.6` |
+| `@sparkleideas/swarm` | ruflo | `v3/@claude-flow/swarm/` | `3.0.0-alpha.6` |
+| `@sparkleideas/ruvector-upstream` | ruflo | `v3/plugins/ruvector-upstream/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-code-intelligence` | ruflo | `v3/plugins/code-intelligence/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-healthcare-clinical` | ruflo | `v3/plugins/healthcare-clinical/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-prime-radiant` | ruflo | `v3/plugins/prime-radiant/` | `0.1.5` |
+| `@sparkleideas/plugin-hyperbolic-reasoning` | ruflo | `v3/plugins/hyperbolic-reasoning/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-gastown-bridge` | ruflo | `v3/plugins/gastown-bridge/` | `0.1.2` |
+| `@sparkleideas/plugin-cognitive-kernel` | ruflo | `v3/plugins/cognitive-kernel/` | `3.0.0-alpha.1` |
+| `@sparkleideas/teammate-plugin` | ruflo | `v3/plugins/teammate-plugin/` | `1.0.0-alpha.1` |
+| `@sparkleideas/plugin-neural-coordination` | ruflo | `v3/plugins/neural-coordination/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-test-intelligence` | ruflo | `v3/plugins/test-intelligence/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-perf-optimizer` | ruflo | `v3/plugins/perf-optimizer/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-legal-contracts` | ruflo | `v3/plugins/legal-contracts/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-financial-risk` | ruflo | `v3/plugins/financial-risk/` | `3.0.0-alpha.1` |
+| `@sparkleideas/plugin-agentic-qe` | ruflo | `v3/plugins/agentic-qe/` | `3.0.0-alpha.4` |
+| `@sparkleideas/plugin-quantum-optimizer` | ruflo | `v3/plugins/quantum-optimizer/` | `3.0.0-alpha.1` |
+| `@sparkleideas/claude-flow` | ruflo | `v2/` | `2.7.47` |
+| **agentic-flow fork** (4 packages) | | | |
+| `@sparkleideas/agentic-flow` | agentic-flow | `agentic-flow/` | `2.0.2-alpha` |
+| `@sparkleideas/agentdb` | agentic-flow | `packages/agentdb/` | `3.0.0-alpha.3` |
+| `@sparkleideas/agentdb-onnx` | agentic-flow | `packages/agentdb-onnx/` | `1.0.0` |
+| `@sparkleideas/agent-booster` | agentic-flow | `packages/agent-booster/` | `0.2.2` |
+| **ruv-FANN fork** (2 packages) | | | |
+| `@sparkleideas/cuda-wasm` | ruv-FANN | `cuda-wasm/` | `1.1.1` |
+| `@sparkleideas/ruv-swarm` | ruv-FANN | `ruv-swarm/npm/` | `1.0.18` |
+| **Wrapper** (1 package, lives in ruflo-patch repo) | | | |
+| `@sparkleideas/ruflo` | ruflo-patch | `package.json` | tracks `@sparkleideas/cli` upstream = `3.1.0-alpha.14` |
+
+The wrapper (`@sparkleideas/ruflo`) is not a fork package — it is a thin proxy (`bin/ruflo.mjs`) that delegates all commands to `@sparkleideas/cli` via `npx` at runtime. Its upstream base version tracks the CLI sub-package's upstream version (`v3/@claude-flow/cli/package.json` version field, minus `-patch.N`), since the wrapper is a drop-in replacement for the same CLI entry point.
+
 **Patch tracking**: GitHub Issues labeled `patch` in each fork repo, replacing the `patch/` directory structure.
 
 **CI/CD flowchart**:

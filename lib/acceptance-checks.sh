@@ -10,6 +10,7 @@
 #
 # Contract:
 #   Caller MUST set:  REGISTRY, TEMP_DIR, PKG
+#   Caller MAY set:   RUFLO_WRAPPER_PKG (e.g. "@sparkleideas/ruflo@3.5.7" — defaults to "@sparkleideas/ruflo@latest")
 #   Caller MAY set:   COMPANION_TAG (dist-tag for agent-booster/plugins, e.g. "@prerelease")
 #   Caller MUST define: run_timed (sets _OUT, _EXIT, _DURATION_MS)
 #   Each check_* function sets: _CHECK_PASSED ("true"/"false"), _CHECK_OUTPUT
@@ -150,12 +151,13 @@ check_wrapper_proxy() {
   start_ns=$(date +%s%N 2>/dev/null || echo 0)
   _CHECK_PASSED="false"
 
+  local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
   local wrapper_out
-  wrapper_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes @sparkleideas/ruflo@latest --version 2>&1) || true
+  wrapper_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes "${wrapper_pkg}" --version 2>&1) || true
 
   if echo "$wrapper_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
     local doctor_out
-    doctor_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx @sparkleideas/ruflo@latest doctor 2>&1) || true
+    doctor_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "${wrapper_pkg}" doctor 2>&1) || true
     if echo "$doctor_out" | grep -qi 'doctor\|diagnostics\|passed'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Wrapper proxy works: version=$(echo "$wrapper_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
@@ -439,9 +441,18 @@ check_ruflo_init_full() {
   full_dir=$(mktemp -d /tmp/ruflo-full-init-XXXXX)
 
   # Run ruflo init --full (proxies to @sparkleideas/cli init --full)
+  # Set RUFLO_CLI_TAG so the wrapper proxies to the CLI version under test,
+  # not @latest (which may not be promoted yet).
+  local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
+  local cli_tag="${RUFLO_CLI_TAG:-}"
+  if [[ -z "$cli_tag" ]]; then
+    # Derive from PKG: "@sparkleideas/cli@3.1.0-alpha.14-patch.12" -> "@3.1.0-alpha.14-patch.12"
+    cli_tag="${PKG#@sparkleideas/cli}"
+    [[ -z "$cli_tag" ]] && cli_tag="@latest"
+  fi
   local init_out
-  init_out=$(cd "$full_dir" && NPM_CONFIG_REGISTRY="$REGISTRY" \
-    npx --yes @sparkleideas/ruflo@latest init --full 2>&1) || true
+  init_out=$(cd "$full_dir" && NPM_CONFIG_REGISTRY="$REGISTRY" RUFLO_CLI_TAG="$cli_tag" \
+    npx --yes "${wrapper_pkg}" init --full 2>&1) || true
 
   # Validate key artifacts created by --full
   local missing=""

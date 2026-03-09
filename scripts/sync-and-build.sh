@@ -840,6 +840,28 @@ run_publish() {
   local -a publish_args=(--build-dir "${TEMP_DIR}")
   node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}"
   log "Publish complete"
+
+  # Publish the local wrapper package (@sparkleideas/ruflo)
+  if [[ -f "${PROJECT_DIR}/package.json" ]]; then
+    local wrapper_ver
+    wrapper_ver=$(node -e "console.log(require('${PROJECT_DIR}/package.json').version)" 2>/dev/null) || wrapper_ver=""
+    if [[ -n "$wrapper_ver" ]]; then
+      log "Publishing wrapper package (@sparkleideas/ruflo@${wrapper_ver})"
+      npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag prerelease 2>&1 || {
+        log "  wrapper publish skipped (may already exist at this version)"
+      }
+      # Add wrapper to published-versions.json so promote.sh includes it
+      local pvfile="${PROJECT_DIR}/config/published-versions.json"
+      if [[ -f "$pvfile" ]]; then
+        node -e "
+          const fs = require('fs');
+          const pv = JSON.parse(fs.readFileSync('${pvfile}', 'utf-8'));
+          pv['@sparkleideas/ruflo'] = '${wrapper_ver}';
+          fs.writeFileSync('${pvfile}', JSON.stringify(pv, null, 2) + '\n');
+        " 2>/dev/null && log "  added wrapper to published-versions.json"
+      fi
+    fi
+  fi
 }
 
 # ---------------------------------------------------------------------------
