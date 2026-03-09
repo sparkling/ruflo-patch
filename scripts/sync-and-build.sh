@@ -178,6 +178,11 @@ load_state() {
   else
     log "No state file found — first run"
   fi
+
+  # Snapshot state as PREV_* for check_merged_prs() comparison
+  PREV_RUFLO_HEAD="${RUFLO_HEAD}"
+  PREV_AGENTIC_HEAD="${AGENTIC_HEAD}"
+  PREV_FANN_HEAD="${FANN_HEAD}"
 }
 
 save_state() {
@@ -199,8 +204,10 @@ EOF
 # ---------------------------------------------------------------------------
 
 check_merged_prs() {
-  # Returns 0 if any fork has new commits merged to main, 1 otherwise.
-  # Updates NEW_*_HEAD variables with current local main SHA.
+  # Returns 0 if any fork has new commits on origin/main since last build, 1 otherwise.
+  # Compares origin/main SHA against the STATE FILE (not local main), so pushes
+  # from this machine are detected correctly.
+  # Updates NEW_*_HEAD variables and fast-forwards local main.
   local any_changed=false
 
   for i in "${!FORK_NAMES[@]}"; do
@@ -218,47 +225,48 @@ check_merged_prs() {
       continue
     }
 
-    local local_sha origin_sha
-    local_sha=$(git -C "${dir}" rev-parse main 2>/dev/null) || continue
+    local origin_sha state_sha
     origin_sha=$(git -C "${dir}" rev-parse origin/main 2>/dev/null) || continue
 
-    # Store current HEAD for state tracking
+    # Get the SHA from the state file (last successfully processed build)
     case "$name" in
-      ruflo)        NEW_RUFLO_HEAD="$local_sha" ;;
-      agentic-flow) NEW_AGENTIC_HEAD="$local_sha" ;;
-      ruv-FANN)     NEW_FANN_HEAD="$local_sha" ;;
+      ruflo)        state_sha="${PREV_RUFLO_HEAD:-}" ;;
+      agentic-flow) state_sha="${PREV_AGENTIC_HEAD:-}" ;;
+      ruv-FANN)     state_sha="${PREV_FANN_HEAD:-}" ;;
     esac
 
-    if [[ "$local_sha" == "$origin_sha" ]]; then
-      log "No new merges for ${name} (main=${local_sha:0:12})"
-    elif git -C "${dir}" merge-base --is-ancestor "$origin_sha" "$local_sha" 2>/dev/null; then
-      # origin/main is an ancestor of local main — local is ahead (e.g., version bumps).
-      # This is NOT a new merge from GitHub; do not trigger publish.
-      log "No new merges for ${name} (local ahead: ${local_sha:0:12}, origin: ${origin_sha:0:12})"
+    if [[ -z "$state_sha" ]]; then
+      # No previous state — treat as new
+      log "No previous state for ${name} — treating as new (origin=${origin_sha:0:12})"
+      any_changed=true
+    elif [[ "$origin_sha" == "$state_sha" ]]; then
+      log "No new merges for ${name} (origin=${origin_sha:0:12})"
+    elif git -C "${dir}" merge-base --is-ancestor "$origin_sha" "$state_sha" 2>/dev/null; then
+      # origin/main is an ancestor of the state SHA — state is ahead (e.g., version bumps
+      # that were pushed). This is NOT a new merge.
+      log "No new merges for ${name} (state ahead: state=${state_sha:0:12}, origin=${origin_sha:0:12})"
     else
-      # origin/main has commits not in local — new merge from GitHub
-      log "New commits on origin/main for ${name}: ${local_sha:0:12} -> ${origin_sha:0:12}"
-      git -C "${dir}" checkout main --quiet 2>/dev/null || true
-      if git -C "${dir}" merge --ff-only origin/main 2>/dev/null; then
-        log "Fast-forwarded ${name} main to ${origin_sha:0:12}"
-        case "$name" in
-          ruflo)        NEW_RUFLO_HEAD="$origin_sha" ;;
-          agentic-flow) NEW_AGENTIC_HEAD="$origin_sha" ;;
-          ruv-FANN)     NEW_FANN_HEAD="$origin_sha" ;;
-        esac
-        any_changed=true
-      else
-        log_error "Cannot fast-forward ${name} — manual intervention needed"
-        send_email "[ruflo] FF merge failed for ${name}" \
-          "Fork ${name} cannot fast-forward to origin/main. Manual intervention required."
-      fi
+      # origin/main has commits not in state — new merge or push
+      log "New commits on origin/main for ${name}: state=${state_sha:0:12} -> origin=${origin_sha:0:12}"
+      any_changed=true
     fi
+
+    # Always fast-forward local main to origin/main
+    git -C "${dir}" checkout main --quiet 2>/dev/null || true
+    git -C "${dir}" merge --ff-only origin/main --quiet 2>/dev/null || {
+      # If local has diverged (shouldn't normally happen), reset to origin
+      git -C "${dir}" reset --hard origin/main --quiet 2>/dev/null || true
+    }
+
+    local new_sha
+    new_sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
+    case "$name" in
+      ruflo)        NEW_RUFLO_HEAD="$new_sha" ;;
+      agentic-flow) NEW_AGENTIC_HEAD="$new_sha" ;;
+      ruv-FANN)     NEW_FANN_HEAD="$new_sha" ;;
+    esac
   done
 
-  # Only return 0 (should publish) if origin/main was actually ahead of local
-  # main — i.e., new commits were merged via GitHub PR. Local-only commits
-  # (like version bumps from a previous Stage 3 that didn't publish) should
-  # NOT trigger another publish cycle.
   if [[ "$any_changed" == "true" ]]; then
     return 0
   fi
@@ -800,8 +808,19 @@ run_tests() {
 # ---------------------------------------------------------------------------
 
 read_build_version() {
-  BUILD_VERSION=$(node -e "console.log(require('${TEMP_DIR}/package.json').version)" 2>/dev/null) || {
-    log_error "Could not read version from ${TEMP_DIR}/package.json"
+  # Read the CLI package version (has -patch.N suffix), not the root monorepo version
+  BUILD_VERSION=$(node -e "
+    const fs = require('fs');
+    const path = require('path');
+    // Try CLI package first (has the definitive version with -patch.N)
+    const cliPath = path.join('${TEMP_DIR}', 'v3/@claude-flow/cli/package.json');
+    if (fs.existsSync(cliPath)) {
+      console.log(require(cliPath).version);
+    } else {
+      console.log(require('${TEMP_DIR}/package.json').version);
+    }
+  " 2>/dev/null) || {
+    log_error "Could not read version from ${TEMP_DIR}"
     BUILD_VERSION="0.0.0"
   }
   log "Build version: ${BUILD_VERSION}"
