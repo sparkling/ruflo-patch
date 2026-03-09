@@ -15,6 +15,9 @@ const { bumpPatchVersion, findPackages, bumpAll } = await import(
   resolve(ROOT, 'scripts', 'fork-version.mjs')
 );
 
+// All bumpAll calls in tests use skipNpmCheck to avoid real npm queries.
+const UNIT_OPTS = { skipNpmCheck: true };
+
 /** Create a temp directory for a test case. */
 function makeTmpDir() {
   return mkdtempSync(join(tmpdir(), 'cfp-forkver-'));
@@ -77,8 +80,6 @@ describe('bumpPatchVersion: pre-release versions', () => {
 
 describe('bumpPatchVersion: upstream version change resets patch', () => {
   it('new upstream version gets -patch.1 (reset behavior)', () => {
-    // If upstream bumps from 3.1.0 to 3.2.0, the new version has no -patch.N,
-    // so bumpPatchVersion produces 3.2.0-patch.1 (effectively a reset).
     assert.equal(bumpPatchVersion('3.2.0'), '3.2.0-patch.1');
   });
 
@@ -218,32 +219,32 @@ describe('bumpAll: single package', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('bumps a single package version', () => {
+  it('bumps a single package version', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/cli', version: '3.1.0' });
 
-    const { changes } = bumpAll(tmp, { dryRun: true });
+    const { changes } = await bumpAll(tmp, { ...UNIT_OPTS, dryRun: true });
     assert.equal(changes.length, 1);
     assert.equal(changes[0].name, '@claude-flow/cli');
     assert.equal(changes[0].from, '3.1.0');
     assert.equal(changes[0].to, '3.1.0-patch.1');
   });
 
-  it('writes updated version to disk when dryRun is false', () => {
+  it('writes updated version to disk when dryRun is false', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/cli', version: '3.1.0' });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(result.version, '3.1.0-patch.1');
   });
 
-  it('preserves trailing newline', () => {
+  it('preserves trailing newline', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/cli', version: '1.0.0' });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
 
     const raw = readFileSync(join(tmp, 'package.json'), 'utf8');
     assert.ok(raw.endsWith('\n'), 'trailing newline must be preserved');
@@ -254,7 +255,7 @@ describe('bumpAll: internal dependency updates', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('updates internal dependency versions to match bumped versions', () => {
+  it('updates internal dependency versions to match bumped versions', async () => {
     tmp = makeTmpDir();
     writePkg(join(tmp, 'cli'), {
       name: '@claude-flow/cli',
@@ -266,7 +267,7 @@ describe('bumpAll: internal dependency updates', () => {
       version: '3.1.0',
     });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
 
     const cli = JSON.parse(readFileSync(join(tmp, 'cli', 'package.json'), 'utf8'));
     assert.equal(cli.version, '3.1.0-patch.1');
@@ -274,7 +275,7 @@ describe('bumpAll: internal dependency updates', () => {
       'internal dep must be updated to new version');
   });
 
-  it('updates peerDependencies and optionalDependencies too', () => {
+  it('updates peerDependencies and optionalDependencies too', async () => {
     tmp = makeTmpDir();
     writePkg(join(tmp, 'core'), {
       name: '@claude-flow/core',
@@ -285,14 +286,14 @@ describe('bumpAll: internal dependency updates', () => {
     writePkg(join(tmp, 'hooks'), { name: '@claude-flow/hooks', version: '2.0.0' });
     writePkg(join(tmp, 'cuda'), { name: '@claude-flow/cuda', version: '2.0.0' });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
 
     const core = JSON.parse(readFileSync(join(tmp, 'core', 'package.json'), 'utf8'));
     assert.equal(core.peerDependencies['@claude-flow/hooks'], '2.0.0-patch.1');
     assert.equal(core.optionalDependencies['@claude-flow/cuda'], '2.0.0-patch.1');
   });
 
-  it('does not touch third-party dependencies', () => {
+  it('does not touch third-party dependencies', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, {
       name: '@claude-flow/cli',
@@ -300,7 +301,7 @@ describe('bumpAll: internal dependency updates', () => {
       dependencies: { lodash: '^4.0.0', express: '~5.0.0' },
     });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
 
     const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(result.dependencies.lodash, '^4.0.0');
@@ -312,7 +313,7 @@ describe('bumpAll: cross-scope alias resolution', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('resolves @sparkleideas/* refs to @claude-flow/* packages', () => {
+  it('resolves @sparkleideas/* refs to @claude-flow/* packages', async () => {
     tmp = makeTmpDir();
     writePkg(join(tmp, 'cli'), {
       name: '@claude-flow/cli',
@@ -324,14 +325,14 @@ describe('bumpAll: cross-scope alias resolution', () => {
       dependencies: { '@sparkleideas/cli': '3.0.0' },
     });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
 
     const wrapper = JSON.parse(readFileSync(join(tmp, 'wrapper', 'package.json'), 'utf8'));
     assert.equal(wrapper.dependencies['@sparkleideas/cli'], '3.0.0-patch.1',
       'cross-scope alias must resolve @sparkleideas/cli to @claude-flow/cli version');
   });
 
-  it('resolves scoped refs to unscoped publishable packages', () => {
+  it('resolves scoped refs to unscoped publishable packages', async () => {
     tmp = makeTmpDir();
     writePkg(join(tmp, 'agentdb'), { name: 'agentdb', version: '2.0.0' });
     writePkg(join(tmp, 'consumer'), {
@@ -343,7 +344,7 @@ describe('bumpAll: cross-scope alias resolution', () => {
       },
     });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
 
     const consumer = JSON.parse(readFileSync(join(tmp, 'consumer', 'package.json'), 'utf8'));
     assert.equal(consumer.dependencies['@claude-flow/agentdb'], '2.0.0-patch.1',
@@ -360,19 +361,19 @@ describe('bumpAll: multiple fork directories', () => {
     if (tmp2) rmSync(tmp2, { recursive: true, force: true });
   });
 
-  it('accepts an array of directories and bumps across all', () => {
+  it('accepts an array of directories and bumps across all', async () => {
     tmp1 = makeTmpDir();
     tmp2 = makeTmpDir();
     writePkg(join(tmp1, 'cli'), { name: '@claude-flow/cli', version: '3.0.0' });
     writePkg(join(tmp2, 'swarm'), { name: 'ruv-swarm', version: '1.0.0' });
 
-    const { changes } = bumpAll([tmp1, tmp2], { dryRun: true });
+    const { changes } = await bumpAll([tmp1, tmp2], { ...UNIT_OPTS, dryRun: true });
     assert.equal(changes.length, 2);
     const names = changes.map(c => c.name).sort();
     assert.deepEqual(names, ['@claude-flow/cli', 'ruv-swarm']);
   });
 
-  it('resolves cross-fork internal dependencies', () => {
+  it('resolves cross-fork internal dependencies', async () => {
     tmp1 = makeTmpDir();
     tmp2 = makeTmpDir();
     writePkg(join(tmp1, 'cli'), {
@@ -382,7 +383,7 @@ describe('bumpAll: multiple fork directories', () => {
     });
     writePkg(join(tmp2, 'swarm'), { name: 'ruv-swarm', version: '1.0.0' });
 
-    bumpAll([tmp1, tmp2]);
+    await bumpAll([tmp1, tmp2], UNIT_OPTS);
 
     const cli = JSON.parse(readFileSync(join(tmp1, 'cli', 'package.json'), 'utf8'));
     assert.equal(cli.dependencies['ruv-swarm'], '1.0.0-patch.1',
@@ -394,22 +395,22 @@ describe('bumpAll: dryRun mode', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('does not write files when dryRun is true', () => {
+  it('does not write files when dryRun is true', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/cli', version: '3.0.0' });
     const before = readFileSync(join(tmp, 'package.json'), 'utf8');
 
-    bumpAll(tmp, { dryRun: true });
+    await bumpAll(tmp, { ...UNIT_OPTS, dryRun: true });
 
     const after = readFileSync(join(tmp, 'package.json'), 'utf8');
     assert.equal(before, after, 'file must not change in dryRun mode');
   });
 
-  it('still returns correct changes in dryRun mode', () => {
+  it('still returns correct changes in dryRun mode', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/cli', version: '3.0.0-patch.2' });
 
-    const { changes } = bumpAll(tmp, { dryRun: true });
+    const { changes } = await bumpAll(tmp, { ...UNIT_OPTS, dryRun: true });
     assert.equal(changes.length, 1);
     assert.equal(changes[0].from, '3.0.0-patch.2');
     assert.equal(changes[0].to, '3.0.0-patch.3');
@@ -420,11 +421,11 @@ describe('bumpAll: empty directory', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('returns empty changes for directory with no matching packages', () => {
+  it('returns empty changes for directory with no matching packages', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: 'lodash', version: '4.0.0' });
 
-    const { changes } = bumpAll(tmp);
+    const { changes } = await bumpAll(tmp, UNIT_OPTS);
     assert.deepEqual(changes, []);
   });
 });
@@ -433,27 +434,27 @@ describe('bumpAll: pre-release version handling', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('bumps alpha version correctly', () => {
+  it('bumps alpha version correctly', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/core', version: '3.0.0-alpha.6' });
 
-    const { changes } = bumpAll(tmp, { dryRun: true });
+    const { changes } = await bumpAll(tmp, { ...UNIT_OPTS, dryRun: true });
     assert.equal(changes[0].to, '3.0.0-alpha.6-patch.1');
   });
 
-  it('bumps rc version correctly', () => {
+  it('bumps rc version correctly', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/core', version: '2.0.0-rc.3' });
 
-    const { changes } = bumpAll(tmp, { dryRun: true });
+    const { changes } = await bumpAll(tmp, { ...UNIT_OPTS, dryRun: true });
     assert.equal(changes[0].to, '2.0.0-rc.3-patch.1');
   });
 
-  it('bumps already-patched alpha version', () => {
+  it('bumps already-patched alpha version', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/core', version: '3.0.0-alpha.6-patch.4' });
 
-    const { changes } = bumpAll(tmp, { dryRun: true });
+    const { changes } = await bumpAll(tmp, { ...UNIT_OPTS, dryRun: true });
     assert.equal(changes[0].to, '3.0.0-alpha.6-patch.5');
   });
 });
@@ -462,15 +463,15 @@ describe('bumpAll: idempotent version map', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('bumps twice produces sequential patch numbers', () => {
+  it('bumps twice produces sequential patch numbers', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, { name: '@claude-flow/cli', version: '3.0.0' });
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
     const after1 = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(after1.version, '3.0.0-patch.1');
 
-    bumpAll(tmp);
+    await bumpAll(tmp, UNIT_OPTS);
     const after2 = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(after2.version, '3.0.0-patch.2');
   });

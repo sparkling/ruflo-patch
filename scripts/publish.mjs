@@ -360,10 +360,11 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
       return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion } };
     } catch (err) {
       const stderr = err.stderr || '';
+      const stderrLower = stderr.toLowerCase();
       if (
-        stderr.includes('cannot publish over previously published version') ||
-        stderr.includes('You cannot publish over the previously published versions') ||
-        stderr.includes('this package is already present')
+        stderrLower.includes('cannot publish over previously published version') ||
+        stderrLower.includes('you cannot publish over the previously published versions') ||
+        stderrLower.includes('this package is already present')
       ) {
         console.log(`    already published — skipping`);
         publishedVersions[pkgName] = effectiveVersion;

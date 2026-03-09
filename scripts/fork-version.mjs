@@ -18,6 +18,10 @@ import { readFileSync, writeFileSync, readdirSync, statSync, realpathSync } from
 import { resolve, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
+import { execFile as execFileCb } from 'node:child_process';
+import { promisify } from 'node:util';
+
+const execFileAsync = promisify(execFileCb);
 
 const __filename = fileURLToPath(import.meta.url);
 
@@ -99,6 +103,81 @@ function walk(dir, results) {
   }
 }
 
+// ── npm registry queries ──
+
+/**
+ * Get the published npm name for a fork package.
+ * Unscoped names and @claude-flow/* both map to @sparkleideas/*.
+ */
+function toNpmName(forkName) {
+  if (forkName.startsWith('@sparkleideas/')) return forkName;
+  if (forkName.startsWith('@claude-flow/')) {
+    return '@sparkleideas/' + forkName.replace('@claude-flow/', '');
+  }
+  if (UNSCOPED_PUBLISHABLE.has(forkName)) {
+    return '@sparkleideas/' + forkName;
+  }
+  return forkName;
+}
+
+/**
+ * Extract the base version (without -patch.N suffix).
+ */
+function getBaseVersion(version) {
+  const match = version.match(/^(.*)-patch\.\d+$/);
+  return match ? match[1] : version;
+}
+
+/**
+ * Query npm registry for all versions of a package, then find the highest
+ * -patch.N for a given base version. Returns 0 if no -patch.N exists.
+ *
+ * @param {string} npmName - The @sparkleideas/* package name
+ * @param {string} baseVersion - e.g. "3.0.0-alpha.6"
+ * @returns {Promise<number>} highest N from -patch.N, or 0
+ */
+async function queryNpmMaxPatch(npmName, baseVersion) {
+  try {
+    const { stdout } = await execFileAsync('npm', ['view', npmName, 'versions', '--json'], {
+      timeout: 15_000,
+    });
+    const versions = JSON.parse(stdout);
+    const arr = Array.isArray(versions) ? versions : [versions];
+    let maxN = 0;
+    const prefix = baseVersion + '-patch.';
+    for (const v of arr) {
+      if (v.startsWith(prefix)) {
+        const n = parseInt(v.slice(prefix.length), 10);
+        if (n > maxN) maxN = n;
+      }
+    }
+    return maxN;
+  } catch {
+    // Package not on npm yet, or network error — safe to start at 0
+    return 0;
+  }
+}
+
+/**
+ * Compute the next safe version for a package, avoiding npm collisions.
+ * Takes the max of (local patch N, npm max patch N) and adds 1.
+ *
+ * @param {string} currentVersion - current version in fork package.json
+ * @param {string} forkName - the package name in the fork
+ * @returns {Promise<string>} safe next version
+ */
+async function safeNextVersion(currentVersion, forkName) {
+  const base = getBaseVersion(currentVersion);
+  const localMatch = currentVersion.match(/^.*-patch\.(\d+)$/);
+  const localN = localMatch ? parseInt(localMatch[1], 10) : 0;
+
+  const npmName = toNpmName(forkName);
+  const npmN = await queryNpmMaxPatch(npmName, base);
+
+  const nextN = Math.max(localN, npmN) + 1;
+  return `${base}-patch.${nextN}`;
+}
+
 // ── Bump all packages ──
 
 /**
@@ -106,13 +185,16 @@ function walk(dir, results) {
  * in one or more fork directories. Updates versions and internal dependency
  * references across all forks (ADR-0027: exact pinned versions, no wildcards).
  *
+ * Queries npm registry to avoid version collisions. Uses max(local, npm) + 1.
+ *
  * @param {string|string[]} dirs - fork root directory or array of directories
  * @param {object} [opts]
  * @param {boolean} [opts.dryRun=false] - if true, don't write files
- * @returns {{changes: Array<{name: string, from: string, to: string, path: string}>}}
+ * @param {boolean} [opts.skipNpmCheck=false] - if true, skip npm query (faster, for tests)
+ * @returns {Promise<{changes: Array<{name: string, from: string, to: string, path: string}>}>}
  */
-export function bumpAll(dirs, opts = {}) {
-  const { dryRun = false } = opts;
+export async function bumpAll(dirs, opts = {}) {
+  const { dryRun = false, skipNpmCheck = false } = opts;
   const dirList = Array.isArray(dirs) ? dirs : [dirs];
 
   // Discover packages across all forks
@@ -122,13 +204,29 @@ export function bumpAll(dirs, opts = {}) {
   }
 
   // Build version map: packageName -> newVersion
-  // Also build alias map: @claude-flow/X -> version of X (for cross-scope dep refs)
+  // Query npm in parallel for all packages to find safe next versions
   const versionMap = new Map();
   const changes = [];
 
-  for (const { path: pkgPath, pkg } of allPackages) {
+  if (!skipNpmCheck) {
+    console.log('Querying npm registry for existing versions...');
+  }
+
+  // Compute safe versions (parallel npm queries)
+  const versionPromises = allPackages.map(async ({ path: pkgPath, pkg }) => {
     const oldVersion = pkg.version;
-    const newVersion = bumpPatchVersion(oldVersion);
+    let newVersion;
+    if (skipNpmCheck) {
+      newVersion = bumpPatchVersion(oldVersion);
+    } else {
+      newVersion = await safeNextVersion(oldVersion, pkg.name);
+    }
+    return { pkgPath, pkg, oldVersion, newVersion };
+  });
+
+  const versionResults = await Promise.all(versionPromises);
+
+  for (const { pkgPath, pkg, oldVersion, newVersion } of versionResults) {
     versionMap.set(pkg.name, newVersion);
 
     // Add aliases so cross-scope references resolve:
@@ -198,44 +296,102 @@ function showAll(dir) {
   }
 }
 
+// ── Reconcile with npm ──
+
+/**
+ * Query npm for the latest version of each @sparkleideas/* package
+ * and rebuild config/published-versions.json from registry truth.
+ * This recovers state after manual resets or failed publishes.
+ */
+async function reconcileWithNpm() {
+  const { LEVELS } = await import('./publish.mjs');
+  const allPackages = LEVELS.flat();
+
+  console.log(`Reconciling ${allPackages.length} packages with npm registry...\n`);
+
+  const stateFile = resolve(
+    new URL('.', import.meta.url).pathname,
+    '..', 'config', 'published-versions.json'
+  );
+
+  const versions = {};
+  const results = await Promise.all(
+    allPackages.map(async (name) => {
+      try {
+        const { stdout } = await execFileAsync('npm', ['view', name, 'dist-tags', '--json'], {
+          timeout: 15_000,
+        });
+        const tags = JSON.parse(stdout);
+        // Prefer prerelease tag (active publish), fall back to latest
+        const version = tags.prerelease || tags.latest || null;
+        return { name, version, error: null };
+      } catch {
+        return { name, version: null, error: 'not found' };
+      }
+    })
+  );
+
+  for (const { name, version, error } of results) {
+    if (version) {
+      versions[name] = version;
+      console.log(`  ${name}: ${version}`);
+    } else {
+      console.log(`  ${name}: (not on npm)`);
+    }
+  }
+
+  writeFileSync(stateFile, JSON.stringify(versions, null, 2) + '\n');
+  console.log(`\nWrote ${Object.keys(versions).length} versions to config/published-versions.json`);
+}
+
 // ── CLI entry point ──
 
 const isMainModule = process.argv[1] &&
   realpathSync(resolve(process.argv[1])) === realpathSync(__filename);
 
 if (isMainModule) {
-  const { positionals } = parseArgs({
-    allowPositionals: true,
-    strict: false,
-  });
+  try {
+    const { positionals } = parseArgs({
+      allowPositionals: true,
+      strict: false,
+    });
 
-  const command = positionals[0];
-  const dirs = positionals.slice(1);
+    const command = positionals[0];
+    const dirs = positionals.slice(1);
 
-  if (!command || dirs.length === 0) {
-    console.error('Usage: node scripts/fork-version.mjs <bump|show> <fork-dir> [fork-dir2] ...');
-    process.exit(1);
-  }
-
-  const resolvedDirs = dirs.map(d => resolve(d));
-
-  if (command === 'show') {
-    for (const dir of resolvedDirs) {
-      showAll(dir);
+    if (!command || (command !== 'reconcile' && dirs.length === 0)) {
+      console.error('Usage: node scripts/fork-version.mjs <bump|show|reconcile> <fork-dir> [fork-dir2] ...');
+      console.error('  bump [--skip-npm-check]  Bump -patch.N (queries npm to avoid collisions)');
+      console.error('  show                     Show current versions');
+      console.error('  reconcile                Rebuild published-versions.json from npm');
+      process.exit(1);
     }
-  } else if (command === 'bump') {
-    const { changes } = bumpAll(resolvedDirs);
-    if (changes.length === 0) {
-      console.log('No @sparkleideas/* or @claude-flow/* packages found.');
-    } else {
-      console.log(`Bumped ${changes.length} package(s):\n`);
-      for (const c of changes) {
-        console.log(`  ${c.name}: ${c.from} -> ${c.to}`);
+
+    const resolvedDirs = dirs.map(d => resolve(d));
+
+    if (command === 'show') {
+      for (const dir of resolvedDirs) {
+        showAll(dir);
       }
+    } else if (command === 'bump') {
+      const skipNpmCheck = process.argv.includes('--skip-npm-check');
+      const { changes } = await bumpAll(resolvedDirs, { skipNpmCheck });
+      if (changes.length === 0) {
+        console.log('No @sparkleideas/* or @claude-flow/* packages found.');
+      } else {
+        console.log(`Bumped ${changes.length} package(s):\n`);
+        for (const c of changes) {
+          console.log(`  ${c.name}: ${c.from} -> ${c.to}`);
+        }
+      }
+    } else if (command === 'reconcile') {
+      await reconcileWithNpm();
+    } else {
+      console.error(`Unknown command: ${command}`);
+      process.exit(1);
     }
-  } else {
-    console.error(`Unknown command: ${command}`);
-    console.error('Usage: node scripts/fork-version.mjs <bump|show> <fork-dir> [fork-dir2] ...');
+  } catch (err) {
+    console.error(err.message);
     process.exit(1);
   }
 }
