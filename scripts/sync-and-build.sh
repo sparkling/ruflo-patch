@@ -229,9 +229,15 @@ check_merged_prs() {
       ruv-FANN)     NEW_FANN_HEAD="$local_sha" ;;
     esac
 
-    if [[ "$local_sha" != "$origin_sha" ]]; then
+    if [[ "$local_sha" == "$origin_sha" ]]; then
+      log "No new merges for ${name} (main=${local_sha:0:12})"
+    elif git -C "${dir}" merge-base --is-ancestor "$origin_sha" "$local_sha" 2>/dev/null; then
+      # origin/main is an ancestor of local main — local is ahead (e.g., version bumps).
+      # This is NOT a new merge from GitHub; do not trigger publish.
+      log "No new merges for ${name} (local ahead: ${local_sha:0:12}, origin: ${origin_sha:0:12})"
+    else
+      # origin/main has commits not in local — new merge from GitHub
       log "New commits on origin/main for ${name}: ${local_sha:0:12} -> ${origin_sha:0:12}"
-      # Fast-forward local main to origin/main
       git -C "${dir}" checkout main --quiet 2>/dev/null || true
       if git -C "${dir}" merge --ff-only origin/main 2>/dev/null; then
         log "Fast-forwarded ${name} main to ${origin_sha:0:12}"
@@ -246,18 +252,13 @@ check_merged_prs() {
         send_email "[ruflo] FF merge failed for ${name}" \
           "Fork ${name} cannot fast-forward to origin/main. Manual intervention required."
       fi
-    else
-      log "No new merges for ${name} (main=${local_sha:0:12})"
     fi
   done
 
-  # Compare against last-published state
-  if [[ "${NEW_RUFLO_HEAD}" != "${RUFLO_HEAD}" || \
-        "${NEW_AGENTIC_HEAD}" != "${AGENTIC_HEAD}" || \
-        "${NEW_FANN_HEAD}" != "${FANN_HEAD}" ]]; then
-    any_changed=true
-  fi
-
+  # Only return 0 (should publish) if origin/main was actually ahead of local
+  # main — i.e., new commits were merged via GitHub PR. Local-only commits
+  # (like version bumps from a previous Stage 3 that didn't publish) should
+  # NOT trigger another publish cycle.
   if [[ "$any_changed" == "true" ]]; then
     return 0
   fi
@@ -973,6 +974,21 @@ run_stage3_publish() {
 
   # Bump versions in forks
   run_phase "bump-versions" bump_fork_versions
+
+  # Update NEW_*_HEAD after bump (the bump created new commits)
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    local name="${FORK_NAMES[$i]}"
+    local sha
+    sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
+    case "$name" in
+      ruflo)        NEW_RUFLO_HEAD="$sha" ;;
+      agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
+      ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+    esac
+  done
+  # Save state immediately so a failed build won't re-bump on next run
+  save_state
 
   # Build pipeline: copy -> codemod -> build
   create_temp_dir
