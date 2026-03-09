@@ -269,21 +269,32 @@ check_merged_prs() {
 # ---------------------------------------------------------------------------
 
 bump_fork_versions() {
+  # Bump all forks at once so cross-fork dep references are updated (ADR-0027)
+  local dirs_args=()
+  for dir in "${FORK_DIRS[@]}"; do
+    [[ -d "${dir}/.git" ]] && dirs_args+=("${dir}")
+  done
+
+  if [[ ${#dirs_args[@]} -eq 0 ]]; then
+    log "No fork directories found — skipping version bump"
+    return 0
+  fi
+
+  log "Bumping versions across all forks"
+  local bump_output
+  bump_output=$(node "${SCRIPT_DIR}/fork-version.mjs" bump "${dirs_args[@]}" 2>&1) || {
+    log_error "Version bump failed: ${bump_output}"
+    return 1
+  }
+  log "${bump_output}"
+
+  # Commit and push each fork that changed
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
 
     [[ -d "${dir}/.git" ]] || continue
 
-    log "Bumping versions in fork: ${name}"
-    local bump_output
-    bump_output=$(node "${SCRIPT_DIR}/fork-version.mjs" bump "${dir}" 2>&1) || {
-      log_error "Version bump failed for ${name}: ${bump_output}"
-      return 1
-    }
-    log "${bump_output}"
-
-    # Commit version bump
     git -C "${dir}" add -A
     local has_changes
     has_changes=$(git -C "${dir}" diff --cached --name-only 2>/dev/null) || true

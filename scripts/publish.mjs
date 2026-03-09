@@ -356,7 +356,8 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
       const stderr = err.stderr || '';
       if (
         stderr.includes('cannot publish over previously published version') ||
-        stderr.includes('You cannot publish over the previously published versions')
+        stderr.includes('You cannot publish over the previously published versions') ||
+        stderr.includes('this package is already present')
       ) {
         console.log(`    already published — skipping`);
         publishedVersions[pkgName] = effectiveVersion;

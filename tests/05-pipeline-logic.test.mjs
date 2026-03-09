@@ -352,11 +352,11 @@ describe('getPublishTag (ADR-0015)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// 6. Config safety — published-versions.json must not contain -patch versions
+// 6. Config safety — published-versions.json must contain valid versions
 // ---------------------------------------------------------------------------
 
 describe('published-versions.json safety', () => {
-  it('no version contains "-patch" suffix (would cause semver resolution failures)', async () => {
+  it('versions using -patch.N follow the ADR-0027 pattern', async () => {
     const { readFileSync } = await import('node:fs');
     const { resolve, dirname } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
@@ -364,8 +364,11 @@ describe('published-versions.json safety', () => {
     const versions = JSON.parse(readFileSync(resolve(root, 'config', 'published-versions.json'), 'utf8'));
 
     for (const [pkg, version] of Object.entries(versions)) {
-      assert.ok(!version.includes('-patch'),
-        `${pkg}@${version} contains "-patch" — this will cause semver resolution failures`);
+      if (version.includes('-patch')) {
+        // ADR-0027: -patch.N versions must have a numeric suffix
+        assert.match(version, /-patch\.\d+$/,
+          `${pkg}@${version} has malformed -patch suffix (expected -patch.N)`);
+      }
     }
   });
 

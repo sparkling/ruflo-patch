@@ -4,8 +4,8 @@
 # Runs the full build pipeline against real upstream code, publishing to a
 # local Verdaccio registry. See ADR-0023 (google-testing-framework) for details.
 #
-# Phases 1-8: Layer 2 (Build Verification)
-# Phase 9:    Cleanup
+# Phases 1-7: Layer 2 (Build Verification)
+# Phase 8:    Cleanup
 #
 # Usage:
 #   bash scripts/test-integration.sh
@@ -25,9 +25,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-UPSTREAM_RUFLO="${HOME}/src/upstream/ruflo"
-UPSTREAM_AGENTIC="${HOME}/src/upstream/agentic-flow"
-UPSTREAM_FANN="${HOME}/src/upstream/ruv-FANN"
+FORK_RUFLO="${HOME}/src/forks/ruflo"
+FORK_AGENTIC="${HOME}/src/forks/agentic-flow"
+FORK_FANN="${HOME}/src/forks/ruv-FANN"
 
 VERDACCIO_PORT=4873
 VERDACCIO_STORAGE="/home/claude/.verdaccio/storage"
@@ -95,7 +95,7 @@ log_error() {
 phase_log() {
   local phase_num="$1"
   shift
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [Phase ${phase_num}/9] $*"
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [Phase ${phase_num}/8] $*"
 }
 
 # ---------------------------------------------------------------------------
@@ -244,9 +244,9 @@ if [[ -n "${CREATE_SNAPSHOT_DIR}" ]]; then
   log "Creating upstream snapshot in ${CREATE_SNAPSHOT_DIR}"
   mkdir -p "${CREATE_SNAPSHOT_DIR}"
 
-  for repo_dir in "${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}"; do
+  for repo_dir in "${FORK_RUFLO}" "${FORK_AGENTIC}" "${FORK_FANN}"; do
     if [[ ! -d "$repo_dir" ]]; then
-      log_error "Upstream directory not found: $repo_dir"
+      log_error "Fork directory not found: $repo_dir"
       exit 1
     fi
     repo_name="$(basename "$repo_dir")"
@@ -261,9 +261,9 @@ if [[ -n "${CREATE_SNAPSHOT_DIR}" ]]; then
   cat > "${CREATE_SNAPSHOT_DIR}/snapshot-manifest.json" <<SNAPEOF
 {
   "timestamp": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
-  "ruflo_head": "$(git -C "${UPSTREAM_RUFLO}" rev-parse HEAD 2>/dev/null || echo 'unknown')",
-  "agentic_flow_head": "$(git -C "${UPSTREAM_AGENTIC}" rev-parse HEAD 2>/dev/null || echo 'unknown')",
-  "ruv_fann_head": "$(git -C "${UPSTREAM_FANN}" rev-parse HEAD 2>/dev/null || echo 'unknown')",
+  "ruflo_head": "$(git -C "${FORK_RUFLO}" rev-parse HEAD 2>/dev/null || echo 'unknown')",
+  "agentic_flow_head": "$(git -C "${FORK_AGENTIC}" rev-parse HEAD 2>/dev/null || echo 'unknown')",
+  "ruv_fann_head": "$(git -C "${FORK_FANN}" rev-parse HEAD 2>/dev/null || echo 'unknown')",
   "platform": "$(uname -srm)"
 }
 SNAPEOF
@@ -318,14 +318,14 @@ check_prerequisites() {
     log "Prerequisite OK: jq $(jq --version 2>/dev/null || echo 'installed')"
   fi
 
-  # Upstream clone dirs (skip if using snapshot)
+  # Fork clone dirs (skip if using snapshot)
   if [[ -z "${SNAPSHOT_DIR}" ]]; then
-    for repo_dir in "${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}"; do
+    for repo_dir in "${FORK_RUFLO}" "${FORK_AGENTIC}" "${FORK_FANN}"; do
       if [[ ! -d "$repo_dir" ]]; then
-        log_error "Upstream clone not found: $repo_dir"
+        log_error "Fork clone not found: $repo_dir"
         fail=1
       else
-        log "Prerequisite OK: $(basename "$repo_dir") clone exists"
+        log "Prerequisite OK: $(basename "$repo_dir") fork clone exists"
       fi
     done
   else
@@ -413,9 +413,9 @@ phase_setup() {
       fann_head="snapshot-no-manifest"
     fi
   else
-    ruflo_head="$(git -C "${UPSTREAM_RUFLO}" rev-parse HEAD 2>/dev/null || echo 'unavailable')"
-    agentic_head="$(git -C "${UPSTREAM_AGENTIC}" rev-parse HEAD 2>/dev/null || echo 'unavailable')"
-    fann_head="$(git -C "${UPSTREAM_FANN}" rev-parse HEAD 2>/dev/null || echo 'unavailable')"
+    ruflo_head="$(git -C "${FORK_RUFLO}" rev-parse HEAD 2>/dev/null || echo 'unavailable')"
+    agentic_head="$(git -C "${FORK_AGENTIC}" rev-parse HEAD 2>/dev/null || echo 'unavailable')"
+    fann_head="$(git -C "${FORK_FANN}" rev-parse HEAD 2>/dev/null || echo 'unavailable')"
   fi
 
   cat > "${RESULTS_DIR}/.test-manifest.json" <<MEOF
@@ -456,7 +456,7 @@ phase_clone() {
   local start
   start=$(now_ns)
 
-  phase_log "2" "Clone - copying upstream source to temp dir"
+  phase_log "2" "Clone - copying fork source to temp dir"
 
   if [[ -n "${SNAPSHOT_DIR}" ]]; then
     # Extract from snapshot tarballs
@@ -475,9 +475,9 @@ phase_clone() {
       tar -xzf "$tarpath" -C "${TEMP_BUILD}"
     done
   else
-    # Copy from live upstream clones in parallel, excluding .git
+    # Copy from fork clones in parallel, excluding .git
     local clone_pids=()
-    for repo_dir in "${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}"; do
+    for repo_dir in "${FORK_RUFLO}" "${FORK_AGENTIC}" "${FORK_FANN}"; do
       local repo_name
       repo_name="$(basename "$repo_dir")"
       phase_log "2" "  Copying ${repo_name} (background)..."
@@ -575,69 +575,14 @@ phase_codemod() {
 }
 
 # ---------------------------------------------------------------------------
-# Phase 4: Patch
-# ---------------------------------------------------------------------------
-
-phase_patch() {
-  local start
-  start=$(now_ns)
-
-  phase_log "4" "Patch - applying patches via patch-all.sh"
-
-  local patch_output
-  patch_output=$(bash "${PROJECT_DIR}/patch-all.sh" --target "${TEMP_BUILD}" 2>&1) || {
-    log_error "patch-all.sh failed"
-    echo "$patch_output" >&2
-    local end
-    end=$(now_ns)
-    record_phase "patch" "false" "$(elapsed_ms "$start" "$end")" "$(truncate_output "$patch_output")"
-    return 1
-  }
-
-  phase_log "4" "Patch output:"
-  echo "$patch_output" | while IFS= read -r line; do
-    phase_log "4" "  $line"
-  done
-
-  # Verify sentinels exist
-  local sentinel_count=0
-  local sentinel_missing=0
-  for sentinel_file in "${PROJECT_DIR}"/patch/*/sentinel; do
-    [[ -f "$sentinel_file" ]] || continue
-    sentinel_count=$((sentinel_count + 1))
-    local patch_name
-    patch_name="$(basename "$(dirname "$sentinel_file")")"
-    # Read the sentinel to see what it expects (format: "absent|present <pattern> <file>")
-    # We just verify the patch directory was processed; detailed sentinel verification
-    # is handled by check-patches.sh
-    phase_log "4" "  Sentinel present for: ${patch_name}"
-  done
-
-  if [[ $sentinel_count -eq 0 ]]; then
-    log_error "No sentinel files found in ${PROJECT_DIR}/patch/*/sentinel"
-    local end
-    end=$(now_ns)
-    record_phase "patch" "false" "$(elapsed_ms "$start" "$end")" "No sentinels found"
-    return 1
-  fi
-
-  phase_log "4" "Verified ${sentinel_count} patch sentinels"
-
-  local end
-  end=$(now_ns)
-  record_phase "patch" "true" "$(elapsed_ms "$start" "$end")" "${sentinel_count} sentinels verified"
-  phase_log "4" "Patch complete ($(elapsed_ms "$start" "$end")ms)"
-}
-
-# ---------------------------------------------------------------------------
-# Phase 5: Build
+# Phase 4: Build (renumbered from 5; patch phase removed per ADR-0027)
 # ---------------------------------------------------------------------------
 
 phase_build() {
   local start
   start=$(now_ns)
 
-  phase_log "5" "Verify - checking pre-built packages exist (no build step needed)"
+  phase_log "4" "Verify - checking pre-built packages exist (no build step needed)"
 
   # Upstream packages ship pre-built dist/ directories.
   # We re-scope and patch them, we do NOT rebuild from source.
@@ -648,7 +593,7 @@ phase_build() {
     build_root="${TEMP_BUILD}"
   fi
 
-  phase_log "5" "Build root: ${build_root}"
+  phase_log "4" "Build root: ${build_root}"
 
   # Count package.json files (each is a publishable package)
   local pkg_count
@@ -674,35 +619,35 @@ phase_build() {
       local pkg_dir
       pkg_dir=$(dirname "$pjson")
       if [[ -d "${pkg_dir}/dist" || -d "${pkg_dir}/src" ]]; then
-        phase_log "5" "CLI package found at ${pkg_dir} with dist/src"
+        phase_log "4" "CLI package found at ${pkg_dir} with dist/src"
       else
-        phase_log "5" "WARNING: CLI package at ${pkg_dir} has no dist/ or src/"
+        phase_log "4" "WARNING: CLI package at ${pkg_dir} has no dist/ or src/"
       fi
       break
     fi
   done < <(find "${build_root}" -name 'package.json' -not -path '*/node_modules/*')
 
   if [[ "$cli_found" == "false" ]]; then
-    phase_log "5" "WARNING: CLI package not found (may be in a subdirectory)"
+    phase_log "4" "WARNING: CLI package not found (may be in a subdirectory)"
   fi
 
-  phase_log "5" "Found ${pkg_count} package.json files"
+  phase_log "4" "Found ${pkg_count} package.json files"
 
   local end
   end=$(now_ns)
   record_phase "verify" "true" "$(elapsed_ms "$start" "$end")" "${pkg_count} packages verified"
-  phase_log "5" "Verify complete ($(elapsed_ms "$start" "$end")ms)"
+  phase_log "4" "Verify complete ($(elapsed_ms "$start" "$end")ms)"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 6: Upstream tests
+# Phase 5: Upstream tests
 # ---------------------------------------------------------------------------
 
 phase_upstream_tests() {
   local start
   start=$(now_ns)
 
-  phase_log "6" "Upstream tests - SKIPPED (we patch pre-built packages, no source build)"
+  phase_log "5" "Upstream tests - SKIPPED (we patch pre-built packages, no source build)"
 
   # We don't build from source, so upstream tests can't run.
   # Our own unit tests (npm test) and acceptance tests validate correctness.
@@ -710,18 +655,18 @@ phase_upstream_tests() {
   local end
   end=$(now_ns)
   record_phase "upstream-tests" "true" "$(elapsed_ms "$start" "$end")" "skipped — no source build"
-  phase_log "6" "Upstream tests phase complete (skipped)"
+  phase_log "5" "Upstream tests phase complete (skipped)"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 7: Publish
+# Phase 6: Publish
 # ---------------------------------------------------------------------------
 
 phase_publish() {
   local start
   start=$(now_ns)
 
-  phase_log "7" "Publish - publishing all packages to local Verdaccio"
+  phase_log "6" "Publish - publishing all packages to local Verdaccio"
 
   # Use the whole temp dir as build root — packages are spread across
   # ruflo/, agentic-flow/, and ruv-FANN/ subdirectories.
@@ -744,10 +689,10 @@ phase_publish() {
   local publish_extra_args=""
   if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON:-}" != "all" && "${CHANGED_PACKAGES_JSON:-}" != "[]" ]]; then
     publish_extra_args="--packages ${CHANGED_PACKAGES_JSON}"
-    phase_log "7" "Incremental: publishing only changed packages"
+    phase_log "6" "Incremental: publishing only changed packages"
   fi
 
-  phase_log "7" "Running publish.mjs (streaming output to ${publish_output_file})..."
+  phase_log "6" "Running publish.mjs (streaming output to ${publish_output_file})..."
 
   # Stream output to both file and stderr so heartbeats remain visible
   # shellcheck disable=SC2086
@@ -758,9 +703,9 @@ phase_publish() {
   local publish_output
   publish_output=$(cat "${publish_output_file}")
 
-  phase_log "7" "Publish output (last 30 lines):"
+  phase_log "6" "Publish output (last 30 lines):"
   tail -30 "${publish_output_file}" | while IFS= read -r line; do
-    phase_log "7" "  $line"
+    phase_log "6" "  $line"
   done
 
   # Extract JSON summary (everything after "--- Summary ---")
@@ -795,23 +740,23 @@ phase_publish() {
     return 1
   fi
 
-  phase_log "7" "Publish succeeded"
+  phase_log "6" "Publish succeeded"
 
   local end
   end=$(now_ns)
   record_phase "publish" "true" "$(elapsed_ms "$start" "$end")" "Published to Verdaccio on port ${VERDACCIO_PORT}"
-  phase_log "7" "Publish complete ($(elapsed_ms "$start" "$end")ms)"
+  phase_log "6" "Publish complete ($(elapsed_ms "$start" "$end")ms)"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 8: Install
+# Phase 7: Install
 # ---------------------------------------------------------------------------
 
 phase_install() {
   local start
   start=$(now_ns)
 
-  phase_log "8" "Install - verifying @sparkleideas/cli installs from Verdaccio"
+  phase_log "7" "Install - verifying @sparkleideas/cli installs from Verdaccio"
 
   # Create a minimal package.json in the install temp dir
   cat > "${TEMP_INSTALL}/package.json" <<IEOF
@@ -828,7 +773,7 @@ IEOF
   local install_output_file="${RESULTS_DIR}/install-raw-output.txt"
   local install_exit=0
 
-  phase_log "8" "Running npm install @sparkleideas/cli (streaming)..."
+  phase_log "7" "Running npm install @sparkleideas/cli (streaming)..."
 
   (cd "${TEMP_INSTALL}" && npm install @sparkleideas/cli \
     --registry "http://localhost:${VERDACCIO_PORT}" \
@@ -840,9 +785,9 @@ IEOF
 
   if [[ $install_exit -ne 0 ]]; then
     log_error "npm install @sparkleideas/cli failed with exit code ${install_exit}"
-    phase_log "8" "Install output (last 20 lines):"
+    phase_log "7" "Install output (last 20 lines):"
     tail -20 "${install_output_file}" | while IFS= read -r line; do
-      phase_log "8" "  $line"
+      phase_log "7" "  $line"
     done
     local end
     end=$(now_ns)
@@ -852,7 +797,7 @@ IEOF
 
   # Verify the package is in node_modules
   if [[ -d "${TEMP_INSTALL}/node_modules/@sparkleideas/cli" ]]; then
-    phase_log "8" "@sparkleideas/cli installed successfully in node_modules"
+    phase_log "7" "@sparkleideas/cli installed successfully in node_modules"
   else
     log_error "@sparkleideas/cli not found in node_modules after install"
     local end
@@ -864,9 +809,9 @@ IEOF
   # Verify key ADR-0021/0022 packages are available in the registry
   for new_pkg in "@sparkleideas/agent-booster" "@sparkleideas/plugins" "@sparkleideas/ruvector-upstream"; do
     if npm view "$new_pkg" version --registry "http://localhost:${VERDACCIO_PORT}" >/dev/null 2>&1; then
-      phase_log "8" "  ADR-0022 package available: $new_pkg"
+      phase_log "7" "  ADR-0022 package available: $new_pkg"
     else
-      phase_log "8" "  WARNING: ADR-0022 package not published: $new_pkg"
+      phase_log "7" "  WARNING: ADR-0022 package not published: $new_pkg"
     fi
   done
 
@@ -874,42 +819,42 @@ IEOF
   local missing_deps
   missing_deps=$(cd "${TEMP_INSTALL}" && npm ls --all 2>&1 | grep 'MISSING' || true)
   if [[ -n "$missing_deps" ]]; then
-    phase_log "8" "WARNING: Missing dependencies detected:"
+    phase_log "7" "WARNING: Missing dependencies detected:"
     echo "$missing_deps" | head -10 | while IFS= read -r line; do
-      phase_log "8" "  $line"
+      phase_log "7" "  $line"
     done
   else
-    phase_log "8" "All dependencies resolved successfully"
+    phase_log "7" "All dependencies resolved successfully"
   fi
 
   local end
   end=$(now_ns)
   record_phase "install" "true" "$(elapsed_ms "$start" "$end")" "@sparkleideas/cli installed and deps resolved"
-  phase_log "8" "Install complete ($(elapsed_ms "$start" "$end")ms)"
+  phase_log "7" "Install complete ($(elapsed_ms "$start" "$end")ms)"
 }
 
 # ---------------------------------------------------------------------------
-# Phase 9: Cleanup
+# Phase 8: Cleanup
 # ---------------------------------------------------------------------------
 
 phase_cleanup() {
   local start
   start=$(now_ns)
 
-  phase_log "9" "Cleanup - copying Verdaccio log and writing final results"
+  phase_log "8" "Cleanup - copying Verdaccio log and writing final results"
 
   # Copy Verdaccio log to results
   local verdaccio_log="/home/claude/.verdaccio/verdaccio.log"
   if [[ -f "${verdaccio_log}" ]]; then
     cp "${verdaccio_log}" "${RESULTS_DIR}/verdaccio.log"
-    phase_log "9" "Verdaccio log saved to ${RESULTS_DIR}/verdaccio.log"
+    phase_log "8" "Verdaccio log saved to ${RESULTS_DIR}/verdaccio.log"
   else
     echo "(no verdaccio log found)" > "${RESULTS_DIR}/verdaccio.log"
   fi
 
   # Write integration-phases.json
   echo "${PHASE_RESULTS}" | jq '.' > "${RESULTS_DIR}/integration-phases.json"
-  phase_log "9" "Phase results written to ${RESULTS_DIR}/integration-phases.json"
+  phase_log "8" "Phase results written to ${RESULTS_DIR}/integration-phases.json"
 
   # Copy manifest to results (it was written in phase 1)
   # Already exists at ${RESULTS_DIR}/.test-manifest.json
@@ -917,16 +862,16 @@ phase_cleanup() {
   # Bootstrap package-checksums.json for incremental builds (if not yet present)
   local checksums_path="${PROJECT_DIR}/config/package-checksums.json"
   if [[ ! -f "$checksums_path" && -n "$TEMP_BUILD" && -d "$TEMP_BUILD" ]]; then
-    phase_log "9" "Bootstrapping package-checksums.json from build dir"
+    phase_log "8" "Bootstrapping package-checksums.json from build dir"
     node "${SCRIPT_DIR}/package-hash.mjs" --build-dir "$TEMP_BUILD" --save 2>&1 || \
-      phase_log "9" "WARNING: Failed to generate package checksums"
+      phase_log "8" "WARNING: Failed to generate package checksums"
   fi
 
   # Remove ephemeral temp dirs (Verdaccio is a permanent service, not ours to stop)
   for d in "${TEMP_BUILD}" "${TEMP_INSTALL}"; do
     if [[ -n "$d" && -d "$d" ]]; then
       rm -rf "$d"
-      phase_log "9" "Removed $d"
+      phase_log "8" "Removed $d"
     fi
   done
   # Clear vars so trap handler skips them
@@ -936,7 +881,7 @@ phase_cleanup() {
   local end
   end=$(now_ns)
   record_phase "cleanup" "true" "$(elapsed_ms "$start" "$end")" "All resources released"
-  phase_log "9" "Cleanup complete ($(elapsed_ms "$start" "$end")ms)"
+  phase_log "8" "Cleanup complete ($(elapsed_ms "$start" "$end")ms)"
 
   # Re-write phases JSON with cleanup included
   echo "${PHASE_RESULTS}" | jq '.' > "${RESULTS_DIR}/integration-phases.json"
@@ -953,8 +898,8 @@ main() {
   log "=========================================="
   log "ruflo integration test starting"
   log "=========================================="
-  log "Phase timeouts: setup=30s clone=60s codemod=60s patch=30s"
-  log "                build=30s upstream=10s publish=90s install=60s"
+  log "Phase timeouts: setup=30s clone=60s codemod=60s build=30s"
+  log "                upstream=10s publish=90s install=60s"
   log "Global timeout: 180s (3 min)"
   log "=========================================="
 
@@ -987,15 +932,11 @@ main() {
   fi
 
   if [[ -z "$phase_failed" ]]; then
-    run_phase_with_timeout 30 phase_patch || phase_failed="patch"
-  fi
-
-  if [[ -z "$phase_failed" ]]; then
     run_phase_with_timeout 30 phase_build || phase_failed="build"
   fi
 
   if [[ -z "$phase_failed" ]]; then
-    # Phase 6 never fails (advisory)
+    # Phase 5 never fails (advisory)
     run_phase_with_timeout 10 phase_upstream_tests
   fi
 
@@ -1007,7 +948,7 @@ main() {
     run_phase_with_timeout 60 phase_install || phase_failed="install"
   fi
 
-  # Phase 9 always runs (cleanup)
+  # Phase 8 always runs (cleanup)
   phase_cleanup
 
   # Cancel global timeout

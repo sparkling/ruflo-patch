@@ -24,6 +24,17 @@ const __filename = fileURLToPath(import.meta.url);
 const SKIP_DIRS = new Set(['node_modules', '.git', '.tsc-toolchain']);
 const SCOPES = ['@sparkleideas/', '@claude-flow/'];
 
+// Unscoped packages that are published as @sparkleideas/* (via codemod rename).
+// These need -patch.N versions too.
+const UNSCOPED_PUBLISHABLE = new Set([
+  'agentdb',
+  'agentic-flow',
+  'ruv-swarm',
+  'agent-booster',
+  'agentdb-onnx',
+  'cuda-wasm',
+]);
+
 // ── Version parsing ──
 
 /**
@@ -75,7 +86,10 @@ function walk(dir, results) {
       try {
         const raw = readFileSync(full, 'utf8');
         const pkg = JSON.parse(raw);
-        if (pkg.name && SCOPES.some(s => pkg.name.startsWith(s))) {
+        if (pkg.name && (
+          SCOPES.some(s => pkg.name.startsWith(s)) ||
+          UNSCOPED_PUBLISHABLE.has(pkg.name)
+        )) {
           results.push({ path: full, pkg });
         }
       } catch {
@@ -88,26 +102,47 @@ function walk(dir, results) {
 // ── Bump all packages ──
 
 /**
- * Bump all @sparkleideas/* and @claude-flow/* packages in a fork directory.
- * Updates versions and internal dependency references.
+ * Bump all @sparkleideas/*, @claude-flow/*, and unscoped publishable packages
+ * in one or more fork directories. Updates versions and internal dependency
+ * references across all forks (ADR-0027: exact pinned versions, no wildcards).
  *
- * @param {string} dir - fork root directory
+ * @param {string|string[]} dirs - fork root directory or array of directories
  * @param {object} [opts]
  * @param {boolean} [opts.dryRun=false] - if true, don't write files
  * @returns {{changes: Array<{name: string, from: string, to: string, path: string}>}}
  */
-export function bumpAll(dir, opts = {}) {
+export function bumpAll(dirs, opts = {}) {
   const { dryRun = false } = opts;
-  const packages = findPackages(dir);
+  const dirList = Array.isArray(dirs) ? dirs : [dirs];
+
+  // Discover packages across all forks
+  const allPackages = [];
+  for (const dir of dirList) {
+    allPackages.push(...findPackages(dir));
+  }
 
   // Build version map: packageName -> newVersion
+  // Also build alias map: @claude-flow/X -> version of X (for cross-scope dep refs)
   const versionMap = new Map();
   const changes = [];
 
-  for (const { path: pkgPath, pkg } of packages) {
+  for (const { path: pkgPath, pkg } of allPackages) {
     const oldVersion = pkg.version;
     const newVersion = bumpPatchVersion(oldVersion);
     versionMap.set(pkg.name, newVersion);
+
+    // Add aliases so cross-scope references resolve:
+    // unscoped "agentdb" -> also register "@claude-flow/agentdb" and "@sparkleideas/agentdb"
+    if (UNSCOPED_PUBLISHABLE.has(pkg.name)) {
+      versionMap.set(`@claude-flow/${pkg.name}`, newVersion);
+      versionMap.set(`@sparkleideas/${pkg.name}`, newVersion);
+    }
+    // scoped "@claude-flow/cli" -> also register "@sparkleideas/cli"
+    if (pkg.name.startsWith('@claude-flow/')) {
+      const short = pkg.name.replace('@claude-flow/', '');
+      versionMap.set(`@sparkleideas/${short}`, newVersion);
+    }
+
     changes.push({
       name: pkg.name,
       from: oldVersion,
@@ -117,7 +152,7 @@ export function bumpAll(dir, opts = {}) {
   }
 
   // Apply version bumps and update internal dep references
-  for (const { path: pkgPath, pkg } of packages) {
+  for (const { path: pkgPath, pkg } of allPackages) {
     const newVersion = versionMap.get(pkg.name);
     pkg.version = newVersion;
 
@@ -175,19 +210,21 @@ if (isMainModule) {
   });
 
   const command = positionals[0];
-  const dir = positionals[1];
+  const dirs = positionals.slice(1);
 
-  if (!command || !dir) {
-    console.error('Usage: node scripts/fork-version.mjs <bump|show> <fork-directory>');
+  if (!command || dirs.length === 0) {
+    console.error('Usage: node scripts/fork-version.mjs <bump|show> <fork-dir> [fork-dir2] ...');
     process.exit(1);
   }
 
-  const resolvedDir = resolve(dir);
+  const resolvedDirs = dirs.map(d => resolve(d));
 
   if (command === 'show') {
-    showAll(resolvedDir);
+    for (const dir of resolvedDirs) {
+      showAll(dir);
+    }
   } else if (command === 'bump') {
-    const { changes } = bumpAll(resolvedDir);
+    const { changes } = bumpAll(resolvedDirs);
     if (changes.length === 0) {
       console.log('No @sparkleideas/* or @claude-flow/* packages found.');
     } else {
@@ -198,7 +235,7 @@ if (isMainModule) {
     }
   } else {
     console.error(`Unknown command: ${command}`);
-    console.error('Usage: node scripts/fork-version.mjs <bump|show> <fork-directory>');
+    console.error('Usage: node scripts/fork-version.mjs <bump|show> <fork-dir> [fork-dir2] ...');
     process.exit(1);
   }
 }

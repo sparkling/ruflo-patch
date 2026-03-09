@@ -108,9 +108,8 @@ function transformPackageJsonObject(json) {
     }
   }
 
-  // ADR-0027: Wildcard replacement removed. In the fork model, dependency
-  // ranges are fixed directly in fork package.json files with exact -patch.N
-  // versions. No build-time dep rewriting needed.
+  // ADR-0027: No wildcard replacement. Internal deps use exact -patch.N
+  // versions set by fork-version.mjs in the fork package.json files.
 
   return changed;
 }
