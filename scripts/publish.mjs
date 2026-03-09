@@ -148,7 +148,13 @@ function buildPackageMap(buildDir) {
         try {
           const pkg = JSON.parse(readFileSync(fullPath, 'utf-8'));
           if (pkg.name) {
-            map.set(pkg.name, dir);
+            // Skip npm/ subdirectory packages — these are thin wrappers
+            // that depend on unpublished @agent-booster/* packages.
+            // The parent directory bundles WASM/dist directly.
+            const existing = map.get(pkg.name);
+            if (!existing || !dir.includes('/npm/')) {
+              map.set(pkg.name, dir);
+            }
           }
         } catch {
           // Skip malformed package.json files
