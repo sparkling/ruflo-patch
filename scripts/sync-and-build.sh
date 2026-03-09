@@ -302,9 +302,10 @@ bump_fork_versions() {
     if [[ -n "$has_changes" ]]; then
       local cli_version
       cli_version=$(node -e "
-        const pkgs = JSON.parse(require('fs').readFileSync('${dir}/package.json', 'utf8'));
-        console.log(pkgs.version || 'unknown');
-      " 2>/dev/null) || cli_version="unknown"
+        const { findPackages } = await import('${SCRIPT_DIR}/fork-version.mjs');
+        const pkgs = findPackages('${dir}');
+        console.log(pkgs.length > 0 ? pkgs[0].pkg.version : 'unknown');
+      " --input-type=module 2>/dev/null) || cli_version="unknown"
 
       git -C "${dir}" commit -m "chore: bump versions to ${cli_version}" --quiet 2>/dev/null || true
 
