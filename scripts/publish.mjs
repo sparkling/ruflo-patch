@@ -176,7 +176,8 @@ function buildPackageMap(buildDir) {
  */
 async function getPublishTag(packageName) {
   try {
-    await execFile('npm', ['view', packageName, 'version', '--registry', 'https://registry.npmjs.org'], {
+    const registry = process.env.NPM_CONFIG_REGISTRY || 'https://registry.npmjs.org';
+    await execFile('npm', ['view', packageName, 'version', '--registry', registry], {
       timeout: 30_000,
     });
     // Package exists -- use prerelease gate (ADR-0010)
@@ -346,8 +347,9 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
       return { ok: true, entry };
     }
 
+    const publishRegistry = process.env.NPM_CONFIG_REGISTRY || 'https://registry.npmjs.org';
     const publishArgs = ['publish', '--access', 'public', '--ignore-scripts',
-      '--registry', 'https://registry.npmjs.org'];
+      '--registry', publishRegistry];
     // ADR-0015: first publish uses --tag latest (npm requires --tag for prerelease
     // versions). Subsequent publishes use --tag prerelease (ADR-0010 gate).
     publishArgs.push('--tag', tag ?? 'latest');
