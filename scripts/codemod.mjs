@@ -75,7 +75,7 @@ function applyNameMapping(name) {
 
 // -- Phase 1: package.json transform ------------------------------------------
 
-const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies'];
+const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies', 'peerDependenciesMeta'];
 const KEY_RENAME_FIELDS = ['bin', 'exports'];
 
 /**
