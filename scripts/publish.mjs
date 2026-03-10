@@ -393,9 +393,32 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
           publishedVersions[pkgName] = effectiveVersion;
           return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion, duration_ms: Date.now() - pkgStart } };
         }
-        // Version does NOT exist on target registry — treat as a real failure
-        console.error(`    publish error claimed "already published" but ${pkgName}@${effectiveVersion} not found on ${publishRegistry}`);
-        console.error(`    stderr: ${stderr.substring(0, 500)}`);
+        // Version does NOT exist on target registry — ghost version.
+        // npm accepted the write but never propagated to read side.
+        // Bump to next -patch.N and retry once.
+        console.warn(`    ghost version detected: ${pkgName}@${effectiveVersion} — bumping and retrying`);
+        const patchMatch = effectiveVersion.match(/^(.*)-patch\.(\d+)$/);
+        if (patchMatch) {
+          const retryVersion = `${patchMatch[1]}-patch.${parseInt(patchMatch[2], 10) + 1}`;
+          console.log(`    retrying as ${pkgName}@${retryVersion}`);
+          pkgJson.version = retryVersion;
+          writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + '\n');
+          stampVersion(pkgDir, retryVersion, metadata);
+          try {
+            const { stdout: retryOut } = await execFile('npm', publishArgs, {
+              cwd: pkgDir,
+              timeout: 120_000,
+            });
+            if (retryOut) console.log(`    ${retryOut.trim()}`);
+            const duration_ms = Date.now() - pkgStart;
+            console.log(`    published (ghost retry) in ${duration_ms}ms`);
+            publishedVersions[pkgName] = retryVersion;
+            return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: retryVersion, duration_ms } };
+          } catch (retryErr) {
+            const retryStderr = retryErr.stderr || '';
+            console.error(`    ghost retry also failed: ${retryStderr.substring(0, 300)}`);
+          }
+        }
       }
 
       const errorOutput = [
