@@ -196,11 +196,16 @@ async function safeNextVersion(currentVersion, forkName) {
   const npmName = toNpmName(forkName);
 
   // If current version has a -patch.N suffix, check if it's already on npm.
-  // If NOT on npm, keep it — it was bumped but never published (failed run).
+  // Always bump past the current version — never reuse. A version that returns
+  // 404 on npm view might be a "ghost" (write side accepted the publish but
+  // read side never propagated), blocking re-publish with E400.
   if (localN > 0) {
     const exists = await versionExistsOnNpm(npmName, currentVersion);
-    if (!exists) {
-      return currentVersion;  // Idempotent: reuse unpublished version
+    if (exists) {
+      // Version confirmed on npm — bump past it
+    } else {
+      // Version not on npm — could be unpublished OR a ghost. Bump past it
+      // to avoid E400 "cannot publish over previously published version".
     }
   }
 

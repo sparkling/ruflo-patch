@@ -221,11 +221,16 @@ function stampVersion(pkgDir, version, metadata) {
   }
 
   // Strip bin entries that reference non-existent files (prevents npm publish errors)
+  // Also normalize bin paths: strip leading "./" (npm 11.x warns about it)
   if (pkg.bin && typeof pkg.bin === 'object') {
     for (const [name, binPath] of Object.entries(pkg.bin)) {
-      const resolved = join(pkgDir, binPath);
+      const normalized = binPath.replace(/^\.\//, '');
+      const resolved = join(pkgDir, normalized);
       try {
         statSync(resolved);
+        if (binPath !== normalized) {
+          pkg.bin[name] = normalized;
+        }
       } catch {
         console.log(`    stripped missing bin: ${name} -> ${binPath}`);
         delete pkg.bin[name];
@@ -372,10 +377,25 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
         stderrLower.includes('you cannot publish over the previously published versions') ||
         stderrLower.includes('this package is already present')
       ) {
-        console.log(`    already published — skipping (${Date.now() - pkgStart}ms)`);
-        console.log(`    (stderr: ${stderr.substring(0, 200)})`);
-        publishedVersions[pkgName] = effectiveVersion;
-        return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion, duration_ms: Date.now() - pkgStart } };
+        // Verify the version actually exists on the target registry before skipping.
+        // Without this check, a failed publish to one registry (e.g. Verdaccio from
+        // a previous test) could be mistaken for a successful publish to npm.
+        let verified = false;
+        try {
+          await execFile('npm', ['view', `${pkgName}@${effectiveVersion}`, 'version',
+            '--registry', publishRegistry], { timeout: 15_000 });
+          verified = true;
+        } catch {
+          verified = false;
+        }
+        if (verified) {
+          console.log(`    already published — skipping (${Date.now() - pkgStart}ms)`);
+          publishedVersions[pkgName] = effectiveVersion;
+          return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion, duration_ms: Date.now() - pkgStart } };
+        }
+        // Version does NOT exist on target registry — treat as a real failure
+        console.error(`    publish error claimed "already published" but ${pkgName}@${effectiveVersion} not found on ${publishRegistry}`);
+        console.error(`    stderr: ${stderr.substring(0, 500)}`);
       }
 
       const errorOutput = [
