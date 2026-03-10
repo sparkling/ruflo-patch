@@ -865,8 +865,13 @@ run_publish() {
   log "Publishing packages (versions from fork package.json files)"
   local -a publish_args=(--build-dir "${TEMP_DIR}")
   local _pub_start; _pub_start=$(date +%s%N 2>/dev/null || echo 0)
-  node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}"
+  local _pub_rc=0
+  node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}" || _pub_rc=$?
   local _pub_end; _pub_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ $_pub_rc -ne 0 ]]; then
+    log_error "publish.mjs failed with exit code ${_pub_rc}"
+    return $_pub_rc
+  fi
   log "Publish complete"
   if [[ "$_pub_start" != "0" && "$_pub_end" != "0" ]]; then
     add_cmd_timing "publish" "node publish.mjs" "$(( (_pub_end - _pub_start) / 1000000 ))"
