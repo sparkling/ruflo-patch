@@ -96,6 +96,11 @@ NEW_RUFLO_HEAD=""
 NEW_AGENTIC_HEAD=""
 NEW_FANN_HEAD=""
 
+# Selective version bumping: tracks which forks changed (set by check_merged_prs)
+CHANGED_FORK_SHAS=""  # format: dir1:oldSha,dir2:oldSha
+# Incremental Verdaccio: JSON array of changed @sparkleideas/* packages (set by bump_fork_versions)
+CHANGED_PACKAGES_JSON="all"
+
 # Build version (set by read_build_version)
 BUILD_VERSION=""
 
@@ -221,7 +226,9 @@ check_merged_prs() {
   # Compares origin/main SHA against the STATE FILE (not local main), so pushes
   # from this machine are detected correctly.
   # Updates NEW_*_HEAD variables and fast-forwards local main.
+  # Sets CHANGED_FORK_SHAS (format: dir1:oldSha,dir2:oldSha) for selective bumping.
   local any_changed=false
+  CHANGED_FORK_SHAS=""
 
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
@@ -252,6 +259,12 @@ check_merged_prs() {
       # No previous state — treat as new
       log "No previous state for ${name} — treating as new (origin=${origin_sha:0:12})"
       any_changed=true
+      # Empty SHA after colon signals first run to fork-version.mjs
+      if [[ -n "$CHANGED_FORK_SHAS" ]]; then
+        CHANGED_FORK_SHAS="${CHANGED_FORK_SHAS},${dir}:"
+      else
+        CHANGED_FORK_SHAS="${dir}:"
+      fi
     elif [[ "$origin_sha" == "$state_sha" ]]; then
       log "No new merges for ${name} (origin=${origin_sha:0:12})"
     elif git -C "${dir}" merge-base --is-ancestor "$origin_sha" "$state_sha" 2>/dev/null; then
@@ -262,6 +275,12 @@ check_merged_prs() {
       # origin/main has commits not in state — new merge or push
       log "New commits on origin/main for ${name}: state=${state_sha:0:12} -> origin=${origin_sha:0:12}"
       any_changed=true
+      # Record dir:oldSha for selective version bumping
+      if [[ -n "$CHANGED_FORK_SHAS" ]]; then
+        CHANGED_FORK_SHAS="${CHANGED_FORK_SHAS},${dir}:${state_sha}"
+      else
+        CHANGED_FORK_SHAS="${dir}:${state_sha}"
+      fi
     fi
 
     # Always fast-forward local main to origin/main
@@ -302,10 +321,19 @@ bump_fork_versions() {
     return 0
   fi
 
-  log "Bumping versions across all forks"
+  # Build fork-version.mjs args: selective bump if we know which forks changed
+  local -a bump_extra_args=()
+  if [[ -n "${CHANGED_FORK_SHAS:-}" && "${FORCE_BUILD}" != "true" ]]; then
+    bump_extra_args+=(--changed-shas "${CHANGED_FORK_SHAS}")
+    log "Selective bump: --changed-shas ${CHANGED_FORK_SHAS}"
+  else
+    log "Bumping versions across all forks (full bump)"
+  fi
+
   local bump_output _bump_start _bump_end
   _bump_start=$(date +%s%N 2>/dev/null || echo 0)
-  bump_output=$(node "${SCRIPT_DIR}/fork-version.mjs" bump "${dirs_args[@]}" 2>&1) || {
+  bump_output=$(node "${SCRIPT_DIR}/fork-version.mjs" bump \
+    "${bump_extra_args[@]+"${bump_extra_args[@]}"}" "${dirs_args[@]}" 2>&1) || {
     log_error "Version bump failed: ${bump_output}"
     return 1
   }
@@ -314,6 +342,14 @@ bump_fork_versions() {
   if [[ "$_bump_start" != "0" && "$_bump_end" != "0" ]]; then
     add_cmd_timing "bump-versions" "node fork-version.mjs bump" "$(( (_bump_end - _bump_start) / 1000000 ))"
   fi
+
+  # Parse BUMPED_PACKAGES line for downstream incremental Verdaccio
+  # grep for BUMPED_PACKAGES: prefix in the output
+  CHANGED_PACKAGES_JSON=$(echo "$bump_output" | grep '^BUMPED_PACKAGES:' | sed 's/^BUMPED_PACKAGES://') || true
+  if [[ -z "${CHANGED_PACKAGES_JSON}" ]]; then
+    CHANGED_PACKAGES_JSON="all"
+  fi
+  log "Changed packages for L2/L3: ${CHANGED_PACKAGES_JSON}"
 
   # Commit and push each fork that changed
   for i in "${!FORK_NAMES[@]}"; do
@@ -802,7 +838,7 @@ run_tests_l1() {
 run_tests_l2() {
   log "Running integration test (L2: local Verdaccio)"
   local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
-  CHANGED_PACKAGES_JSON=all bash "${SCRIPT_DIR}/test-integration.sh" || {
+  CHANGED_PACKAGES_JSON="${CHANGED_PACKAGES_JSON:-all}" bash "${SCRIPT_DIR}/test-integration.sh" || {
     log_error "Integration test failed — aborting before publish to npm"
     return 1
   }
@@ -813,6 +849,10 @@ run_tests_l2() {
 run_tests_l3() {
   log "Running Release Qualification (L3)"
   local -a rq_args=(--build-dir "${TEMP_DIR}")
+  # Pass changed packages for incremental Verdaccio clearing
+  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]]; then
+    rq_args+=(--changed-packages "${CHANGED_PACKAGES_JSON}")
+  fi
   local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
   bash "${SCRIPT_DIR}/test-rq.sh" "${rq_args[@]}" || {
     log_error "Release Qualification FAILED"

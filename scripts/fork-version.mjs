@@ -214,6 +214,134 @@ async function safeNextVersion(currentVersion, forkName) {
   return `${base}-patch.${nextN}`;
 }
 
+// ── Change detection ──
+
+/**
+ * Detect which packages have changed files between oldSha and HEAD.
+ *
+ * @param {Array<{path: string, pkg: object}>} allPackages - from findPackages()
+ * @param {Map<string, string>} changedShas - map of forkDir -> oldSha
+ * @returns {Promise<Set<string>>} set of package names with changed files
+ */
+export async function detectChangedPackages(allPackages, changedShas) {
+  const changed = new Set();
+
+  for (const [forkDir, oldSha] of changedShas) {
+    // Get packages in this fork dir
+    const forkPackages = allPackages.filter(({ path: p }) => p.startsWith(forkDir + '/'));
+    if (forkPackages.length === 0) continue;
+
+    // Empty SHA = first run, treat all packages as changed
+    if (!oldSha) {
+      for (const { pkg } of forkPackages) changed.add(pkg.name);
+      continue;
+    }
+
+    // Get changed files via git diff
+    let changedFiles;
+    try {
+      const { stdout } = await execFileAsync(
+        'git', ['diff', '--name-only', `${oldSha}..HEAD`],
+        { cwd: forkDir, timeout: 15_000 }
+      );
+      changedFiles = stdout.trim().split('\n').filter(Boolean);
+    } catch {
+      // git diff failed (e.g. shallow clone) — treat all as changed
+      for (const { pkg } of forkPackages) changed.add(pkg.name);
+      continue;
+    }
+
+    if (changedFiles.length === 0) continue;
+
+    // Map each changed file to its containing package
+    // Sort packages by path depth (deepest first) for nearest-ancestor matching
+    const sortedPkgs = [...forkPackages].sort((a, b) => b.path.length - a.path.length);
+
+    for (const file of changedFiles) {
+      const absFile = join(forkDir, file);
+      for (const { path: pkgJsonPath, pkg } of sortedPkgs) {
+        // pkgJsonPath = /path/to/package.json, get its directory
+        const pkgDir = pkgJsonPath.replace(/\/package\.json$/, '');
+        if (absFile.startsWith(pkgDir + '/') || absFile === pkgDir) {
+          changed.add(pkg.name);
+          break;
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+/**
+ * Compute the full bump set: changed packages + all transitive dependents.
+ * Uses BFS through a reverse dependency graph.
+ *
+ * @param {Set<string>} changedPackages - directly changed package names
+ * @param {Array<{path: string, pkg: object}>} allPackages - all discovered packages
+ * @returns {Set<string>} packages to bump (changed + transitive dependents)
+ */
+export function computeBumpSet(changedPackages, allPackages) {
+  // Build reverse dependency graph: depName -> Set<dependentName>
+  const reverseDeps = new Map();
+
+  for (const { pkg } of allPackages) {
+    for (const depField of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
+      const deps = pkg[depField];
+      if (!deps || typeof deps !== 'object') continue;
+
+      for (const depName of Object.keys(deps)) {
+        if (!reverseDeps.has(depName)) {
+          reverseDeps.set(depName, new Set());
+        }
+        reverseDeps.get(depName).add(pkg.name);
+      }
+    }
+  }
+
+  // BFS from changed packages through reverse deps
+  const bumpSet = new Set(changedPackages);
+  const queue = [...changedPackages];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    const dependents = reverseDeps.get(current);
+    if (!dependents) continue;
+
+    // Also check cross-scope aliases
+    const aliases = [current];
+    if (UNSCOPED_PUBLISHABLE.has(current)) {
+      aliases.push(`@claude-flow/${current}`, `@sparkleideas/${current}`);
+    }
+    if (current.startsWith('@claude-flow/')) {
+      aliases.push(`@sparkleideas/${current.replace('@claude-flow/', '')}`);
+    }
+    if (current.startsWith('@sparkleideas/')) {
+      aliases.push(`@claude-flow/${current.replace('@sparkleideas/', '')}`);
+    }
+
+    for (const alias of aliases) {
+      const aliasDeps = reverseDeps.get(alias);
+      if (!aliasDeps) continue;
+      for (const dep of aliasDeps) {
+        if (!bumpSet.has(dep)) {
+          bumpSet.add(dep);
+          queue.push(dep);
+        }
+      }
+    }
+
+    for (const dep of dependents) {
+      if (!bumpSet.has(dep)) {
+        bumpSet.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+
+  return bumpSet;
+}
+
 // ── Bump all packages ──
 
 /**
@@ -228,10 +356,11 @@ async function safeNextVersion(currentVersion, forkName) {
  * @param {object} [opts]
  * @param {boolean} [opts.dryRun=false] - if true, don't write files
  * @param {boolean} [opts.skipNpmCheck=false] - if true, skip npm query (faster, for tests)
+ * @param {Set<string>|null} [opts.onlyPackages=null] - if set, only bump these packages
  * @returns {Promise<{changes: Array<{name: string, from: string, to: string, path: string}>}>}
  */
 export async function bumpAll(dirs, opts = {}) {
-  const { dryRun = false, skipNpmCheck = false } = opts;
+  const { dryRun = false, skipNpmCheck = false, onlyPackages = null } = opts;
   const dirList = Array.isArray(dirs) ? dirs : [dirs];
 
   // Discover packages across all forks
@@ -241,29 +370,38 @@ export async function bumpAll(dirs, opts = {}) {
   }
 
   // Build version map: packageName -> newVersion
-  // Query npm in parallel for all packages to find safe next versions
+  // Query npm in parallel for packages that need bumping
   const versionMap = new Map();
   const changes = [];
 
-  if (!skipNpmCheck) {
-    console.log('Querying npm registry for existing versions...');
+  if (!skipNpmCheck && (!onlyPackages || onlyPackages.size > 0)) {
+    const count = onlyPackages ? onlyPackages.size : allPackages.length;
+    console.log(`Querying npm registry for ${count} package version(s)...`);
   }
 
   // Compute safe versions (parallel npm queries)
+  // Only query npm for packages in the bump set (or all if onlyPackages is null)
   const versionPromises = allPackages.map(async ({ path: pkgPath, pkg }) => {
     const oldVersion = pkg.version;
+    const shouldBump = onlyPackages === null || onlyPackages.has(pkg.name);
+
+    if (!shouldBump) {
+      // Unchanged package — keep current version, no npm query
+      return { pkgPath, pkg, oldVersion, newVersion: oldVersion, bumped: false };
+    }
+
     let newVersion;
     if (skipNpmCheck) {
       newVersion = bumpPatchVersion(oldVersion);
     } else {
       newVersion = await safeNextVersion(oldVersion, pkg.name);
     }
-    return { pkgPath, pkg, oldVersion, newVersion };
+    return { pkgPath, pkg, oldVersion, newVersion, bumped: true };
   });
 
   const versionResults = await Promise.all(versionPromises);
 
-  for (const { pkgPath, pkg, oldVersion, newVersion } of versionResults) {
+  for (const { pkgPath, pkg, oldVersion, newVersion, bumped } of versionResults) {
     versionMap.set(pkg.name, newVersion);
 
     // Add aliases so cross-scope references resolve:
@@ -278,32 +416,41 @@ export async function bumpAll(dirs, opts = {}) {
       versionMap.set(`@sparkleideas/${short}`, newVersion);
     }
 
-    changes.push({
-      name: pkg.name,
-      from: oldVersion,
-      to: newVersion,
-      path: pkgPath,
-    });
+    if (bumped) {
+      changes.push({
+        name: pkg.name,
+        from: oldVersion,
+        to: newVersion,
+        path: pkgPath,
+      });
+    }
   }
 
   // Apply version bumps and update internal dep references
   for (const { path: pkgPath, pkg } of allPackages) {
     const newVersion = versionMap.get(pkg.name);
-    pkg.version = newVersion;
+    let modified = false;
+
+    if (pkg.version !== newVersion) {
+      pkg.version = newVersion;
+      modified = true;
+    }
 
     // Update internal dependency references in all dep fields
+    // (even unchanged packages need updated dep refs if a dep was bumped)
     for (const depField of ['dependencies', 'peerDependencies', 'optionalDependencies']) {
       const deps = pkg[depField];
       if (!deps || typeof deps !== 'object') continue;
 
       for (const depName of Object.keys(deps)) {
-        if (versionMap.has(depName)) {
+        if (versionMap.has(depName) && deps[depName] !== versionMap.get(depName)) {
           deps[depName] = versionMap.get(depName);
+          modified = true;
         }
       }
     }
 
-    if (!dryRun) {
+    if (!dryRun && modified) {
       // Preserve trailing newline if original had one
       const original = readFileSync(pkgPath, 'utf8');
       const trailing = original.endsWith('\n') ? '\n' : '';
@@ -398,7 +545,9 @@ if (isMainModule) {
 
     if (!command || (command !== 'reconcile' && dirs.length === 0)) {
       console.error('Usage: node scripts/fork-version.mjs <bump|show|reconcile> <fork-dir> [fork-dir2] ...');
-      console.error('  bump [--skip-npm-check]  Bump -patch.N (queries npm to avoid collisions)');
+      console.error('  bump [--skip-npm-check] [--changed-shas dir1:sha1,dir2:sha2]');
+      console.error('       Bump -patch.N (queries npm to avoid collisions)');
+      console.error('       --changed-shas: only bump packages changed since the given SHAs');
       console.error('  show                     Show current versions');
       console.error('  reconcile                Rebuild published-versions.json from npm');
       process.exit(1);
@@ -412,14 +561,54 @@ if (isMainModule) {
       }
     } else if (command === 'bump') {
       const skipNpmCheck = process.argv.includes('--skip-npm-check');
-      const { changes } = await bumpAll(resolvedDirs, { skipNpmCheck });
+
+      // Parse --changed-shas flag
+      const changedShasIdx = process.argv.indexOf('--changed-shas');
+      let onlyPackages = null;
+
+      if (changedShasIdx !== -1 && process.argv[changedShasIdx + 1]) {
+        const raw = process.argv[changedShasIdx + 1];
+        const changedShas = new Map();
+        for (const entry of raw.split(',')) {
+          const colonIdx = entry.lastIndexOf(':');
+          if (colonIdx === -1) continue;
+          const dir = resolve(entry.slice(0, colonIdx));
+          const sha = entry.slice(colonIdx + 1);
+          changedShas.set(dir, sha || '');
+        }
+
+        if (changedShas.size > 0) {
+          // Discover all packages first for change detection
+          const allPackages = [];
+          for (const dir of resolvedDirs) {
+            allPackages.push(...findPackages(dir));
+          }
+
+          const directlyChanged = await detectChangedPackages(allPackages, changedShas);
+          if (directlyChanged.size === 0) {
+            console.log('No packages changed — skipping bump');
+            console.log('BUMPED_PACKAGES:[]');
+            process.exit(0);
+          }
+
+          onlyPackages = computeBumpSet(directlyChanged, allPackages);
+          console.log(`Change detection: ${directlyChanged.size} changed, ${onlyPackages.size} in bump set (incl. dependents)`);
+        }
+      }
+
+      const { changes } = await bumpAll(resolvedDirs, { skipNpmCheck, onlyPackages });
       if (changes.length === 0) {
         console.log('No @sparkleideas/* or @claude-flow/* packages found.');
+        console.log('BUMPED_PACKAGES:[]');
       } else {
         console.log(`Bumped ${changes.length} package(s):\n`);
         for (const c of changes) {
           console.log(`  ${c.name}: ${c.from} -> ${c.to}`);
         }
+
+        // Output bumped packages as JSON for downstream consumers (deduplicated)
+        const bumpedNames = [...new Set(changes.map(c => toNpmName(c.name)))];
+        console.log(`BUMPED_PACKAGES:${JSON.stringify(bumpedNames)}`);
       }
     } else if (command === 'reconcile') {
       await reconcileWithNpm();
