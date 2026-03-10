@@ -176,7 +176,7 @@ function buildPackageMap(buildDir) {
  */
 async function getPublishTag(packageName) {
   try {
-    await execFile('npm', ['view', packageName, 'version'], {
+    await execFile('npm', ['view', packageName, 'version', '--registry', 'https://registry.npmjs.org'], {
       timeout: 30_000,
     });
     // Package exists -- use prerelease gate (ADR-0010)
@@ -319,6 +319,7 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     // ADR-0027: version is already set correctly in the fork's package.json
     const effectiveVersion = pkgJson.version;
 
+    const pkgStart = Date.now();
     console.log(`  ${pkgName} @ ${effectiveVersion}`);
     if (!dryRun) {
       // stampVersion still strips missing bin entries and adds sparkleideas metadata
@@ -340,12 +341,13 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
 
     if (dryRun) {
       console.log(`    [dry-run] would run: npm publish${tag ? ` --tag ${tag}` : ''}`);
-      const entry = { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion };
+      const entry = { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion, duration_ms: Date.now() - pkgStart };
       publishedVersions[pkgName] = effectiveVersion;
       return { ok: true, entry };
     }
 
-    const publishArgs = ['publish', '--access', 'public', '--ignore-scripts'];
+    const publishArgs = ['publish', '--access', 'public', '--ignore-scripts',
+      '--registry', 'https://registry.npmjs.org'];
     // ADR-0015: first publish uses --tag latest (npm requires --tag for prerelease
     // versions). Subsequent publishes use --tag prerelease (ADR-0010 gate).
     publishArgs.push('--tag', tag ?? 'latest');
@@ -356,8 +358,10 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
         timeout: 120_000,
       });
       if (stdout) console.log(`    ${stdout.trim()}`);
+      const duration_ms = Date.now() - pkgStart;
+      console.log(`    published in ${duration_ms}ms`);
       publishedVersions[pkgName] = effectiveVersion;
-      return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion } };
+      return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion, duration_ms } };
     } catch (err) {
       const stderr = err.stderr || '';
       const stderrLower = stderr.toLowerCase();
@@ -366,9 +370,10 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
         stderrLower.includes('you cannot publish over the previously published versions') ||
         stderrLower.includes('this package is already present')
       ) {
-        console.log(`    already published — skipping`);
+        console.log(`    already published — skipping (${Date.now() - pkgStart}ms)`);
+        console.log(`    (stderr: ${stderr.substring(0, 200)})`);
         publishedVersions[pkgName] = effectiveVersion;
-        return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion } };
+        return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: effectiveVersion, duration_ms: Date.now() - pkgStart } };
       }
 
       const errorOutput = [
