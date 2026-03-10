@@ -303,12 +303,17 @@ bump_fork_versions() {
   fi
 
   log "Bumping versions across all forks"
-  local bump_output
+  local bump_output _bump_start _bump_end
+  _bump_start=$(date +%s%N 2>/dev/null || echo 0)
   bump_output=$(node "${SCRIPT_DIR}/fork-version.mjs" bump "${dirs_args[@]}" 2>&1) || {
     log_error "Version bump failed: ${bump_output}"
     return 1
   }
+  _bump_end=$(date +%s%N 2>/dev/null || echo 0)
   log "${bump_output}"
+  if [[ "$_bump_start" != "0" && "$_bump_end" != "0" ]]; then
+    add_cmd_timing "bump-versions" "node fork-version.mjs bump" "$(( (_bump_end - _bump_start) / 1000000 ))"
+  fi
 
   # Commit and push each fork that changed
   for i in "${!FORK_NAMES[@]}"; do
@@ -665,7 +670,9 @@ run_build() {
   local tsc_install_end
   tsc_install_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$tsc_install_start" != "0" && "$tsc_install_end" != "0" ]]; then
-    log "  TypeScript install: $(( (tsc_install_end - tsc_install_start) / 1000000 ))ms"
+    local _tsc_ms=$(( (tsc_install_end - tsc_install_start) / 1000000 ))
+    log "  TypeScript install: ${_tsc_ms}ms"
+    add_cmd_timing "build" "npm install typescript@5" "${_tsc_ms}"
   fi
   local TSC="$tsc_dir/node_modules/.bin/tsc"
 
@@ -725,7 +732,10 @@ run_build() {
     local pkg_build_end
     pkg_build_end=$(date +%s%N 2>/dev/null || echo 0)
     if [[ "$pkg_build_start" != "0" && "$pkg_build_end" != "0" ]]; then
-      log "  BUILD: ${pkg_name} $(( (pkg_build_end - pkg_build_start) / 1000000 ))ms"
+      local _bms=$(( (pkg_build_end - pkg_build_start) / 1000000 ))
+      log "  BUILD: ${pkg_name} ${_bms}ms"
+      add_build_pkg_timing "${pkg_name}" "${_bms}"
+      add_cmd_timing "build" "tsc ${pkg_name}" "${_bms}"
     fi
   done
 
@@ -778,42 +788,45 @@ run_build() {
 # Test (Layers 0-3)
 # ---------------------------------------------------------------------------
 
-run_tests() {
-  local test_start_ns test_end_ns test_ms
-
-  # ── Layer 1: Unit tests ──
-  log "Running unit tests"
-  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+run_tests_l1() {
+  log "Running unit tests (L0+L1)"
+  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
   npm test --prefix "${PROJECT_DIR}" || {
     log_error "Unit tests failed"
     return 1
   }
-  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
-  log "Unit tests passed (${test_ms}ms)"
+  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
+  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l1-unit" "npm test" "$(( (_t1 - _t0) / 1000000 ))"
+}
 
-  # ── Layer 2: Integration test (local Verdaccio) ──
-  log "Running integration test (local Verdaccio dry run)"
-  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+run_tests_l2() {
+  log "Running integration test (L2: local Verdaccio)"
+  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
   CHANGED_PACKAGES_JSON=all bash "${SCRIPT_DIR}/test-integration.sh" || {
     log_error "Integration test failed — aborting before publish to npm"
     return 1
   }
-  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
-  log "Integration test passed (${test_ms}ms)"
+  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
+  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l2-integration" "test-integration.sh" "$(( (_t1 - _t0) / 1000000 ))"
+}
 
-  # ── Layer 3: Release Qualification ──
-  log "Running Release Qualification"
-  test_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+run_tests_l3() {
+  log "Running Release Qualification (L3)"
   local -a rq_args=(--build-dir "${TEMP_DIR}")
+  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
   bash "${SCRIPT_DIR}/test-rq.sh" "${rq_args[@]}" || {
     log_error "Release Qualification FAILED"
     return 1
   }
-  test_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  test_ms=0; [[ "$test_start_ns" != "0" && "$test_end_ns" != "0" ]] && test_ms=$(( (test_end_ns - test_start_ns) / 1000000 ))
-  log "Release Qualification passed (${test_ms}ms)"
+  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
+  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l3-rq" "test-rq.sh" "$(( (_t1 - _t0) / 1000000 ))"
+}
+
+run_tests() {
+  # Called from Stage 1 (sync) where sub-phase timing is less important
+  run_tests_l1
+  run_tests_l2
+  run_tests_l3
 }
 
 # ---------------------------------------------------------------------------
@@ -851,8 +864,13 @@ run_publish() {
 
   log "Publishing packages (versions from fork package.json files)"
   local -a publish_args=(--build-dir "${TEMP_DIR}")
+  local _pub_start; _pub_start=$(date +%s%N 2>/dev/null || echo 0)
   node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}"
+  local _pub_end; _pub_end=$(date +%s%N 2>/dev/null || echo 0)
   log "Publish complete"
+  if [[ "$_pub_start" != "0" && "$_pub_end" != "0" ]]; then
+    add_cmd_timing "publish" "node publish.mjs" "$(( (_pub_end - _pub_start) / 1000000 ))"
+  fi
 
   # Publish the local wrapper package (@sparkleideas/ruflo)
   # Auto-bump wrapper version if current version already exists on npm.
@@ -992,6 +1010,23 @@ journalctl -u ruflo-sync --since '1 hour ago' --no-pager
 
 PHASE_TIMINGS=""
 
+# Per-command and per-package timing for pipeline-timing.json
+TIMING_CMDS_FILE="/tmp/ruflo-timing-cmds.jsonl"
+TIMING_BUILD_PKGS_FILE="/tmp/ruflo-timing-build-pkgs.jsonl"
+: > "$TIMING_CMDS_FILE"
+: > "$TIMING_BUILD_PKGS_FILE"
+
+add_cmd_timing() {
+  local phase="$1" cmd="$2" ms="$3" exit_code="${4:-0}"
+  printf '{"phase":"%s","command":"%s","duration_ms":%s,"exit_code":%s}\n' \
+    "$phase" "$cmd" "$ms" "$exit_code" >> "$TIMING_CMDS_FILE"
+}
+
+add_build_pkg_timing() {
+  local name="$1" ms="$2"
+  printf '{"name":"%s","duration_ms":%s}\n' "$name" "$ms" >> "$TIMING_BUILD_PKGS_FILE"
+}
+
 run_phase() {
   local phase_name="$1"
   shift
@@ -1030,19 +1065,160 @@ print_phase_summary() {
 }
 
 # ---------------------------------------------------------------------------
+# Post-publish helpers (extracted for run_phase timing)
+# ---------------------------------------------------------------------------
+
+ACCEPTANCE_PASSED=false
+PIPELINE_START_NS=""
+
+wait_for_cdn() {
+  log "Waiting for npm CDN to propagate ${BUILD_VERSION}..."
+  local cdn_attempts=0
+  local cdn_max=12
+  while [[ $cdn_attempts -lt $cdn_max ]]; do
+    local cdn_ver
+    cdn_ver=$(npm view @sparkleideas/cli@prerelease version 2>/dev/null) || true
+    if [[ "$cdn_ver" == "$BUILD_VERSION" ]]; then
+      log "CDN propagation confirmed: @sparkleideas/cli@prerelease = ${cdn_ver}"
+      return 0
+    fi
+    cdn_attempts=$((cdn_attempts + 1))
+    log "  CDN check ${cdn_attempts}/${cdn_max}: got '${cdn_ver:-}', waiting for '${BUILD_VERSION}'..."
+    sleep 10
+  done
+  log "WARNING: CDN propagation timed out after ${cdn_max}0s — continuing anyway"
+}
+
+run_acceptance_tests() {
+  log "Running post-publish acceptance tests against version ${BUILD_VERSION}"
+  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
+  if bash "${SCRIPT_DIR}/test-acceptance.sh" --version "${BUILD_VERSION}"; then
+    log "Acceptance tests passed"
+    ACCEPTANCE_PASSED=true
+  else
+    log_error "WARNING: Acceptance tests failed after publish (packages are live)"
+    create_failure_issue "post-publish-acceptance" "$?"
+    send_email "[ruflo] Acceptance FAILED for ${BUILD_VERSION}" \
+      "Post-publish acceptance tests failed.\nPackages are live on @prerelease but NOT promoted to @latest."
+  fi
+  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
+  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l4-acceptance" "test-acceptance.sh" "$(( (_t1 - _t0) / 1000000 ))"
+}
+
+run_promote() {
+  log "Promoting ${BUILD_VERSION} to @latest"
+  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
+  if bash "${SCRIPT_DIR}/promote.sh" --yes; then
+    log "Promotion to @latest complete"
+    send_email "[ruflo] Promoted ${BUILD_VERSION} to @latest" \
+      "All packages promoted to @latest.\nVersion: ${BUILD_VERSION}"
+  else
+    log_error "WARNING: Promotion to @latest failed"
+    create_failure_issue "promote-latest" "$?"
+  fi
+  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
+  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "promote" "promote.sh" "$(( (_t1 - _t0) / 1000000 ))"
+}
+
+run_post_promote_smoke() {
+  log "Running post-promotion smoke test..."
+  local smoke_cache
+  smoke_cache=$(mktemp -d /tmp/ruflo-smoke-XXXXX)
+  local smoke_out
+  smoke_out=$(NPM_CONFIG_CACHE="$smoke_cache" npx --yes @sparkleideas/cli@latest --version 2>&1) || true
+  rm -rf "$smoke_cache"
+  if echo "$smoke_out" | grep -qE '^[0-9]+\.[0-9]+'; then
+    log "Post-promotion smoke PASSED: @latest = $(echo "$smoke_out" | head -1)"
+  else
+    log_error "Post-promotion smoke FAILED — @latest is broken after promotion"
+    log_error "Output: $(echo "$smoke_out" | head -3)"
+  fi
+}
+
+write_pipeline_summary() {
+  local summary_dir="${PROJECT_DIR}/test-results"
+  mkdir -p "$summary_dir"
+  local timestamp
+  timestamp=$(date -u '+%Y%m%dT%H%M%SZ')
+  local summary_file="${summary_dir}/${timestamp}/pipeline-timing.json"
+  mkdir -p "$(dirname "$summary_file")"
+
+  local pipeline_end_ns
+  pipeline_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local pipeline_ms=0
+  if [[ -n "$PIPELINE_START_NS" && "$PIPELINE_START_NS" != "0" && "$pipeline_end_ns" != "0" ]]; then
+    pipeline_ms=$(( (pipeline_end_ns - PIPELINE_START_NS) / 1000000 ))
+  fi
+
+  # Use node to assemble the full timing JSON (phases + commands + packages)
+  node -e "
+    const fs = require('fs');
+    const phases = '${PHASE_TIMINGS}'.trim().split(/\s+/).filter(Boolean).map(e => {
+      const i = e.lastIndexOf(':');
+      return { name: e.slice(0, i), duration_ms: parseInt(e.slice(i + 1)) };
+    });
+    let commands = [];
+    try {
+      commands = fs.readFileSync('${TIMING_CMDS_FILE}', 'utf-8')
+        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
+    } catch {}
+    let buildPkgs = [];
+    try {
+      buildPkgs = fs.readFileSync('${TIMING_BUILD_PKGS_FILE}', 'utf-8')
+        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
+    } catch {}
+    let publishPkgs = [];
+    try {
+      publishPkgs = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/.publish-timing.json', 'utf-8'));
+    } catch {}
+    const result = {
+      timestamp: '${timestamp}',
+      version: '${BUILD_VERSION:-unknown}',
+      total_duration_ms: ${pipeline_ms},
+      acceptance_passed: ${ACCEPTANCE_PASSED},
+      phases,
+      commands,
+      packages: {
+        build: buildPkgs,
+        publish: publishPkgs.map(p => ({
+          name: p.name, duration_ms: p.duration_ms || 0,
+          version: p.version || '', tag: p.tag || ''
+        }))
+      }
+    };
+    fs.writeFileSync('${summary_file}', JSON.stringify(result, null, 2) + '\\n');
+  " 2>/dev/null || {
+    log "WARNING: Node JSON assembly failed — writing basic summary"
+    local phases_json='[]'
+    cat > "$summary_file" <<EOJSON
+{"timestamp":"${timestamp}","version":"${BUILD_VERSION:-unknown}","total_duration_ms":${pipeline_ms},"acceptance_passed":${ACCEPTANCE_PASSED},"phases":${phases_json},"commands":[],"packages":{"build":[],"publish":[]}}
+EOJSON
+  }
+  log "Pipeline timing summary written to ${summary_file}"
+}
+
+# ---------------------------------------------------------------------------
 # Stage 3: Publish pipeline
 # ---------------------------------------------------------------------------
 
 run_stage3_publish() {
+  PIPELINE_START_NS=$(date +%s%N 2>/dev/null || echo 0)
   log "────────────────────────────────────────────────"
   log "Stage 3: Publish (detect merged PRs, build, publish)"
   log "────────────────────────────────────────────────"
 
   # Check for new merges to fork main branches
+  # (Not wrapped in run_phase — returns 1 for "no changes", not an error)
   local has_merges=false
+  local _md_start _md_end _md_ms
+  _md_start=$(date +%s%N 2>/dev/null || echo 0)
   if check_merged_prs; then
     has_merges=true
   fi
+  _md_end=$(date +%s%N 2>/dev/null || echo 0)
+  _md_ms=0; [[ "$_md_start" != "0" && "$_md_end" != "0" ]] && _md_ms=$(( (_md_end - _md_start) / 1000000 ))
+  log "  Phase 'merge-detect' completed in ${_md_ms}ms"
+  PHASE_TIMINGS="${PHASE_TIMINGS} merge-detect:${_md_ms}"
 
   if [[ "$has_merges" == "false" && "$FORCE_BUILD" == "false" ]]; then
     log "No new merges detected — skipping publish stage"
@@ -1082,8 +1258,10 @@ run_stage3_publish() {
     return 0
   fi
 
-  # Test (L0-L3)
-  run_phase "test" run_tests
+  # Test (L0-L3) — each layer timed separately
+  run_phase "test-l1-unit" run_tests_l1
+  run_phase "test-l2-integration" run_tests_l2
+  run_phase "test-l3-rq" run_tests_l3
 
   if [[ "${TEST_ONLY}" == "true" ]]; then
     print_phase_summary
@@ -1100,66 +1278,22 @@ run_stage3_publish() {
   send_email "[ruflo] Published ${BUILD_VERSION}" \
     "All packages published to npm as @prerelease.\nVersion: ${BUILD_VERSION}"
 
-  # Post-publish acceptance tests (Layer 4)
-  log "Waiting for npm CDN to propagate ${BUILD_VERSION}..."
-  local cdn_attempts=0
-  local cdn_max=12
-  while [[ $cdn_attempts -lt $cdn_max ]]; do
-    local cdn_ver
-    cdn_ver=$(npm view @sparkleideas/cli@prerelease version 2>/dev/null) || true
-    if [[ "$cdn_ver" == "$BUILD_VERSION" ]]; then
-      log "CDN propagation confirmed: @sparkleideas/cli@prerelease = ${cdn_ver}"
-      break
-    fi
-    cdn_attempts=$((cdn_attempts + 1))
-    log "  CDN check ${cdn_attempts}/${cdn_max}: got '${cdn_ver:-}', waiting for '${BUILD_VERSION}'..."
-    sleep 10
-  done
-  if [[ $cdn_attempts -ge $cdn_max ]]; then
-    log "WARNING: CDN propagation timed out after ${cdn_max}0s — running acceptance tests anyway"
-  fi
+  # Post-publish CDN propagation wait
+  run_phase "cdn-propagation" wait_for_cdn
 
-  log "Running post-publish acceptance tests against version ${BUILD_VERSION}"
-  local acceptance_passed=false
-  if bash "${SCRIPT_DIR}/test-acceptance.sh" --version "${BUILD_VERSION}"; then
-    log "Acceptance tests passed"
-    acceptance_passed=true
-  else
-    log_error "WARNING: Acceptance tests failed after publish (packages are live)"
-    create_failure_issue "post-publish-acceptance" "$?"
-    send_email "[ruflo] Acceptance FAILED for ${BUILD_VERSION}" \
-      "Post-publish acceptance tests failed.\nPackages are live on @prerelease but NOT promoted to @latest."
-  fi
+  # Post-publish acceptance tests (Layer 4)
+  run_phase "test-l4-acceptance" run_acceptance_tests
 
   # Auto-promote to @latest
-  if [[ "$acceptance_passed" == true ]]; then
-    log "Promoting ${BUILD_VERSION} to @latest"
-    if bash "${SCRIPT_DIR}/promote.sh" --yes; then
-      log "Promotion to @latest complete"
-      send_email "[ruflo] Promoted ${BUILD_VERSION} to @latest" \
-        "All packages promoted to @latest.\nVersion: ${BUILD_VERSION}"
-    else
-      log_error "WARNING: Promotion to @latest failed"
-      create_failure_issue "promote-latest" "$?"
-    fi
+  if [[ "$ACCEPTANCE_PASSED" == true ]]; then
+    run_phase "promote" run_promote
   else
     log "Skipping promotion to @latest — acceptance tests did not pass"
   fi
 
   # Post-promotion smoke test
-  if [[ "$acceptance_passed" == true ]]; then
-    log "Running post-promotion smoke test..."
-    local smoke_cache
-    smoke_cache=$(mktemp -d /tmp/ruflo-smoke-XXXXX)
-    local smoke_out
-    smoke_out=$(NPM_CONFIG_CACHE="$smoke_cache" npx --yes @sparkleideas/cli@latest --version 2>&1) || true
-    rm -rf "$smoke_cache"
-    if echo "$smoke_out" | grep -qE '^[0-9]+\.[0-9]+'; then
-      log "Post-promotion smoke PASSED: @latest = $(echo "$smoke_out" | head -1)"
-    else
-      log_error "Post-promotion smoke FAILED — @latest is broken after promotion"
-      log_error "Output: $(echo "$smoke_out" | head -3)"
-    fi
+  if [[ "$ACCEPTANCE_PASSED" == true ]]; then
+    run_phase "post-promote-smoke" run_post_promote_smoke
   fi
 
   # GitHub release notification
@@ -1167,6 +1301,9 @@ run_stage3_publish() {
 
   # Save state after successful publish
   save_state
+
+  # Write JSON timing summary
+  write_pipeline_summary
 
   print_phase_summary
   log "Stage 3 complete: ${BUILD_VERSION}"
@@ -1249,6 +1386,7 @@ run_stage1_sync() {
 # ---------------------------------------------------------------------------
 
 main() {
+  PIPELINE_START_NS=$(date +%s%N 2>/dev/null || echo 0)
   log "=========================================="
   log "ruflo sync-and-build starting (ADR-0027)"
   log "  --sync=${RUN_SYNC} --publish=${RUN_PUBLISH}"
@@ -1316,9 +1454,19 @@ main() {
     run_stage1_sync
   fi
 
-  log "=========================================="
-  log "ruflo sync-and-build complete"
-  log "=========================================="
+  # End-to-end timing
+  local _main_end_ns
+  _main_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ -n "$PIPELINE_START_NS" && "$PIPELINE_START_NS" != "0" && "$_main_end_ns" != "0" ]]; then
+    local _main_ms=$(( (_main_end_ns - PIPELINE_START_NS) / 1000000 ))
+    log "=========================================="
+    log "ruflo sync-and-build complete (${_main_ms}ms / $((_main_ms / 1000))s)"
+    log "=========================================="
+  else
+    log "=========================================="
+    log "ruflo sync-and-build complete"
+    log "=========================================="
+  fi
 }
 
 main "$@"

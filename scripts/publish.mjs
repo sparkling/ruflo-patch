@@ -439,6 +439,17 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     console.log(`\nSkipped saving config/published-versions.json (--no-save)`);
   }
 
+  // Write per-package timing data for pipeline instrumentation
+  try {
+    const timingFile = resolve(
+      import.meta.url.startsWith('file://') ? new URL('.', import.meta.url).pathname : '.',
+      '..', 'config', '.publish-timing.json'
+    );
+    writeFileSync(timingFile, JSON.stringify(published, null, 2) + '\n');
+  } catch {
+    // Non-fatal: timing data is supplementary
+  }
+
   console.log(`\nPublished ${published.length} packages successfully.`);
   return { published, failed: null };
 }

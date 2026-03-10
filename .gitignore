@@ -1,5 +1,6 @@
 # Runtime state
 scripts/.last-build-state
+config/.publish-timing.json
 .claude-flow/
 .claude/projects/
 .swarm/
