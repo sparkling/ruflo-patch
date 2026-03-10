@@ -20,6 +20,7 @@
 #   --force       Build even when no changes detected
 #   --build-only  Stop after build (no tests, no publish)
 #   --pull        Pull upstream repos in --build-only mode
+#   --seed-state  Record current fork HEADs as baseline (no build)
 #
 # See: ADR-0027 (fork migration), ADR-0009 (systemd timer),
 #      ADR-0023 (test framework), ADR-0026 (build caching)
@@ -44,8 +45,10 @@ for arg in "$@"; do
     --force)      FORCE_BUILD=true ;;
     --build-only) BUILD_ONLY=true ;;
     --pull)       PULL_UPSTREAM=true ;;
+    --seed-state) SEED_STATE=true ;;
   esac
 done
+SEED_STATE="${SEED_STATE:-false}"
 
 # Default: run both stages
 if [[ "${RUN_SYNC}" == "false" && "${RUN_PUBLISH}" == "false" ]]; then
@@ -721,6 +724,20 @@ run_build() {
     cli
   )
 
+  # Parse CHANGED_PACKAGES_JSON into a lookup set for selective builds.
+  # If "all", build everything. Otherwise only build packages in the set.
+  local -A changed_set
+  local selective_build=false
+  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]]; then
+    selective_build=true
+    # Extract package short names from JSON array of @sparkleideas/* names
+    for full_name in $(echo "${CHANGED_PACKAGES_JSON}" | node -e "
+      const d=require('fs').readFileSync(0,'utf8');try{JSON.parse(d).forEach(n=>console.log(n.replace('@sparkleideas/','')))}catch{}
+    " 2>/dev/null); do
+      changed_set["$full_name"]=1
+    done
+  fi
+
   local built=0
   local failed=0
   local skipped=0
@@ -728,6 +745,12 @@ run_build() {
     local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
     [[ -d "$pkg_dir" ]] || continue
     [[ -f "$pkg_dir/tsconfig.json" ]] || continue
+
+    # Skip unchanged packages (selective build)
+    if [[ "$selective_build" == "true" && -z "${changed_set[$pkg_name]:-}" ]]; then
+      skipped=$((skipped + 1))
+      continue
+    fi
 
     local pkg_build_start
     pkg_build_start=$(date +%s%N 2>/dev/null || echo 0)
@@ -904,6 +927,11 @@ run_publish() {
 
   log "Publishing packages (versions from fork package.json files)"
   local -a publish_args=(--build-dir "${TEMP_DIR}")
+  # Selective publish: only publish changed packages (+ dependents)
+  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]]; then
+    publish_args+=(--packages "${CHANGED_PACKAGES_JSON}")
+    log "Selective publish: $(echo "${CHANGED_PACKAGES_JSON}" | node -e "try{console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).length)}catch{console.log('?')}" 2>/dev/null) packages"
+  fi
   local _pub_start; _pub_start=$(date +%s%N 2>/dev/null || echo 0)
   local _pub_rc=0
   node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}" || _pub_rc=$?
@@ -1445,6 +1473,30 @@ main() {
 
   # Load previous state
   load_state
+
+  # --seed-state: record current fork HEADs as baseline without building.
+  # Use after clean-slate reset so the NEXT run is incremental (not "all changed").
+  if [[ "${SEED_STATE}" == "true" ]]; then
+    log "Seeding state file with current fork HEADs..."
+    for i in "${!FORK_NAMES[@]}"; do
+      local dir="${FORK_DIRS[$i]}"
+      local name="${FORK_NAMES[$i]}"
+      if [[ -d "${dir}/.git" ]]; then
+        git -C "${dir}" fetch origin main --quiet 2>/dev/null || true
+        local sha
+        sha=$(git -C "${dir}" rev-parse origin/main 2>/dev/null) || sha=""
+        case "$name" in
+          ruflo)        NEW_RUFLO_HEAD="$sha" ;;
+          agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
+          ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+        esac
+        log "  ${name}: ${sha:0:12}"
+      fi
+    done
+    save_state
+    log "State seeded — next pipeline run will be incremental"
+    exit 0
+  fi
 
   # --build-only mode: simplified pipeline (copy + codemod + build)
   if [[ "${BUILD_ONLY}" == "true" ]]; then
