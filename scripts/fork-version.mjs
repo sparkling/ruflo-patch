@@ -593,6 +593,11 @@ if (isMainModule) {
 
           onlyPackages = computeBumpSet(directlyChanged, allPackages);
           console.log(`Change detection: ${directlyChanged.size} changed, ${onlyPackages.size} in bump set (incl. dependents)`);
+
+          // Emit directly-changed set (source files changed — need rebuild).
+          // Distinct from BUMPED_PACKAGES (includes transitive deps that only need version bump).
+          const directNames = [...new Set([...directlyChanged].map(n => toNpmName(n)))];
+          console.log(`DIRECTLY_CHANGED:${JSON.stringify(directNames)}`);
         }
       }
 

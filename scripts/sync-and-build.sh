@@ -101,8 +101,10 @@ NEW_FANN_HEAD=""
 
 # Selective version bumping: tracks which forks changed (set by check_merged_prs)
 CHANGED_FORK_SHAS=""  # format: dir1:oldSha,dir2:oldSha
-# Incremental Verdaccio: JSON array of changed @sparkleideas/* packages (set by bump_fork_versions)
+# JSON array of @sparkleideas/* packages: CHANGED = full transitive set (for publish)
 CHANGED_PACKAGES_JSON="all"
+# DIRECTLY_CHANGED = source-changed only (for build — no transitive deps)
+DIRECTLY_CHANGED_JSON="all"
 
 # Build version (set by read_build_version)
 BUILD_VERSION=""
@@ -346,13 +348,18 @@ bump_fork_versions() {
     add_cmd_timing "bump-versions" "node fork-version.mjs bump" "$(( (_bump_end - _bump_start) / 1000000 ))"
   fi
 
-  # Parse BUMPED_PACKAGES line for downstream incremental Verdaccio
-  # grep for BUMPED_PACKAGES: prefix in the output
+  # Parse BUMPED_PACKAGES (full transitive set — for publish/promote)
   CHANGED_PACKAGES_JSON=$(echo "$bump_output" | grep '^BUMPED_PACKAGES:' | sed 's/^BUMPED_PACKAGES://') || true
   if [[ -z "${CHANGED_PACKAGES_JSON}" ]]; then
     CHANGED_PACKAGES_JSON="all"
   fi
-  log "Changed packages for L2/L3: ${CHANGED_PACKAGES_JSON}"
+  # Parse DIRECTLY_CHANGED (source-changed only — for build)
+  DIRECTLY_CHANGED_JSON=$(echo "$bump_output" | grep '^DIRECTLY_CHANGED:' | sed 's/^DIRECTLY_CHANGED://') || true
+  if [[ -z "${DIRECTLY_CHANGED_JSON}" ]]; then
+    DIRECTLY_CHANGED_JSON="${CHANGED_PACKAGES_JSON}"
+  fi
+  log "Build set (source changed): ${DIRECTLY_CHANGED_JSON}"
+  log "Publish set (+ dependents): ${CHANGED_PACKAGES_JSON}"
 
   # Commit and push each fork that changed
   for i in "${!FORK_NAMES[@]}"; do
@@ -724,14 +731,15 @@ run_build() {
     cli
   )
 
-  # Parse CHANGED_PACKAGES_JSON into a lookup set for selective builds.
-  # If "all", build everything. Otherwise only build packages in the set.
+  # Parse DIRECTLY_CHANGED_JSON into a lookup set for selective builds.
+  # Only packages with actual source changes need recompilation.
+  # Transitive dependents only need version bumps (handled by fork-version.mjs).
   local -A changed_set
   local selective_build=false
-  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]]; then
+  if [[ -n "${DIRECTLY_CHANGED_JSON:-}" && "${DIRECTLY_CHANGED_JSON}" != "all" ]]; then
     selective_build=true
     # Extract package short names from JSON array of @sparkleideas/* names
-    for full_name in $(echo "${CHANGED_PACKAGES_JSON}" | node -e "
+    for full_name in $(echo "${DIRECTLY_CHANGED_JSON}" | node -e "
       const d=require('fs').readFileSync(0,'utf8');try{JSON.parse(d).forEach(n=>console.log(n.replace('@sparkleideas/','')))}catch{}
     " 2>/dev/null); do
       changed_set["$full_name"]=1
