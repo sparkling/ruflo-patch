@@ -83,22 +83,56 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# ── Phase timing infrastructure ───────────────────────────────────
+VERIFY_PHASE_TIMINGS=""
+VERIFY_TIMING_FILE="/tmp/ruflo-verify-timing.jsonl"
+: > "$VERIFY_TIMING_FILE"
+
+# Record a phase timing: name, duration_ms
+_record_phase() {
+  local name="$1" ms="$2"
+  VERIFY_PHASE_TIMINGS="${VERIFY_PHASE_TIMINGS} ${name}:${ms}"
+  printf '{"phase":"%s","duration_ms":%d}\n' "$name" "$ms" >> "$VERIFY_TIMING_FILE"
+  if [[ $ms -ge 1000 ]]; then
+    log "  Phase '${name}' completed in ${ms}ms ($(( ms / 1000 ))s)"
+  else
+    log "  Phase '${name}' completed in ${ms}ms"
+  fi
+}
+
+# Nanosecond timestamp helper
+_ns() { date +%s%N 2>/dev/null || echo 0; }
+
+# Compute elapsed ms between two ns timestamps
+_elapsed_ms() {
+  local start="$1" end="$2"
+  if [[ "$start" != "0" && "$end" != "0" ]]; then
+    echo $(( (end - start) / 1000000 ))
+  else
+    echo 0
+  fi
+}
+
+verify_start_ns=$(_ns)
 verify_start_s=$(date +%s)
 log "test-verify.sh starting (build-dir: ${BUILD_DIR})"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 1: Verdaccio health check
 # ══════════════════════════════════════════════════════════════════
+_p1_start=$(_ns)
 if ! curl -sf "http://localhost:${RQ_PORT}/-/ping" >/dev/null 2>&1; then
   log_error "Verdaccio not running on port ${RQ_PORT}"
   log_error "Start it: systemctl --user start verdaccio"
   exit 1
 fi
 log "Verdaccio healthy on port ${RQ_PORT}"
+_record_phase "health-check" "$(_elapsed_ms "$_p1_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 2: Selective cache clear
 # ══════════════════════════════════════════════════════════════════
+_p2_start=$(_ns)
 RQ_STORAGE="/home/claude/.verdaccio/storage"
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
   log "Full mode: clearing all @sparkleideas/* from Verdaccio"
@@ -115,10 +149,12 @@ else
     }
   " 2>/dev/null || true
 fi
+_record_phase "cache-clear" "$(_elapsed_ms "$_p2_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 3: Publish built packages to Verdaccio (ONCE)
 # ══════════════════════════════════════════════════════════════════
+_p3_start=$(_ns)
 log "Publishing built packages to Verdaccio..."
 npm config set "//localhost:${RQ_PORT}/:_authToken" "test-token" 2>/dev/null || true
 
@@ -132,20 +168,24 @@ NPM_CONFIG_REGISTRY="http://localhost:${RQ_PORT}" \
   exit 1
 }
 log "Built packages published to Verdaccio"
+_record_phase "publish-verdaccio" "$(_elapsed_ms "$_p3_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 4: Publish wrapper package (@sparkleideas/ruflo)
 # ══════════════════════════════════════════════════════════════════
+_p4_start=$(_ns)
 if [[ -f "${PROJECT_DIR}/package.json" ]]; then
   log "Publishing local wrapper (@sparkleideas/ruflo) to Verdaccio..."
   NPM_CONFIG_REGISTRY="http://localhost:${RQ_PORT}" \
     npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || \
     log "  wrapper publish skipped (may already exist)"
 fi
+_record_phase "publish-wrapper" "$(_elapsed_ms "$_p4_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 5: NPX cache clear (ADR-0025)
 # ══════════════════════════════════════════════════════════════════
+_p5_start=$(_ns)
 # Two caches: _npx/ (resolution trees) and _cacache/ (HTTP metadata + tarballs)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
@@ -159,10 +199,12 @@ else
       | xargs rm -f 2>/dev/null || true
   done
 fi
+_record_phase "npx-cache-clear" "$(_elapsed_ms "$_p5_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 6: Install packages into temp dir (ONCE)
 # ══════════════════════════════════════════════════════════════════
+_p6_start=$(_ns)
 VERIFY_TEMP=$(mktemp -d /tmp/ruflo-verify-XXXXX)
 (cd "$VERIFY_TEMP" && echo '{"name":"ruflo-verify-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=http://localhost:${RQ_PORT}" > .npmrc \
@@ -173,10 +215,12 @@ VERIFY_TEMP=$(mktemp -d /tmp/ruflo-verify-XXXXX)
   exit 1
 }
 log "Packages installed to ${VERIFY_TEMP}"
+_record_phase "npm-install" "$(_elapsed_ms "$_p6_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 7: Structural checks (from test-integration.sh Phase 7)
 # ══════════════════════════════════════════════════════════════════
+_p7_start=$(_ns)
 structural_fail=0
 
 # S-1: CLI in node_modules
@@ -208,6 +252,7 @@ if [[ -n "$missing_deps" ]]; then
 else
   log "  PASS  S-3: All dependencies resolved"
 fi
+_record_phase "structural-checks" "$(_elapsed_ms "$_p7_start" "$(_ns)")"
 
 if [[ $structural_fail -gt 0 ]]; then
   log_error "Structural checks failed ($structural_fail failures)"
@@ -217,6 +262,7 @@ fi
 # ══════════════════════════════════════════════════════════════════
 # Phase 8: Functional checks (RQ-1..RQ-14)
 # ══════════════════════════════════════════════════════════════════
+_p8_start=$(_ns)
 checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
 if [[ ! -f "$checks_lib" ]]; then
   log_error "Shared test library not found: $checks_lib"
@@ -290,10 +336,10 @@ run_rq_check() {
   if [[ "$_CHECK_PASSED" == "true" ]]; then
     rq_pass=$((rq_pass + 1))
     rq_passed_bool="true"
-    log "  PASS  $id: $name"
+    log "  PASS  $id: $name (${rq_dur_ms}ms)"
   else
     rq_fail=$((rq_fail + 1))
-    log "  FAIL  $id: $name"
+    log "  FAIL  $id: $name (${rq_dur_ms}ms)"
     echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do
       log "        $line"
     done
@@ -380,10 +426,10 @@ for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
     if [[ "$passed" == "true" ]]; then
       rq_pass=$((rq_pass + 1))
       rq_passed_bool="true"
-      log "  PASS  $id: $name_map"
+      log "  PASS  $id: $name_map (${dur_ms:-0}ms)"
     else
       rq_fail=$((rq_fail + 1))
-      log "  FAIL  $id: $name_map"
+      log "  FAIL  $id: $name_map (${dur_ms:-0}ms)"
     fi
     if [[ "${dur_ms:-0}" -gt 15000 ]]; then
       log "  SLOW  $id: ${dur_ms}ms (threshold: 15000ms)"
@@ -403,11 +449,14 @@ done
 rm -rf "$RQ_PARALLEL_DIR"
 RQ_PARALLEL_DIR=""
 
+_record_phase "rq-checks" "$(_elapsed_ms "$_p8_start" "$(_ns)")"
 log "Verification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 9: Promote to @latest (Verdaccio only)
 # ══════════════════════════════════════════════════════════════════
+_p9_start=$(_ns)
+_promote_count=0
 if [[ "${SKIP_PROMOTE}" != "true" ]]; then
   log "Promoting packages to @latest on Verdaccio..."
   for pkg_dir in "${RQ_STORAGE}/@sparkleideas"/*/; do
@@ -417,14 +466,16 @@ if [[ "${SKIP_PROMOTE}" != "true" ]]; then
     [[ -z "$latest_ver" ]] && continue
     npm dist-tag add "${pkg_name}@${latest_ver}" latest \
       --registry "http://localhost:${RQ_PORT}" 2>/dev/null && \
-      log "  ${pkg_name}@${latest_ver} -> @latest" || true
+      { log "  ${pkg_name}@${latest_ver} -> @latest"; _promote_count=$((_promote_count + 1)); } || true
   done
-  log "Promote complete"
+  log "Promote complete (${_promote_count} packages)"
 fi
+_record_phase "promote" "$(_elapsed_ms "$_p9_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 10: Write results
 # ══════════════════════════════════════════════════════════════════
+_p10_start=$(_ns)
 verify_results_dir="${PROJECT_DIR}/test-results/verify-${rq_timestamp//:/}"
 mkdir -p "$verify_results_dir"
 
@@ -447,8 +498,36 @@ cat > "$verify_results_dir/verify-results.json" <<VJSONEOF
 }
 VJSONEOF
 log "Results written to ${verify_results_dir}/verify-results.json"
+_record_phase "write-results" "$(_elapsed_ms "$_p10_start" "$(_ns)")"
 
+# ══════════════════════════════════════════════════════════════════
+# Timing summary
+# ══════════════════════════════════════════════════════════════════
+verify_end_ns=$(_ns)
+verify_total_ms=$(_elapsed_ms "$verify_start_ns" "$verify_end_ns")
 verify_end_s=$(date +%s)
-log "Verification completed in $(( verify_end_s - verify_start_s ))s"
+
+log "──────────────────────────────────────────"
+log "Verify phase timing summary:"
+for entry in $VERIFY_PHASE_TIMINGS; do
+  _name="${entry%%:*}"
+  _ms="${entry##*:}"
+  # compute percentage of total
+  if [[ $verify_total_ms -gt 0 ]]; then
+    _pct=$(( (_ms * 100) / verify_total_ms ))
+  else
+    _pct=0
+  fi
+  if [[ $_ms -ge 1000 ]]; then
+    log "  $(printf '%-22s %6dms (%3ds) %3d%%' "$_name" "$_ms" "$((_ms / 1000))" "$_pct")"
+  else
+    log "  $(printf '%-22s %6dms        %3d%%' "$_name" "$_ms" "$_pct")"
+  fi
+done
+log "  $(printf '%-22s %6dms (%3ds)' 'TOTAL' "$verify_total_ms" "$(( verify_end_s - verify_start_s ))")"
+log "──────────────────────────────────────────"
+
+# Write timing data for parent pipeline to ingest
+printf '{"phase":"TOTAL","duration_ms":%d}\n' "$verify_total_ms" >> "$VERIFY_TIMING_FILE"
 
 exit "$rq_fail"

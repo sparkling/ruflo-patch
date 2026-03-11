@@ -244,10 +244,18 @@ check_merged_prs() {
     fi
 
     # Fetch origin to see if anything was merged
+    local _fetch_start _fetch_end
+    _fetch_start=$(date +%s%N 2>/dev/null || echo 0)
     git -C "${dir}" fetch origin main --quiet 2>/dev/null || {
       log_error "Failed to fetch origin for ${name}"
       continue
     }
+    _fetch_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_fetch_start" != "0" && "$_fetch_end" != "0" ]]; then
+      local _fetch_ms=$(( (_fetch_end - _fetch_start) / 1000000 ))
+      log "  fetch ${name}: ${_fetch_ms}ms"
+      add_cmd_timing "merge-detect" "git fetch ${name}" "${_fetch_ms}"
+    fi
 
     local origin_sha state_sha
     origin_sha=$(git -C "${dir}" rev-parse origin/main 2>/dev/null) || continue
@@ -427,10 +435,18 @@ sync_upstream() {
 
     # Fetch upstream
     log "Fetching upstream for ${name}"
+    local _uf_start _uf_end
+    _uf_start=$(date +%s%N 2>/dev/null || echo 0)
     git -C "${dir}" fetch upstream main --quiet 2>/dev/null || {
       log_error "Failed to fetch upstream for ${name}"
       continue
     }
+    _uf_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_uf_start" != "0" && "$_uf_end" != "0" ]]; then
+      local _uf_ms=$(( (_uf_end - _uf_start) / 1000000 ))
+      log "  fetch upstream ${name}: ${_uf_ms}ms"
+      add_cmd_timing "sync-upstream" "git fetch upstream ${name}" "${_uf_ms}"
+    fi
 
     local upstream_sha last_synced_sha
     upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || continue
@@ -600,10 +616,12 @@ create_temp_dir() {
 
 copy_source() {
   log "Copying fork source to ${TEMP_DIR}"
+  local _cp_start _cp_end
 
   # Copy all 3 forks in parallel (uses all available I/O bandwidth)
   mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN"
 
+  _cp_start=$(date +%s%N 2>/dev/null || echo 0)
   cp -a "${FORK_DIR_RUFLO}/." "${TEMP_DIR}/" &
   local pid_ruflo=$!
   cp -a "${FORK_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/" &
@@ -611,9 +629,16 @@ copy_source() {
   cp -a "${FORK_DIR_FANN}/." "${TEMP_DIR}/cross-repo/ruv-FANN/" &
   local pid_fann=$!
   wait $pid_ruflo $pid_agentic $pid_fann
+  _cp_end=$(date +%s%N 2>/dev/null || echo 0)
 
   rm -rf "${TEMP_DIR}/.git" "${TEMP_DIR}/cross-repo/agentic-flow/.git" "${TEMP_DIR}/cross-repo/ruv-FANN/.git"
 
+  local _cp_ms=0
+  if [[ "$_cp_start" != "0" && "$_cp_end" != "0" ]]; then
+    _cp_ms=$(( (_cp_end - _cp_start) / 1000000 ))
+    log "  Parallel copy completed in ${_cp_ms}ms"
+    add_cmd_timing "copy-source" "cp -a (3 forks parallel)" "${_cp_ms}"
+  fi
   log "Source copied to temp directory (3 forks merged, parallel)"
 }
 
@@ -623,8 +648,15 @@ copy_source() {
 
 run_codemod() {
   log "Running codemod: @claude-flow/* -> @sparkleideas/*"
+  local _cm_start _cm_end
+  _cm_start=$(date +%s%N 2>/dev/null || echo 0)
   node "${SCRIPT_DIR}/codemod.mjs" "${TEMP_DIR}"
-  log "Codemod complete"
+  _cm_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_cm_start" != "0" && "$_cm_end" != "0" ]]; then
+    local _cm_ms=$(( (_cm_end - _cm_start) / 1000000 ))
+    log "  Codemod completed in ${_cm_ms}ms"
+    add_cmd_timing "codemod" "node codemod.mjs" "${_cm_ms}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -900,14 +932,30 @@ run_build() {
 run_tests_ci() {
   # L0 preflight + L1 unit only — no Verdaccio
   log "Running preflight + unit tests (L0+L1)"
+  local _pf_start _pf_end _ut_start _ut_end
+  _pf_start=$(date +%s%N 2>/dev/null || echo 0)
   npm run preflight --prefix "${PROJECT_DIR}" || {
     log_error "Preflight failed"
     return 1
   }
+  _pf_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_pf_start" != "0" && "$_pf_end" != "0" ]]; then
+    local _pf_ms=$(( (_pf_end - _pf_start) / 1000000 ))
+    log "  Preflight (L0): ${_pf_ms}ms"
+    add_cmd_timing "test-ci" "npm run preflight" "${_pf_ms}"
+  fi
+
+  _ut_start=$(date +%s%N 2>/dev/null || echo 0)
   node "${PROJECT_DIR}/scripts/test-runner.mjs" || {
     log_error "Unit tests failed"
     return 1
   }
+  _ut_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_ut_start" != "0" && "$_ut_end" != "0" ]]; then
+    local _ut_ms=$(( (_ut_end - _ut_start) / 1000000 ))
+    log "  Unit tests (L1): ${_ut_ms}ms"
+    add_cmd_timing "test-ci" "node test-runner.mjs" "${_ut_ms}"
+  fi
 }
 
 run_verify() {
@@ -1066,7 +1114,7 @@ write_pipeline_summary() {
     pipeline_ms=$(( (pipeline_end_ns - PIPELINE_START_NS) / 1000000 ))
   fi
 
-  # Use node to assemble the full timing JSON (phases + commands + packages)
+  # Use node to assemble the full timing JSON (phases + commands + packages + verify sub-phases)
   node -e "
     const fs = require('fs');
     const phases = '${PHASE_TIMINGS}'.trim().split(/\s+/).filter(Boolean).map(e => {
@@ -1087,6 +1135,11 @@ write_pipeline_summary() {
     try {
       publishPkgs = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/.publish-timing.json', 'utf-8'));
     } catch {}
+    let verifyPhases = [];
+    try {
+      verifyPhases = fs.readFileSync('/tmp/ruflo-verify-timing.jsonl', 'utf-8')
+        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
+    } catch {}
     const result = {
       timestamp: '${timestamp}',
       version: '${BUILD_VERSION:-unknown}',
@@ -1094,6 +1147,7 @@ write_pipeline_summary() {
       acceptance_passed: true,
       phases,
       commands,
+      verify_phases: verifyPhases,
       packages: {
         build: buildPkgs,
         publish: publishPkgs.map(p => ({
@@ -1107,7 +1161,7 @@ write_pipeline_summary() {
     log "WARNING: Node JSON assembly failed — writing basic summary"
     local phases_json='[]'
     cat > "$summary_file" <<EOJSON
-{"timestamp":"${timestamp}","version":"${BUILD_VERSION:-unknown}","total_duration_ms":${pipeline_ms},"acceptance_passed":true,"phases":${phases_json},"commands":[],"packages":{"build":[],"publish":[]}}
+{"timestamp":"${timestamp}","version":"${BUILD_VERSION:-unknown}","total_duration_ms":${pipeline_ms},"acceptance_passed":true,"phases":${phases_json},"commands":[],"verify_phases":[],"packages":{"build":[],"publish":[]}}
 EOJSON
   }
   log "Pipeline timing summary written to ${summary_file}"

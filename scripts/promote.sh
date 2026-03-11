@@ -33,6 +33,20 @@ for arg in "$@"; do
   esac
 done
 
+# ---------- Timing helpers ----------
+_ns() { date +%s%N 2>/dev/null || echo 0; }
+_elapsed_ms() {
+  local s="$1" e="$2"
+  if [[ "$s" != "0" && "$e" != "0" ]]; then
+    echo $(( (e - s) / 1000000 ))
+  else
+    echo 0
+  fi
+}
+
+PROMOTE_START_NS=$(_ns)
+PROMOTE_PKG_TIMINGS=""
+
 # ---------- Load per-package versions ----------
 if [[ ! -f "$VERSIONS_FILE" ]]; then
   echo "Error: $VERSIONS_FILE not found."
@@ -105,12 +119,14 @@ PROMOTED=0
 
 run_dist_tag() {
   local pkg_spec="$1"
-  local ts
+  local ts _dt_start _dt_end _dt_ms
   ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+  _dt_start=$(_ns)
 
   if [[ "$DRY_RUN" == true ]]; then
     echo "[$ts] [dry-run] npm dist-tag add \"$pkg_spec\" latest"
     PROMOTED=$((PROMOTED + 1))
+    _dt_ms=0
   else
     echo -n "[$ts] npm dist-tag add \"$pkg_spec\" latest ... "
     if npm dist-tag add "$pkg_spec" latest 2>&1; then
@@ -120,7 +136,11 @@ run_dist_tag() {
       echo "FAILED"
       FAILURES=$((FAILURES + 1))
     fi
+    _dt_end=$(_ns)
+    _dt_ms=$(_elapsed_ms "$_dt_start" "$_dt_end")
+    echo "  (${_dt_ms}ms)"
   fi
+  PROMOTE_PKG_TIMINGS="${PROMOTE_PKG_TIMINGS} ${pkg_spec}:${_dt_ms:-0}"
 }
 
 # ---------- Execute ----------
@@ -156,3 +176,31 @@ else
   echo "Verify: npm view @sparkleideas/cli dist-tags"
   echo "Verify: npx @sparkleideas/cli@latest --version"
 fi
+
+# ---------- Timing summary ----------
+PROMOTE_END_NS=$(_ns)
+PROMOTE_TOTAL_MS=$(_elapsed_ms "$PROMOTE_START_NS" "$PROMOTE_END_NS")
+
+echo ""
+echo "──────────────────────────────────────────"
+echo "Promote timing summary:"
+
+# Sort by duration (descending) to highlight slowest packages
+_sorted_timings=""
+for entry in $PROMOTE_PKG_TIMINGS; do
+  _pkg="${entry%:*}"
+  _ms="${entry##*:}"
+  _sorted_timings="${_sorted_timings}${_ms} ${_pkg}\n"
+done
+
+# Print top 10 slowest + total
+echo -e "$_sorted_timings" | sort -rn | head -10 | while IFS=' ' read -r _ms _pkg; do
+  [[ -z "$_ms" ]] && continue
+  printf "  %-45s %6dms\n" "$_pkg" "$_ms"
+done
+
+if [[ $TOTAL -gt 10 ]]; then
+  echo "  ... ($((TOTAL - 10)) more packages)"
+fi
+printf "  %-45s %6dms (%ds)\n" "TOTAL" "$PROMOTE_TOTAL_MS" "$((PROMOTE_TOTAL_MS / 1000))"
+echo "──────────────────────────────────────────"
