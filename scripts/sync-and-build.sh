@@ -1,20 +1,21 @@
 #!/usr/bin/env bash
 # sync-and-build.sh — Fork-based build pipeline for ruflo (ADR-0027).
 #
-# Two stages (Stage 2 is manual GitHub PR review, not in this script):
+# Three stages (review gate is manual, not in this script):
 #
-#   --publish   Stage 3: Detect merges to fork main, bump versions,
+#   --publish   Publish stage: Detect merges to fork main, bump versions,
 #               build, test (L0-L3), publish to local Verdaccio.
 #
-#   --sync      Stage 1: Fetch upstream, create sync branch, merge,
+#   --sync      Sync stage: Fetch upstream, create sync branch, merge,
 #               type-check, build, test (L0-L3). On success create PR
 #               with label "ready". On failure create PR with error label.
 #
-# Stage 3 runs before Stage 1 when both are requested (default).
+# Publish runs before Sync when both are requested (default).
+# Review gate (manual PR merge on GitHub) happens between timer runs.
 #
 # Flags:
-#   --sync        Stage 1 only
-#   --publish     Stage 3 only
+#   --sync        Sync stage only
+#   --publish     Publish stage only
 #   --test-only   Stop after tests (no publish)
 #   --force       Build even when no changes detected
 #   --build-only  Stop after build (no tests, no publish)
@@ -222,7 +223,7 @@ EOF
 }
 
 # ---------------------------------------------------------------------------
-# Stage 3: Check for merged PRs (origin/main vs local main)
+# Publish stage: Check for merged PRs (origin/main vs local main)
 # ---------------------------------------------------------------------------
 
 check_merged_prs() {
@@ -326,7 +327,7 @@ check_merged_prs() {
 }
 
 # ---------------------------------------------------------------------------
-# Stage 3: Bump fork versions, commit, tag, push
+# Publish stage: Bump fork versions, commit, tag, push
 # ---------------------------------------------------------------------------
 
 bump_fork_versions() {
@@ -432,7 +433,7 @@ bump_fork_versions() {
 }
 
 # ---------------------------------------------------------------------------
-# Stage 1: Sync upstream into fork branches
+# Sync stage: Fetch upstream into fork branches
 # ---------------------------------------------------------------------------
 
 sync_upstream() {
@@ -1112,7 +1113,7 @@ run_verify() {
 }
 
 run_tests() {
-  # Called from Stage 1 (sync) where sub-phase timing is less important
+  # Called from sync stage where sub-phase timing is less important
   run_tests_ci
   run_verify
 }
@@ -1312,13 +1313,13 @@ EOJSON
 }
 
 # ---------------------------------------------------------------------------
-# Stage 3: Publish pipeline
+# Publish stage: Build and publish pipeline
 # ---------------------------------------------------------------------------
 
 run_stage3_publish() {
   PIPELINE_START_NS=$(date +%s%N 2>/dev/null || echo 0)
   log "────────────────────────────────────────────────"
-  log "Stage 3: Publish (detect merged PRs, build, publish)"
+  log "Publish stage (detect merged PRs, build, publish)"
   log "────────────────────────────────────────────────"
 
   # Check for new merges to fork main branches
@@ -1394,16 +1395,16 @@ run_stage3_publish() {
   write_pipeline_summary
 
   print_phase_summary
-  log "Stage 3 complete: ${BUILD_VERSION}"
+  log "Publish stage complete: ${BUILD_VERSION}"
 }
 
 # ---------------------------------------------------------------------------
-# Stage 1: Sync upstream pipeline
+# Sync stage: Upstream sync pipeline
 # ---------------------------------------------------------------------------
 
 run_stage1_sync() {
   log "────────────────────────────────────────────────"
-  log "Stage 1: Sync (fetch upstream, create sync branches)"
+  log "Sync stage (fetch upstream, create sync branches)"
   log "────────────────────────────────────────────────"
 
   # Sync upstream into fork branches
@@ -1470,7 +1471,7 @@ run_stage1_sync() {
   save_state
 
   print_phase_summary
-  log "Stage 1 complete"
+  log "Sync stage complete"
 }
 
 # ---------------------------------------------------------------------------
@@ -1560,12 +1561,12 @@ main() {
     exit 0
   fi
 
-  # Stage 3 runs first: publish reviewed code
+  # Publish stage runs first: publish reviewed code
   if [[ "${RUN_PUBLISH}" == "true" ]]; then
     run_stage3_publish
   fi
 
-  # Stage 1 runs second: sync new upstream
+  # Sync stage runs second: pull new upstream
   if [[ "${RUN_SYNC}" == "true" ]]; then
     run_stage1_sync
   fi

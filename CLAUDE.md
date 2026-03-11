@@ -66,10 +66,10 @@ npm run deploy
 # Dry run (full pipeline, stop before publish)
 npm run deploy:dry-run
 
-# Sync upstream (Stage 1: fetch, merge on branch, test, create PR)
+# Sync stage (fetch upstream, merge on branch, test, create PR)
 npm run sync
 
-# Publish from fork (Stage 3: detect merged PRs, version bump, build, publish)
+# Publish stage (detect merged PRs, version bump, build, publish)
 npm run publish:fork
 
 # Acceptance test (verify live packages on real npm)
