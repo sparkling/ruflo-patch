@@ -396,29 +396,19 @@ check_plugins_sdk() {
 check_latest_resolves() {
   _CHECK_PASSED="false"
 
-  # In RQ context, test-rq.sh sets NPM_CONFIG_CACHE to a stable cache dir
-  # pointing at Verdaccio (ADR-0025). Reuse it. In acceptance context (no
-  # preset cache), create a throwaway to avoid stale real-npm entries.
-  local own_cache=""
-  if [[ -z "${NPM_CONFIG_CACHE:-}" ]]; then
-    own_cache=$(mktemp -d /tmp/ruflo-latest-check-XXXXX)
-  fi
-
+  # Use `npm view` instead of `npx --version` to verify @latest resolves.
+  # npx installs all transitive deps (including better-sqlite3 native compile
+  # via cc1) which takes ~58s and wastes CPU. npm view is a metadata-only
+  # check that takes <1s. See MEMORY.md "Post-promote smoke test" note.
   local ver_out
-  if [[ -n "$own_cache" ]]; then
-    ver_out=$(NPM_CONFIG_CACHE="$own_cache" NPM_CONFIG_REGISTRY="$REGISTRY" \
-      npx --yes @sparkleideas/cli@latest --version 2>&1) || true
-    rm -rf "$own_cache"
-  else
-    ver_out=$(NPM_CONFIG_REGISTRY="$REGISTRY" \
-      npx --yes @sparkleideas/cli@latest --version 2>&1) || true
-  fi
+  ver_out=$(npm view "@sparkleideas/cli@latest" version \
+    --registry "$REGISTRY" 2>&1) || true
 
-  if echo "$ver_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
+  if echo "$ver_out" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="cli@latest = $(echo "$ver_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
   else
-    _CHECK_OUTPUT="cli@latest failed to run --version (broken dist-tag?)"
+    _CHECK_OUTPUT="cli@latest failed to resolve (broken dist-tag?)"
     _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(echo "$ver_out" | head -5)"
   fi
 
