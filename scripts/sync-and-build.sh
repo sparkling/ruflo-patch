@@ -296,11 +296,19 @@ check_merged_prs() {
     fi
 
     # Always fast-forward local main to origin/main
+    local _ff_start _ff_end
+    _ff_start=$(date +%s%N 2>/dev/null || echo 0)
     git -C "${dir}" checkout main --quiet 2>/dev/null || true
     git -C "${dir}" merge --ff-only origin/main --quiet 2>/dev/null || {
       # If local has diverged (shouldn't normally happen), reset to origin
       git -C "${dir}" reset --hard origin/main --quiet 2>/dev/null || true
     }
+    _ff_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_ff_start" != "0" && "$_ff_end" != "0" ]]; then
+      local _ff_ms=$(( (_ff_end - _ff_start) / 1000000 ))
+      log "  fast-forward ${name}: ${_ff_ms}ms"
+      add_cmd_timing "merge-detect" "git ff-merge ${name}" "${_ff_ms}"
+    fi
 
     local new_sha
     new_sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
@@ -379,13 +387,15 @@ bump_fork_versions() {
     local has_changes
     has_changes=$(git -C "${dir}" diff --cached --name-only 2>/dev/null) || true
     if [[ -n "$has_changes" ]]; then
-      local cli_version
+      local cli_version _bv_commit_start _bv_push_start _bv_push_end
+
       cli_version=$(node -e "
         const { findPackages } = await import('${SCRIPT_DIR}/fork-version.mjs');
         const pkgs = findPackages('${dir}');
         console.log(pkgs.length > 0 ? pkgs[0].pkg.version : 'unknown');
       " --input-type=module 2>/dev/null) || cli_version="unknown"
 
+      _bv_commit_start=$(date +%s%N 2>/dev/null || echo 0)
       git -C "${dir}" commit -m "chore: bump versions to ${cli_version}" --quiet 2>/dev/null || true
 
       # Tag with version
@@ -393,12 +403,26 @@ bump_fork_versions() {
       git -C "${dir}" tag -a "$tag" -m "Release ${tag}" 2>/dev/null || {
         log "Tag ${tag} already exists in ${name} — skipping"
       }
+      local _bv_commit_end
+      _bv_commit_end=$(date +%s%N 2>/dev/null || echo 0)
+      if [[ "$_bv_commit_start" != "0" && "$_bv_commit_end" != "0" ]]; then
+        local _bvc_ms=$(( (_bv_commit_end - _bv_commit_start) / 1000000 ))
+        log "  commit+tag ${name}: ${_bvc_ms}ms"
+        add_cmd_timing "bump-versions" "git commit+tag ${name}" "${_bvc_ms}"
+      fi
 
       # Push commit and tag
+      _bv_push_start=$(date +%s%N 2>/dev/null || echo 0)
       git -C "${dir}" push origin main --quiet 2>/dev/null || {
         log_error "Failed to push version bump for ${name}"
       }
       git -C "${dir}" push origin "$tag" --quiet 2>/dev/null || true
+      _bv_push_end=$(date +%s%N 2>/dev/null || echo 0)
+      if [[ "$_bv_push_start" != "0" && "$_bv_push_end" != "0" ]]; then
+        local _bvp_ms=$(( (_bv_push_end - _bv_push_start) / 1000000 ))
+        log "  push ${name}: ${_bvp_ms}ms"
+        add_cmd_timing "bump-versions" "git push ${name}" "${_bvp_ms}"
+      fi
 
       log "Version bump committed and pushed for ${name}: ${cli_version}"
     else
@@ -486,6 +510,8 @@ sync_upstream() {
     }
 
     # Attempt merge
+    local _merge_start _merge_end
+    _merge_start=$(date +%s%N 2>/dev/null || echo 0)
     if ! git -C "${dir}" merge --no-edit upstream/main 2>/dev/null; then
       log_error "Merge conflict in ${name}"
       git -C "${dir}" merge --abort 2>/dev/null || true
@@ -498,6 +524,12 @@ sync_upstream() {
       send_email "[ruflo] Merge conflict in ${name}" \
         "Upstream sync for ${name} has merge conflicts.\nBranch: ${branch_name}\nManual resolution required."
       return 1
+    fi
+    _merge_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_merge_start" != "0" && "$_merge_end" != "0" ]]; then
+      local _merge_ms=$(( (_merge_end - _merge_start) / 1000000 ))
+      log "  merge upstream ${name}: ${_merge_ms}ms"
+      add_cmd_timing "sync-upstream" "git merge ${name}" "${_merge_ms}"
     fi
 
     log "Merged upstream/main into ${branch_name} for ${name}"
@@ -525,6 +557,8 @@ sync_upstream() {
         # Try npx
         tsc_bin="npx tsc"
       fi
+      local _tc_start _tc_end
+      _tc_start=$(date +%s%N 2>/dev/null || echo 0)
       if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>/dev/null); then
         log_error "Type-check failed for ${name}"
 
@@ -537,6 +571,12 @@ sync_upstream() {
         # Switch back to main
         git -C "${dir}" checkout main --quiet 2>/dev/null
         return 1
+      fi
+      _tc_end=$(date +%s%N 2>/dev/null || echo 0)
+      if [[ "$_tc_start" != "0" && "$_tc_end" != "0" ]]; then
+        local _tc_ms=$(( (_tc_end - _tc_start) / 1000000 ))
+        log "  type-check ${name}: ${_tc_ms}ms"
+        add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "${_tc_ms}"
       fi
     fi
   done
@@ -556,10 +596,18 @@ create_sync_pr() {
   local body="$5"
 
   # Push the branch
+  local _pr_push_start _pr_push_end
+  _pr_push_start=$(date +%s%N 2>/dev/null || echo 0)
   git -C "${dir}" push origin "${branch}" --quiet 2>/dev/null || {
     log_error "Failed to push branch ${branch} for ${name}"
     return 1
   }
+  _pr_push_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_pr_push_start" != "0" && "$_pr_push_end" != "0" ]]; then
+    local _pr_push_ms=$(( (_pr_push_end - _pr_push_start) / 1000000 ))
+    log "  git push ${name}/${branch}: ${_pr_push_ms}ms"
+    add_cmd_timing "create-pr" "git push ${name}" "${_pr_push_ms}"
+  fi
 
   # Get repo name from remote
   local repo_url
@@ -587,6 +635,8 @@ ${body}"
   # Create label if it doesn't exist (ignore errors)
   gh label create "$label" --repo "$repo_slug" --force 2>/dev/null || true
 
+  local _pr_create_start _pr_create_end
+  _pr_create_start=$(date +%s%N 2>/dev/null || echo 0)
   gh pr create \
     --repo "$repo_slug" \
     --head "$branch" \
@@ -597,6 +647,12 @@ ${body}"
     2>/dev/null || {
       log_error "Failed to create PR for ${name} (non-fatal)"
     }
+  _pr_create_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_pr_create_start" != "0" && "$_pr_create_end" != "0" ]]; then
+    local _pr_create_ms=$(( (_pr_create_end - _pr_create_start) / 1000000 ))
+    log "  gh pr create ${name}: ${_pr_create_ms}ms"
+    add_cmd_timing "create-pr" "gh pr create ${name}" "${_pr_create_ms}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -667,6 +723,8 @@ STABLE_BUILD_DIR="/tmp/ruflo-build"
 
 write_build_manifest() {
   local manifest="${TEMP_DIR}/.build-manifest.json"
+  local _wm_start _wm_end
+  _wm_start=$(date +%s%N 2>/dev/null || echo 0)
   local codemod_hash
   codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
 
@@ -682,7 +740,12 @@ write_build_manifest() {
   "packages_total": $(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
 }
 MANIFESTEOF
-  log "Build manifest written to ${manifest}"
+  _wm_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_wm_start" != "0" && "$_wm_end" != "0" ]]; then
+    local _wm_ms=$(( (_wm_end - _wm_start) / 1000000 ))
+    log "  Build manifest written in ${_wm_ms}ms"
+    add_cmd_timing "build" "write-manifest" "${_wm_ms}"
+  fi
 }
 
 check_build_freshness() {
@@ -834,10 +897,13 @@ run_build() {
 
   : > "${TEMP_DIR}/.build-results"
 
+  local _group_idx=0
   for group_var in "${all_groups[@]}"; do
     local -n group_ref="$group_var"
     local -a bg_pids=()
+    local _grp_start _grp_end _grp_count=0
 
+    _grp_start=$(date +%s%N 2>/dev/null || echo 0)
     for pkg_name in "${group_ref[@]}"; do
       local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
       [[ -d "$pkg_dir" ]] || continue
@@ -850,12 +916,20 @@ run_build() {
 
       build_one_pkg "$pkg_name" &
       bg_pids+=($!)
+      _grp_count=$((_grp_count + 1))
     done
 
     # Wait for all packages in this group before starting the next
     for pid in "${bg_pids[@]}"; do
       wait "$pid" 2>/dev/null || true
     done
+    _grp_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_grp_start" != "0" && "$_grp_end" != "0" && $_grp_count -gt 0 ]]; then
+      local _grp_ms=$(( (_grp_end - _grp_start) / 1000000 ))
+      log "  GROUP ${_group_idx} (${_grp_count} pkgs): ${_grp_ms}ms wall-clock"
+      add_cmd_timing "build" "group_${_group_idx} (${_grp_count} pkgs)" "${_grp_ms}"
+    fi
+    _group_idx=$((_group_idx + 1))
   done
 
   # Collect results from parallel builds
@@ -882,12 +956,16 @@ run_build() {
     [[ -d "$pkg_dir" && -f "$pkg_dir/tsconfig.json" ]] || continue
 
     log "  Building cross-repo: ${rel_path}"
+    local _xr_start _xr_end
+    _xr_start=$(date +%s%N 2>/dev/null || echo 0)
 
     # Build WASM and TypeScript in parallel (independent processes)
     local crate_dir="$pkg_dir/crates/agent-booster-wasm"
     local wasm_pid=""
+    local _wasm_start=""
     if [[ -d "$crate_dir" ]] && command -v wasm-pack &>/dev/null; then
       log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
+      _wasm_start=$(date +%s%N 2>/dev/null || echo 0)
       (
         wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
           echo "WARN: WASM build failed for ${rel_path}" >&2
@@ -900,25 +978,55 @@ run_build() {
       wasm_pid=$!
     fi
 
+    local _xr_tsc_start _xr_tsc_end
+    _xr_tsc_start=$(date +%s%N 2>/dev/null || echo 0)
     if "$TSC" -p "$pkg_dir/tsconfig.json" --skipLibCheck 2>/dev/null; then
       built=$((built + 1))
     else
       log "WARN: TypeScript build failed for ${rel_path}"
       failed=$((failed + 1))
     fi
+    _xr_tsc_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_xr_tsc_start" != "0" && "$_xr_tsc_end" != "0" ]]; then
+      local _xr_tsc_ms=$(( (_xr_tsc_end - _xr_tsc_start) / 1000000 ))
+      log "  cross-repo TSC: ${_xr_tsc_ms}ms"
+      add_cmd_timing "build" "tsc cross-repo/agent-booster" "${_xr_tsc_ms}"
+    fi
 
     # Wait for WASM build to finish
     if [[ -n "$wasm_pid" ]]; then
-      wait "$wasm_pid" 2>/dev/null && log "  WASM build succeeded" || true
+      wait "$wasm_pid" 2>/dev/null && {
+        local _wasm_end
+        _wasm_end=$(date +%s%N 2>/dev/null || echo 0)
+        if [[ -n "$_wasm_start" && "$_wasm_start" != "0" && "$_wasm_end" != "0" ]]; then
+          local _wasm_ms=$(( (_wasm_end - _wasm_start) / 1000000 ))
+          log "  WASM build: ${_wasm_ms}ms"
+          add_cmd_timing "build" "wasm-pack agent-booster" "${_wasm_ms}"
+        fi
+        log "  WASM build succeeded"
+      } || true
+    fi
+
+    _xr_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_xr_start" != "0" && "$_xr_end" != "0" ]]; then
+      local _xr_ms=$(( (_xr_end - _xr_start) / 1000000 ))
+      add_cmd_timing "build" "cross-repo total" "${_xr_ms}"
     fi
   done
 
   log "Build complete: ${built} built, ${skipped} skipped, ${failed} failed"
 
-  local total_packages compiled_packages pre_built_packages
+  local total_packages compiled_packages pre_built_packages _scan_start _scan_end
+  _scan_start=$(date +%s%N 2>/dev/null || echo 0)
   total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
   compiled_packages=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
   pre_built_packages=$((total_packages - compiled_packages))
+  _scan_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_scan_start" != "0" && "$_scan_end" != "0" ]]; then
+    local _scan_ms=$(( (_scan_end - _scan_start) / 1000000 ))
+    log "  post-build scan: ${_scan_ms}ms"
+    add_cmd_timing "build" "find scan" "${_scan_ms}"
+  fi
   log "Build directory contains ${total_packages} publishable packages (${compiled_packages} compiled, ${pre_built_packages} pre-built)"
   if [[ $failed -gt 0 ]]; then
     log_error "Some packages failed to build — published packages may be broken"

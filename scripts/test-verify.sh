@@ -187,7 +187,12 @@ _record_phase "publish-wrapper" "$(_elapsed_ms "$_p4_start" "$(_ns)")"
 # ══════════════════════════════════════════════════════════════════
 _p5_start=$(_ns)
 # Two caches: _npx/ (resolution trees) and _cacache/ (HTTP metadata + tarballs)
+_p5a_start=$(_ns)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
+_p5a_ms=$(_elapsed_ms "$_p5a_start" "$(_ns)")
+log "  npx tree clear: ${_p5a_ms}ms"
+
+_p5b_start=$(_ns)
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
   grep -rl "sparkleideas" "${HOME}/.npm/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
 else
@@ -199,6 +204,8 @@ else
       | xargs rm -f 2>/dev/null || true
   done
 fi
+_p5b_ms=$(_elapsed_ms "$_p5b_start" "$(_ns)")
+log "  cacache index clear: ${_p5b_ms}ms"
 _record_phase "npx-cache-clear" "$(_elapsed_ms "$_p5_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
@@ -224,33 +231,37 @@ _p7_start=$(_ns)
 structural_fail=0
 
 # S-1: CLI in node_modules
+_s1_start=$(_ns)
 if [[ -d "${VERIFY_TEMP}/node_modules/@sparkleideas/cli" ]]; then
-  log "  PASS  S-1: @sparkleideas/cli in node_modules"
+  log "  PASS  S-1: @sparkleideas/cli in node_modules ($(_elapsed_ms "$_s1_start" "$(_ns)")ms)"
 else
-  log "  FAIL  S-1: @sparkleideas/cli not found in node_modules"
+  log "  FAIL  S-1: @sparkleideas/cli not found in node_modules ($(_elapsed_ms "$_s1_start" "$(_ns)")ms)"
   structural_fail=$((structural_fail + 1))
 fi
 
 # S-2: ADR-0022 packages available on Verdaccio
 for new_pkg in "@sparkleideas/agent-booster" "@sparkleideas/plugins" "@sparkleideas/ruvector-upstream"; do
+  _s2_start=$(_ns)
   if npm view "$new_pkg" version --registry "http://localhost:${RQ_PORT}" >/dev/null 2>&1; then
-    log "  PASS  S-2: ADR-0022 package available: $new_pkg"
+    log "  PASS  S-2: $new_pkg ($(_elapsed_ms "$_s2_start" "$(_ns)")ms)"
   else
-    log "  WARN  S-2: ADR-0022 package not published: $new_pkg"
+    log "  WARN  S-2: $new_pkg not published ($(_elapsed_ms "$_s2_start" "$(_ns)")ms)"
     # ruvector-upstream is optional — don't count as failure
     [[ "$new_pkg" != *"ruvector-upstream"* ]] && structural_fail=$((structural_fail + 1))
   fi
 done
 
 # S-3: npm ls clean (no MISSING deps)
+_s3_start=$(_ns)
 missing_deps=$(cd "${VERIFY_TEMP}" && npm ls --all 2>&1 | grep 'MISSING' || true)
+_s3_ms=$(_elapsed_ms "$_s3_start" "$(_ns)")
 if [[ -n "$missing_deps" ]]; then
-  log "  WARN  S-3: Missing dependencies detected:"
+  log "  WARN  S-3: Missing dependencies detected (${_s3_ms}ms):"
   echo "$missing_deps" | head -10 | while IFS= read -r line; do
     log "        $line"
   done
 else
-  log "  PASS  S-3: All dependencies resolved"
+  log "  PASS  S-3: All dependencies resolved (${_s3_ms}ms)"
 fi
 _record_phase "structural-checks" "$(_elapsed_ms "$_p7_start" "$(_ns)")"
 
@@ -269,7 +280,9 @@ if [[ ! -f "$checks_lib" ]]; then
   exit 1
 fi
 # shellcheck source=../lib/acceptance-checks.sh
+_p8_source_start=$(_ns)
 source "$checks_lib"
+log "  source acceptance-checks.sh: $(_elapsed_ms "$_p8_source_start" "$(_ns)")ms"
 
 # Set environment for shared checks
 REGISTRY="http://localhost:${RQ_PORT}"
@@ -283,6 +296,7 @@ TEMP_DIR="$VERIFY_TEMP"
 RQ_NPX_CACHE="/tmp/ruflo-rq-npxcache"
 mkdir -p "$RQ_NPX_CACHE"
 # Clear @sparkleideas entries from persistent cache
+_p8_cache_start=$(_ns)
 find "$RQ_NPX_CACHE/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
   grep -rl "sparkleideas" "$RQ_NPX_CACHE/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
@@ -295,6 +309,7 @@ else
       | xargs rm -f 2>/dev/null || true
   done
 fi
+log "  rq npx cache clear: $(_elapsed_ms "$_p8_cache_start" "$(_ns)")ms"
 export NPM_CONFIG_CACHE="$RQ_NPX_CACHE"
 
 # Define run_timed for the shared library
@@ -457,18 +472,31 @@ log "Verification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
 # ══════════════════════════════════════════════════════════════════
 _p9_start=$(_ns)
 _promote_count=0
+_promote_slowest_pkg=""
+_promote_slowest_ms=0
 if [[ "${SKIP_PROMOTE}" != "true" ]]; then
   log "Promoting packages to @latest on Verdaccio..."
   for pkg_dir in "${RQ_STORAGE}/@sparkleideas"/*/; do
     [[ -d "$pkg_dir" ]] || continue
     pkg_name="@sparkleideas/$(basename "$pkg_dir")"
+    _prom_pkg_start=$(_ns)
     latest_ver=$(npm view "${pkg_name}" version --registry "http://localhost:${RQ_PORT}" 2>/dev/null) || continue
     [[ -z "$latest_ver" ]] && continue
     npm dist-tag add "${pkg_name}@${latest_ver}" latest \
-      --registry "http://localhost:${RQ_PORT}" 2>/dev/null && \
-      { log "  ${pkg_name}@${latest_ver} -> @latest"; _promote_count=$((_promote_count + 1)); } || true
+      --registry "http://localhost:${RQ_PORT}" 2>/dev/null && {
+      _prom_pkg_ms=$(_elapsed_ms "$_prom_pkg_start" "$(_ns)")
+      log "  ${pkg_name}@${latest_ver} -> @latest (${_prom_pkg_ms}ms)"
+      _promote_count=$((_promote_count + 1))
+      if [[ $_prom_pkg_ms -gt $_promote_slowest_ms ]]; then
+        _promote_slowest_ms=$_prom_pkg_ms
+        _promote_slowest_pkg="$pkg_name"
+      fi
+    } || true
   done
   log "Promote complete (${_promote_count} packages)"
+  if [[ $_promote_count -gt 0 ]]; then
+    log "  slowest: ${_promote_slowest_pkg} (${_promote_slowest_ms}ms)"
+  fi
 fi
 _record_phase "promote" "$(_elapsed_ms "$_p9_start" "$(_ns)")"
 
