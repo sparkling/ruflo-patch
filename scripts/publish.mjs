@@ -395,12 +395,16 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
         }
         // Version does NOT exist on target registry — ghost version.
         // npm accepted the write but never propagated to read side.
-        // Bump to next -patch.N and retry once.
+        // Bump to next -patch.N and retry up to 5 times.
         console.warn(`    ghost version detected: ${pkgName}@${effectiveVersion} — bumping and retrying`);
-        const patchMatch = effectiveVersion.match(/^(.*)-patch\.(\d+)$/);
-        if (patchMatch) {
-          const retryVersion = `${patchMatch[1]}-patch.${parseInt(patchMatch[2], 10) + 1}`;
-          console.log(`    retrying as ${pkgName}@${retryVersion}`);
+        const MAX_GHOST_RETRIES = 5;
+        let retryVersion = effectiveVersion;
+        let ghostResolved = false;
+        for (let attempt = 1; attempt <= MAX_GHOST_RETRIES && !ghostResolved; attempt++) {
+          const patchMatch = retryVersion.match(/^(.*)-patch\.(\d+)$/);
+          if (!patchMatch) break;
+          retryVersion = `${patchMatch[1]}-patch.${parseInt(patchMatch[2], 10) + 1}`;
+          console.log(`    retrying as ${pkgName}@${retryVersion} (attempt ${attempt}/${MAX_GHOST_RETRIES})`);
           pkgJson.version = retryVersion;
           writeFileSync(pkgJsonPath, JSON.stringify(pkgJson, null, 2) + '\n');
           stampVersion(pkgDir, retryVersion, metadata);
@@ -411,13 +415,22 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
             });
             if (retryOut) console.log(`    ${retryOut.trim()}`);
             const duration_ms = Date.now() - pkgStart;
-            console.log(`    published (ghost retry) in ${duration_ms}ms`);
+            console.log(`    published (ghost retry #${attempt}) in ${duration_ms}ms`);
             publishedVersions[pkgName] = retryVersion;
+            ghostResolved = true;
             return { ok: true, entry: { name: pkgName, level: levelNumber, tag: tag ?? 'latest', version: retryVersion, duration_ms } };
           } catch (retryErr) {
             const retryStderr = retryErr.stderr || '';
-            console.error(`    ghost retry also failed: ${retryStderr.substring(0, 300)}`);
+            if (retryStderr.toLowerCase().includes('cannot publish over previously published version')) {
+              console.warn(`    ghost retry #${attempt} hit another ghost — continuing`);
+              continue;
+            }
+            console.error(`    ghost retry #${attempt} failed with unexpected error: ${retryStderr.substring(0, 300)}`);
+            break;
           }
+        }
+        if (!ghostResolved) {
+          console.error(`    exhausted ${MAX_GHOST_RETRIES} ghost retries for ${pkgName}`);
         }
       }
 
