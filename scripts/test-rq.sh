@@ -262,20 +262,93 @@ print(json.dumps(data), end="")
   fi
 }
 
+# Sequential: RQ-1 and RQ-2 must run first (RQ-2 creates init state used by others)
 run_rq_check "RQ-1"  "Version check"       check_version
 run_rq_check "RQ-2"  "Init"                check_init
-run_rq_check "RQ-3"  "Settings file"       check_settings_file
-run_rq_check "RQ-4"  "Scope check"         check_scope
-run_rq_check "RQ-5"  "Doctor"              check_doctor
-run_rq_check "RQ-6"  "MCP config"          check_mcp_config
-run_rq_check "RQ-7"  "Wrapper proxy"       check_wrapper_proxy
-run_rq_check "RQ-8"  "Memory lifecycle"    check_memory_lifecycle
-run_rq_check "RQ-9"  "Neural training"     check_neural_training
-run_rq_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
-run_rq_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
-run_rq_check "RQ-12" "Plugins SDK"         check_plugins_sdk
-run_rq_check "RQ-13" "@latest resolves"    check_latest_resolves
-run_rq_check "RQ-14" "ruflo init --full"   check_ruflo_init_full
+
+# Parallel: RQ-3 through RQ-14 are independent (each uses TEMP_DIR or own context)
+# Run all in background subshells, collect results via temp files.
+RQ_PARALLEL_DIR=$(mktemp -d /tmp/ruflo-rq-parallel-XXXXX)
+
+run_rq_check_bg() {
+  local id="$1" name="$2" fn="$3"
+  (
+    # Each background check writes its result to a file
+    local rq_start_ns rq_end_ns rq_dur_ms=0
+    rq_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+    "$fn"
+    rq_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$rq_start_ns" != "0" && "$rq_end_ns" != "0" ]]; then
+      rq_dur_ms=$(( (rq_end_ns - rq_start_ns) / 1000000 ))
+    fi
+    # Escape output for JSON
+    local rq_escaped_output
+    rq_escaped_output=$(printf '%s' "${_CHECK_OUTPUT:-${_OUT:-}}" | head -c 4096 | python3 -c '
+import sys, json
+data = sys.stdin.read()
+print(json.dumps(data), end="")
+' 2>/dev/null || echo '""')
+    # Write result file: passed|duration|escaped_output
+    echo "${_CHECK_PASSED}|${rq_dur_ms}|${rq_escaped_output}" > "${RQ_PARALLEL_DIR}/${id}"
+  ) &
+}
+
+run_rq_check_bg "RQ-3"  "Settings file"       check_settings_file
+run_rq_check_bg "RQ-4"  "Scope check"         check_scope
+run_rq_check_bg "RQ-5"  "Doctor"              check_doctor
+run_rq_check_bg "RQ-6"  "MCP config"          check_mcp_config
+run_rq_check_bg "RQ-7"  "Wrapper proxy"       check_wrapper_proxy
+run_rq_check_bg "RQ-8"  "Memory lifecycle"    check_memory_lifecycle
+run_rq_check_bg "RQ-9"  "Neural training"     check_neural_training
+run_rq_check_bg "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
+run_rq_check_bg "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
+run_rq_check_bg "RQ-12" "Plugins SDK"         check_plugins_sdk
+run_rq_check_bg "RQ-13" "@latest resolves"    check_latest_resolves
+run_rq_check_bg "RQ-14" "ruflo init --full"   check_ruflo_init_full
+
+wait
+
+# Collect parallel results in order
+for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
+  local result_file="${RQ_PARALLEL_DIR}/${id}"
+  rq_total=$((rq_total + 1))
+  if [[ -f "$result_file" ]]; then
+    IFS='|' read -r passed dur_ms escaped_output < "$result_file"
+    local name_map=""
+    case "$id" in
+      RQ-3)  name_map="Settings file";;     RQ-4)  name_map="Scope check";;
+      RQ-5)  name_map="Doctor";;             RQ-6)  name_map="MCP config";;
+      RQ-7)  name_map="Wrapper proxy";;      RQ-8)  name_map="Memory lifecycle";;
+      RQ-9)  name_map="Neural training";;    RQ-10) name_map="Agent Booster ESM";;
+      RQ-11) name_map="Agent Booster CLI";;  RQ-12) name_map="Plugins SDK";;
+      RQ-13) name_map="@latest resolves";;   RQ-14) name_map="ruflo init --full";;
+    esac
+    local rq_passed_bool="false"
+    if [[ "$passed" == "true" ]]; then
+      rq_pass=$((rq_pass + 1))
+      rq_passed_bool="true"
+      log "  PASS  $id: $name_map"
+    else
+      rq_fail=$((rq_fail + 1))
+      log "  FAIL  $id: $name_map"
+    fi
+    if [[ "${dur_ms:-0}" -gt 15000 ]]; then
+      log "  SLOW  $id: ${dur_ms}ms (threshold: 15000ms)"
+    fi
+    local rq_entry
+    rq_entry=$(printf '{"id":"%s","name":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
+      "$id" "$name_map" "$rq_passed_bool" "${escaped_output:-\"\"}" "${dur_ms:-0}")
+    if [[ "$rq_results_json" == "[]" ]]; then
+      rq_results_json="[$rq_entry]"
+    else
+      rq_results_json="${rq_results_json%]}, $rq_entry]"
+    fi
+  else
+    rq_fail=$((rq_fail + 1))
+    log "  FAIL  $id: (no result file — subprocess crashed)"
+  fi
+done
+rm -rf "$RQ_PARALLEL_DIR"
 
 log "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
 

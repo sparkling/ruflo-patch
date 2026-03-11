@@ -191,9 +191,53 @@ async function* walkFiles(dir) {
 
 // -- Main transform -----------------------------------------------------------
 
+/** Process a single file. Returns { scanned, transformed, packageJson, deleted }. */
+async function processOneFile(filePath) {
+  const name = basename(filePath);
+  const result = { scanned: 0, transformed: 0, packageJson: 0, deleted: null };
+
+  if (DELETE_FILES.has(name)) {
+    await unlink(filePath);
+    result.deleted = filePath;
+    return result;
+  }
+
+  if (isSkippedFile(name)) return result;
+
+  const ext = effectiveExt(name);
+  if (!ALLOWED_EXTENSIONS.has(ext)) return result;
+
+  result.scanned = 1;
+  const isPackageJson = name === 'package.json';
+
+  if (isPackageJson) {
+    result.packageJson = 1;
+    const raw = await readFile(filePath, 'utf8');
+    let json;
+    try { json = JSON.parse(raw); } catch { return result; }
+    const changed = transformPackageJsonObject(json);
+    if (changed) {
+      const trailing = raw.endsWith('\n') ? '\n' : '';
+      await writeFile(filePath, JSON.stringify(json, null, 2) + trailing, 'utf8');
+      result.transformed = 1;
+    }
+  } else {
+    const content = await readFile(filePath, 'utf8');
+    const transformed = transformSource(content);
+    if (transformed !== content) {
+      await writeFile(filePath, transformed, 'utf8');
+      result.transformed = 1;
+    }
+  }
+
+  return result;
+}
+
+// Batch size for parallel file I/O (saturate disk without fd exhaustion)
+const BATCH_SIZE = 50;
+
 /** Transform an entire directory tree in place. */
 export async function transform(tempDir) {
-  // Validate tempDir exists
   const dirStat = await stat(tempDir);
   if (!dirStat.isDirectory()) {
     throw new Error(`Not a directory: ${tempDir}`);
@@ -206,51 +250,21 @@ export async function transform(tempDir) {
     deletedFiles: [],
   };
 
+  // Collect all file paths first (fast directory walk)
+  const allFiles = [];
   for await (const filePath of walkFiles(tempDir)) {
-    const name = basename(filePath);
+    allFiles.push(filePath);
+  }
 
-    // Delete lockfiles
-    if (DELETE_FILES.has(name)) {
-      await unlink(filePath);
-      stats.deletedFiles.push(filePath);
-      continue;
-    }
-
-    // Skip LICENSE files
-    if (isSkippedFile(name)) continue;
-
-    // Check extension allowlist
-    const ext = effectiveExt(name);
-    if (!ALLOWED_EXTENSIONS.has(ext)) continue;
-
-    stats.filesScanned++;
-
-    const isPackageJson = name === 'package.json';
-
-    if (isPackageJson) {
-      stats.packageJsonProcessed++;
-      const raw = await readFile(filePath, 'utf8');
-      let json;
-      try {
-        json = JSON.parse(raw);
-      } catch {
-        // Malformed JSON -- skip, do not corrupt
-        continue;
-      }
-      const changed = transformPackageJsonObject(json);
-      if (changed) {
-        // Preserve trailing newline if original had one
-        const trailing = raw.endsWith('\n') ? '\n' : '';
-        await writeFile(filePath, JSON.stringify(json, null, 2) + trailing, 'utf8');
-        stats.filesTransformed++;
-      }
-    } else {
-      const content = await readFile(filePath, 'utf8');
-      const transformed = transformSource(content);
-      if (transformed !== content) {
-        await writeFile(filePath, transformed, 'utf8');
-        stats.filesTransformed++;
-      }
+  // Process files in parallel batches
+  for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
+    const batch = allFiles.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(batch.map(f => processOneFile(f)));
+    for (const r of results) {
+      stats.filesScanned += r.scanned;
+      stats.filesTransformed += r.transformed;
+      stats.packageJsonProcessed += r.packageJson;
+      if (r.deleted) stats.deletedFiles.push(r.deleted);
     }
   }
 

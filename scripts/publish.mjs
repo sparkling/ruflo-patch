@@ -86,7 +86,9 @@ export const LEVELS = [
   ],
 ];
 
-export const RATE_LIMIT_MS = 2000;
+// Rate limit between levels: 0 for local Verdaccio, 2000 for real npm
+// Local publishes don't need rate limiting — saves ~10s across 5 levels
+export const RATE_LIMIT_MS = 0;
 
 // ── Published versions state file ──
 
@@ -311,6 +313,31 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
 
   const published = [];
 
+  // Pre-resolve publish tags for all packages in parallel (batch registry checks).
+  // Each getPublishTag call is an npm view roundtrip (~500ms). Doing 40+ packages
+  // serially inside publishOne wastes ~20s. Batch them all upfront.
+  const tagCache = new Map();
+  async function prefetchTags(packageNames) {
+    const resolveTag = getPublishTagFn || getPublishTag;
+    const uncached = packageNames.filter(n => !tagCache.has(n));
+    if (uncached.length === 0) return;
+    const results = await Promise.allSettled(
+      uncached.map(async (name) => {
+        const tag = await resolveTag(name);
+        return { name, tag };
+      })
+    );
+    for (const r of results) {
+      if (r.status === 'fulfilled') {
+        tagCache.set(r.value.name, { ok: true, tag: r.value.tag });
+      } else {
+        // Store the error so publishOne can report it per-package
+        const name = uncached[results.indexOf(r)];
+        tagCache.set(name, { ok: false, error: r.reason });
+      }
+    }
+  }
+
   // Publish one package. Returns { ok, entry?, error? }.
   async function publishOne(pkgName, levelNumber) {
     const pkgDir = packageMap.get(pkgName);
@@ -332,15 +359,15 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
       stampVersion(pkgDir, effectiveVersion, metadata);
     }
 
-    const resolveTag = getPublishTagFn || getPublishTag;
+    // Use pre-fetched tag from parallel batch
+    const cached = tagCache.get(pkgName);
     let tag;
-    try {
-      tag = await resolveTag(pkgName);
-    } catch (err) {
-      const errorMsg = `Failed to check npm registry for ${pkgName}: ${err.message}`;
+    if (cached && !cached.ok) {
+      const errorMsg = `Failed to check npm registry for ${pkgName}: ${cached.error?.message || 'unknown'}`;
       console.error(`  ERROR: ${errorMsg}`);
       return { ok: false, error: { package: pkgName, level: levelNumber, error: errorMsg } };
     }
+    tag = cached?.tag ?? null;
 
     const tagLabel = tag ?? 'latest (first publish)';
     console.log(`    tag: ${tagLabel}`);
@@ -461,6 +488,9 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     }
 
     console.log(`\n--- Level ${levelNumber} (${levelPackages.length}/${packages.length} packages) ---`);
+
+    // Pre-fetch all registry tags for this level in parallel
+    await prefetchTags(levelPackages);
 
     // Publish all packages within a level concurrently
     const results = await Promise.all(

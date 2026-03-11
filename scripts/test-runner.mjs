@@ -59,7 +59,10 @@ function runTests(args) {
 }
 
 const t0 = Date.now();
-const concurrency = parseInt(process.env.TEST_CONCURRENCY || '0', 10);
+// Default to 4 concurrent test suites (server has 32 vCPUs)
+import { availableParallelism } from 'node:os';
+const defaultConcurrency = Math.min(availableParallelism(), 8);
+const concurrency = parseInt(process.env.TEST_CONCURRENCY || String(defaultConcurrency), 10);
 const args = ['--test', ...allFiles];
 if (concurrency > 0) {
   args.splice(1, 0, `--test-concurrency=${concurrency}`);

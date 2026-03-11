@@ -602,22 +602,20 @@ create_temp_dir() {
 copy_source() {
   log "Copying fork source to ${TEMP_DIR}"
 
-  # Copy the primary fork (ruflo) as the base
-  cp -a "${FORK_DIR_RUFLO}/." "${TEMP_DIR}/"
-  rm -rf "${TEMP_DIR}/.git"
+  # Copy all 3 forks in parallel (uses all available I/O bandwidth)
+  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN"
 
-  # Copy cross-repo packages into the build dir (ADR-0014 Level 1)
-  # agentic-flow repo provides agentdb and agentic-flow packages
-  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow"
-  cp -a "${FORK_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/"
-  rm -rf "${TEMP_DIR}/cross-repo/agentic-flow/.git"
+  cp -a "${FORK_DIR_RUFLO}/." "${TEMP_DIR}/" &
+  local pid_ruflo=$!
+  cp -a "${FORK_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/" &
+  local pid_agentic=$!
+  cp -a "${FORK_DIR_FANN}/." "${TEMP_DIR}/cross-repo/ruv-FANN/" &
+  local pid_fann=$!
+  wait $pid_ruflo $pid_agentic $pid_fann
 
-  # ruv-FANN repo provides ruv-swarm package
-  mkdir -p "${TEMP_DIR}/cross-repo/ruv-FANN"
-  cp -a "${FORK_DIR_FANN}/." "${TEMP_DIR}/cross-repo/ruv-FANN/"
-  rm -rf "${TEMP_DIR}/cross-repo/ruv-FANN/.git"
+  rm -rf "${TEMP_DIR}/.git" "${TEMP_DIR}/cross-repo/agentic-flow/.git" "${TEMP_DIR}/cross-repo/ruv-FANN/.git"
 
-  log "Source copied to temp directory (3 forks merged)"
+  log "Source copied to temp directory (3 forks merged, parallel)"
 }
 
 # ---------------------------------------------------------------------------
@@ -749,17 +747,11 @@ run_build() {
   local built=0
   local failed=0
   local skipped=0
-  for pkg_name in "${build_order[@]}"; do
+
+  # Build one package (called from parallel group below)
+  build_one_pkg() {
+    local pkg_name="$1"
     local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
-    [[ -d "$pkg_dir" ]] || continue
-    [[ -f "$pkg_dir/tsconfig.json" ]] || continue
-
-    # Skip unchanged packages (selective build)
-    if [[ "$selective_build" == "true" && -z "${changed_set[$pkg_name]:-}" ]]; then
-      skipped=$((skipped + 1))
-      continue
-    fi
-
     local pkg_build_start
     pkg_build_start=$(date +%s%N 2>/dev/null || echo 0)
 
@@ -780,31 +772,75 @@ run_build() {
       require('fs').writeFileSync('$tmp_tsconfig', JSON.stringify(ts, null, 2));
     " 2>/dev/null
 
+    local ok=0
     if "$TSC" -p "$tmp_tsconfig" --skipLibCheck 2>/dev/null; then
-      built=$((built + 1))
-    else
-      if "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>/dev/null; then
-        built=$((built + 1))
-      else
-        log "WARN: TypeScript build failed for ${pkg_name} — trying transpileOnly"
-        if "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>/dev/null; then
-          built=$((built + 1))
-        else
-          log_error "TypeScript build failed for ${pkg_name}"
-          failed=$((failed + 1))
-        fi
-      fi
+      ok=1
+    elif "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>/dev/null; then
+      ok=1
+    elif "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>/dev/null; then
+      ok=1
     fi
     rm -f "$tmp_tsconfig"
+
     local pkg_build_end
     pkg_build_end=$(date +%s%N 2>/dev/null || echo 0)
+    local _bms=0
     if [[ "$pkg_build_start" != "0" && "$pkg_build_end" != "0" ]]; then
-      local _bms=$(( (pkg_build_end - pkg_build_start) / 1000000 ))
-      log "  BUILD: ${pkg_name} ${_bms}ms"
-      add_build_pkg_timing "${pkg_name}" "${_bms}"
-      add_cmd_timing "build" "tsc ${pkg_name}" "${_bms}"
+      _bms=$(( (pkg_build_end - pkg_build_start) / 1000000 ))
     fi
+    # Write result to a temp file so the parent can collect it
+    echo "${pkg_name} ${ok} ${_bms}" >> "${TEMP_DIR}/.build-results"
+  }
+
+  # Group packages by dependency level for parallel builds
+  # Packages within the same group have no inter-dependencies
+  local -a group_0=(shared)
+  local -a group_1=(memory embeddings codex aidefence)
+  local -a group_2=(neural hooks browser plugins providers claims)
+  local -a group_3=(guidance mcp integration deployment swarm security performance testing)
+  local -a group_4=(cli)
+  local -a all_groups=("group_0" "group_1" "group_2" "group_3" "group_4")
+
+  : > "${TEMP_DIR}/.build-results"
+
+  for group_var in "${all_groups[@]}"; do
+    local -n group_ref="$group_var"
+    local -a bg_pids=()
+
+    for pkg_name in "${group_ref[@]}"; do
+      local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
+      [[ -d "$pkg_dir" ]] || continue
+      [[ -f "$pkg_dir/tsconfig.json" ]] || continue
+
+      if [[ "$selective_build" == "true" && -z "${changed_set[$pkg_name]:-}" ]]; then
+        skipped=$((skipped + 1))
+        continue
+      fi
+
+      build_one_pkg "$pkg_name" &
+      bg_pids+=($!)
+    done
+
+    # Wait for all packages in this group before starting the next
+    for pid in "${bg_pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
   done
+
+  # Collect results from parallel builds
+  while IFS=' ' read -r pkg_name ok _bms; do
+    [[ -z "$pkg_name" ]] && continue
+    if [[ "$ok" == "1" ]]; then
+      built=$((built + 1))
+    else
+      log_error "TypeScript build failed for ${pkg_name}"
+      failed=$((failed + 1))
+    fi
+    log "  BUILD: ${pkg_name} ${_bms}ms"
+    add_build_pkg_timing "${pkg_name}" "${_bms}"
+    add_cmd_timing "build" "tsc ${pkg_name}" "${_bms}"
+  done < "${TEMP_DIR}/.build-results"
+  rm -f "${TEMP_DIR}/.build-results"
 
   # Build cross-repo packages
   local cross_repo_builds=(
@@ -816,19 +852,21 @@ run_build() {
 
     log "  Building cross-repo: ${rel_path}"
 
-    # Build WASM module if this package has a Rust crate
+    # Build WASM and TypeScript in parallel (independent processes)
     local crate_dir="$pkg_dir/crates/agent-booster-wasm"
+    local wasm_pid=""
     if [[ -d "$crate_dir" ]] && command -v wasm-pack &>/dev/null; then
       log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
-      local wasm_out
-      wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
-        log "WARN: WASM build failed for ${rel_path} (agent-booster ESM import will fail)"
-        echo "$wasm_out" | tail -5 | while IFS= read -r line; do log "  $line"; done
-      }
-      if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
-        rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
-        log "  WASM build succeeded"
-      fi
+      (
+        wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
+          echo "WARN: WASM build failed for ${rel_path}" >&2
+          echo "$wasm_out" | tail -5 >&2
+        }
+        if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
+          rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
+        fi
+      ) &
+      wasm_pid=$!
     fi
 
     if "$TSC" -p "$pkg_dir/tsconfig.json" --skipLibCheck 2>/dev/null; then
@@ -836,6 +874,11 @@ run_build() {
     else
       log "WARN: TypeScript build failed for ${rel_path}"
       failed=$((failed + 1))
+    fi
+
+    # Wait for WASM build to finish
+    if [[ -n "$wasm_pid" ]]; then
+      wait "$wasm_pid" 2>/dev/null && log "  WASM build succeeded" || true
     fi
   done
 

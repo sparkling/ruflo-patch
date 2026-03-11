@@ -337,15 +337,15 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 5. Rate limiting ----------
 
   describe('Rate limiting', () => {
-    it('RATE_LIMIT_MS is set to 2000', () => {
+    it('RATE_LIMIT_MS is set to 0 for local Verdaccio', () => {
       assert.equal(
         RATE_LIMIT_MS,
-        2000,
-        'Rate limit should be 2000ms per ADR-0014'
+        0,
+        'Rate limit should be 0ms (local Verdaccio needs no throttling)'
       );
     });
 
-    it('dry-run completes much faster than real publish would', async () => {
+    it('dry-run completes quickly without network calls', async () => {
       const tmp = createFakeBuildDir();
 
       const start = Date.now();
@@ -354,16 +354,11 @@ describe('Topological publish order (ADR-0014)', () => {
       });
       const elapsed = Date.now() - start;
 
-      // In dry-run mode, no sleep(2000) calls are made.
-      // Real mode would take TOTAL_PACKAGES * 2000ms = ~50s.
-      // Dry-run should be well under that.  The npm-view calls add
-      // network latency (~500ms each), so allow up to 30s total
-      // but confirm it is far below the 50s that real delays would add.
-      const realModeMinimum = TOTAL_PACKAGES * RATE_LIMIT_MS;
+      // With RATE_LIMIT_MS=0 (local Verdaccio) and mock tag resolver,
+      // dry-run should complete in under 5s for all packages.
       assert.ok(
-        elapsed < realModeMinimum,
-        `Dry-run took ${elapsed}ms, but real-mode delays alone would be ${realModeMinimum}ms. ` +
-          'This confirms dry-run skips the rate-limit sleep.'
+        elapsed < 5000,
+        `Dry-run took ${elapsed}ms, expected <5000ms for ${TOTAL_PACKAGES} packages`
       );
       assert.equal(result.failed, null, 'Dry-run should succeed');
       assert.equal(result.published.length, TOTAL_PACKAGES);
