@@ -549,8 +549,51 @@ sync_upstream() {
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
 
-    # Only type-check if there's a tsconfig.json
-    if [[ -f "${dir}/tsconfig.json" ]]; then
+    # ruflo fork: root tsconfig covers the entire v3/ tree including upstream
+    # code with 600+ known errors we don't own. Type-check per-package instead
+    # (each v3/@claude-flow/<pkg>/tsconfig.json scopes to its own src/).
+    if [[ "$name" == "ruflo" ]]; then
+      local v3_cf_dir="${dir}/v3/@claude-flow"
+      if [[ -d "$v3_cf_dir" ]]; then
+        log "Type-checking ${name} per-package on sync branch"
+        local tsc_bin="${dir}/node_modules/.bin/tsc"
+        if [[ ! -x "$tsc_bin" ]]; then
+          tsc_bin="npx tsc"
+        fi
+        local _tc_start _tc_end
+        _tc_start=$(date +%s%N 2>/dev/null || echo 0)
+        local tc_failed=""
+        # Check each package that has a tsconfig
+        for pkg_tsconfig in "${v3_cf_dir}"/*/tsconfig.json; do
+          [[ -f "$pkg_tsconfig" ]] || continue
+          local pkg_name
+          pkg_name=$(basename "$(dirname "$pkg_tsconfig")")
+          if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck -p "$pkg_tsconfig" 2>/dev/null); then
+            log_error "  type-check failed: ${pkg_name}"
+            tc_failed="${tc_failed} ${pkg_name}"
+          fi
+        done
+        _tc_end=$(date +%s%N 2>/dev/null || echo 0)
+        if [[ -n "$tc_failed" ]]; then
+          log_error "Type-check failed for ${name} packages:${tc_failed}"
+
+          create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
+            "TypeScript compilation failed for packages:${tc_failed} after merging upstream/main."
+
+          send_email "[ruflo] Compile error in ${name} sync" \
+            "TypeScript compilation failed for ${name} packages:${tc_failed} after syncing upstream.\nBranch: ${branch_name}"
+
+          git -C "${dir}" checkout main --quiet 2>/dev/null
+          return 1
+        fi
+        if [[ "$_tc_start" != "0" && "$_tc_end" != "0" ]]; then
+          local _tc_ms=$(( (_tc_end - _tc_start) / 1000000 ))
+          log "  type-check ${name} (per-pkg): ${_tc_ms}ms"
+          add_cmd_timing "sync-upstream" "tsc --noEmit ${name} per-pkg" "${_tc_ms}"
+        fi
+      fi
+    # Other forks: use root tsconfig.json if present
+    elif [[ -f "${dir}/tsconfig.json" ]]; then
       log "Type-checking ${name} on sync branch"
       local tsc_bin="${dir}/node_modules/.bin/tsc"
       if [[ ! -x "$tsc_bin" ]]; then
