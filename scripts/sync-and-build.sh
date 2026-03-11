@@ -1416,6 +1416,10 @@ run_stage1_sync() {
     return 0
   fi
 
+  # Save upstream SHA state immediately so next run won't re-create branches
+  # if the build/test phase below fails
+  save_state
+
   # Build pipeline: copy -> codemod -> build -> test
   create_temp_dir
   run_phase "copy-source" copy_source
