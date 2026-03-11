@@ -269,6 +269,7 @@ run_rq_check "RQ-2"  "Init"                check_init
 # Parallel: RQ-3 through RQ-14 are independent (each uses TEMP_DIR or own context)
 # Run all in background subshells, collect results via temp files.
 RQ_PARALLEL_DIR=$(mktemp -d /tmp/ruflo-rq-parallel-XXXXX)
+RQ_BG_PIDS=()
 
 run_rq_check_bg() {
   local id="$1" name="$2" fn="$3"
@@ -291,6 +292,7 @@ print(json.dumps(data), end="")
     # Write result file: passed|duration|escaped_output
     echo "${_CHECK_PASSED}|${rq_dur_ms}|${rq_escaped_output}" > "${RQ_PARALLEL_DIR}/${id}"
   ) &
+  RQ_BG_PIDS+=($!)
 }
 
 run_rq_check_bg "RQ-3"  "Settings file"       check_settings_file
@@ -306,7 +308,8 @@ run_rq_check_bg "RQ-12" "Plugins SDK"         check_plugins_sdk
 run_rq_check_bg "RQ-13" "@latest resolves"    check_latest_resolves
 run_rq_check_bg "RQ-14" "ruflo init --full"   check_ruflo_init_full
 
-wait
+# Wait only for RQ check PIDs, not the global timeout subprocess
+wait "${RQ_BG_PIDS[@]}"
 
 # Collect parallel results in order
 for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
