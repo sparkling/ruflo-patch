@@ -23,7 +23,7 @@
   "@sparkleideas/swarm": "3.0.0-alpha.6-patch.34",
   "@sparkleideas/security": "3.0.0-alpha.6-patch.11",
   "@sparkleideas/performance": "3.0.0-alpha.6-patch.11",
-  "@sparkleideas/testing": "3.0.0-alpha.6-patch.11",
+  "@sparkleideas/testing": "3.0.0-alpha.6-patch.15",
   "@sparkleideas/plugin-gastown-bridge": "0.1.3-patch.26",
   "@sparkleideas/plugin-agentic-qe": "3.0.0-alpha.4-patch.34",
   "@sparkleideas/plugin-code-intelligence": "3.0.0-alpha.1-patch.34",
@@ -40,5 +40,5 @@
   "@sparkleideas/teammate-plugin": "1.0.0-alpha.1-patch.34",
   "@sparkleideas/cli": "3.5.15-patch.10",
   "@sparkleideas/claude-flow": "2.7.47",
-  "@sparkleideas/ruflo": "3.1.0-alpha.14-patch.12"
+  "@sparkleideas/ruflo": "3.1.0-alpha.14-patch.13"
 }
