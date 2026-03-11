@@ -1,6 +1,6 @@
 {
   "name": "@sparkleideas/ruflo",
-  "version": "3.1.0-alpha.14-patch.13",
+  "version": "3.1.0-alpha.14-patch.14",
   "description": "Drop-in replacement for ruflo/@claude-flow/cli — rebuilt from source with bug fixes and current upstream commits",
   "scripts": {
     "build": "bash scripts/build.sh --pull",
