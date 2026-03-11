@@ -11,7 +11,7 @@
 set -uo pipefail
 
 # ── Defaults ────────────────────────────────────────────────────────
-REGISTRY="https://registry.npmjs.org"
+REGISTRY="http://localhost:4873"
 VERSION="@latest"
 PACKAGE_NAME="@sparkleideas/cli"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

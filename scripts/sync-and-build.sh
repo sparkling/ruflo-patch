@@ -897,49 +897,32 @@ run_build() {
 # Test (Layers 0-3)
 # ---------------------------------------------------------------------------
 
-run_tests_l1() {
-  log "Running unit tests (L0+L1)"
-  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
-  npm test --prefix "${PROJECT_DIR}" || {
+run_tests_ci() {
+  # L0 preflight + L1 unit only — no Verdaccio
+  log "Running preflight + unit tests (L0+L1)"
+  npm run preflight --prefix "${PROJECT_DIR}" || {
+    log_error "Preflight failed"
+    return 1
+  }
+  node "${PROJECT_DIR}/scripts/test-runner.mjs" || {
     log_error "Unit tests failed"
     return 1
   }
-  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
-  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l1-unit" "npm test" "$(( (_t1 - _t0) / 1000000 ))"
 }
 
-run_tests_l2() {
-  log "Running integration test (L2: local Verdaccio)"
-  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
-  CHANGED_PACKAGES_JSON="${CHANGED_PACKAGES_JSON:-all}" bash "${SCRIPT_DIR}/test-integration.sh" || {
-    log_error "Integration test failed — aborting before publish to npm"
-    return 1
-  }
-  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
-  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l2-integration" "test-integration.sh" "$(( (_t1 - _t0) / 1000000 ))"
-}
-
-run_tests_l3() {
-  log "Running Release Qualification (L3)"
-  local -a rq_args=(--build-dir "${TEMP_DIR}")
-  # Pass changed packages for incremental Verdaccio clearing
-  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]]; then
-    rq_args+=(--changed-packages "${CHANGED_PACKAGES_JSON}")
-  fi
-  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
-  bash "${SCRIPT_DIR}/test-rq.sh" "${rq_args[@]}" || {
-    log_error "Release Qualification FAILED"
-    return 1
-  }
-  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
-  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l3-rq" "test-rq.sh" "$(( (_t1 - _t0) / 1000000 ))"
+run_verify() {
+  # Publish once + install once + all checks + promote
+  local -a args=(--build-dir "${TEMP_DIR}")
+  [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]] && \
+    args+=(--changed-packages "${CHANGED_PACKAGES_JSON}")
+  [[ "${TEST_ONLY}" == "true" ]] && args+=(--skip-promote)
+  bash "${SCRIPT_DIR}/test-verify.sh" "${args[@]}"
 }
 
 run_tests() {
   # Called from Stage 1 (sync) where sub-phase timing is less important
-  run_tests_l1
-  run_tests_l2
-  run_tests_l3
+  run_tests_ci
+  run_verify
 }
 
 # ---------------------------------------------------------------------------
@@ -969,80 +952,7 @@ read_build_version() {
 # Publish
 # ---------------------------------------------------------------------------
 
-run_publish() {
-  # Copy .npmrc into temp dir (registry points to local Verdaccio)
-  cp "${HOME}/.npmrc" "${TEMP_DIR}/.npmrc" 2>/dev/null || true
-
-  log "Publishing packages (versions from fork package.json files)"
-  local -a publish_args=(--build-dir "${TEMP_DIR}")
-  # Selective publish: only publish changed packages (+ dependents)
-  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]]; then
-    publish_args+=(--packages "${CHANGED_PACKAGES_JSON}")
-    log "Selective publish: $(echo "${CHANGED_PACKAGES_JSON}" | node -e "try{console.log(JSON.parse(require('fs').readFileSync(0,'utf8')).length)}catch{console.log('?')}" 2>/dev/null) packages"
-  fi
-  local _pub_start; _pub_start=$(date +%s%N 2>/dev/null || echo 0)
-  local _pub_rc=0
-  node "${SCRIPT_DIR}/publish.mjs" "${publish_args[@]}" || _pub_rc=$?
-  local _pub_end; _pub_end=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ $_pub_rc -ne 0 ]]; then
-    log_error "publish.mjs failed with exit code ${_pub_rc}"
-    return $_pub_rc
-  fi
-  log "Publish complete"
-  if [[ "$_pub_start" != "0" && "$_pub_end" != "0" ]]; then
-    add_cmd_timing "publish" "node publish.mjs" "$(( (_pub_end - _pub_start) / 1000000 ))"
-  fi
-
-  # Publish the local wrapper package (@sparkleideas/ruflo)
-  # Auto-bump wrapper version if current version already exists on npm.
-  if [[ -f "${PROJECT_DIR}/package.json" ]]; then
-    local wrapper_ver
-    wrapper_ver=$(node -e "console.log(require('${PROJECT_DIR}/package.json').version)" 2>/dev/null) || wrapper_ver=""
-    if [[ -n "$wrapper_ver" ]]; then
-      # Check if this wrapper version already exists on npm
-      local wrapper_exists
-      wrapper_exists=$(npm view "@sparkleideas/ruflo@${wrapper_ver}" version 2>/dev/null) || wrapper_exists=""
-      if [[ "$wrapper_exists" == "$wrapper_ver" ]]; then
-        # Bump wrapper version using same -patch.N logic
-        local new_wrapper_ver
-        new_wrapper_ver=$(node -e "
-          import { bumpPatchVersion } from '${SCRIPT_DIR}/fork-version.mjs';
-          console.log(bumpPatchVersion('${wrapper_ver}'));
-        " --input-type=module 2>/dev/null) || new_wrapper_ver=""
-        if [[ -n "$new_wrapper_ver" ]]; then
-          log "Auto-bumping wrapper: ${wrapper_ver} -> ${new_wrapper_ver}"
-          node -e "
-            const fs = require('fs');
-            const pkg = JSON.parse(fs.readFileSync('${PROJECT_DIR}/package.json', 'utf-8'));
-            pkg.version = '${new_wrapper_ver}';
-            fs.writeFileSync('${PROJECT_DIR}/package.json', JSON.stringify(pkg, null, 2) + '\n');
-          " 2>/dev/null
-          wrapper_ver="$new_wrapper_ver"
-        fi
-      fi
-      log "Publishing wrapper package (@sparkleideas/ruflo@${wrapper_ver})"
-      npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || {
-        log "  wrapper publish skipped (may already exist at this version)"
-      }
-      # Add wrapper to published-versions.json so promote.sh includes it
-      local pvfile="${PROJECT_DIR}/config/published-versions.json"
-      if [[ -f "$pvfile" ]]; then
-        node -e "
-          const fs = require('fs');
-          const pv = JSON.parse(fs.readFileSync('${pvfile}', 'utf-8'));
-          pv['@sparkleideas/ruflo'] = '${wrapper_ver}';
-          fs.writeFileSync('${pvfile}', JSON.stringify(pv, null, 2) + '\n');
-        " 2>/dev/null && log "  added wrapper to published-versions.json"
-      fi
-    fi
-  fi
-}
-
-# ---------------------------------------------------------------------------
-# GitHub release notification
-# ---------------------------------------------------------------------------
-
-}
+## run_publish removed — publish is now handled by test-verify.sh (Phase 3+4)
 
 # ---------------------------------------------------------------------------
 # Failure handler: create GitHub issue
@@ -1264,24 +1174,22 @@ run_stage3_publish() {
     return 0
   fi
 
-  # Test (L0-L3) — each layer timed separately
-  run_phase "test-l1-unit" run_tests_l1
-  run_phase "test-l2-integration" run_tests_l2
-  run_phase "test-l3-rq" run_tests_l3
+  # Test (L0+L1 only — no Verdaccio)
+  run_phase "test-ci" run_tests_ci
+
+  # Verify: publish once, install once, all checks, promote (unless --test-only)
+  run_phase "verify" run_verify
 
   if [[ "${TEST_ONLY}" == "true" ]]; then
     print_phase_summary
-    log "Gate 1 PASSED — all pre-publish tests pass (--test-only mode)"
+    log "Gate 1 PASSED — all tests pass (--test-only mode)"
     return 0
   fi
 
   # Read version from fork package.json (no computation needed)
   read_build_version
 
-  # Publish to Verdaccio
-  run_phase "publish" run_publish
-
-  # Save state after successful publish
+  # Save state after successful verify + publish
   save_state
 
   # Write JSON timing summary

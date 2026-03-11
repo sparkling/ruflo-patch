@@ -1,26 +1,27 @@
 #!/usr/bin/env bash
-# DEPRECATED: Replaced by test-verify.sh. Will be removed in a future release.
-# scripts/test-rq.sh — Layer 3: Standalone Release Qualification runner (ADR-0023)
+# scripts/test-verify.sh — Unified verification: publish once, install once,
+# run all structural + functional checks, promote (ADR-0023 refactor).
 #
-# Publishes built packages to Verdaccio, installs them, and runs RQ-1..RQ-12
-# to verify packages actually work before publishing to real npm.
+# Replaces both test-integration.sh and test-rq.sh for the CI pipeline.
+# Single Verdaccio publish + single install eliminates ~12 minutes of waste.
 #
 # Usage:
-#   bash scripts/test-rq.sh --build-dir <path> [--port 4873] [--changed-packages <json|"all">]
+#   bash scripts/test-verify.sh [--build-dir <path>] [--changed-packages <json>] [--skip-promote]
 #
-# Exit code: number of failed RQ checks (0 = all pass)
+# Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
 
-# ── Defaults ────────────────────────────────────────────────────────
+# ── Defaults ──────────────────────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 BUILD_DIR=""
 RQ_PORT=4873
 CHANGED_PACKAGES="all"
-RQ_TEMP=""
+SKIP_PROMOTE="false"
+VERIFY_TEMP=""
 
-# ── Argument parsing ────────────────────────────────────────────────
+# ── Argument parsing ──────────────────────────────────────────────
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --build-dir)
@@ -28,21 +29,21 @@ while [[ $# -gt 0 ]]; do
       [[ -z "$BUILD_DIR" ]] && { echo "Error: --build-dir requires a path"; exit 1; }
       shift 2
       ;;
-    --port)
-      RQ_PORT="${2:-4873}"
-      shift 2
-      ;;
     --changed-packages)
       CHANGED_PACKAGES="${2:-all}"
       shift 2
       ;;
+    --skip-promote)
+      SKIP_PROMOTE="true"
+      shift
+      ;;
     -h|--help)
-      echo "Usage: bash scripts/test-rq.sh --build-dir <path> [--port 4873] [--changed-packages <json|\"all\">]"
+      echo "Usage: bash scripts/test-verify.sh [--build-dir <path>] [--changed-packages <json>] [--skip-promote]"
       echo ""
       echo "Options:"
       echo "  --build-dir <path>         Built package directory (default: /tmp/ruflo-build)"
-      echo "  --port <port>              Verdaccio port (default: 4873)"
       echo "  --changed-packages <json>  JSON array of changed packages, or \"all\" (default: all)"
+      echo "  --skip-promote             Skip promoting packages to @latest"
       exit 0
       ;;
     *)
@@ -62,29 +63,32 @@ if [[ -z "$BUILD_DIR" ]]; then
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Using cached build at ${BUILD_DIR}" >&2
 fi
 
-# ── Logging ─────────────────────────────────────────────────────────
-log() {
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" >&2
-}
+# ── Logging ───────────────────────────────────────────────────────
+log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" >&2; }
+log_error() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2; }
 
-log_error() {
-  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2
-}
-
-# ── Global timeout: 300s with SIGTERM→5s→SIGKILL escalation ────────
-( sleep 300; log_error "[TIMEOUT] test-rq.sh exceeded 300s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+# ── Global timeout: 180s with SIGTERM→5s→SIGKILL escalation ──────
+( sleep 180; log_error "[TIMEOUT] test-verify.sh exceeded 180s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
-# ── Cleanup trap ────────────────────────────────────────────────────
+# ── Cleanup trap ──────────────────────────────────────────────────
 cleanup() {
   kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
-  if [[ -n "$RQ_TEMP" && -d "$RQ_TEMP" ]]; then
-    rm -rf "$RQ_TEMP"
+  if [[ -n "$VERIFY_TEMP" && -d "$VERIFY_TEMP" ]]; then
+    rm -rf "$VERIFY_TEMP"
+  fi
+  if [[ -n "${RQ_PARALLEL_DIR:-}" && -d "${RQ_PARALLEL_DIR:-}" ]]; then
+    rm -rf "$RQ_PARALLEL_DIR"
   fi
 }
 trap cleanup EXIT INT TERM
 
-# ── Verdaccio health check ──────────────────────────────────────────
+verify_start_s=$(date +%s)
+log "test-verify.sh starting (build-dir: ${BUILD_DIR})"
+
+# ══════════════════════════════════════════════════════════════════
+# Phase 1: Verdaccio health check
+# ══════════════════════════════════════════════════════════════════
 if ! curl -sf "http://localhost:${RQ_PORT}/-/ping" >/dev/null 2>&1; then
   log_error "Verdaccio not running on port ${RQ_PORT}"
   log_error "Start it: systemctl --user start verdaccio"
@@ -92,7 +96,9 @@ if ! curl -sf "http://localhost:${RQ_PORT}/-/ping" >/dev/null 2>&1; then
 fi
 log "Verdaccio healthy on port ${RQ_PORT}"
 
-# ── Selective cache clear ───────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Phase 2: Selective cache clear
+# ══════════════════════════════════════════════════════════════════
 RQ_STORAGE="/home/claude/.verdaccio/storage"
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
   log "Full mode: clearing all @sparkleideas/* from Verdaccio"
@@ -110,7 +116,9 @@ else
   " 2>/dev/null || true
 fi
 
-# ── Publish built packages to Verdaccio ─────────────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Phase 3: Publish built packages to Verdaccio (ONCE)
+# ══════════════════════════════════════════════════════════════════
 log "Publishing built packages to Verdaccio..."
 npm config set "//localhost:${RQ_PORT}/:_authToken" "test-token" 2>/dev/null || true
 
@@ -125,19 +133,20 @@ NPM_CONFIG_REGISTRY="http://localhost:${RQ_PORT}" \
 }
 log "Built packages published to Verdaccio"
 
-# ── Publish local wrapper package (@sparkleideas/ruflo) to Verdaccio ──
-# The wrapper lives in this repo, not the upstream build dir
+# ══════════════════════════════════════════════════════════════════
+# Phase 4: Publish wrapper package (@sparkleideas/ruflo)
+# ══════════════════════════════════════════════════════════════════
 if [[ -f "${PROJECT_DIR}/package.json" ]]; then
   log "Publishing local wrapper (@sparkleideas/ruflo) to Verdaccio..."
   NPM_CONFIG_REGISTRY="http://localhost:${RQ_PORT}" \
-    npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || log "  wrapper publish skipped (may already exist)"
+    npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || \
+    log "  wrapper publish skipped (may already exist)"
 fi
 
-# ── Selective npm cache clear (ADR-0025) ──────────────────────────
-# Two caches to clear — keep external deps (better-sqlite3, onnxruntime) cached:
-#   _npx/     — npx resolution trees: always clear ALL @sparkleideas (cheap,
-#               prevents 77s hangs from stale real-npm resolution entries)
-#   _cacache/ — HTTP metadata + tarballs: clear only changed packages (expensive)
+# ══════════════════════════════════════════════════════════════════
+# Phase 5: NPX cache clear (ADR-0025)
+# ══════════════════════════════════════════════════════════════════
+# Two caches: _npx/ (resolution trees) and _cacache/ (HTTP metadata + tarballs)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
   grep -rl "sparkleideas" "${HOME}/.npm/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
@@ -151,18 +160,63 @@ else
   done
 fi
 
-# ── Install packages into temp dir ──────────────────────────────────
-RQ_TEMP=$(mktemp -d /tmp/ruflo-rq-XXXXX)
-(cd "$RQ_TEMP" && echo '{"name":"ruflo-rq-test","version":"1.0.0","private":true}' > package.json \
+# ══════════════════════════════════════════════════════════════════
+# Phase 6: Install packages into temp dir (ONCE)
+# ══════════════════════════════════════════════════════════════════
+VERIFY_TEMP=$(mktemp -d /tmp/ruflo-verify-XXXXX)
+(cd "$VERIFY_TEMP" && echo '{"name":"ruflo-verify-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=http://localhost:${RQ_PORT}" > .npmrc \
   && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins \
      --registry "http://localhost:${RQ_PORT}" \
      --ignore-scripts --no-audit --no-fund 2>&1) || {
-  log_error "Failed to install packages for RQ"
+  log_error "Failed to install packages"
   exit 1
 }
+log "Packages installed to ${VERIFY_TEMP}"
 
-# ── Source shared test library and run checks ───────────────────────
+# ══════════════════════════════════════════════════════════════════
+# Phase 7: Structural checks (from test-integration.sh Phase 7)
+# ══════════════════════════════════════════════════════════════════
+structural_fail=0
+
+# S-1: CLI in node_modules
+if [[ -d "${VERIFY_TEMP}/node_modules/@sparkleideas/cli" ]]; then
+  log "  PASS  S-1: @sparkleideas/cli in node_modules"
+else
+  log "  FAIL  S-1: @sparkleideas/cli not found in node_modules"
+  structural_fail=$((structural_fail + 1))
+fi
+
+# S-2: ADR-0022 packages available on Verdaccio
+for new_pkg in "@sparkleideas/agent-booster" "@sparkleideas/plugins" "@sparkleideas/ruvector-upstream"; do
+  if npm view "$new_pkg" version --registry "http://localhost:${RQ_PORT}" >/dev/null 2>&1; then
+    log "  PASS  S-2: ADR-0022 package available: $new_pkg"
+  else
+    log "  WARN  S-2: ADR-0022 package not published: $new_pkg"
+    # ruvector-upstream is optional — don't count as failure
+    [[ "$new_pkg" != *"ruvector-upstream"* ]] && structural_fail=$((structural_fail + 1))
+  fi
+done
+
+# S-3: npm ls clean (no MISSING deps)
+missing_deps=$(cd "${VERIFY_TEMP}" && npm ls --all 2>&1 | grep 'MISSING' || true)
+if [[ -n "$missing_deps" ]]; then
+  log "  WARN  S-3: Missing dependencies detected:"
+  echo "$missing_deps" | head -10 | while IFS= read -r line; do
+    log "        $line"
+  done
+else
+  log "  PASS  S-3: All dependencies resolved"
+fi
+
+if [[ $structural_fail -gt 0 ]]; then
+  log_error "Structural checks failed ($structural_fail failures)"
+  exit 1
+fi
+
+# ══════════════════════════════════════════════════════════════════
+# Phase 8: Functional checks (RQ-1..RQ-14)
+# ══════════════════════════════════════════════════════════════════
 checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
 if [[ ! -f "$checks_lib" ]]; then
   log_error "Shared test library not found: $checks_lib"
@@ -175,14 +229,14 @@ source "$checks_lib"
 REGISTRY="http://localhost:${RQ_PORT}"
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
-TEMP_DIR="$RQ_TEMP"
+TEMP_DIR="$VERIFY_TEMP"
 
-# Use a stable cache dir so external deps persist across runs (ADR-0025).
-# Isolated from ~/.npm to avoid stale real-npm metadata, but NOT deleted on
-# exit so external deps (better-sqlite3, onnxruntime) stay cached.
+# Persistent npx cache for external deps (ADR-0025).
+# Isolated from ~/.npm to avoid stale metadata, NOT deleted on exit
+# so external deps (better-sqlite3, onnxruntime) stay cached.
 RQ_NPX_CACHE="/tmp/ruflo-rq-npxcache"
 mkdir -p "$RQ_NPX_CACHE"
-# Clear @sparkleideas entries from the persistent cache (same selective logic)
+# Clear @sparkleideas entries from persistent cache
 find "$RQ_NPX_CACHE/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
   grep -rl "sparkleideas" "$RQ_NPX_CACHE/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
@@ -211,13 +265,12 @@ run_timed() {
   fi
 }
 
-# ── Run RQ-1..RQ-12 ────────────────────────────────────────────────
+# ── RQ result tracking ────────────────────────────────────────────
 rq_pass=0
 rq_fail=0
 rq_total=0
 rq_results_json="[]"
 rq_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-rq_start_s=$(date +%s)
 
 run_rq_check() {
   local id="$1" name="$2" fn="$3"
@@ -245,7 +298,7 @@ run_rq_check() {
       log "        $line"
     done
   fi
-  # Escape output for JSON (matches test-acceptance.sh format)
+  # Escape output for JSON
   local rq_escaped_output
   rq_escaped_output=$(printf '%s' "${_CHECK_OUTPUT:-${_OUT:-}}" | head -c 4096 | python3 -c '
 import sys, json
@@ -263,19 +316,17 @@ print(json.dumps(data), end="")
   fi
 }
 
-# Sequential: RQ-1 and RQ-2 must run first (RQ-2 creates init state used by others)
+# Sequential: RQ-1 and RQ-2 must run first (RQ-2 creates init state)
 run_rq_check "RQ-1"  "Version check"       check_version
 run_rq_check "RQ-2"  "Init"                check_init
 
-# Parallel: RQ-3 through RQ-14 are independent (each uses TEMP_DIR or own context)
-# Run all in background subshells, collect results via temp files.
-RQ_PARALLEL_DIR=$(mktemp -d /tmp/ruflo-rq-parallel-XXXXX)
+# Parallel: RQ-3..RQ-14 are independent
+RQ_PARALLEL_DIR=$(mktemp -d /tmp/ruflo-verify-parallel-XXXXX)
 RQ_BG_PIDS=()
 
 run_rq_check_bg() {
   local id="$1" name="$2" fn="$3"
   (
-    # Each background check writes its result to a file
     local rq_start_ns rq_end_ns rq_dur_ms=0
     rq_start_ns=$(date +%s%N 2>/dev/null || echo 0)
     "$fn"
@@ -283,14 +334,12 @@ run_rq_check_bg() {
     if [[ "$rq_start_ns" != "0" && "$rq_end_ns" != "0" ]]; then
       rq_dur_ms=$(( (rq_end_ns - rq_start_ns) / 1000000 ))
     fi
-    # Escape output for JSON
     local rq_escaped_output
     rq_escaped_output=$(printf '%s' "${_CHECK_OUTPUT:-${_OUT:-}}" | head -c 4096 | python3 -c '
 import sys, json
 data = sys.stdin.read()
 print(json.dumps(data), end="")
 ' 2>/dev/null || echo '""')
-    # Write result file: passed|duration|escaped_output
     echo "${_CHECK_PASSED}|${rq_dur_ms}|${rq_escaped_output}" > "${RQ_PARALLEL_DIR}/${id}"
   ) &
   RQ_BG_PIDS+=($!)
@@ -339,7 +388,6 @@ for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
     if [[ "${dur_ms:-0}" -gt 15000 ]]; then
       log "  SLOW  $id: ${dur_ms}ms (threshold: 15000ms)"
     fi
-    rq_entry=""
     rq_entry=$(printf '{"id":"%s","name":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
       "$id" "$name_map" "$rq_passed_bool" "${escaped_output:-\"\"}" "${dur_ms:-0}")
     if [[ "$rq_results_json" == "[]" ]]; then
@@ -353,26 +401,54 @@ for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
   fi
 done
 rm -rf "$RQ_PARALLEL_DIR"
+RQ_PARALLEL_DIR=""
 
-log "Release Qualification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
+log "Verification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
 
-# ── Write qualification-results.json ────────────────────────────────
-rq_results_dir="${PROJECT_DIR}/test-results/rq-${rq_timestamp//:/}"
-mkdir -p "$rq_results_dir"
-cat > "$rq_results_dir/qualification-results.json" <<RQJSONEOF
+# ══════════════════════════════════════════════════════════════════
+# Phase 9: Promote to @latest (Verdaccio only)
+# ══════════════════════════════════════════════════════════════════
+if [[ "${SKIP_PROMOTE}" != "true" ]]; then
+  log "Promoting packages to @latest on Verdaccio..."
+  for pkg_dir in "${RQ_STORAGE}/@sparkleideas"/*/; do
+    [[ -d "$pkg_dir" ]] || continue
+    pkg_name="@sparkleideas/$(basename "$pkg_dir")"
+    latest_ver=$(npm view "${pkg_name}" version --registry "http://localhost:${RQ_PORT}" 2>/dev/null) || continue
+    [[ -z "$latest_ver" ]] && continue
+    npm dist-tag add "${pkg_name}@${latest_ver}" latest \
+      --registry "http://localhost:${RQ_PORT}" 2>/dev/null && \
+      log "  ${pkg_name}@${latest_ver} -> @latest" || true
+  done
+  log "Promote complete"
+fi
+
+# ══════════════════════════════════════════════════════════════════
+# Phase 10: Write results
+# ══════════════════════════════════════════════════════════════════
+verify_results_dir="${PROJECT_DIR}/test-results/verify-${rq_timestamp//:/}"
+mkdir -p "$verify_results_dir"
+
+_promoted="true"
+[[ "${SKIP_PROMOTE}" == "true" ]] && _promoted="false"
+_structural_pass="true"
+[[ $structural_fail -gt 0 ]] && _structural_pass="false"
+
+cat > "$verify_results_dir/verify-results.json" <<VJSONEOF
 {
   "timestamp": "$rq_timestamp",
-  "layer": 3,
+  "layer": 2,
   "registry": "http://localhost:${RQ_PORT}",
   "total": $rq_total,
   "passed": $rq_pass,
   "failed": $rq_fail,
+  "structural_passed": ${_structural_pass},
+  "promoted": ${_promoted},
   "results": $rq_results_json
 }
-RQJSONEOF
-log "RQ results written to ${rq_results_dir}/qualification-results.json"
+VJSONEOF
+log "Results written to ${verify_results_dir}/verify-results.json"
 
-rq_end_s=$(date +%s)
-log "Release Qualification completed in $(( rq_end_s - rq_start_s ))s"
+verify_end_s=$(date +%s)
+log "Verification completed in $(( verify_end_s - verify_start_s ))s"
 
 exit "$rq_fail"

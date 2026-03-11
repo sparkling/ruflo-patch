@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# DEPRECATED: Replaced by test-verify.sh. Will be removed in a future release.
 # scripts/test-integration.sh — 9-phase integration test for ruflo.
 #
 # Runs the full build pipeline against real upstream code, publishing to a
