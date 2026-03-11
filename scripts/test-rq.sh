@@ -310,11 +310,11 @@ wait
 
 # Collect parallel results in order
 for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
-  local result_file="${RQ_PARALLEL_DIR}/${id}"
+  result_file="${RQ_PARALLEL_DIR}/${id}"
   rq_total=$((rq_total + 1))
   if [[ -f "$result_file" ]]; then
     IFS='|' read -r passed dur_ms escaped_output < "$result_file"
-    local name_map=""
+    name_map=""
     case "$id" in
       RQ-3)  name_map="Settings file";;     RQ-4)  name_map="Scope check";;
       RQ-5)  name_map="Doctor";;             RQ-6)  name_map="MCP config";;
@@ -323,7 +323,7 @@ for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
       RQ-11) name_map="Agent Booster CLI";;  RQ-12) name_map="Plugins SDK";;
       RQ-13) name_map="@latest resolves";;   RQ-14) name_map="ruflo init --full";;
     esac
-    local rq_passed_bool="false"
+    rq_passed_bool="false"
     if [[ "$passed" == "true" ]]; then
       rq_pass=$((rq_pass + 1))
       rq_passed_bool="true"
@@ -335,7 +335,7 @@ for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
     if [[ "${dur_ms:-0}" -gt 15000 ]]; then
       log "  SLOW  $id: ${dur_ms}ms (threshold: 15000ms)"
     fi
-    local rq_entry
+    rq_entry=""
     rq_entry=$(printf '{"id":"%s","name":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
       "$id" "$name_map" "$rq_passed_bool" "${escaped_output:-\"\"}" "${dur_ms:-0}")
     if [[ "$rq_results_json" == "[]" ]]; then
