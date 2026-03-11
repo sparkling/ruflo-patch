@@ -39,6 +39,5 @@
   "@sparkleideas/plugin-test-intelligence": "3.0.0-alpha.1-patch.31",
   "@sparkleideas/teammate-plugin": "1.0.0-alpha.1-patch.32",
   "@sparkleideas/cli": "3.5.15-patch.8",
-  "@sparkleideas/claude-flow": "2.7.47",
-  "@sparkleideas/ruflo": "3.1.0-alpha.14-patch.10"
+  "@sparkleideas/claude-flow": "2.7.47"
 }
