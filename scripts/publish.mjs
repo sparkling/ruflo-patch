@@ -172,18 +172,16 @@ function buildPackageMap(buildDir) {
 // ── First-publish detection (ADR-0015) ──
 
 /**
- * Check if a package has ever been published to npm.
- * Returns 'prerelease' for existing packages, null for first-publish.
- * Distinguishes E404 (not found) from network/other errors.
+ * Check if a package has ever been published to the registry.
+ * Returns 'latest' always — no prerelease gate needed for local Verdaccio.
  */
 async function getPublishTag(packageName) {
   try {
-    const registry = process.env.NPM_CONFIG_REGISTRY || 'https://registry.npmjs.org';
+    const registry = process.env.NPM_CONFIG_REGISTRY || 'http://localhost:4873';
     await execFile('npm', ['view', packageName, 'version', '--registry', registry], {
       timeout: 30_000,
     });
-    // Package exists -- use prerelease gate (ADR-0010)
-    return 'prerelease';
+    return 'latest';
   } catch (err) {
     const stderr = err.stderr || '';
     const isNotFound =
@@ -379,7 +377,7 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
       return { ok: true, entry };
     }
 
-    const publishRegistry = process.env.NPM_CONFIG_REGISTRY || 'https://registry.npmjs.org';
+    const publishRegistry = process.env.NPM_CONFIG_REGISTRY || 'http://localhost:4873';
     const publishArgs = ['publish', '--access', 'public', '--ignore-scripts',
       '--registry', publishRegistry];
     // ADR-0015: first publish uses --tag latest (npm requires --tag for prerelease

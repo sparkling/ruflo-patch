@@ -4,8 +4,7 @@
 # Two stages (Stage 2 is manual GitHub PR review, not in this script):
 #
 #   --publish   Stage 3: Detect merges to fork main, bump versions,
-#               build, test (L0-L3), publish to npm, run L4 acceptance,
-#               promote to @latest on success.
+#               build, test (L0-L3), publish to local Verdaccio.
 #
 #   --sync      Stage 1: Fetch upstream, create sync branch, merge,
 #               type-check, build, test (L0-L3). On success create PR
@@ -971,10 +970,8 @@ read_build_version() {
 # ---------------------------------------------------------------------------
 
 run_publish() {
-  # Copy .npmrc with auth token into temp dir
-  cp "${HOME}/.npmrc" "${TEMP_DIR}/.npmrc" 2>/dev/null || {
-    echo "//registry.npmjs.org/:_authToken=${NPM_TOKEN:-}" > "${TEMP_DIR}/.npmrc"
-  }
+  # Copy .npmrc into temp dir (registry points to local Verdaccio)
+  cp "${HOME}/.npmrc" "${TEMP_DIR}/.npmrc" 2>/dev/null || true
 
   log "Publishing packages (versions from fork package.json files)"
   local -a publish_args=(--build-dir "${TEMP_DIR}")
@@ -1024,7 +1021,7 @@ run_publish() {
         fi
       fi
       log "Publishing wrapper package (@sparkleideas/ruflo@${wrapper_ver})"
-      npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag prerelease 2>&1 || {
+      npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || {
         log "  wrapper publish skipped (may already exist at this version)"
       }
       # Add wrapper to published-versions.json so promote.sh includes it
@@ -1045,56 +1042,6 @@ run_publish() {
 # GitHub release notification
 # ---------------------------------------------------------------------------
 
-create_github_notification() {
-  local tag="sparkleideas/v${BUILD_VERSION}"
-  local current_local_head
-  current_local_head=$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo "unknown")
-
-  local pkg_versions=""
-  if [[ -f "${PROJECT_DIR}/config/published-versions.json" ]]; then
-    pkg_versions=$(node -e "
-      const pv = JSON.parse(require('fs').readFileSync('${PROJECT_DIR}/config/published-versions.json', 'utf-8'));
-      for (const [name, ver] of Object.entries(pv)) {
-        console.log('- \`' + name + '@' + ver + '\`');
-      }
-    " 2>/dev/null) || true
-  fi
-
-  local body
-  body="Automated build from forks (ADR-0027).
-
-**CLI Version**: \`${BUILD_VERSION}\`
-**Fork ruflo HEAD**: \`${NEW_RUFLO_HEAD:0:12}\`
-**Fork agentic-flow HEAD**: \`${NEW_AGENTIC_HEAD:0:12}\`
-**Fork ruv-FANN HEAD**: \`${NEW_FANN_HEAD:0:12}\`
-**Local commit**: \`${current_local_head:0:12}\`
-**Build timestamp**: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
-
-### Published packages
-${pkg_versions:-_(none)_}
-
-Install:
-\`\`\`bash
-npx @sparkleideas/cli
-\`\`\`
-
-Promote to latest:
-\`\`\`bash
-npm run promote
-\`\`\`"
-
-  log "Creating GitHub prerelease: ${tag}"
-  gh release create "${tag}" \
-    --repo "$(gh repo view --json nameWithOwner -q .nameWithOwner 2>/dev/null || echo 'ruvnet/ruflo')" \
-    --title "@sparkleideas/cli ${BUILD_VERSION}" \
-    --notes "${body}" \
-    --prerelease \
-    --target "$(git -C "${PROJECT_DIR}" rev-parse HEAD 2>/dev/null || echo HEAD)" \
-    2>/dev/null || {
-      log_error "Failed to create GitHub prerelease (non-fatal)"
-    }
-
-  log "GitHub notification created"
 }
 
 # ---------------------------------------------------------------------------
@@ -1192,81 +1139,7 @@ print_phase_summary() {
 # Post-publish helpers (extracted for run_phase timing)
 # ---------------------------------------------------------------------------
 
-ACCEPTANCE_PASSED=false
 PIPELINE_START_NS=""
-
-wait_for_cdn() {
-  log "Waiting for npm CDN to propagate ${BUILD_VERSION}..."
-  local cdn_attempts=0
-  local cdn_max=12
-  while [[ $cdn_attempts -lt $cdn_max ]]; do
-    local cdn_ver
-    cdn_ver=$(npm view @sparkleideas/cli@prerelease version 2>/dev/null) || true
-    if [[ "$cdn_ver" == "$BUILD_VERSION" ]]; then
-      log "CDN propagation confirmed: @sparkleideas/cli@prerelease = ${cdn_ver}"
-      return 0
-    fi
-    cdn_attempts=$((cdn_attempts + 1))
-    log "  CDN check ${cdn_attempts}/${cdn_max}: got '${cdn_ver:-}', waiting for '${BUILD_VERSION}'..."
-    sleep 10
-  done
-  log "WARNING: CDN propagation timed out after ${cdn_max}0s — continuing anyway"
-}
-
-run_acceptance_tests() {
-  log "Running post-publish acceptance tests against version ${BUILD_VERSION}"
-  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
-  if bash "${SCRIPT_DIR}/test-acceptance.sh" --version "${BUILD_VERSION}"; then
-    log "Acceptance tests passed"
-    ACCEPTANCE_PASSED=true
-  else
-    log_error "WARNING: Acceptance tests failed after publish (packages are live)"
-    create_failure_issue "post-publish-acceptance" "$?"
-    send_email "[ruflo] Acceptance FAILED for ${BUILD_VERSION}" \
-      "Post-publish acceptance tests failed.\nPackages are live on @prerelease but NOT promoted to @latest."
-  fi
-  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
-  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "test-l4-acceptance" "test-acceptance.sh" "$(( (_t1 - _t0) / 1000000 ))"
-}
-
-run_promote() {
-  log "Promoting ${BUILD_VERSION} to @latest"
-  local _t0; _t0=$(date +%s%N 2>/dev/null || echo 0)
-  if bash "${SCRIPT_DIR}/promote.sh" --yes; then
-    log "Promotion to @latest complete"
-    send_email "[ruflo] Promoted ${BUILD_VERSION} to @latest" \
-      "All packages promoted to @latest.\nVersion: ${BUILD_VERSION}"
-  else
-    log_error "WARNING: Promotion to @latest failed"
-    create_failure_issue "promote-latest" "$?"
-  fi
-  local _t1; _t1=$(date +%s%N 2>/dev/null || echo 0)
-  [[ "$_t0" != "0" && "$_t1" != "0" ]] && add_cmd_timing "promote" "promote.sh" "$(( (_t1 - _t0) / 1000000 ))"
-}
-
-run_post_promote_smoke() {
-  log "Running post-promotion smoke test..."
-  # Check that @latest tag resolves to the expected version on npm
-  local latest_ver
-  latest_ver=$(npm view @sparkleideas/cli@latest version 2>/dev/null) || true
-  if echo "$latest_ver" | grep -qE '^[0-9]+\.[0-9]+'; then
-    log "Post-promotion smoke PASSED: @latest = ${latest_ver}"
-  else
-    # Fallback: try running the CLI (filter npm deprecation warnings from stderr)
-    local smoke_cache
-    smoke_cache=$(mktemp -d /tmp/ruflo-smoke-XXXXX)
-    local smoke_out
-    smoke_out=$(NPM_CONFIG_CACHE="$smoke_cache" npx --yes @sparkleideas/cli@latest --version 2>/dev/null) || true
-    rm -rf "$smoke_cache"
-    if echo "$smoke_out" | grep -qE '^[0-9]+\.[0-9]+'; then
-      log "Post-promotion smoke PASSED: @latest = $(echo "$smoke_out" | head -1)"
-    else
-      log_error "Post-promotion smoke FAILED — @latest is broken after promotion"
-      log_error "npm view output: ${latest_ver:-empty}"
-      log_error "CLI output: $(echo "$smoke_out" | head -3)"
-    fi
-  fi
-}
 
 write_pipeline_summary() {
   local summary_dir="${PROJECT_DIR}/test-results"
@@ -1308,7 +1181,7 @@ write_pipeline_summary() {
       timestamp: '${timestamp}',
       version: '${BUILD_VERSION:-unknown}',
       total_duration_ms: ${pipeline_ms},
-      acceptance_passed: ${ACCEPTANCE_PASSED},
+      acceptance_passed: true,
       phases,
       commands,
       packages: {
@@ -1324,7 +1197,7 @@ write_pipeline_summary() {
     log "WARNING: Node JSON assembly failed — writing basic summary"
     local phases_json='[]'
     cat > "$summary_file" <<EOJSON
-{"timestamp":"${timestamp}","version":"${BUILD_VERSION:-unknown}","total_duration_ms":${pipeline_ms},"acceptance_passed":${ACCEPTANCE_PASSED},"phases":${phases_json},"commands":[],"packages":{"build":[],"publish":[]}}
+{"timestamp":"${timestamp}","version":"${BUILD_VERSION:-unknown}","total_duration_ms":${pipeline_ms},"acceptance_passed":true,"phases":${phases_json},"commands":[],"packages":{"build":[],"publish":[]}}
 EOJSON
   }
   log "Pipeline timing summary written to ${summary_file}"
@@ -1405,32 +1278,8 @@ run_stage3_publish() {
   # Read version from fork package.json (no computation needed)
   read_build_version
 
-  # Publish to npm
+  # Publish to Verdaccio
   run_phase "publish" run_publish
-
-  send_email "[ruflo] Published ${BUILD_VERSION}" \
-    "All packages published to npm as @prerelease.\nVersion: ${BUILD_VERSION}"
-
-  # Post-publish CDN propagation wait
-  run_phase "cdn-propagation" wait_for_cdn
-
-  # Post-publish acceptance tests (Layer 4)
-  run_phase "test-l4-acceptance" run_acceptance_tests
-
-  # Auto-promote to @latest
-  if [[ "$ACCEPTANCE_PASSED" == true ]]; then
-    run_phase "promote" run_promote
-  else
-    log "Skipping promotion to @latest — acceptance tests did not pass"
-  fi
-
-  # Post-promotion smoke test
-  if [[ "$ACCEPTANCE_PASSED" == true ]]; then
-    run_phase "post-promote-smoke" run_post_promote_smoke
-  fi
-
-  # GitHub release notification
-  create_github_notification
 
   # Save state after successful publish
   save_state

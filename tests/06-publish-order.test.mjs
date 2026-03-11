@@ -87,8 +87,8 @@ const KNOWN_DEPS = {
 
 // ── Helpers ──
 
-/** Fast mock for getPublishTag — returns 'prerelease' without network calls. */
-const mockGetPublishTag = async () => 'prerelease';
+/** Fast mock for getPublishTag — returns 'latest' without network calls. */
+const mockGetPublishTag = async () => 'latest';
 
 /** Build a package-name -> level-index lookup from LEVELS. */
 function buildLevelLookup() {
@@ -370,10 +370,7 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 6. First-publish bootstrap integration ----------
 
   describe('First-publish bootstrap integration', () => {
-    it('published entries have either latest or prerelease tag', async () => {
-      // In dry-run mode, publishAll calls getPublishTag (npm view).
-      // Packages not on npm get tag=null -> stored as 'latest'.
-      // Packages already on npm get tag='prerelease'.
+    it('published entries have latest tag', async () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
@@ -383,30 +380,9 @@ describe('Topological publish order (ADR-0014)', () => {
       assert.equal(result.failed, null, 'Dry-run should succeed');
 
       for (const entry of result.published) {
-        assert.ok(
-          entry.tag === 'latest' || entry.tag === 'prerelease',
-          `Package ${entry.name} has unexpected tag: ${entry.tag}. ` +
-            'Expected "latest" (first publish) or "prerelease" (already published).'
-        );
-      }
-
-      rmSync(tmp, { recursive: true, force: true });
-    });
-
-    it('tag is either latest or prerelease depending on npm state', async () => {
-      // All @sparkleideas/* packages have been published, so they should
-      // all get 'prerelease' tag. If a package didn't exist on npm,
-      // it would get 'latest' (first-publish bootstrap).
-      const tmp = createFakeBuildDir();
-
-      const result = await publishAll(tmp, {
-        dryRun: true, getPublishTagFn: mockGetPublishTag,
-      });
-
-      for (const entry of result.published) {
-        assert.ok(
-          entry.tag === 'latest' || entry.tag === 'prerelease',
-          `Package ${entry.name} has unexpected tag: ${entry.tag}`
+        assert.equal(
+          entry.tag, 'latest',
+          `Package ${entry.name} has unexpected tag: ${entry.tag}. Expected "latest".`
         );
       }
 
@@ -454,11 +430,11 @@ describe('Topological publish order (ADR-0014)', () => {
       rmSync(tmp, { recursive: true, force: true });
     });
 
-    it('already-published packages get tag "prerelease"', async () => {
+    it('already-published packages get tag "latest"', async () => {
       const tmp = createFakeBuildDir();
 
       const result = await publishAll(tmp, {
-        dryRun: true, getPublishTagFn: mockGetPublishTag, // returns 'prerelease'
+        dryRun: true, getPublishTagFn: mockGetPublishTag, // returns 'latest'
       });
 
       assert.equal(result.failed, null, 'Dry-run should succeed');
@@ -466,8 +442,8 @@ describe('Topological publish order (ADR-0014)', () => {
       for (const entry of result.published) {
         assert.equal(
           entry.tag,
-          'prerelease',
-          `Already-published package ${entry.name} should get tag "prerelease", got "${entry.tag}"`
+          'latest',
+          `Already-published package ${entry.name} should get tag "latest", got "${entry.tag}"`
         );
       }
 
