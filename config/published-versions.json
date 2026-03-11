@@ -21,11 +21,11 @@
   "@sparkleideas/integration": "3.0.0-patch.38",
   "@sparkleideas/deployment": "3.0.0-alpha.7-patch.15",
   "@sparkleideas/swarm": "3.0.0-alpha.6-patch.38",
-  "@sparkleideas/security": "3.0.0-alpha.6-patch.15",
+  "@sparkleideas/security": "3.0.0-alpha.6-patch.16",
   "@sparkleideas/performance": "3.0.0-alpha.6-patch.15",
   "@sparkleideas/testing": "3.0.0-alpha.6-patch.19",
   "@sparkleideas/plugin-gastown-bridge": "0.1.3-patch.30",
-  "@sparkleideas/plugin-agentic-qe": "3.0.0-alpha.4-patch.38",
+  "@sparkleideas/plugin-agentic-qe": "3.0.0-alpha.4-patch.39",
   "@sparkleideas/plugin-code-intelligence": "3.0.0-alpha.1-patch.38",
   "@sparkleideas/plugin-cognitive-kernel": "3.0.0-alpha.1-patch.38",
   "@sparkleideas/plugin-financial-risk": "3.0.0-alpha.1-patch.38",
@@ -34,11 +34,11 @@
   "@sparkleideas/plugin-legal-contracts": "3.0.0-alpha.1-patch.38",
   "@sparkleideas/plugin-neural-coordination": "3.0.0-alpha.1-patch.38",
   "@sparkleideas/plugin-perf-optimizer": "3.0.0-alpha.1-patch.38",
-  "@sparkleideas/plugin-prime-radiant": "0.1.5-patch.37",
+  "@sparkleideas/plugin-prime-radiant": "0.1.5-patch.38",
   "@sparkleideas/plugin-quantum-optimizer": "3.0.0-alpha.1-patch.38",
   "@sparkleideas/plugin-test-intelligence": "3.0.0-alpha.1-patch.37",
   "@sparkleideas/teammate-plugin": "1.0.0-alpha.1-patch.38",
   "@sparkleideas/cli": "3.5.15-patch.14",
   "@sparkleideas/claude-flow": "2.7.47",
-  "@sparkleideas/ruflo": "3.1.0-alpha.14-patch.14"
+  "@sparkleideas/ruflo": "3.1.0-alpha.14-patch.15"
 }
