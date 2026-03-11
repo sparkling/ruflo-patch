@@ -18,11 +18,35 @@
 # Registry-specific tests (A8 dist-tag, A16 plugin install) are NOT
 # in this library — they live in test-acceptance.sh only.
 
+# Helper: resolve the CLI command. In RQ context (packages pre-installed in
+# TEMP_DIR/node_modules), use the local binary to avoid npx re-installing
+# all transitive deps (~30s, includes better-sqlite3 cc1 compile).
+# In acceptance context (real npm, no pre-install), fall back to npx.
+_cli_cmd() {
+  local local_bin="${TEMP_DIR}/node_modules/.bin/cli"
+  if [[ -x "$local_bin" ]]; then
+    echo "$local_bin"
+  else
+    echo "npx --yes $PKG"
+  fi
+}
+
+_booster_cmd() {
+  local local_bin="${TEMP_DIR}/node_modules/.bin/agent-booster"
+  if [[ -x "$local_bin" ]]; then
+    echo "$local_bin"
+  else
+    echo "npx --yes @sparkleideas/agent-booster${COMPANION_TAG:-}"
+  fi
+}
+
 # --------------------------------------------------------------------------
 # RQ-1 / A1: Version check
 # --------------------------------------------------------------------------
 check_version() {
-  run_timed "NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '$PKG' --version"
+  # Use local binary or npm view — avoid npx which re-installs all deps (~30s)
+  local cli; cli=$(_cli_cmd)
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli --version"
   _CHECK_PASSED="false"
   _CHECK_OUTPUT="$_OUT"
   if [[ $_EXIT -eq 0 && -n "$_OUT" ]]; then
@@ -36,7 +60,8 @@ check_version() {
 # RQ-2 / A2: Init
 # --------------------------------------------------------------------------
 check_init() {
-  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '$PKG' init"
+  local cli; cli=$(_cli_cmd)
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli init"
   _CHECK_PASSED="false"
   _CHECK_OUTPUT="$_OUT"
   if [[ $_EXIT -eq 0 ]]; then
@@ -103,7 +128,8 @@ check_scope() {
 # RQ-5 / A5: Doctor
 # --------------------------------------------------------------------------
 check_doctor() {
-  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '$PKG' doctor --fix"
+  local cli; cli=$(_cli_cmd)
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor --fix"
   _CHECK_PASSED="false"
   _CHECK_OUTPUT="$_OUT"
   if [[ $_EXIT -eq 0 ]]; then
@@ -191,7 +217,8 @@ check_memory_lifecycle() {
 
   # Init memory
   local init_out
-  init_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes "$PKG" memory init 2>&1) || true
+  local cli; cli=$(_cli_cmd)
+  init_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory init 2>&1) || true
   if ! echo "$init_out" | grep -qi 'initialized\|verification passed'; then
     _CHECK_OUTPUT="Memory init failed:\n$(echo "$init_out" | tail -10)"
     end_ns=$(date +%s%N 2>/dev/null || echo 0)
@@ -203,7 +230,7 @@ check_memory_lifecycle() {
 
   # Store
   local store_out
-  store_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory store \
+  store_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory store \
     --key "test-pattern" \
     --value "Integration test: JWT auth with refresh tokens for stateless APIs" \
     --namespace test-ns --tags "test,acceptance" 2>&1) || true
@@ -218,7 +245,7 @@ check_memory_lifecycle() {
 
   # Search (semantic)
   local search_out
-  search_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory search \
+  search_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory search \
     --query "authentication tokens" --namespace test-ns 2>&1) || true
   if ! echo "$search_out" | grep -q 'test-pattern'; then
     _CHECK_OUTPUT="Memory search did not find stored entry:\n$(echo "$search_out" | tail -10)"
@@ -231,7 +258,7 @@ check_memory_lifecycle() {
 
   # Retrieve
   local retrieve_out
-  retrieve_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" npx "$PKG" memory retrieve \
+  retrieve_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory retrieve \
     --key "test-pattern" --namespace test-ns 2>&1) || true
   if echo "$retrieve_out" | grep -q 'JWT auth'; then
     _CHECK_PASSED="true"
@@ -271,7 +298,8 @@ check_memory_lifecycle() {
 # RQ-9 / A10: Neural training
 # --------------------------------------------------------------------------
 check_neural_training() {
-  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx '$PKG' neural train --pattern coordination"
+  local cli; cli=$(_cli_cmd)
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli neural train --pattern coordination"
   _CHECK_PASSED="false"
   _CHECK_OUTPUT="$_OUT"
   if [[ $_EXIT -eq 0 ]]; then
@@ -348,7 +376,8 @@ check_agent_booster_esm() {
 # RQ-11 / A14: Agent Booster binary
 # --------------------------------------------------------------------------
 check_agent_booster_bin() {
-  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '@sparkleideas/agent-booster${COMPANION_TAG:-}' --version"
+  local booster; booster=$(_booster_cmd)
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $booster --version"
   _CHECK_PASSED="false"
   _CHECK_OUTPUT="$_OUT"
   if [[ $_EXIT -eq 0 && -n "$_OUT" ]]; then
