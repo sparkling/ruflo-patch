@@ -4,11 +4,12 @@
 # Phases:
 #   1. Stop the systemd timer
 #   2. Git sanity check (ruflo-patch repo)
-#   3. Clear Verdaccio packages (@sparkleideas/*)
-#   4. Clear pipeline state and caches
-#   5. Seed state from current fork HEADs
-#   6. Set timer to 1-minute interval and start
-#   7. Print summary
+#   3. Reset forks to upstream/main (removes all patch commits)
+#   4. Clear Verdaccio packages (@sparkleideas/*)
+#   5. Clear pipeline state and caches
+#   6. Seed state from current fork HEADs
+#   7. Set timer to 1-minute interval and start
+#   8. Print summary
 #
 # Flags:
 #   --no-start   Skip timer start (for manual triggering)
@@ -101,23 +102,84 @@ log "  Git OK (on main)"
 _record_reset_phase "git-check" "$(_elapsed_ms "$_p2" "$(_ns)")"
 
 # -------------------------------------------------------------------------
-# Phase 3 — Verdaccio reset
+# Phase 3 — Reset forks to upstream/main
 # -------------------------------------------------------------------------
 _p3=$(_ns)
-log "Phase 3: Clearing Verdaccio @sparkleideas packages..."
+log "Phase 3: Resetting forks to upstream/main..."
+
+FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN")
+FORK_DIRS=("$HOME/src/forks/ruflo" "$HOME/src/forks/agentic-flow" "$HOME/src/forks/ruv-FANN")
+
+for i in "${!FORK_NAMES[@]}"; do
+  _fork_name="${FORK_NAMES[$i]}"
+  _fork_dir="${FORK_DIRS[$i]}"
+
+  if [[ ! -d "${_fork_dir}/.git" ]]; then
+    log "  SKIP ${_fork_name}: not a git repo"
+    continue
+  fi
+
+  _fork_start=$(_ns)
+
+  # Ensure upstream remote exists
+  if ! git -C "${_fork_dir}" remote get-url upstream &>/dev/null; then
+    log "  SKIP ${_fork_name}: no upstream remote"
+    continue
+  fi
+
+  # Fetch upstream
+  git -C "${_fork_dir}" fetch upstream main --quiet 2>/dev/null || {
+    log_error "Failed to fetch upstream for ${_fork_name}"
+    continue
+  }
+
+  # Count commits being removed
+  _ahead=$(git -C "${_fork_dir}" rev-list --count upstream/main..origin/main 2>/dev/null || echo "?")
+
+  # Checkout main and hard reset to upstream
+  git -C "${_fork_dir}" checkout main --quiet 2>/dev/null || true
+  git -C "${_fork_dir}" reset --hard upstream/main --quiet 2>/dev/null || {
+    log_error "Failed to reset ${_fork_name} to upstream/main"
+    continue
+  }
+
+  # Force push to origin to sync the GitHub fork
+  git -C "${_fork_dir}" push origin main --force --quiet 2>/dev/null || {
+    log_error "Failed to force push ${_fork_name}"
+    continue
+  }
+
+  # Clean up stale tags (version bump tags from previous runs)
+  _stale_tags=$(git -C "${_fork_dir}" tag -l 'v*-patch.*' 2>/dev/null | wc -l)
+  if [[ $_stale_tags -gt 0 ]]; then
+    git -C "${_fork_dir}" tag -l 'v*-patch.*' | xargs git -C "${_fork_dir}" tag -d 2>/dev/null || true
+    git -C "${_fork_dir}" push origin --delete $(git -C "${_fork_dir}" ls-remote --tags origin | grep 'patch\.' | awk '{print $2}' | sed 's|refs/tags/||') 2>/dev/null || true
+    log "  ${_fork_name}: cleaned ${_stale_tags} stale tags"
+  fi
+
+  _fork_ms=$(_elapsed_ms "$_fork_start" "$(_ns)")
+  log "  ${_fork_name}: reset to upstream/main (removed ${_ahead} commits, ${_fork_ms}ms)"
+done
+_record_reset_phase "reset-forks" "$(_elapsed_ms "$_p3" "$(_ns)")"
+
+# -------------------------------------------------------------------------
+# Phase 4 — Verdaccio reset
+# -------------------------------------------------------------------------
+_p4=$(_ns)
+log "Phase 4: Clearing Verdaccio @sparkleideas packages..."
 
 VERDACCIO_STORAGE="$HOME/.verdaccio/storage/@sparkleideas"
-_p3_rm=$(_ns)
+_p4_rm=$(_ns)
 if [[ -d "${VERDACCIO_STORAGE}" ]]; then
   # Count before clearing
   PKG_COUNT=$(find "${VERDACCIO_STORAGE}" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
   rm -rf "${VERDACCIO_STORAGE}"
-  log "  Removed ${PKG_COUNT} packages ($(_elapsed_ms "$_p3_rm" "$(_ns)")ms)"
+  log "  Removed ${PKG_COUNT} packages ($(_elapsed_ms "$_p4_rm" "$(_ns)")ms)"
 else
   log "  No @sparkleideas storage directory found"
 fi
 
-_p3_restart=$(_ns)
+_p4_restart=$(_ns)
 log "  Restarting Verdaccio..."
 systemctl --user restart verdaccio 2>/dev/null || {
   log_error "Failed to restart Verdaccio — is it installed as a user service?"
@@ -130,7 +192,7 @@ systemctl --user restart verdaccio 2>/dev/null || {
 # Wait for health (up to 10 seconds)
 for i in $(seq 1 10); do
   if curl -sf http://localhost:4873/-/ping &>/dev/null; then
-    log "  Verdaccio healthy (attempt ${i}, $(_elapsed_ms "$_p3_restart" "$(_ns)")ms)"
+    log "  Verdaccio healthy (attempt ${i}, $(_elapsed_ms "$_p4_restart" "$(_ns)")ms)"
     break
   fi
   if [[ $i -eq 10 ]]; then
@@ -138,13 +200,13 @@ for i in $(seq 1 10); do
   fi
   sleep 1
 done
-_record_reset_phase "verdaccio-reset" "$(_elapsed_ms "$_p3" "$(_ns)")"
+_record_reset_phase "verdaccio-reset" "$(_elapsed_ms "$_p4" "$(_ns)")"
 
 # -------------------------------------------------------------------------
-# Phase 4 — Clear pipeline state
+# Phase 5 — Clear pipeline state
 # -------------------------------------------------------------------------
-_p4=$(_ns)
-log "Phase 4: Clearing pipeline state and caches..."
+_p5=$(_ns)
+log "Phase 5: Clearing pipeline state and caches..."
 
 # State file
 if [[ -f "${SCRIPT_DIR}/.last-build-state" ]]; then
@@ -153,14 +215,14 @@ if [[ -f "${SCRIPT_DIR}/.last-build-state" ]]; then
 fi
 
 # Build cache
-_p4_build=$(_ns)
+_p5_build=$(_ns)
 if [[ -d /tmp/ruflo-build ]]; then
   rm -rf /tmp/ruflo-build
-  log "  Removed /tmp/ruflo-build ($(_elapsed_ms "$_p4_build" "$(_ns)")ms)"
+  log "  Removed /tmp/ruflo-build ($(_elapsed_ms "$_p5_build" "$(_ns)")ms)"
 fi
 
 # Stale temp dirs
-_p4_stale=$(_ns)
+_p5_stale=$(_ns)
 STALE_COUNT=0
 for d in /tmp/ruflo-rq-* /tmp/ruflo-verify-*; do
   if [[ -e "$d" ]]; then
@@ -169,30 +231,30 @@ for d in /tmp/ruflo-rq-* /tmp/ruflo-verify-*; do
   fi
 done
 if [[ $STALE_COUNT -gt 0 ]]; then
-  log "  Removed ${STALE_COUNT} stale temp dirs ($(_elapsed_ms "$_p4_stale" "$(_ns)")ms)"
+  log "  Removed ${STALE_COUNT} stale temp dirs ($(_elapsed_ms "$_p5_stale" "$(_ns)")ms)"
 fi
 
 # npm cache entries for @sparkleideas
 # _npx cache
-_p4_npx=$(_ns)
+_p5_npx=$(_ns)
 NPX_CLEANED=0
 while IFS= read -r -d '' d; do
   rm -rf "$d"
   NPX_CLEANED=$((NPX_CLEANED + 1))
 done < <(find "$HOME/.npm/_npx" -path "*/@sparkleideas" -type d -print0 2>/dev/null || true)
 if [[ $NPX_CLEANED -gt 0 ]]; then
-  log "  Removed ${NPX_CLEANED} npx cache entries ($(_elapsed_ms "$_p4_npx" "$(_ns)")ms)"
+  log "  Removed ${NPX_CLEANED} npx cache entries ($(_elapsed_ms "$_p5_npx" "$(_ns)")ms)"
 fi
 
 # _cacache index entries
-_p4_cacache=$(_ns)
+_p5_cacache=$(_ns)
 CACACHE_CLEANED=0
 while IFS= read -r -d '' f; do
   rm -f "$f"
   CACACHE_CLEANED=$((CACACHE_CLEANED + 1))
 done < <(grep -rlZ sparkleideas "$HOME/.npm/_cacache/index-v5/" 2>/dev/null || true)
 if [[ $CACACHE_CLEANED -gt 0 ]]; then
-  log "  Removed ${CACACHE_CLEANED} npm cacache index entries ($(_elapsed_ms "$_p4_cacache" "$(_ns)")ms)"
+  log "  Removed ${CACACHE_CLEANED} npm cacache index entries ($(_elapsed_ms "$_p5_cacache" "$(_ns)")ms)"
 fi
 
 # Orphaned lock file
@@ -208,23 +270,23 @@ if [[ -f "${LOCKFILE}" ]]; then
 fi
 
 log "  Pipeline state cleared"
-_record_reset_phase "clear-state" "$(_elapsed_ms "$_p4" "$(_ns)")"
+_record_reset_phase "clear-state" "$(_elapsed_ms "$_p5" "$(_ns)")"
 
 # -------------------------------------------------------------------------
-# Phase 5 — Seed state from current fork HEADs
+# Phase 6 — Seed state from current fork HEADs
 # -------------------------------------------------------------------------
-_p5=$(_ns)
-log "Phase 5: Seeding state from fork HEADs..."
+_p6=$(_ns)
+log "Phase 6: Seeding state from fork HEADs..."
 cd "${PROJECT_DIR}"
 bash "${SCRIPT_DIR}/sync-and-build.sh" --seed-state
 log "  State seeded"
-_record_reset_phase "seed-state" "$(_elapsed_ms "$_p5" "$(_ns)")"
+_record_reset_phase "seed-state" "$(_elapsed_ms "$_p6" "$(_ns)")"
 
 # -------------------------------------------------------------------------
-# Phase 6 — Set timer to 1 minute and start
+# Phase 7 — Set timer to 1 minute and start
 # -------------------------------------------------------------------------
-_p6=$(_ns)
-log "Phase 6: Configuring timer..."
+_p7=$(_ns)
+log "Phase 7: Configuring timer..."
 
 if [[ -f "${TIMER_FILE}" ]]; then
   # Check if OnCalendar is already set to every minute
@@ -251,10 +313,10 @@ else
   systemctl --user start ruflo-sync.timer
   log "  Timer started (1-minute interval)"
 fi
-_record_reset_phase "configure-timer" "$(_elapsed_ms "$_p6" "$(_ns)")"
+_record_reset_phase "configure-timer" "$(_elapsed_ms "$_p7" "$(_ns)")"
 
 # -------------------------------------------------------------------------
-# Phase 7 — Summary
+# Phase 8 — Summary
 # -------------------------------------------------------------------------
 RESET_END=$(_ns)
 RESET_TOTAL_MS=$(_elapsed_ms "$RESET_START" "$RESET_END")
