@@ -152,8 +152,25 @@ async function queryNpmMaxPatch(npmName, baseVersion) {
       }
     }
     return maxN;
-  } catch {
-    // Package not on npm yet, or network error — safe to start at 0
+  } catch (err) {
+    const stderr = err.stderr || err.message || '';
+    const isNotFound =
+      stderr.includes('E404') ||
+      stderr.includes('is not in this registry') ||
+      stderr.includes('Not Found') ||
+      stderr.includes('code E404') ||
+      err.code === 1;
+
+    if (isNotFound) {
+      // Package not on npm yet — safe to start at 0
+      return 0;
+    }
+
+    // Network error, auth failure, or other unexpected error
+    // Log warning but return 0 to avoid blocking the pipeline
+    // The publish step will catch actual collisions
+    console.warn(`  Warning: npm query failed for ${npmName}: ${stderr.substring(0, 200)}`);
+    console.warn(`  Proceeding with patch count 0 — publish.mjs ghost-retry will handle collisions`);
     return 0;
   }
 }
@@ -172,7 +189,19 @@ async function versionExistsOnNpm(npmName, version) {
     });
     const result = JSON.parse(stdout);
     return result === version;
-  } catch {
+  } catch (err) {
+    const stderr = err.stderr || err.message || '';
+    const isNotFound =
+      stderr.includes('E404') ||
+      stderr.includes('is not in this registry') ||
+      stderr.includes('Not Found') ||
+      err.code === 1;
+
+    if (isNotFound) {
+      return false;
+    }
+
+    console.warn(`  Warning: npm version check failed for ${npmName}@${version}: ${stderr.substring(0, 200)}`);
     return false;
   }
 }

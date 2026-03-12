@@ -46,6 +46,30 @@ for arg in "$@"; do
     --build-only) BUILD_ONLY=true ;;
     --pull)       PULL_UPSTREAM=true ;;
     --seed-state) SEED_STATE=true ;;
+    --help|-h)
+      cat <<'USAGE'
+Usage: sync-and-build.sh [FLAGS]
+
+Flags:
+  --sync        Sync stage only (fetch upstream, create PR)
+  --publish     Publish stage only (detect merges, build, publish)
+  --test-only   Stop after tests (no publish)
+  --force       Build even when no changes detected
+  --build-only  Stop after build (no tests, no publish)
+  --pull        Pull upstream repos in --build-only mode
+  --seed-state  Record current fork HEADs as baseline (no build)
+  --help, -h    Show this help
+
+Stages:
+  Publish stage  Detect merged PRs, bump versions, build, test, publish
+  Review gate    (manual) Operator reviews and merges PR on GitHub
+  Sync stage     Fetch upstream, branch, type-check, codemod, build, test, create PR
+
+See: docs/pipeline-reference.md
+USAGE
+      exit 0
+      ;;
+    -*) echo "Error: Unknown flag: $arg (use --help for usage)"; exit 1 ;;
   esac
 done
 SEED_STATE="${SEED_STATE:-false}"
@@ -108,6 +132,9 @@ DIRECTLY_CHANGED_JSON="all"
 
 # Build version (set by read_build_version)
 BUILD_VERSION=""
+
+# Deferred version bump pushes (populated by bump_fork_versions, pushed after publish)
+PENDING_VERSION_PUSHES=()
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -412,23 +439,27 @@ bump_fork_versions() {
         add_cmd_timing "bump-versions" "git commit+tag ${name}" "${_bvc_ms}"
       fi
 
-      # Push commit and tag
-      _bv_push_start=$(date +%s%N 2>/dev/null || echo 0)
-      git -C "${dir}" push origin main --quiet 2>/dev/null || {
-        log_error "Failed to push version bump for ${name}"
-      }
-      git -C "${dir}" push origin "$tag" --quiet 2>/dev/null || true
-      _bv_push_end=$(date +%s%N 2>/dev/null || echo 0)
-      if [[ "$_bv_push_start" != "0" && "$_bv_push_end" != "0" ]]; then
-        local _bvp_ms=$(( (_bv_push_end - _bv_push_start) / 1000000 ))
-        log "  push ${name}: ${_bvp_ms}ms"
-        add_cmd_timing "bump-versions" "git push ${name}" "${_bvp_ms}"
-      fi
-
-      log "Version bump committed and pushed for ${name}: ${cli_version}"
+      # Defer push until after successful publish
+      PENDING_VERSION_PUSHES+=("${dir}")
+      log "Version bump committed for ${name}: ${cli_version} (push deferred)"
     else
       log "No version changes in ${name} — skipping commit"
     fi
+  done
+}
+
+push_fork_version_bumps() {
+  if [[ ${#PENDING_VERSION_PUSHES[@]} -eq 0 ]]; then
+    return 0
+  fi
+  log "Pushing deferred version bumps to ${#PENDING_VERSION_PUSHES[@]} fork(s)"
+  for dir in "${PENDING_VERSION_PUSHES[@]}"; do
+    local name
+    name=$(basename "$dir")
+    log "  Pushing version bump for ${name}"
+    git -C "${dir}" push origin main --quiet 2>/dev/null || {
+      log "WARNING: Failed to push version bump for ${name} — will retry next run"
+    }
   done
 }
 
@@ -715,22 +746,20 @@ copy_source() {
   mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN"
 
   _cp_start=$(date +%s%N 2>/dev/null || echo 0)
-  cp -a "${FORK_DIR_RUFLO}/." "${TEMP_DIR}/" &
+  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" &
   local pid_ruflo=$!
-  cp -a "${FORK_DIR_AGENTIC}/." "${TEMP_DIR}/cross-repo/agentic-flow/" &
+  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" &
   local pid_agentic=$!
-  cp -a "${FORK_DIR_FANN}/." "${TEMP_DIR}/cross-repo/ruv-FANN/" &
+  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" &
   local pid_fann=$!
   wait $pid_ruflo $pid_agentic $pid_fann
   _cp_end=$(date +%s%N 2>/dev/null || echo 0)
-
-  rm -rf "${TEMP_DIR}/.git" "${TEMP_DIR}/cross-repo/agentic-flow/.git" "${TEMP_DIR}/cross-repo/ruv-FANN/.git"
 
   local _cp_ms=0
   if [[ "$_cp_start" != "0" && "$_cp_end" != "0" ]]; then
     _cp_ms=$(( (_cp_end - _cp_start) / 1000000 ))
     log "  Parallel copy completed in ${_cp_ms}ms"
-    add_cmd_timing "copy-source" "cp -a (3 forks parallel)" "${_cp_ms}"
+    add_cmd_timing "copy-source" "rsync (3 forks parallel)" "${_cp_ms}"
   fi
   log "Source copied to temp directory (3 forks merged, parallel)"
 }
@@ -831,25 +860,18 @@ run_build() {
     return 0
   fi
 
-  # Install TypeScript in an isolated directory
-  local tsc_dir="${TEMP_DIR}/.tsc-toolchain"
-  log "Installing TypeScript toolchain"
-  mkdir -p "$tsc_dir"
-  echo '{}' > "$tsc_dir/package.json"
-  local tsc_install_start
-  tsc_install_start=$(date +%s%N 2>/dev/null || echo 0)
-  (cd "$tsc_dir" && npm install typescript@5 2>&1) || {
-    log_error "Failed to install TypeScript"
-    return 1
-  }
-  local tsc_install_end
-  tsc_install_end=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$tsc_install_start" != "0" && "$tsc_install_end" != "0" ]]; then
-    local _tsc_ms=$(( (tsc_install_end - tsc_install_start) / 1000000 ))
-    log "  TypeScript install: ${_tsc_ms}ms"
-    add_cmd_timing "build" "npm install typescript@5" "${_tsc_ms}"
+  # Install TypeScript in a persistent directory (cached across runs)
+  local tsc_dir="/tmp/ruflo-tsc-toolchain"
+  if [[ ! -x "${tsc_dir}/node_modules/.bin/tsc" ]] || \
+     [[ $(find "${tsc_dir}" -maxdepth 0 -mmin +1440 -print 2>/dev/null | wc -l) -gt 0 ]]; then
+    rm -rf "${tsc_dir}"
+    mkdir -p "${tsc_dir}"
+    (cd "$tsc_dir" && npm install typescript@5 2>&1) | tail -1
+    log "TypeScript toolchain installed at ${tsc_dir}"
+  else
+    log "TypeScript toolchain cached at ${tsc_dir}"
   fi
-  local TSC="$tsc_dir/node_modules/.bin/tsc"
+  local tsc_bin="${tsc_dir}/node_modules/.bin/tsc"
 
   # Build order: shared first, then the rest
   local build_order=(
@@ -904,11 +926,11 @@ run_build() {
     " 2>/dev/null
 
     local ok=0
-    if "$TSC" -p "$tmp_tsconfig" --skipLibCheck 2>/dev/null; then
+    if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck 2>/dev/null; then
       ok=1
-    elif "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>/dev/null; then
+    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>/dev/null; then
       ok=1
-    elif "$TSC" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>/dev/null; then
+    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>/dev/null; then
       ok=1
     fi
     rm -f "$tmp_tsconfig"
@@ -1017,7 +1039,7 @@ run_build() {
 
     local _xr_tsc_start _xr_tsc_end
     _xr_tsc_start=$(date +%s%N 2>/dev/null || echo 0)
-    if "$TSC" -p "$pkg_dir/tsconfig.json" --skipLibCheck 2>/dev/null; then
+    if "$tsc_bin" -p "$pkg_dir/tsconfig.json" --skipLibCheck 2>/dev/null; then
       built=$((built + 1))
     else
       log "WARN: TypeScript build failed for ${rel_path}"
@@ -1390,6 +1412,9 @@ run_stage3_publish() {
 
   # Save state after successful verify + publish
   save_state
+
+  # Push deferred version bumps now that publish succeeded
+  push_fork_version_bumps
 
   # Write JSON timing summary
   write_pipeline_summary

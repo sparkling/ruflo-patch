@@ -295,7 +295,7 @@ function sleep(ms) {
  * @param {number} [options.rateLimitMs] - Override RATE_LIMIT_MS (0 for local registries)
  * @returns {{ published: Array<{name: string, level: number, tag: string|null, version: string}>, failed: null | { package: string, level: number, error: string } }}
  */
-export async function publishAll(buildDir, { dryRun = false, metadata, getPublishTagFn, rateLimitMs, packagesFilter, noSave = false } = {}) {
+export async function publishAll(buildDir, { dryRun = false, metadata, getPublishTagFn, rateLimitMs, packagesFilter, noSave = false, provenance = false } = {}) {
   if (!buildDir) throw new Error('buildDir is required');
 
   const resolvedBuildDir = resolve(buildDir);
@@ -380,6 +380,9 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     const publishRegistry = process.env.NPM_CONFIG_REGISTRY || 'http://localhost:4873';
     const publishArgs = ['publish', '--access', 'public', '--ignore-scripts',
       '--registry', publishRegistry];
+    if (provenance) {
+      publishArgs.push('--provenance');
+    }
     // ADR-0015: first publish uses --tag latest (npm requires --tag for prerelease
     // versions). Subsequent publishes use --tag prerelease (ADR-0010 gate).
     publishArgs.push('--tag', tag ?? 'latest');
@@ -496,16 +499,26 @@ export async function publishAll(buildDir, { dryRun = false, metadata, getPublis
     );
     console.log(`  Level ${levelNumber} completed in ${Date.now() - levelStart}ms`);
 
-    // Check results — first failure stops the pipeline
+    // Check results — collect all successes/failures for this level
+    let levelFailed = null;
     for (const result of results) {
       if (result.ok) {
         published.push(result.entry);
       } else {
-        if (!dryRun) {
-          await createFailureIssue(result.error.package, result.error.level, result.error.error);
-        }
-        return { published, failed: result.error };
+        levelFailed = result.error;
       }
+    }
+
+    if (levelFailed) {
+      // Save state for successfully published packages before returning failure
+      if (!dryRun && !noSave) {
+        savePublishedVersions(publishedVersions);
+        console.log(`\nSaved partial state (${published.length} packages) before failure`);
+      }
+      if (!dryRun) {
+        await createFailureIssue(levelFailed.package, levelFailed.level, levelFailed.error);
+      }
+      return { published, failed: levelFailed };
     }
 
     // Rate limit between levels (not between packages within a level)
@@ -547,6 +560,7 @@ async function main() {
       'dry-run': { type: 'boolean', default: false },
       'no-rate-limit': { type: 'boolean', default: false },
       'no-save': { type: 'boolean', default: false },
+      'provenance': { type: 'boolean', default: false },
       'packages': { type: 'string' },
     },
     strict: true,
@@ -562,8 +576,9 @@ async function main() {
 
   const rateLimitMs = values['no-rate-limit'] ? 0 : undefined;
   const noSave = values['no-save'];
+  const provenance = values['provenance'];
   const packagesFilter = values['packages'] ? JSON.parse(values['packages']) : null;
-  const result = await publishAll(buildDir, { dryRun, rateLimitMs, packagesFilter, noSave });
+  const result = await publishAll(buildDir, { dryRun, rateLimitMs, packagesFilter, noSave, provenance });
 
   // Output JSON summary to stdout
   console.log('\n--- Summary ---');

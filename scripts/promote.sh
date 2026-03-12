@@ -21,13 +21,15 @@ VERSIONS_FILE="$PROJECT_DIR/config/published-versions.json"
 # ---------- Defaults ----------
 DRY_RUN=false
 AUTO_YES=false
+ROLLBACK=false
 BUILD_VERSION=""
 
 # ---------- Parse arguments ----------
 for arg in "$@"; do
   case "$arg" in
-    --dry-run) DRY_RUN=true ;;
-    --yes|-y)  AUTO_YES=true ;;
+    --dry-run)   DRY_RUN=true ;;
+    --rollback)  ROLLBACK=true ;;
+    --yes|-y)    AUTO_YES=true ;;
     -*)        echo "Unknown flag: $arg"; exit 1 ;;
     *)         BUILD_VERSION="$arg" ;;
   esac
@@ -113,44 +115,106 @@ if [[ "$DRY_RUN" == false && "$AUTO_YES" == false ]]; then
   esac
 fi
 
+# ---------- Rollback mode ----------
+if [[ "$ROLLBACK" == true ]]; then
+  echo ""
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Rolling back: moving @previous to @latest for $TOTAL packages"
+  echo ""
+  ROLLBACK_FAILURES=0
+  for pkg in "${!PKG_VERSIONS[@]}"; do
+    prev_ver=$(npm view "${pkg}" dist-tags.previous 2>/dev/null || true)
+    if [[ -z "$prev_ver" ]]; then
+      echo "  ${pkg}: no @previous tag found — skipping"
+      continue
+    fi
+    if [[ "$DRY_RUN" == true ]]; then
+      echo "  [dry-run] would rollback ${pkg} to ${prev_ver}"
+    else
+      echo -n "  ${pkg}@${prev_ver} ... "
+      if npm dist-tag add "${pkg}@${prev_ver}" latest 2>/dev/null; then
+        echo "OK"
+      else
+        echo "FAILED"
+        ROLLBACK_FAILURES=$((ROLLBACK_FAILURES + 1))
+      fi
+    fi
+  done
+  if [[ $ROLLBACK_FAILURES -gt 0 ]]; then
+    echo "Rollback completed with $ROLLBACK_FAILURES failure(s)"
+    exit 1
+  fi
+  echo "Rollback complete."
+  exit 0
+fi
+
 # ---------- Helper ----------
-FAILURES=0
-PROMOTED=0
+PROMOTE_RESULTS_DIR=$(mktemp -d /tmp/ruflo-promote-XXXXX)
 
 run_dist_tag() {
   local pkg_spec="$1"
   local ts _dt_start _dt_end _dt_ms
+  # sanitize pkg_spec for use as filename
+  local result_file="${PROMOTE_RESULTS_DIR}/${pkg_spec//\//_}"
   ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   _dt_start=$(_ns)
 
   if [[ "$DRY_RUN" == true ]]; then
     echo "[$ts] [dry-run] npm dist-tag add \"$pkg_spec\" latest"
-    PROMOTED=$((PROMOTED + 1))
+    echo "OK" > "$result_file"
     _dt_ms=0
   else
     echo -n "[$ts] npm dist-tag add \"$pkg_spec\" latest ... "
     if npm dist-tag add "$pkg_spec" latest 2>&1; then
       echo "OK"
-      PROMOTED=$((PROMOTED + 1))
+      echo "OK" > "$result_file"
     else
       echo "FAILED"
-      FAILURES=$((FAILURES + 1))
+      echo "FAIL" > "$result_file"
     fi
     _dt_end=$(_ns)
     _dt_ms=$(_elapsed_ms "$_dt_start" "$_dt_end")
     echo "  (${_dt_ms}ms)"
   fi
-  PROMOTE_PKG_TIMINGS="${PROMOTE_PKG_TIMINGS} ${pkg_spec}:${_dt_ms:-0}"
 }
+
+# ---------- Snapshot current @latest as @previous ----------
+echo ""
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Saving current @latest tags as @previous (for rollback)"
+echo ""
+
+for pkg in "${!PKG_VERSIONS[@]}"; do
+  if [[ "$DRY_RUN" == true ]]; then
+    echo "  [dry-run] would snapshot @previous for ${pkg}"
+  else
+    # Get current latest version (may not exist for first publish)
+    current_latest=$(npm view "${pkg}" dist-tags.latest 2>/dev/null || true)
+    if [[ -n "$current_latest" ]]; then
+      npm dist-tag add "${pkg}@${current_latest}" previous 2>/dev/null || true
+    fi
+  fi
+done
 
 # ---------- Execute ----------
 echo ""
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Promoting $TOTAL packages to @latest"
 echo ""
 
+MAX_PARALLEL=8
+running=0
 for pkg in "${!PKG_VERSIONS[@]}"; do
-  run_dist_tag "${pkg}@${PKG_VERSIONS[$pkg]}"
+  run_dist_tag "${pkg}@${PKG_VERSIONS[$pkg]}" &
+  running=$((running + 1))
+  if [[ $running -ge $MAX_PARALLEL ]]; then
+    wait -n 2>/dev/null || true
+    running=$((running - 1))
+  fi
 done
+wait
+
+# Count results from temp files
+PROMOTED=$(grep -rl "OK" "$PROMOTE_RESULTS_DIR" 2>/dev/null | wc -l)
+FAILURES=$(grep -rl "FAIL" "$PROMOTE_RESULTS_DIR" 2>/dev/null | wc -l)
+rm -rf "$PROMOTE_RESULTS_DIR"
 
 # ---------- Update state file ----------
 LABEL="${BUILD_VERSION:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"
