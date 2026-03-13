@@ -865,8 +865,101 @@ run_build() {
   if [[ ! -x "${tsc_dir}/node_modules/.bin/tsc" ]] || \
      [[ $(find "${tsc_dir}" -maxdepth 0 -mmin +1440 -print 2>/dev/null | wc -l) -gt 0 ]]; then
     rm -rf "${tsc_dir}"
-    mkdir -p "${tsc_dir}"
-    (cd "$tsc_dir" && npm install typescript@5 2>&1) | tail -1
+    mkdir -p "${tsc_dir}" "${tsc_dir}/stubs"
+    (cd "$tsc_dir" && echo '{"private":true}' > package.json \
+      && npm install typescript@5 zod@3 @types/express @types/cors @types/fs-extra --save-exact 2>&1) | tail -1
+    # Create type stubs for optional modules (ADR-0028)
+    cat > "${tsc_dir}/stubs/agentic-flow_embeddings.d.ts" << 'TSSTUB'
+declare module 'agentic-flow/embeddings' {
+  export function getOptimizedEmbedder(opts: any): any;
+  export function getNeuralSubstrate(opts?: any): any;
+  export function listAvailableModels(): Array<{ id: string; dimension: number; size: string; quantized: boolean; downloaded: boolean; }>;
+  export function downloadModel(modelId: string): Promise<void>;
+  export class OptimizedEmbedder { embed(text: string): Promise<Float32Array>; embedBatch(texts: string[]): Promise<Float32Array[]>; init(): Promise<void>; }
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/onnxruntime-node.d.ts" << 'TSSTUB'
+declare module 'onnxruntime-node' {
+  export class InferenceSession { static create(path: string, opts?: any): Promise<InferenceSession>; run(feeds: any): Promise<any>; }
+  export class Tensor { constructor(type: string, data: any, dims?: number[]); data: any; dims: number[]; }
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/bcrypt.d.ts" << 'TSSTUB'
+declare module 'bcrypt' {
+  export function hash(data: string, saltOrRounds: string | number): Promise<string>;
+  export function compare(data: string, encrypted: string): Promise<boolean>;
+  export function genSalt(rounds?: number): Promise<string>;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/express.d.ts" << 'TSSTUB'
+declare module 'express' {
+  export interface Request { body: any; params: any; query: any; headers: any; method: string; url: string; path: string; }
+  export interface Response { status(code: number): Response; json(body: any): Response; send(body?: any): Response; set(field: string, value: string): Response; end(): void; }
+  export interface NextFunction { (err?: any): void; }
+  export interface Express { use(...args: any[]): any; get(...args: any[]): any; post(...args: any[]): any; listen(...args: any[]): any; }
+  export interface Router { use(...args: any[]): any; get(...args: any[]): any; post(...args: any[]): any; }
+  function express(): Express;
+  namespace express { function Router(): Router; function json(): any; function urlencoded(opts?: any): any; function static(root: string): any; }
+  export = express;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/cors.d.ts" << 'TSSTUB'
+declare module 'cors' {
+  function cors(options?: any): any;
+  export = cors;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/fs-extra.d.ts" << 'TSSTUB'
+declare module 'fs-extra' {
+  export function ensureDir(path: string): Promise<void>;
+  export function ensureDirSync(path: string): void;
+  export function readJson(path: string): Promise<any>;
+  export function writeJson(path: string, data: any, opts?: any): Promise<void>;
+  export function copy(src: string, dest: string, opts?: any): Promise<void>;
+  export function remove(path: string): Promise<void>;
+  export function pathExists(path: string): Promise<boolean>;
+  export function pathExistsSync(path: string): boolean;
+  export function stat(path: string): Promise<any>;
+  export function readFile(path: string, encoding?: string): Promise<any>;
+  export function writeFile(path: string, data: any, opts?: any): Promise<void>;
+  export function readdir(path: string): Promise<string[]>;
+  export function mkdir(path: string, opts?: any): Promise<void>;
+  export function mkdirp(path: string): Promise<void>;
+  export function existsSync(path: string): boolean;
+  export function outputFile(path: string, data: any): Promise<void>;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/vitest.d.ts" << 'TSSTUB'
+declare module 'vitest' {
+  export function describe(name: string, fn: () => void): void;
+  export function it(name: string, fn: () => void | Promise<void>): void;
+  export function test(name: string, fn: () => void | Promise<void>): void;
+  export function expect(value: any): any;
+  export function beforeEach(fn: () => void | Promise<void>): void;
+  export function afterEach(fn: () => void | Promise<void>): void;
+  export function beforeAll(fn: () => void | Promise<void>): void;
+  export function afterAll(fn: () => void | Promise<void>): void;
+  export const vi: any;
+  export type Mock = any;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_attention.d.ts" << 'TSSTUB'
+declare module '@ruvector/attention' {
+  export interface AttentionConfig { dim: number; numHeads?: number; dropout?: number; }
+  export function scaledDotProductAttention(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array;
+  export function multiHeadAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], c: AttentionConfig): Float32Array;
+  export function flashAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], bs?: number): Float32Array;
+  export function hyperbolicAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], c?: number): Float32Array;
+  export class FlashAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; computeRaw(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class DotProductAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class MultiHeadAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class LinearAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class HyperbolicAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class MoEAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class InfoNceLoss { constructor(c?: any); compute(a: Float32Array[], p: Float32Array[], n?: Float32Array[]): number; }
+  export class AdamWOptimizer { constructor(c?: any); step(p: Float32Array, g: Float32Array): Float32Array; }
+}
+TSSTUB
     log "TypeScript toolchain installed at ${tsc_dir}"
   else
     log "TypeScript toolchain cached at ${tsc_dir}"
@@ -944,7 +1037,9 @@ run_build() {
       if (!ts.exclude) ts.exclude = [];
       ts.exclude.push('**/*.test.ts', '**/*.spec.ts', '**/__tests__/**');
 
-      // Map sibling @sparkleideas/* packages to their source for type resolution
+      // Map sibling @sparkleideas/* packages to their dist/ declarations.
+      // IMPORTANT: use dist/*.d.ts (not src/*.ts) to avoid rootDir violations
+      // when paths resolve to files outside this package's rootDir.
       const v3cf = path.resolve('$pkg_dir', '..'); // v3/@claude-flow parent
       if (fs.existsSync(v3cf)) {
         if (!ts.compilerOptions.paths) ts.compilerOptions.paths = {};
@@ -956,36 +1051,59 @@ run_build() {
           try {
             const sp = JSON.parse(fs.readFileSync(sibPkg, 'utf-8'));
             if (sp.name && sp.name.startsWith('@sparkleideas/')) {
-              // Map @sparkleideas/shared -> ../shared/src/index.ts (or dist/index.d.ts)
-              const srcIndex = path.join(sibDir, 'src', 'index.ts');
+              // Prefer dist/ declarations (avoids rootDir violations)
               const distIndex = path.join(sibDir, 'dist', 'index.d.ts');
-              if (fs.existsSync(srcIndex)) {
-                ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', srcIndex)];
-              } else if (fs.existsSync(distIndex)) {
+              const distSrcIndex = path.join(sibDir, 'dist', 'src', 'index.d.ts');
+              if (fs.existsSync(distIndex)) {
                 ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', distIndex)];
+              } else if (fs.existsSync(distSrcIndex)) {
+                ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', distSrcIndex)];
+              }
+              // Fallback: src/ only if no dist/ exists (first build)
+              else {
+                const srcIndex = path.join(sibDir, 'src', 'index.ts');
+                if (fs.existsSync(srcIndex)) {
+                  ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', srcIndex)];
+                }
               }
             }
           } catch {}
         }
       }
 
-      // Stub commonly missing optional modules
+      // Stub commonly missing optional modules.
+      // Filename convention: module_name.d.ts -> module/name
+      //   agentic-flow_embeddings.d.ts -> agentic-flow/embeddings
+      //   @ruvector_attention -> prefix @ then: ruvector/attention
+      // Scoped packages: filename starts with @ (e.g. @ruvector_attention.d.ts)
       const stubDir = '$tsc_dir/stubs';
       if (fs.existsSync(stubDir)) {
         for (const stub of fs.readdirSync(stubDir).filter(f => f.endsWith('.d.ts'))) {
-          // agentic-flow_embeddings.d.ts -> agentic-flow/embeddings
-          const modName = stub.replace('.d.ts', '').replace(/_/g, '/');
+          let modName = stub.replace('.d.ts', '');
+          // Split on first _ to get scope/name for scoped packages
+          const firstUnderscore = modName.indexOf('_');
+          if (firstUnderscore > 0) {
+            modName = modName.substring(0, firstUnderscore) + '/' + modName.substring(firstUnderscore + 1).replace(/_/g, '/');
+          }
           if (!ts.compilerOptions.paths[modName]) {
             ts.compilerOptions.paths[modName] = [path.resolve(stubDir, stub)];
           }
         }
       }
 
-      // Add @types from tsc toolchain so express/cors/fs-extra resolve
+      // Add @types from tsc toolchain (express, cors, fs-extra, zod@3)
       if (!ts.compilerOptions.typeRoots) ts.compilerOptions.typeRoots = [];
       ts.compilerOptions.typeRoots.push('$tsc_dir/node_modules/@types');
-      // Also allow node types
       ts.compilerOptions.typeRoots.push('./node_modules/@types');
+
+      // Resolve zod from tsc toolchain (v3) instead of /tmp/node_modules (v4)
+      ts.compilerOptions.paths['zod'] = ['$tsc_dir/node_modules/zod/index.d.ts'];
+
+      // Enable downlevelIteration for MapIterator support
+      ts.compilerOptions.downlevelIteration = true;
+
+      // Note: moduleResolution stays as 'bundler' (original). Bare specifier stubs
+      // (express, cors, etc.) are installed as real @types in the tsc toolchain.
 
       fs.writeFileSync('$tmp_tsconfig', JSON.stringify(ts, null, 2));
     " 2>/dev/null
