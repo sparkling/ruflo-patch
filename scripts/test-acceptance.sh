@@ -295,23 +295,26 @@ check_plugin_install() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Group 1: Smoke (sequential — fast gates)
+# Group 1: Smoke (parallel — all independent)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
 log "── Group 1: Smoke ──"
-run_check "T01" "Version check"          check_version            "smoke"
-run_check "T02" "@latest resolves"       check_latest_resolves    "smoke"
-run_check "T03" "No broken versions"     check_no_broken_versions "smoke"
+PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+run_check_bg "T01" "Version check"          check_version            "smoke"
+run_check_bg "T02" "@latest resolves"       check_latest_resolves    "smoke"
+run_check_bg "T03" "No broken versions"     check_no_broken_versions "smoke"
+collect_parallel "smoke" \
+  "T01|Version check" "T02|@latest resolves" "T03|No broken versions"
 _record_phase "group-smoke" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# Group 2: Init & Config (init sequential, config checks parallel)
+# Group 2: Init & Config (init first, then config checks + T08 + T11/T12 all start)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
 log "── Group 2: Init & Config ──"
 run_check "T04" "Init"                   check_init               "init-config"
 
-PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+# T05-T07 parallel (fast, depend on T04 state)
 run_check_bg "T05" "Settings file"       check_settings_file      "init-config"
 run_check_bg "T06" "Scope check"         check_scope              "init-config"
 run_check_bg "T07" "MCP config"          check_mcp_config         "init-config"
@@ -320,47 +323,28 @@ collect_parallel "init-config" \
 _record_phase "group-init-config" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# Groups 3-5 + T08 run overlapped:
-#   T08 (ruflo init --full) is slow (~50s, npx download) so it starts
-#   in the background FIRST, then groups 3-5 run while it works.
-#   All results collected at the end.
+# Groups 3-5 + T08 + T11/T12 all run overlapped:
+#   T08 (ruflo init --full, ~2s), T11 (memory, ~8s), T12 (neural, ~5s)
+#   all start immediately. Groups 3+5 run in parallel alongside.
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── Groups 3-5 + T08 (overlapped) ──"
+log "── Groups 3-5 + long-running (overlapped) ──"
 
-# Start T08 early — it will run in parallel with everything below
+# Launch ALL remaining checks in parallel — they're all independent after T04 init
 run_check_bg "T08" "ruflo init --full"   check_ruflo_init_full    "init-config"
-T08_PID="${BG_PIDS[-1]}"
-BG_PIDS=()  # Don't let collect_parallel wait for T08 yet
-
-# Group 3: Diagnostics (parallel)
-log "  ── Diagnostics ──"
 run_check_bg "T09" "Doctor"              check_doctor             "diagnostics"
 run_check_bg "T10" "Wrapper proxy"       check_wrapper_proxy      "diagnostics"
-collect_parallel "diagnostics" \
-  "T09|Doctor" "T10|Wrapper proxy"
-
-# Group 4: Data & ML (parallel)
-log "  ── Data & ML ──"
 run_check_bg "T11" "Memory lifecycle"    check_memory_lifecycle   "data-ml"
 run_check_bg "T12" "Neural training"     check_neural_training    "data-ml"
-collect_parallel "data-ml" \
-  "T11|Memory lifecycle" "T12|Neural training"
-
-# Group 5: Packages (parallel)
-log "  ── Packages ──"
 run_check_bg "T13" "Agent Booster ESM"   check_agent_booster_esm  "packages"
 run_check_bg "T14" "Agent Booster CLI"   check_agent_booster_bin  "packages"
 run_check_bg "T15" "Plugins SDK"         check_plugins_sdk        "packages"
 run_check_bg "T16" "Plugin install"      check_plugin_install     "packages"
-collect_parallel "packages" \
+collect_parallel "all" \
+  "T08|ruflo init --full" "T09|Doctor" "T10|Wrapper proxy" \
+  "T11|Memory lifecycle" "T12|Neural training" \
   "T13|Agent Booster ESM" "T14|Agent Booster CLI" "T15|Plugins SDK" "T16|Plugin install"
-
-# Now wait for T08 and collect it
-log "  ── Collecting T08 ──"
-BG_PIDS=("$T08_PID")
-collect_parallel "init-config" "T08|ruflo init --full"
-_record_phase "groups-3-5-plus-T08" "$(_elapsed_ms "$_g" "$(_ns)")"
+_record_phase "groups-3-5-parallel" "$(_elapsed_ms "$_g" "$(_ns)")"
 rm -rf "$PARALLEL_DIR"; PARALLEL_DIR=""
 
 # ════════════════════════════════════════════════════════════════════

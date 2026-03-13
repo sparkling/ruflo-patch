@@ -40,6 +40,52 @@ _booster_cmd() {
   fi
 }
 
+# Run a CLI command and kill it as soon as output stops growing.
+# CLI processes hang after completion (open SQLite handles) — this detects
+# when output is "done" and kills immediately instead of waiting for timeout.
+# Usage: _run_and_kill "command string" [max_seconds]
+# Sets: _RK_OUT, _RK_EXIT
+_run_and_kill() {
+  local cmd="$1" max_wait="${2:-8}"
+  local tmpout
+  tmpout=$(mktemp /tmp/rk-XXXXX)
+
+  # Run command in background, capture output to file
+  bash -c "$cmd" > "$tmpout" 2>&1 &
+  local pid=$!
+
+  # Poll: kill when output stops growing or max_wait exceeded
+  local prev_size=0 stable_count=0
+  for (( i=0; i<max_wait*4; i++ )); do
+    sleep 0.25
+    # Check if process already exited
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+    local cur_size
+    cur_size=$(wc -c < "$tmpout" 2>/dev/null || echo 0)
+    if [[ "$cur_size" -gt 0 && "$cur_size" -eq "$prev_size" ]]; then
+      stable_count=$((stable_count + 1))
+      # Output stable for 0.75s (3 polls) — command is done, process is hung
+      if [[ $stable_count -ge 3 ]]; then
+        kill -KILL "$pid" 2>/dev/null || true
+        break
+      fi
+    else
+      stable_count=0
+    fi
+    prev_size="$cur_size"
+  done
+
+  # Ensure process is dead
+  kill -KILL "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true
+
+  _RK_OUT=$(cat "$tmpout" 2>/dev/null)
+  _RK_EXIT=$?
+  rm -f "$tmpout"
+}
+
 # --------------------------------------------------------------------------
 # RQ-1 / A1: Version check
 # --------------------------------------------------------------------------
@@ -215,10 +261,11 @@ check_memory_lifecycle() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init memory
+  # Init memory (kill on output stable — CLI hangs after completion)
   local init_out
   local cli; cli=$(_cli_cmd)
-  init_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory init 2>&1) || true
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
+  init_out="$_RK_OUT"
   if ! echo "$init_out" | grep -qi 'initialized\|verification passed'; then
     _CHECK_OUTPUT="Memory init failed:\n$(echo "$init_out" | tail -10)"
     end_ns=$(date +%s%N 2>/dev/null || echo 0)
@@ -230,10 +277,8 @@ check_memory_lifecycle() {
 
   # Store
   local store_out
-  store_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory store \
-    --key "test-pattern" \
-    --value "Integration test: JWT auth with refresh tokens for stateless APIs" \
-    --namespace test-ns --tags "test,acceptance" 2>&1) || true
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key test-pattern --value 'Integration test: JWT auth with refresh tokens for stateless APIs' --namespace test-ns --tags test,acceptance"
+  store_out="$_RK_OUT"
   if ! echo "$store_out" | grep -qi 'stored\|success'; then
     _CHECK_OUTPUT="Memory store failed:\n$(echo "$store_out" | tail -10)"
     end_ns=$(date +%s%N 2>/dev/null || echo 0)
@@ -245,8 +290,8 @@ check_memory_lifecycle() {
 
   # Search (semantic)
   local search_out
-  search_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory search \
-    --query "authentication tokens" --namespace test-ns 2>&1) || true
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace test-ns"
+  search_out="$_RK_OUT"
   if ! echo "$search_out" | grep -q 'test-pattern'; then
     _CHECK_OUTPUT="Memory search did not find stored entry:\n$(echo "$search_out" | tail -10)"
     end_ns=$(date +%s%N 2>/dev/null || echo 0)
@@ -258,8 +303,8 @@ check_memory_lifecycle() {
 
   # Retrieve
   local retrieve_out
-  retrieve_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory retrieve \
-    --key "test-pattern" --namespace test-ns 2>&1) || true
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns"
+  retrieve_out="$_RK_OUT"
   if echo "$retrieve_out" | grep -q 'JWT auth'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="init > store > search found test-pattern > retrieve value matches"
