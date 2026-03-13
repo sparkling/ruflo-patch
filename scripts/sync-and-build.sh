@@ -904,15 +904,25 @@ run_build() {
   # Build one package (called from parallel group below)
   build_one_pkg() {
     local pkg_name="$1"
-    local pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
+    # Accept either a bare name (resolved under v3/@claude-flow/) or a full path
+    local pkg_dir
+    if [[ "$pkg_name" == /* ]]; then
+      pkg_dir="$pkg_name"
+      pkg_name="$(basename "$pkg_dir")"
+    else
+      pkg_dir="$v3_dir/@claude-flow/${pkg_name}"
+    fi
     local pkg_build_start
     pkg_build_start=$(date +%s%N 2>/dev/null || echo 0)
 
-    # Create a standalone tsconfig that doesn't require project references
+    # Create a standalone tsconfig that doesn't require project references.
+    # Key fixes: remove composite (breaks without references), set rootDir
+    # to '.' (prevents cross-package imports from blocking emit).
     local tmp_tsconfig="$pkg_dir/tsconfig.build.json"
     node -e "
       const ts = JSON.parse(require('fs').readFileSync('$pkg_dir/tsconfig.json', 'utf-8'));
       delete ts.references;
+      delete ts.compilerOptions?.composite;
       if (ts.extends) {
         try {
           const base = JSON.parse(require('fs').readFileSync(require('path').resolve('$pkg_dir', ts.extends), 'utf-8'));
@@ -920,20 +930,29 @@ run_build() {
           delete ts.extends;
         } catch {}
       }
+      delete ts.compilerOptions.composite;
       ts.compilerOptions.skipLibCheck = true;
       ts.compilerOptions.noEmit = false;
+      // Preserve original rootDir if set (e.g. './src' -> dist/index.js).
+      // Only default to '.' if unset (prevents cross-package rootDir violations).
+      if (!ts.compilerOptions.rootDir) ts.compilerOptions.rootDir = '.';
       require('fs').writeFileSync('$tmp_tsconfig', JSON.stringify(ts, null, 2));
     " 2>/dev/null
 
     local ok=0
-    if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck 2>/dev/null; then
+    local tsc_log="$pkg_dir/.tsc-build.log"
+    if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck 2>"$tsc_log"; then
       ok=1
-    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>/dev/null; then
+    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>"$tsc_log"; then
       ok=1
-    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>/dev/null; then
+    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>"$tsc_log"; then
       ok=1
     fi
-    rm -f "$tmp_tsconfig"
+    # Log failures instead of swallowing them
+    if [[ $ok -eq 0 && -s "$tsc_log" ]]; then
+      log "    tsc failed for ${pkg_name}: $(head -3 "$tsc_log" | tr '\n' ' ')"
+    fi
+    rm -f "$tmp_tsconfig" "$tsc_log"
 
     local pkg_build_end
     pkg_build_end=$(date +%s%N 2>/dev/null || echo 0)
@@ -990,6 +1009,57 @@ run_build() {
     fi
     _group_idx=$((_group_idx + 1))
   done
+
+  # Build packages outside v3/@claude-flow/ (cross-repo, v3/plugins/*)
+  local -a extra_pkg_dirs=()
+  # Cross-repo packages (agentic-flow fork)
+  for extra_dir in \
+    "${TEMP_DIR}/cross-repo/agentic-flow/packages/agentdb" \
+    "${TEMP_DIR}/cross-repo/agentic-flow/packages/agentdb-onnx"; do
+    [[ -d "$extra_dir" && -f "$extra_dir/tsconfig.json" ]] && extra_pkg_dirs+=("$extra_dir")
+  done
+  # agentic-flow root uses config/tsconfig.json — compile it directly
+  local af_dir="${TEMP_DIR}/cross-repo/agentic-flow/agentic-flow"
+  if [[ -f "${af_dir}/config/tsconfig.json" && ! -f "${af_dir}/dist/index.js" ]]; then
+    log "  Building agentic-flow (config/tsconfig.json)..."
+    local _af_start
+    _af_start=$(date +%s%N 2>/dev/null || echo 0)
+    "$tsc_bin" -p "${af_dir}/config/tsconfig.json" --skipLibCheck --noCheck 2>/dev/null || true
+    local _af_end
+    _af_end=$(date +%s%N 2>/dev/null || echo 0)
+    local _af_ms=0
+    [[ "$_af_start" != "0" && "$_af_end" != "0" ]] && _af_ms=$(( (_af_end - _af_start) / 1000000 ))
+    if [[ -f "${af_dir}/dist/index.js" ]]; then
+      log "  BUILD: agentic-flow ${_af_ms}ms"
+      echo "agentic-flow 1 ${_af_ms}" >> "${TEMP_DIR}/.build-results"
+    else
+      log "  FAIL: agentic-flow ${_af_ms}ms"
+      echo "agentic-flow 0 ${_af_ms}" >> "${TEMP_DIR}/.build-results"
+    fi
+  fi
+  # v3/plugins/* (all plugin packages with tsconfig)
+  for extra_dir in "${TEMP_DIR}"/v3/plugins/*/; do
+    [[ -d "$extra_dir" && -f "$extra_dir/tsconfig.json" ]] && extra_pkg_dirs+=("$extra_dir")
+  done
+  if [[ ${#extra_pkg_dirs[@]} -gt 0 ]]; then
+    local -a extra_pids=()
+    local _extra_start
+    _extra_start=$(date +%s%N 2>/dev/null || echo 0)
+    for extra_dir in "${extra_pkg_dirs[@]}"; do
+      build_one_pkg "$extra_dir" &
+      extra_pids+=($!)
+    done
+    for pid in "${extra_pids[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+    local _extra_end
+    _extra_end=$(date +%s%N 2>/dev/null || echo 0)
+    if [[ "$_extra_start" != "0" && "$_extra_end" != "0" ]]; then
+      local _extra_ms=$(( (_extra_end - _extra_start) / 1000000 ))
+      log "  EXTRA (${#extra_pkg_dirs[@]} pkgs): ${_extra_ms}ms wall-clock"
+      add_cmd_timing "build" "extra (${#extra_pkg_dirs[@]} pkgs)" "${_extra_ms}"
+    fi
+  fi
 
   # Collect results from parallel builds
   while IFS=' ' read -r pkg_name ok _bms; do
