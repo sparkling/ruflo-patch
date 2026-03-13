@@ -252,7 +252,11 @@ collect_parallel() {
       log "  FAIL  ${id}: ${name} (subprocess crashed)"
     fi
   done
-  rm -f "${PARALLEL_DIR}"/*
+  # Only delete collected files, not T08 which runs independently
+  for spec in "$@"; do
+    local id="${spec%%|*}"
+    rm -f "${PARALLEL_DIR}/${id}"
+  done
 }
 
 # ── Registry-specific checks ───────────────────────────────────────
