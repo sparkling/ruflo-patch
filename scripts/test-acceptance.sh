@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # scripts/test-acceptance.sh — Unified acceptance tests (ADR-0023 simplified)
 #
-# Assumes packages are already published to the registry (by publish.mjs or
-# the deploy pipeline). Installs from the registry and runs 16 checks in
-# 5 logical groups.
+# Assumes packages are already published to the registry. Installs from the
+# registry and runs 16 checks in 5 logical groups with parallel execution.
 #
 # Pipeline: build → unit tests → publish → acceptance tests
 #
@@ -12,10 +11,11 @@
 #
 # Groups:
 #   1. Smoke        — version, dist-tag, broken-version check (sequential, fast)
-#   2. Init/Config  — init, settings, scope, MCP, ruflo init --full (init first, rest parallel)
+#   2. Init/Config  — init, settings, scope, MCP (init first, rest parallel)
 #   3. Diagnostics  — doctor, wrapper proxy (parallel)
 #   4. Data & ML    — memory lifecycle, neural training (parallel)
 #   5. Packages     — agent-booster ESM/CLI, plugins SDK, plugin install (parallel)
+#   Long-running: ruflo init --full runs overlapped with groups 3-5
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -57,7 +57,6 @@ _elapsed_ms() {
   if [[ "$s" != "0" && "$e" != "0" ]]; then echo $(( (e - s) / 1000000 )); else echo 0; fi
 }
 
-# Phase timing accumulator
 PHASE_TIMINGS=""
 TIMING_FILE="/tmp/ruflo-acceptance-timing.jsonl"
 : > "$TIMING_FILE"
@@ -74,7 +73,7 @@ _record_phase() {
 }
 
 # ── Global timeout: 300s ────────────────────────────────────────────
-( sleep 300; log_error "[TIMEOUT] test-acceptance.sh exceeded 300s"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+( sleep 300; log_error "[TIMEOUT] exceeded 300s"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup ─────────────────────────────────────────────────────────
@@ -107,7 +106,7 @@ _p=$(_ns)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 
-# Phase: Install packages from registry
+# Phase: Install packages from registry (allow scripts for native modules)
 _p=$(_ns)
 ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 (cd "$ACCEPT_TEMP" \
@@ -148,7 +147,6 @@ checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
 [[ -f "$checks_lib" ]] || { log_error "Missing: $checks_lib"; exit 1; }
 source "$checks_lib"
 
-# Set check environment
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -162,7 +160,7 @@ export NPM_CONFIG_CACHE="$NPX_CACHE"
 run_timed() {
   local t_start t_end
   t_start=$(date +%s%N 2>/dev/null || echo 0)
-  _OUT="$(timeout 30 bash -c "$*" 2>&1)" || true
+  _OUT="$(timeout 60 bash -c "$*" 2>&1)" || true
   _EXIT=${PIPESTATUS[0]:-$?}
   t_end=$(date +%s%N 2>/dev/null || echo 0)
   [[ "$t_start" == "0" || "$t_end" == "0" ]] && _DURATION_MS=0 || _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
@@ -184,7 +182,6 @@ print(json.dumps(sys.stdin.read()), end="")
 ' 2>/dev/null || echo '""'
 }
 
-# Run a check sequentially, record result
 run_check() {
   local id="$1" name="$2" fn="$3" group="$4"
   total_count=$((total_count + 1))
@@ -211,7 +208,6 @@ run_check() {
   [[ "$results_json" == "[]" ]] && results_json="[$entry]" || results_json="${results_json%]}, $entry]"
 }
 
-# Run a check in background, write result to PARALLEL_DIR
 PARALLEL_DIR=""
 BG_PIDS=()
 
@@ -229,7 +225,6 @@ run_check_bg() {
   BG_PIDS+=($!)
 }
 
-# Collect parallel results
 collect_parallel() {
   local group="$1"; shift
   wait "${BG_PIDS[@]}"
@@ -260,7 +255,7 @@ collect_parallel() {
   rm -f "${PARALLEL_DIR}"/*
 }
 
-# ── Registry-specific checks (not in shared lib) ───────────────────
+# ── Registry-specific checks ───────────────────────────────────────
 
 check_no_broken_versions() {
   local start_ns end_ns
@@ -305,7 +300,7 @@ run_check "T03" "No broken versions"     check_no_broken_versions "smoke"
 _record_phase "group-smoke" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# Group 2: Init & Config (init sequential, rest parallel)
+# Group 2: Init & Config (init sequential, config checks parallel)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
 log "── Group 2: Init & Config ──"
@@ -315,64 +310,86 @@ PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
 run_check_bg "T05" "Settings file"       check_settings_file      "init-config"
 run_check_bg "T06" "Scope check"         check_scope              "init-config"
 run_check_bg "T07" "MCP config"          check_mcp_config         "init-config"
-run_check_bg "T08" "ruflo init --full"   check_ruflo_init_full    "init-config"
 collect_parallel "init-config" \
-  "T05|Settings file" "T06|Scope check" "T07|MCP config" "T08|ruflo init --full"
+  "T05|Settings file" "T06|Scope check" "T07|MCP config"
 _record_phase "group-init-config" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# Group 3: Diagnostics (parallel)
+# Groups 3-5 + T08 run overlapped:
+#   T08 (ruflo init --full) is slow (~50s, npx download) so it starts
+#   in the background FIRST, then groups 3-5 run while it works.
+#   All results collected at the end.
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── Group 3: Diagnostics ──"
+log "── Groups 3-5 + T08 (overlapped) ──"
+
+# Start T08 early — it will run in parallel with everything below
+run_check_bg "T08" "ruflo init --full"   check_ruflo_init_full    "init-config"
+T08_PID="${BG_PIDS[-1]}"
+BG_PIDS=()  # Don't let collect_parallel wait for T08 yet
+
+# Group 3: Diagnostics (parallel)
+log "  ── Diagnostics ──"
 run_check_bg "T09" "Doctor"              check_doctor             "diagnostics"
 run_check_bg "T10" "Wrapper proxy"       check_wrapper_proxy      "diagnostics"
 collect_parallel "diagnostics" \
   "T09|Doctor" "T10|Wrapper proxy"
-_record_phase "group-diagnostics" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
 # Group 4: Data & ML (parallel)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── Group 4: Data & ML ──"
+log "  ── Data & ML ──"
 run_check_bg "T11" "Memory lifecycle"    check_memory_lifecycle   "data-ml"
 run_check_bg "T12" "Neural training"     check_neural_training    "data-ml"
 collect_parallel "data-ml" \
   "T11|Memory lifecycle" "T12|Neural training"
-_record_phase "group-data-ml" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
 # Group 5: Packages (parallel)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── Group 5: Packages ──"
+log "  ── Packages ──"
 run_check_bg "T13" "Agent Booster ESM"   check_agent_booster_esm  "packages"
 run_check_bg "T14" "Agent Booster CLI"   check_agent_booster_bin  "packages"
 run_check_bg "T15" "Plugins SDK"         check_plugins_sdk        "packages"
 run_check_bg "T16" "Plugin install"      check_plugin_install     "packages"
 collect_parallel "packages" \
   "T13|Agent Booster ESM" "T14|Agent Booster CLI" "T15|Plugins SDK" "T16|Plugin install"
-_record_phase "group-packages" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# Now wait for T08 and collect it
+log "  ── Collecting T08 ──"
+BG_PIDS=("$T08_PID")
+collect_parallel "init-config" "T08|ruflo init --full"
+_record_phase "groups-3-5-plus-T08" "$(_elapsed_ms "$_g" "$(_ns)")"
 rm -rf "$PARALLEL_DIR"; PARALLEL_DIR=""
 
 # ════════════════════════════════════════════════════════════════════
-# Promote to @latest (local Verdaccio only)
+# Promote to @latest (parallel, local Verdaccio only)
 # ════════════════════════════════════════════════════════════════════
 _p=$(_ns)
 RQ_STORAGE="/home/claude/.verdaccio/storage"
-if [[ "${SKIP_PROMOTE}" != "true" && "$REGISTRY" == *"localhost"* ]]; then
-  log "Promoting packages to @latest..."
+if [[ "${SKIP_PROMOTE}" != "true" && "$REGISTRY" == *"localhost"* && $fail_count -lt $total_count ]]; then
+  log "Promoting packages to @latest (parallel)..."
   promote_count=0
+  promote_pids=()
+  promote_dir=$(mktemp -d /tmp/ruflo-promote-XXXXX)
+
   for pkg_dir in "${RQ_STORAGE}/@sparkleideas"/*/; do
     [[ -d "$pkg_dir" ]] || continue
     pkg_name="@sparkleideas/$(basename "$pkg_dir")"
-    latest_ver=$(npm view "${pkg_name}" version --registry "$REGISTRY" 2>/dev/null) || continue
-    [[ -z "$latest_ver" ]] && continue
-    npm dist-tag add "${pkg_name}@${latest_ver}" latest --registry "$REGISTRY" 2>/dev/null && \
-      promote_count=$((promote_count + 1)) || true
+    (
+      latest_ver=$(npm view "${pkg_name}" version --registry "$REGISTRY" 2>/dev/null) || exit 0
+      [[ -z "$latest_ver" ]] && exit 0
+      npm dist-tag add "${pkg_name}@${latest_ver}" latest --registry "$REGISTRY" 2>/dev/null \
+        && echo "1" > "${promote_dir}/$(basename "$pkg_dir")" || true
+    ) &
+    promote_pids+=($!)
+    # Cap parallelism at 10
+    if [[ ${#promote_pids[@]} -ge 10 ]]; then
+      wait -n 2>/dev/null || true
+    fi
   done
+  wait "${promote_pids[@]}" 2>/dev/null || true
+  promote_count=$(find "$promote_dir" -type f 2>/dev/null | wc -l)
+  rm -rf "$promote_dir"
   log "  Promoted ${promote_count} packages"
+elif [[ $fail_count -ge $total_count ]]; then
+  log "Skipping promote — all tests failed"
 fi
 _record_phase "promote" "$(_elapsed_ms "$_p" "$(_ns)")"
 
@@ -400,7 +417,6 @@ cat > "$results_dir/acceptance-results.json" <<JSONEOF
 }
 JSONEOF
 
-# Timing summary
 log ""
 log "════════════════════════════════════════════"
 log "Acceptance Results: ${pass_count}/${total_count} passed, ${fail_count} failed"
