@@ -218,7 +218,7 @@ check_memory_lifecycle() {
   # Init memory
   local init_out
   local cli; cli=$(_cli_cmd)
-  init_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory init 2>&1) || true
+  init_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory init 2>&1) || true
   if ! echo "$init_out" | grep -qi 'initialized\|verification passed'; then
     _CHECK_OUTPUT="Memory init failed:\n$(echo "$init_out" | tail -10)"
     end_ns=$(date +%s%N 2>/dev/null || echo 0)
@@ -230,7 +230,7 @@ check_memory_lifecycle() {
 
   # Store
   local store_out
-  store_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory store \
+  store_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory store \
     --key "test-pattern" \
     --value "Integration test: JWT auth with refresh tokens for stateless APIs" \
     --namespace test-ns --tags "test,acceptance" 2>&1) || true
@@ -245,7 +245,7 @@ check_memory_lifecycle() {
 
   # Search (semantic)
   local search_out
-  search_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory search \
+  search_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory search \
     --query "authentication tokens" --namespace test-ns 2>&1) || true
   if ! echo "$search_out" | grep -q 'test-pattern'; then
     _CHECK_OUTPUT="Memory search did not find stored entry:\n$(echo "$search_out" | tail -10)"
@@ -258,7 +258,7 @@ check_memory_lifecycle() {
 
   # Retrieve
   local retrieve_out
-  retrieve_out=$(cd "$TEMP_DIR" && timeout 20 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory retrieve \
+  retrieve_out=$(cd "$TEMP_DIR" && timeout --signal=KILL 5 env NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory retrieve \
     --key "test-pattern" --namespace test-ns 2>&1) || true
   if echo "$retrieve_out" | grep -q 'JWT auth'; then
     _CHECK_PASSED="true"
