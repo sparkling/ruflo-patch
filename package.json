@@ -3,7 +3,7 @@
   "version": "3.1.0-alpha.14-patch.15",
   "description": "Drop-in replacement for ruflo/@claude-flow/cli — rebuilt from source with bug fixes and current upstream commits",
   "scripts": {
-    "build": "bash scripts/build.sh --pull",
+    "build": "bash scripts/build.sh",
     "test": "npm run preflight && npm run test:unit",
     "test:unit": "node scripts/test-runner.mjs",
     "test:acceptance": "bash scripts/test-acceptance.sh",
