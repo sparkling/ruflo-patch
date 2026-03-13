@@ -916,16 +916,19 @@ run_build() {
     pkg_build_start=$(date +%s%N 2>/dev/null || echo 0)
 
     # Create a standalone tsconfig that doesn't require project references.
-    # Key fixes: remove composite (breaks without references), set rootDir
-    # to '.' (prevents cross-package imports from blocking emit).
+    # Fixes: remove composite, exclude test files, stub missing modules.
+    # See ADR-0028 for the full rationale.
     local tmp_tsconfig="$pkg_dir/tsconfig.build.json"
     node -e "
-      const ts = JSON.parse(require('fs').readFileSync('$pkg_dir/tsconfig.json', 'utf-8'));
+      const fs = require('fs'), path = require('path');
+      const ts = JSON.parse(fs.readFileSync('$pkg_dir/tsconfig.json', 'utf-8'));
+
+      // Strip project references (we build standalone)
       delete ts.references;
       delete ts.compilerOptions?.composite;
       if (ts.extends) {
         try {
-          const base = JSON.parse(require('fs').readFileSync(require('path').resolve('$pkg_dir', ts.extends), 'utf-8'));
+          const base = JSON.parse(fs.readFileSync(path.resolve('$pkg_dir', ts.extends), 'utf-8'));
           ts.compilerOptions = { ...base.compilerOptions, ...ts.compilerOptions };
           delete ts.extends;
         } catch {}
@@ -933,10 +936,58 @@ run_build() {
       delete ts.compilerOptions.composite;
       ts.compilerOptions.skipLibCheck = true;
       ts.compilerOptions.noEmit = false;
-      // Preserve original rootDir if set (e.g. './src' -> dist/index.js).
-      // Only default to '.' if unset (prevents cross-package rootDir violations).
+
+      // Preserve original rootDir if set (e.g. './src' -> dist/index.js)
       if (!ts.compilerOptions.rootDir) ts.compilerOptions.rootDir = '.';
-      require('fs').writeFileSync('$tmp_tsconfig', JSON.stringify(ts, null, 2));
+
+      // Exclude test files from compilation (they import vitest which isn't installed)
+      if (!ts.exclude) ts.exclude = [];
+      ts.exclude.push('**/*.test.ts', '**/*.spec.ts', '**/__tests__/**');
+
+      // Map sibling @sparkleideas/* packages to their source for type resolution
+      const v3cf = path.resolve('$pkg_dir', '..'); // v3/@claude-flow parent
+      if (fs.existsSync(v3cf)) {
+        if (!ts.compilerOptions.paths) ts.compilerOptions.paths = {};
+        if (!ts.compilerOptions.baseUrl) ts.compilerOptions.baseUrl = '.';
+        for (const sibling of fs.readdirSync(v3cf)) {
+          const sibDir = path.join(v3cf, sibling);
+          const sibPkg = path.join(sibDir, 'package.json');
+          if (!fs.existsSync(sibPkg)) continue;
+          try {
+            const sp = JSON.parse(fs.readFileSync(sibPkg, 'utf-8'));
+            if (sp.name && sp.name.startsWith('@sparkleideas/')) {
+              // Map @sparkleideas/shared -> ../shared/src/index.ts (or dist/index.d.ts)
+              const srcIndex = path.join(sibDir, 'src', 'index.ts');
+              const distIndex = path.join(sibDir, 'dist', 'index.d.ts');
+              if (fs.existsSync(srcIndex)) {
+                ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', srcIndex)];
+              } else if (fs.existsSync(distIndex)) {
+                ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', distIndex)];
+              }
+            }
+          } catch {}
+        }
+      }
+
+      // Stub commonly missing optional modules
+      const stubDir = '$tsc_dir/stubs';
+      if (fs.existsSync(stubDir)) {
+        for (const stub of fs.readdirSync(stubDir).filter(f => f.endsWith('.d.ts'))) {
+          // agentic-flow_embeddings.d.ts -> agentic-flow/embeddings
+          const modName = stub.replace('.d.ts', '').replace(/_/g, '/');
+          if (!ts.compilerOptions.paths[modName]) {
+            ts.compilerOptions.paths[modName] = [path.resolve(stubDir, stub)];
+          }
+        }
+      }
+
+      // Add @types from tsc toolchain so express/cors/fs-extra resolve
+      if (!ts.compilerOptions.typeRoots) ts.compilerOptions.typeRoots = [];
+      ts.compilerOptions.typeRoots.push('$tsc_dir/node_modules/@types');
+      // Also allow node types
+      ts.compilerOptions.typeRoots.push('./node_modules/@types');
+
+      fs.writeFileSync('$tmp_tsconfig', JSON.stringify(ts, null, 2));
     " 2>/dev/null
 
     local ok=0
