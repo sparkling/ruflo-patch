@@ -88,8 +88,30 @@ if [[ "$BUILD_ONLY" != "true" ]]; then
   LOCKFILE="/tmp/ruflo-sync-and-build.lock"
   exec 9>"$LOCKFILE"
   if ! flock -n 9; then
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Another sync-and-build is already running — exiting"
-    exit 0
+    # Lock is held — check if the holder is still alive
+    LOCK_HOLDER=$(fuser "$LOCKFILE" 2>/dev/null | tr -d ' ') || LOCK_HOLDER=""
+    if [[ -n "$LOCK_HOLDER" ]]; then
+      HOLDER_CMD=$(ps -p "$LOCK_HOLDER" -o comm= 2>/dev/null) || HOLDER_CMD=""
+      if [[ "$HOLDER_CMD" == "sleep" ]]; then
+        # Orphaned timeout subprocess holding the lock — kill it and retry
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Stale lock held by orphaned process $LOCK_HOLDER ($HOLDER_CMD) — reclaiming"
+        kill "$LOCK_HOLDER" 2>/dev/null || true
+        sleep 1
+        if ! flock -n 9; then
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Failed to reclaim lock — exiting"
+          exit 0
+        fi
+      else
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Another sync-and-build is running (PID $LOCK_HOLDER, $HOLDER_CMD) — exiting"
+        exit 0
+      fi
+    else
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Lock held by dead process — reclaiming"
+      # Holder is gone, lock fd leaked. Recreate the lock file.
+      rm -f "$LOCKFILE"
+      exec 9>"$LOCKFILE"
+      flock -n 9 || { echo "Failed to reclaim lock — exiting"; exit 0; }
+    fi
   fi
 fi
 
@@ -1830,7 +1852,10 @@ main() {
   log "=========================================="
 
   # Global timeout — 900s
-  ( sleep 900; log_error "[TIMEOUT] sync-and-build.sh exceeded 900s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+  # Close fd 9 (flock) in the subshell so the timeout process does NOT inherit
+  # the lock. Without this, if the main script is killed externally the orphaned
+  # sleep process keeps the flock forever, blocking all future pipeline runs.
+  ( exec 9>&-; sleep 900; log_error "[TIMEOUT] sync-and-build.sh exceeded 900s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
   GLOBAL_TIMEOUT_PID=$!
 
   # Load previous state
