@@ -444,6 +444,28 @@ bump_fork_versions() {
   log "Build set (source changed): ${DIRECTLY_CHANGED_JSON}"
   log "Publish set (+ dependents): ${CHANGED_PACKAGES_JSON}"
 
+  # If no packages changed (e.g., commit was outside any package dir), skip build+publish
+  if [[ "${CHANGED_PACKAGES_JSON}" == "[]" ]]; then
+    log "No packages changed — skipping build and publish"
+    log "  (The merge was detected but no package.json was in the changed files)"
+    # Still save state so we don't re-detect this merge next run
+    for i in "${!FORK_NAMES[@]}"; do
+      local dir="${FORK_DIRS[$i]}"
+      local name="${FORK_NAMES[$i]}"
+      [[ -d "${dir}/.git" ]] || continue
+      local sha
+      sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
+      case "$name" in
+        ruflo)        NEW_RUFLO_HEAD="$sha" ;;
+        agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
+        ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+        ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
+      esac
+    done
+    save_state
+    return 0
+  fi
+
   # Commit and push each fork that changed
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
