@@ -158,6 +158,10 @@ DIRECTLY_CHANGED_JSON="all"
 # Build version (set by read_build_version)
 BUILD_VERSION=""
 
+# Build stats (set by run_build, used by write_build_manifest to avoid re-scanning)
+BUILD_COMPILED_COUNT=""
+BUILD_TOTAL_COUNT=""
+
 # Deferred version bump pushes (populated by bump_fork_versions, pushed after publish)
 PENDING_VERSION_PUSHES=()
 
@@ -510,15 +514,28 @@ push_fork_version_bumps() {
   if [[ ${#PENDING_VERSION_PUSHES[@]} -eq 0 ]]; then
     return 0
   fi
-  log "Pushing deferred version bumps to ${#PENDING_VERSION_PUSHES[@]} fork(s)"
+  log "Pushing deferred version bumps to ${#PENDING_VERSION_PUSHES[@]} fork(s) (parallel)"
+  local push_pids=()
+  local _push_start
+  _push_start=$(date +%s%N 2>/dev/null || echo 0)
   for dir in "${PENDING_VERSION_PUSHES[@]}"; do
     local name
     name=$(basename "$dir")
-    log "  Pushing version bump for ${name}"
-    git -C "${dir}" push origin main --quiet 2>/dev/null || {
-      log "WARNING: Failed to push version bump for ${name} — will retry next run"
-    }
+    (
+      git -C "${dir}" push origin main --quiet 2>/dev/null || {
+        echo "WARNING: Failed to push version bump for ${name}" >&2
+      }
+    ) &
+    push_pids+=($!)
   done
+  wait "${push_pids[@]}" 2>/dev/null || true
+  local _push_end
+  _push_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_push_start" != "0" && "$_push_end" != "0" ]]; then
+    local _push_ms=$(( (_push_end - _push_start) / 1000000 ))
+    log "  Parallel push completed in ${_push_ms}ms"
+    add_cmd_timing "push-versions" "git push (${#PENDING_VERSION_PUSHES[@]} forks parallel)" "${_push_ms}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -536,31 +553,37 @@ sync_upstream() {
   # Track which forks need syncing
   declare -a forks_to_sync=()
 
+  # Parallel upstream fetch — add remotes first, then fetch all at once
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    if ! git -C "${dir}" remote get-url upstream &>/dev/null; then
+      git -C "${dir}" remote add upstream "${UPSTREAM_URLS[$i]}" 2>/dev/null || true
+    fi
+  done
+
+  local _uf_start _uf_end
+  _uf_start=$(date +%s%N 2>/dev/null || echo 0)
+  local upstream_fetch_pids=()
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    git -C "${dir}" fetch upstream main --quiet 2>/dev/null &
+    upstream_fetch_pids+=($!)
+  done
+  wait "${upstream_fetch_pids[@]}" 2>/dev/null || true
+  _uf_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_uf_start" != "0" && "$_uf_end" != "0" ]]; then
+    local _uf_ms=$(( (_uf_end - _uf_start) / 1000000 ))
+    log "  fetch all upstream (parallel): ${_uf_ms}ms"
+    add_cmd_timing "sync-upstream" "git fetch upstream all (parallel)" "${_uf_ms}"
+  fi
+
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
 
     [[ -d "${dir}/.git" ]] || continue
-
-    # Add upstream remote if not present
-    if ! git -C "${dir}" remote get-url upstream &>/dev/null; then
-      git -C "${dir}" remote add upstream "${UPSTREAM_URLS[$i]}" 2>/dev/null || true
-    fi
-
-    # Fetch upstream
-    log "Fetching upstream for ${name}"
-    local _uf_start _uf_end
-    _uf_start=$(date +%s%N 2>/dev/null || echo 0)
-    git -C "${dir}" fetch upstream main --quiet 2>/dev/null || {
-      log_error "Failed to fetch upstream for ${name}"
-      continue
-    }
-    _uf_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$_uf_start" != "0" && "$_uf_end" != "0" ]]; then
-      local _uf_ms=$(( (_uf_end - _uf_start) / 1000000 ))
-      log "  fetch upstream ${name}: ${_uf_ms}ms"
-      add_cmd_timing "sync-upstream" "git fetch upstream ${name}" "${_uf_ms}"
-    fi
 
     local upstream_sha last_synced_sha
     upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || continue
@@ -803,16 +826,37 @@ copy_source() {
   mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN" "${TEMP_DIR}/cross-repo/ruvector"
 
   _cp_start=$(date +%s%N 2>/dev/null || echo 0)
-  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" &
+  local rsync_status_dir
+  rsync_status_dir=$(mktemp -d /tmp/ruflo-rsync-XXXXX)
+
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
+    && touch "${rsync_status_dir}/ruflo" &
   local pid_ruflo=$!
-  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" \
+    && touch "${rsync_status_dir}/agentic" &
   local pid_agentic=$!
-  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" \
+    && touch "${rsync_status_dir}/fann" &
   local pid_fann=$!
-  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" \
+    && touch "${rsync_status_dir}/ruvector" &
   local pid_ruvector=$!
   wait $pid_ruflo $pid_agentic $pid_fann $pid_ruvector
   _cp_end=$(date +%s%N 2>/dev/null || echo 0)
+
+  # Verify all rsync operations succeeded
+  local rsync_failures=0
+  for fork_name in ruflo agentic fann ruvector; do
+    if [[ ! -f "${rsync_status_dir}/${fork_name}" ]]; then
+      log_error "rsync failed for ${fork_name}"
+      rsync_failures=$((rsync_failures + 1))
+    fi
+  done
+  rm -rf "${rsync_status_dir}"
+  if [[ $rsync_failures -gt 0 ]]; then
+    log_error "${rsync_failures} rsync operation(s) failed — aborting build"
+    return 1
+  fi
 
   local _cp_ms=0
   if [[ "$_cp_start" != "0" && "$_cp_end" != "0" ]]; then
@@ -851,6 +895,16 @@ write_build_manifest() {
   local codemod_hash
   codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
 
+  # Use pre-computed counts from run_build if available, else scan (for --build-only without run_build)
+  local compiled_count="${BUILD_COMPILED_COUNT:-}"
+  local total_count="${BUILD_TOTAL_COUNT:-}"
+  if [[ -z "$compiled_count" ]]; then
+    compiled_count=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
+  fi
+  if [[ -z "$total_count" ]]; then
+    total_count=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" -exec grep -l '"@sparkleideas/' {} + 2>/dev/null | wc -l)
+  fi
+
   cat > "$manifest" <<MANIFESTEOF
 {
   "version": 2,
@@ -860,8 +914,8 @@ write_build_manifest() {
   "fann_head": "${NEW_FANN_HEAD:-}",
   "ruvector_head": "${NEW_RUVECTOR_HEAD:-}",
   "codemod_hash": "${codemod_hash}",
-  "packages_compiled": $(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l),
-  "packages_total": $(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
+  "packages_compiled": ${compiled_count},
+  "packages_total": ${total_count}
 }
 MANIFESTEOF
   _wm_end=$(date +%s%N 2>/dev/null || echo 0)
@@ -909,9 +963,8 @@ check_build_freshness() {
 # ---------------------------------------------------------------------------
 
 run_build() {
-  # Remove .npmignore and .gitignore so npm publish uses "files" from package.json
-  find "${TEMP_DIR}" -name ".npmignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
-  find "${TEMP_DIR}" -name ".gitignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
+  # Remove .npmignore and .gitignore so npm publish uses "files" from package.json (single find)
+  find "${TEMP_DIR}" \( -name ".npmignore" -o -name ".gitignore" \) -not -path "*/node_modules/*" -delete 2>/dev/null || true
 
   local v3_dir="${TEMP_DIR}/v3"
   if [[ ! -d "$v3_dir" ]]; then
@@ -1428,10 +1481,11 @@ TSSTUB
 
   log "Build complete: ${built} built, ${skipped} skipped, ${failed} failed"
 
+  # Single combined scan (avoids running find twice for the same data)
   local total_packages compiled_packages pre_built_packages _scan_start _scan_end
   _scan_start=$(date +%s%N 2>/dev/null || echo 0)
-  total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
   compiled_packages=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
+  total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" -exec grep -l '"@sparkleideas/' {} + 2>/dev/null | wc -l)
   pre_built_packages=$((total_packages - compiled_packages))
   _scan_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$_scan_start" != "0" && "$_scan_end" != "0" ]]; then
@@ -1443,6 +1497,10 @@ TSSTUB
   if [[ $failed -gt 0 ]]; then
     log_error "Some packages failed to build — published packages may be broken"
   fi
+
+  # Export build stats for manifest (written by write_build_manifest after build completes)
+  BUILD_COMPILED_COUNT=$compiled_packages
+  BUILD_TOTAL_COUNT=$total_packages
 }
 
 # ---------------------------------------------------------------------------

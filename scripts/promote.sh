@@ -211,9 +211,16 @@ for pkg in "${!PKG_VERSIONS[@]}"; do
 done
 wait
 
-# Count results from temp files
-PROMOTED=$(grep -rl "OK" "$PROMOTE_RESULTS_DIR" 2>/dev/null | wc -l)
-FAILURES=$(grep -rl "FAIL" "$PROMOTE_RESULTS_DIR" 2>/dev/null | wc -l)
+# Count results from temp files (single pass instead of two greps)
+PROMOTED=0
+FAILURES=0
+for result_file in "$PROMOTE_RESULTS_DIR"/*; do
+  [[ -f "$result_file" ]] || continue
+  case "$(cat "$result_file" 2>/dev/null)" in
+    OK)   PROMOTED=$((PROMOTED + 1)) ;;
+    FAIL) FAILURES=$((FAILURES + 1)) ;;
+  esac
+done
 rm -rf "$PROMOTE_RESULTS_DIR"
 
 # ---------- Update state file ----------

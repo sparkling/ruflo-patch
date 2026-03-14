@@ -311,10 +311,15 @@ rq_total=0
 rq_results_json="[]"
 
 _escape_json() {
-  printf '%s' "${1:-}" | head -c 4096 | python3 -c '
-import sys, json
-print(json.dumps(sys.stdin.read()), end="")
-' 2>/dev/null || echo '""'
+  # Pure bash JSON escaping — avoids spawning Python subprocess per check (~2-3s total saving)
+  local s="${1:-}"
+  s="${s:0:4096}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
 }
 
 run_check() {
