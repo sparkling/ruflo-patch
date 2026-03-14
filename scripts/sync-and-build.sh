@@ -189,6 +189,40 @@ log_error() {
 # Email notification helper
 # ---------------------------------------------------------------------------
 
+# Get the GitHub web URL for a fork directory (strips .git suffix)
+_fork_url() {
+  local dir="$1"
+  git -C "${dir}" remote get-url origin 2>/dev/null | sed 's/\.git$//' || echo ""
+}
+
+# Get the upstream GitHub web URL for a fork directory
+_upstream_url() {
+  local dir="$1"
+  git -C "${dir}" remote get-url upstream 2>/dev/null | sed 's/\.git$//' || echo ""
+}
+
+# Build a link block for email body: upstream commit, fork repo, fork commit
+_email_links() {
+  local dir="$1" name="$2"
+  local fork_url upstream_url upstream_sha fork_sha links=""
+
+  fork_url=$(_fork_url "$dir")
+  upstream_url=$(_upstream_url "$dir")
+  upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || upstream_sha=""
+  fork_sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || fork_sha=""
+
+  if [[ -n "$upstream_url" && -n "$upstream_sha" ]]; then
+    links="${links}\nUpstream commit: ${upstream_url}/commit/${upstream_sha}"
+  fi
+  if [[ -n "$fork_url" ]]; then
+    links="${links}\nFork repo: ${fork_url}"
+  fi
+  if [[ -n "$fork_url" && -n "$fork_sha" ]]; then
+    links="${links}\nFork commit: ${fork_url}/commit/${fork_sha}"
+  fi
+  echo "$links"
+}
+
 send_email() {
   local subject="$1"
   local body="$2"
@@ -200,8 +234,8 @@ send_email() {
   fi
 
   if command -v sendmail &>/dev/null; then
-    printf 'From: Ruflo Patch Monitor <%s>\nTo: %s\nSubject: %s\nContent-Type: text/plain; charset=utf-8\n\n%s\n\n--\nRuflo Patch Monitor\nhttps://github.com/sparkling/ruflo-patch\n' \
-      "$recipient" "$recipient" "$subject" "$body" | sendmail "$recipient" 2>/dev/null || {
+    printf 'From: Ruflo Patch Monitor <do-not-reply-ruflo-patching-monitor@sparklingideas.co.uk>\nTo: %s\nSubject: %s\nContent-Type: text/plain; charset=utf-8\n\n%s\n\n--\nRuflo Patch Monitor\nhttps://github.com/sparkling/ruflo-patch\n' \
+      "$recipient" "$subject" "$body" | sendmail "$recipient" 2>/dev/null || {
       log "WARNING: sendmail failed for: ${subject}"
     }
   elif command -v mail &>/dev/null; then
@@ -680,10 +714,10 @@ sync_upstream() {
       conflict_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
         "Merge conflict when syncing upstream/main. Manual resolution required.")
 
-      local conflict_email_body="Upstream sync for ${name} has merge conflicts.\nBranch: ${branch_name}\nManual resolution required."
-      if [[ -n "$conflict_pr_url" ]]; then
-        conflict_email_body="${conflict_email_body}\nPR: ${conflict_pr_url}"
-      fi
+      local conflict_links; conflict_links=$(_email_links "$dir" "$name")
+      local conflict_email_body="Upstream sync for ${name} has merge conflicts.\n\nBranch: ${branch_name}\nFork: ${name}\nManual resolution required."
+      [[ -n "$conflict_pr_url" ]] && conflict_email_body="${conflict_email_body}\n\nPR: ${conflict_pr_url}"
+      conflict_email_body="${conflict_email_body}\n${conflict_links}"
       send_email "[ruflo] Merge conflict in ${name}" "$conflict_email_body"
       create_failure_issue "sync-conflict-${name}" "1"
       return 1
@@ -738,10 +772,10 @@ sync_upstream() {
         ce_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
           "TypeScript compilation failed after merging upstream/main.")
 
-        local ce_email_body="TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
-        if [[ -n "$ce_pr_url" ]]; then
-          ce_email_body="${ce_email_body}\nPR: ${ce_pr_url}"
-        fi
+        local ce_links; ce_links=$(_email_links "$dir" "$name")
+        local ce_email_body="TypeScript compilation failed for ${name} after syncing upstream.\n\nBranch: ${branch_name}\nFork: ${name}"
+        [[ -n "$ce_pr_url" ]] && ce_email_body="${ce_email_body}\n\nPR: ${ce_pr_url}"
+        ce_email_body="${ce_email_body}\n${ce_links}"
         send_email "[ruflo] Compile error in ${name} sync" "$ce_email_body"
         create_failure_issue "sync-compile-error-${name}" "1"
 
@@ -773,10 +807,10 @@ sync_upstream() {
         ce2_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
           "TypeScript compilation failed after merging upstream/main.")
 
-        local ce2_email_body="TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
-        if [[ -n "$ce2_pr_url" ]]; then
-          ce2_email_body="${ce2_email_body}\nPR: ${ce2_pr_url}"
-        fi
+        local ce2_links; ce2_links=$(_email_links "$dir" "$name")
+        local ce2_email_body="TypeScript compilation failed for ${name} after syncing upstream.\n\nBranch: ${branch_name}\nFork: ${name}"
+        [[ -n "$ce2_pr_url" ]] && ce2_email_body="${ce2_email_body}\n\nPR: ${ce2_pr_url}"
+        ce2_email_body="${ce2_email_body}\n${ce2_links}"
         send_email "[ruflo] Compile error in ${name} sync" "$ce2_email_body"
         create_failure_issue "sync-compile-error-${name}" "1"
 
@@ -1714,17 +1748,38 @@ create_failure_issue() {
   local phase="$1"
   local exit_code="$2"
 
-  local title="Build failure in phase: ${phase}"
+  # Extract fork name from phase if present (e.g., "sync-conflict-ruflo" → "ruflo")
+  local fork_name=""
+  if [[ "$phase" == *-ruflo ]]; then fork_name="ruflo"
+  elif [[ "$phase" == *-agentic-flow ]]; then fork_name="agentic-flow"
+  elif [[ "$phase" == *-ruv-FANN ]]; then fork_name="ruv-FANN"
+  elif [[ "$phase" == *-ruvector ]]; then fork_name="ruvector"
+  fi
+
+  local fork_info=""
+  if [[ -n "$fork_name" ]]; then
+    local fork_idx=-1
+    for i in "${!FORK_NAMES[@]}"; do
+      [[ "${FORK_NAMES[$i]}" == "$fork_name" ]] && fork_idx=$i && break
+    done
+    if [[ $fork_idx -ge 0 ]]; then
+      local dir="${FORK_DIRS[$fork_idx]}"
+      local links; links=$(_email_links "$dir" "$fork_name")
+      fork_info="\n**Fork**: ${fork_name}${links}"
+    fi
+  fi
+
+  local title="Build failure: ${phase}"
   local body="The automated ruflo build failed.
 
 **Phase**: ${phase}
 **Exit code**: ${exit_code}
 **Timestamp**: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
-**Server**: $(hostname)
+**Server**: $(hostname)${fork_info}
 
 Check build logs:
 \`\`\`bash
-journalctl -u ruflo-sync --since '1 hour ago' --no-pager
+journalctl --user -u ruflo-sync --since '1 hour ago' --no-pager
 \`\`\`"
 
   log_error "Creating failure issue: ${title}"
@@ -1734,7 +1789,7 @@ journalctl -u ruflo-sync --since '1 hour ago' --no-pager
     --label "build-failure" \
     2>/dev/null || log_error "Could not create GitHub issue (gh CLI failed)"
 
-  send_email "[ruflo] Build failure: ${phase}" "$body"
+  send_email "[ruflo] ${title}" "$body"
 }
 
 # ---------------------------------------------------------------------------
@@ -2083,19 +2138,19 @@ run_stage1_sync() {
       local ready_pr_url
       ready_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
         "All tests passed (L0-L3). Ready for review and merge.")
-      local ready_email_body="Upstream sync for ${name} is ready for review.\nBranch: ${current_branch}\nAll L0-L3 tests passed."
-      if [[ -n "$ready_pr_url" ]]; then
-        ready_email_body="${ready_email_body}\nPR: ${ready_pr_url}"
-      fi
+      local ready_links; ready_links=$(_email_links "$dir" "$name")
+      local ready_email_body="Upstream sync for ${name} is ready for review.\n\nBranch: ${current_branch}\nFork: ${name}\nAll L0-L3 tests passed."
+      [[ -n "$ready_pr_url" ]] && ready_email_body="${ready_email_body}\n\nPR: ${ready_pr_url}"
+      ready_email_body="${ready_email_body}\n${ready_links}"
       send_email "[ruflo] Sync PR ready for ${name}" "$ready_email_body"
     else
       local fail_pr_url
       fail_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "test-failure" \
         "Tests failed during sync validation. Review required.")
-      local fail_email_body="Upstream sync for ${name} failed tests.\nBranch: ${current_branch}\nManual review required."
-      if [[ -n "$fail_pr_url" ]]; then
-        fail_email_body="${fail_email_body}\nPR: ${fail_pr_url}"
-      fi
+      local fail_links; fail_links=$(_email_links "$dir" "$name")
+      local fail_email_body="Upstream sync for ${name} failed tests.\n\nBranch: ${current_branch}\nFork: ${name}\nManual review required."
+      [[ -n "$fail_pr_url" ]] && fail_email_body="${fail_email_body}\n\nPR: ${fail_pr_url}"
+      fail_email_body="${fail_email_body}\n${fail_links}"
       send_email "[ruflo] Sync test failure for ${name}" "$fail_email_body"
       create_failure_issue "sync-test-failure-${name}" "1"
     fi
