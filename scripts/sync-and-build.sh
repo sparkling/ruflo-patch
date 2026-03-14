@@ -116,6 +116,14 @@ if [[ "$BUILD_ONLY" != "true" ]]; then
 fi
 
 # ---------------------------------------------------------------------------
+# Environment configuration
+# ---------------------------------------------------------------------------
+# RUFLO_NOTIFY_EMAIL — recipient for pipeline email notifications.
+# Set in secrets.env (EnvironmentFile in systemd unit) or export before running.
+# When unset, email notifications are logged but not sent.
+: "${RUFLO_NOTIFY_EMAIL:=}"
+
+# ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
 
@@ -253,6 +261,26 @@ load_state() {
         UPSTREAM_RUVECTOR_SHA) UPSTREAM_RUVECTOR_SHA="${value}" ;;
       esac
     done < "${STATE_FILE}"
+
+    # Validate SHA format (40-char hex) — reject corrupted/truncated values
+    _validate_sha() {
+      local val="$1" name="$2"
+      if [[ -n "$val" && ! "$val" =~ ^[0-9a-f]{40}$ ]]; then
+        log "WARNING: Invalid SHA for ${name} in state file: '${val:0:20}...' — treating as first run"
+        echo ""
+      else
+        echo "$val"
+      fi
+    }
+    RUFLO_HEAD=$(_validate_sha "$RUFLO_HEAD" "RUFLO_HEAD")
+    AGENTIC_HEAD=$(_validate_sha "$AGENTIC_HEAD" "AGENTIC_HEAD")
+    FANN_HEAD=$(_validate_sha "$FANN_HEAD" "FANN_HEAD")
+    RUVECTOR_HEAD=$(_validate_sha "$RUVECTOR_HEAD" "RUVECTOR_HEAD")
+    UPSTREAM_RUFLO_SHA=$(_validate_sha "$UPSTREAM_RUFLO_SHA" "UPSTREAM_RUFLO_SHA")
+    UPSTREAM_AGENTIC_SHA=$(_validate_sha "$UPSTREAM_AGENTIC_SHA" "UPSTREAM_AGENTIC_SHA")
+    UPSTREAM_FANN_SHA=$(_validate_sha "$UPSTREAM_FANN_SHA" "UPSTREAM_FANN_SHA")
+    UPSTREAM_RUVECTOR_SHA=$(_validate_sha "$UPSTREAM_RUVECTOR_SHA" "UPSTREAM_RUVECTOR_SHA")
+
     log "State loaded: RUFLO=${RUFLO_HEAD:0:12}, AGENTIC=${AGENTIC_HEAD:0:12}, FANN=${FANN_HEAD:0:12}, RUVECTOR=${RUVECTOR_HEAD:0:12}"
   else
     log "No state file found — first run"
@@ -611,6 +639,22 @@ sync_upstream() {
     return 1
   fi
 
+  # Clean up stale local sync branches from previous runs
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    local stale_branches
+    stale_branches=$(git -C "${dir}" branch --list 'sync/*' 2>/dev/null) || true
+    if [[ -n "$stale_branches" ]]; then
+      git -C "${dir}" checkout main --quiet 2>/dev/null || true
+      echo "$stale_branches" | while IFS= read -r branch; do
+        branch=$(echo "$branch" | tr -d ' *')
+        [[ -n "$branch" ]] && git -C "${dir}" branch -D "$branch" --quiet 2>/dev/null || true
+      done
+      log "  Cleaned stale sync branches in ${FORK_NAMES[$i]}"
+    fi
+  done
+
   # Create sync branches and merge upstream
   for i in "${forks_to_sync[@]}"; do
     local name="${FORK_NAMES[$i]}"
@@ -632,11 +676,16 @@ sync_upstream() {
 
       # Push the branch and create a PR with conflict label
       git -C "${dir}" checkout main --quiet 2>/dev/null
-      create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
-        "Merge conflict when syncing upstream/main. Manual resolution required."
+      local conflict_pr_url
+      conflict_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
+        "Merge conflict when syncing upstream/main. Manual resolution required.")
 
-      send_email "[ruflo] Merge conflict in ${name}" \
-        "Upstream sync for ${name} has merge conflicts.\nBranch: ${branch_name}\nManual resolution required."
+      local conflict_email_body="Upstream sync for ${name} has merge conflicts.\nBranch: ${branch_name}\nManual resolution required."
+      if [[ -n "$conflict_pr_url" ]]; then
+        conflict_email_body="${conflict_email_body}\nPR: ${conflict_pr_url}"
+      fi
+      send_email "[ruflo] Merge conflict in ${name}" "$conflict_email_body"
+      create_failure_issue "sync-conflict-${name}" "1"
       return 1
     fi
     _merge_end=$(date +%s%N 2>/dev/null || echo 0)
@@ -685,11 +734,16 @@ sync_upstream() {
         fi
         log_error "Type-check failed for ${name}"
 
-        create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
-          "TypeScript compilation failed after merging upstream/main."
+        local ce_pr_url
+        ce_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
+          "TypeScript compilation failed after merging upstream/main.")
 
-        send_email "[ruflo] Compile error in ${name} sync" \
-          "TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
+        local ce_email_body="TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
+        if [[ -n "$ce_pr_url" ]]; then
+          ce_email_body="${ce_email_body}\nPR: ${ce_pr_url}"
+        fi
+        send_email "[ruflo] Compile error in ${name} sync" "$ce_email_body"
+        create_failure_issue "sync-compile-error-${name}" "1"
 
         git -C "${dir}" checkout main --quiet 2>/dev/null
         return 1
@@ -715,11 +769,16 @@ sync_upstream() {
       if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>/dev/null); then
         log_error "Type-check failed for ${name}"
 
-        create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
-          "TypeScript compilation failed after merging upstream/main."
+        local ce2_pr_url
+        ce2_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
+          "TypeScript compilation failed after merging upstream/main.")
 
-        send_email "[ruflo] Compile error in ${name} sync" \
-          "TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
+        local ce2_email_body="TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
+        if [[ -n "$ce2_pr_url" ]]; then
+          ce2_email_body="${ce2_email_body}\nPR: ${ce2_pr_url}"
+        fi
+        send_email "[ruflo] Compile error in ${name} sync" "$ce2_email_body"
+        create_failure_issue "sync-compile-error-${name}" "1"
 
         # Switch back to main
         git -C "${dir}" checkout main --quiet 2>/dev/null
@@ -790,15 +849,18 @@ ${body}"
 
   local _pr_create_start _pr_create_end
   _pr_create_start=$(date +%s%N 2>/dev/null || echo 0)
-  gh pr create \
+  # Capture PR URL from gh pr create stdout
+  local pr_url
+  pr_url=$(gh pr create \
     --repo "$repo_slug" \
     --head "$branch" \
     --base main \
     --title "$pr_title" \
     --body "$pr_body" \
     --label "$label" \
-    2>/dev/null || {
+    2>/dev/null) || {
       log_error "Failed to create PR for ${name} (non-fatal)"
+      pr_url=""
     }
   _pr_create_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$_pr_create_start" != "0" && "$_pr_create_end" != "0" ]]; then
@@ -806,6 +868,13 @@ ${body}"
     log "  gh pr create ${name}: ${_pr_create_ms}ms"
     add_cmd_timing "create-pr" "gh pr create ${name}" "${_pr_create_ms}"
   fi
+
+  if [[ -n "$pr_url" ]]; then
+    log "  PR created: ${pr_url}"
+  fi
+
+  # Return PR URL to caller via stdout
+  echo "${pr_url}"
 }
 
 # ---------------------------------------------------------------------------
@@ -1922,6 +1991,21 @@ run_stage1_sync() {
   # if the build/test phase below fails
   save_state
 
+  # Read current fork HEADs for verify dedup check
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    local name="${FORK_NAMES[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    local sha
+    sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
+    case "$name" in
+      ruflo)        NEW_RUFLO_HEAD="$sha" ;;
+      agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
+      ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
+    esac
+  done
+
   # D1: Reuse build artifacts if the publish stage already built from the
   # same fork HEADs (avoids redundant copy+codemod+build ~26s)
   if check_build_freshness; then
@@ -1996,18 +2080,32 @@ run_stage1_sync() {
     [[ "$current_branch" == sync/* ]] || continue
 
     if [[ "$tests_passed" == "true" ]]; then
-      create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
-        "All tests passed (L0-L3). Ready for review and merge."
-      send_email "[ruflo] Sync PR ready for ${name}" \
-        "Upstream sync for ${name} is ready for review.\nBranch: ${current_branch}\nAll L0-L3 tests passed."
+      local ready_pr_url
+      ready_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
+        "All tests passed (L0-L3). Ready for review and merge.")
+      local ready_email_body="Upstream sync for ${name} is ready for review.\nBranch: ${current_branch}\nAll L0-L3 tests passed."
+      if [[ -n "$ready_pr_url" ]]; then
+        ready_email_body="${ready_email_body}\nPR: ${ready_pr_url}"
+      fi
+      send_email "[ruflo] Sync PR ready for ${name}" "$ready_email_body"
     else
-      create_sync_pr "${dir}" "${name}" "${current_branch}" "test-failure" \
-        "Tests failed during sync validation. Review required."
-      send_email "[ruflo] Sync test failure for ${name}" \
-        "Upstream sync for ${name} failed tests.\nBranch: ${current_branch}\nManual review required."
+      local fail_pr_url
+      fail_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "test-failure" \
+        "Tests failed during sync validation. Review required.")
+      local fail_email_body="Upstream sync for ${name} failed tests.\nBranch: ${current_branch}\nManual review required."
+      if [[ -n "$fail_pr_url" ]]; then
+        fail_email_body="${fail_email_body}\nPR: ${fail_pr_url}"
+      fi
+      send_email "[ruflo] Sync test failure for ${name}" "$fail_email_body"
+      create_failure_issue "sync-test-failure-${name}" "1"
     fi
 
     # Switch back to main
+    git -C "${dir}" checkout main --quiet 2>/dev/null || true
+  done
+
+  # Ensure all forks are back on main after sync
+  for dir in "${FORK_DIRS[@]}"; do
     git -C "${dir}" checkout main --quiet 2>/dev/null || true
   done
 
