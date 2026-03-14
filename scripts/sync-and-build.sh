@@ -917,7 +917,7 @@ declare module 'express' {
   export interface Express { use(...args: any[]): any; get(...args: any[]): any; post(...args: any[]): any; listen(...args: any[]): any; }
   export interface Router { use(...args: any[]): any; get(...args: any[]): any; post(...args: any[]): any; }
   function express(): Express;
-  namespace express { function Router(): Router; function json(): any; function urlencoded(opts?: any): any; function static(root: string): any; }
+  namespace express { function Router(): Router; function json(opts?: any): any; function urlencoded(opts?: any): any; function static(root: string): any; }
   export = express;
 }
 TSSTUB
@@ -952,13 +952,14 @@ declare module 'vitest' {
   export function describe(name: string, fn: () => void): void;
   export function it(name: string, fn: () => void | Promise<void>): void;
   export function test(name: string, fn: () => void | Promise<void>): void;
-  export function expect(value: any): any;
+  export const expect: ((value: any) => any) & { extend(matchers: Record<string, any>): void };
   export function beforeEach(fn: () => void | Promise<void>): void;
   export function afterEach(fn: () => void | Promise<void>): void;
   export function beforeAll(fn: () => void | Promise<void>): void;
   export function afterAll(fn: () => void | Promise<void>): void;
   export const vi: any;
-  export type Mock = any;
+  export type Mock<T = any> = ((...args: any[]) => T) & { mock: { calls: any[][]; results: any[]; instances: any[]; invocationCallOrder: number[]; lastCall: any[] }; mockReturnValue(v: any): Mock<T>; mockResolvedValue(v: any): Mock<T>; mockRejectedValue(v: any): Mock<T>; mockImplementation(fn: (...args: any[]) => any): Mock<T>; mockReturnValueOnce(v: any): Mock<T>; mockResolvedValueOnce(v: any): Mock<T>; mockRejectedValueOnce(v: any): Mock<T>; getMockImplementation(): ((...args: any[]) => any) | undefined; mockClear(): void; mockReset(): void; mockRestore(): void; };
+  export type ExpectStatic = typeof expect;
 }
 TSSTUB
     cat > "${tsc_dir}/stubs/@ruvector_attention.d.ts" << 'TSSTUB'
@@ -968,11 +969,13 @@ declare module '@ruvector/attention' {
   export function multiHeadAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], c: AttentionConfig): Float32Array;
   export function flashAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], bs?: number): Float32Array;
   export function hyperbolicAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], c?: number): Float32Array;
-  export class FlashAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; computeRaw(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class DotProductAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class MultiHeadAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class LinearAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class HyperbolicAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export type ArrayInput = Float32Array | number[];
+  export interface BenchmarkResult { name: string; ops: number; mean: number; median: number; stddev: number; min: number; max: number; }
+  export class FlashAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; computeRaw(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class DotProductAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; computeRaw(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class MultiHeadAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class LinearAttention { constructor(dim: number, seqLen: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class HyperbolicAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
   export class MoEAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
   export class InfoNceLoss { constructor(c?: any); compute(a: Float32Array[], p: Float32Array[], n?: Float32Array[]): number; }
   export class AdamWOptimizer { constructor(c?: any); step(p: Float32Array, g: Float32Array): Float32Array; }
