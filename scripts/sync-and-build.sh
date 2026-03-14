@@ -328,14 +328,19 @@ _email_html_body() {
     safe_msg="${safe_msg//</&lt;}"
     safe_msg="${safe_msg//>/&gt;}"
     safe_msg="${safe_msg//$'\n'/<br>}"
+    # Auto-link URLs
     safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <]+)|<a href="\1" style="color:#2563eb;text-decoration:none">\1</a>|g')
+    # Auto-link #NNN issue/PR references to upstream repo
+    if [[ -n "${_EML_UPSTREAM_URL:-}" ]]; then
+      safe_msg=$(echo "$safe_msg" | sed -E "s|#([0-9]+)|<a href=\"${_EML_UPSTREAM_URL}/pull/\1\" style=\"color:#2563eb;text-decoration:none\">#\1</a>|g")
+    fi
     commit_msg_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Upstream Commit Message</div><div style=\"padding:10px 0;background:#f9fafb;border-left:3px solid ${color};padding-left:12px;font-size:13px;color:#374151;line-height:1.6\">${safe_msg}</div></div>"
   fi
 
   # ── Error/debug output block ──
   local extra_html=""
   if [[ -n "$extra" ]]; then
-    extra_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Error Details</div><pre style=\"margin:0;padding:10px 12px;background:#1f2937;border-radius:4px;${mono};font-size:12px;color:#e5e7eb;line-height:1.6;white-space:pre-wrap;overflow-x:auto\">${extra}</pre></div>"
+    extra_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Error Details</div><pre style=\"margin:0;padding:10px 0 10px 12px;background:#f9fafb;border-left:3px solid ${color};${mono};font-size:12px;color:#374151;line-height:1.6;white-space:pre-wrap;overflow-x:auto\">${extra}</pre></div>"
   fi
 
   cat <<EMAILHTML
