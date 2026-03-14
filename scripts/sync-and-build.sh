@@ -192,13 +192,22 @@ log_error() {
 # Get the GitHub web URL for a fork directory (strips .git suffix)
 _fork_url() {
   local dir="$1"
-  git -C "${dir}" remote get-url origin 2>/dev/null | sed 's/\.git$//' || echo ""
+  local url
+  url=$(git -C "${dir}" remote get-url origin 2>/dev/null) || echo ""
+  # Convert SSH URLs (git@github.com:user/repo.git) to HTTPS
+  url="${url%.git}"
+  url=$(echo "$url" | sed -E 's|^git@github\.com:|https://github.com/|')
+  echo "$url"
 }
 
 # Get the upstream GitHub web URL for a fork directory
 _upstream_url() {
   local dir="$1"
-  git -C "${dir}" remote get-url upstream 2>/dev/null | sed 's/\.git$//' || echo ""
+  local url
+  url=$(git -C "${dir}" remote get-url upstream 2>/dev/null) || echo ""
+  url="${url%.git}"
+  url=$(echo "$url" | sed -E 's|^git@github\.com:|https://github.com/|')
+  echo "$url"
 }
 
 # Build a link block for email body: upstream commit, fork repo, fork commit
@@ -278,7 +287,7 @@ _email_html_body() {
   # ── Build metadata rows ──
   local td_label="padding:8px 12px;font-weight:600;color:#374151;white-space:nowrap;border-bottom:1px solid #f3f4f6"
   local td_value="padding:8px 12px;border-bottom:1px solid #f3f4f6"
-  local link_style="color:#2563eb;text-decoration:none"
+  local link_style="color:#2563eb;text-decoration:underline"
   local mono="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px"
   local rows=""
 
@@ -329,10 +338,10 @@ _email_html_body() {
     safe_msg="${safe_msg//>/&gt;}"
     safe_msg="${safe_msg//$'\n'/<br>}"
     # Auto-link URLs
-    safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <]+)|<a href="\1" style="color:#2563eb;text-decoration:none">\1</a>|g')
+    safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <]+)|<a href="\1" style="color:#2563eb;text-decoration:underline">\1</a>|g')
     # Auto-link #NNN issue/PR references to upstream repo
     if [[ -n "${_EML_UPSTREAM_URL:-}" ]]; then
-      safe_msg=$(echo "$safe_msg" | sed -E "s|#([0-9]+)|<a href=\"${_EML_UPSTREAM_URL}/pull/\1\" style=\"color:#2563eb;text-decoration:none\">#\1</a>|g")
+      safe_msg=$(echo "$safe_msg" | sed -E "s|#([0-9]+)|<a href=\"${_EML_UPSTREAM_URL}/pull/\1\" style=\"color:#2563eb;text-decoration:underline\">#\1</a>|g")
     fi
     commit_msg_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Upstream Commit Message</div><div style=\"padding:10px 0;background:#f9fafb;border-left:3px solid ${color};padding-left:12px;font-size:13px;color:#374151;line-height:1.6\">${safe_msg}</div></div>"
   fi
