@@ -160,10 +160,10 @@ _p3_start=$(_ns)
 log "Publishing built packages to Verdaccio..."
 npm config set "//localhost:${RQ_PORT}/:_authToken" "test-token" 2>/dev/null || true
 
+# Always publish ALL packages to Verdaccio (not just changed ones).
+# Acceptance checks need every package available. Incremental publish
+# breaks tests when unchanged packages aren't on Verdaccio.
 publish_args=(--no-rate-limit --no-save)
-if [[ "$CHANGED_PACKAGES" != "all" && "$CHANGED_PACKAGES" != "[]" ]]; then
-  publish_args+=(--packages "$CHANGED_PACKAGES")
-fi
 NPM_CONFIG_REGISTRY="http://localhost:${RQ_PORT}" \
   node "${SCRIPT_DIR}/publish.mjs" --build-dir "${BUILD_DIR}" "${publish_args[@]}" 2>&1 || {
   log_error "Failed to publish to Verdaccio"
