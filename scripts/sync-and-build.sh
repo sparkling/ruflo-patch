@@ -653,14 +653,16 @@ sync_upstream() {
         log "  type-check ${name}: ${_tc_ms}ms"
         add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "${_tc_ms}"
       fi
-    # Other forks: use root tsconfig.json if present
+    # Other forks: use root tsconfig.json if present AND tsc is available
     elif [[ -f "${dir}/tsconfig.json" ]]; then
-      log "Type-checking ${name} on sync branch"
       local tsc_bin="${dir}/node_modules/.bin/tsc"
       if [[ ! -x "$tsc_bin" ]]; then
-        # Try npx
-        tsc_bin="npx tsc"
+        # No local tsc — skip type-check (npx tsc fails without typescript installed)
+        log "Skipping type-check for ${name} (no local tsc — install typescript in fork)"
+        git -C "${dir}" checkout main --quiet 2>/dev/null
+        continue
       fi
+      log "Type-checking ${name} on sync branch"
       local _tc_start _tc_end
       _tc_start=$(date +%s%N 2>/dev/null || echo 0)
       if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>/dev/null); then
