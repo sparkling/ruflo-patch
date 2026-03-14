@@ -212,10 +212,6 @@ cleanup() {
   if [[ -n "${GLOBAL_TIMEOUT_PID}" ]]; then
     kill "${GLOBAL_TIMEOUT_PID}" 2>/dev/null || true
   fi
-  if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" && "${BUILD_ONLY}" != "true" ]]; then
-    log "Cleaning up temp directory: ${TEMP_DIR}"
-    rm -rf "${TEMP_DIR}"
-  fi
   if [[ ${exit_code} -ne 0 ]]; then
     log_error "Build failed with exit code ${exit_code}"
   fi
@@ -794,14 +790,9 @@ ${body}"
 # ---------------------------------------------------------------------------
 
 create_temp_dir() {
-  if [[ "${BUILD_ONLY}" == "true" ]]; then
-    TEMP_DIR="/tmp/ruflo-build"
-    mkdir -p "${TEMP_DIR}"
-    log "Using stable build directory: ${TEMP_DIR}"
-  else
-    TEMP_DIR=$(mktemp -d /tmp/ruflo-build-XXXXX)
-    log "Created temp directory: ${TEMP_DIR}"
-  fi
+  TEMP_DIR="/tmp/ruflo-build"
+  mkdir -p "${TEMP_DIR}"
+  log "Using persistent build directory: ${TEMP_DIR}"
 }
 
 copy_source() {
@@ -812,13 +803,13 @@ copy_source() {
   mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN" "${TEMP_DIR}/cross-repo/ruvector"
 
   _cp_start=$(date +%s%N 2>/dev/null || echo 0)
-  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" &
   local pid_ruflo=$!
-  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" &
   local pid_agentic=$!
-  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" &
   local pid_fann=$!
-  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" &
   local pid_ruvector=$!
   wait $pid_ruflo $pid_agentic $pid_fann $pid_ruvector
   _cp_end=$(date +%s%N 2>/dev/null || echo 0)
@@ -853,8 +844,6 @@ run_codemod() {
 # Build manifest (ADR-0026)
 # ---------------------------------------------------------------------------
 
-STABLE_BUILD_DIR="/tmp/ruflo-build"
-
 write_build_manifest() {
   local manifest="${TEMP_DIR}/.build-manifest.json"
   local _wm_start _wm_end
@@ -884,7 +873,7 @@ MANIFESTEOF
 }
 
 check_build_freshness() {
-  local manifest="${STABLE_BUILD_DIR}/.build-manifest.json"
+  local manifest="/tmp/ruflo-build/.build-manifest.json"
   if [[ ! -f "$manifest" ]]; then
     log "No build manifest found — will build"
     return 1
@@ -1188,12 +1177,8 @@ TSSTUB
               } else if (fs.existsSync(distSrcIndex)) {
                 ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', distSrcIndex)];
               }
-              // Fallback: src/ only if no dist/ exists (first build)
               else {
-                const srcIndex = path.join(sibDir, 'src', 'index.ts');
-                if (fs.existsSync(srcIndex)) {
-                  ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', srcIndex)];
-                }
+                // No dist/ yet — skip mapping (deps build first in build_order, dist/ persists in stable dir)
               }
             }
           } catch {}
@@ -1817,7 +1802,7 @@ run_stage1_sync() {
   # same fork HEADs (avoids redundant copy+codemod+build ~26s)
   if check_build_freshness; then
     log "Reusing existing build artifacts from publish stage"
-    TEMP_DIR="${STABLE_BUILD_DIR}"
+    TEMP_DIR="/tmp/ruflo-build"
   else
     # Build pipeline: copy -> codemod -> build
     create_temp_dir
@@ -1970,29 +1955,6 @@ main() {
   # Publish stage runs first: publish reviewed code
   if [[ "${RUN_PUBLISH}" == "true" ]]; then
     run_stage3_publish
-  fi
-
-  # Copy publish-stage build artifacts to stable dir for sync-stage reuse
-  if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" && -f "${TEMP_DIR}/.build-manifest.json" ]]; then
-    STABLE_BUILD_DIR="/tmp/ruflo-build"
-    if [[ "${TEMP_DIR}" != "${STABLE_BUILD_DIR}" ]]; then
-      log "Caching publish-stage build to ${STABLE_BUILD_DIR} for sync reuse"
-      rsync -a --delete "${TEMP_DIR}/" "${STABLE_BUILD_DIR}/"
-      # Update manifest with post-push HEADs so sync stage freshness check passes
-      local codemod_hash
-      codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
-      cat > "${STABLE_BUILD_DIR}/.build-manifest.json" <<MEOF
-{
-  "version": 2,
-  "built_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
-  "ruflo_head": "${NEW_RUFLO_HEAD:-}",
-  "agentic_head": "${NEW_AGENTIC_HEAD:-}",
-  "fann_head": "${NEW_FANN_HEAD:-}",
-  "ruvector_head": "${NEW_RUVECTOR_HEAD:-}",
-  "codemod_hash": "${codemod_hash}"
-}
-MEOF
-    fi
   fi
 
   # Sync stage runs second: pull new upstream
