@@ -278,7 +278,11 @@ _email_html_body() {
   local rows=""
 
   if [[ -n "$fork_name" ]]; then
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Fork</td><td style=\"padding:6px 12px;color:#1f2937\">${fork_name}</td></tr>"
+    if [[ -n "$fork_url" ]]; then
+      rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Fork</td><td style=\"padding:6px 12px\"><a href=\"${fork_url}\" style=\"color:#2563eb;text-decoration:underline\">${fork_name}</a></td></tr>"
+    else
+      rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Fork</td><td style=\"padding:6px 12px;color:#1f2937\">${fork_name}</td></tr>"
+    fi
   fi
 
   if [[ -n "$branch" ]]; then
@@ -290,7 +294,13 @@ _email_html_body() {
   fi
 
   if [[ -n "$pr_url" ]]; then
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Pull Request</td><td style=\"padding:6px 12px\"><a href=\"${pr_url}\" style=\"color:#2563eb;text-decoration:underline\">${pr_url}</a></td></tr>"
+    # Extract PR number from URL (e.g., .../pull/42 → "PR #42"), fall back to "View PR"
+    local pr_label="View PR"
+    local pr_num="${pr_url##*/pull/}"
+    if [[ "$pr_num" != "$pr_url" && "$pr_num" =~ ^[0-9]+$ ]]; then
+      pr_label="PR #${pr_num}"
+    fi
+    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Pull Request</td><td style=\"padding:6px 12px\"><a href=\"${pr_url}\" style=\"color:#2563eb;text-decoration:underline\">${pr_label}</a></td></tr>"
   fi
 
   if [[ -n "$upstream_commit_url" ]]; then
@@ -298,10 +308,6 @@ _email_html_body() {
     local upstream_short="${upstream_commit_url##*/}"
     upstream_short="${upstream_short:0:8}"
     rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Upstream Commit</td><td style=\"padding:6px 12px\"><a href=\"${upstream_commit_url}\" style=\"color:#2563eb;text-decoration:underline\">${upstream_short}</a></td></tr>"
-  fi
-
-  if [[ -n "$fork_url" ]]; then
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Fork Repo</td><td style=\"padding:6px 12px\"><a href=\"${fork_url}\" style=\"color:#2563eb;text-decoration:underline\">${fork_url##*/}</a></td></tr>"
   fi
 
   if [[ -n "$fork_commit_url" ]]; then
