@@ -275,63 +275,62 @@ _email_html_body() {
     *)       status_label="ERROR" ;;
   esac
 
-  # Build table rows — only include rows with non-empty values
+  # ── Build metadata rows ──
+  local td_label="padding:8px 12px;font-weight:600;color:#374151;white-space:nowrap;border-bottom:1px solid #f3f4f6"
+  local td_value="padding:8px 12px;border-bottom:1px solid #f3f4f6"
+  local link_style="color:#2563eb;text-decoration:none"
+  local mono="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px"
   local rows=""
 
   if [[ -n "$fork_name" ]]; then
     if [[ -n "$fork_url" ]]; then
-      rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Fork</td><td style=\"padding:6px 12px\"><a href=\"${fork_url}\" style=\"color:#2563eb;text-decoration:underline\">${fork_name}</a></td></tr>"
+      rows="${rows}<tr><td style=\"${td_label}\">Fork</td><td style=\"${td_value}\"><a href=\"${fork_url}\" style=\"${link_style}\">${fork_name}</a></td></tr>"
     else
-      rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Fork</td><td style=\"padding:6px 12px;color:#1f2937\">${fork_name}</td></tr>"
+      rows="${rows}<tr><td style=\"${td_label}\">Fork</td><td style=\"${td_value}\">${fork_name}</td></tr>"
     fi
   fi
 
   if [[ -n "$branch" ]]; then
-    if [[ -n "$branch_url" ]]; then
-      rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Branch</td><td style=\"padding:6px 12px\"><a href=\"${branch_url}\" style=\"color:#2563eb;text-decoration:underline\">${branch}</a></td></tr>"
-    else
-      rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Branch</td><td style=\"padding:6px 12px;color:#1f2937\">${branch}</td></tr>"
-    fi
+    local branch_cell="${branch}"
+    [[ -n "$branch_url" ]] && branch_cell="<a href=\"${branch_url}\" style=\"${link_style};${mono}\">${branch}</a>"
+    rows="${rows}<tr><td style=\"${td_label}\">Branch</td><td style=\"${td_value}\">${branch_cell}</td></tr>"
   fi
 
   if [[ -n "$pr_url" ]]; then
-    # Extract PR number from URL (e.g., .../pull/42 → "PR #42"), fall back to "View PR"
     local pr_label="View PR"
     local pr_num="${pr_url##*/pull/}"
-    if [[ "$pr_num" != "$pr_url" && "$pr_num" =~ ^[0-9]+$ ]]; then
-      pr_label="PR #${pr_num}"
-    fi
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Pull Request</td><td style=\"padding:6px 12px\"><a href=\"${pr_url}\" style=\"color:#2563eb;text-decoration:underline\">${pr_label}</a></td></tr>"
+    [[ "$pr_num" != "$pr_url" && "$pr_num" =~ ^[0-9]+$ ]] && pr_label="PR #${pr_num}"
+    rows="${rows}<tr><td style=\"${td_label}\">Pull Request</td><td style=\"${td_value}\"><a href=\"${pr_url}\" style=\"${link_style}\">${pr_label}</a></td></tr>"
   fi
 
   if [[ -n "$upstream_commit_url" ]]; then
     local upstream_short="${upstream_commit_url##*/}"
     upstream_short="${upstream_short:0:8}"
-    local commit_cell="<a href=\"${upstream_commit_url}\" style=\"color:#2563eb;text-decoration:underline;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px\">${upstream_short}</a>"
-    if [[ -n "${_EML_UPSTREAM_MSG:-}" ]]; then
-      local safe_msg="${_EML_UPSTREAM_MSG}"
-      safe_msg="${safe_msg//&/&amp;}"
-      safe_msg="${safe_msg//</&lt;}"
-      safe_msg="${safe_msg//>/&gt;}"
-      # Convert newlines to <br> for HTML
-      safe_msg="${safe_msg//$'\n'/<br>}"
-      # Auto-link URLs (https://...)
-      safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <br>]+)|<a href="\1" style="color:#2563eb;text-decoration:underline">\1</a>|g')
-      commit_cell="${commit_cell}<div style=\"margin-top:4px;color:#6b7280;font-size:13px;line-height:1.5\">${safe_msg}</div>"
-    fi
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap;vertical-align:top\">Upstream</td><td style=\"padding:6px 12px\">${commit_cell}</td></tr>"
+    rows="${rows}<tr><td style=\"${td_label}\">Upstream</td><td style=\"${td_value}\"><a href=\"${upstream_commit_url}\" style=\"${link_style};${mono}\">${upstream_short}</a></td></tr>"
   fi
 
   if [[ -n "$fork_commit_url" ]]; then
     local fork_short="${fork_commit_url##*/}"
     fork_short="${fork_short:0:8}"
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Fork Commit</td><td style=\"padding:6px 12px\"><a href=\"${fork_commit_url}\" style=\"color:#2563eb;text-decoration:underline\">${fork_short}</a></td></tr>"
+    rows="${rows}<tr><td style=\"${td_label}\">Fork Commit</td><td style=\"${td_value}\"><a href=\"${fork_commit_url}\" style=\"${link_style};${mono}\">${fork_short}</a></td></tr>"
   fi
 
-  # Extra section (e.g., journal command for build failures)
+  # ── Upstream commit message block ──
+  local commit_msg_html=""
+  if [[ -n "${_EML_UPSTREAM_MSG:-}" ]]; then
+    local safe_msg="${_EML_UPSTREAM_MSG}"
+    safe_msg="${safe_msg//&/&amp;}"
+    safe_msg="${safe_msg//</&lt;}"
+    safe_msg="${safe_msg//>/&gt;}"
+    safe_msg="${safe_msg//$'\n'/<br>}"
+    safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <]+)|<a href="\1" style="color:#2563eb;text-decoration:none">\1</a>|g')
+    commit_msg_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Upstream Commit Message</div><div style=\"padding:10px 12px;background:#f9fafb;border-left:3px solid ${color};font-size:13px;color:#374151;line-height:1.6\">${safe_msg}</div></div>"
+  fi
+
+  # ── Error/debug output block ──
   local extra_html=""
   if [[ -n "$extra" ]]; then
-    extra_html="<div style=\"margin-top:16px;padding:12px;background:#f3f4f6;border-radius:6px;font-family:monospace;font-size:13px;color:#374151;word-break:break-all\">${extra}</div>"
+    extra_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Output</div><pre style=\"margin:0;padding:10px 12px;background:#1f2937;border-radius:4px;${mono};font-size:12px;color:#e5e7eb;line-height:1.6;white-space:pre-wrap;overflow-x:auto\">${extra}</pre></div>"
   fi
 
   cat <<EMAILHTML
@@ -346,13 +345,13 @@ _email_html_body() {
 <td style="text-align:right;font-size:12px;color:#9ca3af">$(date -u '+%Y-%m-%d %H:%M UTC')</td>
 </tr></table>
 <h1 style="margin:10px 0 6px 0;font-size:18px;font-weight:600;color:#111827">${title}</h1>
-<p style="margin:0 0 14px 0;font-size:14px;color:#4b5563;line-height:1.5">${message}</p>
+<p style="margin:0 0 16px 0;font-size:14px;color:#4b5563;line-height:1.5">${message}</p>
 <table style="width:100%;border-collapse:collapse;font-size:14px">
-<tr style="background:#f9fafb"><td colspan="2" style="padding:4px 12px;font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #e5e7eb">Details</td></tr>
 ${rows}
 </table>
+${commit_msg_html}
 ${extra_html}
-<div style="margin-top:16px;padding-top:12px;border-top:1px solid #f3f4f6">
+<div style="margin-top:20px;padding-top:12px;border-top:1px solid #f3f4f6">
 <p style="margin:0;font-size:11px;color:#9ca3af">Ruflo Patch Monitor &mdash; <a href="https://github.com/sparkling/ruflo-patch" style="color:#9ca3af">ruflo-patch</a></p>
 </div>
 </div>
