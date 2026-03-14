@@ -1173,15 +1173,15 @@ TSSTUB
     cli testing
   )
 
-  # Parse DIRECTLY_CHANGED_JSON into a lookup set for selective builds.
-  # Only packages with actual source changes need recompilation.
-  # Transitive dependents only need version bumps (handled by fork-version.mjs).
+  # Parse CHANGED_PACKAGES_JSON (full transitive set) into a lookup set for
+  # selective builds. We must rebuild ALL dependents, not just directly changed
+  # packages — dependents import from dist/ output which may have changed.
   local -A changed_set
   local selective_build=false
-  if [[ -n "${DIRECTLY_CHANGED_JSON:-}" && "${DIRECTLY_CHANGED_JSON}" != "all" ]]; then
+  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" && "${CHANGED_PACKAGES_JSON}" != "[]" ]]; then
     selective_build=true
     # Extract package short names from JSON array of @sparkleideas/* names
-    for full_name in $(echo "${DIRECTLY_CHANGED_JSON}" | node -e "
+    for full_name in $(echo "${CHANGED_PACKAGES_JSON}" | node -e "
       const d=require('fs').readFileSync(0,'utf8');try{JSON.parse(d).forEach(n=>console.log(n.replace('@sparkleideas/','')))}catch{}
     " 2>/dev/null); do
       changed_set["$full_name"]=1
@@ -1962,7 +1962,10 @@ main() {
   # Close fd 9 (flock) in the subshell so the timeout process does NOT inherit
   # the lock. Without this, if the main script is killed externally the orphaned
   # sleep process keeps the flock forever, blocking all future pipeline runs.
-  ( exec 9>&-; sleep 900; log_error "[TIMEOUT] sync-and-build.sh exceeded 900s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+  # Close ALL inherited fds so the timeout subprocess doesn't hold pipes open.
+  # Without this, piping through tee/cat causes the sleep to block for 900s
+  # after the main script exits (the sleep holds stdout/stderr fds open).
+  ( exec 9>&- 1>/dev/null 2>/dev/null; sleep 900; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
   GLOBAL_TIMEOUT_PID=$!
 
   # Load previous state
@@ -1971,7 +1974,7 @@ main() {
   # --seed-state: record current fork HEADs as baseline without building.
   # Use after clean-slate reset so the NEXT run is incremental (not "all changed").
   if [[ "${SEED_STATE}" == "true" ]]; then
-    log "Seeding state file with current fork HEADs..."
+    log "Seeding state file with current fork HEADs + upstream SHAs..."
     for i in "${!FORK_NAMES[@]}"; do
       local dir="${FORK_DIRS[$i]}"
       local name="${FORK_NAMES[$i]}"
@@ -1983,9 +1986,25 @@ main() {
           ruflo)        NEW_RUFLO_HEAD="$sha" ;;
           agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
           ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
-      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
+          ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
         esac
-        log "  ${name}: ${sha:0:12}"
+        log "  ${name} fork: ${sha:0:12}"
+
+        # Also record upstream SHA so sync stage doesn't re-sync on next run
+        if git -C "${dir}" remote get-url upstream &>/dev/null; then
+          git -C "${dir}" fetch upstream main --quiet 2>/dev/null || true
+          local upstream_sha
+          upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || upstream_sha=""
+          if [[ -n "$upstream_sha" ]]; then
+            case "$name" in
+              ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
+              agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
+              ruv-FANN)     UPSTREAM_FANN_SHA="$upstream_sha" ;;
+              ruvector)     UPSTREAM_RUVECTOR_SHA="$upstream_sha" ;;
+            esac
+            log "  ${name} upstream: ${upstream_sha:0:12}"
+          fi
+        fi
       fi
     done
     save_state
