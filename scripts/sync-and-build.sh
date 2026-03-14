@@ -231,6 +231,7 @@ _email_meta() {
   _EML_UPSTREAM_URL=$(_upstream_url "$dir")
   _EML_UPSTREAM_SHA=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || _EML_UPSTREAM_SHA=""
   _EML_FORK_SHA=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || _EML_FORK_SHA=""
+  _EML_UPSTREAM_MSG=$(git -C "${dir}" log upstream/main -1 --format='%s' 2>/dev/null) || _EML_UPSTREAM_MSG=""
 }
 
 # Generate an HTML email body for pipeline notifications.
@@ -307,7 +308,17 @@ _email_html_body() {
     # extract short SHA from URL
     local upstream_short="${upstream_commit_url##*/}"
     upstream_short="${upstream_short:0:8}"
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Upstream Commit</td><td style=\"padding:6px 12px\"><a href=\"${upstream_commit_url}\" style=\"color:#2563eb;text-decoration:underline\">${upstream_short}</a></td></tr>"
+    local upstream_label="${upstream_short}"
+    # Append commit message if available (from _email_meta)
+    if [[ -n "${_EML_UPSTREAM_MSG:-}" ]]; then
+      # Truncate long messages and escape HTML
+      local safe_msg="${_EML_UPSTREAM_MSG:0:80}"
+      safe_msg="${safe_msg//&/&amp;}"
+      safe_msg="${safe_msg//</&lt;}"
+      safe_msg="${safe_msg//>/&gt;}"
+      upstream_label="${upstream_short} — ${safe_msg}"
+    fi
+    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Upstream Commit</td><td style=\"padding:6px 12px\"><a href=\"${upstream_commit_url}\" style=\"color:#2563eb;text-decoration:underline\">${upstream_label}</a></td></tr>"
   fi
 
   if [[ -n "$fork_commit_url" ]]; then
@@ -895,7 +906,9 @@ sync_upstream() {
       fi
       local _tc_start _tc_end
       _tc_start=$(date +%s%N 2>/dev/null || echo 0)
-      if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck --project v3/tsconfig.json 2>/dev/null); then
+      local _tsc_output
+      _tsc_output=$(cd "${dir}" && $tsc_bin --noEmit --skipLibCheck --project v3/tsconfig.json 2>&1) || true
+      if [[ $? -ne 0 ]] || echo "$_tsc_output" | grep -q "error TS"; then
         _tc_end=$(date +%s%N 2>/dev/null || echo 0)
         if [[ "$_tc_start" != "0" && "$_tc_end" != "0" ]]; then
           local _tc_ms=$(( (_tc_end - _tc_start) / 1000000 ))
@@ -915,13 +928,20 @@ sync_upstream() {
         [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ce_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
         local _ce_fork_commit_url=""
         [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ce_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+        # Include first 20 lines of tsc errors in the email, HTML-escaped
+        local _tsc_errors
+        _tsc_errors=$(echo "$_tsc_output" | grep "error TS" | head -20)
+        _tsc_errors="${_tsc_errors//&/&amp;}"
+        _tsc_errors="${_tsc_errors//</&lt;}"
+        _tsc_errors="${_tsc_errors//>/&gt;}"
         local ce_email_body
         ce_email_body=$(_email_html_body "error" \
           "Compile error in ${name}" \
           "$name" "$branch_name" "$_ce_branch_url" \
           "$ce_pr_url" "$_ce_upstream_url" \
           "$_EML_FORK_URL" "$_ce_fork_commit_url" \
-          "TypeScript compilation failed for ${name} after syncing upstream.")
+          "TypeScript compilation failed for ${name} after syncing upstream." \
+          "$_tsc_errors")
         send_email "[ruflo] Compile error in ${name} sync" "$ce_email_body"
         create_failure_issue "sync-compile-error-${name}" "1"
 
@@ -946,7 +966,9 @@ sync_upstream() {
       log "Type-checking ${name} on sync branch"
       local _tc_start _tc_end
       _tc_start=$(date +%s%N 2>/dev/null || echo 0)
-      if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>/dev/null); then
+      local _tsc_output2
+      _tsc_output2=$(cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>&1) || true
+      if [[ $? -ne 0 ]] || echo "$_tsc_output2" | grep -q "error TS"; then
         log_error "Type-check failed for ${name}"
 
         local ce2_pr_url
@@ -960,13 +982,19 @@ sync_upstream() {
         [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ce2_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
         local _ce2_fork_commit_url=""
         [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ce2_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+        local _tsc_errors2
+        _tsc_errors2=$(echo "$_tsc_output2" | grep "error TS" | head -20)
+        _tsc_errors2="${_tsc_errors2//&/&amp;}"
+        _tsc_errors2="${_tsc_errors2//</&lt;}"
+        _tsc_errors2="${_tsc_errors2//>/&gt;}"
         local ce2_email_body
         ce2_email_body=$(_email_html_body "error" \
           "Compile error in ${name}" \
           "$name" "$branch_name" "$_ce2_branch_url" \
           "$ce2_pr_url" "$_ce2_upstream_url" \
           "$_EML_FORK_URL" "$_ce2_fork_commit_url" \
-          "TypeScript compilation failed for ${name} after syncing upstream.")
+          "TypeScript compilation failed for ${name} after syncing upstream." \
+          "$_tsc_errors2")
         send_email "[ruflo] Compile error in ${name} sync" "$ce2_email_body"
         create_failure_issue "sync-compile-error-${name}" "1"
 
