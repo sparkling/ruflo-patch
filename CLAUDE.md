@@ -1,5 +1,21 @@
 # Claude Code Configuration - Claude Flow V3
 
+## What This Project Is
+
+ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-FANN`) and publishes them as `@sparkleideas/*` packages on npm. Upstream has hundreds of unpublished commits beyond their last npm tags — users installing from upstream get stale code.
+
+**Pipeline**: fork HEAD → `{upstream-tag}-patch.N` versioning → scope rename (`@claude-flow/*` → `@sparkleideas/*`) → pin all internal deps → build → test → publish
+
+**This is NOT just scope renaming.** The primary value is:
+1. **Current code** — builds from upstream HEAD, not stale tags
+2. **Pinned deps** — all 41 packages versioned together with exact `-patch.N` refs
+3. **Bug fix patches** — layered on fork source, tracked as GitHub issues
+
+## Default Scope
+
+- By default, ALL instructions target the **repackaged published version** (`@sparkleideas/*` packages that users install)
+- Only target this repo's internal tooling when the user explicitly says so
+
 ## Behavioral Rules (Always Enforced)
 
 - Do what has been asked; nothing more, nothing less
