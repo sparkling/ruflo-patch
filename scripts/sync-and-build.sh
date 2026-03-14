@@ -1777,7 +1777,7 @@ run_stage1_sync() {
   if ! sync_upstream; then
     # sync_upstream returns 1 if no changes or if it already created a
     # PR for conflict/compile-error
-    log "Upstream sync: no action needed or error handled"
+    log "No upstream changes — skipping sync build"
     return 0
   fi
 
@@ -1785,11 +1785,18 @@ run_stage1_sync() {
   # if the build/test phase below fails
   save_state
 
-  # Build pipeline: copy -> codemod -> build -> test
-  create_temp_dir
-  run_phase "copy-source" copy_source
-  run_phase "codemod" run_codemod
-  run_phase "build" run_build
+  # D1: Reuse build artifacts if the publish stage already built from the
+  # same fork HEADs (avoids redundant copy+codemod+build ~26s)
+  if check_build_freshness; then
+    log "Reusing existing build artifacts from publish stage"
+    TEMP_DIR="${STABLE_BUILD_DIR}"
+  else
+    # Build pipeline: copy -> codemod -> build
+    create_temp_dir
+    run_phase "copy-source" copy_source
+    run_phase "codemod" run_codemod
+    run_phase "build" run_build
+  fi
 
   if [[ "${BUILD_ONLY}" == "true" ]]; then
     print_phase_summary

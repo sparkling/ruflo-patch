@@ -185,28 +185,13 @@ _record_phase "publish-wrapper" "$(_elapsed_ms "$_p4_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 5: NPX cache clear (ADR-0025)
+# D4: Skip slow grep _cacache scan — use --prefer-online on install instead
 # ══════════════════════════════════════════════════════════════════
 _p5_start=$(_ns)
-# Two caches: _npx/ (resolution trees) and _cacache/ (HTTP metadata + tarballs)
-_p5a_start=$(_ns)
+# Clear _npx/ resolution trees so npx picks up fresh versions
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
-_p5a_ms=$(_elapsed_ms "$_p5a_start" "$(_ns)")
-log "  npx tree clear: ${_p5a_ms}ms"
-
-_p5b_start=$(_ns)
-if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
-  grep -rl "sparkleideas" "${HOME}/.npm/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
-else
-  for pkg in $(echo "$CHANGED_PACKAGES" | node -e "
-    JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))
-      .forEach(p => console.log(p.replace('@sparkleideas/','')))
-  " 2>/dev/null); do
-    grep -rl "\"@sparkleideas/${pkg}\"" "${HOME}/.npm/_cacache/index-v5/" 2>/dev/null \
-      | xargs rm -f 2>/dev/null || true
-  done
-fi
-_p5b_ms=$(_elapsed_ms "$_p5b_start" "$(_ns)")
-log "  cacache index clear: ${_p5b_ms}ms"
+_p5a_ms=$(_elapsed_ms "$_p5_start" "$(_ns)")
+log "  npx tree clear: ${_p5a_ms}ms (cacache skipped — using --prefer-online)"
 _record_phase "npx-cache-clear" "$(_elapsed_ms "$_p5_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
@@ -218,7 +203,7 @@ VERIFY_TEMP=$(mktemp -d /tmp/ruflo-verify-XXXXX)
   && echo "registry=http://localhost:${RQ_PORT}" > .npmrc \
   && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins \
      --registry "http://localhost:${RQ_PORT}" \
-     --ignore-scripts --no-audit --no-fund 2>&1) || {
+     --prefer-online --ignore-scripts --no-audit --no-fund 2>&1) || {
   log_error "Failed to install packages"
   exit 1
 }
@@ -479,31 +464,31 @@ _record_phase "acceptance-checks" "$(_elapsed_ms "$_p8_start" "$(_ns)")"
 # ══════════════════════════════════════════════════════════════════
 _p9_start=$(_ns)
 _promote_count=0
-_promote_slowest_pkg=""
-_promote_slowest_ms=0
 if [[ "${SKIP_PROMOTE}" != "true" ]]; then
-  log "Promoting packages to @latest on Verdaccio..."
+  log "Promoting packages to @latest on Verdaccio (parallel)..."
+  _prom_pids=()
+  _prom_count=0
   for pkg_dir in "${RQ_STORAGE}/@sparkleideas"/*/; do
     [[ -d "$pkg_dir" ]] || continue
     pkg_name="@sparkleideas/$(basename "$pkg_dir")"
-    _prom_pkg_start=$(_ns)
-    latest_ver=$(npm view "${pkg_name}" version --registry "http://localhost:${RQ_PORT}" 2>/dev/null) || continue
-    [[ -z "$latest_ver" ]] && continue
-    npm dist-tag add "${pkg_name}@${latest_ver}" latest \
-      --registry "http://localhost:${RQ_PORT}" 2>/dev/null && {
-      _prom_pkg_ms=$(_elapsed_ms "$_prom_pkg_start" "$(_ns)")
-      log "  ${pkg_name}@${latest_ver} -> @latest (${_prom_pkg_ms}ms)"
-      _promote_count=$((_promote_count + 1))
-      if [[ $_prom_pkg_ms -gt $_promote_slowest_ms ]]; then
-        _promote_slowest_ms=$_prom_pkg_ms
-        _promote_slowest_pkg="$pkg_name"
-      fi
-    } || true
+    (
+      latest_ver=$(npm view "${pkg_name}" version --registry "http://localhost:${RQ_PORT}" 2>/dev/null) || exit 0
+      [[ -z "$latest_ver" ]] && exit 0
+      npm dist-tag add "${pkg_name}@${latest_ver}" latest \
+        --registry "http://localhost:${RQ_PORT}" 2>/dev/null || true
+    ) &
+    _prom_pids+=($!)
+    _prom_count=$((_prom_count + 1))
+    _promote_count=$((_promote_count + 1))
+    # Cap at 10 concurrent
+    if [[ $_prom_count -ge 10 ]]; then
+      wait "${_prom_pids[@]}" 2>/dev/null || true
+      _prom_pids=()
+      _prom_count=0
+    fi
   done
-  log "Promote complete (${_promote_count} packages)"
-  if [[ $_promote_count -gt 0 ]]; then
-    log "  slowest: ${_promote_slowest_pkg} (${_promote_slowest_ms}ms)"
-  fi
+  wait "${_prom_pids[@]}" 2>/dev/null || true
+  log "Promote complete (${_promote_count} packages, parallel)"
 fi
 _record_phase "promote" "$(_elapsed_ms "$_p9_start" "$(_ns)")"
 
