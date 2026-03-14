@@ -68,7 +68,8 @@ log() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*" >&2; }
 log_error() { echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2; }
 
 # ── Global timeout: 180s with SIGTERM→5s→SIGKILL escalation ──────
-( sleep 180; log_error "[TIMEOUT] test-verify.sh exceeded 180s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+# Close fd 9 (flock) so orphaned timeout process cannot hold the pipeline lock
+( exec 9>&- 2>/dev/null; sleep 180; log_error "[TIMEOUT] test-verify.sh exceeded 180s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup trap ──────────────────────────────────────────────────

@@ -73,7 +73,8 @@ _record_phase() {
 }
 
 # ── Global timeout: 300s ────────────────────────────────────────────
-( sleep 300; log_error "[TIMEOUT] exceeded 300s"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+# Close fd 9 (flock) so orphaned timeout process cannot hold the pipeline lock
+( exec 9>&- 2>/dev/null; sleep 300; log_error "[TIMEOUT] exceeded 300s"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup ─────────────────────────────────────────────────────────
