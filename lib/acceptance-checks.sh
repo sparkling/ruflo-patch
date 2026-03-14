@@ -520,7 +520,7 @@ check_ruflo_init_full() {
 
   # Validate key artifacts created by --full
   local missing=""
-  for f in .claude/settings.json CLAUDE.md .mcp.json .claude-flow/config.yaml; do
+  for f in .claude/settings.json CLAUDE.md .mcp.json .claude-flow/config.json; do
     if [[ ! -f "$full_dir/$f" ]]; then
       missing="$missing $f"
     fi
