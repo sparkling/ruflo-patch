@@ -1100,8 +1100,8 @@ TSSTUB
     shared
     memory embeddings codex aidefence
     neural hooks browser plugins providers claims
-    guidance mcp integration deployment swarm security performance testing
-    cli
+    guidance mcp integration deployment swarm security performance
+    cli testing
   )
 
   # Parse DIRECTLY_CHANGED_JSON into a lookup set for selective builds.
