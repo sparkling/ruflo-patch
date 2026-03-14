@@ -231,7 +231,7 @@ _email_meta() {
   _EML_UPSTREAM_URL=$(_upstream_url "$dir")
   _EML_UPSTREAM_SHA=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || _EML_UPSTREAM_SHA=""
   _EML_FORK_SHA=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || _EML_FORK_SHA=""
-  _EML_UPSTREAM_MSG=$(git -C "${dir}" log upstream/main -1 --format='%s' 2>/dev/null) || _EML_UPSTREAM_MSG=""
+  _EML_UPSTREAM_MSG=$(git -C "${dir}" log upstream/main -1 --format='%B' 2>/dev/null | head -5 | sed '/^$/d') || _EML_UPSTREAM_MSG=""
 }
 
 # Generate an HTML email body for pipeline notifications.
@@ -309,11 +309,15 @@ _email_html_body() {
     upstream_short="${upstream_short:0:8}"
     local commit_cell="<a href=\"${upstream_commit_url}\" style=\"color:#2563eb;text-decoration:underline;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px\">${upstream_short}</a>"
     if [[ -n "${_EML_UPSTREAM_MSG:-}" ]]; then
-      local safe_msg="${_EML_UPSTREAM_MSG:0:120}"
+      local safe_msg="${_EML_UPSTREAM_MSG}"
       safe_msg="${safe_msg//&/&amp;}"
       safe_msg="${safe_msg//</&lt;}"
       safe_msg="${safe_msg//>/&gt;}"
-      commit_cell="${commit_cell}<br><span style=\"color:#6b7280;font-size:13px;line-height:1.4\">${safe_msg}</span>"
+      # Convert newlines to <br> for HTML
+      safe_msg="${safe_msg//$'\n'/<br>}"
+      # Auto-link URLs (https://...)
+      safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <br>]+)|<a href="\1" style="color:#2563eb;text-decoration:underline">\1</a>|g')
+      commit_cell="${commit_cell}<div style=\"margin-top:4px;color:#6b7280;font-size:13px;line-height:1.5\">${safe_msg}</div>"
     fi
     rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap;vertical-align:top\">Upstream</td><td style=\"padding:6px 12px\">${commit_cell}</td></tr>"
   fi
