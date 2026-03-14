@@ -829,10 +829,10 @@ copy_source() {
   local rsync_status_dir
   rsync_status_dir=$(mktemp -d /tmp/ruflo-rsync-XXXXX)
 
-  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P .wasm-cache.json' --filter='P .last-verified.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
     && touch "${rsync_status_dir}/ruflo" &
   local pid_ruflo=$!
-  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' \
+  rsync -a --delete --filter='P dist/' --filter='P wasm/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' \
     --exclude=node_modules --exclude=.git \
     --exclude='packages/agentic-jujutsu/*.node' \
     --exclude='packages/agentic-jujutsu/*.tgz' \
@@ -1455,19 +1455,49 @@ TSSTUB
     local crate_dir="$pkg_dir/crates/agent-booster-wasm"
     local wasm_pid=""
     local _wasm_start=""
+    local wasm_cache="/tmp/ruflo-build/.wasm-cache.json"
+    local should_rebuild_wasm=true
+
     if [[ -d "$crate_dir" ]] && command -v wasm-pack &>/dev/null; then
-      log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
-      _wasm_start=$(date +%s%N 2>/dev/null || echo 0)
-      (
-        wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
-          echo "WARN: WASM build failed for ${rel_path}" >&2
-          echo "$wasm_out" | tail -5 >&2
-        }
-        if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
-          rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
+      # Check WASM cache: hash all Rust source files, skip if unchanged
+      local parent_crate_dir="$crate_dir/../agent-booster"
+      # Compute hash of all WASM-relevant source files
+      local current_wasm_hash
+      current_wasm_hash=$(cat \
+        "$crate_dir/Cargo.toml" \
+        "$crate_dir/src/lib.rs" \
+        "$parent_crate_dir/Cargo.toml" \
+        $(find "$parent_crate_dir/src" -name "*.rs" -type f 2>/dev/null | sort) \
+        2>/dev/null | sha256sum | cut -d' ' -f1) || current_wasm_hash=""
+
+      if [[ -n "$current_wasm_hash" && -f "$wasm_cache" && -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
+        local cached_wasm_hash
+        cached_wasm_hash=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$wasm_cache','utf-8')).wasm_source_hash||'')" 2>/dev/null) || cached_wasm_hash=""
+        if [[ "$current_wasm_hash" == "$cached_wasm_hash" ]]; then
+          log "  WASM cache hit — skipping wasm-pack (hash=${current_wasm_hash:0:12})"
+          should_rebuild_wasm=false
+          add_cmd_timing "build" "wasm-pack (cache hit)" "0"
         fi
-      ) &
-      wasm_pid=$!
+      fi
+
+      if [[ "$should_rebuild_wasm" == "true" ]]; then
+        log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
+        _wasm_start=$(date +%s%N 2>/dev/null || echo 0)
+        (
+          wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
+            echo "WARN: WASM build failed for ${rel_path}" >&2
+            echo "$wasm_out" | tail -5 >&2
+          }
+          if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
+            rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
+            # Write WASM cache on success
+            cat > "$wasm_cache" <<WASMCACHE
+{"wasm_source_hash":"${current_wasm_hash}","built_at":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"}
+WASMCACHE
+          fi
+        ) &
+        wasm_pid=$!
+      fi
     fi
 
     local _xr_tsc_start _xr_tsc_end
@@ -1840,6 +1870,15 @@ run_stage3_publish() {
   # Verify: publish once, install once, all checks, promote (unless --test-only)
   run_phase "verify" run_verify
 
+  # Record successful verification so sync stage can skip redundant L2
+  local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
+  local _verify_codemod_hash
+  _verify_codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || _verify_codemod_hash=""
+  cat > "$_verify_manifest" <<VMANIFEST
+{"ruflo_head":"${NEW_RUFLO_HEAD:-}","agentic_head":"${NEW_AGENTIC_HEAD:-}","fann_head":"${NEW_FANN_HEAD:-}","ruvector_head":"${NEW_RUVECTOR_HEAD:-}","codemod_hash":"${_verify_codemod_hash}","verified_at":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"}
+VMANIFEST
+  log "Verification manifest written"
+
   if [[ "${TEST_ONLY}" == "true" ]]; then
     print_phase_summary
     log "Gate 1 PASSED — all tests pass (--test-only mode)"
@@ -1906,10 +1945,44 @@ run_stage1_sync() {
     return 0
   fi
 
-  # Test (L0-L3) against the sync branch build
+  # Test against the sync branch build.
+  # Skip expensive L2 verify if the publish stage already verified these exact artifacts.
   local tests_passed=false
-  if run_tests; then
-    tests_passed=true
+  local skip_verify=false
+  local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
+
+  if check_build_freshness && [[ -f "$_verify_manifest" ]]; then
+    local _vm_data
+    _vm_data=$(node -e "
+      const m=JSON.parse(require('fs').readFileSync('$_verify_manifest','utf-8'));
+      console.log([m.ruflo_head,m.agentic_head,m.fann_head,m.ruvector_head,m.codemod_hash].join(':'));
+    " 2>/dev/null) || _vm_data=""
+
+    local _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_codemod
+    IFS=':' read -r _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_codemod <<< "$_vm_data"
+    local _current_codemod
+    _current_codemod=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || _current_codemod=""
+
+    if [[ "${_vm_ruflo}" == "${NEW_RUFLO_HEAD}" && \
+          "${_vm_agentic}" == "${NEW_AGENTIC_HEAD}" && \
+          "${_vm_fann}" == "${NEW_FANN_HEAD}" && \
+          "${_vm_ruvector}" == "${NEW_RUVECTOR_HEAD}" && \
+          "${_vm_codemod}" == "${_current_codemod}" ]]; then
+      log "Skipping L2 verify — already verified by publish stage"
+      skip_verify=true
+    fi
+  fi
+
+  if [[ "$skip_verify" == "true" ]]; then
+    # Run L0+L1 only (fast sanity check)
+    if run_tests_ci; then
+      tests_passed=true
+    fi
+  else
+    # Full L0+L1+L2 verification
+    if run_tests; then
+      tests_passed=true
+    fi
   fi
 
   # Create PRs for each fork that was synced
