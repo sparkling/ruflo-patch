@@ -294,6 +294,26 @@ check_merged_prs() {
   local any_changed=false
   CHANGED_FORK_SHAS=""
 
+  # Pass 1: launch all fetches in parallel
+  local fetch_pids=()
+  local fetch_start_ns
+  fetch_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    git -C "${dir}" fetch origin main --quiet 2>/dev/null &
+    fetch_pids+=($!)
+  done
+  wait "${fetch_pids[@]}" 2>/dev/null || true
+  local fetch_end_ns
+  fetch_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$fetch_start_ns" != "0" && "$fetch_end_ns" != "0" ]]; then
+    local _fetch_all_ms=$(( (fetch_end_ns - fetch_start_ns) / 1000000 ))
+    log "  fetch all forks (parallel): ${_fetch_all_ms}ms"
+    add_cmd_timing "merge-detect" "git fetch all (parallel)" "${_fetch_all_ms}"
+  fi
+
+  # Pass 2: process results (SHA compare, fast-forward)
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
@@ -301,20 +321,6 @@ check_merged_prs() {
     if [[ ! -d "${dir}/.git" ]]; then
       log_error "Fork directory ${dir} is not a git repo"
       continue
-    fi
-
-    # Fetch origin to see if anything was merged
-    local _fetch_start _fetch_end
-    _fetch_start=$(date +%s%N 2>/dev/null || echo 0)
-    git -C "${dir}" fetch origin main --quiet 2>/dev/null || {
-      log_error "Failed to fetch origin for ${name}"
-      continue
-    }
-    _fetch_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$_fetch_start" != "0" && "$_fetch_end" != "0" ]]; then
-      local _fetch_ms=$(( (_fetch_end - _fetch_start) / 1000000 ))
-      log "  fetch ${name}: ${_fetch_ms}ms"
-      add_cmd_timing "merge-detect" "git fetch ${name}" "${_fetch_ms}"
     fi
 
     local origin_sha state_sha
@@ -1942,6 +1948,29 @@ main() {
   # Publish stage runs first: publish reviewed code
   if [[ "${RUN_PUBLISH}" == "true" ]]; then
     run_stage3_publish
+  fi
+
+  # Copy publish-stage build artifacts to stable dir for sync-stage reuse
+  if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" && -f "${TEMP_DIR}/.build-manifest.json" ]]; then
+    STABLE_BUILD_DIR="/tmp/ruflo-build"
+    if [[ "${TEMP_DIR}" != "${STABLE_BUILD_DIR}" ]]; then
+      log "Caching publish-stage build to ${STABLE_BUILD_DIR} for sync reuse"
+      rsync -a --delete "${TEMP_DIR}/" "${STABLE_BUILD_DIR}/"
+      # Update manifest with post-push HEADs so sync stage freshness check passes
+      local codemod_hash
+      codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
+      cat > "${STABLE_BUILD_DIR}/.build-manifest.json" <<MEOF
+{
+  "version": 2,
+  "built_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
+  "ruflo_head": "${NEW_RUFLO_HEAD:-}",
+  "agentic_head": "${NEW_AGENTIC_HEAD:-}",
+  "fann_head": "${NEW_FANN_HEAD:-}",
+  "ruvector_head": "${NEW_RUVECTOR_HEAD:-}",
+  "codemod_hash": "${codemod_hash}"
+}
+MEOF
+    fi
   fi
 
   # Sync stage runs second: pull new upstream

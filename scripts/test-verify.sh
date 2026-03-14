@@ -185,13 +185,13 @@ _record_phase "publish-wrapper" "$(_elapsed_ms "$_p4_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 5: NPX cache clear (ADR-0025)
-# D4: Skip slow grep _cacache scan — use --prefer-online on install instead
+# D4: Skip slow grep _cacache scan — use --prefer-offline on install instead
 # ══════════════════════════════════════════════════════════════════
 _p5_start=$(_ns)
 # Clear _npx/ resolution trees so npx picks up fresh versions
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 _p5a_ms=$(_elapsed_ms "$_p5_start" "$(_ns)")
-log "  npx tree clear: ${_p5a_ms}ms (cacache skipped — using --prefer-online)"
+log "  npx tree clear: ${_p5a_ms}ms (cacache skipped — using --prefer-offline)"
 _record_phase "npx-cache-clear" "$(_elapsed_ms "$_p5_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
@@ -203,7 +203,7 @@ VERIFY_TEMP=$(mktemp -d /tmp/ruflo-verify-XXXXX)
   && echo "registry=http://localhost:${RQ_PORT}" > .npmrc \
   && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins \
      --registry "http://localhost:${RQ_PORT}" \
-     --prefer-online --ignore-scripts --no-audit --no-fund 2>&1) || {
+     --prefer-offline --ignore-scripts --no-audit --no-fund 2>&1) || {
   log_error "Failed to install packages"
   exit 1
 }
