@@ -200,7 +200,7 @@ send_email() {
   fi
 
   if command -v sendmail &>/dev/null; then
-    printf 'From: Ruflo Patch Monitor <%s>\nTo: %s\nSubject: %s\nContent-Type: text/plain; charset=utf-8\n\n%s\n\n--\nRuflo Patch Monitor\nhttps://github.com/sparkling/ruflo-patch\n' \
+    printf 'From: Ruflo Patch Monitor <do-not-reply@ruflo-patch.local>\nReply-To: %s\nTo: %s\nSubject: %s\nContent-Type: text/plain; charset=utf-8\n\n%s\n\n--\nRuflo Patch Monitor\nhttps://github.com/sparkling/ruflo-patch\n' \
       "$recipient" "$recipient" "$subject" "$body" | sendmail "$recipient" 2>/dev/null || {
       log "WARNING: sendmail failed for: ${subject}"
     }
