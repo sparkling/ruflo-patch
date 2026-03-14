@@ -305,20 +305,17 @@ _email_html_body() {
   fi
 
   if [[ -n "$upstream_commit_url" ]]; then
-    # extract short SHA from URL
     local upstream_short="${upstream_commit_url##*/}"
     upstream_short="${upstream_short:0:8}"
-    local upstream_label="${upstream_short}"
-    # Append commit message if available (from _email_meta)
+    local commit_cell="<a href=\"${upstream_commit_url}\" style=\"color:#2563eb;text-decoration:underline;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px\">${upstream_short}</a>"
     if [[ -n "${_EML_UPSTREAM_MSG:-}" ]]; then
-      # Truncate long messages and escape HTML
-      local safe_msg="${_EML_UPSTREAM_MSG:0:80}"
+      local safe_msg="${_EML_UPSTREAM_MSG:0:120}"
       safe_msg="${safe_msg//&/&amp;}"
       safe_msg="${safe_msg//</&lt;}"
       safe_msg="${safe_msg//>/&gt;}"
-      upstream_label="${upstream_short} — ${safe_msg}"
+      commit_cell="${commit_cell}<br><span style=\"color:#6b7280;font-size:13px;line-height:1.4\">${safe_msg}</span>"
     fi
-    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap\">Upstream Commit</td><td style=\"padding:6px 12px\"><a href=\"${upstream_commit_url}\" style=\"color:#2563eb;text-decoration:underline\">${upstream_label}</a></td></tr>"
+    rows="${rows}<tr><td style=\"padding:6px 12px;font-weight:600;color:#374151;white-space:nowrap;vertical-align:top\">Upstream</td><td style=\"padding:6px 12px\">${commit_cell}</td></tr>"
   fi
 
   if [[ -n "$fork_commit_url" ]]; then
@@ -337,22 +334,22 @@ _email_html_body() {
 <!DOCTYPE html>
 <html>
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
-<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,system-ui,'Segoe UI',Roboto,sans-serif">
-<div style="max-width:600px;margin:0 auto;background:#ffffff">
-<div style="height:6px;background:${color}"></div>
-<div style="padding:24px 24px 0 24px">
-<span style="display:inline-block;padding:4px 10px;border-radius:4px;font-size:12px;font-weight:700;letter-spacing:0.5px;color:#ffffff;background:${color}">${status_label}</span>
-<h1 style="margin:12px 0 0 0;font-size:20px;font-weight:600;color:#111827">${title}</h1>
-</div>
-<div style="padding:16px 24px">
-<p style="margin:0 0 16px 0;font-size:15px;color:#4b5563;line-height:1.5">${message}</p>
-<table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;border-radius:6px;font-size:14px">
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,system-ui,'Segoe UI',Roboto,sans-serif">
+<div style="height:4px;background:${color}"></div>
+<div style="padding:20px">
+<table cellpadding="0" cellspacing="0" style="width:100%"><tr>
+<td><span style="display:inline-block;padding:3px 8px;border-radius:3px;font-size:11px;font-weight:700;letter-spacing:0.5px;color:#ffffff;background:${color}">${status_label}</span></td>
+<td style="text-align:right;font-size:12px;color:#9ca3af">$(date -u '+%Y-%m-%d %H:%M UTC')</td>
+</tr></table>
+<h1 style="margin:10px 0 6px 0;font-size:18px;font-weight:600;color:#111827">${title}</h1>
+<p style="margin:0 0 14px 0;font-size:14px;color:#4b5563;line-height:1.5">${message}</p>
+<table style="width:100%;border-collapse:collapse;font-size:14px">
+<tr style="background:#f9fafb"><td colspan="2" style="padding:4px 12px;font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;border-bottom:1px solid #e5e7eb">Details</td></tr>
 ${rows}
 </table>
 ${extra_html}
-</div>
-<div style="padding:16px 24px;border-top:1px solid #e5e7eb">
-<p style="margin:0;font-size:12px;color:#9ca3af">Ruflo Patch Monitor &mdash; <a href="https://github.com/sparkling/ruflo-patch" style="color:#9ca3af;text-decoration:underline">ruflo-patch</a></p>
+<div style="margin-top:16px;padding-top:12px;border-top:1px solid #f3f4f6">
+<p style="margin:0;font-size:11px;color:#9ca3af">Ruflo Patch Monitor &mdash; <a href="https://github.com/sparkling/ruflo-patch" style="color:#9ca3af">ruflo-patch</a></p>
 </div>
 </div>
 </body>
