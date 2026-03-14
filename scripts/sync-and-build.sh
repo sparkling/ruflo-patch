@@ -282,37 +282,42 @@ _email_html_body() {
   local mono="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px"
   local rows=""
 
+  # 1. Fork Repo
   if [[ -n "$fork_name" ]]; then
     if [[ -n "$fork_url" ]]; then
-      rows="${rows}<tr><td style=\"${td_label}\">Fork</td><td style=\"${td_value}\"><a href=\"${fork_url}\" style=\"${link_style}\">${fork_name}</a></td></tr>"
+      rows="${rows}<tr><td style=\"${td_label}\">Fork Repo</td><td style=\"${td_value}\"><a href=\"${fork_url}\" style=\"${link_style}\">${fork_name}</a></td></tr>"
     else
-      rows="${rows}<tr><td style=\"${td_label}\">Fork</td><td style=\"${td_value}\">${fork_name}</td></tr>"
+      rows="${rows}<tr><td style=\"${td_label}\">Fork Repo</td><td style=\"${td_value}\">${fork_name}</td></tr>"
     fi
   fi
 
+  # 2. Fork Branch
   if [[ -n "$branch" ]]; then
     local branch_cell="${branch}"
     [[ -n "$branch_url" ]] && branch_cell="<a href=\"${branch_url}\" style=\"${link_style};${mono}\">${branch}</a>"
-    rows="${rows}<tr><td style=\"${td_label}\">Branch</td><td style=\"${td_value}\">${branch_cell}</td></tr>"
+    rows="${rows}<tr><td style=\"${td_label}\">Fork Branch</td><td style=\"${td_value}\">${branch_cell}</td></tr>"
   fi
 
-  if [[ -n "$pr_url" ]]; then
-    local pr_label="View PR"
-    local pr_num="${pr_url##*/pull/}"
-    [[ "$pr_num" != "$pr_url" && "$pr_num" =~ ^[0-9]+$ ]] && pr_label="PR #${pr_num}"
-    rows="${rows}<tr><td style=\"${td_label}\">Pull Request</td><td style=\"${td_value}\"><a href=\"${pr_url}\" style=\"${link_style}\">${pr_label}</a></td></tr>"
-  fi
-
-  if [[ -n "$upstream_commit_url" ]]; then
-    local upstream_short="${upstream_commit_url##*/}"
-    upstream_short="${upstream_short:0:8}"
-    rows="${rows}<tr><td style=\"${td_label}\">Upstream</td><td style=\"${td_value}\"><a href=\"${upstream_commit_url}\" style=\"${link_style};${mono}\">${upstream_short}</a></td></tr>"
-  fi
-
+  # 3. Fork Commit
   if [[ -n "$fork_commit_url" ]]; then
     local fork_short="${fork_commit_url##*/}"
     fork_short="${fork_short:0:8}"
     rows="${rows}<tr><td style=\"${td_label}\">Fork Commit</td><td style=\"${td_value}\"><a href=\"${fork_commit_url}\" style=\"${link_style};${mono}\">${fork_short}</a></td></tr>"
+  fi
+
+  # 4. Fork Pull Request
+  if [[ -n "$pr_url" ]]; then
+    local pr_label="View PR"
+    local pr_num="${pr_url##*/pull/}"
+    [[ "$pr_num" != "$pr_url" && "$pr_num" =~ ^[0-9]+$ ]] && pr_label="PR #${pr_num}"
+    rows="${rows}<tr><td style=\"${td_label}\">Fork Pull Request</td><td style=\"${td_value}\"><a href=\"${pr_url}\" style=\"${link_style}\">${pr_label}</a></td></tr>"
+  fi
+
+  # 5. Upstream Commit
+  if [[ -n "$upstream_commit_url" ]]; then
+    local upstream_short="${upstream_commit_url##*/}"
+    upstream_short="${upstream_short:0:8}"
+    rows="${rows}<tr><td style=\"${td_label}\">Upstream Commit</td><td style=\"${td_value}\"><a href=\"${upstream_commit_url}\" style=\"${link_style};${mono}\">${upstream_short}</a></td></tr>"
   fi
 
   # ── Upstream commit message block ──
@@ -330,7 +335,7 @@ _email_html_body() {
   # ── Error/debug output block ──
   local extra_html=""
   if [[ -n "$extra" ]]; then
-    extra_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Output</div><pre style=\"margin:0;padding:10px 12px;background:#1f2937;border-radius:4px;${mono};font-size:12px;color:#e5e7eb;line-height:1.6;white-space:pre-wrap;overflow-x:auto\">${extra}</pre></div>"
+    extra_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Error Details</div><pre style=\"margin:0;padding:10px 12px;background:#1f2937;border-radius:4px;${mono};font-size:12px;color:#e5e7eb;line-height:1.6;white-space:pre-wrap;overflow-x:auto\">${extra}</pre></div>"
   fi
 
   cat <<EMAILHTML
