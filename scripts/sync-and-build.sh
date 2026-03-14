@@ -978,6 +978,62 @@ declare module '@ruvector/attention' {
   export class AdamWOptimizer { constructor(c?: any); step(p: Float32Array, g: Float32Array): Float32Array; }
 }
 TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_attention-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/attention-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_cognitum-gate-kernel.d.ts" << 'TSSTUB'
+declare module '@ruvector/cognitum-gate-kernel' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_exotic-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/exotic-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_gnn-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/gnn-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_micro-hnsw-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/micro-hnsw-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_hyperbolic-hnsw-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/hyperbolic-hnsw-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvnet_bmssp.d.ts" << 'TSSTUB'
+declare module '@ruvnet/bmssp' {
+  export default function init(): Promise<void>;
+  export class WasmNeuralBMSSP { constructor(c?: any); [key: string]: any; }
+  export class WasmGraph { constructor(c?: any); [key: string]: any; }
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/prime-radiant-advanced-wasm.d.ts" << 'TSSTUB'
+declare module 'prime-radiant-advanced-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
     log "TypeScript toolchain installed at ${tsc_dir}"
   else
     log "TypeScript toolchain cached at ${tsc_dir}"
