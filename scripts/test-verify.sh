@@ -445,6 +445,12 @@ for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
     else
       rq_fail=$((rq_fail + 1))
       log "  FAIL  $id: $name_map (${dur_ms:-0}ms)"
+      # Log failure output so errors are visible in the pipeline log
+      local fail_output
+      fail_output=$(echo "$escaped_output" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read()))' 2>/dev/null || echo "$escaped_output")
+      if [[ -n "$fail_output" && "$fail_output" != '""' ]]; then
+        log "  DETAIL $id: $fail_output"
+      fi
     fi
     if [[ "${dur_ms:-0}" -gt 15000 ]]; then
       log "  SLOW  $id: ${dur_ms}ms (threshold: 15000ms)"

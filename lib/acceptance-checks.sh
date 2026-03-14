@@ -514,9 +514,15 @@ check_ruflo_init_full() {
     cli_tag="${PKG#@sparkleideas/cli}"
     [[ -z "$cli_tag" ]] && cli_tag="@latest"
   fi
-  local init_out
+  local init_out init_exit
   init_out=$(cd "$full_dir" && NPM_CONFIG_REGISTRY="$REGISTRY" RUFLO_CLI_TAG="$cli_tag" \
-    npx --yes "${wrapper_pkg}" init --full 2>&1) || true
+    npx --yes "${wrapper_pkg}" init --full 2>&1)
+  init_exit=$?
+
+  # Log init output for debugging
+  echo "  [RQ-14] init exit=$init_exit, dir=$full_dir, wrapper=$wrapper_pkg, cli_tag=$cli_tag" >&2
+  echo "  [RQ-14] init output (last 10 lines):" >&2
+  echo "$init_out" | tail -10 | sed 's/^/  [RQ-14]   /' >&2
 
   # Validate key artifacts created by --full
   local missing=""
@@ -545,7 +551,10 @@ check_ruflo_init_full() {
     fi
   else
     _CHECK_OUTPUT="init --full missing:$missing"
-    _CHECK_OUTPUT="$_CHECK_OUTPUT\ninit output:\n$(echo "$init_out" | tail -15)"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT | init exit=$init_exit | init output: $(echo "$init_out" | tail -5 | tr '\n' ' ')"
+    echo "  [RQ-14] MISSING FILES:$missing" >&2
+    echo "  [RQ-14] Files in dir:" >&2
+    find "$full_dir" -maxdepth 3 -type f 2>/dev/null | head -20 | sed 's/^/  [RQ-14]   /' >&2
   fi
 
   rm -rf "$full_dir"
