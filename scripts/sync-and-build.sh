@@ -324,7 +324,7 @@ _email_html_body() {
     safe_msg="${safe_msg//>/&gt;}"
     safe_msg="${safe_msg//$'\n'/<br>}"
     safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <]+)|<a href="\1" style="color:#2563eb;text-decoration:none">\1</a>|g')
-    commit_msg_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Upstream Commit Message</div><div style=\"padding:10px 12px;background:#f9fafb;border-left:3px solid ${color};font-size:13px;color:#374151;line-height:1.6\">${safe_msg}</div></div>"
+    commit_msg_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Upstream Commit Message</div><div style=\"padding:10px 0;background:#f9fafb;border-left:3px solid ${color};padding-left:12px;font-size:13px;color:#374151;line-height:1.6\">${safe_msg}</div></div>"
   fi
 
   # ── Error/debug output block ──
