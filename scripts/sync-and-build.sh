@@ -1943,7 +1943,7 @@ create_failure_issue() {
 
 Check build logs:
 \`\`\`bash
-journalctl --user -u ruflo-sync --since '1 hour ago' --no-pager
+journalctl --user -u ruflo-sync --since '$(date -u '+%Y-%m-%d %H:%M:%S UTC')' --no-pager
 \`\`\`"
 
   log_error "Creating failure issue: ${title}"
@@ -1954,7 +1954,7 @@ journalctl --user -u ruflo-sync --since '1 hour ago' --no-pager
     2>/dev/null || log_error "Could not create GitHub issue (gh CLI failed)"
 
   # HTML email body
-  local _bf_extra="journalctl --user -u ruflo-sync --since &#39;1 hour ago&#39; --no-pager"
+  local _bf_extra="journalctl --user -u ruflo-sync --since &#39;$(date -u '+%Y-%m-%d %H:%M:%S UTC')&#39; --no-pager"
   local _bf_message="The automated ruflo build failed in phase <strong>${phase}</strong> with exit code ${exit_code}."
   [[ -n "$fork_name" ]] && _bf_message="${_bf_message} Fork: ${fork_name}."
   _bf_message="${_bf_message} Server: $(hostname). Time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')."
