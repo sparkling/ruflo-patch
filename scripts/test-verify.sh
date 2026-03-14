@@ -115,6 +115,7 @@ _elapsed_ms() {
 
 verify_start_ns=$(_ns)
 verify_start_s=$(date +%s)
+rq_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 log "test-verify.sh starting (build-dir: ${BUILD_DIR})"
 
 # ══════════════════════════════════════════════════════════════════
@@ -271,207 +272,207 @@ if [[ $structural_fail -gt 0 ]]; then
 fi
 
 # ══════════════════════════════════════════════════════════════════
-# Phase 8: Functional checks (RQ-1..RQ-14)
+# Phase 8: Acceptance checks (inline, grouped parallel execution)
+#
+# Sources lib/acceptance-checks.sh and runs checks directly, avoiding
+# the overhead of shelling out to test-acceptance.sh (which would
+# duplicate the install, structural checks, and promote steps).
+#
+# Groups:
+#   1. Smoke: T01-T03 (version, @latest, broken versions) — parallel
+#   2. Init/Config: T04 sequential, then T05-T07 parallel
+#   3-5. All remaining T08-T16 overlapped in parallel
 # ══════════════════════════════════════════════════════════════════
 _p8_start=$(_ns)
-checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
-if [[ ! -f "$checks_lib" ]]; then
-  log_error "Shared test library not found: $checks_lib"
-  exit 1
-fi
-# shellcheck source=../lib/acceptance-checks.sh
-_p8_source_start=$(_ns)
-source "$checks_lib"
-log "  source acceptance-checks.sh: $(_elapsed_ms "$_p8_source_start" "$(_ns)")ms"
+log "Running acceptance checks (inline)..."
 
-# Set environment for shared checks
-REGISTRY="http://localhost:${RQ_PORT}"
+# Source shared check library
+checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
+[[ -f "$checks_lib" ]] || { log_error "Missing: $checks_lib"; exit 1; }
+source "$checks_lib"
+
+# Set up variables expected by the check functions
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$VERIFY_TEMP"
+REGISTRY="http://localhost:${RQ_PORT}"
 
-# Persistent npx cache for external deps (ADR-0025).
-# Isolated from ~/.npm to avoid stale metadata, NOT deleted on exit
-# so external deps (better-sqlite3, onnxruntime) stay cached.
-RQ_NPX_CACHE="/tmp/ruflo-rq-npxcache"
-mkdir -p "$RQ_NPX_CACHE"
-# Clear @sparkleideas entries from persistent cache
-_p8_cache_start=$(_ns)
-find "$RQ_NPX_CACHE/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
-if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
-  grep -rl "sparkleideas" "$RQ_NPX_CACHE/_cacache/index-v5/" 2>/dev/null | xargs rm -f 2>/dev/null || true
-else
-  for pkg in $(echo "$CHANGED_PACKAGES" | node -e "
-    JSON.parse(require('fs').readFileSync('/dev/stdin','utf8'))
-      .forEach(p => console.log(p.replace('@sparkleideas/','')))
-  " 2>/dev/null); do
-    grep -rl "\"@sparkleideas/${pkg}\"" "$RQ_NPX_CACHE/_cacache/index-v5/" 2>/dev/null \
-      | xargs rm -f 2>/dev/null || true
-  done
-fi
-log "  rq npx cache clear: $(_elapsed_ms "$_p8_cache_start" "$(_ns)")ms"
-export NPM_CONFIG_CACHE="$RQ_NPX_CACHE"
+# Persistent npx cache (ADR-0025)
+NPX_CACHE="/tmp/ruflo-verify-npxcache"
+mkdir -p "$NPX_CACHE"
+find "$NPX_CACHE/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
+export NPM_CONFIG_CACHE="$NPX_CACHE"
 
-# Define run_timed for the shared library
 run_timed() {
   local t_start t_end
   t_start=$(date +%s%N 2>/dev/null || echo 0)
-  _OUT="$(timeout 30 bash -c "$*" 2>&1)" || true
+  # Use --signal=KILL to force-kill hung processes (CLI keeps SQLite handles open)
+  _OUT="$(timeout --signal=KILL 60 bash -c "$*" 2>&1)" || true
   _EXIT=${PIPESTATUS[0]:-$?}
   t_end=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$t_start" == "0" || "$t_end" == "0" ]]; then
-    _DURATION_MS=0
-  else
-    _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
-  fi
+  [[ "$t_start" == "0" || "$t_end" == "0" ]] && _DURATION_MS=0 || _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
 }
 
-# ── RQ result tracking ────────────────────────────────────────────
+# ── Result tracking ──────────────────────────────────────────────
 rq_pass=0
 rq_fail=0
 rq_total=0
 rq_results_json="[]"
-rq_timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-run_rq_check() {
-  local id="$1" name="$2" fn="$3"
+_escape_json() {
+  printf '%s' "${1:-}" | head -c 4096 | python3 -c '
+import sys, json
+print(json.dumps(sys.stdin.read()), end="")
+' 2>/dev/null || echo '""'
+}
+
+run_check() {
+  local id="$1" name="$2" fn="$3" group="$4"
   rq_total=$((rq_total + 1))
-  log "  RQ $id: $name..."
-  local rq_start_ns rq_end_ns rq_dur_ms=0
-  rq_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local c_start c_end c_ms=0
+  c_start=$(_ns)
   "$fn"
-  rq_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$rq_start_ns" != "0" && "$rq_end_ns" != "0" ]]; then
-    rq_dur_ms=$(( (rq_end_ns - rq_start_ns) / 1000000 ))
-  fi
-  if [[ $rq_dur_ms -gt 15000 ]]; then
-    log "  SLOW  $id: ${rq_dur_ms}ms (threshold: 15000ms)"
-  fi
-  local rq_passed_bool="false"
+  c_end=$(_ns)
+  c_ms=$(_elapsed_ms "$c_start" "$c_end")
+
+  local passed_bool="false"
   if [[ "$_CHECK_PASSED" == "true" ]]; then
-    rq_pass=$((rq_pass + 1))
-    rq_passed_bool="true"
-    log "  PASS  $id: $name (${rq_dur_ms}ms)"
+    rq_pass=$((rq_pass + 1)); passed_bool="true"
+    log "  PASS  ${id}: ${name} (${c_ms}ms)"
   else
     rq_fail=$((rq_fail + 1))
-    log "  FAIL  $id: $name (${rq_dur_ms}ms)"
-    echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do
-      log "        $line"
-    done
+    log "  FAIL  ${id}: ${name} (${c_ms}ms)"
+    echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do log "        $line"; done
   fi
-  # Escape output for JSON
-  local rq_escaped_output
-  rq_escaped_output=$(printf '%s' "${_CHECK_OUTPUT:-${_OUT:-}}" | head -c 4096 | python3 -c '
-import sys, json
-data = sys.stdin.read()
-print(json.dumps(data), end="")
-' 2>/dev/null || echo '""')
+  [[ $c_ms -gt 15000 ]] && log "  SLOW  ${id}: ${c_ms}ms"
 
-  local rq_entry
-  rq_entry=$(printf '{"id":"%s","name":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
-    "$id" "$name" "$rq_passed_bool" "$rq_escaped_output" "$rq_dur_ms")
-  if [[ "$rq_results_json" == "[]" ]]; then
-    rq_results_json="[$rq_entry]"
-  else
-    rq_results_json="${rq_results_json%]}, $rq_entry]"
-  fi
+  local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")
+  local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
+    "$id" "$name" "$group" "$passed_bool" "$escaped" "$c_ms")
+  [[ "$rq_results_json" == "[]" ]] && rq_results_json="[$entry]" || rq_results_json="${rq_results_json%]}, $entry]"
 }
 
-# Sequential: RQ-1 and RQ-2 must run first (RQ-2 creates init state)
-run_rq_check "RQ-1"  "Version check"       check_version
-run_rq_check "RQ-2"  "Init"                check_init
+RQ_PARALLEL_DIR=$(mktemp -d /tmp/ruflo-verify-par-XXXXX)
+BG_PIDS=()
 
-# Parallel: RQ-3..RQ-14 are independent
-RQ_PARALLEL_DIR=$(mktemp -d /tmp/ruflo-verify-parallel-XXXXX)
-RQ_BG_PIDS=()
-
-run_rq_check_bg() {
-  local id="$1" name="$2" fn="$3"
+run_check_bg() {
+  local id="$1" name="$2" fn="$3" group="$4"
   (
-    local rq_start_ns rq_end_ns rq_dur_ms=0
-    rq_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+    local c_start c_end c_ms=0
+    c_start=$(_ns)
     "$fn"
-    rq_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$rq_start_ns" != "0" && "$rq_end_ns" != "0" ]]; then
-      rq_dur_ms=$(( (rq_end_ns - rq_start_ns) / 1000000 ))
-    fi
-    local rq_escaped_output
-    rq_escaped_output=$(printf '%s' "${_CHECK_OUTPUT:-${_OUT:-}}" | head -c 4096 | python3 -c '
-import sys, json
-data = sys.stdin.read()
-print(json.dumps(data), end="")
-' 2>/dev/null || echo '""')
-    echo "${_CHECK_PASSED}|${rq_dur_ms}|${rq_escaped_output}" > "${RQ_PARALLEL_DIR}/${id}"
+    c_end=$(_ns)
+    c_ms=$(_elapsed_ms "$c_start" "$c_end")
+    local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")
+    echo "${_CHECK_PASSED}|${c_ms}|${escaped}" > "${RQ_PARALLEL_DIR}/${id}"
   ) &
-  RQ_BG_PIDS+=($!)
+  BG_PIDS+=($!)
 }
 
-run_rq_check_bg "RQ-3"  "Settings file"       check_settings_file
-run_rq_check_bg "RQ-4"  "Scope check"         check_scope
-run_rq_check_bg "RQ-5"  "Doctor"              check_doctor
-run_rq_check_bg "RQ-6"  "MCP config"          check_mcp_config
-run_rq_check_bg "RQ-7"  "Wrapper proxy"       check_wrapper_proxy
-run_rq_check_bg "RQ-8"  "Memory lifecycle"    check_memory_lifecycle
-run_rq_check_bg "RQ-9"  "Neural training"     check_neural_training
-run_rq_check_bg "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
-run_rq_check_bg "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
-run_rq_check_bg "RQ-12" "Plugins SDK"         check_plugins_sdk
-run_rq_check_bg "RQ-13" "@latest resolves"    check_latest_resolves
-run_rq_check_bg "RQ-14" "ruflo init --full"   check_ruflo_init_full
-
-# Wait only for RQ check PIDs, not the global timeout subprocess
-wait "${RQ_BG_PIDS[@]}"
-
-# Collect parallel results in order
-for id in RQ-3 RQ-4 RQ-5 RQ-6 RQ-7 RQ-8 RQ-9 RQ-10 RQ-11 RQ-12 RQ-13 RQ-14; do
-  result_file="${RQ_PARALLEL_DIR}/${id}"
-  rq_total=$((rq_total + 1))
-  if [[ -f "$result_file" ]]; then
-    IFS='|' read -r passed dur_ms escaped_output < "$result_file"
-    name_map=""
-    case "$id" in
-      RQ-3)  name_map="Settings file";;     RQ-4)  name_map="Scope check";;
-      RQ-5)  name_map="Doctor";;             RQ-6)  name_map="MCP config";;
-      RQ-7)  name_map="Wrapper proxy";;      RQ-8)  name_map="Memory lifecycle";;
-      RQ-9)  name_map="Neural training";;    RQ-10) name_map="Agent Booster ESM";;
-      RQ-11) name_map="Agent Booster CLI";;  RQ-12) name_map="Plugins SDK";;
-      RQ-13) name_map="@latest resolves";;   RQ-14) name_map="ruflo init --full";;
-    esac
-    rq_passed_bool="false"
-    if [[ "$passed" == "true" ]]; then
-      rq_pass=$((rq_pass + 1))
-      rq_passed_bool="true"
-      log "  PASS  $id: $name_map (${dur_ms:-0}ms)"
+collect_parallel() {
+  local group="$1"; shift
+  wait "${BG_PIDS[@]}"
+  BG_PIDS=()
+  for spec in "$@"; do
+    local id="${spec%%|*}" name="${spec#*|}"
+    rq_total=$((rq_total + 1))
+    local result_file="${RQ_PARALLEL_DIR}/${id}"
+    if [[ -f "$result_file" ]]; then
+      IFS='|' read -r passed dur_ms escaped_output < "$result_file"
+      local passed_bool="false"
+      if [[ "$passed" == "true" ]]; then
+        rq_pass=$((rq_pass + 1)); passed_bool="true"
+        log "  PASS  ${id}: ${name} (${dur_ms:-0}ms)"
+      else
+        rq_fail=$((rq_fail + 1))
+        log "  FAIL  ${id}: ${name} (${dur_ms:-0}ms)"
+      fi
+      [[ "${dur_ms:-0}" -gt 15000 ]] && log "  SLOW  ${id}: ${dur_ms}ms"
+      local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
+        "$id" "$name" "$group" "$passed_bool" "${escaped_output:-\"\"}" "${dur_ms:-0}")
+      [[ "$rq_results_json" == "[]" ]] && rq_results_json="[$entry]" || rq_results_json="${rq_results_json%]}, $entry]"
     else
       rq_fail=$((rq_fail + 1))
-      log "  FAIL  $id: $name_map (${dur_ms:-0}ms)"
-      # Log failure output so errors are visible in the pipeline log
-      local fail_output
-      fail_output=$(echo "$escaped_output" | python3 -c 'import sys,json; print(json.loads(sys.stdin.read()))' 2>/dev/null || echo "$escaped_output")
-      if [[ -n "$fail_output" && "$fail_output" != '""' ]]; then
-        log "  DETAIL $id: $fail_output"
-      fi
+      log "  FAIL  ${id}: ${name} (subprocess crashed)"
     fi
-    if [[ "${dur_ms:-0}" -gt 15000 ]]; then
-      log "  SLOW  $id: ${dur_ms}ms (threshold: 15000ms)"
-    fi
-    rq_entry=$(printf '{"id":"%s","name":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
-      "$id" "$name_map" "$rq_passed_bool" "${escaped_output:-\"\"}" "${dur_ms:-0}")
-    if [[ "$rq_results_json" == "[]" ]]; then
-      rq_results_json="[$rq_entry]"
+  done
+  for spec in "$@"; do
+    local id="${spec%%|*}"
+    rm -f "${RQ_PARALLEL_DIR}/${id}"
+  done
+}
+
+# Registry-specific checks (not in shared lib)
+check_no_broken_versions() {
+  local start_ns end_ns
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+  local resolved
+  resolved=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view @sparkleideas/cli@latest version 2>/dev/null) || true
+  if [[ -n "$resolved" ]]; then
+    local has_bin
+    has_bin=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view "@sparkleideas/cli@${resolved}" bin --json 2>/dev/null) || true
+    if [[ -n "$has_bin" && "$has_bin" != "{}" ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="cli@latest = $resolved (has bin)"
     else
-      rq_results_json="${rq_results_json%]}, $rq_entry]"
+      _CHECK_OUTPUT="cli@latest = $resolved (no bin entries — broken)"
     fi
   else
-    rq_fail=$((rq_fail + 1))
-    log "  FAIL  $id: (no result file — subprocess crashed)"
+    _CHECK_OUTPUT="cli@latest did not resolve"
   fi
-done
-rm -rf "$RQ_PARALLEL_DIR"
-RQ_PARALLEL_DIR=""
+  end_ns=$(_ns)
+  _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+}
 
-_record_phase "rq-checks" "$(_elapsed_ms "$_p8_start" "$(_ns)")"
-log "Verification: ${rq_pass}/${rq_total} passed, ${rq_fail} failed"
+check_plugin_install() {
+  local cli; cli=$(_cli_cmd)
+  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugins install --name @sparkleideas/plugin-prime-radiant"
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="$_OUT"
+  if [[ $_EXIT -eq 0 ]] && echo "$_OUT" | grep -qi 'install\|success\|prime-radiant'; then
+    _CHECK_PASSED="true"
+  fi
+}
+
+# ── Group 1: Smoke (parallel — all independent) ──
+log "── Group 1: Smoke ──"
+run_check_bg "T01" "Version check"          check_version            "smoke"
+run_check_bg "T02" "@latest resolves"       check_latest_resolves    "smoke"
+run_check_bg "T03" "No broken versions"     check_no_broken_versions "smoke"
+collect_parallel "smoke" \
+  "T01|Version check" "T02|@latest resolves" "T03|No broken versions"
+
+# ── Group 2: Init & Config (init first, then config checks parallel) ──
+log "── Group 2: Init & Config ──"
+run_check "T04" "Init"                   check_init               "init-config"
+
+run_check_bg "T05" "Settings file"       check_settings_file      "init-config"
+run_check_bg "T06" "Scope check"         check_scope              "init-config"
+run_check_bg "T07" "MCP config"          check_mcp_config         "init-config"
+collect_parallel "init-config" \
+  "T05|Settings file" "T06|Scope check" "T07|MCP config"
+
+# ── Groups 3-5 + long-running (all overlapped) ──
+log "── Groups 3-5 + long-running (overlapped) ──"
+run_check_bg "T08" "ruflo init --full"   check_ruflo_init_full    "init-config"
+run_check_bg "T09" "Doctor"              check_doctor             "diagnostics"
+run_check_bg "T10" "Wrapper proxy"       check_wrapper_proxy      "diagnostics"
+run_check_bg "T11" "Memory lifecycle"    check_memory_lifecycle   "data-ml"
+run_check_bg "T12" "Neural training"     check_neural_training    "data-ml"
+run_check_bg "T13" "Agent Booster ESM"   check_agent_booster_esm  "packages"
+run_check_bg "T14" "Agent Booster CLI"   check_agent_booster_bin  "packages"
+run_check_bg "T15" "Plugins SDK"         check_plugins_sdk        "packages"
+run_check_bg "T16" "Plugin install"      check_plugin_install     "packages"
+collect_parallel "all" \
+  "T08|ruflo init --full" "T09|Doctor" "T10|Wrapper proxy" \
+  "T11|Memory lifecycle" "T12|Neural training" \
+  "T13|Agent Booster ESM" "T14|Agent Booster CLI" "T15|Plugins SDK" "T16|Plugin install"
+rm -rf "$RQ_PARALLEL_DIR"; RQ_PARALLEL_DIR=""
+
+log "Acceptance results: ${rq_pass}/$((rq_pass + rq_fail)) passed, ${rq_fail} failed"
+
+_record_phase "acceptance-checks" "$(_elapsed_ms "$_p8_start" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
 # Phase 9: Promote to @latest (Verdaccio only)

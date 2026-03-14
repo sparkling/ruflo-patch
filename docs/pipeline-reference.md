@@ -15,10 +15,9 @@ ruflo-patch repackages 3 upstream repos (`ruflo`, `agentic-flow`, `ruv-FANN`) as
 | `scripts/promote.sh` | Promotes prerelease tags to `@latest` after acceptance tests pass |
 | `scripts/fork-version.mjs` | Bumps versions in fork package.json files (`{upstream}-patch.N`) |
 | `scripts/codemod.mjs` | Scope rename (`@claude-flow/*` → `@sparkleideas/*`) in built output |
-| `scripts/test-rq.sh` | Release Qualification (14 checks against local Verdaccio) |
-| `scripts/test-acceptance.sh` | Production Verification (16 checks against real npm) |
-| `scripts/test-integration.sh` | Pipeline mechanics integration test |
-| `lib/acceptance-checks.sh` | Shared test library used by both RQ (L3) and acceptance (L4) |
+| `scripts/test-verify.sh` | Unified verification: publish to Verdaccio + 16 acceptance checks + promote |
+| `scripts/test-acceptance.sh` | Standalone acceptance tests (16 checks against any registry) |
+| `lib/acceptance-checks.sh` | Shared test library used by both test-verify.sh (L2) and test-acceptance.sh (L3) |
 
 ## Pipeline Phases
 
@@ -32,8 +31,7 @@ When `sync-and-build.sh` detects new fork commits, it runs these phases in order
 | codemod | `codemod.mjs` — renames `@claude-flow/*` to `@sparkleideas/*` | 1s |
 | build | `tsc` for each sub-package (20 packages, sequential) | 24s |
 | test-l1-unit | Unit tests (`npm test` in build dir) | 53s |
-| test-l2-integration | Pipeline mechanics against ephemeral Verdaccio | 28s |
-| test-l3-rq | 14 Release Qualification checks against local Verdaccio | 209s |
+| test-l2-verify | Publish to Verdaccio + 16 acceptance checks + promote | 60s |
 | publish | `publish.mjs` — publishes ~42 packages in 5 topological levels | 43s |
 | cdn-propagation | Polls npm CDN until new version resolves | 11s |
 | test-l4-acceptance | 16 production verification checks against real npm | 303s |
@@ -49,9 +47,8 @@ When `sync-and-build.sh` detects new fork commits, it runs these phases in order
 | -1 | Environment Validation | Smoke | `npm run validate` | Advisory |
 | 0 | Static Analysis | — | `npm run preflight` | Gate 1 (hard) |
 | 1 | Unit Tests | — | `npm run test:unit` | Gate 1 (hard) |
-| 2 | Pipeline Mechanics | — | `npm run test:integration` | Gate 1 (hard) |
-| 3 | Release Qualification | 14 | `npm run test:rq` | Gate 1 (hard) |
-| 4 | Production Verification | 16 | `npm run test:acceptance` | Gate 2 (soft) |
+| 2 | Verification | 16 | `npm run test:verify` | Gate 1 (hard) |
+| 3 | Production Verification | 16 | `npm run test:acceptance` | Gate 2 (soft) |
 
 - **Gate 1** (pre-publish): Layers 0-3 pass → publish to npm with `--tag prerelease`
 - **Gate 2** (post-publish): Layer 4 passes → promote to `@latest`

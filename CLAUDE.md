@@ -61,19 +61,16 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 # Build artifacts (cached at /tmp/ruflo-build, skips if fresh)
 npm run build
 
-# All local tests: L0 (preflight) + L1 (unit) + L2 (integration)
+# All local tests: L0 (preflight) + L1 (unit)
 npm test
 
 # Unit tests only (tight inner loop, 0.2s)
 npm run test:unit
 
-# Integration test (pipeline mechanics, local Verdaccio)
-npm run test:integration
+# Verification test (publish to Verdaccio + 16 acceptance checks, requires prior build)
+npm run test:verify
 
-# Release qualification (14 RQ checks, requires prior build)
-npm run test:rq
-
-# All pre-publish tests: L0 + L1 + L2 + L3
+# All pre-publish tests: L0 + L1 + L2
 npm run test:all
 
 # Deploy (full pipeline: build + test + publish + promote)

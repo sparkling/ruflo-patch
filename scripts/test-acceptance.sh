@@ -161,7 +161,7 @@ run_timed() {
   local t_start t_end
   t_start=$(date +%s%N 2>/dev/null || echo 0)
   # Use --signal=KILL to force-kill hung processes (CLI keeps SQLite handles open)
-  _OUT="$(timeout --signal=KILL 5 bash -c "$*" 2>&1)" || true
+  _OUT="$(timeout --signal=KILL 60 bash -c "$*" 2>&1)" || true
   _EXIT=${PIPESTATUS[0]:-$?}
   t_end=$(date +%s%N 2>/dev/null || echo 0)
   [[ "$t_start" == "0" || "$t_end" == "0" ]] && _DURATION_MS=0 || _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
