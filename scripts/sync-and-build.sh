@@ -106,15 +106,17 @@ STATE_FILE="${SCRIPT_DIR}/.last-build-state"
 FORK_DIR_RUFLO="/home/claude/src/forks/ruflo"
 FORK_DIR_AGENTIC="/home/claude/src/forks/agentic-flow"
 FORK_DIR_FANN="/home/claude/src/forks/ruv-FANN"
+FORK_DIR_RUVECTOR="/home/claude/src/forks/ruvector"
 
-FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN")
-FORK_DIRS=("${FORK_DIR_RUFLO}" "${FORK_DIR_AGENTIC}" "${FORK_DIR_FANN}")
+FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN" "ruvector")
+FORK_DIRS=("${FORK_DIR_RUFLO}" "${FORK_DIR_AGENTIC}" "${FORK_DIR_FANN}" "${FORK_DIR_RUVECTOR}")
 
 UPSTREAM_RUFLO="https://github.com/ruvnet/ruflo.git"
 UPSTREAM_AGENTIC="https://github.com/ruvnet/agentic-flow.git"
 UPSTREAM_FANN="https://github.com/ruvnet/ruv-FANN.git"
+UPSTREAM_RUVECTOR="https://github.com/ruvnet/RuVector.git"
 
-UPSTREAM_URLS=("${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}")
+UPSTREAM_URLS=("${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}" "${UPSTREAM_RUVECTOR}")
 
 TEMP_DIR=""  # set in create_temp_dir, cleaned up on exit
 
@@ -122,6 +124,7 @@ TEMP_DIR=""  # set in create_temp_dir, cleaned up on exit
 NEW_RUFLO_HEAD=""
 NEW_AGENTIC_HEAD=""
 NEW_FANN_HEAD=""
+NEW_RUVECTOR_HEAD=""
 
 # Selective version bumping: tracks which forks changed (set by check_merged_prs)
 CHANGED_FORK_SHAS=""  # format: dir1:oldSha,dir2:oldSha
@@ -207,9 +210,11 @@ load_state() {
   RUFLO_HEAD=""
   AGENTIC_HEAD=""
   FANN_HEAD=""
+  RUVECTOR_HEAD=""
   UPSTREAM_RUFLO_SHA=""
   UPSTREAM_AGENTIC_SHA=""
   UPSTREAM_FANN_SHA=""
+  UPSTREAM_RUVECTOR_SHA=""
 
   if [[ -f "${STATE_FILE}" ]]; then
     log "Loading state from ${STATE_FILE}"
@@ -219,12 +224,14 @@ load_state() {
         RUFLO_HEAD)          RUFLO_HEAD="${value}" ;;
         AGENTIC_HEAD)        AGENTIC_HEAD="${value}" ;;
         FANN_HEAD)           FANN_HEAD="${value}" ;;
+        RUVECTOR_HEAD)       RUVECTOR_HEAD="${value}" ;;
         UPSTREAM_RUFLO_SHA)  UPSTREAM_RUFLO_SHA="${value}" ;;
         UPSTREAM_AGENTIC_SHA) UPSTREAM_AGENTIC_SHA="${value}" ;;
         UPSTREAM_FANN_SHA)   UPSTREAM_FANN_SHA="${value}" ;;
+        UPSTREAM_RUVECTOR_SHA) UPSTREAM_RUVECTOR_SHA="${value}" ;;
       esac
     done < "${STATE_FILE}"
-    log "State loaded: RUFLO=${RUFLO_HEAD:0:12}, AGENTIC=${AGENTIC_HEAD:0:12}, FANN=${FANN_HEAD:0:12}"
+    log "State loaded: RUFLO=${RUFLO_HEAD:0:12}, AGENTIC=${AGENTIC_HEAD:0:12}, FANN=${FANN_HEAD:0:12}, RUVECTOR=${RUVECTOR_HEAD:0:12}"
   else
     log "No state file found — first run"
   fi
@@ -233,6 +240,7 @@ load_state() {
   PREV_RUFLO_HEAD="${RUFLO_HEAD}"
   PREV_AGENTIC_HEAD="${AGENTIC_HEAD}"
   PREV_FANN_HEAD="${FANN_HEAD}"
+  PREV_RUVECTOR_HEAD="${RUVECTOR_HEAD}"
 }
 
 save_state() {
@@ -242,9 +250,11 @@ save_state() {
 RUFLO_HEAD=${NEW_RUFLO_HEAD:-${RUFLO_HEAD}}
 AGENTIC_HEAD=${NEW_AGENTIC_HEAD:-${AGENTIC_HEAD}}
 FANN_HEAD=${NEW_FANN_HEAD:-${FANN_HEAD}}
+RUVECTOR_HEAD=${NEW_RUVECTOR_HEAD:-${RUVECTOR_HEAD}}
 UPSTREAM_RUFLO_SHA=${UPSTREAM_RUFLO_SHA:-}
 UPSTREAM_AGENTIC_SHA=${UPSTREAM_AGENTIC_SHA:-}
 UPSTREAM_FANN_SHA=${UPSTREAM_FANN_SHA:-}
+UPSTREAM_RUVECTOR_SHA=${UPSTREAM_RUVECTOR_SHA:-}
 EOF
   log "State saved"
 }
@@ -293,6 +303,7 @@ check_merged_prs() {
       ruflo)        state_sha="${PREV_RUFLO_HEAD:-}" ;;
       agentic-flow) state_sha="${PREV_AGENTIC_HEAD:-}" ;;
       ruv-FANN)     state_sha="${PREV_FANN_HEAD:-}" ;;
+      ruvector)     state_sha="${PREV_RUVECTOR_HEAD:-}" ;;
     esac
 
     if [[ -z "$state_sha" ]]; then
@@ -344,6 +355,7 @@ check_merged_prs() {
       ruflo)        NEW_RUFLO_HEAD="$new_sha" ;;
       agentic-flow) NEW_AGENTIC_HEAD="$new_sha" ;;
       ruv-FANN)     NEW_FANN_HEAD="$new_sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$new_sha" ;;
     esac
   done
 
@@ -512,6 +524,7 @@ sync_upstream() {
       ruflo)        last_synced_sha="${UPSTREAM_RUFLO_SHA:-}" ;;
       agentic-flow) last_synced_sha="${UPSTREAM_AGENTIC_SHA:-}" ;;
       ruv-FANN)     last_synced_sha="${UPSTREAM_FANN_SHA:-}" ;;
+      ruvector)     last_synced_sha="${UPSTREAM_RUVECTOR_SHA:-}" ;;
     esac
 
     if [[ "$upstream_sha" == "$last_synced_sha" ]]; then
@@ -573,6 +586,7 @@ sync_upstream() {
       ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
       agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
       ruv-FANN)     UPSTREAM_FANN_SHA="$upstream_sha" ;;
+      ruvector)     UPSTREAM_RUVECTOR_SHA="$upstream_sha" ;;
     esac
   done
 
@@ -743,7 +757,7 @@ copy_source() {
   local _cp_start _cp_end
 
   # Copy all 3 forks in parallel (uses all available I/O bandwidth)
-  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN"
+  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN" "${TEMP_DIR}/cross-repo/ruvector"
 
   _cp_start=$(date +%s%N 2>/dev/null || echo 0)
   rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" &
@@ -752,16 +766,18 @@ copy_source() {
   local pid_agentic=$!
   rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" &
   local pid_fann=$!
-  wait $pid_ruflo $pid_agentic $pid_fann
+  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" &
+  local pid_ruvector=$!
+  wait $pid_ruflo $pid_agentic $pid_fann $pid_ruvector
   _cp_end=$(date +%s%N 2>/dev/null || echo 0)
 
   local _cp_ms=0
   if [[ "$_cp_start" != "0" && "$_cp_end" != "0" ]]; then
     _cp_ms=$(( (_cp_end - _cp_start) / 1000000 ))
     log "  Parallel copy completed in ${_cp_ms}ms"
-    add_cmd_timing "copy-source" "rsync (3 forks parallel)" "${_cp_ms}"
+    add_cmd_timing "copy-source" "rsync (4 forks parallel)" "${_cp_ms}"
   fi
-  log "Source copied to temp directory (3 forks merged, parallel)"
+  log "Source copied to temp directory (4 forks merged, parallel)"
 }
 
 # ---------------------------------------------------------------------------
@@ -801,6 +817,7 @@ write_build_manifest() {
   "ruflo_head": "${NEW_RUFLO_HEAD:-}",
   "agentic_head": "${NEW_AGENTIC_HEAD:-}",
   "fann_head": "${NEW_FANN_HEAD:-}",
+  "ruvector_head": "${NEW_RUVECTOR_HEAD:-}",
   "codemod_hash": "${codemod_hash}",
   "packages_compiled": $(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l),
   "packages_total": $(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
@@ -824,11 +841,11 @@ check_build_freshness() {
   local stored
   stored=$(node -e "
     const m = JSON.parse(require('fs').readFileSync('${manifest}', 'utf-8'));
-    console.log([m.ruflo_head, m.agentic_head, m.fann_head, m.codemod_hash].join(':'));
+    console.log([m.ruflo_head, m.agentic_head, m.fann_head, m.ruvector_head || '', m.codemod_hash].join(':'));
   " 2>/dev/null) || { log "Cannot read manifest — will build"; return 1; }
 
-  local stored_ruflo stored_agentic stored_fann stored_codemod
-  IFS=':' read -r stored_ruflo stored_agentic stored_fann stored_codemod <<< "$stored"
+  local stored_ruflo stored_agentic stored_fann stored_ruvector stored_codemod
+  IFS=':' read -r stored_ruflo stored_agentic stored_fann stored_ruvector stored_codemod <<< "$stored"
 
   local current_codemod
   current_codemod=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || current_codemod=""
@@ -836,6 +853,7 @@ check_build_freshness() {
   if [[ "${stored_ruflo}" == "${NEW_RUFLO_HEAD}" && \
         "${stored_agentic}" == "${NEW_AGENTIC_HEAD}" && \
         "${stored_fann}" == "${NEW_FANN_HEAD}" && \
+        "${stored_ruvector}" == "${NEW_RUVECTOR_HEAD}" && \
         "${stored_codemod}" == "${current_codemod}" ]]; then
     log "Build is current (manifest matches) — skipping build"
     return 0
@@ -1614,6 +1632,7 @@ run_stage3_publish() {
       ruflo)        NEW_RUFLO_HEAD="$sha" ;;
       agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
       ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
     esac
   done
   # NOTE: Do NOT save_state here. State is saved ONLY after successful
@@ -1773,6 +1792,7 @@ main() {
           ruflo)        NEW_RUFLO_HEAD="$sha" ;;
           agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
           ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
         esac
         log "  ${name}: ${sha:0:12}"
       fi
@@ -1800,6 +1820,7 @@ main() {
           ruflo)        NEW_RUFLO_HEAD="$sha" ;;
           agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
           ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
         esac
       fi
     done
