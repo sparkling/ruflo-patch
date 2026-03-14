@@ -357,7 +357,7 @@ rm -rf "$PARALLEL_DIR"; PARALLEL_DIR=""
 # Promote to @latest (parallel, local Verdaccio only)
 # ════════════════════════════════════════════════════════════════════
 _p=$(_ns)
-RQ_STORAGE="/home/claude/.verdaccio/storage"
+RQ_STORAGE="/run/user/1000/verdaccio-storage"
 if [[ "${SKIP_PROMOTE}" != "true" && "$REGISTRY" == *"localhost"* && $fail_count -lt $total_count ]]; then
   log "Promoting packages to @latest (parallel)..."
   promote_count=0

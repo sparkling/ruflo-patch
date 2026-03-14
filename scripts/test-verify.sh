@@ -135,7 +135,7 @@ _record_phase "health-check" "$(_elapsed_ms "$_p1_start" "$(_ns)")"
 # Phase 2: Selective cache clear
 # ══════════════════════════════════════════════════════════════════
 _p2_start=$(_ns)
-RQ_STORAGE="/home/claude/.verdaccio/storage"
+RQ_STORAGE="/run/user/1000/verdaccio-storage"
 if [[ "$CHANGED_PACKAGES" == "all" || "$CHANGED_PACKAGES" == "[]" ]]; then
   log "Full mode: clearing all @sparkleideas/* from Verdaccio"
   rm -rf "${RQ_STORAGE}/@sparkleideas" 2>/dev/null || true

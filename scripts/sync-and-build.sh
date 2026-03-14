@@ -832,7 +832,18 @@ copy_source() {
   rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
     && touch "${rsync_status_dir}/ruflo" &
   local pid_ruflo=$!
-  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" \
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' \
+    --exclude=node_modules --exclude=.git \
+    --exclude='packages/agentic-jujutsu/*.node' \
+    --exclude='packages/agentic-jujutsu/*.tgz' \
+    --exclude='packages/agentic-jujutsu/tests' \
+    --exclude='packages/agentic-jujutsu/benchmarks' \
+    --exclude='packages/agentic-jujutsu/benches' \
+    --exclude='packages/agentic-jujutsu/examples' \
+    --exclude='packages/agentic-jujutsu/docs' \
+    --exclude='packages/agentic-jujutsu/test-repo' \
+    --exclude='packages/agentic-jujutsu/target' \
+    "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" \
     && touch "${rsync_status_dir}/agentic" &
   local pid_agentic=$!
   rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" \
@@ -881,6 +892,22 @@ run_codemod() {
     local _cm_ms=$(( (_cm_end - _cm_start) / 1000000 ))
     log "  Codemod completed in ${_cm_ms}ms"
     add_cmd_timing "codemod" "node codemod.mjs" "${_cm_ms}"
+  fi
+
+  # Strip publish bloat from agentic-jujutsu (~58MB of native binaries, nested
+  # tarballs, tests, docs). The upstream files field includes the whole directory
+  # but consumers only need index.js, *.d.ts, bin/, pkg/, and package.json.
+  local jj_dir="${TEMP_DIR}/cross-repo/agentic-flow/packages/agentic-jujutsu"
+  if [[ -d "$jj_dir" ]]; then
+    local _jj_before _jj_after
+    _jj_before=$(du -sm "$jj_dir" 2>/dev/null | cut -f1) || _jj_before=0
+    rm -f "$jj_dir"/*.node "$jj_dir"/*.tgz 2>/dev/null || true
+    rm -rf "$jj_dir"/{tests,docs,benchmarks,benches,examples,test-repo,target,src,typescript,helpers,scripts} 2>/dev/null || true
+    _jj_after=$(du -sm "$jj_dir" 2>/dev/null | cut -f1) || _jj_after=0
+    local _jj_saved=$(( _jj_before - _jj_after ))
+    if [[ $_jj_saved -gt 0 ]]; then
+      log "  Stripped ${_jj_saved}MB publish bloat from agentic-jujutsu (${_jj_before}MB -> ${_jj_after}MB)"
+    fi
   fi
 }
 
