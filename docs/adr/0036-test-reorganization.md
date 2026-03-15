@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Proposed (v3 -- supersedes v2 consensus rejected by product owner)
 
 ## Date
 
@@ -10,31 +10,36 @@ Proposed
 
 ## Deciders
 
-sparkling team, informed by structured hive-mind debate (5 senior testing experts)
+sparkling team, informed by structured hive-mind debate (5 senior testing experts, Round 2)
 
 ## Context
 
-The test suite has grown organically across ADR-0023, ADR-0033, and ADR-0035, producing incoherent organization:
+### v2 was rejected
 
-### Problems
+The v2 consensus produced this pipeline:
 
-1. **Numbering is cargo-cult taxonomy.** Files `04-codemod`, `07-agentdb-tools-activation`, `16-init-structural` -- numbers imply ordering that does not exist. Gaps at 01-03, 11, 20+. Runner ignores numbers (concurrent execution).
+```
+unit -> build -> verify (init tests + verdaccio publish + install + 25 checks) -> deploy -> live
+```
 
-2. **Five incompatible ID schemes.** S-01 through S-17 (structural), H-01 through H-14 (helpers), X-01 through X-08 (cross-mode), R-SG001a (regression), T01 through T32 (acceptance, with gap T25-T31). A new hire cannot navigate this.
+The product owner rejected it with this critique:
 
-3. **L0/L1/L2/L3 is confusing.** Nobody remembers whether verify is L2 or L3. The `tests/CLAUDE.md` needs a table to explain it -- proof that it is not self-explanatory.
+> "You put verify BEFORE deploy. How can you verify the deployment if you run verify first? You need to test that the installer works on a new project, and run tests on the new project. You've conflated init scaffolding tests, Verdaccio publish+install, and functional checks into one badly-defined 'verify'. Where is deploy as a separate step?"
 
-4. **Init tests are misclassified.** Files 16-19 run `npx` (seconds each) but are tagged `@tier unit` alongside files 04-06 that complete in <200ms. Running `test:unit` in the inner loop pays a multi-second tax.
+The core errors in v2:
 
-5. **"RQ" naming persists.** `RQ_PORT`, `rq_pass`, `rq_fail`, `RQ_PARALLEL_DIR`, `RQ_STORAGE` -- legacy "Release Qualification" naming in critical scripts.
+1. **Verdaccio publish IS a deploy.** Publishing to Verdaccio is deploying to a staging registry. It is not a test activity. v2 buried it inside "verify" as if it were a test step.
+2. **Init scaffolding tests are pre-build unit-level tests** that got shoved into verify. Testing that the code generator produces valid output does not require a registry.
+3. **Functional checks (T01-T25) test the DEPLOYED artifact.** They should run AFTER deploy, not as part of it.
+4. **"Verify" conflated 3 different pipeline phases** into one monolithic stage with no clear identity.
 
-6. **Verify vs acceptance confusion.** `test-verify.sh` and `test-acceptance.sh` run the same check functions against different registries. Calling one "verify" and the other "acceptance" creates false semantic distinction.
+### The real question
 
-7. **`test:all` is wrong.** package.json has `"test:all": "... npm run test:acceptance"` -- runs against real npm (L3), but CLAUDE.md says it should be "L0 + L1 + L2".
+Where do tests belong relative to deployments? A CI/CD pipeline has TWO deploy actions (staging, then production) and tests run between and after each:
 
-8. **~200 lines of duplicated bash** between test-verify.sh and test-acceptance.sh (`run_check`, `run_check_bg`, `collect_parallel`, `_escape_json`, result tracking).
-
-9. **No lifecycle model.** The existing ADR ignores the build/test/deploy/test lifecycle entirely. Tests exist in isolation from the pipeline that invokes them.
+```
+code -> build -> test(pre-deploy) -> DEPLOY(staging) -> test(post-staging) -> DEPLOY(prod) -> test(post-prod)
+```
 
 ### Current inventory
 
@@ -58,10 +63,10 @@ sync-and-build.sh
   |        a. npm run preflight        (L0)
   |        b. node test-runner.mjs     (L1 -- all 16 files including slow init tests)
   |     5. run_verify() -> test-verify.sh:
-  |        a. Publish to Verdaccio
-  |        b. Install from Verdaccio
-  |        c. Run 25 acceptance checks (T01-T24, T32)
-  |        d. Promote to @latest
+  |        a. Publish to Verdaccio      <-- THIS IS A DEPLOY, NOT A TEST
+  |        b. Install from Verdaccio    <-- THIS TESTS THE DEPLOY
+  |        c. Run 25 acceptance checks  <-- THESE TEST THE DEPLOY
+  |        d. Promote to @latest        <-- THIS IS ANOTHER DEPLOY ACTION
   |
   +-- Sync stage:
         1. Fetch upstream
@@ -73,165 +78,135 @@ sync-and-build.sh
 
 ---
 
-## Hive-Mind Debate Transcript
+## Hive-Mind Debate Transcript (Round 2)
 
-### Round 1: Each Expert Presents Their Proposed Organization
+### Round 1: Each Expert Re-Evaluates with Deploy as a First-Class Phase
 
 ---
 
 **EXPERT 1 (Google Staff Engineer -- Test Infrastructure)**
 
-My proposal uses Google's Small/Medium/Large classification, which is the most battle-tested approach in the industry.
+The v2 consensus made a fundamental category error. It treated "publish to Verdaccio" as a test action. Publishing is a DEPLOYMENT action. It changes the state of a registry. Tests OBSERVE state; deployments MUTATE state. Mixing them in one stage makes it impossible to answer: "did the deploy succeed?" vs "did the tests pass?"
 
-**Categories:**
-
-| Size | Boundary | Runtime | What belongs here |
-|------|----------|---------|-------------------|
-| **Small** | No I/O, no network, no subprocess | <2s total | codemod transforms, pipeline logic, publish ordering, fork-version calculations, all wiring/activation tests (mocked imports) |
-| **Medium** | Filesystem OK, subprocess OK, no network | <30s total | Init scaffolding tests (run real `npx`), Verdaccio publish+install cycle |
-| **Large** | Network OK, external services OK | <120s total | Real npm registry checks, post-deploy validation |
-
-**Pipeline integration:**
+**Corrected pipeline:**
 
 ```
-commit -> Small tests (gate: merge) -> build -> Medium tests (gate: publish) -> deploy -> Large tests (gate: promote)
+code -> unit tests -> build -> deploy-staging -> acceptance -> deploy-prod -> smoke
 ```
 
-**Verdaccio handling:** Medium tests own the Verdaccio lifecycle. They publish, install, and run structural checks. Large tests are identical checks pointed at real npm.
+**Six phases, not three.** Each phase has exactly one responsibility:
 
-**Post-deploy:** Large tests run after `npm publish`. If they fail, you roll back the dist-tag but the version is already on npm (immutable). This is a known constraint.
+| Phase | Action | Type | What it does |
+|-------|--------|------|-------------|
+| 1. unit | Run preflight + 12 pure logic tests + 4 init scaffolding tests | TEST | Validates code correctness |
+| 2. build | codemod + compile | BUILD | Produces artifacts |
+| 3. deploy-staging | Publish to Verdaccio + install into temp project | DEPLOY | Deploys to staging registry |
+| 4. acceptance | Run T01-T25 against Verdaccio-installed packages | TEST | Validates deployed artifact |
+| 5. deploy-prod | npm publish to npmjs.com + promote Verdaccio to @latest | DEPLOY | Deploys to production registry |
+| 6. smoke | Run T01-T25 against real npm | TEST | Validates production deployment |
 
-**Key principle:** If a test spawns a subprocess, it is NOT small. Period. Your init tests (16-19) that run `npx` are Medium, and mixing them with Small tests is a classification error that costs you seconds on every inner-loop iteration.
+**On init tests:** The init scaffolding tests (files 16-19) run `npx @sparkleideas/cli init` which installs from Verdaccio. That makes them post-deploy, not pre-deploy. Wait -- actually, looking at the test files, they use a fixture factory that mocks the init behavior. Let me check.
+
+Actually, the init tests in files 16-19 DO use `npx` which hits the registry. So they are post-deploy tests. But we could also test the init CODE in isolation without a registry. There is a split: test the generator logic (unit) vs test the installed command (acceptance).
+
+**Decision on init tests:** Keep them as post-deploy acceptance tests since they currently require a registry. If someone wants faster feedback on init logic, write new unit tests for the generator functions. Do not pretend the existing tests are unit tests when they hit the network.
 
 ---
 
 **EXPERT 2 (Stripe Staff Engineer -- SDK/CLI Testing)**
 
-Google's S/M/L is too abstract. It tells you the resource boundary but not the testing intent. When I shipped stripe-cli test infrastructure, we needed to know WHAT we were validating, not just HOW MUCH I/O it does.
+Expert 1 is almost right but has a critical omission. There is no gate between deploy-staging and acceptance. If the deploy fails silently (partial publish, missing package), the acceptance tests will fail with confusing errors. We need a STRUCTURAL VALIDATION between deploy and acceptance.
 
-**Categories:**
-
-| Category | Purpose | What belongs here |
-|----------|---------|-------------------|
-| **Unit** | Verify internal logic in isolation | codemod, pipeline-logic, publish-order, fork-version, all wiring tests |
-| **Contract** | Verify published package structure matches expectations | Package has correct exports, bin entries, scope names, dependency versions |
-| **Integration** | Verify components work together with real I/O | Init scaffolding (runs real npx), Verdaccio publish+install |
-| **Acceptance** | Verify the CUSTOMER experience end-to-end | Install from registry, run commands, verify output |
-| **Smoke** | Post-deploy sanity | Version resolves, dist-tag correct, no broken versions |
-
-**Pipeline integration:**
+**My corrected pipeline:**
 
 ```
-commit -> Unit (gate: merge)
-       -> build
-       -> Contract + Integration (gate: publish-to-verdaccio)
-       -> Acceptance against Verdaccio (gate: publish-to-npm)
-       -> deploy to npm
-       -> Smoke against npm (gate: promote dist-tag)
+code -> unit -> build -> deploy-staging -> structural-gate -> acceptance -> deploy-prod -> smoke
 ```
 
-**Key insight the others will miss:** You need CONTRACT tests. Right now your acceptance checks mix structural validation (does the package have the right exports?) with functional validation (does `ruflo init` work?). Those are different concerns. A contract test can run against the build artifact BEFORE publishing. An acceptance test runs against the installed package AFTER publishing.
+The structural gate is not a test suite -- it is a deploy verification step:
+- Did all packages land on Verdaccio?
+- Can we `npm install` from Verdaccio?
+- Does `npm ls` show no MISSING deps?
 
-**Verdaccio handling:** Integration tests publish to Verdaccio. Acceptance tests install from Verdaccio and exercise the installed package. Different concerns, different scripts.
+This is the "deploy health check" that the current test-verify.sh already does in Phases 1-7 (health check, cache clear, publish, install, structural checks). Those are deploy actions and deploy verification, not tests.
+
+**On init tests:** They should be split. The existing files 16-19 use `npx` and hit a registry -- those are acceptance tests. But the logic they test (does init produce the right file structure?) can also be tested without a registry by calling the generator functions directly. I recommend:
+- Move existing 16-19 to acceptance (post-deploy)
+- Write new unit tests for generator functions (optional, future work)
 
 ---
 
 **EXPERT 3 (Netflix Principal Engineer -- Platform)**
 
-Five categories? Are you kidding me? Nobody is going to remember Unit vs Contract vs Integration vs Acceptance vs Smoke. That is FIVE names for "does our stuff work." Let me count the test files: 16 node:test files and 25 bash checks. This is not a massive codebase. This is a build pipeline for repackaging npm modules.
+Both of you are over-engineering this. Six phases? Seven with a structural gate? This is 16 test files and 25 bash checks. Let me simplify.
 
-**Categories:**
-
-| Category | What | When |
-|----------|------|------|
-| **Fast** | Everything that finishes in <3s with no I/O | Every keystroke |
-| **Slow** | Everything else before deploy (init tests, Verdaccio cycle, all 25 checks) | Before deploy |
-| **Live** | Same checks against real npm | After deploy |
-
-Three categories. A new hire understands it in 30 seconds, not 5 minutes.
-
-**Pipeline integration:**
+**The reality is three ACTIONS and three TEST phases, interleaved:**
 
 ```
-commit -> Fast (gate: commit) -> build -> Slow (gate: deploy) -> deploy -> Live (gate: promote)
+unit -> build -> DEPLOY(verdaccio) -> acceptance -> DEPLOY(npm) -> smoke
 ```
 
-**Verdaccio handling:** Part of Slow. Publish, install, check. One script. Done.
+That is it. Six steps. Three are actions (build, deploy-staging, deploy-prod). Three are tests (unit, acceptance, smoke). Each test phase validates the action that just completed:
+- unit validates the code
+- acceptance validates the staging deploy
+- smoke validates the production deploy
 
-**Post-deploy:** Live is the same checks pointed at npmjs.com. If Live fails, you do not promote the dist-tag.
+No "structural gate" -- that is just the first few checks of acceptance (T01-T03 already do version/dist-tag validation). No separate "preflight" -- that is just the preamble to unit.
 
-**Key principle:** Your entire codebase is 16 test files and 25 bash checks. You are not Google. You are not Stripe. You are a build pipeline. Stop building a test framework and start shipping.
+**On init tests:** They go in acceptance because they need a registry. Period. If someone wants faster init feedback, they refactor the tests. Do not reorganize the pipeline around a hypothetical future test.
 
 ---
 
 **EXPERT 4 (Microsoft Principal SDET -- Azure DevOps)**
 
-Netflix guy is half right -- simplicity matters. But he is completely wrong about collapsing Verdaccio checks into "Slow." The critical architectural question nobody has answered is: **what gates what?**
+Netflix is correct on the pipeline shape. But he is wrong about the structural gate. T01-T03 are NOT structural checks. They are version checks (`npm view @sparkleideas/cli version`). The structural checks in test-verify.sh (S-1: CLI in node_modules, S-2: packages on Verdaccio, S-3: npm ls clean) are deploy verification, not acceptance tests. They answer "did the deploy succeed?" not "does the product work?"
 
-**Categories:**
+But I concede that making them a separate named phase is overkill. They can be the preamble to acceptance, just as preflight is the preamble to unit.
 
-| Stage | Gate for | Tests | Fails -> |
-|-------|----------|-------|----------|
-| **Preflight** | commit | Config validation, env checks | Cannot commit |
-| **Unit** | build | 12 pure logic files (no I/O) | Cannot build |
-| **Verify** | publish | Init tests + Verdaccio publish + 25 checks | Cannot publish to npm |
-| **Post-deploy** | promote | Same 25 checks against npm | Do not promote dist-tag |
-
-**Pipeline integration -- this is the part everyone else is getting wrong:**
+**My pipeline:**
 
 ```
-Preflight ─┐
-           ├─ gate: "safe to build"
-Unit ──────┘
-           |
-         build
-           |
-Verify ────── gate: "safe to publish"
-           |
-       npm publish
-           |
-Post-deploy ── gate: "safe to promote"
-           |
-     npm dist-tag add @latest
+unit -> build -> deploy-staging -> acceptance -> deploy-prod -> smoke
 ```
 
-**The key insight:** "Verify" is ONE stage that includes init tests, Verdaccio publish, Verdaccio install, and all 25 acceptance checks. Splitting it into Contract + Integration + Acceptance (like Stripe suggests) creates three stages that always run together anyway. If you never run Contract without Integration, they are the same stage.
+Six phases. Each is clearly an action or a test. Each phase gates the next.
 
-**Verdaccio handling:** Verify publishes to Verdaccio, installs, runs checks. It is the "can we ship" gate. Full stop.
+| Phase | Gates | Failure meaning |
+|-------|-------|----------------|
+| unit | build | Code is wrong |
+| build | deploy-staging | Cannot produce artifacts |
+| deploy-staging | acceptance | Cannot publish to registry |
+| acceptance | deploy-prod | Deployed artifact is broken |
+| deploy-prod | smoke | Cannot publish to npm |
+| smoke | promote dist-tag | Production artifact is broken |
 
-**Post-deploy is NOT optional.** Every deployment pipeline needs a post-deploy validation gate. The current codebase has `test-acceptance.sh` which does this, but calling it "acceptance" when it runs after deploy is confusing. It is post-deploy validation.
+**On init tests:** Acceptance. They test the installed CLI. They need a registry. They go after deploy-staging.
 
 ---
 
 **EXPERT 5 (Thoughtworks Tech Lead -- CD/XP Practitioner)**
 
-I agree with Microsoft on the gating model but disagree on naming. Tests should be named by WHERE THEY RUN IN THE PIPELINE, not by testing theory. Nobody cares whether something is a "unit test" or an "integration test" in the abstract. They care: "when does this run and what does it block?"
+I agree with the 6-phase pipeline. But everyone is dodging the naming question. What does the developer TYPE? The npm scripts are the interface. Here is my proposal:
 
-**Categories:**
-
-| Pipeline Stage | Tests | Feedback time |
-|----------------|-------|---------------|
-| **commit** | Preflight + pure logic tests | <2s |
-| **pre-publish** | Init scaffolding + Verdaccio publish + install + 25 checks | <60s |
-| **post-publish** | Same 25 checks against npm | <120s |
-
-**Pipeline integration:**
-
-```
-code change
-  -> commit tests (automated, every save)
-  -> build
-  -> pre-publish tests (automated, includes Verdaccio cycle)
-  -> npm publish
-  -> post-publish tests (automated)
-  -> promote dist-tag
+```json
+{
+  "test": "unit tests (<2s)",
+  "test:acceptance": "T01-T25 against Verdaccio (~30s)",
+  "test:smoke": "T01-T25 against npm (~30s)",
+  "deploy:staging": "publish to Verdaccio",
+  "deploy:prod": "publish to npm"
+}
 ```
 
-**Key principle from Continuous Delivery:** The deployment pipeline IS the test organization. You do not need a separate taxonomy. The pipeline stages ARE the categories. When someone asks "what tests do we have?" the answer is: "look at the pipeline."
+Wait. But `deploy:staging` is not how the pipeline actually works. The pipeline orchestrator (`sync-and-build.sh`) handles deployment. Individual npm scripts for deploy steps would be used manually, not in CI. The test scripts are what developers run manually.
 
-**Verdaccio handling:** Pre-publish stage. It is the rehearsal for the real publish. Same checks, local registry.
+Let me reconsider. The developer-facing commands are:
+- `npm test` -- fast feedback (unit)
+- `npm run test:acceptance` -- verify against staging (needs prior staging deploy)
+- `npm run test:smoke` -- verify against production (needs prior prod deploy)
+- `npm run deploy` -- full pipeline (handles everything)
 
-**What I STRONGLY object to in the current state:** The pipeline (`sync-and-build.sh`) runs `run_tests_ci()` which includes ALL 16 test files including the slow init tests. Those init tests (16-19) take seconds each and they are blocking the fast feedback loop. The first fix -- before any renaming -- is to split the runner so fast tests run in <2s and init tests run later.
+The deploy actions are INTERNAL to the pipeline orchestrator, not developer-facing commands. So the npm scripts should be tests only. The deploy actions live in sync-and-build.sh.
 
 ---
 
@@ -239,103 +214,106 @@ code change
 
 ---
 
-**EXPERT 3 (Netflix) attacks EXPERT 2 (Stripe):**
+**EXPERT 1 (Google) attacks EXPERT 3 (Netflix):**
 
-Five categories for 16 test files and 25 bash checks. Let me do the math. You want Unit (12 files), Contract (new -- does not exist yet), Integration (4 files), Acceptance (25 checks), and Smoke (subset of the 25 checks). So you are proposing to CREATE a new test category (Contract) and SPLIT an existing one (Acceptance into Acceptance + Smoke) for a project with 441 total test cases. That is one category per 88 tests. The overhead of maintaining five npm scripts, five directory conventions, and five mental categories exceeds the value of the classification.
-
-**EXPERT 2 (Stripe) defends:**
-
-Contract tests are not new test files. They are a reclassification of existing acceptance checks. T01 (`check_version`), T02 (`check_latest_resolves`), T03 (`check_no_broken_versions`) -- those are contract/structural tests. They verify package SHAPE, not package BEHAVIOR. T04-T08 verify init behavior. T09-T10 verify diagnostics. Those are functional acceptance tests. The distinction matters because contract tests CAN run against build artifacts without publishing, saving the entire Verdaccio cycle for fast feedback.
+You said "no structural gate -- T01-T03 already do version/dist-tag validation." That is wrong. T01 runs `npm view @sparkleideas/cli version` which checks version resolution. S-1 checks `node_modules/@sparkleideas/cli` exists after install. S-2 checks each ADR-0022 package is on Verdaccio. S-3 runs `npm ls --all`. Those are DIFFERENT checks. T01-T03 test the published version metadata. S-1 through S-3 test the install integrity. You cannot collapse them.
 
 **EXPERT 3 (Netflix) responds:**
 
-Can they though? T01 runs `npm view @sparkleideas/cli version`. That requires a registry. T02 runs `npm view @sparkleideas/cli dist-tags.latest`. Also requires a registry. You cannot run these against build artifacts. Your "contract test" category does not actually work for this project.
-
-**EXPERT 2 (Stripe) concedes:**
-
-Fair point. The existing checks are all registry-dependent. I concede that contract tests as a separate pre-publish category do not work here without writing new tests. I withdraw the Contract category. Four categories: Unit, Integration, Acceptance, Smoke.
-
----
-
-**EXPERT 1 (Google) attacks EXPERT 5 (Thoughtworks):**
-
-Naming tests by pipeline stage couples your test taxonomy to your pipeline topology. If you add a staging environment, do you rename "pre-publish" to "pre-staging"? If you split the pipeline into parallel tracks, which stage name wins? Pipeline-coupled naming is fragile.
-
-**EXPERT 5 (Thoughtworks) defends:**
-
-In 20 years of CD practice, I have never seen a team rename their test categories because the pipeline changed. What I HAVE seen, hundreds of times, is teams with beautiful abstract taxonomies (Small/Medium/Large, Unit/Contract/Integration/Acceptance/Smoke) where nobody remembers which category a test belongs to. Pipeline stages are concrete. They are visible in CI. When you see `pre-publish` in the build log, you know exactly what is running and why.
-
-**EXPERT 1 (Google) responds:**
-
-The abstraction exists for a reason. "Small" means "hermetic, fast, deterministic" regardless of where it runs. A Small test that runs in pre-publish is still Small. It should also run on commit. The size tells you the PROPERTIES of the test, the stage tells you WHEN it runs. Conflating them loses information.
-
-**EXPERT 5 (Thoughtworks) responds:**
-
-You are adding a dimension that does not help. Every developer on this project already knows that codemod.test.mjs is fast and hermetic. They do not need a "Small" label to tell them that. What they NEED to know is: "if I change this code, which pipeline stage will catch a regression?" The answer is: commit stage. That is the useful information.
-
----
-
-**EXPERT 4 (Microsoft) attacks EXPERT 3 (Netflix):**
-
-"Fast/Slow/Live" has a fundamental problem: "Slow" conflates two very different failure modes. If an init scaffolding test fails (your `init-structural.test.mjs`), that means the code generator is broken. If a Verdaccio acceptance check fails (`check_memory_lifecycle`), that means the published package is broken. Those are DIFFERENT problems with DIFFERENT fixes, and lumping them into "Slow" means the developer has to inspect the output to figure out what category of breakage occurred.
-
-**EXPERT 3 (Netflix) defends:**
-
-The developer has to inspect the output ANYWAY. Even with your four-category system, a failure in "Verify" could be a publish failure, an install failure, or a check failure. You still have to read the logs. The category name does not tell you the fix. The error message does.
-
-**EXPERT 4 (Microsoft) responds:**
-
-But it tells you WHERE to look. If "Unit" fails, look at your logic. If "Verify" fails, look at the pipeline or the published artifacts. "Slow" tells you nothing.
-
-**EXPERT 3 (Netflix) concedes:**
-
-Okay, I will concede that "Slow" is too broad. But I maintain that three categories is the right number. Let me revise: **Fast** (pure logic), **Publish** (everything in the Verdaccio cycle), **Live** (post-deploy). That gives you the "where to look" signal without the ceremony of four or five categories.
-
----
-
-**EXPERT 5 (Thoughtworks) attacks EXPERT 4 (Microsoft):**
-
-Your "Preflight" as a separate gate is wrong. Preflight is not a gate -- it is a precondition. If config files are missing, you cannot even run unit tests. Making it a separate named stage implies it has independent value. It does not. It should be a preamble to the unit tests, not a peer category.
-
-**EXPERT 4 (Microsoft) defends:**
-
-It IS a separate thing in the codebase. `scripts/preflight.mjs` is its own script. The pipeline calls it separately. `npm run preflight` is its own command.
-
-**EXPERT 5 (Thoughtworks) responds:**
-
-The fact that it is a separate script does not make it a separate test category. `eslint` is a separate script too. You would not call linting a "test category." Preflight validates that the environment is sane. It is a build precondition, not a test.
-
-**EXPERT 4 (Microsoft) concedes:**
-
-Fine. Preflight is a precondition that runs before unit tests, not a peer category. I fold it into the first stage. Three stages with preflight as a preamble.
-
----
-
-**EXPERT 2 (Stripe) attacks EXPERT 1 (Google):**
-
-Small/Medium/Large is designed for monorepos with thousands of engineers who need shared vocabulary across teams. This project has one team and 441 tests. Using Google's classification here is like using Kubernetes to deploy a static website. It works, but the impedance mismatch is obvious. Nobody on this team will ever say "run the Small tests." They will say "run the unit tests" or "run npm test."
+Fine. But they do not need to be a separate pipeline PHASE. They are the setup phase of acceptance. If install fails, acceptance cannot run. If structural checks fail, acceptance cannot run. They are preconditions, not a peer stage.
 
 **EXPERT 1 (Google) concedes:**
 
-Agreed. The S/M/L vocabulary is overkill here. What matters is the PRINCIPLE: tests with no I/O should be separated from tests with I/O, and both should be separated from tests that hit external services. The labels can be anything. I will drop S/M/L and accept whatever names the group converges on, as long as the hermetic boundary is respected.
+Agreed. Preconditions to acceptance, not a separate phase. The 6-phase pipeline stands: unit -> build -> deploy-staging -> acceptance -> deploy-prod -> smoke. Structural checks are the preamble to acceptance, same as preflight is the preamble to unit.
 
 ---
 
-**EXPERT 1 (Google) attacks EXPERT 3 (Netflix revised):**
+**EXPERT 2 (Stripe) attacks EXPERT 5 (Thoughtworks):**
 
-Your revised "Fast/Publish/Live" still has a problem. Where do the init tests go? They are not "Fast" (they run `npx`, take seconds). They are not "Publish" (they do not involve Verdaccio). You have a classification gap.
+You renamed `test:live` (from v2) to `test:smoke`. But "smoke" implies a quick sanity check -- a few critical paths. The post-production tests run ALL 25 checks, which is a full acceptance suite, not a smoke test. Calling it "smoke" sets wrong expectations.
 
-**EXPERT 3 (Netflix) responds:**
+**EXPERT 5 (Thoughtworks) defends:**
 
-They go in Publish. They run before publish as part of the "is everything working" gate. The fact that they do not touch Verdaccio does not matter. They are part of the "safe to publish" validation.
+In CD practice, "smoke test" means "post-deployment validation." It does not imply brevity. The Linux kernel smoke test suite is enormous. But I take your point that it could mislead on this project. Alternatives: `test:live`, `test:prod`, `test:post-deploy`.
 
-**EXPERT 5 (Thoughtworks) interjects:**
+**EXPERT 4 (Microsoft) interjects:**
 
-This proves Netflix's naming is wrong. "Publish" implies Verdaccio involvement. The init tests have nothing to do with publishing. If the name misleads, it is a bad name.
+`test:smoke` is fine. Everyone in DevOps understands smoke testing as post-deploy validation. The alternative `test:live` from v2 was vague -- "live" could mean "against a live service" or "in a live environment." `test:smoke` is more specific.
 
-**EXPERT 3 (Netflix) responds:**
+**EXPERT 3 (Netflix):**
 
-Fine. Call it "Pre-deploy" instead of "Publish." Fast / Pre-deploy / Post-deploy.
+I prefer `test:smoke` over `test:live`. It is industry-standard for post-deploy checks.
+
+**EXPERT 2 (Stripe) concedes:**
+
+Fine. `test:smoke` it is.
+
+---
+
+**EXPERT 4 (Microsoft) attacks EXPERT 5 (Thoughtworks):**
+
+You said deploy actions are internal to the pipeline orchestrator. But what about `npm run test:verify` from v2? That script PUBLISHED to Verdaccio AND ran tests. Your proposal separates them, meaning test-verify.sh needs to be split into two scripts: one that deploys and one that tests. That is a significant refactor.
+
+**EXPERT 5 (Thoughtworks) responds:**
+
+Yes. And that is CORRECT. The current test-verify.sh is a pipeline-in-a-script. It does 8 phases including publish, install, structural checks, and 25 acceptance checks. That monolith is why v2 got confused -- when the deploy and test are in the same script, people call the whole thing a "test." Splitting it is the fix, not the problem.
+
+**EXPERT 1 (Google) supports:**
+
+Splitting is essential. But practically, we should keep a convenience script that runs deploy-staging + acceptance for local development. The pipeline orchestrator calls them as separate functions. The developer runs one command that does both.
+
+**EXPERT 4 (Microsoft) agrees:**
+
+Yes. Two internal functions (`deploy_to_staging` and `run_acceptance`), one convenience command (`npm run test:acceptance` which does both for local dev), and the pipeline orchestrator calls them separately with gates between.
+
+**ALL EXPERTS agree on this design.**
+
+---
+
+**EXPERT 3 (Netflix) attacks EXPERT 1 (Google) on init tests:**
+
+You keep saying the init tests "could be unit tests if we refactored." Stop. The question is: where do the EXISTING tests go? Files 16-19 use `npx` and hit a registry. They are acceptance tests. Ship the reorg with them in acceptance. If someone wants unit-level init tests later, they write them. Do not hold up the reorg for hypothetical future work.
+
+**EXPERT 1 (Google) agrees:**
+
+You are right. Existing init tests go to acceptance. Future init unit tests are out of scope for this ADR.
+
+---
+
+**EXPERT 2 (Stripe) raises a new concern:**
+
+What about the Verdaccio promote step? Currently test-verify.sh promotes packages to @latest AFTER acceptance checks pass. Where does that go? It is a deploy action (mutates dist-tag state) but it happens after acceptance, before npm publish. It is a staging finalization step.
+
+**EXPERT 4 (Microsoft):**
+
+Promote-on-Verdaccio is part of deploy-staging finalization. It is not a test. In the pipeline:
+
+```
+deploy-staging = publish to Verdaccio + install + promote to @latest on Verdaccio
+acceptance = T01-T25 against installed packages
+```
+
+Wait. Actually, promoting before acceptance is wrong. If acceptance fails, you have promoted a broken version on Verdaccio. The promote should happen AFTER acceptance passes.
+
+**EXPERT 5 (Thoughtworks):**
+
+Correct. The promote is a gated action: acceptance must pass before promoting on Verdaccio. So the sequence is:
+
+```
+deploy-staging (publish) -> acceptance -> promote-staging -> deploy-prod -> smoke -> promote-prod
+```
+
+But now we have 8 phases. That is too many names.
+
+**EXPERT 3 (Netflix):**
+
+Promote is an implementation detail of deploy, not a pipeline phase. Just put it at the end of the acceptance script: if all checks pass, promote. Or better: put it at the beginning of deploy-prod. Before you publish to npm, promote on Verdaccio to confirm the staging deploy is blessed.
+
+**EXPERT 4 (Microsoft):**
+
+That is clean. Promote-staging is the first step of deploy-prod. It is the "bless staging" action before going to production.
+
+**ALL EXPERTS agree. Promote stays implicit, triggered by acceptance success.**
 
 ---
 
@@ -345,148 +323,271 @@ Fine. Call it "Pre-deploy" instead of "Publish." Fast / Pre-deploy / Post-deploy
 
 **EXPERT 4 (Microsoft) opens:**
 
-Let me synthesize. Here is what we all agree on:
+Let me synthesize the final consensus. Six phases, three test and three action:
 
-1. Three stages, not five (Netflix was right about simplicity, Stripe and I concede)
-2. Preflight is a preamble, not a category (Thoughtworks was right)
-3. Fast pure-logic tests must be separated from slow I/O tests (Google was right)
-4. Tests should be named by what they gate in the pipeline (Thoughtworks was right)
-5. The Verdaccio cycle and init tests belong in the same pre-deploy stage (Netflix was right -- they always run together)
-6. Post-deploy validation is mandatory and distinct (I was right, everyone agrees)
+```
+unit -> build -> deploy-staging -> acceptance -> deploy-prod -> smoke
+                                                      ^
+                                              (includes promote-staging
+                                               as first step)
+```
+
+Each phase:
+
+| # | Phase | Type | Script/Function | What |
+|---|-------|------|----------------|------|
+| 1 | unit | TEST | `npm test` | Preflight + 12 pure logic files (<2s) |
+| 2 | build | ACTION | `npm run build` | codemod + compile |
+| 3 | deploy-staging | ACTION | `deploy_to_staging()` | Publish to Verdaccio, install into temp project, structural checks |
+| 4 | acceptance | TEST | `run_acceptance_checks()` | T01-T25 against Verdaccio + init tests (16-19) |
+| 5 | deploy-prod | ACTION | `deploy_to_prod()` | Promote Verdaccio @latest, npm publish |
+| 6 | smoke | TEST | `npm run test:smoke` | T01-T25 against real npm |
 
 **EXPERT 1 (Google):**
 
-Agreed on all six. The remaining question is naming. We have three candidate schemes:
-
-- Google: Small / Medium / Large (withdrawn)
-- Netflix: Fast / Pre-deploy / Post-deploy
-- Microsoft: Unit / Verify / Post-deploy
-- Thoughtworks: commit / pre-publish / post-publish
-
-**EXPERT 3 (Netflix):**
-
-Drop all the abstract names. What does a developer actually TYPE? They type `npm test` for fast stuff and `npm run test:verify` for the big gate. Let the npm script names BE the taxonomy. The category IS the command.
-
-**EXPERT 5 (Thoughtworks):**
-
-I strongly support that. The npm script name is the only name that matters. Nobody reads the ADR before running tests. They read `package.json`.
+Accepted. One clarification: the init tests (16-19) run as part of acceptance, not as part of deploy-staging. They test the installed CLI by running `npx @sparkleideas/cli init`. They exercise the deployed artifact. They are acceptance tests.
 
 **EXPERT 2 (Stripe):**
 
-Then let us pick npm script names that are self-explanatory:
-
-- `npm test` -- unit tests, fast, every change (implies: pure logic, no I/O)
-- `npm run test:integration` -- init tests + Verdaccio cycle + all checks (implies: components working together, real I/O)
-- `npm run test:live` -- same checks against real npm (implies: production validation)
-
-Wait. "integration" is a loaded word. It means different things to different people.
-
-**EXPERT 4 (Microsoft):**
-
-Use "verify" instead of "integration." It maps to the existing `test-verify.sh` script, so it is not even a rename. And it clearly means "verify we can ship."
+Accepted. And the structural checks (S-1 through S-3) are part of deploy-staging, not acceptance. They verify the deploy succeeded. They are deploy health checks.
 
 **EXPERT 3 (Netflix):**
 
-But "verify" was one of the confusing names we identified in the problem statement. The confusion was between "verify" and "acceptance."
-
-**EXPERT 4 (Microsoft):**
-
-The confusion was because BOTH existed. With this proposal, there is only "verify" (pre-deploy) and "live" (post-deploy). No "acceptance" to confuse with. The ambiguity disappears when you kill one of the two.
-
-**EXPERT 1 (Google):**
-
-I support that. "verify" is the pre-deploy gate, "live" is the post-deploy gate. Clear, unambiguous, and the developer never has to think about which is which.
+Accepted. But I want to nail down the npm scripts. Developers care about commands, not architecture diagrams.
 
 **EXPERT 5 (Thoughtworks):**
 
-I accept "verify" over my "pre-publish" proposal. It is shorter and already exists in the codebase.
+Here are the scripts:
+
+```json
+{
+  "test": "npm run preflight && node scripts/test-runner.mjs --dir tests/unit",
+  "test:acceptance": "bash scripts/test-acceptance.sh",
+  "test:smoke": "bash scripts/test-smoke.sh",
+  "test:all": "npm test && npm run build && npm run test:acceptance",
+  "preflight": "node scripts/preflight.mjs"
+}
+```
+
+Key design choices:
+- `npm test` is unit only. Fast. Inner loop.
+- `test:acceptance` handles deploy-staging internally (publish + install + structural checks), then runs T01-T25 + init tests. One command for the developer. Under the hood, it is deploy + test.
+- `test:smoke` runs T01-T25 against real npm. Only after `npm run deploy`.
+- `test:all` runs unit + build + acceptance. The pre-publish gate.
+- No `test:verify` -- that name conflated deploy and test. Killed.
+- No `test:live` -- replaced by `test:smoke`.
+
+**EXPERT 4 (Microsoft):**
+
+Wait. You just put deploy back inside `test:acceptance`. Are we not right back where we started?
+
+**EXPERT 5 (Thoughtworks):**
+
+No. The CONCEPTUAL model separates them: deploy-staging is an action, acceptance is a test. The script `test-acceptance.sh` invokes both for developer convenience. Inside sync-and-build.sh, they are separate function calls with a gate between them. The developer sees one command; the pipeline sees two phases.
+
+**EXPERT 3 (Netflix):**
+
+That is the right pragmatic call. A developer running `npm run test:acceptance` wants to test the deployed artifact. They do not want to manually publish to Verdaccio first. The script does both, but the pipeline functions are separated.
+
+**EXPERT 1 (Google):**
+
+Agreed. The implementation detail is that test-acceptance.sh calls `deploy_to_staging()` then `run_acceptance_checks()`. sync-and-build.sh calls them separately with error handling between. Same functions, different entry points.
 
 **EXPERT 2 (Stripe):**
 
-Same. I retract my four-category proposal and accept three. But I want one addition: the init tests (16-19) should be in a separate directory from unit tests even if they are part of the same "verify" stage. The directory structure should reflect the speed boundary so a developer can choose to run just fast tests.
+I want to ensure we are not just renaming. The critical change from v2 is:
 
-**ALL EXPERTS agree.**
-
-**EXPERT 4 (Microsoft):**
-
-Let me also raise the gating question one more time. We need to be precise:
-
-| Stage | Gates | Meaning of failure |
-|-------|-------|-------------------|
-| `npm test` | commit/build | Your logic is wrong. Fix the code. |
-| `npm run test:verify` | npm publish | The package is not shippable. Could be init, could be structure, could be functionality. |
-| `npm run test:live` | dist-tag promotion | The published package has a problem on real npm. Do not promote to @latest. |
-
-**EXPERT 3 (Netflix):**
-
-That is clean. One more thing: the pipeline today runs ALL 16 test files in `run_tests_ci()` before Verdaccio, including the slow init tests. The first concrete improvement is splitting the runner so `npm test` runs only the fast tests (12 files, <2s) and init tests run as part of verify.
-
-**EXPERT 5 (Thoughtworks):**
-
-Agreed. And that is achievable with the existing `test-runner.mjs` by adding `--dir` support. Point it at `tests/unit` for fast tests, `tests/integration` for init tests.
-
-**EXPERT 1 (Google):**
-
-One final concern: the 25 bash acceptance checks currently run twice -- once against Verdaccio (in test-verify.sh) and once against npm (in test-acceptance.sh). Both scripts source the same `lib/acceptance-checks.sh`. That shared library is the right pattern. Keep it. Just rename the consuming scripts.
+1. **test-verify.sh is DELETED.** It conflated deploy and test.
+2. **test-acceptance.sh is REWRITTEN.** It calls deploy-staging, then runs checks. Two clear internal phases.
+3. **test-live.sh becomes test-smoke.sh.** Same 25 checks, pointed at npm.
+4. **The shared functions** (`deploy_to_staging`, `run_acceptance_checks`) live in `lib/` so both test-acceptance.sh and sync-and-build.sh can use them.
 
 **ALL EXPERTS agree on final proposal.**
 
 ---
 
+**EXPERT 4 (Microsoft) final check:**
+
+One more thing: the `--skip-promote` flag on the current test-verify.sh. In the new model, promote happens at deploy-prod time, not at acceptance time. So `--skip-promote` moves to deploy-prod logic. Acceptance never promotes anything.
+
+**EXPERT 5 (Thoughtworks):**
+
+Correct. Acceptance tests the deployed artifact. It does not mutate state. Deploy-prod promotes staging and publishes to npm. Clean separation.
+
+**ALL EXPERTS confirm final consensus.**
+
+---
+
 ## Decision
 
-### Final Consensus: 3 categories, pipeline-gated
+### Final Consensus: 6-phase pipeline with explicit deploy phases
 
-Replace L0/L1/L2/L3 with three stages that map directly to pipeline gates:
-
-| Category | Command | Contents | Runtime | Gates |
-|----------|---------|----------|---------|-------|
-| **unit** | `npm test` | Preflight + 12 pure logic test files (no I/O, no subprocess) | <2s | commit, build |
-| **verify** | `npm run test:verify` | 4 init tests + Verdaccio publish + install + 25 acceptance checks | <60s | npm publish |
-| **live** | `npm run test:live` | Same 25 checks against real npm | <120s | dist-tag promotion |
-
-**Rules:**
-- If it spawns a subprocess or touches the filesystem, it is NOT a unit test
-- If it requires a registry (Verdaccio or npm), it is a verify or live test
-- Preflight is a preamble to unit tests, not a separate category
-
-### Pipeline lifecycle
+The pipeline has three TEST phases and three ACTION phases, interleaved:
 
 ```
   code change
        |
-  +---------+
-  | npm test |  <-- preflight + 12 unit test files (<2s)
-  +---------+
+  +-----------+
+  |  npm test  |  TEST: preflight + 12 pure-logic unit tests (<2s)
+  +-----------+
        |
-   GATE: commit (cannot merge if unit tests fail)
+   GATE: code is correct
        |
-  +---------+
-  |  build  |  <-- codemod + compile (cached, ~30s cold)
-  +---------+
+  +-----------+
+  |   build    |  ACTION: codemod + compile (~30s cold, cached)
+  +-----------+
        |
-  +------------------+
-  | npm run           |
-  | test:verify       |  <-- init tests + verdaccio publish + install + 25 checks
-  +------------------+
-       |
-   GATE: publish (cannot publish to npm if verify fails)
-       |
-  +-------------+
-  | npm publish |  <-- push to npmjs.com
-  +-------------+
+   GATE: artifacts exist
        |
   +------------------+
-  | npm run           |
-  | test:live         |  <-- same 25 checks against real npm
+  | deploy-staging    |  ACTION: publish to Verdaccio, install into temp
+  |                   |  project, structural checks (S-1..S-3)
   +------------------+
        |
-   GATE: promote (do not promote dist-tag if live fails)
+   GATE: staging deploy healthy
+       |
+  +------------------+
+  | acceptance        |  TEST: T01-T25 against Verdaccio-installed
+  |                   |  packages + init tests (16-19)
+  +------------------+
+       |
+   GATE: deployed artifact works
+       |
+  +------------------+
+  | deploy-prod       |  ACTION: promote Verdaccio @latest, npm publish
+  +------------------+
+       |
+   GATE: production deploy succeeded
+       |
+  +------------------+
+  | smoke             |  TEST: T01-T25 against real npm
+  +------------------+
+       |
+   GATE: production artifact works
        |
   +---------------------+
   | npm dist-tag @latest |
   +---------------------+
 ```
+
+### Phase definitions
+
+| Phase | Type | Purpose | Failure meaning |
+|-------|------|---------|----------------|
+| **unit** | TEST | Validate code correctness: transforms, logic, wiring, generator code | Code is wrong. Fix the source. |
+| **build** | ACTION | Produce deployable artifacts: codemod scope rename, compile TypeScript | Build tooling is broken. Fix codemod/tsc config. |
+| **deploy-staging** | ACTION | Deploy to staging registry: publish all packages to Verdaccio, install into fresh temp project, run structural health checks (S-1..S-3) | Packaging is broken. Fix package.json, exports, deps. |
+| **acceptance** | TEST | Validate the deployed artifact works: run T01-T25 acceptance checks + init scaffolding tests against packages installed from Verdaccio | Deployed package is broken. Fix the code or the packaging. |
+| **deploy-prod** | ACTION | Deploy to production: promote Verdaccio dist-tags to @latest, npm publish to npmjs.com | npm publish failed. Check credentials, versions, network. |
+| **smoke** | TEST | Validate the production deployment: run T01-T25 against packages installed from real npm | Production package is broken. Investigate npm-specific issues. |
+
+### What belongs where
+
+#### Unit tests (12 files, <2s)
+
+Pure logic, no I/O, no subprocess, no registry:
+
+| File | it() calls | What it tests |
+|------|-----------|---------------|
+| `codemod.test.mjs` | 16 | Scope rename transforms |
+| `pipeline-logic.test.mjs` | 37 | Pipeline orchestration logic |
+| `publish-order.test.mjs` | 31 | Topological publish ordering |
+| `fork-version.test.mjs` | 41 | Version bump calculations |
+| `agentdb-tools-wiring.test.mjs` | 57 | AgentDB tool registration (mocked) |
+| `hooks-tools-wiring.test.mjs` | 49 | Hooks tool registration (mocked) |
+| `memory-bridge-wiring.test.mjs` | 49 | Memory bridge activation (mocked) |
+| `memory-tools-wiring.test.mjs` | 23 | Memory tool registration (mocked) |
+| `controller-registry.test.mjs` | 20 | Controller registry activation (mocked) |
+| `controller-chaos.test.mjs` | 27 | Controller chaos/fault tests (mocked) |
+| `controller-properties.test.mjs` | 13 | Controller property validation (mocked) |
+| `context-synthesize.test.mjs` | 8 | Context synthesis logic (mocked) |
+
+#### Acceptance tests -- init scaffolding (4 files, post-deploy)
+
+These run `npx` and hit the registry. They test the INSTALLED CLI command, not the generator source code:
+
+| File | it() calls | What it tests |
+|------|-----------|---------------|
+| `init-structural.test.mjs` | 17 | Does `npx @sparkleideas/cli init` produce correct file structure? |
+| `init-helpers.test.mjs` | 14 | Do init helper utilities work on the installed package? |
+| `init-cross-mode.test.mjs` | 9 | Does init work across different modes (v3, wizard, etc.)? |
+| `init-patch-regression.test.mjs` | 15 | Do patched init behaviors survive packaging? |
+
+#### Acceptance tests -- bash checks (25 checks, post-deploy)
+
+These run against packages installed from a registry (Verdaccio or npm):
+
+| ID | Function | Group | What it validates |
+|----|----------|-------|------------------|
+| T01 | `check_version` | smoke | Version resolves on registry |
+| T02 | `check_latest_resolves` | smoke | @latest dist-tag points to correct version |
+| T03 | `check_no_broken_versions` | smoke | No known-broken versions published |
+| T04 | `check_init` | init | `npx @sparkleideas/cli init` creates project |
+| T05 | `check_settings_file` | init | Init produces correct settings file |
+| T06 | `check_scope` | init | Package scope is @sparkleideas throughout |
+| T07 | `check_mcp_config` | init | MCP configuration is generated correctly |
+| T08 | `check_ruflo_init_full` | init | `ruflo init --full` produces complete scaffold |
+| T09 | `check_doctor` | diagnostics | `ruflo doctor` runs without error |
+| T10 | `check_wrapper_proxy` | diagnostics | Wrapper proxy forwards commands correctly |
+| T11 | `check_memory_lifecycle` | data | Memory store/retrieve/delete cycle works |
+| T12 | `check_neural_training` | data | Neural training round-trips |
+| T13 | `check_agent_booster_esm` | packages | Agent booster ESM imports resolve |
+| T14 | `check_agent_booster_bin` | packages | Agent booster CLI binary works |
+| T15 | `check_plugins_sdk` | packages | Plugins SDK exports are accessible |
+| T16 | `check_plugin_install` | packages | Plugin install flow completes |
+| T17 | `check_controller_health` | controllers | Controller health endpoint responds |
+| T18 | `check_hooks_route` | controllers | Hook routing dispatches correctly |
+| T19 | `check_memory_scoping` | controllers | Memory namespace scoping works |
+| T20 | `check_reflexion_lifecycle` | controllers | Reflexion store/recall cycle works |
+| T21 | `check_causal_graph` | controllers | Causal graph edges are recorded |
+| T22 | `check_cow_branching` | controllers | Copy-on-write branching works |
+| T23 | `check_batch_operations` | controllers | Batch API processes multiple ops |
+| T24 | `check_context_synthesis` | controllers | Context synthesis produces output |
+| T25 | `check_full_controller_activation` | e2e | All 28 controllers activate successfully |
+
+#### Structural checks (deploy health, part of deploy-staging)
+
+These are NOT tests -- they verify the deploy succeeded:
+
+| ID | What | Where |
+|----|------|-------|
+| S-1 | `@sparkleideas/cli` exists in `node_modules/` | deploy-staging |
+| S-2 | ADR-0022 packages available on Verdaccio | deploy-staging |
+| S-3 | `npm ls --all` shows no MISSING deps | deploy-staging |
+
+### npm scripts
+
+```json
+{
+  "test": "npm run preflight && node scripts/test-runner.mjs --dir tests/unit",
+  "test:acceptance": "bash scripts/test-acceptance.sh",
+  "test:smoke": "bash scripts/test-smoke.sh",
+  "test:all": "npm test && npm run build && npm run test:acceptance",
+  "preflight": "node scripts/preflight.mjs"
+}
+```
+
+| Script | Phase(s) | What it does | When to run |
+|--------|----------|-------------|-------------|
+| `npm test` | unit | Preflight + 12 unit test files (<2s) | After every code change |
+| `npm run test:acceptance` | deploy-staging + acceptance | Publish to Verdaccio, install, structural checks, T01-T25, init tests | Before deploying to npm (needs `npm run build` first) |
+| `npm run test:smoke` | smoke | T01-T25 against real npm | After deploying to npm |
+| `npm run test:all` | unit + build + deploy-staging + acceptance | Full pre-production gate | Manual pre-deploy validation |
+
+**Why test:acceptance includes deploy-staging:** A developer running `npm run test:acceptance` wants to validate the deployed artifact. Requiring them to manually publish to Verdaccio first creates a footgun (they forget, run acceptance against stale packages, get false passes). The script handles deployment internally, but the pipeline orchestrator calls the deploy and test functions separately with gates.
+
+**Removed scripts:**
+- `test:unit` -- replaced by `npm test` (which now runs only unit tests)
+- `test:verify` -- killed. Conflated deploy and test.
+- `test:live` -- replaced by `test:smoke`
+- `test:acceptance` (old) -- rewritten with new semantics (was pointed at npm, now pointed at Verdaccio)
+
+### Script renames
+
+| Old | New | Reason |
+|-----|-----|--------|
+| `test-verify.sh` | `test-acceptance.sh` | Was deploy+test monolith. Rewritten as deploy-staging + acceptance. |
+| `test-acceptance.sh` | `test-smoke.sh` | Was "acceptance against npm." Now correctly named as post-production smoke test. |
 
 ### Directory structure
 
@@ -505,7 +606,7 @@ tests/
     controller-chaos.test.mjs          (27 it-calls)
     controller-properties.test.mjs     (13 it-calls)
     context-synthesize.test.mjs        (8 it-calls)
-  integration/                       # Runs real CLI, filesystem I/O
+  acceptance/                        # Post-deploy, needs Verdaccio
     init-structural.test.mjs           (17 it-calls)
     init-helpers.test.mjs              (14 it-calls)
     init-cross-mode.test.mjs           (9 it-calls)
@@ -515,14 +616,16 @@ tests/
   helpers/
     fixture-factory.mjs
     pipeline-helpers.mjs
-  CLAUDE.md                          # Simplified test guide (4 lines)
+  CLAUDE.md                          # Simplified test guide
 ```
+
+Note: the init tests moved from `integration/` (v2) to `acceptance/`. The v2 name "integration" was wrong -- these tests do not test component integration, they test the INSTALLED CLI command against a deployed package. That is acceptance testing.
 
 ### File naming convention
 
 - **No numeric prefixes.** Descriptive kebab-case names.
 - `*-wiring.test.mjs` for mock-based contract tests (was "activation")
-- `init-*.test.mjs` for init scaffolding tests
+- `init-*.test.mjs` for init scaffolding acceptance tests
 - No `@tier` annotations (directory IS the category)
 
 ### Migration map
@@ -541,35 +644,24 @@ tests/
 | `13-controller-chaos.test.mjs` | `unit/controller-chaos.test.mjs` | unit |
 | `14-controller-properties.test.mjs` | `unit/controller-properties.test.mjs` | unit |
 | `15-agentdb-context-synthesize.test.mjs` | `unit/context-synthesize.test.mjs` | unit |
-| `16-init-structural.test.mjs` | `integration/init-structural.test.mjs` | integration (runs in verify) |
-| `17-init-helpers.test.mjs` | `integration/init-helpers.test.mjs` | integration (runs in verify) |
-| `18-init-cross-mode.test.mjs` | `integration/init-cross-mode.test.mjs` | integration (runs in verify) |
-| `19-init-patch-regression.test.mjs` | `integration/init-patch-regression.test.mjs` | integration (runs in verify) |
+| `16-init-structural.test.mjs` | `acceptance/init-structural.test.mjs` | acceptance |
+| `17-init-helpers.test.mjs` | `acceptance/init-helpers.test.mjs` | acceptance |
+| `18-init-cross-mode.test.mjs` | `acceptance/init-cross-mode.test.mjs` | acceptance |
+| `19-init-patch-regression.test.mjs` | `acceptance/init-patch-regression.test.mjs` | acceptance |
 
-### npm scripts
+### Bash cleanup
 
-```json
-{
-  "test": "npm run preflight && node scripts/test-runner.mjs --dir tests/unit",
-  "test:init": "node scripts/test-runner.mjs --dir tests/integration",
-  "test:verify": "bash scripts/test-verify.sh",
-  "test:live": "bash scripts/test-live.sh",
-  "test:all": "npm run preflight && npm test && npm run test:init",
-  "test:pre-publish": "npm run test:all && npm run build && npm run test:verify",
-  "preflight": "node scripts/preflight.mjs"
-}
-```
+| Old variable | New variable |
+|-------------|-------------|
+| `RQ_PORT` | `VERDACCIO_PORT` |
+| `rq_pass` | `pass_count` |
+| `rq_fail` | `fail_count` |
+| `rq_total` | `total_count` |
+| `rq_results_json` | `results_json` |
+| `RQ_PARALLEL_DIR` | `PARALLEL_DIR` |
+| `RQ_STORAGE` | `VERDACCIO_STORAGE` |
 
-**Script renames:**
-
-| Old | New | Purpose |
-|-----|-----|---------|
-| `test-verify.sh` | `test-verify.sh` | Kept (Verdaccio cycle + 25 checks). Absorbs init test invocation. |
-| `test-acceptance.sh` | `test-live.sh` | Renamed. Same checks against real npm. |
-
-**Removed:** `test:unit` (replaced by `npm test`), `test:acceptance` (replaced by `test:live`).
-
-**Added:** `test:init` (run init integration tests standalone, useful for debugging), `test:pre-publish` (full pre-deploy pipeline).
+Extract duplicated harness (~200 lines) into `lib/test-harness.sh`: `run_check`, `run_check_bg`, `collect_parallel`, `_escape_json`, result tracking.
 
 ### Acceptance check IDs
 
@@ -603,20 +695,6 @@ Drop the T25-T31 gap. Renumber T32 to T25:
 | T24 | T24 | `check_context_synthesis` | controllers |
 | T25 | T32 | `check_full_controller_activation` | e2e |
 
-### Bash cleanup
-
-| Old variable | New variable |
-|-------------|-------------|
-| `RQ_PORT` | `VERDACCIO_PORT` |
-| `rq_pass` | `pass_count` |
-| `rq_fail` | `fail_count` |
-| `rq_total` | `total_count` |
-| `rq_results_json` | `results_json` |
-| `RQ_PARALLEL_DIR` | `PARALLEL_DIR` |
-| `RQ_STORAGE` | `VERDACCIO_STORAGE` |
-
-Extract duplicated harness (~200 lines) into `lib/test-harness.sh`: `run_check`, `run_check_bg`, `collect_parallel`, `_escape_json`, result tracking.
-
 ### test-runner.mjs change
 
 Add `--dir` argument to scope file discovery:
@@ -629,26 +707,62 @@ const testDir = args.find(a => a.startsWith('--dir='))?.split('=')[1]
 
 Enable recursive subdirectory scanning (currently reads only one level).
 
-### sync-and-build.sh change
+### sync-and-build.sh changes
 
-Update `run_tests_ci()` to use `--dir tests/unit`:
+Separate deploy-staging from acceptance in `run_verify()`:
 
 ```bash
+deploy_to_staging() {
+  log "Deploying to Verdaccio (staging)"
+
+  # Verdaccio health check
+  if ! curl -sf "http://localhost:${VERDACCIO_PORT}/-/ping" >/dev/null 2>&1; then
+    log_error "Verdaccio not running on port ${VERDACCIO_PORT}"
+    return 1
+  fi
+
+  # Clear + publish + install + structural checks
+  # (extracted from current test-verify.sh Phases 1-7)
+  bash "${SCRIPT_DIR}/deploy-staging.sh" "${args[@]}" || return 1
+}
+
+run_acceptance() {
+  log "Running acceptance checks against staging"
+
+  # Init tests (files 16-19, now in tests/acceptance/)
+  node "${PROJECT_DIR}/scripts/test-runner.mjs" --dir tests/acceptance || return 1
+
+  # T01-T25 bash acceptance checks
+  bash "${SCRIPT_DIR}/run-acceptance-checks.sh" --registry "http://localhost:${VERDACCIO_PORT}" || return 1
+}
+
+deploy_to_prod() {
+  log "Deploying to npm (production)"
+
+  # Promote on Verdaccio first (bless staging)
+  # Then npm publish
+  bash "${SCRIPT_DIR}/deploy-prod.sh" || return 1
+}
+
+run_smoke() {
+  log "Running smoke checks against npm"
+  bash "${SCRIPT_DIR}/test-smoke.sh" --registry "https://registry.npmjs.org" || return 1
+}
+
+# Pipeline orchestration with gates
 run_tests_ci() {
-  log "Running preflight + unit tests"
+  log "Running unit tests"
   npm run preflight --prefix "${PROJECT_DIR}" || { log_error "Preflight failed"; return 1; }
   node "${PROJECT_DIR}/scripts/test-runner.mjs" --dir tests/unit || { log_error "Unit tests failed"; return 1; }
 }
-```
 
-Init tests move into `run_verify()` (before the Verdaccio cycle):
-
-```bash
-run_verify() {
-  log "Running init integration tests"
-  node "${PROJECT_DIR}/scripts/test-runner.mjs" --dir tests/integration || { log_error "Init tests failed"; return 1; }
-  # Then Verdaccio publish + install + 25 checks (existing logic)
-  bash "${SCRIPT_DIR}/test-verify.sh" "${args[@]}"
+run_full_pipeline() {
+  run_tests_ci           || return 1   # unit
+  npm run build          || return 1   # build
+  deploy_to_staging      || return 1   # deploy-staging
+  run_acceptance         || return 1   # acceptance
+  deploy_to_prod         || return 1   # deploy-prod
+  run_smoke              || return 1   # smoke
 }
 ```
 
@@ -657,20 +771,24 @@ run_verify() {
 ```markdown
 # Tests
 
+## Pipeline
+
+unit -> build -> deploy-staging -> acceptance -> deploy-prod -> smoke
+
 ## Commands
 - `npm test` -- unit tests (<2s), run after every code change
-- `npm run test:verify` -- Verdaccio publish + 25 checks (~60s), before deploy
-- `npm run test:live` -- same 25 checks against real npm, after deploy
+- `npm run test:acceptance` -- deploy to Verdaccio + 25 checks + init tests (~60s)
+- `npm run test:smoke` -- 25 checks against real npm (~30s), after deploy
 
-## Pipeline gates
+## Gates
 - Unit fails -> cannot build
-- Verify fails -> cannot publish to npm
-- Live fails -> do not promote dist-tag to @latest
+- Acceptance fails -> cannot publish to npm
+- Smoke fails -> do not promote dist-tag to @latest
 
 ## Rules
-- Run `npm test` after any code change
-- Never commit if tests fail
-- Run `npm run test:verify` before deploying (needs `npm run build` first)
+- Deploy is an ACTION, not a test. Verdaccio publish = staging deploy.
+- Acceptance tests the DEPLOYED artifact, not the source code.
+- Run `npm test` after any code change. Never commit if tests fail.
 ```
 
 ## Implementation
@@ -678,20 +796,24 @@ run_verify() {
 ### Execution plan (3 commits, ~3 hours)
 
 **Commit 1: Move files + update runner** (1h)
-- `mkdir -p tests/unit tests/integration`
+- `mkdir -p tests/unit tests/acceptance`
 - `git mv` all 16 test files to new locations (see migration map)
 - Update `test-runner.mjs` with `--dir` support + recursive scan
 - Update `package.json` scripts
 - Run `npm test` to verify
 
-**Commit 2: Rename scripts + purge RQ** (1h)
-- `git mv scripts/test-acceptance.sh scripts/test-live.sh`
-- Find-and-replace RQ variables in test-verify.sh and test-live.sh
+**Commit 2: Split test-verify.sh + rename scripts** (1.5h)
+- Extract deploy-staging logic from test-verify.sh into `scripts/deploy-staging.sh`
+- Extract acceptance check runner into `scripts/run-acceptance-checks.sh`
+- Rewrite `scripts/test-acceptance.sh` to call deploy-staging then acceptance
+- `git mv scripts/test-acceptance.sh scripts/test-smoke.sh` (old acceptance -> smoke)
+- Write new `scripts/test-acceptance.sh` (deploy-staging + acceptance)
+- Find-and-replace RQ variables
 - Renumber T32 to T25 in `lib/acceptance-checks.sh`
 - Extract harness into `lib/test-harness.sh`
-- Update `sync-and-build.sh` (`run_tests_ci` and `run_verify`)
+- Update `sync-and-build.sh` with separated functions
 - Rewrite `tests/CLAUDE.md`
-- Run `npm run test:verify` to validate
+- Run `npm run test:acceptance` to validate
 
 **Commit 3: Update docs + cleanup** (30min)
 - Update project `CLAUDE.md` build/test table
@@ -702,28 +824,30 @@ run_verify() {
 
 ### Risk
 
-Near zero. No test logic changes. Every change is a `git mv`, string replacement, or 10-line filter addition. The existing test-verify.sh and acceptance-checks.sh are proven stable.
+Low. The core change is splitting test-verify.sh into deploy-staging + acceptance. All test logic stays the same -- the checks, the check library, the harness are unchanged. The risk is in the script split, which can be validated by running the full pipeline end-to-end once.
 
 ## Consequences
 
 ### Positive
-- New hire understands the test suite in 30 seconds (3-line CLAUDE.md)
-- `npm test` runs in <2s (inner loop), not 1.7s + init overhead
-- Pipeline gates are explicit and visible
-- No layer numbers to memorize (L0/L1/L2/L3 gone)
-- No ID archaeology (5 schemes consolidated to 1)
-- Complete lifecycle coverage: build -> test -> deploy -> test
-- Clear failure semantics: unit fail = logic bug, verify fail = package bug, live fail = deployment bug
+- Deploy is a first-class pipeline phase, not hidden inside "verify"
+- Tests run at the right time: pre-deploy tests validate code, post-deploy tests validate the artifact
+- `npm test` runs in <2s (inner loop), not 1.7s + init test overhead
+- Clear failure semantics: unit fail = code bug, acceptance fail = package bug, smoke fail = npm-specific bug
+- No more "verify" confusion -- that name is gone
+- Pipeline matches industry-standard CI/CD: build -> deploy(staging) -> test -> deploy(prod) -> test
+- The Verdaccio -> npm two-stage deployment is explicitly modeled
 
 ### Negative
 - One-time churn in `git blame` from file moves
-- Any external references to old filenames break (unlikely -- internal project)
-- `test:acceptance` removed (can alias for one release cycle)
+- test-verify.sh split requires careful extraction of deploy vs test logic
+- Any external references to old script names break (unlikely -- internal project)
+- `test:verify` removed (no alias -- clean break from the conflated concept)
 
 ## Prior Art
 
 - Google: Small/Medium/Large test classification (principle adopted: hermetic boundary; vocabulary rejected: too abstract)
-- Stripe: Unit/Contract/Integration/Acceptance/Smoke (principle adopted: customer-facing validation; vocabulary rejected: too many categories for this project)
-- Netflix: Fast/Slow/Deploy (principle adopted: simplicity; vocabulary refined: "Slow" too vague)
-- Microsoft Azure DevOps: Pipeline-gated testing (principle adopted: every stage gates a deployment decision)
-- Thoughtworks CD: Deployment pipeline as test organization (principle adopted: tests named by pipeline position)
+- Stripe: Unit/Contract/Integration/Acceptance/Smoke (principle adopted: acceptance = test the deployed artifact; Contract withdrawn: requires new tests)
+- Netflix: Fast/Slow/Deploy (principle adopted: simplicity; vocabulary refined through debate)
+- Microsoft Azure DevOps: Pipeline-gated testing (principle adopted: every phase gates the next)
+- Thoughtworks CD: Deployment pipeline as test organization (principle adopted: deploy is a first-class phase, not a test step)
+- v2 of this ADR: Rejected. Conflated deploy and test into "verify."
