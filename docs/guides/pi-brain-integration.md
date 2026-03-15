@@ -189,14 +189,15 @@ Save as `.claude/scripts/pi-brain-session.sh` (make executable with `chmod +x`):
 
 ```bash
 #!/usr/bin/env bash
-# π.ruv.io session integration
+# π.ruv.io session integration — good tenancy edition
 set -euo pipefail
 
 ACTION="${1:-}"
 PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 CACHE_DIR="$PROJECT_DIR/.claude-flow/data"
-PI_PENDING="$CACHE_DIR/pi-pending-shares.jsonl"
+PI_CACHE="$CACHE_DIR/pi-context.json"
 PI_URL="https://pi.ruv.io/v1"
+CACHE_TTL=28800  # 8 hours — max 2 searches per long day
 PI_KEY="${BRAIN_API_KEY:-${PI:-}}"
 
 [ -z "$PI_KEY" ] && exit 0
@@ -204,13 +205,30 @@ mkdir -p "$CACHE_DIR"
 
 case "$ACTION" in
   session-start)
-    # Search π for project-relevant patterns
+    # Good tenancy: skip if cache is less than 8 hours old
+    if [ -f "$PI_CACHE" ]; then
+      CACHE_AGE=$(( $(date +%s) - $(stat -c %Y "$PI_CACHE" 2>/dev/null || echo 0) ))
+      if [ "$CACHE_AGE" -lt "$CACHE_TTL" ]; then
+        CACHED_COUNT=$(python3 -c "
+import json
+try:
+  d=json.load(open('$PI_CACHE'))
+  print(d.get('found',0))
+except: print(0)
+" 2>/dev/null || echo 0)
+        [ "$CACHED_COUNT" -gt 0 ] && echo "[PI] Using cached results ($(( CACHE_AGE / 60 ))m old, refreshes every 8h)"
+        exit 0
+      fi
+    fi
+
+    # Cache stale or missing — search π
     # Customize these queries for your project:
     QUERIES=(
       "your project topic one"
       "your project topic two"
     )
     FOUND=0
+    OUTPUT=""
     for Q in "${QUERIES[@]}"; do
       RESP=$(curl -sf --max-time 5 \
         -H "Authorization: Bearer $PI_KEY" \
@@ -223,32 +241,23 @@ import json,sys
 for m in json.load(sys.stdin)[:3]:
     print(f'  ({m.get(\"score\",0):.2f}) {m.get(\"title\",\"\")[:80]}')
 " 2>/dev/null || true)
-        [ -n "$TITLES" ] && echo "[PI] Relevant: $Q" && echo "$TITLES"
+        [ -n "$TITLES" ] && OUTPUT+="[PI] Relevant: $Q"$'\n'"$TITLES"$'\n'
       fi
     done
-    [ "$FOUND" -gt 0 ] && echo "[PI] $FOUND patterns from π collective"
+    echo "{\"found\":$FOUND,\"timestamp\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}" > "$PI_CACHE"
+    [ "$FOUND" -gt 0 ] && echo "$OUTPUT" && echo "[PI] $FOUND patterns from π collective (refreshes every 8h)"
     ;;
+
   session-end)
-    # Post any pending shares
-    if [ -f "$PI_PENDING" ] && [ -s "$PI_PENDING" ]; then
-      SHARED=0
-      while IFS= read -r line; do
-        ID=$(curl -sf --max-time 5 -X POST \
-          -H "Authorization: Bearer $PI_KEY" \
-          -H "Content-Type: application/json" \
-          -d "$line" "$PI_URL/memories" 2>/dev/null \
-          | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
-        [ -n "$ID" ] && SHARED=$((SHARED + 1))
-      done < "$PI_PENDING"
-      [ "$SHARED" -gt 0 ] && echo "[PI] Shared $SHARED learnings" && > "$PI_PENDING"
-    fi
+    # No auto-shares — all shares explicit via brain_share MCP tool
+    # Good tenancy: quality > quantity for a community resource
     ;;
 esac
 ```
 
 ### 3. Wire into settings.json
 
-Add to `.claude/settings.json` hooks:
+Add **only** session-start (no session-end hook — shares are always explicit):
 
 ```json
 {
@@ -261,33 +270,39 @@ Add to `.claude/settings.json` hooks:
           "timeout": 8000
         }
       ]
-    }],
-    "SessionEnd": [{
-      "hooks": [
-        {
-          "type": "command",
-          "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/pi-brain-session.sh\" session-end",
-          "timeout": 8000
-        }
-      ]
     }]
   }
 }
 ```
 
+### Good Tenancy
+
+This integration is designed to be a respectful consumer of the shared resource:
+
+| Concern | How we handle it |
+|---------|-----------------|
+| **Request frequency** | 8-hour cache TTL — max 2 API calls per 14-hour day |
+| **Sharing** | Always explicit via `brain_share` MCP tool — never automatic |
+| **No key configured** | Script exits silently — zero impact |
+| **Timeout** | 5-second max per request — won't block session start |
+| **Failure** | Silent fallback — if π is down, session starts normally |
+
 ### What happens
 
-**Session start**: The script searches π for your project topics and displays results:
+**Session start (cache miss)**: Searches π and displays relevant patterns:
 ```
 [PI] Relevant: agentdb controller activation memory bridge wiring
   (1.69) AgentDB v3: 23 of 28 controllers are dead code
   (1.46) MCP memory_search returns 0 results: bridge fallback
-[PI] 6 patterns from π collective
+[PI] 6 patterns from π collective (refreshes every 8h)
 ```
 
-**Session end**: Any pending shares in `.claude-flow/data/pi-pending-shares.jsonl` are posted automatically.
+**Session start (cache hit)**: No API call:
+```
+[PI] Using cached results (45m old, refreshes every 8h)
+```
 
-**No key configured**: Script exits silently — zero impact if `BRAIN_API_KEY` is not set.
+**Sharing**: Only when the AI explicitly calls `brain_share` — never automated.
 
 ## Add to CLAUDE.md
 
@@ -296,10 +311,10 @@ Copy this block into your project's CLAUDE.md:
 ```markdown
 ## Collective Intelligence (π.ruv.io)
 
-- Before starting any new feature or investigation, search π: `brain_search "topic"`
-- After completing a significant deploy, share the key finding: `brain_share`
+- When entering a new topic area or facing an unfamiliar problem, search π: `brain_search "topic"`
+- After completing significant work with reusable insights, share via `brain_share`
 - When search results are useful, upvote them: `brain_vote`
-- π has 955+ shared memories from 57 contributors — search before reimplementing
+- Session-start hook auto-searches π (cached 8h — no manual search needed for routine work)
 ```
 
 ## Links

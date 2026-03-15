@@ -38,7 +38,7 @@ Four integration strategies were proposed and voted on by a 5-member specialist 
 Implement **Option C + A+** combined:
 
 - **A+ (behavioral)**: CLAUDE.md instructs AI to search π before implementing and share after deploying
-- **C (session-driven)**: At session-start, search π for project-relevant patterns. At session-end, share significant findings
+- **C (session-driven)**: At session-start, search π for project-relevant patterns (8-hour cache, max 2 calls/day). All sharing is explicit via MCP tool
 
 ## Decision: Specification (SPARC-S)
 
@@ -94,11 +94,11 @@ DURING SESSION:
   5. If result solves problem: use it, cite it, upvote it
   6. If result is wrong: downvote it
 
-SESSION END:
-  7. If significant work completed:
-     brain_share category/title/content/tags
+SHARING (explicit only, never automatic):
+  7. If significant work completed with reusable insight:
+     brain_share category/title/content/tags  (via MCP tool)
   8. If drift suspected:
-     brain_drift domain: "memory-systems"
+     brain_drift domain: "memory-systems"  (via MCP tool)
 ```
 
 ## Decision: Architecture (SPARC-A)
