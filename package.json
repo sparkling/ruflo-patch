@@ -17,7 +17,7 @@
     "finalize": "bash scripts/deploy-finalize.sh",
     "deploy": "npm run test:acceptance && npm run finalize",
     "prepublishOnly": "npm run test:unit",
-    "sync": "bash scripts/sync-and-build.sh --sync",
+    "sync": "bash scripts/ruflo-sync.sh",
     "promote": "bash scripts/promote.sh",
     "rollback": "bash scripts/rollback.sh",
     "validate": "bash scripts/validate-ci.sh",
