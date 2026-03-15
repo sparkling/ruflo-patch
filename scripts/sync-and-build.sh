@@ -1897,6 +1897,41 @@ run_tests_ci() {
     log "  Unit tests (L1): ${_ut_ms}ms"
     add_cmd_timing "test-ci" "node test-runner.mjs" "${_ut_ms}"
   fi
+
+  # L1b: Fork vitest tests (ADR-0033 controller activation)
+  local _vt_start _vt_end
+  _vt_start=$(date +%s%N 2>/dev/null || echo 0)
+  local _vt_failed=0
+  # Memory package tests
+  local _mem_dir="${HOME}/src/forks/ruflo/v3/@claude-flow/memory"
+  if [[ -d "${_mem_dir}/src/__tests__" ]]; then
+    npx vitest run --config "${_mem_dir}/vitest.config.ts" \
+      "${_mem_dir}/src/__tests__/controller-registry-activation.test.ts" \
+      "${_mem_dir}/src/__tests__/rvf-backend-cow.test.ts" \
+      "${_mem_dir}/src/__tests__/controller-activation-smoke.test.ts" \
+      "${_mem_dir}/src/controller-registry-activation.test.ts" \
+      --reporter=dot --passWithNoTests 2>/dev/null || _vt_failed=1
+  fi
+  # CLI package tests
+  local _cli_dir="${HOME}/src/forks/ruflo/v3/@claude-flow/cli"
+  if [[ -d "${_cli_dir}/__tests__" ]]; then
+    npx vitest run --config "${_cli_dir}/vitest.config.ts" \
+      "${_cli_dir}/__tests__/memory-bridge-activation.test.ts" \
+      "${_cli_dir}/__tests__/hooks-tools-activation.test.ts" \
+      "${_cli_dir}/__tests__/agentdb-tools-activation.test.ts" \
+      "${_cli_dir}/__tests__/memory-tools-activation.test.ts" \
+      --reporter=dot --passWithNoTests 2>/dev/null || _vt_failed=1
+  fi
+  _vt_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_vt_start" != "0" && "$_vt_end" != "0" ]]; then
+    local _vt_ms=$(( (_vt_end - _vt_start) / 1000000 ))
+    log "  Fork vitest (L1b): ${_vt_ms}ms"
+    add_cmd_timing "test-ci" "vitest fork tests" "${_vt_ms}"
+  fi
+  if [[ "${_vt_failed}" -eq 1 ]]; then
+    log_error "Fork vitest tests failed"
+    return 1
+  fi
 }
 
 run_verify() {
