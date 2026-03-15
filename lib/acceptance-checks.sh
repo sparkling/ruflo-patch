@@ -579,7 +579,7 @@ check_controller_health() {
   _CHECK_OUTPUT=""
 
   # Try MCP exec for agentdb_health
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec -t agentdb_health"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|status'; then
     # Count controller mentions
@@ -612,7 +612,7 @@ check_hooks_route() {
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
 
   # Try MCP exec for hooks_route
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec -t hooks_route -p '{\"task\":\"write unit tests for authentication\"}'"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests for authentication\"}'"
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'agent\|route\|coder\|tester\|reviewer\|pattern\|fallback'; then
     _CHECK_PASSED="true"
@@ -678,15 +678,15 @@ check_reflexion_lifecycle() {
 
   # Store reflexion via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    -t agentdb_reflexion-store \
-    -p '{\"session_id\":\"accept-session\",\"task\":\"write acceptance tests\",\"reward\":0.85,\"success\":true}'"
+    --tool agentdb_reflexion-store \
+    --params '{\"session_id\":\"accept-session\",\"task\":\"write acceptance tests\",\"reward\":0.85,\"success\":true}'"
   local store_out="$_RK_OUT"
 
   if echo "$store_out" | grep -qi 'success\|stored\|true'; then
     # Retrieve reflexion via MCP
     _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-      -t agentdb_reflexion-retrieve \
-      -p '{\"task\":\"write acceptance tests\",\"k\":5}'"
+      --tool agentdb_reflexion-retrieve \
+      --params '{\"task\":\"write acceptance tests\",\"k\":5}'"
 
     if echo "$_RK_OUT" | grep -qi 'success\|results\|acceptance'; then
       _CHECK_PASSED="true"
@@ -713,14 +713,14 @@ check_causal_graph() {
 
   # Query causal graph (should get cold-start with <5 edges)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    -t agentdb_causal-query \
-    -p '{\"cause\":\"refactor tests\"}'"
+    --tool agentdb_causal-query \
+    --params '{\"cause\":\"refactor tests\"}'"
   local query_out="$_RK_OUT"
 
   # Add a causal edge
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    -t agentdb_causal-edge \
-    -p '{\"cause\":\"refactor\",\"effect\":\"fewer bugs\",\"uplift\":0.7}'"
+    --tool agentdb_causal-edge \
+    --params '{\"cause\":\"refactor\",\"effect\":\"fewer bugs\",\"uplift\":0.7}'"
   local edge_out="$_RK_OUT"
 
   if echo "$query_out" | grep -qi 'cold.start\|fewer than 5\|results.*\[\]\|success'; then
@@ -753,15 +753,15 @@ check_cow_branching() {
 
   # Create branch via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    -t agentdb_branch \
-    -p '{\"action\":\"create\",\"branch_name\":\"accept-experiment\"}'"
+    --tool agentdb_branch \
+    --params '{\"action\":\"create\",\"branch_name\":\"accept-experiment\"}'"
   local create_out="$_RK_OUT"
 
   if echo "$create_out" | grep -qi 'success\|branchId\|created\|true'; then
     # Try branch status
     _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-      -t agentdb_branch \
-      -p '{\"action\":\"status\",\"branch_id\":\"branch:accept-experiment\"}'"
+      --tool agentdb_branch \
+      --params '{\"action\":\"status\",\"branch_id\":\"branch:accept-experiment\"}'"
 
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="COW branching: branch creation works"
@@ -785,14 +785,14 @@ check_batch_operations() {
 
   # Run stats via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    -t agentdb_batch-optimize \
-    -p '{\"action\":\"stats\"}'"
+    --tool agentdb_batch-optimize \
+    --params '{\"action\":\"stats\"}'"
   local stats_out="$_RK_OUT"
 
   # Run optimize via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    -t agentdb_batch-optimize \
-    -p '{\"action\":\"optimize\"}'"
+    --tool agentdb_batch-optimize \
+    --params '{\"action\":\"optimize\"}'"
   local opt_out="$_RK_OUT"
 
   if echo "$stats_out" | grep -qi 'success\|stats\|total' || \
