@@ -95,11 +95,6 @@
           },
           {
             "type": "command",
-            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/check-patches.sh --global",
-            "timeout": 30000
-          },
-          {
-            "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/pi-brain-session.sh\" session-start",
             "timeout": 8000
           }
