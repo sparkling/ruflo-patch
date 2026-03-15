@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(__dirname, '..');
+const ROOT = resolve(__dirname, '../..');
 
 // Import the constants and publish function from the script under test.
 const { LEVELS, RATE_LIMIT_MS, publishAll } = await import(

@@ -93,7 +93,7 @@ Verification:
 3. `npm run test:acceptance` -- full acceptance suite passes against Verdaccio
 4. `grep -rn 'L0\|L1\|L2\|L3\|L4\|test:verify\|test:rq\|RQ_PORT\|rq_pass' scripts/ tests/ package.json` -- no stale references
 5. `grep -rn '"T[0-9]' scripts/ lib/` -- no T-numbered IDs remain
-6. Full pipeline: `npm run deploy:dry-run` -- end-to-end passes
+6. Full pipeline: `npm run deploy` -- end-to-end passes
 
 ## Consequences
 

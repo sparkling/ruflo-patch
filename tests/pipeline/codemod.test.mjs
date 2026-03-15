@@ -10,7 +10,7 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(__dirname, '..');
+const ROOT = resolve(__dirname, '../..');
 
 // Import the codemod transform function under test.
 const { transform } = await import(resolve(ROOT, 'scripts', 'codemod.mjs'));

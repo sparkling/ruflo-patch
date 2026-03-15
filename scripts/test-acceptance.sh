@@ -418,6 +418,22 @@ collect_parallel "controller" \
 _record_phase "group-controller" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
+# Tests: init assertions (ADR-0038, ported from init-*.test.mjs)
+# ════════════════════════════════════════════════════════════════════
+_g=$(_ns)
+log "── init assertions (ADR-0038) ──"
+run_check_bg "init-config-fmt"   "Config format (SG-008)"     check_init_config_format     "init"
+run_check_bg "init-helpers"      "Helper syntax"              check_init_helper_syntax     "init"
+run_check_bg "init-persist"      "No persistPath (MM-001)"    check_init_no_persist_path   "init"
+run_check_bg "init-perms"        "Permission globs (SG-001)"  check_init_permission_globs  "init"
+run_check_bg "init-topology"     "Topology (SG-011)"          check_init_topology          "init"
+collect_parallel "init" \
+  "init-config-fmt|Config format (SG-008)" "init-helpers|Helper syntax" \
+  "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
+  "init-topology|Topology (SG-011)"
+_record_phase "group-init" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
 # Tests: e2e — controller activation on init'd project (split from T32)
 # Each check exercises one controller in a fresh init'd project
 # ════════════════════════════════════════════════════════════════════

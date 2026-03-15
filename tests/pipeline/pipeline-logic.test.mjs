@@ -11,7 +11,7 @@ import {
   serializeState,
   detectChanges,
   getPublishTag,
-} from './helpers/pipeline-helpers.mjs';
+} from '../helpers/pipeline-helpers.mjs';
 
 // ---------------------------------------------------------------------------
 // 1. Version computation (ADR-0012 — bump-last-segment scheme)

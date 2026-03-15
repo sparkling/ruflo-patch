@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const ROOT = resolve(__dirname, '..');
+const ROOT = resolve(__dirname, '../..');
 
 const { bumpPatchVersion, findPackages, bumpAll } = await import(
   resolve(ROOT, 'scripts', 'fork-version.mjs')

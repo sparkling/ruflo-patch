@@ -1,12 +1,13 @@
 #!/usr/bin/env node
-// Test runner — runs all test files in tests/ directory.
+// Test runner — runs test files from specified directories (ADR-0038).
 //
-// Usage: node scripts/test-runner.mjs
-//        node scripts/test-runner.mjs --save-results
-//        SAVE_TEST_RESULTS=1 npm test
+// Usage: node scripts/test-runner.mjs tests/pipeline   — pipeline tests only
+//        node scripts/test-runner.mjs tests/unit        — unit tests only
+//        node scripts/test-runner.mjs                   — both subdirectories
+//        node scripts/test-runner.mjs --save-results    — save TAP + manifest
 
 import { spawn, execSync } from 'node:child_process';
-import { readdirSync, mkdirSync, writeFileSync } from 'node:fs';
+import { readdirSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 
 const MAX_SKIPS = parseInt(process.env.SKIP_THRESHOLD || '8', 10);
@@ -17,14 +18,27 @@ const saveResults = process.argv.includes('--save-results') ||
 const projectRoot = resolve(import.meta.dirname, '..');
 const testsDir = resolve(projectRoot, 'tests');
 
-let allFiles;
-try {
-  allFiles = readdirSync(testsDir)
-    .filter(f => f.endsWith('.test.mjs'))
-    .map(f => join(testsDir, f));
-} catch {
-  console.log('No test files found.');
-  process.exit(0);
+// Determine which directories to scan from positional args
+const positionalArgs = process.argv.slice(2).filter(a => !a.startsWith('--'));
+
+let scanDirs;
+if (positionalArgs.length > 0) {
+  // Resolve each arg relative to project root
+  scanDirs = positionalArgs.map(a => resolve(projectRoot, a));
+} else {
+  // Default: scan both subdirectories (not tests/ root)
+  scanDirs = [resolve(testsDir, 'pipeline'), resolve(testsDir, 'unit')];
+}
+
+let allFiles = [];
+for (const dir of scanDirs) {
+  if (!existsSync(dir)) continue;
+  try {
+    const files = readdirSync(dir)
+      .filter(f => f.endsWith('.test.mjs'))
+      .map(f => join(dir, f));
+    allFiles.push(...files);
+  } catch { /* skip unreadable dirs */ }
 }
 
 if (allFiles.length === 0) {
@@ -32,7 +46,8 @@ if (allFiles.length === 0) {
   process.exit(0);
 }
 
-console.log(`[${new Date().toISOString()}] Unit tests starting (${allFiles.length} files)`);
+const dirLabel = scanDirs.map(d => d.replace(projectRoot + '/', '')).join(', ');
+console.log(`[${new Date().toISOString()}] Tests starting (${allFiles.length} files from ${dirLabel})`);
 
 // Prepare results directory when saving
 let resultsDir;
@@ -79,10 +94,10 @@ if (saveResults) {
 const result = await runTests(args);
 const elapsed = Date.now() - t0;
 
-console.log(`[${new Date().toISOString()}] Unit tests complete (${elapsed}ms)`);
+console.log(`[${new Date().toISOString()}] Tests complete (${elapsed}ms)`);
 console.log(`total: ${(elapsed / 1000).toFixed(1)}s`);
 if (elapsed > 1000) {
-  console.warn(`WARNING: Unit tests took ${elapsed}ms (Google Small threshold: 1000ms)`);
+  console.warn(`WARNING: Tests took ${elapsed}ms (Google Small threshold: 1000ms)`);
 }
 
 // Skip threshold enforcement

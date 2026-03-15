@@ -16,7 +16,6 @@
 # Flags:
 #   --sync        Sync stage only
 #   --publish     Publish stage only
-#   --test-only   Stop after tests (no publish)
 #   --force       Build even when no changes detected
 #   --build-only  Stop after build (no tests, no publish)
 #   --pull        Pull upstream repos in --build-only mode
@@ -33,7 +32,6 @@ set -euo pipefail
 
 RUN_SYNC=false
 RUN_PUBLISH=false
-TEST_ONLY=false
 FORCE_BUILD=false
 BUILD_ONLY=false
 PULL_UPSTREAM=false
@@ -41,7 +39,6 @@ for arg in "$@"; do
   case "$arg" in
     --sync)       RUN_SYNC=true ;;
     --publish)    RUN_PUBLISH=true ;;
-    --test-only)  TEST_ONLY=true ;;
     --force)      FORCE_BUILD=true ;;
     --build-only) BUILD_ONLY=true ;;
     --pull)       PULL_UPSTREAM=true ;;
@@ -53,7 +50,6 @@ Usage: sync-and-build.sh [FLAGS]
 Flags:
   --sync        Sync stage only (fetch upstream, create PR)
   --publish     Publish stage only (detect merges, build, publish)
-  --test-only   Stop after tests (no publish)
   --force       Build even when no changes detected
   --build-only  Stop after build (no tests, no publish)
   --pull        Pull upstream repos in --build-only mode
@@ -2242,12 +2238,6 @@ run_stage3_publish() {
 VMANIFEST
   log "Verification manifest written"
 
-  if [[ "${TEST_ONLY}" == "true" ]]; then
-    print_phase_summary
-    log "Gate 1 PASSED — all tests pass (--test-only mode)"
-    return 0
-  fi
-
   # Read version from fork package.json (no computation needed)
   read_build_version
 
@@ -2439,7 +2429,7 @@ main() {
   log "=========================================="
   log "ruflo sync-and-build starting (ADR-0027)"
   log "  --sync=${RUN_SYNC} --publish=${RUN_PUBLISH}"
-  log "  --test-only=${TEST_ONLY} --force=${FORCE_BUILD}"
+  log "  --force=${FORCE_BUILD}"
   log "  --build-only=${BUILD_ONLY} --pull=${PULL_UPSTREAM}"
   log "=========================================="
 

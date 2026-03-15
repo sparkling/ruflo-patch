@@ -1,4 +1,4 @@
-# Testing Rules (ADR-0023, ADR-0037)
+# Testing Rules (ADR-0023, ADR-0037, ADR-0038)
 
 ## MANDATORY: Test before committing
 
@@ -13,33 +13,44 @@
 
 | Change | Required Tests | Commands |
 |--------|---------------|----------|
-| Patch fix.py | preflight + unit | `npm run preflight && npm run test:unit` |
-| Codemod/pipeline script | preflight + unit + acceptance | `npm test && npm run test:acceptance` |
-| Test script changes only | preflight + unit | `npm run preflight && npm run test:unit` |
-| sync-and-build.sh / acceptance changes | preflight + unit + acceptance | `npm test && npm run test:acceptance` (requires prior `npm run build`) |
-| Pre-publish verification | preflight + unit + acceptance | `npm run build && npm run test:all` |
+| Patch fix | preflight + pipeline + unit | `npm run test:unit` |
+| Codemod/pipeline script | preflight + pipeline + unit | `npm run test:unit` |
+| Test script changes only | preflight + pipeline + unit | `npm run test:unit` |
+| sync-and-build.sh / acceptance changes | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run test:acceptance` (requires prior `npm run build`) |
+| Pre-publish verification | full cascade | `npm run test:acceptance` |
 | Deploy to Verdaccio (full) | all | `npm run deploy` (runs all suites) |
-| Verify live packages | acceptance | `npm run test:acceptance` |
+| Verify live packages | acceptance only | `bash scripts/test-acceptance.sh --registry http://localhost:4873` |
+
+## Cascading Pipeline (ADR-0038)
+
+Each npm script includes all previous steps:
+
+| # | npm script | Includes | What it does |
+|---|---|---|---|
+| 1 | `preflight` | — | Static analysis, lint checks |
+| 2 | `test:pipeline` | 1 | Pipeline infra tests (4 files, mocked) |
+| 3 | `test:unit` | 1-2 | Product unit tests (8 files, mocked) |
+| 4 | `fork-version` | 1-3 | Bump `-patch.N` versions |
+| 5 | `copy-source` | 1-4 | Copy fork source to `/tmp/ruflo-build` |
+| 6 | `codemod` | 1-5 | Scope rename |
+| 7 | `build` | 1-6 | TypeScript compile + WASM |
+| 8 | `publish:verdaccio` | 1-7 | Publish + promote @latest |
+| 9 | `test:acceptance` | 1-8 | Real CLI against real packages |
+| 10 | `finalize` | — | Save state, push forks, write timing (standalone) |
+| 11 | `deploy` | 1-10 | Full pipeline |
 
 ## Test Suites
 
-| Suite | Size | Runner |
-|-------|------|--------|
-| Environment Validation | Smoke | `npm run validate` |
-| Preflight (static analysis) | Small | `npm run preflight` |
-| Unit Tests | Small | `npm run test:unit` |
-| Acceptance | Medium/Large | `npm run test:acceptance` (requires packages published to a registry) |
-
-## How to run preflight + unit + acceptance
-
-`npm run build && npm run test:all` -- builds (cached), then runs all suites. Does NOT publish to npm.
-
-Note: acceptance tests require packages already published to a registry (local Verdaccio or npm).
-The deploy pipeline (`npm run deploy`) handles publish -> acceptance automatically.
+| Suite | Directory | Runner |
+|-------|-----------|--------|
+| Preflight (static analysis) | — | `npm run preflight` |
+| Pipeline Tests (4 files) | `tests/pipeline/` | `node scripts/test-runner.mjs tests/pipeline` |
+| Unit Tests (8 files) | `tests/unit/` | `node scripts/test-runner.mjs tests/unit` |
+| Acceptance | — | `bash scripts/test-acceptance.sh` (requires published packages) |
 
 ## Anti-patterns -- DO NOT
 
-- Run only `npm run test:unit` for pipeline/script changes (use `npm test` then `npm run test:acceptance`)
+- Run only pipeline tests for product code changes (use `npm run test:unit`)
 - Commit before tests pass
 - Say "verified" without running the affected suite
 - Silently skip a required suite -- if you can't run it, say so
