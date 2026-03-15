@@ -44,9 +44,51 @@ Upstream ADR-053 planned 6 phases to activate 28 AgentDB v3 controllers. Only Ph
 4. Phase 2's SolverBandit (Thompson Sampling for routing) is entirely missing (#1217)
 5. MemoryGraph is enabled but has 0 callers — graph-aware ranking never activates
 
+### SolverBandit Investigation (P2-C)
+
+SolverBandit was reported as "entirely missing" but investigation found it **exists** in the agentic-flow fork:
+
+**File**: `~/src/forks/agentic-flow/packages/agentdb/src/backends/rvf/SolverBandit.ts` (270 lines)
+
+**Implementation**: Complete Thompson Sampling with contextual arms:
+- `BanditArmStats`: Beta distribution per (context, arm) pair — tracks alpha/beta/pulls/totalReward/costEma
+- `BanditConfig`: costWeight (0.01), costDecay (0.1), explorationBonus (0.1)
+- `SolverBandit.selectArm(context, arms)`: Thompson sample from Beta(alpha, beta) + cost penalty + exploration bonus
+- `SolverBandit.recordReward(context, arm, reward, cost?)`: Updates Beta distribution and cost EMA
+- `BanditState`: Serializable JSON for cross-session persistence
+
+**Problem**: Not exported from any barrel file:
+- Not in `agentdb/src/index.ts`
+- Not in `agentdb/src/backends/index.ts`
+- Not in `agentdb/src/backends/rvf/index.ts`
+- Internal to `backends/rvf/` directory — consumers cannot import it
+
+**Tests exist**: `tests/backends/solver-bandit.test.ts`
+
+**Fix required in two forks**:
+1. **agentic-flow fork**: Export `SolverBandit` from `packages/agentdb/src/index.ts`
+2. **ruflo fork**: Add to ControllerRegistry, create bridge function, wire to hooks_route
+
 ## Decision: Specification (SPARC-S)
 
-Implement ADR-053 Phases 2-6 as fork patches in `~/src/forks/ruflo`. Each phase targets specific files in the TypeScript source and adds **callers** — the bridge functions already exist for most controllers.
+Implement ADR-053 Phases 2-6 as fork patches. Each phase targets TypeScript source in `~/src/forks/{ruflo,agentic-flow}` and adds **callers** — the bridge functions already exist for most controllers.
+
+### Patch Rules (ADR-0027 Fork Model)
+
+All patches follow the established fork model:
+
+1. **Edit** fork TypeScript source at `~/src/forks/{ruflo,agentic-flow,ruv-FANN,ruvector}`
+2. **Verify** with `tsc --noEmit --project v3/@claude-flow/<pkg>/tsconfig.json`
+3. **Preflight** with `npm run preflight` in ruflo-patch before staging
+4. **Branch** `patch/ID` for non-trivial changes
+5. **Commit** with descriptive message + `Co-Authored-By: claude-flow <ruv@ruv.net>`
+6. **Push** to fork remote
+7. **GitHub Issue** — ALWAYS create one per patch (tracking record)
+8. **PR** referencing the issue (or direct-to-main for quick fixes)
+9. **Test** with `npm run deploy:dry-run` to verify pipeline
+10. **Deploy** with `npm run deploy` when ready
+11. **Never** reuse a defect ID, never modify project CLAUDE.md
+12. **Propagate** — when changing shared types, grep all consumers and fix them too
 
 ### Phase 2: Core Intelligence (P1 — Self-Learning Loop)
 
@@ -54,7 +96,7 @@ Implement ADR-053 Phases 2-6 as fork patches in `~/src/forks/ruflo`. Each phase 
 |----|-----------|---------------|-----------|--------|
 | P2-A | ReasoningBank | **Done** — fully wired | — | 0h |
 | P2-B | LearningBridge | Dedicated bridge function | `memory-bridge.ts` | 1h |
-| P2-C | SolverBandit | **Entirely missing** — no class, no export, no wiring | `controller-registry.ts`, `memory-bridge.ts`, `hooks-tools.ts` | 6h |
+| P2-C | SolverBandit | **Class exists** (270 lines in agentic-flow) but not exported. Need: export from agentdb, add to registry, bridge fn, wire hooks_route + feedback | agentic-flow: `agentdb/src/index.ts`; ruflo: `controller-registry.ts`, `memory-bridge.ts`, `hooks-tools.ts` | 6h |
 | P2-D | HybridSearch (BM25) | **Done** — implicit in bridgeSearchEntries (70/30 RRF) | — | 0h |
 | P2-E | recordFeedback | **Done** — triple-redundancy callers | — | 0h |
 
@@ -98,36 +140,72 @@ Implement ADR-053 Phases 2-6 as fork patches in `~/src/forks/ruflo`. Each phase 
 
 ## Decision: Pseudocode (SPARC-P)
 
-### P2-C: SolverBandit (Thompson Sampling)
+### P2-C: SolverBandit (Thompson Sampling) — Two-Fork Patch
 
+**Fork 1: agentic-flow** (`~/src/forks/agentic-flow`)
 ```
-// controller-registry.ts — add SolverBandit case
-case 'solverBandit':
-  if (!agentdb) return null
-  // Check if SolverBandit exported from agentdb
-  SB = await import('agentdb').SolverBandit
-  if (!SB) return null
-  return new SB(agentdb.database, { arms: AGENT_TYPES })
+// packages/agentdb/src/index.ts — add export
+export { SolverBandit } from './backends/rvf/SolverBandit.js';
+export type { BanditArmStats, BanditConfig, BanditState, BanditStats } from './backends/rvf/SolverBandit.js';
 
-// memory-bridge.ts — add bridge function
+// packages/agentdb/src/backends/rvf/index.ts — add barrel export
+export { SolverBandit } from './SolverBandit.js';
+```
+
+**Fork 2: ruflo** (`~/src/forks/ruflo`)
+```
+// controller-registry.ts — add SolverBandit case at Level 1
+case 'solverBandit': {
+  const agentdbModule = await import('agentdb');
+  const SB = agentdbModule.SolverBandit;
+  if (!SB) return null;
+  const bandit = new SB({
+    costWeight: 0.01,
+    costDecay: 0.1,
+    explorationBonus: 0.1,
+  });
+  // Restore persisted state if available
+  const stateEntry = await this.backend?.getByKey?.('default', '_solver_bandit_state');
+  if (stateEntry?.content) {
+    try { bandit.restore(JSON.parse(stateEntry.content)); } catch {}
+  }
+  return bandit;
+}
+
+// memory-bridge.ts — add bridge functions
 function bridgeSolverBanditSelect(task, availableAgents, context):
   bandit = registry.get('solverBandit')
-  if bandit: return bandit.selectArm(task, availableAgents)
-  return fallback: first agent, confidence 0.5
+  if !bandit: return { agent: availableAgents[0], confidence: 0.5, controller: 'fallback' }
+  arm = bandit.selectArm(context || 'default', availableAgents)
+  return { agent: arm, confidence: bandit.getArmStats(context, arm)?.alpha / (alpha+beta), controller: 'solverBandit' }
+
+function bridgeSolverBanditUpdate(context, arm, reward, cost?):
+  bandit = registry.get('solverBandit')
+  if bandit: bandit.recordReward(context, arm, reward, cost)
+  // Persist state to memory store
+  bridgeStoreEntry({ key: '_solver_bandit_state', value: JSON.stringify(bandit.serialize()), namespace: 'default', upsert: true })
 
 // hooks-tools.ts — wire into hooks_route
 handler hooks_route(params):
   // Try SolverBandit first (learned routing)
-  banditResult = bridge.bridgeSolverBanditSelect(task, agents)
+  banditResult = bridge.bridgeSolverBanditSelect(task, agents, taskType)
   if banditResult.confidence > 0.6: return banditResult
   // Fall back to SemanticRouter + TASK_PATTERNS
   ...
 
-// hooks-tools.ts — wire feedback to bandit
+// hooks-tools.ts — wire feedback to bandit arms
 handler hooks_post-task(params):
   bridge.bridgeRecordFeedback(...)  // existing
-  bridge.bridgeSolverBanditUpdate(taskId, agent, quality)  // new
+  // NEW: update bandit with task outcome
+  quality = params.result?.quality ?? (params.result?.success ? 0.85 : 0.2)
+  bridge.bridgeSolverBanditUpdate(taskType, agent, quality)
 ```
+
+**Patch workflow (per ADR-0027 rules)**:
+1. Edit agentic-flow fork → `tsc --noEmit` → commit → push → create GitHub Issue
+2. Edit ruflo fork → `tsc --noEmit --project v3/@claude-flow/cli/tsconfig.json` → commit → push → create GitHub Issue
+3. `npm run preflight && npm run deploy:dry-run` in ruflo-patch
+4. `npm run deploy` to publish
 
 ### P3-A: MemoryGraph Callers
 
@@ -168,15 +246,36 @@ function bridgeStoreEntry(options):
 
 ### Patch Mapping
 
-All patches target the ruflo fork at `~/src/forks/ruflo/v3/@claude-flow/cli/src/`.
+Patches target two forks. Each patch creates a GitHub Issue (tracking) and either a PR or direct-to-main commit.
 
-| Phase | Files Modified | Total Patches |
-|-------|---------------|--------------|
-| **Phase 2** | `memory-bridge.ts`, `controller-registry.ts`, `hooks-tools.ts` | 3 |
-| **Phase 3** | `memory-tools.ts`, `hooks-tools.ts`, `agentdb-tools.ts` | 4 |
-| **Phase 4** | `hooks-tools.ts`, `controller-registry.ts`, `memory-tools.ts`, `memory-bridge.ts` | 4 |
-| **Phase 5** | `memory-bridge.ts`, `hooks-tools.ts` | 6 |
-| **Phase 6** | `rvf-backend.ts` (in `@claude-flow/memory/src/`) | 1 |
+**ruflo fork** (`~/src/forks/ruflo/v3/@claude-flow/`):
+
+| Phase | Files Modified | Patches | TypeScript check |
+|-------|---------------|---------|-----------------|
+| **Phase 2** | `cli/src/memory/memory-bridge.ts`, `memory/src/controller-registry.ts`, `cli/src/mcp-tools/hooks-tools.ts` | 3 | `--project cli/tsconfig.json` |
+| **Phase 3** | `cli/src/mcp-tools/memory-tools.ts`, `cli/src/mcp-tools/hooks-tools.ts`, `cli/src/mcp-tools/agentdb-tools.ts` | 4 | `--project cli/tsconfig.json` |
+| **Phase 4** | `cli/src/mcp-tools/hooks-tools.ts`, `memory/src/controller-registry.ts`, `cli/src/mcp-tools/memory-tools.ts`, `cli/src/memory/memory-bridge.ts` | 4 | `--project cli/tsconfig.json` + `--project memory/tsconfig.json` |
+| **Phase 5** | `cli/src/memory/memory-bridge.ts`, `cli/src/mcp-tools/hooks-tools.ts` | 6 | `--project cli/tsconfig.json` |
+| **Phase 6** | `memory/src/rvf-backend.ts` | 1 | `--project memory/tsconfig.json` |
+
+**agentic-flow fork** (`~/src/forks/agentic-flow/`):
+
+| Phase | Files Modified | Patches |
+|-------|---------------|---------|
+| **Phase 2** | `packages/agentdb/src/index.ts`, `packages/agentdb/src/backends/rvf/index.ts` | 1 (SolverBandit export) |
+
+### Per-Patch Workflow (ADR-0027)
+
+```
+1. Edit fork TS source
+2. tsc --noEmit --project <pkg>/tsconfig.json
+3. cd ~/src/ruflo-patch && npm run preflight
+4. git add <files> && git commit (with Co-Authored-By)
+5. git push origin main
+6. gh issue create --title "P2-C: Export SolverBandit from agentdb" --body "..."
+7. npm run deploy:dry-run (verify pipeline)
+8. npm run deploy (publish)
+```
 
 ### Dependencies
 
@@ -294,6 +393,9 @@ Each phase creates patches in `~/src/forks/ruflo` (TypeScript source), committed
 - Controller instantiation may fail silently (all have null fallbacks — by design)
 - Performance impact of 28 active controllers unknown (may need lazy loading)
 - FederatedSession API undefined upstream (blocked indefinitely)
+- SolverBandit class exists (270 lines) but has never been exported or tested in the full pipeline — may have API mismatches similar to ADR-055's 7 bugs
+- SolverBandit state persistence requires storing serialized bandit state in memory store — adds write on every feedback call
+- Two-fork patches (agentic-flow + ruflo) require coordinated deployment — agentic-flow export must publish before ruflo can import
 
 ## Related
 
