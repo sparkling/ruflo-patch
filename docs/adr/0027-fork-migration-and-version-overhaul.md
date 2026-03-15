@@ -1,6 +1,6 @@
 # ADR-0027: Fork Migration and Version Overhaul
 
-- **Status**: Proposed
+- **Status**: Accepted
 - **Date**: 2026-03-08
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + MADR
