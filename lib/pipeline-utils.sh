@@ -278,10 +278,13 @@ write_pipeline_summary() {
       publishPkgs = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/.publish-timing.json', 'utf-8'));
     } catch {}
     let verifyPhases = [];
-    try {
-      verifyPhases = fs.readFileSync('/tmp/ruflo-verify-timing.jsonl', 'utf-8')
-        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
-    } catch {}
+    for (const tf of ['/tmp/ruflo-publish-verdaccio-timing.jsonl', '/tmp/ruflo-acceptance-timing.jsonl']) {
+      try {
+        const entries = fs.readFileSync(tf, 'utf-8')
+          .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
+        verifyPhases.push(...entries);
+      } catch {}
+    }
     const result = {
       timestamp: '${timestamp}',
       version: '${BUILD_VERSION:-unknown}',
