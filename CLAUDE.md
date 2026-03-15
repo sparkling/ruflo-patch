@@ -225,10 +225,10 @@ npx @sparkleideas/cli@latest doctor --fix
 
 ## Collective Intelligence (π.ruv.io)
 
-- Before starting any new patch or investigation, search π: `brain_search "topic"`
-- After completing a significant deploy, share the key finding via `brain_share`
+- When entering a new topic area or facing an unfamiliar problem, search π: `brain_search "topic"`
+- After completing significant work with reusable insights, share via `brain_share`
 - When search results are useful, upvote them: `brain_vote`
-- π has 955+ shared memories from 57 contributors — search before reimplementing
+- Session-start hook auto-searches π (cached hourly — no manual search needed for routine work)
 - See `docs/guides/pi-brain-integration.md` for full guide
 
 ## Support
