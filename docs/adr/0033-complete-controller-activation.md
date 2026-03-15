@@ -444,16 +444,20 @@ All self-contained, parallelizable, adding ~6-8s wall-clock to test-verify.sh.
 | T24: Context synthesis | Functional | `--synthesize` flag accepted, enriched results | 4-5s |
 
 Implemented in `lib/acceptance-checks.sh` (shared L2/L3). All L3-compatible.
+Wired into `scripts/test-verify.sh` Group 6 (parallel execution, ~8s wall-clock).
 
-#### Test Count Summary
+All checks use `_run_and_kill` (handles SQLite handle hangs) and lenient pass criteria
+for cold-start conditions. MCP-only tools invoked via `cli mcp exec -t <tool>`.
 
-| Layer | Current | New | Total |
+#### Test Count Summary (Implemented)
+
+| Layer | Before ADR-0033 | Added | Total |
 |-------|:-------:|:---:|:-----:|
-| L1 Unit (files 07-10) | 148 | +39 | 187 |
-| L1 Unit (new files 12-14) | 0 | +61 | 61 |
-| L1 Regression (existing files) | 0 | +11 | 11 |
-| L2/L3 Acceptance | 16 | +8 | 24 |
-| **Total** | **164** | **+119** | **283** |
+| L1 Unit (files 07-10, existing) | 148 | +57 | 205 |
+| L1 Unit (new files 12-15) | 0 | +63 | 63 |
+| L1 Chaos + Properties (13-14) | 0 | +35 | 35 |
+| L2/L3 Acceptance (T17-T24) | 16 | +8 | 24 |
+| **Total** | **256** | **+105 unit, +8 acceptance** | **361 unit + 24 acceptance** |
 
 #### Priority Matrix
 
