@@ -372,6 +372,88 @@ Each phase creates patches in `~/src/forks/ruflo` (TypeScript source), committed
 | Search quality (importance boost) | 0% | 5-10% | 10-15% | 15-25% |
 | Controllers with 0 callers | 23 | 21 | 16 | 3 |
 
+## π-Brain Collective Intelligence Analysis (2026-03-15)
+
+Searched π.ruv.io for all 28 controllers individually. Results inform implementation risk and priority.
+
+### Coverage Summary
+
+| Coverage Level | Count | Controllers |
+|---------------|-------|-------------|
+| **Direct dedicated article** | 4 | SolverBandit, GraphTransformerService, SonaTrajectoryService, memoryGraph |
+| **Rich indirect coverage** | 11 | memoryConsolidation, reasoningBank, hybridSearch, ReflexionMemory, CausalMemoryGraph, NightlyLearner, SkillLibrary, LearningSystem, MutationGuard, AttestationLog, gnnService |
+| **Sparse/tangential** | 6 | tieredCache, learningBridge, hierarchicalMemory, FederatedSession, SemanticRouter, ExplainableRecall |
+| **No π-brain knowledge** | 7 | causalRecall, AgentMemoryScope, GuardedVectorBackend, graphAdapter, contextSynthesizer, rvfOptimizer, mmrDiversityRanker, batchOperations |
+
+### Key Findings That Affect Implementation
+
+**1. MCP Param Signature Mismatches (CRITICAL)**
+π-brain audit found 12 param issues. When wiring controllers, use correct names:
+- `reflexion_retrieve`: uses `task` (not `query`), `k` (not `limit`)
+- `reflexion_store`: requires `session_id`, `task`, `reward`, `success`
+- `causal_add_edge`: uses `cause`/`effect`/`uplift` (not `source`/`target`/`weight`)
+- `experience_record`: requires 6 params: `session_id`, `tool_name`, `action`, `outcome`, `reward`, `success`
+- `hooks_learn` has no `done` param; `hooks_route_enhanced` has no `context` param
+**Impact**: Without correct params, wiring will silently fail. Must audit every bridge call against actual MCP tool schemas.
+
+**2. Embedding Dimension Mismatch (ALREADY PATCHED)**
+ControllerRegistry initialized with `dimension: 384` but providers output 768-dim vectors. Fixed in ADR-0030/0031 (patch.27-28).
+
+**3. Bridge Fallback Short-Circuit (ALREADY PATCHED)**
+`bridgeSearchEntries()` returns `{ success: true, results: [] }` (truthy), preventing sql.js fallback. Fixed in ADR-0030/0031.
+
+**4. SONA Three-Loop Architecture**
+π-brain has detailed SONA specs: Instant Loop (<1ms MicroLoRA rank-2), Background Loop (hourly K-means++), Coordinator. Optimized defaults from benchmarks: rank=2, lr=0.002, 100 clusters, EWC lambda=2000, batch=32. **This validates P2-C and P5-F wiring approach.**
+
+**5. Graph Transformer Is Massive**
+ruvector-graph-transformer has 9 modules (proof_gated, sublinear_attention, physics, biological, self_organizing, verified_training, manifold, temporal, economic). Quality score 16/17 on π-brain. **P5-D (wire into MemoryGraph) should start with just `proof_gated` module, not the full transformer.**
+
+**6. Adaptive Pipeline Integration Pattern**
+Another project (adaptive-pipeline) already wired agentdb with safeguards: try-catch + 2s timeout on all calls, cold-start guard (skip causal reads until >5 edges), max 3 writes per step. **Adopt these safeguards for all Phase 3-5 wiring.**
+
+**7. Federated Learning Has Byzantine Tolerance**
+π-brain shows MicroLoRA federated aggregation uses 2-sigma outlier filtering + reputation-weighted trimmed mean. **FederatedSession (P4-E) remains blocked — API undefined — but the underlying Rust layer is mature.**
+
+**8. Hybrid Search Is More Nuanced Than ADR States**
+π-brain shows two formulas: (a) 70/30 RRF in current bridgeSearchEntries, (b) 0.3*BM25 + 0.5*cosine + 0.2*reputation (tunable). **P2-D is correctly marked "Done" but could be enhanced later with reputation weighting.**
+
+### Controllers With Zero π-Brain Knowledge
+
+These 7 controllers have no community knowledge and likely the highest implementation risk:
+1. `causalRecall` — may overlap with CausalMemoryGraph
+2. `AgentMemoryScope` — 3-scope isolation, entirely uncharted
+3. `GuardedVectorBackend` — cryptographic vector backend
+4. `graphAdapter` — unclear purpose
+5. `contextSynthesizer` — unclear purpose
+6. `rvfOptimizer` — unclear purpose
+7. `mmrDiversityRanker` — MMR re-ranking, likely straightforward
+
+**Recommendation**: De-prioritize zero-knowledge controllers to P3/P4. Start with well-documented ones (SolverBandit, SONA, GraphTransformer, Reflexion, Causal) where π-brain provides implementation guidance.
+
+### Impact on Implementation Plan
+
+**No change to phasing or priority order.** The π-brain analysis confirms:
+- P0 (MemoryGraph + LearningBridge) is correct — cheapest wins with known APIs
+- P1 (Learning loop) is correct — Reflexion/Causal/NightlyLearner have rich π-brain coverage
+- P2 (SolverBandit) is correct — dedicated π-brain article confirms class exists with exact API
+
+**New action items added**:
+1. **Pre-step**: Audit all MCP tool param signatures before wiring (π-brain found 12 mismatches)
+2. **Safeguards**: Add try-catch + 2s timeout + cold-start guards to all agentdb bridge calls (from adaptive-pipeline pattern)
+3. **P5-D scope reduction**: Wire only `proof_gated` module from GraphTransformer, not full 9-module suite
+4. **Defer zero-knowledge controllers**: Move causalRecall, graphAdapter, contextSynthesizer, rvfOptimizer to a future ADR if/when upstream documents their APIs
+
+### Revised Effort Estimate
+
+| Phase | Original | Revised | Delta | Reason |
+|-------|----------|---------|-------|--------|
+| P0 | 3h | 3h | — | No change |
+| P1 | 8h | 10h | +2h | Param audit + safeguard wiring |
+| P2 | 11h | 12h | +1h | Param audit for SolverBandit feedback |
+| P3 | 22h | 18h | -4h | Scope-reduce GraphTransformer, defer zero-knowledge controllers |
+| P4 | 8h | 6h | -2h | Defer graphAdapter, contextSynthesizer |
+| **Total** | **52h** | **49h** | **-3h** | Net savings from scope reduction |
+
 ## Consequences
 
 ### Positive
@@ -396,6 +478,9 @@ Each phase creates patches in `~/src/forks/ruflo` (TypeScript source), committed
 - SolverBandit class exists (270 lines) but has never been exported or tested in the full pipeline — may have API mismatches similar to ADR-055's 7 bugs
 - SolverBandit state persistence requires storing serialized bandit state in memory store — adds write on every feedback call
 - Two-fork patches (agentic-flow + ruflo) require coordinated deployment — agentic-flow export must publish before ruflo can import
+- **NEW (π-brain)**: MCP tool param signatures differ from documentation — 12 mismatches found. Silent failures if wrong param names used in bridge calls
+- **NEW (π-brain)**: 7 controllers have zero community knowledge (causalRecall, AgentMemoryScope, GuardedVectorBackend, graphAdapter, contextSynthesizer, rvfOptimizer, mmrDiversityRanker) — higher risk of undiscovered API bugs
+- **NEW (π-brain)**: GraphTransformerService has 9 internal modules — wiring the full suite risks scope explosion; scope-reduce to proof_gated only
 
 ## Related
 
@@ -404,3 +489,8 @@ Each phase creates patches in `~/src/forks/ruflo` (TypeScript source), committed
 - **ADR-0030**: Memory system optimization (implemented patch.27-28)
 - **ADR-0031**: Runtime validation (implemented patch.27-28)
 - **ADR-0032**: claude-flow-patch adoption analysis
+- **π-brain**: "AgentDB v3: 23 of 28 controllers are dead code" (id: 99c0537c)
+- **π-brain**: "SolverBandit: Thompson Sampling class exists but not exported" (id: 3211600c)
+- **π-brain**: "adaptive-pipeline: MCP signature audit — 12 fixes" (id: b63018dd)
+- **π-brain**: "SONA Self-Optimizing Neural Architecture" (id: 319a0a97)
+- **π-brain**: "Graph Transformer with Proof-Gated Mutation" (id: 8a22db2a)
