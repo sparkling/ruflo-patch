@@ -274,6 +274,7 @@ fi
 #   1. Smoke: T01-T03 (version, @latest, broken versions) — parallel
 #   2. Init/Config: T04 sequential, then T05-T07 parallel
 #   3-5. All remaining T08-T16 overlapped in parallel
+#   6. ADR-0033 Controller Activation: T17-T24 in parallel
 # ══════════════════════════════════════════════════════════════════
 _p8_start=$(_ns)
 log "Running acceptance checks (inline)..."
@@ -465,6 +466,22 @@ collect_parallel "all" \
   "T08|ruflo init --full" "T09|Doctor" "T10|Wrapper proxy" \
   "T11|Memory lifecycle" "T12|Neural training" \
   "T13|Agent Booster ESM" "T14|Agent Booster CLI" "T15|Plugins SDK" "T16|Plugin install"
+
+# ── Group 6: ADR-0033 Controller Activation (all parallel) ──
+log "── Group 6: Controller Activation (ADR-0033) ──"
+run_check_bg "T17" "Controller health"      check_controller_health   "controller"
+run_check_bg "T18" "Learned routing"        check_hooks_route         "controller"
+run_check_bg "T19" "Memory scoping"         check_memory_scoping      "controller"
+run_check_bg "T20" "Reflexion lifecycle"     check_reflexion_lifecycle "controller"
+run_check_bg "T21" "Causal graph"           check_causal_graph        "controller"
+run_check_bg "T22" "COW branching"          check_cow_branching       "controller"
+run_check_bg "T23" "Batch operations"       check_batch_operations    "controller"
+run_check_bg "T24" "Context synthesis"      check_context_synthesis   "controller"
+collect_parallel "controller" \
+  "T17|Controller health" "T18|Learned routing" "T19|Memory scoping" \
+  "T20|Reflexion lifecycle" "T21|Causal graph" "T22|COW branching" \
+  "T23|Batch operations" "T24|Context synthesis"
+
 rm -rf "$RQ_PARALLEL_DIR"; RQ_PARALLEL_DIR=""
 
 log "Acceptance results: ${rq_pass}/$((rq_pass + rq_fail)) passed, ${rq_fail} failed"
