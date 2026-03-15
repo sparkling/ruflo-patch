@@ -43,7 +43,7 @@ function rejectMock(err) {
 // Simulated handler logic (mirrors hooks-tools.ts wiring)
 // ============================================================================
 
-const TIMEOUT_MS = 2000;
+const TIMEOUT_MS = 50; // Production uses 2000ms; 50ms proves the same wiring contract
 const SOLVER_BANDIT_CONFIDENCE_THRESHOLD = 0.6;
 const SKILL_CONFIDENCE_THRESHOLD = 0.7;
 const SKILL_CREATION_QUALITY_THRESHOLD = 0.8;

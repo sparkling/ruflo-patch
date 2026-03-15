@@ -52,7 +52,7 @@ function hangMock() {
 // ============================================================================
 
 const MAX_TOP_K = 100;
-const TIMEOUT_MS = 2000;
+const TIMEOUT_MS = 50; // Production uses 2000ms; 50ms proves the same wiring contract
 
 function withTimeout(promise, ms) {
   return Promise.race([

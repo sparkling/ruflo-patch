@@ -32,6 +32,10 @@ function hangMock() {
   return mockFn(() => new Promise(() => {}));
 }
 
+// Production uses 2000ms per phase; 50ms proves the same cascade wiring contract
+const PHASE_TIMEOUT_MS = 50;
+const CASCADE_BUDGET_MS = PHASE_TIMEOUT_MS * 4 + 500; // 4 phases + margin
+
 function withTimeout(promise, ms) {
   return Promise.race([
     promise,
@@ -82,23 +86,23 @@ function createTimeoutCascadeHandler(phases) {
 
     // Phase 1: SolverBandit
     try {
-      await withTimeout(phases.solverBandit(task), 2000);
+      await withTimeout(phases.solverBandit(task), PHASE_TIMEOUT_MS);
     } catch { /* timeout, fall through */ }
 
     // Phase 2: SkillLibrary
     try {
-      await withTimeout(phases.skillLibrary(task), 2000);
+      await withTimeout(phases.skillLibrary(task), PHASE_TIMEOUT_MS);
     } catch { /* timeout, fall through */ }
 
     // Phase 3: LearningSystem
     try {
-      const result = await withTimeout(phases.learningSystem(task), 2000);
+      const result = await withTimeout(phases.learningSystem(task), PHASE_TIMEOUT_MS);
       if (result) metadata.learningSystem = result;
     } catch { /* timeout, fall through */ }
 
     // Phase 4: SemanticRouter
     try {
-      await withTimeout(phases.semanticRouter(task), 2000);
+      await withTimeout(phases.semanticRouter(task), PHASE_TIMEOUT_MS);
     } catch { /* timeout, fall through */ }
 
     // Fallback
@@ -289,7 +293,7 @@ describe('ADR-0033: controller chaos tests', () => {
 
       assert.equal(result.routing_method, 'fallback');
       assert.equal(result.recommended_agent, 'coder');
-      assert.ok(elapsed < 10000, `Elapsed ${elapsed}ms should be < 10000ms`);
+      assert.ok(elapsed < CASCADE_BUDGET_MS, `Elapsed ${elapsed}ms should be < ${CASCADE_BUDGET_MS}ms`);
     });
 
     it('should return default route within 10s even with all hanging controllers', async () => {
@@ -306,7 +310,7 @@ describe('ADR-0033: controller chaos tests', () => {
 
       assert.equal(result.routing_method, 'fallback');
       assert.equal(result.confidence, 0.3);
-      assert.ok(elapsed < 10000, `Elapsed ${elapsed}ms should be < 10000ms`);
+      assert.ok(elapsed < CASCADE_BUDGET_MS, `Elapsed ${elapsed}ms should be < ${CASCADE_BUDGET_MS}ms`);
     });
 
     it('should not accumulate beyond sum of individual timeouts', async () => {
@@ -322,7 +326,7 @@ describe('ADR-0033: controller chaos tests', () => {
       const elapsed = Date.now() - start;
 
       // 4 phases x 2s = 8s max, with some margin
-      assert.ok(elapsed < 10000, `Elapsed ${elapsed}ms exceeds 10s budget`);
+      assert.ok(elapsed < CASCADE_BUDGET_MS, `Elapsed ${elapsed}ms exceeds ${CASCADE_BUDGET_MS}ms budget`);
     });
 
     it('should preserve partial metadata from phases that succeeded before timeout', async () => {

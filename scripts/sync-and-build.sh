@@ -2202,6 +2202,12 @@ run_stage3_publish() {
   create_temp_dir
   run_phase "copy-source" copy_source
   run_phase "codemod" run_codemod
+  # Run build and L0+L1 tests in parallel (tests don't depend on build artifacts)
+  local _test_pid=""
+  if [[ "${BUILD_ONLY}" != "true" ]]; then
+    run_phase "test-ci" run_tests_ci &
+    _test_pid=$!
+  fi
   run_phase "build" run_build
   write_build_manifest
 
@@ -2211,8 +2217,13 @@ run_stage3_publish() {
     return 0
   fi
 
-  # Test (L0+L1 only — no Verdaccio)
-  run_phase "test-ci" run_tests_ci
+  # Wait for parallel test-ci to complete
+  if [[ -n "$_test_pid" ]]; then
+    if ! wait "$_test_pid"; then
+      log_error "test-ci failed (ran in parallel with build)"
+      return 1
+    fi
+  fi
 
   # Verify: publish once, install once, all checks, promote (unless --test-only)
   run_phase "verify" run_verify
