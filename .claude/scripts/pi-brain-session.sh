@@ -8,7 +8,7 @@ PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 CACHE_DIR="$PROJECT_DIR/.claude-flow/data"
 PI_CACHE="$CACHE_DIR/pi-context.json"
 PI_URL="https://pi.ruv.io/v1"
-CACHE_TTL=3600  # 1 hour — skip search if cache is fresh
+CACHE_TTL=28800  # 8 hours — max 2 searches per long day
 
 # comment: read BRAIN_API_KEY from env
 PI_KEY="${BRAIN_API_KEY:-${PI:-}}"
