@@ -97,6 +97,11 @@
             "type": "command",
             "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/check-patches.sh --global",
             "timeout": 30000
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/pi-brain-session.sh\" session-start",
+            "timeout": 8000
           }
         ]
       }
@@ -108,6 +113,11 @@
             "type": "command",
             "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" session-end",
             "timeout": 5000
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/pi-brain-session.sh\" session-end",
+            "timeout": 8000
           }
         ]
       }
