@@ -10,193 +10,176 @@ Accepted
 
 ## Deciders
 
-sparkling team
+sparkling team (hive consensus: 5 specialists, Byzantine mesh topology)
 
 ## Methodology
 
-SPARC (Specification, Pseudocode, Architecture, Refinement, Completion) + MADR
+SPARC + MADR + Hive-Mind Consensus
 
 ## Context
 
-π.ruv.io is a shared intelligence layer where AI agents contribute, search, and learn from a collective knowledge graph. It is now available as an MCP server in this project:
+π.ruv.io is a shared intelligence layer where AI agents contribute, search, and learn from a collective knowledge graph. 955 memories, 57 contributors, 123K graph edges, 20 clusters.
 
-```bash
-claude mcp add pi-brain --transport sse https://pi.ruv.io/sse
-```
+MCP server configured: `claude mcp add pi-brain --transport sse https://pi.ruv.io/sse`
 
-**Live system**: 955 memories, 57 contributors, 123K graph edges, 20 knowledge clusters, 128-dim embeddings, Bayesian quality scoring, cryptographic witness chains.
+### Hive Consensus Results
+
+Four integration strategies were proposed and voted on by a 5-member specialist hive:
+
+| Option | For | Against | Verdict |
+|--------|-----|---------|---------|
+| **C: Session-driven** (search at start, cache, share at end) | **5** | 0 | **Unanimous** |
+| **A+: Manual with CLAUDE.md rule** (behavioral, no automation) | **4** | 1 | **Strong consensus** |
+| B: Hook-driven pre-task (auto-search every task) | 2 | 3 | Rejected — noisy for trivial tasks |
+| E: Full 91-tool integration (add npx ruvector MCP) | 1 | 4 | Rejected — overlaps with local tools |
 
 ## Decision
 
-Integrate π as part of the development workflow for this project. The AI assistant should use π tools proactively during sessions.
+Implement **Option C + A+** combined:
+
+- **A+ (behavioral)**: CLAUDE.md instructs AI to search π before implementing and share after deploying
+- **C (session-driven)**: At session-start, search π for project-relevant patterns. At session-end, share significant findings
 
 ## Decision: Specification (SPARC-S)
 
-### S1: Workflow Integration
+### S1: CLAUDE.md Behavioral Rule (A+)
 
-π integrates at the workflow level — no code patches, no dependencies, no build changes. The MCP server is already configured. The AI should use the 21 available tools as part of normal development.
+Add to project CLAUDE.md under Build & Test or as a new section:
 
-### S2: Proactive Usage Rules
+> Before starting any new patch or investigation, search π (`brain_search`) for relevant patterns.
+> After completing a significant deploy, share the key finding via `brain_share`.
 
-The AI should use π tools **without being asked** in these situations:
-- Before implementing: search for existing patterns
-- After deploying: share significant learnings
-- When encountering unfamiliar territory: transfer domain priors
-- When finding useful content: vote on quality
+### S2: Session-Start Search (C)
 
-## Decision: Pseudocode (SPARC-P)
-
-## Implementation Instructions for AI
-
-### 1. Search Before Implementing
-
-Before starting any new feature, bug fix, or patch, search the collective for existing patterns:
+At the beginning of each session, search π for patterns relevant to the current project:
 
 ```
-brain_search "your topic here"
+brain_search "agentdb controller activation memory bridge"
+brain_search "fork model upstream patches npm publish"
 ```
 
-Examples:
-- Before a memory system change: `brain_search "AgentDB controller activation"`
-- Before an embedding fix: `brain_search "embedding dimension mismatch bridge"`
-- Before a new architecture: `brain_search "Thompson Sampling agent routing"`
+Cache the top results mentally — reference them during the session.
 
-If results are found, cite them. If they solve the problem, use them instead of reimplementing.
+### S3: Session-End Share (C)
 
-### 2. Share Learnings After Significant Work
-
-After completing a meaningful piece of work (bug fix, feature, architecture decision), share the key insight:
+At the end of a session with significant work, share 1-2 key findings:
 
 ```
 brain_share
-  category: "pattern" | "solution" | "architecture" | "debug" | "performance" | "security"
+  category: "pattern" | "solution" | "debug" | "architecture"
   title: "Short descriptive title"
-  content: "Root cause, solution, and rationale (max 10K chars)"
+  content: "Root cause, solution, rationale"
   tags: ["relevant", "tags"]
-  code_snippet: "optional relevant code"
 ```
 
-**Share when**:
-- A bug is fixed with non-obvious root cause
-- An architecture decision has reusable rationale
-- A performance improvement has measurable results
-- A pattern is discovered that others would benefit from
+### S4: Vote on Quality
 
-**Do NOT share**:
-- Secrets, credentials, API keys, file paths with usernames
-- Trivial changes (typos, formatting)
-- Unverified theories or speculative content
-
-### 3. Vote on Quality
-
-When a search result is helpful, upvote it:
+When search returns useful results, upvote. When wrong or outdated, downvote:
 ```
 brain_vote id: "<memory-id>" direction: "up"
 ```
 
-When a result is wrong or outdated, downvote it:
-```
-brain_vote id: "<memory-id>" direction: "down"
-```
+## Decision: Pseudocode (SPARC-P)
 
-### 4. Check System Status
+### Session Lifecycle
 
-At session start or when investigating issues:
 ```
-brain_status
-```
+SESSION START:
+  1. brain_search "project-relevant query 1"
+  2. brain_search "project-relevant query 2"
+  3. Note useful results for reference during session
 
-### 5. Check Drift
+DURING SESSION:
+  4. Before any new patch: brain_search "specific topic"
+  5. If result solves problem: use it, cite it, upvote it
+  6. If result is wrong: downvote it
 
-When working on memory/learning systems, check if collective knowledge has shifted:
+SESSION END:
+  7. If significant work completed:
+     brain_share category/title/content/tags
+  8. If drift suspected:
+     brain_drift domain: "memory-systems"
 ```
-brain_drift domain: "memory-systems"
-```
-
-### 6. Transfer Learning Across Domains
-
-When entering unfamiliar territory, pull priors:
-```
-brain_transfer source_domain: "vector-search" target_domain: "memory-optimization"
-```
-
-### 7. Create Brainpedia Pages for Stable Knowledge
-
-For well-established patterns that won't change frequently:
-```
-brain_page_create
-  category: "pattern"
-  title: "Established Pattern Name"
-  content: "Full documentation"
-  tags: ["stable", "verified"]
-  evidence_links: [{ type: "test_pass", url: "..." }]
-```
-
-Pages go through Draft → Canonical lifecycle. Requires quality >= 0.7, observations >= 5, evidence >= 3 from >= 2 contributors to promote.
 
 ## Decision: Architecture (SPARC-A)
 
 ### Integration Architecture
 
 ```
-Claude Code Session
+Session Start
     │
-    ├── brain_search ──→ π.ruv.io ──→ ranked results
-    │                                    (cosine + PageRank + quality + keyword)
-    ├── brain_share  ──→ π.ruv.io ──→ PII-stripped, embedded, signed, stored
-    │                                    (128-dim, witness chain, RVF container)
-    ├── brain_vote   ──→ π.ruv.io ──→ Bayesian quality update
-    │                                    (Beta(alpha, beta) distribution)
-    └── Local memory (.swarm/memory.db)
-         ├── 768-dim embeddings (independent)
-         └── No automatic sync with π
+    ├── brain_search ──→ π.ruv.io ──→ cached context
+    │
+    ├── Work happens (patches, deploys, investigations)
+    │   └── brain_search as needed for specific topics
+    │
+    ├── brain_vote on useful/wrong results found
+    │
+Session End
+    │
+    └── brain_share significant findings
 ```
 
-Local memory and collective memory are **independent systems**. No automatic sync. Sharing is explicit and intentional.
+No hooks, no auto-sync, no fork patches. Pure behavioral integration via MCP tools already configured.
+
+### What NOT to do
+
+- Do NOT add π search to pre-task hooks (rejected — noisy for trivial tasks)
+- Do NOT add the 91-tool npx ruvector MCP server (rejected — overlaps with local claude-flow)
+- Do NOT auto-sync local memory to π (privacy risk, unnecessary coupling)
 
 ## Decision: Refinement (SPARC-R)
 
-## What to Share from This Project
+### Share Categories
 
-| Topic | Category | Key Insight |
-|-------|----------|-------------|
-| 768-dim embedding dimension fix | debug | `bridgeGenerateEmbedding` must reject 384-dim; bridge/CLI dimension mismatch causes 0 search results |
-| Fork model for upstream patches | architecture | Fork HEAD → scope rename → pinned deps → publish as `@sparkleideas/*` |
-| Controller activation gap | architecture | 23 of 28 AgentDB controllers are dead code — bridge functions exist but no callers |
-| MCP search fallback fix | solution | `searchEntries()` must check `results.length > 0` before short-circuiting sql.js fallback |
-| Init config optimization for 7950X3D | performance | cacheSize 2048, sonaMode instant, maxNodes 50K, learningBatchSize 128 |
-| SolverBandit location | pattern | Thompson Sampling class exists at `agentdb/src/backends/rvf/SolverBandit.ts` (270 lines) but not exported |
+| When | Category | Example |
+|------|----------|---------|
+| Bug fix with non-obvious root cause | `debug` | MCP search 0-results: bridge fallback + dimension mismatch |
+| Architecture decision with reusable rationale | `architecture` | 23/28 controllers dead code — bridge exists but no callers |
+| Performance improvement with measurable results | `performance` | Search scores 0.27→0.88 after 768-dim fix |
+| Reusable pattern | `pattern` | SolverBandit Thompson Sampling — exists but not exported |
+| Security finding | `security` | MutationGuard stub always returns allowed:true |
+
+### Do NOT Share
+
+- Secrets, credentials, API keys, file paths with usernames
+- Trivial changes (typos, formatting)
+- Unverified theories or speculative content
+- Raw code files (use `code_snippet` for relevant excerpts)
 
 ## Decision: Completion (SPARC-C)
 
-### Immediate Actions
+### Already Done
 
-1. API key generated and stored
-2. MCP server configured (`pi-brain` via SSE)
-3. Share the 6 learnings from the table above to π
-4. Search π before starting ADR-0033 P0 implementation
+1. MCP server configured (`pi-brain` via SSE)
+2. 3 learnings shared to π (MCP search bug, controller gap, SolverBandit)
+3. ADR-0034 created
+
+### Implementing Now
+
+4. CLAUDE.md updated with behavioral rule
+5. Portable AI integration guide created at `docs/guides/pi-brain-integration.md`
 
 ### Ongoing
 
-- Search before every new patch
-- Share after every significant deploy
+- Search π at session start
+- Share findings at session end
 - Vote on content found during searches
-- Weekly drift check on memory-systems domain
 
 ## Consequences
 
 ### Positive
 
-- Avoid reinventing solutions (955 memories available)
+- Avoid reinventing solutions (955+ memories available)
 - Our learnings help 57+ other contributors
-- Community voting surfaces best patterns
-- Zero infrastructure cost
+- Zero infrastructure — behavioral integration only
+- No latency impact on per-task operations
 
 ### Negative
 
+- Depends on AI remembering to search (mitigated by CLAUDE.md rule)
 - Shared content is publicly visible (pseudonymous)
 - 128-dim collective embeddings are lower resolution than our 768-dim local ones
-- Depends on external service availability
 
 ## Privacy
 
@@ -210,5 +193,6 @@ Local memory and collective memory are **independent systems**. No automatic syn
 
 - **π.ruv.io**: https://pi.ruv.io/
 - **Guide**: https://pi.ruv.io/?guide=1
+- **GitHub**: https://github.com/ruvnet/RuVector
+- **Portable integration guide**: `docs/guides/pi-brain-integration.md`
 - **MCP config**: `claude mcp add pi-brain --transport sse https://pi.ruv.io/sse`
-- **ADR-0033**: Controller activation (benefits from collective search)
