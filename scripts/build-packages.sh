@@ -274,7 +274,7 @@ run_build() {
   done < "${TEMP_DIR}/.build-results"
   rm -f "${TEMP_DIR}/.build-results"
 
-  # Build cross-repo packages
+  # Build cross-repo packages (TSC only — WASM is handled by build-wasm.sh)
   local cross_repo_builds=(
     "cross-repo/agentic-flow/packages/agent-booster"
   )
@@ -282,59 +282,7 @@ run_build() {
     local pkg_dir="${TEMP_DIR}/${rel_path}"
     [[ -d "$pkg_dir" && -f "$pkg_dir/tsconfig.json" ]] || continue
 
-    log "  Building cross-repo: ${rel_path}"
-    local _xr_start _xr_end
-    _xr_start=$(date +%s%N 2>/dev/null || echo 0)
-
-    # Build WASM and TypeScript in parallel (independent processes)
-    local crate_dir="$pkg_dir/crates/agent-booster-wasm"
-    local wasm_pid=""
-    local _wasm_start=""
-    local wasm_cache="/tmp/ruflo-build/.wasm-cache.json"
-    local should_rebuild_wasm=true
-
-    if [[ -d "$crate_dir" ]] && command -v wasm-pack &>/dev/null; then
-      # Check WASM cache: hash all Rust source files, skip if unchanged
-      local parent_crate_dir="$crate_dir/../agent-booster"
-      # Compute hash of all WASM-relevant source files
-      local current_wasm_hash
-      current_wasm_hash=$(cat \
-        "$crate_dir/Cargo.toml" \
-        "$crate_dir/src/lib.rs" \
-        "$parent_crate_dir/Cargo.toml" \
-        $(find "$parent_crate_dir/src" -name "*.rs" -type f 2>/dev/null | sort) \
-        2>/dev/null | sha256sum | cut -d' ' -f1) || current_wasm_hash=""
-
-      if [[ -n "$current_wasm_hash" && -f "$wasm_cache" && -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
-        local cached_wasm_hash
-        cached_wasm_hash=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$wasm_cache','utf-8')).wasm_source_hash||'')" 2>/dev/null) || cached_wasm_hash=""
-        if [[ "$current_wasm_hash" == "$cached_wasm_hash" ]]; then
-          log "  WASM cache hit — skipping wasm-pack (hash=${current_wasm_hash:0:12})"
-          should_rebuild_wasm=false
-          add_cmd_timing "build" "wasm-pack (cache hit)" "0"
-        fi
-      fi
-
-      if [[ "$should_rebuild_wasm" == "true" ]]; then
-        log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
-        _wasm_start=$(date +%s%N 2>/dev/null || echo 0)
-        (
-          wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
-            echo "WARN: WASM build failed for ${rel_path}" >&2
-            echo "$wasm_out" | tail -5 >&2
-          }
-          if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
-            rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
-            # Write WASM cache on success
-            cat > "$wasm_cache" <<WASMCACHE
-{"wasm_source_hash":"${current_wasm_hash}","built_at":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"}
-WASMCACHE
-          fi
-        ) &
-        wasm_pid=$!
-      fi
-    fi
-
+    log "  Building cross-repo TSC: ${rel_path}"
     local _xr_tsc_start _xr_tsc_end
     _xr_tsc_start=$(date +%s%N 2>/dev/null || echo 0)
     if "$tsc_bin" -p "$pkg_dir/tsconfig.json" --skipLibCheck 2>/dev/null; then
@@ -348,26 +296,6 @@ WASMCACHE
       local _xr_tsc_ms=$(( (_xr_tsc_end - _xr_tsc_start) / 1000000 ))
       log "  cross-repo TSC: ${_xr_tsc_ms}ms"
       add_cmd_timing "build" "tsc cross-repo/agent-booster" "${_xr_tsc_ms}"
-    fi
-
-    # Wait for WASM build to finish
-    if [[ -n "$wasm_pid" ]]; then
-      wait "$wasm_pid" 2>/dev/null && {
-        local _wasm_end
-        _wasm_end=$(date +%s%N 2>/dev/null || echo 0)
-        if [[ -n "$_wasm_start" && "$_wasm_start" != "0" && "$_wasm_end" != "0" ]]; then
-          local _wasm_ms=$(( (_wasm_end - _wasm_start) / 1000000 ))
-          log "  WASM build: ${_wasm_ms}ms"
-          add_cmd_timing "build" "wasm-pack agent-booster" "${_wasm_ms}"
-        fi
-        log "  WASM build succeeded"
-      } || true
-    fi
-
-    _xr_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$_xr_start" != "0" && "$_xr_end" != "0" ]]; then
-      local _xr_ms=$(( (_xr_end - _xr_start) / 1000000 ))
-      add_cmd_timing "build" "cross-repo total" "${_xr_ms}"
     fi
   done
 
