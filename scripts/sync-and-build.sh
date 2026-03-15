@@ -123,6 +123,7 @@ source "${PROJECT_DIR}/lib/pipeline-utils.sh"
 source "${PROJECT_DIR}/lib/pipeline-helpers.sh"
 
 : "${RUFLO_NOTIFY_EMAIL:=}"
+[[ -z "${RUFLO_NOTIFY_EMAIL}" ]] && log_warn "RUFLO_NOTIFY_EMAIL not set — failure notifications disabled"
 
 trap cleanup EXIT
 

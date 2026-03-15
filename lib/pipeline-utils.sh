@@ -17,7 +17,7 @@ TIMING_BUILD_PKGS_FILE="/tmp/ruflo-timing-build-pkgs.jsonl"
 PIPELINE_START_NS=""
 
 # ---------------------------------------------------------------------------
-# Logging helpers
+# Logging helpers (Q4: structured logging with levels)
 # ---------------------------------------------------------------------------
 
 log() {
@@ -26,6 +26,72 @@ log() {
 
 log_error() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2
+}
+
+log_warn() {
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARN: $*" >&2
+}
+
+log_debug() {
+  [[ "${RUFLO_DEBUG:-}" == "1" ]] && echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] DEBUG: $*" >&2
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Timing helpers (Q1: eliminate boilerplate)
+# ---------------------------------------------------------------------------
+
+# Get current time in nanoseconds (returns 0 if unavailable)
+_ns() {
+  date +%s%N 2>/dev/null || echo 0
+}
+
+# Compute elapsed milliseconds from two nanosecond timestamps
+_elapsed_ms() {
+  local start="$1" end="$2"
+  if [[ "$start" != "0" && "$end" != "0" ]]; then
+    echo $(( (end - start) / 1000000 ))
+  else
+    echo 0
+  fi
+}
+
+# Time a command and record to TIMING_CMDS_FILE
+# Usage: time_cmd "phase" "label" command arg1 arg2 ...
+time_cmd() {
+  local phase="$1" label="$2"; shift 2
+  local _tc_start _tc_end _tc_ms _tc_rc
+  _tc_start=$(_ns)
+  "$@"
+  _tc_rc=$?
+  _tc_end=$(_ns)
+  _tc_ms=$(_elapsed_ms "$_tc_start" "$_tc_end")
+  add_cmd_timing "$phase" "$label" "$_tc_ms" "$_tc_rc"
+  [[ $_tc_ms -gt 0 ]] && log_debug "  ${label}: ${_tc_ms}ms (rc=${_tc_rc})"
+  return $_tc_rc
+}
+
+# ---------------------------------------------------------------------------
+# Retry with exponential backoff (O1: transient failure resilience)
+# ---------------------------------------------------------------------------
+
+# Usage: retry [max_attempts] [initial_delay_s] command arg1 arg2 ...
+# Default: 3 attempts, 5s initial delay (doubles each retry)
+retry() {
+  local max_attempts="${1:-3}" delay="${2:-5}"; shift 2
+  local attempt
+  for ((attempt=1; attempt<=max_attempts; attempt++)); do
+    if "$@"; then
+      return 0
+    fi
+    if [[ $attempt -lt $max_attempts ]]; then
+      log_warn "Attempt ${attempt}/${max_attempts} failed: $1 — retrying in ${delay}s"
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+  done
+  log_error "All ${max_attempts} attempts failed: $1"
+  return 1
 }
 
 # ---------------------------------------------------------------------------
