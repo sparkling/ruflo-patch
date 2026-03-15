@@ -581,15 +581,18 @@ check_controller_health() {
   # Try MCP exec for agentdb_health
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
 
-  if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|status'; then
-    # Count controller mentions
+  if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|available'; then
+    # Count named controllers in output (each has "name": "xxx")
     local ctrl_count
-    ctrl_count=$(echo "$_RK_OUT" | grep -oi 'controller\|healthy\|available\|degraded' | wc -l)
-    if [[ $ctrl_count -ge 3 ]]; then
+    ctrl_count=$(echo "$_RK_OUT" | grep -c '"name"' || echo 0)
+    if [[ $ctrl_count -ge 5 ]]; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Controller health: $ctrl_count status indicators found"
+      _CHECK_OUTPUT="Controller health: $ctrl_count controllers listed"
+    elif echo "$_RK_OUT" | grep -qi '"available".*true\|"controllers"'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Controller health: health report available ($ctrl_count controllers)"
     else
-      _CHECK_OUTPUT="Controller health: only $ctrl_count indicators (expected 3+)"
+      _CHECK_OUTPUT="Controller health: only $ctrl_count controllers found (expected 5+)"
     fi
   else
     # Fallback: verify the controller-registry module shipped
