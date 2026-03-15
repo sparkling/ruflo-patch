@@ -209,7 +209,7 @@ function calculateModuleProgress(moduleDir) {
  * Check security file status
  */
 function checkSecurityFile(filename, minLines = 100) {
-  const filePath = join(V3_DIR, '@claude-flow/security/src', filename);
+  const filePath = join(V3_DIR, '@sparkleideas/security/src', filename);
   if (!existsSync(filePath)) return false;
 
   try {

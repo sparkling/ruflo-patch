@@ -3,7 +3,7 @@
  * Intelligence Layer (ADR-050)
  *
  * Closes the intelligence loop by wiring PageRank-ranked memory into
- * the hook system. Pure CJS — no ESM imports of @claude-flow/memory.
+ * the hook system. Pure CJS — no ESM imports of @sparkleideas/memory.
  *
  * Data files (all under .claude-flow/data/):
  *   auto-memory-store.json  — written by auto-memory-hook.mjs
@@ -24,6 +24,8 @@ const RANKED_PATH = path.join(DATA_DIR, 'ranked-context.json');
 const PENDING_PATH = path.join(DATA_DIR, 'pending-insights.jsonl');
 const SESSION_DIR = path.join(process.cwd(), '.claude-flow', 'sessions');
 const SESSION_FILE = path.join(SESSION_DIR, 'current.json');
+const SNAPSHOT_BRIDGE_PATH = path.join(process.cwd(), '.claude-flow', 'intelligence-snapshot.json');
+const SIGNALS_PATH = path.join(process.cwd(), '.claude-flow', 'cjs-intelligence-signals.json');
 
 // ── Stop words for trigram matching ──────────────────────────────────────────
 
@@ -48,7 +50,7 @@ function ensureDataDir() {
 function readJSON(filePath) {
   try {
     if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-01: readJSON failed for ' + filePath, JSON.stringify({error: String(e)})); }
+  } catch { /* corrupt file — start fresh */ }
   return null;
 }
 
@@ -87,7 +89,7 @@ function sessionGet(key) {
     if (!fs.existsSync(SESSION_FILE)) return null;
     const session = JSON.parse(fs.readFileSync(SESSION_FILE, 'utf-8'));
     return key ? (session.context || {})[key] : session.context;
-  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-02: sessionGet failed for key=' + key, JSON.stringify({error: String(e)})); return null; }
+  } catch { return null; }
 }
 
 function sessionSet(key, value) {
@@ -101,7 +103,7 @@ function sessionSet(key, value) {
     session.context[key] = value;
     session.updatedAt = new Date().toISOString();
     fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2), 'utf-8');
-  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-03: sessionSet failed for key=' + key, JSON.stringify({error: String(e)})); }
+  } catch { /* best effort */ }
 }
 
 // ── PageRank ─────────────────────────────────────────────────────────────────
@@ -217,7 +219,7 @@ function buildEdges(entries) {
 /**
  * If auto-memory-store.json is empty, bootstrap by parsing MEMORY.md and
  * topic files from the auto-memory directory. This removes the dependency
- * on @claude-flow/memory for the initial seed.
+ * on @sparkleideas/memory for the initial seed.
  */
 function bootstrapFromMemoryFiles() {
   const entries = [];
@@ -246,7 +248,7 @@ function bootstrapFromMemoryFiles() {
             parseMemoryDir(memDir, entries);
           }
         }
-      } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-04: bootstrap projectDirs scan failed', JSON.stringify({base, error: String(e)})); }
+      } catch { /* skip */ }
     } else if (fs.existsSync(base)) {
       parseMemoryDir(base, entries);
     }
@@ -284,7 +286,7 @@ function parseMemoryDir(dir, entries) {
         });
       }
     }
-  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-05: parseMemoryDir failed', JSON.stringify({dir, error: String(e)})); }
+  } catch { /* skip unreadable dirs */ }
 }
 
 // ── Exported functions ───────────────────────────────────────────────────────
@@ -478,6 +480,9 @@ function feedback(success) {
 
   const amount = success ? 0.05 : -0.02;
   boostConfidence(matchedIds, amount);
+
+  // IN-004: Write signal for ESM bridge consumption
+  writeSignals({ type: 'task', task: sessionGet('currentTask') || 'hook', success: !!success });
 }
 
 function boostConfidence(ids, amount) {
@@ -531,7 +536,7 @@ function consolidate() {
         if (insight.file) {
           editCounts[insight.file] = (editCounts[insight.file] || 0) + 1;
         }
-      } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-06: malformed insight line', JSON.stringify({line, error: String(e)})); }
+      } catch { /* skip malformed */ }
     }
 
     // Create entries for frequently-edited files (3+ edits)
@@ -890,7 +895,102 @@ function stats(outputJson) {
   return report;
 }
 
-module.exports = { init, getContext, recordEdit, feedback, consolidate, stats };
+// ── CJS Signal Writer (ADR-078 / IN-004) ──────────────────────────────────
+
+function writeSignals(event) {
+  try {
+    let signals = readJSON(SIGNALS_PATH);
+    if (!signals || !Array.isArray(signals.taskOutcomes)) {
+      signals = { timestamp: null, taskOutcomes: [], routingDecisions: [] };
+    }
+    signals.timestamp = new Date().toISOString();
+    if (event.type === 'task') {
+      signals.taskOutcomes.push({
+        task: event.task || 'unknown',
+        success: !!event.success,
+        model: event.model || 'unknown',
+        duration: event.duration || 0,
+        timestamp: new Date().toISOString(),
+      });
+    } else if (event.type === 'routing') {
+      signals.routingDecisions.push({
+        input: (event.input || '').slice(0, 100),
+        recommended: event.recommended || 'unknown',
+        actual: event.actual || 'unknown',
+        timestamp: new Date().toISOString(),
+      });
+    }
+    // Cap at 100 entries each to prevent unbounded growth
+    if (signals.taskOutcomes.length > 100) signals.taskOutcomes = signals.taskOutcomes.slice(-100);
+    if (signals.routingDecisions.length > 100) signals.routingDecisions = signals.routingDecisions.slice(-100);
+    writeJSON(SIGNALS_PATH, signals);
+  } catch { /* IN-004: best effort — do not block hook execution */ }
+}
+
+// ── ESM Bridge Snapshot Reader (ADR-078 / IN-003) ──────────────────────────
+
+let _snapshotCache = null;
+let _snapshotCacheTs = 0;
+const SNAPSHOT_TTL = 30000; // 30s cache
+
+function loadSnapshot() {
+  const now = Date.now();
+  if (_snapshotCache && (now - _snapshotCacheTs) < SNAPSHOT_TTL) return _snapshotCache;
+  try {
+    if (fs.existsSync(SNAPSHOT_BRIDGE_PATH)) {
+      const raw = JSON.parse(fs.readFileSync(SNAPSHOT_BRIDGE_PATH, 'utf-8'));
+      // Snapshot may be an array (history) or object (single); use latest
+      _snapshotCache = Array.isArray(raw) ? raw[raw.length - 1] : raw;
+      _snapshotCacheTs = now;
+      return _snapshotCache;
+    }
+  } catch { /* IN-003: corrupt snapshot — continue without */ }
+  return null;
+}
+
+function getModelRecommendation(complexity) {
+  const snap = loadSnapshot();
+  if (!snap) return { model: 'sonnet', reason: 'no snapshot available' };
+
+  // Use routing rules from snapshot if available
+  if (snap.routingRules && Array.isArray(snap.routingRules)) {
+    for (const rule of snap.routingRules) {
+      if (rule.complexity && complexity !== undefined) {
+        const threshold = parseFloat(rule.complexity);
+        if (!isNaN(threshold) && complexity < threshold) {
+          return { model: rule.model || 'haiku', reason: 'snapshot routing rule' };
+        }
+      }
+    }
+  }
+
+  // Fallback: use model stats to pick lowest-latency model for simple tasks
+  if (snap.modelStats && complexity !== undefined && complexity < 0.3) {
+    const haiku = snap.modelStats.haiku;
+    if (haiku && haiku.count > 0) {
+      return { model: 'haiku', reason: 'low complexity + haiku stats available' };
+    }
+  }
+
+  return { model: 'sonnet', reason: 'default fallback' };
+}
+
+function getPatternContext(taskType) {
+  const snap = loadSnapshot();
+  if (!snap || !snap.topPatterns) return null;
+
+  if (!taskType) return snap.topPatterns.slice(0, 5);
+
+  const lowerType = taskType.toLowerCase();
+  const matched = snap.topPatterns.filter(p => {
+    const summary = (p.summary || '').toLowerCase();
+    return summary.includes(lowerType);
+  });
+
+  return matched.length > 0 ? matched : snap.topPatterns.slice(0, 3);
+}
+
+module.exports = { init, getContext, recordEdit, feedback, consolidate, stats, getModelRecommendation, getPatternContext, writeSignals };
 
 // ── CLI entrypoint ──────────────────────────────────────────────────────────
 if (require.main === module) {

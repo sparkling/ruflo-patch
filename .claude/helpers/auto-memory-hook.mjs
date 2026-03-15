@@ -51,7 +51,7 @@ class JsonFileBackend {
         if (Array.isArray(data)) {
           for (const entry of data) this.entries.set(entry.id, entry);
         }
-      } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-07: JsonFileBackend parse failed', JSON.stringify({file: this.filePath, error: String(e)})); }
+      } catch { /* start fresh */ }
     }
   }
 
@@ -122,7 +122,7 @@ class JsonFileBackend {
   _persist() {
     try {
       writeFileSync(this.filePath, JSON.stringify([...this.entries.values()], null, 2), 'utf-8');
-    } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-08: _persist failed', JSON.stringify({file: this.filePath, error: String(e)})); }
+    } catch { /* best effort */ }
   }
 }
 
@@ -132,64 +132,133 @@ class JsonFileBackend {
 
 async function loadMemoryPackage() {
   // Strategy 1: Local dev (built dist)
-  const localDist = join(PROJECT_ROOT, 'v3/@claude-flow/memory/dist/index.js');
+  const localDist = join(PROJECT_ROOT, 'v3/@sparkleideas/memory/dist/index.js');
   if (existsSync(localDist)) {
     try {
       return await import(`file://${localDist}`);
-    } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-09: loadMemoryPackage local dist import failed', JSON.stringify({path: localDist, error: String(e)})); }
+    } catch { /* fall through */ }
   }
 
-  // Strategy 2: npm installed @claude-flow/memory
+  // Strategy 2: Use createRequire for CJS-style resolution (handles nested node_modules
+  // when installed as a transitive dependency via npx ruflo / npx claude-flow)
   try {
-    return await import('@claude-flow/memory');
-  } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-10: loadMemoryPackage npm import failed', JSON.stringify({error: String(e)})); }
+    const { createRequire } = await import('module');
+    const require = createRequire(join(PROJECT_ROOT, 'package.json'));
+    return require('@sparkleideas/memory');
+  } catch { /* fall through */ }
 
-  // Strategy 3: Installed via @claude-flow/cli which includes memory
-  const cliMemory = join(PROJECT_ROOT, 'node_modules/@claude-flow/memory/dist/index.js');
-  if (existsSync(cliMemory)) {
-    try {
-      return await import(`file://${cliMemory}`);
-    } catch (e) { console.warn('[RUFLO-FALLBACK] FB-002-11: loadMemoryPackage cli memory import failed', JSON.stringify({path: cliMemory, error: String(e)})); }
+  // Strategy 3: ESM import (works when @sparkleideas/memory is a direct dependency)
+  try {
+    return await import('@sparkleideas/memory');
+  } catch { /* fall through */ }
+
+  // Strategy 4: Walk up from PROJECT_ROOT looking for @sparkleideas/memory in any node_modules
+  let searchDir = PROJECT_ROOT;
+  const { parse } = await import('path');
+  while (searchDir !== parse(searchDir).root) {
+    const candidate = join(searchDir, 'node_modules', '@claude-flow', 'memory', 'dist', 'index.js');
+    if (existsSync(candidate)) {
+      try {
+        return await import(`file://${candidate}`);
+      } catch { /* fall through */ }
+    }
+    searchDir = dirname(searchDir);
   }
 
   return null;
 }
 
 // ============================================================================
-// Read config from .claude-flow/config.yaml
+// Read config from .claude-flow/config.json (YAML fallback for migration)
 // ============================================================================
 
 function readConfig() {
-  const configPath = join(PROJECT_ROOT, '.claude-flow', 'config.yaml');
   const defaults = {
+    backend: 'agentdb',
     learningBridge: { enabled: true, sonaMode: 'balanced', confidenceDecayRate: 0.005, accessBoostAmount: 0.03, consolidationThreshold: 10 },
     memoryGraph: { enabled: true, pageRankDamping: 0.85, maxNodes: 5000, similarityThreshold: 0.8 },
     agentScopes: { enabled: true, defaultScope: 'project' },
+    agentdb: { enableLearning: true },
+    syncMode: 'on-session-end',
   };
 
-  if (!existsSync(configPath)) return defaults;
+  // Primary: read .claude-flow/config.json
+  const jsonPath = join(PROJECT_ROOT, '.claude-flow', 'config.json');
+  if (existsSync(jsonPath)) {
+    try {
+      const cfg = JSON.parse(readFileSync(jsonPath, 'utf-8'));
+      const mem = cfg.memory || {};
+      if (['hybrid', 'json', 'sqlite', 'agentdb'].includes(mem.backend)) defaults.backend = mem.backend;
+      if (mem.learningBridge) Object.assign(defaults.learningBridge, mem.learningBridge);
+      if (mem.memoryGraph) Object.assign(defaults.memoryGraph, mem.memoryGraph);
+      if (mem.agentScopes) Object.assign(defaults.agentScopes, mem.agentScopes);
+      if (mem.agentdb) Object.assign(defaults.agentdb, mem.agentdb);
+      if (mem.syncMode) defaults.syncMode = mem.syncMode;
+      return defaults;
+    } catch (err) {
+      console.error(`[FAIL] auto-memory.readConfig: ${err.message}`);
+    }
+  }
 
+  // Fallback: read config.yaml for backward compat
+  const yamlPath = join(PROJECT_ROOT, '.claude-flow', 'config.yaml');
+  if (existsSync(yamlPath)) {
+    try {
+      const yaml = readFileSync(yamlPath, 'utf-8');
+      const getBool = (key) => {
+        const match = yaml.match(new RegExp(`${key}:\\s*(true|false)`, 'i'));
+        return match ? match[1] === 'true' : undefined;
+      };
+      const getStr = (key) => {
+        const match = yaml.match(new RegExp(`${key}:\\s*([\\w-]+)`, 'i'));
+        return match ? match[1] : undefined;
+      };
+      const parsedBackend = getStr('backend');
+      if (parsedBackend && ['hybrid', 'json', 'sqlite', 'agentdb'].includes(parsedBackend)) defaults.backend = parsedBackend;
+      const lbEnabled = getBool('learningBridge[\\s\\S]*?enabled');
+      if (lbEnabled !== undefined) defaults.learningBridge.enabled = lbEnabled;
+      const mgEnabled = getBool('memoryGraph[\\s\\S]*?enabled');
+      if (mgEnabled !== undefined) defaults.memoryGraph.enabled = mgEnabled;
+      const asEnabled = getBool('agentScopes[\\s\\S]*?enabled');
+      if (asEnabled !== undefined) defaults.agentScopes.enabled = asEnabled;
+      defaults.syncMode = getStr('syncMode') || defaults.syncMode;
+      dim('[config] Read from config.yaml (legacy).');
+      return defaults;
+    } catch { /* WM-003: legacy YAML parse failure, return defaults */
+      return defaults;
+    }
+  }
+
+  return defaults;
+}
+
+// WM-003: Backend factory — AgentDBBackend only (no more HybridBackend dual-write)
+function createBackend(config, memPkg) {
+  if (config.backend === 'json') {
+    return { backend: new JsonFileBackend(STORE_PATH) };
+  }
+  if (!memPkg.AgentDBBackend) {
+    throw new Error(
+      `Memory backend '${config.backend}' requires AgentDBBackend but it is not exported.\n` +
+      `Fix: Run 'npx @sparkleideas/cli doctor --install'\n` +
+      `  Or: set "memory.backend": "json" in .claude-flow/config.json`
+    );
+  }
+  const swarmDir = join(PROJECT_ROOT, '.swarm');
+  if (!existsSync(swarmDir)) mkdirSync(swarmDir, { recursive: true });
   try {
-    const yaml = readFileSync(configPath, 'utf-8');
-    // Simple YAML parser for the memory section
-    const getBool = (key) => {
-      const match = yaml.match(new RegExp(`${key}:\\s*(true|false)`, 'i'));
-      return match ? match[1] === 'true' : undefined;
-    };
-
-    const lbEnabled = getBool('learningBridge[\\s\\S]*?enabled');
-    if (lbEnabled !== undefined) defaults.learningBridge.enabled = lbEnabled;
-
-    const mgEnabled = getBool('memoryGraph[\\s\\S]*?enabled');
-    if (mgEnabled !== undefined) defaults.memoryGraph.enabled = mgEnabled;
-
-    const asEnabled = getBool('agentScopes[\\s\\S]*?enabled');
-    if (asEnabled !== undefined) defaults.agentScopes.enabled = asEnabled;
-
-    return defaults;
-  } catch (e) {
-    console.warn('[RUFLO-FALLBACK] FB-002-12: readConfig YAML parse failed', JSON.stringify({error: String(e)}));
-    return defaults;
+    const backend = new memPkg.AgentDBBackend({
+      dbPath: join(swarmDir, 'agentdb-memory.rvf'),
+      vectorBackend: config.agentdb.vectorBackend || 'auto',
+      enableLearning: config.agentdb.enableLearning !== false,
+    });
+    return { backend };
+  } catch (err) {
+    throw new Error(
+      `AgentDBBackend failed to initialize: ${err.message}\n` +
+      `Fix: Run 'npx @sparkleideas/cli doctor --install'\n` +
+      `  Or: set "memory.backend": "json" in .claude-flow/config.json`
+    );
   }
 }
 
@@ -207,12 +276,12 @@ async function doImport() {
   }
 
   const config = readConfig();
-  const backend = new JsonFileBackend(STORE_PATH);
+  const { backend } = createBackend(config, memPkg);
   await backend.initialize();
 
   const bridgeConfig = {
     workingDir: PROJECT_ROOT,
-    syncMode: 'on-session-end',
+    syncMode: config.syncMode || 'on-session-end',
   };
 
   // Wire learning if enabled and available
@@ -260,7 +329,7 @@ async function doSync() {
   }
 
   const config = readConfig();
-  const backend = new JsonFileBackend(STORE_PATH);
+  const { backend } = createBackend(config, memPkg);
   await backend.initialize();
 
   const entryCount = await backend.count();
@@ -272,7 +341,7 @@ async function doSync() {
 
   const bridgeConfig = {
     workingDir: PROJECT_ROOT,
-    syncMode: 'on-session-end',
+    syncMode: config.syncMode || 'on-session-end',
   };
 
   if (config.learningBridge.enabled && memPkg.LearningBridge) {
@@ -314,7 +383,7 @@ async function doStatus() {
   const config = readConfig();
 
   console.log('\n=== Auto Memory Bridge Status ===\n');
-  console.log(`  Package:        ${memPkg ? '✅ Available' : '❌ Not found'}`);
+  console.log(`  Package:        ${memPkg?.AutoMemoryBridge ? 'Active (AutoMemoryBridge)' : memPkg ? '✅ Available' : '❌ Not found'}`);
   console.log(`  Store:          ${existsSync(STORE_PATH) ? '✅ ' + STORE_PATH : '⏸ Not initialized'}`);
   console.log(`  LearningBridge: ${config.learningBridge.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
   console.log(`  MemoryGraph:    ${config.memoryGraph.enabled ? '✅ Enabled' : '⏸ Disabled'}`);
@@ -343,9 +412,11 @@ try {
     case 'status': await doStatus(); break;
     default:
       console.log('Usage: auto-memory-hook.mjs <import|sync|status>');
-      process.exit(1);
+      break;
   }
 } catch (err) {
   // Hooks must never crash Claude Code - fail silently
-  dim(`Error (non-critical): ${err.message}`);
+  try { dim(`Error (non-critical): ${err.message}`); } catch (_) {}
 }
+// Hooks must ALWAYS exit 0
+process.exitCode = 0;

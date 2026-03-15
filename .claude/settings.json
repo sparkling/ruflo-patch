@@ -6,7 +6,27 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs pre-bash",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" pre-bash",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" pre-edit",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" pre-task",
             "timeout": 5000
           }
         ]
@@ -18,8 +38,28 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs post-edit",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" post-edit",
             "timeout": 10000
+          }
+        ]
+      },
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" post-command",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" post-task",
+            "timeout": 5000
           }
         ]
       }
@@ -29,8 +69,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs route",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" route",
             "timeout": 10000
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" user-prompt",
+            "timeout": 5000
           }
         ]
       }
@@ -40,13 +85,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs session-restore",
-            "timeout": 15000
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" session-restore",
+            "timeout": 5000
           },
           {
             "type": "command",
-            "command": "node .claude/helpers/auto-memory-hook.mjs import",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/auto-memory-hook.mjs\" import",
             "timeout": 8000
+          },
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR\"/.claude/scripts/check-patches.sh --global",
+            "timeout": 30000
           }
         ]
       }
@@ -56,8 +106,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs session-end",
-            "timeout": 10000
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" session-end",
+            "timeout": 5000
           }
         ]
       }
@@ -67,7 +117,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/auto-memory-hook.mjs sync",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/auto-memory-hook.mjs\" sync",
             "timeout": 10000
           }
         ]
@@ -79,11 +129,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs compact-manual"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" compact-manual"
           },
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs session-end",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" session-end",
             "timeout": 5000
           }
         ]
@@ -93,11 +143,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs compact-auto"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" compact-auto"
           },
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs session-end",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" session-end",
             "timeout": 6000
           }
         ]
@@ -108,7 +158,40 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node .claude/helpers/hook-handler.cjs status",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" status",
+            "timeout": 3000
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" teammate-idle",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" post-tool-failure",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/hook-handler.cjs\" notify",
             "timeout": 3000
           }
         ]
@@ -117,13 +200,13 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node .claude/helpers/statusline.cjs"
+    "command": "node \"$CLAUDE_PROJECT_DIR/.claude/helpers/statusline.cjs\""
   },
   "permissions": {
     "allow": [
-      "Bash(npx @claude-flow*)",
-      "Bash(npx claude-flow*)",
-      "Bash(node .claude/*)",
+      "Bash(npx @sparkleideas/cli:*)",
+      "Bash(npx claude-flow:*)",
+      "Bash(node \"$CLAUDE_PROJECT_DIR\"/.claude/*)",
       "mcp__claude-flow__:*"
     ],
     "deny": [
@@ -138,11 +221,25 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_FLOW_V3_ENABLED": "true",
-    "CLAUDE_FLOW_HOOKS_ENABLED": "true"
+    "CLAUDE_FLOW_HOOKS_ENABLED": "true",
+    "GUIDANCE_EVENT_WIRING_ENABLED": "true",
+    "GUIDANCE_PRE_EDIT_HOOK": "true",
+    "GUIDANCE_POST_COMMAND_SENTINEL": "true",
+    "GUIDANCE_TEAMMATE_IDLE_HOOK": "true",
+    "GUIDANCE_POST_TOOL_FAILURE": "true",
+    "GUIDANCE_SESSION_SENTINEL": "true",
+    "GUIDANCE_AUTO_MEMORY": "true",
+    "GUIDANCE_LEARNING_BRIDGE": "true",
+    "GUIDANCE_STATUS_LINE": "true"
   },
   "claudeFlow": {
     "version": "3.0.0",
     "enabled": true,
+    "platform": {
+      "os": "linux",
+      "arch": "x64",
+      "shell": "bash"
+    },
     "modelPreferences": {
       "default": "claude-opus-4-6",
       "routing": "claude-haiku-4-5-20251001"
@@ -173,23 +270,43 @@
     },
     "swarm": {
       "topology": "hierarchical-mesh",
-      "maxAgents": 15
+      "maxAgents": 15,
+      "autoScale": true,
+      "coordinationStrategy": "adaptive"
     },
     "memory": {
       "backend": "hybrid",
+      "cacheSize": 256,
       "enableHNSW": true,
+      "agentdb": {
+        "learningThreshold": 0.6,
+        "vectorBackend": "auto",
+        "tickInterval": 300000
+      },
       "learningBridge": {
-        "enabled": true
+        "enabled": true,
+        "sonaMode": "adaptive",
+        "confidenceDecayRate": 0.02,
+        "accessBoostAmount": 0.1
       },
       "memoryGraph": {
-        "enabled": true
+        "enabled": true,
+        "pageRankDamping": 0.85,
+        "maxNodes": 10000,
+        "similarityThreshold": 0.7
       },
       "agentScopes": {
-        "enabled": true
+        "enabled": true,
+        "defaultScope": "project"
       }
     },
     "neural": {
-      "enabled": true
+      "enabled": true,
+      "modelPath": ".claude-flow/neural"
+    },
+    "hooks": {
+      "enabled": true,
+      "autoExecute": true
     },
     "daemon": {
       "autoStart": true,
