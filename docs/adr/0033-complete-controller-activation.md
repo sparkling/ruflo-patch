@@ -430,6 +430,46 @@ These 7 controllers have no community knowledge and likely the highest implement
 
 **Recommendation**: De-prioritize zero-knowledge controllers to P3/P4. Start with well-documented ones (SolverBandit, SONA, GraphTransformer, Reflexion, Causal) where π-brain provides implementation guidance.
 
+### Adaptive Pipeline Prior Art (Deep Analysis)
+
+π-brain contains 8 entries documenting a complete agentdb integration into another project's SKILL.md (contributor `e9c5696b`, 2026-03-06 to 2026-03-09). This integration went through 3 rounds of hive-mind audit (4.5 → 5.5 → 8.2/10) and provides a proven wiring template.
+
+**What they wired (directly maps to our phases)**:
+
+| Their Step | AgentDB Call | Our Phase Equivalent |
+|-----------|-------------|---------------------|
+| Step 1 (Classify) | `reflexion_retrieve({task, k})` + `skill_search` | P3-B + P4-A |
+| Step 1b (Tier) | Reflexion failure signal in classification | P3-B |
+| Step 5 (Verify) | `reflexion_retrieve` before voter spawning | P3-B |
+| Step 6 (Persist) | `experience_record({session_id, tool_name, action, outcome, reward, success})` | P2-E (done) |
+| Step 6 (Persist) | `reflexion_store({session_id, task, reward, success})` on rework | P3-B |
+| Step 6 (Persist) | `causal_add_edge({cause, effect, uplift})` always | P3-C |
+| Step 6 (Persist) | `skill_create` on novel pattern | P4-A |
+
+**Correct MCP param signatures (verified against actual schemas)**:
+
+```
+reflexion_retrieve:  { task: string, k?: number }
+reflexion_store:     { session_id: string, task: string, reward: number, success: boolean }
+causal_add_edge:     { cause: string, effect: string, uplift: number }
+experience_record:   { session_id: string, tool_name: string, action: string,
+                       outcome: string, reward: number, success: boolean }
+skill_search:        { query: string, k?: number }
+skill_create:        { name: string, pattern: string, context?: string }
+```
+
+**Production safeguards (adopt for all ADR-0033 patches)**:
+
+1. **try-catch + 2s timeout** on every agentdb bridge call — prevents pipeline hangs
+2. **Cold-start guard**: skip `causal_query` reads until graph has >5 edges — empty graph returns noise
+3. **Max 3 agentdb writes per MCP handler** — prevents write amplification
+4. **WAL mode verification** before writes — prevents sqlite corruption from concurrent access
+5. **Fire-and-forget pattern** for persist calls — learning writes must not block the response path
+
+**Architecture constraint discovered**: Subagents (spawned via Task tool) cannot call MCP tools directly. All agentdb calls must happen in the orchestrator layer (hooks-tools.ts, memory-tools.ts), with results passed to agents in their prompts.
+
+**Validation**: Their SPARC score went from 4.0 → projected 8.2 after full integration. This confirms the controller activation approach in ADR-0033 will measurably improve system intelligence.
+
 ### Impact on Implementation Plan
 
 **No change to phasing or priority order.** The π-brain analysis confirms:
@@ -492,5 +532,8 @@ These 7 controllers have no community knowledge and likely the highest implement
 - **π-brain**: "AgentDB v3: 23 of 28 controllers are dead code" (id: 99c0537c)
 - **π-brain**: "SolverBandit: Thompson Sampling class exists but not exported" (id: 3211600c)
 - **π-brain**: "adaptive-pipeline: MCP signature audit — 12 fixes" (id: b63018dd)
+- **π-brain**: "adaptive-pipeline: P0 agentdb integration" (id: 1273a5b5)
+- **π-brain**: "Adaptive Pipeline 3-Package Optimization: Hive Consensus" (id: 47ae6292)
+- **π-brain**: "Adaptive Pipeline SKILL.md v2 — 3-Round Hive Audit" (id: 04458b9b)
 - **π-brain**: "SONA Self-Optimizing Neural Architecture" (id: 319a0a97)
 - **π-brain**: "Graph Transformer with Proof-Gated Mutation" (id: 8a22db2a)
