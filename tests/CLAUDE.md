@@ -33,7 +33,9 @@ Each npm script includes all previous steps:
 | 4 | `fork-version` | 1-3 | Bump `-patch.N` versions |
 | 5 | `copy-source` | 1-4 | Copy fork source to `/tmp/ruflo-build` |
 | 6 | `codemod` | 1-5 | Scope rename |
-| 7 | `build` | 1-6 | TypeScript compile + WASM |
+| 7a | `build:tsc` | 1-6 | TypeScript compile (parallel by dep group) |
+| 7b | `build:wasm` | — | WASM compile (standalone, optional) |
+| 7 | `build` | 7a+7b | Both |
 | 8 | `publish:verdaccio` | 1-7 | Publish + promote @latest |
 | 9 | `test:acceptance` | 1-8 | Real CLI against real packages |
 | 10 | `finalize` | — | Save state, push forks, write timing (standalone) |
