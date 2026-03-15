@@ -360,7 +360,7 @@ describe('published-versions.json safety', () => {
     const { readFileSync } = await import('node:fs');
     const { resolve, dirname } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
-    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
     const versions = JSON.parse(readFileSync(resolve(root, 'config', 'published-versions.json'), 'utf8'));
 
     for (const [pkg, version] of Object.entries(versions)) {
@@ -376,7 +376,7 @@ describe('published-versions.json safety', () => {
     const { readFileSync } = await import('node:fs');
     const { resolve, dirname } = await import('node:path');
     const { fileURLToPath } = await import('node:url');
-    const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '../..');
     const versions = JSON.parse(readFileSync(resolve(root, 'config', 'published-versions.json'), 'utf8'));
 
     for (const [pkg, version] of Object.entries(versions)) {
