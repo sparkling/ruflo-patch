@@ -4,10 +4,10 @@
 # Three stages (review gate is manual, not in this script):
 #
 #   --publish   Publish stage: Detect merges to fork main, bump versions,
-#               build, test (L0-L3), publish to local Verdaccio.
+#               build, test (preflight + unit + acceptance), publish to local Verdaccio.
 #
 #   --sync      Sync stage: Fetch upstream, create sync branch, merge,
-#               type-check, build, test (L0-L3). On success create PR
+#               type-check, build, test (preflight + unit + acceptance). On success create PR
 #               with label "ready". On failure create PR with error label.
 #
 # Publish runs before Sync when both are requested (default).
@@ -1867,12 +1867,12 @@ WASMCACHE
 }
 
 # ---------------------------------------------------------------------------
-# Test (Layers 0-3)
+# Test (preflight + unit + acceptance)
 # ---------------------------------------------------------------------------
 
 run_tests_ci() {
-  # L0 preflight + L1 unit only — no Verdaccio
-  log "Running preflight + unit tests (L0+L1)"
+  # preflight + unit only — no Verdaccio
+  log "Running preflight + unit tests"
   local _pf_start _pf_end _ut_start _ut_end
   _pf_start=$(date +%s%N 2>/dev/null || echo 0)
   npm run preflight --prefix "${PROJECT_DIR}" || {
@@ -1882,7 +1882,7 @@ run_tests_ci() {
   _pf_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$_pf_start" != "0" && "$_pf_end" != "0" ]]; then
     local _pf_ms=$(( (_pf_end - _pf_start) / 1000000 ))
-    log "  Preflight (L0): ${_pf_ms}ms"
+    log "  Preflight: ${_pf_ms}ms"
     add_cmd_timing "test-ci" "npm run preflight" "${_pf_ms}"
   fi
 
@@ -1894,24 +1894,28 @@ run_tests_ci() {
   _ut_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$_ut_start" != "0" && "$_ut_end" != "0" ]]; then
     local _ut_ms=$(( (_ut_end - _ut_start) / 1000000 ))
-    log "  Unit tests (L1): ${_ut_ms}ms"
+    log "  Unit tests: ${_ut_ms}ms"
     add_cmd_timing "test-ci" "node test-runner.mjs" "${_ut_ms}"
   fi
 }
 
-run_verify() {
-  # Publish once + install once + all checks + promote
+run_publish_verdaccio() {
+  # Publish + promote to local Verdaccio (always — no external consumers)
   local -a args=(--build-dir "${TEMP_DIR}")
   [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" ]] && \
     args+=(--changed-packages "${CHANGED_PACKAGES_JSON}")
-  [[ "${TEST_ONLY}" == "true" ]] && args+=(--skip-promote)
-  bash "${SCRIPT_DIR}/test-verify.sh" "${args[@]}"
+  bash "${SCRIPT_DIR}/publish-verdaccio.sh" "${args[@]}"
+}
+
+run_acceptance() {
+  bash "${SCRIPT_DIR}/test-acceptance.sh" --registry "http://localhost:4873"
 }
 
 run_tests() {
   # Called from sync stage where sub-phase timing is less important
   run_tests_ci
-  run_verify
+  run_publish_verdaccio
+  run_acceptance
 }
 
 # ---------------------------------------------------------------------------
@@ -2202,7 +2206,7 @@ run_stage3_publish() {
   create_temp_dir
   run_phase "copy-source" copy_source
   run_phase "codemod" run_codemod
-  # Run build and L0+L1 tests in parallel (tests don't depend on build artifacts)
+  # Run build and preflight + unit tests in parallel (tests don't depend on build artifacts)
   local _test_pid=""
   if [[ "${BUILD_ONLY}" != "true" ]]; then
     run_phase "test-ci" run_tests_ci &
@@ -2225,10 +2229,11 @@ run_stage3_publish() {
     fi
   fi
 
-  # Verify: publish once, install once, all checks, promote (unless --test-only)
-  run_phase "verify" run_verify
+  # Publish to local Verdaccio + run acceptance tests
+  run_phase "publish-verdaccio" run_publish_verdaccio
+  run_phase "acceptance" run_acceptance
 
-  # Record successful verification so sync stage can skip redundant L2
+  # Record successful verification so sync stage can skip redundant acceptance
   local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
   local _verify_codemod_hash
   _verify_codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || _verify_codemod_hash=""
@@ -2319,9 +2324,9 @@ run_stage1_sync() {
   fi
 
   # Test against the sync branch build.
-  # Skip expensive L2 verify if the publish stage already verified these exact artifacts.
+  # Skip expensive acceptance if the publish stage already verified these exact artifacts.
   local tests_passed=false
-  local skip_verify=false
+  local skip_acceptance=false
   local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
 
   if check_build_freshness && [[ -f "$_verify_manifest" ]]; then
@@ -2341,18 +2346,18 @@ run_stage1_sync() {
           "${_vm_fann}" == "${NEW_FANN_HEAD}" && \
           "${_vm_ruvector}" == "${NEW_RUVECTOR_HEAD}" && \
           "${_vm_codemod}" == "${_current_codemod}" ]]; then
-      log "Skipping L2 verify — already verified by publish stage"
-      skip_verify=true
+      log "Skipping acceptance — already verified by publish stage"
+      skip_acceptance=true
     fi
   fi
 
-  if [[ "$skip_verify" == "true" ]]; then
-    # Run L0+L1 only (fast sanity check)
+  if [[ "$skip_acceptance" == "true" ]]; then
+    # Run preflight + unit only (fast sanity check)
     if run_tests_ci; then
       tests_passed=true
     fi
   else
-    # Full L0+L1+L2 verification
+    # Full preflight + unit + acceptance
     if run_tests; then
       tests_passed=true
     fi
@@ -2371,7 +2376,7 @@ run_stage1_sync() {
     if [[ "$tests_passed" == "true" ]]; then
       local ready_pr_url
       ready_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
-        "All tests passed (L0-L3). Ready for review and merge.")
+        "All tests passed (preflight + unit + acceptance). Ready for review and merge.")
       _email_meta "$dir"
       local _ready_branch_url=""
       [[ -n "$_EML_FORK_URL" ]] && _ready_branch_url="${_EML_FORK_URL}/tree/${current_branch}"
@@ -2385,7 +2390,7 @@ run_stage1_sync() {
         "$name" "$current_branch" "$_ready_branch_url" \
         "$ready_pr_url" "$_ready_upstream_url" \
         "$_EML_FORK_URL" "$_ready_fork_commit_url" \
-        "Upstream sync for ${name} is ready for review. All L0-L3 tests passed.")
+        "Upstream sync for ${name} is ready for review. All tests passed.")
       send_email "[ruflo] Sync PR ready for ${name}" "$ready_email_body"
     else
       local fail_pr_url

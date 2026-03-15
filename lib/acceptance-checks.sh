@@ -1,12 +1,9 @@
 #!/usr/bin/env bash
-# lib/acceptance-checks.sh — Shared functional test library (ADR-0023)
+# lib/acceptance-checks.sh — Shared functional test library (ADR-0023, ADR-0037)
 #
-# Defines test functions used by both:
-#   - test-verify.sh Phase 8 (Layer 2: Verification, local Verdaccio)
-#   - test-acceptance.sh (Layer 3: Production Verification, real npm)
-#
-# One definition, two execution contexts. Adding a test here
-# automatically runs it in both layers.
+# Defines test functions used by test-acceptance.sh. The harness (install,
+# init --full, memory init) runs before any checks — individual checks
+# should NOT re-run init or memory init.
 #
 # Contract:
 #   Caller MUST set:  REGISTRY, TEMP_DIR, PKG
@@ -14,12 +11,9 @@
 #   Caller MAY set:   COMPANION_TAG (dist-tag for agent-booster/plugins, e.g. "@prerelease")
 #   Caller MUST define: run_timed (sets _OUT, _EXIT, _DURATION_MS)
 #   Each check_* function sets: _CHECK_PASSED ("true"/"false"), _CHECK_OUTPUT
-#
-# Registry-specific tests (A8 dist-tag, A16 plugin install) are NOT
-# in this library — they live in test-acceptance.sh only.
 
-# Helper: resolve the CLI command. In RQ context (packages pre-installed in
-# TEMP_DIR/node_modules), use the local binary to avoid npx re-installing
+# Helper: resolve the CLI command. In context where packages are pre-installed in
+# TEMP_DIR/node_modules, use the local binary to avoid npx re-installing
 # all transitive deps (~30s, includes better-sqlite3 cc1 compile).
 # In acceptance context (real npm, no pre-install), fall back to npx.
 _cli_cmd() {
@@ -87,10 +81,9 @@ _run_and_kill() {
 }
 
 # --------------------------------------------------------------------------
-# T01: Version check
+# Version check
 # --------------------------------------------------------------------------
 check_version() {
-  # Use local binary or npm view — avoid npx which re-installs all deps (~30s)
   local cli; cli=$(_cli_cmd)
   run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli --version"
   _CHECK_PASSED="false"
@@ -103,20 +96,7 @@ check_version() {
 }
 
 # --------------------------------------------------------------------------
-# T04: Init
-# --------------------------------------------------------------------------
-check_init() {
-  local cli; cli=$(_cli_cmd)
-  run_timed "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli init"
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT="$_OUT"
-  if [[ $_EXIT -eq 0 ]]; then
-    _CHECK_PASSED="true"
-  fi
-}
-
-# --------------------------------------------------------------------------
-# T05: Settings file
+# Settings file
 # --------------------------------------------------------------------------
 check_settings_file() {
   local start_ns end_ns
@@ -141,7 +121,7 @@ check_settings_file() {
 }
 
 # --------------------------------------------------------------------------
-# T06: Scope check
+# Scope check
 # --------------------------------------------------------------------------
 check_scope() {
   local start_ns end_ns
@@ -171,7 +151,7 @@ check_scope() {
 }
 
 # --------------------------------------------------------------------------
-# T09: Doctor
+# Doctor
 # --------------------------------------------------------------------------
 check_doctor() {
   local cli; cli=$(_cli_cmd)
@@ -186,7 +166,7 @@ check_doctor() {
 }
 
 # --------------------------------------------------------------------------
-# T07: MCP config
+# MCP config
 # --------------------------------------------------------------------------
 check_mcp_config() {
   local start_ns end_ns
@@ -216,7 +196,7 @@ check_mcp_config() {
 }
 
 # --------------------------------------------------------------------------
-# T10: Wrapper proxy
+# Wrapper proxy
 # --------------------------------------------------------------------------
 check_wrapper_proxy() {
   local start_ns end_ns
@@ -253,7 +233,7 @@ check_wrapper_proxy() {
 }
 
 # --------------------------------------------------------------------------
-# T11: Memory lifecycle
+# Memory lifecycle
 # --------------------------------------------------------------------------
 check_memory_lifecycle() {
   local start_ns end_ns
@@ -261,19 +241,8 @@ check_memory_lifecycle() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init memory (kill on output stable — CLI hangs after completion)
-  local init_out
+  # Harness already ran memory init — go straight to store
   local cli; cli=$(_cli_cmd)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
-  init_out="$_RK_OUT"
-  if ! echo "$init_out" | grep -qi 'initialized\|verification passed'; then
-    _CHECK_OUTPUT="Memory init failed:\n$(echo "$init_out" | tail -10)"
-    end_ns=$(date +%s%N 2>/dev/null || echo 0)
-    _EXIT=0
-    [[ "$start_ns" != "0" && "$end_ns" != "0" ]] && _DURATION_MS=$(( (end_ns - start_ns) / 1000000 )) || _DURATION_MS=0
-    _OUT="$_CHECK_OUTPUT"
-    return
-  fi
 
   # Store
   local store_out
@@ -307,7 +276,7 @@ check_memory_lifecycle() {
   retrieve_out="$_RK_OUT"
   if echo "$retrieve_out" | grep -q 'JWT auth'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="init > store > search found test-pattern > retrieve value matches"
+    _CHECK_OUTPUT="store > search found test-pattern > retrieve value matches"
   else
     _CHECK_OUTPUT="Memory retrieve did not return stored value:\n$(echo "$retrieve_out" | tail -10)"
   fi
@@ -340,7 +309,7 @@ check_memory_lifecycle() {
 }
 
 # --------------------------------------------------------------------------
-# T12: Neural training
+# Neural training
 # --------------------------------------------------------------------------
 check_neural_training() {
   local cli; cli=$(_cli_cmd)
@@ -366,7 +335,7 @@ check_neural_training() {
 }
 
 # --------------------------------------------------------------------------
-# T13: Agent Booster ESM import
+# Agent Booster ESM import
 # --------------------------------------------------------------------------
 check_agent_booster_esm() {
   local start_ns end_ns
@@ -418,7 +387,7 @@ check_agent_booster_esm() {
 }
 
 # --------------------------------------------------------------------------
-# T14: Agent Booster binary
+# Agent Booster binary
 # --------------------------------------------------------------------------
 check_agent_booster_bin() {
   local booster; booster=$(_booster_cmd)
@@ -433,7 +402,7 @@ check_agent_booster_bin() {
 }
 
 # --------------------------------------------------------------------------
-# T15: Plugins SDK import
+# Plugins SDK import
 # --------------------------------------------------------------------------
 check_plugins_sdk() {
   local start_ns end_ns
@@ -465,7 +434,7 @@ check_plugins_sdk() {
 }
 
 # --------------------------------------------------------------------------
-# T02: @latest dist-tag resolves to a working version
+# @latest dist-tag resolves to a working version
 # --------------------------------------------------------------------------
 check_latest_resolves() {
   _CHECK_PASSED="false"
@@ -491,86 +460,11 @@ check_latest_resolves() {
   _OUT="$_CHECK_OUTPUT"
 }
 
-# --------------------------------------------------------------------------
-# T08: ruflo init --full creates a complete project
-# --------------------------------------------------------------------------
-check_ruflo_init_full() {
-  local start_ns end_ns
-  start_ns=$(date +%s%N 2>/dev/null || echo 0)
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT=""
-
-  # Use a separate temp dir so we don't pollute the main TEMP_DIR
-  local full_dir
-  full_dir=$(mktemp -d /tmp/ruflo-full-init-XXXXX)
-
-  # Run ruflo init --full (proxies to @sparkleideas/cli init --full)
-  # Set RUFLO_CLI_TAG so the wrapper proxies to the CLI version under test,
-  # not @latest (which may not be promoted yet).
-  local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
-  local cli_tag="${RUFLO_CLI_TAG:-}"
-  if [[ -z "$cli_tag" ]]; then
-    # Derive from PKG: "@sparkleideas/cli@3.1.0-alpha.14-patch.12" -> "@3.1.0-alpha.14-patch.12"
-    cli_tag="${PKG#@sparkleideas/cli}"
-    [[ -z "$cli_tag" ]] && cli_tag="@latest"
-  fi
-  local init_out init_exit
-  init_out=$(cd "$full_dir" && NPM_CONFIG_REGISTRY="$REGISTRY" RUFLO_CLI_TAG="$cli_tag" \
-    npx --yes "${wrapper_pkg}" init --full 2>&1)
-  init_exit=$?
-
-  # Log init output for debugging
-  echo "  [RQ-14] init exit=$init_exit, dir=$full_dir, wrapper=$wrapper_pkg, cli_tag=$cli_tag" >&2
-  echo "  [RQ-14] init output (last 10 lines):" >&2
-  echo "$init_out" | tail -10 | sed 's/^/  [RQ-14]   /' >&2
-
-  # Validate key artifacts created by --full
-  local missing=""
-  for f in .claude/settings.json CLAUDE.md .mcp.json .claude-flow/config.json; do
-    if [[ ! -f "$full_dir/$f" ]]; then
-      missing="$missing $f"
-    fi
-  done
-
-  # Check directories
-  for d in .claude/skills .claude/commands .claude-flow/data; do
-    if [[ ! -d "$full_dir/$d" ]]; then
-      missing="$missing $d/"
-    fi
-  done
-
-  if [[ -z "$missing" ]]; then
-    # Verify CLAUDE.md has @sparkleideas scope
-    if grep -q '@sparkleideas' "$full_dir/CLAUDE.md" 2>/dev/null; then
-      _CHECK_PASSED="true"
-      local file_count
-      file_count=$(find "$full_dir" -type f 2>/dev/null | wc -l)
-      _CHECK_OUTPUT="init --full created $file_count files with correct scope"
-    else
-      _CHECK_OUTPUT="init --full created files but CLAUDE.md missing @sparkleideas scope"
-    fi
-  else
-    _CHECK_OUTPUT="init --full missing:$missing"
-    _CHECK_OUTPUT="$_CHECK_OUTPUT | init exit=$init_exit | init output: $(echo "$init_out" | tail -5 | tr '\n' ' ')"
-    echo "  [RQ-14] MISSING FILES:$missing" >&2
-    echo "  [RQ-14] Files in dir:" >&2
-    find "$full_dir" -maxdepth 3 -type f 2>/dev/null | head -20 | sed 's/^/  [RQ-14]   /' >&2
-  fi
-
-  rm -rf "$full_dir"
-
-  end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  _EXIT=0
-  if [[ "$start_ns" != "0" && "$end_ns" != "0" ]]; then
-    _DURATION_MS=$(( (end_ns - start_ns) / 1000000 ))
-  else
-    _DURATION_MS=0
-  fi
-  _OUT="$_CHECK_OUTPUT"
-}
-
 # ══════════════════════════════════════════════════════════════════════════════
-# ADR-0033: Controller Activation Checks (T17-T24)
+# ADR-0033: Controller Activation Checks
+#
+# Harness already ran init --full + memory init. These checks exercise
+# individual controllers without re-initializing.
 # ══════════════════════════════════════════════════════════════════════════════
 
 check_controller_health() {
@@ -582,7 +476,6 @@ check_controller_health() {
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|available'; then
-    # Count named controllers in output (each has "name": "xxx")
     local ctrl_count
     ctrl_count=$(echo "$_RK_OUT" | grep -c '"name"' || echo 0)
     if [[ $ctrl_count -ge 5 ]]; then
@@ -611,10 +504,7 @@ check_hooks_route() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init memory first (routing needs DB)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
-
-  # Try MCP exec for hooks_route
+  # Try MCP exec for hooks_route (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests for authentication\"}'"
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'agent\|route\|coder\|tester\|reviewer\|pattern\|fallback'; then
@@ -634,10 +524,7 @@ check_memory_scoping() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
-
-  # Store with agent scope
+  # Store with agent scope (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key scoped-accept-key --value 'scoped acceptance test value' \
     --namespace scope-accept --scope agent --scope-id accept-agent-1"
@@ -676,10 +563,7 @@ check_reflexion_lifecycle() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
-
-  # Store reflexion via MCP
+  # Store reflexion via MCP (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_reflexion-store \
     --params '{\"session_id\":\"accept-session\",\"task\":\"write acceptance tests\",\"reward\":0.85,\"success\":true}'"
@@ -711,10 +595,7 @@ check_causal_graph() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
-
-  # Query causal graph (should get cold-start with <5 edges)
+  # Query causal graph (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_causal-query \
     --params '{\"cause\":\"refactor tests\"}'"
@@ -747,10 +628,7 @@ check_cow_branching() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
-
-  # Store baseline entry
+  # Store baseline entry (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key branch-base --value 'baseline data' --namespace branch-accept"
 
@@ -781,8 +659,7 @@ check_batch_operations() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init + store entries
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
+  # Store entries (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key batch-accept-1 --value 'batch entry 1' --namespace batch-accept"
 
@@ -815,8 +692,7 @@ check_context_synthesis() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Init + store entries for context
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
+  # Store entries for context (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key synth-accept-1 --value 'JWT authentication with refresh token rotation' \
     --namespace synth-accept"
@@ -856,84 +732,3 @@ check_context_synthesis() {
     _CHECK_OUTPUT="Context synthesis: search with --synthesize failed — $synth_out"
   fi
 }
-
-# --------------------------------------------------------------------------
-# T32: Full controller activation on init'd project (ADR-0033 end-to-end)
-# --------------------------------------------------------------------------
-check_full_controller_activation() {
-  local cli; cli=$(_cli_cmd)
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT=""
-
-  # Init a fresh project (--full enables all features)
-  local test_dir
-  test_dir=$(mktemp -d /tmp/ruflo-ctrl-activation-XXXXX)
-
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli init --full --force"
-
-  if [[ ! -f "$test_dir/.claude/settings.json" ]]; then
-    _CHECK_OUTPUT="Controller activation: init --full failed to produce settings.json"
-    rm -rf "$test_dir"
-    return
-  fi
-
-  # Init memory in the generated project
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
-
-  # Get controller health — count how many are listed
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
-  local health_out="$_RK_OUT"
-
-  local ctrl_count=0
-  if echo "$health_out" | grep -q '"name"'; then
-    ctrl_count=$(echo "$health_out" | grep -c '"name"')
-  fi
-
-  # Exercise key controllers in the init'd project
-  local pass_count=0
-  local total_checks=5
-
-  # Check 1: Memory store + search works
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key ctrl-test --value 'controller activation test' --namespace ctrl-test"
-  if echo "$_RK_OUT" | grep -qi 'stored\|success'; then
-    pass_count=$((pass_count + 1))
-  fi
-
-  # Check 2: Hooks route produces a routing decision
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests\"}'"
-  if echo "$_RK_OUT" | grep -qi 'agent\|route\|coder\|tester\|pattern'; then
-    pass_count=$((pass_count + 1))
-  fi
-
-  # Check 3: Causal edge accepted
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_causal-edge --params '{\"cause\":\"init\",\"effect\":\"working project\",\"uplift\":0.9}'"
-  if echo "$_RK_OUT" | grep -qi 'success\|recorded\|true'; then
-    pass_count=$((pass_count + 1))
-  fi
-
-  # Check 4: Reflexion store accepted
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion-store --params '{\"session_id\":\"ctrl-test\",\"task\":\"activation test\",\"reward\":0.9,\"success\":true}'"
-  if echo "$_RK_OUT" | grep -qi 'success\|true'; then
-    pass_count=$((pass_count + 1))
-  fi
-
-  # Check 5: Batch optimize accepted
-  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_batch-optimize --params '{\"action\":\"stats\"}'"
-  if echo "$_RK_OUT" | grep -qi 'success\|stats\|true'; then
-    pass_count=$((pass_count + 1))
-  fi
-
-  # Verdict: need controller listing + majority of functional checks
-  if [[ $ctrl_count -ge 10 && $pass_count -ge 3 ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Controller activation: $ctrl_count controllers listed, $pass_count/$total_checks functional checks pass on init'd project"
-  elif [[ $ctrl_count -ge 5 ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Controller activation: $ctrl_count controllers (partial), $pass_count/$total_checks checks pass"
-  else
-    _CHECK_OUTPUT="Controller activation: only $ctrl_count controllers, $pass_count/$total_checks checks — health: ${health_out:0:200}"
-  fi
-
-  rm -rf "$test_dir"
-}
-

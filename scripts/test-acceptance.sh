@@ -1,21 +1,26 @@
 #!/usr/bin/env bash
-# scripts/test-acceptance.sh — Unified acceptance tests (ADR-0023 simplified)
+# scripts/test-acceptance.sh — Acceptance tests against published packages (ADR-0037).
 #
-# Assumes packages are already published to the registry. Installs from the
-# registry and runs 16 checks in 5 logical groups with parallel execution.
+# Assumes packages are already published AND promoted to @latest on the registry.
+# Installs from the registry, runs a harness (init --full + memory init), then
+# executes all acceptance checks against the initialized project.
 #
-# Pipeline: build → unit tests → publish → acceptance tests
+# Pipeline: build -> unit tests -> publish-verdaccio.sh -> test-acceptance.sh
 #
 # Usage:
-#   bash scripts/test-acceptance.sh [--registry <url>] [--skip-promote]
+#   bash scripts/test-acceptance.sh [--registry <url>]
 #
 # Groups:
-#   1. Smoke        — version, dist-tag, broken-version check (sequential, fast)
-#   2. Init/Config  — init, settings, scope, MCP (init first, rest parallel)
-#   3. Diagnostics  — doctor, wrapper proxy (parallel)
-#   4. Data & ML    — memory lifecycle, neural training (parallel)
-#   5. Packages     — agent-booster ESM/CLI, plugins SDK, plugin install (parallel)
-#   Long-running: ruflo init --full runs overlapped with groups 3-5
+#   harness    — install, structural checks, init --full, memory init (abort on failure)
+#   smoke      — version, latest-resolves, no-broken-versions
+#   structure  — settings-file, scope, mcp-config
+#   diagnostics — doctor, wrapper-proxy
+#   data       — memory-lifecycle, neural-training
+#   packages   — booster-esm, booster-cli, plugins-sdk, plugin-install
+#   controller — ctrl-health, ctrl-routing, ctrl-scoping, ctrl-reflexion,
+#                ctrl-causal, ctrl-cow, ctrl-batch, ctrl-synthesis
+#   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
+#                e2e-reflexion-store, e2e-batch-optimize
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -26,7 +31,6 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 PORT=4873
 REGISTRY="http://localhost:${PORT}"
-SKIP_PROMOTE="false"
 ACCEPT_TEMP=""
 
 # ── Argument parsing ────────────────────────────────────────────────
@@ -34,12 +38,10 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --registry)         REGISTRY="${2:-}"; shift 2 ;;
     --port)             PORT="${2:-4873}"; REGISTRY="http://localhost:${PORT}"; shift 2 ;;
-    --skip-promote)     SKIP_PROMOTE="true"; shift ;;
     -h|--help)
       echo "Usage: bash scripts/test-acceptance.sh [options]"
       echo "  --registry <url>           Registry URL (default: http://localhost:4873)"
       echo "  --port <port>              Verdaccio port (default: 4873)"
-      echo "  --skip-promote             Skip promoting packages to @latest"
       exit 0 ;;
     *) echo "Unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -83,6 +85,7 @@ cleanup() {
   kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
   [[ -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]] && rm -rf "$ACCEPT_TEMP"
   [[ -n "${PARALLEL_DIR:-}" && -d "${PARALLEL_DIR:-}" ]] && rm -rf "$PARALLEL_DIR"
+  [[ -n "${E2E_DIR:-}" && -d "${E2E_DIR:-}" ]] && rm -rf "$E2E_DIR"
 }
 trap cleanup EXIT INT TERM
 
@@ -92,7 +95,8 @@ log "Acceptance tests starting"
 log "  registry: ${REGISTRY}"
 
 # ════════════════════════════════════════════════════════════════════
-# Setup: health check → install
+# Harness: health check -> install -> structural -> init --full -> memory init
+# Harness failure = abort (infrastructure error, not test failure)
 # ════════════════════════════════════════════════════════════════════
 
 # Phase: Registry health check
@@ -108,7 +112,7 @@ _p=$(_ns)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 
-# Phase: Install packages from registry (allow scripts for native modules)
+# Phase: Install packages from registry
 _p=$(_ns)
 ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 (cd "$ACCEPT_TEMP" \
@@ -120,7 +124,7 @@ ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 
-# Phase: Structural checks
+# Phase: Structural checks (validate harness, not tests)
 _p=$(_ns)
 structural_fail=0
 if [[ ! -d "${ACCEPT_TEMP}/node_modules/@sparkleideas/cli" ]]; then
@@ -137,10 +141,61 @@ for pkg in "@sparkleideas/agent-booster" "@sparkleideas/plugins"; do
     structural_fail=$((structural_fail + 1))
   fi
 done
+# S-3: npm ls clean (no MISSING deps)
+missing_deps=$(cd "${ACCEPT_TEMP}" && npm ls --all 2>&1 | grep 'MISSING' || true)
+if [[ -n "$missing_deps" ]]; then
+  log "  WARN  S-3: Missing dependencies detected:"
+  echo "$missing_deps" | head -10 | while IFS= read -r line; do log "        $line"; done
+else
+  log "  PASS  S-3: All dependencies resolved"
+fi
 _record_phase "structural" "$(_elapsed_ms "$_p" "$(_ns)")"
 if [[ $structural_fail -gt 0 ]]; then
-  log_error "Structural checks failed ($structural_fail)"; exit 1
+  log_error "Structural checks failed ($structural_fail) — harness abort"; exit 1
 fi
+
+# Phase: Initialize project (harness — init --full + memory init)
+_p=$(_ns)
+CLI_BIN="${ACCEPT_TEMP}/node_modules/.bin/cli"
+if [[ ! -x "$CLI_BIN" ]]; then
+  log_error "CLI binary not found at ${CLI_BIN} — harness abort"; exit 1
+fi
+
+log "Running harness: init --full --force"
+(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout --signal=KILL 30 "$CLI_BIN" init --full --force 2>&1) || {
+  log_error "Harness: init --full failed"; exit 1
+}
+
+log "Running harness: memory init"
+# Use _run_and_kill pattern — CLI hangs after completion (SQLite handles)
+_harness_mem_out=""
+_harness_mem_tmpfile=$(mktemp /tmp/rk-harness-XXXXX)
+(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init > "$_harness_mem_tmpfile" 2>&1) &
+_harness_mem_pid=$!
+_harness_prev_size=0 _harness_stable=0
+for (( _hi=0; _hi<32; _hi++ )); do
+  sleep 0.25
+  if ! kill -0 "$_harness_mem_pid" 2>/dev/null; then break; fi
+  _harness_cur_size=$(wc -c < "$_harness_mem_tmpfile" 2>/dev/null || echo 0)
+  if [[ "$_harness_cur_size" -gt 0 && "$_harness_cur_size" -eq "$_harness_prev_size" ]]; then
+    _harness_stable=$((_harness_stable + 1))
+    if [[ $_harness_stable -ge 3 ]]; then kill -KILL "$_harness_mem_pid" 2>/dev/null || true; break; fi
+  else
+    _harness_stable=0
+  fi
+  _harness_prev_size="$_harness_cur_size"
+done
+kill -KILL "$_harness_mem_pid" 2>/dev/null || true
+wait "$_harness_mem_pid" 2>/dev/null || true
+_harness_mem_out=$(cat "$_harness_mem_tmpfile" 2>/dev/null)
+rm -f "$_harness_mem_tmpfile"
+
+if echo "$_harness_mem_out" | grep -qi 'initialized\|verification passed'; then
+  log "Harness: memory init succeeded"
+else
+  log "WARN: memory init output unclear (continuing): $(echo "$_harness_mem_out" | tail -3 | tr '\n' ' ')"
+fi
+_record_phase "harness-init" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Source shared check library
@@ -179,7 +234,6 @@ results_json="[]"
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 _escape_json() {
-  # Pure bash JSON escaping — avoids spawning Python subprocess per check (~2-3s total saving)
   local s="${1:-}"
   s="${s:0:4096}"
   s="${s//\\/\\\\}"
@@ -260,7 +314,6 @@ collect_parallel() {
       log "  FAIL  ${id}: ${name} (subprocess crashed)"
     fi
   done
-  # Only delete collected files, not T08 which runs independently
   for spec in "$@"; do
     local id="${spec%%|*}"
     rm -f "${PARALLEL_DIR}/${id}"
@@ -302,92 +355,171 @@ check_plugin_install() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Group 1: Smoke (parallel — all independent)
+# Tests: smoke (parallel — all independent)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── Group 1: Smoke ──"
+log "── smoke ──"
 PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
-run_check_bg "T01" "Version check"          check_version            "smoke"
-run_check_bg "T02" "@latest resolves"       check_latest_resolves    "smoke"
-run_check_bg "T03" "No broken versions"     check_no_broken_versions "smoke"
+run_check_bg "version"          "Version check"          check_version            "smoke"
+run_check_bg "latest-resolves"  "@latest resolves"       check_latest_resolves    "smoke"
+run_check_bg "no-broken-versions" "No broken versions"   check_no_broken_versions "smoke"
 collect_parallel "smoke" \
-  "T01|Version check" "T02|@latest resolves" "T03|No broken versions"
+  "version|Version check" "latest-resolves|@latest resolves" "no-broken-versions|No broken versions"
 _record_phase "group-smoke" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# Group 2: Init & Config (init first, then config checks + T08 + T11/T12 all start)
+# Tests: structure (parallel — harness already ran init)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── Group 2: Init & Config ──"
-run_check "T04" "Init"                   check_init               "init-config"
-
-# T05-T07 parallel (fast, depend on T04 state)
-run_check_bg "T05" "Settings file"       check_settings_file      "init-config"
-run_check_bg "T06" "Scope check"         check_scope              "init-config"
-run_check_bg "T07" "MCP config"          check_mcp_config         "init-config"
-collect_parallel "init-config" \
-  "T05|Settings file" "T06|Scope check" "T07|MCP config"
-_record_phase "group-init-config" "$(_elapsed_ms "$_g" "$(_ns)")"
+log "── structure ──"
+run_check_bg "settings-file"    "Settings file"       check_settings_file      "structure"
+run_check_bg "scope"            "Scope check"         check_scope              "structure"
+run_check_bg "mcp-config"       "MCP config"          check_mcp_config         "structure"
+collect_parallel "structure" \
+  "settings-file|Settings file" "scope|Scope check" "mcp-config|MCP config"
+_record_phase "group-structure" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# Groups 3-5 + T08 + T11/T12 all run overlapped:
-#   T08 (ruflo init --full, ~2s), T11 (memory, ~8s), T12 (neural, ~5s)
-#   all start immediately. Groups 3+5 run in parallel alongside.
+# Tests: diagnostics + data + packages (all overlapped in parallel)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── Groups 3-5 + long-running (overlapped) ──"
-
-# Launch ALL remaining checks in parallel — they're all independent after T04 init
-run_check_bg "T08" "ruflo init --full"   check_ruflo_init_full    "init-config"
-run_check_bg "T09" "Doctor"              check_doctor             "diagnostics"
-run_check_bg "T10" "Wrapper proxy"       check_wrapper_proxy      "diagnostics"
-run_check_bg "T11" "Memory lifecycle"    check_memory_lifecycle   "data-ml"
-run_check_bg "T12" "Neural training"     check_neural_training    "data-ml"
-run_check_bg "T13" "Agent Booster ESM"   check_agent_booster_esm  "packages"
-run_check_bg "T14" "Agent Booster CLI"   check_agent_booster_bin  "packages"
-run_check_bg "T15" "Plugins SDK"         check_plugins_sdk        "packages"
-run_check_bg "T16" "Plugin install"      check_plugin_install     "packages"
+log "── diagnostics + data + packages (overlapped) ──"
+run_check_bg "doctor"           "Doctor"              check_doctor             "diagnostics"
+run_check_bg "wrapper-proxy"    "Wrapper proxy"       check_wrapper_proxy      "diagnostics"
+run_check_bg "memory-lifecycle" "Memory lifecycle"    check_memory_lifecycle   "data"
+run_check_bg "neural-training"  "Neural training"     check_neural_training    "data"
+run_check_bg "booster-esm"     "Agent Booster ESM"   check_agent_booster_esm  "packages"
+run_check_bg "booster-cli"     "Agent Booster CLI"   check_agent_booster_bin  "packages"
+run_check_bg "plugins-sdk"     "Plugins SDK"         check_plugins_sdk        "packages"
+run_check_bg "plugin-install"  "Plugin install"      check_plugin_install     "packages"
 collect_parallel "all" \
-  "T08|ruflo init --full" "T09|Doctor" "T10|Wrapper proxy" \
-  "T11|Memory lifecycle" "T12|Neural training" \
-  "T13|Agent Booster ESM" "T14|Agent Booster CLI" "T15|Plugins SDK" "T16|Plugin install"
-_record_phase "groups-3-5-parallel" "$(_elapsed_ms "$_g" "$(_ns)")"
+  "doctor|Doctor" "wrapper-proxy|Wrapper proxy" \
+  "memory-lifecycle|Memory lifecycle" "neural-training|Neural training" \
+  "booster-esm|Agent Booster ESM" "booster-cli|Agent Booster CLI" "plugins-sdk|Plugins SDK" "plugin-install|Plugin install"
+_record_phase "groups-diag-data-pkg" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# Tests: controller (ADR-0033, all parallel)
+# ════════════════════════════════════════════════════════════════════
+_g=$(_ns)
+log "── controller (ADR-0033) ──"
+run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
+run_check_bg "ctrl-routing"     "Learned routing"        check_hooks_route         "controller"
+run_check_bg "ctrl-scoping"     "Memory scoping"         check_memory_scoping      "controller"
+run_check_bg "ctrl-reflexion"   "Reflexion lifecycle"     check_reflexion_lifecycle "controller"
+run_check_bg "ctrl-causal"      "Causal graph"           check_causal_graph        "controller"
+run_check_bg "ctrl-cow"         "COW branching"          check_cow_branching       "controller"
+run_check_bg "ctrl-batch"       "Batch operations"       check_batch_operations    "controller"
+run_check_bg "ctrl-synthesis"   "Context synthesis"      check_context_synthesis   "controller"
+collect_parallel "controller" \
+  "ctrl-health|Controller health" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
+  "ctrl-reflexion|Reflexion lifecycle" "ctrl-causal|Causal graph" "ctrl-cow|COW branching" \
+  "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis"
+_record_phase "group-controller" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# Tests: e2e — controller activation on init'd project (split from T32)
+# Each check exercises one controller in a fresh init'd project
+# ════════════════════════════════════════════════════════════════════
+_g=$(_ns)
+log "── e2e (controller activation) ──"
+
+# Create a fresh project for e2e tests
+E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
+_run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN init --full --force"
+
+if [[ ! -f "$E2E_DIR/.claude/settings.json" ]]; then
+  log "  WARN  e2e harness: init --full did not produce settings.json — skipping e2e group"
+else
+  # Init memory in the e2e project
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init"
+
+  # Get controller health for context
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health"
+  _E2E_HEALTH_OUT="$_RK_OUT"
+  _E2E_CTRL_COUNT=0
+  if echo "$_E2E_HEALTH_OUT" | grep -q '"name"'; then
+    _E2E_CTRL_COUNT=$(echo "$_E2E_HEALTH_OUT" | grep -c '"name"')
+  fi
+
+  # e2e check functions (run against E2E_DIR, not ACCEPT_TEMP)
+  _e2e_memory_store() {
+    local cli="$CLI_BIN"
+    _CHECK_PASSED="false"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key ctrl-test --value 'controller activation test' --namespace ctrl-test"
+    if echo "$_RK_OUT" | grep -qi 'stored\|success'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Memory store works in init'd project"
+    else
+      _CHECK_OUTPUT="Memory store failed: $_RK_OUT"
+    fi
+  }
+
+  _e2e_hooks_route() {
+    local cli="$CLI_BIN"
+    _CHECK_PASSED="false"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests\"}'"
+    if echo "$_RK_OUT" | grep -qi 'agent\|route\|coder\|tester\|pattern'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Hooks route returns routing decision in init'd project"
+    else
+      _CHECK_OUTPUT="Hooks route failed: $_RK_OUT"
+    fi
+  }
+
+  _e2e_causal_edge() {
+    local cli="$CLI_BIN"
+    _CHECK_PASSED="false"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_causal-edge --params '{\"cause\":\"init\",\"effect\":\"working project\",\"uplift\":0.9}'"
+    if echo "$_RK_OUT" | grep -qi 'success\|recorded\|true'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Causal edge accepted in init'd project"
+    else
+      _CHECK_OUTPUT="Causal edge failed: $_RK_OUT"
+    fi
+  }
+
+  _e2e_reflexion_store() {
+    local cli="$CLI_BIN"
+    _CHECK_PASSED="false"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion-store --params '{\"session_id\":\"e2e-test\",\"task\":\"activation test\",\"reward\":0.9,\"success\":true}'"
+    if echo "$_RK_OUT" | grep -qi 'success\|true'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Reflexion store accepted in init'd project"
+    else
+      _CHECK_OUTPUT="Reflexion store failed: $_RK_OUT"
+    fi
+  }
+
+  _e2e_batch_optimize() {
+    local cli="$CLI_BIN"
+    _CHECK_PASSED="false"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_batch-optimize --params '{\"action\":\"stats\"}'"
+    if echo "$_RK_OUT" | grep -qi 'success\|stats\|true'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Batch optimize accepted in init'd project"
+    else
+      _CHECK_OUTPUT="Batch optimize failed: $_RK_OUT"
+    fi
+  }
+
+  run_check_bg "e2e-memory-store"    "E2E memory store"     _e2e_memory_store     "e2e"
+  run_check_bg "e2e-hooks-route"     "E2E hooks route"      _e2e_hooks_route      "e2e"
+  run_check_bg "e2e-causal-edge"     "E2E causal edge"      _e2e_causal_edge      "e2e"
+  run_check_bg "e2e-reflexion-store" "E2E reflexion store"   _e2e_reflexion_store  "e2e"
+  run_check_bg "e2e-batch-optimize"  "E2E batch optimize"    _e2e_batch_optimize   "e2e"
+  collect_parallel "e2e" \
+    "e2e-memory-store|E2E memory store" "e2e-hooks-route|E2E hooks route" \
+    "e2e-causal-edge|E2E causal edge" "e2e-reflexion-store|E2E reflexion store" \
+    "e2e-batch-optimize|E2E batch optimize"
+
+  log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
+fi
+rm -rf "$E2E_DIR"; E2E_DIR=""
+
 rm -rf "$PARALLEL_DIR"; PARALLEL_DIR=""
 
-# ════════════════════════════════════════════════════════════════════
-# Promote to @latest (parallel, local Verdaccio only)
-# ════════════════════════════════════════════════════════════════════
-_p=$(_ns)
-RQ_STORAGE="/run/user/1000/verdaccio-storage"
-if [[ "${SKIP_PROMOTE}" != "true" && "$REGISTRY" == *"localhost"* && $fail_count -lt $total_count ]]; then
-  log "Promoting packages to @latest (parallel)..."
-  promote_count=0
-  promote_pids=()
-  promote_dir=$(mktemp -d /tmp/ruflo-promote-XXXXX)
-
-  for pkg_dir in "${RQ_STORAGE}/@sparkleideas"/*/; do
-    [[ -d "$pkg_dir" ]] || continue
-    pkg_name="@sparkleideas/$(basename "$pkg_dir")"
-    (
-      latest_ver=$(npm view "${pkg_name}" version --registry "$REGISTRY" 2>/dev/null) || exit 0
-      [[ -z "$latest_ver" ]] && exit 0
-      npm dist-tag add "${pkg_name}@${latest_ver}" latest --registry "$REGISTRY" 2>/dev/null \
-        && echo "1" > "${promote_dir}/$(basename "$pkg_dir")" || true
-    ) &
-    promote_pids+=($!)
-    # Cap parallelism at 10
-    if [[ ${#promote_pids[@]} -ge 10 ]]; then
-      wait -n 2>/dev/null || true
-    fi
-  done
-  wait "${promote_pids[@]}" 2>/dev/null || true
-  promote_count=$(find "$promote_dir" -type f 2>/dev/null | wc -l)
-  rm -rf "$promote_dir"
-  log "  Promoted ${promote_count} packages"
-elif [[ $fail_count -ge $total_count ]]; then
-  log "Skipping promote — all tests failed"
-fi
-_record_phase "promote" "$(_elapsed_ms "$_p" "$(_ns)")"
+_record_phase "group-e2e" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

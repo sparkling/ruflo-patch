@@ -6,7 +6,6 @@
     "build": "bash scripts/build.sh",
     "test": "npm run preflight && npm run test:unit",
     "test:unit": "node scripts/test-runner.mjs",
-    "test:verify": "bash scripts/test-verify.sh",
     "test:acceptance": "bash scripts/test-acceptance.sh",
     "test:all": "npm run preflight && npm run test:unit && npm run test:acceptance",
     "preflight": "node scripts/preflight.mjs",
