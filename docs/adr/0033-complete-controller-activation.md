@@ -2,38 +2,43 @@
 
 ## Status
 
-Implementing (P0-P2 complete, P3-P4 remaining)
+Implemented (all non-blocked patches complete)
 
 ### Implementation Log (2026-03-15)
 
-**Commits:**
+**Commits (8 total across 2 forks):**
 - `719d85d` (agentic-flow) — P2-C: Export SolverBandit from agentdb barrel files
 - `f46a104b0` (ruflo) — P2-B/C + P5-C: Bridge + registry patches
 - `54d66c71e` (ruflo) — P2-C/P3-D/P4-C/P5-E: Hooks controller activation
 - `68e57a37a` (ruflo) — P3-B/C: Reflexion retrieve/store + causal query MCP tools
+- `0a3ac771a` (ruflo) — P4-B + P5-A/D: ExplainableRecall Merkle + GuardedVector + GraphTransformer
+- `6ac5be144` (ruflo) — P4-A + P5-F: SkillLibrary routing + SonaTrajectory integration
+- `0f034f89f` (ruflo) — P4-D: AgentMemoryScope 3-scope isolation
+- `594d8cd3a` (ruflo) — P6-B: COW branching via RvfBackend.derive()
 
-**Issues:** #81, #82, #83, #84 (sparkling/ruflo-patch)
+**Issues:** #81-#88 (sparkling/ruflo-patch)
 
-**Patches implemented (14 of 18 non-done items):**
+**All patches implemented (21 of 22 non-blocked items):**
 - P2-B: LearningBridge dedicated bridge function
 - P2-C: SolverBandit export + registry + bridge + hooks routing + feedback
+- P3-A: MemoryGraph callers (pre-existing)
 - P3-B: ReflexionMemory retrieve/store MCP tools
 - P3-C: CausalMemoryGraph causal_query with cold-start guard
 - P3-D: NightlyLearner consolidation on session end
+- P4-A: SkillLibrary search in routing + skill creation on novel patterns
+- P4-B: ExplainableRecall Merkle proof chain via AttestationLog
 - P4-C: LearningSystem.recommendAlgorithm in routing
-- P5-B: MutationGuard enforcement (already existed)
+- P4-D: AgentMemoryScope 3-scope isolation (agent/session/global)
+- P5-A: GuardedVectorBackend overlay on store/search paths
+- P5-B: MutationGuard enforcement (pre-existing)
 - P5-C: AttestationLog stats in health check
+- P5-D: GraphTransformerService proof_gated re-ranking
 - P5-E: SemanticRouter as primary router (falls back to TASK_PATTERNS)
+- P5-F: SonaTrajectoryService recording + stats
+- P6-B: COW branching (derive/branchGet/branchStore/branchMerge + MCP tool)
 
-**Remaining (P3/P4 priority):**
-- P4-A: SkillLibrary CLI + skill search in routing
-- P4-B: ExplainableRecall Merkle proof chain
-- P4-D: AgentMemoryScope 3-scope isolation
-- P5-A: GuardedVectorBackend as primary backend
-- P5-D: GraphTransformerService (proof_gated only)
-- P5-F: SonaTrajectoryService integration
-- P6-B: COW branching (RvfBackend.derive)
-- P4-E: FederatedSession (blocked — API undefined)
+**Blocked (1):**
+- P4-E: FederatedSession — upstream API undefined
 
 ## Date
 
