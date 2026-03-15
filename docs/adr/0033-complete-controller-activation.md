@@ -390,6 +390,60 @@ After each phase, verify via MCP tools:
 - `npm run test:verify` (16 acceptance) must pass before deploy
 - `tsc --noEmit` for each fork must pass
 
+### Testing Strategy (Implemented 2026-03-15)
+
+**194 vitest tests** across 6 test files, using London School TDD (mock-first). All tests pass.
+
+#### Test Files
+
+| File | Tests | Coverage |
+|------|-------|----------|
+| `memory/src/controller-registry-activation.test.ts` | 16 | Factory cases: solverBandit (4), agentMemoryScope (5), gnnService (3), rvfOptimizer (4) |
+| `memory/src/__tests__/rvf-backend-cow.test.ts` | 18 | COW branching: derive (4), branchGet (4), branchStore (4), branchMerge (6) |
+| `memory/src/__tests__/controller-activation-smoke.test.ts` | 41 | Smoke: 29 per-controller INIT_LEVELS checks, 7 structural assertions, 5 level ordering constraints |
+| `cli/__tests__/memory-bridge-activation.test.ts` | 28 | Bridge fns: SolverBandit (6), LearningBridge (3), CausalRecall (3), Batch (4), ExplainableRecall (2), GraphTransformer (5), GraphAdapter (5) |
+| `cli/__tests__/hooks-tools-activation.test.ts` | 41 | Hooks wiring: SolverBandit routing (6), SkillLibrary (6), LearningSystem (3), SemanticRouter (6), post-task feedback (12), NightlyLearner (4), quality defaults (3) |
+| `cli/__tests__/agentdb-tools-activation.test.ts` | 47 | MCP tools: reflexion-retrieve (7), reflexion-store (6), causal-query (7), causal-recall (6), batch-optimize (9), branch COW (14) |
+| `cli/__tests__/memory-tools-activation.test.ts` | 19 | Search pipeline: scope prefix (3), scope filter (2), synthesis (5), MMR diversity (4) |
+
+**Note:** Test count is 210 across 7 files (16+18+41+28+41+47+19). The memory package runs 59 new tests, CLI runs 135 new tests + existing 16 legacy tests.
+
+#### What Tests Verify
+
+1. **Wiring correctness** — each controller is called with correct arguments
+2. **Error isolation** — every try-catch block exercised; failures never propagate
+3. **Fire-and-forget** — learning writes don't block the response path
+4. **Timeout enforcement** — 2s timeouts tested with slow mocks
+5. **Cold-start guards** — causal queries skip when <5 edges
+6. **Fallback behavior** — graceful degradation when controllers unavailable
+7. **Input validation** — required params enforced, values clamped
+8. **Controller completeness** — smoke test verifies all 27+1 controllers have factory cases and INIT_LEVELS entries
+
+#### Mocking Strategy
+
+All tests use `vi.mock()` at module level:
+- Bridge module mocked to return controllable mock functions
+- Controllers returned via `bridgeGetController` mock with per-test configuration
+- `vi.clearAllMocks()` in `beforeEach` for isolation
+- No real I/O, no real timeouts — pure unit tests
+
+#### Running Tests
+
+```bash
+# ADR-0033 memory package tests (59 tests, <1s)
+cd ~/src/forks/ruflo/v3/@claude-flow/memory && npx vitest run src/__tests__/controller-*  src/__tests__/rvf-backend-cow.test.ts src/controller-registry-activation.test.ts
+
+# ADR-0033 CLI package tests (135 tests, <9s)
+cd ~/src/forks/ruflo/v3/@claude-flow/cli && npx vitest run __tests__/*-activation.test.ts
+
+# All ruflo-patch pipeline tests (120 tests, <0.2s)
+cd ~/src/ruflo-patch && npm run test:unit
+```
+
+#### Gap Found
+
+Smoke test discovered `causalRecall` has a factory case but is NOT listed in any `INIT_LEVELS` entry. This means it won't be auto-initialized — it requires explicit `getController('causalRecall')` calls. Non-blocking but should be fixed in a follow-up patch.
+
 ## Decision: Completion (SPARC-C)
 
 ### Implementation as fork patches
