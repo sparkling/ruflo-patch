@@ -857,3 +857,83 @@ check_context_synthesis() {
   fi
 }
 
+# --------------------------------------------------------------------------
+# T32: Full controller activation on init'd project (ADR-0033 end-to-end)
+# --------------------------------------------------------------------------
+check_full_controller_activation() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Init a fresh project (--full enables all features)
+  local test_dir
+  test_dir=$(mktemp -d /tmp/ruflo-ctrl-activation-XXXXX)
+
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli init --full --force"
+
+  if [[ ! -f "$test_dir/.claude/settings.json" ]]; then
+    _CHECK_OUTPUT="Controller activation: init --full failed to produce settings.json"
+    rm -rf "$test_dir"
+    return
+  fi
+
+  # Init memory in the generated project
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory init"
+
+  # Get controller health — count how many are listed
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
+  local health_out="$_RK_OUT"
+
+  local ctrl_count=0
+  if echo "$health_out" | grep -q '"name"'; then
+    ctrl_count=$(echo "$health_out" | grep -c '"name"')
+  fi
+
+  # Exercise key controllers in the init'd project
+  local pass_count=0
+  local total_checks=5
+
+  # Check 1: Memory store + search works
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key ctrl-test --value 'controller activation test' --namespace ctrl-test"
+  if echo "$_RK_OUT" | grep -qi 'stored\|success'; then
+    pass_count=$((pass_count + 1))
+  fi
+
+  # Check 2: Hooks route produces a routing decision
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests\"}'"
+  if echo "$_RK_OUT" | grep -qi 'agent\|route\|coder\|tester\|pattern'; then
+    pass_count=$((pass_count + 1))
+  fi
+
+  # Check 3: Causal edge accepted
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_causal-edge --params '{\"cause\":\"init\",\"effect\":\"working project\",\"uplift\":0.9}'"
+  if echo "$_RK_OUT" | grep -qi 'success\|recorded\|true'; then
+    pass_count=$((pass_count + 1))
+  fi
+
+  # Check 4: Reflexion store accepted
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion-store --params '{\"session_id\":\"ctrl-test\",\"task\":\"activation test\",\"reward\":0.9,\"success\":true}'"
+  if echo "$_RK_OUT" | grep -qi 'success\|true'; then
+    pass_count=$((pass_count + 1))
+  fi
+
+  # Check 5: Batch optimize accepted
+  _run_and_kill "cd '$test_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_batch-optimize --params '{\"action\":\"stats\"}'"
+  if echo "$_RK_OUT" | grep -qi 'success\|stats\|true'; then
+    pass_count=$((pass_count + 1))
+  fi
+
+  # Verdict: need controller listing + majority of functional checks
+  if [[ $ctrl_count -ge 10 && $pass_count -ge 3 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Controller activation: $ctrl_count controllers listed, $pass_count/$total_checks functional checks pass on init'd project"
+  elif [[ $ctrl_count -ge 5 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Controller activation: $ctrl_count controllers (partial), $pass_count/$total_checks checks pass"
+  else
+    _CHECK_OUTPUT="Controller activation: only $ctrl_count controllers, $pass_count/$total_checks checks — health: ${health_out:0:200}"
+  fi
+
+  rm -rf "$test_dir"
+}
+

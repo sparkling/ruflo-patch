@@ -482,6 +482,10 @@ collect_parallel "controller" \
   "T20|Reflexion lifecycle" "T21|Causal graph" "T22|COW branching" \
   "T23|Batch operations" "T24|Context synthesis"
 
+# ── Group 7: End-to-end controller activation on init'd project ──
+log "── Group 7: Full Controller Activation (ADR-0033 E2E) ──"
+run_check "T32" "Full controller activation" check_full_controller_activation "e2e"
+
 rm -rf "$RQ_PARALLEL_DIR"; RQ_PARALLEL_DIR=""
 
 log "Acceptance results: ${rq_pass}/$((rq_pass + rq_fail)) passed, ${rq_fail} failed"
