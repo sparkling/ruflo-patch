@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted — **partially implemented as of patch.26; see ADR-0031 for runtime validation results**
 
 ## Date
 
@@ -538,8 +538,27 @@ After applying fixes:
 - ReasoningBank bridge fix (S1) may require deeper investigation if the module's export structure differs from expected
 - Cross-namespace search (S5) may return too many results for broad queries — mitigated by similarity sorting and limit
 
+## Implementation Status (Updated 2026-03-15)
+
+Runtime validation against `@sparkleideas/cli@3.5.15-patch.26` (ADR-0031) found:
+
+| Fix | Status | Notes |
+|-----|--------|-------|
+| S1 | **Not implemented** | bridge-fallback persists; `.store()` still not callable |
+| S2 | **Partial** | CLI uses 768-dim, MCP uses 384-dim — dimension split (BUG-3) |
+| S3 | **Not applied** | `init --full` still generates default config |
+| S4 | **Partial** | CLI scores work (0.49–0.73); MCP search returns 0 results (BUG-1) |
+| S5 | **Partial** | CLI cross-namespace works; MCP broken |
+| S6 | **Exists** | `memory migrate` subcommand present in CLI |
+| S7 | **Not implemented** | neural and intelligence patterns still separate |
+
+**4 new bugs discovered**: MCP search always empty (BUG-1), dual-database split (BUG-2), 384/768 dimension mismatch (BUG-3), `embeddings init` crash on missing agentic-flow subpath export (BUG-4).
+
+See **ADR-0031** for full details, evidence, and the 7-patch remediation plan (DB-001 through DB-007).
+
 ## Related
 
+- **ADR-0031**: Runtime validation of this ADR's fixes — 4 new bugs, 7 new patches planned
 - **ADR-0029**: Memory & learning system fixes (predecessor — fixes bugs, this ADR optimizes)
 - **ADR-0027**: Fork migration and version overhaul (patch model)
 - **ADR-0028**: Build type safety
