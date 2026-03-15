@@ -169,6 +169,126 @@ const brain = new PiBrainClient({ apiKey: process.env.BRAIN_API_KEY });
 const results = await brain.search({ query: 'your topic' });
 ```
 
+## Automatic Session Hooks (Option C)
+
+For projects that want π integrated into every session automatically (no manual searches needed):
+
+### 1. Set the API key
+
+Add to your shell env (e.g. `~/.claude/env.sh` or `~/.bashrc`):
+
+```bash
+export BRAIN_API_KEY="your_generated_key_here"
+```
+
+The key is a SHAKE-256 pseudonym — generate one at https://pi.ruv.io/ (click "Generate Key").
+
+### 2. Create the session script
+
+Save as `.claude/scripts/pi-brain-session.sh` (make executable with `chmod +x`):
+
+```bash
+#!/usr/bin/env bash
+# π.ruv.io session integration
+set -euo pipefail
+
+ACTION="${1:-}"
+PROJECT_DIR="${CLAUDE_PROJECT_DIR:-$(pwd)}"
+CACHE_DIR="$PROJECT_DIR/.claude-flow/data"
+PI_PENDING="$CACHE_DIR/pi-pending-shares.jsonl"
+PI_URL="https://pi.ruv.io/v1"
+PI_KEY="${BRAIN_API_KEY:-${PI:-}}"
+
+[ -z "$PI_KEY" ] && exit 0
+mkdir -p "$CACHE_DIR"
+
+case "$ACTION" in
+  session-start)
+    # Search π for project-relevant patterns
+    # Customize these queries for your project:
+    QUERIES=(
+      "your project topic one"
+      "your project topic two"
+    )
+    FOUND=0
+    for Q in "${QUERIES[@]}"; do
+      RESP=$(curl -sf --max-time 5 \
+        -H "Authorization: Bearer $PI_KEY" \
+        "$PI_URL/memories/search?q=$(echo "$Q" | sed 's/ /+/g')&limit=3" 2>/dev/null || echo '[]')
+      COUNT=$(echo "$RESP" | python3 -c "import json,sys; d=json.load(sys.stdin); print(len(d) if isinstance(d,list) else 0)" 2>/dev/null || echo 0)
+      FOUND=$((FOUND + COUNT))
+      if [ "$COUNT" -gt 0 ]; then
+        TITLES=$(echo "$RESP" | python3 -c "
+import json,sys
+for m in json.load(sys.stdin)[:3]:
+    print(f'  ({m.get(\"score\",0):.2f}) {m.get(\"title\",\"\")[:80]}')
+" 2>/dev/null || true)
+        [ -n "$TITLES" ] && echo "[PI] Relevant: $Q" && echo "$TITLES"
+      fi
+    done
+    [ "$FOUND" -gt 0 ] && echo "[PI] $FOUND patterns from π collective"
+    ;;
+  session-end)
+    # Post any pending shares
+    if [ -f "$PI_PENDING" ] && [ -s "$PI_PENDING" ]; then
+      SHARED=0
+      while IFS= read -r line; do
+        ID=$(curl -sf --max-time 5 -X POST \
+          -H "Authorization: Bearer $PI_KEY" \
+          -H "Content-Type: application/json" \
+          -d "$line" "$PI_URL/memories" 2>/dev/null \
+          | python3 -c "import json,sys; print(json.load(sys.stdin).get('id',''))" 2>/dev/null || true)
+        [ -n "$ID" ] && SHARED=$((SHARED + 1))
+      done < "$PI_PENDING"
+      [ "$SHARED" -gt 0 ] && echo "[PI] Shared $SHARED learnings" && > "$PI_PENDING"
+    fi
+    ;;
+esac
+```
+
+### 3. Wire into settings.json
+
+Add to `.claude/settings.json` hooks:
+
+```json
+{
+  "hooks": {
+    "SessionStart": [{
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/pi-brain-session.sh\" session-start",
+          "timeout": 8000
+        }
+      ]
+    }],
+    "SessionEnd": [{
+      "hooks": [
+        {
+          "type": "command",
+          "command": "bash \"$CLAUDE_PROJECT_DIR/.claude/scripts/pi-brain-session.sh\" session-end",
+          "timeout": 8000
+        }
+      ]
+    }]
+  }
+}
+```
+
+### What happens
+
+**Session start**: The script searches π for your project topics and displays results:
+```
+[PI] Relevant: agentdb controller activation memory bridge wiring
+  (1.69) AgentDB v3: 23 of 28 controllers are dead code
+  (1.46) MCP memory_search returns 0 results: bridge fallback
+[PI] 6 patterns from π collective
+```
+
+**Session end**: Any pending shares in `.claude-flow/data/pi-pending-shares.jsonl` are posted automatically.
+
+**No key configured**: Script exits silently — zero impact if `BRAIN_API_KEY` is not set.
+
 ## Add to CLAUDE.md
 
 Copy this block into your project's CLAUDE.md:
