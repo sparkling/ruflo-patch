@@ -386,63 +386,83 @@ After each phase, verify via MCP tools:
 
 ### Regression guards
 
-- `npm test` (120 unit tests) must pass after each phase
-- `npm run test:verify` (16 acceptance) must pass before deploy
+- `npm test` (255 unit tests) must pass after each phase
+- `npm run test:verify` (24 acceptance) must pass before deploy
 - `tsc --noEmit` for each fork must pass
 
-### Testing Strategy (Implemented 2026-03-15)
+### Testing Strategy (designed 2026-03-15)
 
-**194 vitest tests** across 6 test files, using London School TDD (mock-first). All tests pass.
+Full test design documents: `docs/test-design-adr0033-integration.md`
 
-#### Test Files
+#### L1 Unit Tests — 67 new tests (2 new files + additions to 4 existing)
 
 | File | Tests | Coverage |
-|------|-------|----------|
-| `memory/src/controller-registry-activation.test.ts` | 16 | Factory cases: solverBandit (4), agentMemoryScope (5), gnnService (3), rvfOptimizer (4) |
-| `memory/src/__tests__/rvf-backend-cow.test.ts` | 18 | COW branching: derive (4), branchGet (4), branchStore (4), branchMerge (6) |
-| `memory/src/__tests__/controller-activation-smoke.test.ts` | 41 | Smoke: 29 per-controller INIT_LEVELS checks, 7 structural assertions, 5 level ordering constraints |
-| `cli/__tests__/memory-bridge-activation.test.ts` | 28 | Bridge fns: SolverBandit (6), LearningBridge (3), CausalRecall (3), Batch (4), ExplainableRecall (2), GraphTransformer (5), GraphAdapter (5) |
-| `cli/__tests__/hooks-tools-activation.test.ts` | 41 | Hooks wiring: SolverBandit routing (6), SkillLibrary (6), LearningSystem (3), SemanticRouter (6), post-task feedback (12), NightlyLearner (4), quality defaults (3) |
-| `cli/__tests__/agentdb-tools-activation.test.ts` | 47 | MCP tools: reflexion-retrieve (7), reflexion-store (6), causal-query (7), causal-recall (6), batch-optimize (9), branch COW (14) |
-| `cli/__tests__/memory-tools-activation.test.ts` | 19 | Search pipeline: scope prefix (3), scope filter (2), synthesis (5), MMR diversity (4) |
+|------|:-----:|----------|
+| `12-controller-registry-activation.test.mjs` (NEW) | 20 | AgentMemoryScope factory (getScope/scopeKey/filterByScope), SolverBandit factory (init/state restore/corrupt JSON), gnnService wrapper, rvfOptimizer wrapper |
+| `13-agentdb-context-synthesize.test.mjs` (NEW) | 8 | agentdb_context-synthesize MCP tool (zero existing coverage) |
+| `08-hooks-tools-activation.test.mjs` additions | +8 | Routing cascade ORDER (SolverBandit→Skill→Learning→Semantic→Patterns), fire-and-forget multi-rejection, max 3 writes enforcement |
+| `09-memory-bridge-activation.test.mjs` additions | +20 | GuardedVectorBackend overlay (store/search/fallback), MutationGuard enforcement (allow/deny/bypass), AttestationLog health, bridgeHealthCheck new controllers |
+| `10-memory-tools-activation.test.mjs` additions | +7 | Scope/MMR interaction ordering, global scope edge case, context synthesis error path |
+| `07-agentdb-tools-activation.test.mjs` additions | +4 | causal-query no cause/effect, default k, negative reward clamp |
 
-**Note:** Test count is 210 across 7 files (16+18+41+28+41+47+19). The memory package runs 59 new tests, CLI runs 135 new tests + existing 16 legacy tests.
+**Critical gap found**: Controller-registry factory layer (file 12) has ZERO existing tests. Factory returning null silently disables entire controller chains — all downstream tests mock past this layer, so happy-path tests pass vacuously.
 
-#### What Tests Verify
+#### L1 Integration Tests — 32 tests (1 new file, requires build artifacts)
 
-1. **Wiring correctness** — each controller is called with correct arguments
-2. **Error isolation** — every try-catch block exercised; failures never propagate
-3. **Fire-and-forget** — learning writes don't block the response path
-4. **Timeout enforcement** — 2s timeouts tested with slow mocks
-5. **Cold-start guards** — causal queries skip when <5 edges
-6. **Fallback behavior** — graceful degradation when controllers unavailable
-7. **Input validation** — required params enforced, values clamped
-8. **Controller completeness** — smoke test verifies all 27+1 controllers have factory cases and INIT_LEVELS entries
+| File | Tests | Coverage |
+|------|:-----:|----------|
+| `12-controller-integration.test.mjs` | 32 | Real wiring chain (Handler→Bridge→Registry→Controller) using built artifacts from `/tmp/ruflo-build/`. Only DB/storage mocked. Routing cascade, memory scope isolation, learning feedback loop, health check, COW lifecycle. Guarded by `{ skip: !hasBuild }`. |
 
-#### Mocking Strategy
+#### L1 Chaos / Edge Case Tests — 35 tests (1 new file + 1 property file)
 
-All tests use `vi.mock()` at module level:
-- Bridge module mocked to return controllable mock functions
-- Controllers returned via `bridgeGetController` mock with per-test configuration
-- `vi.clearAllMocks()` in `beforeEach` for isolation
-- No real I/O, no real timeouts — pure unit tests
+| File | Tests | Coverage |
+|------|:-----:|----------|
+| `13-controller-chaos.test.mjs` | 26 | 50 concurrent calls, controller init failure cascade, timeout cascade across 4 routing phases, corrupted JSON state, cold-start boundary (4→5 edges), scope leakage (negative test), double-fire prevention |
+| `14-controller-properties.test.mjs` | 9 | AgentMemoryScope key symmetry (`unscopeKey(scopeKey(k)) === k`), SolverBandit convergence (Thompson Sampling learns from rewards), cold-start guard monotonicity |
 
-#### Running Tests
+#### L1 Regression Tests — 11 tests (additions to existing files)
 
-```bash
-# ADR-0033 memory package tests (59 tests, <1s)
-cd ~/src/forks/ruflo/v3/@claude-flow/memory && npx vitest run src/__tests__/controller-*  src/__tests__/rvf-backend-cow.test.ts src/controller-registry-activation.test.ts
+Cover 5 specific bugs fixed during implementation:
+- MMR error handling (commit 322b3e2f8)
+- gnnService/rvfOptimizer broken imports (commit 35d851fdb)
+- MutationGuard enforcement verification (P5-B)
+- causalRecall getStats edge cases
 
-# ADR-0033 CLI package tests (135 tests, <9s)
-cd ~/src/forks/ruflo/v3/@claude-flow/cli && npx vitest run __tests__/*-activation.test.ts
+#### L2/L3 Acceptance Tests — 8 new checks (T17-T24)
 
-# All ruflo-patch pipeline tests (120 tests, <0.2s)
-cd ~/src/ruflo-patch && npm run test:unit
-```
+All self-contained, parallelizable, adding ~6-8s wall-clock to test-verify.sh.
 
-#### Gap Found
+| Check | Category | What it verifies | Time |
+|-------|----------|-----------------|:----:|
+| T17: Controller health | Smoke | `agentdb health` reports 20+ controllers | 1-2s |
+| T18: Learned routing | Functional | `hooks route` returns routing decision (cascade) | 3-4s |
+| T19: Memory scoping | Functional | `--scope`/`--scope-id` params accepted, filtering works | 4-5s |
+| T20: Reflexion lifecycle | Functional | session-start → reflexion-store → reflexion-retrieve → session-end | 5-7s |
+| T21: Causal graph | Functional | Cold-start guard (<5 edges), edge addition accepted | 4-6s |
+| T22: COW branching | Integration | create → store → read → merge lifecycle | 6-8s |
+| T23: Batch operations | Functional | optimize/stats/prune actions accepted | 4-5s |
+| T24: Context synthesis | Functional | `--synthesize` flag accepted, enriched results | 4-5s |
 
-Smoke test discovered `causalRecall` has a factory case but is NOT listed in any `INIT_LEVELS` entry. This means it won't be auto-initialized — it requires explicit `getController('causalRecall')` calls. Non-blocking but should be fixed in a follow-up patch.
+Implemented in `lib/acceptance-checks.sh` (shared L2/L3). All L3-compatible.
+
+#### Test Count Summary
+
+| Layer | Current | New | Total |
+|-------|:-------:|:---:|:-----:|
+| L1 Unit (files 07-10) | 148 | +39 | 187 |
+| L1 Unit (new files 12-14) | 0 | +61 | 61 |
+| L1 Regression (existing files) | 0 | +11 | 11 |
+| L2/L3 Acceptance | 16 | +8 | 24 |
+| **Total** | **164** | **+119** | **283** |
+
+#### Priority Matrix
+
+| Priority | Count | What | Risk if untested |
+|----------|:-----:|------|-----------------|
+| **P0** | 24 | Registry factory, routing cascade order, GuardedVectorBackend, MutationGuard, fire-and-forget guarantees | Silent controller disablement, security bypass, 500 errors |
+| **P1** | 35 | Context-synthesize MCP tool, ExplainableRecall branches, health check, scope/MMR ordering, integration wiring | Broken MCP tools, wrong search results, observability gaps |
+| **P2** | 19 | Property tests, boundary values, chaos scenarios | Edge cases in adversarial conditions |
+| **Acceptance** | 8 | T17-T24 end-to-end checks | Published packages missing features |
 
 ## Decision: Completion (SPARC-C)
 
