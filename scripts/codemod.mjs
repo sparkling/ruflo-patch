@@ -35,6 +35,7 @@ const UNSCOPED_MAP = {
   'agent-booster': '@sparkleideas/agent-booster',
   'agentdb-onnx': '@sparkleideas/agentdb-onnx',
   'cuda-wasm': '@sparkleideas/cuda-wasm',
+  'ruvector': '@sparkleideas/ruvector',
 };
 
 // -- File filters -------------------------------------------------------------

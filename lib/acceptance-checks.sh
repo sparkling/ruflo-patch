@@ -2,8 +2,8 @@
 # lib/acceptance-checks.sh — Shared functional test library (ADR-0023)
 #
 # Defines test functions used by both:
-#   - test-integration.sh Phase 9 (Layer 3: Release Qualification, Verdaccio)
-#   - test-acceptance.sh (Layer 4: Production Verification, real npm)
+#   - test-verify.sh Phase 8 (Layer 2: Verification, local Verdaccio)
+#   - test-acceptance.sh (Layer 3: Production Verification, real npm)
 #
 # One definition, two execution contexts. Adding a test here
 # automatically runs it in both layers.
@@ -87,7 +87,7 @@ _run_and_kill() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-1 / A1: Version check
+# T01: Version check
 # --------------------------------------------------------------------------
 check_version() {
   # Use local binary or npm view — avoid npx which re-installs all deps (~30s)
@@ -103,7 +103,7 @@ check_version() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-2 / A2: Init
+# T04: Init
 # --------------------------------------------------------------------------
 check_init() {
   local cli; cli=$(_cli_cmd)
@@ -116,7 +116,7 @@ check_init() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-3 / A3: Settings file
+# T05: Settings file
 # --------------------------------------------------------------------------
 check_settings_file() {
   local start_ns end_ns
@@ -141,7 +141,7 @@ check_settings_file() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-4 / A4: Scope check
+# T06: Scope check
 # --------------------------------------------------------------------------
 check_scope() {
   local start_ns end_ns
@@ -171,7 +171,7 @@ check_scope() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-5 / A5: Doctor
+# T09: Doctor
 # --------------------------------------------------------------------------
 check_doctor() {
   local cli; cli=$(_cli_cmd)
@@ -186,7 +186,7 @@ check_doctor() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-6 / A6: MCP config
+# T07: MCP config
 # --------------------------------------------------------------------------
 check_mcp_config() {
   local start_ns end_ns
@@ -216,7 +216,7 @@ check_mcp_config() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-7 / A7: Wrapper proxy
+# T10: Wrapper proxy
 # --------------------------------------------------------------------------
 check_wrapper_proxy() {
   local start_ns end_ns
@@ -253,7 +253,7 @@ check_wrapper_proxy() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-8 / A9: Memory lifecycle
+# T11: Memory lifecycle
 # --------------------------------------------------------------------------
 check_memory_lifecycle() {
   local start_ns end_ns
@@ -340,7 +340,7 @@ check_memory_lifecycle() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-9 / A10: Neural training
+# T12: Neural training
 # --------------------------------------------------------------------------
 check_neural_training() {
   local cli; cli=$(_cli_cmd)
@@ -366,7 +366,7 @@ check_neural_training() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-10 / A13: Agent Booster ESM import
+# T13: Agent Booster ESM import
 # --------------------------------------------------------------------------
 check_agent_booster_esm() {
   local start_ns end_ns
@@ -418,7 +418,7 @@ check_agent_booster_esm() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-11 / A14: Agent Booster binary
+# T14: Agent Booster binary
 # --------------------------------------------------------------------------
 check_agent_booster_bin() {
   local booster; booster=$(_booster_cmd)
@@ -433,7 +433,7 @@ check_agent_booster_bin() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-12 / A15: Plugins SDK import
+# T15: Plugins SDK import
 # --------------------------------------------------------------------------
 check_plugins_sdk() {
   local start_ns end_ns
@@ -465,7 +465,7 @@ check_plugins_sdk() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-13 / A0: @latest dist-tag resolves to a working version
+# T02: @latest dist-tag resolves to a working version
 # --------------------------------------------------------------------------
 check_latest_resolves() {
   _CHECK_PASSED="false"
@@ -492,7 +492,7 @@ check_latest_resolves() {
 }
 
 # --------------------------------------------------------------------------
-# RQ-14: ruflo init --full creates a complete project
+# T08: ruflo init --full creates a complete project
 # --------------------------------------------------------------------------
 check_ruflo_init_full() {
   local start_ns end_ns
@@ -514,13 +514,19 @@ check_ruflo_init_full() {
     cli_tag="${PKG#@sparkleideas/cli}"
     [[ -z "$cli_tag" ]] && cli_tag="@latest"
   fi
-  local init_out
+  local init_out init_exit
   init_out=$(cd "$full_dir" && NPM_CONFIG_REGISTRY="$REGISTRY" RUFLO_CLI_TAG="$cli_tag" \
-    npx --yes "${wrapper_pkg}" init --full 2>&1) || true
+    npx --yes "${wrapper_pkg}" init --full 2>&1)
+  init_exit=$?
+
+  # Log init output for debugging
+  echo "  [RQ-14] init exit=$init_exit, dir=$full_dir, wrapper=$wrapper_pkg, cli_tag=$cli_tag" >&2
+  echo "  [RQ-14] init output (last 10 lines):" >&2
+  echo "$init_out" | tail -10 | sed 's/^/  [RQ-14]   /' >&2
 
   # Validate key artifacts created by --full
   local missing=""
-  for f in .claude/settings.json CLAUDE.md .mcp.json .claude-flow/config.yaml; do
+  for f in .claude/settings.json CLAUDE.md .mcp.json .claude-flow/config.json; do
     if [[ ! -f "$full_dir/$f" ]]; then
       missing="$missing $f"
     fi
@@ -545,7 +551,10 @@ check_ruflo_init_full() {
     fi
   else
     _CHECK_OUTPUT="init --full missing:$missing"
-    _CHECK_OUTPUT="$_CHECK_OUTPUT\ninit output:\n$(echo "$init_out" | tail -15)"
+    _CHECK_OUTPUT="$_CHECK_OUTPUT | init exit=$init_exit | init output: $(echo "$init_out" | tail -5 | tr '\n' ' ')"
+    echo "  [RQ-14] MISSING FILES:$missing" >&2
+    echo "  [RQ-14] Files in dir:" >&2
+    find "$full_dir" -maxdepth 3 -type f 2>/dev/null | head -20 | sed 's/^/  [RQ-14]   /' >&2
   fi
 
   rm -rf "$full_dir"
@@ -560,32 +569,3 @@ check_ruflo_init_full() {
   _OUT="$_CHECK_OUTPUT"
 }
 
-# --------------------------------------------------------------------------
-# Run all shared checks. Caller provides run_check() wrapper.
-#
-# Usage:
-#   run_check "RQ-1" "Version check" check_version
-#   run_check "RQ-2" "Init" check_init
-#   ... etc
-#
-# The run_check function must be defined by the caller. It should:
-#   1. Call the check function
-#   2. Read _CHECK_PASSED, _CHECK_OUTPUT, _OUT, _EXIT, _DURATION_MS
-#   3. Record the result in its own format
-# --------------------------------------------------------------------------
-run_all_shared_checks() {
-  run_check "RQ-1"  "Version check"       check_version
-  run_check "RQ-2"  "Init"                check_init
-  run_check "RQ-3"  "Settings file"       check_settings_file
-  run_check "RQ-4"  "Scope check"         check_scope
-  run_check "RQ-5"  "Doctor"              check_doctor
-  run_check "RQ-6"  "MCP config"          check_mcp_config
-  run_check "RQ-7"  "Wrapper proxy"       check_wrapper_proxy
-  run_check "RQ-8"  "Memory lifecycle"    check_memory_lifecycle
-  run_check "RQ-9"  "Neural training"     check_neural_training
-  run_check "RQ-10" "Agent Booster ESM"   check_agent_booster_esm
-  run_check "RQ-11" "Agent Booster CLI"   check_agent_booster_bin
-  run_check "RQ-12" "Plugins SDK"         check_plugins_sdk
-  run_check "RQ-13" "@latest resolves"    check_latest_resolves
-  run_check "RQ-14" "ruflo init --full"   check_ruflo_init_full
-}

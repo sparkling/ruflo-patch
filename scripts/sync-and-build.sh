@@ -88,10 +88,40 @@ if [[ "$BUILD_ONLY" != "true" ]]; then
   LOCKFILE="/tmp/ruflo-sync-and-build.lock"
   exec 9>"$LOCKFILE"
   if ! flock -n 9; then
-    echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Another sync-and-build is already running — exiting"
-    exit 0
+    # Lock is held — check if the holder is still alive
+    LOCK_HOLDER=$(fuser "$LOCKFILE" 2>/dev/null | tr -d ' ') || LOCK_HOLDER=""
+    if [[ -n "$LOCK_HOLDER" ]]; then
+      HOLDER_CMD=$(ps -p "$LOCK_HOLDER" -o comm= 2>/dev/null) || HOLDER_CMD=""
+      if [[ "$HOLDER_CMD" == "sleep" ]]; then
+        # Orphaned timeout subprocess holding the lock — kill it and retry
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Stale lock held by orphaned process $LOCK_HOLDER ($HOLDER_CMD) — reclaiming"
+        kill "$LOCK_HOLDER" 2>/dev/null || true
+        sleep 1
+        if ! flock -n 9; then
+          echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Failed to reclaim lock — exiting"
+          exit 0
+        fi
+      else
+        echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Another sync-and-build is running (PID $LOCK_HOLDER, $HOLDER_CMD) — exiting"
+        exit 0
+      fi
+    else
+      echo "[$(date -u +%Y-%m-%dT%H:%M:%SZ)] Lock held by dead process — reclaiming"
+      # Holder is gone, lock fd leaked. Recreate the lock file.
+      rm -f "$LOCKFILE"
+      exec 9>"$LOCKFILE"
+      flock -n 9 || { echo "Failed to reclaim lock — exiting"; exit 0; }
+    fi
   fi
 fi
+
+# ---------------------------------------------------------------------------
+# Environment configuration
+# ---------------------------------------------------------------------------
+# RUFLO_NOTIFY_EMAIL — recipient for pipeline email notifications.
+# Set in secrets.env (EnvironmentFile in systemd unit) or export before running.
+# When unset, email notifications are logged but not sent.
+: "${RUFLO_NOTIFY_EMAIL:=}"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -106,15 +136,17 @@ STATE_FILE="${SCRIPT_DIR}/.last-build-state"
 FORK_DIR_RUFLO="/home/claude/src/forks/ruflo"
 FORK_DIR_AGENTIC="/home/claude/src/forks/agentic-flow"
 FORK_DIR_FANN="/home/claude/src/forks/ruv-FANN"
+FORK_DIR_RUVECTOR="/home/claude/src/forks/ruvector"
 
-FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN")
-FORK_DIRS=("${FORK_DIR_RUFLO}" "${FORK_DIR_AGENTIC}" "${FORK_DIR_FANN}")
+FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN" "ruvector")
+FORK_DIRS=("${FORK_DIR_RUFLO}" "${FORK_DIR_AGENTIC}" "${FORK_DIR_FANN}" "${FORK_DIR_RUVECTOR}")
 
 UPSTREAM_RUFLO="https://github.com/ruvnet/ruflo.git"
 UPSTREAM_AGENTIC="https://github.com/ruvnet/agentic-flow.git"
 UPSTREAM_FANN="https://github.com/ruvnet/ruv-FANN.git"
+UPSTREAM_RUVECTOR="https://github.com/ruvnet/RuVector.git"
 
-UPSTREAM_URLS=("${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}")
+UPSTREAM_URLS=("${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}" "${UPSTREAM_RUVECTOR}")
 
 TEMP_DIR=""  # set in create_temp_dir, cleaned up on exit
 
@@ -122,6 +154,7 @@ TEMP_DIR=""  # set in create_temp_dir, cleaned up on exit
 NEW_RUFLO_HEAD=""
 NEW_AGENTIC_HEAD=""
 NEW_FANN_HEAD=""
+NEW_RUVECTOR_HEAD=""
 
 # Selective version bumping: tracks which forks changed (set by check_merged_prs)
 CHANGED_FORK_SHAS=""  # format: dir1:oldSha,dir2:oldSha
@@ -132,6 +165,10 @@ DIRECTLY_CHANGED_JSON="all"
 
 # Build version (set by read_build_version)
 BUILD_VERSION=""
+
+# Build stats (set by run_build, used by write_build_manifest to avoid re-scanning)
+BUILD_COMPILED_COUNT=""
+BUILD_TOTAL_COUNT=""
 
 # Deferred version bump pushes (populated by bump_fork_versions, pushed after publish)
 PENDING_VERSION_PUSHES=()
@@ -152,6 +189,196 @@ log_error() {
 # Email notification helper
 # ---------------------------------------------------------------------------
 
+# Get the GitHub web URL for a fork directory (strips .git suffix)
+_fork_url() {
+  local dir="$1"
+  local url
+  url=$(git -C "${dir}" remote get-url origin 2>/dev/null) || echo ""
+  # Convert SSH URLs (git@github.com:user/repo.git) to HTTPS
+  url="${url%.git}"
+  url=$(echo "$url" | sed -E 's|^git@github\.com:|https://github.com/|')
+  echo "$url"
+}
+
+# Get the upstream GitHub web URL for a fork directory
+_upstream_url() {
+  local dir="$1"
+  local url
+  url=$(git -C "${dir}" remote get-url upstream 2>/dev/null) || echo ""
+  url="${url%.git}"
+  url=$(echo "$url" | sed -E 's|^git@github\.com:|https://github.com/|')
+  echo "$url"
+}
+
+# Build a link block for email body: upstream commit, fork repo, fork commit
+_email_links() {
+  local dir="$1" name="$2"
+  local fork_url upstream_url upstream_sha fork_sha links=""
+
+  fork_url=$(_fork_url "$dir")
+  upstream_url=$(_upstream_url "$dir")
+  upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || upstream_sha=""
+  fork_sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || fork_sha=""
+
+  if [[ -n "$upstream_url" && -n "$upstream_sha" ]]; then
+    links="${links}\nUpstream commit: ${upstream_url}/commit/${upstream_sha}"
+  fi
+  if [[ -n "$fork_url" ]]; then
+    links="${links}\nFork repo: ${fork_url}"
+  fi
+  if [[ -n "$fork_url" && -n "$fork_sha" ]]; then
+    links="${links}\nFork commit: ${fork_url}/commit/${fork_sha}"
+  fi
+  echo "$links"
+}
+
+# Collect email metadata from a fork directory into associative-style variables.
+# Sets: _EML_FORK_URL, _EML_UPSTREAM_URL, _EML_UPSTREAM_SHA, _EML_FORK_SHA
+_email_meta() {
+  local dir="$1"
+  _EML_FORK_URL=$(_fork_url "$dir")
+  _EML_UPSTREAM_URL=$(_upstream_url "$dir")
+  _EML_UPSTREAM_SHA=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || _EML_UPSTREAM_SHA=""
+  _EML_FORK_SHA=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || _EML_FORK_SHA=""
+  _EML_UPSTREAM_MSG=$(git -C "${dir}" log upstream/main -1 --format='%B' 2>/dev/null | head -5 | sed '/^$/d') || _EML_UPSTREAM_MSG=""
+}
+
+# Generate an HTML email body for pipeline notifications.
+#
+# Arguments (positional):
+#   1  status       "success" | "error" | "warning"
+#   2  title        Headline text
+#   3  fork_name    Which fork (e.g. "ruflo")
+#   4  branch       Branch name
+#   5  branch_url   URL to branch on GitHub (may be empty)
+#   6  pr_url       PR link (may be empty)
+#   7  upstream_commit_url  Link to upstream commit (may be empty)
+#   8  fork_url     Link to fork repo (may be empty)
+#   9  fork_commit_url  Link to fork commit (may be empty)
+#  10  message      Main status message
+#  11  extra        Optional extra text (e.g. journal command)
+_email_html_body() {
+  local status="$1"
+  local title="$2"
+  local fork_name="$3"
+  local branch="$4"
+  local branch_url="$5"
+  local pr_url="$6"
+  local upstream_commit_url="$7"
+  local fork_url="$8"
+  local fork_commit_url="$9"
+  local message="${10}"
+  local extra="${11:-}"
+
+  local color
+  case "$status" in
+    success) color="#22c55e" ;;
+    warning) color="#f59e0b" ;;
+    *)       color="#ef4444" ;;
+  esac
+
+  local status_label
+  case "$status" in
+    success) status_label="SUCCESS" ;;
+    warning) status_label="WARNING" ;;
+    *)       status_label="ERROR" ;;
+  esac
+
+  # ── Build metadata rows ──
+  local td_label="padding:8px 12px;font-weight:600;color:#374151;white-space:nowrap;border-bottom:1px solid #f3f4f6"
+  local td_value="padding:8px 12px;border-bottom:1px solid #f3f4f6"
+  local link_style="color:#2563eb;text-decoration:underline"
+  local mono="font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px"
+  local rows=""
+
+  # 1. Fork Repo
+  if [[ -n "$fork_name" ]]; then
+    if [[ -n "$fork_url" ]]; then
+      rows="${rows}<tr><td style=\"${td_label}\">Fork Repo</td><td style=\"${td_value}\"><a href=\"${fork_url}\" style=\"${link_style}\">${fork_name}</a></td></tr>"
+    else
+      rows="${rows}<tr><td style=\"${td_label}\">Fork Repo</td><td style=\"${td_value}\">${fork_name}</td></tr>"
+    fi
+  fi
+
+  # 2. Fork Branch
+  if [[ -n "$branch" ]]; then
+    local branch_cell="${branch}"
+    [[ -n "$branch_url" ]] && branch_cell="<a href=\"${branch_url}\" style=\"${link_style};${mono}\">${branch}</a>"
+    rows="${rows}<tr><td style=\"${td_label}\">Fork Branch</td><td style=\"${td_value}\">${branch_cell}</td></tr>"
+  fi
+
+  # 3. Fork Commit
+  if [[ -n "$fork_commit_url" ]]; then
+    local fork_short="${fork_commit_url##*/}"
+    fork_short="${fork_short:0:8}"
+    rows="${rows}<tr><td style=\"${td_label}\">Fork Commit</td><td style=\"${td_value}\"><a href=\"${fork_commit_url}\" style=\"${link_style};${mono}\">${fork_short}</a></td></tr>"
+  fi
+
+  # 4. Fork Pull Request
+  if [[ -n "$pr_url" ]]; then
+    local pr_label="View PR"
+    local pr_num="${pr_url##*/pull/}"
+    [[ "$pr_num" != "$pr_url" && "$pr_num" =~ ^[0-9]+$ ]] && pr_label="PR #${pr_num}"
+    rows="${rows}<tr><td style=\"${td_label}\">Fork Pull Request</td><td style=\"${td_value}\"><a href=\"${pr_url}\" style=\"${link_style}\">${pr_label}</a></td></tr>"
+  fi
+
+  # 5. Upstream Commit
+  if [[ -n "$upstream_commit_url" ]]; then
+    local upstream_short="${upstream_commit_url##*/}"
+    upstream_short="${upstream_short:0:8}"
+    rows="${rows}<tr><td style=\"${td_label}\">Upstream Commit</td><td style=\"${td_value}\"><a href=\"${upstream_commit_url}\" style=\"${link_style};${mono}\">${upstream_short}</a></td></tr>"
+  fi
+
+  # ── Upstream commit message block ──
+  local commit_msg_html=""
+  if [[ -n "${_EML_UPSTREAM_MSG:-}" ]]; then
+    local safe_msg="${_EML_UPSTREAM_MSG}"
+    safe_msg="${safe_msg//&/&amp;}"
+    safe_msg="${safe_msg//</&lt;}"
+    safe_msg="${safe_msg//>/&gt;}"
+    safe_msg="${safe_msg//$'\n'/<br>}"
+    # Auto-link URLs
+    safe_msg=$(echo "$safe_msg" | sed -E 's|(https?://[^ <]+)|<a href="\1" style="color:#2563eb;text-decoration:underline">\1</a>|g')
+    # Auto-link #NNN issue/PR references to upstream repo
+    if [[ -n "${_EML_UPSTREAM_URL:-}" ]]; then
+      safe_msg=$(echo "$safe_msg" | sed -E "s|#([0-9]+)|<a href=\"${_EML_UPSTREAM_URL}/pull/\1\" style=\"color:#2563eb;text-decoration:underline\">#\1</a>|g")
+    fi
+    commit_msg_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Upstream Commit Message</div><div style=\"padding:10px 0;background:#f9fafb;border-left:3px solid ${color};padding-left:12px;font-size:13px;color:#374151;line-height:1.6\">${safe_msg}</div></div>"
+  fi
+
+  # ── Error/debug output block ──
+  local extra_html=""
+  if [[ -n "$extra" ]]; then
+    extra_html="<div style=\"margin-top:16px\"><div style=\"font-size:11px;font-weight:600;color:#9ca3af;letter-spacing:0.5px;text-transform:uppercase;margin-bottom:6px\">Error Details</div><pre style=\"margin:0;padding:10px 0 10px 12px;background:#f9fafb;border-left:3px solid ${color};${mono};font-size:12px;color:#374151;line-height:1.6;white-space:pre-wrap;overflow-x:auto\">${extra}</pre></div>"
+  fi
+
+  cat <<EMAILHTML
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="margin:0;padding:0;background:#ffffff;font-family:-apple-system,system-ui,'Segoe UI',Roboto,sans-serif">
+<div style="height:4px;background:${color}"></div>
+<div style="padding:20px">
+<table cellpadding="0" cellspacing="0" style="width:100%"><tr>
+<td><span style="display:inline-block;padding:3px 8px;border-radius:3px;font-size:11px;font-weight:700;letter-spacing:0.5px;color:#ffffff;background:${color}">${status_label}</span></td>
+<td style="text-align:right;font-size:12px;color:#9ca3af">$(date -u '+%Y-%m-%d %H:%M UTC')</td>
+</tr></table>
+<h1 style="margin:10px 0 6px 0;font-size:18px;font-weight:600;color:#111827">${title}</h1>
+<p style="margin:0 0 16px 0;font-size:14px;color:#4b5563;line-height:1.5">${message}</p>
+<table style="width:100%;border-collapse:collapse;font-size:14px">
+${rows}
+</table>
+${commit_msg_html}
+${extra_html}
+<div style="margin-top:20px;padding-top:12px;border-top:1px solid #f3f4f6">
+<p style="margin:0;font-size:11px;color:#9ca3af">Ruflo Patch Monitor &mdash; <a href="https://github.com/sparkling/ruflo-patch" style="color:#9ca3af">ruflo-patch</a></p>
+</div>
+</div>
+</body>
+</html>
+EMAILHTML
+}
+
 send_email() {
   local subject="$1"
   local body="$2"
@@ -163,12 +390,12 @@ send_email() {
   fi
 
   if command -v sendmail &>/dev/null; then
-    printf "Subject: %s\nFrom: ruflo-build@$(hostname)\nTo: %s\n\n%s\n" \
-      "$subject" "$recipient" "$body" | sendmail "$recipient" 2>/dev/null || {
+    printf 'From: Ruflo Patch Monitor <do-not-reply-ruflo-patching-monitor@sparklingideas.co.uk>\nTo: %s\nSubject: %s\nMIME-Version: 1.0\nContent-Type: text/html; charset=utf-8\n\n%s\n' \
+      "$recipient" "$subject" "$body" | sendmail "$recipient" 2>/dev/null || {
       log "WARNING: sendmail failed for: ${subject}"
     }
   elif command -v mail &>/dev/null; then
-    echo "$body" | mail -s "$subject" "$recipient" 2>/dev/null || {
+    echo "$body" | mail -s "$subject" -a "Content-Type: text/html; charset=utf-8" "$recipient" 2>/dev/null || {
       log "WARNING: mail failed for: ${subject}"
     }
   else
@@ -187,10 +414,6 @@ cleanup() {
   if [[ -n "${GLOBAL_TIMEOUT_PID}" ]]; then
     kill "${GLOBAL_TIMEOUT_PID}" 2>/dev/null || true
   fi
-  if [[ -n "${TEMP_DIR}" && -d "${TEMP_DIR}" && "${BUILD_ONLY}" != "true" ]]; then
-    log "Cleaning up temp directory: ${TEMP_DIR}"
-    rm -rf "${TEMP_DIR}"
-  fi
   if [[ ${exit_code} -ne 0 ]]; then
     log_error "Build failed with exit code ${exit_code}"
   fi
@@ -207,9 +430,11 @@ load_state() {
   RUFLO_HEAD=""
   AGENTIC_HEAD=""
   FANN_HEAD=""
+  RUVECTOR_HEAD=""
   UPSTREAM_RUFLO_SHA=""
   UPSTREAM_AGENTIC_SHA=""
   UPSTREAM_FANN_SHA=""
+  UPSTREAM_RUVECTOR_SHA=""
 
   if [[ -f "${STATE_FILE}" ]]; then
     log "Loading state from ${STATE_FILE}"
@@ -219,12 +444,34 @@ load_state() {
         RUFLO_HEAD)          RUFLO_HEAD="${value}" ;;
         AGENTIC_HEAD)        AGENTIC_HEAD="${value}" ;;
         FANN_HEAD)           FANN_HEAD="${value}" ;;
+        RUVECTOR_HEAD)       RUVECTOR_HEAD="${value}" ;;
         UPSTREAM_RUFLO_SHA)  UPSTREAM_RUFLO_SHA="${value}" ;;
         UPSTREAM_AGENTIC_SHA) UPSTREAM_AGENTIC_SHA="${value}" ;;
         UPSTREAM_FANN_SHA)   UPSTREAM_FANN_SHA="${value}" ;;
+        UPSTREAM_RUVECTOR_SHA) UPSTREAM_RUVECTOR_SHA="${value}" ;;
       esac
     done < "${STATE_FILE}"
-    log "State loaded: RUFLO=${RUFLO_HEAD:0:12}, AGENTIC=${AGENTIC_HEAD:0:12}, FANN=${FANN_HEAD:0:12}"
+
+    # Validate SHA format (40-char hex) — reject corrupted/truncated values
+    _validate_sha() {
+      local val="$1" name="$2"
+      if [[ -n "$val" && ! "$val" =~ ^[0-9a-f]{40}$ ]]; then
+        log "WARNING: Invalid SHA for ${name} in state file: '${val:0:20}...' — treating as first run"
+        echo ""
+      else
+        echo "$val"
+      fi
+    }
+    RUFLO_HEAD=$(_validate_sha "$RUFLO_HEAD" "RUFLO_HEAD")
+    AGENTIC_HEAD=$(_validate_sha "$AGENTIC_HEAD" "AGENTIC_HEAD")
+    FANN_HEAD=$(_validate_sha "$FANN_HEAD" "FANN_HEAD")
+    RUVECTOR_HEAD=$(_validate_sha "$RUVECTOR_HEAD" "RUVECTOR_HEAD")
+    UPSTREAM_RUFLO_SHA=$(_validate_sha "$UPSTREAM_RUFLO_SHA" "UPSTREAM_RUFLO_SHA")
+    UPSTREAM_AGENTIC_SHA=$(_validate_sha "$UPSTREAM_AGENTIC_SHA" "UPSTREAM_AGENTIC_SHA")
+    UPSTREAM_FANN_SHA=$(_validate_sha "$UPSTREAM_FANN_SHA" "UPSTREAM_FANN_SHA")
+    UPSTREAM_RUVECTOR_SHA=$(_validate_sha "$UPSTREAM_RUVECTOR_SHA" "UPSTREAM_RUVECTOR_SHA")
+
+    log "State loaded: RUFLO=${RUFLO_HEAD:0:12}, AGENTIC=${AGENTIC_HEAD:0:12}, FANN=${FANN_HEAD:0:12}, RUVECTOR=${RUVECTOR_HEAD:0:12}"
   else
     log "No state file found — first run"
   fi
@@ -233,6 +480,7 @@ load_state() {
   PREV_RUFLO_HEAD="${RUFLO_HEAD}"
   PREV_AGENTIC_HEAD="${AGENTIC_HEAD}"
   PREV_FANN_HEAD="${FANN_HEAD}"
+  PREV_RUVECTOR_HEAD="${RUVECTOR_HEAD}"
 }
 
 save_state() {
@@ -242,9 +490,11 @@ save_state() {
 RUFLO_HEAD=${NEW_RUFLO_HEAD:-${RUFLO_HEAD}}
 AGENTIC_HEAD=${NEW_AGENTIC_HEAD:-${AGENTIC_HEAD}}
 FANN_HEAD=${NEW_FANN_HEAD:-${FANN_HEAD}}
+RUVECTOR_HEAD=${NEW_RUVECTOR_HEAD:-${RUVECTOR_HEAD}}
 UPSTREAM_RUFLO_SHA=${UPSTREAM_RUFLO_SHA:-}
 UPSTREAM_AGENTIC_SHA=${UPSTREAM_AGENTIC_SHA:-}
 UPSTREAM_FANN_SHA=${UPSTREAM_FANN_SHA:-}
+UPSTREAM_RUVECTOR_SHA=${UPSTREAM_RUVECTOR_SHA:-}
 EOF
   log "State saved"
 }
@@ -262,6 +512,26 @@ check_merged_prs() {
   local any_changed=false
   CHANGED_FORK_SHAS=""
 
+  # Pass 1: launch all fetches in parallel
+  local fetch_pids=()
+  local fetch_start_ns
+  fetch_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    git -C "${dir}" fetch origin main --quiet 2>/dev/null &
+    fetch_pids+=($!)
+  done
+  wait "${fetch_pids[@]}" 2>/dev/null || true
+  local fetch_end_ns
+  fetch_end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$fetch_start_ns" != "0" && "$fetch_end_ns" != "0" ]]; then
+    local _fetch_all_ms=$(( (fetch_end_ns - fetch_start_ns) / 1000000 ))
+    log "  fetch all forks (parallel): ${_fetch_all_ms}ms"
+    add_cmd_timing "merge-detect" "git fetch all (parallel)" "${_fetch_all_ms}"
+  fi
+
+  # Pass 2: process results (SHA compare, fast-forward)
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
@@ -269,20 +539,6 @@ check_merged_prs() {
     if [[ ! -d "${dir}/.git" ]]; then
       log_error "Fork directory ${dir} is not a git repo"
       continue
-    fi
-
-    # Fetch origin to see if anything was merged
-    local _fetch_start _fetch_end
-    _fetch_start=$(date +%s%N 2>/dev/null || echo 0)
-    git -C "${dir}" fetch origin main --quiet 2>/dev/null || {
-      log_error "Failed to fetch origin for ${name}"
-      continue
-    }
-    _fetch_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$_fetch_start" != "0" && "$_fetch_end" != "0" ]]; then
-      local _fetch_ms=$(( (_fetch_end - _fetch_start) / 1000000 ))
-      log "  fetch ${name}: ${_fetch_ms}ms"
-      add_cmd_timing "merge-detect" "git fetch ${name}" "${_fetch_ms}"
     fi
 
     local origin_sha state_sha
@@ -293,6 +549,7 @@ check_merged_prs() {
       ruflo)        state_sha="${PREV_RUFLO_HEAD:-}" ;;
       agentic-flow) state_sha="${PREV_AGENTIC_HEAD:-}" ;;
       ruv-FANN)     state_sha="${PREV_FANN_HEAD:-}" ;;
+      ruvector)     state_sha="${PREV_RUVECTOR_HEAD:-}" ;;
     esac
 
     if [[ -z "$state_sha" ]]; then
@@ -344,6 +601,7 @@ check_merged_prs() {
       ruflo)        NEW_RUFLO_HEAD="$new_sha" ;;
       agentic-flow) NEW_AGENTIC_HEAD="$new_sha" ;;
       ruv-FANN)     NEW_FANN_HEAD="$new_sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$new_sha" ;;
     esac
   done
 
@@ -404,6 +662,28 @@ bump_fork_versions() {
   log "Build set (source changed): ${DIRECTLY_CHANGED_JSON}"
   log "Publish set (+ dependents): ${CHANGED_PACKAGES_JSON}"
 
+  # If no packages changed (e.g., commit was outside any package dir), skip build+publish
+  if [[ "${CHANGED_PACKAGES_JSON}" == "[]" ]]; then
+    log "No packages changed — skipping build and publish"
+    log "  (The merge was detected but no package.json was in the changed files)"
+    # Still save state so we don't re-detect this merge next run
+    for i in "${!FORK_NAMES[@]}"; do
+      local dir="${FORK_DIRS[$i]}"
+      local name="${FORK_NAMES[$i]}"
+      [[ -d "${dir}/.git" ]] || continue
+      local sha
+      sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
+      case "$name" in
+        ruflo)        NEW_RUFLO_HEAD="$sha" ;;
+        agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
+        ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+        ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
+      esac
+    done
+    save_state
+    return 0
+  fi
+
   # Commit and push each fork that changed
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
@@ -452,15 +732,28 @@ push_fork_version_bumps() {
   if [[ ${#PENDING_VERSION_PUSHES[@]} -eq 0 ]]; then
     return 0
   fi
-  log "Pushing deferred version bumps to ${#PENDING_VERSION_PUSHES[@]} fork(s)"
+  log "Pushing deferred version bumps to ${#PENDING_VERSION_PUSHES[@]} fork(s) (parallel)"
+  local push_pids=()
+  local _push_start
+  _push_start=$(date +%s%N 2>/dev/null || echo 0)
   for dir in "${PENDING_VERSION_PUSHES[@]}"; do
     local name
     name=$(basename "$dir")
-    log "  Pushing version bump for ${name}"
-    git -C "${dir}" push origin main --quiet 2>/dev/null || {
-      log "WARNING: Failed to push version bump for ${name} — will retry next run"
-    }
+    (
+      git -C "${dir}" push origin main --quiet 2>/dev/null || {
+        echo "WARNING: Failed to push version bump for ${name}" >&2
+      }
+    ) &
+    push_pids+=($!)
   done
+  wait "${push_pids[@]}" 2>/dev/null || true
+  local _push_end
+  _push_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_push_start" != "0" && "$_push_end" != "0" ]]; then
+    local _push_ms=$(( (_push_end - _push_start) / 1000000 ))
+    log "  Parallel push completed in ${_push_ms}ms"
+    add_cmd_timing "push-versions" "git push (${#PENDING_VERSION_PUSHES[@]} forks parallel)" "${_push_ms}"
+  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -478,31 +771,37 @@ sync_upstream() {
   # Track which forks need syncing
   declare -a forks_to_sync=()
 
+  # Parallel upstream fetch — add remotes first, then fetch all at once
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    if ! git -C "${dir}" remote get-url upstream &>/dev/null; then
+      git -C "${dir}" remote add upstream "${UPSTREAM_URLS[$i]}" 2>/dev/null || true
+    fi
+  done
+
+  local _uf_start _uf_end
+  _uf_start=$(date +%s%N 2>/dev/null || echo 0)
+  local upstream_fetch_pids=()
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    git -C "${dir}" fetch upstream main --quiet 2>/dev/null &
+    upstream_fetch_pids+=($!)
+  done
+  wait "${upstream_fetch_pids[@]}" 2>/dev/null || true
+  _uf_end=$(date +%s%N 2>/dev/null || echo 0)
+  if [[ "$_uf_start" != "0" && "$_uf_end" != "0" ]]; then
+    local _uf_ms=$(( (_uf_end - _uf_start) / 1000000 ))
+    log "  fetch all upstream (parallel): ${_uf_ms}ms"
+    add_cmd_timing "sync-upstream" "git fetch upstream all (parallel)" "${_uf_ms}"
+  fi
+
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
 
     [[ -d "${dir}/.git" ]] || continue
-
-    # Add upstream remote if not present
-    if ! git -C "${dir}" remote get-url upstream &>/dev/null; then
-      git -C "${dir}" remote add upstream "${UPSTREAM_URLS[$i]}" 2>/dev/null || true
-    fi
-
-    # Fetch upstream
-    log "Fetching upstream for ${name}"
-    local _uf_start _uf_end
-    _uf_start=$(date +%s%N 2>/dev/null || echo 0)
-    git -C "${dir}" fetch upstream main --quiet 2>/dev/null || {
-      log_error "Failed to fetch upstream for ${name}"
-      continue
-    }
-    _uf_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$_uf_start" != "0" && "$_uf_end" != "0" ]]; then
-      local _uf_ms=$(( (_uf_end - _uf_start) / 1000000 ))
-      log "  fetch upstream ${name}: ${_uf_ms}ms"
-      add_cmd_timing "sync-upstream" "git fetch upstream ${name}" "${_uf_ms}"
-    fi
 
     local upstream_sha last_synced_sha
     upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || continue
@@ -512,6 +811,7 @@ sync_upstream() {
       ruflo)        last_synced_sha="${UPSTREAM_RUFLO_SHA:-}" ;;
       agentic-flow) last_synced_sha="${UPSTREAM_AGENTIC_SHA:-}" ;;
       ruv-FANN)     last_synced_sha="${UPSTREAM_FANN_SHA:-}" ;;
+      ruvector)     last_synced_sha="${UPSTREAM_RUVECTOR_SHA:-}" ;;
     esac
 
     if [[ "$upstream_sha" == "$last_synced_sha" ]]; then
@@ -528,6 +828,22 @@ sync_upstream() {
     log "No upstream changes to sync"
     return 1
   fi
+
+  # Clean up stale local sync branches from previous runs
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    local stale_branches
+    stale_branches=$(git -C "${dir}" branch --list 'sync/*' 2>/dev/null) || true
+    if [[ -n "$stale_branches" ]]; then
+      git -C "${dir}" checkout main --quiet 2>/dev/null || true
+      echo "$stale_branches" | while IFS= read -r branch; do
+        branch=$(echo "$branch" | tr -d ' *')
+        [[ -n "$branch" ]] && git -C "${dir}" branch -D "$branch" --quiet 2>/dev/null || true
+      done
+      log "  Cleaned stale sync branches in ${FORK_NAMES[$i]}"
+    fi
+  done
 
   # Create sync branches and merge upstream
   for i in "${forks_to_sync[@]}"; do
@@ -550,11 +866,26 @@ sync_upstream() {
 
       # Push the branch and create a PR with conflict label
       git -C "${dir}" checkout main --quiet 2>/dev/null
-      create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
-        "Merge conflict when syncing upstream/main. Manual resolution required."
+      local conflict_pr_url
+      conflict_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
+        "Merge conflict when syncing upstream/main. Manual resolution required.")
 
-      send_email "[ruflo] Merge conflict in ${name}" \
-        "Upstream sync for ${name} has merge conflicts.\nBranch: ${branch_name}\nManual resolution required."
+      _email_meta "$dir"
+      local _conflict_branch_url=""
+      [[ -n "$_EML_FORK_URL" ]] && _conflict_branch_url="${_EML_FORK_URL}/tree/${branch_name}"
+      local _conflict_upstream_url=""
+      [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _conflict_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
+      local _conflict_fork_commit_url=""
+      [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _conflict_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+      local conflict_email_body
+      conflict_email_body=$(_email_html_body "error" \
+        "Merge conflict in ${name}" \
+        "$name" "$branch_name" "$_conflict_branch_url" \
+        "$conflict_pr_url" "$_conflict_upstream_url" \
+        "$_EML_FORK_URL" "$_conflict_fork_commit_url" \
+        "Upstream sync for ${name} has merge conflicts. Manual resolution required.")
+      send_email "[ruflo] Merge conflict in ${name}" "$conflict_email_body"
+      create_failure_issue "sync-conflict-${name}" "1"
       return 1
     fi
     _merge_end=$(date +%s%N 2>/dev/null || echo 0)
@@ -573,6 +904,7 @@ sync_upstream() {
       ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
       agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
       ruv-FANN)     UPSTREAM_FANN_SHA="$upstream_sha" ;;
+      ruvector)     UPSTREAM_RUVECTOR_SHA="$upstream_sha" ;;
     esac
   done
 
@@ -593,7 +925,9 @@ sync_upstream() {
       fi
       local _tc_start _tc_end
       _tc_start=$(date +%s%N 2>/dev/null || echo 0)
-      if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck --project v3/tsconfig.json 2>/dev/null); then
+      local _tsc_output
+      _tsc_output=$(cd "${dir}" && $tsc_bin --noEmit --skipLibCheck --project v3/tsconfig.json 2>&1) || true
+      if [[ $? -ne 0 ]] || echo "$_tsc_output" | grep -q "error TS"; then
         _tc_end=$(date +%s%N 2>/dev/null || echo 0)
         if [[ "$_tc_start" != "0" && "$_tc_end" != "0" ]]; then
           local _tc_ms=$(( (_tc_end - _tc_start) / 1000000 ))
@@ -602,11 +936,33 @@ sync_upstream() {
         fi
         log_error "Type-check failed for ${name}"
 
-        create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
-          "TypeScript compilation failed after merging upstream/main."
+        local ce_pr_url
+        ce_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
+          "TypeScript compilation failed after merging upstream/main.")
 
-        send_email "[ruflo] Compile error in ${name} sync" \
-          "TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
+        _email_meta "$dir"
+        local _ce_branch_url=""
+        [[ -n "$_EML_FORK_URL" ]] && _ce_branch_url="${_EML_FORK_URL}/tree/${branch_name}"
+        local _ce_upstream_url=""
+        [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ce_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
+        local _ce_fork_commit_url=""
+        [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ce_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+        # Include first 20 lines of tsc errors in the email, HTML-escaped
+        local _tsc_errors
+        _tsc_errors=$(echo "$_tsc_output" | grep "error TS" | head -20)
+        _tsc_errors="${_tsc_errors//&/&amp;}"
+        _tsc_errors="${_tsc_errors//</&lt;}"
+        _tsc_errors="${_tsc_errors//>/&gt;}"
+        local ce_email_body
+        ce_email_body=$(_email_html_body "error" \
+          "Compile error in ${name}" \
+          "$name" "$branch_name" "$_ce_branch_url" \
+          "$ce_pr_url" "$_ce_upstream_url" \
+          "$_EML_FORK_URL" "$_ce_fork_commit_url" \
+          "TypeScript compilation failed for ${name} after syncing upstream." \
+          "$_tsc_errors")
+        send_email "[ruflo] Compile error in ${name} sync" "$ce_email_body"
+        create_failure_issue "sync-compile-error-${name}" "1"
 
         git -C "${dir}" checkout main --quiet 2>/dev/null
         return 1
@@ -617,24 +973,49 @@ sync_upstream() {
         log "  type-check ${name}: ${_tc_ms}ms"
         add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "${_tc_ms}"
       fi
-    # Other forks: use root tsconfig.json if present
+    # Other forks: use root tsconfig.json if present AND tsc is available
     elif [[ -f "${dir}/tsconfig.json" ]]; then
-      log "Type-checking ${name} on sync branch"
       local tsc_bin="${dir}/node_modules/.bin/tsc"
       if [[ ! -x "$tsc_bin" ]]; then
-        # Try npx
-        tsc_bin="npx tsc"
+        # No local tsc — skip type-check (npx tsc fails without typescript installed)
+        log "Skipping type-check for ${name} (no local tsc — install typescript in fork)"
+        git -C "${dir}" checkout main --quiet 2>/dev/null
+        continue
       fi
+      log "Type-checking ${name} on sync branch"
       local _tc_start _tc_end
       _tc_start=$(date +%s%N 2>/dev/null || echo 0)
-      if ! (cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>/dev/null); then
+      local _tsc_output2
+      _tsc_output2=$(cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>&1) || true
+      if [[ $? -ne 0 ]] || echo "$_tsc_output2" | grep -q "error TS"; then
         log_error "Type-check failed for ${name}"
 
-        create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
-          "TypeScript compilation failed after merging upstream/main."
+        local ce2_pr_url
+        ce2_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
+          "TypeScript compilation failed after merging upstream/main.")
 
-        send_email "[ruflo] Compile error in ${name} sync" \
-          "TypeScript compilation failed for ${name} after syncing upstream.\nBranch: ${branch_name}"
+        _email_meta "$dir"
+        local _ce2_branch_url=""
+        [[ -n "$_EML_FORK_URL" ]] && _ce2_branch_url="${_EML_FORK_URL}/tree/${branch_name}"
+        local _ce2_upstream_url=""
+        [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ce2_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
+        local _ce2_fork_commit_url=""
+        [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ce2_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+        local _tsc_errors2
+        _tsc_errors2=$(echo "$_tsc_output2" | grep "error TS" | head -20)
+        _tsc_errors2="${_tsc_errors2//&/&amp;}"
+        _tsc_errors2="${_tsc_errors2//</&lt;}"
+        _tsc_errors2="${_tsc_errors2//>/&gt;}"
+        local ce2_email_body
+        ce2_email_body=$(_email_html_body "error" \
+          "Compile error in ${name}" \
+          "$name" "$branch_name" "$_ce2_branch_url" \
+          "$ce2_pr_url" "$_ce2_upstream_url" \
+          "$_EML_FORK_URL" "$_ce2_fork_commit_url" \
+          "TypeScript compilation failed for ${name} after syncing upstream." \
+          "$_tsc_errors2")
+        send_email "[ruflo] Compile error in ${name} sync" "$ce2_email_body"
+        create_failure_issue "sync-compile-error-${name}" "1"
 
         # Switch back to main
         git -C "${dir}" checkout main --quiet 2>/dev/null
@@ -705,15 +1086,18 @@ ${body}"
 
   local _pr_create_start _pr_create_end
   _pr_create_start=$(date +%s%N 2>/dev/null || echo 0)
-  gh pr create \
+  # Capture PR URL from gh pr create stdout
+  local pr_url
+  pr_url=$(gh pr create \
     --repo "$repo_slug" \
     --head "$branch" \
     --base main \
     --title "$pr_title" \
     --body "$pr_body" \
     --label "$label" \
-    2>/dev/null || {
+    2>/dev/null) || {
       log_error "Failed to create PR for ${name} (non-fatal)"
+      pr_url=""
     }
   _pr_create_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$_pr_create_start" != "0" && "$_pr_create_end" != "0" ]]; then
@@ -721,6 +1105,13 @@ ${body}"
     log "  gh pr create ${name}: ${_pr_create_ms}ms"
     add_cmd_timing "create-pr" "gh pr create ${name}" "${_pr_create_ms}"
   fi
+
+  if [[ -n "$pr_url" ]]; then
+    log "  PR created: ${pr_url}"
+  fi
+
+  # Return PR URL to caller via stdout
+  echo "${pr_url}"
 }
 
 # ---------------------------------------------------------------------------
@@ -728,14 +1119,9 @@ ${body}"
 # ---------------------------------------------------------------------------
 
 create_temp_dir() {
-  if [[ "${BUILD_ONLY}" == "true" ]]; then
-    TEMP_DIR="/tmp/ruflo-build"
-    mkdir -p "${TEMP_DIR}"
-    log "Using stable build directory: ${TEMP_DIR}"
-  else
-    TEMP_DIR=$(mktemp -d /tmp/ruflo-build-XXXXX)
-    log "Created temp directory: ${TEMP_DIR}"
-  fi
+  TEMP_DIR="/tmp/ruflo-build"
+  mkdir -p "${TEMP_DIR}"
+  log "Using persistent build directory: ${TEMP_DIR}"
 }
 
 copy_source() {
@@ -743,25 +1129,59 @@ copy_source() {
   local _cp_start _cp_end
 
   # Copy all 3 forks in parallel (uses all available I/O bandwidth)
-  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN"
+  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN" "${TEMP_DIR}/cross-repo/ruvector"
 
   _cp_start=$(date +%s%N 2>/dev/null || echo 0)
-  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" &
+  local rsync_status_dir
+  rsync_status_dir=$(mktemp -d /tmp/ruflo-rsync-XXXXX)
+
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P .wasm-cache.json' --filter='P .last-verified.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
+    && touch "${rsync_status_dir}/ruflo" &
   local pid_ruflo=$!
-  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" &
+  rsync -a --delete --filter='P dist/' --filter='P wasm/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' \
+    --exclude=node_modules --exclude=.git \
+    --exclude='packages/agentic-jujutsu/*.node' \
+    --exclude='packages/agentic-jujutsu/*.tgz' \
+    --exclude='packages/agentic-jujutsu/tests' \
+    --exclude='packages/agentic-jujutsu/benchmarks' \
+    --exclude='packages/agentic-jujutsu/benches' \
+    --exclude='packages/agentic-jujutsu/examples' \
+    --exclude='packages/agentic-jujutsu/docs' \
+    --exclude='packages/agentic-jujutsu/test-repo' \
+    --exclude='packages/agentic-jujutsu/target' \
+    "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" \
+    && touch "${rsync_status_dir}/agentic" &
   local pid_agentic=$!
-  rsync -a --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" &
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" \
+    && touch "${rsync_status_dir}/fann" &
   local pid_fann=$!
-  wait $pid_ruflo $pid_agentic $pid_fann
+  rsync -a --delete --filter='P dist/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" \
+    && touch "${rsync_status_dir}/ruvector" &
+  local pid_ruvector=$!
+  wait $pid_ruflo $pid_agentic $pid_fann $pid_ruvector
   _cp_end=$(date +%s%N 2>/dev/null || echo 0)
+
+  # Verify all rsync operations succeeded
+  local rsync_failures=0
+  for fork_name in ruflo agentic fann ruvector; do
+    if [[ ! -f "${rsync_status_dir}/${fork_name}" ]]; then
+      log_error "rsync failed for ${fork_name}"
+      rsync_failures=$((rsync_failures + 1))
+    fi
+  done
+  rm -rf "${rsync_status_dir}"
+  if [[ $rsync_failures -gt 0 ]]; then
+    log_error "${rsync_failures} rsync operation(s) failed — aborting build"
+    return 1
+  fi
 
   local _cp_ms=0
   if [[ "$_cp_start" != "0" && "$_cp_end" != "0" ]]; then
     _cp_ms=$(( (_cp_end - _cp_start) / 1000000 ))
     log "  Parallel copy completed in ${_cp_ms}ms"
-    add_cmd_timing "copy-source" "rsync (3 forks parallel)" "${_cp_ms}"
+    add_cmd_timing "copy-source" "rsync (4 forks parallel)" "${_cp_ms}"
   fi
-  log "Source copied to temp directory (3 forks merged, parallel)"
+  log "Source copied to temp directory (4 forks merged, parallel)"
 }
 
 # ---------------------------------------------------------------------------
@@ -779,13 +1199,27 @@ run_codemod() {
     log "  Codemod completed in ${_cm_ms}ms"
     add_cmd_timing "codemod" "node codemod.mjs" "${_cm_ms}"
   fi
+
+  # Strip publish bloat from agentic-jujutsu (~58MB of native binaries, nested
+  # tarballs, tests, docs). The upstream files field includes the whole directory
+  # but consumers only need index.js, *.d.ts, bin/, pkg/, and package.json.
+  local jj_dir="${TEMP_DIR}/cross-repo/agentic-flow/packages/agentic-jujutsu"
+  if [[ -d "$jj_dir" ]]; then
+    local _jj_before _jj_after
+    _jj_before=$(du -sm "$jj_dir" 2>/dev/null | cut -f1) || _jj_before=0
+    rm -f "$jj_dir"/*.node "$jj_dir"/*.tgz 2>/dev/null || true
+    rm -rf "$jj_dir"/{tests,docs,benchmarks,benches,examples,test-repo,target,src,typescript,helpers,scripts} 2>/dev/null || true
+    _jj_after=$(du -sm "$jj_dir" 2>/dev/null | cut -f1) || _jj_after=0
+    local _jj_saved=$(( _jj_before - _jj_after ))
+    if [[ $_jj_saved -gt 0 ]]; then
+      log "  Stripped ${_jj_saved}MB publish bloat from agentic-jujutsu (${_jj_before}MB -> ${_jj_after}MB)"
+    fi
+  fi
 }
 
 # ---------------------------------------------------------------------------
 # Build manifest (ADR-0026)
 # ---------------------------------------------------------------------------
-
-STABLE_BUILD_DIR="/tmp/ruflo-build"
 
 write_build_manifest() {
   local manifest="${TEMP_DIR}/.build-manifest.json"
@@ -794,6 +1228,16 @@ write_build_manifest() {
   local codemod_hash
   codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
 
+  # Use pre-computed counts from run_build if available, else scan (for --build-only without run_build)
+  local compiled_count="${BUILD_COMPILED_COUNT:-}"
+  local total_count="${BUILD_TOTAL_COUNT:-}"
+  if [[ -z "$compiled_count" ]]; then
+    compiled_count=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
+  fi
+  if [[ -z "$total_count" ]]; then
+    total_count=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" -exec grep -l '"@sparkleideas/' {} + 2>/dev/null | wc -l)
+  fi
+
   cat > "$manifest" <<MANIFESTEOF
 {
   "version": 2,
@@ -801,9 +1245,10 @@ write_build_manifest() {
   "ruflo_head": "${NEW_RUFLO_HEAD:-}",
   "agentic_head": "${NEW_AGENTIC_HEAD:-}",
   "fann_head": "${NEW_FANN_HEAD:-}",
+  "ruvector_head": "${NEW_RUVECTOR_HEAD:-}",
   "codemod_hash": "${codemod_hash}",
-  "packages_compiled": $(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l),
-  "packages_total": $(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
+  "packages_compiled": ${compiled_count},
+  "packages_total": ${total_count}
 }
 MANIFESTEOF
   _wm_end=$(date +%s%N 2>/dev/null || echo 0)
@@ -815,7 +1260,7 @@ MANIFESTEOF
 }
 
 check_build_freshness() {
-  local manifest="${STABLE_BUILD_DIR}/.build-manifest.json"
+  local manifest="/tmp/ruflo-build/.build-manifest.json"
   if [[ ! -f "$manifest" ]]; then
     log "No build manifest found — will build"
     return 1
@@ -824,11 +1269,11 @@ check_build_freshness() {
   local stored
   stored=$(node -e "
     const m = JSON.parse(require('fs').readFileSync('${manifest}', 'utf-8'));
-    console.log([m.ruflo_head, m.agentic_head, m.fann_head, m.codemod_hash].join(':'));
+    console.log([m.ruflo_head, m.agentic_head, m.fann_head, m.ruvector_head || '', m.codemod_hash].join(':'));
   " 2>/dev/null) || { log "Cannot read manifest — will build"; return 1; }
 
-  local stored_ruflo stored_agentic stored_fann stored_codemod
-  IFS=':' read -r stored_ruflo stored_agentic stored_fann stored_codemod <<< "$stored"
+  local stored_ruflo stored_agentic stored_fann stored_ruvector stored_codemod
+  IFS=':' read -r stored_ruflo stored_agentic stored_fann stored_ruvector stored_codemod <<< "$stored"
 
   local current_codemod
   current_codemod=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || current_codemod=""
@@ -836,6 +1281,7 @@ check_build_freshness() {
   if [[ "${stored_ruflo}" == "${NEW_RUFLO_HEAD}" && \
         "${stored_agentic}" == "${NEW_AGENTIC_HEAD}" && \
         "${stored_fann}" == "${NEW_FANN_HEAD}" && \
+        "${stored_ruvector}" == "${NEW_RUVECTOR_HEAD}" && \
         "${stored_codemod}" == "${current_codemod}" ]]; then
     log "Build is current (manifest matches) — skipping build"
     return 0
@@ -850,9 +1296,8 @@ check_build_freshness() {
 # ---------------------------------------------------------------------------
 
 run_build() {
-  # Remove .npmignore and .gitignore so npm publish uses "files" from package.json
-  find "${TEMP_DIR}" -name ".npmignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
-  find "${TEMP_DIR}" -name ".gitignore" -not -path "*/node_modules/*" -delete 2>/dev/null || true
+  # Remove .npmignore and .gitignore so npm publish uses "files" from package.json (single find)
+  find "${TEMP_DIR}" \( -name ".npmignore" -o -name ".gitignore" \) -not -path "*/node_modules/*" -delete 2>/dev/null || true
 
   local v3_dir="${TEMP_DIR}/v3"
   if [[ ! -d "$v3_dir" ]]; then
@@ -899,7 +1344,7 @@ declare module 'express' {
   export interface Express { use(...args: any[]): any; get(...args: any[]): any; post(...args: any[]): any; listen(...args: any[]): any; }
   export interface Router { use(...args: any[]): any; get(...args: any[]): any; post(...args: any[]): any; }
   function express(): Express;
-  namespace express { function Router(): Router; function json(): any; function urlencoded(opts?: any): any; function static(root: string): any; }
+  namespace express { function Router(): Router; function json(opts?: any): any; function urlencoded(opts?: any): any; function static(root: string): any; }
   export = express;
 }
 TSSTUB
@@ -934,13 +1379,14 @@ declare module 'vitest' {
   export function describe(name: string, fn: () => void): void;
   export function it(name: string, fn: () => void | Promise<void>): void;
   export function test(name: string, fn: () => void | Promise<void>): void;
-  export function expect(value: any): any;
+  export const expect: ((value: any) => any) & { extend(matchers: Record<string, any>): void };
   export function beforeEach(fn: () => void | Promise<void>): void;
   export function afterEach(fn: () => void | Promise<void>): void;
   export function beforeAll(fn: () => void | Promise<void>): void;
   export function afterAll(fn: () => void | Promise<void>): void;
   export const vi: any;
-  export type Mock = any;
+  export type Mock<T = any> = ((...args: any[]) => T) & { mock: { calls: any[][]; results: any[]; instances: any[]; invocationCallOrder: number[]; lastCall: any[] }; mockReturnValue(v: any): Mock<T>; mockResolvedValue(v: any): Mock<T>; mockRejectedValue(v: any): Mock<T>; mockImplementation(fn: (...args: any[]) => any): Mock<T>; mockReturnValueOnce(v: any): Mock<T>; mockResolvedValueOnce(v: any): Mock<T>; mockRejectedValueOnce(v: any): Mock<T>; getMockImplementation(): ((...args: any[]) => any) | undefined; mockClear(): void; mockReset(): void; mockRestore(): void; };
+  export type ExpectStatic = typeof expect;
 }
 TSSTUB
     cat > "${tsc_dir}/stubs/@ruvector_attention.d.ts" << 'TSSTUB'
@@ -950,14 +1396,72 @@ declare module '@ruvector/attention' {
   export function multiHeadAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], c: AttentionConfig): Float32Array;
   export function flashAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], bs?: number): Float32Array;
   export function hyperbolicAttention(q: Float32Array, k: Float32Array[], v: Float32Array[], c?: number): Float32Array;
-  export class FlashAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; computeRaw(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class DotProductAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class MultiHeadAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class LinearAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
-  export class HyperbolicAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export type ArrayInput = Float32Array | number[];
+  export interface BenchmarkResult { name: string; ops: number; mean: number; median: number; stddev: number; min: number; max: number; }
+  export class FlashAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; computeRaw(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class DotProductAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; computeRaw(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class MultiHeadAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class LinearAttention { constructor(dim: number, seqLen: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
+  export class HyperbolicAttention { constructor(dim: number, numHeads: number); constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
   export class MoEAttention { constructor(c?: any); compute(q: Float32Array, k: Float32Array[], v: Float32Array[]): Float32Array; }
   export class InfoNceLoss { constructor(c?: any); compute(a: Float32Array[], p: Float32Array[], n?: Float32Array[]): number; }
   export class AdamWOptimizer { constructor(c?: any); step(p: Float32Array, g: Float32Array): Float32Array; }
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_attention-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/attention-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_cognitum-gate-kernel.d.ts" << 'TSSTUB'
+declare module '@ruvector/cognitum-gate-kernel' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_exotic-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/exotic-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_gnn-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/gnn-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_micro-hnsw-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/micro-hnsw-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvector_hyperbolic-hnsw-wasm.d.ts" << 'TSSTUB'
+declare module '@ruvector/hyperbolic-hnsw-wasm' {
+  const m: any;
+  export default m;
+  export = m;
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/@ruvnet_bmssp.d.ts" << 'TSSTUB'
+declare module '@ruvnet/bmssp' {
+  export default function init(): Promise<void>;
+  export class WasmNeuralBMSSP { constructor(c?: any); [key: string]: any; }
+  export class WasmGraph { constructor(c?: any); [key: string]: any; }
+}
+TSSTUB
+    cat > "${tsc_dir}/stubs/prime-radiant-advanced-wasm.d.ts" << 'TSSTUB'
+declare module 'prime-radiant-advanced-wasm' {
+  const m: any;
+  export default m;
+  export = m;
 }
 TSSTUB
     log "TypeScript toolchain installed at ${tsc_dir}"
@@ -971,19 +1475,19 @@ TSSTUB
     shared
     memory embeddings codex aidefence
     neural hooks browser plugins providers claims
-    guidance mcp integration deployment swarm security performance testing
-    cli
+    guidance mcp integration deployment swarm security performance
+    cli testing
   )
 
-  # Parse DIRECTLY_CHANGED_JSON into a lookup set for selective builds.
-  # Only packages with actual source changes need recompilation.
-  # Transitive dependents only need version bumps (handled by fork-version.mjs).
+  # Parse CHANGED_PACKAGES_JSON (full transitive set) into a lookup set for
+  # selective builds. We must rebuild ALL dependents, not just directly changed
+  # packages — dependents import from dist/ output which may have changed.
   local -A changed_set
   local selective_build=false
-  if [[ -n "${DIRECTLY_CHANGED_JSON:-}" && "${DIRECTLY_CHANGED_JSON}" != "all" ]]; then
+  if [[ -n "${CHANGED_PACKAGES_JSON:-}" && "${CHANGED_PACKAGES_JSON}" != "all" && "${CHANGED_PACKAGES_JSON}" != "[]" ]]; then
     selective_build=true
     # Extract package short names from JSON array of @sparkleideas/* names
-    for full_name in $(echo "${DIRECTLY_CHANGED_JSON}" | node -e "
+    for full_name in $(echo "${CHANGED_PACKAGES_JSON}" | node -e "
       const d=require('fs').readFileSync(0,'utf8');try{JSON.parse(d).forEach(n=>console.log(n.replace('@sparkleideas/','')))}catch{}
     " 2>/dev/null); do
       changed_set["$full_name"]=1
@@ -1059,12 +1563,8 @@ TSSTUB
               } else if (fs.existsSync(distSrcIndex)) {
                 ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', distSrcIndex)];
               }
-              // Fallback: src/ only if no dist/ exists (first build)
               else {
-                const srcIndex = path.join(sibDir, 'src', 'index.ts');
-                if (fs.existsSync(srcIndex)) {
-                  ts.compilerOptions.paths[sp.name] = [path.relative('$pkg_dir', srcIndex)];
-                }
+                // No dist/ yet — skip mapping (deps build first in build_order, dist/ persists in stable dir)
               }
             }
           } catch {}
@@ -1261,19 +1761,49 @@ TSSTUB
     local crate_dir="$pkg_dir/crates/agent-booster-wasm"
     local wasm_pid=""
     local _wasm_start=""
+    local wasm_cache="/tmp/ruflo-build/.wasm-cache.json"
+    local should_rebuild_wasm=true
+
     if [[ -d "$crate_dir" ]] && command -v wasm-pack &>/dev/null; then
-      log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
-      _wasm_start=$(date +%s%N 2>/dev/null || echo 0)
-      (
-        wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
-          echo "WARN: WASM build failed for ${rel_path}" >&2
-          echo "$wasm_out" | tail -5 >&2
-        }
-        if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
-          rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
+      # Check WASM cache: hash all Rust source files, skip if unchanged
+      local parent_crate_dir="$crate_dir/../agent-booster"
+      # Compute hash of all WASM-relevant source files
+      local current_wasm_hash
+      current_wasm_hash=$(cat \
+        "$crate_dir/Cargo.toml" \
+        "$crate_dir/src/lib.rs" \
+        "$parent_crate_dir/Cargo.toml" \
+        $(find "$parent_crate_dir/src" -name "*.rs" -type f 2>/dev/null | sort) \
+        2>/dev/null | sha256sum | cut -d' ' -f1) || current_wasm_hash=""
+
+      if [[ -n "$current_wasm_hash" && -f "$wasm_cache" && -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
+        local cached_wasm_hash
+        cached_wasm_hash=$(node -e "console.log(JSON.parse(require('fs').readFileSync('$wasm_cache','utf-8')).wasm_source_hash||'')" 2>/dev/null) || cached_wasm_hash=""
+        if [[ "$current_wasm_hash" == "$cached_wasm_hash" ]]; then
+          log "  WASM cache hit — skipping wasm-pack (hash=${current_wasm_hash:0:12})"
+          should_rebuild_wasm=false
+          add_cmd_timing "build" "wasm-pack (cache hit)" "0"
         fi
-      ) &
-      wasm_pid=$!
+      fi
+
+      if [[ "$should_rebuild_wasm" == "true" ]]; then
+        log "  Building WASM: ${rel_path}/crates/agent-booster-wasm"
+        _wasm_start=$(date +%s%N 2>/dev/null || echo 0)
+        (
+          wasm_out=$(wasm-pack build "$crate_dir" --target nodejs --out-dir "$pkg_dir/wasm" 2>&1) || {
+            echo "WARN: WASM build failed for ${rel_path}" >&2
+            echo "$wasm_out" | tail -5 >&2
+          }
+          if [[ -f "$pkg_dir/wasm/agent_booster_wasm.js" ]]; then
+            rm -f "$pkg_dir/wasm/package.json" "$pkg_dir/wasm/.gitignore"
+            # Write WASM cache on success
+            cat > "$wasm_cache" <<WASMCACHE
+{"wasm_source_hash":"${current_wasm_hash}","built_at":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"}
+WASMCACHE
+          fi
+        ) &
+        wasm_pid=$!
+      fi
     fi
 
     local _xr_tsc_start _xr_tsc_end
@@ -1314,10 +1844,11 @@ TSSTUB
 
   log "Build complete: ${built} built, ${skipped} skipped, ${failed} failed"
 
+  # Single combined scan (avoids running find twice for the same data)
   local total_packages compiled_packages pre_built_packages _scan_start _scan_end
   _scan_start=$(date +%s%N 2>/dev/null || echo 0)
-  total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" 2>/dev/null | xargs grep -l '"@sparkleideas/' 2>/dev/null | wc -l)
   compiled_packages=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
+  total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" -exec grep -l '"@sparkleideas/' {} + 2>/dev/null | wc -l)
   pre_built_packages=$((total_packages - compiled_packages))
   _scan_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$_scan_start" != "0" && "$_scan_end" != "0" ]]; then
@@ -1329,6 +1860,10 @@ TSSTUB
   if [[ $failed -gt 0 ]]; then
     log_error "Some packages failed to build — published packages may be broken"
   fi
+
+  # Export build stats for manifest (written by write_build_manifest after build completes)
+  BUILD_COMPILED_COUNT=$compiled_packages
+  BUILD_TOTAL_COUNT=$total_packages
 }
 
 # ---------------------------------------------------------------------------
@@ -1416,27 +1951,68 @@ create_failure_issue() {
   local phase="$1"
   local exit_code="$2"
 
-  local title="Build failure in phase: ${phase}"
-  local body="The automated ruflo build failed.
+  # Extract fork name from phase if present (e.g., "sync-conflict-ruflo" → "ruflo")
+  local fork_name=""
+  if [[ "$phase" == *-ruflo ]]; then fork_name="ruflo"
+  elif [[ "$phase" == *-agentic-flow ]]; then fork_name="agentic-flow"
+  elif [[ "$phase" == *-ruv-FANN ]]; then fork_name="ruv-FANN"
+  elif [[ "$phase" == *-ruvector ]]; then fork_name="ruvector"
+  fi
+
+  # Collect fork metadata for both GitHub issue and HTML email
+  local _bf_fork_url="" _bf_upstream_commit_url="" _bf_fork_commit_url=""
+  local fork_info=""
+  if [[ -n "$fork_name" ]]; then
+    local fork_idx=-1
+    for i in "${!FORK_NAMES[@]}"; do
+      [[ "${FORK_NAMES[$i]}" == "$fork_name" ]] && fork_idx=$i && break
+    done
+    if [[ $fork_idx -ge 0 ]]; then
+      local dir="${FORK_DIRS[$fork_idx]}"
+      local links; links=$(_email_links "$dir" "$fork_name")
+      fork_info="\n**Fork**: ${fork_name}${links}"
+      _email_meta "$dir"
+      _bf_fork_url="$_EML_FORK_URL"
+      [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _bf_upstream_commit_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
+      [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _bf_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+    fi
+  fi
+
+  local title="Build failure: ${phase}"
+
+  # GitHub issue body (Markdown, unchanged format)
+  local issue_body="The automated ruflo build failed.
 
 **Phase**: ${phase}
 **Exit code**: ${exit_code}
 **Timestamp**: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
-**Server**: $(hostname)
+**Server**: $(hostname)${fork_info}
 
 Check build logs:
 \`\`\`bash
-journalctl -u ruflo-sync --since '1 hour ago' --no-pager
+journalctl --user -u ruflo-sync --since '$(date -u '+%Y-%m-%d %H:%M:%S UTC')' --no-pager
 \`\`\`"
 
   log_error "Creating failure issue: ${title}"
   gh issue create \
     --title "${title}" \
-    --body "${body}" \
+    --body "${issue_body}" \
     --label "build-failure" \
     2>/dev/null || log_error "Could not create GitHub issue (gh CLI failed)"
 
-  send_email "[ruflo] Build failure: ${phase}" "$body"
+  # HTML email body
+  local _bf_extra="journalctl --user -u ruflo-sync --since &#39;$(date -u '+%Y-%m-%d %H:%M:%S UTC')&#39; --no-pager"
+  local _bf_message="The automated ruflo build failed in phase <strong>${phase}</strong> with exit code ${exit_code}."
+  [[ -n "$fork_name" ]] && _bf_message="${_bf_message} Fork: ${fork_name}."
+  _bf_message="${_bf_message} Server: $(hostname). Time: $(date -u '+%Y-%m-%dT%H:%M:%SZ')."
+  local email_body
+  email_body=$(_email_html_body "error" \
+    "Build failure: ${phase}" \
+    "$fork_name" "" "" \
+    "" "$_bf_upstream_commit_url" \
+    "$_bf_fork_url" "$_bf_fork_commit_url" \
+    "$_bf_message" "$_bf_extra")
+  send_email "[ruflo] ${title}" "$email_body"
 }
 
 # ---------------------------------------------------------------------------
@@ -1614,6 +2190,7 @@ run_stage3_publish() {
       ruflo)        NEW_RUFLO_HEAD="$sha" ;;
       agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
       ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
     esac
   done
   # NOTE: Do NOT save_state here. State is saved ONLY after successful
@@ -1639,6 +2216,15 @@ run_stage3_publish() {
 
   # Verify: publish once, install once, all checks, promote (unless --test-only)
   run_phase "verify" run_verify
+
+  # Record successful verification so sync stage can skip redundant L2
+  local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
+  local _verify_codemod_hash
+  _verify_codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || _verify_codemod_hash=""
+  cat > "$_verify_manifest" <<VMANIFEST
+{"ruflo_head":"${NEW_RUFLO_HEAD:-}","agentic_head":"${NEW_AGENTIC_HEAD:-}","fann_head":"${NEW_FANN_HEAD:-}","ruvector_head":"${NEW_RUVECTOR_HEAD:-}","codemod_hash":"${_verify_codemod_hash}","verified_at":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"}
+VMANIFEST
+  log "Verification manifest written"
 
   if [[ "${TEST_ONLY}" == "true" ]]; then
     print_phase_summary
@@ -1675,7 +2261,7 @@ run_stage1_sync() {
   if ! sync_upstream; then
     # sync_upstream returns 1 if no changes or if it already created a
     # PR for conflict/compile-error
-    log "Upstream sync: no action needed or error handled"
+    log "No upstream changes — skipping sync build"
     return 0
   fi
 
@@ -1683,11 +2269,33 @@ run_stage1_sync() {
   # if the build/test phase below fails
   save_state
 
-  # Build pipeline: copy -> codemod -> build -> test
-  create_temp_dir
-  run_phase "copy-source" copy_source
-  run_phase "codemod" run_codemod
-  run_phase "build" run_build
+  # Read current fork HEADs for verify dedup check
+  for i in "${!FORK_NAMES[@]}"; do
+    local dir="${FORK_DIRS[$i]}"
+    local name="${FORK_NAMES[$i]}"
+    [[ -d "${dir}/.git" ]] || continue
+    local sha
+    sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
+    case "$name" in
+      ruflo)        NEW_RUFLO_HEAD="$sha" ;;
+      agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
+      ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
+    esac
+  done
+
+  # D1: Reuse build artifacts if the publish stage already built from the
+  # same fork HEADs (avoids redundant copy+codemod+build ~26s)
+  if check_build_freshness; then
+    log "Reusing existing build artifacts from publish stage"
+    TEMP_DIR="/tmp/ruflo-build"
+  else
+    # Build pipeline: copy -> codemod -> build
+    create_temp_dir
+    run_phase "copy-source" copy_source
+    run_phase "codemod" run_codemod
+    run_phase "build" run_build
+  fi
 
   if [[ "${BUILD_ONLY}" == "true" ]]; then
     print_phase_summary
@@ -1699,10 +2307,44 @@ run_stage1_sync() {
     return 0
   fi
 
-  # Test (L0-L3) against the sync branch build
+  # Test against the sync branch build.
+  # Skip expensive L2 verify if the publish stage already verified these exact artifacts.
   local tests_passed=false
-  if run_tests; then
-    tests_passed=true
+  local skip_verify=false
+  local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
+
+  if check_build_freshness && [[ -f "$_verify_manifest" ]]; then
+    local _vm_data
+    _vm_data=$(node -e "
+      const m=JSON.parse(require('fs').readFileSync('$_verify_manifest','utf-8'));
+      console.log([m.ruflo_head,m.agentic_head,m.fann_head,m.ruvector_head,m.codemod_hash].join(':'));
+    " 2>/dev/null) || _vm_data=""
+
+    local _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_codemod
+    IFS=':' read -r _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_codemod <<< "$_vm_data"
+    local _current_codemod
+    _current_codemod=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || _current_codemod=""
+
+    if [[ "${_vm_ruflo}" == "${NEW_RUFLO_HEAD}" && \
+          "${_vm_agentic}" == "${NEW_AGENTIC_HEAD}" && \
+          "${_vm_fann}" == "${NEW_FANN_HEAD}" && \
+          "${_vm_ruvector}" == "${NEW_RUVECTOR_HEAD}" && \
+          "${_vm_codemod}" == "${_current_codemod}" ]]; then
+      log "Skipping L2 verify — already verified by publish stage"
+      skip_verify=true
+    fi
+  fi
+
+  if [[ "$skip_verify" == "true" ]]; then
+    # Run L0+L1 only (fast sanity check)
+    if run_tests_ci; then
+      tests_passed=true
+    fi
+  else
+    # Full L0+L1+L2 verification
+    if run_tests; then
+      tests_passed=true
+    fi
   fi
 
   # Create PRs for each fork that was synced
@@ -1716,18 +2358,52 @@ run_stage1_sync() {
     [[ "$current_branch" == sync/* ]] || continue
 
     if [[ "$tests_passed" == "true" ]]; then
-      create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
-        "All tests passed (L0-L3). Ready for review and merge."
-      send_email "[ruflo] Sync PR ready for ${name}" \
-        "Upstream sync for ${name} is ready for review.\nBranch: ${current_branch}\nAll L0-L3 tests passed."
+      local ready_pr_url
+      ready_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
+        "All tests passed (L0-L3). Ready for review and merge.")
+      _email_meta "$dir"
+      local _ready_branch_url=""
+      [[ -n "$_EML_FORK_URL" ]] && _ready_branch_url="${_EML_FORK_URL}/tree/${current_branch}"
+      local _ready_upstream_url=""
+      [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ready_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
+      local _ready_fork_commit_url=""
+      [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ready_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+      local ready_email_body
+      ready_email_body=$(_email_html_body "success" \
+        "Sync PR ready for ${name}" \
+        "$name" "$current_branch" "$_ready_branch_url" \
+        "$ready_pr_url" "$_ready_upstream_url" \
+        "$_EML_FORK_URL" "$_ready_fork_commit_url" \
+        "Upstream sync for ${name} is ready for review. All L0-L3 tests passed.")
+      send_email "[ruflo] Sync PR ready for ${name}" "$ready_email_body"
     else
-      create_sync_pr "${dir}" "${name}" "${current_branch}" "test-failure" \
-        "Tests failed during sync validation. Review required."
-      send_email "[ruflo] Sync test failure for ${name}" \
-        "Upstream sync for ${name} failed tests.\nBranch: ${current_branch}\nManual review required."
+      local fail_pr_url
+      fail_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "test-failure" \
+        "Tests failed during sync validation. Review required.")
+      _email_meta "$dir"
+      local _fail_branch_url=""
+      [[ -n "$_EML_FORK_URL" ]] && _fail_branch_url="${_EML_FORK_URL}/tree/${current_branch}"
+      local _fail_upstream_url=""
+      [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _fail_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
+      local _fail_fork_commit_url=""
+      [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _fail_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+      local fail_email_body
+      fail_email_body=$(_email_html_body "warning" \
+        "Sync test failure for ${name}" \
+        "$name" "$current_branch" "$_fail_branch_url" \
+        "$fail_pr_url" "$_fail_upstream_url" \
+        "$_EML_FORK_URL" "$_fail_fork_commit_url" \
+        "Upstream sync for ${name} failed tests. Manual review required.")
+      send_email "[ruflo] Sync test failure for ${name}" "$fail_email_body"
+      create_failure_issue "sync-test-failure-${name}" "1"
     fi
 
     # Switch back to main
+    git -C "${dir}" checkout main --quiet 2>/dev/null || true
+  done
+
+  # Ensure all forks are back on main after sync
+  for dir in "${FORK_DIRS[@]}"; do
     git -C "${dir}" checkout main --quiet 2>/dev/null || true
   done
 
@@ -1752,7 +2428,13 @@ main() {
   log "=========================================="
 
   # Global timeout — 900s
-  ( sleep 900; log_error "[TIMEOUT] sync-and-build.sh exceeded 900s — sending SIGTERM"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+  # Close fd 9 (flock) in the subshell so the timeout process does NOT inherit
+  # the lock. Without this, if the main script is killed externally the orphaned
+  # sleep process keeps the flock forever, blocking all future pipeline runs.
+  # Close ALL inherited fds so the timeout subprocess doesn't hold pipes open.
+  # Without this, piping through tee/cat causes the sleep to block for 900s
+  # after the main script exits (the sleep holds stdout/stderr fds open).
+  ( exec 9>&- 1>/dev/null 2>/dev/null; sleep 900; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
   GLOBAL_TIMEOUT_PID=$!
 
   # Load previous state
@@ -1761,7 +2443,7 @@ main() {
   # --seed-state: record current fork HEADs as baseline without building.
   # Use after clean-slate reset so the NEXT run is incremental (not "all changed").
   if [[ "${SEED_STATE}" == "true" ]]; then
-    log "Seeding state file with current fork HEADs..."
+    log "Seeding state file with current fork HEADs + upstream SHAs..."
     for i in "${!FORK_NAMES[@]}"; do
       local dir="${FORK_DIRS[$i]}"
       local name="${FORK_NAMES[$i]}"
@@ -1773,8 +2455,25 @@ main() {
           ruflo)        NEW_RUFLO_HEAD="$sha" ;;
           agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
           ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+          ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
         esac
-        log "  ${name}: ${sha:0:12}"
+        log "  ${name} fork: ${sha:0:12}"
+
+        # Also record upstream SHA so sync stage doesn't re-sync on next run
+        if git -C "${dir}" remote get-url upstream &>/dev/null; then
+          git -C "${dir}" fetch upstream main --quiet 2>/dev/null || true
+          local upstream_sha
+          upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || upstream_sha=""
+          if [[ -n "$upstream_sha" ]]; then
+            case "$name" in
+              ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
+              agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
+              ruv-FANN)     UPSTREAM_FANN_SHA="$upstream_sha" ;;
+              ruvector)     UPSTREAM_RUVECTOR_SHA="$upstream_sha" ;;
+            esac
+            log "  ${name} upstream: ${upstream_sha:0:12}"
+          fi
+        fi
       fi
     done
     save_state
@@ -1800,6 +2499,7 @@ main() {
           ruflo)        NEW_RUFLO_HEAD="$sha" ;;
           agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
           ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
+      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
         esac
       fi
     done

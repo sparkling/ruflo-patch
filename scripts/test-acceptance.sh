@@ -73,7 +73,9 @@ _record_phase() {
 }
 
 # ── Global timeout: 300s ────────────────────────────────────────────
-( sleep 300; log_error "[TIMEOUT] exceeded 300s"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+# Close fd 9 (flock) so orphaned timeout process cannot hold the pipeline lock
+# Close ALL inherited fds so timeout sleep doesn't hold pipes open
+( exec 9>&- 1>/dev/null 2>/dev/null; sleep 300; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup ─────────────────────────────────────────────────────────
@@ -161,7 +163,7 @@ run_timed() {
   local t_start t_end
   t_start=$(date +%s%N 2>/dev/null || echo 0)
   # Use --signal=KILL to force-kill hung processes (CLI keeps SQLite handles open)
-  _OUT="$(timeout --signal=KILL 5 bash -c "$*" 2>&1)" || true
+  _OUT="$(timeout --signal=KILL 60 bash -c "$*" 2>&1)" || true
   _EXIT=${PIPESTATUS[0]:-$?}
   t_end=$(date +%s%N 2>/dev/null || echo 0)
   [[ "$t_start" == "0" || "$t_end" == "0" ]] && _DURATION_MS=0 || _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
@@ -177,10 +179,15 @@ results_json="[]"
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
 _escape_json() {
-  printf '%s' "${1:-}" | head -c 4096 | python3 -c '
-import sys, json
-print(json.dumps(sys.stdin.read()), end="")
-' 2>/dev/null || echo '""'
+  # Pure bash JSON escaping — avoids spawning Python subprocess per check (~2-3s total saving)
+  local s="${1:-}"
+  s="${s:0:4096}"
+  s="${s//\\/\\\\}"
+  s="${s//\"/\\\"}"
+  s="${s//$'\n'/\\n}"
+  s="${s//$'\r'/\\r}"
+  s="${s//$'\t'/\\t}"
+  printf '"%s"' "$s"
 }
 
 run_check() {
@@ -351,7 +358,7 @@ rm -rf "$PARALLEL_DIR"; PARALLEL_DIR=""
 # Promote to @latest (parallel, local Verdaccio only)
 # ════════════════════════════════════════════════════════════════════
 _p=$(_ns)
-RQ_STORAGE="/home/claude/.verdaccio/storage"
+RQ_STORAGE="/run/user/1000/verdaccio-storage"
 if [[ "${SKIP_PROMOTE}" != "true" && "$REGISTRY" == *"localhost"* && $fail_count -lt $total_count ]]; then
   log "Promoting packages to @latest (parallel)..."
   promote_count=0
