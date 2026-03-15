@@ -2,11 +2,11 @@
 
 ## Status
 
-Implemented (all non-blocked patches complete)
+Implemented (27/28 controllers wired — only FederatedSession blocked)
 
 ### Implementation Log (2026-03-15)
 
-**Commits (8 total across 2 forks):**
+**Commits (11 total across 2 forks):**
 - `719d85d` (agentic-flow) — P2-C: Export SolverBandit from agentdb barrel files
 - `f46a104b0` (ruflo) — P2-B/C + P5-C: Bridge + registry patches
 - `54d66c71e` (ruflo) — P2-C/P3-D/P4-C/P5-E: Hooks controller activation
@@ -15,10 +15,13 @@ Implemented (all non-blocked patches complete)
 - `6ac5be144` (ruflo) — P4-A + P5-F: SkillLibrary routing + SonaTrajectory integration
 - `0f034f89f` (ruflo) — P4-D: AgentMemoryScope 3-scope isolation
 - `594d8cd3a` (ruflo) — P6-B: COW branching via RvfBackend.derive()
+- `72032f44c` (ruflo) — causalRecall + batchOperations bridge + MCP tools
+- `322b3e2f8` (ruflo) — contextSynthesizer + mmrDiversityRanker wiring + MMR bugfix
+- `35d851fdb` (ruflo) — graphAdapter + gnnService + rvfOptimizer inline wrappers
 
-**Issues:** #81-#88 (sparkling/ruflo-patch)
+**Issues:** #81-#91 (sparkling/ruflo-patch)
 
-**All patches implemented (21 of 22 non-blocked items):**
+**All 27 controllers wired (of 28 total):**
 - P2-B: LearningBridge dedicated bridge function
 - P2-C: SolverBandit export + registry + bridge + hooks routing + feedback
 - P3-A: MemoryGraph callers (pre-existing)
@@ -36,8 +39,15 @@ Implemented (all non-blocked patches complete)
 - P5-E: SemanticRouter as primary router (falls back to TASK_PATTERNS)
 - P5-F: SonaTrajectoryService recording + stats
 - P6-B: COW branching (derive/branchGet/branchStore/branchMerge + MCP tool)
+- causalRecall: causal-aware search with cold-start guard + MCP tool
+- batchOperations: optimize/prune/stats bridge + MCP tool
+- contextSynthesizer: opt-in synthesis in memory_search + existing MCP tool
+- mmrDiversityRanker: fixed error handling in memory_search pipeline
+- graphAdapter: bridge function for graph database operations
+- gnnService: inline wrapper around GNN wrapper functions
+- rvfOptimizer: inline wrapper around backend.optimize()
 
-**Blocked (1):**
+**Blocked (1 of 28):**
 - P4-E: FederatedSession — upstream API undefined
 
 ## Date
