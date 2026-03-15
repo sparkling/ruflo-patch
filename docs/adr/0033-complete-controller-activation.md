@@ -2,7 +2,38 @@
 
 ## Status
 
-Proposed
+Implementing (P0-P2 complete, P3-P4 remaining)
+
+### Implementation Log (2026-03-15)
+
+**Commits:**
+- `719d85d` (agentic-flow) — P2-C: Export SolverBandit from agentdb barrel files
+- `f46a104b0` (ruflo) — P2-B/C + P5-C: Bridge + registry patches
+- `54d66c71e` (ruflo) — P2-C/P3-D/P4-C/P5-E: Hooks controller activation
+- `68e57a37a` (ruflo) — P3-B/C: Reflexion retrieve/store + causal query MCP tools
+
+**Issues:** #81, #82, #83, #84 (sparkling/ruflo-patch)
+
+**Patches implemented (14 of 18 non-done items):**
+- P2-B: LearningBridge dedicated bridge function
+- P2-C: SolverBandit export + registry + bridge + hooks routing + feedback
+- P3-B: ReflexionMemory retrieve/store MCP tools
+- P3-C: CausalMemoryGraph causal_query with cold-start guard
+- P3-D: NightlyLearner consolidation on session end
+- P4-C: LearningSystem.recommendAlgorithm in routing
+- P5-B: MutationGuard enforcement (already existed)
+- P5-C: AttestationLog stats in health check
+- P5-E: SemanticRouter as primary router (falls back to TASK_PATTERNS)
+
+**Remaining (P3/P4 priority):**
+- P4-A: SkillLibrary CLI + skill search in routing
+- P4-B: ExplainableRecall Merkle proof chain
+- P4-D: AgentMemoryScope 3-scope isolation
+- P5-A: GuardedVectorBackend as primary backend
+- P5-D: GraphTransformerService (proof_gated only)
+- P5-F: SonaTrajectoryService integration
+- P6-B: COW branching (RvfBackend.derive)
+- P4-E: FederatedSession (blocked — API undefined)
 
 ## Date
 
