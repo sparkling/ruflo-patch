@@ -38,39 +38,6 @@ BUILD_COMPILED_COUNT=""
 BUILD_TOTAL_COUNT=""
 
 # ---------------------------------------------------------------------------
-# Codemod wrapper
-# ---------------------------------------------------------------------------
-
-run_codemod() {
-  log "Running codemod: @claude-flow/* -> @sparkleideas/*"
-  local _cm_start _cm_end
-  _cm_start=$(date +%s%N 2>/dev/null || echo 0)
-  node "${SCRIPT_DIR}/codemod.mjs" "${TEMP_DIR}"
-  _cm_end=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$_cm_start" != "0" && "$_cm_end" != "0" ]]; then
-    local _cm_ms=$(( (_cm_end - _cm_start) / 1000000 ))
-    log "  Codemod completed in ${_cm_ms}ms"
-    add_cmd_timing "codemod" "node codemod.mjs" "${_cm_ms}"
-  fi
-
-  # Strip publish bloat from agentic-jujutsu (~58MB of native binaries, nested
-  # tarballs, tests, docs). The upstream files field includes the whole directory
-  # but consumers only need index.js, *.d.ts, bin/, pkg/, and package.json.
-  local jj_dir="${TEMP_DIR}/cross-repo/agentic-flow/packages/agentic-jujutsu"
-  if [[ -d "$jj_dir" ]]; then
-    local _jj_before _jj_after
-    _jj_before=$(du -sm "$jj_dir" 2>/dev/null | cut -f1) || _jj_before=0
-    rm -f "$jj_dir"/*.node "$jj_dir"/*.tgz 2>/dev/null || true
-    rm -rf "$jj_dir"/{tests,docs,benchmarks,benches,examples,test-repo,target,src,typescript,helpers,scripts} 2>/dev/null || true
-    _jj_after=$(du -sm "$jj_dir" 2>/dev/null | cut -f1) || _jj_after=0
-    local _jj_saved=$(( _jj_before - _jj_after ))
-    if [[ $_jj_saved -gt 0 ]]; then
-      log "  Stripped ${_jj_saved}MB publish bloat from agentic-jujutsu (${_jj_before}MB -> ${_jj_after}MB)"
-    fi
-  fi
-}
-
-# ---------------------------------------------------------------------------
 # Build (TypeScript compilation)
 # ---------------------------------------------------------------------------
 
@@ -138,13 +105,14 @@ run_build() {
     node "${SCRIPT_DIR}/gen-tsconfig.mjs" --pkg-dir "$pkg_dir" --tsc-dir "$tsc_dir" --output "$tmp_tsconfig" 2>/dev/null
 
     local ok=0
+    local fallback_level=3
     local tsc_log="$pkg_dir/.tsc-build.log"
     if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck 2>"$tsc_log"; then
-      ok=1
+      ok=1; fallback_level=0
     elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>"$tsc_log"; then
-      ok=1
+      ok=1; fallback_level=1
     elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>"$tsc_log"; then
-      ok=1
+      ok=1; fallback_level=2
     fi
     # Log failures instead of swallowing them
     if [[ $ok -eq 0 && -s "$tsc_log" ]]; then
@@ -158,20 +126,69 @@ run_build() {
     if [[ "$pkg_build_start" != "0" && "$pkg_build_end" != "0" ]]; then
       _bms=$(( (pkg_build_end - pkg_build_start) / 1000000 ))
     fi
-    # Write result to a temp file so the parent can collect it
-    echo "${pkg_name} ${ok} ${_bms}" >> "${TEMP_DIR}/.build-results"
+    # Write result to a per-package file so parallel appends don't race
+    echo "${pkg_name} ${ok} ${_bms} ${fallback_level}" > "${TEMP_DIR}/.build-result-${pkg_name}"
   }
 
-  # Group packages by dependency level for parallel builds
-  # Packages within the same group have no inter-dependencies
-  local -a group_0=(shared)
-  local -a group_1=(memory embeddings codex aidefence)
-  local -a group_2=(neural hooks browser plugins providers claims)
-  local -a group_3=(guidance mcp integration deployment swarm security performance testing)
-  local -a group_4=(cli)
-  local -a all_groups=("group_0" "group_1" "group_2" "group_3" "group_4")
+  # Group packages by dependency level for parallel builds (B3: derive from publish-levels.json)
+  # Packages within the same group have no inter-dependencies.
+  # Build groups map to publish levels 2-5 (level 1 packages are cross-repo).
+  # Only v3/@claude-flow/* packages are built here; plugins and cross-repo
+  # packages are handled separately below.
+  local -a group_0 group_1 group_2 group_3
+  local -a all_groups
 
-  : > "${TEMP_DIR}/.build-results"
+  # Known v3/@claude-flow/ packages (used to filter out cross-repo and plugin packages)
+  local -A _v3_packages=([shared]=1 [memory]=1 [embeddings]=1 [codex]=1 [aidefence]=1
+    [neural]=1 [hooks]=1 [browser]=1 [plugins]=1 [providers]=1 [claims]=1
+    [guidance]=1 [mcp]=1 [integration]=1 [deployment]=1 [swarm]=1
+    [security]=1 [performance]=1 [testing]=1 [cli]=1)
+
+  # Try to read from publish-levels.json; fall back to hardcoded if unavailable
+  local _build_groups_ok=false
+  local _build_groups_json
+  # Read levels 2-5 from JSON, filter to v3/@claude-flow/ packages only
+  _build_groups_json=$(node -e "
+    const fs = require('fs');
+    const data = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/publish-levels.json', 'utf-8'));
+    const v3set = new Set(['shared','memory','embeddings','codex','aidefence',
+      'neural','hooks','browser','plugins','providers','claims',
+      'guidance','mcp','integration','deployment','swarm',
+      'security','performance','testing','cli']);
+    for (let i = 1; i < data.levels.length; i++) {
+      const pkgs = data.levels[i].packages
+        .map(p => p.replace('@sparkleideas/', ''))
+        .filter(p => v3set.has(p));
+      console.log(pkgs.join(' '));
+    }
+  " 2>/dev/null) && _build_groups_ok=true
+
+  if [[ "$_build_groups_ok" == "true" && -n "$_build_groups_json" ]]; then
+    local _gi=0
+    while IFS= read -r _line; do
+      if [[ -n "$_line" ]]; then
+        # Split space-separated names into array
+        read -ra "_tmp_arr" <<< "$_line"
+        eval "group_${_gi}=(\"\${_tmp_arr[@]}\")"
+      else
+        eval "group_${_gi}=()"
+      fi
+      _gi=$((_gi + 1))
+    done <<< "$_build_groups_json"
+    # Build all_groups from populated groups
+    all_groups=()
+    for (( _g=0; _g<_gi; _g++ )); do
+      local -n _gref="group_${_g}"
+      [[ ${#_gref[@]} -gt 0 ]] && all_groups+=("group_${_g}")
+    done
+  else
+    log "WARN: Could not read publish-levels.json for build groups — using hardcoded fallback"
+    group_0=(shared memory embeddings codex aidefence)
+    group_1=(neural hooks browser plugins providers claims)
+    group_2=(guidance mcp integration deployment swarm security performance testing)
+    group_3=(cli)
+    all_groups=("group_0" "group_1" "group_2" "group_3")
+  fi
 
   local _group_idx=0
   for group_var in "${all_groups[@]}"; do
@@ -229,10 +246,10 @@ run_build() {
     [[ "$_af_start" != "0" && "$_af_end" != "0" ]] && _af_ms=$(( (_af_end - _af_start) / 1000000 ))
     if [[ -f "${af_dir}/dist/index.js" ]]; then
       log "  BUILD: agentic-flow ${_af_ms}ms"
-      echo "agentic-flow 1 ${_af_ms}" >> "${TEMP_DIR}/.build-results"
+      echo "agentic-flow 1 ${_af_ms} 1" > "${TEMP_DIR}/.build-result-agentic-flow"
     else
       log "  FAIL: agentic-flow ${_af_ms}ms"
-      echo "agentic-flow 0 ${_af_ms}" >> "${TEMP_DIR}/.build-results"
+      echo "agentic-flow 0 ${_af_ms} 3" > "${TEMP_DIR}/.build-result-agentic-flow"
     fi
   fi
   # v3/plugins/* (all plugin packages with tsconfig)
@@ -259,11 +276,16 @@ run_build() {
     fi
   fi
 
-  # Collect results from parallel builds
-  while IFS=' ' read -r pkg_name ok _bms; do
-    [[ -z "$pkg_name" ]] && continue
+  # Collect results from per-package files (avoids shared-file race condition)
+  for result_file in "${TEMP_DIR}"/.build-result-*; do
+    [[ -f "$result_file" ]] || continue
+    IFS=' ' read -r pkg_name ok _bms fallback_level < "$result_file"
+    [[ -z "$pkg_name" ]] && { rm -f "$result_file"; continue; }
     if [[ "$ok" == "1" ]]; then
       built=$((built + 1))
+      if [[ "${fallback_level:-0}" -gt 0 ]]; then
+        log_warn "  ${pkg_name} compiled with fallback level ${fallback_level}"
+      fi
     else
       log_error "TypeScript build failed for ${pkg_name}"
       failed=$((failed + 1))
@@ -271,8 +293,8 @@ run_build() {
     log "  BUILD: ${pkg_name} ${_bms}ms"
     add_build_pkg_timing "${pkg_name}" "${_bms}"
     add_cmd_timing "build" "tsc ${pkg_name}" "${_bms}"
-  done < "${TEMP_DIR}/.build-results"
-  rm -f "${TEMP_DIR}/.build-results"
+    rm -f "$result_file"
+  done
 
   # Build cross-repo packages (TSC only — WASM is handled by build-wasm.sh)
   local cross_repo_builds=(

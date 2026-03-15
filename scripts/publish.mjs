@@ -18,21 +18,17 @@ import { parseArgs } from 'node:util';
 
 const execFile = promisify(execFileCb);
 
-// ── Topological levels (ADR-0014) ──
+// ── Topological levels (ADR-0014, B3: read from publish-levels.json) ──
 
-export const LEVELS = [
-  // Level 1: depends only on external @ruvector/* (public npm)
+// Hardcoded fallback in case publish-levels.json is unreadable
+const FALLBACK_LEVELS = [
   [
     '@sparkleideas/agentdb',
     '@sparkleideas/agentic-flow',
     '@sparkleideas/ruv-swarm',
-    // ADR-0021/0022 Phase 1: no internal deps
     '@sparkleideas/agent-booster',
     '@sparkleideas/agentdb-onnx',
-    // cuda-wasm removed: requires wasm-pack, build often fails silently,
-    // causing version mismatches. Re-add when WASM build is gated.
   ],
-  // Level 2: depends on Level 1
   [
     '@sparkleideas/shared',
     '@sparkleideas/memory',
@@ -40,7 +36,6 @@ export const LEVELS = [
     '@sparkleideas/codex',
     '@sparkleideas/aidefence',
   ],
-  // Level 3: depends on Level 2
   [
     '@sparkleideas/neural',
     '@sparkleideas/hooks',
@@ -48,10 +43,8 @@ export const LEVELS = [
     '@sparkleideas/plugins',
     '@sparkleideas/providers',
     '@sparkleideas/claims',
-    // ADR-0022 Phase 3: WASM bridge
     '@sparkleideas/ruvector-upstream',
   ],
-  // Level 4: depends on Level 3
   [
     '@sparkleideas/guidance',
     '@sparkleideas/mcp',
@@ -61,7 +54,6 @@ export const LEVELS = [
     '@sparkleideas/security',
     '@sparkleideas/performance',
     '@sparkleideas/testing',
-    // ADR-0022 Phase 3: plugins (depend on @sparkleideas/plugins SDK)
     '@sparkleideas/plugin-gastown-bridge',
     '@sparkleideas/plugin-agentic-qe',
     '@sparkleideas/plugin-code-intelligence',
@@ -77,14 +69,33 @@ export const LEVELS = [
     '@sparkleideas/plugin-test-intelligence',
     '@sparkleideas/teammate-plugin',
   ],
-  // Level 5: root packages
-  // Note: @sparkleideas/ruflo is published separately from the local repo
-  // (it's our wrapper package, not an upstream package)
   [
     '@sparkleideas/cli',
     '@sparkleideas/claude-flow',
   ],
 ];
+
+function loadLevelsFromJson() {
+  const levelsFile = resolve(
+    import.meta.url.startsWith('file://')
+      ? new URL('.', import.meta.url).pathname
+      : '.',
+    '..', 'config', 'publish-levels.json'
+  );
+  try {
+    const data = JSON.parse(readFileSync(levelsFile, 'utf-8'));
+    if (!data.levels || !Array.isArray(data.levels) || data.levels.length === 0) {
+      throw new Error('publish-levels.json has no valid levels array');
+    }
+    return data.levels.map(l => l.packages);
+  } catch (err) {
+    console.warn(`Warning: could not load publish-levels.json: ${err.message}`);
+    console.warn('Falling back to hardcoded LEVELS');
+    return null;
+  }
+}
+
+export const LEVELS = loadLevelsFromJson() || FALLBACK_LEVELS;
 
 // Rate limit between levels: 0 for local Verdaccio, 2000 for real npm
 // Local publishes don't need rate limiting — saves ~10s across 5 levels

@@ -11,6 +11,7 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STATE_FILE="$SCRIPT_DIR/.last-promoted-version"
 
 # ---------- Defaults ----------
@@ -45,27 +46,43 @@ if [[ -z "$GOOD_VERSION" ]]; then
   exit 1
 fi
 
-# Complete list of scoped packages (ADR-0014 levels 1-5)
-SCOPED_PACKAGES=(
-  # Level 1
-  agentdb agentic-flow ruv-swarm
-  # Level 2
-  shared memory embeddings codex aidefence
-  # Level 3
-  neural hooks browser plugins providers claims
-  # Level 4
-  guidance mcp integration deployment swarm security performance testing
-  # Level 5
-  cli claude-flow
-)
+# Dynamic package list from published-versions.json (P2: avoid stale hardcoded list)
+# Read packages from config
+PACKAGES=($(node -e "
+  const pv = JSON.parse(require('fs').readFileSync('${PROJECT_DIR}/config/published-versions.json', 'utf-8'));
+  Object.keys(pv).forEach(k => console.log(k));
+" 2>/dev/null))
 
-TOTAL=$(( ${#SCOPED_PACKAGES[@]} + 1 ))  # +1 for @sparkleideas/ruflo root
+if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARN: Could not read packages from config/published-versions.json — using hardcoded fallback"
+  # Fallback hardcoded list as safety net
+  SCOPED_PACKAGES=(
+    # Level 1
+    agentdb agentic-flow ruv-swarm
+    # Level 2
+    shared memory embeddings codex aidefence
+    # Level 3
+    neural hooks browser plugins providers claims
+    # Level 4
+    guidance mcp integration deployment swarm security performance testing
+    # Level 5
+    cli claude-flow
+  )
+  PACKAGES=()
+  for pkg in "${SCOPED_PACKAGES[@]}"; do
+    PACKAGES+=("@sparkleideas/${pkg}")
+  done
+  # Add the root package
+  PACKAGES+=("@sparkleideas/ruflo")
+fi
+
+TOTAL=${#PACKAGES[@]}
 
 # ---------- Summary ----------
 echo ""
 echo "Rollback plan"
 echo "  Target version : $GOOD_VERSION"
-echo "  Packages       : $TOTAL (@sparkleideas/ruflo + ${#SCOPED_PACKAGES[@]} scoped)"
+echo "  Packages       : $TOTAL (from published-versions.json)"
 echo "  Dry run        : $DRY_RUN"
 echo ""
 
@@ -107,12 +124,9 @@ echo ""
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Rolling back @latest to ${GOOD_VERSION}"
 echo ""
 
-# Root package
-run_dist_tag "@sparkleideas/ruflo@${GOOD_VERSION}"
-
-# Scoped packages
-for pkg in "${SCOPED_PACKAGES[@]}"; do
-  run_dist_tag "@sparkleideas/${pkg}@${GOOD_VERSION}"
+# All packages (fully-qualified names from published-versions.json or fallback)
+for pkg in "${PACKAGES[@]}"; do
+  run_dist_tag "${pkg}@${GOOD_VERSION}"
 done
 
 # ---------- Summary ----------

@@ -2,6 +2,7 @@
 Description=Sync and build ruflo from upstream
 After=network-online.target
 Wants=network-online.target
+OnFailure=ruflo-notify-failure@%n.service
 
 [Service]
 Type=oneshot

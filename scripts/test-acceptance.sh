@@ -167,26 +167,29 @@ log "Running harness: init --full --force"
 }
 
 log "Running harness: memory init"
-# Use _run_and_kill pattern — CLI hangs after completion (SQLite handles)
+# Sentinel-based completion detection (ADR-0039 T1) — CLI hangs after
+# completion (open SQLite handles). Run command, append sentinel when done,
+# poll for sentinel or timeout.
 _harness_mem_out=""
 _harness_mem_tmpfile=$(mktemp /tmp/rk-harness-XXXXX)
-(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init > "$_harness_mem_tmpfile" 2>&1) &
+> "$_harness_mem_tmpfile"
+( cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init >> "$_harness_mem_tmpfile" 2>&1; echo "__RUFLO_DONE__" >> "$_harness_mem_tmpfile" ) &
 _harness_mem_pid=$!
-_harness_prev_size=0 _harness_stable=0
-for (( _hi=0; _hi<32; _hi++ )); do
+_harness_elapsed=0
+_harness_max=8
+while (( $(echo "$_harness_elapsed < $_harness_max" | bc) )); do
   sleep 0.25
-  if ! kill -0 "$_harness_mem_pid" 2>/dev/null; then break; fi
-  _harness_cur_size=$(wc -c < "$_harness_mem_tmpfile" 2>/dev/null || echo 0)
-  if [[ "$_harness_cur_size" -gt 0 && "$_harness_cur_size" -eq "$_harness_prev_size" ]]; then
-    _harness_stable=$((_harness_stable + 1))
-    if [[ $_harness_stable -ge 3 ]]; then kill -KILL "$_harness_mem_pid" 2>/dev/null || true; break; fi
-  else
-    _harness_stable=0
+  _harness_elapsed=$(echo "$_harness_elapsed + 0.25" | bc)
+  if grep -q '__RUFLO_DONE__' "$_harness_mem_tmpfile" 2>/dev/null; then
+    break
   fi
-  _harness_prev_size="$_harness_cur_size"
+  if ! kill -0 "$_harness_mem_pid" 2>/dev/null; then
+    sleep 0.1
+    break
+  fi
 done
-kill -KILL "$_harness_mem_pid" 2>/dev/null || true
-wait "$_harness_mem_pid" 2>/dev/null || true
+kill "$_harness_mem_pid" 2>/dev/null && wait "$_harness_mem_pid" 2>/dev/null || true
+sed -i '/__RUFLO_DONE__/d' "$_harness_mem_tmpfile"
 _harness_mem_out=$(cat "$_harness_mem_tmpfile" 2>/dev/null)
 rm -f "$_harness_mem_tmpfile"
 

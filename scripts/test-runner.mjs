@@ -10,7 +10,11 @@ import { spawn, execSync } from 'node:child_process';
 import { readdirSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
 import { resolve, join, basename } from 'node:path';
 
-const MAX_SKIPS = parseInt(process.env.SKIP_THRESHOLD || '8', 10);
+// Max skips = 20% of total tests, with a floor of 8.
+// Rationale: a fixed threshold becomes too tight as the test suite grows;
+// 20% keeps the ratio stable while still catching mass-skip regressions.
+const MAX_SKIPS_FLOOR = 8;
+const MAX_SKIPS_ENV = process.env.SKIP_THRESHOLD ? parseInt(process.env.SKIP_THRESHOLD, 10) : null;
 const TIMEOUT_MS = parseInt(process.env.TEST_TIMEOUT || '60000', 10);
 const saveResults = process.argv.includes('--save-results') ||
   process.env.SAVE_TEST_RESULTS === '1';
@@ -106,8 +110,13 @@ const allOutput = (result.stdout || '') + (result.stderr || '');
 const tapSkips = allOutput.match(/^ok \d+.*# SKIP/gm);
 if (tapSkips) skipCount = tapSkips.length;
 
+// Derive totalTests from TAP output to compute percentage-based threshold
+const tapAll = allOutput.match(/^(?:ok|not ok) \d+/gm);
+const totalTests = tapAll ? tapAll.length : 0;
+const MAX_SKIPS = MAX_SKIPS_ENV ?? Math.max(MAX_SKIPS_FLOOR, Math.ceil(totalTests * 0.20));
+
 if (skipCount > MAX_SKIPS) {
-  console.error(`\nERROR: ${skipCount} tests skipped (max ${MAX_SKIPS}).`);
+  console.error(`\nERROR: ${skipCount} tests skipped (max ${MAX_SKIPS}, 20% of ${totalTests} tests, floor ${MAX_SKIPS_FLOOR}).`);
   process.exit(1);
 }
 
