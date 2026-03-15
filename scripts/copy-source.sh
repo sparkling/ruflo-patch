@@ -36,13 +36,11 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# Fork directories (ADR-0027: source is local forks, not upstream repos)
+# Fork directories (ADR-0039: single source of truth)
 # ---------------------------------------------------------------------------
 
-FORK_DIR_RUFLO="/home/claude/src/forks/ruflo"
-FORK_DIR_AGENTIC="/home/claude/src/forks/agentic-flow"
-FORK_DIR_FANN="/home/claude/src/forks/ruv-FANN"
-FORK_DIR_RUVECTOR="/home/claude/src/forks/ruvector"
+# shellcheck source=../lib/fork-paths.sh
+source "${PROJECT_DIR}/lib/fork-paths.sh"
 
 TEMP_DIR=""  # set in create_temp_dir
 
