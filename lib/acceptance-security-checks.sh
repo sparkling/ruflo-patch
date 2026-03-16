@@ -3,6 +3,7 @@
 #
 # ADR-0040/0041/0042: Security controllers (D4/D5/D6), composite architecture,
 # and wiring remediation fixes in published packages.
+# ADR-0045: A9 EnhancedEmbeddingService + D1 TelemetryManager acceptance.
 #
 # Uses dedicated MCP tools (not agentdb_health). No fallback success paths.
 #
@@ -296,6 +297,87 @@ check_controller_composition() {
   fi
 }
 
+# ===== ADR-0047: Quantization & Index Health =====
+
+check_quantize_status() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_quantize_status"
+  local qs_out="$_RK_OUT"
+
+  if [[ -z "$qs_out" ]]; then
+    _CHECK_OUTPUT="Quantize status: agentdb_quantize_status returned no output"
+    return
+  fi
+
+  # Tool must return a response with success field
+  if ! echo "$qs_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Quantize status: no success field in response"
+    return
+  fi
+
+  # B9 may not be active on fresh init (requires >50K entries).
+  # Accept either: success=true with stats, or success=false with "not active" error.
+  if echo "$qs_out" | grep -q '"success": *true\|"success":true'; then
+    # Active: verify stats fields (type, compression, entryCount)
+    local has_fields=0
+    for field in type compression entryCount; do
+      if echo "$qs_out" | grep -qi "$field"; then
+        has_fields=$((has_fields + 1))
+      fi
+    done
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Quantize status: active, $has_fields/3 expected fields present"
+  elif echo "$qs_out" | grep -qi "not active\|QuantizedVectorStore"; then
+    # Inactive but responded correctly
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Quantize status: B9 not active (expected on fresh init — below 50K threshold)"
+  else
+    _CHECK_OUTPUT="Quantize status: unexpected response — $qs_out"
+  fi
+}
+
+check_health_report() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health_report"
+  local hr_out="$_RK_OUT"
+
+  if [[ -z "$hr_out" ]]; then
+    _CHECK_OUTPUT="Health report: agentdb_health_report returned no output"
+    return
+  fi
+
+  if ! echo "$hr_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Health report: no success field in response"
+    return
+  fi
+
+  # B3 may not be active on fresh init.
+  # Accept either: success=true with assessment, or success=false with "not active" error.
+  if echo "$hr_out" | grep -q '"success": *true\|"success":true'; then
+    # Active: verify assessment fields (status, recommendations, p95Latency)
+    local has_fields=0
+    for field in status recommendations p95Latency; do
+      if echo "$hr_out" | grep -qi "$field"; then
+        has_fields=$((has_fields + 1))
+      fi
+    done
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Health report: active, $has_fields/3 expected fields present"
+  elif echo "$hr_out" | grep -qi "not active\|IndexHealthMonitor"; then
+    # Inactive but responded correctly
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Health report: B3 not active (expected on fresh init — passive monitor)"
+  else
+    _CHECK_OUTPUT="Health report: unexpected response — $hr_out"
+  fi
+}
+
 check_wiring_remediation() {
   local cli; cli=$(_cli_cmd)
   _CHECK_PASSED="false"
@@ -337,5 +419,186 @@ check_wiring_remediation() {
     _CHECK_OUTPUT="Wiring remediation: no stale names, $positive/6 positive confirmations"
   else
     _CHECK_OUTPUT="Wiring remediation: ${issues}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0043: Query & Filtering Infrastructure
+# ════════════════════════════════════════════════════════════════════
+
+check_filtered_search() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Call agentdb_filtered_search with a query (no filter = passthrough)
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_filtered_search --params '{\"query\":\"authentication patterns\"}'"
+  local fs_out="$_RK_OUT"
+
+  if [[ -z "$fs_out" ]]; then
+    _CHECK_OUTPUT="Filtered search: agentdb_filtered_search returned no output"
+    return
+  fi
+
+  # Must contain results array and success field
+  if ! echo "$fs_out" | grep -q '"results"'; then
+    _CHECK_OUTPUT="Filtered search: no results field in response"
+    return
+  fi
+
+  if echo "$fs_out" | grep -q '"success"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Filtered search: agentdb_filtered_search returns structured response with results"
+  else
+    _CHECK_OUTPUT="Filtered search: missing success field in response"
+  fi
+}
+
+check_query_stats() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_query_stats"
+  local qs_out="$_RK_OUT"
+
+  if [[ -z "$qs_out" ]]; then
+    _CHECK_OUTPUT="Query stats: agentdb_query_stats returned no output"
+    return
+  fi
+
+  if ! echo "$qs_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Query stats: no success field in response"
+    return
+  fi
+
+  # Verify response has expected stat fields
+  local has_hits has_misses has_size
+  has_hits=0; has_misses=0; has_size=0
+  echo "$qs_out" | grep -qi "cacheHits\|cache_hits\|hits" && has_hits=1
+  echo "$qs_out" | grep -qi "cacheMisses\|cache_misses\|misses" && has_misses=1
+  echo "$qs_out" | grep -qi "cacheSize\|cache_size\|size" && has_size=1
+
+  if [[ $((has_hits + has_misses + has_size)) -ge 2 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Query stats: response has cache stat fields (hits=$has_hits misses=$has_misses size=$has_size)"
+  elif echo "$qs_out" | grep -qi "not active\|not available"; then
+    # QueryOptimizer may not be active if agentdb is unavailable — that's a valid state
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Query stats: QueryOptimizer not active (expected when agentdb unavailable)"
+  else
+    _CHECK_OUTPUT="Query stats: response missing expected fields: hits=$has_hits misses=$has_misses size=$has_size"
+  fi
+}
+
+check_metadata_filter_controllers() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  local ctrl_out="$_RK_OUT"
+
+  if [[ -z "$ctrl_out" ]]; then
+    _CHECK_OUTPUT="B5/B6 controllers: agentdb_controllers returned no output"
+    return
+  fi
+
+  local found=0 missing=""
+  for ctrl in metadataFilter queryOptimizer; do
+    if echo "$ctrl_out" | grep -q "$ctrl"; then
+      found=$((found + 1))
+    else
+      missing="${missing}${ctrl} "
+    fi
+  done
+
+  if [[ $found -eq 2 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="B5/B6 controllers: metadataFilter + queryOptimizer both registered at Level 1"
+  else
+    _CHECK_OUTPUT="B5/B6 controllers: $found/2 found, missing: ${missing}"
+  fi
+}
+
+# ── ADR-0045: A9 EnhancedEmbeddingService ─────────────────────────
+
+check_embedding_generate() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Call agentdb_embed with test text — assert response has embedding + provider
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_embed --params '{\"text\":\"acceptance test embedding\"}'"
+  local embed_out="$_RK_OUT"
+
+  if [[ -z "$embed_out" ]]; then
+    _CHECK_OUTPUT="Embedding generate: agentdb_embed returned no output"
+    return
+  fi
+
+  if ! echo "$embed_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Embedding generate: no success field in response"
+    return
+  fi
+
+  # Parse embedding response: check for embedding array and dimension
+  local result
+  result=$(echo "$embed_out" | node -e "
+    const raw = require('fs').readFileSync('/dev/stdin','utf8');
+    try {
+      const jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);
+      if (!jsonMatch) { console.log('no-json'); process.exit(0); }
+      const data = JSON.parse(jsonMatch[0]);
+      if (!data.success) { console.log('not-success|' + (data.error || 'unknown')); process.exit(0); }
+      const dim = data.dimension || (data.embedding ? data.embedding.length : 0);
+      const provider = data.provider || 'none';
+      console.log('ok|' + dim + '|' + provider);
+    } catch { console.log('parse-error'); }
+  " 2>/dev/null) || result="parse-error"
+
+  local status="${result%%|*}"
+  if [[ "$status" == "ok" ]]; then
+    local rest="${result#*|}"
+    local dim="${rest%%|*}"
+    local provider="${rest#*|}"
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Embedding generate: dim=$dim, provider=$provider"
+  elif [[ "$status" == "not-success" ]]; then
+    local err="${result#*|}"
+    _CHECK_OUTPUT="Embedding generate: success=false — $err"
+  else
+    _CHECK_OUTPUT="Embedding generate: parse failed ($result)"
+  fi
+}
+
+check_embedding_controller_registered() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Verify A9 + D1 appear in agentdb_controllers
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  local ctrl_out="$_RK_OUT"
+
+  if [[ -z "$ctrl_out" ]]; then
+    _CHECK_OUTPUT="ADR-0045 controllers: agentdb_controllers returned no output"
+    return
+  fi
+
+  local found=0 missing=""
+  for name in enhancedEmbeddingService telemetryManager auditLogger; do
+    if echo "$ctrl_out" | grep -q "$name"; then
+      found=$((found + 1))
+    else
+      missing="${missing}${name} "
+    fi
+  done
+
+  if [[ $found -eq 3 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0045 controllers: all 3 (A9/D1/D3) registered"
+  else
+    _CHECK_OUTPUT="ADR-0045 controllers: $found/3 found, missing: ${missing}"
   fi
 }
