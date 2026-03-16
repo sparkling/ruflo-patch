@@ -876,27 +876,50 @@ check_security_controllers() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
-  local health_out="$_RK_OUT"
+  # Use agentdb_controllers (registry entries only) — NOT agentdb_health
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  local ctrl_out="$_RK_OUT"
 
-  if echo "$health_out" | grep -qi 'resourceTracker\|rateLimiter\|circuitBreaker'; then
-    local found=0
-    for ctrl in resourceTracker rateLimiter circuitBreaker; do
-      if echo "$health_out" | grep -qi "$ctrl"; then
-        found=$((found + 1))
-      fi
-    done
-    if [[ $found -ge 3 ]]; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Security controllers: all 3 (D4/D5/D6) active at Level 0"
-    else
-      _CHECK_OUTPUT="Security controllers: only $found/3 found in health output"
-    fi
-  elif echo "$health_out" | grep -qi 'controller\|health'; then
+  if [[ -z "$ctrl_out" ]]; then
+    _CHECK_OUTPUT="Security controllers: agentdb_controllers returned no output"
+    return
+  fi
+
+  # Parse with node via stdin to avoid argv quoting issues with multi-line output
+  local result
+  result=$(echo "$ctrl_out" | node -e "
+    const fs = require('fs');
+    const raw = fs.readFileSync('/dev/stdin', 'utf8');
+    const names = ['resourceTracker', 'rateLimiter', 'circuitBreakerController'];
+    const found = [], missing = [], notEnabled = [];
+    for (const n of names) {
+      if (raw.includes(n)) {
+        found.push(n);
+        const idx = raw.indexOf(n);
+        const slice = raw.substring(idx, idx + 60);
+        if (slice.includes('enabled') && slice.includes('false')) {
+          notEnabled.push(n);
+        }
+      } else {
+        missing.push(n);
+      }
+    }
+    console.log(found.length + '|' + missing.join(',') + '|' + notEnabled.join(','));
+  " 2>/dev/null) || result="0|parse-error|"
+
+  local found missing not_enabled
+  found="${result%%|*}"
+  result="${result#*|}"
+  missing="${result%%|*}"
+  not_enabled="${result#*|}"
+
+  if [[ "$found" == "3" && -z "$not_enabled" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Security controllers: health endpoint works (D4/D5/D6 may not be named yet)"
+    _CHECK_OUTPUT="Security controllers: all 3 (D4/D5/D6) present and enabled"
+  elif [[ "$found" == "3" && -n "$not_enabled" ]]; then
+    _CHECK_OUTPUT="Security controllers: 3 present but disabled: ${not_enabled}"
   else
-    _CHECK_OUTPUT="Security controllers: agentdb_health failed — $health_out"
+    _CHECK_OUTPUT="Security controllers: $found/3 found, missing: ${missing}"
   fi
 }
 
@@ -905,28 +928,36 @@ check_rate_limit_status() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
-  local health_out="$_RK_OUT"
+  # Use dedicated agentdb_rate_limit_status — NOT agentdb_health
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
+  local rl_out="$_RK_OUT"
 
-  # Check for rate limiter buckets in health output
-  local bucket_count=0
+  if [[ -z "$rl_out" ]]; then
+    _CHECK_OUTPUT="Rate limiter: agentdb_rate_limit_status returned no output"
+    return
+  fi
+
+  # Verify success field
+  if ! echo "$rl_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Rate limiter: no success field in response"
+    return
+  fi
+
+  # Verify all 4 bucket names present
+  local bucket_count=0 missing_buckets=""
   for bucket in insert search delete batch; do
-    if echo "$health_out" | grep -qi "$bucket"; then
+    if echo "$rl_out" | grep -qi "$bucket"; then
       bucket_count=$((bucket_count + 1))
+    else
+      missing_buckets="${missing_buckets}${bucket} "
     fi
   done
 
-  if [[ $bucket_count -ge 4 ]]; then
+  if [[ $bucket_count -eq 4 ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Rate limiter: all 4 buckets (insert/search/delete/batch) present"
-  elif echo "$health_out" | grep -qi 'rateLimiter\|rate.limit'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Rate limiter: controller active (bucket details may not be in health)"
-  elif echo "$health_out" | grep -qi 'controller\|health'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Rate limiter: health endpoint works (rate limiter may be internal)"
   else
-    _CHECK_OUTPUT="Rate limiter: could not verify — $health_out"
+    _CHECK_OUTPUT="Rate limiter: $bucket_count/4 buckets, missing: ${missing_buckets}"
   fi
 }
 
@@ -935,23 +966,33 @@ check_circuit_breaker_status() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
-  local health_out="$_RK_OUT"
+  # Use dedicated agentdb_circuit_status — NOT agentdb_health
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_circuit_status"
+  local cb_out="$_RK_OUT"
 
-  if echo "$health_out" | grep -qi 'circuitBreaker'; then
-    # Verify breakers start CLOSED (no OPEN state on fresh init)
-    if echo "$health_out" | grep -qi 'OPEN'; then
-      _CHECK_OUTPUT="Circuit breaker: found but some breakers are OPEN on fresh init"
-    else
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Circuit breaker: active, no breakers OPEN (all CLOSED as expected)"
-    fi
-  elif echo "$health_out" | grep -qi 'controller\|health'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Circuit breaker: health endpoint works (breaker may be internal-only)"
-  else
-    _CHECK_OUTPUT="Circuit breaker: could not verify — $health_out"
+  if [[ -z "$cb_out" ]]; then
+    _CHECK_OUTPUT="Circuit breaker: agentdb_circuit_status returned no output"
+    return
   fi
+
+  # Verify success field
+  if ! echo "$cb_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Circuit breaker: no success field in response"
+    return
+  fi
+
+  # Fail if any breaker is OPEN (fresh init = all CLOSED or empty)
+  if echo "$cb_out" | grep -q '"OPEN"'; then
+    _CHECK_OUTPUT="Circuit breaker: found OPEN breakers on fresh init (expected all CLOSED)"
+    return
+  fi
+
+  # Extract total count for output message
+  local total
+  total=$(echo "$cb_out" | grep -o '"total"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$') || total="?"
+
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="Circuit breaker: active, no OPEN breakers (total: ${total})"
 }
 
 check_resource_tracker() {
@@ -959,24 +1000,35 @@ check_resource_tracker() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
-  local health_out="$_RK_OUT"
+  # Use dedicated agentdb_resource_usage — NOT agentdb_health
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_resource_usage"
+  local ru_out="$_RK_OUT"
 
-  if echo "$health_out" | grep -qi 'resourceTracker'; then
-    # Check for ceiling/usage fields
-    if echo "$health_out" | grep -qi 'ceiling\|usage\|utilization'; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Resource tracker: active with stats (ceiling/usage reported)"
-    else
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Resource tracker: active (stats detail may not be in health)"
-    fi
-  elif echo "$health_out" | grep -qi 'controller\|health'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Resource tracker: health endpoint works (tracker may be internal)"
-  else
-    _CHECK_OUTPUT="Resource tracker: could not verify — $health_out"
+  if [[ -z "$ru_out" ]]; then
+    _CHECK_OUTPUT="Resource tracker: agentdb_resource_usage returned no output"
+    return
   fi
+
+  # Verify success field
+  if ! echo "$ru_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Resource tracker: no success field in response"
+    return
+  fi
+
+  # Verify ceiling field present (16GB resource ceiling)
+  if ! echo "$ru_out" | grep -qi "ceiling"; then
+    _CHECK_OUTPUT="Resource tracker: missing ceiling field in response"
+    return
+  fi
+
+  # Verify overlimit/overLimit field present (case-insensitive for camelCase variants)
+  if ! echo "$ru_out" | grep -qi "overlimit"; then
+    _CHECK_OUTPUT="Resource tracker: missing overLimit field in response"
+    return
+  fi
+
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="Resource tracker: active with ceiling and overLimit fields"
 }
 
 check_controller_composition() {
@@ -984,26 +1036,37 @@ check_controller_composition() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
-  local health_out="$_RK_OUT"
+  # Use agentdb_controllers (registry only) — NOT agentdb_health
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  local ctrl_out="$_RK_OUT"
 
-  if echo "$health_out" | grep -qi 'controller\|health'; then
-    # Composite children should NOT appear as separate top-level controllers
-    local leaked=0
-    for child in semanticQueryRouter temporalCompressor contrastiveTrainer; do
-      if echo "$health_out" | grep -qi "\"$child\""; then
-        leaked=$((leaked + 1))
-      fi
-    done
+  if [[ -z "$ctrl_out" ]]; then
+    _CHECK_OUTPUT="Controller composition: agentdb_controllers returned no output"
+    return
+  fi
 
-    if [[ $leaked -eq 0 ]]; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Controller composition: no composite children leaked as top-level"
-    else
-      _CHECK_OUTPUT="Controller composition: $leaked composite children found as top-level (ADR-0041 violation)"
+  # Positive: registry must return structured data with total >= 7
+  local total
+  total=$(echo "$ctrl_out" | grep -o '"total"[[:space:]]*:[[:space:]]*[0-9]*' | grep -o '[0-9]*$') || total="0"
+  if [[ "$total" -lt 7 ]]; then
+    _CHECK_OUTPUT="Controller composition: registry too small (total=$total, expected >= 7)"
+    return
+  fi
+
+  # Composite children MUST NOT appear as top-level registry entries
+  local leaked=0 leaked_names=""
+  for child in semanticQueryRouter sonaLearningBackend contrastiveTrainer temporalCompressor; do
+    if echo "$ctrl_out" | grep -q "$child"; then
+      leaked=$((leaked + 1))
+      leaked_names="${leaked_names}${child} "
     fi
+  done
+
+  if [[ $leaked -eq 0 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Controller composition: $total controllers, no composite children leaked"
   else
-    _CHECK_OUTPUT="Controller composition: health endpoint not available"
+    _CHECK_OUTPUT="Controller composition: $leaked composite children leaked as top-level: ${leaked_names}"
   fi
 }
 
@@ -1012,37 +1075,44 @@ check_wiring_remediation() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
-  local health_out="$_RK_OUT"
+  # Use agentdb_controllers (registry only)
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  local ctrl_out="$_RK_OUT"
 
-  if echo "$health_out" | grep -qi 'controller\|health'; then
-    local issues=""
+  if [[ -z "$ctrl_out" ]]; then
+    _CHECK_OUTPUT="Wiring remediation: agentdb_controllers returned no output"
+    return
+  fi
 
-    # graphTransformer should NOT appear (removed in ADR-0040 BUG-3)
-    if echo "$health_out" | grep -qi '"graphTransformer"'; then
-      issues="${issues}graphTransformer still present; "
+  local issues=""
+
+  # ADR-0040 BUG-3: graphTransformer must be absent (removed)
+  if echo "$ctrl_out" | grep -q 'graphTransformer'; then
+    issues="${issues}graphTransformer still present (BUG-3); "
+  fi
+
+  # ADR-0040 BUG-2: stale mmrDiversity name must NOT appear
+  if echo "$ctrl_out" | grep -q '"mmrDiversity"'; then
+    issues="${issues}stale mmrDiversity name found (BUG-2); "
+  fi
+
+  # Positive confirmation: at least 2 of memoryGraph/memoryConsolidation/hierarchicalMemory
+  # must be present (proves registry is functional and wired post-remediation)
+  local positive=0
+  for ctrl in memoryGraph memoryConsolidation hierarchicalMemory; do
+    if echo "$ctrl_out" | grep -q "$ctrl"; then
+      positive=$((positive + 1))
     fi
+  done
+  if [[ $positive -lt 2 ]]; then
+    issues="${issues}only $positive/3 expected controllers found (need >= 2); "
+  fi
 
-    # mmrDiversity should NOT appear (renamed to mmrDiversityRanker in ADR-0040 BUG-2)
-    if echo "$health_out" | grep -qi '"mmrDiversity"' && ! echo "$health_out" | grep -qi '"mmrDiversityRanker"'; then
-      issues="${issues}mmrDiversity not renamed to mmrDiversityRanker; "
-    fi
-
-    if [[ -z "$issues" ]]; then
-      # Positive checks: causalRecall and learningSystem should be healthy
-      local healthy_count=0
-      for ctrl in causalRecall learningSystem; do
-        if echo "$health_out" | grep -qi "$ctrl"; then
-          healthy_count=$((healthy_count + 1))
-        fi
-      done
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Wiring remediation: no stale names found, $healthy_count/2 key controllers visible"
-    else
-      _CHECK_OUTPUT="Wiring remediation: issues found — $issues"
-    fi
+  if [[ -z "$issues" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Wiring remediation: no stale names, $positive/3 positive confirmations"
   else
-    _CHECK_OUTPUT="Wiring remediation: health endpoint not available"
+    _CHECK_OUTPUT="Wiring remediation: ${issues}"
   fi
 }
 
