@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Implemented
 
 ## Date
 
@@ -107,15 +107,15 @@ Of 31 candidates: 18 wired separately, 8 via composite, 6 deferred, 1 dropped. E
 
 ### Checklist
 
-- [ ] Define TypeScript interfaces for composite parent APIs (~20 lines each for A6, B9, D6)
-- [ ] Define init level assignments for all 18 new top-level entries (~40 lines)
+- [x] Define TypeScript interfaces for composite parent APIs (~20 lines each for A6, B9, D6)
+- [x] Define init level assignments for all 18 new top-level entries (~40 lines)
 - [ ] Implement 7-step integration template as code-generation helper (~50 lines)
 - [ ] Implement safeguards 1-4 as shared wrapper in memory-bridge.ts (~30 lines)
-- [ ] Wire D6 CircuitBreaker as registry-level decorator (~80 lines)
-- [ ] Wire B4 NativeAccelerator as shared singleton with capability probing (~40 lines)
-- [ ] Wire A6 SelfLearningRvfBackend composite factory (~30 lines)
-- [ ] Wire B9 QuantizedVectorStore composite factory (~25 lines)
-- [ ] Add validation: `agentdb_health` reports composite children via parent stats (~15 lines)
+- [x] Wire D6 CircuitBreaker as registry-level decorator (~80 lines)
+- [x] Wire B4 NativeAccelerator as shared singleton with capability probing (~40 lines)
+- [x] Wire A6 SelfLearningRvfBackend composite factory (~30 lines)
+- [x] Wire B9 QuantizedVectorStore composite factory (~25 lines)
+- [x] Add validation: `agentdb_health` reports composite children via parent stats (~15 lines)
 
 ### Testing
 
