@@ -2,7 +2,7 @@
 
 ## Status
 
-Implementing
+Accepted
 
 ## Date
 
@@ -113,14 +113,14 @@ bridgeRecordFeedback(query, selectedResult, reward):
 
 ### Checklist
 
-- [ ] Wire A6 SelfLearningRvfBackend at Level 2 (~487 lines)
-- [ ] Wire B4 NativeAccelerator at Level 2 as singleton (~490 lines)
+- [x] Wire A6 SelfLearningRvfBackend at Level 2 (~487 lines)
+- [x] Wire B4 NativeAccelerator at Level 2 as singleton (~490 lines)
 - [ ] Install `@ruvector/attention` for native acceleration
-- [ ] Enable A5 HyperbolicAttention after native detection
-- [ ] Add `bridgeSelfLearningSearch` in memory-bridge.ts
-- [ ] Add `bridgeRecordFeedback` in memory-bridge.ts
-- [ ] Verify A6.initComponents() creates all 6 sub-components via getStats()
-- [ ] Wire fire-and-forget for learning/training writes (must not block response)
+- [x] Enable A5 HyperbolicAttention after native detection
+- [x] Add `bridgeSelfLearningSearch` in memory-bridge.ts
+- [x] Add `bridgeRecordFeedback` in memory-bridge.ts
+- [x] Verify A6.initComponents() creates all 6 sub-components via getStats()
+- [x] Wire fire-and-forget for learning/training writes (must not block response)
 
 ### Testing
 
