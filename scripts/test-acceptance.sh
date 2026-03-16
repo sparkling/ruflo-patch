@@ -322,7 +322,7 @@ _record_phase "group-controller" "$(_elapsed_ms "$_g" "$(_ns)")"
 # Tests: security & reliability (ADR-0040/0041/0042, all parallel)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── security & reliability (ADR-0040/0041/0042) ──"
+log "── security & reliability (ADR-0040/0041/0042/0043) ──"
 run_check_bg "sec-controllers"  "Security controllers (D4/D5/D6)"  check_security_controllers    "security"
 run_check_bg "sec-ratelimit"    "Rate limiter status"              check_rate_limit_status        "security"
 run_check_bg "sec-breaker"      "Circuit breaker status"           check_circuit_breaker_status   "security"
@@ -333,12 +333,17 @@ run_check_bg "sec-rl-consumed"  "Rate limit token consumed"        check_rate_li
 run_check_bg "sec-health-comp"  "Health composite count"           check_health_composite_count    "security"
 run_check_bg "sec-quantize"     "Quantize status (B9)"             check_quantize_status           "security"
 run_check_bg "sec-health-rpt"   "Health report (B3)"               check_health_report             "security"
+run_check_bg "sec-filtered"     "Filtered search (B5)"             check_filtered_search           "security"
+run_check_bg "sec-query-stats"  "Query stats (B6)"                 check_query_stats               "security"
+run_check_bg "sec-b5b6-ctrls"   "B5/B6 controllers"               check_metadata_filter_controllers "security"
 collect_parallel "security" \
   "sec-controllers|Security controllers (D4/D5/D6)" "sec-ratelimit|Rate limiter status" \
   "sec-breaker|Circuit breaker status" "sec-resource|Resource tracker" \
   "sec-composition|Controller composition" "sec-wiring|Wiring remediation" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
-  "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)"
+  "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
+  "sec-filtered|Filtered search (B5)" "sec-query-stats|Query stats (B6)" \
+  "sec-b5b6-ctrls|B5/B6 controllers"
 _record_phase "group-security" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
@@ -443,15 +448,43 @@ else
     fi
   }
 
-  run_check_bg "e2e-memory-store"    "E2E memory store"     _e2e_memory_store     "e2e"
-  run_check_bg "e2e-hooks-route"     "E2E hooks route"      _e2e_hooks_route      "e2e"
-  run_check_bg "e2e-causal-edge"     "E2E causal edge"      _e2e_causal_edge      "e2e"
-  run_check_bg "e2e-reflexion-store" "E2E reflexion store"   _e2e_reflexion_store  "e2e"
-  run_check_bg "e2e-batch-optimize"  "E2E batch optimize"    _e2e_batch_optimize   "e2e"
+  # ADR-0043: e2e filtered search — store entries, then search with metadata filter
+  _e2e_filtered_search() {
+    local cli="$CLI_BIN"
+    _CHECK_PASSED="false"
+
+    # Store 3 entries with distinct metadata via memory_store
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key filter-a --value 'high score entry' --namespace filter-test"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key filter-b --value 'low score entry' --namespace filter-test"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key filter-c --value 'medium score entry' --namespace filter-test"
+
+    # Search with agentdb_filtered_search (exercises the new MCP tool end-to-end)
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_filtered_search --params '{\"query\":\"score entry\",\"namespace\":\"filter-test\",\"limit\":10}'"
+    local search_out="$_RK_OUT"
+
+    if [[ -z "$search_out" ]]; then
+      _CHECK_OUTPUT="E2E filtered search: no output from agentdb_filtered_search"
+      return
+    fi
+
+    if echo "$search_out" | grep -q '"results"' && echo "$search_out" | grep -q '"success"'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="E2E filtered search: stored 3 entries, search returned structured results"
+    else
+      _CHECK_OUTPUT="E2E filtered search: unexpected response — $search_out"
+    fi
+  }
+
+  run_check_bg "e2e-memory-store"    "E2E memory store"       _e2e_memory_store       "e2e"
+  run_check_bg "e2e-hooks-route"     "E2E hooks route"        _e2e_hooks_route        "e2e"
+  run_check_bg "e2e-causal-edge"     "E2E causal edge"        _e2e_causal_edge        "e2e"
+  run_check_bg "e2e-reflexion-store" "E2E reflexion store"    _e2e_reflexion_store    "e2e"
+  run_check_bg "e2e-batch-optimize"  "E2E batch optimize"     _e2e_batch_optimize     "e2e"
+  run_check_bg "e2e-filtered-search" "E2E filtered search"    _e2e_filtered_search    "e2e"
   collect_parallel "e2e" \
     "e2e-memory-store|E2E memory store" "e2e-hooks-route|E2E hooks route" \
     "e2e-causal-edge|E2E causal edge" "e2e-reflexion-store|E2E reflexion store" \
-    "e2e-batch-optimize|E2E batch optimize"
+    "e2e-batch-optimize|E2E batch optimize" "e2e-filtered-search|E2E filtered search"
 
   log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
 fi
