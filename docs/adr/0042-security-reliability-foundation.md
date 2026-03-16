@@ -176,11 +176,44 @@ describe('ADR-0042 security & reliability', () => {
 });
 ```
 
+### Testing Guidance (Lessons Learned)
+
+**Unit tests (35 tests, all passing)** verify D4/D5/D6 controller behavior in isolation using mock factories. They cover all state transitions, edge cases, bucket independence, token refill, and threshold arithmetic. Run with `npm run test:unit` (~0.2s).
+
+**Acceptance tests (4 checks in `lib/acceptance-checks.sh`)** verify deployment correctness in published packages:
+
+| Check | What it proves |
+|-------|---------------|
+| `sec-rl-status` | `agentdb_rate_limit_status` tool responds with structured `insert/search/delete/batch` fields |
+| `sec-cb-status` | `agentdb_circuit_status` tool responds with structured `state/failures/threshold` fields |
+| `sec-res-usage` | `agentdb_resource_usage` tool responds with structured `memoryUsage/queriesPerSecond` fields |
+| `sec-rl-consumed` | `memory store` then `agentdb_rate_limit_status` shows insert tokens consumed -- proves bridge wiring is functional |
+
+Key acceptance test rules:
+- Use dedicated MCP tools (`agentdb_rate_limit_status`, `agentdb_circuit_status`, `agentdb_resource_usage`), NOT `agentdb_health`. The health tool does not expose D4/D5/D6 internals.
+- Assert structured response fields (e.g., `insert`, `state`, `memoryUsage`), not just tool name presence.
+- No fallback success paths -- if the tool call fails, the check must fail.
+
+**What acceptance tests CANNOT prove** (verified by unit tests instead):
+- `bridgeCheckRateLimit()` is called during every MCP operation (internal plumbing, not externally observable)
+- CircuitBreaker actually opens after 5 consecutive failures (requires controller failure injection; the breaker wraps internal `registry.get()`, not MCP calls)
+- ResourceTracker warns at 80% of 16GB (would require recording 13GB+ of data via internal `record(bytes)`)
+- Rate limit depletion under load (requires 100+ calls within the 8s MCP timeout; token bucket refills faster than acceptance can drain it)
+
+**When to run which tests:**
+
+| Change | Command |
+|--------|---------|
+| D4/D5/D6 controller logic (thresholds, state transitions, buckets) | `npm run test:unit` |
+| Bridge wiring (`bridgeCheckRateLimit`, `bridgeCheckResources`) | `npm run deploy` (full acceptance) |
+| MCP tool handlers (`agentdb_rate_limit_status`, etc.) | `npm run deploy` (full acceptance) |
+| Acceptance check code (`lib/acceptance-checks.sh`) | `npm run deploy` (full acceptance) |
+
 ### Success Criteria
 
-- 0 cascading errors; CircuitBreaker opens after 5 failures, recovers after 30s
-- RateLimiter caps insert:100/s, search:1000/s; ResourceTracker warns at 80% of 16GB
-- `agentdb_health` reports D4, D5, D6 as active at Level 0
+- 0 cascading errors; CircuitBreaker opens after 5 failures, recovers after 30s **(unit: state transition tests; acceptance: `sec-cb-status` confirms breaker exists and reports state)**
+- RateLimiter caps insert:100/s, search:1000/s; ResourceTracker warns at 80% of 16GB **(unit: bucket arithmetic and threshold tests; acceptance: `sec-rl-status` and `sec-res-usage` confirm tools respond with correct structure; `sec-rl-consumed` confirms bridge wiring)**
+- D4, D5, D6 active at Level 0 **(acceptance: all 4 `sec-*` checks pass, proving controllers initialized and MCP tools operational)**
 
 ## Consequences
 

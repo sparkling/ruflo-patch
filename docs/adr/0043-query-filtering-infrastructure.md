@@ -175,6 +175,36 @@ describe('ADR-0043 query & filtering', () => {
 });
 ```
 
+### Testing Guidance
+
+**Unit test file**: `tests/unit/adr-0043-query-filtering.test.mjs`
+
+**Unit test strategy** (London School TDD with inline mocks):
+- Use the `mockFn` pattern established in ADR-0042 for all test doubles
+- Test B5 MetadataFilter factory in isolation: verify constructor accepts operator config, `apply()` method signature, state after construction
+- Test each operator family independently: comparison (`$gt`, `$lt`, `$gte`, `$lte`, `$eq`, `$ne`), set (`$in`, `$nin`), pattern (`$regex`, `$exists`), logical (`$and`, `$or`, `$not`), array (`$elemMatch`)
+- Test B6 QueryOptimizer factory: verify constructor params (`cacheSize`, `ttlMs`), `getCached()`/`cache()` method signatures, LRU eviction when cache exceeds 1000 entries
+- Edge cases: null filter input (passthrough), empty entries array, nested `$and`/`$or` with mixed operators, `$regex` with invalid pattern string, `$in` with empty array
+- Degraded mode: registry returns null for `metadataFilter` -- `bridgeFilteredSearch` must return unfiltered results; registry returns null for `queryOptimizer` -- `bridgeOptimizedSearch` must bypass cache
+
+**Acceptance test strategy**:
+- B5 MetadataFilter: testable via `memory_search` with filter params. Store 3+ entries with distinct metadata, search with `{ score: { $gt: 0.7 } }`, assert returned entries match predicate. Assert response contains structured `results` array, not string
+- B6 QueryOptimizer: internal-only (no dedicated MCP tool). Cache statistics may surface in `agentdb_health` response fields but do not create a test that depends on health output shape
+- `agentdb_query_stats` tool (if wired): assert response contains `cacheHits`, `cacheMisses`, `cacheSize` fields
+- No fallback success paths -- if `memory_search` with filter returns an error, the test must fail
+
+**What is impractical at acceptance level**:
+- QueryOptimizer TTL expiration (requires 60s wait in test)
+- LRU eviction behavior (requires inserting 1000+ cache entries)
+- `$elemMatch` with deeply nested arrays (hard to set up via MCP store calls)
+- Cache invalidation between writes and reads (timing-dependent)
+
+**Test cascade**:
+- B5/B6 factory wiring in fork TS: `npm run test:unit`
+- New `agentdb_filtered_search` or `agentdb_query_stats` MCP tool: `npm run deploy` (full acceptance)
+- Filter param added to existing `memory_search` handler: `npm run deploy` (full acceptance)
+- Acceptance check changes only: `npm run deploy`
+
 ### Success Criteria
 
 - Filter memories by metadata: `{ score: { $gt: 0.8 } }` returns only matching entries

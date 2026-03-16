@@ -199,6 +199,40 @@ describe('ADR-0044: attention suite', () => {
 });
 ```
 
+### Testing Guidance
+
+**Unit test file**: `tests/unit/adr-0044-attention-suite.test.mjs`
+
+**Unit test strategy** (London School TDD with inline mocks):
+- Use the `mockFn` pattern established in ADR-0042 for all test doubles
+- Test A1 SelfAttentionController factory: verify constructor accepts `{ dimension }`, `attend()` method signature, output shape matches input length with added weight fields
+- Test A2 CrossAttentionController factory: verify constructor accepts `{ dimension }`, `attend(query, memories)` method signature, 3 aggregation strategies return different rankings
+- Test A3 MultiHeadAttentionController factory: verify constructor accepts `{ dimension, numHeads }`, composite scores from multiple heads, 4 aggregation modes produce distinct outputs
+- Test A5 AttentionService factory: verify constructor accepts mechanism config (flash, moe, graphRoPE, hyperbolic), each mechanism independently toggleable, disabled mechanism returns null
+- Test D2 AttentionMetricsCollector factory: verify `collect()` accepts mechanism name + latency, `getMetrics()` returns per-mechanism percentiles
+- Edge cases: null attention controller (bridge returns unchanged vector results), empty entry list to `attend()`, single-entry input (no reordering possible), `numHeads=1` (degenerates to single attention)
+- Degraded mode: all attention controllers null -- `bridgeAttentionSearch` must fall back to existing pipeline; A5 with all mechanisms disabled must return null; D2 with no data collected must return empty metrics
+- State transitions: D2 metrics accumulate across calls; A5 mechanism enable/disable at runtime
+
+**Acceptance test strategy**:
+- A1-A3 attention controllers: may need new MCP tools (`agentdb_attention_search` or similar). If no dedicated tool exists, these are internal-only and tested only at unit level
+- A5 AttentionService: testable if wired to MCP tools (compute, benchmark, configure, metrics). Assert structured response with mechanism-specific fields, not string presence
+- D2 AttentionMetricsCollector: testable via `agentdb_health` if health response includes attention metrics section. Assert `attention` key exists with per-mechanism latency fields
+- No fallback success paths -- if an attention MCP tool returns an error, the test must fail
+
+**What is impractical at acceptance level**:
+- Verifying >20% result reordering (requires seeded vector data with known cosine distances)
+- FlashAttention O(N) memory verification (requires 10K+ entries and memory profiling)
+- GraphRoPE hop-distance correctness (requires a pre-built causal graph with known hop distances)
+- Multi-head Xavier projection weight initialization (internal numerical detail)
+- A5 HyperbolicAttention (disabled until Phase 11 native install)
+
+**Test cascade**:
+- A1-A3 or A5 factory wiring in fork TS: `npm run test:unit`
+- New attention MCP tools (compute, benchmark, configure, metrics): `npm run deploy` (full acceptance)
+- D2 metrics surfaced in health endpoint: `npm run deploy` (full acceptance)
+- GraphRoPE JS bugfix (3 bugs, ~15 lines): `npm run test:unit`
+
 ### Success Criteria
 
 - Attention-weighted search returns different top-5 than vector-only (>20% result reordering)

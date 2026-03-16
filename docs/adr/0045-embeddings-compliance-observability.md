@@ -191,6 +191,40 @@ describe('ADR-0045: embeddings, compliance & observability', () => {
 });
 ```
 
+### Testing Guidance
+
+**Unit test file**: `tests/unit/adr-0045-embeddings-compliance.test.mjs`
+
+**Unit test strategy** (London School TDD with inline mocks):
+- Use the `mockFn` pattern established in ADR-0042 for all test doubles
+- Test A9 EnhancedEmbeddingService factory: verify constructor accepts `{ providers, cache, batch, dimension }`, `embed()` method signature, fallback chain order (Xenova -> OpenAI -> Cohere -> hash)
+- Test A9 dimension alignment: 384-dim input produces 768-dim output (zero-padded), 1536-dim input produces 768-dim output (projected), 768-dim input passes through unchanged
+- Test A9 LRU cache: second call with same text returns cached result without incrementing provider call count, cache respects `maxSize` eviction
+- Test A9 semaphore batch: mock 10+ concurrent embed calls, verify at most `concurrency` calls are in-flight simultaneously
+- Test D3 AuditLogger factory: verify constructor accepts `{ rotation, format }`, `log()` method accepts typed event object with `type` and `payload`, 18 event types accepted
+- Test D1 TelemetryManager factory: verify constructor accepts `{ exporters, metricsInterval }`, `startSpan()` returns span with `end()`, `increment()` modifies counter state
+- Edge cases: null embedding service (bridge falls back to existing pipeline), all providers fail (hash fallback), empty string input to embed, D3 log with missing optional fields, D1 span ended twice
+- Degraded mode: A9 null -- `bridgeEmbed` must use existing pipeline; D3 null -- `bridgeAuditEvent` must no-op silently; D1 null -- controllers init without instrumentation
+
+**Acceptance test strategy**:
+- A9 EnhancedEmbeddingService: testable via `embeddings_generate` MCP tool. Call with a text string, assert response contains `embedding` array of length 768 and `provider` field. Call twice with same text, assert second call includes `cached: true` or equivalent field
+- D3 AuditLogger: testable only if an audit query endpoint exists (no standard MCP tool). If D3 events are surfaced in health or a dedicated `audit_query` tool, assert structured event records. Otherwise internal-only
+- D1 TelemetryManager: internal-only (metrics exported to console/OTLP/Prometheus, not queryable via MCP). D1 init time may appear in `agentdb_health` but do not depend on its shape
+- No fallback success paths -- if `embeddings_generate` returns an error, the test must fail
+
+**What is impractical at acceptance level**:
+- Provider failover chain (requires simulating Xenova failure, which needs env manipulation)
+- LRU eviction at 100K entries (requires storing 100K+ texts)
+- D3 file rotation at 10MB (requires generating 10MB+ of audit events)
+- D1 <1% overhead validation (requires production-scale load testing)
+- D3 SOC2/GDPR/HIPAA format compliance (requires format schema validation, not a runtime check)
+
+**Test cascade**:
+- A9/D3/D1 factory wiring in fork TS: `npm run test:unit`
+- New MCP tools for A9 (embed, status) or D1 (metrics, spans): `npm run deploy` (full acceptance)
+- `bridgeEmbed` fallback chain changes: `npm run deploy` (full acceptance)
+- Acceptance check changes only: `npm run deploy`
+
 ### Success Criteria
 
 - A9 embedding fallback chain: primary fails, secondary succeeds, no caller disruption

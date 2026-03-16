@@ -184,6 +184,42 @@ describe('ADR-0046: self-learning pipeline & native acceleration', () => {
 });
 ```
 
+### Testing Guidance
+
+**Unit test file**: `tests/unit/adr-0046-self-learning-native.test.mjs`
+
+**Unit test strategy** (London School TDD with inline mocks):
+- Use the `mockFn` pattern established in ADR-0042 for all test doubles
+- Test A6 SelfLearningRvfBackend factory: verify constructor accepts `{ dimension }`, exposes `search()`, `recordFeedback()`, `getStats()` method signatures, `initComponents()` is callable
+- Test A6 composite behavior: after `initComponents()`, `getStats()` returns keys for all 6 sub-components (router, sona, trainer, compressor, federated, solver). Mock `initComponents()` to verify it is called exactly once
+- Test A6.search() delegation: mock internal routing, verify search options are passed through, results include routing metadata
+- Test A6.recordFeedback() fire-and-forget: verify call does not block (returns void/undefined), verify feedback payload is forwarded to internal handler
+- Test A6.destroy() cleanup: verify all 6 sub-component names appear in cleanup list
+- Test B4 NativeAccelerator singleton: `getInstance()` called twice returns same reference (`===`), verify `simdAvailable` property exists
+- Test B4 JS fallback: cosine distance, L2 distance, inner product all produce correct results when native is unavailable. Verify fallback produces same ranking order as reference implementation
+- Edge cases: A6 null (bridge falls back to `bridgeSearchEntries`), B4 null (A5 HyperbolicAttention stays disabled), A6 `initComponents()` partial failure (some sub-components null in getStats), empty search results from A6
+- Degraded mode: A6 null -- `bridgeSelfLearningSearch` must fall back to existing vector search; B4 null -- all consumers use JS distance functions; A6 with failed sub-components -- search still works via remaining components
+
+**Acceptance test strategy**:
+- A6 SelfLearningRvfBackend: testable via existing search/insert MCP tools if A6 replaces vectorBackend transparently. Store entries, search, assert results returned. If A6 exposes `getStats()` via a dedicated MCP tool, assert response contains sub-component status fields
+- B4 NativeAccelerator: internal singleton with no MCP exposure. Its effects are observable only as performance improvements (not testable at acceptance level). WASM/native availability may surface in `agentdb_health` but do not depend on its shape
+- A6 feedback loop: testable only if `recordFeedback` is exposed via MCP. Otherwise internal-only
+- No fallback success paths -- if search via A6 returns an error, the test must fail
+
+**What is impractical at acceptance level**:
+- SONA micro-LoRA <1ms latency verification (requires sub-millisecond timing precision)
+- Contrastive training quality improvement over time (requires multi-session longitudinal data)
+- A6 `initComponents()` lazy import validation (internal implementation detail)
+- B4 SIMD 2-8x speedup measurement (requires controlled benchmarking environment)
+- EWC++ lambda tuning effects (requires multiple training rounds with measurable forgetting)
+- A5 HyperbolicAttention Poincare triangle inequality (requires native binary and geometric validation)
+
+**Test cascade**:
+- A6/B4 factory wiring in fork TS: `npm run test:unit`
+- A6 replaces vectorBackend in bridge (changes search behavior): `npm run deploy` (full acceptance)
+- New MCP tool for A6 stats or feedback: `npm run deploy` (full acceptance)
+- B4 native package install (`@ruvector/attention`): `npm run deploy` (full acceptance)
+
 ### Success Criteria
 
 - A6.search() invokes router + SONA + solver internally (non-empty routing decisions from getStats())
