@@ -312,10 +312,13 @@ run_check_bg "ctrl-causal"      "Causal graph"           check_causal_graph     
 run_check_bg "ctrl-cow"         "COW branching"          check_cow_branching       "controller"
 run_check_bg "ctrl-batch"       "Batch operations"       check_batch_operations    "controller"
 run_check_bg "ctrl-synthesis"   "Context synthesis"      check_context_synthesis   "controller"
+run_check_bg "ctrl-sl-health"   "Self-learning health"   check_self_learning_health "controller"
+run_check_bg "ctrl-sl-search"   "Self-learning search"   check_self_learning_search "controller"
 collect_parallel "controller" \
   "ctrl-health|Controller health" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
   "ctrl-reflexion|Reflexion lifecycle" "ctrl-causal|Causal graph" "ctrl-cow|COW branching" \
-  "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis"
+  "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
+  "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search"
 _record_phase "group-controller" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
