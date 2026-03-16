@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded by [ADR-0023](0023-google-testing-framework.md)
+Superseded by [ADR-0037](0037-test-reorganization.md)
 
 ## Context
 
@@ -57,6 +57,8 @@ LAYER 3 — Acceptance tests (scripts/test-acceptance.sh):
 ## Decision
 
 ### Architecture (SPARC-A)
+
+> **Note (2026-03-16):** L0-L4 test level naming removed per user feedback. Use plain names: preflight, unit, acceptance.
 
 Adopt a 3-layer testing strategy. Each layer is independently runnable and builds on the previous layer's confidence.
 

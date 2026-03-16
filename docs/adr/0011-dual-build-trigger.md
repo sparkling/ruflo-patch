@@ -51,6 +51,8 @@ SAVE state to scripts/.last-build-state
 
 ### Architecture (SPARC-A)
 
+> **Note (2026-03-16):** `sync-and-build.sh` was split into `ruflo-sync.sh` and `ruflo-publish.sh` per ADR-0038/0039. The systemd unit now calls these directly.
+
 The `scripts/sync-and-build.sh` script checks both upstream and local sources before deciding whether to build. It maintains a state file at `scripts/.last-build-state` containing the last-built commit hash for each monitored source.
 
 **Upstream detection** uses `git ls-remote` to compare the current HEAD of each upstream fork against the last-built HEAD. This is a single HTTP request per repo — no clone or fetch required.

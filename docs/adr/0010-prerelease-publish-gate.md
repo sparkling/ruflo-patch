@@ -94,6 +94,8 @@ The above list of rejected alternatives is exhaustive.
 
 ### Amendment: Auto-Promote After Acceptance Tests (2026-03-07)
 
+> **Note (2026-03-16):** `sync-and-build.sh` was split into `ruflo-sync.sh` and `ruflo-publish.sh` per ADR-0038/0039. The systemd unit now calls these directly.
+
 The original design required manual promotion via `npm dist-tag add`. In practice,
 this step was never performed, causing `@latest` to drift behind `@prerelease` indefinitely.
 Users on `npx @sparkleideas/cli@latest` never received updates.

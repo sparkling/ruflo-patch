@@ -22,9 +22,9 @@ ADR-0033 reported 27/28 controllers wired. A swarm audit (ADR-0039) found this i
 
 ## Decision: Specification (SPARC-S)
 
-### Issue 1: Non-existent upstream classes (6 controllers)
+### Issue 1: Unexported upstream classes (6 controllers)
 
-HierarchicalMemory, MemoryConsolidation, MutationGuard, AttestationLog, GuardedVectorBackend, and SemanticRouter were assumed to exist but be unexported. Investigation revealed 5/6 do not exist in upstream code at all (SemanticRouter exists in `agentic-flow/src/routing/` but not in the agentdb package). The registry handles this correctly via graceful degradation to stubs — this is correct behavior until upstream ships these classes.
+HierarchicalMemory, MemoryConsolidation, MutationGuard, AttestationLog, GuardedVectorBackend, and SemanticRouter were assumed to exist but be unexported. Initial investigation (pre-alpha.10) found 5/6 missing from upstream; the registry fell back to stubs. As of agentdb 3.0.0-alpha.10, all 6 classes exist in the agentdb package and can be exported from `agentdb/src/index.ts`.
 
 ### Issue 2: Missing embedder parameter (4 controllers)
 
@@ -100,7 +100,7 @@ The non-exported classes (Issue 1) require adding 6 export lines to `agentdb/src
 - [x] Remove graphTransformer from registry (BUG-3, ~15 lines)
 - [x] Remove hybridSearch and federatedSession stubs (~5 lines)
 - [x] Mark gnnService and rvfOptimizer as stats-only (~2 lines comments)
-- [x] Export 6 classes from `agentdb/src/index.ts` in agentic-flow fork — 5/6 classes (HierarchicalMemory, MemoryConsolidation, MutationGuard, AttestationLog, GuardedVectorBackend) do not exist in upstream; registry falls back to stubs. SemanticRouter exists in agentic-flow/src/routing/ but not in agentdb package. N/A — cannot export what upstream hasn't written.
+- [x] Export 6 classes from `agentdb/src/index.ts` in agentic-flow fork — all 6 classes (HierarchicalMemory, MemoryConsolidation, MutationGuard, AttestationLog, GuardedVectorBackend, SemanticRouter) exist in agentdb 3.0.0-alpha.10 and are now exported.
 - [x] Patch NightlyLearner constructor to accept optional singletons (~10 lines, agentic-flow fork)
 - [x] Patch CausalRecall constructor to accept optional singletons (~10 lines, agentic-flow fork)
 - [x] Pass AgentDB singletons to NightlyLearner and CausalRecall in registry (~6 lines)

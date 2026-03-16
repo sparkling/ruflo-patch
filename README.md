@@ -243,12 +243,11 @@ If any phase fails, a GitHub Issue is created automatically. State is never upda
 | Command | Description |
 |---------|-------------|
 | `npm run build` | Build artifacts (cached at /tmp/ruflo-build, skips if fresh) |
-| `npm test` | All local tests: L0 (preflight) + L1 (unit) + L2 (integration) |
-| `npm run test:unit` | Unit tests only (93 tests, 0.2s) |
-| `npm run test:integration` | Pipeline mechanics against local Verdaccio |
-| `npm run test:rq` | Release qualification (14 RQ checks, requires build) |
-| `npm run test:acceptance` | Production verification against real npm |
-| `npm run test:all` | All pre-publish tests (L0-L3) |
+| `npm test` | All local tests: preflight + unit |
+| `npm run test:unit` | Unit tests only (314 tests, ~2s) |
+| `npm run test:verify` | Publish to Verdaccio + 38 acceptance checks |
+| `npm run test:acceptance` | Acceptance checks (requires prior build + publish) |
+| `npm run test:all` | All pre-publish tests: preflight + unit + acceptance |
 | `npm run deploy` | Full pipeline: build + test + publish + promote |
 | `npm run deploy:dry-run` | Full pipeline, stop before publish |
 | `npm run promote` | Promote a prerelease to `@latest` |
@@ -310,18 +309,16 @@ This reassigns the `latest` dist-tag for `ruflo` and all 24 `@sparkleideas/*` pa
 
 ### Testing
 
-Three layers of testing:
+Testing levels:
 
-| Layer | What | How to run |
+| Level | What | How to run |
 |-------|------|------------|
-| **Unit (L1)** | 93 tests — codemod, pipeline logic, publish order, patches | `npm run test:unit` |
-| **Integration (L2)** | Pipeline mechanics against local Verdaccio | `npm run test:integration` |
-| **RQ (L3)** | 14 functional checks against built packages | `npm run test:rq` (requires `npm run build`) |
-| **Acceptance (L4)** | End-user commands against real npm | `npm run test:acceptance` |
-| **All local** | L0 + L1 + L2 (safe to commit?) | `npm test` |
-| **All pre-publish** | L0 + L1 + L2 + L3 | `npm run build && npm run test:all` |
+| **Unit** | 314 tests — codemod, pipeline logic, publish order, controllers | `npm run test:unit` |
+| **Acceptance** | 38 checks — publish to Verdaccio + end-to-end verification | `npm run test:verify` |
+| **All local** | Preflight + unit (safe to commit?) | `npm test` |
+| **All pre-publish** | Preflight + unit + acceptance | `npm run test:all` |
 
-Unit tests run with `node:test` (no dependencies). Integration tests use an isolated Verdaccio instance with no npm proxy (`uplinks: {}`).
+Unit tests run with `node:test` (no dependencies). Acceptance tests publish to local Verdaccio, install in a fresh project, and run 38 checks.
 
 ---
 
@@ -346,9 +343,7 @@ ruflo/
 │   ├── promote.sh                   Promote prerelease to @latest
 │   ├── rollback.sh                  Roll back @latest to previous version
 │   ├── test-runner.mjs              Unit test runner
-│   ├── test-integration.sh          9-phase integration tests with Verdaccio
-│   ├── test-rq.sh                   Release qualification runner (ADR-0023)
-│   ├── test-acceptance.sh           End-user acceptance tests
+│   ├── test-acceptance.sh           Acceptance tests (38 checks against Verdaccio)
 │   ├── validate-ci.sh               CI environment health check
 │   ├── audit-dynamic-imports.sh     Dynamic import inventory
 │   ├── install-systemd.sh           systemd unit installer

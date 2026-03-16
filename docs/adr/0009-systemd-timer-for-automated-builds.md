@@ -34,6 +34,8 @@ EVERY 6 hours:
 
 ### Architecture (SPARC-A)
 
+> **Note (2026-03-16):** `sync-and-build.sh` was split into `ruflo-sync.sh` and `ruflo-publish.sh` per ADR-0038/0039. The systemd unit now calls these directly.
+
 Use a systemd timer and a oneshot service to trigger the build script on a 6-hour cadence. No external CI system.
 
 ```ini

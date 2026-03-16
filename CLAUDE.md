@@ -1,8 +1,8 @@
-# Claude Code Configuration - RuFlo V3
+# Claude Code Configuration - Claude Flow V3
 
 ## What This Project Is
 
-ruflo-patch builds **upstream HEAD** of 4 repos (`ruflo`, `agentic-flow`, `ruv-FANN`, `RuVector`) and publishes them as `@sparkleideas/*` packages on npm. Upstream has hundreds of unpublished commits beyond their last npm tags — users installing from upstream get stale code.
+ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-FANN`) and publishes them as `@sparkleideas/*` packages on npm. Upstream has hundreds of unpublished commits beyond their last npm tags — users installing from upstream get stale code.
 
 **Pipeline**: fork HEAD → `{upstream-tag}-patch.N` versioning → scope rename (`@claude-flow/*` → `@sparkleideas/*`) → pin all internal deps → build → test → publish
 
@@ -58,46 +58,39 @@ ruflo-patch builds **upstream HEAD** of 4 repos (`ruflo`, `agentic-flow`, `ruv-F
 ## Build & Test
 
 ```bash
-# Unit tests (preflight + pipeline + unit, ~0.8s)
-npm run test:unit
-
-# Build (TSC + WASM, cached at /tmp/ruflo-build)
+# Build artifacts (cached at /tmp/ruflo-build, skips if fresh)
 npm run build
 
-# Build targets (ADR-0039)
-npm run build:tsc          # TypeScript compile only
-npm run build:wasm         # WASM compile only (optional, standalone)
+# All local tests: preflight + unit
+npm test
 
-# Deploy (full cascade: test → build → publish → acceptance → finalize)
+# Unit tests only (tight inner loop, 0.2s)
+npm run test:unit
+
+# Verification test (publish to Verdaccio + acceptance checks, requires prior build)
+npm run test:verify
+
+# All pre-publish tests: preflight + unit + acceptance
+npm run test:all
+
+# Deploy (full pipeline: build + test + publish + promote)
 npm run deploy
 
-# Sync stage (fetch upstream, merge, test, create PR)
+# Dry run (full pipeline, stop before publish)
+npm run deploy:dry-run
+
+# Sync stage (fetch upstream, merge on branch, test, create PR)
 npm run sync
 
-# Acceptance test (requires prior publish to Verdaccio)
+# Publish stage (detect merged PRs, version bump, build, publish)
+npm run publish:fork
+
+# Acceptance test (verify live packages on real npm)
 npm run test:acceptance
 
-# Promote prerelease to @latest
-npm run promote
+# Environment validation (smoke)
+npm run validate
 ```
-
-### Cascading Pipeline (ADR-0038, ADR-0039)
-
-| # | npm script | Includes | What it does |
-|---|---|---|---|
-| 1 | `preflight` | — | Static analysis |
-| 2 | `test:pipeline` | 1 | Pipeline infra tests |
-| 3 | `test:unit` | 1-2 | Unit tests |
-| 4 | `fork-version` | 1-3 | Bump `-patch.N` versions |
-| 5 | `copy-source` | 1-4 | rsync forks to build dir |
-| 6 | `codemod` | 1-5 | Scope rename |
-| 7a | `build:tsc` | 1-6 | TypeScript compile |
-| 7b | `build:wasm` | — | WASM compile (standalone) |
-| 7 | `build` | 7a+7b | Both |
-| 8 | `publish:verdaccio` | 1-7 | Publish + promote @latest |
-| 9 | `test:acceptance` | 1-8 | Real CLI, real packages |
-| 10 | `finalize` | — | Save state, push forks |
-| 11 | `deploy` | 1-10 | Full pipeline |
 
 - ALWAYS run tests after making code changes
 - ALWAYS verify build succeeds before committing
@@ -178,7 +171,7 @@ npx @sparkleideas/cli@latest swarm init --topology hierarchical --max-agents 8 -
 ```bash
 npx @sparkleideas/cli@latest init --wizard
 npx @sparkleideas/cli@latest agent spawn -t coder --name my-coder
-npx @sparkleideas/cli@latest swarm init
+npx @sparkleideas/cli@latest swarm init --v3-mode
 npx @sparkleideas/cli@latest memory search --query "authentication patterns"
 npx @sparkleideas/cli@latest doctor --fix
 ```
