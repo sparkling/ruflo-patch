@@ -30,7 +30,7 @@ done
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-TIMER_FILE="$HOME/.config/systemd/user/ruflo-pipeline.timer"
+TIMER_FILE="$HOME/.config/systemd/user/ruflo.timer"
 
 log() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] $*"
@@ -64,9 +64,9 @@ _record_reset_phase() {
 # Phase 1 — Stop the timer
 # -------------------------------------------------------------------------
 _p1=$(_ns)
-log "Phase 1: Stopping ruflo-sync timer..."
-systemctl --user stop ruflo-pipeline.timer 2>/dev/null || true
-systemctl --user stop ruflo-pipeline.service 2>/dev/null || true
+log "Phase 1: Stopping ruflo timer..."
+systemctl --user stop ruflo.timer 2>/dev/null || true
+systemctl --user stop ruflo.service 2>/dev/null || true
 log "  Timer stopped"
 _record_reset_phase "stop-timer" "$(_elapsed_ms "$_p1" "$(_ns)")"
 
@@ -308,9 +308,9 @@ systemctl --user daemon-reload
 
 if [[ "${NO_START}" == "true" ]]; then
   log "  --no-start: timer NOT started (manual trigger mode)"
-  log "  To trigger manually: systemctl --user start ruflo-pipeline.service"
+  log "  To trigger manually: systemctl --user start ruflo.service"
 else
-  systemctl --user start ruflo-pipeline.timer
+  systemctl --user start ruflo.timer
   log "  Timer started (1-minute interval)"
 fi
 _record_reset_phase "configure-timer" "$(_elapsed_ms "$_p7" "$(_ns)")"
@@ -329,14 +329,14 @@ echo ""
 echo "  Push a commit to any fork's main branch to trigger the pipeline."
 echo ""
 echo "  Monitor:"
-echo "    journalctl --user -u ruflo-pipeline.service -f"
+echo "    journalctl --user -u ruflo.service -f"
 echo ""
 echo "  Timer status:"
-echo "    systemctl --user list-timers ruflo-pipeline.timer"
+echo "    systemctl --user list-timers ruflo.timer"
 echo ""
 if [[ "${NO_START}" == "true" ]]; then
   echo "  Manual trigger:"
-  echo "    systemctl --user start ruflo-pipeline.service"
+  echo "    systemctl --user start ruflo.service"
   echo ""
 fi
 echo "  State file: ${SCRIPT_DIR}/.last-build-state"

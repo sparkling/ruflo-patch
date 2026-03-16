@@ -9,16 +9,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-TIMER_SRC="$REPO_DIR/config/ruflo-pipeline.timer"
-SERVICE_SRC="$REPO_DIR/config/ruflo-pipeline.service"
+TIMER_SRC="$REPO_DIR/config/ruflo.timer"
+SERVICE_SRC="$REPO_DIR/config/ruflo.service"
 SYSTEMD_DIR="/etc/systemd/system"
 
 SECRETS_DIR="/home/claude/.config/ruflo"
 SECRETS_FILE="$SECRETS_DIR/secrets.env"
 
 # Unit names (installed under these names regardless of source filename)
-UNIT_TIMER="ruflo-pipeline.timer"
-UNIT_SERVICE="ruflo-pipeline.service"
+UNIT_TIMER="ruflo.timer"
+UNIT_SERVICE="ruflo.service"
 
 # ── 1. Check for root privileges ────────────────────────────────────────────
 
@@ -38,7 +38,7 @@ done
 
 # ── 3. Stop old units if they exist (migration from ruflo-sync → ruflo-pipeline)
 
-for old_unit in ruflo-sync.timer ruflo-sync.service; do
+for old_unit in ruflo-sync.timer ruflo-sync.service ruflo-pipeline.timer ruflo-pipeline.service; do
     if systemctl is-active --quiet "$old_unit" 2>/dev/null; then
         echo "Stopping old unit: $old_unit"
         systemctl stop "$old_unit"
@@ -75,7 +75,7 @@ if [[ ! -f "$SECRETS_FILE" ]]; then
     NEEDS_SECRETS=true
     echo "WARNING: $SECRETS_FILE does not exist. Creating template..."
     cat > "$SECRETS_FILE" <<'TMPL'
-# ruflo secrets — loaded by ruflo-pipeline.service via EnvironmentFile=
+# ruflo secrets — loaded by ruflo.service via EnvironmentFile=
 # Replace placeholder values with real tokens before enabling the timer.
 #
 # npm automation token (bypasses 2FA): npm token create --type=automation
@@ -105,7 +105,7 @@ echo "  OK"
 
 echo ""
 echo "Timer status:"
-systemctl list-timers ruflo-pipeline*
+systemctl list-timers ruflo*
 echo ""
 
 # ── 9. Print next steps if secrets need configuration ───────────────────────
@@ -125,10 +125,10 @@ if [[ "$NEEDS_SECRETS" == "true" ]]; then
     echo ""
     echo "  3. Test the service manually:"
     echo "     sudo systemctl start $UNIT_SERVICE"
-    echo "     journalctl -u ruflo-pipeline -f"
+    echo "     journalctl -u ruflo -f"
     echo ""
 else
     echo "Installation complete. The timer will fire every 6 hours."
     echo "To trigger a manual run: sudo systemctl start $UNIT_SERVICE"
-    echo "To view logs:           journalctl -u ruflo-pipeline"
+    echo "To view logs:           journalctl -u ruflo"
 fi
