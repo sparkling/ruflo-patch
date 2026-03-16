@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Implemented
 
 ## Date
 
@@ -95,12 +95,12 @@ Phase 7 effort: 7h. Dependency: Phase 0 (ADR-0040). The existing system appears 
 
 ### Checklist
 
-- [ ] Wire D4 ResourceTracker at Level 0 (~15 lines)
-- [ ] Wire D5 RateLimiter at Level 0 with 4 token-bucket instances (~20 lines)
-- [ ] Wire D6 CircuitBreaker at Level 0 as registry `get()` decorator (~25 lines)
-- [ ] Add `bridgeCheckRateLimit()` + `bridgeCheckResources()` helpers (~20 lines)
-- [ ] Add 3 MCP tools: `agentdb_rate_limit_status`, `agentdb_resource_usage`, `agentdb_circuit_status` (~60 lines)
-- [ ] Add unit tests for D4, D5, D6 (~35 tests total)
+- [x] Wire D4 ResourceTracker at Level 0 (~15 lines)
+- [x] Wire D5 RateLimiter at Level 0 with 4 token-bucket instances (~20 lines)
+- [x] Wire D6 CircuitBreaker at Level 0 as registry `get()` decorator (~25 lines)
+- [x] Add `bridgeCheckRateLimit()` + `bridgeCheckResources()` helpers (~20 lines)
+- [x] Add 3 MCP tools: `agentdb_rate_limit_status`, `agentdb_resource_usage`, `agentdb_circuit_status` (~60 lines)
+- [x] Add unit tests for D4, D5, D6 (~35 tests total)
 
 ### Testing
 
