@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Superseded by ADR-0040 through ADR-0047
 
 ## Date
 
