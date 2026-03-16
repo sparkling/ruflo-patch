@@ -329,10 +329,13 @@ run_check_bg "sec-breaker"      "Circuit breaker status"           check_circuit
 run_check_bg "sec-resource"     "Resource tracker"                 check_resource_tracker          "security"
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
 run_check_bg "sec-wiring"       "Wiring remediation"               check_wiring_remediation        "security"
+run_check_bg "sec-rl-consumed"  "Rate limit token consumed"        check_rate_limit_consumed       "security"
+run_check_bg "sec-health-comp"  "Health composite count"           check_health_composite_count    "security"
 collect_parallel "security" \
   "sec-controllers|Security controllers (D4/D5/D6)" "sec-ratelimit|Rate limiter status" \
   "sec-breaker|Circuit breaker status" "sec-resource|Resource tracker" \
-  "sec-composition|Controller composition" "sec-wiring|Wiring remediation"
+  "sec-composition|Controller composition" "sec-wiring|Wiring remediation" \
+  "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count"
 _record_phase "group-security" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
