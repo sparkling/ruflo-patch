@@ -1,5 +1,5 @@
 [Unit]
-Description=Ruflo pipeline: publish + sync upstream
+Description=Ruflo pipeline: publish merged PRs, sync upstream
 After=network-online.target
 Wants=network-online.target
 OnFailure=ruflo-notify-failure@%n.service
@@ -10,8 +10,15 @@ WorkingDirectory=/home/claude/src/ruflo-patch
 EnvironmentFile=/home/claude/.config/ruflo/secrets.env
 Environment=HOME=/home/claude
 Environment=PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# Stage 1: Publish — detect merged PRs on fork main, bump, build, test, publish
+# Exits 0 if no new merges (skip). Exits non-zero to abort sync on failure.
 ExecStart=/home/claude/src/ruflo-patch/scripts/ruflo-publish.sh
+
+# Stage 2: Sync — fetch upstream, merge on branch, typecheck, build, test, create PR
+# Only runs if publish succeeded (or was skipped).
 ExecStart=/home/claude/src/ruflo-patch/scripts/ruflo-sync.sh
+
 TimeoutStartSec=3600
 MemoryMax=32G
 CPUQuota=800%
