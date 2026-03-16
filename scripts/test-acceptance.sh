@@ -19,6 +19,8 @@
 #   packages   — booster-esm, booster-cli, plugins-sdk, plugin-install
 #   controller — ctrl-health, ctrl-routing, ctrl-scoping, ctrl-reflexion,
 #                ctrl-causal, ctrl-cow, ctrl-batch, ctrl-synthesis
+#   security   — sec-controllers, sec-ratelimit, sec-breaker, sec-resource,
+#                sec-composition, sec-wiring
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
 #
@@ -416,6 +418,23 @@ collect_parallel "controller" \
   "ctrl-reflexion|Reflexion lifecycle" "ctrl-causal|Causal graph" "ctrl-cow|COW branching" \
   "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis"
 _record_phase "group-controller" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# Tests: security & reliability (ADR-0040/0041/0042, all parallel)
+# ════════════════════════════════════════════════════════════════════
+_g=$(_ns)
+log "── security & reliability (ADR-0040/0041/0042) ──"
+run_check_bg "sec-controllers"  "Security controllers (D4/D5/D6)"  check_security_controllers    "security"
+run_check_bg "sec-ratelimit"    "Rate limiter status"              check_rate_limit_status        "security"
+run_check_bg "sec-breaker"      "Circuit breaker status"           check_circuit_breaker_status   "security"
+run_check_bg "sec-resource"     "Resource tracker"                 check_resource_tracker          "security"
+run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
+run_check_bg "sec-wiring"       "Wiring remediation"               check_wiring_remediation        "security"
+collect_parallel "security" \
+  "sec-controllers|Security controllers (D4/D5/D6)" "sec-ratelimit|Rate limiter status" \
+  "sec-breaker|Circuit breaker status" "sec-resource|Resource tracker" \
+  "sec-composition|Controller composition" "sec-wiring|Wiring remediation"
+_record_phase "group-security" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Tests: init assertions (ADR-0038, ported from init-*.test.mjs)

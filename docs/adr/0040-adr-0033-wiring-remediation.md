@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Implemented
 
 ## Date
 
@@ -89,21 +89,21 @@ The non-exported classes (Issue 1) require adding 6 export lines to `agentdb/src
 
 ### Checklist
 
-- [ ] Export `bridgeSolverBanditSelect`/`Update` from memory-bridge.ts (BUG-1, ~1 line)
-- [ ] Fix `mmrDiversity` to `mmrDiversityRanker` in memory-tools.ts (BUG-2, ~3 lines)
-- [ ] Pass `this.createEmbeddingService()` to causalRecall constructor (~4 lines)
-- [ ] Pass `this.createEmbeddingService()` to learningSystem constructor (~4 lines)
-- [ ] Pass `this.createEmbeddingService()` to nightlyLearner constructor (~4 lines)
-- [ ] Pass `this.createEmbeddingService()` to explainableRecall constructor (~4 lines)
-- [ ] Fix vectorBackend: use `agentdb.vectorBackend` property (~2 lines)
-- [ ] Fix sonaTrajectory + graphAdapter: access via property or remove (~10 lines)
-- [ ] Remove graphTransformer from registry (BUG-3, ~15 lines)
-- [ ] Remove hybridSearch and federatedSession stubs (~5 lines)
-- [ ] Mark gnnService and rvfOptimizer as stats-only (~2 lines comments)
-- [ ] Export 6 classes from `agentdb/src/index.ts` in agentic-flow fork (~6 lines)
-- [ ] Patch NightlyLearner constructor to accept optional singletons (~10 lines, agentic-flow fork)
-- [ ] Patch CausalRecall constructor to accept optional singletons (~10 lines, agentic-flow fork)
-- [ ] Pass AgentDB singletons to NightlyLearner and CausalRecall in registry (~6 lines)
+- [x] Export `bridgeSolverBanditSelect`/`Update` from memory-bridge.ts (BUG-1, ~1 line)
+- [x] Fix `mmrDiversity` to `mmrDiversityRanker` in memory-tools.ts (BUG-2, ~3 lines)
+- [x] Pass `this.createEmbeddingService()` to causalRecall constructor (~4 lines)
+- [x] Pass `this.createEmbeddingService()` to learningSystem constructor (~4 lines)
+- [x] Pass `this.createEmbeddingService()` to nightlyLearner constructor (~4 lines)
+- [x] Pass `this.createEmbeddingService()` to explainableRecall constructor (~4 lines)
+- [x] Fix vectorBackend: use `agentdb.vectorBackend` property (~2 lines)
+- [x] Fix sonaTrajectory + graphAdapter: access via property or remove (~10 lines)
+- [x] Remove graphTransformer from registry (BUG-3, ~15 lines)
+- [x] Remove hybridSearch and federatedSession stubs (~5 lines)
+- [x] Mark gnnService and rvfOptimizer as stats-only (~2 lines comments)
+- [x] Export 6 classes from `agentdb/src/index.ts` in agentic-flow fork (~6 lines)
+- [x] Patch NightlyLearner constructor to accept optional singletons (~10 lines, agentic-flow fork)
+- [x] Patch CausalRecall constructor to accept optional singletons (~10 lines, agentic-flow fork)
+- [x] Pass AgentDB singletons to NightlyLearner and CausalRecall in registry (~6 lines)
 
 ### Testing
 
