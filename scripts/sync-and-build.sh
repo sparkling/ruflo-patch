@@ -128,21 +128,11 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 STATE_FILE="${SCRIPT_DIR}/.last-build-state"
 
-# Fork directories (ADR-0027: source is local forks, not upstream repos)
-FORK_DIR_RUFLO="/home/claude/src/forks/ruflo"
-FORK_DIR_AGENTIC="/home/claude/src/forks/agentic-flow"
-FORK_DIR_FANN="/home/claude/src/forks/ruv-FANN"
-FORK_DIR_RUVECTOR="/home/claude/src/forks/ruvector"
-
-FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN" "ruvector")
-FORK_DIRS=("${FORK_DIR_RUFLO}" "${FORK_DIR_AGENTIC}" "${FORK_DIR_FANN}" "${FORK_DIR_RUVECTOR}")
-
-UPSTREAM_RUFLO="https://github.com/ruvnet/ruflo.git"
-UPSTREAM_AGENTIC="https://github.com/ruvnet/agentic-flow.git"
-UPSTREAM_FANN="https://github.com/ruvnet/ruv-FANN.git"
-UPSTREAM_RUVECTOR="https://github.com/ruvnet/RuVector.git"
-
-UPSTREAM_URLS=("${UPSTREAM_RUFLO}" "${UPSTREAM_AGENTIC}" "${UPSTREAM_FANN}" "${UPSTREAM_RUVECTOR}")
+# Fork config — single source of truth: config/upstream-branches.json
+# Exports: FORK_NAMES[], FORK_DIRS[], UPSTREAM_URLS[], UPSTREAM_BRANCHES[],
+#          FORK_DIR_RUFLO, FORK_DIR_AGENTIC, etc., _upstream_branch()
+# shellcheck source=../lib/fork-paths.sh
+source "${PROJECT_DIR}/lib/fork-paths.sh"
 
 TEMP_DIR=""  # set in create_temp_dir, cleaned up on exit
 
@@ -474,6 +464,8 @@ push_fork_version_bumps() {
   fi
 }
 
+# _upstream_branch() provided by lib/fork-paths.sh
+
 # ---------------------------------------------------------------------------
 # Sync stage: Fetch upstream into fork branches
 # ---------------------------------------------------------------------------
@@ -503,8 +495,9 @@ sync_upstream() {
   local upstream_fetch_pids=()
   for i in "${!FORK_NAMES[@]}"; do
     local dir="${FORK_DIRS[$i]}"
+    local ub; ub=$(_upstream_branch "${FORK_NAMES[$i]}")
     [[ -d "${dir}/.git" ]] || continue
-    git -C "${dir}" fetch upstream main --quiet 2>/dev/null &
+    git -C "${dir}" fetch upstream "$ub" --quiet 2>/dev/null &
     upstream_fetch_pids+=($!)
   done
   wait "${upstream_fetch_pids[@]}" 2>/dev/null || true
@@ -521,8 +514,9 @@ sync_upstream() {
 
     [[ -d "${dir}/.git" ]] || continue
 
+    local ub; ub=$(_upstream_branch "$name")
     local upstream_sha last_synced_sha
-    upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || continue
+    upstream_sha=$(git -C "${dir}" rev-parse "upstream/${ub}" 2>/dev/null) || continue
 
     # Get last-synced SHA from state
     case "$name" in
@@ -567,8 +561,9 @@ sync_upstream() {
   for i in "${forks_to_sync[@]}"; do
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
+    local ub; ub=$(_upstream_branch "$name")
 
-    log "Creating sync branch ${branch_name} in ${name}"
+    log "Creating sync branch ${branch_name} in ${name} (tracking upstream/${ub})"
     git -C "${dir}" checkout main --quiet 2>/dev/null
     git -C "${dir}" checkout -b "${branch_name}" --quiet 2>/dev/null || {
       log_error "Failed to create branch ${branch_name} in ${name}"
@@ -578,7 +573,7 @@ sync_upstream() {
     # Attempt merge
     local _merge_start _merge_end
     _merge_start=$(date +%s%N 2>/dev/null || echo 0)
-    if ! git -C "${dir}" merge --no-edit upstream/main 2>/dev/null; then
+    if ! git -C "${dir}" merge --no-edit "upstream/${ub}" 2>/dev/null; then
       log_error "Merge conflict in ${name}"
       git -C "${dir}" merge --abort 2>/dev/null || true
 
@@ -586,7 +581,7 @@ sync_upstream() {
       git -C "${dir}" checkout main --quiet 2>/dev/null
       local conflict_pr_url
       conflict_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
-        "Merge conflict when syncing upstream/main. Manual resolution required.")
+        "Merge conflict when syncing upstream/${ub}. Manual resolution required.")
 
       _email_meta "$dir"
       local _conflict_branch_url=""
@@ -613,11 +608,11 @@ sync_upstream() {
       add_cmd_timing "sync-upstream" "git merge ${name}" "${_merge_ms}"
     fi
 
-    log "Merged upstream/main into ${branch_name} for ${name}"
+    log "Merged upstream/${ub} into ${branch_name} for ${name}"
 
     # Update upstream SHA tracking
     local upstream_sha
-    upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || true
+    upstream_sha=$(git -C "${dir}" rev-parse "upstream/${ub}" 2>/dev/null) || true
     case "$name" in
       ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
       agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
@@ -1139,9 +1134,10 @@ main() {
 
         # Also record upstream SHA so sync stage doesn't re-sync on next run
         if git -C "${dir}" remote get-url upstream &>/dev/null; then
-          git -C "${dir}" fetch upstream main --quiet 2>/dev/null || true
+          local _ub; _ub=$(_upstream_branch "$name")
+          git -C "${dir}" fetch upstream "$_ub" --quiet 2>/dev/null || true
           local upstream_sha
-          upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || upstream_sha=""
+          upstream_sha=$(git -C "${dir}" rev-parse "upstream/${_ub}" 2>/dev/null) || upstream_sha=""
           if [[ -n "$upstream_sha" ]]; then
             case "$name" in
               ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;

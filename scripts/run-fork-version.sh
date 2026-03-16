@@ -7,9 +7,9 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
-node "${SCRIPT_DIR}/fork-version.mjs" bump \
-  ~/src/forks/ruflo \
-  ~/src/forks/agentic-flow \
-  ~/src/forks/ruv-FANN \
-  ~/src/forks/ruvector
+# shellcheck source=../lib/fork-paths.sh
+source "${PROJECT_DIR}/lib/fork-paths.sh"
+
+node "${SCRIPT_DIR}/fork-version.mjs" bump "${FORK_DIRS[@]}"
