@@ -14,28 +14,12 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 STATE_FILE="${SCRIPT_DIR}/.last-build-state"
-TEMP_DIR=""
 
 # ---------------------------------------------------------------------------
-# Mutable state
+# Mutable state (single source of truth: lib/pipeline-state.sh)
 # ---------------------------------------------------------------------------
 
-NEW_RUFLO_HEAD=""
-NEW_AGENTIC_HEAD=""
-NEW_FANN_HEAD=""
-NEW_RUVECTOR_HEAD=""
-UPSTREAM_RUFLO_SHA=""
-UPSTREAM_AGENTIC_SHA=""
-UPSTREAM_FANN_SHA=""
-UPSTREAM_RUVECTOR_SHA=""
-CHANGED_FORK_SHAS=""
-CHANGED_PACKAGES_JSON="all"
-DIRECTLY_CHANGED_JSON="all"
-BUILD_VERSION=""
-BUILD_COMPILED_COUNT=""
-BUILD_TOTAL_COUNT=""
-PENDING_VERSION_PUSHES=()
-GLOBAL_TIMEOUT_PID=""
+source "${PROJECT_DIR}/lib/pipeline-state.sh"
 
 # Parse flags
 FORCE_BUILD="${FORCE_BUILD:-false}"
@@ -72,8 +56,7 @@ check_merged_prs() {
 
   # Pass 1: launch all fetches in parallel
   local fetch_pids=()
-  local fetch_start_ns
-  fetch_start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  local _start; _start=$(_ns)
   for i in "${!FORK_NAMES[@]}"; do
     local dir="${FORK_DIRS[$i]}"
     [[ -d "${dir}/.git" ]] || continue
@@ -81,13 +64,9 @@ check_merged_prs() {
     fetch_pids+=($!)
   done
   wait "${fetch_pids[@]}" 2>/dev/null || true
-  local fetch_end_ns
-  fetch_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$fetch_start_ns" != "0" && "$fetch_end_ns" != "0" ]]; then
-    local _fetch_all_ms=$(( (fetch_end_ns - fetch_start_ns) / 1000000 ))
-    log "  fetch all forks (parallel): ${_fetch_all_ms}ms"
-    add_cmd_timing "merge-detect" "git fetch all (parallel)" "${_fetch_all_ms}"
-  fi
+  local _ms; _ms=$(_elapsed_ms "$_start" "$(_ns)")
+  log "  fetch all forks (parallel): ${_ms}ms"
+  add_cmd_timing "merge-detect" "git fetch all (parallel)" "$_ms"
 
   # Pass 2: process results (SHA compare, fast-forward)
   for i in "${!FORK_NAMES[@]}"; do
@@ -102,12 +81,7 @@ check_merged_prs() {
     local origin_sha state_sha
     origin_sha=$(git -C "${dir}" rev-parse origin/main 2>/dev/null) || continue
 
-    case "$name" in
-      ruflo)        state_sha="${PREV_RUFLO_HEAD:-}" ;;
-      agentic-flow) state_sha="${PREV_AGENTIC_HEAD:-}" ;;
-      ruv-FANN)     state_sha="${PREV_FANN_HEAD:-}" ;;
-      ruvector)     state_sha="${PREV_RUVECTOR_HEAD:-}" ;;
-    esac
+    state_sha=$(get_prev_head "$name")
 
     if [[ -z "$state_sha" ]]; then
       log "No previous state for ${name} — treating as new (origin=${origin_sha:0:12})"
@@ -132,27 +106,18 @@ check_merged_prs() {
     fi
 
     # Always fast-forward local main to origin/main
-    local _ff_start _ff_end
-    _ff_start=$(date +%s%N 2>/dev/null || echo 0)
+    local _ff_start; _ff_start=$(_ns)
     git -C "${dir}" checkout main --quiet 2>/dev/null || true
     git -C "${dir}" merge --ff-only origin/main --quiet 2>/dev/null || {
       git -C "${dir}" reset --hard origin/main --quiet 2>/dev/null || true
     }
-    _ff_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$_ff_start" != "0" && "$_ff_end" != "0" ]]; then
-      local _ff_ms=$(( (_ff_end - _ff_start) / 1000000 ))
-      log "  fast-forward ${name}: ${_ff_ms}ms"
-      add_cmd_timing "merge-detect" "git ff-merge ${name}" "${_ff_ms}"
-    fi
+    local _ff_ms; _ff_ms=$(_elapsed_ms "$_ff_start" "$(_ns)")
+    log "  fast-forward ${name}: ${_ff_ms}ms"
+    add_cmd_timing "merge-detect" "git ff-merge ${name}" "$_ff_ms"
 
     local new_sha
     new_sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
-    case "$name" in
-      ruflo)        NEW_RUFLO_HEAD="$new_sha" ;;
-      agentic-flow) NEW_AGENTIC_HEAD="$new_sha" ;;
-      ruv-FANN)     NEW_FANN_HEAD="$new_sha" ;;
-      ruvector)     NEW_RUVECTOR_HEAD="$new_sha" ;;
-    esac
+    set_fork_head "$name" "$new_sha"
   done
 
   if [[ "$any_changed" == "true" ]]; then
@@ -184,18 +149,16 @@ bump_fork_versions() {
     log "Bumping versions across all forks (full bump)"
   fi
 
-  local bump_output _bump_start _bump_end
-  _bump_start=$(date +%s%N 2>/dev/null || echo 0)
+  local bump_output _bump_start
+  _bump_start=$(_ns)
   bump_output=$(node "${SCRIPT_DIR}/fork-version.mjs" bump \
     "${bump_extra_args[@]+"${bump_extra_args[@]}"}" "${dirs_args[@]}" 2>&1) || {
     log_error "Version bump failed: ${bump_output}"
     return 1
   }
-  _bump_end=$(date +%s%N 2>/dev/null || echo 0)
+  local _bump_ms; _bump_ms=$(_elapsed_ms "$_bump_start" "$(_ns)")
   log "${bump_output}"
-  if [[ "$_bump_start" != "0" && "$_bump_end" != "0" ]]; then
-    add_cmd_timing "bump-versions" "node fork-version.mjs bump" "$(( (_bump_end - _bump_start) / 1000000 ))"
-  fi
+  add_cmd_timing "bump-versions" "node fork-version.mjs bump" "$_bump_ms"
 
   CHANGED_PACKAGES_JSON=$(echo "$bump_output" | grep '^BUMPED_PACKAGES:' | sed 's/^BUMPED_PACKAGES://') || true
   [[ -z "${CHANGED_PACKAGES_JSON}" ]] && CHANGED_PACKAGES_JSON="all"
@@ -212,12 +175,7 @@ bump_fork_versions() {
       [[ -d "${dir}/.git" ]] || continue
       local sha
       sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
-      case "$name" in
-        ruflo)        NEW_RUFLO_HEAD="$sha" ;;
-        agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
-        ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
-        ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
-      esac
+      set_fork_head "$name" "$sha"
     done
     save_state
     return 0
@@ -233,27 +191,23 @@ bump_fork_versions() {
     local has_changes
     has_changes=$(git -C "${dir}" diff --cached --name-only 2>/dev/null) || true
     if [[ -n "$has_changes" ]]; then
-      local cli_version _bv_commit_start
+      local cli_version
       cli_version=$(node -e "
         const { findPackages } = await import('${SCRIPT_DIR}/fork-version.mjs');
         const pkgs = findPackages('${dir}');
         console.log(pkgs.length > 0 ? pkgs[0].pkg.version : 'unknown');
       " --input-type=module 2>/dev/null) || cli_version="unknown"
 
-      _bv_commit_start=$(date +%s%N 2>/dev/null || echo 0)
+      local _ct_start; _ct_start=$(_ns)
       git -C "${dir}" commit -m "chore: bump versions to ${cli_version}" --quiet 2>/dev/null || true
 
       local tag="v${cli_version}"
       git -C "${dir}" tag -a "$tag" -m "Release ${tag}" 2>/dev/null || {
         log "Tag ${tag} already exists in ${name} — skipping"
       }
-      local _bv_commit_end
-      _bv_commit_end=$(date +%s%N 2>/dev/null || echo 0)
-      if [[ "$_bv_commit_start" != "0" && "$_bv_commit_end" != "0" ]]; then
-        local _bvc_ms=$(( (_bv_commit_end - _bv_commit_start) / 1000000 ))
-        log "  commit+tag ${name}: ${_bvc_ms}ms"
-        add_cmd_timing "bump-versions" "git commit+tag ${name}" "${_bvc_ms}"
-      fi
+      local _ct_ms; _ct_ms=$(_elapsed_ms "$_ct_start" "$(_ns)")
+      log "  commit+tag ${name}: ${_ct_ms}ms"
+      add_cmd_timing "bump-versions" "git commit+tag ${name}" "$_ct_ms"
 
       PENDING_VERSION_PUSHES+=("${dir}")
       log "Version bump committed for ${name}: ${cli_version} (push deferred)"
@@ -273,8 +227,7 @@ push_fork_version_bumps() {
   fi
   log "Pushing deferred version bumps to ${#PENDING_VERSION_PUSHES[@]} fork(s) (parallel)"
   local push_pids=()
-  local _push_start
-  _push_start=$(date +%s%N 2>/dev/null || echo 0)
+  local _start; _start=$(_ns)
   for dir in "${PENDING_VERSION_PUSHES[@]}"; do
     local name
     name=$(basename "$dir")
@@ -286,13 +239,9 @@ push_fork_version_bumps() {
     push_pids+=($!)
   done
   wait "${push_pids[@]}" 2>/dev/null || true
-  local _push_end
-  _push_end=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$_push_start" != "0" && "$_push_end" != "0" ]]; then
-    local _push_ms=$(( (_push_end - _push_start) / 1000000 ))
-    log "  Parallel push completed in ${_push_ms}ms"
-    add_cmd_timing "push-versions" "git push (${#PENDING_VERSION_PUSHES[@]} forks parallel)" "${_push_ms}"
-  fi
+  local _ms; _ms=$(_elapsed_ms "$_start" "$(_ns)")
+  log "  Parallel push completed in ${_ms}ms"
+  add_cmd_timing "push-versions" "git push (${#PENDING_VERSION_PUSHES[@]} forks parallel)" "$_ms"
 }
 
 # ---------------------------------------------------------------------------
@@ -300,7 +249,7 @@ push_fork_version_bumps() {
 # ---------------------------------------------------------------------------
 
 main() {
-  PIPELINE_START_NS=$(date +%s%N 2>/dev/null || echo 0)
+  PIPELINE_START_NS=$(_ns)
   log "────────────────────────────────────────────────"
   log "Publish stage (detect merged PRs, build, publish)"
   log "────────────────────────────────────────────────"
@@ -310,13 +259,11 @@ main() {
 
   # Check for new merges to fork main branches
   local has_merges=false
-  local _md_start _md_end _md_ms
-  _md_start=$(date +%s%N 2>/dev/null || echo 0)
+  local _md_start; _md_start=$(_ns)
   if check_merged_prs; then
     has_merges=true
   fi
-  _md_end=$(date +%s%N 2>/dev/null || echo 0)
-  _md_ms=0; [[ "$_md_start" != "0" && "$_md_end" != "0" ]] && _md_ms=$(( (_md_end - _md_start) / 1000000 ))
+  local _md_ms; _md_ms=$(_elapsed_ms "$_md_start" "$(_ns)")
   log "  Phase 'merge-detect' completed in ${_md_ms}ms"
   PHASE_TIMINGS="${PHASE_TIMINGS} merge-detect:${_md_ms}"
 
@@ -334,12 +281,7 @@ main() {
     local name="${FORK_NAMES[$i]}"
     local sha
     sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
-    case "$name" in
-      ruflo)        NEW_RUFLO_HEAD="$sha" ;;
-      agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
-      ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
-      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
-    esac
+    set_fork_head "$name" "$sha"
   done
 
   # Build pipeline: copy -> codemod -> build

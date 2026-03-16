@@ -25,6 +25,11 @@ run_build() {
   TEMP_DIR="${TEMP_DIR}" CHANGED_PACKAGES_JSON="${CHANGED_PACKAGES_JSON:-all}" \
     bash "${SCRIPT_DIR}/build-packages.sh"
   bash "${SCRIPT_DIR}/build-wasm.sh" --build-dir "${TEMP_DIR}"
+  # Read build counts exported by build-packages.sh (subprocess can't set parent vars)
+  if [[ -f "${TEMP_DIR}/.build-counts" ]]; then
+    read -r BUILD_COMPILED_COUNT BUILD_TOTAL_COUNT < "${TEMP_DIR}/.build-counts"
+    export BUILD_COMPILED_COUNT BUILD_TOTAL_COUNT
+  fi
 }
 
 write_build_manifest() {

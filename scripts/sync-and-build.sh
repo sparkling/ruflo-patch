@@ -101,22 +101,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 STATE_FILE="${SCRIPT_DIR}/.last-build-state"
-TEMP_DIR=""
-GLOBAL_TIMEOUT_PID=""
 
-# Mutable state needed by --seed-state and --build-only
-NEW_RUFLO_HEAD=""
-NEW_AGENTIC_HEAD=""
-NEW_FANN_HEAD=""
-NEW_RUVECTOR_HEAD=""
-UPSTREAM_RUFLO_SHA=""
-UPSTREAM_AGENTIC_SHA=""
-UPSTREAM_FANN_SHA=""
-UPSTREAM_RUVECTOR_SHA=""
-BUILD_VERSION=""
-BUILD_COMPILED_COUNT=""
-BUILD_TOTAL_COUNT=""
-CHANGED_PACKAGES_JSON="all"
+# Mutable state (single source of truth: lib/pipeline-state.sh)
+source "${PROJECT_DIR}/lib/pipeline-state.sh"
 
 source "${PROJECT_DIR}/lib/fork-paths.sh"
 source "${PROJECT_DIR}/lib/pipeline-utils.sh"
@@ -136,7 +123,7 @@ trap cleanup EXIT
 # ---------------------------------------------------------------------------
 
 main() {
-  PIPELINE_START_NS=$(date +%s%N 2>/dev/null || echo 0)
+  PIPELINE_START_NS=$(_ns)
   log "=========================================="
   log "ruflo sync-and-build starting (ADR-0027)"
   log "  --sync=${RUN_SYNC} --publish=${RUN_PUBLISH}"
@@ -161,12 +148,7 @@ main() {
         git -C "${dir}" fetch origin main --quiet 2>/dev/null || true
         local sha
         sha=$(git -C "${dir}" rev-parse origin/main 2>/dev/null) || sha=""
-        case "$name" in
-          ruflo)        NEW_RUFLO_HEAD="$sha" ;;
-          agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
-          ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
-          ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
-        esac
+        set_fork_head "$name" "$sha"
         log "  ${name} fork: ${sha:0:12}"
 
         if git -C "${dir}" remote get-url upstream &>/dev/null; then
@@ -174,12 +156,7 @@ main() {
           local upstream_sha
           upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || upstream_sha=""
           if [[ -n "$upstream_sha" ]]; then
-            case "$name" in
-              ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
-              agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
-              ruv-FANN)     UPSTREAM_FANN_SHA="$upstream_sha" ;;
-              ruvector)     UPSTREAM_RUVECTOR_SHA="$upstream_sha" ;;
-            esac
+            set_upstream_sha "$name" "$upstream_sha"
             log "  ${name} upstream: ${upstream_sha:0:12}"
           fi
         fi
@@ -203,12 +180,7 @@ main() {
         fi
         local sha
         sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || sha=""
-        case "$name" in
-          ruflo)        NEW_RUFLO_HEAD="$sha" ;;
-          agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
-          ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
-          ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
-        esac
+        set_fork_head "$name" "$sha"
       fi
     done
 
@@ -242,10 +214,10 @@ main() {
   fi
 
   # End-to-end timing
-  local _main_end_ns
-  _main_end_ns=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ -n "$PIPELINE_START_NS" && "$PIPELINE_START_NS" != "0" && "$_main_end_ns" != "0" ]]; then
-    local _main_ms=$(( (_main_end_ns - PIPELINE_START_NS) / 1000000 ))
+  local _main_end_ns _main_ms
+  _main_end_ns=$(_ns)
+  _main_ms=$(_elapsed_ms "$PIPELINE_START_NS" "$_main_end_ns")
+  if [[ "$_main_ms" -gt 0 ]]; then
     log "=========================================="
     log "ruflo sync-and-build complete (${_main_ms}ms / $((_main_ms / 1000))s)"
     log "=========================================="

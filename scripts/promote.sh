@@ -33,6 +33,13 @@ for arg in "$@"; do
     --dry-run)   DRY_RUN=true ;;
     --rollback)  ROLLBACK=true ;;
     --yes|-y)    AUTO_YES=true ;;
+    -h|--help)
+      echo "Usage: promote.sh [--dry-run] [--rollback] [--yes] [<build-version>]"
+      echo "  --dry-run       Print commands without executing"
+      echo "  --rollback      Move @previous to @latest for all packages"
+      echo "  --yes|-y        Skip confirmation prompt"
+      echo "  <build-version> Label for state file (optional)"
+      exit 0 ;;
     -*)        echo "Unknown flag: $arg"; exit 1 ;;
     *)         BUILD_VERSION="$arg" ;;
   esac
@@ -194,10 +201,12 @@ else
   PROMOTE_RESULT=$(promote_packages "" "$MAX_PARALLEL" "${PROMOTE_PKG_VERS[@]}")
   PROMOTED=0
   FAILURES=0
-  # Parse result line: promoted=N failed=M
-  eval "$PROMOTE_RESULT"
-  PROMOTED=${promoted:-0}
-  FAILURES=${failed:-0}
+  # Parse result line "promoted=N failed=M" safely (no eval — C5 injection fix)
+  local _promoted=0 _failed=0
+  if [[ "$PROMOTE_RESULT" =~ promoted=([0-9]+) ]]; then _promoted="${BASH_REMATCH[1]}"; fi
+  if [[ "$PROMOTE_RESULT" =~ failed=([0-9]+) ]]; then _failed="${BASH_REMATCH[1]}"; fi
+  PROMOTED=$_promoted
+  FAILURES=$_failed
 fi
 
 # ---------- Update state file ----------

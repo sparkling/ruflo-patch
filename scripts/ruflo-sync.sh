@@ -14,25 +14,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 STATE_FILE="${SCRIPT_DIR}/.last-build-state"
-TEMP_DIR=""
 
-# ---------------------------------------------------------------------------
-# Mutable state
-# ---------------------------------------------------------------------------
-
-NEW_RUFLO_HEAD=""
-NEW_AGENTIC_HEAD=""
-NEW_FANN_HEAD=""
-NEW_RUVECTOR_HEAD=""
-UPSTREAM_RUFLO_SHA=""
-UPSTREAM_AGENTIC_SHA=""
-UPSTREAM_FANN_SHA=""
-UPSTREAM_RUVECTOR_SHA=""
-CHANGED_PACKAGES_JSON="all"
-BUILD_VERSION=""
-BUILD_COMPILED_COUNT=""
-BUILD_TOTAL_COUNT=""
-GLOBAL_TIMEOUT_PID=""
+# Mutable state (single source of truth: lib/pipeline-state.sh)
+source "${PROJECT_DIR}/lib/pipeline-state.sh"
 
 # Parse flags
 FORCE_BUILD="${FORCE_BUILD:-false}"
@@ -43,10 +27,7 @@ for arg in "$@"; do
   esac
 done
 
-# ---------------------------------------------------------------------------
 # Sourced libraries
-# ---------------------------------------------------------------------------
-
 source "${PROJECT_DIR}/lib/fork-paths.sh"
 source "${PROJECT_DIR}/lib/pipeline-utils.sh"
 source "${PROJECT_DIR}/lib/email-notify.sh"
@@ -61,8 +42,30 @@ source "${PROJECT_DIR}/lib/pipeline-helpers.sh"
 : "${RUFLO_NOTIFY_EMAIL:=}"
 
 # ---------------------------------------------------------------------------
-# sync_upstream subfunctions (ADR-0039: decomposed from 277-line monolith)
+# Helpers
 # ---------------------------------------------------------------------------
+
+# Build email URLs from _email_meta output and send a sync notification.
+# Arguments: status title fork_name fork_dir branch pr_url message [extra]
+_send_sync_email() {
+  local status="$1" title="$2" fork_name="$3" fork_dir="$4"
+  local branch="$5" pr_url="$6" message="$7" extra="${8:-}"
+
+  _email_meta "$fork_dir"
+  local _branch_url="" _upstream_url="" _fork_commit_url=""
+  [[ -n "$_EML_FORK_URL" ]] && _branch_url="${_EML_FORK_URL}/tree/${branch}"
+  [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
+  [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
+
+  local email_body
+  email_body=$(_email_html_body "$status" \
+    "$title" \
+    "$fork_name" "$branch" "$_branch_url" \
+    "$pr_url" "$_upstream_url" \
+    "$_EML_FORK_URL" "$_fork_commit_url" \
+    "$message" "$extra")
+  send_email "[ruflo] ${title}" "$email_body"
+}
 
 # Add upstream remotes if not present
 _add_upstream_remotes() {
@@ -77,8 +80,8 @@ _add_upstream_remotes() {
 
 # Fetch all upstream repos in parallel
 _fetch_upstream_parallel() {
-  local _uf_start _uf_end
-  _uf_start=$(date +%s%N 2>/dev/null || echo 0)
+  local _uf_start
+  _uf_start=$(_ns)
   local upstream_fetch_pids=()
   for i in "${!FORK_NAMES[@]}"; do
     local dir="${FORK_DIRS[$i]}"
@@ -87,9 +90,8 @@ _fetch_upstream_parallel() {
     upstream_fetch_pids+=($!)
   done
   wait "${upstream_fetch_pids[@]}" 2>/dev/null || true
-  _uf_end=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$_uf_start" != "0" && "$_uf_end" != "0" ]]; then
-    local _uf_ms=$(( (_uf_end - _uf_start) / 1000000 ))
+  local _uf_ms; _uf_ms=$(_elapsed_ms "$_uf_start" "$(_ns)")
+  if [[ "$_uf_ms" -gt 0 ]]; then
     log "  fetch all upstream (parallel): ${_uf_ms}ms"
     add_cmd_timing "sync-upstream" "git fetch upstream all (parallel)" "${_uf_ms}"
   fi
@@ -130,8 +132,8 @@ _create_sync_branches() {
     }
 
     # Attempt merge
-    local _merge_start _merge_end
-    _merge_start=$(date +%s%N 2>/dev/null || echo 0)
+    local _merge_start
+    _merge_start=$(_ns)
     if ! git -C "${dir}" merge --no-edit upstream/main 2>/dev/null; then
       log_error "Merge conflict in ${name}"
       git -C "${dir}" merge --abort 2>/dev/null || true
@@ -141,27 +143,15 @@ _create_sync_branches() {
       conflict_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "conflict" \
         "Merge conflict when syncing upstream/main. Manual resolution required.")
 
-      _email_meta "$dir"
-      local _conflict_branch_url=""
-      [[ -n "$_EML_FORK_URL" ]] && _conflict_branch_url="${_EML_FORK_URL}/tree/${branch_name}"
-      local _conflict_upstream_url=""
-      [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _conflict_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
-      local _conflict_fork_commit_url=""
-      [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _conflict_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
-      local conflict_email_body
-      conflict_email_body=$(_email_html_body "error" \
-        "Merge conflict in ${name}" \
-        "$name" "$branch_name" "$_conflict_branch_url" \
-        "$conflict_pr_url" "$_conflict_upstream_url" \
-        "$_EML_FORK_URL" "$_conflict_fork_commit_url" \
-        "Upstream sync for ${name} has merge conflicts. Manual resolution required.")
-      send_email "[ruflo] Merge conflict in ${name}" "$conflict_email_body"
+      _send_sync_email "error" "Merge conflict in ${name}" \
+        "$name" "$dir" "$branch_name" "$conflict_pr_url" \
+        "Upstream sync for ${name} has merge conflicts. Manual resolution required."
       create_failure_issue "sync-conflict-${name}" "1"
       return 1
     fi
-    _merge_end=$(date +%s%N 2>/dev/null || echo 0)
-    if [[ "$_merge_start" != "0" && "$_merge_end" != "0" ]]; then
-      local _merge_ms=$(( (_merge_end - _merge_start) / 1000000 ))
+    local _merge_ms
+    _merge_ms=$(_elapsed_ms "$_merge_start" "$(_ns)")
+    if [[ "$_merge_ms" -gt 0 ]]; then
       log "  merge upstream ${name}: ${_merge_ms}ms"
       add_cmd_timing "sync-upstream" "git merge ${name}" "${_merge_ms}"
     fi
@@ -170,13 +160,52 @@ _create_sync_branches() {
 
     local upstream_sha
     upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || true
-    case "$name" in
-      ruflo)        UPSTREAM_RUFLO_SHA="$upstream_sha" ;;
-      agentic-flow) UPSTREAM_AGENTIC_SHA="$upstream_sha" ;;
-      ruv-FANN)     UPSTREAM_FANN_SHA="$upstream_sha" ;;
-      ruvector)     UPSTREAM_RUVECTOR_SHA="$upstream_sha" ;;
-    esac
+    set_upstream_sha "$name" "$upstream_sha"
   done
+}
+
+# Type-check a single fork on its sync branch.
+# Arguments: name dir branch_name tsconfig_path
+_typecheck_one_fork() {
+  local name="$1" dir="$2" branch_name="$3" tsconfig_path="$4"
+
+  local tsc_bin="${dir}/node_modules/.bin/tsc"
+  [[ -x "$tsc_bin" ]] || tsc_bin="npx tsc"
+
+  log "Type-checking ${name} via ${tsconfig_path} on sync branch"
+  local _tc_start _tsc_output
+  _tc_start=$(_ns)
+  _tsc_output=$(cd "${dir}" && $tsc_bin --noEmit --skipLibCheck --project "$tsconfig_path" 2>&1) || true
+
+  if echo "$_tsc_output" | grep -q "error TS"; then
+    local _tc_ms; _tc_ms=$(_elapsed_ms "$_tc_start" "$(_ns)")
+    add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "$_tc_ms"
+    log_error "Type-check failed for ${name}"
+
+    local ce_pr_url
+    ce_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
+      "TypeScript compilation failed after merging upstream/main.")
+
+    # Sanitise tsc errors for HTML email
+    local _tsc_errors
+    _tsc_errors=$(echo "$_tsc_output" | grep "error TS" | head -20)
+    _tsc_errors="${_tsc_errors//&/&amp;}"
+    _tsc_errors="${_tsc_errors//</&lt;}"
+    _tsc_errors="${_tsc_errors//>/&gt;}"
+
+    _send_sync_email "error" "Compile error in ${name}" \
+      "$name" "$dir" "$branch_name" "$ce_pr_url" \
+      "TypeScript compilation failed for ${name} after syncing upstream." \
+      "$_tsc_errors"
+    create_failure_issue "sync-compile-error-${name}" "1"
+
+    git -C "${dir}" checkout main --quiet 2>/dev/null
+    return 1
+  fi
+
+  local _tc_ms; _tc_ms=$(_elapsed_ms "$_tc_start" "$(_ns)")
+  add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "$_tc_ms"
+  log "  type-check ${name}: ${_tc_ms}ms"
 }
 
 # Type-check each fork on the sync branch
@@ -190,109 +219,14 @@ _typecheck_sync_branches() {
     local dir="${FORK_DIRS[$i]}"
 
     if [[ "$name" == "ruflo" && -f "${dir}/v3/tsconfig.json" ]]; then
-      log "Type-checking ${name} via v3/tsconfig.json on sync branch"
-      local tsc_bin="${dir}/node_modules/.bin/tsc"
-      [[ -x "$tsc_bin" ]] || tsc_bin="npx tsc"
-      local _tc_start _tc_end
-      _tc_start=$(date +%s%N 2>/dev/null || echo 0)
-      local _tsc_output
-      _tsc_output=$(cd "${dir}" && $tsc_bin --noEmit --skipLibCheck --project v3/tsconfig.json 2>&1) || true
-      if [[ $? -ne 0 ]] || echo "$_tsc_output" | grep -q "error TS"; then
-        _tc_end=$(date +%s%N 2>/dev/null || echo 0)
-        if [[ "$_tc_start" != "0" && "$_tc_end" != "0" ]]; then
-          local _tc_ms=$(( (_tc_end - _tc_start) / 1000000 ))
-          log "  type-check ${name}: ${_tc_ms}ms"
-          add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "${_tc_ms}"
-        fi
-        log_error "Type-check failed for ${name}"
-
-        local ce_pr_url
-        ce_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
-          "TypeScript compilation failed after merging upstream/main.")
-
-        _email_meta "$dir"
-        local _ce_branch_url=""
-        [[ -n "$_EML_FORK_URL" ]] && _ce_branch_url="${_EML_FORK_URL}/tree/${branch_name}"
-        local _ce_upstream_url=""
-        [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ce_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
-        local _ce_fork_commit_url=""
-        [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ce_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
-        local _tsc_errors
-        _tsc_errors=$(echo "$_tsc_output" | grep "error TS" | head -20)
-        _tsc_errors="${_tsc_errors//&/&amp;}"
-        _tsc_errors="${_tsc_errors//</&lt;}"
-        _tsc_errors="${_tsc_errors//>/&gt;}"
-        local ce_email_body
-        ce_email_body=$(_email_html_body "error" \
-          "Compile error in ${name}" \
-          "$name" "$branch_name" "$_ce_branch_url" \
-          "$ce_pr_url" "$_ce_upstream_url" \
-          "$_EML_FORK_URL" "$_ce_fork_commit_url" \
-          "TypeScript compilation failed for ${name} after syncing upstream." \
-          "$_tsc_errors")
-        send_email "[ruflo] Compile error in ${name} sync" "$ce_email_body"
-        create_failure_issue "sync-compile-error-${name}" "1"
-
-        git -C "${dir}" checkout main --quiet 2>/dev/null
-        return 1
-      fi
-      _tc_end=$(date +%s%N 2>/dev/null || echo 0)
-      if [[ "$_tc_start" != "0" && "$_tc_end" != "0" ]]; then
-        local _tc_ms=$(( (_tc_end - _tc_start) / 1000000 ))
-        log "  type-check ${name}: ${_tc_ms}ms"
-        add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "${_tc_ms}"
-      fi
+      _typecheck_one_fork "$name" "$dir" "$branch_name" "v3/tsconfig.json" || return 1
     elif [[ -f "${dir}/tsconfig.json" ]]; then
       local tsc_bin="${dir}/node_modules/.bin/tsc"
       if [[ ! -x "$tsc_bin" ]]; then
         log "Skipping type-check for ${name} (no local tsc)"
-        git -C "${dir}" checkout main --quiet 2>/dev/null
         continue
       fi
-      log "Type-checking ${name} on sync branch"
-      local _tc_start _tc_end
-      _tc_start=$(date +%s%N 2>/dev/null || echo 0)
-      local _tsc_output2
-      _tsc_output2=$(cd "${dir}" && $tsc_bin --noEmit --skipLibCheck 2>&1) || true
-      if [[ $? -ne 0 ]] || echo "$_tsc_output2" | grep -q "error TS"; then
-        log_error "Type-check failed for ${name}"
-
-        local ce2_pr_url
-        ce2_pr_url=$(create_sync_pr "${dir}" "${name}" "${branch_name}" "compile-error" \
-          "TypeScript compilation failed after merging upstream/main.")
-
-        _email_meta "$dir"
-        local _ce2_branch_url=""
-        [[ -n "$_EML_FORK_URL" ]] && _ce2_branch_url="${_EML_FORK_URL}/tree/${branch_name}"
-        local _ce2_upstream_url=""
-        [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ce2_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
-        local _ce2_fork_commit_url=""
-        [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ce2_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
-        local _tsc_errors2
-        _tsc_errors2=$(echo "$_tsc_output2" | grep "error TS" | head -20)
-        _tsc_errors2="${_tsc_errors2//&/&amp;}"
-        _tsc_errors2="${_tsc_errors2//</&lt;}"
-        _tsc_errors2="${_tsc_errors2//>/&gt;}"
-        local ce2_email_body
-        ce2_email_body=$(_email_html_body "error" \
-          "Compile error in ${name}" \
-          "$name" "$branch_name" "$_ce2_branch_url" \
-          "$ce2_pr_url" "$_ce2_upstream_url" \
-          "$_EML_FORK_URL" "$_ce2_fork_commit_url" \
-          "TypeScript compilation failed for ${name} after syncing upstream." \
-          "$_tsc_errors2")
-        send_email "[ruflo] Compile error in ${name} sync" "$ce2_email_body"
-        create_failure_issue "sync-compile-error-${name}" "1"
-
-        git -C "${dir}" checkout main --quiet 2>/dev/null
-        return 1
-      fi
-      _tc_end=$(date +%s%N 2>/dev/null || echo 0)
-      if [[ "$_tc_start" != "0" && "$_tc_end" != "0" ]]; then
-        local _tc_ms=$(( (_tc_end - _tc_start) / 1000000 ))
-        log "  type-check ${name}: ${_tc_ms}ms"
-        add_cmd_timing "sync-upstream" "tsc --noEmit ${name}" "${_tc_ms}"
-      fi
+      _typecheck_one_fork "$name" "$dir" "$branch_name" "tsconfig.json" || return 1
     fi
   done
 }
@@ -300,7 +234,6 @@ _typecheck_sync_branches() {
 # ---------------------------------------------------------------------------
 # sync_upstream — orchestrate fetch, compare, merge, typecheck
 # ---------------------------------------------------------------------------
-
 sync_upstream() {
   local any_changed=false
   local timestamp
@@ -319,13 +252,7 @@ sync_upstream() {
 
     local upstream_sha last_synced_sha
     upstream_sha=$(git -C "${dir}" rev-parse upstream/main 2>/dev/null) || continue
-
-    case "$name" in
-      ruflo)        last_synced_sha="${UPSTREAM_RUFLO_SHA:-}" ;;
-      agentic-flow) last_synced_sha="${UPSTREAM_AGENTIC_SHA:-}" ;;
-      ruv-FANN)     last_synced_sha="${UPSTREAM_FANN_SHA:-}" ;;
-      ruvector)     last_synced_sha="${UPSTREAM_RUVECTOR_SHA:-}" ;;
-    esac
+    last_synced_sha=$(get_upstream_sha "$name")
 
     if [[ "$upstream_sha" == "$last_synced_sha" ]]; then
       log "No new upstream commits for ${name} (SHA=${upstream_sha:0:12})"
@@ -351,7 +278,6 @@ sync_upstream() {
 # ---------------------------------------------------------------------------
 # Main: sync stage pipeline
 # ---------------------------------------------------------------------------
-
 main() {
   log "────────────────────────────────────────────────"
   log "Sync stage (fetch upstream, create sync branches)"
@@ -376,12 +302,7 @@ main() {
     [[ -d "${dir}/.git" ]] || continue
     local sha
     sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
-    case "$name" in
-      ruflo)        NEW_RUFLO_HEAD="$sha" ;;
-      agentic-flow) NEW_AGENTIC_HEAD="$sha" ;;
-      ruv-FANN)     NEW_FANN_HEAD="$sha" ;;
-      ruvector)     NEW_RUVECTOR_HEAD="$sha" ;;
-    esac
+    set_fork_head "$name" "$sha"
   done
 
   # Reuse build artifacts if publish stage already built from same fork HEADs
@@ -405,10 +326,8 @@ main() {
   fi
 
   # Test — skip expensive acceptance if publish stage already verified
-  local tests_passed=false
-  local skip_acceptance=false
+  local tests_passed=false skip_acceptance=false
   local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
-
   if check_build_freshness && [[ -f "$_verify_manifest" ]]; then
     local _vm_data
     _vm_data=$(node -e "
@@ -432,13 +351,9 @@ main() {
   fi
 
   if [[ "$skip_acceptance" == "true" ]]; then
-    if run_tests_ci; then
-      tests_passed=true
-    fi
+    run_tests_ci && tests_passed=true
   else
-    if run_tests; then
-      tests_passed=true
-    fi
+    run_tests && tests_passed=true
   fi
 
   # Create PRs for each fork that was synced
@@ -454,40 +369,16 @@ main() {
       local ready_pr_url
       ready_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "ready" \
         "All tests passed (preflight + unit + acceptance). Ready for review and merge.")
-      _email_meta "$dir"
-      local _ready_branch_url=""
-      [[ -n "$_EML_FORK_URL" ]] && _ready_branch_url="${_EML_FORK_URL}/tree/${current_branch}"
-      local _ready_upstream_url=""
-      [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _ready_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
-      local _ready_fork_commit_url=""
-      [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _ready_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
-      local ready_email_body
-      ready_email_body=$(_email_html_body "success" \
-        "Sync PR ready for ${name}" \
-        "$name" "$current_branch" "$_ready_branch_url" \
-        "$ready_pr_url" "$_ready_upstream_url" \
-        "$_EML_FORK_URL" "$_ready_fork_commit_url" \
-        "Upstream sync for ${name} is ready for review. All tests passed.")
-      send_email "[ruflo] Sync PR ready for ${name}" "$ready_email_body"
+      _send_sync_email "success" "Sync PR ready for ${name}" \
+        "$name" "$dir" "$current_branch" "$ready_pr_url" \
+        "Upstream sync for ${name} is ready for review. All tests passed."
     else
       local fail_pr_url
       fail_pr_url=$(create_sync_pr "${dir}" "${name}" "${current_branch}" "test-failure" \
         "Tests failed during sync validation. Review required.")
-      _email_meta "$dir"
-      local _fail_branch_url=""
-      [[ -n "$_EML_FORK_URL" ]] && _fail_branch_url="${_EML_FORK_URL}/tree/${current_branch}"
-      local _fail_upstream_url=""
-      [[ -n "$_EML_UPSTREAM_URL" && -n "$_EML_UPSTREAM_SHA" ]] && _fail_upstream_url="${_EML_UPSTREAM_URL}/commit/${_EML_UPSTREAM_SHA}"
-      local _fail_fork_commit_url=""
-      [[ -n "$_EML_FORK_URL" && -n "$_EML_FORK_SHA" ]] && _fail_fork_commit_url="${_EML_FORK_URL}/commit/${_EML_FORK_SHA}"
-      local fail_email_body
-      fail_email_body=$(_email_html_body "warning" \
-        "Sync test failure for ${name}" \
-        "$name" "$current_branch" "$_fail_branch_url" \
-        "$fail_pr_url" "$_fail_upstream_url" \
-        "$_EML_FORK_URL" "$_fail_fork_commit_url" \
-        "Upstream sync for ${name} failed tests. Manual review required.")
-      send_email "[ruflo] Sync test failure for ${name}" "$fail_email_body"
+      _send_sync_email "warning" "Sync test failure for ${name}" \
+        "$name" "$dir" "$current_branch" "$fail_pr_url" \
+        "Upstream sync for ${name} failed tests. Manual review required."
       create_failure_issue "sync-test-failure-${name}" "1"
     fi
 

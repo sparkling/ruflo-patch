@@ -24,6 +24,12 @@ for arg in "$@"; do
   case "$arg" in
     --dry-run) DRY_RUN=true ;;
     --yes|-y)  AUTO_YES=true ;;
+    -h|--help)
+      echo "Usage: rollback.sh [--dry-run] [--yes] <version>"
+      echo "  --dry-run   Print commands without executing"
+      echo "  --yes|-y    Skip confirmation prompt"
+      echo "  <version>   Target version to roll back to (or reads .last-promoted-version)"
+      exit 0 ;;
     -*)        echo "Unknown flag: $arg"; exit 1 ;;
     *)         GOOD_VERSION="$arg" ;;
   esac
@@ -46,16 +52,18 @@ if [[ -z "$GOOD_VERSION" ]]; then
   exit 1
 fi
 
-# Dynamic package list from published-versions.json (P2: avoid stale hardcoded list)
-# Read packages from config
-PACKAGES=($(node -e "
-  const pv = JSON.parse(require('fs').readFileSync('${PROJECT_DIR}/config/published-versions.json', 'utf-8'));
-  Object.keys(pv).forEach(k => console.log(k));
-" 2>/dev/null))
+# Dynamic per-package versions from published-versions.json (C6: per-package rollback)
+declare -A PKG_VERSIONS
+while IFS=$'\t' read -r name version; do
+  [[ -n "$name" ]] && PKG_VERSIONS["$name"]="$version"
+done < <(node -e "
+  const pv = JSON.parse(require('fs').readFileSync('${PROJECT_DIR}/config/published-versions.json','utf-8'));
+  for (const [k,v] of Object.entries(pv)) console.log(k + '\t' + v);
+" 2>/dev/null)
 
-if [[ ${#PACKAGES[@]} -eq 0 ]]; then
+if [[ ${#PKG_VERSIONS[@]} -eq 0 ]]; then
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARN: Could not read packages from config/published-versions.json — using hardcoded fallback"
-  # Fallback hardcoded list as safety net
+  # Fallback hardcoded list as safety net (uses GOOD_VERSION since we have no per-package info)
   SCOPED_PACKAGES=(
     # Level 1
     agentdb agentic-flow ruv-swarm
@@ -68,20 +76,19 @@ if [[ ${#PACKAGES[@]} -eq 0 ]]; then
     # Level 5
     cli claude-flow
   )
-  PACKAGES=()
   for pkg in "${SCOPED_PACKAGES[@]}"; do
-    PACKAGES+=("@sparkleideas/${pkg}")
+    PKG_VERSIONS["@sparkleideas/${pkg}"]="${GOOD_VERSION}"
   done
   # Add the root package
-  PACKAGES+=("@sparkleideas/ruflo")
+  PKG_VERSIONS["@sparkleideas/ruflo"]="${GOOD_VERSION}"
 fi
 
-TOTAL=${#PACKAGES[@]}
+TOTAL=${#PKG_VERSIONS[@]}
 
 # ---------- Summary ----------
 echo ""
 echo "Rollback plan"
-echo "  Target version : $GOOD_VERSION"
+echo "  Target version : ${GOOD_VERSION} (fallback) / per-package from published-versions.json"
 echo "  Packages       : $TOTAL (from published-versions.json)"
 echo "  Dry run        : $DRY_RUN"
 echo ""
@@ -121,12 +128,13 @@ run_dist_tag() {
 
 # ---------- Execute ----------
 echo ""
-echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Rolling back @latest to ${GOOD_VERSION}"
+echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Rolling back @latest (per-package versions)"
 echo ""
 
-# All packages (fully-qualified names from published-versions.json or fallback)
-for pkg in "${PACKAGES[@]}"; do
-  run_dist_tag "${pkg}@${GOOD_VERSION}"
+# All packages with per-package versions from published-versions.json (C6)
+for pkg in "${!PKG_VERSIONS[@]}"; do
+  local_ver="${PKG_VERSIONS[$pkg]}"
+  run_dist_tag "${pkg}@${local_ver}"
 done
 
 # ---------- Summary ----------

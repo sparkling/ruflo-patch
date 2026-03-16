@@ -322,58 +322,18 @@ write_pipeline_summary() {
     pipeline_ms=$(( (pipeline_end_ns - PIPELINE_START_NS) / 1000000 ))
   fi
 
-  # Use node to assemble the full timing JSON (phases + commands + packages + verify sub-phases)
-  node -e "
-    const fs = require('fs');
-    const phases = '${PHASE_TIMINGS}'.trim().split(/\s+/).filter(Boolean).map(e => {
-      const i = e.lastIndexOf(':');
-      return { name: e.slice(0, i), duration_ms: parseInt(e.slice(i + 1)) };
-    });
-    let commands = [];
-    try {
-      commands = fs.readFileSync('${TIMING_CMDS_FILE}', 'utf-8')
-        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
-    } catch {}
-    let buildPkgs = [];
-    try {
-      buildPkgs = fs.readFileSync('${TIMING_BUILD_PKGS_FILE}', 'utf-8')
-        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
-    } catch {}
-    let publishPkgs = [];
-    try {
-      publishPkgs = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/.publish-timing.json', 'utf-8'));
-    } catch {}
-    let verifyPhases = [];
-    for (const tf of ['/tmp/ruflo-publish-verdaccio-timing.jsonl', '/tmp/ruflo-acceptance-timing.jsonl']) {
-      try {
-        const entries = fs.readFileSync(tf, 'utf-8')
-          .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
-        verifyPhases.push(...entries);
-      } catch {}
-    }
-    const result = {
-      timestamp: '${timestamp}',
-      version: '${BUILD_VERSION:-unknown}',
-      total_duration_ms: ${pipeline_ms},
-      acceptance_passed: true,
-      phases,
-      commands,
-      verify_phases: verifyPhases,
-      packages: {
-        build: buildPkgs,
-        publish: publishPkgs.map(p => ({
-          name: p.name, duration_ms: p.duration_ms || 0,
-          version: p.version || '', tag: p.tag || ''
-        }))
-      }
-    };
-    fs.writeFileSync('${summary_file}', JSON.stringify(result, null, 2) + '\\n');
-  " 2>/dev/null || {
-    log "WARNING: Node JSON assembly failed — writing basic summary"
-    local phases_json='[]'
-    cat > "$summary_file" <<EOJSON
-{"timestamp":"${timestamp}","version":"${BUILD_VERSION:-unknown}","total_duration_ms":${pipeline_ms},"acceptance_passed":true,"phases":${phases_json},"commands":[],"verify_phases":[],"packages":{"build":[],"publish":[]}}
-EOJSON
+  # Assemble the full timing JSON via external script (phases + commands + packages + verify sub-phases)
+  node "${PROJECT_DIR}/scripts/assemble-timing.mjs" \
+    --phase-timings "${PHASE_TIMINGS}" \
+    --cmds-file "${TIMING_CMDS_FILE}" \
+    --build-pkgs-file "${TIMING_BUILD_PKGS_FILE}" \
+    --project-dir "${PROJECT_DIR}" \
+    --timestamp "${timestamp}" \
+    --version "${BUILD_VERSION:-unknown}" \
+    --total-ms "${pipeline_ms}" \
+    --output "${summary_file}" 2>/dev/null || {
+    log_warn "Timing assembly failed — writing basic summary"
+    echo '{"timestamp":"'"${timestamp}"'","version":"'"${BUILD_VERSION:-unknown}"'","total_duration_ms":'"${pipeline_ms}"'}' > "$summary_file"
   }
   log "Pipeline timing summary written to ${summary_file}"
 }

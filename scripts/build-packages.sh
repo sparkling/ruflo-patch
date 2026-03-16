@@ -340,47 +340,10 @@ run_build() {
     log_error "Some packages failed to build — published packages may be broken"
   fi
 
-  # Export build stats for manifest (written by write_build_manifest after build completes)
+  # Export build stats for caller's write_build_manifest (via file, since this is a subprocess)
+  echo "${compiled_packages} ${total_packages}" > "${TEMP_DIR}/.build-counts"
   BUILD_COMPILED_COUNT=$compiled_packages
   BUILD_TOTAL_COUNT=$total_packages
-}
-
-write_build_manifest() {
-  local manifest="${TEMP_DIR}/.build-manifest.json"
-  local _wm_start _wm_end
-  _wm_start=$(date +%s%N 2>/dev/null || echo 0)
-  local codemod_hash
-  codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || codemod_hash=""
-
-  # Use pre-computed counts from run_build if available, else scan (for --build-only without run_build)
-  local compiled_count="${BUILD_COMPILED_COUNT:-}"
-  local total_count="${BUILD_TOTAL_COUNT:-}"
-  if [[ -z "$compiled_count" ]]; then
-    compiled_count=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
-  fi
-  if [[ -z "$total_count" ]]; then
-    total_count=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" -exec grep -l '"@sparkleideas/' {} + 2>/dev/null | wc -l)
-  fi
-
-  cat > "$manifest" <<MANIFESTEOF
-{
-  "version": 2,
-  "built_at": "$(date -u '+%Y-%m-%dT%H:%M:%SZ')",
-  "ruflo_head": "${NEW_RUFLO_HEAD:-}",
-  "agentic_head": "${NEW_AGENTIC_HEAD:-}",
-  "fann_head": "${NEW_FANN_HEAD:-}",
-  "ruvector_head": "${NEW_RUVECTOR_HEAD:-}",
-  "codemod_hash": "${codemod_hash}",
-  "packages_compiled": ${compiled_count},
-  "packages_total": ${total_count}
-}
-MANIFESTEOF
-  _wm_end=$(date +%s%N 2>/dev/null || echo 0)
-  if [[ "$_wm_start" != "0" && "$_wm_end" != "0" ]]; then
-    local _wm_ms=$(( (_wm_end - _wm_start) / 1000000 ))
-    log "  Build manifest written in ${_wm_ms}ms"
-    add_cmd_timing "build" "write-manifest" "${_wm_ms}"
-  fi
 }
 
 # ---------------------------------------------------------------------------
@@ -388,5 +351,4 @@ MANIFESTEOF
 # ---------------------------------------------------------------------------
 
 run_build
-write_build_manifest
 log "Build packages complete"
