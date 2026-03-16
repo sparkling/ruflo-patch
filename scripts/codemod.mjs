@@ -153,25 +153,47 @@ function renameObjectKeys(obj) {
 // Only match @claude-flow/ that is NOT already part of @sparkleideas/
 const SCOPED_RE = /@claude-flow\//g;
 
-// Step 2: Unscoped replacements -- ONLY used for package.json name/dependency
-// transforms (handled separately by transformPackageJsonObject).
-// In source files, bare names like "agentdb" are often variable names, property
-// keys, or shorthand object keys -- renaming them breaks JavaScript syntax.
-// Only the scoped @claude-flow/ prefix is safe to replace in source files.
+// Step 2: Unscoped import replacements -- rename bare unscoped package names
+// ONLY inside import/require contexts (string literals following import/from/require).
+// Bare names as variables, property keys, or object shorthand are NOT renamed.
+//
+// Matches these patterns (single or double quotes):
+//   import('agentdb')          -> import('@sparkleideas/agentdb')
+//   require('agentdb')         -> require('@sparkleideas/agentdb')
+//   from 'agentdb'             -> from '@sparkleideas/agentdb'
+//   import 'agentdb'           -> import '@sparkleideas/agentdb'
+//   from "agentdb/embeddings"  -> from "@sparkleideas/agentdb/embeddings"
+
+const UNSCOPED_IMPORT_NAMES = Object.keys(UNSCOPED_MAP);
+
+// Build a single regex that matches unscoped names in import contexts.
+// Lookbehind: import(, require(, from , import  — followed by quote + name
+// The name must be at the start of the string literal (right after the quote).
+const UNSCOPED_NAMES_RE = UNSCOPED_IMPORT_NAMES.map(n => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|');
+const UNSCOPED_IMPORT_RE = new RegExp(
+  `((?:import|require)\\s*\\(\\s*['"]|(?:from|import)\\s+['"])(${UNSCOPED_NAMES_RE})(\\/|['"])`,
+  'g'
+);
 
 /**
- * Apply scoped regex replacement to source file content.
- * Returns the transformed content (may be identical if no matches).
+ * Apply scope renaming to source file content.
  *
- * NOTE: Only @claude-flow/ -> @sparkleideas/ is applied in source files.
- * Unscoped names (agentdb, claude-flow, etc.) are only renamed in
- * package.json via transformPackageJsonObject().
- *
- * Behavioral fixes (MC-001 autoStart, etc.) belong in the patch system
- * (patch-all.sh), not in the codemod. The codemod only does scope renaming.
+ * Two passes:
+ *  1. @claude-flow/* -> @sparkleideas/* (all occurrences)
+ *  2. Bare unscoped names in import/require/from contexts only
  */
 function transformSource(content) {
-  return content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
+  // Pass 1: scoped prefix
+  let result = content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
+
+  // Pass 2: unscoped names in import contexts
+  result = result.replace(UNSCOPED_IMPORT_RE, (match, prefix, name, suffix) => {
+    const mapped = UNSCOPED_MAP[name];
+    if (!mapped) return match;
+    return prefix + mapped + suffix;
+  });
+
+  return result;
 }
 
 // -- File walker --------------------------------------------------------------

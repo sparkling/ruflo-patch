@@ -89,7 +89,7 @@ describe('codemod: source file transform', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('transforms scoped @claude-flow/ imports and leaves unscoped names alone', async () => {
+  it('transforms scoped @claude-flow/ and unscoped imports in import/require contexts', async () => {
     tmp = makeTmpDir();
     const source = [
       "import { foo } from '@claude-flow/memory';",
@@ -108,12 +108,12 @@ describe('codemod: source file transform', () => {
     // Scoped @claude-flow/ references ARE transformed in source files
     assert.ok(result.includes("from '@sparkleideas/memory'"), 'scoped import transformed');
     assert.ok(result.includes("from '@sparkleideas/core/utils'"), 'scoped deep import transformed');
-    // Unscoped bare names are NOT transformed in source files (would corrupt JS)
-    assert.ok(result.includes("require('claude-flow')"), 'unscoped claude-flow left alone');
-    assert.ok(result.includes("require('ruflo')"), 'unscoped ruflo left alone');
-    assert.ok(result.includes("require('agentdb')"), 'unscoped agentdb left alone');
-    assert.ok(result.includes("require('agentic-flow')"), 'unscoped agentic-flow left alone');
-    assert.ok(result.includes("require('ruv-swarm')"), 'unscoped ruv-swarm left alone');
+    // Unscoped names in import/require contexts ARE transformed
+    assert.ok(result.includes("require('@sparkleideas/claude-flow')"), 'require claude-flow transformed');
+    assert.ok(result.includes("require('@sparkleideas/ruflo')"), 'require ruflo transformed');
+    assert.ok(result.includes("require('@sparkleideas/agentdb')"), 'require agentdb transformed');
+    assert.ok(result.includes("require('@sparkleideas/agentic-flow')"), 'require agentic-flow transformed');
+    assert.ok(result.includes("require('@sparkleideas/ruv-swarm')"), 'require ruv-swarm transformed');
   });
 });
 
@@ -134,8 +134,8 @@ describe('codemod: ordering — scoped before unscoped', () => {
     const result = readFileSync(join(tmp, 'mixed.js'), 'utf8');
     // Scoped must become @sparkleideas/memory
     assert.ok(result.includes("'@sparkleideas/memory'"), 'scoped transformed correctly');
-    // Unscoped 'claude-flow' must NOT be transformed in source files
-    assert.ok(result.includes("'claude-flow'"), 'unscoped left alone in source');
+    // Unscoped 'claude-flow' in a non-import context (const name = '...') is left alone
+    assert.ok(result.includes("'claude-flow'"), 'non-import string left alone');
     // Must NOT contain double-patched strings
     assert.ok(!result.includes('@sparkleideas-patch'), 'no double-replacement');
     assert.ok(!result.includes('@sparkleideas/patch'), 'no corruption of already-transformed');
@@ -158,11 +158,11 @@ describe('codemod: negative lookahead — no double-transform', () => {
   });
 });
 
-describe('codemod: ruvector untouched', () => {
+describe('codemod: ruvector scopes', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('does not transform @ruvector/core or ruvector references', async () => {
+  it('does not transform @ruvector/core (different scope), but transforms bare ruvector in imports', async () => {
     tmp = makeTmpDir();
     const source = [
       "import { vec } from '@ruvector/core';",
@@ -173,7 +173,10 @@ describe('codemod: ruvector untouched', () => {
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'ruvector.js'), 'utf8');
-    assert.equal(result, source, 'ruvector references must not be transformed');
+    // @ruvector/* scope is NOT in the codemod — untouched
+    assert.ok(result.includes("from '@ruvector/core'"), '@ruvector/core untouched');
+    // bare 'ruvector' in require IS renamed (it's in UNSCOPED_MAP)
+    assert.ok(result.includes("require('@sparkleideas/ruvector')"), 'bare ruvector in require transformed');
   });
 });
 
@@ -191,6 +194,7 @@ describe('codemod: idempotency', () => {
     const source = [
       "import { foo } from '@claude-flow/memory';",
       "const bar = require('ruflo');",
+      "const name = 'ruflo';",  // non-import context
     ].join('\n');
     writeFileSync(join(tmp, 'app.js'), source);
 
@@ -301,21 +305,26 @@ describe('codemod: source file transforms', () => {
     assert.ok(result.includes("from '@sparkleideas/memory'"), 'scoped memory must be transformed');
   });
 
-  it('does NOT transform bare unscoped names in source files (prevents JS corruption)', async () => {
+  it('transforms unscoped imports but preserves variable names and property access', async () => {
     tmp = makeTmpDir();
     const source = [
       "const agentdb = require('agentdb');",
       "const x = agentdb.query();",
+      "const name = 'my-agentdb-wrapper';",
+      "console.log({ agentdb });",
     ].join('\n');
     writeFileSync(join(tmp, 'unscoped.js'), source);
 
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'unscoped.js'), 'utf8');
-    // Bare unscoped names are NOT transformed in source files to avoid
-    // corrupting variable names, property access, etc.
-    assert.ok(result.includes("require('agentdb')"), 'bare agentdb must NOT be transformed in source');
-    assert.ok(result.includes("const agentdb"), 'variable name must be preserved');
+    // require('agentdb') IS transformed (import context)
+    assert.ok(result.includes("require('@sparkleideas/agentdb')"), 'require agentdb transformed');
+    // Variable names, property access, and non-import strings are NOT touched
+    assert.ok(result.includes("const agentdb"), 'variable name preserved');
+    assert.ok(result.includes("agentdb.query()"), 'property access preserved');
+    assert.ok(result.includes("'my-agentdb-wrapper'"), 'unrelated string preserved');
+    assert.ok(result.includes("{ agentdb }"), 'shorthand property preserved');
   });
 
   it('does not transform @sparkleideas/ruflo further', async () => {
@@ -414,5 +423,58 @@ describe('codemod: ADR-0027 — dependency ranges preserved (no wildcard replace
       '^3.0.0 range preserved after scope rename');
     assert.equal(result.dependencies['@sparkleideas/agentdb'], '^3.0.0-alpha.1',
       'prerelease range preserved after scope rename');
+  });
+});
+
+describe('codemod: unscoped dynamic import() — the agentdb bug', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('transforms import("agentdb") to import("@sparkleideas/agentdb")', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "const agentdbModule = await import('agentdb');",
+      'const mod = await import("agentic-flow");',
+      "const sub = await import('agentdb/embeddings');",
+    ].join('\n');
+    writeFileSync(join(tmp, 'dynamic.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'dynamic.js'), 'utf8');
+    assert.ok(result.includes("import('@sparkleideas/agentdb')"), 'dynamic import agentdb transformed');
+    assert.ok(result.includes('import("@sparkleideas/agentic-flow")'), 'dynamic import agentic-flow transformed');
+    assert.ok(result.includes("import('@sparkleideas/agentdb/embeddings')"), 'dynamic import with subpath transformed');
+  });
+
+  it('transforms from "agentdb" static imports', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "import { SolverBandit } from 'agentdb';",
+      'import type { Config } from "agentic-flow";',
+    ].join('\n');
+    writeFileSync(join(tmp, 'static.ts'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'static.ts'), 'utf8');
+    assert.ok(result.includes("from '@sparkleideas/agentdb'"), 'static import agentdb transformed');
+    assert.ok(result.includes('from "@sparkleideas/agentic-flow"'), 'static import agentic-flow transformed');
+  });
+
+  it('does NOT transform unscoped names outside import contexts', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "const agentdb = getDB();",
+      "if (agentdb) { agentdb.query(); }",
+      "const config = { agentdb: true };",
+      "// This uses agentdb internally",
+    ].join('\n');
+    writeFileSync(join(tmp, 'vars.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'vars.js'), 'utf8');
+    assert.equal(result, source, 'non-import agentdb references must not change');
   });
 });
