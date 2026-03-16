@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -98,12 +98,12 @@ Phase 8 effort: 5h. No dependencies (parallel with Phase 7). Both already export
 
 ### Checklist
 
-- [ ] Wire B5 MetadataFilter at Level 1 (~15 lines)
-- [ ] Wire B6 QueryOptimizer at Level 1 (~15 lines)
-- [ ] Add `bridgeFilteredSearch()` + `bridgeOptimizedSearch()` in memory-bridge.ts (~40 lines)
-- [ ] Add MCP tools `agentdb_filtered_search` + `agentdb_query_stats` (~40 lines)
-- [ ] Integrate filter param into existing `memory_search` handler (~10 lines)
-- [ ] Add unit tests for B5 operators + B6 cache (~30 tests)
+- [x] Wire B5 MetadataFilter at Level 1 (~15 lines) — pre-existing in controller-registry.ts
+- [x] Wire B6 QueryOptimizer at Level 1 (~15 lines) — pre-existing in controller-registry.ts
+- [x] Add `bridgeFilteredSearch()` + `bridgeOptimizedSearch()` + `bridgeQueryStats()` in memory-bridge.ts
+- [x] Add MCP tools `agentdb_filtered_search` + `agentdb_query_stats` in agentdb-tools.ts
+- [x] Integrate QueryOptimizer cache into existing `memory_search` handler
+- [x] Add unit tests for B5 operators + B6 cache (32 tests)
 
 ### Testing
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -107,14 +107,14 @@ bridgeAuditEvent(type, payload):
 
 ### Checklist
 
-- [ ] Wire A9 EnhancedEmbeddingService at Level 3 (~1435 lines)
-- [ ] Wire D3 AuditLogger at Level 3 (~483 lines)
-- [ ] Wire D1 TelemetryManager at Level 0 (~545 lines)
-- [ ] Add `bridgeEmbed` fallback chain in memory-bridge.ts
-- [ ] Add `bridgeAuditEvent` in memory-bridge.ts
-- [ ] Configure D1 exporters (Console default, OTLP/Prometheus optional)
-- [ ] Wire D1 to instrument all controller init times and call counts
-- [ ] Register MCP tools for A9 (embed, status) and D1 (metrics, spans)
+- [x] Wire A9 EnhancedEmbeddingService at Level 3 (~1435 lines)
+- [x] Wire D3 AuditLogger at Level 3 (~483 lines)
+- [x] Wire D1 TelemetryManager at Level 0 (~545 lines)
+- [x] Add `bridgeEmbed` fallback chain in memory-bridge.ts
+- [x] Add `bridgeAuditEvent` in memory-bridge.ts
+- [x] Configure D1 exporters (Console default, OTLP/Prometheus optional)
+- [x] Wire D1 to instrument all controller init times and call counts
+- [x] Register MCP tools for A9 (embed, status) and D1 (metrics, spans)
 
 ### Testing
 
