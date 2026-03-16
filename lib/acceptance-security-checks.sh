@@ -339,3 +339,102 @@ check_wiring_remediation() {
     _CHECK_OUTPUT="Wiring remediation: ${issues}"
   fi
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0043: Query & Filtering Infrastructure
+# ════════════════════════════════════════════════════════════════════
+
+check_filtered_search() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Call agentdb_filtered_search with a query (no filter = passthrough)
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_filtered_search --params '{\"query\":\"authentication patterns\"}'"
+  local fs_out="$_RK_OUT"
+
+  if [[ -z "$fs_out" ]]; then
+    _CHECK_OUTPUT="Filtered search: agentdb_filtered_search returned no output"
+    return
+  fi
+
+  # Must contain results array and success field
+  if ! echo "$fs_out" | grep -q '"results"'; then
+    _CHECK_OUTPUT="Filtered search: no results field in response"
+    return
+  fi
+
+  if echo "$fs_out" | grep -q '"success"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Filtered search: agentdb_filtered_search returns structured response with results"
+  else
+    _CHECK_OUTPUT="Filtered search: missing success field in response"
+  fi
+}
+
+check_query_stats() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_query_stats"
+  local qs_out="$_RK_OUT"
+
+  if [[ -z "$qs_out" ]]; then
+    _CHECK_OUTPUT="Query stats: agentdb_query_stats returned no output"
+    return
+  fi
+
+  if ! echo "$qs_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Query stats: no success field in response"
+    return
+  fi
+
+  # Verify response has expected stat fields
+  local has_hits has_misses has_size
+  has_hits=0; has_misses=0; has_size=0
+  echo "$qs_out" | grep -qi "cacheHits\|cache_hits\|hits" && has_hits=1
+  echo "$qs_out" | grep -qi "cacheMisses\|cache_misses\|misses" && has_misses=1
+  echo "$qs_out" | grep -qi "cacheSize\|cache_size\|size" && has_size=1
+
+  if [[ $((has_hits + has_misses + has_size)) -ge 2 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Query stats: response has cache stat fields (hits=$has_hits misses=$has_misses size=$has_size)"
+  elif echo "$qs_out" | grep -qi "not active\|not available"; then
+    # QueryOptimizer may not be active if agentdb is unavailable — that's a valid state
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Query stats: QueryOptimizer not active (expected when agentdb unavailable)"
+  else
+    _CHECK_OUTPUT="Query stats: response missing expected fields: hits=$has_hits misses=$has_misses size=$has_size"
+  fi
+}
+
+check_metadata_filter_controllers() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  local ctrl_out="$_RK_OUT"
+
+  if [[ -z "$ctrl_out" ]]; then
+    _CHECK_OUTPUT="B5/B6 controllers: agentdb_controllers returned no output"
+    return
+  fi
+
+  local found=0 missing=""
+  for ctrl in metadataFilter queryOptimizer; do
+    if echo "$ctrl_out" | grep -q "$ctrl"; then
+      found=$((found + 1))
+    else
+      missing="${missing}${ctrl} "
+    fi
+  done
+
+  if [[ $found -eq 2 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="B5/B6 controllers: metadataFilter + queryOptimizer both registered at Level 1"
+  else
+    _CHECK_OUTPUT="B5/B6 controllers: $found/2 found, missing: ${missing}"
+  fi
+}
