@@ -21,6 +21,8 @@
 #                ctrl-causal, ctrl-cow, ctrl-batch, ctrl-synthesis
 #   security   — sec-controllers, sec-ratelimit, sec-breaker, sec-resource,
 #                sec-composition, sec-wiring
+#   attention  — attn-compute, attn-benchmark, attn-configure, attn-metrics,
+#                attn-wiring
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
 #
@@ -353,6 +355,22 @@ collect_parallel "init" \
   "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
   "init-topology|Topology (SG-011)"
 _record_phase "group-init" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# Tests: attention suite (ADR-0044, all parallel)
+# ════════════════════════════════════════════════════════════════════
+_g=$(_ns)
+log "── attention suite (ADR-0044) ──"
+run_check_bg "attn-compute"     "Attention compute"        check_attention_compute          "attention"
+run_check_bg "attn-benchmark"   "Attention benchmark"      check_attention_benchmark         "attention"
+run_check_bg "attn-configure"   "Attention configure"      check_attention_configure         "attention"
+run_check_bg "attn-metrics"     "Attention metrics (D2)"   check_attention_metrics           "attention"
+run_check_bg "attn-wiring"      "Attention controllers"    check_attention_controllers_wired "attention"
+collect_parallel "attention" \
+  "attn-compute|Attention compute" "attn-benchmark|Attention benchmark" \
+  "attn-configure|Attention configure" "attn-metrics|Attention metrics (D2)" \
+  "attn-wiring|Attention controllers"
+_record_phase "group-attention" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Tests: e2e — controller activation on init'd project (split from T32)
