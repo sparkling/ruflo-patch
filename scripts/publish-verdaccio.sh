@@ -14,6 +14,9 @@ set -uo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Source shared promote logic (P3: DRY)
+source "${PROJECT_DIR}/lib/promote-packages.sh"
+
 BUILD_DIR=""
 PORT=4873
 CHANGED_PACKAGES="all"
@@ -165,33 +168,25 @@ log "  npx tree clear: ${_p5_ms}ms (cacache skipped — using --prefer-offline)"
 _record_phase "npx-cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ══════════════════════════════════════════════════════════════════
-# Phase 6: Promote all packages to @latest
+# Phase 6: Promote all packages to @latest (P3: shared promote logic)
 # ══════════════════════════════════════════════════════════════════
 _p=$(_ns)
 log "Promoting packages to @latest on Verdaccio (parallel)..."
-_promote_count=0
-_prom_pids=()
-_prom_count=0
+
+# Build pkg@ver list from Verdaccio storage
+_promote_pkg_vers=()
 for pkg_dir in "${RQ_STORAGE}/@sparkleideas"/*/; do
   [[ -d "$pkg_dir" ]] || continue
   pkg_name="@sparkleideas/$(basename "$pkg_dir")"
-  (
-    latest_ver=$(npm view "${pkg_name}" version --registry "http://localhost:${PORT}" 2>/dev/null) || exit 0
-    [[ -z "$latest_ver" ]] && exit 0
-    npm dist-tag add "${pkg_name}@${latest_ver}" latest \
-      --registry "http://localhost:${PORT}" 2>/dev/null || true
-  ) &
-  _prom_pids+=($!)
-  _prom_count=$((_prom_count + 1))
-  _promote_count=$((_promote_count + 1))
-  # Cap at 10 concurrent
-  if [[ $_prom_count -ge 10 ]]; then
-    wait "${_prom_pids[@]}" 2>/dev/null || true
-    _prom_pids=()
-    _prom_count=0
-  fi
+  latest_ver=$(npm view "${pkg_name}" version --registry "http://localhost:${PORT}" 2>/dev/null) || continue
+  [[ -z "$latest_ver" ]] && continue
+  _promote_pkg_vers+=("${pkg_name}@${latest_ver}")
 done
-wait "${_prom_pids[@]}" 2>/dev/null || true
+
+_promote_count=${#_promote_pkg_vers[@]}
+if [[ $_promote_count -gt 0 ]]; then
+  promote_packages "http://localhost:${PORT}" 10 "${_promote_pkg_vers[@]}" >/dev/null || true
+fi
 log "Promote complete (${_promote_count} packages, parallel)"
 _record_phase "promote" "$(_elapsed_ms "$_p" "$(_ns)")"
 

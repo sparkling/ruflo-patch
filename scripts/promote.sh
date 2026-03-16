@@ -18,6 +18,9 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 STATE_FILE="$SCRIPT_DIR/.last-promoted-version"
 VERSIONS_FILE="$PROJECT_DIR/config/published-versions.json"
 
+# Source shared promote logic (P3: DRY)
+source "${PROJECT_DIR}/lib/promote-packages.sh"
+
 # ---------- Defaults ----------
 DRY_RUN=false
 AUTO_YES=false
@@ -30,6 +33,13 @@ for arg in "$@"; do
     --dry-run)   DRY_RUN=true ;;
     --rollback)  ROLLBACK=true ;;
     --yes|-y)    AUTO_YES=true ;;
+    -h|--help)
+      echo "Usage: promote.sh [--dry-run] [--rollback] [--yes] [<build-version>]"
+      echo "  --dry-run       Print commands without executing"
+      echo "  --rollback      Move @previous to @latest for all packages"
+      echo "  --yes|-y        Skip confirmation prompt"
+      echo "  <build-version> Label for state file (optional)"
+      exit 0 ;;
     -*)        echo "Unknown flag: $arg"; exit 1 ;;
     *)         BUILD_VERSION="$arg" ;;
   esac
@@ -147,36 +157,6 @@ if [[ "$ROLLBACK" == true ]]; then
   exit 0
 fi
 
-# ---------- Helper ----------
-PROMOTE_RESULTS_DIR=$(mktemp -d /tmp/ruflo-promote-XXXXX)
-
-run_dist_tag() {
-  local pkg_spec="$1"
-  local ts _dt_start _dt_end _dt_ms
-  # sanitize pkg_spec for use as filename
-  local result_file="${PROMOTE_RESULTS_DIR}/${pkg_spec//\//_}"
-  ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
-  _dt_start=$(_ns)
-
-  if [[ "$DRY_RUN" == true ]]; then
-    echo "[$ts] [dry-run] npm dist-tag add \"$pkg_spec\" latest"
-    echo "OK" > "$result_file"
-    _dt_ms=0
-  else
-    echo -n "[$ts] npm dist-tag add \"$pkg_spec\" latest ... "
-    if npm dist-tag add "$pkg_spec" latest 2>&1; then
-      echo "OK"
-      echo "OK" > "$result_file"
-    else
-      echo "FAILED"
-      echo "FAIL" > "$result_file"
-    fi
-    _dt_end=$(_ns)
-    _dt_ms=$(_elapsed_ms "$_dt_start" "$_dt_end")
-    echo "  (${_dt_ms}ms)"
-  fi
-}
-
 # ---------- Snapshot current @latest as @previous ----------
 echo ""
 echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Saving current @latest tags as @previous (for rollback)"
@@ -200,28 +180,34 @@ echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] Promoting $TOTAL packages to @latest"
 echo ""
 
 MAX_PARALLEL=8
-running=0
-for pkg in "${!PKG_VERSIONS[@]}"; do
-  run_dist_tag "${pkg}@${PKG_VERSIONS[$pkg]}" &
-  running=$((running + 1))
-  if [[ $running -ge $MAX_PARALLEL ]]; then
-    wait -n 2>/dev/null || true
-    running=$((running - 1))
-  fi
-done
-wait
 
-# Count results from temp files (single pass instead of two greps)
-PROMOTED=0
-FAILURES=0
-for result_file in "$PROMOTE_RESULTS_DIR"/*; do
-  [[ -f "$result_file" ]] || continue
-  case "$(cat "$result_file" 2>/dev/null)" in
-    OK)   PROMOTED=$((PROMOTED + 1)) ;;
-    FAIL) FAILURES=$((FAILURES + 1)) ;;
-  esac
-done
-rm -rf "$PROMOTE_RESULTS_DIR"
+if [[ "$DRY_RUN" == true ]]; then
+  # Dry-run: just print commands, count as promoted
+  PROMOTED=0
+  for pkg in "${!PKG_VERSIONS[@]}"; do
+    echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] [dry-run] npm dist-tag add \"${pkg}@${PKG_VERSIONS[$pkg]}\" latest"
+    PROMOTED=$((PROMOTED + 1))
+  done
+  FAILURES=0
+else
+  # Build pkg_vers array for shared promote function
+  PROMOTE_PKG_VERS=()
+  for pkg in "${!PKG_VERSIONS[@]}"; do
+    PROMOTE_PKG_VERS+=("${pkg}@${PKG_VERSIONS[$pkg]}")
+  done
+
+  # Use shared promote logic (P3: DRY)
+  # promote_packages uses the default registry (from npm config)
+  PROMOTE_RESULT=$(promote_packages "" "$MAX_PARALLEL" "${PROMOTE_PKG_VERS[@]}")
+  PROMOTED=0
+  FAILURES=0
+  # Parse result line "promoted=N failed=M" safely (no eval — C5 injection fix)
+  local _promoted=0 _failed=0
+  if [[ "$PROMOTE_RESULT" =~ promoted=([0-9]+) ]]; then _promoted="${BASH_REMATCH[1]}"; fi
+  if [[ "$PROMOTE_RESULT" =~ failed=([0-9]+) ]]; then _failed="${BASH_REMATCH[1]}"; fi
+  PROMOTED=$_promoted
+  FAILURES=$_failed
+fi
 
 # ---------- Update state file ----------
 LABEL="${BUILD_VERSION:-$(date -u '+%Y-%m-%dT%H:%M:%SZ')}"

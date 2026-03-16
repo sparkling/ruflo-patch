@@ -17,7 +17,7 @@ TIMING_BUILD_PKGS_FILE="/tmp/ruflo-timing-build-pkgs.jsonl"
 PIPELINE_START_NS=""
 
 # ---------------------------------------------------------------------------
-# Logging helpers
+# Logging helpers (Q4: structured logging with levels)
 # ---------------------------------------------------------------------------
 
 log() {
@@ -26,6 +26,72 @@ log() {
 
 log_error() {
   echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: $*" >&2
+}
+
+log_warn() {
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] WARN: $*" >&2
+}
+
+log_debug() {
+  [[ "${RUFLO_DEBUG:-}" == "1" ]] && echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] DEBUG: $*" >&2
+  return 0
+}
+
+# ---------------------------------------------------------------------------
+# Timing helpers (Q1: eliminate boilerplate)
+# ---------------------------------------------------------------------------
+
+# Get current time in nanoseconds (returns 0 if unavailable)
+_ns() {
+  date +%s%N 2>/dev/null || echo 0
+}
+
+# Compute elapsed milliseconds from two nanosecond timestamps
+_elapsed_ms() {
+  local start="$1" end="$2"
+  if [[ "$start" != "0" && "$end" != "0" ]]; then
+    echo $(( (end - start) / 1000000 ))
+  else
+    echo 0
+  fi
+}
+
+# Time a command and record to TIMING_CMDS_FILE
+# Usage: time_cmd "phase" "label" command arg1 arg2 ...
+time_cmd() {
+  local phase="$1" label="$2"; shift 2
+  local _tc_start _tc_end _tc_ms _tc_rc
+  _tc_start=$(_ns)
+  "$@"
+  _tc_rc=$?
+  _tc_end=$(_ns)
+  _tc_ms=$(_elapsed_ms "$_tc_start" "$_tc_end")
+  add_cmd_timing "$phase" "$label" "$_tc_ms" "$_tc_rc"
+  [[ $_tc_ms -gt 0 ]] && log_debug "  ${label}: ${_tc_ms}ms (rc=${_tc_rc})"
+  return $_tc_rc
+}
+
+# ---------------------------------------------------------------------------
+# Retry with exponential backoff (O1: transient failure resilience)
+# ---------------------------------------------------------------------------
+
+# Usage: retry [max_attempts] [initial_delay_s] command arg1 arg2 ...
+# Default: 3 attempts, 5s initial delay (doubles each retry)
+retry() {
+  local max_attempts="${1:-3}" delay="${2:-5}"; shift 2
+  local attempt
+  for ((attempt=1; attempt<=max_attempts; attempt++)); do
+    if "$@"; then
+      return 0
+    fi
+    if [[ $attempt -lt $max_attempts ]]; then
+      log_warn "Attempt ${attempt}/${max_attempts} failed: $1 — retrying in ${delay}s"
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+  done
+  log_error "All ${max_attempts} attempts failed: $1"
+  return 1
 }
 
 # ---------------------------------------------------------------------------
@@ -106,7 +172,7 @@ load_state() {
 
 save_state() {
   cat > "${STATE_FILE}" <<EOF
-# ruflo build state — written by sync-and-build.sh (ADR-0027)
+# ruflo build state — written by ruflo-publish.sh / ruflo-sync.sh (ADR-0027)
 # Last updated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 RUFLO_HEAD=${NEW_RUFLO_HEAD:-${RUFLO_HEAD}}
 AGENTIC_HEAD=${NEW_AGENTIC_HEAD:-${AGENTIC_HEAD}}
@@ -256,58 +322,18 @@ write_pipeline_summary() {
     pipeline_ms=$(( (pipeline_end_ns - PIPELINE_START_NS) / 1000000 ))
   fi
 
-  # Use node to assemble the full timing JSON (phases + commands + packages + verify sub-phases)
-  node -e "
-    const fs = require('fs');
-    const phases = '${PHASE_TIMINGS}'.trim().split(/\s+/).filter(Boolean).map(e => {
-      const i = e.lastIndexOf(':');
-      return { name: e.slice(0, i), duration_ms: parseInt(e.slice(i + 1)) };
-    });
-    let commands = [];
-    try {
-      commands = fs.readFileSync('${TIMING_CMDS_FILE}', 'utf-8')
-        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
-    } catch {}
-    let buildPkgs = [];
-    try {
-      buildPkgs = fs.readFileSync('${TIMING_BUILD_PKGS_FILE}', 'utf-8')
-        .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
-    } catch {}
-    let publishPkgs = [];
-    try {
-      publishPkgs = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/.publish-timing.json', 'utf-8'));
-    } catch {}
-    let verifyPhases = [];
-    for (const tf of ['/tmp/ruflo-publish-verdaccio-timing.jsonl', '/tmp/ruflo-acceptance-timing.jsonl']) {
-      try {
-        const entries = fs.readFileSync(tf, 'utf-8')
-          .trim().split('\\n').filter(Boolean).map(l => JSON.parse(l));
-        verifyPhases.push(...entries);
-      } catch {}
-    }
-    const result = {
-      timestamp: '${timestamp}',
-      version: '${BUILD_VERSION:-unknown}',
-      total_duration_ms: ${pipeline_ms},
-      acceptance_passed: true,
-      phases,
-      commands,
-      verify_phases: verifyPhases,
-      packages: {
-        build: buildPkgs,
-        publish: publishPkgs.map(p => ({
-          name: p.name, duration_ms: p.duration_ms || 0,
-          version: p.version || '', tag: p.tag || ''
-        }))
-      }
-    };
-    fs.writeFileSync('${summary_file}', JSON.stringify(result, null, 2) + '\\n');
-  " 2>/dev/null || {
-    log "WARNING: Node JSON assembly failed — writing basic summary"
-    local phases_json='[]'
-    cat > "$summary_file" <<EOJSON
-{"timestamp":"${timestamp}","version":"${BUILD_VERSION:-unknown}","total_duration_ms":${pipeline_ms},"acceptance_passed":true,"phases":${phases_json},"commands":[],"verify_phases":[],"packages":{"build":[],"publish":[]}}
-EOJSON
+  # Assemble the full timing JSON via external script (phases + commands + packages + verify sub-phases)
+  node "${PROJECT_DIR}/scripts/assemble-timing.mjs" \
+    --phase-timings "${PHASE_TIMINGS}" \
+    --cmds-file "${TIMING_CMDS_FILE}" \
+    --build-pkgs-file "${TIMING_BUILD_PKGS_FILE}" \
+    --project-dir "${PROJECT_DIR}" \
+    --timestamp "${timestamp}" \
+    --version "${BUILD_VERSION:-unknown}" \
+    --total-ms "${pipeline_ms}" \
+    --output "${summary_file}" 2>/dev/null || {
+    log_warn "Timing assembly failed — writing basic summary"
+    echo '{"timestamp":"'"${timestamp}"'","version":"'"${BUILD_VERSION:-unknown}"'","total_duration_ms":'"${pipeline_ms}"'}' > "$summary_file"
   }
   log "Pipeline timing summary written to ${summary_file}"
 }

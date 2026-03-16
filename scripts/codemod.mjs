@@ -18,6 +18,8 @@
 
 import { readdir, readFile, writeFile, stat, unlink } from 'node:fs/promises';
 import { join, extname, basename } from 'node:path';
+import { createHash } from 'node:crypto';
+import { fileURLToPath } from 'node:url';
 
 // -- Package mapping (inline; switchable to config/package-map.json) ----------
 
@@ -214,8 +216,13 @@ async function* walkFiles(dir) {
 
 // -- Main transform -----------------------------------------------------------
 
+/** Compute SHA-256 of a string. */
+function sha256(data) {
+  return createHash('sha256').update(data).digest('hex');
+}
+
 /** Process a single file. Returns { scanned, transformed, packageJson, deleted }. */
-async function processOneFile(filePath) {
+async function processOneFile(filePath, fileCache) {
   const name = basename(filePath);
   const result = { scanned: 0, transformed: 0, packageJson: 0, deleted: null };
 
@@ -236,20 +243,49 @@ async function processOneFile(filePath) {
   if (isPackageJson) {
     result.packageJson = 1;
     const raw = await readFile(filePath, 'utf8');
+
+    // ADR-0040: check per-file hash cache
+    if (fileCache) {
+      const contentHash = sha256(raw);
+      if (fileCache.get(filePath) === contentHash) {
+        result.cacheHit = true;
+        fileCache.touch(filePath);
+        return result;
+      }
+    }
+
     let json;
     try { json = JSON.parse(raw); } catch { return result; }
     const changed = transformPackageJsonObject(json);
     if (changed) {
       const trailing = raw.endsWith('\n') ? '\n' : '';
-      await writeFile(filePath, JSON.stringify(json, null, 2) + trailing, 'utf8');
+      const output = JSON.stringify(json, null, 2) + trailing;
+      await writeFile(filePath, output, 'utf8');
       result.transformed = 1;
+      if (fileCache) fileCache.set(filePath, sha256(output));
+    } else {
+      if (fileCache) fileCache.set(filePath, sha256(raw));
     }
   } else {
     const content = await readFile(filePath, 'utf8');
+
+    // ADR-0040: check per-file hash cache
+    if (fileCache) {
+      const contentHash = sha256(content);
+      if (fileCache.get(filePath) === contentHash) {
+        result.cacheHit = true;
+        fileCache.touch(filePath);
+        return result;
+      }
+    }
+
     const transformed = transformSource(content);
     if (transformed !== content) {
       await writeFile(filePath, transformed, 'utf8');
       result.transformed = 1;
+      if (fileCache) fileCache.set(filePath, sha256(transformed));
+    } else {
+      if (fileCache) fileCache.set(filePath, sha256(content));
     }
   }
 
@@ -259,6 +295,61 @@ async function processOneFile(filePath) {
 // Batch size for parallel file I/O (saturate disk without fd exhaustion)
 const BATCH_SIZE = 50;
 
+// -- ADR-0040: Per-file hash cache --------------------------------------------
+
+/** Simple file cache wrapper with self-invalidation. */
+class FileCache {
+  constructor(data) {
+    this._entries = data?.entries ?? {};
+    this._selfHash = data?._selfHash ?? '';
+    this._touched = new Set();
+  }
+
+  get(path) { return this._entries[path]; }
+
+  set(path, hash) {
+    this._entries[path] = hash;
+    this._touched.add(path);
+  }
+
+  touch(path) { this._touched.add(path); }
+
+  /** Prune to only files seen this run and return serializable object. */
+  serialize(selfHash) {
+    const pruned = {};
+    for (const path of this._touched) {
+      if (this._entries[path]) pruned[path] = this._entries[path];
+    }
+    return { _selfHash: selfHash, entries: pruned };
+  }
+}
+
+/** Load file cache, invalidating if codemod source has changed. */
+async function loadFileCache(tempDir) {
+  const cachePath = join(tempDir, '.codemod-file-cache.json');
+
+  // Compute hash of codemod.mjs itself for self-invalidation
+  const selfPath = fileURLToPath(import.meta.url);
+  let selfHash = '';
+  try {
+    const selfSource = await readFile(selfPath, 'utf8');
+    selfHash = sha256(selfSource);
+  } catch { /* ignore — will invalidate cache */ }
+
+  let data = null;
+  try {
+    const raw = await readFile(cachePath, 'utf8');
+    data = JSON.parse(raw);
+  } catch { /* no cache or corrupt — start fresh */ }
+
+  // Invalidate if codemod source changed
+  if (data && data._selfHash !== selfHash) {
+    data = null;
+  }
+
+  return { cache: new FileCache(data), selfHash, cachePath };
+}
+
 /** Transform an entire directory tree in place. */
 export async function transform(tempDir) {
   const dirStat = await stat(tempDir);
@@ -266,10 +357,14 @@ export async function transform(tempDir) {
     throw new Error(`Not a directory: ${tempDir}`);
   }
 
+  // ADR-0040: load per-file hash cache
+  const { cache: fileCache, selfHash, cachePath } = await loadFileCache(tempDir);
+
   const stats = {
     filesScanned: 0,
     filesTransformed: 0,
     packageJsonProcessed: 0,
+    cacheHits: 0,
     deletedFiles: [],
   };
 
@@ -282,14 +377,20 @@ export async function transform(tempDir) {
   // Process files in parallel batches
   for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
     const batch = allFiles.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(batch.map(f => processOneFile(f)));
+    const results = await Promise.all(batch.map(f => processOneFile(f, fileCache)));
     for (const r of results) {
       stats.filesScanned += r.scanned;
       stats.filesTransformed += r.transformed;
       stats.packageJsonProcessed += r.packageJson;
+      if (r.cacheHit) stats.cacheHits += 1;
       if (r.deleted) stats.deletedFiles.push(r.deleted);
     }
   }
+
+  // Save cache (pruned to only files scanned this run)
+  try {
+    await writeFile(cachePath, JSON.stringify(fileCache.serialize(selfHash)), 'utf8');
+  } catch { /* non-fatal — cache miss next run */ }
 
   return stats;
 }
@@ -311,6 +412,7 @@ if (isMainModule) {
       console.log('Codemod complete.');
       console.log(`  Files scanned:          ${stats.filesScanned}`);
       console.log(`  Files transformed:      ${stats.filesTransformed}`);
+      console.log(`  Cache hits (skipped):   ${stats.cacheHits}`);
       console.log(`  package.json processed: ${stats.packageJsonProcessed}`);
       if (stats.deletedFiles.length > 0) {
         console.log(`  Deleted files:          ${stats.deletedFiles.length}`);

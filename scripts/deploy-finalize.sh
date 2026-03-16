@@ -32,7 +32,7 @@ STATE_FILE="${SCRIPT_DIR}/.last-build-state"
 TEMP_DIR="/tmp/ruflo-build"
 
 # ---------------------------------------------------------------------------
-# Fork directories — single source: config/upstream-branches.json
+# Fork directories (ADR-0039: single source of truth)
 # ---------------------------------------------------------------------------
 
 # shellcheck source=../lib/fork-paths.sh
@@ -75,7 +75,7 @@ GLOBAL_TIMEOUT_PID=""
 source "${PROJECT_DIR}/lib/pipeline-utils.sh"
 
 # ---------------------------------------------------------------------------
-# Push deferred version bumps (extracted from sync-and-build.sh)
+# Push deferred version bumps
 # ---------------------------------------------------------------------------
 
 push_fork_version_bumps() {

@@ -85,7 +85,7 @@ Missing `peerDependenciesMeta` coverage previously caused A16 (Plugin install) t
 
 ## Concurrency
 
-- `flock` guard on `/tmp/ruflo-sync-and-build.lock` prevents overlapping timer runs
+- `flock` guard on `/tmp/ruflo-pipeline.lock` prevents overlapping timer runs
 - Skipped for `--build-only` mode (local builds don't conflict)
 - Without this guard, the 1-minute timer caused double version bumps and dependency mismatches
 - Orphaned processes (e.g. `sleep` from failed runs) can hold the lock — check with `fuser`

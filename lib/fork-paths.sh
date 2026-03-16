@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# lib/fork-paths.sh — Single source of truth for fork configuration
+# lib/fork-paths.sh — Single source of truth for fork configuration (ADR-0039)
 #
 # Reads config/upstream-branches.json and exports:
 #   FORK_NAMES[]          — ("ruflo" "agentic-flow" "ruv-FANN" "ruvector")
@@ -7,12 +7,17 @@
 #   UPSTREAM_URLS[]       — ("https://github.com/..." ...)
 #   UPSTREAM_BRANCHES[]   — ("main" "feature/agentic-flow-v2" ...)
 #   FORK_DIR_RUFLO, FORK_DIR_AGENTIC, FORK_DIR_FANN, FORK_DIR_RUVECTOR
+#   UPSTREAM_RUFLO, UPSTREAM_AGENTIC, UPSTREAM_FANN, UPSTREAM_RUVECTOR
 #
 # Also provides:
-#   _upstream_branch <name>  — returns the branch for a fork name
+#   _upstream_branch <name>          — returns the tracked branch for a fork
+#   set_fork_head <name> <sha>       — sets NEW_<PREFIX>_HEAD
+#   get_fork_head <name>             — prints NEW_<PREFIX>_HEAD
+#   get_prev_head <name>             — prints PREV_<PREFIX>_HEAD
+#   set_upstream_sha <name> <sha>    — sets UPSTREAM_<PREFIX>_SHA
+#   get_upstream_sha <name>          — prints UPSTREAM_<PREFIX>_SHA
 #
-# Usage: source "$(dirname "${BASH_SOURCE[0]}")/../lib/fork-paths.sh"
-#    or: source "${PROJECT_DIR}/lib/fork-paths.sh"
+# Consumers: ruflo-publish.sh, ruflo-sync.sh, copy-source.sh, deploy-finalize.sh
 
 # Guard against double-sourcing
 [[ -n "${_FORK_PATHS_LOADED:-}" ]] && return 0
@@ -41,20 +46,22 @@ eval "$(node -e "
   console.log('UPSTREAM_BRANCHES=(' + branches.map(b => JSON.stringify(b)).join(' ') + ')');
 
   // Emit named constants for backward compat
+  const SHORT = {
+    'ruflo': 'RUFLO', 'agentic-flow': 'AGENTIC',
+    'ruv-FANN': 'FANN', 'ruvector': 'RUVECTOR',
+  };
   for (const n of names) {
-    const varName = n.replace(/-/g, '_').replace(/\\./, '_').toUpperCase();
-    const shortName = {
-      'ruflo': 'RUFLO',
-      'agentic-flow': 'AGENTIC',
-      'ruv-FANN': 'FANN',
-      'ruvector': 'RUVECTOR',
-    }[n] || varName;
-    console.log('FORK_DIR_' + shortName + '=' + JSON.stringify(c[n].dir));
-    console.log('UPSTREAM_' + shortName + '=' + JSON.stringify(c[n].url));
+    const s = SHORT[n] || n.replace(/-/g, '_').toUpperCase();
+    console.log('FORK_DIR_' + s + '=' + JSON.stringify(c[n].dir));
+    console.log('UPSTREAM_' + s + '=' + JSON.stringify(c[n].url));
   }
 " 2>/dev/null)"
 
-# Helper: get the upstream branch name for a fork
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+# _upstream_branch <name> — returns tracked upstream branch for a fork
 _upstream_branch() {
   local name="$1"
   for i in "${!FORK_NAMES[@]}"; do
@@ -64,4 +71,48 @@ _upstream_branch() {
     fi
   done
   echo "main"
+}
+
+# Fork-name-to-variable helpers (Q2: eliminate case-switch boilerplate)
+declare -A _FORK_HEAD_PREFIX=(
+  [ruflo]=RUFLO
+  [agentic-flow]=AGENTIC
+  [ruv-FANN]=FANN
+  [ruvector]=RUVECTOR
+)
+
+# set_fork_head "ruflo" "$sha"  →  NEW_RUFLO_HEAD="$sha"
+set_fork_head() {
+  local prefix="${_FORK_HEAD_PREFIX[$1]:-}"
+  [[ -n "$prefix" ]] && declare -g "NEW_${prefix}_HEAD=$2"
+}
+
+# get_fork_head "ruflo"  →  prints value of NEW_RUFLO_HEAD
+get_fork_head() {
+  local prefix="${_FORK_HEAD_PREFIX[$1]:-}"
+  [[ -n "$prefix" ]] || return 1
+  local var="NEW_${prefix}_HEAD"
+  echo "${!var:-}"
+}
+
+# get_prev_head "ruflo"  →  prints value of PREV_RUFLO_HEAD
+get_prev_head() {
+  local prefix="${_FORK_HEAD_PREFIX[$1]:-}"
+  [[ -n "$prefix" ]] || return 1
+  local var="PREV_${prefix}_HEAD"
+  echo "${!var:-}"
+}
+
+# set_upstream_sha "ruflo" "$sha"  →  UPSTREAM_RUFLO_SHA="$sha"
+set_upstream_sha() {
+  local prefix="${_FORK_HEAD_PREFIX[$1]:-}"
+  [[ -n "$prefix" ]] && declare -g "UPSTREAM_${prefix}_SHA=$2"
+}
+
+# get_upstream_sha "ruflo"  →  prints value of UPSTREAM_RUFLO_SHA
+get_upstream_sha() {
+  local prefix="${_FORK_HEAD_PREFIX[$1]:-}"
+  [[ -n "$prefix" ]] || return 1
+  local var="UPSTREAM_${prefix}_SHA"
+  echo "${!var:-}"
 }

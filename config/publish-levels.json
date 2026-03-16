@@ -3,11 +3,13 @@
   "levels": [
     {
       "level": 1,
-      "description": "Depends only on @ruvector/* (public npm)",
+      "description": "No internal dependencies (only @ruvector/* from public npm)",
       "packages": [
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
-        "@sparkleideas/ruv-swarm"
+        "@sparkleideas/ruv-swarm",
+        "@sparkleideas/agent-booster",
+        "@sparkleideas/agentdb-onnx"
       ]
     },
     {
@@ -30,7 +32,8 @@
         "@sparkleideas/browser",
         "@sparkleideas/plugins",
         "@sparkleideas/providers",
-        "@sparkleideas/claims"
+        "@sparkleideas/claims",
+        "@sparkleideas/ruvector-upstream"
       ]
     },
     {
@@ -44,7 +47,21 @@
         "@sparkleideas/swarm",
         "@sparkleideas/security",
         "@sparkleideas/performance",
-        "@sparkleideas/testing"
+        "@sparkleideas/testing",
+        "@sparkleideas/plugin-gastown-bridge",
+        "@sparkleideas/plugin-agentic-qe",
+        "@sparkleideas/plugin-code-intelligence",
+        "@sparkleideas/plugin-cognitive-kernel",
+        "@sparkleideas/plugin-financial-risk",
+        "@sparkleideas/plugin-healthcare-clinical",
+        "@sparkleideas/plugin-hyperbolic-reasoning",
+        "@sparkleideas/plugin-legal-contracts",
+        "@sparkleideas/plugin-neural-coordination",
+        "@sparkleideas/plugin-perf-optimizer",
+        "@sparkleideas/plugin-prime-radiant",
+        "@sparkleideas/plugin-quantum-optimizer",
+        "@sparkleideas/plugin-test-intelligence",
+        "@sparkleideas/teammate-plugin"
       ]
     },
     {
@@ -52,8 +69,7 @@
       "description": "Root packages",
       "packages": [
         "@sparkleideas/cli",
-        "@sparkleideas/claude-flow",
-        "@sparkleideas/ruflo"
+        "@sparkleideas/claude-flow"
       ]
     }
   ],

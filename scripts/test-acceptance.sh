@@ -61,20 +61,8 @@ _elapsed_ms() {
   if [[ "$s" != "0" && "$e" != "0" ]]; then echo $(( (e - s) / 1000000 )); else echo 0; fi
 }
 
-PHASE_TIMINGS=""
-TIMING_FILE="/tmp/ruflo-acceptance-timing.jsonl"
-: > "$TIMING_FILE"
-
-_record_phase() {
-  local name="$1" ms="$2"
-  PHASE_TIMINGS="${PHASE_TIMINGS} ${name}:${ms}"
-  printf '{"phase":"%s","duration_ms":%d}\n' "$name" "$ms" >> "$TIMING_FILE"
-  if [[ $ms -ge 1000 ]]; then
-    log "  Phase '${name}': ${ms}ms ($(( ms / 1000 ))s)"
-  else
-    log "  Phase '${name}': ${ms}ms"
-  fi
-}
+# ── Source acceptance harness framework ────────────────────────────
+source "${PROJECT_DIR}/lib/acceptance-harness.sh"
 
 # ── Global timeout: 300s ────────────────────────────────────────────
 # Close fd 9 (flock) so orphaned timeout process cannot hold the pipeline lock
@@ -109,9 +97,11 @@ if ! curl -sf "${REGISTRY}/-/ping" >/dev/null 2>&1; then
 fi
 _record_phase "health-check" "$(_elapsed_ms "$_p" "$(_ns)")"
 
-# Phase: Clear stale npm cache entries
+# Phase: Clear stale npm cache entries + orphaned acceptance temp dirs
 _p=$(_ns)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
+# Remove stale acceptance temp dirs from previous runs (>1 hour old)
+find /tmp -maxdepth 1 -name "ruflo-accept-*" -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # Phase: Install packages from registry
@@ -169,26 +159,29 @@ log "Running harness: init --full --force"
 }
 
 log "Running harness: memory init"
-# Use _run_and_kill pattern — CLI hangs after completion (SQLite handles)
+# Sentinel-based completion detection (ADR-0039 T1) — CLI hangs after
+# completion (open SQLite handles). Run command, append sentinel when done,
+# poll for sentinel or timeout.
 _harness_mem_out=""
 _harness_mem_tmpfile=$(mktemp /tmp/rk-harness-XXXXX)
-(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init > "$_harness_mem_tmpfile" 2>&1) &
+> "$_harness_mem_tmpfile"
+( cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init >> "$_harness_mem_tmpfile" 2>&1; echo "__RUFLO_DONE__" >> "$_harness_mem_tmpfile" ) &
 _harness_mem_pid=$!
-_harness_prev_size=0 _harness_stable=0
-for (( _hi=0; _hi<32; _hi++ )); do
+_harness_elapsed=0
+_harness_max=8
+while (( $(echo "$_harness_elapsed < $_harness_max" | bc) )); do
   sleep 0.25
-  if ! kill -0 "$_harness_mem_pid" 2>/dev/null; then break; fi
-  _harness_cur_size=$(wc -c < "$_harness_mem_tmpfile" 2>/dev/null || echo 0)
-  if [[ "$_harness_cur_size" -gt 0 && "$_harness_cur_size" -eq "$_harness_prev_size" ]]; then
-    _harness_stable=$((_harness_stable + 1))
-    if [[ $_harness_stable -ge 3 ]]; then kill -KILL "$_harness_mem_pid" 2>/dev/null || true; break; fi
-  else
-    _harness_stable=0
+  _harness_elapsed=$(echo "$_harness_elapsed + 0.25" | bc)
+  if grep -q '__RUFLO_DONE__' "$_harness_mem_tmpfile" 2>/dev/null; then
+    break
   fi
-  _harness_prev_size="$_harness_cur_size"
+  if ! kill -0 "$_harness_mem_pid" 2>/dev/null; then
+    sleep 0.1
+    break
+  fi
 done
-kill -KILL "$_harness_mem_pid" 2>/dev/null || true
-wait "$_harness_mem_pid" 2>/dev/null || true
+kill "$_harness_mem_pid" 2>/dev/null && wait "$_harness_mem_pid" 2>/dev/null || true
+sed -i '/__RUFLO_DONE__/d' "$_harness_mem_tmpfile"
 _harness_mem_out=$(cat "$_harness_mem_tmpfile" 2>/dev/null)
 rm -f "$_harness_mem_tmpfile"
 
@@ -226,101 +219,7 @@ run_timed() {
   [[ "$t_start" == "0" || "$t_end" == "0" ]] && _DURATION_MS=0 || _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
 }
 
-# ════════════════════════════════════════════════════════════════════
-# Result tracking
-# ════════════════════════════════════════════════════════════════════
-pass_count=0
-fail_count=0
-total_count=0
-results_json="[]"
 timestamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
-
-_escape_json() {
-  local s="${1:-}"
-  s="${s:0:4096}"
-  s="${s//\\/\\\\}"
-  s="${s//\"/\\\"}"
-  s="${s//$'\n'/\\n}"
-  s="${s//$'\r'/\\r}"
-  s="${s//$'\t'/\\t}"
-  printf '"%s"' "$s"
-}
-
-run_check() {
-  local id="$1" name="$2" fn="$3" group="$4"
-  total_count=$((total_count + 1))
-  local c_start c_end c_ms=0
-  c_start=$(_ns)
-  "$fn"
-  c_end=$(_ns)
-  c_ms=$(_elapsed_ms "$c_start" "$c_end")
-
-  local passed_bool="false"
-  if [[ "$_CHECK_PASSED" == "true" ]]; then
-    pass_count=$((pass_count + 1)); passed_bool="true"
-    log "  PASS  ${id}: ${name} (${c_ms}ms)"
-  else
-    fail_count=$((fail_count + 1))
-    log "  FAIL  ${id}: ${name} (${c_ms}ms)"
-    echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do log "        $line"; done
-  fi
-  [[ $c_ms -gt 15000 ]] && log "  SLOW  ${id}: ${c_ms}ms"
-
-  local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")
-  local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
-    "$id" "$name" "$group" "$passed_bool" "$escaped" "$c_ms")
-  [[ "$results_json" == "[]" ]] && results_json="[$entry]" || results_json="${results_json%]}, $entry]"
-}
-
-PARALLEL_DIR=""
-BG_PIDS=()
-
-run_check_bg() {
-  local id="$1" name="$2" fn="$3" group="$4"
-  (
-    local c_start c_end c_ms=0
-    c_start=$(_ns)
-    "$fn"
-    c_end=$(_ns)
-    c_ms=$(_elapsed_ms "$c_start" "$c_end")
-    local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")
-    echo "${_CHECK_PASSED}|${c_ms}|${escaped}" > "${PARALLEL_DIR}/${id}"
-  ) &
-  BG_PIDS+=($!)
-}
-
-collect_parallel() {
-  local group="$1"; shift
-  wait "${BG_PIDS[@]}"
-  BG_PIDS=()
-  for spec in "$@"; do
-    local id="${spec%%|*}" name="${spec#*|}"
-    total_count=$((total_count + 1))
-    local result_file="${PARALLEL_DIR}/${id}"
-    if [[ -f "$result_file" ]]; then
-      IFS='|' read -r passed dur_ms escaped_output < "$result_file"
-      local passed_bool="false"
-      if [[ "$passed" == "true" ]]; then
-        pass_count=$((pass_count + 1)); passed_bool="true"
-        log "  PASS  ${id}: ${name} (${dur_ms:-0}ms)"
-      else
-        fail_count=$((fail_count + 1))
-        log "  FAIL  ${id}: ${name} (${dur_ms:-0}ms)"
-      fi
-      [[ "${dur_ms:-0}" -gt 15000 ]] && log "  SLOW  ${id}: ${dur_ms}ms"
-      local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
-        "$id" "$name" "$group" "$passed_bool" "${escaped_output:-\"\"}" "${dur_ms:-0}")
-      [[ "$results_json" == "[]" ]] && results_json="[$entry]" || results_json="${results_json%]}, $entry]"
-    else
-      fail_count=$((fail_count + 1))
-      log "  FAIL  ${id}: ${name} (subprocess crashed)"
-    fi
-  done
-  for spec in "$@"; do
-    local id="${spec%%|*}"
-    rm -f "${PARALLEL_DIR}/${id}"
-  done
-}
 
 # ── Registry-specific checks ───────────────────────────────────────
 
