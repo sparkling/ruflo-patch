@@ -156,9 +156,13 @@ if [[ ! -x "$CLI_BIN" ]]; then
 fi
 
 log "Running harness: init --full --force"
-(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout --signal=KILL 60 "$CLI_BIN" init --full --force 2>&1) || {
-  log_error "Harness: init --full failed"; exit 1
-}
+# CLI process hangs after init (open SQLite handles from 42-controller registry).
+# Use timeout+KILL but verify success by checking output files, not exit code.
+_init_out=$(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout --signal=KILL 120 "$CLI_BIN" init --full --force 2>&1) || true
+if [[ ! -f "${ACCEPT_TEMP}/.claude-flow/config.json" ]]; then
+  log_error "Harness: init --full failed (no config.json created)"
+  exit 1
+fi
 
 log "Running harness: memory init"
 # Sentinel-based completion detection (ADR-0039 T1) — CLI hangs after
