@@ -116,7 +116,18 @@ run_build() {
     local fallback_level=3
     local tsc_log="$pkg_dir/.tsc-build.log"
     # ADR-0040: --incremental with .tsbuildinfo for faster rebuilds
-    local _incr_flags="--incremental --tsBuildInfoFile ${pkg_dir}/.tsbuildinfo"
+    # Invalidate .tsbuildinfo if any source file is newer (prevents stale incremental cache)
+    local _buildinfo="${pkg_dir}/.tsbuildinfo"
+    if [[ -f "$_buildinfo" ]] && [[ -d "${pkg_dir}/src" ]]; then
+      # comment: find files newer than .tsbuildinfo
+      local _newer
+      _newer=$(find "${pkg_dir}/src" -name '*.ts' -newer "$_buildinfo" 2>/dev/null | head -1)
+      if [[ -n "$_newer" ]]; then
+        rm -f "$_buildinfo"
+        log "    cache invalidated for ${pkg_name} (source newer than .tsbuildinfo)"
+      fi
+    fi
+    local _incr_flags="--incremental --tsBuildInfoFile ${_buildinfo}"
     if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck $_incr_flags 2>"$tsc_log"; then
       ok=1; fallback_level=0
     elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck $_incr_flags 2>"$tsc_log"; then
