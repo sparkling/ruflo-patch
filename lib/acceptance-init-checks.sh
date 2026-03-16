@@ -51,22 +51,32 @@ check_init_helper_syntax() {
     _CHECK_OUTPUT="No .claude/helpers directory (SG-003 may not be applied yet)"
   else
     local syntax_errors=0 checked=0
+    local failed_files=""
     for f in "$helpers_dir"/*.cjs "$helpers_dir"/*.js; do
       [[ -f "$f" ]] || continue
       checked=$((checked + 1))
-      if ! node -c "$f" 2>/dev/null; then
+      local err_out
+      err_out=$(node -c "$f" 2>&1) || {
         syntax_errors=$((syntax_errors + 1))
-        _CHECK_OUTPUT="Syntax error in $(basename "$f")"
-      fi
+        local bname; bname=$(basename "$f")
+        failed_files="${failed_files:+${failed_files}, }${bname}: ${err_out%%$'\n'*}"
+      }
     done
     for f in "$helpers_dir"/*.mjs; do
       [[ -f "$f" ]] || continue
       checked=$((checked + 1))
-      local content
-      content=$(cat "$f")
-      if ! echo "$content" | grep -qE 'import|export'; then
+      # ESM: node -c doesn't validate top-level await, so also check for import/export
+      local err_out
+      err_out=$(node -c "$f" 2>&1) || {
         syntax_errors=$((syntax_errors + 1))
-        _CHECK_OUTPUT="$(basename "$f") does not appear to be ESM"
+        local bname; bname=$(basename "$f")
+        failed_files="${failed_files:+${failed_files}, }${bname}: ${err_out%%$'\n'*}"
+        continue
+      }
+      if ! grep -qE 'import|export' "$f"; then
+        syntax_errors=$((syntax_errors + 1))
+        local bname; bname=$(basename "$f")
+        failed_files="${failed_files:+${failed_files}, }${bname}: not ESM (no import/export)"
       fi
     done
     if [[ $checked -eq 0 ]]; then
@@ -75,6 +85,8 @@ check_init_helper_syntax() {
     elif [[ $syntax_errors -eq 0 ]]; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="$checked helper scripts have valid syntax"
+    else
+      _CHECK_OUTPUT="${syntax_errors}/${checked} failed: ${failed_files}"
     fi
   fi
 
