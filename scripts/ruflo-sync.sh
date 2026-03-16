@@ -6,7 +6,7 @@
 #
 # Usage: bash scripts/ruflo-sync.sh [--force]
 #
-# Called by ruflo-pipeline.sh dispatcher or directly via npm run.
+# Called by ruflo.service or npm run sync.
 
 set -euo pipefail
 

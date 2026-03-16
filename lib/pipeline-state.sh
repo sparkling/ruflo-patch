@@ -4,7 +4,7 @@
 # All pipeline mutable state is declared here ONCE. Scripts source this
 # instead of re-declaring the same variables independently.
 #
-# Consumers: ruflo-pipeline.sh, ruflo-publish.sh, ruflo-sync.sh
+# Consumers: ruflo-publish.sh, ruflo-sync.sh, deploy-finalize.sh
 
 # ---------------------------------------------------------------------------
 # Fork HEAD SHAs (set by merge detection / sync, read by state save)

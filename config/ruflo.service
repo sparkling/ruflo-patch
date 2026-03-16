@@ -2,7 +2,7 @@
 Description=Ruflo pipeline: publish merged PRs, sync upstream
 After=network-online.target
 Wants=network-online.target
-OnFailure=ruflo-notify-failure@%n.service
+
 
 [Service]
 Type=oneshot

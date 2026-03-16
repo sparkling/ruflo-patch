@@ -18,7 +18,7 @@ for pattern in /tmp/ruflo-timing-*.jsonl /tmp/ruflo-publish-verdaccio-timing.jso
 done
 
 # Clean stale lock files (only if no holder)
-LOCKFILE="/tmp/ruflo-sync-and-build.lock"
+LOCKFILE="/tmp/ruflo-pipeline.lock"
 if [[ -f "$LOCKFILE" ]]; then
   if ! fuser "$LOCKFILE" 2>/dev/null | grep -q '[0-9]'; then
     rm -f "$LOCKFILE"

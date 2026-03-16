@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # scripts/build-packages.sh — TypeScript compile + WASM build (ADR-0038)
 #
-# Standalone build script extracted from sync-and-build.sh.
 # Compiles TypeScript packages in dependency order, builds WASM.
 #
 # Usage: bash scripts/build-packages.sh [build-dir]

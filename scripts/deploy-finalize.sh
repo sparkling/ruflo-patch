@@ -75,7 +75,7 @@ GLOBAL_TIMEOUT_PID=""
 source "${PROJECT_DIR}/lib/pipeline-utils.sh"
 
 # ---------------------------------------------------------------------------
-# Push deferred version bumps (extracted from sync-and-build.sh)
+# Push deferred version bumps
 # ---------------------------------------------------------------------------
 
 push_fork_version_bumps() {

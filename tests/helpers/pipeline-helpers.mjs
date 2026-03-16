@@ -1,6 +1,6 @@
 // tests/helpers/pipeline-helpers.mjs
 // Pure functions extracted from pipeline logic (ADR-0011, ADR-0012, ADR-0015).
-// These are importable by sync-and-build.sh (via node -e) and publish.mjs,
+// These are importable by pipeline scripts (via node -e) and publish.mjs,
 // and directly testable without git or npm calls.
 
 /**

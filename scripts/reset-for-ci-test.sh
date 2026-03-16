@@ -258,7 +258,7 @@ if [[ $CACACHE_CLEANED -gt 0 ]]; then
 fi
 
 # Orphaned lock file
-LOCKFILE="/tmp/ruflo-sync-and-build.lock"
+LOCKFILE="/tmp/ruflo-pipeline.lock"
 if [[ -f "${LOCKFILE}" ]]; then
   # Check if anyone holds the lock
   if ! fuser "${LOCKFILE}" &>/dev/null; then

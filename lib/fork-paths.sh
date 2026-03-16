@@ -3,8 +3,7 @@
 # Single source of truth for fork directories and upstream URLs.
 # Sourceable library — no `set -euo pipefail` (caller provides).
 #
-# Consumers: ruflo-pipeline.sh, copy-source.sh, deploy-finalize.sh,
-#            ruflo-publish.sh, ruflo-sync.sh
+# Consumers: ruflo-publish.sh, ruflo-sync.sh, copy-source.sh, deploy-finalize.sh
 
 # ---------------------------------------------------------------------------
 # Fork directories (ADR-0027: source is local forks, not upstream repos)

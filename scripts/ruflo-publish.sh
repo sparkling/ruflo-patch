@@ -6,12 +6,20 @@
 #
 # Usage: bash scripts/ruflo-publish.sh [--force]
 #
-# Called by ruflo-pipeline.sh dispatcher or directly via npm run.
+# Called by ruflo.service or npm run deploy.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+
+# Concurrency guard — prevent overlapping timer + manual deploy runs
+LOCKFILE="/tmp/ruflo-pipeline.lock"
+exec 9>"${LOCKFILE}"
+if ! flock -n 9; then
+  echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] publish: another pipeline run holds ${LOCKFILE} — exiting" >&2
+  exit 0
+fi
 
 STATE_FILE="${SCRIPT_DIR}/.last-build-state"
 

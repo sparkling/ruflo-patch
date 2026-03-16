@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-systemd.sh — Install ruflo-pipeline systemd timer and service units.
+# install-systemd.sh — Install ruflo systemd timer and service units.
 #
 # Must be run as root (or via sudo).
 #

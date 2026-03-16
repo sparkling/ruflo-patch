@@ -172,7 +172,7 @@ load_state() {
 
 save_state() {
   cat > "${STATE_FILE}" <<EOF
-# ruflo build state — written by ruflo-pipeline.sh (ADR-0027)
+# ruflo build state — written by ruflo-publish.sh / ruflo-sync.sh (ADR-0027)
 # Last updated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')
 RUFLO_HEAD=${NEW_RUFLO_HEAD:-${RUFLO_HEAD}}
 AGENTIC_HEAD=${NEW_AGENTIC_HEAD:-${AGENTIC_HEAD}}

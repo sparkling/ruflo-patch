@@ -45,7 +45,7 @@ source "${PROJECT_DIR}/lib/fork-paths.sh"
 TEMP_DIR=""  # set in create_temp_dir
 
 # ---------------------------------------------------------------------------
-# Functions (extracted from sync-and-build.sh)
+# Functions
 # ---------------------------------------------------------------------------
 
 create_temp_dir() {
