@@ -6,7 +6,7 @@
 #
 # Usage: bash scripts/ruflo-publish.sh [--force]
 #
-# Called by sync-and-build.sh dispatcher or directly via npm run.
+# Called by ruflo-pipeline.sh dispatcher or directly via npm run.
 
 set -euo pipefail
 

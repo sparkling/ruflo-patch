@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# sync-and-build.sh — Thin dispatcher for ruflo pipeline (ADR-0039)
+# ruflo-pipeline.sh — Thin dispatcher for ruflo pipeline (ADR-0039)
 #
 # Dispatches to ruflo-publish.sh and/or ruflo-sync.sh.
 # Handles: flag parsing, concurrency guard, global timeout, --seed-state,
@@ -37,7 +37,7 @@ for arg in "$@"; do
     --seed-state) SEED_STATE=true ;;
     --help|-h)
       cat <<'USAGE'
-Usage: sync-and-build.sh [FLAGS]
+Usage: ruflo-pipeline.sh [FLAGS]
 
 Flags:
   --sync        Sync stage only (fetch upstream, create PR)

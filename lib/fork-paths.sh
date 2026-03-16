@@ -3,7 +3,7 @@
 # Single source of truth for fork directories and upstream URLs.
 # Sourceable library — no `set -euo pipefail` (caller provides).
 #
-# Consumers: sync-and-build.sh, copy-source.sh, deploy-finalize.sh,
+# Consumers: ruflo-pipeline.sh, copy-source.sh, deploy-finalize.sh,
 #            ruflo-publish.sh, ruflo-sync.sh
 
 # ---------------------------------------------------------------------------

@@ -278,7 +278,7 @@ _record_reset_phase "clear-state" "$(_elapsed_ms "$_p5" "$(_ns)")"
 _p6=$(_ns)
 log "Phase 6: Seeding state from fork HEADs..."
 cd "${PROJECT_DIR}"
-bash "${SCRIPT_DIR}/sync-and-build.sh" --seed-state
+bash "${SCRIPT_DIR}/ruflo-pipeline.sh" --seed-state
 log "  State seeded"
 _record_reset_phase "seed-state" "$(_elapsed_ms "$_p6" "$(_ns)")"
 

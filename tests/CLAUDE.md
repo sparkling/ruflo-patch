@@ -16,7 +16,7 @@
 | Patch fix | preflight + pipeline + unit | `npm run test:unit` |
 | Codemod/pipeline script | preflight + pipeline + unit | `npm run test:unit` |
 | Test script changes only | preflight + pipeline + unit | `npm run test:unit` |
-| sync-and-build.sh / acceptance changes | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run test:acceptance` (requires prior `npm run build`) |
+| ruflo-pipeline.sh / acceptance changes | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run test:acceptance` (requires prior `npm run build`) |
 | Pre-publish verification | full cascade | `npm run test:acceptance` |
 | Deploy to Verdaccio (full) | all | `npm run deploy` (runs all suites) |
 | Verify live packages | acceptance only | `bash scripts/test-acceptance.sh --registry http://localhost:4873` |

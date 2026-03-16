@@ -10,7 +10,7 @@ WorkingDirectory=/home/claude/src/ruflo-patch
 EnvironmentFile=/home/claude/.config/ruflo/secrets.env
 Environment=HOME=/home/claude
 Environment=PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/claude/src/ruflo-patch/scripts/sync-and-build.sh
+ExecStart=/home/claude/src/ruflo-patch/scripts/ruflo-pipeline.sh
 TimeoutStartSec=3600
 MemoryMax=32G
 CPUQuota=800%
