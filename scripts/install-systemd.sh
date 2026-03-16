@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# install-systemd.sh — Install ruflo-sync systemd timer and service units.
+# install-systemd.sh — Install ruflo-pipeline systemd timer and service units.
 #
 # Must be run as root (or via sudo).
 #
@@ -9,12 +9,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-TIMER_SRC="$REPO_DIR/config/ruflo-sync.timer"
-SERVICE_SRC="$REPO_DIR/config/ruflo-sync.service"
+TIMER_SRC="$REPO_DIR/config/ruflo-pipeline.timer"
+SERVICE_SRC="$REPO_DIR/config/ruflo-pipeline.service"
 SYSTEMD_DIR="/etc/systemd/system"
 
 SECRETS_DIR="/home/claude/.config/ruflo"
 SECRETS_FILE="$SECRETS_DIR/secrets.env"
+
+# Unit names (installed under these names regardless of source filename)
+UNIT_TIMER="ruflo-pipeline.timer"
+UNIT_SERVICE="ruflo-pipeline.service"
 
 # ── 1. Check for root privileges ────────────────────────────────────────────
 
@@ -32,16 +36,30 @@ for f in "$TIMER_SRC" "$SERVICE_SRC"; do
     fi
 done
 
-# ── 3. Copy unit files to systemd ───────────────────────────────────────────
+# ── 3. Stop old units if they exist (migration from ruflo-sync → ruflo-pipeline)
+
+for old_unit in ruflo-sync.timer ruflo-sync.service; do
+    if systemctl is-active --quiet "$old_unit" 2>/dev/null; then
+        echo "Stopping old unit: $old_unit"
+        systemctl stop "$old_unit"
+    fi
+    if systemctl is-enabled --quiet "$old_unit" 2>/dev/null; then
+        echo "Disabling old unit: $old_unit"
+        systemctl disable "$old_unit"
+    fi
+    [[ -f "$SYSTEMD_DIR/$old_unit" ]] && rm -f "$SYSTEMD_DIR/$old_unit"
+done
+
+# ── 4. Copy unit files to systemd ───────────────────────────────────────────
 
 echo "Copying unit files to $SYSTEMD_DIR/ ..."
-cp "$TIMER_SRC"   "$SYSTEMD_DIR/ruflo-sync.timer"
-cp "$SERVICE_SRC" "$SYSTEMD_DIR/ruflo-sync.service"
-chmod 644 "$SYSTEMD_DIR/ruflo-sync.timer"
-chmod 644 "$SYSTEMD_DIR/ruflo-sync.service"
+cp "$TIMER_SRC"   "$SYSTEMD_DIR/$UNIT_TIMER"
+cp "$SERVICE_SRC" "$SYSTEMD_DIR/$UNIT_SERVICE"
+chmod 644 "$SYSTEMD_DIR/$UNIT_TIMER"
+chmod 644 "$SYSTEMD_DIR/$UNIT_SERVICE"
 echo "  OK"
 
-# ── 4. Create secrets directory ─────────────────────────────────────────────
+# ── 5. Create secrets directory ─────────────────────────────────────────────
 
 NEEDS_SECRETS=false
 
@@ -51,13 +69,13 @@ chown claude:claude "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 echo "  OK"
 
-# ── 5. Create secrets template if missing ───────────────────────────────────
+# ── 6. Create secrets template if missing ───────────────────────────────────
 
 if [[ ! -f "$SECRETS_FILE" ]]; then
     NEEDS_SECRETS=true
     echo "WARNING: $SECRETS_FILE does not exist. Creating template..."
     cat > "$SECRETS_FILE" <<'TMPL'
-# ruflo secrets — loaded by ruflo-sync.service via EnvironmentFile=
+# ruflo secrets — loaded by ruflo-pipeline.service via EnvironmentFile=
 # Replace placeholder values with real tokens before enabling the timer.
 #
 # npm automation token (bypasses 2FA): npm token create --type=automation
@@ -73,24 +91,24 @@ else
     echo "  $SECRETS_FILE already exists — skipping"
 fi
 
-# ── 6. Reload systemd and enable timer ──────────────────────────────────────
+# ── 7. Reload systemd and enable timer ──────────────────────────────────────
 
 echo "Reloading systemd daemon ..."
 systemctl daemon-reload
 echo "  OK"
 
-echo "Enabling ruflo-sync.timer ..."
-systemctl enable --now ruflo-sync.timer
+echo "Enabling $UNIT_TIMER ..."
+systemctl enable --now "$UNIT_TIMER"
 echo "  OK"
 
-# ── 7. Show timer status ───────────────────────────────────────────────────
+# ── 8. Show timer status ───────────────────────────────────────────────────
 
 echo ""
 echo "Timer status:"
-systemctl list-timers ruflo-sync*
+systemctl list-timers ruflo-pipeline*
 echo ""
 
-# ── 8. Print next steps if secrets need configuration ───────────────────────
+# ── 9. Print next steps if secrets need configuration ───────────────────────
 
 if [[ "$NEEDS_SECRETS" == "true" ]]; then
     echo "================================================================"
@@ -106,11 +124,11 @@ if [[ "$NEEDS_SECRETS" == "true" ]]; then
     echo "     (should show -rw------- claude claude)"
     echo ""
     echo "  3. Test the service manually:"
-    echo "     sudo systemctl start ruflo-sync.service"
-    echo "     journalctl -u ruflo-sync -f"
+    echo "     sudo systemctl start $UNIT_SERVICE"
+    echo "     journalctl -u ruflo-pipeline -f"
     echo ""
 else
     echo "Installation complete. The timer will fire every 6 hours."
-    echo "To trigger a manual run: sudo systemctl start ruflo-sync.service"
-    echo "To view logs:           journalctl -u ruflo-sync"
+    echo "To trigger a manual run: sudo systemctl start $UNIT_SERVICE"
+    echo "To view logs:           journalctl -u ruflo-pipeline"
 fi

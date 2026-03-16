@@ -1,5 +1,5 @@
 [Unit]
-Description=Check upstream ruflo repos for changes
+Description=Ruflo pipeline: publish + sync every 6 hours
 
 [Timer]
 OnCalendar=*-*-* 00/6:00:00
