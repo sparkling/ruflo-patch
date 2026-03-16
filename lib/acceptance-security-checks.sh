@@ -3,6 +3,7 @@
 #
 # ADR-0040/0041/0042: Security controllers (D4/D5/D6), composite architecture,
 # and wiring remediation fixes in published packages.
+# ADR-0045: A9 EnhancedEmbeddingService + D1 TelemetryManager acceptance.
 #
 # Uses dedicated MCP tools (not agentdb_health). No fallback success paths.
 #
@@ -517,5 +518,87 @@ check_metadata_filter_controllers() {
     _CHECK_OUTPUT="B5/B6 controllers: metadataFilter + queryOptimizer both registered at Level 1"
   else
     _CHECK_OUTPUT="B5/B6 controllers: $found/2 found, missing: ${missing}"
+  fi
+}
+
+# ── ADR-0045: A9 EnhancedEmbeddingService ─────────────────────────
+
+check_embedding_generate() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Call agentdb_embed with test text — assert response has embedding + provider
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_embed --params '{\"text\":\"acceptance test embedding\"}'"
+  local embed_out="$_RK_OUT"
+
+  if [[ -z "$embed_out" ]]; then
+    _CHECK_OUTPUT="Embedding generate: agentdb_embed returned no output"
+    return
+  fi
+
+  if ! echo "$embed_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Embedding generate: no success field in response"
+    return
+  fi
+
+  # Parse embedding response: check for embedding array and dimension
+  local result
+  result=$(echo "$embed_out" | node -e "
+    const raw = require('fs').readFileSync('/dev/stdin','utf8');
+    try {
+      const jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);
+      if (!jsonMatch) { console.log('no-json'); process.exit(0); }
+      const data = JSON.parse(jsonMatch[0]);
+      if (!data.success) { console.log('not-success|' + (data.error || 'unknown')); process.exit(0); }
+      const dim = data.dimension || (data.embedding ? data.embedding.length : 0);
+      const provider = data.provider || 'none';
+      console.log('ok|' + dim + '|' + provider);
+    } catch { console.log('parse-error'); }
+  " 2>/dev/null) || result="parse-error"
+
+  local status="${result%%|*}"
+  if [[ "$status" == "ok" ]]; then
+    local rest="${result#*|}"
+    local dim="${rest%%|*}"
+    local provider="${rest#*|}"
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Embedding generate: dim=$dim, provider=$provider"
+  elif [[ "$status" == "not-success" ]]; then
+    local err="${result#*|}"
+    _CHECK_OUTPUT="Embedding generate: success=false — $err"
+  else
+    _CHECK_OUTPUT="Embedding generate: parse failed ($result)"
+  fi
+}
+
+check_embedding_controller_registered() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Verify A9 + D1 appear in agentdb_controllers
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  local ctrl_out="$_RK_OUT"
+
+  if [[ -z "$ctrl_out" ]]; then
+    _CHECK_OUTPUT="ADR-0045 controllers: agentdb_controllers returned no output"
+    return
+  fi
+
+  local found=0 missing=""
+  for name in enhancedEmbeddingService telemetryManager auditLogger; do
+    if echo "$ctrl_out" | grep -q "$name"; then
+      found=$((found + 1))
+    else
+      missing="${missing}${name} "
+    fi
+  done
+
+  if [[ $found -eq 3 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0045 controllers: all 3 (A9/D1/D3) registered"
+  else
+    _CHECK_OUTPUT="ADR-0045 controllers: $found/3 found, missing: ${missing}"
   fi
 }

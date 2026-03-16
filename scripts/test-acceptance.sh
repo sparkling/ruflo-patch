@@ -325,7 +325,7 @@ _record_phase "group-controller" "$(_elapsed_ms "$_g" "$(_ns)")"
 # Tests: security & reliability (ADR-0040/0041/0042, all parallel)
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── security & reliability (ADR-0040/0041/0042/0043) ──"
+log "── security & reliability (ADR-0040/0041/0042/0043/0045) ──"
 run_check_bg "sec-controllers"  "Security controllers (D4/D5/D6)"  check_security_controllers    "security"
 run_check_bg "sec-ratelimit"    "Rate limiter status"              check_rate_limit_status        "security"
 run_check_bg "sec-breaker"      "Circuit breaker status"           check_circuit_breaker_status   "security"
@@ -339,6 +339,8 @@ run_check_bg "sec-health-rpt"   "Health report (B3)"               check_health_
 run_check_bg "sec-filtered"     "Filtered search (B5)"             check_filtered_search           "security"
 run_check_bg "sec-query-stats"  "Query stats (B6)"                 check_query_stats               "security"
 run_check_bg "sec-b5b6-ctrls"   "B5/B6 controllers"               check_metadata_filter_controllers "security"
+run_check_bg "sec-embed-gen"    "Embedding generate (A9)"          check_embedding_generate        "security"
+run_check_bg "sec-045-ctrls"    "ADR-0045 controllers (A9/D1/D3)" check_embedding_controller_registered "security"
 collect_parallel "security" \
   "sec-controllers|Security controllers (D4/D5/D6)" "sec-ratelimit|Rate limiter status" \
   "sec-breaker|Circuit breaker status" "sec-resource|Resource tracker" \
@@ -346,7 +348,8 @@ collect_parallel "security" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
   "sec-filtered|Filtered search (B5)" "sec-query-stats|Query stats (B6)" \
-  "sec-b5b6-ctrls|B5/B6 controllers"
+  "sec-b5b6-ctrls|B5/B6 controllers" \
+  "sec-embed-gen|Embedding generate (A9)" "sec-045-ctrls|ADR-0045 controllers (A9/D1/D3)"
 _record_phase "group-security" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
