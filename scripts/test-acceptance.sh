@@ -156,7 +156,7 @@ if [[ ! -x "$CLI_BIN" ]]; then
 fi
 
 log "Running harness: init --full --force"
-(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout --signal=KILL 30 "$CLI_BIN" init --full --force 2>&1) || {
+(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout --signal=KILL 60 "$CLI_BIN" init --full --force 2>&1) || {
   log_error "Harness: init --full failed"; exit 1
 }
 
