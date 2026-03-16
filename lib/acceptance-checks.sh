@@ -45,7 +45,7 @@ _booster_cmd() {
 # Usage: _run_and_kill "command string" [out_file] [max_seconds]
 # Sets: _RK_OUT, _RK_EXIT
 _run_and_kill() {
-  local cmd="$1" out_file="${2:-}" max_wait="${3:-30}"
+  local cmd="$1" out_file="${2:-}" max_wait="${3:-8}"
 
   # Create temp file if caller did not provide one
   if [[ -z "$out_file" ]]; then
