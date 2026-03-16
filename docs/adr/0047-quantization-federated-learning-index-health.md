@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted
 
 ## Date
 
@@ -105,13 +105,13 @@ case 'indexHealth':
 
 ### Checklist
 
-- [ ] Wire B9 QuantizedVectorStore at Level 2 (~500 lines)
-- [ ] Wire A11 FederatedLearningManager at Level 4 (~436 lines)
-- [ ] Wire B3 IndexHealthMonitor at Level 4 (~96 lines)
-- [ ] Add `selectBackend` threshold logic in memory-bridge.ts
-- [ ] Add bridge functions for federated round management
-- [ ] Add bridge functions for health assessment queries
-- [ ] Register MCP tools for B9 (quantize-status) and B3 (health-report)
+- [x] Wire B9 QuantizedVectorStore at Level 2 (~500 lines)
+- [x] Wire A11 FederatedLearningManager at Level 4 (~436 lines)
+- [x] Wire B3 IndexHealthMonitor at Level 4 (~96 lines)
+- [x] Add `selectBackend` threshold logic in memory-bridge.ts
+- [x] Add bridge functions for federated round management
+- [x] Add bridge functions for health assessment queries
+- [x] Register MCP tools for B9 (quantize-status) and B3 (health-report)
 
 ### Testing
 
