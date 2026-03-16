@@ -399,7 +399,8 @@ log "── e2e (controller activation) ──"
 
 # Create a fresh project for e2e tests
 E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
-_run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN init --full --force"
+# E2E init needs 60s+ for 42-controller registry (ADR-0048)
+_run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN init --full --force" "" 90
 
 if [[ ! -f "$E2E_DIR/.claude/settings.json" ]]; then
   log "  WARN  e2e harness: init --full did not produce settings.json — skipping e2e group"
