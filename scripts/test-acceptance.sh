@@ -107,9 +107,11 @@ if ! curl -sf "${REGISTRY}/-/ping" >/dev/null 2>&1; then
 fi
 _record_phase "health-check" "$(_elapsed_ms "$_p" "$(_ns)")"
 
-# Phase: Clear stale npm cache entries
+# Phase: Clear stale npm cache entries + orphaned acceptance temp dirs
 _p=$(_ns)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
+# Remove stale acceptance temp dirs from previous runs (>1 hour old)
+find /tmp -maxdepth 1 -name "ruflo-accept-*" -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # Phase: Install packages from registry
