@@ -53,14 +53,23 @@ run_build() {
 
   # Install TypeScript in a persistent directory (cached across runs)
   local tsc_dir="/tmp/ruflo-tsc-toolchain"
+  # ADR-0040: extend TTL to 7 days + content hash for pinned deps
+  local _deps_str="typescript@5 zod@3 @types/express @types/cors @types/fs-extra"
+  # Compute deps hash to detect changes in pinned dep list
+  local _deps_hash
+  _deps_hash=$(printf '%s' "$_deps_str" | sha256sum | cut -d' ' -f1)
+  local _stored_hash=""
+  [[ -f "${tsc_dir}/.deps-hash" ]] && _stored_hash=$(cat "${tsc_dir}/.deps-hash" 2>/dev/null)
   if [[ ! -x "${tsc_dir}/node_modules/.bin/tsc" ]] || \
-     [[ $(find "${tsc_dir}" -maxdepth 0 -mmin +1440 -print 2>/dev/null | wc -l) -gt 0 ]]; then
+     [[ "$_deps_hash" != "$_stored_hash" ]] || \
+     [[ $(find "${tsc_dir}" -maxdepth 0 -mmin +10080 -print 2>/dev/null | wc -l) -gt 0 ]]; then
     rm -rf "${tsc_dir}"
     mkdir -p "${tsc_dir}" "${tsc_dir}/stubs"
     (cd "$tsc_dir" && echo '{"private":true}' > package.json \
-      && npm install typescript@5 zod@3 @types/express @types/cors @types/fs-extra --save-exact 2>&1) | tail -1
+      && npm install $_deps_str --save-exact 2>&1) | tail -1
     # Copy static type stubs (ADR-0039: committed files instead of heredocs)
     cp "${PROJECT_DIR}/config/tsc-stubs/"*.d.ts "${tsc_dir}/stubs/"
+    printf '%s' "$_deps_hash" > "${tsc_dir}/.deps-hash"
     log "TypeScript toolchain installed at ${tsc_dir}"
   else
     log "TypeScript toolchain cached at ${tsc_dir}"
@@ -107,18 +116,21 @@ run_build() {
     local ok=0
     local fallback_level=3
     local tsc_log="$pkg_dir/.tsc-build.log"
-    if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck 2>"$tsc_log"; then
+    # ADR-0040: --incremental with .tsbuildinfo for faster rebuilds
+    local _incr_flags="--incremental --tsBuildInfoFile ${pkg_dir}/.tsbuildinfo"
+    if "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck $_incr_flags 2>"$tsc_log"; then
       ok=1; fallback_level=0
-    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck 2>"$tsc_log"; then
+    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck $_incr_flags 2>"$tsc_log"; then
       ok=1; fallback_level=1
-    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules 2>"$tsc_log"; then
+    elif "$tsc_bin" -p "$tmp_tsconfig" --skipLibCheck --noCheck --isolatedModules $_incr_flags 2>"$tsc_log"; then
       ok=1; fallback_level=2
     fi
     # Log failures instead of swallowing them
     if [[ $ok -eq 0 && -s "$tsc_log" ]]; then
       log "    tsc failed for ${pkg_name}: $(head -3 "$tsc_log" | tr '\n' ' ')"
     fi
-    rm -f "$tmp_tsconfig" "$tsc_log"
+    # ADR-0040: keep tsconfig.build.json — .tsbuildinfo references it
+    rm -f "$tsc_log"
 
     local pkg_build_end
     pkg_build_end=$(date +%s%N 2>/dev/null || echo 0)
@@ -239,7 +251,9 @@ run_build() {
     log "  Building agentic-flow (config/tsconfig.json)..."
     local _af_start
     _af_start=$(date +%s%N 2>/dev/null || echo 0)
-    "$tsc_bin" -p "${af_dir}/config/tsconfig.json" --skipLibCheck --noCheck 2>/dev/null || true
+    # ADR-0040: --incremental for agentic-flow standalone build
+    "$tsc_bin" -p "${af_dir}/config/tsconfig.json" --skipLibCheck --noCheck \
+      --incremental --tsBuildInfoFile "${af_dir}/.tsbuildinfo" 2>/dev/null || true
     local _af_end
     _af_end=$(date +%s%N 2>/dev/null || echo 0)
     local _af_ms=0
@@ -307,7 +321,9 @@ run_build() {
     log "  Building cross-repo TSC: ${rel_path}"
     local _xr_tsc_start _xr_tsc_end
     _xr_tsc_start=$(date +%s%N 2>/dev/null || echo 0)
-    if "$tsc_bin" -p "$pkg_dir/tsconfig.json" --skipLibCheck 2>/dev/null; then
+    # ADR-0040: --incremental for cross-repo builds
+    if "$tsc_bin" -p "$pkg_dir/tsconfig.json" --skipLibCheck \
+      --incremental --tsBuildInfoFile "$pkg_dir/.tsbuildinfo" 2>/dev/null; then
       built=$((built + 1))
     else
       log "WARN: TypeScript build failed for ${rel_path}"
@@ -323,11 +339,21 @@ run_build() {
 
   log "Build complete: ${built} built, ${skipped} skipped, ${failed} failed"
 
-  # Single combined scan (avoids running find twice for the same data)
-  local total_packages compiled_packages pre_built_packages _scan_start _scan_end
+  # ADR-0040: single find traversal categorizing dist dirs and package.json files
+  local total_packages=0 compiled_packages=0 pre_built_packages _scan_start _scan_end
   _scan_start=$(date +%s%N 2>/dev/null || echo 0)
-  compiled_packages=$(find "${TEMP_DIR}" -name "dist" -type d 2>/dev/null | wc -l)
-  total_packages=$(find "${TEMP_DIR}" -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" -exec grep -l '"@sparkleideas/' {} + 2>/dev/null | wc -l)
+  local _pkg_json_files=()
+  while IFS= read -r -d '' _entry; do
+    if [[ -d "$_entry" ]]; then
+      compiled_packages=$((compiled_packages + 1))
+    else
+      _pkg_json_files+=("$_entry")
+    fi
+  done < <(find "${TEMP_DIR}" \( -name "dist" -type d \) -o \( -name "package.json" -not -path "*/node_modules/*" -not -path "*/.tsc-toolchain/*" \) -print0 2>/dev/null)
+  if [[ ${#_pkg_json_files[@]} -gt 0 ]]; then
+    # Count package.json files that contain @sparkleideas/ scope
+    total_packages=$(grep -l '"@sparkleideas/' "${_pkg_json_files[@]}" 2>/dev/null | wc -l)
+  fi
   pre_built_packages=$((total_packages - compiled_packages))
   _scan_end=$(date +%s%N 2>/dev/null || echo 0)
   if [[ "$_scan_start" != "0" && "$_scan_end" != "0" ]]; then
