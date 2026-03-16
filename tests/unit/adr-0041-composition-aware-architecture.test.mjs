@@ -655,4 +655,171 @@ describe('ADR-0041: Composition-Aware Controller Architecture', () => {
       );
     });
   });
+
+  // ==========================================================================
+  // 7-Step Integration Template (ADR-0041 item 3) (4)
+  // ==========================================================================
+
+  describe('7-Step Integration Validator', () => {
+
+    // Mock of validateControllerIntegration logic
+    function validateControllerIntegration(desc) {
+      const missing = [];
+      const allRegistered = INIT_LEVELS.flat();
+      if (!allRegistered.includes(desc.name)) {
+        missing.push(`Step 1: '${desc.name}' not in ControllerName type union`);
+      }
+      const levelEntries = INIT_LEVELS[desc.level] || [];
+      if (!levelEntries.includes(desc.name)) {
+        missing.push(`Step 2: '${desc.name}' not in INIT_LEVELS at level ${desc.level}`);
+      }
+      if (!desc.hasEnableCheck) missing.push(`Step 3: '${desc.name}' missing isControllerEnabled() case`);
+      if (!desc.hasFactory) missing.push(`Step 4: '${desc.name}' missing createController() factory case`);
+      if (!desc.hasBridgeFunction) missing.push(`Step 5: '${desc.name}' missing bridge function`);
+      if (!desc.hasMcpTool) missing.push(`Step 6: '${desc.name}' missing MCP tool`);
+      return missing;
+    }
+
+    it('returns empty array for fully-wired controller', () => {
+      const result = validateControllerIntegration({
+        name: 'resourceTracker',
+        level: 0,
+        hasEnableCheck: true,
+        hasFactory: true,
+        hasBridgeFunction: true,
+        hasMcpTool: true,
+      });
+      assert.strictEqual(result.length, 0, 'no missing steps');
+    });
+
+    it('detects missing steps for partially-wired controller', () => {
+      const result = validateControllerIntegration({
+        name: 'rateLimiter',
+        level: 0,
+        hasEnableCheck: true,
+        hasFactory: false,       // missing
+        hasBridgeFunction: true,
+        hasMcpTool: false,       // missing
+      });
+      assert.strictEqual(result.length, 2, '2 missing steps');
+      assert.ok(result.some(s => s.includes('Step 4')), 'factory missing');
+      assert.ok(result.some(s => s.includes('Step 6')), 'MCP tool missing');
+    });
+
+    it('detects unknown controller not in INIT_LEVELS', () => {
+      const result = validateControllerIntegration({
+        name: 'totallyNewController',
+        level: 3,
+        hasEnableCheck: true,
+        hasFactory: true,
+        hasBridgeFunction: true,
+        hasMcpTool: true,
+      });
+      assert.ok(result.some(s => s.includes('Step 1')), 'type union missing');
+      assert.ok(result.some(s => s.includes('Step 2')), 'INIT_LEVELS missing');
+    });
+
+    it('detects wrong level assignment', () => {
+      // resourceTracker is at level 0, not level 3
+      const result = validateControllerIntegration({
+        name: 'resourceTracker',
+        level: 3,
+        hasEnableCheck: true,
+        hasFactory: true,
+        hasBridgeFunction: true,
+        hasMcpTool: true,
+      });
+      assert.ok(result.some(s => s.includes('Step 2')), 'wrong level detected');
+      assert.ok(!result.some(s => s.includes('Step 1')), 'name IS in type union');
+    });
+  });
+
+  // ==========================================================================
+  // Safeguards 1-4 Shared Wrapper (ADR-0041 item 4) (5)
+  // ==========================================================================
+
+  describe('withBridgeSafeguards wrapper', () => {
+
+    // Mock of withBridgeSafeguards logic
+    async function withBridgeSafeguards(fn, opts = {}) {
+      const {
+        timeoutMs = 2000,
+        coldStartCheck,
+        maxWrites = 3,
+        writeCounter,
+        fireAndForget = false,
+        fallback,
+      } = opts;
+
+      if (coldStartCheck && !coldStartCheck()) return fallback;
+      if (writeCounter && writeCounter.count >= maxWrites) return fallback;
+      if (fireAndForget) {
+        fn().then(
+          () => { if (writeCounter) writeCounter.count++; },
+          () => {},
+        );
+        return fallback;
+      }
+
+      try {
+        const result = await Promise.race([
+          fn(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), timeoutMs)),
+        ]);
+        if (writeCounter) writeCounter.count++;
+        return result;
+      } catch {
+        return fallback;
+      }
+    }
+
+    it('returns result on success within timeout', async () => {
+      const result = await withBridgeSafeguards(
+        async () => 'ok',
+        { timeoutMs: 100 },
+      );
+      assert.strictEqual(result, 'ok');
+    });
+
+    it('returns fallback on timeout (safeguard 1)', async () => {
+      const result = await withBridgeSafeguards(
+        () => new Promise(() => {}), // never resolves
+        { timeoutMs: 50, fallback: 'timed-out' },
+      );
+      assert.strictEqual(result, 'timed-out');
+    });
+
+    it('returns fallback when cold-start check fails (safeguard 2)', async () => {
+      const result = await withBridgeSafeguards(
+        async () => 'should-not-run',
+        { coldStartCheck: () => false, fallback: 'cold' },
+      );
+      assert.strictEqual(result, 'cold');
+    });
+
+    it('enforces max writes per call (safeguard 3)', async () => {
+      const counter = { count: 0 };
+      for (let i = 0; i < 5; i++) {
+        await withBridgeSafeguards(
+          async () => 'write',
+          { maxWrites: 3, writeCounter: counter },
+        );
+      }
+      assert.strictEqual(counter.count, 3, 'only 3 writes counted');
+    });
+
+    it('fire-and-forget returns fallback immediately (safeguard 4)', async () => {
+      let executed = false;
+      const start = Date.now();
+      const result = await withBridgeSafeguards(
+        async () => { executed = true; return 'bg'; },
+        { fireAndForget: true, fallback: 'immediate' },
+      );
+      assert.strictEqual(result, 'immediate');
+      assert.ok(Date.now() - start < 50, 'returned immediately');
+      // Background execution completes async
+      await new Promise(resolve => setTimeout(resolve, 10));
+      assert.strictEqual(executed, true, 'background fn did execute');
+    });
+  });
 });
