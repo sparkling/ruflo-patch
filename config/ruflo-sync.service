@@ -1,5 +1,5 @@
 [Unit]
-Description=Sync and build ruflo from upstream
+Description=Ruflo pipeline: publish + sync upstream
 After=network-online.target
 Wants=network-online.target
 OnFailure=ruflo-notify-failure@%n.service
@@ -10,7 +10,8 @@ WorkingDirectory=/home/claude/src/ruflo-patch
 EnvironmentFile=/home/claude/.config/ruflo/secrets.env
 Environment=HOME=/home/claude
 Environment=PATH=/home/claude/.local/bin:/usr/local/bin:/usr/bin:/bin
-ExecStart=/home/claude/src/ruflo-patch/scripts/ruflo-pipeline.sh
+ExecStart=/home/claude/src/ruflo-patch/scripts/ruflo-publish.sh
+ExecStart=/home/claude/src/ruflo-patch/scripts/ruflo-sync.sh
 TimeoutStartSec=3600
 MemoryMax=32G
 CPUQuota=800%

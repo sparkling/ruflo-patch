@@ -18,6 +18,7 @@
     "deploy": "npm run test:acceptance && npm run finalize",
     "prepublishOnly": "npm run test:unit",
     "sync": "bash scripts/ruflo-sync.sh",
+    "seed-state": "bash scripts/seed-state.sh",
     "promote": "bash scripts/promote.sh",
     "rollback": "bash scripts/rollback.sh",
     "validate": "bash scripts/validate-ci.sh",
