@@ -20,7 +20,7 @@
 #   controller — ctrl-health, ctrl-routing, ctrl-scoping, ctrl-reflexion,
 #                ctrl-causal, ctrl-cow, ctrl-batch, ctrl-synthesis
 #   security   — sec-controllers, sec-ratelimit, sec-breaker, sec-resource,
-#                sec-composition, sec-wiring
+#                sec-composition, sec-wiring, sec-quantize, sec-health-rpt
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
 #
@@ -331,11 +331,14 @@ run_check_bg "sec-composition"  "Controller composition"           check_control
 run_check_bg "sec-wiring"       "Wiring remediation"               check_wiring_remediation        "security"
 run_check_bg "sec-rl-consumed"  "Rate limit token consumed"        check_rate_limit_consumed       "security"
 run_check_bg "sec-health-comp"  "Health composite count"           check_health_composite_count    "security"
+run_check_bg "sec-quantize"     "Quantize status (B9)"             check_quantize_status           "security"
+run_check_bg "sec-health-rpt"   "Health report (B3)"               check_health_report             "security"
 collect_parallel "security" \
   "sec-controllers|Security controllers (D4/D5/D6)" "sec-ratelimit|Rate limiter status" \
   "sec-breaker|Circuit breaker status" "sec-resource|Resource tracker" \
   "sec-composition|Controller composition" "sec-wiring|Wiring remediation" \
-  "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count"
+  "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
+  "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)"
 _record_phase "group-security" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════

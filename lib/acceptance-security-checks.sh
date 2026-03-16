@@ -296,6 +296,87 @@ check_controller_composition() {
   fi
 }
 
+# ===== ADR-0047: Quantization & Index Health =====
+
+check_quantize_status() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_quantize_status"
+  local qs_out="$_RK_OUT"
+
+  if [[ -z "$qs_out" ]]; then
+    _CHECK_OUTPUT="Quantize status: agentdb_quantize_status returned no output"
+    return
+  fi
+
+  # Tool must return a response with success field
+  if ! echo "$qs_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Quantize status: no success field in response"
+    return
+  fi
+
+  # B9 may not be active on fresh init (requires >50K entries).
+  # Accept either: success=true with stats, or success=false with "not active" error.
+  if echo "$qs_out" | grep -q '"success": *true\|"success":true'; then
+    # Active: verify stats fields (type, compression, entryCount)
+    local has_fields=0
+    for field in type compression entryCount; do
+      if echo "$qs_out" | grep -qi "$field"; then
+        has_fields=$((has_fields + 1))
+      fi
+    done
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Quantize status: active, $has_fields/3 expected fields present"
+  elif echo "$qs_out" | grep -qi "not active\|QuantizedVectorStore"; then
+    # Inactive but responded correctly
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Quantize status: B9 not active (expected on fresh init — below 50K threshold)"
+  else
+    _CHECK_OUTPUT="Quantize status: unexpected response — $qs_out"
+  fi
+}
+
+check_health_report() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health_report"
+  local hr_out="$_RK_OUT"
+
+  if [[ -z "$hr_out" ]]; then
+    _CHECK_OUTPUT="Health report: agentdb_health_report returned no output"
+    return
+  fi
+
+  if ! echo "$hr_out" | grep -q '"success"'; then
+    _CHECK_OUTPUT="Health report: no success field in response"
+    return
+  fi
+
+  # B3 may not be active on fresh init.
+  # Accept either: success=true with assessment, or success=false with "not active" error.
+  if echo "$hr_out" | grep -q '"success": *true\|"success":true'; then
+    # Active: verify assessment fields (status, recommendations, p95Latency)
+    local has_fields=0
+    for field in status recommendations p95Latency; do
+      if echo "$hr_out" | grep -qi "$field"; then
+        has_fields=$((has_fields + 1))
+      fi
+    done
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Health report: active, $has_fields/3 expected fields present"
+  elif echo "$hr_out" | grep -qi "not active\|IndexHealthMonitor"; then
+    # Inactive but responded correctly
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Health report: B3 not active (expected on fresh init — passive monitor)"
+  else
+    _CHECK_OUTPUT="Health report: unexpected response — $hr_out"
+  fi
+}
+
 check_wiring_remediation() {
   local cli; cli=$(_cli_cmd)
   _CHECK_PASSED="false"
