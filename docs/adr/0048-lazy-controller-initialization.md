@@ -103,7 +103,9 @@ With model cache resolved, the acceptance suite bottleneck is now:
 - **group-e2e** (93s): Same `init --full` hang in e2e test setup.
 - Individual tool tests: 1-8s each (fast, model cached).
 
-The CLI process hangs because `better-sqlite3` holds file descriptors open after `AgentDB.initialize()`. The Node.js event loop doesn't exit until all handles close. The `_run_and_kill` sentinel detection works for tool output, but `init --full` produces output then hangs.
+The CLI process hangs because `db-fallback.js` creates a `setInterval(10s)` memory leak detector without calling `.unref()`. This only triggers on the sql.js WASM fallback path — used when `better-sqlite3` native bindings aren't compiled (acceptance tests use `npm install --ignore-scripts`). Fixed by adding `.unref()` to the interval (commit c57c963).
+
+Additionally, the `shutdownBridge()` function in `memory-bridge.ts` exists but is never called after `init --full`. This leaves the ControllerRegistry singleton alive with open database handles. The `.unref()` fix resolves the hang, but calling `shutdownBridge()` would provide cleaner cleanup.
 
 ## Decision: Pseudocode (SPARC-P)
 
@@ -258,7 +260,7 @@ Serialize the initialized registry to `.swarm/registry-cache.json` and reload on
 
 **Remaining**:
 - [x] Pre-cache ONNX model via `~/.cache/agentdb-models/` + `AGENTDB_MODEL_PATH` env (commit dd8c0d5 agentic-flow, 926ac59 ruflo-patch)
-- [ ] Fix SQLite handle hang — CLI process doesn't exit after `init --full` (causes 120s KILL timeout)
+- [x] Fix process hang — `db-fallback.js` `setInterval` without `.unref()` keeps event loop alive on sql.js WASM fallback path (commit c57c963 agentic-flow)
 - [ ] Lazy-load EmbeddingService in AgentDB.initialize() (defer `transformers.pipeline()` until first `embed()`)
 - [ ] Cache `import('agentdb')` result at `createController()` scope (eliminate 32 redundant dynamic imports)
 - [ ] Export 12 missing controller classes from agentdb index.ts (AuditLogger, AttentionMetrics, IndexHealthMonitor, etc.)
@@ -432,3 +434,5 @@ This is sufficient because:
 | 7 | MetadataFilter not exported | agentic-flow | dcc421a | B5 controller class unavailable |
 | 8 | Console log pollution | ruflo | 53878094c | Controller logs break MCP tool output parsing |
 | 9 | Deferred controller init | ruflo | b469ef61e | CLI startup <1s (Levels 0-1 eager, 2-6 background) |
+| 10 | ONNX model persistent cache | agentic-flow + ruflo-patch | dd8c0d5 + 926ac59 | Eliminates 30-60s cold model download |
+| 11 | `db-fallback.js` `.unref()` | agentic-flow | c57c963 | Fixes process hang on sql.js WASM path (acceptance tests) |
