@@ -43,35 +43,40 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 
 - **Error**: `Cannot read properties of undefined (reading 'toLowerCase')`
 - **Controller**: solverBandit route handler
-- **Root cause**: The route handler calls `.toLowerCase()` on an input field that is undefined. Missing input validation at handler boundary.
+- **Root cause**: The error originates in `search-memory.query.ts` line 127, not in the solverBandit handler itself. The code `input.textQuery!.toLowerCase()` uses an unsafe non-null assertion — when `textQuery` is undefined (optional field), the assertion passes TypeScript but crashes at runtime.
+- **File**: `v3/@claude-flow/memory/src/application/queries/search-memory.query.ts:127`
 - **ADR**: 0040
 
 #### F2: `agentdb_filtered_search` — bridge not available
 
 - **Error**: `"Bridge not available"`
-- **Controller**: B5 metadataFilter (depends on learningBridge)
-- **Root cause**: `learningBridge` controller is disabled at Level 1 (no backend configured). The filtered search bridge function requires learningBridge, but this dependency isn't documented — B5 MetadataFilter should work independently of learningBridge.
+- **Controller**: B5 metadataFilter
+- **Root cause**: The error is NOT a learningBridge dependency. `bridgeFilteredSearch` (memory-bridge.ts:2699) calls `bridgeSearchEntries` (line 2714) which returns null when `getRegistry()` or `getDb()` returns null — i.e., when the base search engine is unavailable. B5 metadataFilter is at Level 1 and has no dependency on learningBridge (its constructor takes zero arguments, line 1603). The "Bridge not available" triggers when the entire registry/db layer fails to initialize, blocking all search operations.
+- **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts:2699-2724`
 - **ADR**: 0043
 
 #### F3: `agentdb_attention_metrics` — D2 not active
 
 - **Error**: `"AttentionMetrics (D2) not active"`
 - **Controller**: D2 attentionMetrics
-- **Root cause**: D2 factory passes `{ attentionService, selfAttention, crossAttention, multiHeadAttention }` to constructor, but `AttentionMetricsCollector` takes no constructor arguments. The constructor silently ignores the config, but the controller may fail for a different reason at Level 4 (deferred init timing or import failure).
+- **Root cause**: Compound failure — import failure AND constructor mismatch. The factory (controller-registry.ts:1884) does `agentdbModule.AttentionMetrics` which resolves to the TypeScript **interface**, not the **class** `AttentionMetricsCollector`. Interfaces don't exist at runtime, so `AM` is `undefined` and the factory returns null at line 1885. Even if the import were fixed, the factory passes `{ attentionService, selfAttention, crossAttention, multiHeadAttention }` but `AttentionMetricsCollector` (attention-metrics.ts:31) has no constructor — config is silently ignored. Fix requires: (1) export `AttentionMetricsCollector` from agentdb barrel, (2) change factory to use `AttentionMetricsCollector`, (3) remove config object.
+- **File**: `v3/@claude-flow/memory/src/controller-registry.ts:1884-1895`
 - **ADR**: 0044
 
 #### F4: `agentdb_quantize_status` — B9 not active
 
 - **Error**: `"QuantizedVectorStore not active"`
 - **Controller**: B9 quantizedVectorStore
-- **Root cause**: Factory passes `{ dimension, innerBackend }` but `QuantizedVectorStore` constructor requires `{ dimension, quantizationType }`. The `quantizationType` field (`'scalar8bit' | 'scalar4bit' | 'product'`) is never provided. Controller silently fails during deferred init.
+- **Root cause**: Factory (controller-registry.ts:1696-1699) passes `{ dimension, innerBackend }` but `QuantizedVectorStore` constructor (Quantization.ts:628) requires `QuantizationConfig` with mandatory `type: QuantizationType` field (`'scalar-4bit' | 'scalar-8bit' | 'product'`). The `dimension` field doesn't even exist in `QuantizationConfig`. Controller silently fails during deferred init.
+- **File**: `v3/@claude-flow/memory/src/controller-registry.ts:1696-1699`
 - **ADR**: 0047
 
 #### F5: `agentdb_health_report` — B3 not available
 
 - **Error**: `"indexHealthMonitor not available"`
 - **Controller**: B3 indexHealthMonitor
-- **Root cause**: B3 is at Level 4 (deferred). During a single CLI `mcp exec` invocation, deferred init (levels 2+) runs in the background and does not complete before the tool handler executes. The controller is structurally correct (no constructor mismatch) but never ready in time.
+- **Root cause**: Compound bug — (1) `IndexHealthMonitor` is NOT exported from `agentdb/src/index.ts`, so the factory's `agentdbModule.IndexHealthMonitor` resolves to `undefined` and returns null regardless of timing. (2) Even if exported, B3 is at Level 4 (deferred) and `bridgeHealthReport()` does not call `waitForDeferred()` before checking the controller, unlike `bridgeEmbed()`, `bridgeListControllers()`, and `bridgeControllers()` which all await deferred init. Fix requires: (1) add barrel export, (2) add `await registry.waitForDeferred()` to `bridgeHealthReport()`.
+- **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (handler) + `agentdb/src/index.ts` (export)
 - **ADR**: 0047
 
 ### 7 Degradations (tools that succeed with empty/wrong data)
@@ -79,19 +84,19 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 #### D1: `agentdb_attention_compute` — empty results
 
 - **Symptom**: `success: true`, `results: []`
-- **Root cause**: Handler schema accepts `query`/`namespace`/`limit` but ignores the `entries` parameter from ADR-0044 spec. It performs a memory search against an empty namespace, returning nothing. Schema mismatch with spec.
+- **Root cause**: Handler schema (agentdb-tools.ts:1134-1160) accepts `query`/`namespace`/`limit` which correctly matches ADR-0044 spec (line 75: `bridgeAttentionSearch(options)` takes `{ query, namespace, limit }`). The empty results are a logic issue — the handler performs a memory search against a namespace with no data, not a schema mismatch.
 - **ADR**: 0044
 
 #### D2: `agentdb_attention_benchmark` — wrong dimensions
 
 - **Symptom**: `success: true`, hardcoded `dim=64` instead of requested `768`
-- **Root cause**: Handler schema defines `entryCount`/`blockSize`, not `dimensions`. The `dimensions` parameter is silently dropped. Flash output is 64 JS-fallback floats.
+- **Root cause**: Handler schema (agentdb-tools.ts:1164-1194) defines `entryCount`/`blockSize` which matches the ADR-0044 pseudocode (line 84-85). ADR-0044 does NOT specify a `dimensions` parameter. The real issue is that synthetic benchmark entries at line 1181 use hardcoded 64-dimensional vectors instead of a configurable dimension. Fix: add a `dimensions` parameter to the schema and use it when generating synthetic entries.
 - **ADR**: 0044
 
 #### D3: `agentdb_attention_configure` — read-only, ignores mechanism
 
 - **Symptom**: `success: true`, `engine: "fallback"`, `initialized: false`
-- **Root cause**: Handler schema has empty `properties: {}` — the `mechanism` parameter is silently ignored. The tool is read-only despite its name. No NAPI/WASM available, so engine is permanently "fallback".
+- **Root cause**: Handler schema (agentdb-tools.ts:1198-1219) has empty `properties: {}`. ADR-0044 does NOT specify a `mechanism` parameter for this tool — configuration happens at init-time via the AttentionService constructor. The tool is correctly read-only (queries engine type, info, stats). The degradation is that without NAPI/WASM, engine is permanently "fallback". Consider renaming to `agentdb_attention_status` to match read-only behavior.
 - **ADR**: 0044
 
 #### D4: `agentdb_embed` — zero-dimension embedding
@@ -103,7 +108,8 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 #### D5: `agentdb_embed_status` — contradicts health
 
 - **Symptom**: `active: false`, `"EnhancedEmbeddingService not active"`
-- **Root cause**: Health report shows `enhancedEmbeddingService` as `enabled: true` at Level 3, but `bridgeHasController()` returns false. Inconsistent readiness signals — the controller is registered but the bridge checks a different readiness flag.
+- **Root cause**: Two different readiness checks disagree. Health report (memory-bridge.ts:1987) calls `registry.listControllers()` which uses `isControllerEnabled()` (controller-registry.ts:820-822) — returns `true` if AgentDB is available (configuration readiness). But `embed_status` handler (agentdb-tools.ts:1062-1087) calls `bridgeHasController()` (memory-bridge.ts:1450-1451) which checks `registry.get()` — returns null for deferred controllers not yet instantiated (instantiation readiness). For Level 3 controllers, there is a window where `enabled: true` but `get()` returns null.
+- **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts:1450-1451` vs `:1987`
 - **ADR**: 0045
 
 #### D6: `agentdb_telemetry_metrics` — empty counters
@@ -122,14 +128,14 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 
 | Level | Controller | ADR | Cause |
 |:-----:|-----------|-----|-------|
-| 1 | learningBridge | 0040 | No backend configured; blocks filtered_search |
+| 1 | learningBridge | 0040 | No backend configured (does NOT block filtered_search — see F2 correction) |
 | 2 | selfLearningRvfBackend | 0046 | Factory calls `new SLRB(config)` but private ctor expects `(RvfBackend, config)` — needs `SelfLearningRvfBackend.create()` |
 | 2 | nativeAccelerator | 0046 | `@ruvector/*` packages not installed — expected, JS fallbacks work |
 | 2 | quantizedVectorStore | 0047 | Missing required `quantizationType` field in constructor config |
 | 3 | auditLogger | 0045 | `AuditLogger` not exported from `agentdb/src/index.ts` — factory always gets `undefined` |
-| 4 | indexHealthMonitor | 0047 | Deferred init (Level 4) doesn't complete during single CLI invocation |
-| 4 | federatedLearningManager | 0047 | `FederatedLearningManager` not exported from `agentdb/src/index.ts` |
-| 4 | attentionMetrics | 0044 | D2 constructor mismatch or import failure at Level 4 |
+| 4 | indexHealthMonitor | 0047 | Compound: not exported from agentdb barrel AND deferred init timing |
+| 4 | federatedLearningManager | 0047 | Compound: not exported from agentdb barrel AND constructor mismatch (factory passes `{ backend, dimension }`, constructor expects `FederatedConfig` with required `agentId: string`) |
+| 4 | attentionMetrics | 0044 | Compound: factory imports interface (undefined at runtime) not class, AND constructor mismatch |
 | 2 | gnnService (anomaly) | — | `enabled: true` but `available: false` internally — inconsistent status |
 
 ### 3 Cross-cutting issues
@@ -142,11 +148,13 @@ The `mcp exec` subcommand accepts `--params` / `-p` for tool parameters. The `--
 
 Tools returning `{ success: false, error: "..." }` still exit with code 0. Under fail-loud mode, MCP tools that detect controller failures should propagate as exit code 1 so CI/scripts can catch them.
 
-#### X3: 3 attention tool schemas don't match ADR-0044 spec
+#### X3: Attention tool schema issues
 
-- `attention_compute`: spec uses `entries`, schema has `query`/`namespace`/`limit`
-- `attention_benchmark`: spec uses `dimensions`, schema has `entryCount`/`blockSize`
-- `attention_configure`: spec uses `mechanism`, schema has empty `properties: {}`
+Original analysis claimed 3 schema/spec mismatches. Source verification against ADR-0044 found:
+
+- `attention_compute`: Schema (`query`/`namespace`/`limit`) **matches** ADR-0044 spec (line 75). No mismatch — empty results are a data issue, not schema.
+- `attention_benchmark`: Schema (`entryCount`/`blockSize`) **matches** ADR-0044 pseudocode (line 84-85). ADR-0044 does not specify a `dimensions` parameter. Real issue: hardcoded `dim=64` in synthetic entries (agentdb-tools.ts:1181). Fix: add `dimensions` parameter.
+- `attention_configure`: Empty `properties: {}` is **correct** — ADR-0044 configures AttentionService at init-time, not via tool parameters. Tool is read-only by design. Consider renaming to `agentdb_attention_status`.
 
 ## Decision: Pseudocode (SPARC-P)
 
@@ -158,16 +166,17 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 
 | Category | Count | Fix approach |
 |----------|:-----:|-------------|
-| Constructor mismatch (registry passes wrong args) | 3 | Update factory in controller-registry.ts |
-| Not exported from agentdb barrel | 2 | Add export lines to agentic-flow fork |
-| Schema/spec mismatch (MCP handler ignores params) | 3 | Update handler schemas in agentdb-tools.ts |
-| Wrong class imported | 1 | Change import target in registry factory |
-| Deferred init timing | 1 | Either lower B3 to Level 1 or await deferred in handler |
-| Missing input validation | 1 | Add null check in hooks_route handler |
-| Undocumented dependency | 1 | Remove learningBridge dependency from filtered_search bridge |
-| No instrumentation wired | 2 | Wire telemetry calls into controller init and bridge ops |
-| CLI UX (silent flag drop) | 1 | Reject unknown flags in mcp exec command parser |
-| Exit code propagation | 1 | Return exit code 1 when tool result has `success: false` |
+| Constructor mismatch (registry passes wrong args) | 3 | Update factory in controller-registry.ts (F4: `type` field, F3: remove config, FLM: `agentId`) |
+| Not exported from agentdb barrel | 4 | Add export lines to agentic-flow fork (AttentionMetricsCollector, IndexHealthMonitor, AuditLogger, FederatedLearningManager) |
+| Import resolves to wrong class | 1 | Change import target in registry factory (D4: controllers/ → services/ EnhancedEmbeddingService) |
+| Unsafe non-null assertion | 1 | Add null guard in search-memory.query.ts:127 (F1: `textQuery!` → `textQuery ?? ''`) |
+| Registry/db unavailability | 1 | Investigate why base search engine fails to init (F2: registry returns null) |
+| Missing `waitForDeferred()` | 1 | Add await in bridgeHealthReport, matching pattern in 3 other bridge functions (F5) |
+| Readiness check inconsistency | 1 | Align embed_status to check `isControllerEnabled` or report `enabled/initialized` separately (D5) |
+| Hardcoded dimension | 1 | Add `dimensions` parameter to benchmark schema (D2: `dim=64` → configurable) |
+| No instrumentation wired | 2 | Instrument controller init with spans; add notice field to empty responses (D6/D7) |
+| CLI UX (silent flag drop) | 1 | Reject unknown flags in mcp exec command parser (X1) |
+| Exit code propagation | 1 | Return exit code 1 when tool result has `success: false` (X2) |
 
 ## Decision: Refinement (SPARC-R)
 
@@ -177,49 +186,54 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 
 | ID | Defect | Effort |
 |----|--------|--------|
-| F1 | hooks_route null deref | ~10 lines |
-| F2 | filtered_search depends on learningBridge | ~15 lines |
-| F4 | B9 missing `quantizationType` | ~2 lines |
-| D4 | A9 imports wrong EnhancedEmbeddingService class | ~3 lines (change import) |
+| F1 | Unsafe `textQuery!.toLowerCase()` in search-memory.query.ts:127 | ~3 lines (null guard) |
+| F2 | Registry/db unavailability blocks all bridgeFilteredSearch | ~10 lines (investigate init failure, improve error message) |
+| F4 | B9 factory passes `{dimension, innerBackend}`, needs `{type: 'scalar-8bit'}` | ~2 lines |
+| D4 | A9 imports 159-line WASM wrapper, not 1435-line full service | ~3 lines (change import) |
 
 **Tier 2 — Fix soon (features inert but not crashing)**
 
 | ID | Defect | Effort |
 |----|--------|--------|
-| F3 | D2 attentionMetrics constructor/import | ~5 lines |
-| D5 | A9 embed_status contradicts health | ~10 lines (align readiness check) |
-| X1 | CLI `--args` silent drop | ~10 lines (reject unknown flags) |
-| X3 | 3 attention schema/spec mismatches | ~30 lines (update handler schemas) |
+| F3 | D2 import failure (interface not class) + constructor mismatch; needs barrel export of `AttentionMetricsCollector` | ~8 lines (export + factory fix) |
+| D5 | `isControllerEnabled` vs `registry.get()` readiness disagreement | ~10 lines (align readiness check) |
+| X1 | `mcp exec` silently ignores unknown flags (no `--args` validation) | ~10 lines (reject unknown flags) |
+| D2 | Benchmark hardcodes `dim=64`; add `dimensions` parameter to schema | ~8 lines |
 
 **Tier 3 — Fix later (improvements, not broken)**
 
-| ID | Defect | Effort |
-|----|--------|--------|
-| F5 | B3 deferred init timing | Architecture decision: move level or add await |
-| D6/D7 | Telemetry empty (no instrumentation) | ~50 lines (wire spans into init + bridge) |
-| X2 | Exit code propagation | ~15 lines in mcp exec handler |
-| — | Export D3 AuditLogger from agentdb | ~1 line in agentic-flow fork |
-| — | Export A11 FederatedLearningManager from agentdb | ~1 line in agentic-flow fork |
+| ID | Defect | Approach | Effort |
+|----|--------|----------|--------|
+| F5 | B3 compound: missing barrel export + missing `waitForDeferred()` | Export `IndexHealthMonitor` from agentdb + add `await registry.waitForDeferred()` to `bridgeHealthReport()` (matches pattern in 3 other bridge functions) | ~5 lines |
+| D6/D7 | Telemetry empty (no instrumentation) | Instrument `initController()` loop with spans; add `notice` field to empty telemetry responses. Defer runtime bridge spans until real backend exists. | ~20 lines |
+| X2 | Exit code propagation | Always-on: check `result.success` after `callMCPTool()`, return `exitCode: 1` if falsy. Consistent with ADR-0049 fail-loud philosophy. | ~8 lines |
+| — | Export AuditLogger from agentdb | No circular dep risk (imports only `fs`/`path`). | ~2 lines |
+| — | Export FederatedLearningManager from agentdb + fix factory | No circular dep risk (type-only `@ruvector/sona` import). Also needs factory fix: constructor expects `FederatedConfig` with `agentId: string`, factory passes `{ backend, dimension }`. | ~5 lines |
 
 ## Decision: Completion (SPARC-C)
 
 ### Checklist
 
-- [ ] Tier 1: Fix hooks_route null deref (F1)
-- [ ] Tier 1: Remove learningBridge dependency from bridgeFilteredSearch (F2)
-- [ ] Tier 1: Add `quantizationType: 'scalar8bit'` to B9 factory (F4)
-- [ ] Tier 1: Change A9 factory to import services-level EnhancedEmbeddingService (D4)
-- [ ] Tier 2: Fix D2 attentionMetrics factory (F3)
-- [ ] Tier 2: Align A9 embed_status readiness check with health (D5)
-- [ ] Tier 2: Reject unknown flags in `mcp exec` (X1)
-- [ ] Tier 2: Update 3 attention tool handler schemas (X3)
-- [ ] Tier 3: Resolve B3 deferred init timing (F5)
-- [ ] Tier 3: Wire D1 telemetry into controller init and bridge ops (D6/D7)
-- [ ] Tier 3: Propagate `success: false` as exit code 1 (X2)
-- [ ] Tier 3: Export AuditLogger from agentdb (D3 disabled)
-- [ ] Tier 3: Export FederatedLearningManager from agentdb (A11 disabled)
+- [ ] Tier 1: Add null guard to `input.textQuery!.toLowerCase()` in search-memory.query.ts:127 (F1)
+- [ ] Tier 1: Investigate registry/db init failure in bridgeFilteredSearch; improve error message (F2)
+- [ ] Tier 1: Fix B9 factory: pass `{type: 'scalar-8bit'}` instead of `{dimension, innerBackend}` (F4)
+- [ ] Tier 1: Change A9 factory import from controllers/EnhancedEmbeddingService to services/enhanced-embeddings (D4)
+- [ ] Tier 2: Export `AttentionMetricsCollector` from agentdb barrel + fix factory import + remove config (F3)
+- [ ] Tier 2: Align embed_status readiness check with health report (D5)
+- [ ] Tier 2: Reject unknown flags in `mcp exec` options (X1)
+- [ ] Tier 2: Add `dimensions` parameter to attention_benchmark schema (D2)
+- [ ] Tier 3: Export `IndexHealthMonitor` from agentdb barrel (F5 prerequisite)
+- [ ] Tier 3: Add `await registry.waitForDeferred()` to `bridgeHealthReport()` (F5)
+- [ ] Tier 3: Instrument `initController()` with telemetry spans + add notice to empty responses (D6/D7)
+- [ ] Tier 3: Propagate `success: false` as exit code 1 in mcp exec handler (X2)
+- [ ] Tier 3: Export `AuditLogger` from agentdb barrel
+- [ ] Tier 3: Export `FederatedLearningManager` from agentdb barrel + fix factory constructor mismatch
 - [ ] Run `npm run deploy` after each tier — verify 55/55 acceptance
 - [ ] Run full MCP tool validation against ~/src/test after all tiers
+
+### Dependency order
+
+Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogger, FederatedLearningManager). All ruflo-side fixes are independent of each other.
 
 ### Success Criteria
 
@@ -241,13 +255,13 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 
 - 5 MCP tools are broken for end users until Tier 1 fixes ship
 - 7 tools return misleading `success: true` with empty data until Tier 2
-- Total fix effort estimated at ~150 lines across 3 files + 2 fork export lines
+- Total fix effort estimated at ~95 lines across 4 files + 4 fork barrel export lines
 
 ### Risks
 
 - Tier 1 fixes may introduce new failures if constructor signatures aren't carefully verified
-- B3 deferred init timing (F5) may require architectural change to ADR-0048's deferred init strategy
-- Attention schema fixes (X3) may break existing callers that rely on current parameter names
+- B3 deferred init timing (F5) uses established `waitForDeferred()` pattern — low risk
+- X3 attention schemas mostly match ADR-0044 spec; only D2 benchmark dimension needs a new parameter
 
 ## Related
 
@@ -255,3 +269,15 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 - **ADR-0040 through ADR-0047**: The 8 ADRs whose implementations contain these defects
 - **ADR-0048**: Lazy controller initialization (deferred init causes F5)
 - **Swarm audit 2026-03-17**: 8-agent code analysis that found 29 bugs; this ADR confirms 7 at runtime
+
+## Revision History
+
+- **2026-03-17 (rev 2)**: Source verification audit corrected 4 root causes:
+  - F1: Error is in search-memory.query.ts:127, not solverBandit handler
+  - F2: No learningBridge dependency — registry/db unavailability is the root cause
+  - F3: Refined — import failure (interface not class) is the primary cause, not just constructor mismatch
+  - X3: 2 of 3 claimed spec mismatches were wrong — schemas match ADR-0044; real issues are hardcoded dim and read-only behavior
+  - F5: Compound bug discovered — missing barrel export AND missing waitForDeferred
+  - FederatedLearningManager: Additional constructor mismatch found
+  - Barrel exports needed: 4 (was 2) — added AttentionMetricsCollector and IndexHealthMonitor
+  - Tier 2 updated: X3 removed (schemas correct), D2 benchmark dimension added
