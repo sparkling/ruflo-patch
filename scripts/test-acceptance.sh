@@ -106,6 +106,11 @@ find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/de
 find /tmp -maxdepth 1 -name "ruflo-accept-*" -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true
 _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 
+# ADR-0048: Persistent ONNX model cache — avoids 30-60s cold download per test run.
+# ModelCacheLoader checks AGENTDB_MODEL_PATH first, then ~/.cache/agentdb-models/.
+# Staleness is verified by SHA-256 checksum comparison in ModelCacheLoader.extractFromRvf().
+export AGENTDB_MODEL_PATH="${HOME}/.cache/agentdb-models"
+
 # Phase: Install packages from registry
 _p=$(_ns)
 ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
