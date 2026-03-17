@@ -1,8 +1,8 @@
-# ADR-0048: Lazy Controller Initialization & Registry Performance
+# ADR-0048: Deferred Controller Initialization & Registry Performance
 
 ## Status
 
-Draft
+Accepted (partially implemented)
 
 ## Date
 
@@ -18,14 +18,34 @@ SPARC + MADR
 
 ## Context
 
-With ADR-0043/0044/0045/0047 fully wired, the ControllerRegistry now initializes 42 controllers at startup. Six bugs prevented this until today (see Related). With all fixes applied, the full init takes 30-60 seconds per CLI process due to heavy imports: GNN models, Sona RL, SemanticRouter, Transformers.js, GraphTransformer, and native NAPI bindings.
+With ADR-0043/0044/0045/0047 fully wired, the ControllerRegistry now initializes 44 controllers at startup. Nine bugs prevented this until 2026-03-17 (see Related — Bugs Fixed). With all fixes applied, full initialization takes 30-60 seconds on cold start but only ~228ms when warm.
 
-Each `_run_and_kill` acceptance test invocation spawns a fresh CLI process. With 20+ invocations, the test suite takes 300+ seconds (up from 35s). Three previously passing tests now fail:
-- **memory-lifecycle**: controller init logs pollute tool output, breaking result parsing
-- **e2e-\***: processes crash or timeout during heavy init (subprocess OOM or 8s sentinel timeout)
-- **sec-embed-gen**: A9 response format parse error under load
+### Profiler Findings (2026-03-17)
 
-The root cause: `ControllerRegistry.initialize()` eagerly creates all 42 controllers in INIT_LEVELS order, blocking until every controller's factory completes. Heavy controllers (GNN, Sona, GraphTransformer) load native modules and download/initialize ML models synchronously.
+Empirical measurement revealed the actual bottleneck is NOT individual controllers:
+
+| Phase | Warm (cached) | Cold (first run) | % of total |
+|-------|--------------|-------------------|------------|
+| `import('agentdb')` (65 exports, 41MB) | 25-30ms | 25-30ms | 11% |
+| `AgentDB.initialize()` | **180-200ms** | **30-60s** | **79%** |
+| — `import('@xenova/transformers')` | 73ms | 73ms | 32% |
+| — `transformers.pipeline(model)` | 96ms | **30-60s download** | 42% |
+| All 44 controller factories combined | **8ms** | **8ms** | 4% |
+| `WASMVectorSearch` post-init | 16ms | 16ms | 7% |
+
+**Key finding**: Every individual controller is FAST (<1ms each). The 30-60s delay comes entirely from `@xenova/transformers` downloading the `Xenova/all-MiniLM-L6-v2` ONNX model (~23MB) from HuggingFace on first use. Once cached in `node_modules/@xenova/transformers/.cache/`, the full 44-controller init completes in ~228ms.
+
+### Impact on Acceptance Tests
+
+Each `_run_and_kill` acceptance test invocation spawns a fresh CLI process. The acceptance test harness creates a fresh temp directory, so the ONNX model cache is cold. Effects:
+- **memory-lifecycle**: controller init logs (GNN, Sona, WASM) pollute tool output, breaking result parsing
+- **e2e-\***: `init --full` exceeds `_run_and_kill` timeout (process killed before completion)
+- **sec-embed-gen**: A9 EnhancedEmbeddingService (Level 3, deferred) not initialized when tool runs
+- **sec-045-ctrls**: A9/D1/D3 controllers (Level 3+) not visible in deferred init window
+
+### Current State (partially implemented)
+
+The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2026-03-17. Results: 46/49 tests pass (3 remaining failures from deferred timing). The LazyControllerProxy from the original design was replaced by a simpler `eagerMaxLevel` approach — see Implementation Notes.
 
 ## Decision: Specification (SPARC-S)
 
@@ -50,12 +70,19 @@ The root cause: `ControllerRegistry.initialize()` eagerly creates all 42 control
 
 ### Performance Targets
 
-| Metric | Current | Target |
-|--------|---------|--------|
-| CLI startup (first tool response) | 30-60s | <2s |
-| Acceptance suite total | 300s | <60s |
-| First lazy controller access | N/A | <5s |
-| Memory at startup | ~400MB (42 controllers) | <100MB (11 eager) |
+| Metric | Before fix | After deferred init | Target (with model cache) |
+|--------|-----------|--------------------|----|
+| CLI startup (first tool response) | 30-60s (cold) / ~228ms (warm) | <1s (warm) | <500ms |
+| Acceptance suite total | 300s+ | 354s (cold model downloads) | <60s (with pre-cached model) |
+| First deferred controller access | N/A | ~8s (background init) | <2s (warm) |
+| Controller factories (all 44) | 8ms | 8ms | 8ms (already optimal) |
+
+### Remaining Optimization: Pre-cache ONNX Model
+
+The single largest optimization opportunity is eliminating the cold ONNX model download. Options:
+1. **Ship model in package**: Bundle `Xenova/all-MiniLM-L6-v2` ONNX model (~23MB) in `@sparkleideas/agentdb`
+2. **Pre-download in harness**: Run `npx agentdb install-embeddings` during acceptance test setup
+3. **Lazy-load EmbeddingService**: Defer `transformers.pipeline()` until first `embed()` call (saves 96ms warm, eliminates cold download blocking)
 
 ## Decision: Pseudocode (SPARC-P)
 
@@ -126,25 +153,44 @@ try {
 
 ## Decision: Architecture (SPARC-A)
 
+### Implemented: eagerMaxLevel Approach
+
 ```
 CLI process start
   ├── import memory-bridge.js
   ├── getRegistry() called by tool handler
-  │     ├── import @sparkleideas/memory
+  │     ├── import @sparkleideas/memory                     ← <1ms (cached)
   │     ├── new ControllerRegistry()
-  │     ├── initAgentDB()              ← ~2s (better-sqlite3 + HNSWLib)
-  │     ├── Eager controllers (L0+L1)  ← ~200ms (11 controllers)
-  │     └── Lazy proxies (L2-L6)       ← ~1ms (31 proxies, no imports)
-  ├── Tool handler runs               ← immediate for L0/L1 tools
-  │     └── If tool needs lazy controller:
-  │           └── proxy.get() triggers factory  ← 5-15s on first use
+  │     ├── initAgentDB()                                    ← ~200ms (warm) / 30-60s (cold model download)
+  │     │     ├── import('agentdb')                          ← 25-30ms
+  │     │     ├── new AgentDB({ dbPath })
+  │     │     └── agentdb.initialize()                       ← 180ms (warm) — bottleneck is transformers.pipeline()
+  │     ├── Eager controllers (L0+L1)                        ← ~8ms (11 controllers, all <1ms each)
+  │     ├── emit('initialized')                              ← initialize() returns here
+  │     └── Background: deferred controllers (L2-L6)         ← ~8ms more (33 controllers, all <1ms each)
+  ├── Tool handler runs                                       ← immediate for L0/L1 tools
   └── Process exits (or killed by _run_and_kill)
 ```
 
-- Eager controllers: 11 total, ~200ms init. Covers all acceptance tests that don't explicitly require attention/GNN/learning.
-- Lazy controllers: 31 total, 0ms at startup. Initialized on demand.
-- `listControllers()` returns all 42 entries with `lazy: true/false` flag.
-- Acceptance tests that check `agentdb_controllers` see all 42 controllers listed (lazy ones marked as `enabled: true, lazy: true`).
+### Measured Init Breakdown (44 controllers)
+
+| Level | Controllers | Measured Time | Strategy |
+|-------|:-----------:|:------------:|----------|
+| 0 | 4 (telemetryManager, resourceTracker, rateLimiter, circuitBreaker) | 0.6ms | Eager — pure JS objects, no imports |
+| 1 | 7 (reasoningBank, hierarchicalMemory, learningBridge, solverBandit, tieredCache, metadataFilter, queryOptimizer) | 2.5ms | Eager — `import('agentdb')` cached from initAgentDB |
+| 2 | 12 (memoryGraph, vectorBackend, attention A1-A3/A5, gnnService, quantizedVectorStore, ...) | 1.4ms | Deferred (background) |
+| 3 | 8 (skills, reflexion, enhancedEmbeddingService, auditLogger, ...) | 2.0ms | Deferred (background) |
+| 4 | 7 (causalGraph, learningSystem, semanticRouter, attentionMetrics, ...) | 0.6ms | Deferred (background) |
+| 5 | 5 (contextSynthesizer, rvfOptimizer, mmrDiversityRanker, guardedVectorBackend, sonaTrajectory) | 0.4ms | Deferred (background) |
+| 6 | 1 (graphAdapter) | 0.0ms | Deferred (background) |
+
+### 12 Controllers Return Null (class missing from agentdb exports)
+
+solverBandit, hierarchicalMemory (stub), mutationGuard, selfLearningRvfBackend, nativeAccelerator, attestationLog, auditLogger, semanticRouter, indexHealthMonitor, federatedLearningManager, attentionMetrics, guardedVectorBackend — these require classes not yet exported from agentdb v3. They register with `enabled: false`.
+
+### Console Isolation
+
+All `console.log` and `console.warn` output is suppressed during registry initialization in `memory-bridge.ts`. This prevents 42 controllers' diagnostic logs (GNN, Sona, WASM, LearningSystem) from polluting MCP tool output.
 
 ## Decision: Refinement (SPARC-R)
 
@@ -181,16 +227,20 @@ Serialize the initialized registry to `.swarm/registry-cache.json` and reload on
 
 ### Checklist
 
-- [ ] Implement `LazyControllerProxy` class in controller-registry.ts (~80 lines)
-- [ ] Add `isEagerController()` method with Level 0 + Level 1 core set
-- [ ] Modify `initialize()` to use lazy proxies for non-eager controllers
-- [ ] Modify `get()` to resolve lazy proxies on access
-- [ ] Modify `listControllers()` to include lazy flag
-- [ ] Add console log isolation in memory-bridge.ts `getRegistry()`
-- [ ] Add `init --full` flag to force eager init of all controllers (project setup)
-- [ ] Increase `_run_and_kill` default max_wait to 15s
-- [ ] Update acceptance tests to handle `lazy: true` in controller list
-- [ ] Add unit tests for LazyControllerProxy
+**Implemented (2026-03-17)**:
+- [x] Deferred init via `eagerMaxLevel` config in controller-registry.ts (commit b469ef61e, ruflo fork)
+- [x] Background `_deferredInitPromise` for Level 2-6 controllers
+- [x] `waitForDeferred()` method for tools that need deferred controllers
+- [x] Console log+warn isolation in memory-bridge.ts `getRegistry()` (commit 53878094c, ruflo fork)
+- [x] E2E init --full timeout increased to 90s (commit 4147809, ruflo-patch)
+- [x] `init --full` harness verifies by file existence, not exit code (commit 7037cef, ruflo-patch)
+
+**Remaining**:
+- [ ] Pre-cache ONNX model in acceptance test harness setup (eliminates 30-60s cold download)
+- [ ] Lazy-load EmbeddingService in AgentDB.initialize() (defer `transformers.pipeline()` until first `embed()`)
+- [ ] Cache `import('agentdb')` result at `createController()` scope (eliminate 32 redundant dynamic imports)
+- [ ] Export 12 missing controller classes from agentdb index.ts (AuditLogger, AttentionMetrics, IndexHealthMonitor, etc.)
+- [ ] Add unit tests for deferred init behavior
 
 ### Testing
 
@@ -322,12 +372,41 @@ describe('ADR-0048: lazy controller initialization', () => {
 - Lazy controllers failing silently: users see `enabled: true` but `get()` returns null (mitigated by error propagation in proxy)
 - Test timing sensitivity: lazy init adds variability to tool response times
 
+## Implementation Notes
+
+### What Was Actually Implemented (vs Original Design)
+
+The original design proposed `LazyControllerProxy` with per-controller lazy init. Profiling showed this was over-engineered — all 44 controller factories complete in 8ms total. The actual bottleneck is `AgentDB.initialize()` (ONNX model download on cold start).
+
+The implemented solution uses a simpler `eagerMaxLevel` config:
+- `initialize()` returns after Level 0-1 controllers are ready (~200ms warm)
+- Levels 2-6 initialize in a background promise (`_deferredInitPromise`)
+- `waitForDeferred()` allows tools to await deferred completion when needed
+
+This is sufficient because:
+1. Controller factories are all FAST (<1ms each) — lazy proxies add complexity without measurable benefit
+2. The `initAgentDB()` call (which includes the ONNX bottleneck) runs eagerly regardless — it must complete before any controller can initialize
+3. The real fix for cold-start latency is pre-caching the ONNX model, not deferring controller factories
+
 ## Related
 
 - **ADR-0039**: Upstream controller integration roadmap (parent)
 - **ADR-0041**: 7-step controller integration protocol (wiring standard)
-- **ADR-0043**: Query filtering (B5/B6 controllers — eager set)
-- **ADR-0044**: Attention suite (A1-A5 controllers — lazy set)
-- **ADR-0045**: Embeddings & compliance (A9/D1/D3 — mixed eager/lazy)
-- **ADR-0047**: Quantization & health (B9/A11/B3 — lazy set)
-- **Bugs fixed (2026-03-17)**: TSC cache staleness, ruvector hard dep, duplicate LLMRouter export, missing QueryCache import, missing getWASMSearchPaths, ESM require('path') — all prerequisites for this ADR
+- **ADR-0043**: Query filtering (B5/B6 controllers — eager set, Level 1)
+- **ADR-0044**: Attention suite (A1-A5 controllers — deferred, Level 2)
+- **ADR-0045**: Embeddings & compliance (A9/D1/D3 — deferred, Level 3+)
+- **ADR-0047**: Quantization & health (B9/A11/B3 — deferred, Level 2/4)
+
+### Bugs Fixed (2026-03-17) — Prerequisites
+
+| # | Bug | Repo | Commit | Impact |
+|---|-----|------|--------|--------|
+| 1 | TSC `.tsbuildinfo` cache stale | ruflo-patch | 4d8d6bf | Compiled JS missing ADR-0043/44/45/47 tools |
+| 2 | ruvector hard dependency (E404) | agentic-flow | dcc421a | memory/agentdb packages fail to install |
+| 3 | Duplicate LLMRouter export | agentic-flow | a0250d7 | `import('agentdb')` crashes at module load |
+| 4 | Missing QueryCache import | agentic-flow | d83fca5 | AgentDB.initialize() throws "QueryCache is not defined" |
+| 5 | Missing WASMVectorSearch.getWASMSearchPaths | agentic-flow | 4c8f034 | CLI init crashes with TypeError |
+| 6 | ESM `require('path')` | ruflo | 0d4d4135 | initAgentDB fails with "require is not defined" |
+| 7 | MetadataFilter not exported | agentic-flow | dcc421a | B5 controller class unavailable |
+| 8 | Console log pollution | ruflo | 53878094c | Controller logs break MCP tool output parsing |
+| 9 | Deferred controller init | ruflo | b469ef61e | CLI startup <1s (Levels 0-1 eager, 2-6 background) |
