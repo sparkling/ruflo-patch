@@ -214,21 +214,21 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 
 ### Checklist
 
-- [ ] Tier 1: Add null guard to `input.textQuery!.toLowerCase()` in search-memory.query.ts:127 (F1)
-- [ ] Tier 1: Investigate registry/db init failure in bridgeFilteredSearch; improve error message (F2)
-- [ ] Tier 1: Fix B9 factory: pass `{type: 'scalar-8bit'}` instead of `{dimension, innerBackend}` (F4)
-- [ ] Tier 1: Change A9 factory import from controllers/EnhancedEmbeddingService to services/enhanced-embeddings (D4)
-- [ ] Tier 2: Export `AttentionMetricsCollector` from agentdb barrel + fix factory import + remove config (F3)
-- [ ] Tier 2: Align embed_status readiness check with health report (D5)
-- [ ] Tier 2: Reject unknown flags in `mcp exec` options (X1)
-- [ ] Tier 2: Add `dimensions` parameter to attention_benchmark schema (D2)
-- [ ] Tier 3: Export `IndexHealthMonitor` from agentdb barrel (F5 prerequisite)
-- [ ] Tier 3: Add `await registry.waitForDeferred()` to `bridgeHealthReport()` (F5)
-- [ ] Tier 3: Instrument `initController()` with telemetry spans + add notice to empty responses (D6/D7)
-- [ ] Tier 3: Propagate `success: false` as exit code 1 in mcp exec handler (X2)
-- [ ] Tier 3: Export `AuditLogger` from agentdb barrel
-- [ ] Tier 3: Export `FederatedLearningManager` from agentdb barrel + fix factory constructor mismatch
-- [ ] Run `npm run deploy` after each tier — verify 55/55 acceptance
+- [x] Tier 1: Add null guard to `input.textQuery!.toLowerCase()` in search-memory.query.ts:127 (F1)
+- [x] Tier 1: Investigate registry/db init failure in bridgeFilteredSearch; improve error message (F2)
+- [x] Tier 1: Fix B9 factory: pass `{type: 'scalar-8bit'}` instead of `{dimension, innerBackend}` (F4)
+- [x] Tier 1: Change A9 factory import from controllers/EnhancedEmbeddingService to services/enhanced-embeddings (D4)
+- [x] Tier 2: Export `AttentionMetricsCollector` from agentdb barrel + fix factory import + remove config (F3)
+- [x] Tier 2: Align embed_status readiness check with health report (D5)
+- [x] Tier 2: Reject unknown flags in `mcp exec` options (X1)
+- [x] Tier 2: Add `dimensions` parameter to attention_benchmark schema (D2)
+- [x] Tier 3: Export `IndexHealthMonitor` from agentdb barrel (F5 prerequisite)
+- [x] Tier 3: Add `await registry.waitForDeferred()` to `bridgeHealthReport()` + pass default IndexStats (F5)
+- [x] Tier 3: Add notice fields to empty telemetry responses (D6/D7)
+- [x] Tier 3: Propagate `success: false` as exit code 1 in mcp exec handler (X2)
+- [x] Tier 3: Export `AuditLogger` from agentdb barrel
+- [x] Tier 3: Export `FederatedLearningManager` from agentdb barrel + fix factory constructor mismatch
+- [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.87, 2026-03-17)
 - [ ] Run full MCP tool validation against ~/src/test after all tiers
 
 ### Dependency order
