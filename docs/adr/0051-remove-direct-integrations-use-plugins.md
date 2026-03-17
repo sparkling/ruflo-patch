@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed (final ruling 2026-03-17 — hive-mind consensus 5-1)
+Deferred — upstream code is unchanged by our patches (8 lines delta); restructuring 44K lines of upstream code is not justified. Architecture analysis preserved as reference for future upstream contribution.
 
 ## Date
 
