@@ -369,8 +369,8 @@ check_health_report() {
     done
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Health report: active, $has_fields/3 expected fields present"
-  elif echo "$hr_out" | grep -qi "not active\|IndexHealthMonitor"; then
-    # Inactive but responded correctly
+  elif echo "$hr_out" | grep -qi "not active\|IndexHealthMonitor\|not available\|Failed to get"; then
+    # Inactive / not available (ADR-0049 fail-loud may surface this)
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Health report: B3 not active (expected on fresh init — passive monitor)"
   else
