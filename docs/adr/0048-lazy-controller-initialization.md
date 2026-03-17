@@ -77,12 +77,33 @@ The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2
 | First deferred controller access | N/A | ~8s (background init) | <2s (warm) |
 | Controller factories (all 44) | 8ms | 8ms | 8ms (already optimal) |
 
-### Remaining Optimization: Pre-cache ONNX Model
+### ONNX Model Cache (Implemented 2026-03-17)
 
-The single largest optimization opportunity is eliminating the cold ONNX model download. Options:
-1. **Ship model in package**: Bundle `Xenova/all-MiniLM-L6-v2` ONNX model (~23MB) in `@sparkleideas/agentdb`
-2. **Pre-download in harness**: Run `npx agentdb install-embeddings` during acceptance test setup
-3. **Lazy-load EmbeddingService**: Defer `transformers.pipeline()` until first `embed()` call (saves 96ms warm, eliminates cold download blocking)
+The cold ONNX model download (~23MB, 30-60s) was the primary bottleneck. Fixed by adding a persistent cache layer to `ModelCacheLoader`:
+
+**Resolution chain** (checked in order):
+1. `AGENTDB_MODEL_PATH` env var → user-specified dir
+2. Bundled `.rvf` file → extracted to `/tmp/agentdb-models/`
+3. `node_modules/@xenova/transformers/.cache/` → per-install (ephemeral)
+4. **`~/.cache/agentdb-models/`** → home dir (NEW — persists across installs/deploys)
+5. `/tmp/agentdb-models/` → temp dir (persists across processes, not reboots)
+6. Network download from HuggingFace (last resort)
+
+**Staleness checking**:
+- `.rvf` bundles: SHA-256 per-file checksum in SQLite table (`model_assets.sha256`)
+- Direct cache: model ID directory path (`Xenova/<model>/onnx/model_quantized.onnx`) — new model version = new model ID
+- `AGENTDB_MODEL_PATH`: existence check only (user manages freshness)
+
+**Result**: CLI init drops from 30-60s (cold) to **217ms** (cached). Acceptance test sets `AGENTDB_MODEL_PATH=$HOME/.cache/agentdb-models`.
+
+### Remaining Bottleneck: `init --full` + SQLite Handle Hang
+
+With model cache resolved, the acceptance suite bottleneck is now:
+- **harness-init** (120s): `init --full --force` creates 119 files + initializes 44 controllers. Process hangs on open SQLite handles after completion, hitting the 120s KILL timeout.
+- **group-e2e** (93s): Same `init --full` hang in e2e test setup.
+- Individual tool tests: 1-8s each (fast, model cached).
+
+The CLI process hangs because `better-sqlite3` holds file descriptors open after `AgentDB.initialize()`. The Node.js event loop doesn't exit until all handles close. The `_run_and_kill` sentinel detection works for tool output, but `init --full` produces output then hangs.
 
 ## Decision: Pseudocode (SPARC-P)
 
@@ -236,7 +257,8 @@ Serialize the initialized registry to `.swarm/registry-cache.json` and reload on
 - [x] `init --full` harness verifies by file existence, not exit code (commit 7037cef, ruflo-patch)
 
 **Remaining**:
-- [ ] Pre-cache ONNX model in acceptance test harness setup (eliminates 30-60s cold download)
+- [x] Pre-cache ONNX model via `~/.cache/agentdb-models/` + `AGENTDB_MODEL_PATH` env (commit dd8c0d5 agentic-flow, 926ac59 ruflo-patch)
+- [ ] Fix SQLite handle hang — CLI process doesn't exit after `init --full` (causes 120s KILL timeout)
 - [ ] Lazy-load EmbeddingService in AgentDB.initialize() (defer `transformers.pipeline()` until first `embed()`)
 - [ ] Cache `import('agentdb')` result at `createController()` scope (eliminate 32 redundant dynamic imports)
 - [ ] Export 12 missing controller classes from agentdb index.ts (AuditLogger, AttentionMetrics, IndexHealthMonitor, etc.)
