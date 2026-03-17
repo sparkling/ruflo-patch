@@ -543,13 +543,18 @@ check_embedding_generate() {
   fi
 
   # Parse embedding response: check for embedding array and dimension
+  # Extract the LAST JSON object (skip Parameters: {...} line which also contains JSON)
   local result
   result=$(echo "$embed_out" | node -e "
     const raw = require('fs').readFileSync('/dev/stdin','utf8');
     try {
-      const jsonMatch = raw.match(/\\{[\\s\\S]*\\}/);
-      if (!jsonMatch) { console.log('no-json'); process.exit(0); }
-      const data = JSON.parse(jsonMatch[0]);
+      // Find all JSON-like blocks and parse the last valid one (the Result)
+      const blocks = raw.match(/\\{[^{}]*(?:\\{[^{}]*\\}[^{}]*)*\\}/g) || [];
+      let data = null;
+      for (let i = blocks.length - 1; i >= 0; i--) {
+        try { data = JSON.parse(blocks[i]); break; } catch {}
+      }
+      if (!data) { console.log('no-json'); process.exit(0); }
       if (!data.success) { console.log('not-success|' + (data.error || 'unknown')); process.exit(0); }
       const dim = data.dimension || (data.embedding ? data.embedding.length : 0);
       const provider = data.provider || 'none';
