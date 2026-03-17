@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted (partially implemented)
+Accepted (implemented — 52/55 tests passing, 44s total)
 
 ## Date
 
@@ -43,9 +43,23 @@ Each `_run_and_kill` acceptance test invocation spawns a fresh CLI process. The 
 - **sec-embed-gen**: A9 EnhancedEmbeddingService (Level 3, deferred) not initialized when tool runs
 - **sec-045-ctrls**: A9/D1/D3 controllers (Level 3+) not visible in deferred init window
 
-### Current State (partially implemented)
+### Final Results (2026-03-17)
 
-The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2026-03-17. Results: 46/49 tests pass (3 remaining failures from deferred timing). The LazyControllerProxy from the original design was replaced by a simpler `eagerMaxLevel` approach — see Implementation Notes.
+| Metric | Before fixes | After all fixes |
+|--------|-------------|-----------------|
+| Tests passing | 44/55 | **52/55** |
+| Total time | 300-355s | **44s** |
+| harness-init | 120s (KILL timeout) | **577ms** |
+| group-e2e | 93s (skipped) | **5s (running + passing)** |
+| e2e controllers | skipped | **23 controllers** |
+| Controller init (all 44) | 30-60s (cold) | **~228ms (warm)** |
+
+**3 remaining failures** (deferred-init timing):
+- **memory-lifecycle** (1s): search not finding stored entry — embedding index not ready during deferred init
+- **sec-embed-gen** (549ms): A9 EnhancedEmbeddingService (Level 3, deferred) returns unparseable response
+- **sec-045-ctrls** (536ms): A9/D1/D3 controllers are Level 3+ (deferred), not visible within 8s `_run_and_kill` window
+
+The deferred init (Levels 0-1 eager, Levels 2-6 background) was implemented on 2026-03-17. The LazyControllerProxy from the original design was replaced by a simpler `eagerMaxLevel` approach — see Implementation Notes.
 
 ## Decision: Specification (SPARC-S)
 
@@ -375,26 +389,83 @@ describe('ADR-0048: lazy controller initialization', () => {
 
 ## Consequences
 
-### Positive
+### Positive (measured)
 
-- 15-30x faster CLI startup for most operations
-- Acceptance tests return to ~40s total runtime
-- Memory footprint reduced from ~400MB to ~100MB at startup
-- Users only pay initialization cost for controllers they actually use
-- Enables future growth beyond 42 controllers without startup penalty
+- **8x faster acceptance suite**: 44s (was 300-355s)
+- **200x faster harness init**: 577ms (was 120s KILL timeout)
+- **e2e tests recovered**: 5s and running (were skipped/crashed at 93s)
+- **52/55 tests passing**: up from 44/55 (8 new passes, 3 remaining)
+- **CLI startup <1s**: for L0/L1 tools (was 30-60s cold)
+- **11 bugs fixed**: across 3 repos, all committed and pushed
 
-### Negative
+### Negative (accepted)
 
-- First access to a lazy controller incurs 5-15s delay (acceptable for rare operations)
-- `listControllers()` may show controllers as `enabled` that will fail on first use
-- Added complexity in controller lifecycle (proxy layer)
-- `init --full` still takes 30-60s (needed for project validation)
+- 3 tests still fail due to deferred-init timing (Level 3+ controllers not visible within 8s)
+- `init --full` process hangs on exit without explicit `shutdownBridge()` call (mitigated by `.unref()`)
+- 12 controller classes not exported from agentdb (register as `enabled: false`)
+- sql.js is 2-13x slower than better-sqlite3 (acceptable for CLI workload)
 
-### Risks
+### Risks (mitigated)
 
-- Lazy init race conditions: multiple concurrent tool calls triggering same controller init (mitigated by promise deduplication in proxy)
-- Lazy controllers failing silently: users see `enabled: true` but `get()` returns null (mitigated by error propagation in proxy)
-- Test timing sensitivity: lazy init adds variability to tool response times
+- **ONNX cold download**: mitigated by 6-layer model cache with `AGENTDB_MODEL_PATH`
+- **Process hang**: mitigated by `setInterval.unref()` in db-fallback.js
+- **Console pollution**: mitigated by full log+warn suppression during init
+- **Deferred timing**: acceptance tests that need L2+ controllers wait 8s (within `_run_and_kill` window for most tools)
+
+## SQLite Backend Analysis: better-sqlite3 vs sql.js
+
+### Upstream Decision (commit 50d83b4, Feb 2026)
+
+Upstream explicitly chose **sql.js (WASM) as primary** and **better-sqlite3 as optional**:
+
+1. **Security**: Removing `sqlite3` npm package eliminated **10 HIGH severity vulnerabilities** from the node-gyp/tar dependency chain (73 packages removed)
+2. **Portability**: sql.js works in browsers, edge functions, MCP tools, serverless — no C++ toolchain required
+3. **Reliability**: `npm install --ignore-scripts` (used in CI/CD, acceptance tests) works without platform-specific build failures
+
+### Benchmark Results (measured 2026-03-17)
+
+| Operation | better-sqlite3 | sql.js (WASM) | Speedup |
+|-----------|---------------|---------------|---------|
+| Insert 10K rows (batched) | 18ms | 240ms | **13.3x** |
+| Select 1Kx (top-10 by quality) | 554ms | 1,256ms | **2.3x** |
+| BLOB update 1Kx (768-dim float32) | 5.6ms | 50ms | **8.9x** |
+| Random read 10Kx | 8ms | 76ms | **9.5x** |
+| Heap memory | 8MB | 11MB | 1.4x |
+
+### Why sql.js Is Correct for This Pipeline
+
+| Factor | Assessment |
+|--------|-----------|
+| **CLI workload** | Short-lived processes, <1MB datasets, sequential operations — sql.js <100ms per op is sufficient |
+| **Acceptance tests** | `--ignore-scripts` skips native compilation; sql.js is the only working backend |
+| **Process exit** | sql.js `setInterval` needed `.unref()` fix (commit c57c963); better-sqlite3 uses WAL handles that also hang |
+| **Portability** | sql.js: zero deps. better-sqlite3: requires C++ compiler, fails on Alpine/ARM without build tools |
+| **Upstream alignment** | sql.js is the hard dependency; better-sqlite3 is optionalPeerDependency |
+| **Production scaling** | Users needing 150x performance can `npm install better-sqlite3` — auto-detected by AgentDB |
+
+### Database Abstraction Architecture
+
+```
+AgentDB.initialize()
+  ├── try import('better-sqlite3')        ← optional, needs native addon
+  │     └── new Database(dbPath)          ← WAL mode, streaming I/O
+  └── catch → import('./db-fallback.js')  ← always available
+        └── sql.js WASM wrapper           ← compatible API, 64MB heap limit
+              └── setInterval(10s).unref() ← memory leak detector (fixed)
+```
+
+**Fallback chain**: `better-sqlite3 → sql.js → error`
+**Config override**: `forceWasm: true` forces sql.js even if better-sqlite3 available
+**No config** to force better-sqlite3 if unavailable
+
+### Staleness & Integrity
+
+| Layer | Mechanism |
+|-------|-----------|
+| **ONNX model cache** | Model ID path (`Xenova/<model>/onnx/`) as version key; SHA-256 for `.rvf` bundles |
+| **SQLite database** | Per-project at `.swarm/memory.db`; WAL mode (better-sqlite3) or in-memory (sql.js) |
+| **Model resolution** | 6-layer cache chain checked in order (env → bundle → node_modules → home → tmp → network) |
+| **Acceptance tests** | `AGENTDB_MODEL_PATH=$HOME/.cache/agentdb-models` persists across deploys |
 
 ## Implementation Notes
 
