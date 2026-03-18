@@ -229,7 +229,13 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 - [x] Tier 3: Export `AuditLogger` from agentdb barrel
 - [x] Tier 3: Export `FederatedLearningManager` from agentdb barrel + fix factory constructor mismatch
 - [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.87, 2026-03-17)
-- [ ] Run full MCP tool validation against ~/src/test after all tiers
+- [x] Run full MCP tool validation against ~/src/test — 5-agent swarm (2026-03-18)
+- [x] Validation fix: QuantizedVectorStore barrel export (F4 was dead code)
+- [x] Validation fix: EnhancedEmbeddingService barrel → services/ (D4 was WASM wrapper)
+- [x] Validation fix: bridgeGetController waitForDeferred (F3 runtime, Level 4 deferred)
+- [x] Validation fix: D6 emptiness check — counters/histograms, not Object.keys(metrics)
+- [x] Validation fix: X1 --no-color parsed as 'color' key, added to known set
+- [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.88, 2026-03-18)
 
 ### Dependency order
 
@@ -281,3 +287,12 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
   - FederatedLearningManager: Additional constructor mismatch found
   - Barrel exports needed: 4 (was 2) — added AttentionMetricsCollector and IndexHealthMonitor
   - Tier 2 updated: X3 removed (schemas correct), D2 benchmark dimension added
+- **2026-03-18 (rev 3)**: Post-implementation validation audit (5-agent swarm) found 5 unsound fixes:
+  - F4: Constructor args correct but QuantizedVectorStore not in barrel — dead code. Added barrel export.
+  - D4: Barrel still pointed to controllers/ WASM wrapper, not services/ full impl. Changed export path.
+  - F3 runtime: Factory fix correct but bridgeGetController() lacked waitForDeferred(). Added.
+  - D6: Object.keys(metrics).length was 3 (counters/histograms/exporters), not 0. Fixed to check inner keys.
+  - X1: --no-color parsed as 'color' by CLI parser, but known set had 'noColor'. Added 'color'.
+  - AuditLogger factory: pre-existing constructor mismatch (passes database+config, ctor takes single config). Not introduced by ADR-0050; tracked for future fix.
+  - IndexHealthMonitor factory: passes unused {vectorBackend, guardedBackend} to no-arg constructor. Harmless dead code.
+  - All fixes re-verified: 55/55 acceptance, published v3.5.15-patch.88
