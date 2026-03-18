@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — partially implemented (v3.5.15-patch.99, 2026-03-18). Config framework complete, ~30 files migrated, ~34 files remaining in ruflo fork.
+Accepted — fully implemented (v3.5.15-patch.102, 2026-03-18). Config framework + 64 files migrated across both forks.
 
 ## Date
 
