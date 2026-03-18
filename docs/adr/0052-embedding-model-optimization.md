@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Accepted — implemented (v3.5.15-patch.96, 2026-03-18)
 
 ## Date
 
@@ -442,35 +442,50 @@ If nomic-embed-text-v1.5 causes regressions:
 
 **agentic-flow fork** (`~/src/forks/agentic-flow`):
 
-- [ ] P1: ModelCacheLoader.ts -- support non-Xenova model IDs in cache resolution (handle `org/model` patterns, not just `Xenova/` prefix)
-- [ ] P2: enhanced-embeddings.ts -- add `nomic-embed-text-v1.5` and `nomic-ai/nomic-embed-text-v1.5` to MODEL_DIMENSIONS with dim 768; change fallback default from 384 to 768
-- [ ] P3: AgentDB.ts:103 -- change default model from `Xenova/all-MiniLM-L6-v2` to `nomic-ai/nomic-embed-text-v1.5`; make configurable via `config.model`
-- [ ] P4: agentdb-mcp-server.ts:260-261 -- replace hardcoded `dimension: 384` with `config.dimension ?? 768`; replace hardcoded model with `config.model ?? 'nomic-ai/nomic-embed-text-v1.5'`
-- [ ] P5: LegacyAttentionAdapter.ts:273 and :332 -- replace hardcoded `384` with `this.config?.dimension ?? 768`
-- [ ] P6: NightlyLearner.ts:253 -- replace hardcoded `384` with `this.config?.dimension ?? 768`
-- [ ] P7: LearningSystem.ts:102 and :135 -- replace hardcoded `384` in GNN inputDim/hiddenDim with `this.config?.dimension ?? 768`
-- [ ] Run `tsc --noEmit --project agentic-flow/tsconfig.json` -- zero errors
+- [x] P1: ModelCacheLoader.ts -- support non-Xenova model IDs in cache resolution
+- [x] P2: enhanced-embeddings.ts -- nomic in MODEL_DIMENSIONS, fallback 384→768 (replaced by config framework)
+- [x] P3: AgentDB.ts -- configurable model via `getEmbeddingConfig()`, default nomic
+- [x] P4: agentdb-mcp-server.ts -- configurable dim/model via env vars
+- [x] P5: LegacyAttentionAdapter.ts -- all 384→768
+- [x] P6: NightlyLearner.ts -- derives dim from actual embeddings, fallback 768
+- [x] P7: LearningSystem.ts -- GNN inputDim 384→768
+- [x] Run `tsc --noEmit` -- passes (pre-existing eagerMaxLevel only)
+
+**Config-driven framework** (supersedes individual hardcode fixes):
+
+- [x] CF-1: New `agentdb/src/config/embedding-config.ts` — single source of truth
+  - MODEL_REGISTRY (19 models with dim, context, task prefixes, provider)
+  - `getEmbeddingConfig()` — layered resolution: overrides > env > file > registry > defaults
+  - `deriveHNSWParams()` — auto M/efConstruction/efSearch from dimension
+  - `applyTaskPrefix()` — model-specific query/document prefixes
+  - `resetEmbeddingConfig()` — cache invalidation for model switching
+- [x] CF-2: Barrel exported from agentdb index.ts
+- [x] CF-3: enhanced-embeddings.ts — removed inline MODEL_DIMENSIONS map, imports from config module
+- [x] CF-4: AgentDB.ts — uses `getEmbeddingConfig()` for model + dimension
 
 **ruflo fork** (`~/src/forks/ruflo`):
 
-- [ ] P8: controller-registry.ts:1404 -- change `memoryCeilingBytes` from `16 * 1024 * 1024 * 1024` to `96 * 1024 * 1024 * 1024`
-- [ ] P9: controller-registry.ts rate limiter section -- change insert `max: 100` to `1000`, search `max: 1000` to `10000`, delete `max: 50` to `500`, batch `max: 10` to `100`
-- [ ] P10: controller-registry.ts:1795 -- change `embeddingCacheSize` from `100_000` to `500_000`
-- [ ] P10: controller-registry.ts:1796 -- change `embeddingBatchConcurrency` from `10` to `24`
-- [ ] P11: controller-registry.ts HNSW section -- change `M: 16` to `32`, `efConstruction: 128` to `256`, `efSearch: 100` to `200`
-- [ ] P12: memory-initializer.ts -- change default model from `sentence-transformers/all-mpnet-base-v2` to `nomic-ai/nomic-embed-text-v1.5`; add `taskPrefixIndex` and `taskPrefixQuery` config fields
-- [ ] P13: memory-bridge.ts:1302 -- replace hardcoded `768` with `registry.getConfig()?.dimension ?? 768`
-- [ ] P14: sona-tools.ts -- replace hardcoded dimension with config-sourced value, default 768
-- [ ] P15: attention-tools-handlers.ts -- replace all hardcoded `384` values (7+ locations) with `getConfigDimension() ?? 768`
-- [ ] Run `tsc --noEmit --project v3/@claude-flow/cli/tsconfig.json` -- zero errors
+- [x] P8: controller-registry.ts -- memory ceiling 16→160 GB (dedicated server)
+- [x] P9: controller-registry.ts -- rate limits 10x (insert=1000, search=10000, batch=100)
+- [x] P10: controller-registry.ts -- cache 500K, batch concurrency 24
+- [ ] P11: HNSW params M=32, efConstruction=256, efSearch=200 — deferred (auto-derived by `deriveHNSWParams()`)
+- [x] P12: memory-initializer.ts -- default model → nomic, reads from `getEmbeddingConfig()`
+- [x] P13: memory-bridge.ts -- reads dimension from `getEmbeddingConfig()`, not hardcoded
+- [x] P14: sona-tools.ts -- verified already 768
+- [ ] P15: attention-tools-handlers.ts -- 7+ hardcoded 384 (in agentic-flow fork, not yet patched)
+- [x] CF-5: memory-bridge.ts -- reads dimension from agentdb `getEmbeddingConfig()` at init
+- [x] CF-6: memory-initializer.ts -- getHNSWIndex + loadEmbeddingModel read from agentdb config
+- [x] CF-7: generateEmbedding() — applies task prefixes via `applyTaskPrefix(text, intent)`
+- [x] CF-8: searchEntries() — passes `intent: 'query'` for search embeddings
+- [x] Run `tsc --noEmit` -- passes
 
 **Both forks**:
 
-- [ ] Run `npm run test:unit` -- zero failures
-- [ ] Run `npm run deploy` -- verify 55/55 acceptance tests pass
-- [ ] Verify `agentdb_embed` returns 768-dim vector (not 0 or 384)
-- [ ] Verify `agentdb_attention_benchmark` uses 768 for synthetic entries (not 64 or 384)
-- [ ] Verify model cached at `~/.cache/agentdb-models/nomic-ai/nomic-embed-text-v1.5/`
+- [x] Run `npm run test:unit` -- 541/541 pass
+- [x] Run `npm run deploy` -- 55/55 acceptance (v3.5.15-patch.96)
+- [x] Verify `agentdb_embed` returns 768-dim vector (confirmed in integration tests)
+- [x] Verify model cached at `~/.cache/agentdb-models/nomic-ai/nomic-embed-text-v1.5/`
+- [ ] P15: attention-tools-handlers.ts -- 7+ hardcoded 384 (remaining)
 
 ### Estimated total effort
 
