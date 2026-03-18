@@ -369,8 +369,12 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
 - **2026-03-18 (rev 5)**: 6-agent integration test discovered 6 new upstream bugs (N1-N6). 3-agent fix swarm resolved all:
   - N1: causal-query orphaned timeout — try/finally + clearTimeout
   - N2: pattern-store bare error — cascading registry/db/store diagnostics
-  - N3: semantic-route false success — return success:false
+  - N3: semantic-route false success — handler null check fixed, but bridge returns truthy error object
   - N4: attention_metrics empty — notice field added
   - N5: hierarchical-recall — success field + empty notice
   - N6: embed false success — Float32Array type mismatch in bridgeEmbed (was treating typed array as structured object)
   - 55/55 acceptance, published v3.5.15-patch.91.
+  - N3 final fix: bridge returns `{route:null, error:"..."}` as truthy — added explicit error/null-route check with `success:false` wrapper
+  - 4-agent integration test on v3.5.15-patch.91 confirmed 19/20 PASS (N3 only remaining)
+  - N3 fixed, re-tested: `success:false` + exit code 1 confirmed. 20/20 PASS.
+  - 55/55 acceptance, published v3.5.15-patch.92.
