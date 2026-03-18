@@ -275,6 +275,60 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
 - B3 deferred init timing (F5) uses established `waitForDeferred()` pattern — low risk
 - X3 attention schemas mostly match ADR-0044 spec; only D2 benchmark dimension needs a new parameter
 
+### New upstream bugs discovered during integration testing (2026-03-18)
+
+#### N1: `agentdb_causal-query` — orphaned timeout crash
+
+- **Symptom**: Tool returns correct result, then process crashes with unhandled timeout error
+- **Error**: `Error: causal_query timeout (2s)` at `agentdb-tools.js:660`
+- **Root cause**: `Promise.race` with a 2-second `setTimeout` that is never cleared when the main operation succeeds. The result is printed, then the orphaned timeout fires and crashes the process with exit code 1.
+- **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (~line 660)
+- **Fix**: Add `clearTimeout()` on the success path
+
+#### N2: `agentdb_pattern-store` — bare "Bridge not available" error
+
+- **Symptom**: Returns `"Bridge not available"` with no diagnostic context
+- **Root cause**: Same class of error as F2, but the F2 diagnostic fix was only applied to `bridgeFilteredSearch`, not to `bridgePatternStore`
+- **File**: `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (pattern-store bridge function)
+- **Fix**: Apply same diagnostic pattern as F2 — check registry vs db, return specific error
+
+#### N3: `agentdb_semantic-route` — false success (exit 0 with error payload)
+
+- **Symptom**: Returns exit code 0 and `[OK]` but payload contains `route: null` and `error: "SemanticRouter not available"`
+- **Root cause**: The tool returns `{ route: null, error: "..." }` without a `success: false` field, so the X2 exit-code check doesn't trigger
+- **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (semantic-route handler) OR the bridge function
+- **Fix**: Return `{ success: false, error: "..." }` so X2 propagates exit code 1
+
+#### N4: `agentdb_attention_metrics` — empty metrics with no notice
+
+- **Symptom**: Returns `{ success: true, metrics: {} }` with no `notice` field
+- **Root cause**: D6 (telemetry_metrics) and D7 (telemetry_spans) both add notice fields on empty data, but attention_metrics does not follow the same pattern
+- **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (attention_metrics handler)
+- **Fix**: Add notice field: `"No attention operations performed. Metrics populate after attention_compute or attention_benchmark calls."`
+
+#### N5: `agentdb_hierarchical-recall` — missing `success` field
+
+- **Symptom**: Response has `{ results: [], controller: "hierarchicalMemory" }` but no `success` boolean
+- **Root cause**: Handler returns raw results without wrapping in the standard `{ success: true/false, ... }` envelope
+- **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (hierarchical-recall handler)
+- **Fix**: Wrap response with `success` field; add notice when results empty
+
+#### N6: `agentdb_embed` — false success with zero-dimension embedding
+
+- **Symptom**: Returns `{ success: true, embedding: [], dimension: 0, provider: "unknown" }` — reports success but produces no usable output
+- **Root cause**: `EnhancedEmbeddingService` barrel export now points to services/ (full impl), and embed_status correctly reports `provider: "transformers"`, `model: "all-MiniLM-L6-v2"`, but the actual embed handler does not invoke the model. The handler's code path may use a different method or the model fails to load silently.
+- **File**: `v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` (embed handler) + `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (bridgeEmbed)
+- **Fix**: Investigate why bridgeEmbed returns empty when embed_status shows model configured. If model can't load, return `success: false` with diagnostic.
+
+### Checklist — New bugs
+
+- [ ] N1: Clear orphaned timeout in causal-query handler
+- [ ] N2: Add F2-style diagnostic to pattern-store bridge
+- [ ] N3: Return `success: false` from semantic-route when unavailable
+- [ ] N4: Add notice field to empty attention_metrics response
+- [ ] N5: Add `success` field to hierarchical-recall response
+- [ ] N6: Investigate embed handler — return `success: false` if model not loaded
+
 ## Related
 
 - **ADR-0049**: Fail-loud mode (prerequisite — made these defects visible)
