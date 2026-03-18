@@ -322,12 +322,13 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
 
 ### Checklist — New bugs
 
-- [ ] N1: Clear orphaned timeout in causal-query handler
-- [ ] N2: Add F2-style diagnostic to pattern-store bridge
-- [ ] N3: Return `success: false` from semantic-route when unavailable
-- [ ] N4: Add notice field to empty attention_metrics response
-- [ ] N5: Add `success` field to hierarchical-recall response
-- [ ] N6: Investigate embed handler — return `success: false` if model not loaded
+- [x] N1: Clear orphaned timeout in causal-query handler (try/finally + clearTimeout)
+- [x] N2: Add F2-style diagnostic to pattern-store bridge (cascading registry/db/store checks)
+- [x] N3: Return `success: false` from semantic-route when unavailable
+- [x] N4: Add notice field to empty attention_metrics response
+- [x] N5: Add `success` field to hierarchical-recall response + empty notice
+- [x] N6: Fixed — `embed()` returns `Float32Array`, not `{embedding,dimension,provider}` object. Bridge now handles typed array directly.
+- [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.91, 2026-03-18)
 
 ## Related
 
@@ -365,3 +366,11 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
   - nativeAccelerator: barrel export missing (primary cause), `@ruvector/*` not installed (secondary, expected). Fixed: barrel export — initializes as JS-fallback singleton.
   - gnnService: factory created inline wrapper from stale assumption ("class doesn't exist"). GNNService IS exported from agentdb. Fixed: replaced wrapper with real class + JS fallbacks.
   - All 9/9 originally-disabled controllers now FIXED. 55/55 acceptance, published v3.5.15-patch.90.
+- **2026-03-18 (rev 5)**: 6-agent integration test discovered 6 new upstream bugs (N1-N6). 3-agent fix swarm resolved all:
+  - N1: causal-query orphaned timeout — try/finally + clearTimeout
+  - N2: pattern-store bare error — cascading registry/db/store diagnostics
+  - N3: semantic-route false success — return success:false
+  - N4: attention_metrics empty — notice field added
+  - N5: hierarchical-recall — success field + empty notice
+  - N6: embed false success — Float32Array type mismatch in bridgeEmbed (was treating typed array as structured object)
+  - 55/55 acceptance, published v3.5.15-patch.91.
