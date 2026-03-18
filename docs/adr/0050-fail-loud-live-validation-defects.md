@@ -131,11 +131,11 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 | 1 | learningBridge | 0040 | No backend configured (does NOT block filtered_search — see F2 correction) |
 | 2 | selfLearningRvfBackend | 0046 | Factory calls `new SLRB(config)` but private ctor expects `(RvfBackend, config)` — needs `SelfLearningRvfBackend.create()` |
 | 2 | nativeAccelerator | 0046 | `@ruvector/*` packages not installed — expected, JS fallbacks work |
-| 2 | quantizedVectorStore | 0047 | Missing required `quantizationType` field in constructor config |
-| 3 | auditLogger | 0045 | `AuditLogger` not exported from `agentdb/src/index.ts` — factory always gets `undefined` |
-| 4 | indexHealthMonitor | 0047 | Compound: not exported from agentdb barrel AND deferred init timing |
-| 4 | federatedLearningManager | 0047 | Compound: not exported from agentdb barrel AND constructor mismatch (factory passes `{ backend, dimension }`, constructor expects `FederatedConfig` with required `agentId: string`) |
-| 4 | attentionMetrics | 0044 | Compound: factory imports interface (undefined at runtime) not class, AND constructor mismatch |
+| 2 | quantizedVectorStore | 0047 | **FIXED** (rev 3): barrel export added, factory passes `{type: 'scalar-8bit'}` |
+| 3 | auditLogger | 0045 | **FIXED** (rev 3): barrel export added, factory passes `Partial<AuditLoggerConfig>` |
+| 4 | indexHealthMonitor | 0047 | **FIXED** (rev 3): barrel export + waitForDeferred + no-arg constructor |
+| 4 | federatedLearningManager | 0047 | **FIXED**: barrel export + factory passes `{agentId: 'default'}` |
+| 4 | attentionMetrics | 0044 | **FIXED**: barrel export of `AttentionMetricsCollector` + no-arg constructor |
 | 2 | gnnService (anomaly) | — | `enabled: true` but `available: false` internally — inconsistent status |
 
 ### 3 Cross-cutting issues
@@ -235,7 +235,9 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 - [x] Validation fix: bridgeGetController waitForDeferred (F3 runtime, Level 4 deferred)
 - [x] Validation fix: D6 emptiness check — counters/histograms, not Object.keys(metrics)
 - [x] Validation fix: X1 --no-color parsed as 'color' key, added to known set
-- [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.88, 2026-03-18)
+- [x] Validation fix: AuditLogger factory — single Partial<AuditLoggerConfig> instead of (database, config)
+- [x] Validation fix: IndexHealthMonitor factory — removed unused args, no-arg constructor
+- [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.89, 2026-03-18)
 
 ### Dependency order
 
@@ -296,3 +298,6 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
   - AuditLogger factory: pre-existing constructor mismatch (passes database+config, ctor takes single config). Not introduced by ADR-0050; tracked for future fix.
   - IndexHealthMonitor factory: passes unused {vectorBackend, guardedBackend} to no-arg constructor. Harmless dead code.
   - All fixes re-verified: 55/55 acceptance, published v3.5.15-patch.88
+  - AuditLogger factory: fixed constructor mismatch — passes single `Partial<AuditLoggerConfig>` instead of `(database, {rotation, format})`
+  - IndexHealthMonitor factory: removed unused `{vectorBackend, guardedBackend}` arg — class has no explicit constructor
+  - Re-deployed: 55/55 acceptance, published v3.5.15-patch.89
