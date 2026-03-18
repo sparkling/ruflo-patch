@@ -468,11 +468,11 @@ If nomic-embed-text-v1.5 causes regressions:
 - [x] P8: controller-registry.ts -- memory ceiling 16→160 GB (dedicated server)
 - [x] P9: controller-registry.ts -- rate limits 10x (insert=1000, search=10000, batch=100)
 - [x] P10: controller-registry.ts -- cache 500K, batch concurrency 24
-- [ ] P11: HNSW params M=32, efConstruction=256, efSearch=200 — deferred (auto-derived by `deriveHNSWParams()`)
+- [x] P11: HNSW params — superseded by `deriveHNSWParams()` which auto-derives from dimension
 - [x] P12: memory-initializer.ts -- default model → nomic, reads from `getEmbeddingConfig()`
 - [x] P13: memory-bridge.ts -- reads dimension from `getEmbeddingConfig()`, not hardcoded
 - [x] P14: sona-tools.ts -- verified already 768
-- [ ] P15: attention-tools-handlers.ts -- 7+ hardcoded 384 (in agentic-flow fork, not yet patched)
+- [x] P15: attention-tools-handlers.ts — 10 hardcoded 384 replaced with `${_DIM}` from `getEmbeddingConfig()`
 - [x] CF-5: memory-bridge.ts -- reads dimension from agentdb `getEmbeddingConfig()` at init
 - [x] CF-6: memory-initializer.ts -- getHNSWIndex + loadEmbeddingModel read from agentdb config
 - [x] CF-7: generateEmbedding() — applies task prefixes via `applyTaskPrefix(text, intent)`
@@ -485,7 +485,7 @@ If nomic-embed-text-v1.5 causes regressions:
 - [x] Run `npm run deploy` -- 55/55 acceptance (v3.5.15-patch.96)
 - [x] Verify `agentdb_embed` returns 768-dim vector (confirmed in integration tests)
 - [x] Verify model cached at `~/.cache/agentdb-models/nomic-ai/nomic-embed-text-v1.5/`
-- [ ] P15: attention-tools-handlers.ts -- 7+ hardcoded 384 (remaining)
+- [x] P15: attention-tools-handlers.ts — done (v3.5.15-patch.97)
 
 ### Estimated total effort
 
