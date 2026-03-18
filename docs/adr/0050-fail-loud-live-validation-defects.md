@@ -128,15 +128,15 @@ ADR-0049 replaced 34 silent `catch { return null }` blocks with error-aware catc
 
 | Level | Controller | ADR | Cause |
 |:-----:|-----------|-----|-------|
-| 1 | learningBridge | 0040 | No backend configured (does NOT block filtered_search — see F2 correction) |
-| 2 | selfLearningRvfBackend | 0046 | Factory calls `new SLRB(config)` but private ctor expects `(RvfBackend, config)` — needs `SelfLearningRvfBackend.create()` |
-| 2 | nativeAccelerator | 0046 | `@ruvector/*` packages not installed — expected, JS fallbacks work |
+| 1 | learningBridge | 0040 | **FIXED** (rev 4): removed `!this.backend` guard, no-op stub + added `learn()` method |
+| 2 | selfLearningRvfBackend | 0046 | **FIXED** (rev 4): barrel export + factory uses `SLRB.create()` (private ctor pattern) |
+| 2 | nativeAccelerator | 0046 | **FIXED** (rev 4): barrel export added — initializes with JS fallbacks, `@ruvector/*` not required |
 | 2 | quantizedVectorStore | 0047 | **FIXED** (rev 3): barrel export added, factory passes `{type: 'scalar-8bit'}` |
 | 3 | auditLogger | 0045 | **FIXED** (rev 3): barrel export added, factory passes `Partial<AuditLoggerConfig>` |
 | 4 | indexHealthMonitor | 0047 | **FIXED** (rev 3): barrel export + waitForDeferred + no-arg constructor |
 | 4 | federatedLearningManager | 0047 | **FIXED**: barrel export + factory passes `{agentId: 'default'}` |
 | 4 | attentionMetrics | 0044 | **FIXED**: barrel export of `AttentionMetricsCollector` + no-arg constructor |
-| 2 | gnnService (anomaly) | — | `enabled: true` but `available: false` internally — inconsistent status |
+| 2 | gnnService (anomaly) | 0040 | **FIXED** (rev 4): replaced inline wrapper with real `GNNService` class (JS fallbacks) |
 
 ### 3 Cross-cutting issues
 
@@ -301,3 +301,9 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
   - AuditLogger factory: fixed constructor mismatch — passes single `Partial<AuditLoggerConfig>` instead of `(database, {rotation, format})`
   - IndexHealthMonitor factory: removed unused `{vectorBackend, guardedBackend}` arg — class has no explicit constructor
   - Re-deployed: 55/55 acceptance, published v3.5.15-patch.89
+- **2026-03-18 (rev 4)**: 4-agent analysis swarm investigated remaining 4 disabled controllers:
+  - learningBridge: factory required `IMemoryBackend` that nobody provides. Fixed: no-op stub + added `learn()` method (was missing, bridge callers crashed).
+  - selfLearningRvfBackend: private ctor + missing barrel. Fixed: barrel export + `SLRB.create()` factory pattern.
+  - nativeAccelerator: barrel export missing (primary cause), `@ruvector/*` not installed (secondary, expected). Fixed: barrel export — initializes as JS-fallback singleton.
+  - gnnService: factory created inline wrapper from stale assumption ("class doesn't exist"). GNNService IS exported from agentdb. Fixed: replaced wrapper with real class + JS fallbacks.
+  - All 9/9 originally-disabled controllers now FIXED. 55/55 acceptance, published v3.5.15-patch.90.
