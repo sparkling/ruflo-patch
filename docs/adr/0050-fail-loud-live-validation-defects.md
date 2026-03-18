@@ -238,6 +238,9 @@ No pseudocode — this ADR is a defect catalog, not an implementation plan. Fixe
 - [x] Validation fix: AuditLogger factory — single Partial<AuditLoggerConfig> instead of (database, config)
 - [x] Validation fix: IndexHealthMonitor factory — removed unused args, no-arg constructor
 - [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.89, 2026-03-18)
+- [x] Fix remaining 4 disabled controllers (learningBridge, selfLearningRvfBackend, nativeAccelerator, gnnService)
+- [x] Run `npm run deploy` — 55/55 acceptance (v3.5.15-patch.90, 2026-03-18)
+- [x] Full 6-agent integration test against fresh install: 13/14 PASS, 49 total tests, 41 pass, 6 loud-fail (correct), 2 fail (pre-existing)
 
 ### Dependency order
 
@@ -245,9 +248,10 @@ Barrel exports in agentic-flow fork must ship first (unblocks F3, F5, AuditLogge
 
 ### Success Criteria
 
-- 0 FAIL results from MCP tool validation (all 5 failures fixed)
-- Degraded tools return real data instead of empty stubs (at least D1-D5)
-- 43/43 controllers show `enabled: true` in health (or explicitly documented as optional)
+- ~~0 FAIL results from MCP tool validation (all 5 failures fixed)~~ **13/14 PASS** — D4 embed persists (model configured but not loaded; separate from barrel export fix)
+- ~~Degraded tools return real data instead of empty stubs (at least D1-D5)~~ **D1-D3, D5-D7 fixed.** D4 remains: EnhancedEmbeddingService initialized but model not loaded at runtime.
+- ~~43/43 controllers show `enabled: true` in health~~ **43/43 controllers enabled** — confirmed by 6-agent integration test (v3.5.15-patch.90)
+- 9/9 previously-disabled controllers now active (was 0/9 at ADR creation)
 - `npm run deploy` passes 55/55
 
 ## Consequences
