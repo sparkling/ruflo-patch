@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted — implemented (v3.5.15-patch.96, 2026-03-18)
+Accepted — fully implemented (v3.5.15-patch.99, 2026-03-18)
 
 ## Date
 
@@ -487,14 +487,29 @@ If nomic-embed-text-v1.5 causes regressions:
 - [x] Verify model cached at `~/.cache/agentdb-models/nomic-ai/nomic-embed-text-v1.5/`
 - [x] P15: attention-tools-handlers.ts — done (v3.5.15-patch.97)
 
-### Estimated total effort
+**Full dimension elimination (v3.5.15-patch.99):**
 
-| Tier | Line changes | Effort | Files |
-|------|:-----------:|:------:|:-----:|
-| Tier 1 (dimension + model) | ~60 lines | ~4h | 11 files across 2 forks |
-| Tier 2 (server config) | ~10 lines | ~30min | 1 file |
-| Tier 3 (task prefixes) | ~35 lines | ~2h | 4 files |
-| **Total** | **~105 lines** | **~6.5h** | **12 unique files** |
+- [x] Fix runtime model loading: pass model from getEmbeddingConfig() to EnhancedEmbeddingService (v3.5.15-patch.98)
+- [x] Fix Xenova prefix: `modelName.includes('/')` not `startsWith('Xenova/')` (v3.5.15-patch.98)
+- [x] Fix hardcoded model names: bridge reads from config, not hardcoded mpnet (v3.5.15-patch.98)
+- [x] Cache embeddingDimension in ControllerRegistry from getEmbeddingConfig() (v3.5.15-patch.99)
+- [x] agentic-flow: 22 files, 143 insertions — all backends, controllers, browser, CLI, services (v3.5.15-patch.99)
+- [x] ruflo: 17 files, 89 insertions — neural, plugins, swarm, memory, registry, bridge (v3.5.15-patch.99)
+- [x] Zero hardcoded embedding 384 remaining in production code
+- [x] All `|| 768` fallbacks now use `getEmbeddingConfig().dimension`
+- [x] Browser modules use lazy try/catch fallback (no fs access)
+- [x] Run `npm run deploy` -- 55/55 acceptance (v3.5.15-patch.99)
+
+### Actual total effort
+
+| Phase | Line changes | Files |
+|-------|:-----------:|:-----:|
+| Config framework + model switch | ~275 lines | 14 files |
+| Server optimization | ~20 lines | 3 files |
+| Task prefix support | ~25 lines | 2 files |
+| Runtime model loading fixes | ~35 lines | 3 files |
+| Full dimension elimination | ~232 lines | 39 files |
+| **Total** | **~587 lines** | **43 unique files across 2 forks** |
 
 ### Success criteria
 
