@@ -1,6 +1,6 @@
 # ADR-0052: Config-Driven Embedding Framework
 
-**Status**: Partially Implemented
+**Status**: Mostly Implemented (Tier 2 config wiring + e2e test remaining)
 **Date**: 2026-03-18 (updated 2026-03-19)
 **Deciders**: System Architecture
 **Methodology**: SPARC + MADR
@@ -323,25 +323,18 @@ TIER 1: Dynamic config resolution (can import agentdb)
        └── memory-initializer.ts   dynamic import('agentdb')
 
 TIER 2: Per-package constants (cannot import agentdb — circular deps)
-  8 × embedding-constants.ts ──── each exports: EMBEDDING_DIM = 768
+  9 × embedding-constants.ts ──── each exports: EMBEDDING_DIM = 768
        │
        ├── @claude-flow/neural (10 consumers)
        ├── @claude-flow/embeddings (2 consumers)
+       ├── @claude-flow/cli (7 consumers: headless, ewc-consolidation, intelligence,
+       │     performance, embeddings cmd, embeddings-tools, executor)
        ├── @claude-flow/cli/mcp-tools (2 consumers)
        ├── @claude-flow/cli/ruvector (4 consumers)
        ├── @claude-flow/guidance (1 consumer)
        ├── @claude-flow/hooks (1 consumer)
-       ├── @claude-flow/memory (1 consumer)
+       ├── @claude-flow/memory (1+8 consumers: learning-bridge + controller-registry factories)
        └── @claude-flow/swarm (1 consumer)
-
-NOT YET WIRED:
-  shared/defaults.ts ────── still 1536
-  shared/schema.ts ──────── still 1536
-  init/executor.ts ──────── hardcoded ternary
-  headless.ts ───────────── hardcoded 768
-  ewc-consolidation.ts ──── hardcoded 768
-  commands/embeddings.ts ── hardcoded 384/768
-  commands/performance.ts ─ hardcoded 768
 ```
 
 ### Server Optimization (also implemented in this ADR)
@@ -379,9 +372,9 @@ Tuned controller-registry.ts for available hardware (Ryzen 9 7950X3D / 187GB):
 | File | Change | Status |
 |------|--------|:------:|
 | `cli/src/memory/memory-bridge.ts` | Dynamic import, reads config at init | DONE (3 safe-default `768` remain as pre-config-load init values) |
-| `memory/src/controller-registry.ts` | Dynamic import, caches `embeddingDimension` | PARTIAL — **8 `\|\| 768` fallbacks remain** in factory methods |
+| `memory/src/controller-registry.ts` | Dynamic import + 8 factory fallbacks → `EMBEDDING_DIM` | DONE |
 | `cli/src/memory/memory-initializer.ts` | Dynamic import for getHNSWIndex + loadEmbeddingModel | PARTIAL — **10 static `768`** in fallback chains and config objects |
-| `cli/src/init/executor.ts` | Should use MODEL_REGISTRY lookup | NOT DONE — hardcoded `? 384 : 768` ternary |
+| `cli/src/init/executor.ts` | `MODEL_DIMS` lookup map replacing hardcoded ternary | DONE |
 
 #### Per-package constants (ruflo fork — Tier 2)
 
@@ -393,24 +386,28 @@ Tuned controller-registry.ts for available hardware (Ryzen 9 7950X3D / 187GB):
 | `@claude-flow/cli/ruvector` | `src/ruvector/embedding-constants.ts` | 4 | DONE |
 | `@claude-flow/guidance` | `src/embedding-constants.ts` | 1 | DONE |
 | `@claude-flow/hooks` | `src/reasoningbank/embedding-constants.ts` | 1 | DONE |
-| `@claude-flow/memory` | `src/embedding-constants.ts` | 1 | DONE |
+| `@claude-flow/cli` | `src/embedding-constants.ts` | 7 | DONE (2026-03-19) |
+| `@claude-flow/memory` | `src/embedding-constants.ts` | 9 | DONE (2026-03-19: +8 controller-registry factories) |
 | `@claude-flow/swarm` | `src/embedding-constants.ts` | 1 | DONE |
 
 Each contains: `export const EMBEDDING_DIM = 768;`
 
 These are static constants — changing `embeddings.json` does NOT propagate here.
 
-#### Not yet migrated
+#### Previously not migrated — now DONE (2026-03-19)
 
-| File | Current value | Should be |
-|------|:------------:|-----------|
-| `shared/src/core/config/defaults.ts:78` | `1536` | `768` |
-| `shared/src/core/config/schema.ts:95` | `1536` | `768` |
-| `cli/src/init/executor.ts:1244` | `? 384 : 768` ternary | `MODEL_REGISTRY` lookup |
-| `cli/src/runtime/headless.ts:211` | `768` literal | Import from embedding-constants or config |
-| `cli/src/memory/ewc-consolidation.ts:152` | `768` literal | Import from embedding-constants or config |
-| `cli/src/commands/embeddings.ts:738,1270,1371` | `384`/`768` literals | Use MODEL_REGISTRY |
-| `cli/src/commands/performance.ts:94,96` | `768` literals | Import from embedding-constants |
+| File | Was | Now | Status |
+|------|-----|-----|:------:|
+| `shared/src/core/config/defaults.ts:78` | `1536` | `768` | DONE |
+| `shared/src/core/config/schema.ts:95` | `.default(1536)` | `.default(768)` | DONE |
+| `cli/src/init/executor.ts:1244` | `? 384 : 768` ternary | `MODEL_DIMS` lookup map | DONE |
+| `cli/src/runtime/headless.ts:211` | `768` literal | `EMBEDDING_DIM` import | DONE |
+| `cli/src/memory/ewc-consolidation.ts:152` | `768` literal | `EMBEDDING_DIM` import | DONE |
+| `cli/src/memory/intelligence.ts:776` | `768` literal | `EMBEDDING_DIM` import | DONE |
+| `cli/src/commands/embeddings.ts:738,1270,1371` | `384`/`768` literals | `EMBEDDING_DIM` import | DONE |
+| `cli/src/commands/performance.ts:94,96` | `768` literals | `EMBEDDING_DIM` import | DONE |
+| `cli/src/mcp-tools/embeddings-tools.ts:212` | `768` literal | `EMBEDDING_DIM` import | DONE |
+| `memory/src/controller-registry.ts` (8 places) | `\|\| 768` | `\|\| EMBEDDING_DIM` | DONE |
 
 ### Files that do NOT need changes (false positives)
 
@@ -444,19 +441,22 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 | Phase | Description | Status | Effort |
 |-------|-------------|:------:|--------|
 | 1: Core config module | embedding-config.ts + barrel + AgentDB + enhanced-embeddings | **Done** | ~275 lines, 14 files |
-| 2: Primary consumers | memory-bridge, controller-registry, memory-initializer | **Partial** | ~35 lines done, ~20 remaining |
-| 3: Per-package constants | 8 embedding-constants.ts files, 22 consumers wired | **Done** | ~30 files |
-| 4: Remaining stragglers | shared/, init, headless, ewc, commands | **Not done** | ~15 lines across 7 files |
-| 5: Wire Tier 2 to config | Make 8 constants read from getEmbeddingConfig() | **Not done** | ~40 lines across 8 files |
+| 2: Primary consumers | memory-bridge, controller-registry, memory-initializer | **Mostly done** | controller-registry + executor done; memory-initializer has 10 remaining |
+| 3: Per-package constants | 9 embedding-constants.ts files, 37 consumers wired | **Done** | ~41 files |
+| 4: Remaining stragglers | shared/, init, headless, ewc, commands | **Done** (2026-03-19) | 11 files, 44 insertions |
+| 5: Wire Tier 2 to config | Make 9 constants read from getEmbeddingConfig() | **Not done** | ~45 lines across 9 files |
 | 6: End-to-end test | Change embeddings.json, verify propagation | **Not done** | 1 test file |
 
-**Total effort so far**: ~587 lines across 43 unique files in 2 forks.
+**Total effort**: ~631 lines across 54 unique files in 2 forks.
 
 ### What works today
 
 - Default dimension is **768 everywhere** — the dimension war is resolved
 - Default model is **nomic-ai/nomic-embed-text-v1.5** — +30pp retrieval accuracy
 - `getEmbeddingConfig()` works correctly for Tier 1 consumers
+- **Zero raw `768` or `1536` literals** remain in production code outside memory-initializer fallback chains
+- `shared/defaults.ts` and `shared/schema.ts` now correctly default to `768`
+- `init/executor.ts` uses a `MODEL_DIMS` lookup map for new project generation
 - Server is tuned for available hardware (160GB ceiling, 10x rate limits)
 - Task prefix support is plumbed through memory-bridge
 
@@ -464,20 +464,15 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 
 - Changing `embeddings.json` to a different model/dimension only propagates to
   Tier 1 consumers. Tier 2 consumers (neural, embeddings, guidance, hooks, swarm,
-  ruvector) ignore config and stay at static 768.
-- `shared/defaults.ts` and `shared/schema.ts` still say 1536 — wrong but
-  rarely hit because agentdb config takes priority at runtime.
+  ruvector, cli) use static `EMBEDDING_DIM = 768` constants.
+- `memory-initializer.ts` still has ~10 static `768` in fallback chains.
 
 ### Remaining work
 
-1. Fix `shared/defaults.ts` and `shared/schema.ts` — change `1536` to `768`
-2. Fix `init/executor.ts` — use `MODEL_REGISTRY` lookup
-3. Wire 8 `embedding-constants.ts` files to read from `getEmbeddingConfig()`
-4. Fix `controller-registry.ts` — replace 8 `|| 768` with `|| this.embeddingDimension`
-5. Fix `memory-initializer.ts` — replace 10 static `768` with config-resolved value
-6. Fix stragglers: `headless.ts`, `ewc-consolidation.ts`, `commands/embeddings.ts`, `commands/performance.ts`
-7. Write end-to-end test: change `embeddings.json` model, verify all consumers see new dimension
-8. Deploy and verify 55/55 acceptance
+1. Wire 9 `embedding-constants.ts` files to read from `getEmbeddingConfig()` at import time
+2. Fix `memory-initializer.ts` — replace ~10 static `768` with config-resolved value
+3. Write end-to-end test: change `embeddings.json` model, verify all consumers see new dimension
+4. Deploy and verify 55/55 acceptance
 
 ### Env variables
 
@@ -515,7 +510,7 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 
 - Existing stored 384-dim embeddings become incompatible (must re-embed)
 - nomic model is 131MB quantized vs MiniLM 23MB — larger cache footprint
-- Tier 2 is not yet config-driven — model change still requires editing 8 files
+- Tier 2 is not yet config-driven — model change still requires editing 9 constant files
 
 ## Related
 
