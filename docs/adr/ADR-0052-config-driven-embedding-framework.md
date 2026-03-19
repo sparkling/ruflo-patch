@@ -1,6 +1,6 @@
 # ADR-0052: Config-Driven Embedding Framework
 
-**Status**: Implemented (v3.5.15-patch.104, 2026-03-19)
+**Status**: Implemented (v3.5.15-patch.107, 2026-03-19)
 **Date**: 2026-03-18 (implemented 2026-03-19)
 **Deciders**: System Architecture
 **Methodology**: SPARC + MADR
@@ -446,7 +446,8 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 | 4: Remaining stragglers | shared/, init, headless, ewc, commands | **Done** (2026-03-19) | 11 files, 44 insertions |
 | 5: Wire Tier 2 to config | 9 constants read from getEmbeddingConfig() via top-level await | **Done** (2026-03-19) | 9 files |
 | 6: End-to-end test | 8 tests: exports, defaults, overrides, HNSW, cache reset | **Done** (2026-03-19) | 1 file, 95 lines |
-| 7: Deploy | v3.5.15-patch.104 — 55/55 acceptance | **Done** (2026-03-19) | |
+| 7: Deploy | v3.5.15-patch.107 — 56/56 acceptance | **Done** (2026-03-19) | |
+| 8: Acceptance tests | Config-driven assertions (not hardcoded) | **Done** (2026-03-19) | 2 checks |
 
 **Total effort**: ~631 lines across 54 unique files in 2 forks.
 
@@ -454,6 +455,11 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 
 - `tsc --noEmit` passes on memory, cli, shared, embeddings (pre-existing `eagerMaxLevel` only)
 - `npm run test:unit` — **541/541 pass** (2.2s)
+- `npm run deploy` — **56/56 acceptance** (v3.5.15-patch.107)
+
+Acceptance tests validate config, not hardcoded values:
+- `sec-embed-gen` — calls `agentdb_embed`, reads expected dim from `getEmbeddingConfig()`, asserts match
+- `sec-embed-cfg` — verifies model is in `MODEL_REGISTRY`, dimension matches registry, `deriveHNSWParams()` works
 
 ### Remaining `768` audit
 
@@ -493,7 +499,8 @@ Remaining `1536` values are all **false positives** (not embedding defaults):
 All remaining items done in a single session:
 1. Wired 9 `embedding-constants.ts` files to read from `getEmbeddingConfig()` via top-level `await import('agentdb')`
 2. E2e test: 8 tests covering exports, defaults, overrides, HNSW derivation, cache reset (all pass)
-3. Deployed as v3.5.15-patch.104 — **55/55 acceptance**, 541/541 unit tests
+3. Deployed as v3.5.15-patch.107 — **56/56 acceptance**, 541/541 unit tests
+4. Acceptance tests validate config values (not hardcoded): `sec-embed-gen` + `sec-embed-cfg`
 
 ### Env variables
 
