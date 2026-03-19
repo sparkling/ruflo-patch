@@ -2,7 +2,13 @@
 
 ## Status
 
-Accepted — fully implemented (v3.5.15-patch.102, 2026-03-18). Config framework + 64 files migrated across both forks.
+**Superseded** by `ADR-0052-config-driven-embedding-framework.md` (2026-03-19).
+
+This document overclaimed completion — the checklist was marked done prematurely.
+The replacement doc has an honest implementation status. This file is retained
+as a historical record per project ADR rules.
+
+Original claim: ~~Accepted — fully implemented (v3.5.15-patch.102, 2026-03-18). Config framework + 64 files migrated across both forks.~~
 
 ## Date
 

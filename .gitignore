@@ -4,6 +4,7 @@ config/.publish-timing.json
 config/storage/
 .claude-flow/
 .claude/projects/
+.claude/worktrees/
 .swarm/
 .entire/
 .codex/
