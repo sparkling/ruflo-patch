@@ -352,6 +352,7 @@ run_check_bg "sec-query-stats"  "Query stats (B6)"                 check_query_s
 run_check_bg "sec-b5b6-ctrls"   "B5/B6 controllers"               check_metadata_filter_controllers "security"
 run_check_bg "sec-embed-gen"    "Embedding generate (A9)"          check_embedding_generate        "security"
 run_check_bg "sec-045-ctrls"    "ADR-0045 controllers (A9/D1/D3)" check_embedding_controller_registered "security"
+run_check_bg "sec-embed-cfg"    "Embedding config propagation (ADR-0052)" check_embedding_config_propagation "security"
 collect_parallel "security" \
   "sec-controllers|Security controllers (D4/D5/D6)" "sec-ratelimit|Rate limiter status" \
   "sec-breaker|Circuit breaker status" "sec-resource|Resource tracker" \
@@ -360,7 +361,8 @@ collect_parallel "security" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
   "sec-filtered|Filtered search (B5)" "sec-query-stats|Query stats (B6)" \
   "sec-b5b6-ctrls|B5/B6 controllers" \
-  "sec-embed-gen|Embedding generate (A9)" "sec-045-ctrls|ADR-0045 controllers (A9/D1/D3)"
+  "sec-embed-gen|Embedding generate (A9)" "sec-045-ctrls|ADR-0045 controllers (A9/D1/D3)" \
+  "sec-embed-cfg|Embedding config propagation (ADR-0052)"
 _record_phase "group-security" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════

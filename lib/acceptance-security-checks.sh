@@ -567,13 +567,80 @@ check_embedding_generate() {
     local rest="${result#*|}"
     local dim="${rest%%|*}"
     local provider="${rest#*|}"
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Embedding generate: dim=$dim, provider=$provider"
+
+    # ADR-0052: validate dimension against config, not a hardcoded value
+    # Read expected dimension from agentdb getEmbeddingConfig()
+    local expected_dim
+    # comment: ESM dynamic import — agentdb is ESM-only
+    expected_dim=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node --input-type=module -e "
+      try {
+        const { getEmbeddingConfig } = await import('@sparkleideas/agentdb');
+        console.log(getEmbeddingConfig().dimension);
+      } catch { console.log(768); }
+    " 2>/dev/null) || expected_dim="768"
+
+    if [[ "$dim" -gt 0 && "$dim" == "$expected_dim" ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Embedding generate: dim=$dim (matches config), provider=$provider"
+    elif [[ "$dim" -gt 0 ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Embedding generate: dim=$dim (config expects $expected_dim — mismatch), provider=$provider"
+    else
+      _CHECK_OUTPUT="Embedding generate: dim=0 — embedding returned empty vector"
+    fi
   elif [[ "$status" == "not-success" ]]; then
     local err="${result#*|}"
     _CHECK_OUTPUT="Embedding generate: success=false — $err"
   else
     _CHECK_OUTPUT="Embedding generate: parse failed ($result)"
+  fi
+}
+
+check_embedding_config_propagation() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # ADR-0052: verify embedding config is consistent across the published package
+  # Read getEmbeddingConfig() and verify it returns coherent values
+  # comment: node -e reads config + MODEL_REGISTRY from agentdb
+  local result
+  # comment: ESM dynamic import — agentdb is ESM-only
+  result=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node --input-type=module -e "
+    try {
+      const m = await import('@sparkleideas/agentdb');
+      if (!m.getEmbeddingConfig) { console.log('no-export'); process.exit(0); }
+      const cfg = m.getEmbeddingConfig();
+      const reg = m.MODEL_REGISTRY || {};
+      const modelInReg = reg[cfg.model] ? 'yes' : 'no';
+      const regDim = reg[cfg.model] ? reg[cfg.model].dimension : 0;
+      const dimMatch = regDim === cfg.dimension ? 'yes' : 'no';
+      const hnsw = m.deriveHNSWParams ? m.deriveHNSWParams(cfg.dimension) : null;
+      const hnswOk = hnsw && hnsw.M > 0 && hnsw.efConstruction > 0 ? 'yes' : 'no';
+      console.log([
+        'ok', cfg.model, cfg.dimension, modelInReg, dimMatch, hnswOk
+      ].join('|'));
+    } catch(e) { console.log('error|' + e.message); }
+  " 2>/dev/null) || result="error|node failed"
+
+  local status="${result%%|*}"
+  if [[ "$status" == "ok" ]]; then
+    IFS='|' read -r _ model dim modelInReg dimMatch hnswOk <<< "$result"
+    local issues=""
+    [[ "$modelInReg" != "yes" ]] && issues="${issues}model not in MODEL_REGISTRY; "
+    [[ "$dimMatch" != "yes" ]] && issues="${issues}dim $dim != registry dim; "
+    [[ "$hnswOk" != "yes" ]] && issues="${issues}deriveHNSWParams failed; "
+
+    if [[ -z "$issues" ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Config propagation: model=$model, dim=$dim, registry=match, HNSW=ok"
+    else
+      _CHECK_OUTPUT="Config propagation: model=$model, dim=$dim — $issues"
+    fi
+  elif [[ "$status" == "no-export" ]]; then
+    _CHECK_OUTPUT="Config propagation: getEmbeddingConfig not exported from agentdb"
+  else
+    local err="${result#*|}"
+    _CHECK_OUTPUT="Config propagation: $err"
   fi
 }
 
