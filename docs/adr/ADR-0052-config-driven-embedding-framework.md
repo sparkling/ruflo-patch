@@ -449,12 +449,34 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 
 **Total effort**: ~631 lines across 54 unique files in 2 forks.
 
+### Validation (2026-03-19)
+
+- `tsc --noEmit` passes on memory, cli, shared, embeddings (pre-existing `eagerMaxLevel` only)
+- `npm run test:unit` — **541/541 pass** (2.2s)
+
+### Remaining `768` audit
+
+After wiring, a grep audit found these remaining `768` values:
+
+| File | Count | Verdict |
+|------|:-----:|---------|
+| `memory-initializer.ts` | ~10 | Fallback chains in getHNSWIndex + loadEmbeddingModel — safe defaults before config loads |
+| `memory-bridge.ts` | 2 | Init values (lines 1237, 1324) before dynamic import resolves — safe |
+| `executor.ts` | 1 | `?? 768` in MODEL_DIMS fallback — correct (default when model not in map) |
+
+Remaining `1536` values are all **false positives** (not embedding defaults):
+- `rvfa-builder.ts` — RVF binary file format spec
+- `commands/embeddings.ts` — OpenAI model description in help table
+- `neural-tools.ts` — quantization example display text
+- `hooks/reasoningbank` — JSDoc comment
+- `plugins/agentic-flow.ts` — separate plugin integration (own config)
+
 ### What works today
 
 - Default dimension is **768 everywhere** — the dimension war is resolved
 - Default model is **nomic-ai/nomic-embed-text-v1.5** — +30pp retrieval accuracy
 - `getEmbeddingConfig()` works correctly for Tier 1 consumers
-- **Zero raw `768` or `1536` literals** remain in production code outside memory-initializer fallback chains
+- **Zero raw `768` or `1536` default literals** remain in production code outside memory-initializer/memory-bridge fallback chains
 - `shared/defaults.ts` and `shared/schema.ts` now correctly default to `768`
 - `init/executor.ts` uses a `MODEL_DIMS` lookup map for new project generation
 - Server is tuned for available hardware (160GB ceiling, 10x rate limits)
@@ -465,14 +487,14 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 - Changing `embeddings.json` to a different model/dimension only propagates to
   Tier 1 consumers. Tier 2 consumers (neural, embeddings, guidance, hooks, swarm,
   ruvector, cli) use static `EMBEDDING_DIM = 768` constants.
-- `memory-initializer.ts` still has ~10 static `768` in fallback chains.
+- `memory-initializer.ts` fallback chains use static `768` (but only fire when
+  config loading fails).
 
 ### Remaining work
 
 1. Wire 9 `embedding-constants.ts` files to read from `getEmbeddingConfig()` at import time
-2. Fix `memory-initializer.ts` — replace ~10 static `768` with config-resolved value
-3. Write end-to-end test: change `embeddings.json` model, verify all consumers see new dimension
-4. Deploy and verify 55/55 acceptance
+2. Write end-to-end test: change `embeddings.json` model, verify all consumers see new dimension
+3. Deploy and verify 55/55 acceptance
 
 ### Env variables
 
