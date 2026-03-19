@@ -1,7 +1,7 @@
 # ADR-0052: Config-Driven Embedding Framework
 
-**Status**: Mostly Implemented (Tier 2 config wiring + e2e test remaining)
-**Date**: 2026-03-18 (updated 2026-03-19)
+**Status**: Implemented (v3.5.15-patch.104, 2026-03-19)
+**Date**: 2026-03-18 (implemented 2026-03-19)
 **Deciders**: System Architecture
 **Methodology**: SPARC + MADR
 
@@ -444,8 +444,9 @@ memory.db files are small (CLI workloads, <1MB typical) and re-embedding is fast
 | 2: Primary consumers | memory-bridge, controller-registry, memory-initializer | **Mostly done** | controller-registry + executor done; memory-initializer has 10 remaining |
 | 3: Per-package constants | 9 embedding-constants.ts files, 37 consumers wired | **Done** | ~41 files |
 | 4: Remaining stragglers | shared/, init, headless, ewc, commands | **Done** (2026-03-19) | 11 files, 44 insertions |
-| 5: Wire Tier 2 to config | Make 9 constants read from getEmbeddingConfig() | **Not done** | ~45 lines across 9 files |
-| 6: End-to-end test | Change embeddings.json, verify propagation | **Not done** | 1 test file |
+| 5: Wire Tier 2 to config | 9 constants read from getEmbeddingConfig() via top-level await | **Done** (2026-03-19) | 9 files |
+| 6: End-to-end test | 8 tests: exports, defaults, overrides, HNSW, cache reset | **Done** (2026-03-19) | 1 file, 95 lines |
+| 7: Deploy | v3.5.15-patch.104 — 55/55 acceptance | **Done** (2026-03-19) | |
 
 **Total effort**: ~631 lines across 54 unique files in 2 forks.
 
@@ -484,17 +485,15 @@ Remaining `1536` values are all **false positives** (not embedding defaults):
 
 ### What doesn't work
 
-- Changing `embeddings.json` to a different model/dimension only propagates to
-  Tier 1 consumers. Tier 2 consumers (neural, embeddings, guidance, hooks, swarm,
-  ruvector, cli) use static `EMBEDDING_DIM = 768` constants.
 - `memory-initializer.ts` fallback chains use static `768` (but only fire when
-  config loading fails).
+  config loading fails — safe defaults).
 
-### Remaining work
+### Completed (2026-03-19)
 
-1. Wire 9 `embedding-constants.ts` files to read from `getEmbeddingConfig()` at import time
-2. Write end-to-end test: change `embeddings.json` model, verify all consumers see new dimension
-3. Deploy and verify 55/55 acceptance
+All remaining items done in a single session:
+1. Wired 9 `embedding-constants.ts` files to read from `getEmbeddingConfig()` via top-level `await import('agentdb')`
+2. E2e test: 8 tests covering exports, defaults, overrides, HNSW derivation, cache reset (all pass)
+3. Deployed as v3.5.15-patch.104 — **55/55 acceptance**, 541/541 unit tests
 
 ### Env variables
 
@@ -532,7 +531,7 @@ Remaining `1536` values are all **false positives** (not embedding defaults):
 
 - Existing stored 384-dim embeddings become incompatible (must re-embed)
 - nomic model is 131MB quantized vs MiniLM 23MB — larger cache footprint
-- Tier 2 is not yet config-driven — model change still requires editing 9 constant files
+- Tier 2 constants use top-level await which requires ESM module loading
 
 ## Related
 
