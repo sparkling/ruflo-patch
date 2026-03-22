@@ -8,7 +8,10 @@
 GLOBAL_MEMORY_DIR := $(HOME)/.claude/projects/-home-claude-src-ruflo-patch/memory
 REPO_MEMORY_DIR   := .claude/memory
 
-.PHONY: memory-install memory-copy memory-link memory-status help
+.PHONY: setup memory-install memory-copy memory-link memory-status help
+
+setup: memory-install ## Initial project setup (run after clone)
+	@echo "Setup complete."
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
