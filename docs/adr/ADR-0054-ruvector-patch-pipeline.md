@@ -77,15 +77,26 @@ publish to Verdaccio
 
 ### 3. Wire into agentic-flow dependencies
 
-```
-# In agentic-flow/package.json (or agentic-flow/agentic-flow/package.json):
-# Change: "ruvector": "^x.y.z"  (if present)
-# Or add: "@sparkleideas/ruvector": "{version}-patch.N"
+The unscoped `ruvector` CLI is imported in one file:
+- `agentic-flow/agentic-flow/src/intelligence/RuVectorIntelligence.ts:84`:
+  `import ruvector from 'ruvector'`
 
-# In code that imports from ruvector:
-# Change: import ... from 'ruvector'
-# To:     import ... from '@sparkleideas/ruvector'
-# (handled by codemod.mjs scope rename)
+The `@ruvector/*` WASM packages (`@ruvector/sona`, `@ruvector/attention`,
+`@ruvector/core`, `@ruvector/rvf`, `@ruvector/gnn`) are NOT patched — they
+stay as upstream deps. Only the CLI package (`ruvector`) needs the scope rename.
+
+```
+# In agentic-flow/agentic-flow/package.json:
+# Add: "@sparkleideas/ruvector": "{version}-patch.N"
+# (ruvector was not previously listed as a dep — it was resolved transitively)
+
+# In codemod.mjs scope rename:
+# Add rule: import ... from 'ruvector' → import ... from '@sparkleideas/ruvector'
+# EXCLUDE: @ruvector/* imports (those stay upstream)
+
+# Affected file:
+# agentic-flow/agentic-flow/src/intelligence/RuVectorIntelligence.ts:84
+#   import ruvector from 'ruvector' → import ruvector from '@sparkleideas/ruvector'
 ```
 
 ### 4. Add to pipeline
@@ -259,7 +270,9 @@ Add to the existing `neural status` command output:
 - [ ] Commit patches to ruvector fork, push to `sparkling/RuVector`
 - [ ] Add ruvector to `lib/fork-paths.sh`
 - [ ] Add ruvector to `scripts/copy-source.sh`
-- [ ] Add ruvector scope rename to `scripts/codemod.mjs`
+- [ ] Add ruvector scope rename to `scripts/codemod.mjs` (`ruvector` → `@sparkleideas/ruvector`, exclude `@ruvector/*`)
+- [ ] Add `@sparkleideas/ruvector` dep to `agentic-flow/agentic-flow/package.json`
+- [ ] Verify `RuVectorIntelligence.ts` import is renamed by codemod
 - [ ] Add `@sparkleideas/ruvector` to `scripts/publish.mjs` (Level 1)
 - [ ] Add ruvector version bump to `scripts/run-fork-version.sh`
 - [ ] Add 3 acceptance tests (`force-learn`, trajectory persistence, stats counters)
