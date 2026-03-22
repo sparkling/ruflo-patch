@@ -135,3 +135,23 @@ See `docs/pipeline-reference.md` for full failure history and details.
 - `flock` lock at `/tmp/ruflo-pipeline.lock` — check for orphaned holders with `fuser`
 - MockInstance `>` in `=>` arrow: bracket-counting scripts must skip `>` preceded by `=` to avoid treating arrow operators as closing angle brackets
 - Post-promote smoke test uses `npm view` (not `npx --version`) to avoid stderr deprecation warnings causing false failures
+
+## Imported from predecessor projects
+
+### claude-flow-patch (predecessor to ruflo-patch)
+- [Dependency analysis](cfp-dependency-analysis.md) — package dependency graph analysis
+- [Hook lifecycle analysis](cfp-hook-lifecycle-analysis.md) — how hooks execute and interact
+- [Settings generator audit](cfp-settings-gen-audit.md) — settings.json generation analysis
+- [WM-092 research](cfp-WM-092-research-findings.md) — memory system research findings
+
+### gene-clean (server setup/patterns)
+- [Debugging notes](gene-debugging.md) — common debugging patterns on gene server
+- [Project patterns](gene-patterns.md) — V3 system architecture patterns (150+ tools, 93 agents, etc.)
+- [Preferences](gene-preferences.md) — user preferences and project conventions
+- [Self-awareness report](gene-self-awareness-report.md) — full V3 system self-analysis
+
+### agentdb-upgrade worktree
+- [Memory systems map](agentdb-upgrade-CLAUDE_FLOW_MEMORY_MAP.md) — HybridBackend, AutoMemoryBridge, Intelligence.cjs
+- [Quick reference](agentdb-upgrade-QUICK_REFERENCE.md) — agentdb upgrade quick ref
+- [Source file reference](agentdb-upgrade-SOURCE_FILE_REFERENCE.md) — key source files
+- [Systems relationship](agentdb-upgrade-SYSTEMS_RELATIONSHIP.md) — how subsystems connect
