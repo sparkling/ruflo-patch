@@ -1,0 +1,188 @@
+{
+  "initialized": true,
+  "topology": "hierarchical",
+  "workers": [
+    "architect-1772719627699-olfq",
+    "architect-1772719627699-uyim",
+    "architect-1772719627699-fowi",
+    "architect-1772719627699-gjum",
+    "architect-1772719627699-ljya",
+    "pi-advisor-1773569028569-ycda",
+    "pi-advisor-1773569028569-ozpt",
+    "pi-advisor-1773569028569-6966",
+    "pi-advisor-1773569028569-856e",
+    "adr-debater-1773774235096-r8z2",
+    "adr-debater-1773774235096-q13r",
+    "adr-debater-1773774235096-tfpl",
+    "adr-debater-1773774235096-tmjx",
+    "adr-debater-1773774235096-yh3y",
+    "impl-worker-1773777955071-koab",
+    "impl-worker-1773777955071-chfd",
+    "impl-worker-1773777955071-tlq2",
+    "impl-worker-1773777955071-lde6"
+  ],
+  "consensus": {
+    "pending": [
+      {
+        "proposalId": "proposal-1772719859282-gwvgxa",
+        "type": "packaging-strategy",
+        "value": {
+          "recommendation": "verdaccio-private-registry",
+          "runner_up": "local-build-with-pnpm-overrides",
+          "approaches_found": 11
+        },
+        "proposedBy": "system",
+        "proposedAt": "2026-03-05T14:10:59.282Z",
+        "votes": {},
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773569055880-5ut2vv",
+        "type": "integration-strategy",
+        "value": "Option C: Session-driven integration. At session-start, search π for patterns relevant to the project (e.g. 'AgentDB memory controller patterns'). Cache top 5 results in .claude-flow/data/pi-context.json. AI references this cache during the session. At session-end, share any significant learnings via brain_share. Rationale: Low latency (one search at start, not per-task), high signal (curated results, not firehose), no hook changes needed, privacy-safe (explicit shares only). For this build pipeline repo specifically, the session-start search would focus on 'fork model patches agentdb memory' topics.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-15T10:04:15.880Z",
+        "votes": {
+          "pi-advisor-1773569028569-ycda": true,
+          "pi-advisor-1773569028569-ozpt": true,
+          "pi-advisor-1773569028569-6966": true,
+          "pi-advisor-1773569028569-856e": true,
+          "queen-pi-integration": true
+        },
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773569068331-tmvsd8",
+        "type": "integration-strategy",
+        "value": "Option A+: Manual with prompting. Keep it simple — no hooks, no auto-sync. But update CLAUDE.md with an explicit instruction: 'Before starting any new patch or investigation, run brain_search for relevant patterns. After completing a deploy, share the key finding via brain_share.' This makes it a behavioral rule rather than an automated system. Rationale: Zero infrastructure, zero latency, zero risk. The AI already has the tools. The missing piece is the habit, not the plumbing. Adding automation for 11 memory entries and a build pipeline repo is overengineering.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-15T10:04:28.331Z",
+        "votes": {
+          "pi-advisor-1773569028569-ycda": true,
+          "pi-advisor-1773569028569-ozpt": true,
+          "pi-advisor-1773569028569-6966": true,
+          "pi-advisor-1773569028569-856e": false,
+          "queen-pi-integration": true
+        },
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773569076762-clkein",
+        "type": "integration-strategy",
+        "value": "Option B: Hook-driven pre-task search. Add brain_search call to the pre-task hook in hook-handler.cjs. Every task gets a π search with the task description. Results injected as [PI_CONTEXT] in the hook output. Rationale: Fully automatic, no manual discipline needed, every task benefits. Concern: Adds ~30ms latency per task, may return noise for simple tasks (typo fixes don't need π search), requires hook-handler.cjs patch in the ruflo fork.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-15T10:04:36.762Z",
+        "votes": {
+          "pi-advisor-1773569028569-ycda": false,
+          "pi-advisor-1773569028569-ozpt": false,
+          "pi-advisor-1773569028569-6966": true,
+          "pi-advisor-1773569028569-856e": true,
+          "queen-pi-integration": false
+        },
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773569086009-kq9sv6",
+        "type": "integration-strategy",
+        "value": "Option E: Full 91-tool integration. Add npx ruvector MCP server alongside pi-brain SSE. This gives us SONA tools (pattern extraction), GNN tools (graph operations), attention tools (46 mechanisms), embed tools (ONNX + LoRA), and hooks tools — exactly the subsystems ADR-0033 is trying to activate. The ruvector MCP could replace some of our local AgentDB controller work by connecting to the collective's infrastructure. Concern: Heavy dependency, 91 tools is noisy, npx startup latency, potential conflict with our local claude-flow MCP server tools.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-15T10:04:46.009Z",
+        "votes": {
+          "pi-advisor-1773569028569-ycda": false,
+          "pi-advisor-1773569028569-ozpt": false,
+          "pi-advisor-1773569028569-6966": false,
+          "pi-advisor-1773569028569-856e": true,
+          "queen-pi-integration": false
+        },
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773570048110-1x5fvf",
+        "type": "tenancy-policy",
+        "value": "CONSERVATIVE: Add 1-hour cache TTL to session-start hook. If .claude-flow/data/pi-context.json is less than 1 hour old, skip the search entirely. This means 20 Claude restarts in a day still only make 2 requests per hour maximum. Rationale: The collective knowledge doesn't change fast enough to justify per-restart searches. Our queries are project-specific and the results won't differ in 1 hour. Also change CLAUDE.md from 'search before every patch' to 'search when entering a new topic area' — most patches in a session are related and one search covers them all.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-15T10:20:48.111Z",
+        "votes": {
+          "pi-advisor-1773569028569-ycda": true,
+          "pi-advisor-1773569028569-ozpt": true,
+          "pi-advisor-1773569028569-6966": true,
+          "pi-advisor-1773569028569-856e": true,
+          "queen-pi-integration": true
+        },
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773570059558-dt4vok",
+        "type": "tenancy-policy",
+        "value": "MODERATE: Keep session-start searches but add a daily budget. Max 10 searches per day via the hook (counter in .claude-flow/data/pi-daily-counter). MCP tool searches (brain_search) are uncounted since those are intentional. Remove auto-share at session-end entirely — all shares should be explicit via brain_share MCP tool. The AI decides what's worth sharing, not an automated script. Rationale: Reads are cheap (5000/hr limit), but we should self-limit as courtesy. Writes should always be intentional because quality matters more than quantity in a community resource.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-15T10:20:59.558Z",
+        "votes": {
+          "pi-advisor-1773569028569-ycda": true,
+          "pi-advisor-1773569028569-ozpt": true,
+          "pi-advisor-1773569028569-6966": true,
+          "pi-advisor-1773569028569-856e": false,
+          "queen-pi-integration": true
+        },
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773570069577-k7r35g",
+        "type": "tenancy-policy",
+        "value": "MINIMAL: Remove session-start hook entirely. It's premature optimization — we have 11 local memory entries and a build pipeline repo. The π search adds value when you're exploring unfamiliar territory, not when you're running npm run deploy for the 50th time. Keep brain_search as an MCP tool for when the AI genuinely needs collective input. Keep brain_share for explicit contributions. Remove the CLAUDE.md rule about searching before every patch — it creates false urgency. Replace with: 'When entering a new technical domain or facing an unfamiliar problem, consider searching π for prior art.' Rationale: Good tenancy means not treating a community resource as your personal search engine. Use it when it adds value, not as a reflex.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-15T10:21:09.577Z",
+        "votes": {
+          "pi-advisor-1773569028569-ycda": false,
+          "pi-advisor-1773569028569-ozpt": false,
+          "pi-advisor-1773569028569-6966": true,
+          "pi-advisor-1773569028569-856e": true,
+          "queen-pi-integration": false
+        },
+        "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1773774731927-asxe6u",
+        "type": "architecture",
+        "value": "ADR-0051 ruling: Expand extraction scope to ~44,620 lines across 9 rungs. Core = ADR-004 microkernel (6 items: agent lifecycle, task execution, memory interfaces, basic coordination, MCP server, plugin infrastructure). Everything else is a defaultEnabled plugin with fallback implementations. Guidance, memory-intelligence, agentic-flow bridge, and RuVector routing ALL extract to plugins. Mechanism stays in core; policy goes to plugins.",
+        "proposedBy": "system",
+        "proposedAt": "2026-03-17T19:12:11.928Z",
+        "votes": {
+          "queen-architect": true,
+          "adr-debater-1773774235096-r8z2": true,
+          "adr-debater-1773774235096-q13r": false,
+          "adr-debater-1773774235096-tfpl": true,
+          "adr-debater-1773774235096-tmjx": true,
+          "adr-debater-1773774235096-yh3y": true
+        },
+        "status": "pending"
+      }
+    ],
+    "history": []
+  },
+  "sharedMemory": {
+    "broadcasts": [
+      {
+        "messageId": "msg-1773569045643-nbsu3k",
+        "message": "DISCUSSION: How should we integrate π.ruv.io into the ruflo-patch workflow? \n\nContext: We have 21 MCP tools via SSE (brain_search, brain_share, brain_vote, etc). We could also add 91 tools via npx ruvector. The collective has 955 memories, 57 contributors, 123K graph edges.\n\nCurrent state: We wrote 3 learnings to π today. We read from it twice during this session. ADR-0034 says \"search before implementing\" but it's not enforced.\n\nOptions to discuss:\nA) Manual only — AI searches π when it remembers to (current state)\nB) Hook-driven — add brain_search to pre-task hook, auto-search before every task\nC) Session-driven — search π at session-start, cache relevant results for the session\nD) Bidirectional sync — auto-push SONA patterns to π, auto-pull relevant patterns on session restore\nE) Full 91-tool integration — add npx ruvector MCP alongside pi-brain SSE for SONA/GNN/attention tools\n\nConsider: latency impact, value vs noise ratio, privacy concerns, and what makes sense for a build pipeline repo.",
+        "priority": "high",
+        "fromId": "queen-pi-integration",
+        "timestamp": "2026-03-15T10:04:05.643Z"
+      },
+      {
+        "messageId": "msg-1773570039135-epwnpg",
+        "message": "DISCUSSION: Are we being good tenants of π.ruv.io? \n\nCurrent behavior:\n- Session-start hook makes 2 HTTP requests to pi.ruv.io every time Claude restarts (~5-10 times/day)\n- Each request hits /v1/memories/search with a 5-second timeout\n- CLAUDE.md tells AI to search before every patch and share after every deploy\n- We shared 3 learnings today in one session\n\nRate limits per the guide:\n- 5000 reads/hr per contributor\n- 500 writes/hr per contributor\n- IP-level limits also exist\n\nQuestions for the hive:\n1. Is 2 searches per session-start too frequent? What if someone restarts Claude 20 times in a day?\n2. Should we cache results and skip the search if cache is fresh (e.g. <1 hour old)?\n3. Should the CLAUDE.md instruction say \"search before every patch\" or something less aggressive?\n4. Should we rate-limit ourselves below the API limits as a courtesy?\n5. Is auto-sharing at session-end appropriate, or should all shares be explicit?\n6. Are the search queries too broad? Should they be more targeted?\n7. What's the right etiquette for a shared community resource?",
+        "priority": "high",
+        "fromId": "queen-pi-integration",
+        "timestamp": "2026-03-15T10:20:39.136Z"
+      }
+    ]
+  },
+  "createdAt": "2026-03-17T20:05:49.694Z",
+  "updatedAt": "2026-03-17T20:05:55.071Z",
+  "queen": {
+    "agentId": "queen-implementer",
+    "electedAt": "2026-03-17T20:05:49.694Z",
+    "term": 1
+  }
+}

@@ -1,0 +1,133 @@
+{
+  "sessions": {
+    "term-1773147847541-b0ld7y": {
+      "id": "term-1773147847541-b0ld7y",
+      "name": "Default Terminal",
+      "status": "active",
+      "createdAt": "2026-03-10T13:04:07.541Z",
+      "lastActivity": "2026-03-10T14:22:22.355Z",
+      "workingDir": "/home/claude/src/ruflo-patch",
+      "history": [
+        {
+          "command": "cd /home/claude/src/ruflo-patch && npm run test:unit 2>&1",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && npm run test:unit 2>&1",
+          "timestamp": "2026-03-10T13:04:07.541Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cd /home/claude/src/ruflo-patch && npx vitest run --reporter verbose 2>&1",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && npx vitest run --reporter verbose 2>&1",
+          "timestamp": "2026-03-10T13:04:11.371Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cd /home/claude/src/ruflo-patch && node --test tests/06-publish-order.test.mjs 2>&1",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && node --test tests/06-publish-order.test.mjs 2>&1",
+          "timestamp": "2026-03-10T13:07:44.814Z",
+          "exitCode": 0
+        },
+        {
+          "command": "/bin/bash --norc --noprofile -c 'export PATH=$HOME/.npm-global/bin:$HOME/.bun/bin:$PATH && cd /home/claude/src/ruflo-patch && node --test tests/06-publish-order.test.mjs 2>&1'",
+          "output": "[STATE TRACKING] Command recorded: /bin/bash --norc --noprofile -c 'export PATH=$HOME/.npm-global/bin:$HOME/.bun/bin:$PATH && cd /home/claude/src/ruflo-patch && node --test tests/06-publish-order.test.mjs 2>&1'",
+          "timestamp": "2026-03-10T13:07:48.778Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cd /home/claude/src/ruflo-patch && node --test tests/*.test.mjs 2>&1",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && node --test tests/*.test.mjs 2>&1",
+          "timestamp": "2026-03-10T14:13:37.199Z",
+          "exitCode": 0
+        },
+        {
+          "command": "chmod +x /tmp/run-tests.sh && /bin/bash /tmp/run-tests.sh",
+          "output": "[STATE TRACKING] Command recorded: chmod +x /tmp/run-tests.sh && /bin/bash /tmp/run-tests.sh",
+          "timestamp": "2026-03-10T14:13:55.521Z",
+          "exitCode": 0
+        },
+        {
+          "command": "node /tmp/run-unit-tests.mjs",
+          "output": "[STATE TRACKING] Command recorded: node /tmp/run-unit-tests.mjs",
+          "timestamp": "2026-03-10T14:14:14.058Z",
+          "exitCode": 0
+        },
+        {
+          "command": "node /tmp/run-unit-tests-fresh.mjs && cat /tmp/fresh-test-path.txt",
+          "output": "[STATE TRACKING] Command recorded: node /tmp/run-unit-tests-fresh.mjs && cat /tmp/fresh-test-path.txt",
+          "timestamp": "2026-03-10T14:14:32.843Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cd /home/claude/src/ruflo-patch && node --test tests/*.test.mjs 2>&1",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && node --test tests/*.test.mjs 2>&1",
+          "timestamp": "2026-03-10T14:22:22.355Z",
+          "exitCode": 0
+        }
+      ],
+      "env": {}
+    },
+    "term-1773147859269-rr6p0p": {
+      "id": "term-1773147859269-rr6p0p",
+      "name": "test-runner",
+      "status": "active",
+      "createdAt": "2026-03-10T13:04:19.269Z",
+      "lastActivity": "2026-03-10T13:04:30.439Z",
+      "workingDir": "/home/claude/src/ruflo-patch",
+      "history": [
+        {
+          "command": "cd /home/claude/src/ruflo-patch && npx vitest run --reporter verbose 2>&1",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && npx vitest run --reporter verbose 2>&1",
+          "timestamp": "2026-03-10T13:04:22.209Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cd /home/claude/src/ruflo-patch && npx vitest run --reporter verbose > /tmp/test-output.txt 2>&1; echo \"EXIT_CODE=$?\" >> /tmp/test-output.txt",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && npx vitest run --reporter verbose > /tmp/test-output.txt 2>&1; echo \"EXIT_CODE=$?\" >> /tmp/test-output.txt",
+          "timestamp": "2026-03-10T13:04:30.439Z",
+          "exitCode": 0
+        }
+      ],
+      "env": {}
+    },
+    "term-1773152024539-6caapd": {
+      "id": "term-1773152024539-6caapd",
+      "name": "Terminal 3",
+      "status": "active",
+      "createdAt": "2026-03-10T14:13:44.539Z",
+      "lastActivity": "2026-03-10T14:13:48.417Z",
+      "workingDir": "/home/claude/src/ruflo-patch",
+      "history": [
+        {
+          "command": "cd /home/claude/src/ruflo-patch && node --test tests/04-codemod.test.mjs tests/05-pipeline-logic.test.mjs tests/fork-version.test.mjs tests/06-publish-order.test.mjs 2>&1",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && node --test tests/04-codemod.test.mjs tests/05-pipeline-logic.test.mjs tests/fork-version.test.mjs tests/06-publish-order.test.mjs 2>&1",
+          "timestamp": "2026-03-10T14:13:48.417Z",
+          "exitCode": 0
+        }
+      ],
+      "env": {}
+    },
+    "term-1773152547751-hyaaiz": {
+      "id": "term-1773152547751-hyaaiz",
+      "name": "test-runner",
+      "status": "active",
+      "createdAt": "2026-03-10T14:22:27.751Z",
+      "lastActivity": "2026-03-10T14:22:34.068Z",
+      "workingDir": "/home/claude/src/ruflo-patch",
+      "history": [
+        {
+          "command": "node --test tests/*.test.mjs 2>&1",
+          "output": "[STATE TRACKING] Command recorded: node --test tests/*.test.mjs 2>&1",
+          "timestamp": "2026-03-10T14:22:30.232Z",
+          "exitCode": 0
+        },
+        {
+          "command": "cd /home/claude/src/ruflo-patch && node --test tests/*.test.mjs > /tmp/test-output.txt 2>&1; echo \"EXIT_CODE=$?\" >> /tmp/test-output.txt",
+          "output": "[STATE TRACKING] Command recorded: cd /home/claude/src/ruflo-patch && node --test tests/*.test.mjs > /tmp/test-output.txt 2>&1; echo \"EXIT_CODE=$?\" >> /tmp/test-output.txt",
+          "timestamp": "2026-03-10T14:22:34.068Z",
+          "exitCode": 0
+        }
+      ],
+      "env": {}
+    }
+  },
+  "version": "3.0.0"
+}

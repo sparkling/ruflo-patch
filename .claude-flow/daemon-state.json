@@ -1,0 +1,212 @@
+{
+  "running": true,
+  "startedAt": "2026-03-04T21:23:52.198Z",
+  "workers": {
+    "map": {
+      "runCount": 1353,
+      "successCount": 1353,
+      "failureCount": 0,
+      "averageDurationMs": 0.21359940872135977,
+      "isRunning": false,
+      "nextRun": "2026-03-18T23:40:16.534Z",
+      "lastRun": "2026-03-18T23:25:16.534Z"
+    },
+    "audit": {
+      "runCount": 335,
+      "successCount": 335,
+      "failureCount": 0,
+      "averageDurationMs": 43239.35223880597,
+      "isRunning": false,
+      "nextRun": "2026-03-18T23:26:19.041Z",
+      "lastRun": "2026-03-18T23:26:57.247Z"
+    },
+    "optimize": {
+      "runCount": 628,
+      "successCount": 627,
+      "failureCount": 1,
+      "averageDurationMs": 137629.10996810105,
+      "isRunning": false,
+      "nextRun": "2026-03-18T23:36:43.385Z",
+      "lastRun": "2026-03-18T23:06:43.385Z"
+    },
+    "consolidate": {
+      "runCount": 169,
+      "successCount": 169,
+      "failureCount": 0,
+      "averageDurationMs": 3.2781065088757395,
+      "isRunning": false,
+      "nextRun": "2026-03-18T23:30:03.213Z",
+      "lastRun": "2026-03-18T21:30:03.212Z"
+    },
+    "testgaps": {
+      "runCount": 325,
+      "successCount": 325,
+      "failureCount": 0,
+      "averageDurationMs": 154363.5815384616,
+      "isRunning": false,
+      "nextRun": "2026-03-19T00:26:00.407Z",
+      "lastRun": "2026-03-18T23:26:00.407Z"
+    },
+    "predict": {
+      "runCount": 0,
+      "successCount": 0,
+      "failureCount": 0,
+      "averageDurationMs": 0,
+      "isRunning": false
+    },
+    "document": {
+      "runCount": 0,
+      "successCount": 0,
+      "failureCount": 0,
+      "averageDurationMs": 0,
+      "isRunning": false
+    },
+    "ultralearn": {
+      "runCount": 0,
+      "successCount": 0,
+      "failureCount": 0,
+      "averageDurationMs": 0,
+      "isRunning": false
+    },
+    "deepdive": {
+      "runCount": 0,
+      "successCount": 0,
+      "failureCount": 0,
+      "averageDurationMs": 0,
+      "isRunning": false
+    },
+    "refactor": {
+      "runCount": 0,
+      "successCount": 0,
+      "failureCount": 0,
+      "averageDurationMs": 0,
+      "isRunning": false
+    },
+    "benchmark": {
+      "runCount": 0,
+      "successCount": 0,
+      "failureCount": 0,
+      "averageDurationMs": 0,
+      "isRunning": false
+    },
+    "preload": {
+      "runCount": 2029,
+      "successCount": 2029,
+      "failureCount": 0,
+      "averageDurationMs": 0.1986200098570725,
+      "isRunning": false,
+      "nextRun": "2026-03-18T23:35:17.788Z",
+      "lastRun": "2026-03-18T23:25:17.787Z"
+    }
+  },
+  "config": {
+    "autoStart": false,
+    "logDir": "/home/claude/src/ruflo-patch/.claude-flow/logs",
+    "stateFile": "/home/claude/src/ruflo-patch/.claude-flow/daemon-state.json",
+    "maxConcurrent": 2,
+    "workerTimeoutMs": 960000,
+    "resourceThresholds": {
+      "maxCpuLoad": 28,
+      "minFreeMemoryPercent": 20
+    },
+    "workers": [
+      {
+        "type": "map",
+        "intervalMs": 900000,
+        "offsetMs": 0,
+        "priority": "normal",
+        "description": "Codebase mapping",
+        "enabled": true
+      },
+      {
+        "type": "audit",
+        "intervalMs": 3600000,
+        "offsetMs": 120000,
+        "priority": "critical",
+        "description": "Security analysis",
+        "enabled": true
+      },
+      {
+        "type": "optimize",
+        "intervalMs": 1800000,
+        "offsetMs": 240000,
+        "priority": "high",
+        "description": "Performance optimization",
+        "enabled": true
+      },
+      {
+        "type": "consolidate",
+        "intervalMs": 7200000,
+        "offsetMs": 360000,
+        "priority": "low",
+        "description": "Memory consolidation",
+        "enabled": true
+      },
+      {
+        "type": "testgaps",
+        "intervalMs": 3600000,
+        "offsetMs": 480000,
+        "priority": "normal",
+        "description": "Test coverage analysis",
+        "enabled": true
+      },
+      {
+        "type": "predict",
+        "intervalMs": 600000,
+        "offsetMs": 0,
+        "priority": "low",
+        "description": "Predictive preloading",
+        "enabled": false
+      },
+      {
+        "type": "document",
+        "intervalMs": 3600000,
+        "offsetMs": 0,
+        "priority": "low",
+        "description": "Auto-documentation",
+        "enabled": false
+      },
+      {
+        "type": "ultralearn",
+        "intervalMs": 3600000,
+        "offsetMs": 0,
+        "priority": "normal",
+        "description": "Deep knowledge acquisition (headless, manual trigger)",
+        "enabled": false
+      },
+      {
+        "type": "deepdive",
+        "intervalMs": 14400000,
+        "offsetMs": 0,
+        "priority": "low",
+        "description": "Deep code analysis",
+        "enabled": false
+      },
+      {
+        "type": "refactor",
+        "intervalMs": 14400000,
+        "offsetMs": 0,
+        "priority": "low",
+        "description": "Refactoring suggestions",
+        "enabled": false
+      },
+      {
+        "type": "benchmark",
+        "intervalMs": 7200000,
+        "offsetMs": 0,
+        "priority": "low",
+        "description": "Performance benchmarking",
+        "enabled": false
+      },
+      {
+        "type": "preload",
+        "intervalMs": 600000,
+        "offsetMs": 0,
+        "priority": "high",
+        "description": "Embedding model + HNSW preload",
+        "enabled": true
+      }
+    ]
+  },
+  "savedAt": "2026-03-18T23:26:57.247Z"
+}

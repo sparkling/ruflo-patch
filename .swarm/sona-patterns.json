@@ -1,0 +1,47 @@
+{
+  "version": "1.0.0",
+  "patterns": {
+    "analyst:analyze+health+learn+learning+memory+system": {
+      "keywords": [
+        "analyze",
+        "system",
+        "learn",
+        "memory",
+        "learning",
+        "health"
+      ],
+      "agent": "analyst",
+      "confidence": 0.55,
+      "successCount": 1,
+      "failureCount": 0,
+      "lastUsed": 1773534002706,
+      "createdAt": 1773534002706
+    },
+    "analyzer:0030+analysis+memory+optimization+test+validation": {
+      "keywords": [
+        "test",
+        "memory",
+        "optimization",
+        "analysis",
+        "0030",
+        "validation"
+      ],
+      "agent": "analyzer",
+      "confidence": 0.55,
+      "successCount": 1,
+      "failureCount": 0,
+      "lastUsed": 1773538013330,
+      "createdAt": 1773538013330
+    }
+  },
+  "stats": {
+    "trajectoriesProcessed": 2,
+    "successfulRoutings": 2,
+    "failedRoutings": 0,
+    "lastUpdate": 1773538013330
+  },
+  "metadata": {
+    "createdAt": "2026-03-15T01:26:53.330Z",
+    "savedAt": "2026-03-15T01:26:53.330Z"
+  }
+}

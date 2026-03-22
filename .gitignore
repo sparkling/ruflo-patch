@@ -1,20 +1,16 @@
 # Runtime state
 scripts/.last-build-state
 config/.publish-timing.json
-config/storage/
-.claude-flow/
 .claude/projects/
 .claude/worktrees/
-.swarm/
 .entire/
 .codex/
 CLAUDE.local.md
 
-# Runtime databases
-*.db
-*.db-shm
-*.db-wal
-*.rvf
+# Large runtime data (keep config, ignore bulk)
+.claude-flow/data/
+.claude-flow/logs/
+.claude-flow/daemon.pid
 
 # Environment variables
 .env

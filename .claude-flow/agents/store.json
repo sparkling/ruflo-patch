@@ -1,0 +1,174 @@
+{
+  "agents": {
+    "patch-inventory": {
+      "agentId": "patch-inventory",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:18:43.917Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "build-impact": {
+      "agentId": "build-impact",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:20:50.383Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "test-impact": {
+      "agentId": "test-impact",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:20:54.879Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "security-review": {
+      "agentId": "security-review",
+      "agentType": "security-auditor",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-13T23:20:59.364Z",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "perf-analysis": {
+      "agentId": "perf-analysis",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:18:55.528Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "regression-risk": {
+      "agentId": "regression-risk",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-13T23:21:07.562Z",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "dependency-graph": {
+      "agentId": "dependency-graph",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:21:09.546Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "upstream-drift": {
+      "agentId": "upstream-drift",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:21:10.960Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "type-stub-audit": {
+      "agentId": "type-stub-audit",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "sonnet"
+      },
+      "createdAt": "2026-03-13T23:19:06.799Z",
+      "model": "sonnet",
+      "modelRoutedBy": "explicit"
+    },
+    "adr-compliance": {
+      "agentId": "adr-compliance",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:19:09.450Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "coverage-gaps": {
+      "agentId": "coverage-gaps",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:19:12.102Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "pipeline-reliability": {
+      "agentId": "pipeline-reliability",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:19:15.692Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    },
+    "patch-catalogue": {
+      "agentId": "patch-catalogue",
+      "agentType": "analyst",
+      "status": "idle",
+      "health": 1,
+      "taskCount": 0,
+      "config": {
+        "model": "haiku"
+      },
+      "createdAt": "2026-03-13T23:20:46.842Z",
+      "model": "haiku",
+      "modelRoutedBy": "explicit"
+    }
+  },
+  "version": "3.0.0"
+}

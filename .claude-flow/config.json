@@ -1,0 +1,53 @@
+{
+    "version": "3.0.0",
+    "swarm": {
+        "topology": "hierarchical-mesh",
+        "maxAgents": 15,
+        "autoScale": true,
+        "coordinationStrategy": "consensus"
+    },
+    "memory": {
+        "backend": "hybrid",
+        "enableHNSW": true,
+        "cacheSize": 2048,
+        "learningBridge": {
+            "enabled": true,
+            "sonaMode": "instant",
+            "confidenceDecayRate": 0.005,
+            "accessBoostAmount": 0.03,
+            "consolidationThreshold": 10
+        },
+        "memoryGraph": {
+            "enabled": true,
+            "pageRankDamping": 0.85,
+            "maxNodes": 50000,
+            "similarityThreshold": 0.65
+        },
+        "agentScopes": {
+            "enabled": true,
+            "defaultScope": "project"
+        },
+        "agentdb": {
+            "vectorBackend": "rvf",
+            "enableLearning": true,
+            "learningPositiveThreshold": 0.7,
+            "learningNegativeThreshold": 0.3,
+            "learningBatchSize": 128,
+            "learningTickInterval": 15000
+        }
+    },
+    "neural": {
+        "enabled": true,
+        "modelPath": ".claude-flow/neural",
+        "flashAttention": true,
+        "maxModels": 5
+    },
+    "hooks": {
+        "enabled": true,
+        "autoExecute": true
+    },
+    "mcp": {
+        "autoStart": true,
+        "port": 3000
+    }
+}
