@@ -7,10 +7,14 @@ config/.publish-timing.json
 .codex/
 CLAUDE.local.md
 
-# Large runtime data (keep config, ignore bulk)
+# Claude Flow runtime (keep config, ignore bulk)
 .claude-flow/data/graph-state.json
 .claude-flow/logs/
+.claude-flow/sessions/
+.claude-flow/neural/
 .claude-flow/daemon.pid
+.claude-flow/**/*.log
+.claude-flow/**/*.tmp
 
 # Environment variables
 .env
