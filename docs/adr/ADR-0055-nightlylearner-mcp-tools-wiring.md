@@ -1,6 +1,6 @@
 # ADR-0055: NightlyLearner Skill Consolidation + MCP Tool Completion
 
-**Status**: Implemented (v3.5.15-patch.111, 2026-03-22)
+**Status**: Implemented (v3.5.15-patch.114, 2026-03-22)
 **Date**: 2026-03-22
 **Deciders**: System Architecture
 **Methodology**: SPARC + MADR
@@ -88,11 +88,17 @@ NightlyLearner.run()
 
 | New tool | Controller | Backend method |
 |----------|-----------|---------------|
-| `agentdb_skill-create` | skillLibrary | `createSkill()` / `promote()` |
-| `agentdb_skill-search` | skillLibrary | `retrieveSkills()` / `searchSkills()` |
-| `agentdb_learner-run` | nightlyLearner | `run()` / `consolidate()` |
-| `agentdb_learning-predict` | learningSystem | `predict()` / `recommendAlgorithm()` |
-| `agentdb_experience-record` | reflexion | `store()` |
+| `agentdb_skill_create` | skillLibrary | `createSkill()` / `promote()` |
+| `agentdb_skill_search` | skillLibrary | `retrieveSkills()` / `searchSkills()` |
+| `agentdb_learner_run` | nightlyLearner | `run()` / `consolidate()` |
+| `agentdb_learning_predict` | learningSystem | `predict()` / `recommendAlgorithm()` |
+| `agentdb_experience_record` | reflexion | `store()` |
+
+### Tool naming convention
+
+All 41 MCP tools use underscores as separators: `agentdb_{feature}_{action}`.
+This matches the upstream agentdb MCP server convention. Hyphens were normalized
+to underscores in patch.114 (14 legacy tools renamed).
 
 ---
 
@@ -128,7 +134,8 @@ NightlyLearner.run()
 
 - `tsc --noEmit`: clean on both forks
 - `npm run test:unit`: 541/541 pass
-- `npm run deploy`: 56/56 acceptance, v3.5.15-patch.111
+- `npm run deploy`: 56/56 acceptance, v3.5.15-patch.114
+- All 41 MCP tool names normalized to underscore convention
 
 ### Related issues
 
