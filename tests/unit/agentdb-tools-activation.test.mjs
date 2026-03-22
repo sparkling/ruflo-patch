@@ -4,11 +4,11 @@
 // Converted from vitest: ruflo/v3/@claude-flow/cli/__tests__/agentdb-tools-activation.test.ts
 //
 // Tests wiring contracts for:
-// - agentdb_reflexion-retrieve (P3-B)
-// - agentdb_reflexion-store (P3-B)
-// - agentdb_causal-query (P3-C)
-// - agentdb_causal-recall (ADR-0033)
-// - agentdb_batch-optimize (ADR-0033)
+// - agentdb_reflexion_retrieve (P3-B)
+// - agentdb_reflexion_store (P3-B)
+// - agentdb_causal_query (P3-C)
+// - agentdb_causal_recall (ADR-0033)
+// - agentdb_batch_optimize (ADR-0033)
 // - agentdb_branch (P6-B COW)
 //
 // London School TDD: all bridge interactions are mocked with plain objects.
@@ -61,7 +61,7 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-// --- agentdb_reflexion-retrieve ---
+// --- agentdb_reflexion_retrieve ---
 function createReflexionRetrieveHandler(bridge) {
   return async (params) => {
     if (!params.task || params.task === '') {
@@ -81,7 +81,7 @@ function createReflexionRetrieveHandler(bridge) {
   };
 }
 
-// --- agentdb_reflexion-store ---
+// --- agentdb_reflexion_store ---
 function createReflexionStoreHandler(bridge) {
   return async (params) => {
     if (!params.session_id) return { success: false, error: 'session_id is required' };
@@ -105,7 +105,7 @@ function createReflexionStoreHandler(bridge) {
   };
 }
 
-// --- agentdb_causal-query ---
+// --- agentdb_causal_query ---
 function createCausalQueryHandler(bridge) {
   return async (params) => {
     try {
@@ -139,7 +139,7 @@ function createCausalQueryHandler(bridge) {
   };
 }
 
-// --- agentdb_causal-recall ---
+// --- agentdb_causal_recall ---
 function createCausalRecallHandler(bridgeCausalRecall) {
   return async (params) => {
     if (!params.query || params.query === '') {
@@ -161,7 +161,7 @@ function createCausalRecallHandler(bridgeCausalRecall) {
   };
 }
 
-// --- agentdb_batch-optimize ---
+// --- agentdb_batch_optimize ---
 function createBatchOptimizeHandler(bridgeBatchOptimize, bridgeBatchPrune) {
   return async (params) => {
     if (!params.action) return { success: false, error: 'action is required' };
@@ -290,9 +290,9 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
   });
 
-  // ---------- agentdb_reflexion-retrieve ----------
+  // ---------- agentdb_reflexion_retrieve ----------
 
-  describe('agentdb_reflexion-retrieve', () => {
+  describe('agentdb_reflexion_retrieve', () => {
     it('should retrieve reflexion memories by task', async () => {
       const mockResults = [
         { task: 'write unit tests', reward: 0.9, success: true },
@@ -374,9 +374,9 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
   });
 
-  // ---------- agentdb_reflexion-store ----------
+  // ---------- agentdb_reflexion_store ----------
 
-  describe('agentdb_reflexion-store', () => {
+  describe('agentdb_reflexion_store', () => {
     it('should store reflexion memory with correct params', async () => {
       mockReflexionController.store = asyncMock(undefined);
       const handler = createReflexionStoreHandler(bridge);
@@ -457,9 +457,9 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
   });
 
-  // ---------- agentdb_causal-query ----------
+  // ---------- agentdb_causal_query ----------
 
-  describe('agentdb_causal-query', () => {
+  describe('agentdb_causal_query', () => {
     it('should query causal graph for effects of a cause', async () => {
       const mockEffects = [
         { effect: 'faster CI', uplift: 0.8 },
@@ -553,9 +553,9 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
   });
 
-  // ---------- agentdb_causal-recall ----------
+  // ---------- agentdb_causal_recall ----------
 
-  describe('agentdb_causal-recall', () => {
+  describe('agentdb_causal_recall', () => {
     it('should call bridgeCausalRecall with query and params', async () => {
       const mockBridgeCausalRecall = asyncMock({
         success: true,
@@ -630,9 +630,9 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
   });
 
-  // ---------- agentdb_batch-optimize ----------
+  // ---------- agentdb_batch_optimize ----------
 
-  describe('agentdb_batch-optimize', () => {
+  describe('agentdb_batch_optimize', () => {
     it('should dispatch optimize action', async () => {
       const mockBridgeBatchOptimize = asyncMock({ success: true, optimized: 42 });
       const mockBridgeBatchPrune = asyncMock({ success: true });
@@ -886,10 +886,10 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
   });
 
   // ===========================================================================
-  // agentdb_causal-query -- gap coverage
+  // agentdb_causal_query -- gap coverage
   // ===========================================================================
 
-  describe('agentdb_causal-query -- gap coverage', () => {
+  describe('agentdb_causal_query -- gap coverage', () => {
     it('should handle neither cause nor effect provided', async () => {
       // When neither cause nor effect is given, results stays undefined,
       // then min_uplift filter (if present) crashes → caught → success:false.
@@ -922,10 +922,10 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
   });
 
   // ===========================================================================
-  // agentdb_reflexion-store -- boundary values
+  // agentdb_reflexion_store -- boundary values
   // ===========================================================================
 
-  describe('agentdb_reflexion-store -- boundary values', () => {
+  describe('agentdb_reflexion_store -- boundary values', () => {
     it('should clamp negative reward to 0', async () => {
       mockReflexionController.store = asyncMock(undefined);
       const handler = createReflexionStoreHandler(bridge);

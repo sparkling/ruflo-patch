@@ -1,5 +1,5 @@
 // @tier unit
-// ADR-0033: agentdb_context-synthesize MCP tool -- activation contract tests
+// ADR-0033: agentdb_context_synthesize MCP tool -- activation contract tests
 //
 // London School TDD: bridge interactions are mocked with plain objects.
 
@@ -68,7 +68,7 @@ function createContextSynthesizeHandler(bridge) {
 // Tests
 // ============================================================================
 
-describe('ADR-0033: agentdb_context-synthesize MCP tool', () => {
+describe('ADR-0033: agentdb_context_synthesize MCP tool', () => {
   let mockController;
   let bridge;
 

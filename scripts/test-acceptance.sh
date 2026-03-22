@@ -451,7 +451,7 @@ else
   _e2e_causal_edge() {
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_causal-edge --params '{\"cause\":\"init\",\"effect\":\"working project\",\"uplift\":0.9}'"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_causal_edge --params '{\"cause\":\"init\",\"effect\":\"working project\",\"uplift\":0.9}'"
     if echo "$_RK_OUT" | grep -qi 'success\|recorded\|true'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Causal edge accepted in init'd project"
@@ -463,7 +463,7 @@ else
   _e2e_reflexion_store() {
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion-store --params '{\"session_id\":\"e2e-test\",\"task\":\"activation test\",\"reward\":0.9,\"success\":true}'"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion_store --params '{\"session_id\":\"e2e-test\",\"task\":\"activation test\",\"reward\":0.9,\"success\":true}'"
     if echo "$_RK_OUT" | grep -qi 'success\|true'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Reflexion store accepted in init'd project"
@@ -475,7 +475,7 @@ else
   _e2e_batch_optimize() {
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_batch-optimize --params '{\"action\":\"stats\"}'"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_batch_optimize --params '{\"action\":\"stats\"}'"
     if echo "$_RK_OUT" | grep -qi 'success\|stats\|true'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Batch optimize accepted in init'd project"

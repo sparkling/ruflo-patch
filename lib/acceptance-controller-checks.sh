@@ -106,14 +106,14 @@ check_reflexion_lifecycle() {
 
   # Store reflexion via MCP (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_reflexion-store \
+    --tool agentdb_reflexion_store \
     --params '{\"session_id\":\"accept-session\",\"task\":\"write acceptance tests\",\"reward\":0.85,\"success\":true}'"
   local store_out="$_RK_OUT"
 
   if echo "$store_out" | grep -qi 'success\|stored\|true'; then
     # Retrieve reflexion via MCP
     _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-      --tool agentdb_reflexion-retrieve \
+      --tool agentdb_reflexion_retrieve \
       --params '{\"task\":\"write acceptance tests\",\"k\":5}'"
 
     if echo "$_RK_OUT" | grep -qi 'success\|results\|acceptance'; then
@@ -138,13 +138,13 @@ check_causal_graph() {
 
   # Query causal graph (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_causal-query \
+    --tool agentdb_causal_query \
     --params '{\"cause\":\"refactor tests\"}'"
   local query_out="$_RK_OUT"
 
   # Add a causal edge
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_causal-edge \
+    --tool agentdb_causal_edge \
     --params '{\"cause\":\"refactor\",\"effect\":\"fewer bugs\",\"uplift\":0.7}'"
   local edge_out="$_RK_OUT"
 
@@ -206,13 +206,13 @@ check_batch_operations() {
 
   # Run stats via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_batch-optimize \
+    --tool agentdb_batch_optimize \
     --params '{\"action\":\"stats\"}'"
   local stats_out="$_RK_OUT"
 
   # Run optimize via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_batch-optimize \
+    --tool agentdb_batch_optimize \
     --params '{\"action\":\"optimize\"}'"
   local opt_out="$_RK_OUT"
 
