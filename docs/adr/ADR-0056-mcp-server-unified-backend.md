@@ -1,6 +1,6 @@
 # ADR-0056: MCP Server Unified Backend — RVF Primary, SQLite Fallback
 
-**Status**: Proposed
+**Status**: Implemented (v3.5.15-patch.115, 2026-03-22)
 **Date**: 2026-03-22
 **Deciders**: System Architecture
 **Methodology**: SPARC + MADR
