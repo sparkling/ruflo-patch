@@ -8,7 +8,7 @@ config/.publish-timing.json
 CLAUDE.local.md
 
 # Large runtime data (keep config, ignore bulk)
-.claude-flow/data/
+.claude-flow/data/graph-state.json
 .claude-flow/logs/
 .claude-flow/daemon.pid
 
