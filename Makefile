@@ -1,20 +1,14 @@
 # ruflo-patch Makefile
 #
 # Memory symlink management: keeps repo memory in sync with Claude's global store.
-# Auto-detects the global project path from $(CURDIR), works in worktrees.
-# The global store resolves to ~/.claude/projects/-<path-with-dashes>/memory/
-# We symlink it to .claude/memory/ in this repo so memory is version-controlled.
+# The global store is at ~/.claude/projects/-home-claude-src-ruflo-patch/memory/
+# We copy all files into .claude/memory/ in this repo, then symlink the global
+# store to point here — so memory is version-controlled and portable.
 
-# Derive the Claude project dir name from the current working directory
-# Claude uses the absolute path with / replaced by - and leading - stripped
-PROJECT_SLUG    := $(shell echo "$(CURDIR)" | tr '/' '-' | sed 's/^-//')
-GLOBAL_MEMORY_DIR := $(HOME)/.claude/projects/-$(PROJECT_SLUG)/memory
+GLOBAL_MEMORY_DIR := $(HOME)/.claude/projects/-home-claude-src-ruflo-patch/memory
 REPO_MEMORY_DIR   := .claude/memory
 
-.PHONY: setup memory-install memory-copy memory-link memory-status help
-
-setup: memory-install ## Initial project setup (run after clone)
-	@echo "Setup complete."
+.PHONY: memory-install memory-copy memory-link memory-status help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -50,7 +44,6 @@ memory-link: ## Replace global memory dir with symlink to repo copy
 	fi
 
 memory-status: ## Show memory symlink status and file counts
-	@echo "Project slug: $(PROJECT_SLUG)"
 	@echo "Global store: $(GLOBAL_MEMORY_DIR)"
 	@if [ -L "$(GLOBAL_MEMORY_DIR)" ]; then \
 		echo "  Type: symlink -> $$(readlink $(GLOBAL_MEMORY_DIR))"; \
