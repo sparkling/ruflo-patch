@@ -105,15 +105,16 @@ check_reflexion_lifecycle() {
   _CHECK_OUTPUT=""
 
   # Store reflexion via MCP (harness already ran memory init)
+  # Upstream renamed tool: agentdb_reflexion_store -> agentdb_reflexion-store (hyphenated)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_reflexion_store \
+    --tool agentdb_reflexion-store \
     --params '{\"session_id\":\"accept-session\",\"task\":\"write acceptance tests\",\"reward\":0.85,\"success\":true}'"
   local store_out="$_RK_OUT"
 
   if echo "$store_out" | grep -qi 'success\|stored\|true'; then
-    # Retrieve reflexion via MCP
+    # Retrieve reflexion via MCP (hyphenated tool name)
     _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-      --tool agentdb_reflexion_retrieve \
+      --tool agentdb_reflexion-retrieve \
       --params '{\"task\":\"write acceptance tests\",\"k\":5}'"
 
     if echo "$_RK_OUT" | grep -qi 'success\|results\|acceptance'; then
@@ -137,14 +138,15 @@ check_causal_graph() {
   _CHECK_OUTPUT=""
 
   # Query causal graph (harness already ran memory init)
+  # Upstream renamed tools: agentdb_causal_query -> agentdb_causal-query (hyphenated)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_causal_query \
+    --tool agentdb_causal-query \
     --params '{\"cause\":\"refactor tests\"}'"
   local query_out="$_RK_OUT"
 
-  # Add a causal edge
+  # Add a causal edge (hyphenated tool name)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_causal_edge \
+    --tool agentdb_causal-edge \
     --params '{\"cause\":\"refactor\",\"effect\":\"fewer bugs\",\"uplift\":0.7}'"
   local edge_out="$_RK_OUT"
 
@@ -206,13 +208,13 @@ check_batch_operations() {
 
   # Run stats via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_batch_optimize \
+    --tool agentdb_batch-optimize \
     --params '{\"action\":\"stats\"}'"
   local stats_out="$_RK_OUT"
 
   # Run optimize via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_batch_optimize \
+    --tool agentdb_batch-optimize \
     --params '{\"action\":\"optimize\"}'"
   local opt_out="$_RK_OUT"
 

@@ -223,13 +223,6 @@ npx @sparkleideas/cli@latest doctor --fix
 - CLI tools handle coordination via Bash: swarm init, memory, hooks, routing
 - NEVER use CLI tools as a substitute for Task tool agents
 
-## Collective Intelligence (π.ruv.io)
-
-- When entering a new topic area or facing an unfamiliar problem, search π: `brain_search "topic"`
-- After completing significant work with reusable insights, share via `brain_share`
-- When search results are useful, upvote them: `brain_vote`
-- Session-start hook auto-searches π (cached hourly — no manual search needed for routine work)
-- See `docs/guides/pi-brain-integration.md` for full guide
 
 ## Support
 
