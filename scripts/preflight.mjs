@@ -66,15 +66,15 @@ check('scripts/fork-version.mjs exists', () => {
   return existsSync(resolve(ROOT, 'scripts', 'fork-version.mjs'));
 });
 
-// ── Fork directories (advisory) ──
+// ── Fork directories (advisory — reads paths from config/upstream-branches.json) ──
 
-const forkBase = resolve(homedir(), 'src', 'forks');
-const forkNames = ['ruflo', 'agentic-flow', 'ruv-FANN'];
+const upstreamConfig = JSON.parse(readFileSync(resolve(ROOT, 'config', 'upstream-branches.json'), 'utf8'));
+const forkEntries = Object.entries(upstreamConfig).filter(([n]) => n !== 'ruvector');
 
-for (const name of forkNames) {
-  check(`fork dir ~/src/forks/${name}`, () => {
-    if (existsSync(resolve(forkBase, name))) return true;
-    console.warn(`  Warning: fork directory not found — ~/src/forks/${name}`);
+for (const [name, cfg] of forkEntries) {
+  check(`fork dir ${cfg.dir}`, () => {
+    if (existsSync(cfg.dir)) return true;
+    console.warn(`  Warning: fork directory not found — ${cfg.dir}`);
     return 'warn';
   });
 }
