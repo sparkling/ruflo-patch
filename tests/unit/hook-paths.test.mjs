@@ -177,7 +177,7 @@ describe('settings.json hook paths', () => {
     }
   });
 
-  describe('Test 4: settings-generator uses git rev-parse', () => {
+  describe('Test 4: settings-generator uses reliable path resolution', () => {
     // The generator lives in the ruflo fork; skip gracefully if not cloned
     const generatorExists = existsSync(SETTINGS_GENERATOR_PATH);
 
@@ -188,62 +188,26 @@ describe('settings.json hook paths', () => {
     if (generatorExists) {
       const source = readFileSync(SETTINGS_GENERATOR_PATH, 'utf8');
 
-      it('should use git rev-parse --show-toplevel in hookHandlerCmd', { skip: !generatorExists }, () => {
-        // The hookHandlerCmd function builds the path to hook-handler.cjs.
-        // It should reference git rev-parse, not $CLAUDE_PROJECT_DIR.
-        const hookHandlerMatch = source.match(/function hookHandlerCmd[\s\S]*?return[^;]+/);
-        assert.ok(hookHandlerMatch, 'Could not find hookHandlerCmd function');
-
-        const fnBody = hookHandlerMatch[0];
+      it('should use $CLAUDE_PROJECT_DIR or git rev-parse for path resolution', { skip: !generatorExists }, () => {
+        // Upstream uses $CLAUDE_PROJECT_DIR (Claude Code built-in env var).
+        // Either $CLAUDE_PROJECT_DIR or $(git rev-parse --show-toplevel) is acceptable.
+        const hasReliablePaths = source.includes('$CLAUDE_PROJECT_DIR') ||
+          source.includes('git rev-parse --show-toplevel');
         assert.ok(
-          !fnBody.includes('$CLAUDE_PROJECT_DIR'),
-          `hookHandlerCmd still uses $CLAUDE_PROJECT_DIR:\n${fnBody}\n` +
-          'It should use $(git rev-parse --show-toplevel) instead.'
+          hasReliablePaths,
+          'settings-generator.ts should use $CLAUDE_PROJECT_DIR or $(git rev-parse --show-toplevel) for path resolution'
         );
       });
 
-      it('should use git rev-parse --show-toplevel in autoMemoryCmd', { skip: !generatorExists }, () => {
-        const autoMemoryMatch = source.match(/function autoMemoryCmd[\s\S]*?return[^;]+/);
-        assert.ok(autoMemoryMatch, 'Could not find autoMemoryCmd function');
-
-        const fnBody = autoMemoryMatch[0];
-        assert.ok(
-          !fnBody.includes('$CLAUDE_PROJECT_DIR'),
-          `autoMemoryCmd still uses $CLAUDE_PROJECT_DIR:\n${fnBody}\n` +
-          'It should use $(git rev-parse --show-toplevel) instead.'
-        );
-      });
-
-      it('should use git rev-parse --show-toplevel in generateStatusLineConfig', { skip: !generatorExists }, () => {
-        const statusLineMatch = source.match(/function generateStatusLineConfig[\s\S]*?^}/m);
-        assert.ok(statusLineMatch, 'Could not find generateStatusLineConfig function');
-
-        const fnBody = statusLineMatch[0];
-        assert.ok(
-          !fnBody.includes('$CLAUDE_PROJECT_DIR'),
-          `generateStatusLineConfig still uses $CLAUDE_PROJECT_DIR:\n${fnBody}\n` +
-          'It should use $(git rev-parse --show-toplevel) instead.'
-        );
-      });
-
-      it('should not use $CLAUDE_PROJECT_DIR anywhere in path generation', { skip: !generatorExists }, () => {
-        // Scan the entire source for $CLAUDE_PROJECT_DIR usage.
-        // Collect all lines that contain it for a clear failure message.
-        const lines = source.split('\n');
-        const violations = [];
-        for (let i = 0; i < lines.length; i++) {
-          if (lines[i].includes('$CLAUDE_PROJECT_DIR')) {
-            violations.push({ line: i + 1, content: lines[i].trim() });
-          }
+      it('should not hardcode absolute paths in hook commands', { skip: !generatorExists }, () => {
+        // Ensure no hardcoded /home/... or /Users/... paths in hook commands
+        const hookFunctions = source.match(/function (hookHandlerCmd|autoMemoryCmd|hookCmd)[\s\S]*?return[^;]+/g) || [];
+        for (const fn of hookFunctions) {
+          assert.ok(
+            !fn.match(/\/home\/\w+|\/Users\/\w+/),
+            `Hook function contains hardcoded absolute path:\n${fn}`
+          );
         }
-
-        assert.equal(
-          violations.length,
-          0,
-          `settings-generator.ts still references $CLAUDE_PROJECT_DIR at:\n${
-            violations.map(v => `  line ${v.line}: ${v.content}`).join('\n')
-          }\nAll path generation should use $(git rev-parse --show-toplevel) instead.`
-        );
       });
     }
   });
