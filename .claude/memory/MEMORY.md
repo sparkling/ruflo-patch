@@ -40,16 +40,19 @@
 
 ## Active Patches (GitHub Issues)
 
-### ruflo-patch tracker (`sparkling/ruflo-patch`) — 54 issues from full sweep (2026-03-14)
+### ruflo-patch tracker (`sparkling/ruflo-patch`) — 48 open (19 closed 2026-04-03 as fixed upstream)
 
-**Services (ruflo fork)**: HW-001 (#2), HW-002 (#3), HW-003 (#4), HW-004 (#5), DM-001 (#6), DM-002 (#7), DM-003 (#8), DM-004 (#9), DM-006 (#10), WM-108 (#11)
-**MCP hooks-tools (ruflo)**: HK-002 (#18), HK-003 (#19), HK-004 (#20), HK-005 (#21), NS-003 (#22), WM-104 (#23), WM-106 (#24), WM-107 (#25), WM-114 (#26–28)
-**MCP memory-tools (ruflo)**: NS-001 (#29), NS-002 (#30), WM-103 (#27 area), WM-105 (#28 area)
-**Commands (ruflo)**: CF-002 (#12), CF-003 (#13), CF-004 (#14), CF-006 (#15), SG-005 (#16), SG-009 (#17)
-**Init generators (ruflo)**: CF-009 (#42), SG-001 (#43), SG-003 (#44), SG-004 (#45), SG-006 (#46), SG-007 (#47), SG-008 (#48), SG-010 (#49), SG-011 (#50), SG-012 (#51), HK-001 (#52), HK-006 (#53), MM-001 (#54)
-**Memory system (ruflo)**: EM-001 (#31), GV-001 (#32), MM-002 (#33), WM-102 (#34), WM-111 (#35), WM-115 (#36), WM-116 (#37), UI-002 (#38), WM-003 (#39), IN-003 (#40), IN-004 (#41)
+**Services (ruflo fork)**: DM-004 (#9), DM-006 (#10), WM-108 (#11)
+**MCP hooks-tools (ruflo)**: HK-002 (#18), NS-003 (#22), WM-104 (#23), WM-106 (#24), WM-107 (#25), WM-114 (#26–28)
+**MCP memory-tools (ruflo)**: NS-002 (#30), WM-103 (#27 area), WM-105 (#28 area)
+**Commands (ruflo)**: CF-003 (#13), CF-006 (#15), SG-005 (#16), SG-009 (#17)
+**Init generators (ruflo)**: SG-001 (#43), SG-003 (#44), SG-004 (#45), SG-006 (#46), SG-007 (#47), SG-008 (#48), SG-010 (#49), SG-012 (#51), HK-001 (#52), HK-006 (#53), MM-001 (#54)
+**Memory system (ruflo)**: EM-001 (#31), WM-102 (#34), WM-111 (#35), WM-115 (#36), WM-116 (#37), UI-002 (#38), WM-003 (#39), IN-003 (#40), IN-004 (#41)
 **ruv-FANN fork**: RS-001 (#1)
 **ruvector fork** (`sparkling/RuVector`, dir `~/src/forks/ruvector`): RV-001 (#55), RV-002 (#56), RV-003 (#57)
+
+### Closed 2026-04-03 (fixed upstream v3.5.23–v3.5.51)
+HW-001–004 (#2-5), DM-001–003 (#6-8), CF-002 (#12), CF-004 (#14), HK-003–005 (#19-21), NS-001 (#22→29), GV-001 (#32), MM-002 (#33), CF-009 (#42), SG-011 (#50), AN-001 (#59), OPT-001/002 (#74)
 
 ### Previous ruflo fork patches (`sparkling/ruflo` issues, all closed)
 - **Closed 2026-03-13**: MC-001 (#1, PR #14), SG-004 (#13, PR #10), TS-001 (#11, PR #12), GB-001 (#15, PR #16), SG-003 (#4, not-needed)
@@ -100,8 +103,9 @@
 
 See `docs/pipeline-reference.md` for full failure history and details.
 
-## Full Sweep History
+## Sync History
 
+- [Upstream sync 2026-04-03](project-upstream-sync-2026-04-03.md) — ruflo 52 commits, ruvector 228 commits, 19 patches closed
 - [Full patch sweep 2026-03-14](project-full-sweep-2026-03-14.md) — ported 54/146 patches from claude-flow-patch to fork model
 
 ## Feedback
