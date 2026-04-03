@@ -175,3 +175,52 @@ check_init_topology() {
   [[ "$start_ns" != "0" && "$end_ns" != "0" ]] && _DURATION_MS=$(( (end_ns - start_ns) / 1000000 )) || _DURATION_MS=0
   _OUT="$_CHECK_OUTPUT"
 }
+
+check_init_config_values() {
+  local start_ns end_ns
+  start_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _CHECK_PASSED="false"
+
+  local config_json="$TEMP_DIR/.claude-flow/config.json"
+  if [[ ! -f "$config_json" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="No config.json to validate values"
+  else
+    local issues=""
+    local vals
+    vals=$(node -e "
+      const c=JSON.parse(require('fs').readFileSync('$config_json','utf8'));
+      const m=c.memory||{};
+      console.log([
+        m.cacheSize||0,
+        (m.memoryGraph||{}).maxNodes||0,
+        (m.learningBridge||{}).sonaMode||'',
+        m.enableHNSW===true?'true':'false',
+        (m.learningBridge||{}).enabled===true?'true':'false',
+      ].join('|'));
+    " 2>/dev/null) || vals=""
+    IFS='|' read -r cache nodes sona hnsw lb <<< "$vals"
+    # cacheSize should be set by init, not fall back to 0
+    [[ "${cache:-0}" -gt 0 ]] || issues="${issues}cacheSize=0 "
+    # maxNodes should be set
+    [[ "${nodes:-0}" -gt 0 ]] || issues="${issues}maxNodes=0 "
+    # sonaMode should be a known value
+    [[ "$sona" == "balanced" || "$sona" == "instant" || "$sona" == "real-time" ]] || issues="${issues}sonaMode='${sona}' "
+    # HNSW should be enabled
+    [[ "$hnsw" == "true" ]] || issues="${issues}enableHNSW=false "
+    # learningBridge should be enabled
+    [[ "$lb" == "true" ]] || issues="${issues}learningBridge=false "
+
+    if [[ -z "$issues" ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Config values OK: cache=${cache}, nodes=${nodes}, sona=${sona}, hnsw=${hnsw}, lb=${lb}"
+    else
+      _CHECK_OUTPUT="Config value issues: ${issues}(cache=${cache}, nodes=${nodes}, sona=${sona})"
+    fi
+  fi
+
+  end_ns=$(date +%s%N 2>/dev/null || echo 0)
+  _EXIT=0
+  [[ "$start_ns" != "0" && "$end_ns" != "0" ]] && _DURATION_MS=$(( (end_ns - start_ns) / 1000000 )) || _DURATION_MS=0
+  _OUT="$_CHECK_OUTPUT"
+}

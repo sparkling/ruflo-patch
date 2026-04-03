@@ -63,6 +63,25 @@ _elapsed_ms() {
   if [[ "$s" != "0" && "$e" != "0" ]]; then echo $(( (e - s) / 1000000 )); else echo 0; fi
 }
 
+# ── Portable timeout (macOS lacks coreutils timeout) ──────────────
+if command -v timeout >/dev/null 2>&1; then
+  _timeout() { timeout --signal=KILL "$@"; }
+elif command -v gtimeout >/dev/null 2>&1; then
+  _timeout() { gtimeout --signal=KILL "$@"; }
+else
+  _timeout() {
+    local secs="$1"; shift
+    bash -c "$*" &
+    local pid=$!
+    ( sleep "$secs" && kill -9 "$pid" 2>/dev/null ) &
+    local watchdog=$!
+    wait "$pid" 2>/dev/null
+    local rc=$?
+    kill "$watchdog" 2>/dev/null; wait "$watchdog" 2>/dev/null
+    return $rc
+  }
+fi
+
 # ── Source acceptance harness framework ────────────────────────────
 source "${PROJECT_DIR}/lib/acceptance-harness.sh"
 
@@ -163,9 +182,9 @@ fi
 log "Running harness: init --full --force"
 # CLI process hangs after init (open SQLite handles from 42-controller registry).
 # Use timeout+KILL but verify success by checking output files, not exit code.
-_init_out=$(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout --signal=KILL 120 "$CLI_BIN" init --full --force 2>&1) || true
-if [[ ! -f "${ACCEPT_TEMP}/.claude-flow/config.json" ]]; then
-  log_error "Harness: init --full failed (no config.json created)"
+_init_out=$(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" _timeout 120 "$CLI_BIN" init --full --force 2>&1) || true
+if [[ ! -f "${ACCEPT_TEMP}/.claude-flow/config.json" && ! -f "${ACCEPT_TEMP}/.claude-flow/config.yaml" ]]; then
+  log_error "Harness: init --full failed (no config.json or config.yaml created)"
   exit 1
 fi
 
@@ -192,7 +211,7 @@ while (( $(echo "$_harness_elapsed < $_harness_max" | bc) )); do
   fi
 done
 kill "$_harness_mem_pid" 2>/dev/null && wait "$_harness_mem_pid" 2>/dev/null || true
-sed -i '/__RUFLO_DONE__/d' "$_harness_mem_tmpfile"
+sed '/__RUFLO_DONE__/d' "$_harness_mem_tmpfile" > "${_harness_mem_tmpfile}.tmp" && mv "${_harness_mem_tmpfile}.tmp" "$_harness_mem_tmpfile"
 _harness_mem_out=$(cat "$_harness_mem_tmpfile" 2>/dev/null)
 rm -f "$_harness_mem_tmpfile"
 
@@ -224,7 +243,7 @@ run_timed() {
   local t_start t_end
   t_start=$(date +%s%N 2>/dev/null || echo 0)
   # Use --signal=KILL to force-kill hung processes (CLI keeps SQLite handles open)
-  _OUT="$(timeout --signal=KILL 60 bash -c "$*" 2>&1)" || true
+  _OUT="$(_timeout 120 bash -c "$*" 2>&1)" || true
   _EXIT=${PIPESTATUS[0]:-$?}
   t_end=$(date +%s%N 2>/dev/null || echo 0)
   [[ "$t_start" == "0" || "$t_end" == "0" ]] && _DURATION_MS=0 || _DURATION_MS=$(( (t_end - t_start) / 1000000 ))
@@ -375,10 +394,11 @@ run_check_bg "init-helpers"      "Helper syntax"              check_init_helper_
 run_check_bg "init-persist"      "No persistPath (MM-001)"    check_init_no_persist_path   "init"
 run_check_bg "init-perms"        "Permission globs (SG-001)"  check_init_permission_globs  "init"
 run_check_bg "init-topology"     "Topology (SG-011)"          check_init_topology          "init"
+run_check_bg "init-config-vals"  "Config values"              check_init_config_values     "init"
 collect_parallel "init" \
   "init-config-fmt|Config format (SG-008)" "init-helpers|Helper syntax" \
   "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
-  "init-topology|Topology (SG-011)"
+  "init-topology|Topology (SG-011)" "init-config-vals|Config values"
 _record_phase "group-init" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
@@ -451,8 +471,8 @@ else
   _e2e_causal_edge() {
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
-    # Upstream renamed tool: agentdb_causal_edge -> agentdb_causal-edge (hyphenated)
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_causal-edge --params '{\"cause\":\"init\",\"effect\":\"working project\",\"uplift\":0.9}'"
+    # Upstream renamed tool: agentdb_causal_edge -> agentdb_causal_edge (hyphenated)
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_causal_edge --params '{\"cause\":\"init\",\"effect\":\"working project\",\"uplift\":0.9}'"
     if echo "$_RK_OUT" | grep -qi 'success\|recorded\|true'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Causal edge accepted in init'd project"

@@ -5,6 +5,7 @@
       "level": 1,
       "description": "No internal dependencies (only @ruvector/* from public npm)",
       "packages": [
+        "@sparkleideas/ruvector",
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
         "@sparkleideas/ruv-swarm",

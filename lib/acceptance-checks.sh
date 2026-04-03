@@ -79,7 +79,7 @@ _run_and_kill() {
   kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null || true
 
   # Strip sentinel from output
-  sed -i '/__RUFLO_DONE__/d' "$out_file"
+  sed '/__RUFLO_DONE__/d' "$out_file" > "${out_file}.tmp" && mv "${out_file}.tmp" "$out_file"
 
   # Set output variable for callers
   _RK_OUT=$(cat "$out_file")

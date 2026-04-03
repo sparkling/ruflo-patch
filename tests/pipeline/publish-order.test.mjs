@@ -26,6 +26,7 @@ const TOTAL_PACKAGES = LEVELS.flat().length;
 // and the validation test allows deps at level <= N.
 const KNOWN_DEPS = {
   // Level 1 — no internal deps
+  '@sparkleideas/ruvector': [],
   '@sparkleideas/agentdb': [],
   '@sparkleideas/agentic-flow': [],
   '@sparkleideas/ruv-swarm': [],
@@ -166,18 +167,18 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (6+5+7+22+2)', () => {
+    it('all expected packages are present across all levels (7+5+7+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0021/0022: L1=5 (cuda-wasm removed), L2=5, L3=7, L4=22, L5=2
-      assert.equal(LEVELS[0].length, 5, 'Level 1 should have 5 packages');
+      // ADR-0014 + ADR-0021/0022 + PB-001: L1=6 (+ruvector), L2=5, L3=7, L4=22, L5=2
+      assert.equal(LEVELS[0].length, 6, 'Level 1 should have 6 packages');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
       assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
       assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        41,
-        `Expected 41 packages total, got ${allPackages.length}`
+        42,
+        `Expected 42 packages total, got ${allPackages.length}`
       );
     });
 

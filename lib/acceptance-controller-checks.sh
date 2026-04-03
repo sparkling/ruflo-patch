@@ -138,15 +138,15 @@ check_causal_graph() {
   _CHECK_OUTPUT=""
 
   # Query causal graph (harness already ran memory init)
-  # Upstream renamed tools: agentdb_causal_query -> agentdb_causal-query (hyphenated)
+  # Upstream renamed tools: agentdb_causal_query -> agentdb_causal_query (hyphenated)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_causal-query \
+    --tool agentdb_causal_query \
     --params '{\"cause\":\"refactor tests\"}'"
   local query_out="$_RK_OUT"
 
   # Add a causal edge (hyphenated tool name)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_causal-edge \
+    --tool agentdb_causal_edge \
     --params '{\"cause\":\"refactor\",\"effect\":\"fewer bugs\",\"uplift\":0.7}'"
   local edge_out="$_RK_OUT"
 

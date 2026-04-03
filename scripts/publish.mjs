@@ -161,11 +161,14 @@ function buildPackageMap(buildDir) {
         try {
           const pkg = JSON.parse(readFileSync(fullPath, 'utf-8'));
           if (pkg.name) {
-            // Skip npm/ subdirectory packages — these are thin wrappers
-            // that depend on unpublished @agent-booster/* packages.
-            // The parent directory bundles WASM/dist directly.
+            // Prefer non-private packages over private ones (e.g. ruvector
+            // root is private: true but npm/packages/ruvector/ is publishable).
+            // For non-private duplicates, prefer parent over npm/ subdirectory.
             const existing = map.get(pkg.name);
-            if (!existing || !dir.includes('/npm/')) {
+            const existingPkg = existing
+              ? JSON.parse(readFileSync(resolve(existing, 'package.json'), 'utf-8'))
+              : null;
+            if (!existing || existingPkg?.private || (!pkg.private && !dir.includes('/npm/'))) {
               map.set(pkg.name, dir);
             }
           }

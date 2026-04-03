@@ -33,7 +33,9 @@ const SCOPES = ['@sparkleideas/', '@claude-flow/'];
 const UNSCOPED_PUBLISHABLE = new Set([
   'agentdb',
   'agentic-flow',
+  'claude-flow',
   'ruv-swarm',
+  'ruvector',
   'agent-booster',
   'agentdb-onnx',
   'cuda-wasm',
