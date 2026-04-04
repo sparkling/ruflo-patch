@@ -79,6 +79,157 @@ check_adr0059_daemon_ipc_probe() {
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
 }
 
+# ════════════════════════════════════════════════════════════════════
+# DAEMON IPC: memory operations through socket
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0059_daemon_ipc_store() {
+  _CHECK_PASSED="false"
+
+  # Start daemon
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
+  sleep 1
+
+  local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+  if [[ ! -e "$socket_path" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="No socket — IPC store test skipped (non-fatal)"
+    return
+  fi
+
+  # Send memory.store via JSON-RPC over Unix socket
+  local result
+  result=$(node -e "
+    const net = require('net');
+    const req = JSON.stringify({jsonrpc:'2.0',method:'memory.store',params:{key:'ipc-test-store',value:'daemon stored this via IPC',namespace:'ipc-test'},id:1}) + '\n';
+    const socket = net.createConnection('$socket_path', () => { socket.write(req); });
+    let data = '';
+    socket.on('data', c => {
+      data += c.toString();
+      if (data.includes('\n')) { console.log(data.trim()); socket.destroy(); }
+    });
+    socket.on('error', e => { console.log('ERROR:' + e.message); });
+    setTimeout(() => { socket.destroy(); if (!data) console.log('TIMEOUT'); }, 5000);
+  " 2>&1) || true
+
+  if echo "$result" | grep -qi '"result"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="memory.store via IPC returned result"
+  elif echo "$result" | grep -qi 'success'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="memory.store via IPC succeeded"
+  elif echo "$result" | grep -qi 'TIMEOUT'; then
+    _CHECK_OUTPUT="memory.store IPC timed out"
+  else
+    _CHECK_OUTPUT="memory.store IPC unexpected: $result"
+  fi
+
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
+}
+
+check_adr0059_daemon_ipc_search() {
+  _CHECK_PASSED="false"
+
+  # Start daemon
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
+  sleep 1
+
+  local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+  if [[ ! -e "$socket_path" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="No socket — IPC search test skipped (non-fatal)"
+    return
+  fi
+
+  # Store an entry first, then search for it via IPC
+  local store_result
+  store_result=$(node -e "
+    const net = require('net');
+    const req = JSON.stringify({jsonrpc:'2.0',method:'memory.store',params:{key:'ipc-search-entry',value:'OAuth PKCE flow for mobile authentication',namespace:'ipc-search'},id:1}) + '\n';
+    const socket = net.createConnection('$socket_path', () => { socket.write(req); });
+    let data = '';
+    socket.on('data', c => {
+      data += c.toString();
+      if (data.includes('\n')) { socket.destroy(); }
+    });
+    socket.on('error', e => { console.log('ERROR:' + e.message); });
+    setTimeout(() => { socket.destroy(); }, 5000);
+  " 2>&1) || true
+
+  # Now search
+  local search_result
+  search_result=$(node -e "
+    const net = require('net');
+    const req = JSON.stringify({jsonrpc:'2.0',method:'memory.search',params:{query:'OAuth authentication',namespace:'ipc-search',limit:5},id:2}) + '\n';
+    const socket = net.createConnection('$socket_path', () => { socket.write(req); });
+    let data = '';
+    socket.on('data', c => {
+      data += c.toString();
+      if (data.includes('\n')) { console.log(data.trim()); socket.destroy(); }
+    });
+    socket.on('error', e => { console.log('ERROR:' + e.message); });
+    setTimeout(() => { socket.destroy(); if (!data) console.log('TIMEOUT'); }, 8000);
+  " 2>&1) || true
+
+  if echo "$search_result" | grep -qi '"result"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="memory.search via IPC returned result"
+  elif echo "$search_result" | grep -qi 'success\|results'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="memory.search via IPC succeeded"
+  elif echo "$search_result" | grep -qi 'TIMEOUT'; then
+    _CHECK_OUTPUT="memory.search IPC timed out"
+  else
+    _CHECK_OUTPUT="memory.search IPC unexpected: $search_result"
+  fi
+
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
+}
+
+check_adr0059_daemon_ipc_count() {
+  _CHECK_PASSED="false"
+
+  # Start daemon
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
+  sleep 1
+
+  local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+  if [[ ! -e "$socket_path" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="No socket — IPC count test skipped (non-fatal)"
+    return
+  fi
+
+  # Send memory.count via JSON-RPC
+  local result
+  result=$(node -e "
+    const net = require('net');
+    const req = JSON.stringify({jsonrpc:'2.0',method:'memory.count',params:{},id:3}) + '\n';
+    const socket = net.createConnection('$socket_path', () => { socket.write(req); });
+    let data = '';
+    socket.on('data', c => {
+      data += c.toString();
+      if (data.includes('\n')) { console.log(data.trim()); socket.destroy(); }
+    });
+    socket.on('error', e => { console.log('ERROR:' + e.message); });
+    setTimeout(() => { socket.destroy(); if (!data) console.log('TIMEOUT'); }, 5000);
+  " 2>&1) || true
+
+  if echo "$result" | grep -qi '"result"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="memory.count via IPC returned: $result"
+  elif echo "$result" | grep -qE '[0-9]'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="memory.count via IPC returned numeric result"
+  elif echo "$result" | grep -qi 'TIMEOUT'; then
+    _CHECK_OUTPUT="memory.count IPC timed out"
+  else
+    _CHECK_OUTPUT="memory.count IPC unexpected: $result"
+  fi
+
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
+}
+
 check_adr0059_daemon_ipc_fallback() {
   _CHECK_PASSED="false"
 

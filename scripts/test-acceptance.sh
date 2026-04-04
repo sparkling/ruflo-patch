@@ -562,6 +562,9 @@ else
     if [[ -f "$adr0059_p4_lib" ]]; then
       run_check_bg "e2e-0059-p4-socket-exists"  "Daemon IPC socket exists"    check_adr0059_daemon_ipc_socket_exists   "adr0059-p4"
       run_check_bg "e2e-0059-p4-ipc-probe"      "Daemon IPC probe"            check_adr0059_daemon_ipc_probe           "adr0059-p4"
+      run_check_bg "e2e-0059-p4-store"           "Daemon IPC store"            check_adr0059_daemon_ipc_store           "adr0059-p4"
+      run_check_bg "e2e-0059-p4-search"          "Daemon IPC search"           check_adr0059_daemon_ipc_search          "adr0059-p4"
+      run_check_bg "e2e-0059-p4-count"           "Daemon IPC count"            check_adr0059_daemon_ipc_count           "adr0059-p4"
       run_check_bg "e2e-0059-p4-fallback"        "Daemon IPC fallback"         check_adr0059_daemon_ipc_fallback        "adr0059-p4"
     fi
   fi
@@ -592,6 +595,9 @@ else
       _e2e_specs+=(
         "e2e-0059-p4-socket-exists|Daemon IPC socket exists"
         "e2e-0059-p4-ipc-probe|Daemon IPC probe"
+        "e2e-0059-p4-store|Daemon IPC store"
+        "e2e-0059-p4-search|Daemon IPC search"
+        "e2e-0059-p4-count|Daemon IPC count"
         "e2e-0059-p4-fallback|Daemon IPC fallback"
       )
     fi
