@@ -1,11 +1,11 @@
 # ADR-0059: RVF Native Storage Backend (Patch-Level Implementation)
 
-**Status**: Proposed (under review — see Open Questions)
+**Status**: Proposed
 **Date**: 2026-04-03
-**Updated**: 2026-04-04 (v2 — dependency audit + open questions)
+**Updated**: 2026-04-04 (v3 — upstream intent confirmed, open questions resolved)
 **Deciders**: ruflo-patch maintainers
-**Methodology**: SPARC + hive-mind analysis (4 experts, collective synthesis)
-**Upstream ADR**: upstream:ADR-057 (RVF Native Storage, status: Proposed)
+**Methodology**: SPARC + hive-mind analysis (8 experts across 2 hives, collective synthesis)
+**Upstream ADRs**: upstream-ruflo:ADR-057 (RVF replaces sql.js for vectors/KV), upstream-agentic:ADR-057 (Full SQLite + RuVector for AgentDB)
 
 ---
 
@@ -15,11 +15,22 @@
 
 The P0 bridge bug documented in ADR-0058 prevents the JSON cache from draining into AgentDB. The root cause is `auto-memory-hook.mjs` line 235: `createBackend("hybrid")` instantiates `AgentDBBackend`, which targets `.swarm/agentdb-memory.rvf`. `AgentDBBackend` internally requires the full AgentDB stack (SQLite + sql.js + embedding service + controller registry), and when any piece fails to initialize, it silently degrades to an in-memory store. The drain writes to RAM, the process exits, data is lost.
 
-Upstream ADR-057 proposes replacing SQLite with RVF for all AgentDB storage. Our analysis finds this is a misframing of what has actually been built. The correct reframing:
+There are **two upstream ADR-057 documents** in different repos with different scopes:
 
-> **RVF handles vectors + key-value storage. SQLite keeps relational data.**
+| Document | Repo | Scope | Intent |
+|----------|------|-------|--------|
+| **upstream-ruflo:ADR-057** | ruflo | `@claude-flow/memory`, `shared`, `embeddings` | Replace sql.js (18MB WASM) with RVF for 3 non-relational consumers |
+| **upstream-agentic:ADR-057** | agentic-flow | AgentDB controllers | "Full SQLite + RuVector" — SQLite stays for relational data |
 
-The hybrid architecture is already the design. The gap is in the **session/hook bridge layer** where `AgentDBBackend` (which pulls in the entire 18MB sql.js stack) should be swapped for `RvfBackend` or `SqlJsRvfBackend` (which are self-contained vector stores that create `.rvf` files directly).
+upstream-ruflo:ADR-057 analysed the three sql.js consumers (1,767 lines total): EventStore, SqlJsBackend, PersistentCache. These are KV stores with BLOB vectors — no JOINs, no CTEs, no triggers. RVF maps 1:1 to these. The ADR explicitly designs RVF as their replacement.
+
+The 24 relational tables (episodes, skills, causal_edges, reflexion_sessions) are in the `agentdb` package (agentic-flow repo). upstream-agentic:ADR-057 says "Full SQLite + RuVector" — SQLite stays. Nobody proposed replacing those tables.
+
+The correct architecture is:
+
+> **RVF for vectors/KV/events (`@claude-flow/memory`). SQLite for relational data (`agentdb`).**
+
+This is not our interpretation — it is the upstream design across both repos. The gap is in the **session/hook bridge layer** where `AgentDBBackend` (which pulls in the full SQLite + AgentDB controller stack) is used for what is fundamentally a vector-store operation. It should be `RvfBackend` or `SqlJsRvfBackend` (self-contained vector stores that create `.rvf` files directly).
 
 ### What Exists (Upstream Code Audit)
 
@@ -350,7 +361,8 @@ Phase 4 (remove sql.js) is explicitly out of scope. RVF does not replace SQLite.
 | **ADR-0056** (MCP Unified Backend) | Phase 3 of this ADR completes ADR-0056 |
 | **ADR-0054** (RuVector Pipeline) | Provides `@ruvector/rvf` packages this ADR depends on |
 | **ADR-0052** (Embedding Config) | Provides dimension configuration used by RvfBackend |
-| **upstream:ADR-057** (RVF Storage) | This ADR is our interpretation/implementation |
+| **upstream-ruflo:ADR-057** (RVF Storage) | Phase 1 implements this — swap sql.js consumers to RVF |
+| **upstream-agentic:ADR-057** (Deep Integration) | Confirms SQLite stays for relational AgentDB tables |
 | **upstream:ADR-050** (Intelligence Loop) | Bridge fix restores the WAL pattern designed there |
 
 ## Fork Dependency Audit (2026-04-04)
@@ -375,18 +387,35 @@ All 5 in-place session commits (dedup guard, config defaults, ControllerRegistry
 
 `auto-memory-hook.mjs` was never modified this session — clean target for Phase 1.
 
-## Open Questions
+## Resolved Questions (v3, 2026-04-04)
 
-> **IMPORTANT**: This ADR's reframing — "RVF handles vectors + KV, SQLite keeps relational" — is our interpretation based on code analysis. It may not match the upstream author's original intent.
+Questions raised in v2 have been resolved by a dedicated investigation hive (5 experts reading the full 1512-line upstream ADR, upstream code, upstream issues, and both repos' ADR-057 documents).
 
-upstream:ADR-057 explicitly states "RVF replaces SQLite" across all consumers. Our AgentDB expert found this is impractical (24 tables, JOINs, CTEs, triggers). But we may be wrong:
+### Q1: Did the upstream author intend a full SQL replacement?
 
-1. **Did the upstream author intend a full SQL replacement?** The ADR lists 8 phases including "Phase 8: Remove sql.js". If so, our hybrid interpretation fights the design.
-2. **Is there a KV/document model for relational data planned upstream?** Some of the 24 tables could be modelled as RVF KV segments instead of SQL.
-3. **Are our fork patches (especially WM-003) implementing the wrong backend?** WM-003 changed to AgentDBBackend; upstream may have intended RvfBackend all along.
-4. **Does `db-unified.ts` in upstream represent the intended migration path?** It exists but is not adopted by the MCP server.
+**No.** upstream-ruflo:ADR-057 targets three specific non-relational sql.js consumers (1,767 lines): EventStore, SqlJsBackend, PersistentCache. These use SQLite as a KV store with BLOB vectors — no JOINs, no CTEs, no triggers. The ADR does not mention AgentDB's 24 relational tables. "Phase 8: Remove sql.js" means demote to optional lazy-loaded dependency for legacy `.db` reads, not remove SQLite from all usage.
 
-These questions require reading upstream:ADR-057 in its entirety and checking upstream commits/issues for the author's intent. See follow-up investigation.
+The agentic-flow repo's own ADR-057 explicitly states "Full SQLite + RuVector" as the achieved persistence model. Nobody proposed replacing relational tables.
+
+### Q2: Is there a KV/document model for relational data planned upstream?
+
+**No.** upstream-agentic:ADR-057 mentions `@ruvector/graph-node` with Cypher queries as a future graph model, but the implementation section shows "Full SQLite + RuVector" as the current state. No plan to remove SQLite for relational data.
+
+### Q3: Are our fork patches (especially WM-003) implementing the wrong backend?
+
+**Yes — WM-003 selected the wrong class.** WM-003 chose `AgentDBBackend` (which pulls in the full SQLite + controller stack) for what is a vector-store operation. The upstream design calls for `RvfBackend` or `SqlJsRvfBackend` in the hook bridge path. Phase 1 of this ADR corrects this.
+
+WM-003 made the right tactical decision (single backend, no dual-write) with the wrong class. It is not "fighting the design" — it is implementing the right idea with the wrong tool.
+
+### Q4: Does `db-unified.ts` represent the intended migration path?
+
+**Yes, but for a different layer.** `db-unified.ts` implements "GraphDatabase primary, SQLite fallback" for the MCP server — not for the hook bridge. The hook bridge should use `RvfBackend` directly (lightweight, no full stack). `db-unified.ts` adoption is Phase 3 territory.
+
+Note: `db-unified.ts` was not found at the expected path in the upstream tree. It may have been renamed to `database-provider.ts` or is in the agentdb package.
+
+### Conclusion
+
+Our architecture (RVF for vectors, SQLite for relational) aligns with the upstream design across both repos. Phase 1 (swap `AgentDBBackend` → `RvfBackend`) is the upstream-intended fix, not a workaround.
 
 ## Related
 
