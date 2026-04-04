@@ -110,6 +110,24 @@ npm run publish:fork      # Detect merged PRs, version bump, build, publish
 
 Never treat acceptance tests as optional or "later" work. The framework exists — use it.
 
+#### Fast acceptance runner (iterating on specific checks)
+
+For debugging or iterating on acceptance check code without rebuilding packages:
+
+```bash
+# Run Phase 3+4 checks only (~90s, reuses existing temp dirs)
+bash scripts/test-acceptance-fast.sh p3,p4
+
+# Run all ADR-0059 checks (Phase 1-4, 18 checks)
+bash scripts/test-acceptance-fast.sh all
+
+# Run specific groups
+bash scripts/test-acceptance-fast.sh p3        # Phase 3 only
+bash scripts/test-acceptance-fast.sh adr0059   # Phase 1+2 only
+```
+
+Requires Verdaccio running and packages published (from a prior `npm run test:acceptance`). Reuses existing `/tmp/ruflo-accept-*` and `/tmp/ruflo-e2e-*` dirs. Runs checks sequentially (no subshell — reliable variable propagation).
+
 #### Running tests: ALL THREE levels every time
 
 When asked to run/test/verify, ALWAYS run all available levels:

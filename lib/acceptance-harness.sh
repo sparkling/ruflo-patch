@@ -88,13 +88,15 @@ BG_PIDS=()
 run_check_bg() {
   local id="$1" name="$2" fn="$3" group="$4"
   (
+    set +u  # disable strict unset — check functions may leave vars unset in helper chains
+    _CHECK_PASSED="false"; _CHECK_OUTPUT=""
     local c_start c_end c_ms=0
     c_start=$(_ns)
-    "$fn"
+    "$fn" || true  # don't let function failure crash subshell
     c_end=$(_ns)
     c_ms=$(_elapsed_ms "$c_start" "$c_end")
     local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")
-    echo "${_CHECK_PASSED}|${c_ms}|${escaped}" > "${PARALLEL_DIR}/${id}"
+    echo "${_CHECK_PASSED:-false}|${c_ms:-0}|${escaped}" > "${PARALLEL_DIR}/${id}"
   ) &
   BG_PIDS+=($!)
 }
