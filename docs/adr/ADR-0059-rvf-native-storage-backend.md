@@ -1,755 +1,303 @@
-# ADR-0059: RVF Native Storage Backend (Patch-Level Implementation)
+# ADR-0059: RVF Native Storage Backend
 
-**Status**: Proposed (decision finalised v10, not yet implemented)
-**Date**: 2026-04-03
-**Updated**: 2026-04-04 (v3 — upstream intent confirmed, open questions resolved)
-**Deciders**: ruflo-patch maintainers
-**Methodology**: SPARC + hive-mind analysis (8 experts across 2 hives, collective synthesis)
-**Upstream ADRs**: upstream-ruflo:ADR-057 (RVF replaces sql.js for vectors/KV), upstream-agentic:ADR-057 (Full SQLite + RuVector for AgentDB)
+- **Status**: Proposed (decision finalised, not yet implemented)
+- **Date**: 2026-04-03
+- **Updated**: 2026-04-04 (v12 — clean rewrite from 11 iterations)
+- **Deciders**: ruflo-patch maintainers
+- **Methodology**: SPARC + multi-agent swarm analysis (8 hives, 30+ experts)
 
----
+## Architecture
 
-## S - Specification
-
-### Problem
-
-The P0 bridge bug documented in ADR-0058 prevents the JSON cache from draining into AgentDB. The root cause is `auto-memory-hook.mjs` line 235: `createBackend("hybrid")` instantiates `AgentDBBackend`, which targets `.swarm/agentdb-memory.rvf`. `AgentDBBackend` internally requires the full AgentDB stack (SQLite + sql.js + embedding service + controller registry), and when any piece fails to initialize, it silently degrades to an in-memory store. The drain writes to RAM, the process exits, data is lost.
-
-There are **two upstream ADR-057 documents** in different repos with different scopes:
-
-| Document | Repo | Scope | Intent |
-|----------|------|-------|--------|
-| **upstream-ruflo:ADR-057** | ruflo | `@claude-flow/memory`, `shared`, `embeddings` | Replace sql.js (18MB WASM) with RVF for 3 non-relational consumers |
-| **upstream-agentic:ADR-057** | agentic-flow | AgentDB controllers | "Full SQLite + RuVector" — SQLite stays for relational data |
-
-upstream-ruflo:ADR-057 analysed the three sql.js consumers (1,767 lines total): EventStore, SqlJsBackend, PersistentCache. These are KV stores with BLOB vectors — no JOINs, no CTEs, no triggers. RVF maps 1:1 to these. The ADR explicitly designs RVF as their replacement.
-
-The 24 relational tables (episodes, skills, causal_edges, reflexion_sessions) are in the `agentdb` package (agentic-flow repo). upstream-agentic:ADR-057 says "Full SQLite + RuVector" — SQLite stays. Nobody proposed replacing those tables.
-
-The correct architecture is:
-
-> **RVF for vectors/KV/events (`@claude-flow/memory`). SQLite for relational data (`agentdb`).**
-
-This is not our interpretation — it is the upstream design across both repos. The gap is in the **session/hook bridge layer** where `AgentDBBackend` (which pulls in the full SQLite + AgentDB controller stack) is used for what is fundamentally a vector-store operation. It should be `RvfBackend` or `SqlJsRvfBackend` (self-contained vector stores that create `.rvf` files directly).
-
-### What Exists (Upstream Code Audit)
-
-| Component | File | Lines | Status |
-|-----------|------|------:|--------|
-| **RvfBackend** (native N-API + WASM) | `packages/agentdb/src/backends/rvf/RvfBackend.ts` | 695 | Complete |
-| **SqlJsRvfBackend** (zero-dep fallback) | `packages/agentdb/src/backends/rvf/SqlJsRvfBackend.ts` | ~400 | Complete |
-| **SelfLearningRvfBackend** | `packages/agentdb/src/backends/rvf/SelfLearningRvfBackend.ts` | 414 | Complete |
-| **Backend factory** | `packages/agentdb/src/backends/factory.ts` | 411 | Complete, selects RVF |
-| **RVF SDK** (`@ruvector/rvf`) | `ruvector/npm/packages/rvf/src/` | ~800 | Complete, published |
-| **NodeBackend** (NAPI wrapper) | `ruvector/npm/packages/rvf/src/backend.ts` | 790 | Complete |
-| **WasmBackend** (browser) | same file | (included) | Complete |
-| **RvfDatabase** (user-facing API) | `ruvector/npm/packages/rvf/src/database.ts` | 291 | Complete |
-| **db-unified.ts** (mode selector) | `packages/agentdb/src/db-unified.ts` | ~250 | Complete, not adopted by MCP |
-| **FilterBuilder** | `packages/agentdb/src/backends/rvf/FilterBuilder.ts` | ~200 | Complete |
-| **ID mapping sidecar** | NodeBackend internal | (included) | Complete |
-
-**Key finding**: RVF is ~85% implemented in upstream code. The missing piece is not code -- it is wiring. The existing `RvfBackend` and `SqlJsRvfBackend` are not used by the hook bridge that controls the session drain path.
-
-### What RVF Cannot Replace
-
-SQLite serves 24 tables with JOINs, foreign keys, recursive CTEs, triggers, and 1,085 SQL occurrences across 81 files in the agentdb package. These are:
-
-- `episodes`, `skills`, `causal_edges` (with foreign keys)
-- `reflexion_sessions`, `reflexion_entries` (with recursive CTEs)
-- `nightly_learner_insights`, `consolidation_log` (with triggers)
-- Migration tracking, session state, hierarchical memory
-
-RVF is a vector container with HNSW indexing and metadata filtering. It has no SQL engine, no JOINs, no triggers. Replacing SQLite for relational data would require rewriting the entire agentdb controller layer.
-
-### Quality Attributes
-
-| Attribute | Requirement |
-|-----------|-------------|
-| Correctness | Bridge drain creates `.rvf` files that persist across sessions |
-| Backward compatibility | Existing `.db` files continue working unchanged |
-| Size reduction | Hook bridge does not pull in 18MB sql.js for vector-only operations |
-| Failure transparency | No silent degradation to in-memory stores |
-
----
-
-## P - Pseudocode (Design)
-
-### Minimal fix (Phase 1): Wire RvfBackend into the bridge
+Two stores, one bridge, zero in-process reconciliation.
 
 ```
-# In auto-memory-hook.mjs createBackend():
-# BEFORE:
-new memPkg.AgentDBBackend({
-  dbPath: join(swarmDir, 'agentdb-memory.rvf'),
-  vectorBackend: config.agentdb.vectorBackend || 'auto',
-  enableLearning: config.agentdb.enableLearning !== false,
-})
-
-# AFTER:
-# Try SqlJsRvfBackend first (always available, creates .rvf files)
-# Fall back to JsonFileBackend if even that fails
-if (memPkg.SqlJsRvfBackend) {
-  backend = new memPkg.SqlJsRvfBackend({
-    dimension: config.agentdb?.vectorDimension || 384,
-    storagePath: join(swarmDir, 'agentdb-memory.rvf'),
-    metric: 'cosine',
-  })
-  await backend.initialize()
-  return { backend, isRvf: true }
-}
-# else: fall through to AgentDBBackend with better error handling
+Hook → RvfBackend → .swarm/agentdb-memory.rvf  (vectors/KV, atomic persist)
+CLI  → memory-bridge → .swarm/memory.db         (relational, 24 tables, full AgentDB)
+Both → AutoMemoryBridge → MEMORY.md              (session-boundary reconciliation)
 ```
 
-### Phase 2: Adapter (RvfBackend as IMemoryBackend)
+| Store | File | Owner | Format | Purpose |
+|-------|------|-------|--------|---------|
+| Hook store | `.swarm/agentdb-memory.rvf` | Hook subprocess | RVF binary | Fast vector/KV writes during session |
+| CLI store | `.swarm/memory.db` | CLI/MCP | SQLite | Relational data, controllers, embeddings |
+| Reconciliation | `MEMORY.md` + topic files | AutoMemoryBridge | Markdown | Session-boundary sync, human-readable |
+| Session cache | `.claude-flow/data/*.json` | CJS intelligence | JSON | Intra-session PageRank/context (ephemeral) |
 
-The hook bridge expects `IMemoryBackend` (store/get/query/delete/shutdown). `RvfBackend` implements `VectorBackendAsync` (insert/search/remove/close). An adapter bridges the interface gap:
+This is the upstream-intended architecture per upstream-ruflo:ADR-048 (auto-memory bridge), upstream-ruflo:ADR-057 (RVF for vectors), and upstream-agentic:ADR-057 ("Full SQLite + RuVector").
 
-```
-class RvfMemoryAdapter implements IMemoryBackend {
-  constructor(private rvf: VectorBackendAsync, private embeddingFn) {}
+> **Two `RvfBackend` classes exist.** The `@claude-flow/memory` version (pure-TS, `IMemoryBackend`) is used here. The `agentdb` version (N-API/WASM wrapper) is a different class in a different package. All references below mean the memory-package version.
 
-  async store(entry) {
-    const vector = await this.embeddingFn(entry.content)
-    await this.rvf.insert(entry.id, vector, entry.metadata)
-  }
+## Problem
 
-  async query(options) {
-    if (options.type === 'semantic') {
-      const vector = await this.embeddingFn(options.query)
-      return this.rvf.search(vector, options.limit)
-    }
-    // Structured queries fall back to metadata filtering
-    return this.rvf.search(zeroVector, options.limit, { filter: options.filter })
-  }
+`auto-memory-hook.mjs` `createBackend()` instantiates `AgentDBBackend`, which does `import('@sparkleideas/agentdb')` — a cross-package dynamic import that fails silently in the hook subprocess. Data writes to an in-memory `Map`, lost on process exit. The `.rvf` file is never created. The session-boundary drain (upstream-ruflo:ADR-048) has never worked.
 
-  async get(id) { return this.rvf.getById(id) }
-  async delete(id) { await this.rvf.remove(id) }
-  async shutdown() { await this.rvf.close() }
-}
-```
+### Root Cause Chain
 
-### Phase 3: MCP server adoption (ADR-0056 completion)
+1. `AgentDBBackend.initialize()` calls `import('@sparkleideas/agentdb')` (line ~51)
+2. `@sparkleideas/agentdb` is NOT a dependency of `@sparkleideas/memory` — the import resolves from the caller's module graph
+3. In the hook subprocess, `@sparkleideas/agentdb` is not installed → import fails
+4. Empty `catch` block silently swallows the error (line ~53)
+5. `AgentDBBackend` sets `this.available = false`, continues with in-memory `Map`
+6. Every `store()` call writes to RAM → process exits → data evaporates
+7. `.swarm/agentdb-memory.rvf` is never created → drain is a no-op
 
-Wire `db-unified.ts` into `agentdb-mcp-server.ts` as designed in ADR-0056. This is independent of the bridge fix but completes the RVF adoption across all consumers.
+### Why Not Fix AgentDBBackend?
 
----
+Investigated thoroughly (8 expert analyses). Three independent problems:
 
-## A - Architecture
+| Problem | Fix AgentDBBackend? | Swap to RvfBackend? |
+|---------|--------------------|--------------------|
+| Cross-package import fails | Would need `agentdb` as dep (18MB sql.js in 50ms hook) | RvfBackend is in same package — no cross-package import |
+| `dbPath` defaults to `':memory:'` | One-line fix, but hook already passes a real path | N/A — RvfBackend always writes to file |
+| Silent degradation (catch swallows error) | Could throw, but caller also swallows | N/A — RvfBackend never degrades |
 
-### Current state (broken drain)
+Even if all three were fixed, `AgentDBBackend` would pull in 18MB sql.js + embeddings + 44 controllers for 5 basic `IMemoryBackend` calls (`initialize`, `shutdown`, `count`, `bulkInsert`, `query`). The hook never calls `getAgentDB()`, `getController()`, or any AgentDB-specific method. `AgentDBBackend` was chosen because it was the only `IMemoryBackend` at the time, not for its features.
 
-```
-Hook subprocess (CJS)
-    |
-    v
-auto-memory-hook.mjs
-    |
-    v createBackend("hybrid")
-    |
-    v new AgentDBBackend({ dbPath: .rvf })
-    |
-    v Pulls full AgentDB stack (sql.js 18MB + embedder + controllers)
-    |
-    v Init fails silently -> degrades to in-memory
-    |
-    v Drain writes to RAM -> process exits -> data lost
-    |
-    ====== NEVER REACHES DISK ======
-```
+### Why the Two Stores Are Intentionally Separate
 
-### Target state (Phase 1)
-
-```
-Hook subprocess (CJS)
-    |
-    v
-auto-memory-hook.mjs
-    |
-    v createBackend("hybrid")
-    |
-    v new SqlJsRvfBackend({ dimension: 384, storagePath: .rvf })
-    |
-    v Creates .swarm/agentdb-memory.rvf on first write
-    |
-    v Vectors stored with HNSW indexing
-    |
-    v .rvf file persists across sessions
-    |
-    ====== DATA REACHES DISK ======
-```
-
-### Target state (Phase 2+)
-
-```
-Hook subprocess                       CLI / MCP server
-    |                                      |
-    v                                      v
-auto-memory-hook.mjs               agentdb-mcp-server.ts
-    |                                      |
-    v                                      v
-RvfMemoryAdapter                    db-unified.ts
-    |                                      |
-    v                                      v
-SqlJsRvfBackend                     SQLite (relational) + RvfBackend (vectors)
-    |                                      |      |
-    v                                      v      v
-.swarm/agentdb-memory.rvf           .swarm/memory.db  .swarm/agentdb-memory.rvf
-    (vectors + KV)                  (tables + JOINs)  (shared vector store)
-```
-
-### What changes per layer
-
-| Layer | Before | After |
-|-------|--------|-------|
-| Hook bridge | AgentDBBackend -> silent fail -> RAM | SqlJsRvfBackend -> .rvf file |
-| MCP server | db-fallback.js only | db-unified.ts (RVF primary, SQLite fallback) |
-| CLI memory | HybridBackend with broken init | Same, but .rvf file now exists |
-| Controllers | SQLite for everything | SQLite for relational, RVF for vectors |
-| `@ruvector/rvf` | Unused by ruflo consumers | Used by bridge and MCP server |
-
----
-
-## R - Refinement
-
-### Phase 1: Bridge fix (patch-level, this repo)
-
-**Scope**: 1 file, ~20 lines
-**Risk**: Low (additive, fallback preserved)
-**Fixes**: P0 bridge bug, unblocks entire WAL architecture
-
-Files:
-- `.claude/helpers/auto-memory-hook.mjs` -- swap AgentDBBackend for SqlJsRvfBackend in `createBackend()`
-
-Implementation:
-1. Try `memPkg.SqlJsRvfBackend` (exported from `@sparkleideas/memory`)
-2. Initialize with `{ dimension: 384, storagePath: '.swarm/agentdb-memory.rvf', metric: 'cosine' }`
-3. Wrap in adapter if IMemoryBackend interface is required
-4. Fall back to current AgentDBBackend path if SqlJsRvfBackend not exported
-5. Fall back to JsonFileBackend as last resort (existing behavior)
-
-Validation:
-- After `doImport()`, `.swarm/agentdb-memory.rvf` file exists on disk
-- After `doSync()`, entries are retrievable from the `.rvf` file
-- `memory search` via MCP returns entries that hooks wrote
-
-### Phase 2: IMemoryBackend adapter (patch-level, this repo)
-
-**Scope**: 1 new file (~80 lines), 1 edit
-**Risk**: Low-Medium (new abstraction, but small surface)
-
-Files:
-- `tests/fixtures/memory/dist/rvf-memory-adapter.js` (new, adapter)
-- `.claude/helpers/auto-memory-hook.mjs` (use adapter)
-
-The adapter translates between:
-- `IMemoryBackend.store(entry)` -> `VectorBackendAsync.insert(id, vector, metadata)`
-- `IMemoryBackend.query({type:'semantic'})` -> `VectorBackendAsync.search(vector, k)`
-- `IMemoryBackend.get(id)` -> metadata lookup from .rvf
-
-### Phase 3: MCP server unification (fork-level, upstream PR)
-
-**Scope**: ~245 lines (per ADR-0056)
-**Risk**: Medium (changes MCP initialization, needs thorough testing)
-
-This is ADR-0056 implementation -- already designed, just needs execution:
-- Replace `db-fallback.js` import with `db-unified.ts`
-- Wire vectorBackend into controller constructors
-- Add branch tools (create, query, merge)
-
-### Phase 4: Remove sql.js hard dependency (future, upstream only)
-
-**Scope**: Large (cross-package dependency audit)
-**Risk**: High (sql.js is used for 24 relational tables)
-**Prerequisite**: Upstream ships all controller migrations to graph/KV model
-
-This phase is NOT in scope for ruflo-patch. It requires upstream to redesign their relational storage layer, which is a fundamental architecture change.
-
-### Risk assessment
-
-| Risk | Severity | Phase | Mitigation |
-|------|----------|-------|------------|
-| `SqlJsRvfBackend` not exported from `@sparkleideas/memory` | Medium | 1 | Check export, add if missing; fall back to JSON |
-| `.rvf` format instability across `@ruvector/rvf` versions | Low | 1 | Pin exact version in our pipeline |
-| Embedding dimension mismatch (384 vs 768 vs 1536) | Medium | 1 | Read from config.json `agentdb.vectorDimension`, default 384 |
-| Silent degradation to brute-force when HNSW unavailable | Low | 1 | SqlJsRvfBackend uses SIMD brute-force by design -- acceptable for <10k vectors |
-| IMemoryBackend.query() structured queries unsupported by RVF | Medium | 2 | Adapter falls back to metadata filter or returns empty |
-| MCP server regression from db-unified switch | Medium | 3 | Wrap in try/catch, fall back to db-fallback.js |
-| sql.js removal breaks 24 tables | Critical | 4 | Not in scope -- SQLite stays for relational data |
-
----
-
-## C - Completion
-
-### Implementation checklist
-
-**Phase 1 (Bridge fix -- immediate)**
-- [ ] Verify `SqlJsRvfBackend` is exported from `@sparkleideas/memory`
-- [ ] Edit `auto-memory-hook.mjs` `createBackend()` to use `SqlJsRvfBackend`
-- [ ] Add dimension config reading from `config.json`
-- [ ] Test: `doImport()` creates `.swarm/agentdb-memory.rvf`
-- [ ] Test: `doSync()` persists entries to `.rvf` file
-- [ ] Test: entries survive process restart
-- [ ] Run `npm test` (preflight + unit pass)
-- [ ] Run `npm run test:verify` (acceptance pass)
-
-**Phase 2 (Adapter -- next)**
-- [ ] Write `RvfMemoryAdapter` implementing `IMemoryBackend`
-- [ ] Wire adapter into `auto-memory-hook.mjs`
-- [ ] Test: `memory search` returns entries written by hooks
-- [ ] Test: `doImport()` + `doSync()` round-trip works
-
-**Phase 3 (MCP server -- separate PR)**
-- [ ] Implement ADR-0056 in agentic-flow fork
-- [ ] Build and publish updated `@sparkleideas/agentdb`
-- [ ] Run full acceptance suite
-
-### Estimated effort
-
-| Phase | Files | Lines | Risk |
-|-------|:-----:|:-----:|------|
-| 1: Bridge fix | 1 | ~20 | Low |
-| 2: Adapter | 2 | ~100 | Low-Medium |
-| 3: MCP server | 3 | ~245 | Medium |
-| **Total (in scope)** | **6** | **~365** | |
-
-### Success criteria
-
-- `.swarm/agentdb-memory.rvf` file exists after first session
-- JSON cache files drain into RVF at session-end (file sizes decrease)
-- `memory search` via CLI/MCP returns entries from hooks
-- No regression on existing acceptance tests
-- sql.js not loaded by hook subprocess (18MB savings in hook process)
-
----
+- **RVF has no file-level locking** — two processes sharing one `.rvf` file corrupt each other
+- **SQLite WAL handles concurrent readers** — but 18MB sql.js in a 50ms hook budget is unacceptable
+- **MEMORY.md is the designed reconciliation layer** — curated at session-end, imported at session-start
+- **The stores were ALWAYS separate** — `AgentDBBackend` writes to `.swarm/agentdb-memory.rvf`, CLI reads `.swarm/memory.db`. The swap doesn't create a new split; it makes the existing one work.
 
 ## Decision
 
-**This is a patch-level change for Phase 1-2 and a fork-level change for Phase 3.**
+Swap `AgentDBBackend` for `RvfBackend` in `auto-memory-hook.mjs` `createBackend()`.
 
-Phase 1 (bridge fix) is the minimal intervention: swap one backend class in one file. It accidentally fixes the P0 bug because it creates the `.rvf` file that the rest of the architecture expects to exist. No upstream PR needed -- this is our hook file.
-
-Phase 2 (adapter) is a small abstraction layer that makes the fix proper rather than expedient.
-
-Phase 3 (MCP server) requires a fork-level change to `@sparkleideas/agentdb` and should be filed as a separate upstream PR.
-
-Phase 4 (remove sql.js) is explicitly out of scope. RVF does not replace SQLite. It replaces SQLite **for vector storage only**. The 24 relational tables remain on SQLite until upstream designs an alternative.
-
----
-
-## Consequences
-
-### If Phase 1 applied
-
-- P0 bridge bug fixed: JSON cache drains into RVF at session-end
-- `.swarm/agentdb-memory.rvf` file created and populated
-- The 8-file persistence sprawl reduces to 3 systems as designed in ADR-0058
-- Hook subprocess no longer pulls in 18MB sql.js for vector operations
-- Remaining JSON cache bugs become self-healing (drain empties the cache)
-
-### If Phase 1 not applied
-
-- Two permanent memory silos persist indefinitely
-- `memory search` returns nothing useful (17 MCP entries vs 157 hook entries)
-- Hooks inject context from stale, cross-project, duplicate-inflated JSON
-- Architecture remains broken despite all code being present
-
-### Relationship to other ADRs
-
-| ADR | Relationship |
-|-----|-------------|
-| **ADR-0058** (Deep Analysis) | This ADR implements the P0 fix identified there |
-| **ADR-0056** (MCP Unified Backend) | Phase 3 of this ADR completes ADR-0056 |
-| **ADR-0054** (RuVector Pipeline) | Provides `@ruvector/rvf` packages this ADR depends on |
-| **ADR-0052** (Embedding Config) | Provides dimension configuration used by RvfBackend |
-| **upstream-ruflo:ADR-057** (RVF Storage) | Phase 1 implements this — swap sql.js consumers to RVF |
-| **upstream-agentic:ADR-057** (Deep Integration) | Confirms SQLite stays for relational AgentDB tables |
-| **upstream:ADR-050** (Intelligence Loop) | Bridge fix restores the WAL pattern designed there |
-
-## Fork Dependency Audit (2026-04-04)
-
-### Required fork changes (must exist for Phase 1)
-
-| Change | File | Status |
-|--------|------|--------|
-| `RvfBackend` class | `@claude-flow/memory/src/rvf-backend.ts` | In place (hz fork) |
-| `RvfBackend` exported | `@claude-flow/memory/src/index.ts` lines 196-197 | In place (hz fork) |
-| `AutoMemoryBridge` class | `@claude-flow/memory/src/auto-memory-bridge.ts` | In place (hz fork) |
-
-### Superseded fork changes
-
-| Change | Why superseded |
-|--------|---------------|
-| WM-003 (AgentDBBackend-only) | Phase 1 replaces AgentDBBackend with RvfBackend in the same function WM-003 modified |
-
-### Session commits (2026-04-03/04) — no conflicts
-
-All 5 in-place session commits (dedup guard, config defaults, ControllerRegistry config, ruvector dep, memory-initializer cleanup) are independent of Phase 1. Four reverted commits (bridgeGenerateEmbedding rewrite, getBridge timeout, EmbeddingService prefixes) are already cleaned up.
-
-`auto-memory-hook.mjs` was never modified this session — clean target for Phase 1.
-
-## Resolved Questions (v3, 2026-04-04)
-
-Questions raised in v2 have been resolved by a dedicated investigation hive (5 experts reading the full 1512-line upstream ADR, upstream code, upstream issues, and both repos' ADR-057 documents).
-
-### Q1: Did the upstream author intend a full SQL replacement?
-
-**No.** upstream-ruflo:ADR-057 targets three specific non-relational sql.js consumers (1,767 lines): EventStore, SqlJsBackend, PersistentCache. These use SQLite as a KV store with BLOB vectors — no JOINs, no CTEs, no triggers. The ADR does not mention AgentDB's 24 relational tables. "Phase 8: Remove sql.js" means demote to optional lazy-loaded dependency for legacy `.db` reads, not remove SQLite from all usage.
-
-The agentic-flow repo's own ADR-057 explicitly states "Full SQLite + RuVector" as the achieved persistence model. Nobody proposed replacing relational tables.
-
-### Q2: Is there a KV/document model for relational data planned upstream?
-
-**No.** upstream-agentic:ADR-057 mentions `@ruvector/graph-node` with Cypher queries as a future graph model, but the implementation section shows "Full SQLite + RuVector" as the current state. No plan to remove SQLite for relational data.
-
-### Q3: Are our fork patches (especially WM-003) implementing the wrong backend?
-
-**Yes — WM-003 selected the wrong class.** WM-003 chose `AgentDBBackend` (which pulls in the full SQLite + controller stack) for what is a vector-store operation. The upstream design calls for `RvfBackend` or `SqlJsRvfBackend` in the hook bridge path. Phase 1 of this ADR corrects this.
-
-WM-003 made the right tactical decision (single backend, no dual-write) with the wrong class. It is not "fighting the design" — it is implementing the right idea with the wrong tool.
-
-### Q4: Does `db-unified.ts` represent the intended migration path?
-
-**Yes, but for a different layer.** `db-unified.ts` implements "GraphDatabase primary, SQLite fallback" for the MCP server — not for the hook bridge. The hook bridge should use `RvfBackend` directly (lightweight, no full stack). `db-unified.ts` adoption is Phase 3 territory.
-
-Note: `db-unified.ts` was not found at the expected path in the upstream tree. It may have been renamed to `database-provider.ts` or is in the agentdb package.
-
-### Conclusion
-
-Our architecture (RVF for vectors, SQLite for relational) aligns with the upstream design across both repos. Phase 1 (swap `AgentDBBackend` → `RvfBackend`) is the upstream-intended fix, not a workaround.
-
-## Agentic-Flow Deep Search (2026-04-04, 5-agent swarm)
-
-### Architecture Confirmed: Two Parallel Storage Layers
-
-AgentDB has two completely independent storage systems selected in different code paths:
-
-```
-Layer 1: Relational (SQL)     — better-sqlite3 primary, sql.js fallback — ALWAYS runs
-Layer 2: Vector (HNSW/RVF)    — ruvector > @ruvector/rvf > hnswlib > SqlJsRvfBackend
-```
-
-These coexist. The factory doesn't choose between them — Layer 1 always initialises for schemas, Layer 2 always initialises for vectors.
-
-### Evidence from agentic-flow repo
-
-| Source | Finding |
-|--------|---------|
-| agentic-flow:ADR-057 line 177 | Exact quote: `"Full (SQLite + RuVector)"` as persistence model |
-| ADR-054 (architecture review) | `@ruvector/rvf` listed as "installed, not used". ADR-056/057 "100% complete" is aspirational |
-| ADR-006 | Mandated `@ruvector` as exclusive **vector** backend — not about replacing SQL |
-| ADR-003 | RVF format spec in agentdb docs. Status: Proposed |
-| factory.ts | Priority chain: ruvector → @ruvector/rvf → hnswlib → SqlJsRvfBackend |
-| AgentDB.ts | SQL engine selected independently, always runs regardless of vector backend |
-| db-unified.ts | Legacy v2 layer, NOT used by v3 |
-
-### Known RVF Data Loss Bugs
-
-| Issue | Bug | Impact on Phase 1 |
-|-------|-----|-------------------|
-| ruvnet/agentic-flow#114 | `SqlJsRvfBackend` drops non-numeric IDs via `Number()` coercion | **BLOCKER** — our entries use IDs like `mem-MEMORY-project-patterns` which would be silently dropped |
-| ruvnet/agentic-flow#128 | Reflexion writes HNSW but skips SQL insert — data lost on restart | Relevant if using reflexion controllers |
-| ruvnet/agentic-flow#115 (PR) | Bidirectional ID mapping fix for #114 | **Must verify this is in our fork before Phase 1** |
-
-### Impact on Phase 1
-
-Phase 1 (swap `AgentDBBackend` → `RvfBackend` in `auto-memory-hook.mjs`) remains the correct fix, but:
-
-1. **Must verify PR #115 (ID mapping fix) is in our agentic-flow fork** — without it, `SqlJsRvfBackend` will silently drop all string IDs
-2. **`db-unified.ts` is dead code** — cannot be used as migration path (v2 legacy)
-3. **ADR-056/057 "100% complete" is unreliable** — ADR-054 lists 50+ remaining TODOs
-4. **Use `RvfBackend` (pure-TS, @claude-flow/memory) not `SqlJsRvfBackend` (agentdb)** — avoids the ID coercion bug entirely since RvfBackend uses its own Map-based KV store
-
-## Final Implementation Decision (2026-04-04, 4-expert hive)
-
-### Backend Selection: `RvfBackend` from `@sparkleideas/memory`
-
-All experts unanimous. `RvfBackend` is a drop-in replacement for `AgentDBBackend`:
-- Implements full `IMemoryBackend` interface (17 methods)
-- Exported from `@sparkleideas/memory` (index.ts lines 196-197)
-- String IDs safe — `Map<string, MemoryEntry>` throughout, no `Number()` coercion
+`RvfBackend` from `@sparkleideas/memory`:
+- Implements full `IMemoryBackend` interface (17 methods) — drop-in replacement
+- Lives in the same package — no cross-package import
+- String IDs safe (`Map<string, MemoryEntry>` — no `Number()` coercion)
+- Atomic persist (write-tmp + rename) — crash-safe
 - Creates `.rvf` file on first flush — never throws on missing path
-- Zero native dependencies — pure-TS HnswLite fallback
-- ID coercion bug #114 is in `SqlJsRvfBackend` (different class, different package) — does not affect us
+- Zero native dependencies — pure-TS `HnswLite` fallback
+- Exported from `@sparkleideas/memory` (`index.ts` lines 196-197)
 
 ### Exact Code Change
 
-```javascript
-// auto-memory-hook.mjs createBackend(), replacing lines 249-262:
+File: `.claude/helpers/auto-memory-hook.mjs`, function `createBackend()` (~line 236)
 
-// Before:
-if (!memPkg.AgentDBBackend) { throw ... }
+```javascript
+// BEFORE (broken — AgentDBBackend silently degrades to in-memory):
+if (!memPkg.AgentDBBackend) {
+  throw new Error('Memory backend requires AgentDBBackend...');
+}
 const backend = new memPkg.AgentDBBackend({
   dbPath: join(swarmDir, 'agentdb-memory.rvf'),
   vectorBackend: config.agentdb.vectorBackend || 'auto',
   enableLearning: config.agentdb.enableLearning !== false,
 });
+return { backend };
 
-// After:
-if (!memPkg.RvfBackend) { throw ... }
-const backend = new memPkg.RvfBackend({
-  databasePath: join(swarmDir, 'agentdb-memory.rvf'),
-});
+// AFTER (correct — RvfBackend persists atomically):
+if (memPkg.RvfBackend) {
+  const backend = new memPkg.RvfBackend({
+    databasePath: join(swarmDir, 'agentdb-memory.rvf'),
+  });
+  return { backend };
+}
+// Fallback: AgentDBBackend (heavier but functional if agentdb is installed)
+if (memPkg.AgentDBBackend) {
+  const backend = new memPkg.AgentDBBackend({
+    dbPath: join(swarmDir, 'agentdb-memory.rvf'),
+  });
+  return { backend };
+}
+throw new Error(
+  'Memory backend requires RvfBackend or AgentDBBackend.\n' +
+  'Fix: set "memory.backend": "json" in .claude-flow/config.json'
+);
 ```
 
-### Pre-Implementation Checklist
+> **Verify before implementing**: confirm `RvfBackend` constructor parameter is `databasePath` by checking `@claude-flow/memory/src/rvf-backend.ts` constructor signature.
 
-| Check | Status |
-|-------|--------|
-| `RvfBackend` implements `IMemoryBackend` | Verified |
-| `RvfBackend` exported from package | Verified (index.ts:196-197) |
-| String IDs safe | Verified (Map-based, no coercion) |
-| Creates file on first flush | Verified (loadFromDisk skips missing) |
-| Zero native deps | Verified (HnswLite pure-TS) |
-| ID coercion bug #114 | Not applicable (different class) |
-| Existing patches need reverting | No |
-| Uncommitted changes conflict | No |
+### Acceptance Criteria
 
-### Resolved: RvfBackend vs Fix AgentDBBackend (v6, 2026-04-04)
+1. After `doImport()`: `.swarm/agentdb-memory.rvf` exists on disk with size > 0
+2. After `doSync()`: entries persist (re-read returns stored data)
+3. Entries survive process restart
+4. `npm run test:unit` passes (539/539)
+5. `npm run deploy` passes (57/57 acceptance)
+6. Hook subprocess does not load sql.js (no 18MB WASM overhead)
 
-Two viable permanent solutions exist. Both are legitimate. The choice depends on whether future hooks will need AgentDB controllers.
+## Execution Plan
 
-**Option A: Swap to `RvfBackend`** (recommended for current hook design)
-
-| Pro | Con |
-|-----|-----|
-| Zero native deps (pure-TS HnswLite) | No access to AgentDB controllers from hooks |
-| Persists to `.rvf` file atomically | If future hooks need reflexion/causal, needs rework |
-| Drop-in `IMemoryBackend` replacement | Different code path from MCP/CLI tools |
-| No 18MB sql.js in hook subprocess | |
-| Aligned with upstream:ADR-057 for vector/KV | |
-
-**Option B: Fix `AgentDBBackend`** (better if hooks will need controllers)
-
-Three fixes needed in `agentdb-backend.ts`:
-1. **Import path**: ensure `@sparkleideas/agentdb` is resolvable (add as dependency of `@sparkleideas/memory`, or fix the dynamic import)
-2. **Default dbPath**: change from `':memory:'` to `join(swarmDir, 'agentdb.db')` — data must survive process exit
-3. **Silent degradation**: throw on import failure instead of `console.warn` + return (or at minimum, expose `this.available` so callers can detect it)
-
-| Pro | Con |
-|-----|-----|
-| Preserves author's original backend choice | Pulls in 18MB sql.js + embeddings + controllers for basic store/query |
-| Future-proof if hooks need controllers | Three separate fixes across two packages |
-| Same code path as MCP/CLI tools | `agentdb` import may fail on minimal installs |
-| Controller access available if needed later | Need to also fix WM-003 to pass correct dbPath |
-
-**Current analysis**: the hook only calls `initialize`, `shutdown`, `count`, `bulkInsert`, `query`. `LearningBridge` and `MemoryGraph` operate through `IMemoryBackend` — they work with either backend. No controller access is used today. But this could change if upstream wires reflexion/causal into session lifecycle hooks.
-
-**Decision (v7)**: **Option A — swap to `RvfBackend`.**
-
-> **v8 caveat**: The "import topology" argument that sealed Option A may be invalid. `@sparkleideas/agentdb` is one of our 42 published packages — we build, publish, and install it routinely. The 18MB sql.js is already a transitive dependency. The question is not "can we install agentdb" but "why does the dynamic import fail in the hook context, and can we fix the resolution?" This needs investigation before finalising the decision.
-
-### Open Task: Investigate AgentDBBackend Import Failure
-
-Before implementing either option, we need to understand WHY `import('@sparkleideas/agentdb')` fails inside `AgentDBBackend` when called from the hook subprocess.
-
-**Steps:**
-1. Make the silent catch at `agentdb-backend.ts` line 51-53 log the actual error
-2. Run `auto-memory-hook.mjs import` and capture the error message
-3. Determine if it's: ESM/CJS mismatch, wrong package name after codemod, missing from node_modules, or a genuine resolution failure
-4. If the fix is simple (e.g. wrong import path), Option B (fix AgentDBBackend) becomes the better permanent solution — it preserves the author's backend choice with minimal change
-5. If the fix is fundamental (e.g. hooks can't resolve cross-package ESM imports), Option A (RvfBackend) is confirmed correct
-
-**This investigation must complete before implementation.**
-
-### Investigation Result (v9): Shared Store is a Phantom
-
-The investigation revealed that **AgentDBBackend never wrote to the same store as the CLI**:
-
-```
-Hook → AgentDBBackend → .swarm/agentdb-memory.rvf  (separate file)
-CLI  → memory-bridge  → .swarm/memory.db            (separate file)
-```
-
-The hook passes `dbPath: join(swarmDir, 'agentdb-memory.rvf')` (line 251). The CLI's `getDbPath()` returns `.swarm/memory.db` (line 78 of memory-bridge.ts). These were ALWAYS two separate files. The "single source of truth" was never achieved — not because of the backend class, but because of the file path.
-
-Swapping to RvfBackend preserves the same file topology. The only change: data reaches disk instead of evaporating from RAM.
-
-**The import topology concern is also resolved**: `AgentDBBackend` fails because it does a dynamic `import('@sparkleideas/agentdb')` which is not a dependency of `@sparkleideas/memory`. This is a cross-package resolution failure in the hook subprocess context. `RvfBackend` lives in `@sparkleideas/memory` itself — no cross-package import.
-
-**Decision confirmed**: Option A (RvfBackend swap) is correct. The "fix AgentDBBackend" option (Option B) would fix the import and persistence bugs but would NOT unify the two stores — the file paths are different regardless.
-
-### Unifying the Two Stores (Separate Task)
-
-Making `memory search` return hook-written data requires one of:
-1. **Phase 2**: MCP server learns to also read from `.rvf` file
-2. **Session-end drain**: `AutoMemoryBridge.syncToAutoMemory()` writes entries from `.rvf` into MEMORY.md, which the CLI can re-import
-3. **Future**: hooks write directly to `.swarm/memory.db` via a shared interface, or both paths converge on a single `.rvf` file via upstream:ADR-057
-
-This is NOT blocked by the backend choice. It is a layer above.
-
-Confirmed by 4 expert hives across 7 ADR versions:
-
-1. **Author's intent**: AgentDBBackend was aspirational, not functional. The hook only needs store/query. Controller access is routed through MCP bridge by design (ADR-053).
-2. **Import topology**: `agentdb` is a dependency of `@sparkleideas/memory`, but the hook resolves imports from the caller's module graph. `@sparkleideas/agentdb` is not installed in this project. The dynamic import fails silently — this is a deployment topology issue, not a fixable bug.
-3. **RvfBackend** lives in `@claude-flow/memory` itself — same package, same dist, no cross-package import. Implements full `IMemoryBackend`, persists to `.rvf` atomically, HNSW via pure-TS `HnswLite`.
-4. **Future-proofing**: if hooks ever need controllers, they will import AgentDB directly. That is a new requirement, not a regression from this change.
-
-## Final Architecture (v10, 2026-04-04)
-
-### Confirmed: Two Stores, One Bridge, Zero Reconciliation
-
-Investigated by 8 expert hives across 10 ADR versions. Tested alternatives: daemon IPC (no API surface exists), single .rvf file (no concurrent writer safety), CJS shim to .db (re-introduces 18MB sql.js), MEMORY.md as bridge (correct — it IS the bridge).
-
-**The upstream design is already correct. The implementation is one function wrong.**
-
-### The Permanent Architecture
-
-```
-Hook → RvfBackend → .swarm/agentdb-memory.rvf  (vectors/KV, fast, atomic)
-CLI  → memory-bridge → .swarm/memory.db         (relational, full AgentDB)
-Both → AutoMemoryBridge → MEMORY.md              (reconciliation at session boundaries)
-```
-
-| Component | File | Owner | Purpose |
-|-----------|------|-------|---------|
-| RVF store | `.swarm/agentdb-memory.rvf` | Hook subprocess | Fast vector/KV writes during session |
-| SQLite store | `.swarm/memory.db` | CLI/MCP | Relational data, 24 tables, controllers |
-| MEMORY.md | `.claude/memory/*.md` | AutoMemoryBridge | Session-boundary reconciliation, human-readable |
-| JSON cache | `.claude-flow/data/*.json` | CJS intelligence | Intra-session PageRank/context cache (ephemeral) |
-
-### Why Two Stores (Intentional)
-
-- **RVF has no file-level locking** — two processes sharing one .rvf file corrupt each other
-- **SQLite WAL handles concurrent readers** — but importing 18MB sql.js into a 50ms hook budget is unacceptable
-- **MEMORY.md is the designed reconciliation layer** — curated at session-end, imported at session-start
-- **The daemon has no IPC API today** — building one is future work, not a prerequisite
-
-### Why NOT Other Options
-
-| Option | Verdict | Reason |
-|--------|---------|--------|
-| Daemon IPC (sole writer) | Future work | Daemon has no socket/HTTP — would be built from scratch |
-| Both write one .rvf | Unsafe | RvfBackend has no flock/advisory lock |
-| Hooks write to .db | Wrong trade-off | 18MB sql.js in a 50ms subprocess |
-| CJS shim to .db | Same problem | Still pulls SQLite into hooks |
-| Fix AgentDBBackend | Doesn't unify stores | Same file path separation regardless |
-
-### The Fix
-
-One function change in `auto-memory-hook.mjs createBackend()`: swap `AgentDBBackend` (cross-package import fails silently, data evaporates from RAM) for `RvfBackend` (same package, atomic persist, zero native deps).
-
-### Execution Plan
-
-| Phase | What | Where | Upstream PR? |
+| Phase | What | Scope | Upstream PR? |
 |-------|------|-------|-------------|
-| **1** | Swap AgentDBBackend → RvfBackend in createBackend() | This repo (patch) + upstream PR | Yes |
-| **2** | Fix CJS bugs: ID collision, ML-006 scope, tool_input snake_case | This repo (patch) + upstream PR | Yes |
-| **3** | Wire db-unified.ts into MCP server so `memory search` queries .rvf directly | Fork-level change | Yes |
+| **1** | Swap AgentDBBackend → RvfBackend in `createBackend()` | Patch (this repo) + upstream PR | Yes — see below |
+| **2** | Fix CJS bugs: ID collision in `intelligence.cjs`, ML-006 scope, `tool_input` snake_case | Patch + upstream PRs | Yes (separate PRs) |
+| **3** | Wire MCP server to also query `.rvf` — so `memory search` returns hook-written data | Fork-level | Yes (separate PR) |
 | **Future** | Daemon IPC: hooks call daemon socket instead of file I/O | New feature | Yes |
 | **Future** | Converge CLI onto RVF for vectors (upstream-ruflo:ADR-057) | Upstream | N/A |
 
-### What This Is NOT
+Phase 3 requires additional investigation: the intended integration point (`db-unified.ts`) may have been renamed to `database-provider.ts`. Path must be confirmed before Phase 3 can be specified.
 
-This is not a workaround. This is not a compromise. This is the upstream-intended architecture (ADR-048 WAL pattern + upstream-ruflo:ADR-057 RVF for vectors) implemented correctly for the first time.
+## Risks
 
-## Session Audit (v11, 2026-04-04)
+| Risk | Severity | Mitigation |
+|------|----------|------------|
+| `RvfBackend` not exported from `@sparkleideas/memory` | High | Verify export at `index.ts:196-197`; add if missing |
+| Constructor parameter name mismatch | Medium | Verify against source before implementing |
+| Stale empty `.rvf` from prior broken runs | Low | `RvfBackend.loadFromDisk()` handles missing/empty files gracefully |
+| `HnswLite` performance vs native HNSW | Low | Acceptable for hook use case (sub-5K entries) |
 
-Full audit of all session changes by 5-expert hive. Verdict: **zero reversals needed.**
+## Upstream Issue (Ready to File)
 
-| Category | Items | Keep | Reverse | Replace |
-|----------|-------|------|---------|---------|
-| ruflo-patch commits | 14 | 14 | 0 | 0 |
-| ruflo fork commits | 14 | 10 | 0 | 0 (4 already reverted during session) |
-| agentic-flow fork commits | 5 | 3 | 0 | 0 (2 already reverted during session) |
-| Upstream PRs (ruflo) | 3 | 3 | 0 | 0 |
-| Upstream issues (ruflo) | 3 | 3 | 0 | 0 |
-| agentic-flow PR #138 | 1 | 0 | 0 | 1 (needs clean refile) |
+**Title**: `fix: auto-memory hook silently drops all session data — swap AgentDBBackend for RvfBackend`
 
-## All Fixes Applied This Session
+**Labels**: `bug`, `memory`, `hooks`
 
-### Upstream PRs Filed (ruvnet/ruflo)
+<details>
+<summary>Full issue body (click to expand)</summary>
 
-| PR | Issue | Files | Description | Status |
-|----|-------|-------|-------------|--------|
-| [#1512](https://github.com/ruvnet/ruflo/pull/1512) | [#1511](https://github.com/ruvnet/ruflo/issues/1511) | `claudemd-generator.ts` | CLAUDE.md generator: 14x "Task tool"→"Agent tool", add MCP Tool Discovery section, Hook Signals section, When to Use What decision tree, Task Complexity gate, Feature Workflow. Standard template 250→112 lines. | Open |
-| [#1517](https://github.com/ruvnet/ruflo/pull/1517) | [#1516](https://github.com/ruvnet/ruflo/issues/1516) | `types.ts`, `init.ts`, `embeddings-tools.ts`, `hooks-tools.ts`, `controller-registry.ts` | Prefix bare model names with `Xenova/` in all defaults. Pass embedding config from ControllerRegistry to AgentDB. Fixes silent fallback to mock embeddings (hash pseudo-vectors). | Open |
-| [#1519](https://github.com/ruvnet/ruflo/pull/1519) | [#1518](https://github.com/ruvnet/ruflo/issues/1518) | `intelligence.cjs` | Deduplicate store entries before graph construction. 4,482 entries→157 unique. graph-state.json 194MB→79KB. Fix cache-hit check to compare unique count. | Open |
+## Summary
 
-### Upstream Issues Filed (ruvnet/ruflo)
+Every session's hook-written memory is silently discarded. `createBackend()` in `auto-memory-hook.mjs` instantiates `AgentDBBackend`, which does a cross-package `import('@claude-flow/agentdb')`. This import fails silently in the hook subprocess because `@claude-flow/agentdb` is not a dependency of `@claude-flow/memory`. The backend degrades to an in-memory `Map` — data writes succeed but are lost on process exit. The `.rvf` file is never created.
 
-| Issue | Title | Root cause |
-|-------|-------|------------|
-| [#1511](https://github.com/ruvnet/ruflo/issues/1511) | claudemd-generator references "Task tool" (renamed to Agent in Claude Code v2.1.63) | v2 templates inherited bare name, never updated |
-| [#1516](https://github.com/ruvnet/ruflo/issues/1516) | Bare model names cause silent fallback to mock embeddings | `all-mpnet-base-v2` resolves to HuggingFace 401; needs `Xenova/` prefix |
-| [#1518](https://github.com/ruvnet/ruflo/issues/1518) | intelligence.cjs graph-state.json grows to 194MB | 4,482 duplicate store entries with 157 unique IDs; no dedup before edge building |
+## Steps to Reproduce
 
-### Upstream Issues Filed (ruvnet/agentic-flow)
+1. Run a Claude Code session with hooks enabled
+2. After session ends, check: `ls -la .swarm/agentdb-memory.rvf` — file does not exist
+3. Run `memory search` for any term — no results from hook-written data
+4. Repeat across sessions — the hook store never grows
 
-| Issue | Title | Status |
-|-------|-------|--------|
-| [#137](https://github.com/ruvnet/agentic-flow/issues/137) | EmbeddingService passes bare model name to transformers.js | Closed (broader fix in ruflo #1516) |
+## Expected Behavior
 
-### Fork Commits (ruflo, in place)
+`.swarm/agentdb-memory.rvf` is created on first session and grows as hooks write entries. `syncToAutoMemory()` at session-end curates entries into MEMORY.md.
 
-| Commit | Description | Category |
-|--------|-------------|----------|
-| `ad4fc39ba` | CLAUDE.md generator rewrite: Task→Agent, MCP discovery, hook signals, when-to-use-what | CLAUDE.md (CM-001) |
-| `1f83c817a` | Add task complexity gate, feature workflow, hook lifecycle, remove Project Config | CLAUDE.md (CM-001) |
-| `72e7305eb` | Replace hetzner-specific defaults with portable values (cacheSize 256, maxNodes 5000, balanced SONA) | Config (portable) |
-| `639aa3701` | Replace hardcoded 160GB memory ceiling with dynamic `os.totalmem() * 0.75` | Config (portable) |
-| `243386a25` | Add Xenova/ prefix to bare model names in init defaults (types.ts) | Embedding (EM-002) |
-| `d7654639b` | Add Xenova/ prefix to remaining bare model names in CLI (embeddings-tools, hooks-tools, init.ts) | Embedding (EM-002) |
-| `0a5697b20` | Pass embedding model config from ControllerRegistry to AgentDB | Embedding (EM-002) |
-| `7f4b7064d` | Remove Xenova/ prefix band-aid from memory-initializer (defaults now correct) | Embedding (cleanup) |
-| `dc179d605` | Deduplicate store entries in intelligence.cjs before building graph (194MB→79KB) | Storage (dedup) |
-| `a50ff5c35` | Update all default values from benchmark-validated config (384MB cache, 10K nodes, etc.) | Config (benchmark) |
+## Actual Behavior
 
-### Fork Commits (ruflo, reverted during session)
+`.swarm/agentdb-memory.rvf` is never created. All hook-written entries exist only in RAM, lost on process exit. The session-boundary drain (ADR-048) is a no-op.
 
-| Commit | Reverted by | Why |
-|--------|------------|-----|
-| `544fb22c9` (bridgeGenerateEmbedding rewrite) | `dc4133aa4` | Band-aid; root cause was bare model names |
-| `7c3b3b270` (getBridge 5s timeout) | `866b62a05` | Band-aid; root cause was bare model names |
+## Root Cause
 
-### Fork Commits (agentic-flow, in place)
+`AgentDBBackend.initialize()` (line ~51) calls `import('@claude-flow/agentdb')`. This package is not a dependency of `@claude-flow/memory`. The import fails. The error is caught silently (empty `catch`). The backend operates against an in-memory `Map` with no indication of failure.
 
-| Commit | Description |
-|--------|-------------|
-| `960df30` | Move ruvector back to dependencies in agentdb (was optional workaround) |
+## Fix
 
-### Fork Commits (agentic-flow, reverted during session)
+`RvfBackend` ships in `@claude-flow/memory` itself — same package, no cross-package import. It implements the identical `IMemoryBackend` interface and writes atomically to `.rvf` files with zero native dependencies.
 
-| Commit | Reverted by | Why |
-|--------|------------|-----|
-| `24b1295` (EmbeddingService Xenova prefix) | `77aeb66` | Root cause fix is in defaults, not runtime prefix |
-| `84942dc` (EnhancedEmbeddingService prefix) | `2468cea` | Root cause fix is in defaults, not runtime prefix |
+```javascript
+// Before (broken):
+const backend = new memPkg.AgentDBBackend({ dbPath: join(swarmDir, 'agentdb-memory.rvf') });
 
-### Pipeline Fixes (ruflo-patch repo)
+// After (correct):
+const backend = new memPkg.RvfBackend({ databasePath: join(swarmDir, 'agentdb-memory.rvf') });
+```
 
-| Fix | Impact |
-|-----|--------|
-| `ruvector` added to `UNSCOPED_PUBLISHABLE` in fork-version.mjs | Version pinning for ruvector package |
-| `claude-flow` added to `UNSCOPED_PUBLISHABLE` | Version pinning for v2 package |
-| `@sparkleideas/ruvector` added to publish-levels.json level 1 | Package now published to Verdaccio |
-| `publish.mjs` prefers non-private packages over private roots | Picks `npm/packages/ruvector/` not private workspace root |
-| Portable `_timeout` wrapper for macOS (gtimeout/timeout/bash fallback) | Acceptance tests work without GNU coreutils |
-| `sed -i` → portable `sed > tmp && mv` | No macOS sed warnings |
-| Accept `config.yaml` alongside `config.json` in harness | Upstream init changed output format |
-| Causal tool names: hyphens → underscores | Upstream renamed tools |
-| `init-config-vals` acceptance test | Validates init writes real config values |
-| `run_timed` timeout 60s → 120s | Neural training needs ONNX model download time |
-| Node 24 via mise (.tool-versions) | Match hz machine |
-| ONNX model cache seeded at `~/.cache/transformers/` | Neural training passes on cold machine |
+`AgentDBBackend` is preserved as a fallback for environments where `RvfBackend` is not yet exported.
 
-### Upstream Issue for ADR-0059 Phase 1 (TODO)
+## Why RvfBackend, Not a Fixed AgentDBBackend
 
-The following should be filed as a single upstream issue + PR on ruvnet/ruflo:
+- Same package — no cross-package dynamic import
+- Pure-TS `HnswLite` — no 18MB sql.js in a 50ms hook subprocess
+- The hook calls only 5 `IMemoryBackend` methods — no need for 44 controllers
+- The `.rvf` file path is already what the hook passes — `RvfBackend` handles it natively
 
-**Title**: fix: swap AgentDBBackend for RvfBackend in auto-memory-hook session bridge
+## Impact
 
-**Root cause**: `auto-memory-hook.mjs createBackend()` instantiates `AgentDBBackend` which does `import('@sparkleideas/agentdb')` — a cross-package dynamic import that fails silently in the hook subprocess context. Data writes to in-memory Map, lost on process exit. The `.rvf` file is never created. The session-boundary drain (ADR-048) has never worked.
+Silent data loss on every session. No warning emitted. `.rvf` file never written.
 
-**Fix**: Swap `AgentDBBackend` for `RvfBackend` (same `IMemoryBackend` interface, same package, no cross-package import, atomic `.rvf` persistence, zero native deps).
+## Acceptance Criteria
 
-**Files**: `auto-memory-hook.mjs` — one function (`createBackend()`), ~10 lines changed.
-
-**Related upstream ADRs**: upstream-ruflo:ADR-048 (auto-memory bridge), upstream-ruflo:ADR-057 (RVF storage), upstream-agentic:ADR-057 (Full SQLite + RuVector).
-
-**Related downstream work**: sparkling/ruflo-patch ADR-0058 (root cause analysis), ADR-0059 (implementation plan, 10 versions, 8 expert hives).
+1. `.swarm/agentdb-memory.rvf` created on first session
+2. Entries survive process restart
+3. Hook subprocess does not load sql.js
 
 ## Related
 
-- **ADR-0058**: Memory, Learning & Storage Deep Analysis — root cause analysis
-- **ADR-0056**: MCP Server Unified Backend — Phase 3 of this implementation
-- **ADR-0054**: RuVector Patch Pipeline — dependency chain
-- **GitHub issues**: P0 bridge bug (ADR-0058 section), upstream-ruflo:ADR-057
+- ADR-048: auto-memory bridge design
+- ADR-057: RVF storage specification
+
+**File changed**: `.claude/helpers/auto-memory-hook.mjs` — `createBackend()`, ~10 lines.
+
+</details>
+
+## Upstream PR (Ready to File)
+
+**Title**: `fix: swap AgentDBBackend for RvfBackend in auto-memory-hook session bridge`
+
+<details>
+<summary>Full PR body (click to expand)</summary>
+
+## Issue
+
+Fixes #XXXX (the issue filed above)
+
+## Summary
+
+- Swap `AgentDBBackend` → `RvfBackend` in `createBackend()` — data persists to `.rvf` file
+- Preserve `AgentDBBackend` as fallback for older package versions
+- Preserve `JsonFileBackend` as last-resort fallback
+
+## Root Cause
+
+`AgentDBBackend` does `import('@claude-flow/agentdb')` — a cross-package import that fails silently in the hook subprocess. Data writes to RAM, lost on exit. See issue for full chain.
+
+## Change
+
+One function (`createBackend`), ~15 lines. `RvfBackend` tried first (same package, atomic persist, zero native deps). Falls back to `AgentDBBackend` then `JsonFileBackend`.
+
+## Test Plan
+
+- [ ] After `doImport()`: `.swarm/agentdb-memory.rvf` exists on disk
+- [ ] Entries survive process restart
+- [ ] `npm test` passes
+- [ ] Hook subprocess does not load sql.js
+
+## Backward Compatibility
+
+Existing `.swarm/memory.db` files untouched. Fallback chain ensures older installations work.
+
+Generated with [claude-flow](https://github.com/ruvnet/claude-flow)
+
+</details>
+
+## All Session Fixes (Cross-Reference)
+
+### Upstream PRs Filed (ruvnet/ruflo)
+
+| PR | Issue | Description |
+|----|-------|-------------|
+| [#1512](https://github.com/ruvnet/ruflo/pull/1512) | [#1511](https://github.com/ruvnet/ruflo/issues/1511) | CLAUDE.md generator: Task→Agent, MCP discovery, hook signals |
+| [#1517](https://github.com/ruvnet/ruflo/pull/1517) | [#1516](https://github.com/ruvnet/ruflo/issues/1516) | Bare model names → Xenova/ prefix + ControllerRegistry config |
+| [#1519](https://github.com/ruvnet/ruflo/pull/1519) | [#1518](https://github.com/ruvnet/ruflo/issues/1518) | intelligence.cjs dedup (194MB→79KB) |
+
+### Fork Commits In Place (ruflo)
+
+| Commit | Description |
+|--------|-------------|
+| `ad4fc39ba` + `1f83c817a` | CLAUDE.md generator rewrite (CM-001) |
+| `72e7305eb` + `639aa3701` | Portable defaults + dynamic memory ceiling |
+| `243386a25` + `d7654639b` + `0a5697b20` | Xenova/ prefix + ControllerRegistry embedding config |
+| `7f4b7064d` | Remove memory-initializer prefix band-aid |
+| `dc179d605` | intelligence.cjs dedup guard |
+| `a50ff5c35` | Benchmark-validated config defaults |
+
+### Pipeline Fixes (ruflo-patch)
+
+Portable `_timeout`, `sed -i` fix, `config.yaml` acceptance, causal tool names, `init-config-vals` test, node 24, ONNX cache seeding, `@sparkleideas/ruvector` publishing, run_timed 120s timeout.
+
+## Related ADRs
+
+- **ADR-0058**: Memory, Learning & Storage Deep Analysis — root cause investigation
+- **ADR-0056**: MCP Server Unified Backend — future Phase 3
+- **upstream-ruflo:ADR-048**: Auto-memory bridge design (session-boundary drain)
+- **upstream-ruflo:ADR-057**: RVF replaces sql.js for vectors/KV in @claude-flow/memory
+- **upstream-agentic:ADR-057**: "Full SQLite + RuVector" for AgentDB relational tables
+
+<details>
+<summary>Version History (archived — 11 iterations during 2026-04-03/04 session)</summary>
+
+See `ADR-0059-rvf-native-storage-backend.v11-archive.md` for the full deliberation
+trail across 11 versions and 8 expert hives. Key decision points:
+
+- v1-v4: Initial design, upstream code audit, agentic-flow deep search
+- v5-v6: RvfBackend vs fix AgentDBBackend — both options documented fairly
+- v7: Decision locked (Option A: RvfBackend) with unanimous expert consensus
+- v8: Decision challenged — "can't we just fix agentdb?" — import topology investigated
+- v9: "Shared store is a phantom" — the two files were ALWAYS separate
+- v10: Final architecture confirmed — two stores, one bridge, zero reconciliation
+- v11: Full session audit — zero reversals needed across all repos
+
+</details>
