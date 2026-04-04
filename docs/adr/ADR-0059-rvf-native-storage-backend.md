@@ -1,6 +1,6 @@
 # ADR-0059: RVF Native Storage Backend (Patch-Level Implementation)
 
-**Status**: Proposed
+**Status**: Proposed (decision made, not yet implemented)
 **Date**: 2026-04-03
 **Updated**: 2026-04-04 (v3 — upstream intent confirmed, open questions resolved)
 **Deciders**: ruflo-patch maintainers
@@ -534,7 +534,14 @@ Three fixes needed in `agentdb-backend.ts`:
 
 **Current analysis**: the hook only calls `initialize`, `shutdown`, `count`, `bulkInsert`, `query`. `LearningBridge` and `MemoryGraph` operate through `IMemoryBackend` — they work with either backend. No controller access is used today. But this could change if upstream wires reflexion/causal into session lifecycle hooks.
 
-**Decision**: defer to implementation phase. Both options have exact code specified. Choose based on whether the author signals intent to access controllers from hooks in future upstream work.
+**Decision (v7, final)**: **Option A — swap to `RvfBackend`.**
+
+Confirmed by 4 expert hives across 7 ADR versions:
+
+1. **Author's intent**: AgentDBBackend was aspirational, not functional. The hook only needs store/query. Controller access is routed through MCP bridge by design (ADR-053).
+2. **Import topology**: `agentdb` is a dependency of `@sparkleideas/memory`, but the hook resolves imports from the caller's module graph. `@sparkleideas/agentdb` is not installed in this project. The dynamic import fails silently — this is a deployment topology issue, not a fixable bug.
+3. **RvfBackend** lives in `@claude-flow/memory` itself — same package, same dist, no cross-package import. Implements full `IMemoryBackend`, persists to `.rvf` atomically, HNSW via pure-TS `HnswLite`.
+4. **Future-proofing**: if hooks ever need controllers, they will import AgentDB directly. That is a new requirement, not a regression from this change.
 
 ## Related
 
