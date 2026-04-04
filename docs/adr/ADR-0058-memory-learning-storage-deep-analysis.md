@@ -2,15 +2,72 @@
 
 - **Status**: Active (living document)
 - **Date**: 2026-04-04
-- **Updated**: 2026-04-04
+- **Updated**: 2026-04-04 (v2 — architecture hive findings)
 - **Deciders**: ruflo-patch maintainers
-- **Methodology**: SPARC + multi-agent swarm analysis
+- **Methodology**: SPARC + multi-agent swarm analysis (4 hives, 30+ agents)
 
 ## Context
 
 This ADR documents the findings from a comprehensive swarm-assisted audit of the ruflo memory, learning, and storage subsystems. It traces root causes across both upstream repos (ruflo, agentic-flow) and the ruflo-patch pipeline, cross-referencing ADRs, patches, commits, and upstream issues.
 
 The audit was triggered by investigating upstream issue ruvnet/claude-flow#1204 (12 dead config keys) and expanded to cover the full memory/learning stack after discovering cascading issues.
+
+## Intended Architecture (Confirmed by Expert Hive)
+
+The storage system is designed as a **write-ahead-log pattern** with three layers:
+
+| Layer | Backend | Role | Lifetime |
+|-------|---------|------|----------|
+| **1. AgentDB** | SQLite (→ RVF per ADR-057) | Single source of truth — durable cross-session store | Permanent |
+| **2. CJS JSON cache** | `.claude-flow/data/*.json` | Fast intra-session write-ahead for CJS hook subprocesses | Ephemeral — drained into AgentDB at session-end |
+| **3. MEMORY.md** | Markdown files | Human-readable projection of most relevant entries | Permanent, curated |
+
+**"AgentDB owns truth, JSON files own speed, MEMORY.md owns human readability."** — Reuven Cohen
+
+### Key Design Decisions (from upstream ADRs)
+
+- **CJS/ESM split is temporary** (ADR-050): hooks use CJS because ESM `import()` adds 50ms. Not a design goal — collapses when daemon IPC or synchronous ESM loading is available.
+- **JSON files are staging, not permanent** (ADR-050, ADR-057): designed to migrate to RVF once ADR-057 ships. Until then, they are a valid write-ahead cache.
+- **Two-system architecture is intentional** (ADR-048, ADR-050): CJS hooks append to JSON (fast), session-end reconciles into AgentDB (durable). Standard WAL pattern.
+- **RVF replaces SQLite** (ADR-057, status: Proposed): binary container (5.5KB) with native HNSW, replacing sql.js (18MB WASM, O(n) brute-force). Do not depend on it yet.
+- **Architecture is federated** (ADR-053): AgentDB handles episodic/skill/causal storage. ControllerRegistry adds routing, caching, graph layers on top. 44 controllers live in memory.
+
+### How Many Systems Should Exist: Three, Not Eight
+
+The current 8 persistence files exist because the drain from Layer 2 (JSON cache) to Layer 1 (AgentDB) is broken. Fix the drain, and 4 of 5 JSON files become transient caches that empty themselves.
+
+| # | System | Files | Status |
+|---|--------|-------|--------|
+| 1 | AgentDB (SQLite → RVF) | `.swarm/memory.db` | Working but nearly empty (17 entries) — drain broken |
+| 2 | CJS JSON cache | `.claude-flow/data/*.json` (5 files) | Working but accumulating permanently |
+| 3 | SONA patterns | `.swarm/sona-patterns.json` | Working, appropriately small |
+
+### The One Fix That Unblocks Everything
+
+`auto-memory-hook.mjs` line 235: `createBackend("hybrid")` can't initialise → targets `.swarm/agentdb-memory.rvf` which doesn't exist → init throws → caught silently → falls back to `JsonFileBackend` → JSON cache never drains → data accumulates → two permanent silos.
+
+Fix this function and the architecture works as designed.
+
+### Are Our Patches Consistent With the Design?
+
+**Most are genuine bug fixes.** The ID collision, tool_input snake_case mismatch, graph-state dedup, bare model names, ControllerRegistry→AgentDB config wiring — these fix real bugs in any design.
+
+**A few fight the design.** Patches that treat JSON files as permanent fixtures (adding rotation, capping, optimising graph-state.json) are fortifying the cache instead of fixing the drain. The correct fix is to repair the AgentDB drain path, not make the JSON store self-sufficient.
+
+### Storage Backend Roles
+
+| Backend | Right Use | Wrong Use |
+|---------|-----------|-----------|
+| **SQLite/AgentDB** | Durable entries, patterns, trajectories, sessions, embeddings | Intra-session cache (too slow for hook budget) |
+| **JSON files** | Fast hook-subprocess IPC, session-scoped ranked context | Long-term storage (no indexing, no ACID) |
+| **RVF** | Future: replace SQLite with native HNSW + smaller footprint | Current: not yet merged (ADR-057 Proposed) |
+| **HNSW (in-memory)** | Vector similarity search during active session | Persistence (that's RVF's job) |
+| **MEMORY.md** | Human-readable knowledge base, version-controlled | Machine-readable store (no schema, no search) |
+| **SONA patterns** | Lightweight routing heuristics (2-10 entries) | Large-scale pattern storage |
+
+### Embedding Service Duplication (Intentional)
+
+`AgentDB.embedder` (EmbeddingService) is the low-level ONNX model driver, shared by AgentDB's 8 core controllers. `EnhancedEmbeddingService` is a CLI-layer wrapper adding batching, caching, and fallback chains for controllers owned by ControllerRegistry. The duplication is architectural: AgentDB is a self-contained library; ControllerRegistry is the CLI integration point.
 
 ## Architecture: Two Independent Stacks
 
@@ -152,30 +209,46 @@ SQLite (17 entries via MCP) and JSON (157 entries via hooks) remain permanently 
 
 ## Priority Fixes Remaining
 
-| # | Fix | Files | Impact |
-|---|-----|-------|--------|
-| P0 | Fix ID generation: `entries.length` index | `intelligence.cjs` line 276 | Prevents 4,482 duplicates |
-| P0 | Scope bootstrap to current project (ML-006) | `intelligence.cjs` lines 231-244 | Prevents cross-project contamination |
-| P1 | Fix `tool_input` snake_case (HK-001) | `hook-handler.cjs` line 157 | Enables file tracking in learning loop |
-| P1 | Fix `createBackend()` for `hybrid` | `auto-memory-hook.mjs` line 235 | Unifies the two memory stacks |
-| P2 | Fix consolidate() identity guard | `intelligence.cjs` line 554 | Prevents session-over-session accumulation |
-| P2 | Skip consolidation for `file === 'unknown'` | `intelligence.cjs` consolidate() | Prevents garbage entries |
-| P3 | Implement ADR-0049 fail-loud | 132 catch blocks across 2 files | Surfaces all hidden bugs |
+Reordered based on architecture understanding: fix the drain first, then the cache bugs.
+
+| # | Fix | Files | Impact | Design Alignment |
+|---|-----|-------|--------|-----------------|
+| **P0** | Fix `createBackend("hybrid")` initialisation | `auto-memory-hook.mjs` line 235 | **Unblocks the entire architecture** — JSON cache drains into AgentDB as designed | Core design fix |
+| **P0** | Scope bootstrap to current project (ML-006) | `intelligence.cjs` lines 231-244 | Prevents cross-project contamination (51 dirs → 1) | Bug fix |
+| **P1** | Fix ID generation: `entries.length` index | `intelligence.cjs` line 276 | Prevents 4,482 duplicates in JSON cache | Bug fix |
+| **P1** | Fix `tool_input` snake_case (HK-001) | `hook-handler.cjs` line 157 | Enables file tracking in learning loop | Bug fix |
+| **P2** | Fix consolidate() identity guard | `intelligence.cjs` line 554 | Prevents session-over-session accumulation | Bug fix |
+| **P2** | Skip consolidation for `file === 'unknown'` | `intelligence.cjs` consolidate() | Prevents garbage entries | Bug fix |
+| **P3** | Implement ADR-0049 fail-loud | 132 catch blocks across 2 files | Surfaces all hidden bugs | Unimplemented ADR |
+| **Future** | Migrate JSON cache to daemon IPC | `hook-handler.cjs` → daemon socket | Eliminates file I/O, gives hooks access to full in-memory graph | ADR-050 evolution |
+| **Future** | Migrate SQLite to RVF | `@claude-flow/memory` | 150x-12,500x faster vector search, 18MB→5.5KB footprint | ADR-057 (Proposed) |
 
 ## Consequences
 
-### If Priority Fixes Are Applied
+### If P0 Bridge Fix Is Applied
 
-- Single memory stack (SQLite + HNSW) for all operations
-- Learning loop tracks real files, promotes hot files correctly
-- graph-state.json stays under 100KB regardless of session count
-- Runtime errors visible instead of silent degradation
-- Memory entries scoped to current project only
+- JSON cache drains into AgentDB at session-end as designed
+- SQLite becomes the populated source of truth (not 17 entries while JSON has 157)
+- `memory search` (CLI/MCP) returns results from the same data hooks use
+- The 8-file sprawl reduces to 3 systems as intended
+- Remaining JSON cache bugs become self-healing (drain empties the cache)
+
+### If P0-P2 Fixes Are All Applied
+
+- Additionally: learning loop tracks real files, ID collisions eliminated
+- graph-state.json stays under 100KB, scoped to current project
+- consolidate() produces useful insight entries, not "unknown" garbage
 
 ### If Not Applied
 
 - Two permanent memory silos with no data exchange
-- Learning loop accumulates garbage ("unknown" file entries)
-- graph-state.json may regrow to 194MB+ on unpatched intelligence.cjs
+- `memory search` returns nothing useful (only 17 manual entries)
+- hooks inject ranked context from stale, cross-project, duplicate-inflated JSON
+- graph-state.json regrows to 194MB+ (without dedup guard)
 - 132 silent catch blocks continue hiding every controller failure
-- Cross-project data contamination on every session start
+
+### Relationship to Future ADRs
+
+- **ADR-057 (RVF)**: once merged, SQLite→RVF migration. Does not change the 3-layer architecture. JSON cache still drains into RVF instead of SQLite.
+- **ADR-050 evolution (daemon IPC)**: replaces JSON files with socket calls to the running daemon. Eliminates file I/O but keeps the same write-ahead pattern. Requires daemon to be running.
+- **ADR-0049 (fail-loud)**: orthogonal to storage architecture. Surfaces bugs in controllers regardless of which backend stores the data.
