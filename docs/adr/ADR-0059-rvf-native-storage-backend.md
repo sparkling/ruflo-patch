@@ -534,7 +534,22 @@ Three fixes needed in `agentdb-backend.ts`:
 
 **Current analysis**: the hook only calls `initialize`, `shutdown`, `count`, `bulkInsert`, `query`. `LearningBridge` and `MemoryGraph` operate through `IMemoryBackend` — they work with either backend. No controller access is used today. But this could change if upstream wires reflexion/causal into session lifecycle hooks.
 
-**Decision (v7, final)**: **Option A — swap to `RvfBackend`.**
+**Decision (v7)**: **Option A — swap to `RvfBackend`.**
+
+> **v8 caveat**: The "import topology" argument that sealed Option A may be invalid. `@sparkleideas/agentdb` is one of our 42 published packages — we build, publish, and install it routinely. The 18MB sql.js is already a transitive dependency. The question is not "can we install agentdb" but "why does the dynamic import fail in the hook context, and can we fix the resolution?" This needs investigation before finalising the decision.
+
+### Open Task: Investigate AgentDBBackend Import Failure
+
+Before implementing either option, we need to understand WHY `import('@sparkleideas/agentdb')` fails inside `AgentDBBackend` when called from the hook subprocess.
+
+**Steps:**
+1. Make the silent catch at `agentdb-backend.ts` line 51-53 log the actual error
+2. Run `auto-memory-hook.mjs import` and capture the error message
+3. Determine if it's: ESM/CJS mismatch, wrong package name after codemod, missing from node_modules, or a genuine resolution failure
+4. If the fix is simple (e.g. wrong import path), Option B (fix AgentDBBackend) becomes the better permanent solution — it preserves the author's backend choice with minimal change
+5. If the fix is fundamental (e.g. hooks can't resolve cross-package ESM imports), Option A (RvfBackend) is confirmed correct
+
+**This investigation must complete before implementation.**
 
 Confirmed by 4 expert hives across 7 ADR versions:
 
