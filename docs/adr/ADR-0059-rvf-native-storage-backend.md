@@ -551,6 +551,32 @@ Before implementing either option, we need to understand WHY `import('@sparkleid
 
 **This investigation must complete before implementation.**
 
+### Investigation Result (v9): Shared Store is a Phantom
+
+The investigation revealed that **AgentDBBackend never wrote to the same store as the CLI**:
+
+```
+Hook → AgentDBBackend → .swarm/agentdb-memory.rvf  (separate file)
+CLI  → memory-bridge  → .swarm/memory.db            (separate file)
+```
+
+The hook passes `dbPath: join(swarmDir, 'agentdb-memory.rvf')` (line 251). The CLI's `getDbPath()` returns `.swarm/memory.db` (line 78 of memory-bridge.ts). These were ALWAYS two separate files. The "single source of truth" was never achieved — not because of the backend class, but because of the file path.
+
+Swapping to RvfBackend preserves the same file topology. The only change: data reaches disk instead of evaporating from RAM.
+
+**The import topology concern is also resolved**: `AgentDBBackend` fails because it does a dynamic `import('@sparkleideas/agentdb')` which is not a dependency of `@sparkleideas/memory`. This is a cross-package resolution failure in the hook subprocess context. `RvfBackend` lives in `@sparkleideas/memory` itself — no cross-package import.
+
+**Decision confirmed**: Option A (RvfBackend swap) is correct. The "fix AgentDBBackend" option (Option B) would fix the import and persistence bugs but would NOT unify the two stores — the file paths are different regardless.
+
+### Unifying the Two Stores (Separate Task)
+
+Making `memory search` return hook-written data requires one of:
+1. **Phase 2**: MCP server learns to also read from `.rvf` file
+2. **Session-end drain**: `AutoMemoryBridge.syncToAutoMemory()` writes entries from `.rvf` into MEMORY.md, which the CLI can re-import
+3. **Future**: hooks write directly to `.swarm/memory.db` via a shared interface, or both paths converge on a single `.rvf` file via upstream:ADR-057
+
+This is NOT blocked by the backend choice. It is a layer above.
+
 Confirmed by 4 expert hives across 7 ADR versions:
 
 1. **Author's intent**: AgentDBBackend was aspirational, not functional. The hook only needs store/query. Controller access is routed through MCP bridge by design (ADR-053).
