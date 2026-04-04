@@ -1,7 +1,8 @@
 # ADR-0059: RVF Native Storage Backend (Patch-Level Implementation)
 
-**Status**: Proposed
+**Status**: Proposed (under review — see Open Questions)
 **Date**: 2026-04-03
+**Updated**: 2026-04-04 (v2 — dependency audit + open questions)
 **Deciders**: ruflo-patch maintainers
 **Methodology**: SPARC + hive-mind analysis (4 experts, collective synthesis)
 **Upstream ADR**: upstream:ADR-057 (RVF Native Storage, status: Proposed)
@@ -352,9 +353,44 @@ Phase 4 (remove sql.js) is explicitly out of scope. RVF does not replace SQLite.
 | **upstream:ADR-057** (RVF Storage) | This ADR is our interpretation/implementation |
 | **upstream:ADR-050** (Intelligence Loop) | Bridge fix restores the WAL pattern designed there |
 
+## Fork Dependency Audit (2026-04-04)
+
+### Required fork changes (must exist for Phase 1)
+
+| Change | File | Status |
+|--------|------|--------|
+| `RvfBackend` class | `@claude-flow/memory/src/rvf-backend.ts` | In place (hz fork) |
+| `RvfBackend` exported | `@claude-flow/memory/src/index.ts` lines 196-197 | In place (hz fork) |
+| `AutoMemoryBridge` class | `@claude-flow/memory/src/auto-memory-bridge.ts` | In place (hz fork) |
+
+### Superseded fork changes
+
+| Change | Why superseded |
+|--------|---------------|
+| WM-003 (AgentDBBackend-only) | Phase 1 replaces AgentDBBackend with RvfBackend in the same function WM-003 modified |
+
+### Session commits (2026-04-03/04) — no conflicts
+
+All 5 in-place session commits (dedup guard, config defaults, ControllerRegistry config, ruvector dep, memory-initializer cleanup) are independent of Phase 1. Four reverted commits (bridgeGenerateEmbedding rewrite, getBridge timeout, EmbeddingService prefixes) are already cleaned up.
+
+`auto-memory-hook.mjs` was never modified this session — clean target for Phase 1.
+
+## Open Questions
+
+> **IMPORTANT**: This ADR's reframing — "RVF handles vectors + KV, SQLite keeps relational" — is our interpretation based on code analysis. It may not match the upstream author's original intent.
+
+upstream:ADR-057 explicitly states "RVF replaces SQLite" across all consumers. Our AgentDB expert found this is impractical (24 tables, JOINs, CTEs, triggers). But we may be wrong:
+
+1. **Did the upstream author intend a full SQL replacement?** The ADR lists 8 phases including "Phase 8: Remove sql.js". If so, our hybrid interpretation fights the design.
+2. **Is there a KV/document model for relational data planned upstream?** Some of the 24 tables could be modelled as RVF KV segments instead of SQL.
+3. **Are our fork patches (especially WM-003) implementing the wrong backend?** WM-003 changed to AgentDBBackend; upstream may have intended RvfBackend all along.
+4. **Does `db-unified.ts` in upstream represent the intended migration path?** It exists but is not adopted by the MCP server.
+
+These questions require reading upstream:ADR-057 in its entirety and checking upstream commits/issues for the author's intent. See follow-up investigation.
+
 ## Related
 
-- **ADR-0058**: Memory, Learning & Storage Deep Analysis -- root cause analysis
-- **ADR-0056**: MCP Server Unified Backend -- Phase 3 of this implementation
-- **ADR-0054**: RuVector Patch Pipeline -- dependency chain
+- **ADR-0058**: Memory, Learning & Storage Deep Analysis — root cause analysis
+- **ADR-0056**: MCP Server Unified Backend — Phase 3 of this implementation
+- **ADR-0054**: RuVector Patch Pipeline — dependency chain
 - **GitHub issues**: P0 bridge bug (ADR-0058 section), upstream:ADR-057
