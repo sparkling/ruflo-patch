@@ -122,15 +122,41 @@ throw new Error(
 
 ## Execution Plan
 
-| Phase | What | Scope | Upstream PR? |
-|-------|------|-------|-------------|
-| **1** | Swap AgentDBBackend → RvfBackend in `createBackend()` | Patch (this repo) + upstream PR | Yes — see below |
-| **2** | Fix CJS bugs: ID collision in `intelligence.cjs`, ML-006 scope, `tool_input` snake_case | Patch + upstream PRs | Yes (separate PRs) |
-| **3** | Wire MCP server to also query `.rvf` — so `memory search` returns hook-written data | Fork-level | Yes (separate PR) |
-| **Future** | Daemon IPC: hooks call daemon socket instead of file I/O | New feature | Yes |
-| **Future** | Converge CLI onto RVF for vectors (upstream-ruflo:ADR-057) | Upstream | N/A |
+### Phase Independence (Confirmed)
 
-Phase 3 requires additional investigation: the intended integration point (`db-unified.ts`) may have been renamed to `database-provider.ts`. Path must be confirmed before Phase 3 can be specified.
+Phase 1 and Phase 2 operate on **independent data paths** and can ship in any order:
+
+```
+Path A (CJS):  auto-memory-store.json → intelligence.cjs → ranked-context.json
+Path B (ESM):  MEMORY.md → AutoMemoryBridge → RvfBackend → .rvf → MEMORY.md
+```
+
+Phase 1 fixes Path B (drain). Phase 2 fixes Path A (CJS cache). They never cross. The 4,482 duplicate entries in `auto-memory-store.json` cannot enter the `.rvf` file — `importFromAutoMemory()` reads only MEMORY.md topic files and has a content-hash dedup guard (line 405 of `auto-memory-bridge.ts`).
+
+### Phases
+
+| Order | Phase | What | Lines | Scope | Upstream PR? |
+|-------|-------|------|-------|-------|-------------|
+| 1 | **Phase 1** | Swap AgentDBBackend → RvfBackend in `createBackend()` | ~15 | Patch + upstream | Yes — see below |
+| 2 | **Phase 2** | Fix CJS bugs: ID collision, ML-006 scope, `tool_input` snake_case | ~25 | Patch + upstream | Yes (separate PRs) |
+| 3 | **Phase 3** | Wire MCP server to also query `.rvf` — unified search | ~200 | Fork-level | Yes (separate PR) |
+| 4 | **Future** | Daemon IPC: hooks call Unix domain socket, daemon owns stores | ~265 | New feature | Yes |
+| 5 | **Future** | Converge CLI onto RVF for vectors (upstream-ruflo:ADR-057) | TBD | Upstream | N/A |
+
+### Why Not Skip to Daemon?
+
+Investigated as a serious candidate (4-expert hive). Findings:
+
+- **Daemon has no IPC API today** — ~265 lines across 4 files to build (Unix socket server, route handler, hook client, fallback)
+- **Daemon must be running before hooks fire** — if it's down, data loss returns. Fallback needed → that fallback IS Phase 1's RvfBackend
+- **Phase 1 is prerequisite work for the daemon** — you need real persisted data to validate the daemon's API design against
+- **Phase 1 is not throwaway work** — it becomes the daemon's offline fallback permanently
+
+The daemon is the right **long-term** architecture (single writer, no reconciliation). But it's additive to Phase 1, not a replacement.
+
+### Phase 3 Note
+
+The intended MCP integration point (`db-unified.ts`) may have been renamed to `database-provider.ts`. Path must be confirmed before Phase 3 can be specified.
 
 ## Risks
 
