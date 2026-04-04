@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" pre-bash",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" pre-bash'",
             "timeout": 5000
           }
         ]
@@ -16,17 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" pre-edit",
-            "timeout": 5000
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" pre-task",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" pre-edit'",
             "timeout": 5000
           }
         ]
@@ -38,7 +28,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" post-edit",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" post-edit'",
             "timeout": 10000
           }
         ]
@@ -48,17 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" post-command",
-            "timeout": 5000
-          }
-        ]
-      },
-      {
-        "matcher": "Task",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" post-task",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" post-bash'",
             "timeout": 5000
           }
         ]
@@ -69,13 +49,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" route",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" route'",
             "timeout": 10000
-          },
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" user-prompt",
-            "timeout": 5000
           }
         ]
       }
@@ -85,17 +60,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" session-restore",
-            "timeout": 5000
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-restore'",
+            "timeout": 15000
           },
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/auto-memory-hook.mjs\" import",
-            "timeout": 8000
-          },
-          {
-            "type": "command",
-            "command": "bash \"$(git rev-parse --show-toplevel)/.claude/scripts/pi-brain-session.sh\" session-start",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/auto-memory-hook.mjs\" import'",
             "timeout": 8000
           }
         ]
@@ -106,8 +76,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" session-end",
-            "timeout": 5000
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-end'",
+            "timeout": 10000
           }
         ]
       }
@@ -117,7 +87,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/auto-memory-hook.mjs\" sync",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/auto-memory-hook.mjs\" sync'",
             "timeout": 10000
           }
         ]
@@ -129,11 +99,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" compact-manual"
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" compact-manual'"
           },
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" session-end",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-end'",
             "timeout": 5000
           }
         ]
@@ -143,11 +113,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" compact-auto"
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" compact-auto'"
           },
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" session-end",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-end'",
             "timeout": 6000
           }
         ]
@@ -158,7 +128,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" status",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" status'",
             "timeout": 3000
           }
         ]
@@ -169,18 +139,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" teammate-idle",
-            "timeout": 5000
-          }
-        ]
-      }
-    ],
-    "PostToolUseFailure": [
-      {
-        "hooks": [
-          {
-            "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" post-tool-failure",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" post-task'",
             "timeout": 5000
           }
         ]
@@ -191,7 +150,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/hook-handler.cjs\" notify",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" notify'",
             "timeout": 3000
           }
         ]
@@ -200,13 +159,13 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "node \"$(git rev-parse --show-toplevel)/.claude/helpers/statusline.cjs\""
+    "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/statusline.cjs\"'"
   },
   "permissions": {
     "allow": [
-      "Bash(npx @sparkleideas/cli:*)",
-      "Bash(npx claude-flow:*)",
-      "Bash(node \"$(git rev-parse --show-toplevel)\"/.claude/*)",
+      "Bash(npx @claude-flow*)",
+      "Bash(npx claude-flow*)",
+      "Bash(node .claude/*)",
       "mcp__claude-flow__:*"
     ],
     "deny": [
@@ -221,24 +180,15 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_FLOW_V3_ENABLED": "true",
-    "CLAUDE_FLOW_HOOKS_ENABLED": "true",
-    "GUIDANCE_EVENT_WIRING_ENABLED": "true",
-    "GUIDANCE_PRE_EDIT_HOOK": "true",
-    "GUIDANCE_POST_COMMAND_SENTINEL": "true",
-    "GUIDANCE_TEAMMATE_IDLE_HOOK": "true",
-    "GUIDANCE_POST_TOOL_FAILURE": "true",
-    "GUIDANCE_SESSION_SENTINEL": "true",
-    "GUIDANCE_AUTO_MEMORY": "true",
-    "GUIDANCE_LEARNING_BRIDGE": "true",
-    "GUIDANCE_STATUS_LINE": "true"
+    "CLAUDE_FLOW_HOOKS_ENABLED": "true"
   },
   "claudeFlow": {
     "version": "3.0.0",
     "enabled": true,
     "platform": {
-      "os": "linux",
-      "arch": "x64",
-      "shell": "bash"
+      "os": "darwin",
+      "arch": "arm64",
+      "shell": "zsh"
     },
     "modelPreferences": {
       "default": "claude-opus-4-6",
@@ -270,89 +220,39 @@
     },
     "swarm": {
       "topology": "hierarchical-mesh",
-      "maxAgents": 15,
-      "autoScale": true,
-      "coordinationStrategy": "adaptive"
+      "maxAgents": 15
     },
     "memory": {
       "backend": "hybrid",
-      "cacheSize": 256,
       "enableHNSW": true,
-      "agentdb": {
-        "learningThreshold": 0.6,
-        "vectorBackend": "auto",
-        "tickInterval": 300000
-      },
       "learningBridge": {
-        "enabled": true,
-        "sonaMode": "adaptive",
-        "confidenceDecayRate": 0.02,
-        "accessBoostAmount": 0.1
+        "enabled": true
       },
       "memoryGraph": {
-        "enabled": true,
-        "pageRankDamping": 0.85,
-        "maxNodes": 10000,
-        "similarityThreshold": 0.7
+        "enabled": true
       },
       "agentScopes": {
-        "enabled": true,
-        "defaultScope": "project"
+        "enabled": true
       }
     },
     "neural": {
-      "enabled": true,
-      "modelPath": ".claude-flow/neural"
-    },
-    "hooks": {
-      "enabled": true,
-      "autoExecute": true
+      "enabled": true
     },
     "daemon": {
-      "autoStart": true,
+      "autoStart": false,
       "workers": [
         "map",
         "audit",
-        "optimize",
-        "consolidate",
-        "testgaps",
-        "ultralearn",
-        "deepdive",
-        "document",
-        "refactor",
-        "benchmark"
+        "optimize"
       ],
       "schedules": {
         "audit": {
-          "interval": "1h",
+          "interval": "4h",
           "priority": "critical"
         },
         "optimize": {
-          "interval": "30m",
-          "priority": "high"
-        },
-        "consolidate": {
           "interval": "2h",
-          "priority": "low"
-        },
-        "document": {
-          "interval": "1h",
-          "priority": "normal",
-          "triggers": [
-            "adr-update",
-            "api-change"
-          ]
-        },
-        "deepdive": {
-          "interval": "4h",
-          "priority": "normal",
-          "triggers": [
-            "complex-change"
-          ]
-        },
-        "ultralearn": {
-          "interval": "1h",
-          "priority": "normal"
+          "priority": "high"
         }
       }
     },

@@ -353,7 +353,7 @@ function init() {
   };
   writeJSON(GRAPH_PATH, graph);
 
-  // Build ranked context for fast lookup (use deduped, not raw store)
+  // Build ranked context for fast lookup
   const rankedEntries = deduped.map(entry => {
     const id = entry.id;
     const content = entry.content || entry.value || '';
@@ -609,7 +609,7 @@ function consolidate() {
   });
 
   // 7. Write updated ranked context
-  const rankedEntries = store.map(entry => {
+  const rankedEntries = deduped.map(entry => {
     const id = entry.id;
     const content = entry.content || entry.value || '';
     const summary = entry.summary || entry.key || '';

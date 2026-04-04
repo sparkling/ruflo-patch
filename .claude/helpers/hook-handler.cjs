@@ -270,5 +270,6 @@ const handlers = {
 process.exitCode = 0;
 main().catch((e) => {
   try { console.log(`[WARN] Hook handler error: ${e.message}`); } catch (_) {}
-  process.exitCode = 0;
+}).finally(() => {
+  process.exit(0);
 });
