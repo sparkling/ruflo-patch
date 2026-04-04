@@ -504,9 +504,37 @@ const backend = new memPkg.RvfBackend({
 | Existing patches need reverting | No |
 | Uncommitted changes conflict | No |
 
-### Open Question (v5)
+### Resolved: RvfBackend vs Fix AgentDBBackend (v6, 2026-04-04)
 
-> **Should we use `RvfBackend` as a workaround, or fix the ID coercion bug in `AgentDBBackend`/`SqlJsRvfBackend` and use the intended backend?** The `RvfBackend` swap avoids the bug but may not match the upstream author's intended backend for the hook bridge. The original code used `AgentDBBackend` — was that a deliberate choice? If the ID bug is fixed, should we use the author's original backend class instead? See follow-up investigation.
+Two viable permanent solutions exist. Both are legitimate. The choice depends on whether future hooks will need AgentDB controllers.
+
+**Option A: Swap to `RvfBackend`** (recommended for current hook design)
+
+| Pro | Con |
+|-----|-----|
+| Zero native deps (pure-TS HnswLite) | No access to AgentDB controllers from hooks |
+| Persists to `.rvf` file atomically | If future hooks need reflexion/causal, needs rework |
+| Drop-in `IMemoryBackend` replacement | Different code path from MCP/CLI tools |
+| No 18MB sql.js in hook subprocess | |
+| Aligned with upstream:ADR-057 for vector/KV | |
+
+**Option B: Fix `AgentDBBackend`** (better if hooks will need controllers)
+
+Three fixes needed in `agentdb-backend.ts`:
+1. **Import path**: ensure `@sparkleideas/agentdb` is resolvable (add as dependency of `@sparkleideas/memory`, or fix the dynamic import)
+2. **Default dbPath**: change from `':memory:'` to `join(swarmDir, 'agentdb.db')` — data must survive process exit
+3. **Silent degradation**: throw on import failure instead of `console.warn` + return (or at minimum, expose `this.available` so callers can detect it)
+
+| Pro | Con |
+|-----|-----|
+| Preserves author's original backend choice | Pulls in 18MB sql.js + embeddings + controllers for basic store/query |
+| Future-proof if hooks need controllers | Three separate fixes across two packages |
+| Same code path as MCP/CLI tools | `agentdb` import may fail on minimal installs |
+| Controller access available if needed later | Need to also fix WM-003 to pass correct dbPath |
+
+**Current analysis**: the hook only calls `initialize`, `shutdown`, `count`, `bulkInsert`, `query`. `LearningBridge` and `MemoryGraph` operate through `IMemoryBackend` — they work with either backend. No controller access is used today. But this could change if upstream wires reflexion/causal into session lifecycle hooks.
+
+**Decision**: defer to implementation phase. Both options have exact code specified. Choose based on whether the author signals intent to access controllers from hooks in future upstream work.
 
 ## Related
 
