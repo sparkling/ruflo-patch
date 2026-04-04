@@ -1,4 +1,4 @@
-# Claude Code Configuration - Claude Flow V3
+# Claude Code Configuration - RuFlo V3
 
 ## What This Project Is
 
@@ -198,6 +198,99 @@ npx @sparkleideas/cli@latest swarm init --topology hierarchical --max-agents 8 -
 - Never poll TaskOutput or check swarm status — trust agents to return
 - When agent results arrive, review ALL results before proceeding
 
+## Swarm Protocols & Routing
+
+### Auto-Start Swarm Protocol
+
+When the user requests a complex task, spawn agents in background and WAIT:
+
+```javascript
+// STEP 1: Initialize swarm coordination
+Bash("npx @sparkleideas/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized")
+
+// STEP 2: Spawn ALL agents IN BACKGROUND in a SINGLE message
+Task({prompt: "Research requirements...", subagent_type: "researcher", run_in_background: true})
+Task({prompt: "Design architecture...", subagent_type: "system-architect", run_in_background: true})
+Task({prompt: "Implement solution...", subagent_type: "coder", run_in_background: true})
+Task({prompt: "Write tests...", subagent_type: "tester", run_in_background: true})
+Task({prompt: "Review code quality...", subagent_type: "reviewer", run_in_background: true})
+```
+
+### Agent Routing
+
+| Code | Task | Agents |
+|------|------|--------|
+| 1 | Bug Fix | coordinator, researcher, coder, tester |
+| 3 | Feature | coordinator, architect, coder, tester, reviewer |
+| 5 | Refactor | coordinator, architect, coder, reviewer |
+| 7 | Performance | coordinator, perf-engineer, coder |
+| 9 | Security | coordinator, security-architect, auditor |
+
+### Task Complexity Detection
+
+- AUTO-INVOKE SWARM when task involves: 3+ files, new features, cross-module refactoring, API changes, security, or performance work
+- SKIP SWARM for: single file edits, simple bug fixes (1-2 lines), documentation updates, configuration changes
+
+## Hooks System (27 Hooks + 12 Workers)
+
+### Essential Hooks
+
+| Hook | Description |
+|------|-------------|
+| `pre-task` / `post-task` | Task lifecycle with learning |
+| `pre-edit` / `post-edit` | File editing with neural training |
+| `session-start` / `session-end` | Session state persistence |
+| `route` | Route task to optimal agent |
+| `intelligence` | RuVector intelligence system |
+| `worker` | Background worker management |
+
+### 12 Background Workers
+
+| Worker | Priority | Description |
+|--------|----------|-------------|
+| `optimize` | high | Performance optimization |
+| `audit` | critical | Security analysis |
+| `testgaps` | normal | Test coverage analysis |
+| `map` | normal | Codebase mapping |
+| `deepdive` | normal | Deep code analysis |
+| `document` | normal | Auto-documentation |
+
+```bash
+npx @sparkleideas/cli@latest hooks pre-task --description "[task]"
+npx @sparkleideas/cli@latest hooks post-task --task-id "[id]" --success true
+npx @sparkleideas/cli@latest hooks worker dispatch --trigger audit
+```
+
+## Auto-Learning Protocol
+
+### Before Starting Any Task
+```bash
+npx @sparkleideas/cli@latest memory search --query "[task keywords]" --namespace patterns
+npx @sparkleideas/cli@latest hooks route --task "[task description]"
+```
+
+### After Completing Any Task Successfully
+```bash
+npx @sparkleideas/cli@latest memory store --namespace patterns --key "[pattern-name]" --value "[what worked]"
+npx @sparkleideas/cli@latest hooks post-task --task-id "[id]" --success true --store-results true
+```
+
+- ALWAYS check memory before starting new features, debugging, or refactoring
+- ALWAYS store patterns in memory after solving bugs, completing features, or finding optimizations
+
+## Intelligence System (RuVector)
+
+- **SONA**: Self-Optimizing Neural Architecture (<0.05ms adaptation)
+- **HNSW**: 150x-12,500x faster pattern search
+- **EWC++**: Elastic Weight Consolidation (prevents forgetting)
+- **Flash Attention**: 2.49x-7.47x speedup
+
+The 4-step intelligence pipeline:
+1. **RETRIEVE** - Fetch relevant patterns via HNSW
+2. **JUDGE** - Evaluate with verdicts (success/failure)
+3. **DISTILL** - Extract key learnings via LoRA
+4. **CONSOLIDATE** - Prevent catastrophic forgetting via EWC++
+
 ## V3 CLI Commands
 
 ### Core Commands
@@ -254,6 +347,16 @@ npx @sparkleideas/cli@latest memory list --namespace patterns --limit 10
 
 # Retrieve (REQUIRED: --key; OPTIONAL: --namespace)
 npx @sparkleideas/cli@latest memory retrieve --key "pattern-auth" --namespace patterns
+```
+
+## Environment Variables
+
+```bash
+CLAUDE_FLOW_CONFIG=./claude-flow.config.json
+CLAUDE_FLOW_LOG_LEVEL=info
+ANTHROPIC_API_KEY=sk-ant-...
+CLAUDE_FLOW_MEMORY_BACKEND=hybrid
+CLAUDE_FLOW_MEMORY_PATH=./data/memory
 ```
 
 ## Quick Setup
