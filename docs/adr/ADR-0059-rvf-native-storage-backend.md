@@ -459,6 +459,55 @@ Phase 1 (swap `AgentDBBackend` → `RvfBackend` in `auto-memory-hook.mjs`) remai
 3. **ADR-056/057 "100% complete" is unreliable** — ADR-054 lists 50+ remaining TODOs
 4. **Use `RvfBackend` (pure-TS, @claude-flow/memory) not `SqlJsRvfBackend` (agentdb)** — avoids the ID coercion bug entirely since RvfBackend uses its own Map-based KV store
 
+## Final Implementation Decision (2026-04-04, 4-expert hive)
+
+### Backend Selection: `RvfBackend` from `@sparkleideas/memory`
+
+All experts unanimous. `RvfBackend` is a drop-in replacement for `AgentDBBackend`:
+- Implements full `IMemoryBackend` interface (17 methods)
+- Exported from `@sparkleideas/memory` (index.ts lines 196-197)
+- String IDs safe — `Map<string, MemoryEntry>` throughout, no `Number()` coercion
+- Creates `.rvf` file on first flush — never throws on missing path
+- Zero native dependencies — pure-TS HnswLite fallback
+- ID coercion bug #114 is in `SqlJsRvfBackend` (different class, different package) — does not affect us
+
+### Exact Code Change
+
+```javascript
+// auto-memory-hook.mjs createBackend(), replacing lines 249-262:
+
+// Before:
+if (!memPkg.AgentDBBackend) { throw ... }
+const backend = new memPkg.AgentDBBackend({
+  dbPath: join(swarmDir, 'agentdb-memory.rvf'),
+  vectorBackend: config.agentdb.vectorBackend || 'auto',
+  enableLearning: config.agentdb.enableLearning !== false,
+});
+
+// After:
+if (!memPkg.RvfBackend) { throw ... }
+const backend = new memPkg.RvfBackend({
+  databasePath: join(swarmDir, 'agentdb-memory.rvf'),
+});
+```
+
+### Pre-Implementation Checklist
+
+| Check | Status |
+|-------|--------|
+| `RvfBackend` implements `IMemoryBackend` | Verified |
+| `RvfBackend` exported from package | Verified (index.ts:196-197) |
+| String IDs safe | Verified (Map-based, no coercion) |
+| Creates file on first flush | Verified (loadFromDisk skips missing) |
+| Zero native deps | Verified (HnswLite pure-TS) |
+| ID coercion bug #114 | Not applicable (different class) |
+| Existing patches need reverting | No |
+| Uncommitted changes conflict | No |
+
+### Open Question (v5)
+
+> **Should we use `RvfBackend` as a workaround, or fix the ID coercion bug in `AgentDBBackend`/`SqlJsRvfBackend` and use the intended backend?** The `RvfBackend` swap avoids the bug but may not match the upstream author's intended backend for the hook bridge. The original code used `AgentDBBackend` — was that a deliberate choice? If the ID bug is fixed, should we use the author's original backend class instead? See follow-up investigation.
+
 ## Related
 
 - **ADR-0058**: Memory, Learning & Storage Deep Analysis — root cause analysis
