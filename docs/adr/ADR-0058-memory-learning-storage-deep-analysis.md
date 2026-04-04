@@ -18,7 +18,7 @@ The storage system is designed as a **write-ahead-log pattern** with three layer
 
 | Layer | Backend | Role | Lifetime |
 |-------|---------|------|----------|
-| **1. AgentDB** | SQLite (→ RVF per ADR-057) | Single source of truth — durable cross-session store | Permanent |
+| **1. AgentDB** | SQLite (→ RVF per upstream:ADR-057) | Single source of truth — durable cross-session store | Permanent |
 | **2. CJS JSON cache** | `.claude-flow/data/*.json` | Fast intra-session write-ahead for CJS hook subprocesses | Ephemeral — drained into AgentDB at session-end |
 | **3. MEMORY.md** | Markdown files | Human-readable projection of most relevant entries | Permanent, curated |
 
@@ -26,11 +26,13 @@ The storage system is designed as a **write-ahead-log pattern** with three layer
 
 ### Key Design Decisions (from upstream ADRs)
 
-- **CJS/ESM split is temporary** (ADR-050): hooks use CJS because ESM `import()` adds 50ms. Not a design goal — collapses when daemon IPC or synchronous ESM loading is available.
-- **JSON files are staging, not permanent** (ADR-050, ADR-057): designed to migrate to RVF once ADR-057 ships. Until then, they are a valid write-ahead cache.
-- **Two-system architecture is intentional** (ADR-048, ADR-050): CJS hooks append to JSON (fast), session-end reconciles into AgentDB (durable). Standard WAL pattern.
-- **RVF replaces SQLite** (ADR-057, status: Proposed): binary container (5.5KB) with native HNSW, replacing sql.js (18MB WASM, O(n) brute-force). Do not depend on it yet.
-- **Architecture is federated** (ADR-053): AgentDB handles episodic/skill/causal storage. ControllerRegistry adds routing, caching, graph layers on top. 44 controllers live in memory.
+> **ADR numbering**: This project (ruflo-patch) uses 4-digit zero-padded numbers (ADR-0029 through ADR-0058). Upstream ruflo uses 3-digit numbers (ADR-048 through ADR-057). The namespaces overlap — our ADR-0048 (lazy controller init) is NOT the same as upstream ADR-048 (auto-memory integration). All upstream references below are prefixed with `upstream:`.
+
+- **CJS/ESM split is temporary** (upstream:ADR-050): hooks use CJS because ESM `import()` adds 50ms. Not a design goal — collapses when daemon IPC or synchronous ESM loading is available.
+- **JSON files are staging, not permanent** (upstream:ADR-050, upstream:ADR-057): designed to migrate to RVF once upstream:ADR-057 ships. Until then, they are a valid write-ahead cache.
+- **Two-system architecture is intentional** (upstream:ADR-048, upstream:ADR-050): CJS hooks append to JSON (fast), session-end reconciles into AgentDB (durable). Standard WAL pattern.
+- **RVF replaces SQLite** (upstream:ADR-057, status: Proposed): binary container (5.5KB) with native HNSW, replacing sql.js (18MB WASM, O(n) brute-force). Do not depend on it yet.
+- **Architecture is federated** (upstream:ADR-053): AgentDB handles episodic/skill/causal storage. ControllerRegistry adds routing, caching, graph layers on top. 44 controllers live in memory.
 
 ### How Many Systems Should Exist: Three, Not Eight
 
@@ -75,8 +77,8 @@ The system has two memory stacks separated by the ESM/CJS boundary, with no sync
 
 | Stack | Runtime | Storage | Entries | Upstream ADR |
 |-------|---------|---------|---------|-------------|
-| **AgentDB** (ESM) | CLI/MCP tools | `.swarm/memory.db` (SQLite) + `.swarm/memory.graph` (HNSW) | 17 | ADR-053, ADR-057 |
-| **CJS Intelligence** (CJS) | Hook subprocess | `.claude-flow/data/*.json` (5 files) | 157 (4,482 raw) | ADR-050, ADR-048 |
+| **AgentDB** (ESM) | CLI/MCP tools | `.swarm/memory.db` (SQLite) + `.swarm/memory.graph` (HNSW) | 17 | upstream:ADR-053, upstream:ADR-057 |
+| **CJS Intelligence** (CJS) | Hook subprocess | `.claude-flow/data/*.json` (5 files) | 157 (4,482 raw) | upstream:ADR-050, upstream:ADR-048 |
 
 ### Why Two Stacks?
 
@@ -110,7 +112,7 @@ Two collision vectors:
 
 **Result**: 4,482 entries with only 157 unique IDs. `buildEdges()` processes all 4,482, generating O(n²) edges → 1,337,498 edges → 194MB `graph-state.json`.
 
-**ADR-048 designed `insightCounter` for unique keys** (line 516) but only for the `AutoMemoryBridge` path, not `intelligence.cjs`'s `parseMemoryDir()`.
+**upstream:ADR-048 designed `insightCounter` for unique keys** (line 516) but only for the `AutoMemoryBridge` path, not `intelligence.cjs`'s `parseMemoryDir()`.
 
 **Fix**: Use `entries.length` as index suffix (like the stub generator at `helpers-generator.ts` line 694).
 
@@ -144,7 +146,7 @@ Claude Code PostToolUse sends `tool_input` (snake_case). Handler checks `toolInp
 
 SQLite (17 entries via MCP) and JSON (157 entries via hooks) remain permanently separated.
 
-**Design intent** (ADR-048): `AutoMemoryBridge.importFromAutoMemory()` should sync entries from MEMORY.md into AgentDB; `syncToAutoMemory()` should write back. This round-trip is the designed unification mechanism, but it's broken because the backend can't initialise.
+**Design intent** (upstream:ADR-048): `AutoMemoryBridge.importFromAutoMemory()` should sync entries from MEMORY.md into AgentDB; `syncToAutoMemory()` should write back. This round-trip is the designed unification mechanism, but it's broken because the backend can't initialise.
 
 ### P2: Cumulative Append Bug in `consolidate()`
 
@@ -165,18 +167,28 @@ SQLite (17 entries via MCP) and JSON (157 entries via hooks) remain permanently 
 
 ## ADR Cross-Reference
 
+> **Numbering**: ruflo-patch ADRs use 4-digit (ADR-0029). Upstream ruflo ADRs use 3-digit (ADR-048). Different namespaces — numbers may overlap.
+
+### ruflo-patch ADRs (this repo: `docs/adr/`)
+
 | ADR | Title | Memory/Storage Relevance | Unfixed Items |
 |-----|-------|--------------------------|---------------|
-| **0029** (patch) | Memory & Learning Fixes | ML-001→ML-007 | ML-006 partial, ML-005 hooks |
-| **0030** (patch) | Memory Optimisation | OPT-001→OPT-017, dual SQLite | BUG-1/2/3/4, OPT-017 dual stores |
-| **0033** (patch) | Controller Activation | 27/28 controllers wired | SolverBandit routing broken |
-| **0039** (patch) | Integration Roadmap | 31 additional classes found | Superseded by 0040-0047 |
-| **0041** (patch) | Composition-Aware | Composite controller pattern | Implemented |
-| **0048** (patch) | Deferred Init | 44 controllers, 228ms warm | Silent swallowing preserved |
-| **0049** (patch) | Fail-Loud | 132 silent catch blocks | **Entirely unimplemented** |
-| **ADR-048** (upstream) | Auto-Memory Integration | Bidirectional MEMORY.md↔AgentDB sync | `insightCounter` only in bridge path |
-| **ADR-050** (upstream) | Intelligence Loop | CJS layer design, file persistence | No dedup spec, no pruning spec |
-| **ADR-053** (upstream) | Controller Activation | 28 controllers, 7 init levels | FederatedSession blocked |
+| **ADR-0029** | Memory & Learning Fixes | ML-001→ML-007 | ML-006 partial, ML-005 hooks |
+| **ADR-0030** | Memory Optimisation | OPT-001→OPT-017, dual SQLite | BUG-1/2/3/4, OPT-017 dual stores |
+| **ADR-0033** | Controller Activation | 27/28 controllers wired | SolverBandit routing broken |
+| **ADR-0039** | Integration Roadmap | 31 additional classes found | Superseded by ADR-0040–0047 |
+| **ADR-0041** | Composition-Aware | Composite controller pattern | Implemented |
+| **ADR-0048** | Deferred Init | 44 controllers, 228ms warm | Silent swallowing preserved |
+| **ADR-0049** | Fail-Loud | 132 silent catch blocks | **Entirely unimplemented** |
+
+### Upstream ruflo ADRs (fork: `v3/implementation/adrs/`)
+
+| ADR | Title | Memory/Storage Relevance | Unfixed Items |
+|-----|-------|--------------------------|---------------|
+| **upstream:ADR-048** | Auto-Memory Integration | Bidirectional MEMORY.md↔AgentDB sync | `insightCounter` only in bridge path |
+| **upstream:ADR-050** | Intelligence Loop | CJS layer design, file persistence | No dedup spec, no pruning spec |
+| **upstream:ADR-053** | Controller Activation | 28 controllers, 7 init levels | FederatedSession blocked |
+| **upstream:ADR-057** | RVF Native Storage | Replace SQLite with binary HNSW container | Status: Proposed, not merged |
 
 ## Patch Status
 
@@ -249,6 +261,6 @@ Reordered based on architecture understanding: fix the drain first, then the cac
 
 ### Relationship to Future ADRs
 
-- **ADR-057 (RVF)**: once merged, SQLite→RVF migration. Does not change the 3-layer architecture. JSON cache still drains into RVF instead of SQLite.
-- **ADR-050 evolution (daemon IPC)**: replaces JSON files with socket calls to the running daemon. Eliminates file I/O but keeps the same write-ahead pattern. Requires daemon to be running.
+- **upstream:ADR-057 (RVF)**: once merged, SQLite→RVF migration. Does not change the 3-layer architecture. JSON cache still drains into RVF instead of SQLite.
+- **upstream:ADR-050 evolution (daemon IPC)**: replaces JSON files with socket calls to the running daemon. Eliminates file I/O but keeps the same write-ahead pattern. Requires daemon to be running.
 - **ADR-0049 (fail-loud)**: orthogonal to storage architecture. Surfaces bugs in controllers regardless of which backend stores the data.
