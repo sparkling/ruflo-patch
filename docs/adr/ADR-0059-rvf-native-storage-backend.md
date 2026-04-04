@@ -1,6 +1,6 @@
 # ADR-0059: RVF Native Storage Backend (Patch-Level Implementation)
 
-**Status**: Proposed (decision made, not yet implemented)
+**Status**: Proposed (decision finalised v10, not yet implemented)
 **Date**: 2026-04-03
 **Updated**: 2026-04-04 (v3 — upstream intent confirmed, open questions resolved)
 **Deciders**: ruflo-patch maintainers
@@ -583,6 +583,64 @@ Confirmed by 4 expert hives across 7 ADR versions:
 2. **Import topology**: `agentdb` is a dependency of `@sparkleideas/memory`, but the hook resolves imports from the caller's module graph. `@sparkleideas/agentdb` is not installed in this project. The dynamic import fails silently — this is a deployment topology issue, not a fixable bug.
 3. **RvfBackend** lives in `@claude-flow/memory` itself — same package, same dist, no cross-package import. Implements full `IMemoryBackend`, persists to `.rvf` atomically, HNSW via pure-TS `HnswLite`.
 4. **Future-proofing**: if hooks ever need controllers, they will import AgentDB directly. That is a new requirement, not a regression from this change.
+
+## Final Architecture (v10, 2026-04-04)
+
+### Confirmed: Two Stores, One Bridge, Zero Reconciliation
+
+Investigated by 8 expert hives across 10 ADR versions. Tested alternatives: daemon IPC (no API surface exists), single .rvf file (no concurrent writer safety), CJS shim to .db (re-introduces 18MB sql.js), MEMORY.md as bridge (correct — it IS the bridge).
+
+**The upstream design is already correct. The implementation is one function wrong.**
+
+### The Permanent Architecture
+
+```
+Hook → RvfBackend → .swarm/agentdb-memory.rvf  (vectors/KV, fast, atomic)
+CLI  → memory-bridge → .swarm/memory.db         (relational, full AgentDB)
+Both → AutoMemoryBridge → MEMORY.md              (reconciliation at session boundaries)
+```
+
+| Component | File | Owner | Purpose |
+|-----------|------|-------|---------|
+| RVF store | `.swarm/agentdb-memory.rvf` | Hook subprocess | Fast vector/KV writes during session |
+| SQLite store | `.swarm/memory.db` | CLI/MCP | Relational data, 24 tables, controllers |
+| MEMORY.md | `.claude/memory/*.md` | AutoMemoryBridge | Session-boundary reconciliation, human-readable |
+| JSON cache | `.claude-flow/data/*.json` | CJS intelligence | Intra-session PageRank/context cache (ephemeral) |
+
+### Why Two Stores (Intentional)
+
+- **RVF has no file-level locking** — two processes sharing one .rvf file corrupt each other
+- **SQLite WAL handles concurrent readers** — but importing 18MB sql.js into a 50ms hook budget is unacceptable
+- **MEMORY.md is the designed reconciliation layer** — curated at session-end, imported at session-start
+- **The daemon has no IPC API today** — building one is future work, not a prerequisite
+
+### Why NOT Other Options
+
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| Daemon IPC (sole writer) | Future work | Daemon has no socket/HTTP — would be built from scratch |
+| Both write one .rvf | Unsafe | RvfBackend has no flock/advisory lock |
+| Hooks write to .db | Wrong trade-off | 18MB sql.js in a 50ms subprocess |
+| CJS shim to .db | Same problem | Still pulls SQLite into hooks |
+| Fix AgentDBBackend | Doesn't unify stores | Same file path separation regardless |
+
+### The Fix
+
+One function change in `auto-memory-hook.mjs createBackend()`: swap `AgentDBBackend` (cross-package import fails silently, data evaporates from RAM) for `RvfBackend` (same package, atomic persist, zero native deps).
+
+### Execution Plan
+
+| Phase | What | Where | Upstream PR? |
+|-------|------|-------|-------------|
+| **1** | Swap AgentDBBackend → RvfBackend in createBackend() | This repo (patch) + upstream PR | Yes |
+| **2** | Fix CJS bugs: ID collision, ML-006 scope, tool_input snake_case | This repo (patch) + upstream PR | Yes |
+| **3** | Wire db-unified.ts into MCP server so `memory search` queries .rvf directly | Fork-level change | Yes |
+| **Future** | Daemon IPC: hooks call daemon socket instead of file I/O | New feature | Yes |
+| **Future** | Converge CLI onto RVF for vectors (upstream-ruflo:ADR-057) | Upstream | N/A |
+
+### What This Is NOT
+
+This is not a workaround. This is not a compromise. This is the upstream-intended architecture (ADR-048 WAL pattern + upstream-ruflo:ADR-057 RVF for vectors) implemented correctly for the first time.
 
 ## Related
 
