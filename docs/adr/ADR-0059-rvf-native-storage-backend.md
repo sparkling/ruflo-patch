@@ -642,9 +642,114 @@ One function change in `auto-memory-hook.mjs createBackend()`: swap `AgentDBBack
 
 This is not a workaround. This is not a compromise. This is the upstream-intended architecture (ADR-048 WAL pattern + upstream-ruflo:ADR-057 RVF for vectors) implemented correctly for the first time.
 
+## Session Audit (v11, 2026-04-04)
+
+Full audit of all session changes by 5-expert hive. Verdict: **zero reversals needed.**
+
+| Category | Items | Keep | Reverse | Replace |
+|----------|-------|------|---------|---------|
+| ruflo-patch commits | 14 | 14 | 0 | 0 |
+| ruflo fork commits | 14 | 10 | 0 | 0 (4 already reverted during session) |
+| agentic-flow fork commits | 5 | 3 | 0 | 0 (2 already reverted during session) |
+| Upstream PRs (ruflo) | 3 | 3 | 0 | 0 |
+| Upstream issues (ruflo) | 3 | 3 | 0 | 0 |
+| agentic-flow PR #138 | 1 | 0 | 0 | 1 (needs clean refile) |
+
+## All Fixes Applied This Session
+
+### Upstream PRs Filed (ruvnet/ruflo)
+
+| PR | Issue | Files | Description | Status |
+|----|-------|-------|-------------|--------|
+| [#1512](https://github.com/ruvnet/ruflo/pull/1512) | [#1511](https://github.com/ruvnet/ruflo/issues/1511) | `claudemd-generator.ts` | CLAUDE.md generator: 14x "Task tool"→"Agent tool", add MCP Tool Discovery section, Hook Signals section, When to Use What decision tree, Task Complexity gate, Feature Workflow. Standard template 250→112 lines. | Open |
+| [#1517](https://github.com/ruvnet/ruflo/pull/1517) | [#1516](https://github.com/ruvnet/ruflo/issues/1516) | `types.ts`, `init.ts`, `embeddings-tools.ts`, `hooks-tools.ts`, `controller-registry.ts` | Prefix bare model names with `Xenova/` in all defaults. Pass embedding config from ControllerRegistry to AgentDB. Fixes silent fallback to mock embeddings (hash pseudo-vectors). | Open |
+| [#1519](https://github.com/ruvnet/ruflo/pull/1519) | [#1518](https://github.com/ruvnet/ruflo/issues/1518) | `intelligence.cjs` | Deduplicate store entries before graph construction. 4,482 entries→157 unique. graph-state.json 194MB→79KB. Fix cache-hit check to compare unique count. | Open |
+
+### Upstream Issues Filed (ruvnet/ruflo)
+
+| Issue | Title | Root cause |
+|-------|-------|------------|
+| [#1511](https://github.com/ruvnet/ruflo/issues/1511) | claudemd-generator references "Task tool" (renamed to Agent in Claude Code v2.1.63) | v2 templates inherited bare name, never updated |
+| [#1516](https://github.com/ruvnet/ruflo/issues/1516) | Bare model names cause silent fallback to mock embeddings | `all-mpnet-base-v2` resolves to HuggingFace 401; needs `Xenova/` prefix |
+| [#1518](https://github.com/ruvnet/ruflo/issues/1518) | intelligence.cjs graph-state.json grows to 194MB | 4,482 duplicate store entries with 157 unique IDs; no dedup before edge building |
+
+### Upstream Issues Filed (ruvnet/agentic-flow)
+
+| Issue | Title | Status |
+|-------|-------|--------|
+| [#137](https://github.com/ruvnet/agentic-flow/issues/137) | EmbeddingService passes bare model name to transformers.js | Closed (broader fix in ruflo #1516) |
+
+### Fork Commits (ruflo, in place)
+
+| Commit | Description | Category |
+|--------|-------------|----------|
+| `ad4fc39ba` | CLAUDE.md generator rewrite: Task→Agent, MCP discovery, hook signals, when-to-use-what | CLAUDE.md (CM-001) |
+| `1f83c817a` | Add task complexity gate, feature workflow, hook lifecycle, remove Project Config | CLAUDE.md (CM-001) |
+| `72e7305eb` | Replace hetzner-specific defaults with portable values (cacheSize 256, maxNodes 5000, balanced SONA) | Config (portable) |
+| `639aa3701` | Replace hardcoded 160GB memory ceiling with dynamic `os.totalmem() * 0.75` | Config (portable) |
+| `243386a25` | Add Xenova/ prefix to bare model names in init defaults (types.ts) | Embedding (EM-002) |
+| `d7654639b` | Add Xenova/ prefix to remaining bare model names in CLI (embeddings-tools, hooks-tools, init.ts) | Embedding (EM-002) |
+| `0a5697b20` | Pass embedding model config from ControllerRegistry to AgentDB | Embedding (EM-002) |
+| `7f4b7064d` | Remove Xenova/ prefix band-aid from memory-initializer (defaults now correct) | Embedding (cleanup) |
+| `dc179d605` | Deduplicate store entries in intelligence.cjs before building graph (194MB→79KB) | Storage (dedup) |
+| `a50ff5c35` | Update all default values from benchmark-validated config (384MB cache, 10K nodes, etc.) | Config (benchmark) |
+
+### Fork Commits (ruflo, reverted during session)
+
+| Commit | Reverted by | Why |
+|--------|------------|-----|
+| `544fb22c9` (bridgeGenerateEmbedding rewrite) | `dc4133aa4` | Band-aid; root cause was bare model names |
+| `7c3b3b270` (getBridge 5s timeout) | `866b62a05` | Band-aid; root cause was bare model names |
+
+### Fork Commits (agentic-flow, in place)
+
+| Commit | Description |
+|--------|-------------|
+| `960df30` | Move ruvector back to dependencies in agentdb (was optional workaround) |
+
+### Fork Commits (agentic-flow, reverted during session)
+
+| Commit | Reverted by | Why |
+|--------|------------|-----|
+| `24b1295` (EmbeddingService Xenova prefix) | `77aeb66` | Root cause fix is in defaults, not runtime prefix |
+| `84942dc` (EnhancedEmbeddingService prefix) | `2468cea` | Root cause fix is in defaults, not runtime prefix |
+
+### Pipeline Fixes (ruflo-patch repo)
+
+| Fix | Impact |
+|-----|--------|
+| `ruvector` added to `UNSCOPED_PUBLISHABLE` in fork-version.mjs | Version pinning for ruvector package |
+| `claude-flow` added to `UNSCOPED_PUBLISHABLE` | Version pinning for v2 package |
+| `@sparkleideas/ruvector` added to publish-levels.json level 1 | Package now published to Verdaccio |
+| `publish.mjs` prefers non-private packages over private roots | Picks `npm/packages/ruvector/` not private workspace root |
+| Portable `_timeout` wrapper for macOS (gtimeout/timeout/bash fallback) | Acceptance tests work without GNU coreutils |
+| `sed -i` → portable `sed > tmp && mv` | No macOS sed warnings |
+| Accept `config.yaml` alongside `config.json` in harness | Upstream init changed output format |
+| Causal tool names: hyphens → underscores | Upstream renamed tools |
+| `init-config-vals` acceptance test | Validates init writes real config values |
+| `run_timed` timeout 60s → 120s | Neural training needs ONNX model download time |
+| Node 24 via mise (.tool-versions) | Match hz machine |
+| ONNX model cache seeded at `~/.cache/transformers/` | Neural training passes on cold machine |
+
+### Upstream Issue for ADR-0059 Phase 1 (TODO)
+
+The following should be filed as a single upstream issue + PR on ruvnet/ruflo:
+
+**Title**: fix: swap AgentDBBackend for RvfBackend in auto-memory-hook session bridge
+
+**Root cause**: `auto-memory-hook.mjs createBackend()` instantiates `AgentDBBackend` which does `import('@sparkleideas/agentdb')` — a cross-package dynamic import that fails silently in the hook subprocess context. Data writes to in-memory Map, lost on process exit. The `.rvf` file is never created. The session-boundary drain (ADR-048) has never worked.
+
+**Fix**: Swap `AgentDBBackend` for `RvfBackend` (same `IMemoryBackend` interface, same package, no cross-package import, atomic `.rvf` persistence, zero native deps).
+
+**Files**: `auto-memory-hook.mjs` — one function (`createBackend()`), ~10 lines changed.
+
+**Related upstream ADRs**: upstream-ruflo:ADR-048 (auto-memory bridge), upstream-ruflo:ADR-057 (RVF storage), upstream-agentic:ADR-057 (Full SQLite + RuVector).
+
+**Related downstream work**: sparkling/ruflo-patch ADR-0058 (root cause analysis), ADR-0059 (implementation plan, 10 versions, 8 expert hives).
+
 ## Related
 
 - **ADR-0058**: Memory, Learning & Storage Deep Analysis — root cause analysis
 - **ADR-0056**: MCP Server Unified Backend — Phase 3 of this implementation
 - **ADR-0054**: RuVector Patch Pipeline — dependency chain
-- **GitHub issues**: P0 bridge bug (ADR-0058 section), upstream:ADR-057
+- **GitHub issues**: P0 bridge bug (ADR-0058 section), upstream-ruflo:ADR-057
