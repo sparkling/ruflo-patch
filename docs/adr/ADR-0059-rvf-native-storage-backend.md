@@ -417,6 +417,48 @@ Note: `db-unified.ts` was not found at the expected path in the upstream tree. I
 
 Our architecture (RVF for vectors, SQLite for relational) aligns with the upstream design across both repos. Phase 1 (swap `AgentDBBackend` → `RvfBackend`) is the upstream-intended fix, not a workaround.
 
+## Agentic-Flow Deep Search (2026-04-04, 5-agent swarm)
+
+### Architecture Confirmed: Two Parallel Storage Layers
+
+AgentDB has two completely independent storage systems selected in different code paths:
+
+```
+Layer 1: Relational (SQL)     — better-sqlite3 primary, sql.js fallback — ALWAYS runs
+Layer 2: Vector (HNSW/RVF)    — ruvector > @ruvector/rvf > hnswlib > SqlJsRvfBackend
+```
+
+These coexist. The factory doesn't choose between them — Layer 1 always initialises for schemas, Layer 2 always initialises for vectors.
+
+### Evidence from agentic-flow repo
+
+| Source | Finding |
+|--------|---------|
+| agentic-flow:ADR-057 line 177 | Exact quote: `"Full (SQLite + RuVector)"` as persistence model |
+| ADR-054 (architecture review) | `@ruvector/rvf` listed as "installed, not used". ADR-056/057 "100% complete" is aspirational |
+| ADR-006 | Mandated `@ruvector` as exclusive **vector** backend — not about replacing SQL |
+| ADR-003 | RVF format spec in agentdb docs. Status: Proposed |
+| factory.ts | Priority chain: ruvector → @ruvector/rvf → hnswlib → SqlJsRvfBackend |
+| AgentDB.ts | SQL engine selected independently, always runs regardless of vector backend |
+| db-unified.ts | Legacy v2 layer, NOT used by v3 |
+
+### Known RVF Data Loss Bugs
+
+| Issue | Bug | Impact on Phase 1 |
+|-------|-----|-------------------|
+| ruvnet/agentic-flow#114 | `SqlJsRvfBackend` drops non-numeric IDs via `Number()` coercion | **BLOCKER** — our entries use IDs like `mem-MEMORY-project-patterns` which would be silently dropped |
+| ruvnet/agentic-flow#128 | Reflexion writes HNSW but skips SQL insert — data lost on restart | Relevant if using reflexion controllers |
+| ruvnet/agentic-flow#115 (PR) | Bidirectional ID mapping fix for #114 | **Must verify this is in our fork before Phase 1** |
+
+### Impact on Phase 1
+
+Phase 1 (swap `AgentDBBackend` → `RvfBackend` in `auto-memory-hook.mjs`) remains the correct fix, but:
+
+1. **Must verify PR #115 (ID mapping fix) is in our agentic-flow fork** — without it, `SqlJsRvfBackend` will silently drop all string IDs
+2. **`db-unified.ts` is dead code** — cannot be used as migration path (v2 legacy)
+3. **ADR-056/057 "100% complete" is unreliable** — ADR-054 lists 50+ remaining TODOs
+4. **Use `RvfBackend` (pure-TS, @claude-flow/memory) not `SqlJsRvfBackend` (agentdb)** — avoids the ID coercion bug entirely since RvfBackend uses its own Map-based KV store
+
 ## Related
 
 - **ADR-0058**: Memory, Learning & Storage Deep Analysis — root cause analysis
