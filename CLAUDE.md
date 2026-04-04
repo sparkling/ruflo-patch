@@ -57,43 +57,72 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 
 ## Build & Test
 
+### Cascading Pipeline (ADR-0038)
+
+Each script includes all previous steps — running a later step runs everything before it:
+
+| # | `npm run` script | Includes | What it does |
+|---|------------------|----------|--------------|
+| 1 | `preflight` | — | Static analysis, lint checks |
+| 2 | `test:pipeline` | 1 | Pipeline infra tests (6 files, mocked) |
+| 3 | `test:unit` | 1-2 | Product unit + integration tests (20 files) |
+| 4 | `fork-version` | 1-3 | Bump `-patch.N` versions |
+| 5 | `copy-source` | 1-4 | Copy fork source to `/tmp/ruflo-build` |
+| 6 | `codemod` | 1-5 | Scope rename (`@claude-flow/*` → `@sparkleideas/*`) |
+| 7 | `build` | 1-6 | TypeScript compile + WASM (parallel) |
+| 8 | `publish:verdaccio` | 1-7 | Publish to Verdaccio + promote @latest |
+| 9 | `test:acceptance` | 1-8 | Acceptance checks against real init'd project |
+| 10 | `finalize` | — | Save state, push forks, write timing (standalone) |
+| 11 | `deploy` | 1-10 | Full pipeline end-to-end |
+
+Other scripts:
+
 ```bash
-# Build artifacts (cached at /tmp/ruflo-build, skips if fresh)
-npm run build
-
-# All local tests: preflight + unit
-npm test
-
-# Unit tests only (tight inner loop, 0.2s)
-npm run test:unit
-
-# Verification test (publish to Verdaccio + acceptance checks, requires prior build)
-npm run test:verify
-
-# All pre-publish tests: preflight + unit + acceptance
-npm run test:all
-
-# Deploy (full pipeline: build + test + publish + promote)
-npm run deploy
-
-# Dry run (full pipeline, stop before publish)
-npm run deploy:dry-run
-
-# Sync stage (fetch upstream, merge on branch, test, create PR)
-npm run sync
-
-# Publish stage (detect merged PRs, version bump, build, publish)
-npm run publish:fork
-
-# Acceptance test (verify live packages on real npm)
-npm run test:acceptance
-
-# Environment validation (smoke)
-npm run validate
+npm run validate          # Environment smoke test
+npm run sync              # Fetch upstream, merge on branch, test, create PR
+npm run publish:fork      # Detect merged PRs, version bump, build, publish
 ```
 
-- ALWAYS run tests after making code changes
-- ALWAYS verify build succeeds before committing
+### Required Tests Per Change Type
+
+| Change | Required Tests | Command |
+|--------|---------------|---------|
+| Patch fix / helper code | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run test:acceptance` |
+| Codemod / pipeline script | preflight + pipeline + unit | `npm run test:unit` |
+| Test script changes only | preflight + pipeline + unit | `npm run test:unit` |
+| Acceptance / publish changes | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run test:acceptance` |
+| Pre-publish verification | full cascade | `npm run test:acceptance` |
+| Deploy to Verdaccio (full) | all | `npm run deploy` |
+
+### Test Pyramid (MANDATORY — all levels for every change)
+
+| Level | Location | Style | Runner |
+|-------|----------|-------|--------|
+| **Unit** | `tests/unit/*.test.mjs` | London School TDD — `mockFn()`/`mockCtor()`, mocked deps, no I/O | `npm run test:unit` |
+| **Integration** | `tests/unit/*.test.mjs` | Real I/O — file persistence, subprocess exec, pipeline exercises | `npm run test:unit` |
+| **Acceptance** | `lib/acceptance-*.sh` wired into `scripts/test-acceptance.sh` | Bash checks against real `init --full` project with published packages | `npm run test:acceptance` |
+
+#### Writing tests: ALL THREE levels in the same pass
+
+1. **Unit**: mock the function under test, verify wiring contracts (constructor args, fallback chains, return types)
+2. **Integration**: exercise real components with real I/O (file reads/writes, subprocess calls, data round-trips)
+3. **Acceptance**: add bash check functions in `lib/acceptance-{feature}-checks.sh`, source it in `test-acceptance.sh`, wire into the appropriate group with `run_check_bg` + `collect_parallel`
+
+Never treat acceptance tests as optional or "later" work. The framework exists — use it.
+
+#### Running tests: ALL THREE levels every time
+
+When asked to run/test/verify, ALWAYS run all available levels:
+
+```bash
+# Level 1+2: Unit + Integration (always available)
+npm run test:unit
+
+# Level 3: Acceptance (requires Verdaccio — check first, run if up)
+curl -sf http://localhost:4873/-/ping && npm run test:acceptance
+```
+
+**NEVER run only `test:unit` and call it done.** If Verdaccio is down, say so explicitly — do not silently skip acceptance. If packages need building first, say that too.
 
 ## Security Rules
 

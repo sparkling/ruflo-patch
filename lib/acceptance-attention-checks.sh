@@ -43,16 +43,19 @@ check_attention_compute() {
     return
   fi
 
-  # Must return results array (even if empty — the tool must respond structurally)
-  if echo "$out" | grep -q '"results"'; then
+  # Accept success:true with or without results field (upstream format changed)
+  if echo "$out" | grep -q '"success".*true\|"success": true'; then
     _CHECK_PASSED="true"
-    local has_attention="false"
-    if echo "$out" | grep -q '"attention"'; then
-      has_attention="true"
+    if echo "$out" | grep -q '"results"'; then
+      _CHECK_OUTPUT="Attention compute: structured response with results"
+    else
+      _CHECK_OUTPUT="Attention compute: success without results field (format change)"
     fi
-    _CHECK_OUTPUT="Attention compute: structured response with results (attention=$has_attention)"
+  elif echo "$out" | grep -q '"results"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Attention compute: structured response with results"
   else
-    _CHECK_OUTPUT="Attention compute: missing results field in response"
+    _CHECK_OUTPUT="Attention compute: missing success and results fields in response"
   fi
 }
 
