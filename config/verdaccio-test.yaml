@@ -1,5 +1,7 @@
 storage: ./storage
 max_body_size: 100mb
+server:
+  keepAliveTimeout: 60
 uplinks: {}
 packages:
   '@sparkleideas/*':

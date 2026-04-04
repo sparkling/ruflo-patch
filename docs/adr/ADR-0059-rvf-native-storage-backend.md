@@ -1,8 +1,8 @@
 # ADR-0059: RVF Native Storage Backend
 
-- **Status**: Implemented (Phase 1 + Phase 2 complete, Phase 3 pending)
+- **Status**: Implemented (Phase 1-4 complete)
 - **Date**: 2026-04-03
-- **Updated**: 2026-04-04 (v12 — clean rewrite from 11 iterations)
+- **Updated**: 2026-04-04 (v14 — Phase 3+4 implemented)
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + multi-agent swarm analysis (8 hives, 30+ experts)
 
@@ -183,8 +183,8 @@ Phase 1 fixes Path B (drain). Phase 2 fixes Path A (CJS cache). They never cross
 |-------|-------|------|-------|-------|-------------|
 | 1 | **Phase 1** | Swap AgentDBBackend → RvfBackend in `createBackend()` | ~15 | Patch + upstream | Yes — see below |
 | 2 | **Phase 2** | Fix CJS bugs: ID collision, ML-006 scope, `tool_input` snake_case | ~25 | Patch + upstream | Yes (separate PRs) |
-| 3 | **Phase 3** | Wire MCP server to also query `.rvf` — unified search | ~200 | Fork-level | Yes (separate PR) |
-| 4 | **Future** | Daemon IPC: hooks call Unix domain socket, daemon owns stores | ~265 | New feature | Yes |
+| 3 | **Phase 3** | Wire MCP server to also query `.rvf` — unified search | ~180 | Fork-level | **✓ Complete** |
+| 4 | **Phase 4** | Daemon IPC: hooks call Unix domain socket, daemon owns stores | ~265 | Fork-level | **✓ Complete** |
 | 5 | **Future** | Converge CLI onto RVF for vectors (upstream-ruflo:ADR-057) | TBD | Upstream | N/A |
 
 ### Why Not Skip to Daemon?
@@ -441,6 +441,41 @@ All fixes applied to fork source at `forks/ruflo/v3/@claude-flow/cli/.claude/hel
 ### Acceptance Test Suite
 
 12 behavioral checks in `lib/acceptance-adr0059-checks.sh`, wired into `scripts/test-acceptance.sh` e2e group. All run against a fresh `init --full` project from published packages. Result: **12/12 pass**.
+
+### Phase 3+4 Implementation (2026-04-04)
+
+#### Phase 3: Unified MCP Search
+
+Modified `memory-bridge.ts` to query both SQLite and RVF stores:
+
+| Component | What | Lines |
+|-----------|------|-------|
+| `getRvfStore()` | Lazy singleton — opens `.swarm/agentdb-memory.rvf` read-only via RvfBackend | ~30 |
+| `queryRvfStore()` | Scores RVF entries with same BM25+cosine hybrid as SQLite path | ~60 |
+| `contentHash()` | Dedup key: `namespace\0key` — matches RvfBackend's compositeKey format | 3 |
+| `bridgeSearchEntries()` merge | Query RVF, deduplicate by contentHash, merge into results | ~25 |
+| `searchMethod` | Appends `+rvf` when RVF contributed results | 1 |
+
+**File**: `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-bridge.ts`
+
+#### Phase 4: Daemon IPC
+
+| File | Change | Lines |
+|------|--------|-------|
+| `daemon-ipc.ts` (new) | `DaemonIPCServer` (Unix socket, JSON-RPC 2.0) + `DaemonIPCClient` (50ms probe, 500ms call) | ~265 |
+| `worker-daemon.ts` | Start/stop IPC server in daemon lifecycle, register memory method handlers | ~25 |
+| `auto-memory-hook.mjs` | `tryDaemonIPC()` + `ipcCall()` helpers, IPC-first check in import/sync, status display | ~50 |
+| `daemon.ts` | IPC socket status in `daemon status` command | ~10 |
+
+**IPC Methods**: `memory.store`, `memory.search`, `memory.count`, `memory.bulkInsert`
+**Fallback**: If daemon is not running, hooks write RVF directly (Phase 1 behavior)
+
+#### Phase 3+4 Acceptance Tests
+
+| File | Checks | What |
+|------|--------|------|
+| `acceptance-adr0059-phase3-checks.sh` | 3 | Unified search both stores, dedup, no-crash without .rvf |
+| `acceptance-adr0059-phase4-checks.sh` | 3 | Socket exists, IPC probe, fallback to direct RVF |
 
 ### Bugs Found During Acceptance Testing
 

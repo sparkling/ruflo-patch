@@ -137,7 +137,7 @@ ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=${REGISTRY}" > .npmrc \
   && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins \
-     --registry "$REGISTRY" --no-audit --no-fund 2>&1) || {
+     --registry "$REGISTRY" --no-audit --no-fund --prefer-offline 2>&1) || {
   log_error "Failed to install packages from ${REGISTRY}"; exit 1
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
@@ -233,6 +233,14 @@ source "$checks_lib"
 adr0059_lib="${PROJECT_DIR}/lib/acceptance-adr0059-checks.sh"
 [[ -f "$adr0059_lib" ]] && source "$adr0059_lib"
 
+# ADR-0059 Phase 3: Unified MCP search
+adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
+[[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
+
+# ADR-0059 Phase 4: Daemon IPC
+adr0059_p4_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase4-checks.sh"
+[[ -f "$adr0059_p4_lib" ]] && source "$adr0059_p4_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -290,35 +298,24 @@ check_plugin_install() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Tests: smoke (parallel — all independent)
+# Non-e2e tests: ALL groups in one mega-parallel wave (ADR-0059 optimization)
+# Groups have no data dependencies — each uses separate namespaces.
+# One collect_parallel replaces 7 sequential barriers.
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
-log "── smoke ──"
+log "── all non-e2e checks (mega-parallel wave) ──"
 PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+# smoke
 run_check_bg "version"          "Version check"          check_version            "smoke"
 run_check_bg "latest-resolves"  "@latest resolves"       check_latest_resolves    "smoke"
 run_check_bg "no-broken-versions" "No broken versions"   check_no_broken_versions "smoke"
-collect_parallel "smoke" \
-  "version|Version check" "latest-resolves|@latest resolves" "no-broken-versions|No broken versions"
-_record_phase "group-smoke" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
-# Tests: structure (parallel — harness already ran init)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── structure ──"
+# structure
 run_check_bg "settings-file"    "Settings file"       check_settings_file      "structure"
 run_check_bg "scope"            "Scope check"         check_scope              "structure"
-# mcp-config removed: tests MC-001 patch (autoStart:false) which was deleted with ADR-0027 patch infra
-collect_parallel "structure" \
-  "settings-file|Settings file" "scope|Scope check"
-_record_phase "group-structure" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
-# Tests: diagnostics + data + packages (all overlapped in parallel)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── diagnostics + data + packages (overlapped) ──"
+# diagnostics + data + packages
 run_check_bg "doctor"           "Doctor"              check_doctor             "diagnostics"
 run_check_bg "wrapper-proxy"    "Wrapper proxy"       check_wrapper_proxy      "diagnostics"
 run_check_bg "memory-lifecycle" "Memory lifecycle"    check_memory_lifecycle   "data"
@@ -327,43 +324,18 @@ run_check_bg "booster-esm"     "Agent Booster ESM"   check_agent_booster_esm  "p
 run_check_bg "booster-cli"     "Agent Booster CLI"   check_agent_booster_bin  "packages"
 run_check_bg "plugins-sdk"     "Plugins SDK"         check_plugins_sdk        "packages"
 run_check_bg "plugin-install"  "Plugin install"      check_plugin_install     "packages"
-collect_parallel "all" \
-  "doctor|Doctor" "wrapper-proxy|Wrapper proxy" \
-  "memory-lifecycle|Memory lifecycle" "neural-training|Neural training" \
-  "booster-esm|Agent Booster ESM" "booster-cli|Agent Booster CLI" "plugins-sdk|Plugins SDK" "plugin-install|Plugin install"
-_record_phase "groups-diag-data-pkg" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
-# Tests: controller (ADR-0033, all parallel)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── controller (ADR-0033) ──"
+# controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
 run_check_bg "ctrl-routing"     "Learned routing"        check_hooks_route         "controller"
 run_check_bg "ctrl-scoping"     "Memory scoping"         check_memory_scoping      "controller"
 run_check_bg "ctrl-reflexion"   "Reflexion lifecycle"     check_reflexion_lifecycle "controller"
-# ctrl-causal removed: uses agentdb_causal_query which doesn't exist in any branch
-# ctrl-cow removed: uses agentdb_branch which doesn't exist in any branch
 run_check_bg "ctrl-batch"       "Batch operations"       check_batch_operations    "controller"
 run_check_bg "ctrl-synthesis"   "Context synthesis"      check_context_synthesis   "controller"
 run_check_bg "ctrl-sl-health"   "Self-learning health"   check_self_learning_health "controller"
 run_check_bg "ctrl-sl-search"   "Self-learning search"   check_self_learning_search "controller"
-collect_parallel "controller" \
-  "ctrl-health|Controller health" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
-  "ctrl-reflexion|Reflexion lifecycle" \
-  "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
-  "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search"
-_record_phase "group-controller" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
-# Tests: security & reliability (ADR-0040/0041/0042, all parallel)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── security & reliability (ADR-0040/0041/0042/0043/0045) ──"
-# Removed: sec-controllers (resourceTracker/rateLimiter/circuitBreaker don't exist in any branch)
-# Removed: sec-ratelimit, sec-breaker, sec-resource (agentdb_rate_limit_status/circuit_status/resource_usage don't exist)
-# Removed: sec-wiring (expects graphTransformer absent, but it IS a registered controller)
-# Removed: sec-b5b6-ctrls (metadataFilter/queryOptimizer not in controller-registry type system)
+# security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
 run_check_bg "sec-rl-consumed"  "Rate limit token consumed"        check_rate_limit_consumed       "security"
 run_check_bg "sec-health-comp"  "Health composite count"           check_health_composite_count    "security"
@@ -374,47 +346,45 @@ run_check_bg "sec-query-stats"  "Query stats (B6)"                 check_query_s
 run_check_bg "sec-embed-gen"    "Embedding generate (A9)"          check_embedding_generate        "security"
 run_check_bg "sec-045-ctrls"    "ADR-0045 controllers (A9/D1/D3)" check_embedding_controller_registered "security"
 run_check_bg "sec-embed-cfg"    "Embedding config propagation (ADR-0052)" check_embedding_config_propagation "security"
-collect_parallel "security" \
-  "sec-composition|Controller composition" \
-  "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
-  "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
-  "sec-filtered|Filtered search (B5)" "sec-query-stats|Query stats (B6)" \
-  "sec-embed-gen|Embedding generate (A9)" "sec-045-ctrls|ADR-0045 controllers (A9/D1/D3)" \
-  "sec-embed-cfg|Embedding config propagation (ADR-0052)"
-_record_phase "group-security" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
-# Tests: init assertions (ADR-0038, ported from init-*.test.mjs)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── init assertions (ADR-0038) ──"
+# init assertions (ADR-0038)
 run_check_bg "init-config-fmt"   "Config format (SG-008)"     check_init_config_format     "init"
 run_check_bg "init-helpers"      "Helper syntax"              check_init_helper_syntax     "init"
 run_check_bg "init-persist"      "No persistPath (MM-001)"    check_init_no_persist_path   "init"
 run_check_bg "init-perms"        "Permission globs (SG-001)"  check_init_permission_globs  "init"
 run_check_bg "init-topology"     "Topology (SG-011)"          check_init_topology          "init"
 run_check_bg "init-config-vals"  "Config values"              check_init_config_values     "init"
-collect_parallel "init" \
-  "init-config-fmt|Config format (SG-008)" "init-helpers|Helper syntax" \
-  "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
-  "init-topology|Topology (SG-011)" "init-config-vals|Config values"
-_record_phase "group-init" "$(_elapsed_ms "$_g" "$(_ns)")"
 
-# ════════════════════════════════════════════════════════════════════
-# Tests: attention suite (ADR-0044, all parallel)
-# ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── attention suite (ADR-0044) ──"
+# attention suite (ADR-0044)
 run_check_bg "attn-compute"     "Attention compute"        check_attention_compute          "attention"
 run_check_bg "attn-benchmark"   "Attention benchmark"      check_attention_benchmark         "attention"
 run_check_bg "attn-configure"   "Attention configure"      check_attention_configure         "attention"
 run_check_bg "attn-metrics"     "Attention metrics (D2)"   check_attention_metrics           "attention"
 run_check_bg "attn-wiring"      "Attention controllers"    check_attention_controllers_wired "attention"
-collect_parallel "attention" \
+
+collect_parallel "all" \
+  "version|Version check" "latest-resolves|@latest resolves" "no-broken-versions|No broken versions" \
+  "settings-file|Settings file" "scope|Scope check" \
+  "doctor|Doctor" "wrapper-proxy|Wrapper proxy" \
+  "memory-lifecycle|Memory lifecycle" "neural-training|Neural training" \
+  "booster-esm|Agent Booster ESM" "booster-cli|Agent Booster CLI" "plugins-sdk|Plugins SDK" "plugin-install|Plugin install" \
+  "ctrl-health|Controller health" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
+  "ctrl-reflexion|Reflexion lifecycle" \
+  "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
+  "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \
+  "sec-composition|Controller composition" \
+  "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
+  "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
+  "sec-filtered|Filtered search (B5)" "sec-query-stats|Query stats (B6)" \
+  "sec-embed-gen|Embedding generate (A9)" "sec-045-ctrls|ADR-0045 controllers (A9/D1/D3)" \
+  "sec-embed-cfg|Embedding config propagation (ADR-0052)" \
+  "init-config-fmt|Config format (SG-008)" "init-helpers|Helper syntax" \
+  "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
+  "init-topology|Topology (SG-011)" "init-config-vals|Config values" \
   "attn-compute|Attention compute" "attn-benchmark|Attention benchmark" \
   "attn-configure|Attention configure" "attn-metrics|Attention metrics (D2)" \
   "attn-wiring|Attention controllers"
-_record_phase "group-attention" "$(_elapsed_ms "$_g" "$(_ns)")"
+_record_phase "groups-all-non-e2e" "$(_elapsed_ms "$_g" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Tests: e2e — controller activation on init'd project (split from T32)
@@ -423,13 +393,16 @@ _record_phase "group-attention" "$(_elapsed_ms "$_g" "$(_ns)")"
 _g=$(_ns)
 log "── e2e (controller activation) ──"
 
-# Create a fresh project for e2e tests
+# Create a fresh project for e2e tests — snapshot from harness instead of second init --full.
+# The harness project ($ACCEPT_TEMP) was already init'd. cp -r takes <0.5s vs 60-120s for init.
 E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
-# E2E init needs 60s+ for 42-controller registry (ADR-0048)
-_run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN init --full --force" "" 90
+cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
+# Remove any state from non-e2e checks so e2e starts clean
+rm -rf "$E2E_DIR/.swarm" "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
+log "  e2e project: snapshot from harness ($(du -sh "$E2E_DIR" 2>/dev/null | cut -f1))"
 
 if [[ ! -f "$E2E_DIR/.claude/settings.json" ]]; then
-  log "  WARN  e2e harness: init --full did not produce settings.json — skipping e2e group"
+  log "  WARN  e2e harness: snapshot missing settings.json — skipping e2e group"
 else
   # Init memory in the e2e project
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init"
@@ -554,54 +527,78 @@ else
     fi
   }
 
+  # ── All e2e checks in one mega-parallel wave ──────────────────────
+  # Core e2e + ADR-0059 Phase 1-4 all use separate namespaces — no conflicts.
   run_check_bg "e2e-memory-store"    "E2E memory store"       _e2e_memory_store       "e2e"
   run_check_bg "e2e-hooks-route"     "E2E hooks route"        _e2e_hooks_route        "e2e"
   run_check_bg "e2e-causal-edge"     "E2E causal edge"        _e2e_causal_edge        "e2e"
   run_check_bg "e2e-reflexion-store" "E2E reflexion store"    _e2e_reflexion_store    "e2e"
   run_check_bg "e2e-batch-optimize"  "E2E batch optimize"     _e2e_batch_optimize     "e2e"
   run_check_bg "e2e-filtered-search" "E2E filtered search"    _e2e_filtered_search    "e2e"
-  collect_parallel "e2e" \
-    "e2e-memory-store|E2E memory store" "e2e-hooks-route|E2E hooks route" \
-    "e2e-causal-edge|E2E causal edge" "e2e-reflexion-store|E2E reflexion store" \
-    "e2e-batch-optimize|E2E batch optimize" "e2e-filtered-search|E2E filtered search"
 
-  log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
-
-  # ── ADR-0059: memory, storage, learning, retrieval, hooks ────────
+  # ADR-0059 Phase 1+2: memory, storage, learning, hooks
   if [[ -f "$adr0059_lib" ]]; then
-    log "── ADR-0059 (memory/storage/learning/retrieval) ──"
-
-    # Memory: store → retrieve → search round-trip
     run_check_bg "e2e-0059-mem-roundtrip"     "Memory store→retrieve"       check_adr0059_memory_store_retrieve   "adr0059"
     run_check_bg "e2e-0059-mem-search"        "Memory store→search"         check_adr0059_memory_search           "adr0059"
-
-    # Storage: persistence + file verification
     run_check_bg "e2e-0059-persist"           "Storage persistence"         check_adr0059_storage_persistence      "adr0059"
     run_check_bg "e2e-0059-storage-files"     "Storage files exist"         check_adr0059_storage_files            "adr0059"
-
-    # Learning: intelligence graph, retrieval, insights, feedback
     run_check_bg "e2e-0059-intel-graph"       "Intelligence graph+PageRank" check_adr0059_intelligence_graph       "adr0059"
     run_check_bg "e2e-0059-retrieval"         "Retrieval relevance"         check_adr0059_retrieval_relevance      "adr0059"
     run_check_bg "e2e-0059-insight"           "Insight generation"          check_adr0059_learning_insight_generation "adr0059"
     run_check_bg "e2e-0059-feedback"          "Learning feedback loop"      check_adr0059_learning_feedback         "adr0059"
-
-    # Hooks: behavioral verification
     run_check_bg "e2e-0059-hook-import"       "Hook import populates"      check_adr0059_hook_import_populates    "adr0059"
     run_check_bg "e2e-0059-hook-edit"         "Hook edit records file"     check_adr0059_hook_edit_records_file   "adr0059"
     run_check_bg "e2e-0059-hook-lifecycle"    "Hook full lifecycle"        check_adr0059_hook_full_lifecycle       "adr0059"
-
-    # Data integrity
     run_check_bg "e2e-0059-no-collisions"     "No ID collisions"           check_adr0059_no_id_collisions         "adr0059"
 
-    collect_parallel "adr0059" \
-      "e2e-0059-mem-roundtrip|Memory store→retrieve" "e2e-0059-mem-search|Memory store→search" \
-      "e2e-0059-persist|Storage persistence" "e2e-0059-storage-files|Storage files exist" \
-      "e2e-0059-intel-graph|Intelligence graph+PageRank" "e2e-0059-retrieval|Retrieval relevance" \
-      "e2e-0059-insight|Insight generation" "e2e-0059-feedback|Learning feedback loop" \
-      "e2e-0059-hook-import|Hook import populates" "e2e-0059-hook-edit|Hook edit records file" \
-      "e2e-0059-hook-lifecycle|Hook full lifecycle" "e2e-0059-no-collisions|No ID collisions"
-    _record_phase "group-adr0059" "$(_elapsed_ms "$_g" "$(_ns)")"
+    # Phase 3: Unified search
+    if [[ -f "$adr0059_p3_lib" ]]; then
+      run_check_bg "e2e-0059-p3-unified-both"  "Unified search both stores"  check_adr0059_unified_search_both_stores  "adr0059-p3"
+      run_check_bg "e2e-0059-p3-dedup"          "Unified search dedup"        check_adr0059_unified_search_dedup        "adr0059-p3"
+      run_check_bg "e2e-0059-p3-no-crash"       "Unified search no crash"     check_adr0059_unified_search_no_crash     "adr0059-p3"
+    fi
+
+    # Phase 4: Daemon IPC
+    if [[ -f "$adr0059_p4_lib" ]]; then
+      run_check_bg "e2e-0059-p4-socket-exists"  "Daemon IPC socket exists"    check_adr0059_daemon_ipc_socket_exists   "adr0059-p4"
+      run_check_bg "e2e-0059-p4-ipc-probe"      "Daemon IPC probe"            check_adr0059_daemon_ipc_probe           "adr0059-p4"
+      run_check_bg "e2e-0059-p4-fallback"        "Daemon IPC fallback"         check_adr0059_daemon_ipc_fallback        "adr0059-p4"
+    fi
   fi
+
+  # One collect_parallel for ALL e2e checks
+  local _e2e_specs=(
+    "e2e-memory-store|E2E memory store" "e2e-hooks-route|E2E hooks route"
+    "e2e-causal-edge|E2E causal edge" "e2e-reflexion-store|E2E reflexion store"
+    "e2e-batch-optimize|E2E batch optimize" "e2e-filtered-search|E2E filtered search"
+  )
+  if [[ -f "$adr0059_lib" ]]; then
+    _e2e_specs+=(
+      "e2e-0059-mem-roundtrip|Memory store→retrieve" "e2e-0059-mem-search|Memory store→search"
+      "e2e-0059-persist|Storage persistence" "e2e-0059-storage-files|Storage files exist"
+      "e2e-0059-intel-graph|Intelligence graph+PageRank" "e2e-0059-retrieval|Retrieval relevance"
+      "e2e-0059-insight|Insight generation" "e2e-0059-feedback|Learning feedback loop"
+      "e2e-0059-hook-import|Hook import populates" "e2e-0059-hook-edit|Hook edit records file"
+      "e2e-0059-hook-lifecycle|Hook full lifecycle" "e2e-0059-no-collisions|No ID collisions"
+    )
+    if [[ -f "$adr0059_p3_lib" ]]; then
+      _e2e_specs+=(
+        "e2e-0059-p3-unified-both|Unified search both stores"
+        "e2e-0059-p3-dedup|Unified search dedup"
+        "e2e-0059-p3-no-crash|Unified search no crash"
+      )
+    fi
+    if [[ -f "$adr0059_p4_lib" ]]; then
+      _e2e_specs+=(
+        "e2e-0059-p4-socket-exists|Daemon IPC socket exists"
+        "e2e-0059-p4-ipc-probe|Daemon IPC probe"
+        "e2e-0059-p4-fallback|Daemon IPC fallback"
+      )
+    fi
+  fi
+
+  collect_parallel "e2e" "${_e2e_specs[@]}"
+  log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
 fi
 rm -rf "$E2E_DIR"; E2E_DIR=""
 
