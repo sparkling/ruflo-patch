@@ -1,0 +1,191 @@
+# ADR-0069: Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
+
+- **Status**: Proposed (future work, not scheduled)
+- **Date**: 2026-04-05
+- **Depends on**: ADR-0068 (must be completed first)
+- **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
+- **Analysis**: ADR-0067 (original vision for controller wiring)
+
+## Context
+
+The controller-wiring-vision.md document (Section 5, Section 6, Section 7) identifies three large-scope items that go beyond completing the upstream author's existing wiring gaps. ADR-0066/0068 scope is limited to finishing what was designed but never connected. This ADR captures three future directions that require new architectural work -- a third wiring layer consolidation, a storage format migration, and a full attention mechanism implementation.
+
+These items were excluded from ADR-0066/0068 for concrete reasons:
+
+- **AgentDBService** is agentic-flow-internal. Our forks track upstream HEAD, and restructuring a 1,679-line singleton facade in agentic-flow is high-risk with low immediate benefit for CLI users.
+- **RVF unification** has open blocking bugs (#315 recall-after-import, #323 Node 22 ONNX) and no merged implementation of the `claude-flow-v3-ruvector` integration branch.
+- **AttentionService** requires the unbuilt `@claude-flow/attention` WASM package and `@ruvector/attention` Rust module. Only WASM stubs and LegacyAdapter exist today.
+
+## F1: AgentDBService Third Layer Consolidation
+
+### What it is
+
+`AgentDBService` (`agentic-flow/src/services/agentdb-service.ts`, 1,679 lines) is a singleton facade that all MCP tools in agentic-flow call. It has `static getInstance()`, its own phased initialization (Phase 1: attention/WASM/MMR, Phase 2: RuVector packages, Phase 4: Sync/NightlyLearner/QUIC), and its own in-memory fallback stores. It never calls `AgentDB.getController()` -- it constructs every controller directly.
+
+As documented in the vision (Section 5), a fully wired system has three parallel controller wiring layers:
+
+| Layer | File | Pattern | Instance count |
+|-------|------|---------|---------------|
+| AgentDB core | `AgentDB.ts` | `getController(name)` | 1 set of 8 controllers |
+| AgentDBService | `agentdb-service.ts` | `getInstance()` singleton | 2nd set -- re-instantiates all |
+| ControllerRegistry | `controller-registry.ts` | Level-based init | 3rd set (before ADR-0068) |
+
+### Why it creates duplicate instances
+
+AgentDBService was written before ControllerRegistry existed. It predates ADR-053. Its phased init (Phase 1-4) constructs controllers with `new X(this.db, ...)` identically to how the registry does -- but independently. There is no call to `agentdb.getController()` anywhere in the file.
+
+### What the fix would look like
+
+After ADR-0068 completes, AgentDB.getController() will be reliable for all 13+ controller names, and AgentDB.initialize() will wire singletons correctly. AgentDBService should then be refactored to:
+
+1. Hold a single `AgentDB` instance (it already does at `this.agentDb`)
+2. Replace every `new X(this.db, ...)` with `this.agentDb.getController('name')`
+3. Remove its phased initialization entirely -- AgentDB's own init handles ordering
+4. Keep only the MCP-specific convenience methods (the `async store()`, `async search()`, etc. wrappers)
+
+This would reduce AgentDBService from ~1,679 lines to ~400 lines of MCP facade.
+
+### Risks and dependencies
+
+- **Risk**: AgentDBService has 50+ callers in agentic-flow MCP tools. Changing its initialization timing could break tools that call `getInstance()` before AgentDB finishes init.
+- **Risk**: AgentDBService has in-memory fallback stores (Map-based) for environments where SQLite is unavailable. These must be preserved or migrated to RvfBackend pure-TS mode.
+- **Dependency**: ADR-0068 W1-1 (singleton wiring) and W1-2 (getController extension) must be complete.
+- **Dependency**: The agentic-flow fork must be at a version where AgentDB exports all controller names reliably.
+
+### Why ADR-0068 partially addresses this
+
+The AgentDB.initialize() singleton wiring fix (ADR-0068 W1-1) ensures that even AgentDBService's directly-constructed controllers get correct internal wiring. When AgentDBService creates `new NightlyLearner(db, embedder)`, the NightlyLearner constructor will now accept optional singletons -- but AgentDBService does not pass them. The fix makes AgentDB's own copies correct, which matters when tools use `agentdb.getController()` directly. But AgentDBService's copies remain duplicates with their own state.
+
+## F2: RVF as Single Storage Format
+
+### What RuVector ADR-029 proposes
+
+RuVector ADR-029 (RVF Canonical Format) defines a single binary format for all vector/memory storage with profiles for different use cases:
+
+- `RVText` profile: text content + embeddings + metadata (replaces AgentDB's JSON + SQLite)
+- `WITNESS_SEG` profile: audit trails with cryptographic attestation (replaces claude-flow's flat JSON)
+- Streaming protocol: for cross-process memory sharing (replaces agentic-flow's shared memory blobs)
+
+### Current state (6 separate formats)
+
+| Format | Used by | Location |
+|--------|---------|----------|
+| SQLite (better-sqlite3) | AgentDB core, SQLiteBackend | `.swarm/memory.db` |
+| SQLite (AgentDBBackend) | HybridBackend's AgentDB layer | Same `.db` file |
+| RVF (RvfBackend) | SelfLearningRvfBackend | `.swarm/memory-rvf.sqlite` |
+| JSON (flat files) | claude-flow config, daemon state | `.claude-flow/data/*.json` |
+| Graph binary | GraphDatabaseAdapter | `.swarm/memory.graph` |
+| In-memory Maps | MemoryGraph, AgentDBService fallback | Process memory only |
+
+These formats cannot interoperate. A memory entry stored via the CLI (SQLiteBackend) is invisible to a search via MCP tools (AgentDBService's in-memory fallback). The graph stored in `.swarm/memory.graph` has no connection to the causal graph in SQLite.
+
+### Migration path
+
+The `claude-flow-v3-ruvector` branch in ruvnet/RuVector contains a SPARC plan to replace AgentDB's JS vector layer with RuVector Rust-native storage via NAPI-RS (primary) with WASM fallback. Target performance: 150x pattern search, 500x batch operations.
+
+Migration sequence:
+1. RvfBackend becomes the primary IMemoryBackend (it already exists and works)
+2. SQLiteBackend delegates to RvfBackend for vector operations, keeps SQLite for relational queries
+3. AgentDB's internal HNSW index delegates to RuVector's Rust HNSW via NAPI-RS
+4. GraphDatabaseAdapter migrates from custom binary to RVF graph profile
+5. JSON config/state files remain as-is (they are human-readable config, not storage)
+
+### Blocking issues
+
+- **#315** (ruvnet/RuVector): `import()` does not rebuild HNSW index -- `recall()` returns empty after load. PR #318 (`importAsync() + rebuildHnswIndex()`) is open but unmerged.
+- **#323** (ruvnet/RuVector): ONNX embedder fails on Node 22 LTS with `.wasm` extension error. Blocks ONNX-based embedding on current LTS.
+- **#316** (ruvnet/RuVector): sync `embed()` returns hash vectors, not semantic vectors. Using the sync path corrupts persisted databases with mixed dimension spaces.
+- The `claude-flow-v3-ruvector` branch has a plan but no implementation. NAPI-RS bindings for RuVector do not exist yet.
+
+### Risks
+
+- RVF is a young format. The open bugs above affect core operations (import, embed, Node compatibility).
+- Migrating existing `.swarm/memory.db` data to RVF requires a one-time conversion tool that does not exist.
+- NAPI-RS bindings require native compilation per platform (macOS ARM, Linux x64), complicating CI.
+- Fallback to WASM is 10-100x slower than NAPI-RS, narrowing the performance benefit.
+
+## F3: Full 39-Mechanism AttentionService
+
+### What upstream ADR-028 designed
+
+ADR-028 (Neural Attention Mechanisms) specifies a unified `AttentionService` supporting 39 RuVector attention mechanism types:
+
+- Self-attention variants (standard, multi-head, cross-attention)
+- Flash Attention (tiled computation, 2.49x-7.47x speedup)
+- Sparse attention (top-k, local windowed, random)
+- Mixture-of-Experts (MoE) routing
+- Hyperbolic attention (Poincare ball geometry)
+- Sublinear attention (only one currently wired)
+
+The intended package structure: `@claude-flow/attention` wrapping `@ruvector/attention` WASM module.
+
+### Current state
+
+Only WASM stubs and `LegacyAttentionAdapter` exist. The vision document (Section 7) confirms "only `sublinearAttention` wired" and agentic-flow ADR-062 rates "Attention -> Tools: 0% (F)".
+
+The current 4 duplicate AttentionService instances (documented in ADR-0066 Problem 3) all use LegacyAttentionAdapter and provide only basic cosine-similarity-weighted attention. ADR-0068 P1-3a/b/c/d will reduce these to 1 shared instance, but that instance still only provides the legacy adapter.
+
+### Why this is not a singleton (by design)
+
+ADR-0067 Section 8 documents this explicitly: "ADR-028 explicitly designed AttentionService for multiple instances." The evidence:
+
+- `SONAWithAttention` creates TWO instances -- one for Flash Attention (self-attention layers), one for MoE attention (expert routing). These have different mechanism configurations.
+- The intended `@claude-flow/attention` package was designed as an instantiable class with per-use configuration, not a process singleton.
+- The singleton pattern in the current WIRING-PLAN (Section 1.2: `svc.getAttentionService()`) was a pragmatic narrowing for the MVP, not the target architecture.
+
+The correct architecture (per ADR-0067): multiple AttentionService instances are valid when intentionally configured for different use cases (Flash vs MoE vs Hyperbolic). Unintentional duplicates with identical config should be shared. ADR-0068 achieves the second part; F3 enables the first.
+
+### Prerequisite: @ruvector/attention WASM module
+
+The `@ruvector/attention` package does not exist yet. The Rust-side attention mechanisms are in `ruvector-core` but not compiled to WASM or exposed via NAPI-RS. Building this requires:
+
+1. Extracting attention mechanisms from `ruvector-core` into a standalone `ruvector-attention` crate
+2. Building WASM bindings via `wasm-pack` (for cross-platform) and NAPI-RS bindings (for performance)
+3. Creating the `@claude-flow/attention` TypeScript package that loads WASM/NAPI and exposes the 39 mechanism types
+4. Replacing `LegacyAttentionAdapter` with real mechanism dispatch
+
+### Effort estimate
+
+This is the largest of the three items. The 39 mechanism types represent significant Rust implementation work (each mechanism is a separate attention computation kernel). Realistic scope for a first phase would be: Flash Attention + Multi-Head + MoE (the three that have existing Rust code in ruvector-core), with the remaining 36 as stubs.
+
+## Consequences
+
+### What becomes possible after all three are done
+
+1. **Single controller instance per name** across all deployment contexts (CLI, MCP server, direct AgentDB). No more 2-3 copies with divergent state.
+2. **Single storage format** (RVF) with unified vector search, eliminating the 6-format fragmentation and enabling cross-tool data visibility.
+3. **Real neural attention** replacing stub adapters, enabling Flash Attention speedups (2.49x-7.47x), MoE expert routing, and hyperbolic embeddings for hierarchical data.
+4. **AgentDBService becomes a thin facade** (~400 lines instead of 1,679), reducing agentic-flow maintenance burden and making the MCP tool layer predictable.
+5. **Cross-ecosystem interop** via RVF: memory stored by the CLI is searchable by MCP tools, and vice versa, with consistent dimension/model/HNSW parameters throughout.
+
+### What does NOT change
+
+- The four-layer architecture (config -> memory-bridge -> registry -> AgentDB) remains stable.
+- Controller types and their responsibilities remain unchanged.
+- config.json and embeddings.json remain the operator-facing control plane.
+- The ruflo-patch pipeline (fork -> version -> codemod -> build -> publish) is unaffected.
+
+## Acceptance Criteria
+
+### F1: AgentDBService Consolidation
+- [ ] AgentDBService calls `agentdb.getController()` for all domain controllers
+- [ ] AgentDBService phased init removed; delegates to AgentDB.initialize()
+- [ ] AgentDBService reduced to MCP facade (~400 lines)
+- [ ] All 50+ MCP tool callers pass integration tests with consolidated service
+- [ ] In-memory fallback preserved for environments without better-sqlite3
+
+### F2: RVF Single Storage
+- [ ] RuVector issues #315, #323, #316 closed (blocking bugs fixed)
+- [ ] NAPI-RS bindings for RuVector exist and pass CI on macOS ARM + Linux x64
+- [ ] RvfBackend is primary IMemoryBackend; SQLiteBackend deprecated
+- [ ] Migration tool converts existing `.swarm/memory.db` to RVF format
+- [ ] `.swarm/memory.graph` data migrated to RVF graph profile
+- [ ] Cross-tool data visibility verified (CLI store -> MCP search returns results)
+
+### F3: Full AttentionService
+- [ ] `@ruvector/attention` crate exists with WASM + NAPI-RS bindings
+- [ ] `@claude-flow/attention` package wraps Rust module with TypeScript API
+- [ ] At least 3 mechanism types functional: Flash Attention, Multi-Head, MoE
+- [ ] LegacyAttentionAdapter replaced by real dispatch in ControllerRegistry
+- [ ] SONAWithAttention correctly uses 2 separate AttentionService instances (Flash + MoE)
+- [ ] Performance benchmark: Flash Attention achieves >= 2x speedup over legacy adapter
