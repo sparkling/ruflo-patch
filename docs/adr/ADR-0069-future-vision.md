@@ -425,6 +425,91 @@ No known residual bypass sites remain.
 | A16 | HuggingFace model URLs | LOW | No private registry support for air-gapped deployments | **Yes** (`MODEL_REGISTRY_URL` env var overrides base URL) |
 | A17 | EWC consolidator dim | MEDIUM | `ewc-consolidation.ts:152` hardcodes `dimensions: 768`, never receives config | **Yes** (reads from embeddings.json) |
 
+### Dead config keys (audited 2026-04-05)
+
+11 keys were added to `config.json` but have no code consuming them. The config chain remediation created producers (default values) but not all consumers (runtime reads). These must be wired before the init template ships them to users.
+
+| Key | Why dead | Fix |
+|-----|---------|-----|
+| `memory.swarmDir` | All code hardcodes `.swarm` via `path.join()` | Read from config in memory-bridge, pass to consumers |
+| `memory.sqlite.journalMode` | Bridge fallback object only has `cacheSize`+`busyTimeoutMs` | Add to bridge fallback object |
+| `memory.sqlite.synchronous` | Same gap | Same fix |
+| `memory.similarityThreshold` | No consumer reads from config.json; SONA adapter uses own mode tables | Wire through bridge → RuntimeConfig → search query |
+| `memory.embeddingCacheSize` | Separate from `embeddings.json cacheSize` | Wire through bridge or merge with embeddings path |
+| `ports.quic` / `federation` / `health` | Env vars `QUIC_PORT`/`FEDERATION_PORT`/`HEALTH_PORT` not consumed in ruflo fork code | Wire env vars in ruflo CLI (agentic-flow fork has them) |
+| `rateLimiter.auth/tools/memory/files.*` | Only `controllers.rateLimiter` forwarded by bridge | Forward top-level `rateLimiter` block through bridge |
+| `workers.triggers.*` | `worker-daemon.ts` has own `DEFAULT_WORKERS`, never reads config | Wire config read in daemon startup |
+| `neural.learningRates.sona` / `lora` | No code reads these keys | Wire in sona-manager and lora-adapter |
+
+**Bug**: `neural/algorithms/sarsa.ts:21` reads `cfg?.neural?.learningRates?.qLearning` instead of `.sarsa` (copy-paste bug).
+
+### Init template gap (audited 2026-04-05)
+
+`init` generates zero ADR-0069 config.json keys. The init command writes `.claude-flow/config.yaml` with ~15 keys; the runtime reads `.claude-flow/config.json` with ~50 keys. New projects fall back to scattered hardcoded defaults.
+
+**Plan** (from hive-architect analysis):
+
+1. **Config template module** (`cli/src/init/config-template.ts`): Exports `getMinimalConfigTemplate()` (~25 lines, essential keys) and `getFullConfigTemplate()` (all ADR-0069 keys). `init` uses minimal; `init --full` uses full.
+
+2. **Init generates JSON, not YAML**: `writeRuntimeConfig()` writes `.claude-flow/config.json`. Existing YAML configs still read by runtime.
+
+3. **5 CLI flags** for deployment-critical values:
+
+| Flag | Config key | Existing? |
+|------|-----------|-----------|
+| `--port` | `ports.mcp` | Partially (env var only) |
+| `--embedding-model` | `embeddings.json model` | Yes |
+| `--embedding-dim` | `embeddings.json dimension` | No (inferred from model) |
+| `--similarity-threshold` | `memory.similarityThreshold` | No |
+| `--max-agents` | `swarm.maxAgents` | No |
+
+All other keys settable via `config set <dotpath> <value>` (already works, no whitelist).
+
+**Files to modify** (ruflo fork CLI package):
+- `cli/src/init/config-template.ts` (new)
+- `cli/src/init/executor.ts` (YAML→JSON)
+- `cli/src/commands/init.ts` (3 new flags)
+- `cli/src/init/types.ts` (option types)
+- `cli/src/services/config-file-manager.ts` (DEFAULT_CONFIG expansion)
+- `cli/src/commands/embeddings.ts` (`--dimension` flag)
+
+### F-item re-assessment (2026-04-05)
+
+Analysis swarm investigated actual blocker status. Key findings contradict ADR assumptions:
+
+**F1 (AgentDBService consolidation) — READY**
+
+Prerequisites complete: `getController()` has 19 names (ADR-0068), config chain wired (ADR-0069). 11 constructors migratable (not 13 as originally estimated). Two small prereqs remain:
+- `getController('hierarchicalMemory')` needs vectorBackend+config in lazy-init (3-line fix)
+- `getController('memoryConsolidation')` same gap (3-line fix)
+
+Risk: `embCfg` scope bug at agentdb-service.ts:557 (pre-existing, fix in passing).
+
+**F2 (RVF storage) — NOT ACTUALLY BLOCKED**
+
+| ADR claim | Reality |
+|-----------|---------|
+| NAPI-RS bindings don't exist | Already exist, published on npm (`@ruvector/rvf-node` v0.1.7), prebuilt for 5 platforms |
+| Bug #315 blocks | RvfStore has no HNSW at all (brute-force only). ruvector-core `VectorDB` has working HNSW with rebuild. Use VectorDB instead. |
+| Bug #323 blocks | `OnnxEmbedder` class already works around Node 22 .wasm import issue |
+| Bug #316 blocks | By-design: enforce async-only ONNX path, never mix hash+semantic vectors |
+
+Path: Use ruvector-core `VectorDB` via existing NAPI bindings. ruflo's `RvfBackend` pure-TS fallback already works. Fix 10-line `tryNativeInit()` API mismatch for native acceleration.
+
+**F3 (Full AttentionService) — NOT ACTUALLY BLOCKED**
+
+| ADR claim | Reality |
+|-----------|---------|
+| @ruvector/attention WASM doesn't exist | Rust crate exists (19,377 lines), WASM+NAPI bindings exist as source. Only published npm package missing. |
+| Need WASM for performance | At seq_len=10-100 (memory retrieval), JS fallback runs in 1-10ms. WASM saves microseconds. |
+| Only sublinearAttention wired | `controllers/AttentionService.ts` already implements Flash, MultiHead, MoE, Linear, Hyperbolic in pure TS |
+
+Critical finding: **Attention is invoked zero times in a normal CLI session.** All three controller feature flags default to `false`. WASMVectorSearch's `setAttentionService` is never called.
+
+Path: Proceed with pure TS. Remove LegacyAttentionAdapter. Fix WASMVectorSearch wiring gap. Wire multiple instances per ADR-0067. Keep NAPI detection for future drop-in.
+
+**Recommended priority**: F1 (highest value, lowest risk) → F3 (remove dead code, fix wiring) → F2 (viable but needs careful scoping).
+
 ## Consequences
 
 ### What becomes possible after all three are done
