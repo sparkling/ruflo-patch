@@ -227,6 +227,174 @@ The `@ruvector/attention` package does not exist yet. The Rust-side attention me
 
 This is the largest of the three items. The 39 mechanism types represent significant Rust implementation work (each mechanism is a separate attention computation kernel). Realistic scope for a first phase would be: Flash Attention + Multi-Head + MoE (the three that have existing Rust code in ruvector-core), with the remaining 36 as stubs.
 
+## Appendix: Full Config Chain Bypass Inventory (audited 2026-04-05)
+
+Comprehensive audit of all hardcoded values across both forks that bypass the ADR-0068 config chain (`embeddings.json -> memory-bridge -> RuntimeConfig -> controller-registry -> AgentDB`). Organized by category; all items rated HIGH severity.
+
+### A1: SQLite Pragmas (HIGH)
+
+| Pragma | AgentDB (6 sites) | EmbeddingCache + sqlite-backend | Conflict |
+|--------|-------------------|--------------------------------|----------|
+| `cache_size` | `-64000` (64 MB) | `10000` (40 MB in pages) | Different units, different values |
+| `busy_timeout` | `5000ms` (consistent) | Omitted entirely at 3 WAL sites | EmbeddingCache, IntelligenceStore, worker-registry lack timeout |
+
+3 WAL-mode sites omit `busy_timeout` entirely, risking `SQLITE_BUSY` under concurrent access.
+
+**Remediation**: add `sqlite.cacheSize` and `sqlite.busyTimeoutMs` to config.json `memory` block; all 9 sites read from config.
+
+### A2: Rate Limiters (HIGH)
+
+6 independent singletons with incompatible granularity and units.
+
+| Location | Limits | Unit |
+|----------|--------|------|
+| `security/rate-limiter.ts` | tools=10/min, memory=100/min, files=50/min | per-minute |
+| `mcp/middleware/rate-limiter.ts` | 100/min, auth=10/min | per-minute |
+| `sdk/security.ts` | 100/60s | per-minute (implicit) |
+| `agentdb limits.ts` | 100 tokens/100ms | **per-second** (incompatible) |
+| `agentdb middleware` | 7 policies at 15-min/1-hr windows | per-window |
+| `controller-registry` | 100/1000ms | **per-second** (incompatible with memory-gate 60s window) |
+
+The per-second limiters in agentdb and controller-registry are fundamentally incompatible with the per-minute limiters elsewhere. A unified burst/sustained model is needed.
+
+**Remediation** (done 2026-04-05): Created `config/rate-limiter-config.ts` with config-chain reader (`.claude-flow/config.json` -> `~/.claude-flow/config.json` -> hardcoded fallback). The 4 per-minute sites (`security/rate-limiter.ts`, `mcp/middleware/rate-limiter.ts`, `sdk/security.ts`, `QUICServer.ts`) now read from config chain via `getRateLimitPreset()`. The 2 agentdb sites (`limits.ts` token-bucket, `rate-limit.middleware.ts` HTTP middleware) are annotated as intentionally different granularity; config-chain awareness deferred until agentdb gets its own RuntimeConfig bridge. QUICServer default aligned from 60/min to 100/min.
+
+### A3: Worker Trigger Timeouts (HIGH)
+
+`trigger-detector.ts` and `custom-worker-config.ts` specify conflicting timeout values for the same workers.
+
+| Worker | trigger-detector.ts | custom-worker-config.ts | Delta |
+|--------|--------------------|-----------------------|-------|
+| optimize | 300s | 30s | 10x |
+| audit | 180s | 300s | 1.7x |
+| document | 240s | 120s | 2x |
+
+Which file wins depends on import order, creating nondeterministic behavior.
+
+**Remediation**: single source of truth in config.json `workers.triggers` block; both files read from config.
+
+### A4: Swarm Directory Path (HIGH)
+
+Two incompatible swarm directory conventions coexist.
+
+| Path | Used by | Site count |
+|------|---------|------------|
+| `.swarm` | memory-initializer, bridge, commands, most CLI code | 12+ |
+| `.claude-flow/swarm` | swarm-tools.ts, hooks/workers | 2 |
+
+**Remediation**: standardize on `.swarm`; update the 2 outlier sites in swarm-tools.ts and hooks/workers.
+
+### A5: EWC Lambda (HIGH)
+
+3 incompatible scales across 9 sites.
+
+| Value | Location | Site count | Scale |
+|-------|----------|------------|-------|
+| `2000` | SONA, learning-bridge | 5 | Absolute penalty weight |
+| `1000` | WASM init | 2 | Absolute penalty weight |
+| `0.5` | self-learning plugin | 2 | Fractional (possibly incompatible scale) |
+
+The `0.5` value in self-learning plugin appears to use a normalized [0,1] scale while the SONA/WASM sites use an absolute penalty weight. These may not be comparable.
+
+**Remediation**: add `neural.ewcLambda` to config.json; reconcile the scale difference between absolute and fractional values.
+
+### A6: Port Numbers (HIGH)
+
+3 service ports hardcoded with partial env-var coverage.
+
+| Service | Port | Sites | Env-var coverage |
+|---------|------|-------|-----------------|
+| MCP HTTP | `3000` | 8 | Partial (`PORT` env-var in 3 of 8) |
+| QUIC | `4433` | 5 | Partial (`QUIC_PORT` in 2 of 5) |
+| Federation | `8443` | 5 | None (FederationHub uses string-replace hack) |
+
+FederationHub constructs URLs via string concatenation with `:8443` embedded, making port override impossible without source modification.
+
+**Remediation**: add `ports` block to config.json (`httpPort`, `quicPort`, `federationPort`); all sites read from config with env-var fallback.
+
+### A7: Pattern Similarity Threshold (HIGH)
+
+Search query default diverges from all other code.
+
+| Value | Location | Context |
+|-------|----------|---------|
+| `0.5` | Search query default | Memory search API |
+| `0.7` - `0.85` | All other pattern-matching code | Dedup, routing, learning |
+
+A threshold of `0.5` returns low-quality matches that all downstream consumers would reject.
+
+**Remediation**: add `memory.similarityThreshold` to config.json; default `0.7`.
+
+### A8: Learning Rate (HIGH)
+
+3 distinct learning rates across 13 sites.
+
+| Value | Algorithm | Sites |
+|-------|-----------|-------|
+| `0.001` | SONA, LoRA fine-tuning | 5 |
+| `0.01` | MoE routing, neural training | 4 |
+| `0.1` | Q-learning, SARSA | 4 |
+
+These are algorithmically appropriate defaults (RL uses higher rates than gradient methods), but none are configurable. A change requires modifying source at all sites.
+
+**Remediation**: add `neural.defaultLearningRate` to config.json; per-algorithm overrides via `neural.learningRates.{algorithm}`.
+
+### A9: Embedding Cache Size Bug (HIGH)
+
+`rvf-embedding-service.ts` constructor creates two LRU caches with contradictory sizes.
+
+| Cache | Size | Purpose |
+|-------|------|---------|
+| Primary LRU | 1000 | Main embedding cache |
+| Secondary LRU | 10000 | Same constructor, same purpose |
+
+Both caches serve the same embedding lookups. The 10x discrepancy is a bug, not intentional tiering.
+
+**Remediation**: fix the bug (single cache); read size from config `memory.embeddingCacheSize`.
+
+### A10: Migration Batch Size (HIGH)
+
+Two migration files in the same package use different batch sizes.
+
+| File | Batch size |
+|------|-----------|
+| `migration.ts` | 100 |
+| `rvf-migration.ts` | 500 |
+
+Both perform the same type of row-batch operations. The inconsistency causes different memory profiles and timing characteristics for the same logical operation.
+
+**Remediation**: align to one default; add `memory.migrationBatchSize` to config.json.
+
+### A11: Dedup Threshold (HIGH)
+
+| Value | Location | Impact |
+|-------|----------|--------|
+| `0.98` | AgentDB, RVFOptimizer | Conservative — only near-exact duplicates |
+| `0.95` | ReasoningBank | Aggressive — catches paraphrases too |
+
+The 3-point gap means ReasoningBank deduplicates entries that AgentDB considers distinct, causing silent data loss when entries flow between the two systems.
+
+**Remediation**: add `memory.dedupThreshold` to config.json; default `0.98`.
+
+### Summary
+
+| ID | Category | Severity | Sites | Config key | Remediated |
+|----|----------|----------|-------|------------|------------|
+| A1 | SQLite pragmas | HIGH | 9 | `sqlite.cacheSize`, `sqlite.busyTimeoutMs` | No |
+| A2 | Rate limiters | HIGH | 6 singletons | `rateLimiter.*` | **Yes** |
+| A3 | Worker timeouts | HIGH | 2 files | `workers.triggers.*` | No |
+| A4 | Swarm directory | HIGH | 14 | (standardize path) | No |
+| A5 | EWC lambda | HIGH | 9 | `neural.ewcLambda` | No |
+| A6 | Port numbers | HIGH | 18 | `ports.*` | No |
+| A7 | Similarity threshold | HIGH | ~10 | `memory.similarityThreshold` | No |
+| A8 | Learning rate | HIGH | 13 | `neural.defaultLearningRate` | No |
+| A9 | Embedding cache bug | HIGH | 1 | `memory.embeddingCacheSize` | No |
+| A10 | Migration batch size | HIGH | 2 | `memory.migrationBatchSize` | No |
+| A11 | Dedup threshold | HIGH | ~4 | `memory.dedupThreshold` | No |
+| **Total** | | | **~86 sites** | **14 new config keys** | **0 of 11** |
+
+All 11 items require new config.json fields. None have been remediated yet. The embedding/HNSW bypass sites documented in F1 above (12 sites, remediated 2026-04-05) are separate from this inventory.
+
 ## Consequences
 
 ### What becomes possible after all three are done
