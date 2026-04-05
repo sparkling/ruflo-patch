@@ -395,24 +395,24 @@ The 3-point gap means ReasoningBank deduplicates entries that AgentDB considers 
 
 All 11 items have config.json fields. 10 are fully remediated; A6 (ports) uses env-var guards but not all sites read from config.json yet. The embedding/HNSW bypass sites documented in F1 above (12 sites, remediated 2026-04-05) are separate from this inventory.
 
-### Residual bypass sites (validated 2026-04-05)
+### Residual bypass sites (validated 2026-04-05, remediated 2026-04-05)
 
-15-agent validation swarm confirmed the primary remediation is sound. The following secondary sites were found still hardcoded:
+15-agent validation swarm found 25 secondary bypass sites. All were fixed in the subsequent 15-agent remediation round:
 
-| Category | File | Value | Severity |
-|----------|------|-------|----------|
-| A1 SQLite | 8 agentic-flow CLI/benchmark/query sites | Missing `busy_timeout` after WAL | HIGH |
-| Dim 768 | `agentdb-wrapper.ts:90`, `agentdb-wrapper-enhanced.ts:108` | `\|\| 768` fallback | HIGH |
-| Dim 768 | `HNSWIndex.ts:152` | `dimension: 768` in default config | HIGH |
-| maxElements | `AgentDB.ts:166` | `?? 10000` stale fallback | HIGH |
-| maxElements | `agentdb-service.ts:271,301` | Literal `100000` instead of `hnswParams.maxElements` | MEDIUM |
-| A5 EWC | `intelligence-tools.ts:315` | `ewcLambda: 1000.0` (reporting) | MEDIUM — remediated (A17: reads from embeddings.json) |
-| A5 EWC | `SonaLearningBackend.ts` | `?? 1000` fallback | MEDIUM — remediated (A17: reads from embeddings.json) |
-| A8 LR | `sona-adapter.ts` (5 modes), `self-learning.ts` (5 sites) | Per-mode LR not config-aware | MEDIUM |
-| A11 dedup | `rvf-tools.ts:50` | Fallback 0.98 (should be 0.95) | MEDIUM |
-| A6 ports | 4 agentic-flow sites | No env-var guard | MEDIUM |
-| A3 timeouts | `dispatch-service.ts:330`, `custom-worker-factory.ts:223` | Unguarded fallbacks | MEDIUM |
-| A2 rate | `agentdb-cli.ts:893` | `maxRequestsPerMinute: 60` | LOW |
+| Category | What was fixed | Sites |
+|----------|---------------|-------|
+| A1 SQLite | Added `busy_timeout = 5000` to 8 agentic-flow WAL sites | 8 |
+| Dim 768 | `agentdb-wrapper.ts`, `agentdb-wrapper-enhanced.ts`, `HNSWIndex.ts` use `getEmbeddingConfig()` | 3 |
+| maxElements | `AgentDB.ts` fixed 10000→config chain; `agentdb-service.ts` uses `hnswParams.maxElements` | 3 |
+| A5 EWC | `intelligence-tools.ts` reads config; `SonaLearningBackend.ts` fallback 1000→2000 | 2 |
+| A8 LR | `sona-adapter.ts` per-mode LR uses multipliers; `self-learning.ts` 5 sites use `readLearningRate()` | 12 |
+| A11 dedup | `rvf-tools.ts` fallback 0.98→0.95 | 1 |
+| A6 ports | `http-sse.ts`, `claude-code-wrapper.ts`, `daemon-cli.ts`, `onnx-proxy.ts` env-var guarded | 4 |
+| A3 timeouts | `dispatch-service.ts` uses `loadGlobalWorkerTimeout()`; `custom-worker-factory.ts` uses `resolveWorkerTimeout()` | 2 |
+| A2 rate | `agentdb-cli.ts` aligned 60→100 | 1 |
+| **Total** | | **36** |
+
+No known residual bypass sites remain.
 
 ### New patterns identified (not in original A1-A11 audit)
 
