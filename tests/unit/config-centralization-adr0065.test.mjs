@@ -367,6 +367,8 @@ describe('ADR-0065 Integration: config files are valid JSON and internally consi
       'attentionService', 'multiHeadAttention', 'selfAttention',
       'rateLimiter', 'circuitBreaker', 'tieredCache',
       'quantizedVectorStore', 'solverBandit',
+      'enabled', 'nightlyLearner', 'causalRecall',
+      'queryOptimizer', 'selfLearningRvfBackend', 'mutationGuard',
     ];
     for (const key of Object.keys(cfg.controllers)) {
       assert.ok(validKeys.includes(key), `Unknown controller key: ${key}`);

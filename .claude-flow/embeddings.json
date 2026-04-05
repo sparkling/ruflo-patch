@@ -11,7 +11,10 @@
         "metric": "cosine",
         "maxElements": 100000,
         "persistIndex": true,
-        "rebuildThreshold": 0.1
+        "rebuildThreshold": 0.1,
+        "m": 23,
+        "efConstruction": 100,
+        "efSearch": 50
     },
     "hashFallbackDimension": 128
 }

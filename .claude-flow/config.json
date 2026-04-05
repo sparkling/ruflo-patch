@@ -37,6 +37,51 @@
         "transport": { "port": 3000 }
     },
     "controllers": {
+        "enabled": {
+            "reasoningBank": true,
+            "causalRecall": true,
+            "nightlyLearner": true,
+            "queryOptimizer": false,
+            "auditLogger": false,
+            "batchOperations": false,
+            "attentionService": true,
+            "hierarchicalMemory": false,
+            "memoryConsolidation": false,
+            "hybridSearch": false,
+            "agentMemoryScope": true,
+            "federatedSession": false
+        },
+        "nightlyLearner": {
+            "schedule": "0 3 * * *",
+            "maxPatternsPerRun": 500,
+            "rewardThreshold": 0.3,
+            "useEwcConsolidation": true,
+            "ewcLambda": 0.5
+        },
+        "causalRecall": {
+            "maxDepth": 5,
+            "minEdgeWeight": 0.1,
+            "temporalDecay": true,
+            "decayHalfLifeMs": 86400000
+        },
+        "queryOptimizer": {
+            "planCache": true,
+            "maxCachedPlans": 256,
+            "autoIndexHints": true,
+            "vectorCostWeight": 0.6
+        },
+        "selfLearningRvfBackend": {
+            "learningRate": 0.01,
+            "feedbackWindowSize": 100,
+            "autoRerank": true,
+            "minFeedbackCount": 10
+        },
+        "mutationGuard": {
+            "walEnabled": true,
+            "maxMutationsPerTx": 1000,
+            "schemaValidation": true,
+            "allowedNamespaces": []
+        },
         "attentionService": {
             "numHeads": 8,
             "useFlash": true,

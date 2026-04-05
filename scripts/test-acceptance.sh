@@ -309,6 +309,10 @@ adr0064_lib="${PROJECT_DIR}/lib/acceptance-adr0064-checks.sh"
 adr0065_lib="${PROJECT_DIR}/lib/acceptance-adr0065-checks.sh"
 [[ -f "$adr0065_lib" ]] && source "$adr0065_lib"
 
+# ADR-0068: Controller Config Unification
+adr0068_lib="${PROJECT_DIR}/lib/acceptance-adr0068-checks.sh"
+[[ -f "$adr0068_lib" ]] && source "$adr0068_lib"
+
 # ADR-0059 Phase 3: Unified MCP search
 adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 [[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
@@ -453,6 +457,13 @@ run_check_bg "adr0065-no-sqljs"      "No SqlJsBackend"              check_adr006
 run_check_bg "adr0065-no-jsonbe"     "No JsonBackend"               check_adr0065_no_json_backend           "adr0065"
 run_check_bg "adr0065-schema"        "Shared memory-schema"         check_adr0065_shared_schema             "adr0065"
 run_check_bg "adr0065-hnsw-util"     "Shared hnsw-utils"            check_adr0065_shared_hnsw_utils         "adr0065"
+
+# ADR-0068: Controller Config Unification
+run_check_bg "adr0068-no384"          "No 384 fallbacks (ADR-0068)"      check_adr0068_no_384_fallbacks     "adr0068"
+run_check_bg "adr0068-no-minilm"      "No MiniLM (ADR-0068)"             check_adr0068_no_minilm            "adr0068"
+run_check_bg "adr0068-no-direct-ctor" "No direct construction (ADR-0068)" check_adr0068_no_direct_construction "adr0068"
+run_check_bg "adr0068-hnsw-cfg"       "HNSW config (ADR-0068)"           check_adr0068_hnsw_config          "adr0068"
+run_check_bg "adr0068-ctrl-enabled"   "Controllers enabled (ADR-0068)"   check_adr0068_controllers_enabled  "adr0068"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -738,6 +749,11 @@ collect_parallel "all" \
   "adr0065-no-jsonbe|No JsonBackend" \
   "adr0065-schema|Shared memory-schema" \
   "adr0065-hnsw-util|Shared hnsw-utils" \
+  "adr0068-no384|No 384 fallbacks (ADR-0068)" \
+  "adr0068-no-minilm|No MiniLM (ADR-0068)" \
+  "adr0068-no-direct-ctor|No direct construction (ADR-0068)" \
+  "adr0068-hnsw-cfg|HNSW config (ADR-0068)" \
+  "adr0068-ctrl-enabled|Controllers enabled (ADR-0068)" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
