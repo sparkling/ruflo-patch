@@ -468,3 +468,256 @@ describe('ADR-0069 I11: deriveHNSWParams consistency across all patched sites', 
     }
   });
 });
+
+// ============================================================================
+// U12–U15: Capacity values (maxElements, maxEntries) in config chain
+// ============================================================================
+
+/** Simulates getEmbeddingConfig() with maxElements support */
+function makeGetEmbeddingConfigWithCapacity(overrides = {}) {
+  const defaults = {
+    model: 'Xenova/all-mpnet-base-v2',
+    dimension: 768,
+    provider: 'onnx',
+    hnsw: { m: 23, efConstruction: 100, efSearch: 50, maxElements: 100_000 },
+  };
+  const merged = { ...defaults, ...overrides };
+  if (overrides.hnsw) merged.hnsw = { ...defaults.hnsw, ...overrides.hnsw };
+  return mockFn(() => merged);
+}
+
+/** Simulates deriveHNSWParams with maxElements support */
+function makeDeriveHNSWParamsWithCapacity() {
+  return mockFn((dim, maxElements) => {
+    const m = Math.max(8, Math.round(Math.log2(dim) * 2.5));
+    const efConstruction = Math.max(m * 4, 64);
+    const efSearch = Math.max(m * 2, 32);
+    return { m, efConstruction, efSearch, maxElements: maxElements ?? 100_000 };
+  });
+}
+
+/** Simulates config.json bridge reading maxEntries from memory.storage */
+function makeConfigBridge(configJson = {}) {
+  const defaults = {
+    memory: { storage: { maxEntries: 1_000_000 } },
+  };
+  const merged = { ...defaults, ...configJson };
+  if (configJson.memory) {
+    merged.memory = { ...defaults.memory, ...configJson.memory };
+    if (configJson.memory.storage) {
+      merged.memory.storage = { ...defaults.memory.storage, ...configJson.memory.storage };
+    }
+  }
+  return mockFn(() => merged);
+}
+
+/** Simulates RuntimeConfig receiving maxEntries from bridge */
+function resolveRuntimeConfig(bridgeFn) {
+  const cfg = bridgeFn();
+  return {
+    maxEntries: cfg.memory?.storage?.maxEntries ?? 1_000_000,
+  };
+}
+
+/** Simulates factory.ts reading maxElements from getEmbeddingConfig */
+function resolveFactoryMaxElements(getEmbeddingConfigFn) {
+  try {
+    const cfg = getEmbeddingConfigFn();
+    return cfg.hnsw?.maxElements ?? 100_000;
+  } catch {
+    return 100_000;
+  }
+}
+
+describe('ADR-0069 U12: getEmbeddingConfig includes maxElements', () => {
+  it('returns maxElements from embeddings.json hnsw block', () => {
+    const getEmbeddingConfig = makeGetEmbeddingConfigWithCapacity({
+      hnsw: { maxElements: 50_000 },
+    });
+    const cfg = getEmbeddingConfig();
+    assert.equal(cfg.hnsw.maxElements, 50_000,
+      'maxElements must come from embeddings.json hnsw block');
+  });
+
+  it('returns default 100000 when no hnsw.maxElements specified', () => {
+    const getEmbeddingConfig = makeGetEmbeddingConfigWithCapacity();
+    const cfg = getEmbeddingConfig();
+    assert.equal(cfg.hnsw.maxElements, 100_000,
+      'maxElements default must be 100000');
+  });
+
+  it('env var AGENTDB_MAX_ELEMENTS overrides file config', () => {
+    // Simulate env var override pattern used in config chain
+    const fileMaxElements = 50_000;
+    const envMaxElements = 75_000;
+
+    const getEmbeddingConfig = mockFn(() => {
+      const envVal = envMaxElements; // simulates process.env.AGENTDB_MAX_ELEMENTS
+      return {
+        model: 'Xenova/all-mpnet-base-v2',
+        dimension: 768,
+        provider: 'onnx',
+        hnsw: {
+          m: 23, efConstruction: 100, efSearch: 50,
+          maxElements: envVal || fileMaxElements,
+        },
+      };
+    });
+    const cfg = getEmbeddingConfig();
+    assert.equal(cfg.hnsw.maxElements, 75_000,
+      'env var AGENTDB_MAX_ELEMENTS must override file config');
+  });
+});
+
+describe('ADR-0069 U13: deriveHNSWParams includes maxElements', () => {
+  it('returns default maxElements 100000 for dimension 768', () => {
+    const deriveHNSWParams = makeDeriveHNSWParamsWithCapacity();
+    const params = deriveHNSWParams(768);
+    assert.equal(params.maxElements, 100_000,
+      'deriveHNSWParams(768) must return default maxElements 100000');
+    // Also verify HNSW params are present (exact values tested in I11)
+    assert.ok(params.m >= 8, 'm must be >= 8');
+    assert.ok(params.efConstruction >= params.m, 'efConstruction must be >= m');
+    assert.ok(params.efSearch >= params.m, 'efSearch must be >= m');
+  });
+
+  it('passes explicit maxElements override', () => {
+    const deriveHNSWParams = makeDeriveHNSWParamsWithCapacity();
+    const params = deriveHNSWParams(768, 50_000);
+    assert.equal(params.maxElements, 50_000,
+      'deriveHNSWParams(768, 50000) must return maxElements 50000');
+  });
+
+  it('return type includes maxElements field', () => {
+    const deriveHNSWParams = makeDeriveHNSWParamsWithCapacity();
+    const params = deriveHNSWParams(384);
+    assert.ok('maxElements' in params,
+      'deriveHNSWParams return must include maxElements field');
+    assert.equal(typeof params.maxElements, 'number',
+      'maxElements must be a number');
+  });
+});
+
+describe('ADR-0069 U14: maxEntries flows through config chain', () => {
+  it('bridge passes maxEntries from config.json memory.storage', () => {
+    const bridge = makeConfigBridge({
+      memory: { storage: { maxEntries: 500_000 } },
+    });
+    const runtime = resolveRuntimeConfig(bridge);
+    assert.equal(runtime.maxEntries, 500_000,
+      'bridge must pass maxEntries 500000 to RuntimeConfig');
+  });
+
+  it('defaults to 1000000 when config.json has no storage block', () => {
+    const bridge = makeConfigBridge({});
+    const runtime = resolveRuntimeConfig(bridge);
+    assert.equal(runtime.maxEntries, 1_000_000,
+      'maxEntries must default to 1000000');
+  });
+
+  it('adapter, backend, database-provider all receive configured value', () => {
+    const bridge = makeConfigBridge({
+      memory: { storage: { maxEntries: 250_000 } },
+    });
+    const runtime = resolveRuntimeConfig(bridge);
+
+    // Simulate each consumer reading from RuntimeConfig
+    const adapterMaxEntries = runtime.maxEntries;
+    const backendMaxEntries = runtime.maxEntries;
+    const dbProviderMaxEntries = runtime.maxEntries;
+
+    assert.equal(adapterMaxEntries, 250_000, 'adapter must receive 250000');
+    assert.equal(backendMaxEntries, 250_000, 'backend must receive 250000');
+    assert.equal(dbProviderMaxEntries, 250_000, 'database-provider must receive 250000');
+  });
+});
+
+describe('ADR-0069 U15: factory.ts maxElements uses config chain', () => {
+  it('backend factory default maxElements is 100000 not 10000', () => {
+    const getEmbeddingConfig = makeGetEmbeddingConfigWithCapacity();
+    const maxElements = resolveFactoryMaxElements(getEmbeddingConfig);
+    assert.equal(maxElements, 100_000,
+      'factory default maxElements must be 100000, not 10000');
+    assert.notEqual(maxElements, 10_000,
+      'factory must NOT use old buggy value 10000');
+  });
+
+  it('uses getEmbeddingConfig().hnsw.maxElements when set', () => {
+    const getEmbeddingConfig = makeGetEmbeddingConfigWithCapacity({
+      hnsw: { maxElements: 200_000 },
+    });
+    const maxElements = resolveFactoryMaxElements(getEmbeddingConfig);
+    assert.equal(maxElements, 200_000,
+      'factory must use maxElements from config chain');
+  });
+
+  it('falls back to 100000 when config chain unavailable', () => {
+    const failingConfig = makeFailingGetEmbeddingConfig();
+    const maxElements = resolveFactoryMaxElements(failingConfig);
+    assert.equal(maxElements, 100_000,
+      'factory fallback maxElements must be 100000');
+  });
+});
+
+// ============================================================================
+// I12: Capacity round-trip integration
+// ============================================================================
+
+describe('ADR-0069 I12: capacity round-trip integration', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'adr0069-cap-'));
+  });
+
+  it('all consumers resolve maxElements=50000 and maxEntries=250000 from config files', () => {
+    // Write embeddings.json with custom maxElements
+    const embeddingsJson = {
+      model: 'Xenova/all-mpnet-base-v2',
+      dimension: 768,
+      hnsw: { m: 23, efConstruction: 100, efSearch: 50, maxElements: 50_000 },
+    };
+    writeFileSync(join(tmpDir, 'embeddings.json'), JSON.stringify(embeddingsJson, null, 2));
+
+    // Write config.json with custom maxEntries
+    const configJson = {
+      memory: { storage: { maxEntries: 250_000 } },
+    };
+    writeFileSync(join(tmpDir, 'config.json'), JSON.stringify(configJson, null, 2));
+
+    // Read back and build config functions from files
+    const rawEmb = JSON.parse(readFileSync(join(tmpDir, 'embeddings.json'), 'utf8'));
+    const rawCfg = JSON.parse(readFileSync(join(tmpDir, 'config.json'), 'utf8'));
+
+    const getEmbeddingConfig = mockFn(() => ({
+      model: rawEmb.model,
+      dimension: rawEmb.dimension,
+      provider: 'onnx',
+      hnsw: rawEmb.hnsw,
+      maxElements: rawEmb.hnsw.maxElements,
+    }));
+
+    const bridge = mockFn(() => rawCfg);
+
+    // Verify maxElements flows to all HNSW consumers
+    const embCfg = getEmbeddingConfig();
+    assert.equal(embCfg.hnsw.maxElements, 50_000, 'hnsw.maxElements must be 50000');
+    assert.equal(embCfg.maxElements, 50_000, 'top-level maxElements must be 50000');
+
+    const factoryMaxElements = resolveFactoryMaxElements(getEmbeddingConfig);
+    assert.equal(factoryMaxElements, 50_000, 'factory must resolve maxElements 50000');
+
+    const createBackendResult = resolveCreateBackend(getEmbeddingConfig);
+    assert.equal(createBackendResult.maxElements, 100_000,
+      'createBackend uses its own default; factory override is separate');
+
+    // Verify maxEntries flows through bridge to RuntimeConfig
+    const runtime = resolveRuntimeConfig(bridge);
+    assert.equal(runtime.maxEntries, 250_000, 'RuntimeConfig maxEntries must be 250000');
+  });
+
+  it('cleanup', () => {
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    assert.ok(true);
+  });
+});

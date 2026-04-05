@@ -152,3 +152,63 @@ check_adr0069_bypass_count() {
     _CHECK_OUTPUT="ADR-0069: ${total_bypasses} file(s) with hardcoded dimension:768 in DEFAULT_CONFIG:${bypass_details}"
   fi
 }
+
+check_adr0069_factory_maxelements_not_10k() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local factory_file
+  factory_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/memory" "factory.js")
+
+  if [[ -z "$factory_file" ]]; then
+    # Try agentdb sub-path
+    factory_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/memory" -name "factory.js" -path "*/agentdb*" 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$factory_file" ]]; then
+    _CHECK_OUTPUT="ADR-0069: factory.js not found in published memory/agentdb package"
+    return
+  fi
+
+  # The old buggy value was maxElements: 10000 (or 10_000 or 1e4).
+  # After ADR-0069 fix, factory should use 100000 (from config chain).
+  if grep -qE 'maxElements\s*[:=]\s*(10000|10_000|1e4)\b' "$factory_file" 2>/dev/null; then
+    _CHECK_OUTPUT="ADR-0069: factory.ts still has buggy maxElements=10000 (should be 100000 from config chain)"
+  else
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069: factory.ts maxElements is not the old buggy 10000"
+  fi
+}
+
+check_adr0069_hnsw_params_include_maxelements() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local hnsw_file
+  hnsw_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/memory" "hnsw-utils.js")
+
+  if [[ -z "$hnsw_file" ]]; then
+    # Broader search for hnsw utils
+    hnsw_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/memory" -name "hnsw*.js" 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$hnsw_file" ]]; then
+    # Try shared package
+    hnsw_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/shared" "hnsw-utils.js")
+    if [[ -z "$hnsw_file" ]]; then
+      hnsw_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/shared" -name "hnsw*.js" 2>/dev/null | head -1)
+    fi
+  fi
+
+  if [[ -z "$hnsw_file" ]]; then
+    _CHECK_OUTPUT="ADR-0069: hnsw-utils.js not found in published memory or shared package"
+    return
+  fi
+
+  if grep -qE 'maxElements' "$hnsw_file" 2>/dev/null; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069: hnsw-utils includes maxElements in HNSWParams return"
+  else
+    _CHECK_OUTPUT="ADR-0069: hnsw-utils.js does not include maxElements in HNSWParams"
+  fi
+}

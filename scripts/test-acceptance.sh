@@ -506,6 +506,8 @@ run_check_bg "adr0069-backend"       "Backend config chain (ADR-0069)"   check_a
 run_check_bg "adr0069-bridge"        "Bridge config chain (ADR-0069)"    check_adr0069_bridge_uses_config_chain   "adr0069"
 run_check_bg "adr0069-hooks-rb"      "Hooks RB config chain (ADR-0069)"  check_adr0069_hooks_rb_uses_config_chain "adr0069"
 run_check_bg "adr0069-bypass-count"  "Bypass count zero (ADR-0069)"      check_adr0069_bypass_count               "adr0069"
+run_check_bg "adr0069-factory-max"  "Factory maxElements not 10K (ADR-0069)"  check_adr0069_factory_maxelements_not_10k  "adr0069"
+run_check_bg "adr0069-hnsw-maxel"   "HNSW params include maxElements (ADR-0069)" check_adr0069_hnsw_params_include_maxelements "adr0069"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -801,6 +803,8 @@ collect_parallel "all" \
   "adr0069-bridge|Bridge config chain (ADR-0069)" \
   "adr0069-hooks-rb|Hooks RB config chain (ADR-0069)" \
   "adr0069-bypass-count|Bypass count zero (ADR-0069)" \
+  "adr0069-factory-max|Factory maxElements not 10K (ADR-0069)" \
+  "adr0069-hnsw-maxel|HNSW params include maxElements (ADR-0069)" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
