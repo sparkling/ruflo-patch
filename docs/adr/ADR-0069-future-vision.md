@@ -239,7 +239,13 @@ The ruflo `RvfBackend` is the default storage for all CLI memory operations. It 
 
 #### SPARC integration branch
 
-`remotes/origin/claude/claude-flow-v3-ruvector-011aqixBbBUJPRLVEJYfvPUq` contains a 7-document SPARC plan for rebuilding claude-flow on RuVector Rust crates. Coverage: ~45% of existing features. 6-phase roadmap (12-16 weeks). No implementation — planning documents only.
+`remotes/origin/claude/claude-flow-v3-ruvector-011aqixBbBUJPRLVEJYfvPUq` contains a 14-document SPARC plan for rebuilding claude-flow on RuVector Rust crates. Original estimate: 12-16 weeks. After gap analysis: **44-49 weeks** (coverage only ~15-20% of existing features). No implementation — planning and scaffolding only.
+
+#### Upstream feature branch audit (9 branches checked)
+
+7 of 9 branches are fully merged to main. All substantive Rust code (HNSW, RvfStore, adapters, NAPI bindings, WASM, string-ID mapping) is on main. Two unmerged branches contain only documentation (`ruvector-format-design`) and planning (`claude-flow-v3-ruvector`). No hidden HNSW fixes or store improvements on any branch.
+
+Key merged branches: `fix/rvf-backend-stubs` (fixed NAPI/WASM binding layer), `claude/rvf-wasm-integration` (CJS/ESM dual-format, E2E tested), `fix/rvf-string-id-mapping` (numeric↔string ID mapping for HNSW compatibility).
 
 #### Revised F2 path (post-deep-dive)
 
