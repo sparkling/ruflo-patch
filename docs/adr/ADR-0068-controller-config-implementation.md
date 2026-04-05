@@ -59,11 +59,20 @@ These changes must land first because they fix AgentDB internals that all three 
 
 **W1-2: Extend getController() switch**
 - File: same AgentDB.ts, lines 183-223
-- Add cases for `reasoningBank`, `causalRecall`, `learningSystem`, `explainableRecall`, `nightlyLearner`, `graphTransformer`
-- Also add `attentionService`, `hierarchicalMemory`, `memoryConsolidation` — these 3 are needed
-  by ADR-0069 F1 (AgentDBService consolidation) and are cheaper to add now than retrofit later
-- Currently only 5 names are reliable (ADR-055); the remaining 9+ need adding
-- Total after this change: ~16 names in the switch (9 existing + 6 from ADR-0066 + 3 for F1 readiness)
+- The switch currently has 13 cases (confirmed by reading the fork source). ADR-055's claim
+  of "only 5 reliable" refers to an older alpha; the fork already has all 13.
+- Add 3 new cases for ADR-0066: `queryOptimizer`, `auditLogger`, `batchOperations`
+- Add 3 new cases for ADR-0069 F1 readiness (scope note: these go beyond ADR-0066 but are
+  trivial to add now): `attentionService`, `hierarchicalMemory`, `memoryConsolidation`
+- Total after this change: 19 names in the switch (13 existing + 3 ADR-0066 + 3 F1)
+
+**W1-5: Inject shared AttentionService into CausalMemoryGraph, ExplainableRecall, NightlyLearner**
+- Files: `packages/agentdb/src/controllers/CausalMemoryGraph.ts`, `ExplainableRecall.ts`, `NightlyLearner.ts`
+- Add optional `attentionService?: AttentionService` constructor parameter to each
+- In AgentDB.initialize(): create ONE AttentionService, pass it to all three
+- This eliminates 3 accidental duplicate instances (all with identical config)
+- Note: this is NOT a global singleton — ADR-0028 designed for multi-instance with different
+  configs. The sharing is only for identical-config duplicates (per ADR-0067 Section 8)
 
 **W1-3: Fix all 384 dimension fallbacks in agentic-flow**
 - Files: `agentdb-wrapper.ts:90`, `agentdb-wrapper-enhanced.ts:108/119/128`, `EmbeddingService.ts:179-180`, `reasoningbank/utils/embeddings.ts:47/53/151`, `agentdb-service.ts:215/461`, `TinyDancerRouter.ts:87`
@@ -95,18 +104,23 @@ These changes must land first because they fix AgentDB internals that all three 
 - Closes Vision Gap 3 completely
 
 **W2-5: Add HNSW tuning to embeddings.json and propagate**
-- Add `hnsw.m: 23`, `hnsw.efConstruction: 100`, `hnsw.efSearch: 50` to embeddings.json
+- Add `hnsw.m`, `hnsw.efConstruction`, `hnsw.efSearch` to embeddings.json
+- Values are derived from `deriveHNSWParams(768)`: M=23, efConstruction=100, efSearch=50
+  (these differ from the upstream ADR-001 hand-tuned defaults of M=16/efC=200/efS=100
+  because the formula accounts for the 768-dim model — `floor(sqrt(768)/1.2)=23`,
+  `clamp(4*23,100,500)=100`, `clamp(2*23,50,400)=50`)
 - Propagate to AgentDBConfig, RvfBackend, HNSWLibBackend init calls
 - Replace scattered `hnswM: 16` hardcodes in `agentdb-backend.ts:123`, `integration/types.ts:465`, `agentic-flow-bridge.ts:607`
 
-### Wave 3: Fork patches (ruvector) -- P3
+### Wave 3: Fork patches (ruvector at `/Users/henrik/source/forks/ruvector/`) -- P3
 
 **W3-1: Fix dimension defaults**
-- Files: `ruvector-core/src/types.rs:119`, `ruvector-cli/src/config.rs:92`, `ruvector-graph-node/src/types.rs:48`, `ruvector-postgres/src/routing/router.rs:158,167`
+- Files: `crates/ruvector-core/src/types.rs:119`, `crates/ruvector-cli/src/config.rs:92`, `crates/ruvector-graph-node/src/types.rs:48`, `crates/ruvector-postgres/src/routing/router.rs:158,167`
 - Change all 384 defaults to 768 (4 files, ~10 lines Rust)
 
 **W3-2: Fix RuVectorBackend adaptive params**
-- File: ruflo fork, RuVectorBackend (in memory/src/)
+- File: ruflo fork, `/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src/agentdb-backend.ts`
+  (RuVectorBackend's `getAdaptiveParams()` is in this file's import chain)
 - `getAdaptiveParams()` delegates to `deriveHNSWParams(dimension)` from `hnsw-utils.ts`
 
 ### Wave 4: Patch repo (ruflo-patch) -- P1 config + P2 stubs
@@ -122,12 +136,20 @@ These changes must land first because they fix AgentDB internals that all three 
 
 **W4-3: Implement stub controllers**
 - `agentMemoryScope`: wire existing `agent-memory-scope.ts` class
-- `hybridSearch`: BM25 + HNSW fusion (~150 lines)
-- `federatedSession`: shared-SQLite session transport (~120 lines)
+- `hybridSearch`: BM25 + HNSW fusion (~150 lines). Must implement `IMemoryBackend` interface
+  for storage operations — do NOT call `better-sqlite3` directly. This is required for
+  forward-compatibility with ADR-0069 F2 (RVF storage migration).
+- `federatedSession`: shared-SQLite session transport (~120 lines). Must route through
+  `IMemoryBackend` for the same reason.
 
 **W4-4: Register queryOptimizer and auditLogger in AgentDB**
 - File: AgentDB.ts, add cases to getController() switch
 - Lazy-init: `this.queryOptimizer ??= new QO(this.db)`
+
+**W4-5: Wire controllers.enabled from config.json into memory-bridge.ts**
+- File: ruflo fork, `@claude-flow/cli/src/memory/memory-bridge.ts`
+- In `getRegistry()`, merge `cfgJson.controllers.enabled` with the hardcoded enable/disable map
+- Without this, the `controllers.enabled` section added by W4-2 has no runtime effect
 
 ### Wave 5: Tests + acceptance
 

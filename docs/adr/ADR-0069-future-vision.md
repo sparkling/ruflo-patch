@@ -54,16 +54,18 @@ After ADR-0068 completes, AgentDB.getController() will be reliable for 16+ contr
 (including the 3 added for F1 readiness: `attentionService`, `hierarchicalMemory`,
 `memoryConsolidation`), and AgentDB.initialize() will wire singletons correctly.
 
-AgentDBService constructs 29 distinct objects. Only 9 overlap with AgentDB's `getController()`
-(+3 added by ADR-0068 W1-2 = 12 total). The remaining 17 are agentic-flow-specific:
+AgentDBService constructs 29 distinct objects. 13 overlap with AgentDB's `getController()`
+(9 existing + 3 added by ADR-0068 W1-2 + NightlyLearner which is already in getController).
+The remaining 16 are agentic-flow-specific and stay in AgentDBService:
 - Phase 1: WASMVectorSearch, EnhancedEmbeddingService
 - Phase 2: RuVectorLearning (GNN), SemanticRouter, GraphDatabaseAdapter, SonaTrajectoryService
-- Phase 4: SyncCoordinator, QUICClient, QUICServer, NightlyLearner (already in getController)
-- Other: RVFOptimizer, CostOptimizerService, GuardedVectorBackend wrapper, EmbeddingService
+- Phase 4: SyncCoordinator, QUICClient, QUICServer
+- Other: RVFOptimizer, CostOptimizerService, GuardedVectorBackend wrapper, EmbeddingService,
+  MMRDiversityRanker (class ref), ContextSynthesizer (class ref), ExplainableRecall (Phase 4)
 
 Refactoring scope:
-1. Replace the 12 migratable `new X(db, ...)` calls with `this.agentDb.getController('name')`
-2. Keep the 17 agentic-flow-specific controllers as AgentDBService-owned
+1. Replace the 13 migratable `new X(db, ...)` calls with `this.agentDb.getController('name')`
+2. Keep the 16 agentic-flow-specific controllers as AgentDBService-owned
 3. Keep the phased init for Phase 2/4 (RuVector packages, QUIC, Sync) — these have external deps
 4. Keep the MCP convenience wrappers and in-memory fallback stores
 
@@ -193,9 +195,9 @@ This is the largest of the three items. The 39 mechanism types represent signifi
 ## Acceptance Criteria
 
 ### F1: AgentDBService Consolidation
-- [ ] AgentDBService calls `agentdb.getController()` for all domain controllers
-- [ ] AgentDBService phased init removed; delegates to AgentDB.initialize()
-- [ ] AgentDBService reduced to MCP facade (~700-800 lines; 12 controllers delegated, 17 stay)
+- [ ] AgentDBService calls `agentdb.getController()` for the 13 migratable controllers (verified: zero `new X(this.db` for those 13 in agentdb-service.ts)
+- [ ] AgentDBService Phase 1 init delegated to AgentDB; Phase 2/4 init retained (RuVector/QUIC/Sync have external deps)
+- [ ] AgentDBService reduced to MCP facade (~700-800 lines; 13 controllers delegated, 16 stay)
 - [ ] All 50+ MCP tool callers pass integration tests with consolidated service
 - [ ] In-memory fallback preserved for environments without better-sqlite3
 
