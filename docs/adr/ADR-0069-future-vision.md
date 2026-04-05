@@ -252,9 +252,10 @@ Key merged branches: `fix/rvf-backend-stubs` (fixed NAPI/WASM binding layer), `c
 The original F2 migration sequence assumed blocked prerequisites. Revised path:
 
 1. **Fix ruflo `tryNativeInit()` API mismatch** (~50 lines in `rvf-backend.ts`). The code opens `@ruvector/rvf` but never routes reads/writes through it. Fix: align the API call (`RvfDatabase.create(path, {dimension})` vs `new RvfDatabase({path, dimensions})`), then delegate `search()` to native when available. Immediate perf win on the backend that's already selected by default. **This is the lowest-effort, highest-impact F2 step.**
-2. **Wire rvf-index into rvf-runtime + cross-compile CI** (ruvector fork Rust patch, ~200-300 lines in `store.rs` + `Cargo.toml`; CI pipeline for 5-platform NAPI binary builds). Turns every RVF query from O(n) to O(log n). Do both together — the Rust patch without CI has no deployment path, and CI without the patch ships brute-force binaries.
+2. **Wire rvf-index into rvf-runtime** (ruvector fork Rust patch, ~200 lines in `store.rs` + `Cargo.toml`). Turns every RVF query from O(n) to O(log n).
    - Rust: add `rvf-index` dependency to `rvf-runtime/Cargo.toml`, add `HnswGraph` field to `RvfStore`, wire `ingest_batch()` to insert into graph, wire `query()` to use HNSW search
-   - CI: GitHub Actions matrix build for darwin-arm64, darwin-x64, linux-arm64-gnu, linux-x64-gnu, win32-x64-msvc using `napi-rs/napi-rs` action. Publish prebuilt `.node` binaries as platform-specific npm packages
+   - Build locally on macOS ARM (`cargo build --release && napi build --release`), commit the `.node` binary (same pattern as upstream's checked-in binaries at `npm/packages/rvf-node/`)
+   - Other platforms: users get upstream's prebuilt binaries (without HNSW fix) and fall back to pure-TS `HnswLite` via `tryNativeInit()`. Cross-platform binaries done later via a one-time build on Linux/Windows boxes — no CI pipeline needed
 3. **Build SQLite→RVF migration tool** — automatic on first access. When a project has `.swarm/memory.db` (SQLite) but no `.swarm/agentdb-memory.rvf`, migrate on startup. Use the existing `RvfMigrator.fromSqlite()` path + `rvf-import` patterns. User-facing: zero manual steps, migration logged to console.
 4. **Keep two RvfBackend classes** — ruflo's for `IMemoryBackend` (full MemoryEntry), agentdb's for `VectorBackendAsync` (raw vectors). Different interfaces, different purposes.
 5. **Do not wait for upstream bug fixes** — #315/#316/#323 have zero maintainer engagement.
