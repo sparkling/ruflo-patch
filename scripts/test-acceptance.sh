@@ -223,6 +223,31 @@ fi
 _record_phase "harness-init" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
+# Pre-create e2e snapshot BEFORE non-e2e checks touch $ACCEPT_TEMP.
+# This lets us start e2e memory init in the background, overlapping
+# with the non-e2e wave (~8-10s saved on the critical path).
+# ════════════════════════════════════════════════════════════════════
+_p=$(_ns)
+E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
+cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
+rm -rf "$E2E_DIR/.swarm" "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
+log "  e2e snapshot: $(du -sh "$E2E_DIR" 2>/dev/null | cut -f1) (taken before non-e2e wave)"
+
+# Start e2e memory init + health check in background
+_E2E_READY_FILE=$(mktemp /tmp/ruflo-e2e-ready-XXXXX)
+_E2E_HEALTH_FILE=$(mktemp /tmp/ruflo-e2e-health-XXXXX)
+(
+  if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health"
+    echo "$_RK_OUT" > "$_E2E_HEALTH_FILE"
+  fi
+  echo "ready" > "$_E2E_READY_FILE"
+) &
+_E2E_PREP_PID=$!
+_record_phase "e2e-snapshot" "$(_elapsed_ms "$_p" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
 # Source shared check library
 # ════════════════════════════════════════════════════════════════════
 checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
@@ -391,69 +416,26 @@ run_check_bg "attn-configure"   "Attention configure"      check_attention_confi
 run_check_bg "attn-metrics"     "Attention metrics (D2)"   check_attention_metrics           "attention"
 run_check_bg "attn-wiring"      "Attention controllers"    check_attention_controllers_wired "attention"
 
-collect_parallel "all" \
-  "version|Version check" "latest-resolves|@latest resolves" "no-broken-versions|No broken versions" \
-  "settings-file|Settings file" "scope|Scope check" \
-  "doctor|Doctor" "wrapper-proxy|Wrapper proxy" \
-  "memory-lifecycle|Memory lifecycle" "neural-training|Neural training" \
-  "booster-esm|Agent Booster ESM" "booster-cli|Agent Booster CLI" "plugins-sdk|Plugins SDK" "plugin-install|Plugin install" \
-  "ctrl-health|Controller health" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
-  "ctrl-reflexion|Reflexion lifecycle" \
-  "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
-  "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \
-  "adr0062-causal|Causal graph level 3" "adr0062-busy|SQLite busy_timeout" \
-  "adr0062-rl-cfg|RateLimiter/CB config" "adr0062-hnsw|deriveHNSWParams wired" \
-  "adr0063-c1-import|Embedding import agentdb" "adr0063-c2-accessor|getEmbeddingService()" \
-  "adr0063-c3-dim768|Dimension 768 default" "adr0063-h1-rl|RateLimiter semantics" \
-  "adr0063-h2-maxel|maxElements 100K" "adr0063-h3-rvf|rvf optional dep" \
-  "adr0063-m1m3-busy|busy_timeout broad" "adr0063-m4-hnsw|deriveHNSWParams broad" \
-  "adr0063-m5-noenable|enableHNSW removed" "adr0063-m6-lbdim|Learning-bridge dim" \
-  "adr0063-m7-cache|Cache cleanup timers" "adr0063-m8-tiered|tieredCache maxSize" \
-  "sec-composition|Controller composition" \
-  "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
-  "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
-  "sec-filtered|Filtered search (B5)" "sec-query-stats|Query stats (B6)" \
-  "sec-embed-gen|Embedding generate (A9)" "sec-045-ctrls|ADR-0045 controllers (A9/D1/D3)" \
-  "sec-embed-cfg|Embedding config propagation (ADR-0052)" \
-  "init-config-fmt|Config format (SG-008)" "init-helpers|Helper syntax" \
-  "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
-  "init-topology|Topology (SG-011)" "init-config-vals|Config values" \
-  "attn-compute|Attention compute" "attn-benchmark|Attention benchmark" \
-  "attn-configure|Attention configure" "attn-metrics|Attention metrics (D2)" \
-  "attn-wiring|Attention controllers"
-_record_phase "groups-all-non-e2e" "$(_elapsed_ms "$_g" "$(_ns)")"
-
 # ════════════════════════════════════════════════════════════════════
-# Tests: e2e — controller activation on init'd project (split from T32)
-# Each check exercises one controller in a fresh init'd project
+# e2e check function definitions — launched in same wave as non-e2e.
+# Each e2e subshell waits for _E2E_READY_FILE before running its check,
+# so they block only until background memory init completes (~8s) while
+# non-e2e grep checks execute immediately. All 85 checks run in parallel.
 # ════════════════════════════════════════════════════════════════════
-_g=$(_ns)
-log "── e2e (controller activation) ──"
 
-# Create a fresh project for e2e tests — snapshot from harness instead of second init --full.
-# The harness project ($ACCEPT_TEMP) was already init'd. cp -r takes <0.5s vs 60-120s for init.
-E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
-cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
-# Remove any state from non-e2e checks so e2e starts clean
-rm -rf "$E2E_DIR/.swarm" "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
-log "  e2e project: snapshot from harness ($(du -sh "$E2E_DIR" 2>/dev/null | cut -f1))"
+# Wrapper: e2e checks wait for prep, then run the actual check
+_wait_e2e_ready() {
+  local max_wait=30 elapsed=0
+  while [[ ! -f "$_E2E_READY_FILE" ]] && (( elapsed < max_wait )); do
+    sleep 0.25
+    elapsed=$((elapsed + 1))
+  done
+}
 
-if [[ ! -f "$E2E_DIR/.claude/settings.json" ]]; then
-  log "  WARN  e2e harness: snapshot missing settings.json — skipping e2e group"
-else
-  # Init memory in the e2e project
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init"
-
-  # Get controller health for context
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health"
-  _E2E_HEALTH_OUT="$_RK_OUT"
-  _E2E_CTRL_COUNT=0
-  if echo "$_E2E_HEALTH_OUT" | grep -q '"name"'; then
-    _E2E_CTRL_COUNT=$(echo "$_E2E_HEALTH_OUT" | grep -c '"name"')
-  fi
-
+if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   # e2e check functions (run against E2E_DIR, not ACCEPT_TEMP)
   _e2e_memory_store() {
+    _wait_e2e_ready
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key ctrl-test --value 'controller activation test' --namespace ctrl-test"
@@ -466,6 +448,7 @@ else
   }
 
   _e2e_hooks_route() {
+    _wait_e2e_ready
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests\"}'"
@@ -478,6 +461,7 @@ else
   }
 
   _e2e_causal_edge() {
+    _wait_e2e_ready
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
     # Tool name uses hyphen: agentdb_causal-edge (not underscore)
@@ -491,6 +475,7 @@ else
   }
 
   _e2e_reflexion_store() {
+    _wait_e2e_ready
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
     # Upstream renamed tool: agentdb_reflexion_store -> agentdb_reflexion-store (hyphenated)
@@ -504,6 +489,7 @@ else
   }
 
   _e2e_batch_optimize() {
+    _wait_e2e_ready
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
     # Upstream renamed tool: agentdb_batch_optimize -> agentdb_batch-optimize (hyphenated)
@@ -518,6 +504,7 @@ else
 
   # ADR-0043: e2e filtered search — store entries, then search with metadata filter
   _e2e_filtered_search() {
+    _wait_e2e_ready
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
 
@@ -564,8 +551,11 @@ else
     fi
   }
 
-  # ── All e2e checks in one mega-parallel wave ──────────────────────
-  # Core e2e + ADR-0059 Phase 1-4 all use separate namespaces — no conflicts.
+  # ── e2e checks: launched in same wave as non-e2e ──────────────────
+  # Each e2e function calls _wait_e2e_ready internally, so subshells
+  # block until background memory init completes (~8s), then run.
+  # Non-e2e grep checks execute immediately. All ~85 checks in parallel.
+
   run_check_bg "e2e-memory-store"    "E2E memory store"       _e2e_memory_store       "e2e"
   run_check_bg "e2e-hooks-route"     "E2E hooks route"        _e2e_hooks_route        "e2e"
   run_check_bg "e2e-causal-edge"     "E2E causal edge"        _e2e_causal_edge        "e2e"
@@ -574,40 +564,70 @@ else
   run_check_bg "e2e-filtered-search" "E2E filtered search"    _e2e_filtered_search    "e2e"
 
   # ADR-0059 Phase 1+2: memory, storage, learning, hooks
+  # Wrap each external check with _wait_e2e_ready gate
   if [[ -f "$adr0059_lib" ]]; then
-    run_check_bg "e2e-0059-mem-roundtrip"     "Memory store→retrieve"       check_adr0059_memory_store_retrieve   "adr0059"
-    run_check_bg "e2e-0059-mem-search"        "Memory store→search"         check_adr0059_memory_search           "adr0059"
-    run_check_bg "e2e-0059-persist"           "Storage persistence"         check_adr0059_storage_persistence      "adr0059"
-    run_check_bg "e2e-0059-storage-files"     "Storage files exist"         check_adr0059_storage_files            "adr0059"
-    run_check_bg "e2e-0059-intel-graph"       "Intelligence graph+PageRank" check_adr0059_intelligence_graph       "adr0059"
-    run_check_bg "e2e-0059-retrieval"         "Retrieval relevance"         check_adr0059_retrieval_relevance      "adr0059"
-    run_check_bg "e2e-0059-insight"           "Insight generation"          check_adr0059_learning_insight_generation "adr0059"
-    run_check_bg "e2e-0059-feedback"          "Learning feedback loop"      check_adr0059_learning_feedback         "adr0059"
-    run_check_bg "e2e-0059-hook-import"       "Hook import populates"      check_adr0059_hook_import_populates    "adr0059"
-    run_check_bg "e2e-0059-hook-edit"         "Hook edit records file"     check_adr0059_hook_edit_records_file   "adr0059"
-    run_check_bg "e2e-0059-hook-lifecycle"    "Hook full lifecycle"        check_adr0059_hook_full_lifecycle       "adr0059"
-    run_check_bg "e2e-0059-no-collisions"     "No ID collisions"           check_adr0059_no_id_collisions         "adr0059"
+    _e2e_0059_mem_rt()    { _wait_e2e_ready; check_adr0059_memory_store_retrieve; }
+    _e2e_0059_mem_s()     { _wait_e2e_ready; check_adr0059_memory_search; }
+    _e2e_0059_persist()   { _wait_e2e_ready; check_adr0059_storage_persistence; }
+    _e2e_0059_files()     { _wait_e2e_ready; check_adr0059_storage_files; }
+    _e2e_0059_intel()     { _wait_e2e_ready; check_adr0059_intelligence_graph; }
+    _e2e_0059_retr()      { _wait_e2e_ready; check_adr0059_retrieval_relevance; }
+    _e2e_0059_insight()   { _wait_e2e_ready; check_adr0059_learning_insight_generation; }
+    _e2e_0059_feedback()  { _wait_e2e_ready; check_adr0059_learning_feedback; }
+    _e2e_0059_import()    { _wait_e2e_ready; check_adr0059_hook_import_populates; }
+    _e2e_0059_edit()      { _wait_e2e_ready; check_adr0059_hook_edit_records_file; }
+    _e2e_0059_lifecycle() { _wait_e2e_ready; check_adr0059_hook_full_lifecycle; }
+    _e2e_0059_collide()   { _wait_e2e_ready; check_adr0059_no_id_collisions; }
+
+    run_check_bg "e2e-0059-mem-roundtrip"     "Memory store→retrieve"       _e2e_0059_mem_rt    "adr0059"
+    run_check_bg "e2e-0059-mem-search"        "Memory store→search"         _e2e_0059_mem_s     "adr0059"
+    run_check_bg "e2e-0059-persist"           "Storage persistence"         _e2e_0059_persist   "adr0059"
+    run_check_bg "e2e-0059-storage-files"     "Storage files exist"         _e2e_0059_files     "adr0059"
+    run_check_bg "e2e-0059-intel-graph"       "Intelligence graph+PageRank" _e2e_0059_intel     "adr0059"
+    run_check_bg "e2e-0059-retrieval"         "Retrieval relevance"         _e2e_0059_retr      "adr0059"
+    run_check_bg "e2e-0059-insight"           "Insight generation"          _e2e_0059_insight   "adr0059"
+    run_check_bg "e2e-0059-feedback"          "Learning feedback loop"      _e2e_0059_feedback  "adr0059"
+    run_check_bg "e2e-0059-hook-import"       "Hook import populates"      _e2e_0059_import    "adr0059"
+    run_check_bg "e2e-0059-hook-edit"         "Hook edit records file"     _e2e_0059_edit      "adr0059"
+    run_check_bg "e2e-0059-hook-lifecycle"    "Hook full lifecycle"        _e2e_0059_lifecycle  "adr0059"
+    run_check_bg "e2e-0059-no-collisions"     "No ID collisions"           _e2e_0059_collide   "adr0059"
 
     # Phase 3: Unified search
     if [[ -f "$adr0059_p3_lib" ]]; then
-      run_check_bg "e2e-0059-p3-unified-both"  "Unified search both stores"  check_adr0059_unified_search_both_stores  "adr0059-p3"
-      run_check_bg "e2e-0059-p3-dedup"          "Unified search dedup"        check_adr0059_unified_search_dedup        "adr0059-p3"
-      run_check_bg "e2e-0059-p3-no-crash"       "Unified search no crash"     check_adr0059_unified_search_no_crash     "adr0059-p3"
+      _e2e_p3_both()  { _wait_e2e_ready; check_adr0059_unified_search_both_stores; }
+      _e2e_p3_dedup() { _wait_e2e_ready; check_adr0059_unified_search_dedup; }
+      _e2e_p3_crash() { _wait_e2e_ready; check_adr0059_unified_search_no_crash; }
+      run_check_bg "e2e-0059-p3-unified-both"  "Unified search both stores"  _e2e_p3_both   "adr0059-p3"
+      run_check_bg "e2e-0059-p3-dedup"          "Unified search dedup"        _e2e_p3_dedup  "adr0059-p3"
+      run_check_bg "e2e-0059-p3-no-crash"       "Unified search no crash"     _e2e_p3_crash  "adr0059-p3"
     fi
 
     # Phase 4: Daemon IPC
     if [[ -f "$adr0059_p4_lib" ]]; then
-      run_check_bg "e2e-0059-p4-socket-exists"  "Daemon IPC socket exists"    check_adr0059_daemon_ipc_socket_exists   "adr0059-p4"
-      run_check_bg "e2e-0059-p4-ipc-probe"      "Daemon IPC probe"            check_adr0059_daemon_ipc_probe           "adr0059-p4"
-      run_check_bg "e2e-0059-p4-store"           "Daemon IPC store"            check_adr0059_daemon_ipc_store           "adr0059-p4"
-      run_check_bg "e2e-0059-p4-search"          "Daemon IPC search"           check_adr0059_daemon_ipc_search          "adr0059-p4"
-      run_check_bg "e2e-0059-p4-count"           "Daemon IPC count"            check_adr0059_daemon_ipc_count           "adr0059-p4"
-      run_check_bg "e2e-0059-p4-fallback"        "Daemon IPC fallback"         check_adr0059_daemon_ipc_fallback        "adr0059-p4"
+      _e2e_p4_sock()  { _wait_e2e_ready; check_adr0059_daemon_ipc_socket_exists; }
+      _e2e_p4_probe() { _wait_e2e_ready; check_adr0059_daemon_ipc_probe; }
+      _e2e_p4_store() { _wait_e2e_ready; check_adr0059_daemon_ipc_store; }
+      _e2e_p4_srch()  { _wait_e2e_ready; check_adr0059_daemon_ipc_search; }
+      _e2e_p4_cnt()   { _wait_e2e_ready; check_adr0059_daemon_ipc_count; }
+      _e2e_p4_fb()    { _wait_e2e_ready; check_adr0059_daemon_ipc_fallback; }
+      run_check_bg "e2e-0059-p4-socket-exists"  "Daemon IPC socket exists"    _e2e_p4_sock   "adr0059-p4"
+      run_check_bg "e2e-0059-p4-ipc-probe"      "Daemon IPC probe"            _e2e_p4_probe  "adr0059-p4"
+      run_check_bg "e2e-0059-p4-store"           "Daemon IPC store"            _e2e_p4_store  "adr0059-p4"
+      run_check_bg "e2e-0059-p4-search"          "Daemon IPC search"           _e2e_p4_srch   "adr0059-p4"
+      run_check_bg "e2e-0059-p4-count"           "Daemon IPC count"            _e2e_p4_cnt    "adr0059-p4"
+      run_check_bg "e2e-0059-p4-fallback"        "Daemon IPC fallback"         _e2e_p4_fb     "adr0059-p4"
     fi
   fi
+fi
 
-  # One collect_parallel for ALL e2e checks
-  local _e2e_specs=(
+# ════════════════════════════════════════════════════════════════════
+# Single collect_parallel for ALL checks (non-e2e + e2e unified wave)
+# ════════════════════════════════════════════════════════════════════
+
+# Build e2e spec list
+_e2e_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
+  _e2e_specs=(
     "e2e-memory-store|E2E memory store" "e2e-hooks-route|E2E hooks route"
     "e2e-causal-edge|E2E causal edge" "e2e-reflexion-store|E2E reflexion store"
     "e2e-batch-optimize|E2E batch optimize" "e2e-filtered-search|E2E filtered search"
@@ -639,15 +659,58 @@ else
       )
     fi
   fi
-
-  collect_parallel "e2e" "${_e2e_specs[@]}"
-  log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
 fi
-rm -rf "$E2E_DIR"; E2E_DIR=""
 
-rm -rf "$PARALLEL_DIR"; PARALLEL_DIR=""
+collect_parallel "all" \
+  "version|Version check" "latest-resolves|@latest resolves" "no-broken-versions|No broken versions" \
+  "settings-file|Settings file" "scope|Scope check" \
+  "doctor|Doctor" "wrapper-proxy|Wrapper proxy" \
+  "memory-lifecycle|Memory lifecycle" "neural-training|Neural training" \
+  "booster-esm|Agent Booster ESM" "booster-cli|Agent Booster CLI" "plugins-sdk|Plugins SDK" "plugin-install|Plugin install" \
+  "ctrl-health|Controller health" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
+  "ctrl-reflexion|Reflexion lifecycle" \
+  "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
+  "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \
+  "ctrl-adr0061|ADR-0061 controllers" \
+  "adr0062-causal|Causal graph level 3" "adr0062-busy|SQLite busy_timeout" \
+  "adr0062-rl-cfg|RateLimiter/CB config" "adr0062-hnsw|deriveHNSWParams wired" \
+  "adr0063-c1-import|Embedding import agentdb" "adr0063-c2-accessor|getEmbeddingService()" \
+  "adr0063-c3-dim768|Dimension 768 default" "adr0063-h1-rl|RateLimiter semantics" \
+  "adr0063-h2-maxel|maxElements 100K" "adr0063-h3-rvf|rvf optional dep" \
+  "adr0063-m1m3-busy|busy_timeout broad" "adr0063-m4-hnsw|deriveHNSWParams broad" \
+  "adr0063-m5-noenable|enableHNSW removed" "adr0063-m6-lbdim|Learning-bridge dim" \
+  "adr0063-m7-cache|Cache cleanup timers" "adr0063-m8-tiered|tieredCache maxSize" \
+  "sec-composition|Controller composition" \
+  "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
+  "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
+  "sec-filtered|Filtered search (B5)" "sec-query-stats|Query stats (B6)" \
+  "sec-embed-gen|Embedding generate (A9)" "sec-045-ctrls|ADR-0045 controllers (A9/D1/D3)" \
+  "sec-embed-cfg|Embedding config propagation (ADR-0052)" \
+  "init-config-fmt|Config format (SG-008)" "init-helpers|Helper syntax" \
+  "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
+  "init-topology|Topology (SG-011)" "init-config-vals|Config values" \
+  "attn-compute|Attention compute" "attn-benchmark|Attention benchmark" \
+  "attn-configure|Attention configure" "attn-metrics|Attention metrics (D2)" \
+  "attn-wiring|Attention controllers" \
+  "${_e2e_specs[@]}"
 
-_record_phase "group-e2e" "$(_elapsed_ms "$_g" "$(_ns)")"
+# Wait for e2e prep background process (may already be done)
+wait "$_E2E_PREP_PID" 2>/dev/null || true
+rm -f "$_E2E_READY_FILE" "$_E2E_HEALTH_FILE" 2>/dev/null
+
+# Read e2e health for context logging
+_E2E_CTRL_COUNT=0
+if [[ -f "$_E2E_HEALTH_FILE" ]]; then
+  _E2E_HEALTH_OUT=$(cat "$_E2E_HEALTH_FILE")
+  if echo "$_E2E_HEALTH_OUT" | grep -q '"name"'; then
+    _E2E_CTRL_COUNT=$(echo "$_E2E_HEALTH_OUT" | grep -c '"name"')
+  fi
+fi
+log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
+
+_record_phase "all-checks" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+rm -rf "$E2E_DIR" "$PARALLEL_DIR"; E2E_DIR=""; PARALLEL_DIR=""
 
 # ════════════════════════════════════════════════════════════════════
 # Results
