@@ -1,10 +1,17 @@
 {
-    "model": "nomic-ai/nomic-embed-text-v1.5",
+    "model": "Xenova/all-mpnet-base-v2",
     "dimension": 768,
     "provider": "transformers",
-    "taskPrefixQuery": "search_query: ",
-    "taskPrefixIndex": "search_document: ",
+    "taskPrefixQuery": "",
+    "taskPrefixIndex": "",
     "cache": "~/.cache/transformers",
     "batchSize": 32,
-    "quantization": "none"
+    "quantization": "none",
+    "hnsw": {
+        "metric": "cosine",
+        "maxElements": 100000,
+        "persistIndex": true,
+        "rebuildThreshold": 0.1
+    },
+    "hashFallbackDimension": 128
 }

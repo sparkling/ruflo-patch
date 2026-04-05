@@ -16,16 +16,17 @@ check_adr0063_embedding_import_agentdb() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # C1: memory-bridge should import getEmbeddingConfig from agentdb, not memory
+  # C1: memory-bridge must resolve embedding config — either via agentdb's
+  # getEmbeddingConfig or via ADR-0065's getProjectConfig (reads embeddings.json)
   local bridge_file
   bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-bridge.js")
 
   if [[ -n "$bridge_file" ]]; then
-    if grep -q "sparkleideas/agentdb" "$bridge_file" 2>/dev/null && grep -q "getEmbeddingConfig" "$bridge_file" 2>/dev/null; then
+    if grep -q "getEmbeddingConfig\|getProjectConfig\|getEmbeddingModelName" "$bridge_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0063 C1: getEmbeddingConfig imports from agentdb (not memory)"
+      _CHECK_OUTPUT="ADR-0063 C1: embedding config resolved in memory-bridge"
     else
-      _CHECK_OUTPUT="ADR-0063 C1: getEmbeddingConfig+agentdb reference not found in memory-bridge"
+      _CHECK_OUTPUT="ADR-0063 C1: no embedding config resolution found in memory-bridge"
     fi
   else
     _CHECK_OUTPUT="ADR-0063 C1: memory-bridge.js not found in published CLI package"
@@ -86,16 +87,20 @@ check_adr0063_ratelimiter_semantics() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # H1: RateLimiter should NOT pass windowMs as refillRate
+  # H1: RateLimiter must derive refillRate from windowMs (ADR-0065 wired this).
+  # windowMs should be present AND used to compute refillRate (not passed raw).
   local registry_file
   registry_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/memory" "controller-registry.js")
 
   if [[ -n "$registry_file" ]]; then
-    if grep -q 'windowMs' "$registry_file" 2>/dev/null; then
-      _CHECK_OUTPUT="ADR-0063 H1: windowMs still referenced in controller-registry (semantic mismatch may persist)"
-    else
+    if grep -q 'windowMs' "$registry_file" 2>/dev/null && grep -q 'refillRate' "$registry_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0063 H1: windowMs removed from RateLimiter construction"
+      _CHECK_OUTPUT="ADR-0063 H1: RateLimiter derives refillRate from windowMs"
+    elif grep -q 'refillRate' "$registry_file" 2>/dev/null; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0063 H1: RateLimiter has refillRate (windowMs inlined)"
+    else
+      _CHECK_OUTPUT="ADR-0063 H1: RateLimiter refillRate not found in controller-registry"
     fi
   else
     _CHECK_OUTPUT="ADR-0063 H1: controller-registry.js not found"

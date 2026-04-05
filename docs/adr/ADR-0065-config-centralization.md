@@ -1,6 +1,6 @@
 # ADR-0065: Configuration Centralization and Storage Deduplication
 
-- **Status**: Proposed
+- **Status**: Accepted (P0/P1/P2 implemented)
 - **Date**: 2026-04-05
 - **Deciders**: Henrik Pettersen
 - **Builds on**: ADR-0062 (storage config unification), ADR-0063 (storage audit), ADR-0064 (controller config alignment)
@@ -187,33 +187,61 @@ Line 269: replace `require('@claude-flow/agentdb')` with
 - `mutationGuard`: share vectorBackend instead of creating own HNSW index
 - `attestationLog`: fetch from AgentDB instead of creating new instance
 
-### P3: Consolidate storage stacks
+### P3-1: Remove dead fallback backends (SqlJsBackend + JsonBackend)
 
-Long-term: replace `IMemoryBackend` (sqlite-backend, sqljs-backend, rvf-backend,
-json-backend) with AgentDB as the single storage layer. The dual-stack architecture
-(AgentDB + IMemoryBackend) exists because the two were designed independently.
-Unification eliminates:
-- The second SQLite database file
-- 3 redundant vector search implementations
-- Schema duplication between `memory_entries`/`memory_embeddings` and AgentDB tables
+`SqlJsBackend` (766 lines) and `JsonBackend` (215 lines, embedded in database-provider.ts)
+exist as inferior fallbacks for environments without `better-sqlite3`. RvfBackend's
+pure-TS mode provides the same cross-platform fallback with HNSW-Lite vector search
+(150x–12,500x faster than their brute-force cosine). Remove both and let the
+`database-provider.ts` selection logic fall through to RvfBackend when better-sqlite3
+is unavailable.
 
-### P3: Consolidate graph representations
+Files to change:
+- `database-provider.ts`: remove `sql.js` and `json` cases from switch, remove
+  embedded `JsonBackend` class
+- `sqljs-backend.ts`: delete
+- `index.ts`: remove re-exports of SqlJsBackend and JsonBackend
+- Tests referencing these backends: update or remove
 
-Three graph representations exist for the same conceptual data:
-- `MemoryGraph` (in-memory Maps + PageRank)
-- `CausalMemoryGraph` (SQLite tables in AgentDB)
-- `GraphDatabaseAdapter` (separate `.graph` file)
+### P3-2: Deduplicate memory_entries schema (SQLiteBackend ↔ AgentDBBackend)
 
-Consolidate to CausalMemoryGraph as the single source, with MemoryGraph as an
-optional in-memory cache layer.
+`SQLiteBackend` (735 lines) and `AgentDBBackend` (1054 lines) define identical
+16-column `memory_entries` tables with identical indexes. When both are instantiated
+by `HybridBackend`, the same data exists in two SQLite databases. AgentDBBackend
+should delegate to AgentDB's own storage rather than reimplementing the schema.
 
-### P3: Remove dead config fields
+- Extract the shared `memory_entries` DDL into a single constant
+- Have AgentDBBackend use AgentDB's database handle rather than its own
 
-| Field | Reason |
-|-------|--------|
-| `memory.agentScopes.*` | No code reads it; controller is disabled |
-| `neural.flashAttention` | Not in RuntimeConfig |
-| `neural.maxModels` | Not in RuntimeConfig |
+### P3-3: Centralize HNSW parameter derivation
+
+`deriveHNSWParams(dimension)` is duplicated in `agentdb-backend.ts` (line 66) and
+`rvf-backend.ts` (line 21) with identical formulas. Extract to a shared utility in
+`@claude-flow/memory/src/hnsw-utils.ts` and import from both.
+
+### ~~P3: Consolidate graph representations~~ — REJECTED
+
+The original proposal to consolidate MemoryGraph, CausalMemoryGraph, and
+GraphDatabaseAdapter was based on a surface-level observation ("3 graph systems").
+A code-level audit shows they serve fundamentally different purposes:
+
+| System | Purpose | Schema | Repo |
+|--------|---------|--------|------|
+| **MemoryGraph** | Structural ranking — PageRank + community detection blended with vector similarity | In-memory Maps (generic nodes/edges) | ruflo fork |
+| **CausalMemoryGraph** | Causal inference — do-calculus, A/B experiments, uplift estimation, multi-hop chains | `causal_edges`, `causal_experiments`, `causal_observations` | agentic-flow fork |
+| **GraphDatabaseAdapter** | Graph storage engine — Cypher-queryable nodes with vector embeddings and hyperedges | `@ruvector/graph-node` (.graph file) | agentic-flow fork |
+
+These are not redundant implementations of the same concept. Consolidating them
+would create a god-object that does three different things badly. Each system stays
+as-is.
+
+### P3-4: Remove dead config fields — DONE
+
+| Field | Reason | Status |
+|-------|--------|--------|
+| `memory.agentScopes.*` | No code reads it; controller is disabled | Removed |
+| `neural.flashAttention` | Not in RuntimeConfig | Removed |
+| `neural.maxModels` | Not in RuntimeConfig | Removed |
 
 ## Consequences
 
@@ -222,24 +250,31 @@ optional in-memory cache layer.
 - embeddings.json controls ALL embedding behavior (model, dimension, HNSW params)
 - Dimension mismatches eliminated (no more 384 vs 768 split-brain)
 - Operators can tune controller behavior without code changes
-- Storage deduplication reduces disk usage and eliminates WAL lock contention
+- Removing SqlJsBackend + JsonBackend eliminates ~1000 lines and 2 brute-force search paths
+- Centralizing HNSW params prevents formula drift between backends
 
 ### Negative
 - Large changeset across memory-bridge.ts, memory-initializer.ts, controller-registry.ts
 - Must preserve backward compatibility for existing config files (missing fields = use defaults)
-- Storage consolidation (P3) requires data migration for existing databases
+- Removing SqlJsBackend drops WASM-only environment support (RvfBackend pure-TS covers this)
 
 ### Risks
 - Changing dimension fallbacks from 384 to 768 may break existing databases with 384-dim vectors
 - Config forwarding must handle partial configs gracefully (missing keys = defaults, not crashes)
+- Removing fallback backends requires verifying RvfBackend works in all environments where
+  sql.js was previously needed
 
 ## Acceptance Criteria
 
-- [ ] All config.json `controllers.*` fields are consumed by their respective controllers
-- [ ] embeddings.json `dimension` and `model` are used by memory-bridge and memory-initializer
-- [ ] Zero hardcoded `384` fallbacks remain in the codebase
-- [ ] Zero hardcoded `all-MiniLM-L6-v2` model strings remain
-- [ ] quantizedVectorStore reads type from config
-- [ ] rateLimiter passes windowMs to constructor
-- [ ] No `require()` in ESM context
+- [x] All config.json `controllers.*` fields are consumed by their respective controllers
+- [x] embeddings.json `dimension` and `model` are used by memory-bridge and memory-initializer
+- [x] Zero hardcoded `384` fallbacks remain in the codebase
+- [x] Zero hardcoded `all-MiniLM-L6-v2` model strings remain
+- [x] quantizedVectorStore reads type from config
+- [x] rateLimiter passes windowMs to constructor
+- [x] No `require()` in ESM context
+- [x] Dead config fields removed (agentScopes, flashAttention, maxModels)
 - [ ] Controller instances reuse AgentDB singletons where available
+- [ ] SqlJsBackend and JsonBackend removed; database-provider falls through to RvfBackend
+- [ ] memory_entries DDL defined once, shared between SQLiteBackend and AgentDBBackend
+- [ ] deriveHNSWParams extracted to shared utility

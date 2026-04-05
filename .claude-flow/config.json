@@ -3,44 +3,30 @@
     "swarm": {
         "topology": "hierarchical-mesh",
         "maxAgents": 15,
-        "autoScale": true,
+        "autoScale": { "enabled": true },
         "coordinationStrategy": "consensus"
     },
     "memory": {
         "backend": "hybrid",
-        "enableHNSW": true,
-        "cacheSize": 2048,
+        "type": "hybrid",
+        "maxElements": 100000,
         "learningBridge": {
             "enabled": true,
-            "sonaMode": "instant",
-            "confidenceDecayRate": 0.005,
-            "accessBoostAmount": 0.03,
-            "consolidationThreshold": 10
+            "sonaMode": "balanced",
+            "confidenceDecayRate": 0.0008,
+            "accessBoostAmount": 0.05,
+            "consolidationThreshold": 8
         },
         "memoryGraph": {
             "enabled": true,
-            "pageRankDamping": 0.85,
-            "maxNodes": 50000,
-            "similarityThreshold": 0.65
-        },
-        "agentScopes": {
-            "enabled": true,
-            "defaultScope": "project"
-        },
-        "agentdb": {
-            "vectorBackend": "rvf",
-            "enableLearning": true,
-            "learningPositiveThreshold": 0.7,
-            "learningNegativeThreshold": 0.3,
-            "learningBatchSize": 128,
-            "learningTickInterval": 15000
+            "pageRankDamping": 0.82,
+            "maxNodes": 10000,
+            "similarityThreshold": 0.25
         }
     },
     "neural": {
         "enabled": true,
-        "modelPath": ".claude-flow/neural",
-        "flashAttention": true,
-        "maxModels": 5
+        "modelPath": ".claude-flow/neural"
     },
     "hooks": {
         "enabled": true,
@@ -48,6 +34,49 @@
     },
     "mcp": {
         "autoStart": true,
-        "port": 3000
+        "transport": { "port": 3000 }
+    },
+    "controllers": {
+        "attentionService": {
+            "numHeads": 8,
+            "useFlash": true,
+            "useMoE": false,
+            "useHyperbolic": false
+        },
+        "multiHeadAttention": {
+            "numHeads": 8,
+            "topK": 10
+        },
+        "selfAttention": {
+            "topK": 10
+        },
+        "rateLimiter": {
+            "maxRequests": 100
+        },
+        "circuitBreaker": {
+            "failureThreshold": 5,
+            "resetTimeoutMs": 60000
+        },
+        "tieredCache": {
+            "maxSize": 10000,
+            "ttl": 300000
+        },
+        "quantizedVectorStore": {
+            "type": "scalar-8bit"
+        },
+        "solverBandit": {
+            "costWeight": 0.3,
+            "costDecay": 0.05,
+            "explorationBonus": 0.1
+        }
+    },
+    "daemon": {
+        "maxConcurrent": 2,
+        "workerTimeoutMs": 300000,
+        "headless": false,
+        "resourceThresholds": {
+            "maxCpuLoad": 28,
+            "minFreeMemoryPercent": 5
+        }
     }
 }

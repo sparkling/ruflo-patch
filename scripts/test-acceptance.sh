@@ -305,6 +305,10 @@ adr0063_lib="${PROJECT_DIR}/lib/acceptance-adr0063-checks.sh"
 adr0064_lib="${PROJECT_DIR}/lib/acceptance-adr0064-checks.sh"
 [[ -f "$adr0064_lib" ]] && source "$adr0064_lib"
 
+# ADR-0065: Config Centralization
+adr0065_lib="${PROJECT_DIR}/lib/acceptance-adr0065-checks.sh"
+[[ -f "$adr0065_lib" ]] && source "$adr0065_lib"
+
 # ADR-0059 Phase 3: Unified MCP search
 adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 [[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
@@ -435,6 +439,20 @@ run_check_bg "adr0064-no-embconst" "No embedding-constants"       check_adr0064_
 run_check_bg "adr0064-numheads"    "numHeads aligned"             check_adr0064_numheads_aligned          "adr0064"
 run_check_bg "adr0064-batch-emb"   "Batch embedder fix"           check_adr0064_batch_embedder            "adr0064"
 run_check_bg "adr0064-maxel-100k" "maxElements 100K default"     check_adr0064_maxel_100k                "adr0064"
+
+# ADR-0065: Config Centralization
+run_check_bg "adr0065-no384-bridge"   "No 384 in memory-bridge"       check_adr0065_no_384_memory_bridge      "adr0065"
+run_check_bg "adr0065-no384-adapter"  "No 384 in config-adapter"      check_adr0065_no_384_config_adapter     "adr0065"
+run_check_bg "adr0065-no-minilm"      "No MiniLM in memory-bridge"    check_adr0065_no_minilm_memory_bridge   "adr0065"
+run_check_bg "adr0065-cfg-wiring"     "Config wiring helpers"         check_adr0065_config_wiring             "adr0065"
+run_check_bg "adr0065-qvs-config"     "QVS reads config"             check_adr0065_qvs_reads_config          "adr0065"
+run_check_bg "adr0065-rl-windowms"    "RateLimiter windowMs"          check_adr0065_ratelimiter_windowms      "adr0065"
+run_check_bg "adr0065-no-require"     "No require() in ESM"           check_adr0065_no_require_esm            "adr0065"
+run_check_bg "adr0065-emb-model"      "Embedding model from config"   check_adr0065_embeddings_model_name     "adr0065"
+run_check_bg "adr0065-no-sqljs"      "No SqlJsBackend"              check_adr0065_no_sqljs_backend          "adr0065"
+run_check_bg "adr0065-no-jsonbe"     "No JsonBackend"               check_adr0065_no_json_backend           "adr0065"
+run_check_bg "adr0065-schema"        "Shared memory-schema"         check_adr0065_shared_schema             "adr0065"
+run_check_bg "adr0065-hnsw-util"     "Shared hnsw-utils"            check_adr0065_shared_hnsw_utils         "adr0065"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -708,6 +726,18 @@ collect_parallel "all" \
   "adr0064-no-embconst|No embedding-constants" "adr0064-numheads|numHeads aligned" \
   "adr0064-batch-emb|Batch embedder fix" \
   "adr0064-maxel-100k|maxElements 100K default" \
+  "adr0065-no384-bridge|No 384 in memory-bridge" \
+  "adr0065-no384-adapter|No 384 in config-adapter" \
+  "adr0065-no-minilm|No MiniLM in memory-bridge" \
+  "adr0065-cfg-wiring|Config wiring helpers" \
+  "adr0065-qvs-config|QVS reads config" \
+  "adr0065-rl-windowms|RateLimiter windowMs" \
+  "adr0065-no-require|No require() in ESM" \
+  "adr0065-emb-model|Embedding model from config" \
+  "adr0065-no-sqljs|No SqlJsBackend" \
+  "adr0065-no-jsonbe|No JsonBackend" \
+  "adr0065-schema|Shared memory-schema" \
+  "adr0065-hnsw-util|Shared hnsw-utils" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
