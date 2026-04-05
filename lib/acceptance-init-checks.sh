@@ -188,25 +188,28 @@ check_init_config_values() {
   else
     local issues=""
     local vals
+    # Supports both old format (memory.cacheSize, memory.enableHNSW) and
+    # new format (memory.sqlite.cacheSize, memory.backend='hybrid' implies HNSW).
     vals=$(node -e "
       const c=JSON.parse(require('fs').readFileSync('$config_json','utf8'));
       const m=c.memory||{};
-      console.log([
-        m.cacheSize||0,
-        (m.memoryGraph||{}).maxNodes||0,
-        (m.learningBridge||{}).sonaMode||'',
-        m.enableHNSW===true?'true':'false',
-        (m.learningBridge||{}).enabled===true?'true':'false',
-      ].join('|'));
+      // cacheSize: old format uses m.cacheSize (positive), new uses m.sqlite.cacheSize (negative KB)
+      const cache = m.cacheSize || (m.sqlite||{}).cacheSize || 0;
+      const nodes = (m.memoryGraph||{}).maxNodes || 0;
+      const sona = (m.learningBridge||{}).sonaMode || '';
+      // HNSW: old format has explicit enableHNSW, new format uses backend='hybrid'
+      const hnswOk = m.enableHNSW === true || m.backend === 'hybrid';
+      const lb = (m.learningBridge||{}).enabled === true;
+      console.log([cache, nodes, sona, hnswOk?'true':'false', lb?'true':'false'].join('|'));
     " 2>/dev/null) || vals=""
     IFS='|' read -r cache nodes sona hnsw lb <<< "$vals"
-    # cacheSize should be set by init, not fall back to 0
-    [[ "${cache:-0}" -gt 0 ]] || issues="${issues}cacheSize=0 "
+    # cacheSize should be set by init and non-zero (positive in old format, negative KB in new)
+    [[ "${cache:-0}" -ne 0 ]] || issues="${issues}cacheSize=0 "
     # maxNodes should be set
     [[ "${nodes:-0}" -gt 0 ]] || issues="${issues}maxNodes=0 "
     # sonaMode should be a known value
     [[ "$sona" == "balanced" || "$sona" == "instant" || "$sona" == "real-time" ]] || issues="${issues}sonaMode='${sona}' "
-    # HNSW should be enabled
+    # HNSW should be enabled (explicit flag or backend=hybrid)
     [[ "$hnsw" == "true" ]] || issues="${issues}enableHNSW=false "
     # learningBridge should be enabled
     [[ "$lb" == "true" ]] || issues="${issues}learningBridge=false "

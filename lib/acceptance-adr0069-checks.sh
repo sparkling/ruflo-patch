@@ -302,9 +302,18 @@ check_adr0069_migration_batch_aligned() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local mem_dir="$TEMP_DIR/node_modules/@sparkleideas/memory"
-  if [[ ! -d "$mem_dir" ]]; then
-    _CHECK_OUTPUT="ADR-0069 H10: @sparkleideas/memory not found"
+  # Try TEMP_DIR first, then E2E_DIR as fallback (E2E_DIR is a snapshot of the
+  # init'd project and may still have packages when TEMP_DIR has been mutated).
+  local mem_dir=""
+  local _candidate
+  for _candidate in \
+    "${TEMP_DIR:-}/node_modules/@sparkleideas/memory" \
+    "${E2E_DIR:-}/node_modules/@sparkleideas/memory"; do
+    [[ -d "$_candidate" ]] && { mem_dir="$_candidate"; break; }
+  done
+
+  if [[ -z "$mem_dir" ]]; then
+    _CHECK_OUTPUT="ADR-0069 H10: @sparkleideas/memory not found in TEMP_DIR or E2E_DIR"
     return
   fi
 
@@ -316,13 +325,20 @@ check_adr0069_migration_batch_aligned() {
   if [[ -z "$mig_file" ]]; then
     mig_file=$(find "$mem_dir" -name "migration.js" -path "*/dist/*" 2>/dev/null | head -1)
   fi
+  # Broadest fallback: any migration.js anywhere in the package
+  if [[ -z "$mig_file" ]]; then
+    mig_file=$(find "$mem_dir" -name "migration.js" 2>/dev/null | head -1)
+  fi
   rvf_mig_file=$(_find_pkg_js "$mem_dir" "rvf-migration.js")
   if [[ -z "$rvf_mig_file" ]]; then
     rvf_mig_file=$(find "$mem_dir" -name "rvf-migration.js" -path "*/dist/*" 2>/dev/null | head -1)
   fi
+  if [[ -z "$rvf_mig_file" ]]; then
+    rvf_mig_file=$(find "$mem_dir" -name "rvf-migration.js" 2>/dev/null | head -1)
+  fi
 
   if [[ -z "$mig_file" && -z "$rvf_mig_file" ]]; then
-    _CHECK_OUTPUT="ADR-0069 H10: neither migration.js nor rvf-migration.js found"
+    _CHECK_OUTPUT="ADR-0069 H10: neither migration.js nor rvf-migration.js found in $mem_dir"
     return
   fi
 
