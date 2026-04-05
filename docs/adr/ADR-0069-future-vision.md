@@ -240,7 +240,7 @@ Comprehensive audit of all hardcoded values across both forks that bypass the AD
 
 3 WAL-mode sites omit `busy_timeout` entirely, risking `SQLITE_BUSY` under concurrent access.
 
-**Remediation**: add `sqlite.cacheSize` and `sqlite.busyTimeoutMs` to config.json `memory` block; all 9 sites read from config.
+**Remediation** (done 2026-04-05): Added `memory.sqlite.cacheSize` and `memory.sqlite.busyTimeoutMs` to config.json. `sqlite-backend.ts` reads from config with `-64000`/`5000` fallbacks. `EmbeddingCache.ts` cache_size fixed from `10000` to `-64000`. `IntelligenceStore.ts` and `worker-registry.ts` now include `busy_timeout`. 8 secondary agentic-flow sites (CLI, benchmarks, reasoningbank queries, MCP server, init) still lack `busy_timeout` — tracked as residual.
 
 ### A2: Rate Limiters (HIGH)
 
@@ -271,7 +271,7 @@ The per-second limiters in agentdb and controller-registry are fundamentally inc
 
 Which file wins depends on import order, creating nondeterministic behavior.
 
-**Remediation**: single source of truth in config.json `workers.triggers` block; both files read from config.
+**Remediation** (done 2026-04-05): Extracted `CANONICAL_WORKER_TIMEOUTS` and `resolveWorkerTimeout()` in `trigger-detector.ts`. `custom-worker-config.ts` now imports `resolveWorkerTimeout()` for all trigger-aligned presets. `resource-governor.ts` reads global timeout from config. ruflo `plugins/workers/index.ts` factory uses `resolveFactoryTimeout()` with config chain. Residual: `dispatch-service.ts:330` and `custom-worker-factory.ts:223` still have unguarded fallbacks.
 
 ### A4: Swarm Directory Path (HIGH)
 
@@ -282,7 +282,7 @@ Two incompatible swarm directory conventions coexist.
 | `.swarm` | memory-initializer, bridge, commands, most CLI code | 12+ |
 | `.claude-flow/swarm` | swarm-tools.ts, hooks/workers | 2 |
 
-**Remediation**: standardize on `.swarm`; update the 2 outlier sites in swarm-tools.ts and hooks/workers.
+**Remediation** (done 2026-04-05): Standardized on `.swarm`. Updated 3 outlier sites: `swarm-tools.ts:13`, `hooks/workers/index.ts:1146`, `statusline-generator.ts:301`. Validation confirmed zero remaining `.claude-flow/swarm` references.
 
 ### A5: EWC Lambda (HIGH)
 
@@ -296,7 +296,7 @@ Two incompatible swarm directory conventions coexist.
 
 The `0.5` value in self-learning plugin appears to use a normalized [0,1] scale while the SONA/WASM sites use an absolute penalty weight. These may not be comparable.
 
-**Remediation**: add `neural.ewcLambda` to config.json; reconcile the scale difference between absolute and fractional values.
+**Remediation** (done 2026-04-05): Added `neural.ewcLambda` to config.json (default 2000). `learning-bridge.ts`, `sona-manager.ts`, `sona-service.ts`, `sona-agentdb-integration.ts`, `RuVectorIntelligence.ts` all use `readEwcLambdaFromConfig()`. Per-mode values derived via multipliers. `self-learning.ts` uses normalized conversion (`absolute / 4000`). Residual: `intelligence-tools.ts:315` (1000, reporting) and `SonaLearningBackend.ts` (fallback 1000) still hardcoded.
 
 ### A6: Port Numbers (HIGH)
 
@@ -310,7 +310,7 @@ The `0.5` value in self-learning plugin appears to use a normalized [0,1] scale 
 
 FederationHub constructs URLs via string concatenation with `:8443` embedded, making port override impossible without source modification.
 
-**Remediation**: add `ports` block to config.json (`httpPort`, `quicPort`, `federationPort`); all sites read from config with env-var fallback.
+**Remediation** (partial, 2026-04-05): Added `ports` block to config.json. ruflo fork: all 9 MCP HTTP sites, 2 WS sites, and Redis URL now read from env vars (`MCP_PORT`, `MCP_WS_PORT`, `REDIS_URL`). agentic-flow fork: QUIC (`QUIC_PORT`), Federation (`FEDERATION_PORT`), Health (`HEALTH_PORT`) env-var guarded. FederationHub string-replace now uses env-var-sourced ports. Residual: 4 agentic-flow sites lack env-var guards (`http-sse.ts:395`, `claude-code-wrapper.ts:46`, `daemon-cli.ts:54`, `onnx-proxy.ts:48`).
 
 ### A7: Pattern Similarity Threshold (HIGH)
 
@@ -323,7 +323,7 @@ Search query default diverges from all other code.
 
 A threshold of `0.5` returns low-quality matches that all downstream consumers would reject.
 
-**Remediation**: add `memory.similarityThreshold` to config.json; default `0.7`.
+**Remediation** (done 2026-04-05): Added `memory.similarityThreshold` to config.json (default 0.7). `search-memory.query.ts` changed from 0.5 to 0.7. `persistent-sona.ts`, `memory-graph.ts` now config-chain-aware. Residual: `aidefence/threat-learning-service.ts:178` and 2 agentic-flow `minSimilarity: 0.7` sites not config-aware.
 
 ### A8: Learning Rate (HIGH)
 
@@ -337,7 +337,7 @@ A threshold of `0.5` returns low-quality matches that all downstream consumers w
 
 These are algorithmically appropriate defaults (RL uses higher rates than gradient methods), but none are configurable. A change requires modifying source at all sites.
 
-**Remediation**: add `neural.defaultLearningRate` to config.json; per-algorithm overrides via `neural.learningRates.{algorithm}`.
+**Remediation** (done 2026-04-05): Added `neural.defaultLearningRate` (0.001) and `neural.learningRates` block to config.json. `sona-manager.ts` uses `readLearningRateFromConfig()`. `q-learning.ts`, `sarsa.ts` read `neural.learningRates.qLearning`. `moe-router.ts` reads `neural.learningRates.moe`. `lora-adapter.ts` reads `neural.defaultLearningRate`. Residual: `sona-adapter.ts` per-mode LR values and `self-learning.ts` (5 sites) not config-chain-aware.
 
 ### A9: Embedding Cache Size Bug (HIGH)
 
@@ -350,7 +350,7 @@ These are algorithmically appropriate defaults (RL uses higher rates than gradie
 
 Both caches serve the same embedding lookups. The 10x discrepancy is a bug, not intentional tiering.
 
-**Remediation**: fix the bug (single cache); read size from config `memory.embeddingCacheSize`.
+**Remediation** (done 2026-04-05): Fixed `rvf-embedding-service.ts` — secondary LRU now uses `config.cacheSize ?? DEFAULT_CACHE_SIZE` (was hardcoded 10000). `embedding-service.ts` persistent cache inherits same size. Added `memory.embeddingCacheSize` to config.json (default 1000).
 
 ### A10: Migration Batch Size (HIGH)
 
@@ -363,7 +363,7 @@ Two migration files in the same package use different batch sizes.
 
 Both perform the same type of row-batch operations. The inconsistency causes different memory profiles and timing characteristics for the same logical operation.
 
-**Remediation**: align to one default; add `memory.migrationBatchSize` to config.json.
+**Remediation** (done 2026-04-05): Aligned `migration.ts` from 100 to 500 (matching `rvf-migration.ts`). Added `memory.migrationBatchSize` to config.json (default 500). Also fixed `agentdb-adapter.ts` delete path — `bulkDelete()` now accepts `options.batchSize` parameter (was hardcoded, ignoring caller).
 
 ### A11: Dedup Threshold (HIGH)
 
@@ -374,7 +374,7 @@ Both perform the same type of row-batch operations. The inconsistency causes dif
 
 The 3-point gap means ReasoningBank deduplicates entries that AgentDB considers distinct, causing silent data loss when entries flow between the two systems.
 
-**Remediation**: add `memory.dedupThreshold` to config.json; default `0.98`.
+**Remediation** (done 2026-04-05): Added `memory.dedupThreshold` to config.json (default 0.95 — unified on ReasoningBank's value; operators needing conservative dedup can override to 0.98). `agentdb-service.ts`, `RVFOptimizer.ts`, `reasoningbank/config.ts`, `hooks/reasoningbank/index.ts`, `neural/reasoning-bank.ts`, `memory-domain-service.ts`, `sona-adapter.ts` all config-chain-aware. Residual: `rvf-tools.ts:50` fallback still 0.98.
 
 ### Summary
 
@@ -394,6 +394,36 @@ The 3-point gap means ReasoningBank deduplicates entries that AgentDB considers 
 | **Total** | | | **~86 sites** | **14 new config keys** | **10 of 11 complete** |
 
 All 11 items have config.json fields. 10 are fully remediated; A6 (ports) uses env-var guards but not all sites read from config.json yet. The embedding/HNSW bypass sites documented in F1 above (12 sites, remediated 2026-04-05) are separate from this inventory.
+
+### Residual bypass sites (validated 2026-04-05)
+
+15-agent validation swarm confirmed the primary remediation is sound. The following secondary sites were found still hardcoded:
+
+| Category | File | Value | Severity |
+|----------|------|-------|----------|
+| A1 SQLite | 8 agentic-flow CLI/benchmark/query sites | Missing `busy_timeout` after WAL | HIGH |
+| Dim 768 | `agentdb-wrapper.ts:90`, `agentdb-wrapper-enhanced.ts:108` | `\|\| 768` fallback | HIGH |
+| Dim 768 | `HNSWIndex.ts:152` | `dimension: 768` in default config | HIGH |
+| maxElements | `AgentDB.ts:166` | `?? 10000` stale fallback | HIGH |
+| maxElements | `agentdb-service.ts:271,301` | Literal `100000` instead of `hnswParams.maxElements` | MEDIUM |
+| A5 EWC | `intelligence-tools.ts:315` | `ewcLambda: 1000.0` (reporting) | MEDIUM |
+| A5 EWC | `SonaLearningBackend.ts` | `?? 1000` fallback | MEDIUM |
+| A8 LR | `sona-adapter.ts` (5 modes), `self-learning.ts` (5 sites) | Per-mode LR not config-aware | MEDIUM |
+| A11 dedup | `rvf-tools.ts:50` | Fallback 0.98 (should be 0.95) | MEDIUM |
+| A6 ports | 4 agentic-flow sites | No env-var guard | MEDIUM |
+| A3 timeouts | `dispatch-service.ts:330`, `custom-worker-factory.ts:223` | Unguarded fallbacks | MEDIUM |
+| A2 rate | `agentdb-cli.ts:893` | `maxRequestsPerMinute: 60` | LOW |
+
+### New patterns identified (not in original A1-A11 audit)
+
+| ID | Category | Severity | Detail |
+|----|----------|----------|--------|
+| A12 | Embedding model divergence | MEDIUM | ruflo defaults to `all-mpnet-base-v2` (768d), agentic-flow to `all-MiniLM-L6-v2` (384d) — vector incompatibility risk for shared memory |
+| A13 | Cleanup intervals | MEDIUM | `setInterval(60000)` at 5+ sites across both forks, not configurable |
+| A14 | Memory buffer limits | LOW | `maxBuffer` ranges 5MB-100MB across 60+ `execSync` sites |
+| A15 | Service base URLs | MEDIUM | Ollama `localhost:11434`, RuvLLM `localhost:3000` — no env-var guards |
+| A16 | HuggingFace model URLs | LOW | No private registry support for air-gapped deployments |
+| A17 | EWC consolidator dim | MEDIUM | `ewc-consolidation.ts:152` hardcodes `dimensions: 768`, never receives config |
 
 ## Consequences
 
