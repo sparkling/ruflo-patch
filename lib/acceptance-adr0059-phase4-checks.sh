@@ -3,6 +3,10 @@
 #
 # Daemon IPC: Unix domain socket communication between hooks and daemon.
 #
+# LIFECYCLE: The caller (test-acceptance.sh) manages the daemon lifecycle.
+# These functions are pure assertions — they assume the daemon is already
+# running (or stopped, for fallback). They do NOT start/stop the daemon.
+#
 # Requires: acceptance-checks.sh + acceptance-adr0059-checks.sh sourced first
 # Caller MUST set: E2E_DIR, CLI_BIN, REGISTRY
 
@@ -10,23 +14,17 @@
 set +u 2>/dev/null || true
 
 # ════════════════════════════════════════════════════════════════════
-# DAEMON IPC: socket exists, probe, fallback
+# DAEMON IPC: socket exists, probe
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0059_daemon_ipc_socket_exists() {
   _CHECK_PASSED="false"
-
-  # Start daemon in background
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
-  sleep 1
-
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
   if [[ -S "$socket_path" ]] || [[ -e "$socket_path" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Socket file created at $socket_path"
   else
-    # Daemon may not have IPC support yet in this build — accept gracefully
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon status" "" 5
     if echo "$_RK_OUT" | grep -qi "running"; then
       _CHECK_PASSED="true"
@@ -36,21 +34,12 @@ check_adr0059_daemon_ipc_socket_exists() {
       _CHECK_OUTPUT="Daemon start may require foreground mode (non-fatal)"
     fi
   fi
-
-  # Stop daemon
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
 }
 
 check_adr0059_daemon_ipc_probe() {
   _CHECK_PASSED="false"
-
-  # Start daemon
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
-  sleep 1
-
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
-  # Try to connect via node
   local result
   result=$(node -e "
     const net = require('net');
@@ -75,8 +64,6 @@ check_adr0059_daemon_ipc_probe() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Probe result: $result (non-fatal)"
   fi
-
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -85,19 +72,14 @@ check_adr0059_daemon_ipc_probe() {
 
 check_adr0059_daemon_ipc_store() {
   _CHECK_PASSED="false"
-
-  # Start daemon
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
-  sleep 1
-
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+
   if [[ ! -e "$socket_path" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="No socket — IPC store test skipped (non-fatal)"
     return
   fi
 
-  # Send memory.store via JSON-RPC over Unix socket
   local result
   result=$(node -e "
     const net = require('net');
@@ -123,27 +105,20 @@ check_adr0059_daemon_ipc_store() {
   else
     _CHECK_OUTPUT="memory.store IPC unexpected: $result"
   fi
-
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
 }
 
 check_adr0059_daemon_ipc_search() {
   _CHECK_PASSED="false"
-
-  # Start daemon
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
-  sleep 1
-
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+
   if [[ ! -e "$socket_path" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="No socket — IPC search test skipped (non-fatal)"
     return
   fi
 
-  # Store an entry first, then search for it via IPC
-  local store_result
-  store_result=$(node -e "
+  # Store an entry first, then search for it
+  node -e "
     const net = require('net');
     const req = JSON.stringify({jsonrpc:'2.0',method:'memory.store',params:{key:'ipc-search-entry',value:'OAuth PKCE flow for mobile authentication',namespace:'ipc-search'},id:1}) + '\n';
     const socket = net.createConnection('$socket_path', () => { socket.write(req); });
@@ -154,9 +129,8 @@ check_adr0059_daemon_ipc_search() {
     });
     socket.on('error', e => { console.log('ERROR:' + e.message); });
     setTimeout(() => { socket.destroy(); }, 5000);
-  " 2>&1) || true
+  " 2>&1 || true
 
-  # Now search
   local search_result
   search_result=$(node -e "
     const net = require('net');
@@ -182,25 +156,18 @@ check_adr0059_daemon_ipc_search() {
   else
     _CHECK_OUTPUT="memory.search IPC unexpected: $search_result"
   fi
-
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
 }
 
 check_adr0059_daemon_ipc_count() {
   _CHECK_PASSED="false"
-
-  # Start daemon
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
-  sleep 1
-
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+
   if [[ ! -e "$socket_path" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="No socket — IPC count test skipped (non-fatal)"
     return
   fi
 
-  # Send memory.count via JSON-RPC
   local result
   result=$(node -e "
     const net = require('net');
@@ -226,14 +193,12 @@ check_adr0059_daemon_ipc_count() {
   else
     _CHECK_OUTPUT="memory.count IPC unexpected: $result"
   fi
-
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
 }
 
 check_adr0059_daemon_ipc_fallback() {
   _CHECK_PASSED="false"
 
-  # Ensure daemon is NOT running
+  # Ensure daemon is NOT running (caller should have stopped it already)
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
   rm -f "$E2E_DIR/.claude-flow/daemon.sock" 2>/dev/null || true
 

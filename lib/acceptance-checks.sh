@@ -75,8 +75,12 @@ _run_and_kill() {
     fi
   done
 
-  # Kill if still running
-  kill "$pid" 2>/dev/null && wait "$pid" 2>/dev/null || true
+  # Kill process tree if still running (prevents orphaned node children)
+  if kill -0 "$pid" 2>/dev/null; then
+    pkill -P "$pid" 2>/dev/null || true   # kill children first
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
 
   # Strip sentinel from output
   sed '/__RUFLO_DONE__/d' "$out_file" > "${out_file}.tmp" && mv "${out_file}.tmp" "$out_file"

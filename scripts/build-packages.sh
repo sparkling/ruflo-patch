@@ -53,7 +53,7 @@ run_build() {
   # Install TypeScript in a persistent directory (cached across runs)
   local tsc_dir="/tmp/ruflo-tsc-toolchain"
   # ADR-0040: extend TTL to 7 days + content hash for pinned deps
-  local _deps_str="typescript@5 zod@3 @types/express @types/cors @types/fs-extra"
+  local _deps_str="typescript@5 zod@3 @types/express @types/cors @types/fs-extra @types/node@20"
   # Compute deps hash to detect changes in pinned dep list
   local _deps_hash
   _deps_hash=$(printf '%s' "$_deps_str" | sha256sum | cut -d' ' -f1)
@@ -252,12 +252,15 @@ run_build() {
   # Cross-repo packages (agentic-flow fork)
   for extra_dir in \
     "${TEMP_DIR}/cross-repo/agentic-flow/packages/agentdb" \
-    "${TEMP_DIR}/cross-repo/agentic-flow/packages/agentdb-onnx"; do
+    "${TEMP_DIR}/cross-repo/agentic-flow/packages/agentdb-onnx" \
+    "${TEMP_DIR}/cross-repo/agentic-flow/packages/agent-booster"; do
     [[ -d "$extra_dir" && -f "$extra_dir/tsconfig.json" ]] && extra_pkg_dirs+=("$extra_dir")
   done
   # agentic-flow root uses config/tsconfig.json — compile it directly
   local af_dir="${TEMP_DIR}/cross-repo/agentic-flow/agentic-flow"
-  if [[ -f "${af_dir}/config/tsconfig.json" && ! -f "${af_dir}/dist/index.js" ]]; then
+  local _af_has_dist=false
+  [[ -f "${af_dir}/dist/index.js" || -f "${af_dir}/dist/agentic-flow/src/index.js" ]] && _af_has_dist=true
+  if [[ -f "${af_dir}/config/tsconfig.json" && "$_af_has_dist" == "false" ]]; then
     log "  Building agentic-flow (config/tsconfig.json)..."
     local _af_start
     _af_start=$(date +%s%N 2>/dev/null || echo 0)
@@ -268,7 +271,7 @@ run_build() {
     _af_end=$(date +%s%N 2>/dev/null || echo 0)
     local _af_ms=0
     [[ "$_af_start" != "0" && "$_af_end" != "0" ]] && _af_ms=$(( (_af_end - _af_start) / 1000000 ))
-    if [[ -f "${af_dir}/dist/index.js" ]]; then
+    if [[ -f "${af_dir}/dist/index.js" || -f "${af_dir}/dist/agentic-flow/src/index.js" ]]; then
       log "  BUILD: agentic-flow ${_af_ms}ms"
       echo "agentic-flow 1 ${_af_ms} 1" > "${TEMP_DIR}/.build-result-agentic-flow"
     else
@@ -320,9 +323,8 @@ run_build() {
     rm -f "$result_file"
   done
 
-  # Build cross-repo packages (TSC only — WASM is handled by build-wasm.sh)
+  # Cross-repo TSC builds handled above in extra_pkg_dirs
   local cross_repo_builds=(
-    "cross-repo/agentic-flow/packages/agent-booster"
   )
   for rel_path in "${cross_repo_builds[@]}"; do
     local pkg_dir="${TEMP_DIR}/${rel_path}"

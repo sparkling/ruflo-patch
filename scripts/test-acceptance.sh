@@ -92,7 +92,40 @@ source "${PROJECT_DIR}/lib/acceptance-harness.sh"
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup ─────────────────────────────────────────────────────────
+_P4_DAEMON_PID=""
 cleanup() {
+  # Kill Phase 4 daemon via PID file (deterministic, no pattern matching)
+  for _d in "${E2E_DIR:-}" "${ACCEPT_TEMP:-}"; do
+    [[ -z "$_d" ]] && continue
+    local _pid_file="${_d}/.claude-flow/daemon.pid"
+    if [[ -f "$_pid_file" ]]; then
+      local _dpid
+      _dpid=$(cat "$_pid_file" 2>/dev/null) || true
+      if [[ -n "$_dpid" ]]; then
+        kill "$_dpid" 2>/dev/null || true
+        sleep 0.5
+        kill -0 "$_dpid" 2>/dev/null && kill -9 "$_dpid" 2>/dev/null || true
+      fi
+      rm -f "$_pid_file" 2>/dev/null || true
+    fi
+    rm -f "${_d}/.claude-flow/daemon.sock" 2>/dev/null || true
+  done
+  # Also kill by stored PID (belt-and-suspenders)
+  if [[ -n "$_P4_DAEMON_PID" ]] && kill -0 "$_P4_DAEMON_PID" 2>/dev/null; then
+    kill "$_P4_DAEMON_PID" 2>/dev/null || true
+    sleep 0.5
+    kill -0 "$_P4_DAEMON_PID" 2>/dev/null && kill -9 "$_P4_DAEMON_PID" 2>/dev/null || true
+  fi
+  # Kill all background jobs and their children
+  local job_pids
+  job_pids=$(jobs -p 2>/dev/null) || true
+  if [[ -n "$job_pids" ]]; then
+    for jp in $job_pids; do
+      pkill -P "$jp" 2>/dev/null || true
+      kill "$jp" 2>/dev/null || true
+    done
+    wait 2>/dev/null || true
+  fi
   kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
   [[ -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]] && rm -rf "$ACCEPT_TEMP"
   [[ -n "${PARALLEL_DIR:-}" && -d "${PARALLEL_DIR:-}" ]] && rm -rf "$PARALLEL_DIR"
@@ -268,6 +301,10 @@ adr0062_lib="${PROJECT_DIR}/lib/acceptance-adr0062-checks.sh"
 adr0063_lib="${PROJECT_DIR}/lib/acceptance-adr0063-checks.sh"
 [[ -f "$adr0063_lib" ]] && source "$adr0063_lib"
 
+# ADR-0064: Controller Config Alignment
+adr0064_lib="${PROJECT_DIR}/lib/acceptance-adr0064-checks.sh"
+[[ -f "$adr0064_lib" ]] && source "$adr0064_lib"
+
 # ADR-0059 Phase 3: Unified MCP search
 adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 [[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
@@ -390,6 +427,13 @@ run_check_bg "adr0063-m5-noenable"  "enableHNSW removed"           check_adr0063
 run_check_bg "adr0063-m6-lbdim"     "Learning-bridge dim"          check_adr0063_learning_bridge_dim       "adr0063"
 run_check_bg "adr0063-m7-cache"     "Cache cleanup timers"         check_adr0063_cache_cleanup             "adr0063"
 run_check_bg "adr0063-m8-tiered"    "tieredCache maxSize"          check_adr0063_tiered_cache_maxsize      "adr0063"
+
+# ADR-0064: Controller Config Alignment
+run_check_bg "adr0064-resdim"      "resolvedDimension"            check_adr0064_resolved_dimension        "adr0064"
+run_check_bg "adr0064-no384"       "No || 384 fallback"           check_adr0064_no_384_default            "adr0064"
+run_check_bg "adr0064-no-embconst" "No embedding-constants"       check_adr0064_no_embedding_constants    "adr0064"
+run_check_bg "adr0064-numheads"    "numHeads aligned"             check_adr0064_numheads_aligned          "adr0064"
+run_check_bg "adr0064-batch-emb"   "Batch embedder fix"           check_adr0064_batch_embedder            "adr0064"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -604,21 +648,7 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
       run_check_bg "e2e-0059-p3-no-crash"       "Unified search no crash"     _e2e_p3_crash  "adr0059-p3"
     fi
 
-    # Phase 4: Daemon IPC
-    if [[ -f "$adr0059_p4_lib" ]]; then
-      _e2e_p4_sock()  { _wait_e2e_ready; check_adr0059_daemon_ipc_socket_exists; }
-      _e2e_p4_probe() { _wait_e2e_ready; check_adr0059_daemon_ipc_probe; }
-      _e2e_p4_store() { _wait_e2e_ready; check_adr0059_daemon_ipc_store; }
-      _e2e_p4_srch()  { _wait_e2e_ready; check_adr0059_daemon_ipc_search; }
-      _e2e_p4_cnt()   { _wait_e2e_ready; check_adr0059_daemon_ipc_count; }
-      _e2e_p4_fb()    { _wait_e2e_ready; check_adr0059_daemon_ipc_fallback; }
-      run_check_bg "e2e-0059-p4-socket-exists"  "Daemon IPC socket exists"    _e2e_p4_sock   "adr0059-p4"
-      run_check_bg "e2e-0059-p4-ipc-probe"      "Daemon IPC probe"            _e2e_p4_probe  "adr0059-p4"
-      run_check_bg "e2e-0059-p4-store"           "Daemon IPC store"            _e2e_p4_store  "adr0059-p4"
-      run_check_bg "e2e-0059-p4-search"          "Daemon IPC search"           _e2e_p4_srch   "adr0059-p4"
-      run_check_bg "e2e-0059-p4-count"           "Daemon IPC count"            _e2e_p4_cnt    "adr0059-p4"
-      run_check_bg "e2e-0059-p4-fallback"        "Daemon IPC fallback"         _e2e_p4_fb     "adr0059-p4"
-    fi
+    # Phase 4: Daemon IPC — runs AFTER collect_parallel (sequential, shared daemon)
   fi
 fi
 
@@ -650,16 +680,7 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
         "e2e-0059-p3-no-crash|Unified search no crash"
       )
     fi
-    if [[ -f "$adr0059_p4_lib" ]]; then
-      _e2e_specs+=(
-        "e2e-0059-p4-socket-exists|Daemon IPC socket exists"
-        "e2e-0059-p4-ipc-probe|Daemon IPC probe"
-        "e2e-0059-p4-store|Daemon IPC store"
-        "e2e-0059-p4-search|Daemon IPC search"
-        "e2e-0059-p4-count|Daemon IPC count"
-        "e2e-0059-p4-fallback|Daemon IPC fallback"
-      )
-    fi
+    # Phase 4 runs sequentially after collect_parallel — not in _e2e_specs
   fi
 fi
 
@@ -682,6 +703,9 @@ collect_parallel "all" \
   "adr0063-m1m3-busy|busy_timeout broad" "adr0063-m4-hnsw|deriveHNSWParams broad" \
   "adr0063-m5-noenable|enableHNSW removed" "adr0063-m6-lbdim|Learning-bridge dim" \
   "adr0063-m7-cache|Cache cleanup timers" "adr0063-m8-tiered|tieredCache maxSize" \
+  "adr0064-resdim|resolvedDimension" "adr0064-no384|No || 384 fallback" \
+  "adr0064-no-embconst|No embedding-constants" "adr0064-numheads|numHeads aligned" \
+  "adr0064-batch-emb|Batch embedder fix" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
@@ -711,6 +735,62 @@ fi
 log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
 
 _record_phase "all-checks" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# Phase 4: Daemon IPC — sequential with shared daemon lifecycle
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "${adr0059_p4_lib:-}" && -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" ]]; then
+  _p4_start=$(_ns)
+  log "── Phase 4: Daemon IPC (sequential, shared daemon) ──"
+
+  # Start daemon once
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon start" "" 10
+
+  # Capture daemon PID from pid file
+  _p4_pidfile="$E2E_DIR/.claude-flow/daemon.pid"
+  if [[ -f "$_p4_pidfile" ]]; then
+    _P4_DAEMON_PID=$(cat "$_p4_pidfile" 2>/dev/null) || true
+  fi
+
+  # Wait for socket (up to 5s)
+  _p4_sock="$E2E_DIR/.claude-flow/daemon.sock"
+  _p4_waited=0
+  while [[ ! -e "$_p4_sock" ]] && (( _p4_waited < 20 )); do
+    sleep 0.25
+    _p4_waited=$((_p4_waited + 1))
+  done
+
+  # Run 5 daemon-present checks sequentially
+  run_check "e2e-0059-p4-socket-exists" "Daemon IPC socket exists" \
+    check_adr0059_daemon_ipc_socket_exists "adr0059-p4"
+  run_check "e2e-0059-p4-ipc-probe" "Daemon IPC probe" \
+    check_adr0059_daemon_ipc_probe "adr0059-p4"
+  run_check "e2e-0059-p4-store" "Daemon IPC store" \
+    check_adr0059_daemon_ipc_store "adr0059-p4"
+  run_check "e2e-0059-p4-search" "Daemon IPC search" \
+    check_adr0059_daemon_ipc_search "adr0059-p4"
+  run_check "e2e-0059-p4-count" "Daemon IPC count" \
+    check_adr0059_daemon_ipc_count "adr0059-p4"
+
+  # Stop daemon cleanly
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
+  sleep 0.5
+
+  # Kill daemon PID if stop didn't work
+  if [[ -n "$_P4_DAEMON_PID" ]] && kill -0 "$_P4_DAEMON_PID" 2>/dev/null; then
+    kill "$_P4_DAEMON_PID" 2>/dev/null || true
+    sleep 0.5
+    kill -0 "$_P4_DAEMON_PID" 2>/dev/null && kill -9 "$_P4_DAEMON_PID" 2>/dev/null || true
+  fi
+  rm -f "$_p4_sock" "$_p4_pidfile" 2>/dev/null || true
+  _P4_DAEMON_PID=""
+
+  # Fallback check — daemon confirmed dead
+  run_check "e2e-0059-p4-fallback" "Daemon IPC fallback" \
+    check_adr0059_daemon_ipc_fallback "adr0059-p4"
+
+  _record_phase "phase4-daemon" "$(_elapsed_ms "$_p4_start" "$(_ns)")"
+fi
 
 rm -rf "$E2E_DIR" "$PARALLEL_DIR"; E2E_DIR=""; PARALLEL_DIR=""
 
