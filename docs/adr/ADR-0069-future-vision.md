@@ -499,23 +499,24 @@ No known residual bypass sites remain.
 | A16 | HuggingFace model URLs | LOW | No private registry support for air-gapped deployments | **Yes** (`MODEL_REGISTRY_URL` env var overrides base URL) |
 | A17 | EWC consolidator dim | MEDIUM | `ewc-consolidation.ts:152` hardcodes `dimensions: 768`, never receives config | **Yes** (reads from embeddings.json) |
 
-### Dead config keys (audited 2026-04-05)
+### Dead config keys (audited 2026-04-05, remediated 2026-04-05)
 
-11 keys were added to `config.json` but have no code consuming them. The config chain remediation created producers (default values) but not all consumers (runtime reads). These must be wired before the init template ships them to users.
+11 keys were added to `config.json` but initially had no code consuming them. All have now been wired:
 
-| Key | Why dead | Fix |
-|-----|---------|-----|
-| `memory.swarmDir` | All code hardcodes `.swarm` via `path.join()` | Read from config in memory-bridge, pass to consumers |
-| `memory.sqlite.journalMode` | Bridge fallback object only has `cacheSize`+`busyTimeoutMs` | Add to bridge fallback object |
-| `memory.sqlite.synchronous` | Same gap | Same fix |
-| `memory.similarityThreshold` | No consumer reads from config.json; SONA adapter uses own mode tables | Wire through bridge → RuntimeConfig → search query |
-| `memory.embeddingCacheSize` | Separate from `embeddings.json cacheSize` | Wire through bridge or merge with embeddings path |
-| `ports.quic` / `federation` / `health` | Env vars `QUIC_PORT`/`FEDERATION_PORT`/`HEALTH_PORT` not consumed in ruflo fork code | Wire env vars in ruflo CLI (agentic-flow fork has them) |
-| `rateLimiter.auth/tools/memory/files.*` | Only `controllers.rateLimiter` forwarded by bridge | Forward top-level `rateLimiter` block through bridge |
-| `workers.triggers.*` | `worker-daemon.ts` has own `DEFAULT_WORKERS`, never reads config | Wire config read in daemon startup |
-| `neural.learningRates.sona` / `lora` | No code reads these keys | Wire in sona-manager and lora-adapter |
+| Key | Fix |
+|-----|-----|
+| `memory.swarmDir` | `getSwarmDir()` helper in memory-initializer; bridge forwards to RuntimeConfig |
+| `memory.sqlite.journalMode` | Bridge fallback object now includes journalMode/synchronous |
+| `memory.sqlite.synchronous` | Same fix |
+| `memory.similarityThreshold` | Bridge forwards to RuntimeConfig; search query reads it |
+| `memory.embeddingCacheSize` | rvf-embedding-service and embedding-service read from config |
+| `ports.quic/federation/health` | Bridge forwards ports block to RuntimeConfig |
+| `rateLimiter.auth/tools/memory/files.*` | Bridge forwards full rateLimiter presets alongside controllers.rateLimiter |
+| `workers.triggers.*` | worker-daemon reads workers.triggers, merges with DEFAULT_WORKERS |
+| `neural.learningRates.sona` | sona-manager checks sona-specific rate before defaultLearningRate |
+| `neural.learningRates.lora` | lora-adapter checks lora-specific rate before defaultLearningRate |
 
-**Bug**: `neural/algorithms/sarsa.ts:21` reads `cfg?.neural?.learningRates?.qLearning` instead of `.sarsa` (copy-paste bug).
+**Bug fix**: `neural/algorithms/sarsa.ts` copy-paste bug fixed — reads `.sarsa` instead of `.qLearning`.
 
 ### Init template gap (audited 2026-04-05)
 

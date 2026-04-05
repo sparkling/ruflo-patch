@@ -348,6 +348,9 @@ adr0068_lib="${PROJECT_DIR}/lib/acceptance-adr0068-checks.sh"
 adr0069_lib="${PROJECT_DIR}/lib/acceptance-adr0069-checks.sh"
 [[ -f "$adr0069_lib" ]] && source "$adr0069_lib"
 
+adr0069_init_lib="${PROJECT_DIR}/lib/acceptance-adr0069-init-checks.sh"
+[[ -f "$adr0069_init_lib" ]] && source "$adr0069_init_lib"
+
 # ADR-0059 Phase 3: Unified MCP search
 adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 [[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
@@ -514,6 +517,12 @@ run_check_bg "adr0069-swarm-dir"   "No hardcoded swarm dir (ADR-0069 H4)"   chec
 run_check_bg "adr0069-thresh-07"   "Search threshold not 0.5 (ADR-0069 H7)" check_adr0069_search_threshold_not_05    "adr0069"
 run_check_bg "adr0069-mig-batch"   "Migration batch aligned (ADR-0069 H10)" check_adr0069_migration_batch_aligned    "adr0069"
 run_check_bg "adr0069-dedup-098"   "Dedup threshold aligned (ADR-0069 H11)" check_adr0069_dedup_threshold_aligned    "adr0069"
+run_check_bg "adr0069-init-json"  "Init config is JSON (ADR-0069)"         check_init_config_is_json                "adr0069"
+run_check_bg "adr0069-init-sql"   "Init has sqlite keys (ADR-0069)"        check_init_has_sqlite_keys               "adr0069"
+run_check_bg "adr0069-init-neur"  "Init has neural keys (ADR-0069)"        check_init_has_neural_keys               "adr0069"
+run_check_bg "adr0069-init-port"  "Init has ports keys (ADR-0069)"         check_init_has_ports_keys                "adr0069"
+run_check_bg "adr0069-init-rl"    "Init has rateLimiter (ADR-0069)"        check_init_has_ratelimiter_keys           "adr0069"
+run_check_bg "adr0069-init-work"  "Init has workers keys (ADR-0069)"       check_init_has_workers_keys              "adr0069"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -815,6 +824,12 @@ collect_parallel "all" \
   "adr0069-thresh-07|Search threshold not 0.5 (ADR-0069 H7)" \
   "adr0069-mig-batch|Migration batch aligned (ADR-0069 H10)" \
   "adr0069-dedup-098|Dedup threshold aligned (ADR-0069 H11)" \
+  "adr0069-init-json|Init config is JSON (ADR-0069)" \
+  "adr0069-init-sql|Init has sqlite keys (ADR-0069)" \
+  "adr0069-init-neur|Init has neural keys (ADR-0069)" \
+  "adr0069-init-port|Init has ports keys (ADR-0069)" \
+  "adr0069-init-rl|Init has rateLimiter (ADR-0069)" \
+  "adr0069-init-work|Init has workers keys (ADR-0069)" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \
