@@ -15,6 +15,7 @@
         "similarityThreshold": 0.7,
         "dedupThreshold": 0.95,
         "embeddingCacheSize": 1000,
+        "cleanupIntervalMs": 60000,
         "storage": {
             "maxEntries": 1000000
         },

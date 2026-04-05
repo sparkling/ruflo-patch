@@ -406,8 +406,8 @@ All 11 items have config.json fields. 10 are fully remediated; A6 (ports) uses e
 | Dim 768 | `HNSWIndex.ts:152` | `dimension: 768` in default config | HIGH |
 | maxElements | `AgentDB.ts:166` | `?? 10000` stale fallback | HIGH |
 | maxElements | `agentdb-service.ts:271,301` | Literal `100000` instead of `hnswParams.maxElements` | MEDIUM |
-| A5 EWC | `intelligence-tools.ts:315` | `ewcLambda: 1000.0` (reporting) | MEDIUM |
-| A5 EWC | `SonaLearningBackend.ts` | `?? 1000` fallback | MEDIUM |
+| A5 EWC | `intelligence-tools.ts:315` | `ewcLambda: 1000.0` (reporting) | MEDIUM — remediated (A17: reads from embeddings.json) |
+| A5 EWC | `SonaLearningBackend.ts` | `?? 1000` fallback | MEDIUM — remediated (A17: reads from embeddings.json) |
 | A8 LR | `sona-adapter.ts` (5 modes), `self-learning.ts` (5 sites) | Per-mode LR not config-aware | MEDIUM |
 | A11 dedup | `rvf-tools.ts:50` | Fallback 0.98 (should be 0.95) | MEDIUM |
 | A6 ports | 4 agentic-flow sites | No env-var guard | MEDIUM |
@@ -416,14 +416,14 @@ All 11 items have config.json fields. 10 are fully remediated; A6 (ports) uses e
 
 ### New patterns identified (not in original A1-A11 audit)
 
-| ID | Category | Severity | Detail |
-|----|----------|----------|--------|
-| A12 | Embedding model divergence | MEDIUM | ruflo defaults to `all-mpnet-base-v2` (768d), agentic-flow to `all-MiniLM-L6-v2` (384d) — vector incompatibility risk for shared memory |
-| A13 | Cleanup intervals | MEDIUM | `setInterval(60000)` at 5+ sites across both forks, not configurable |
-| A14 | Memory buffer limits | LOW | `maxBuffer` ranges 5MB-100MB across 60+ `execSync` sites |
-| A15 | Service base URLs | MEDIUM | Ollama `localhost:11434`, RuvLLM `localhost:3000` — no env-var guards |
-| A16 | HuggingFace model URLs | LOW | No private registry support for air-gapped deployments |
-| A17 | EWC consolidator dim | MEDIUM | `ewc-consolidation.ts:152` hardcodes `dimensions: 768`, never receives config |
+| ID | Category | Severity | Detail | Remediated |
+|----|----------|----------|--------|------------|
+| A12 | Embedding model divergence | MEDIUM | ruflo defaults to `all-mpnet-base-v2` (768d), agentic-flow to `all-MiniLM-L6-v2` (384d) — vector incompatibility risk for shared memory | **Yes** (ONNX default aligned to config chain) |
+| A13 | Cleanup intervals | MEDIUM | `setInterval(60000)` at 5+ sites across both forks, not configurable | **Yes** (5 sites now configurable via `memory.cleanupIntervalMs`) |
+| A14 | Memory buffer limits | LOW | `maxBuffer` ranges 5MB-100MB across 60+ `execSync` sites | No (60+ sites, low risk) |
+| A15 | Service base URLs | MEDIUM | Ollama `localhost:11434`, RuvLLM `localhost:3000` — no env-var guards | **Yes** (env-var guards: OLLAMA_URL, RUVLLM_URL, OPENROUTER_URL) |
+| A16 | HuggingFace model URLs | LOW | No private registry support for air-gapped deployments | No (air-gap support deferred) |
+| A17 | EWC consolidator dim | MEDIUM | `ewc-consolidation.ts:152` hardcodes `dimensions: 768`, never receives config | **Yes** (reads from embeddings.json) |
 
 ## Consequences
 
