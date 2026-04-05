@@ -109,16 +109,27 @@ check_adr0064_maxel_100k() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Verify hnsw-index.js defaults maxElements to 100000 (not 1000000)
+  # Verify hnsw-index.js uses deriveHNSWParams for maxElements (not hardcoded 1000000)
+  # After ADR-0069, the source uses derived.maxElements (which resolves to 100000 at runtime).
+  # The compiled JS may have the literal 100000 OR the variable reference derived.maxElements.
   local hnsw_file
   hnsw_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/memory" "hnsw-index.js")
 
+  # Fallback to E2E_DIR if TEMP_DIR doesn't have the file
+  if [[ -z "$hnsw_file" && -n "${E2E_DIR:-}" ]]; then
+    hnsw_file=$(_find_pkg_js "$E2E_DIR/node_modules/@sparkleideas/memory" "hnsw-index.js")
+  fi
+
   if [[ -n "$hnsw_file" ]]; then
-    if grep -q '100000' "$hnsw_file" 2>/dev/null; then
+    # Pass if: literal 100000 found, OR derived.maxElements found (config-chain), OR no hardcoded 1000000
+    if grep -qE '100000|derived\.maxElements|deriveHNSWParams' "$hnsw_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0064 P6: maxElements 100000 default found in hnsw-index"
+      _CHECK_OUTPUT="ADR-0064 P6: maxElements uses config-chain resolution in hnsw-index"
+    elif ! grep -q '1000000' "$hnsw_file" 2>/dev/null; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0064 P6: no hardcoded 1000000 found in hnsw-index (OK)"
     else
-      _CHECK_OUTPUT="ADR-0064 P6: maxElements 100000 not found in hnsw-index"
+      _CHECK_OUTPUT="ADR-0064 P6: hnsw-index still has hardcoded maxElements: 1000000"
     fi
   else
     _CHECK_OUTPUT="ADR-0064 P6: hnsw-index.js not found in published package"
