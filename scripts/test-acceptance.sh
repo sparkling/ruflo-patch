@@ -212,13 +212,44 @@ if [[ ! -x "$CLI_BIN" ]]; then
   log_error "CLI binary not found at ${CLI_BIN} — harness abort"; exit 1
 fi
 
-log "Running harness: init --full --force"
+# ── ADR-0068: Unified embedding config (explicit, never rely on defaults) ──
+# These are the canonical values for the all-mpnet-base-v2 model.
+# Tests MUST fail if any of these change — that's the point.
+RUFLO_EMBEDDING_MODEL="all-mpnet-base-v2"
+RUFLO_EMBEDDING_DIM=768
+RUFLO_HNSW_M=23
+RUFLO_HNSW_EF_CONSTRUCTION=100
+RUFLO_HNSW_EF_SEARCH=50
+
+log "Running harness: init --full --force (model=${RUFLO_EMBEDDING_MODEL}, dim=${RUFLO_EMBEDDING_DIM})"
 # CLI process hangs after init (open SQLite handles from 42-controller registry).
 # Use timeout+KILL but verify success by checking output files, not exit code.
-_init_out=$(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" _timeout 120 "$CLI_BIN" init --full --force --with-embeddings --embedding-model all-mpnet-base-v2 2>&1) || true
+_init_out=$(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" _timeout 120 "$CLI_BIN" init --full --force --with-embeddings --embedding-model "$RUFLO_EMBEDDING_MODEL" 2>&1) || true
 if [[ ! -f "${ACCEPT_TEMP}/.claude-flow/config.json" && ! -f "${ACCEPT_TEMP}/.claude-flow/config.yaml" ]]; then
   log_error "Harness: init --full failed (no config.json or config.yaml created)"
   exit 1
+fi
+
+# Stamp the init'd embeddings.json with explicit HNSW values.
+# The CLI template should already write these, but we overwrite to make the
+# contract between harness and acceptance checks ironclad — no hidden defaults.
+_emb_json="${ACCEPT_TEMP}/.claude-flow/embeddings.json"
+if [[ -f "$_emb_json" ]]; then
+  _emb_tmp=$(mktemp)
+  python3 -c "
+import json, sys
+with open('$_emb_json') as f: cfg = json.load(f)
+cfg['model'] = '${RUFLO_EMBEDDING_MODEL}'
+cfg['dimension'] = ${RUFLO_EMBEDDING_DIM}
+cfg.setdefault('hnsw', {})
+cfg['hnsw']['m'] = ${RUFLO_HNSW_M}
+cfg['hnsw']['efConstruction'] = ${RUFLO_HNSW_EF_CONSTRUCTION}
+cfg['hnsw']['efSearch'] = ${RUFLO_HNSW_EF_SEARCH}
+json.dump(cfg, sys.stdout, indent=2)
+" > "$_emb_tmp" 2>/dev/null && mv "$_emb_tmp" "$_emb_json"
+  log "  Stamped embeddings.json: model=${RUFLO_EMBEDDING_MODEL} dim=${RUFLO_EMBEDDING_DIM} hnsw=(m=${RUFLO_HNSW_M} efC=${RUFLO_HNSW_EF_CONSTRUCTION} efS=${RUFLO_HNSW_EF_SEARCH})"
+else
+  log "WARN: embeddings.json not created by init — HNSW acceptance checks may fail"
 fi
 
 log "Running harness: memory init"
