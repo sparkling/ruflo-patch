@@ -251,11 +251,37 @@ Key merged branches: `fix/rvf-backend-stubs` (fixed NAPI/WASM binding layer), `c
 
 The original F2 migration sequence assumed blocked prerequisites. Revised path:
 
-1. **Wire rvf-index into rvf-runtime** (ruvector fork Rust patch, ~200-300 lines in `store.rs` + `Cargo.toml`). Turns every RVF query from O(n) to O(log n). Highest-leverage single change.
-2. **Fix ruflo `tryNativeInit()` API mismatch** (~10 lines). Enables native Rust HNSW via the existing NAPI bindings already published on npm.
+1. **Fix ruflo `tryNativeInit()` API mismatch** (~50 lines in `rvf-backend.ts`). The code opens `@ruvector/rvf` but never routes reads/writes through it. Fix: align the API call (`RvfDatabase.create(path, {dimension})` vs `new RvfDatabase({path, dimensions})`), then delegate `search()` to native when available. Immediate perf win on the backend that's already selected by default. **This is the lowest-effort, highest-impact F2 step.**
+2. **Wire rvf-index into rvf-runtime** (ruvector fork Rust patch, ~200-300 lines in `store.rs` + `Cargo.toml`). Turns every RVF query from O(n) to O(log n). Requires cross-compiling NAPI binaries for 5 platforms.
 3. **Build SQLite→RVF migration tool** using `rvf-import` patterns + ruflo `RvfMigrator`.
 4. **Keep two RvfBackend classes** — ruflo's for `IMemoryBackend` (full MemoryEntry), agentdb's for `VectorBackendAsync` (raw vectors). Different interfaces, different purposes.
 5. **Do not wait for upstream bug fixes** — #315/#316/#323 have zero maintainer engagement.
+
+#### What NOT to wire from the RVF/RuVector integration roadmap
+
+Agentic-flow ADR-056 says 8 ruvector packages are installed but only ~30% wired. The other 70% should NOT be wired now because they have zero runtime usage:
+
+| Package | Status | Why skip |
+|---------|--------|----------|
+| `@ruvector/attention` | 39 mechanisms, zero calls in normal sessions | F3 analysis: all feature flags default to false |
+| `@ruvector/gnn` | GNN inference stubs | No training pipeline, no user-facing feature |
+| `@ruvector/router` (TinyDancer) | MoE routing | No multi-model deployment target |
+| `@ruvector/graph` | Graph DB adapter | Causal graph works fine with SQLite |
+| SONA trajectory learning | Disabled by default | `ENABLE_FLASH_CONSOLIDATION: false` |
+| Federation/QUIC | Distributed features | No multi-node deployment target |
+
+**Principle**: Activate capabilities when users need them, not because packages are installed. The full roadmap is the SPARC rewrite in smaller chunks — same risk of activating features nobody uses.
+
+#### README vs implementation gap
+
+The RVF crate README (ruvnet/RuVector `crates/rvf/README.md`) claims progressive indexing, <5ms cold boot, and recall >= 0.95. These describe the **design per ADR-029**, not the current `rvf-runtime` implementation:
+
+- `rvf-runtime/Cargo.toml` does NOT depend on `rvf-index` — query is O(n) brute-force
+- `rvf-index` has working HNSW (tested, recall >= 0.95) but is never called by `RvfStore.query()`
+- HNSW params accepted by NAPI bindings are silently ignored
+- `query_with_envelope()` hard-codes `layer_a: true` giving appearance of progressive indexing
+
+The individual crates work in isolation. The integration that connects them doesn't exist. Step 2 above creates it.
 
 ## F3: Full 39-Mechanism AttentionService
 
