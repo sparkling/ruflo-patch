@@ -183,6 +183,74 @@ These affect F2 scope — when RVF becomes the primary storage backend, these ha
 - NAPI-RS bindings require native compilation per platform (macOS ARM, Linux x64), complicating CI.
 - Fallback to WASM is 10-100x slower than NAPI-RS, narrowing the performance benefit.
 
+### Deep-dive findings (2026-04-05, 7-agent research hive)
+
+#### ADR claim corrections
+
+| Claim in this ADR | Actual state |
+|-------------------|-------------|
+| "NAPI-RS bindings do not exist yet" | **Wrong.** `@ruvector/rvf-node` v0.1.7 published on npm with prebuilt binaries for 5 platforms (darwin-arm64/x64, linux-arm64/x64, win32-x64). The NAPI-RS crate `rvf-node` is mature with full CRUD API. |
+| "#315 blocks import/recall" | **Partially wrong.** The bug is real but misattributed: `RvfStore.query()` is brute-force by design — it has no HNSW at all. The "empty recall" is because the HNSW graph is never built, not because import fails to rebuild it. The `rvf-index` crate has a complete HNSW (recall >= 0.95) but it is **not wired into rvf-runtime**. |
+| "#323 blocks Node 22" | **Has workaround.** `OnnxEmbedder` class manually loads WASM bytes, bypassing the broken ESM import. Only the `loader.js` direct path fails. |
+| "#316 blocks embed" | **By design.** Sync `embed()` uses hash vectors; async uses ONNX. Enforce async-only path. |
+
+#### The critical gap: HNSW disconnected from runtime
+
+```
+rvf-index (2,673 lines)         rvf-runtime (8,500 lines)
+├── HnswGraph (complete)        ├── RvfStore
+├── ProgressiveIndex            │   └── query() = brute-force O(n)
+├── Layer A/B/C builder         │       (no rvf-index dependency)
+├── INDEX_SEG codec             │   └── HNSW params accepted but IGNORED
+└── recall >= 0.95 tested       └── rvf-runtime/Cargo.toml: no rvf-index dep
+```
+
+`rvf-runtime/Cargo.toml` does not depend on `rvf-index`. Query is always linear scan. Despite this, the NAPI bindings accept `m`, `ef_construction`, `ef_search` parameters and silently ignore them. The `query_with_envelope()` method hard-codes `layer_a: true` giving the appearance of progressive indexing while doing brute force.
+
+#### Two separate things called "RvfBackend"
+
+| | ruflo `RvfBackend` | agentdb `RvfBackend` |
+|---|---|---|
+| Location | `@claude-flow/memory/src/rvf-backend.ts` | `agentdb/src/backends/rvf/RvfBackend.ts` |
+| Interface | `IMemoryBackend` (17 methods, full MemoryEntry) | `VectorBackendAsync` (raw float vectors) |
+| File format | Custom `RVF\0` + JSON header + JSON entries | Real `@ruvector/rvf` binary segments |
+| HNSW | Pure-TS `HnswLite` (works) | Delegates to `@ruvector/rvf` (brute-force) |
+| Native upgrade | `tryNativeInit()` opens handle but never routes reads/writes through it | Direct `@ruvector/rvf` |
+| Production role | **Primary backend** (selected by default in `auto` mode) | Via `SelfLearningRvfBackend` controller |
+
+The ruflo `RvfBackend` is the default storage for all CLI memory operations. It has working HNSW via pure-TS `HnswLite`. Its `tryNativeInit()` opens `@ruvector/rvf` but never uses it for actual queries — a 10-line API mismatch fix would enable native acceleration.
+
+#### Upstream ADR ecosystem (12 RVF ADRs)
+
+| ADR | Title | Status | Key contribution |
+|-----|-------|--------|-----------------|
+| 029 | RVF Canonical Format | Accepted | Core binary format, 28 segment types, 5 profiles |
+| 030 | Cognitive Container | Proposed | 3-tier execution (WASM/eBPF/unikernel) |
+| 031 | Example Repository | Accepted | 24 examples including COW segments |
+| 032 | WASM Integration | Accepted | Wire RVF into npx ruvector + rvlite |
+| 033 | Progressive Indexing Hardening | Accepted | Content-addressed centroids, adversarial resilience |
+| 037 | Publishable Acceptance Test | Accepted | Witness-chain verified benchmarks |
+| 039 | Solver WASM AGI Engine | Implemented | Thompson Sampling in 160KB WASM |
+| 042 | Security RVF AIDefence TEE | Accepted | TEE-hardened RVF |
+| 056 | Knowledge Export | Accepted | Project knowledge as RVF segments |
+| 057 | Federated Transfer Learning | Proposed | 4 federation segments, differential privacy |
+| 063 | RVF Optimizer Integration | Implemented | 2-8x compression, 10-100x batch |
+| 075 | Wire into mcp-brain-server | Implemented | Replace inline crypto with rvf-crypto |
+
+#### SPARC integration branch
+
+`remotes/origin/claude/claude-flow-v3-ruvector-011aqixBbBUJPRLVEJYfvPUq` contains a 7-document SPARC plan for rebuilding claude-flow on RuVector Rust crates. Coverage: ~45% of existing features. 6-phase roadmap (12-16 weeks). No implementation — planning documents only.
+
+#### Revised F2 path (post-deep-dive)
+
+The original F2 migration sequence assumed blocked prerequisites. Revised path:
+
+1. **Wire rvf-index into rvf-runtime** (ruvector fork Rust patch, ~200-300 lines in `store.rs` + `Cargo.toml`). Turns every RVF query from O(n) to O(log n). Highest-leverage single change.
+2. **Fix ruflo `tryNativeInit()` API mismatch** (~10 lines). Enables native Rust HNSW via the existing NAPI bindings already published on npm.
+3. **Build SQLite→RVF migration tool** using `rvf-import` patterns + ruflo `RvfMigrator`.
+4. **Keep two RvfBackend classes** — ruflo's for `IMemoryBackend` (full MemoryEntry), agentdb's for `VectorBackendAsync` (raw vectors). Different interfaces, different purposes.
+5. **Do not wait for upstream bug fixes** — #315/#316/#323 have zero maintainer engagement.
+
 ## F3: Full 39-Mechanism AttentionService
 
 ### What upstream ADR-028 designed
