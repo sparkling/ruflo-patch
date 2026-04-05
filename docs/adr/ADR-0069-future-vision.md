@@ -380,20 +380,20 @@ The 3-point gap means ReasoningBank deduplicates entries that AgentDB considers 
 
 | ID | Category | Severity | Sites | Config key | Remediated |
 |----|----------|----------|-------|------------|------------|
-| A1 | SQLite pragmas | HIGH | 9 | `sqlite.cacheSize`, `sqlite.busyTimeoutMs` | No |
+| A1 | SQLite pragmas | HIGH | 9 | `sqlite.cacheSize`, `sqlite.busyTimeoutMs` | **Yes** |
 | A2 | Rate limiters | HIGH | 6 singletons | `rateLimiter.*` | **Yes** |
-| A3 | Worker timeouts | HIGH | 2 files | `workers.triggers.*` | No |
-| A4 | Swarm directory | HIGH | 14 | (standardize path) | No |
-| A5 | EWC lambda | HIGH | 9 | `neural.ewcLambda` | No |
-| A6 | Port numbers | HIGH | 18 | `ports.*` | No |
-| A7 | Similarity threshold | HIGH | ~10 | `memory.similarityThreshold` | No |
-| A8 | Learning rate | HIGH | 13 | `neural.defaultLearningRate` | No |
-| A9 | Embedding cache bug | HIGH | 1 | `memory.embeddingCacheSize` | No |
-| A10 | Migration batch size | HIGH | 2 | `memory.migrationBatchSize` | No |
-| A11 | Dedup threshold | HIGH | ~4 | `memory.dedupThreshold` | No |
-| **Total** | | | **~86 sites** | **14 new config keys** | **0 of 11** |
+| A3 | Worker timeouts | HIGH | 2 files | `workers.triggers.*` | **Yes** |
+| A4 | Swarm directory | HIGH | 14 | (standardize path) | **Yes** |
+| A5 | EWC lambda | HIGH | 9 | `neural.ewcLambda` | **Yes** |
+| A6 | Port numbers | HIGH | 18 | `ports.*` | **Partial** (env-var guards; config.json not yet read at all sites) |
+| A7 | Similarity threshold | HIGH | ~10 | `memory.similarityThreshold` | **Yes** |
+| A8 | Learning rate | HIGH | 13 | `neural.defaultLearningRate` | **Yes** |
+| A9 | Embedding cache bug | HIGH | 1 | `memory.embeddingCacheSize` | **Yes** |
+| A10 | Migration batch size | HIGH | 2 | `memory.migrationBatchSize` | **Yes** |
+| A11 | Dedup threshold | HIGH | ~4 | `memory.dedupThreshold` | **Yes** |
+| **Total** | | | **~86 sites** | **14 new config keys** | **10 of 11 complete** |
 
-All 11 items require new config.json fields. None have been remediated yet. The embedding/HNSW bypass sites documented in F1 above (12 sites, remediated 2026-04-05) are separate from this inventory.
+All 11 items have config.json fields. 10 are fully remediated; A6 (ports) uses env-var guards but not all sites read from config.json yet. The embedding/HNSW bypass sites documented in F1 above (12 sites, remediated 2026-04-05) are separate from this inventory.
 
 ## Consequences
 

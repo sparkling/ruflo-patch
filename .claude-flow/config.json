@@ -14,6 +14,7 @@
         "migrationBatchSize": 500,
         "similarityThreshold": 0.7,
         "dedupThreshold": 0.95,
+        "embeddingCacheSize": 1000,
         "storage": {
             "maxEntries": 1000000
         },
@@ -42,7 +43,14 @@
         "modelPath": ".claude-flow/neural",
         "ewcLambda": 2000,
         "defaultLearningRate": 0.001,
-        "qualityThreshold": 0.5
+        "qualityThreshold": 0.5,
+        "learningRates": {
+            "qLearning": 0.1,
+            "sarsa": 0.1,
+            "moe": 0.01,
+            "sona": 0.001,
+            "lora": 0.001
+        }
     },
     "hooks": {
         "enabled": true,
