@@ -215,7 +215,7 @@ fi
 log "Running harness: init --full --force"
 # CLI process hangs after init (open SQLite handles from 42-controller registry).
 # Use timeout+KILL but verify success by checking output files, not exit code.
-_init_out=$(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" _timeout 120 "$CLI_BIN" init --full --force --with-embeddings 2>&1) || true
+_init_out=$(cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" _timeout 120 "$CLI_BIN" init --full --force --with-embeddings --embedding-model all-mpnet-base-v2 2>&1) || true
 if [[ ! -f "${ACCEPT_TEMP}/.claude-flow/config.json" && ! -f "${ACCEPT_TEMP}/.claude-flow/config.yaml" ]]; then
   log_error "Harness: init --full failed (no config.json or config.yaml created)"
   exit 1
