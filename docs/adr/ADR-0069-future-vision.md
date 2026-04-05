@@ -619,7 +619,7 @@ Path: Proceed with pure TS. Remove LegacyAttentionAdapter. Fix WASMVectorSearch 
 
 The following bugs were discovered during ADR-0070 Phase 5 acceptance testing and config chain validation:
 
-1. **Model name inconsistency (`Xenova/` prefix)** — Several sites referenced the embedding model as `Xenova/all-mpnet-base-v2` while the canonical config chain uses `all-mpnet-base-v2` without the HuggingFace org prefix. This caused model identity comparisons to fail silently, allowing duplicate model loads and config chain bypasses. **Fixed**: all sites now use the bare model name; the `Xenova/` prefix is added only at the ONNX loader boundary.
+1. **Model name inconsistency (`Xenova/` prefix)** — ~20 CLI defaults used the bare name `all-mpnet-base-v2` while runtime code and config files used `Xenova/all-mpnet-base-v2`. Bare names cause HuggingFace 401 because `pipeline()` requires `org/model` format. The "bare + boundary normalization" approach (previously claimed in this ADR) was rejected — not all call sites normalize, and `reasoningbank/embeddings.ts` passes bare names directly to `pipeline()`. **Fixed**: all defaults use the full `Xenova/all-mpnet-base-v2` form. No runtime string prepending. This aligns with ADRs 0059, 0060, 0065, 0066, 0068.
 
 2. **`cacheSize` disagreement (256 vs 1000)** — `EmbeddingService` constructor created an LRU cache with size 256 while `rvf-embedding-service.ts` used 1000 (and its secondary cache used 10000 — see A9 above). The inconsistency meant cache hit rates varied unpredictably depending on which code path served a query. **Fixed**: all embedding caches unified on `memory.embeddingCacheSize` config key (default 1000).
 
