@@ -1,10 +1,24 @@
 # ADR-0069: Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
 
-- **Status**: Proposed (future work, not scheduled)
+- **Status**: Proposed
 - **Date**: 2026-04-05
 - **Depends on**: ADR-0068 (must be completed first)
 - **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
 - **Analysis**: ADR-0067 (original vision for controller wiring)
+
+## Dependencies on ADR-0068
+
+Each F-item in this ADR depends on specific ADR-0068 waves. The table below maps those dependencies and records the forward-compatibility analysis performed on 2026-04-05.
+
+| F-item | ADR-0068 dependency | Impact verdict | Notes |
+|--------|---------------------|----------------|-------|
+| F1: AgentDBService consolidation | W1-1 (singleton wiring), W1-2 (getController extension) | **INDEPENDENT** | F1 calls `agentdb.getController()` for all controllers -- W1-2 makes that reliable. No ADR-0068 design changes needed. The delegation pattern (registry -> AgentDB) that W2-3 establishes is the same pattern F1 extends to AgentDBService. |
+| F2: RVF single storage | W2-5 (HNSW centralization), W4-3 (hybridSearch, federatedSession stubs) | **FORWARD-COMPATIBLE** | W4-3's hybridSearch and federatedSession should be implemented behind `IMemoryBackend` abstractions rather than direct SQLite calls. This avoids rewriting controller interfaces when RVF replaces SQLite. The shared `memory-schema.ts` DDL and `hnsw-utils.ts` derivation function are format-agnostic and do not conflict with RVF's Rust-side HNSW. |
+| F3: Full AttentionService | P1-3a/b/c/d (shared AttentionService instance) | **INDEPENDENT** | ADR-0068's optional constructor parameter pattern (`attentionService?`) is already maximally flexible. When F3 introduces real mechanisms, the registry creates multiple instances and passes different ones to different controllers -- no interface changes needed. LegacyAttentionAdapter must be kept in ADR-0068; F3 removes it. |
+
+### Design principle
+
+ADR-0068 should not anticipate ADR-0069's internal implementation choices. It should complete the upstream wiring gaps cleanly. The one forward-compatible adjustment (W4-3 interface abstraction) aligns with good practice regardless of F2 and costs negligible extra effort.
 
 ## Context
 
