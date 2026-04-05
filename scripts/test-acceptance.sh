@@ -434,6 +434,7 @@ run_check_bg "adr0064-no384"       "No || 384 fallback"           check_adr0064_
 run_check_bg "adr0064-no-embconst" "No embedding-constants"       check_adr0064_no_embedding_constants    "adr0064"
 run_check_bg "adr0064-numheads"    "numHeads aligned"             check_adr0064_numheads_aligned          "adr0064"
 run_check_bg "adr0064-batch-emb"   "Batch embedder fix"           check_adr0064_batch_embedder            "adr0064"
+run_check_bg "adr0064-maxel-100k" "maxElements 100K default"     check_adr0064_maxel_100k                "adr0064"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -706,6 +707,7 @@ collect_parallel "all" \
   "adr0064-resdim|resolvedDimension" "adr0064-no384|No || 384 fallback" \
   "adr0064-no-embconst|No embedding-constants" "adr0064-numheads|numHeads aligned" \
   "adr0064-batch-emb|Batch embedder fix" \
+  "adr0064-maxel-100k|maxElements 100K default" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \

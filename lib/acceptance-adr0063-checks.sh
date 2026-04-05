@@ -56,21 +56,29 @@ check_adr0063_dimension_768() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # C3: dimension defaults should be 768, not 1536
+  # C3: dimension defaults should be 768, not 1536 in controller/backend files
+  # Note: 1536 appears legitimately in embedding-config.js (model specs for ada-002 etc.)
+  # so we only check controller/backend/index files where it would be a hardcoded default
   local stale_1536=0
-  local pkg_dir="$TEMP_DIR/node_modules/@sparkleideas/memory"
+  local check_patterns="controller-registry.js|hnsw-index.js|HNSWIndex.js|agentdb-backend.js|rvf-backend.js|database-provider.js"
 
-  if [[ -d "$pkg_dir" ]]; then
-    local count
-    count=$(grep -rl '1536' "$pkg_dir/dist" --include="*.js" 2>/dev/null | wc -l | tr -d ' ')
-    stale_1536=$((stale_1536 + count))
-  fi
+  for pkg_dir in \
+    "$TEMP_DIR/node_modules/@sparkleideas/memory" \
+    "$TEMP_DIR/node_modules/@sparkleideas/agentdb"; do
+    if [[ -d "$pkg_dir/dist" ]]; then
+      local count
+      count=$(find "$pkg_dir/dist" -name "*.js" 2>/dev/null \
+        | grep -E "$check_patterns" \
+        | xargs grep -l '1536' 2>/dev/null | wc -l | tr -d ' ')
+      stale_1536=$((stale_1536 + count))
+    fi
+  done
 
   if [[ $stale_1536 -eq 0 ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0063 C3: no 1536 dimension references in memory package"
+    _CHECK_OUTPUT="ADR-0063 C3: no 1536 dimension defaults in controller/backend files"
   else
-    _CHECK_OUTPUT="ADR-0063 C3: $stale_1536 file(s) still reference 1536 dimension"
+    _CHECK_OUTPUT="ADR-0063 C3: $stale_1536 file(s) still have 1536 dimension default"
   fi
 }
 
