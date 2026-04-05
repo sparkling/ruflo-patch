@@ -268,13 +268,13 @@ as-is.
 
 - [x] All config.json `controllers.*` fields are consumed by their respective controllers
 - [x] embeddings.json `dimension` and `model` are used by memory-bridge and memory-initializer
-- [x] Zero hardcoded `384` fallbacks remain in the codebase
-- [x] Zero hardcoded `all-MiniLM-L6-v2` model strings remain
+- [x] Zero hardcoded `384` fallbacks remain in ruflo fork (`@claude-flow/memory` + `@claude-flow/cli`)
+- [x] Zero hardcoded `all-MiniLM-L6-v2` model strings remain in ruflo fork (cross-repo cleanup in ADR-0066 P0)
 - [x] quantizedVectorStore reads type from config
 - [x] rateLimiter passes windowMs to constructor
 - [x] No `require()` in ESM context
 - [x] Dead config fields removed (agentScopes, flashAttention, maxModels)
-- [ ] Controller instances reuse AgentDB singletons where available
-- [ ] SqlJsBackend and JsonBackend removed; database-provider falls through to RvfBackend
-- [ ] memory_entries DDL defined once, shared between SQLiteBackend and AgentDBBackend
-- [ ] deriveHNSWParams extracted to shared utility
+- [ ] Controller instances reuse AgentDB singletons where available → ADR-0066 P1
+- [x] SqlJsBackend and JsonBackend removed; database-provider falls through to RvfBackend (P3-1 done)
+- [x] memory_entries DDL defined once, shared between SQLiteBackend and AgentDBBackend (P3-2 done)
+- [x] deriveHNSWParams extracted to shared utility (P3-3 done)

@@ -298,9 +298,43 @@ For the 6 controllers where AgentDB already owns an instance, the registry shoul
 | `graphTransformer` | `new GT(db)` | `this.agentdb.getController('graphTransformer')` |
 | `mutationGuard` | `new MG({dimension})` | `this.agentdb.getMutationGuard()` |
 
-### P1: Consolidate AttentionService to singleton
+### P1: Prerequisite — extend AgentDB.getController() and wire singletons
 
-Modify `CausalMemoryGraph`, `ExplainableRecall`, and `NightlyLearner` constructors to accept an optional `AttentionService` parameter. In `AgentDB.initialize()`, create ONE AttentionService and inject it into all three.
+Before the registry can delegate to `agentdb.getController()`, two prerequisite changes
+are needed in the agentic-flow fork:
+
+1. **Extend `getController()` switch** (AgentDB.ts:183-223) to cover all 8 domain
+   controller names that P1 relies on. Upstream ADR-055 documented that only 5 names
+   (`reflexion`, `skills`, `causalGraph`, `vectorBackend`, `graphAdapter`) are reliable.
+   The remaining names (`reasoningBank`, `causalRecall`, `learningSystem`,
+   `explainableRecall`, `nightlyLearner`, `graphTransformer`) must be added.
+
+2. **Wire singletons in `AgentDB.initialize()`** — the two-line fix for the ADR-0040
+   and ADR-0056 violations documented in ADR-0067 Section 6:
+   - At AgentDB.ts:157, pass `controllerVB` + `this.causalGraph` + `this.explainableRecall` to CausalRecall
+   - At AgentDB.ts:160, pass `this.causalGraph`, `this.reflexion`, `this.skills` to NightlyLearner
+
+   These fixes benefit ALL three wiring layers (AgentDB core, AgentDBService, ControllerRegistry).
+
+### P1: Share AttentionService instances with identical config
+
+Upstream ADR-028 designed AttentionService for multiple instances (e.g., SONAWithAttention
+uses separate instances for Flash Attention and MoE routing). The current 4 duplicates are
+accidental — all 3 in-AgentDB instances have identical config. Per ADR-0067 Section 8:
+"unintentional duplicates with identical config should be shared."
+
+Modify `CausalMemoryGraph`, `ExplainableRecall`, and `NightlyLearner` constructors to accept
+an optional `AttentionService` parameter. In `AgentDB.initialize()`, create one shared
+instance and inject it into all three. This is not a global singleton constraint — intentional
+multi-instance use cases (e.g., SONA) remain valid.
+
+### P1 scoping note
+
+ADR-0066's P1 deduplication addresses the registry-vs-AgentDB duplicate (2 of 3 wiring
+layers). A third layer — `AgentDBService` (1,679 lines, `agentic-flow/src/services/agentdb-service.ts`)
+— creates another full set of controller instances independently. AgentDBService is
+agentic-flow-internal and out of scope for this ADR. The prerequisite singleton wiring in
+`AgentDB.initialize()` (above) is the only fix that benefits all three layers.
 
 ### P1: Add HNSW tuning to embeddings.json and propagate
 
