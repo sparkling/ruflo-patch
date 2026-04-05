@@ -112,6 +112,31 @@ copy_source() {
     add_cmd_timing "copy-source" "rsync (4 forks parallel)" "${_cp_ms}"
   fi
   log "Source copied to temp directory (4 forks merged, parallel)"
+
+  # ADR-0069: Clear stale dist/ for packages with patched .ts source.
+  # The rsync --filter='P dist/' preserves compiled JS to avoid recompiling
+  # everything, but fork patches to .ts files won't take effect until dist
+  # is cleared. Compare source mtime vs dist mtime for known-patched packages.
+  for pkg_dir in \
+    "${TEMP_DIR}/v3/@claude-flow/memory" \
+    "${TEMP_DIR}/v3/@claude-flow/cli" \
+    "${TEMP_DIR}/v3/@claude-flow/hooks" \
+    "${TEMP_DIR}/v3/@claude-flow/integration" \
+    "${TEMP_DIR}/v3/@claude-flow/embeddings" \
+    "${TEMP_DIR}/v3/@claude-flow/neural" \
+    "${TEMP_DIR}/v3/@claude-flow/guidance" \
+    "${TEMP_DIR}/v3/@claude-flow/plugins" \
+    "${TEMP_DIR}/v3/@claude-flow/shared" \
+    ; do
+    if [[ -d "$pkg_dir/dist" && -d "$pkg_dir/src" ]]; then
+      local newest_src newest_dist
+      newest_src=$(find "$pkg_dir/src" -name '*.ts' -newer "$pkg_dir/dist" 2>/dev/null | head -1)
+      if [[ -n "$newest_src" ]]; then
+        rm -rf "$pkg_dir/dist" "$pkg_dir/.tsbuildinfo" 2>/dev/null
+        log "  Cleared stale dist/ for $(basename "$pkg_dir") (source newer than dist)"
+      fi
+    fi
+  done
 }
 
 # ---------------------------------------------------------------------------

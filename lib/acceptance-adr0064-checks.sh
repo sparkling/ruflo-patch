@@ -121,15 +121,19 @@ check_adr0064_maxel_100k() {
   fi
 
   if [[ -n "$hnsw_file" ]]; then
-    # Pass if: literal 100000 found, OR derived.maxElements found (config-chain), OR no hardcoded 1000000
-    if grep -qE '100000|derived\.maxElements|deriveHNSWParams' "$hnsw_file" 2>/dev/null; then
+    # STRICT: the compiled mergeConfig must NOT have the hardcoded 1000000 fallback.
+    # It should have derived.maxElements (config-chain) or the literal 100000 (not 1000000).
+    if grep -q 'maxElements.*1000000' "$hnsw_file" 2>/dev/null; then
+      # Stale build — fork source is correct but compiled JS hasn't been regenerated
+      _CHECK_OUTPUT="ADR-0064 P6: hnsw-index has stale maxElements: 1000000 (fork source uses derived.maxElements — rebuild needed)"
+    elif grep -qE 'derived\.maxElements|deriveHNSWParams' "$hnsw_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0064 P6: maxElements uses config-chain resolution in hnsw-index"
-    elif ! grep -q '1000000' "$hnsw_file" 2>/dev/null; then
+      _CHECK_OUTPUT="ADR-0064 P6: maxElements uses config-chain (derived.maxElements)"
+    elif grep -q 'maxElements.*100000[^0]' "$hnsw_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0064 P6: no hardcoded 1000000 found in hnsw-index (OK)"
+      _CHECK_OUTPUT="ADR-0064 P6: maxElements literal 100000 found"
     else
-      _CHECK_OUTPUT="ADR-0064 P6: hnsw-index still has hardcoded maxElements: 1000000"
+      _CHECK_OUTPUT="ADR-0064 P6: maxElements default not found in hnsw-index"
     fi
   else
     _CHECK_OUTPUT="ADR-0064 P6: hnsw-index.js not found in published package"
