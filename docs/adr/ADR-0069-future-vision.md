@@ -76,8 +76,47 @@ originally estimated — the Phase 2/4 distributed controllers have no path into
 
 - **Risk**: AgentDBService has 50+ callers in agentic-flow MCP tools. Changing its initialization timing could break tools that call `getInstance()` before AgentDB finishes init.
 - **Risk**: AgentDBService has in-memory fallback stores (Map-based) for environments where SQLite is unavailable. These must be preserved or migrated to RvfBackend pure-TS mode.
-- **Dependency**: ADR-0068 W1-1 (singleton wiring) and W1-2 (getController extension) must be complete.
-- **Dependency**: The agentic-flow fork must be at a version where AgentDB exports all controller names reliably.
+- **Dependency**: ADR-0068 W1-1 (singleton wiring) and W1-2 (getController extension) must be complete. *(Done as of 2026-04-05.)*
+- **Dependency**: The agentic-flow fork must be at a version where AgentDB exports all controller names reliably. *(Done — 19 names in getController.)*
+
+### Config chain bypass inventory (audited 2026-04-05)
+
+ADR-0068 built the chain `embeddings.json → memory-bridge → RuntimeConfig → controller-registry → AgentDB`. The following production code paths bypass it entirely, constructing backends/services with hardcoded literals. F1 consolidation would eliminate most of these.
+
+#### agentic-flow fork — AgentDBService (HIGH, 4 sites)
+
+| File:line | Hardcoded values | Impact |
+|-----------|-----------------|--------|
+| `agentic-flow/src/services/agentdb-service.ts:215` | `model: 'Xenova/all-mpnet-base-v2', dimension: 768` | Primary MCP entry point constructs EmbeddingService with literals — no `getEmbeddingConfig()` or RuntimeConfig |
+| `agentdb-service.ts:461-462` | Same model+dim | `upgradeEmbeddingService()` re-pins model, ignoring config |
+| `agentdb-service.ts:262,291` | `dimension: 768, maxElements: 10000` | `createBackend()` and MutationGuard hardcode capacity at 10K (registry uses 100K) |
+| `agentic-flow/src/reasoningbank/utils/embeddings.ts:53,151` | `'Xenova/all-mpnet-base-v2'`, `768` | ReasoningBank pipeline loads model independently — no config chain awareness |
+
+#### agentic-flow fork — EmbeddingService (HIGH, 1 site)
+
+| File:line | Hardcoded values | Impact |
+|-----------|-----------------|--------|
+| `agentic-flow/src/intelligence/EmbeddingService.ts:188,215` | `dimension: 768` passed to cache before config loads; 768 set unconditionally on ONNX detection | Race: cache created with 768 before model's actual dimension is known |
+
+#### ruflo fork — bypass construction paths (HIGH, 7 sites)
+
+| File:line | Hardcoded values | Impact |
+|-----------|-----------------|--------|
+| `cli/src/mcp-tools/hooks-tools.ts:327-331` | `dimensions:768, hnswM:23, efC:100, efS:50` | Hooks routing DB fully disconnected from config chain |
+| `cli/src/memory/memory-initializer.ts:1611,1616,1672,1677` | `dimensions: 768` (×4 fallback branches) | Ignores already-loaded `embeddingModelState` |
+| `memory/src/agentdb-adapter.ts:74,79-80` | `dimensions:768, hnswM:23, efC:100` | DEFAULT_CONFIG module-level const |
+| `memory/src/agentdb-backend.ts:122-126` | Same 4 values | DEFAULT_CONFIG for direct backend construction |
+| `integration/src/types.ts:463-467` | Same 4 values | DEFAULT_AGENTDB_CONFIG exported constant |
+| `integration/src/agentic-flow-bridge.ts:604-609` | Same 4 values | Inline literal in bridge init |
+| `hooks/src/reasoningbank/index.ts:114-118` | Same 4 values | Hooks-package DEFAULT_CONFIG |
+
+#### SQLite pragmas (MEDIUM, 6 sites across both forks, no shared constant)
+
+`cache_size` and `busy_timeout` are hardcoded independently at 6 call sites with inconsistent values (cache: -64000 vs 10000; timeout: 5000 everywhere). No RuntimeConfig field exists for either.
+
+#### Rate limiters (MEDIUM, 3 module-level singletons in agentic-flow)
+
+`security/rate-limiter.ts`, `mcp/middleware/rate-limiter.ts`, `sdk/security.ts` — all construct singletons at import time with hardcoded `maxRequests`/`windowMs`, unreachable by RuntimeConfig.
 
 ### Why ADR-0068 partially addresses this
 
@@ -123,6 +162,18 @@ Migration sequence:
 - **#323** (ruvnet/RuVector): ONNX embedder fails on Node 22 LTS with `.wasm` extension error. Blocks ONNX-based embedding on current LTS.
 - **#316** (ruvnet/RuVector): sync `embed()` returns hash vectors, not semantic vectors. Using the sync path corrupts persisted databases with mixed dimension spaces.
 - The `claude-flow-v3-ruvector` branch has a plan but no implementation. NAPI-RS bindings for RuVector do not exist yet.
+
+### Hardcoded values in ruvector (audited 2026-04-05)
+
+These affect F2 scope — when RVF becomes the primary storage backend, these hardcodes will need config plumbing.
+
+| File:line | Value | Severity | Issue |
+|-----------|-------|----------|-------|
+| `ruvector-postgres/src/routing/router.rs:158,167` | `embedding_dim: 768` | HIGH | No setter or constructor param — non-768 models silently misroute |
+| `ruvector-postgres/src/workers/engine.rs:937,946,955` | `ef_search: Some(50)` ×3 | HIGH | Production query paths with no per-query HNSW override |
+| `ruvector-dag/src/qudag/network.rs:14`, `client.rs:17` | `qudag.network:8443` | HIGH | Production hostname in Default — self-hosted deployments fail |
+| `ruvector-graph/src/distributed/replication.rs:111,121` | Port `:9001` concatenated | HIGH | No configurable replication port |
+| `ruvector-core` vs `ruvector-postgres` | m:32/efC:200 vs m:16/efC:64 | MEDIUM | HNSW default inconsistency between crates |
 
 ### Risks
 
