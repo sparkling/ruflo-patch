@@ -60,7 +60,10 @@ These changes must land first because they fix AgentDB internals that all three 
 **W1-2: Extend getController() switch**
 - File: same AgentDB.ts, lines 183-223
 - Add cases for `reasoningBank`, `causalRecall`, `learningSystem`, `explainableRecall`, `nightlyLearner`, `graphTransformer`
-- Currently only 5 names are reliable (ADR-055); the remaining 6 return errors
+- Also add `attentionService`, `hierarchicalMemory`, `memoryConsolidation` — these 3 are needed
+  by ADR-0069 F1 (AgentDBService consolidation) and are cheaper to add now than retrofit later
+- Currently only 5 names are reliable (ADR-055); the remaining 9+ need adding
+- Total after this change: ~16 names in the switch (9 existing + 6 from ADR-0066 + 3 for F1 readiness)
 
 **W1-3: Fix all 384 dimension fallbacks in agentic-flow**
 - Files: `agentdb-wrapper.ts:90`, `agentdb-wrapper-enhanced.ts:108/119/128`, `EmbeddingService.ts:179-180`, `reasoningbank/utils/embeddings.ts:47/53/151`, `agentdb-service.ts:215/461`, `TinyDancerRouter.ts:87`
@@ -204,7 +207,7 @@ These changes must land first because they fix AgentDB internals that all three 
 - [ ] Zero `384` or `1536` dimension fallbacks in any fork (only `768` or config reads)
 - [ ] Zero hardcoded `all-MiniLM-L6-v2` model strings outside MODEL_REGISTRY
 - [ ] AgentDB.initialize() passes singletons to CausalRecall and NightlyLearner (W1-1)
-- [ ] AgentDB.getController() handles all 13+ controller names (W1-2)
+- [ ] AgentDB.getController() handles all 16+ controller names (W1-2) including attentionService, hierarchicalMemory, memoryConsolidation for ADR-0069 F1 readiness
 - [ ] ControllerRegistry delegates to agentdb.getController() for 6 Tier 1 controllers (W2-3)
 - [ ] ControllerRegistry forwards dimension/model/HNSW to AgentDB constructor (W2-4)
 - [ ] embeddings.json contains hnsw.m, hnsw.efConstruction, hnsw.efSearch (W2-5)

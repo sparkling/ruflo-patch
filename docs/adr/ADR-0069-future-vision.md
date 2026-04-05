@@ -41,7 +41,7 @@ As documented in the vision (Section 5), a fully wired system has three parallel
 | Layer | File | Pattern | Instance count |
 |-------|------|---------|---------------|
 | AgentDB core | `AgentDB.ts` | `getController(name)` | 1 set of 8 controllers |
-| AgentDBService | `agentdb-service.ts` | `getInstance()` singleton | 2nd set -- re-instantiates all |
+| AgentDBService | `agentdb-service.ts` | `getInstance()` singleton | 2nd set -- 29 objects total, 9 overlap with AgentDB |
 | ControllerRegistry | `controller-registry.ts` | Level-based init | 3rd set (before ADR-0068) |
 
 ### Why it creates duplicate instances
@@ -50,14 +50,25 @@ AgentDBService was written before ControllerRegistry existed. It predates ADR-05
 
 ### What the fix would look like
 
-After ADR-0068 completes, AgentDB.getController() will be reliable for all 13+ controller names, and AgentDB.initialize() will wire singletons correctly. AgentDBService should then be refactored to:
+After ADR-0068 completes, AgentDB.getController() will be reliable for 16+ controller names
+(including the 3 added for F1 readiness: `attentionService`, `hierarchicalMemory`,
+`memoryConsolidation`), and AgentDB.initialize() will wire singletons correctly.
 
-1. Hold a single `AgentDB` instance (it already does at `this.agentDb`)
-2. Replace every `new X(this.db, ...)` with `this.agentDb.getController('name')`
-3. Remove its phased initialization entirely -- AgentDB's own init handles ordering
-4. Keep only the MCP-specific convenience methods (the `async store()`, `async search()`, etc. wrappers)
+AgentDBService constructs 29 distinct objects. Only 9 overlap with AgentDB's `getController()`
+(+3 added by ADR-0068 W1-2 = 12 total). The remaining 17 are agentic-flow-specific:
+- Phase 1: WASMVectorSearch, EnhancedEmbeddingService
+- Phase 2: RuVectorLearning (GNN), SemanticRouter, GraphDatabaseAdapter, SonaTrajectoryService
+- Phase 4: SyncCoordinator, QUICClient, QUICServer, NightlyLearner (already in getController)
+- Other: RVFOptimizer, CostOptimizerService, GuardedVectorBackend wrapper, EmbeddingService
 
-This would reduce AgentDBService from ~1,679 lines to ~400 lines of MCP facade.
+Refactoring scope:
+1. Replace the 12 migratable `new X(db, ...)` calls with `this.agentDb.getController('name')`
+2. Keep the 17 agentic-flow-specific controllers as AgentDBService-owned
+3. Keep the phased init for Phase 2/4 (RuVector packages, QUIC, Sync) — these have external deps
+4. Keep the MCP convenience wrappers and in-memory fallback stores
+
+This would reduce AgentDBService from ~1,679 lines to **~700-800 lines** (not ~400 as
+originally estimated — the Phase 2/4 distributed controllers have no path into AgentDB core).
 
 ### Risks and dependencies
 
@@ -169,7 +180,7 @@ This is the largest of the three items. The 39 mechanism types represent signifi
 1. **Single controller instance per name** across all deployment contexts (CLI, MCP server, direct AgentDB). No more 2-3 copies with divergent state.
 2. **Single storage format** (RVF) with unified vector search, eliminating the 6-format fragmentation and enabling cross-tool data visibility.
 3. **Real neural attention** replacing stub adapters, enabling Flash Attention speedups (2.49x-7.47x), MoE expert routing, and hyperbolic embeddings for hierarchical data.
-4. **AgentDBService becomes a thin facade** (~400 lines instead of 1,679), reducing agentic-flow maintenance burden and making the MCP tool layer predictable.
+4. **AgentDBService becomes a thin facade** (~700-800 lines instead of 1,679), reducing agentic-flow maintenance burden and making the MCP tool layer predictable.
 5. **Cross-ecosystem interop** via RVF: memory stored by the CLI is searchable by MCP tools, and vice versa, with consistent dimension/model/HNSW parameters throughout.
 
 ### What does NOT change
@@ -184,7 +195,7 @@ This is the largest of the three items. The 39 mechanism types represent signifi
 ### F1: AgentDBService Consolidation
 - [ ] AgentDBService calls `agentdb.getController()` for all domain controllers
 - [ ] AgentDBService phased init removed; delegates to AgentDB.initialize()
-- [ ] AgentDBService reduced to MCP facade (~400 lines)
+- [ ] AgentDBService reduced to MCP facade (~700-800 lines; 12 controllers delegated, 17 stay)
 - [ ] All 50+ MCP tool callers pass integration tests with consolidated service
 - [ ] In-memory fallback preserved for environments without better-sqlite3
 
