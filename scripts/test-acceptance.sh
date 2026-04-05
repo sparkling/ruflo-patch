@@ -509,6 +509,12 @@ run_check_bg "adr0069-bypass-count"  "Bypass count zero (ADR-0069)"      check_a
 run_check_bg "adr0069-factory-max"  "Factory maxElements not 10K (ADR-0069)"  check_adr0069_factory_maxelements_not_10k  "adr0069"
 run_check_bg "adr0069-hnsw-maxel"   "HNSW params include maxElements (ADR-0069)" check_adr0069_hnsw_params_include_maxelements "adr0069"
 
+# ADR-0069 H7–H11: Additional bypass remediation
+run_check_bg "adr0069-swarm-dir"   "No hardcoded swarm dir (ADR-0069 H4)"   check_adr0069_no_hardcoded_swarm_dir     "adr0069"
+run_check_bg "adr0069-thresh-07"   "Search threshold not 0.5 (ADR-0069 H7)" check_adr0069_search_threshold_not_05    "adr0069"
+run_check_bg "adr0069-mig-batch"   "Migration batch aligned (ADR-0069 H10)" check_adr0069_migration_batch_aligned    "adr0069"
+run_check_bg "adr0069-dedup-098"   "Dedup threshold aligned (ADR-0069 H11)" check_adr0069_dedup_threshold_aligned    "adr0069"
+
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
 run_check_bg "sec-rl-consumed"  "Rate limit token consumed"        check_rate_limit_consumed       "security"
@@ -805,6 +811,10 @@ collect_parallel "all" \
   "adr0069-bypass-count|Bypass count zero (ADR-0069)" \
   "adr0069-factory-max|Factory maxElements not 10K (ADR-0069)" \
   "adr0069-hnsw-maxel|HNSW params include maxElements (ADR-0069)" \
+  "adr0069-swarm-dir|No hardcoded swarm dir (ADR-0069 H4)" \
+  "adr0069-thresh-07|Search threshold not 0.5 (ADR-0069 H7)" \
+  "adr0069-mig-batch|Migration batch aligned (ADR-0069 H10)" \
+  "adr0069-dedup-098|Dedup threshold aligned (ADR-0069 H11)" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \

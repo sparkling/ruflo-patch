@@ -212,3 +212,126 @@ check_adr0069_hnsw_params_include_maxelements() {
     _CHECK_OUTPUT="ADR-0069: hnsw-utils.js does not include maxElements in HNSWParams"
   fi
 }
+
+# ── H7–H11 checks ─────────────────────────────────────────────────────
+
+check_adr0069_no_hardcoded_swarm_dir() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local swarm_tools_file
+  swarm_tools_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "swarm-tools.js")
+
+  if [[ -z "$swarm_tools_file" ]]; then
+    swarm_tools_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/cli" -name "swarm*.js" -not -path "*/node_modules/*" 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$swarm_tools_file" ]]; then
+    _CHECK_OUTPUT="ADR-0069 H4: swarm-tools.js not found in published cli package"
+    return
+  fi
+
+  # Published swarm-tools should use .swarm not .claude-flow/swarm
+  if grep -qE '\.claude-flow/swarm' "$swarm_tools_file" 2>/dev/null; then
+    _CHECK_OUTPUT="ADR-0069 H4: swarm-tools still references .claude-flow/swarm (should use .swarm)"
+  else
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069 H4: swarm-tools uses .swarm not .claude-flow/swarm"
+  fi
+}
+
+check_adr0069_search_threshold_not_05() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local pkgs=("cli" "memory" "hooks")
+  local found_05="false"
+  local offending=""
+
+  for pkg in "${pkgs[@]}"; do
+    local pkg_dir="$TEMP_DIR/node_modules/@sparkleideas/$pkg"
+    [[ -d "$pkg_dir" ]] || continue
+
+    # Look for search/query files with threshold: 0.5 (the old buggy default)
+    local hits
+    hits=$(grep -rlE 'threshold\s*[:=]\s*0\.5\b' "$pkg_dir" --include='*.js' 2>/dev/null \
+      | grep -vE 'node_modules|\.map$' || true)
+
+    if [[ -n "$hits" ]]; then
+      found_05="true"
+      offending="${offending} ${pkg}:$(echo "$hits" | wc -l | tr -d ' ')"
+    fi
+  done
+
+  if [[ "$found_05" == "false" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069 H7: no threshold: 0.5 found in search-memory code"
+  else
+    _CHECK_OUTPUT="ADR-0069 H7: search threshold 0.5 still present in:${offending}"
+  fi
+}
+
+check_adr0069_migration_batch_aligned() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local mem_dir="$TEMP_DIR/node_modules/@sparkleideas/memory"
+  if [[ ! -d "$mem_dir" ]]; then
+    _CHECK_OUTPUT="ADR-0069 H10: @sparkleideas/memory not found"
+    return
+  fi
+
+  # Find both migration files
+  local mig_file rvf_mig_file
+  mig_file=$(find "$mem_dir" -name "migration.js" -not -path "*/node_modules/*" 2>/dev/null | head -1)
+  rvf_mig_file=$(find "$mem_dir" -name "rvf-migration.js" -not -path "*/node_modules/*" 2>/dev/null | head -1)
+
+  if [[ -z "$mig_file" && -z "$rvf_mig_file" ]]; then
+    _CHECK_OUTPUT="ADR-0069 H10: neither migration.js nor rvf-migration.js found"
+    return
+  fi
+
+  # Check for the old mismatched value (100 in migration.ts, 500 in rvf-migration.ts)
+  local mig_has_100="false"
+  if [[ -n "$mig_file" ]] && grep -qE 'batchSize\s*[:=]\s*100\b' "$mig_file" 2>/dev/null; then
+    mig_has_100="true"
+  fi
+
+  if [[ "$mig_has_100" == "true" ]]; then
+    _CHECK_OUTPUT="ADR-0069 H10: migration.js still uses batchSize=100 (should be 500 or config-driven)"
+  else
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069 H10: migration batch sizes aligned (no hardcoded 100 in migration.js)"
+  fi
+}
+
+check_adr0069_dedup_threshold_aligned() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local pkgs=("memory" "hooks")
+  local found_098="false"
+  local offending=""
+
+  for pkg in "${pkgs[@]}"; do
+    local pkg_dir="$TEMP_DIR/node_modules/@sparkleideas/$pkg"
+    [[ -d "$pkg_dir" ]] || continue
+
+    # Look for dedup threshold of 0.98 (the old inconsistent value)
+    local hits
+    hits=$(grep -rlE 'dedup.*0\.98|0\.98.*dedup|dedupThreshold\s*[:=]\s*0\.98' "$pkg_dir" --include='*.js' 2>/dev/null \
+      | grep -vE 'node_modules|\.map$' || true)
+
+    if [[ -n "$hits" ]]; then
+      found_098="true"
+      offending="${offending} ${pkg}:$(echo "$hits" | wc -l | tr -d ' ')"
+    fi
+  done
+
+  if [[ "$found_098" == "false" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069 H11: no hardcoded dedupThreshold 0.98 — AgentDB and ReasoningBank aligned"
+  else
+    _CHECK_OUTPUT="ADR-0069 H11: dedupThreshold 0.98 still present in:${offending}"
+  fi
+}

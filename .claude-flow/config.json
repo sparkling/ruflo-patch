@@ -10,8 +10,18 @@
         "backend": "hybrid",
         "type": "hybrid",
         "maxElements": 100000,
+        "swarmDir": ".swarm",
+        "migrationBatchSize": 500,
+        "similarityThreshold": 0.7,
+        "dedupThreshold": 0.95,
         "storage": {
             "maxEntries": 1000000
+        },
+        "sqlite": {
+            "cacheSize": -64000,
+            "busyTimeoutMs": 5000,
+            "journalMode": "WAL",
+            "synchronous": "NORMAL"
         },
         "learningBridge": {
             "enabled": true,
@@ -29,7 +39,10 @@
     },
     "neural": {
         "enabled": true,
-        "modelPath": ".claude-flow/neural"
+        "modelPath": ".claude-flow/neural",
+        "ewcLambda": 2000,
+        "defaultLearningRate": 0.001,
+        "qualityThreshold": 0.5
     },
     "hooks": {
         "enabled": true,
@@ -116,6 +129,32 @@
             "costWeight": 0.3,
             "costDecay": 0.05,
             "explorationBonus": 0.1
+        }
+    },
+    "ports": {
+        "mcp": 3000,
+        "mcpWebSocket": 3001,
+        "quic": 4433,
+        "federation": 8443,
+        "health": 8080
+    },
+    "rateLimiter": {
+        "default": { "maxRequests": 100, "windowMs": 60000 },
+        "auth": { "maxRequests": 10, "windowMs": 60000 },
+        "tools": { "maxRequests": 10, "windowMs": 60000 },
+        "memory": { "maxRequests": 100, "windowMs": 60000 },
+        "files": { "maxRequests": 50, "windowMs": 60000 }
+    },
+    "workers": {
+        "triggers": {
+            "optimize": { "timeoutMs": 300000, "priority": "high" },
+            "audit": { "timeoutMs": 180000, "priority": "critical" },
+            "testgaps": { "timeoutMs": 120000, "priority": "normal" },
+            "map": { "timeoutMs": 300000, "priority": "normal" },
+            "deepdive": { "timeoutMs": 300000, "priority": "normal" },
+            "document": { "timeoutMs": 240000, "priority": "normal" },
+            "learning": { "timeoutMs": 90000, "priority": "normal" },
+            "security": { "timeoutMs": 120000, "priority": "normal" }
         }
     },
     "daemon": {
