@@ -3,6 +3,8 @@
 **Status**: Analysis (informational)
 **Date**: 2026-04-05
 **Context**: Synthesized from upstream code evidence to guide future refactoring
+**Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
+**Implements**: [ADR-0066 — Controller Configuration Unification](ADR-0066-controller-config-unification.md)
 
 ---
 

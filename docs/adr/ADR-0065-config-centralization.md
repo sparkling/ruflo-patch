@@ -4,6 +4,8 @@
 - **Date**: 2026-04-05
 - **Deciders**: Henrik Pettersen
 - **Builds on**: ADR-0062 (storage config unification), ADR-0063 (storage audit), ADR-0064 (controller config alignment)
+- **Continued by**: [ADR-0066 — Controller Configuration Unification](ADR-0066-controller-config-unification.md)
+- **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
 
 ## Context
 

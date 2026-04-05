@@ -4,6 +4,8 @@
 - **Date**: 2026-04-05
 - **Deciders**: Henrik Pettersen
 - **Builds on**: ADR-0065 (config centralization), ADR-0062 (storage config), ADR-0064 (controller config alignment)
+- **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
+- **Analysis**: [ADR-0067 — Original Vision for Controller Wiring](ADR-0067-original-vision-controller-wiring.md)
 
 ## Upstream References
 
