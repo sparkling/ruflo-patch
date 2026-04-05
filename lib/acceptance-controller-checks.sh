@@ -359,11 +359,10 @@ check_adr0061_controller_types() {
   _CHECK_OUTPUT=""
   local status=0
 
-  # Verify the barrel exports the new security classes
-  local barrel_file
-  barrel_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentdb" -name "index.js" -path "*/src/*" 2>/dev/null | head -1)
-  if [ -z "$barrel_file" ]; then
-    barrel_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentdb" -name "index.js" -not -path "*/node_modules/*" 2>/dev/null | head -1)
+  # Verify the barrel exports the new security classes (use main entry point directly)
+  local barrel_file="$TEMP_DIR/node_modules/@sparkleideas/agentdb/dist/src/index.js"
+  if [[ ! -f "$barrel_file" ]]; then
+    barrel_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentdb/dist" -maxdepth 2 -name "index.js" 2>/dev/null | head -1)
   fi
 
   if [ -n "$barrel_file" ]; then

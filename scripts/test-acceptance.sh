@@ -230,7 +230,9 @@ _record_phase "harness-init" "$(_elapsed_ms "$_p" "$(_ns)")"
 _p=$(_ns)
 E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
 cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
-rm -rf "$E2E_DIR/.swarm" "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
+# Snapshot taken before non-e2e wave — state is clean from harness init.
+# Only remove transient data that could interfere with e2e checks.
+rm -rf "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
 log "  e2e snapshot: $(du -sh "$E2E_DIR" 2>/dev/null | cut -f1) (taken before non-e2e wave)"
 
 # Start e2e memory init + health check in background
