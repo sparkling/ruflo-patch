@@ -27,8 +27,10 @@ check_adr0062_causal_graph_level3() {
       # Verify causalGraph is NOT in the same array as nightlyLearner
       # In the INIT_LEVELS array, level 4 contains nightlyLearner.
       # If causalGraph and nightlyLearner are in the same array literal, the fix is missing.
+      # Exclude comment lines (// ...) which may mention both names in explanatory text.
       local same_level
-      same_level=$(grep -c 'nightlyLearner.*causalGraph\|causalGraph.*nightlyLearner' "$registry_file" 2>/dev/null || echo 0)
+      same_level=$(grep -v '^\s*//' "$registry_file" 2>/dev/null | grep -c 'nightlyLearner.*causalGraph\|causalGraph.*nightlyLearner' 2>/dev/null || true)
+      same_level="${same_level:-0}"
       if [[ "$same_level" -eq 0 ]]; then
         _CHECK_PASSED="true"
         _CHECK_OUTPUT="ADR-0062 P0-1: causalGraph not co-located with nightlyLearner (level separation correct)"

@@ -737,7 +737,7 @@ check_embedding_config_propagation() {
         'ok', cfg.model, cfg.dimension, modelInReg, dimMatch, hnswOk
       ].join('|'));
     } catch(e) { console.log('error|' + e.message); }
-  " 2>/dev/null) || result="error|node failed"
+  " 2>/dev/null | grep -E '^ok\||^error\||^no-export' | tail -1) || result="error|node failed"
 
   local status="${result%%|*}"
   if [[ "$status" == "ok" ]]; then
