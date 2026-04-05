@@ -215,7 +215,7 @@ fi
 # ── ADR-0068: Unified embedding config (explicit, never rely on defaults) ──
 # These are the canonical values for the all-mpnet-base-v2 model.
 # Tests MUST fail if any of these change — that's the point.
-RUFLO_EMBEDDING_MODEL="all-mpnet-base-v2"
+RUFLO_EMBEDDING_MODEL="Xenova/all-mpnet-base-v2"
 RUFLO_EMBEDDING_DIM=768
 RUFLO_HNSW_M=23
 RUFLO_HNSW_EF_CONSTRUCTION=100
@@ -917,6 +917,94 @@ if [[ -f "${adr0059_p4_lib:-}" && -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/sett
 fi
 
 rm -rf "$E2E_DIR" "$PARALLEL_DIR"; E2E_DIR=""; PARALLEL_DIR=""
+
+# ════════════════════════════════════════════════════════════════════
+# Phase 5: Init-Generated Config Validation (ADR-0070)
+# Tests what init actually generates — no harness stamping
+# ════════════════════════════════════════════════════════════════════
+_p5_start=$(_ns)
+log "── Phase 5: Init-Generated Config (fresh init, no stamping) ──"
+
+# Source the check library
+p5_lib="${PROJECT_DIR}/lib/acceptance-init-generated-checks.sh"
+if [[ -f "$p5_lib" ]]; then
+  source "$p5_lib"
+
+  # Create a completely fresh directory for Phase 5
+  _P5_DIR=$(mktemp -d /tmp/ruflo-p5-XXXXX)
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  # Run init in the fresh dir
+  (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx @sparkleideas/cli@latest init --full --force --with-embeddings --embedding-model all-mpnet-base-v2 2>/dev/null) || true
+
+  # Export for check functions
+  export _P5_DIR
+
+  # Group 1: config.json structure and values (parallel)
+  run_check_bg "p5-cfg-valid"     "config.json valid"              check_p5_config_valid_json    "p5-config"
+  run_check_bg "p5-cfg-sqlite"    "sqlite cacheSize=-64000"        check_p5_config_sqlite_keys   "p5-config"
+  run_check_bg "p5-cfg-neural"    "neural ewcLambda=2000"          check_p5_config_neural_keys   "p5-config"
+  run_check_bg "p5-cfg-ports"     "ports.mcp=3000"                 check_p5_config_ports         "p5-config"
+  run_check_bg "p5-cfg-ratelimit" "windowMs=60000"                 check_p5_config_ratelimiter   "p5-config"
+  run_check_bg "p5-cfg-workers"   "optimize.timeout=300000"        check_p5_config_workers       "p5-config"
+  run_check_bg "p5-cfg-simthresh" "similarityThreshold=0.7"        check_p5_config_similarity    "p5-config"
+  run_check_bg "p5-cfg-dedup"     "dedupThreshold=0.95"            check_p5_config_dedup         "p5-config"
+  run_check_bg "p5-cfg-cpuload"   "maxCpuLoad=28"                  check_p5_config_maxcpu        "p5-config"
+
+  # Group 2: embeddings.json (parallel, no harness stamp)
+  run_check_bg "p5-emb-valid"     "embeddings.json valid"          check_p5_embeddings_valid_json "p5-embed"
+  run_check_bg "p5-emb-model"     "model=mpnet"                    check_p5_embeddings_model      "p5-embed"
+  run_check_bg "p5-emb-dim"       "dimension=768"                  check_p5_embeddings_dimension  "p5-embed"
+  run_check_bg "p5-emb-hnswm"     "hnsw.m=23"                     check_p5_embeddings_hnsw_m     "p5-embed"
+  run_check_bg "p5-emb-efcon"     "hnsw.efConstruction=100"        check_p5_embeddings_hnsw_efc   "p5-embed"
+  run_check_bg "p5-emb-efsearch"  "hnsw.efSearch=50"               check_p5_embeddings_hnsw_efs   "p5-embed"
+  run_check_bg "p5-emb-maxel"     "hnsw.maxElements=100000"        check_p5_embeddings_maxel      "p5-embed"
+
+  # Group 3: runtime memory round-trip (parallel)
+  run_check_bg "p5-rt-store"      "memory store in fresh init"     check_p5_runtime_memory_store  "p5-runtime"
+  run_check_bg "p5-rt-search"     "memory search in fresh init"    check_p5_runtime_memory_search "p5-runtime"
+
+  # Group 4: CLI flag overrides (parallel)
+  run_check_bg "p5-flag-port"     "init --port 4000"               check_p5_flag_port             "p5-flags"
+  run_check_bg "p5-flag-simthresh" "init --similarity-threshold"   check_p5_flag_similarity       "p5-flags"
+  run_check_bg "p5-flag-maxagents" "init --max-agents 10"          check_p5_flag_maxagents        "p5-flags"
+
+  # Group 5: backward compatibility (parallel)
+  run_check_bg "p5-compat-noforce" "no overwrite without --force"  check_p5_compat_no_overwrite   "p5-compat"
+  run_check_bg "p5-compat-cfgset"  "config set/get round-trip"     check_p5_compat_config_set     "p5-compat"
+
+  # Collect all Phase 5 parallel checks
+  collect_parallel \
+    "p5-cfg-valid|config.json valid" \
+    "p5-cfg-sqlite|sqlite cacheSize=-64000" \
+    "p5-cfg-neural|neural ewcLambda=2000" \
+    "p5-cfg-ports|ports.mcp=3000" \
+    "p5-cfg-ratelimit|windowMs=60000" \
+    "p5-cfg-workers|optimize.timeout=300000" \
+    "p5-cfg-simthresh|similarityThreshold=0.7" \
+    "p5-cfg-dedup|dedupThreshold=0.95" \
+    "p5-cfg-cpuload|maxCpuLoad=28" \
+    "p5-emb-valid|embeddings.json valid" \
+    "p5-emb-model|model=mpnet" \
+    "p5-emb-dim|dimension=768" \
+    "p5-emb-hnswm|hnsw.m=23" \
+    "p5-emb-efcon|hnsw.efConstruction=100" \
+    "p5-emb-efsearch|hnsw.efSearch=50" \
+    "p5-emb-maxel|hnsw.maxElements=100000" \
+    "p5-rt-store|memory store in fresh init" \
+    "p5-rt-search|memory search in fresh init" \
+    "p5-flag-port|init --port 4000" \
+    "p5-flag-simthresh|init --similarity-threshold" \
+    "p5-flag-maxagents|init --max-agents 10" \
+    "p5-compat-noforce|no overwrite without --force" \
+    "p5-compat-cfgset|config set/get round-trip"
+
+  # Cleanup
+  rm -rf "$_P5_DIR" 2>/dev/null
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+
+_record_phase "phase5-init-config" "$(_elapsed_ms "$_p5_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

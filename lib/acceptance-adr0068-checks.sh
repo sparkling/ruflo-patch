@@ -4,7 +4,7 @@
 # Requires: _find_pkg_js from acceptance-checks.sh
 # Caller MUST set: TEMP_DIR
 # Caller MUST set (ADR-0068 harness constants):
-#   RUFLO_EMBEDDING_MODEL   — e.g. "all-mpnet-base-v2"
+#   RUFLO_EMBEDDING_MODEL   — e.g. "Xenova/all-mpnet-base-v2"
 #   RUFLO_EMBEDDING_DIM     — e.g. 768
 #   RUFLO_HNSW_M            — e.g. 23
 #   RUFLO_HNSW_EF_CONSTRUCTION — e.g. 100

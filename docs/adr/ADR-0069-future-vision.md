@@ -546,11 +546,13 @@ No known residual bypass sites remain.
 
 **Bug fix**: `neural/algorithms/sarsa.ts` copy-paste bug fixed — reads `.sarsa` instead of `.qLearning`.
 
-### Init template gap (audited 2026-04-05)
+### Init template gap (audited 2026-04-05, implemented 2026-04-05 as ADR-0070)
 
 `init` generates zero ADR-0069 config.json keys. The init command writes `.claude-flow/config.yaml` with ~15 keys; the runtime reads `.claude-flow/config.json` with ~50 keys. New projects fall back to scattered hardcoded defaults.
 
-**Plan** (from hive-architect analysis):
+This gap is now addressed by **ADR-0070** (Init Config Template Alignment), which implements the plan below. Phase 5 acceptance tests verify that `init --full` produces config.json with all ADR-0069 keys, that `--embedding-model` stamps the correct model into embeddings.json, and that the runtime config chain resolves values end-to-end.
+
+**Plan** (from hive-architect analysis, implemented in ADR-0070):
 
 1. **Config template module** (`cli/src/init/config-template.ts`): Exports `getMinimalConfigTemplate()` (~25 lines, essential keys) and `getFullConfigTemplate()` (all ADR-0069 keys). `init` uses minimal; `init --full` uses full.
 
@@ -612,6 +614,16 @@ Critical finding: **Attention is invoked zero times in a normal CLI session.** A
 Path: Proceed with pure TS. Remove LegacyAttentionAdapter. Fix WASMVectorSearch wiring gap. Wire multiple instances per ADR-0067. Keep NAPI detection for future drop-in.
 
 **Recommended priority**: F1 (highest value, lowest risk) → F3 (remove dead code, fix wiring) → F2 (viable but needs careful scoping).
+
+## Bugs Found During Validation
+
+The following bugs were discovered during ADR-0070 Phase 5 acceptance testing and config chain validation:
+
+1. **Model name inconsistency (`Xenova/` prefix)** — Several sites referenced the embedding model as `Xenova/all-mpnet-base-v2` while the canonical config chain uses `all-mpnet-base-v2` without the HuggingFace org prefix. This caused model identity comparisons to fail silently, allowing duplicate model loads and config chain bypasses. **Fixed**: all sites now use the bare model name; the `Xenova/` prefix is added only at the ONNX loader boundary.
+
+2. **`cacheSize` disagreement (256 vs 1000)** — `EmbeddingService` constructor created an LRU cache with size 256 while `rvf-embedding-service.ts` used 1000 (and its secondary cache used 10000 — see A9 above). The inconsistency meant cache hit rates varied unpredictably depending on which code path served a query. **Fixed**: all embedding caches unified on `memory.embeddingCacheSize` config key (default 1000).
+
+3. **Memory persistence bug — CLI `memory store` does not persist between invocations** — `npx @sparkleideas/cli@latest memory store --key foo --value bar` followed by `memory retrieve --key foo` in a separate invocation returns nothing. Each CLI invocation constructs a fresh in-memory backend that is discarded on exit. The SQLite/RVF persistent backends are only initialized when a full `init`-ed project context is detected, but `memory store` does not require or check for one. **Status**: open, not yet fixed. Workaround: run memory commands inside an initialized project directory.
 
 ## Consequences
 

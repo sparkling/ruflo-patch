@@ -7,7 +7,7 @@
 # Usage:
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
-# Groups: all, p3, p4, adr0059, e2e-core
+# Groups: all, p3, p4, p5, adr0059, e2e-core
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -121,6 +121,43 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0059"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   _fast_run "hook-edit"      check_adr0059_hook_edit_records_file
   _fast_run "hook-lifecycle" check_adr0059_hook_full_lifecycle
   _fast_run "no-collisions"  check_adr0059_no_id_collisions
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"p5"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-init-generated-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-init-generated-checks.sh"
+
+    # Phase 5 needs a completely fresh temp dir — no reuse
+    _P5_DIR=$(mktemp -d /tmp/ruflo-p5-fast-XXXXX)
+    export P5_DIR="$_P5_DIR"
+
+    echo "── Phase 5: Init-Generated Config (fresh init, no stamping) ──"
+    echo "  [fast] Creating fresh project at $_P5_DIR (~60s)..."
+    (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force --with-embeddings --embedding-model all-mpnet-base-v2 2>/dev/null) || true
+
+    echo "  ── config.json checks ──"
+    _fast_run "p5-cfg-ewclambda"  check_p5_ewc_lambda
+    _fast_run "p5-cfg-cachesize"  check_p5_cache_size
+    _fast_run "p5-cfg-mcpport"    check_p5_mcp_port
+    _fast_run "p5-cfg-windowms"   check_p5_window_ms
+    _fast_run "p5-cfg-opttimeout" check_p5_optimize_timeout
+    _fast_run "p5-cfg-simthresh"  check_p5_similarity_threshold
+    _fast_run "p5-cfg-dedup"      check_p5_dedup_threshold
+    _fast_run "p5-cfg-cpuload"    check_p5_cpu_load
+    _fast_run "p5-cfg-maxel"      check_p5_max_elements
+
+    echo "  ── embeddings.json checks ──"
+    _fast_run "p5-emb-model"      check_p5_emb_model
+    _fast_run "p5-emb-dim"        check_p5_emb_dimension
+    _fast_run "p5-emb-hnswm"      check_p5_emb_hnsw_m
+    _fast_run "p5-emb-efcon"      check_p5_emb_ef_construction
+    _fast_run "p5-emb-efsearch"   check_p5_emb_ef_search
+    _fast_run "p5-emb-maxel"      check_p5_emb_max_elements
+    _fast_run "p5-emb-hashfb"     check_p5_emb_hash_fallback
+
+    # Cleanup
+    rm -rf "$_P5_DIR" 2>/dev/null
+  fi
 fi
 
 rm -rf "$PARALLEL_DIR"
