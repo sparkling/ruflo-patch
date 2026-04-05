@@ -344,6 +344,10 @@ adr0065_lib="${PROJECT_DIR}/lib/acceptance-adr0065-checks.sh"
 adr0068_lib="${PROJECT_DIR}/lib/acceptance-adr0068-checks.sh"
 [[ -f "$adr0068_lib" ]] && source "$adr0068_lib"
 
+# ADR-0069: Config Chain Bypass Remediation
+adr0069_lib="${PROJECT_DIR}/lib/acceptance-adr0069-checks.sh"
+[[ -f "$adr0069_lib" ]] && source "$adr0069_lib"
+
 # ADR-0059 Phase 3: Unified MCP search
 adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 [[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
@@ -495,6 +499,13 @@ run_check_bg "adr0068-no-minilm"      "No MiniLM (ADR-0068)"             check_a
 run_check_bg "adr0068-no-direct-ctor" "No direct construction (ADR-0068)" check_adr0068_no_direct_construction "adr0068"
 run_check_bg "adr0068-hnsw-cfg"       "HNSW config (ADR-0068)"           check_adr0068_hnsw_config          "adr0068"
 run_check_bg "adr0068-ctrl-enabled"   "Controllers enabled (ADR-0068)"   check_adr0068_controllers_enabled  "adr0068"
+
+# ADR-0069: Config Chain Bypass Remediation
+run_check_bg "adr0069-adapter"       "Adapter config chain (ADR-0069)"   check_adr0069_adapter_uses_config_chain  "adr0069"
+run_check_bg "adr0069-backend"       "Backend config chain (ADR-0069)"   check_adr0069_backend_uses_config_chain  "adr0069"
+run_check_bg "adr0069-bridge"        "Bridge config chain (ADR-0069)"    check_adr0069_bridge_uses_config_chain   "adr0069"
+run_check_bg "adr0069-hooks-rb"      "Hooks RB config chain (ADR-0069)"  check_adr0069_hooks_rb_uses_config_chain "adr0069"
+run_check_bg "adr0069-bypass-count"  "Bypass count zero (ADR-0069)"      check_adr0069_bypass_count               "adr0069"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -785,6 +796,11 @@ collect_parallel "all" \
   "adr0068-no-direct-ctor|No direct construction (ADR-0068)" \
   "adr0068-hnsw-cfg|HNSW config (ADR-0068)" \
   "adr0068-ctrl-enabled|Controllers enabled (ADR-0068)" \
+  "adr0069-adapter|Adapter config chain (ADR-0069)" \
+  "adr0069-backend|Backend config chain (ADR-0069)" \
+  "adr0069-bridge|Bridge config chain (ADR-0069)" \
+  "adr0069-hooks-rb|Hooks RB config chain (ADR-0069)" \
+  "adr0069-bypass-count|Bypass count zero (ADR-0069)" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \

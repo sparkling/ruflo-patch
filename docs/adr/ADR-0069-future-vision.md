@@ -1,7 +1,8 @@
 # ADR-0069: Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
 
-- **Status**: Proposed
+- **Status**: Partially Implemented (config chain bypass remediation complete)
 - **Date**: 2026-04-05
+- **Implemented**: 2026-04-05 (bypass inventory remediation — 12 sites across both forks)
 - **Depends on**: ADR-0068 (must be completed first)
 - **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
 - **Analysis**: ADR-0067 (original vision for controller wiring)
@@ -79,9 +80,9 @@ originally estimated — the Phase 2/4 distributed controllers have no path into
 - **Dependency**: ADR-0068 W1-1 (singleton wiring) and W1-2 (getController extension) must be complete. *(Done as of 2026-04-05.)*
 - **Dependency**: The agentic-flow fork must be at a version where AgentDB exports all controller names reliably. *(Done — 19 names in getController.)*
 
-### Config chain bypass inventory (audited 2026-04-05)
+### Config chain bypass inventory (audited 2026-04-05, remediated 2026-04-05)
 
-ADR-0068 built the chain `embeddings.json → memory-bridge → RuntimeConfig → controller-registry → AgentDB`. The following production code paths bypass it entirely, constructing backends/services with hardcoded literals. F1 consolidation would eliminate most of these.
+ADR-0068 built the chain `embeddings.json → memory-bridge → RuntimeConfig → controller-registry → AgentDB`. The following production code paths previously bypassed it entirely. All HIGH-severity sites have been remediated — each now resolves from `getEmbeddingConfig()` + `deriveHNSWParams()` with graceful fallback to the original hardcoded values.
 
 #### agentic-flow fork — AgentDBService (HIGH, 4 sites)
 
