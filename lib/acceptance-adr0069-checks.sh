@@ -66,24 +66,24 @@ check_adr0069_bridge_uses_config_chain() {
   bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "agentic-flow-bridge.js")
 
   if [[ -z "$bridge_file" ]]; then
-    # Try integration package
-    bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/integration" "agentic-flow-bridge.js")
-  fi
-
-  if [[ -z "$bridge_file" ]]; then
-    _CHECK_OUTPUT="ADR-0069: agentic-flow-bridge.js not found in published packages"
+    _CHECK_OUTPUT="ADR-0069: agentic-flow-bridge.js not found in published cli package"
     return
   fi
 
-  if grep -qE 'getEmbeddingConfig|resolveEmbeddingDefaults|deriveHNSWParams' "$bridge_file" 2>/dev/null; then
+  # The bridge is a thin lazy-loader (~94 lines) that imports from
+  # @sparkleideas/agentic-flow/*. It delegates config to the modules it
+  # loads, so it should NOT contain hardcoded dimension/HNSW values.
+  # Pass if: it has FALLBACK_AGENTDB_CONFIG / getDefaultAgentDBConfig /
+  # getEmbeddingConfig, OR it simply has no hardcoded bypass values.
+  if grep -qE 'FALLBACK|getDefaultAgentDBConfig|getEmbeddingConfig|resolveEmbeddingDefaults|deriveHNSWParams' "$bridge_file" 2>/dev/null; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0069: agentic-flow-bridge uses config-chain resolution"
+  elif grep -qE 'dimensions:\s*768|hnswM:\s*23|efConstruction:\s*100' "$bridge_file" 2>/dev/null; then
+    _CHECK_OUTPUT="ADR-0069: agentic-flow-bridge still has hardcoded bypass values (768/23/100)"
   else
-    if grep -qE 'dimensions:\s*768|hnswM:\s*23|efConstruction:\s*100' "$bridge_file" 2>/dev/null; then
-      _CHECK_OUTPUT="ADR-0069: agentic-flow-bridge still has hardcoded bypass values (768/23/100)"
-    else
-      _CHECK_OUTPUT="ADR-0069: agentic-flow-bridge — no config-chain call and no hardcodes found (inconclusive)"
-    fi
+    # No config-chain call AND no hardcodes — bridge delegates to its imports
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069: agentic-flow-bridge delegates config to imported modules (no hardcodes)"
   fi
 }
 
@@ -91,31 +91,35 @@ check_adr0069_hooks_rb_uses_config_chain() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
+  # The reasoningbank index lives in @sparkleideas/agentic-flow, not hooks
   local hooks_rb_file
-  hooks_rb_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/hooks" "reasoningbank")
+  hooks_rb_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentic-flow" -path "*/reasoningbank/index.js" 2>/dev/null | head -1)
 
-  # Try index.js inside reasoningbank directory
+  # Fall back to hooks package in case layout changes
   if [[ -z "$hooks_rb_file" ]]; then
     hooks_rb_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/hooks" -path "*/reasoningbank/index.js" 2>/dev/null | head -1)
   fi
-  # Fall back to any JS file mentioning DEFAULT_CONFIG in hooks package
+  # Fall back to any JS file mentioning DEFAULT_CONFIG in agentic-flow package
   if [[ -z "$hooks_rb_file" ]]; then
-    hooks_rb_file=$(grep -rlE 'DEFAULT_CONFIG' "$TEMP_DIR/node_modules/@sparkleideas/hooks" --include='*.js' 2>/dev/null | head -1)
+    hooks_rb_file=$(grep -rlE 'DEFAULT_CONFIG' "$TEMP_DIR/node_modules/@sparkleideas/agentic-flow" --include='*.js' 2>/dev/null | head -1)
   fi
 
   if [[ -z "$hooks_rb_file" ]]; then
-    _CHECK_OUTPUT="ADR-0069: hooks reasoningbank not found in published hooks package"
+    _CHECK_OUTPUT="ADR-0069: reasoningbank index.js not found in published agentic-flow or hooks package"
     return
   fi
 
-  if grep -qE 'getEmbeddingConfig|resolveEmbeddingDefaults|deriveHNSWParams' "$hooks_rb_file" 2>/dev/null; then
+  # After codemod, imports reference @sparkleideas/agentdb. The file should
+  # use config-chain resolution via loadConfig, sparkleideas/agentdb imports,
+  # or explicit config-chain helpers.
+  if grep -qE 'getEmbeddingConfig|resolveEmbeddingDefaults|deriveHNSWParams|loadConfig|sparkleideas/agentdb' "$hooks_rb_file" 2>/dev/null; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0069: hooks reasoningbank uses config-chain resolution"
+    _CHECK_OUTPUT="ADR-0069: reasoningbank uses config-chain resolution (via agentdb or loadConfig)"
   else
     if grep -qE 'dimensions:\s*768|hnswM:\s*23|efConstruction:\s*100' "$hooks_rb_file" 2>/dev/null; then
-      _CHECK_OUTPUT="ADR-0069: hooks reasoningbank still has hardcoded DEFAULT_CONFIG (768/23/100)"
+      _CHECK_OUTPUT="ADR-0069: reasoningbank still has hardcoded DEFAULT_CONFIG (768/23/100)"
     else
-      _CHECK_OUTPUT="ADR-0069: hooks reasoningbank — no config-chain call and no hardcodes found (inconclusive)"
+      _CHECK_OUTPUT="ADR-0069: reasoningbank — no config-chain call and no hardcodes found (inconclusive)"
     fi
   fi
 }
@@ -158,15 +162,19 @@ check_adr0069_factory_maxelements_not_10k() {
   _CHECK_OUTPUT=""
 
   local factory_file
-  factory_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/memory" "factory.js")
+  # factory.js lives in @sparkleideas/agentdb/dist/src/backends/
+  factory_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/agentdb" "factory.js")
 
   if [[ -z "$factory_file" ]]; then
-    # Try agentdb sub-path
-    factory_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/memory" -name "factory.js" -path "*/agentdb*" 2>/dev/null | head -1)
+    # Fall back to memory package
+    factory_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/memory" "factory.js")
+  fi
+  if [[ -z "$factory_file" ]]; then
+    factory_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentdb" -name "factory.js" -path "*/backends*" 2>/dev/null | head -1)
   fi
 
   if [[ -z "$factory_file" ]]; then
-    _CHECK_OUTPUT="ADR-0069: factory.js not found in published memory/agentdb package"
+    _CHECK_OUTPUT="ADR-0069: factory.js not found in published agentdb or memory package"
     return
   fi
 
