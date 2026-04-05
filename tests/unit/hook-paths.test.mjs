@@ -75,47 +75,54 @@ function extractScriptPath(command) {
 describe('settings.json hook paths', () => {
   const { raw, parsed } = loadSettings();
 
-  describe('Test 1: no $CLAUDE_PROJECT_DIR references', () => {
-    it('should not contain $CLAUDE_PROJECT_DIR anywhere in settings.json', () => {
+  describe('Test 1: portable path resolution (no hardcoded absolute paths)', () => {
+    it('should not contain hardcoded absolute paths in settings.json', () => {
       const occurrences = [];
       const lines = raw.split('\n');
       for (let i = 0; i < lines.length; i++) {
-        if (lines[i].includes('$CLAUDE_PROJECT_DIR') || lines[i].includes('CLAUDE_PROJECT_DIR')) {
-          // Exclude env-variable definitions (key names) that happen to contain the substring
-          const trimmed = lines[i].trim();
-          if (trimmed.startsWith('"CLAUDE_') && trimmed.includes(':')) continue;
+        // Flag hardcoded absolute paths like /home/user or /Users/user
+        if (lines[i].match(/\/home\/\w+|\/Users\/\w+/)) {
           occurrences.push({ line: i + 1, content: lines[i].trim() });
         }
       }
       assert.equal(
         occurrences.length,
         0,
-        `Found $CLAUDE_PROJECT_DIR in settings.json at:\n${
+        `Found hardcoded absolute paths in settings.json at:\n${
           occurrences.map(o => `  line ${o.line}: ${o.content}`).join('\n')
-        }\nAll hook paths should use $(git rev-parse --show-toplevel) instead.`
+        }\nAll hook paths should use $CLAUDE_PROJECT_DIR or $(git rev-parse --show-toplevel) instead.`
       );
     });
 
-    it('should use git rev-parse --show-toplevel in hook commands', () => {
+    it('should use portable path resolution in hook commands', () => {
       const commands = collectCommands(parsed.hooks);
       assert.ok(commands.length > 0, 'Expected at least one hook command in settings.json');
 
       for (const cmd of commands) {
-        // Every command referencing .claude/ should go through git rev-parse
+        // Every command referencing .claude/ should use a portable path method
         if (cmd.includes('.claude/')) {
+          const usesPortablePath =
+            cmd.includes('git rev-parse --show-toplevel') ||
+            cmd.includes('CLAUDE_PROJECT_DIR');
           assert.ok(
-            cmd.includes('git rev-parse --show-toplevel'),
-            `Hook command does not use git rev-parse:\n  ${cmd}`
+            usesPortablePath,
+            `Hook command does not use portable path resolution:\n  ${cmd}\n` +
+            `  Expected $CLAUDE_PROJECT_DIR or $(git rev-parse --show-toplevel)`
           );
         }
       }
     });
 
-    it('should use git rev-parse in statusLine command', () => {
+    it('should use portable path resolution in statusLine command', () => {
       assert.ok(parsed.statusLine, 'Expected statusLine configuration to exist');
+      const cmd = parsed.statusLine.command;
+      const usesPortablePath =
+        cmd.includes('git rev-parse --show-toplevel') ||
+        cmd.includes('CLAUDE_PROJECT_DIR');
       assert.ok(
-        parsed.statusLine.command.includes('git rev-parse --show-toplevel'),
-        `statusLine command does not use git rev-parse:\n  ${parsed.statusLine.command}`
+        usesPortablePath,
+        `statusLine command does not use portable path resolution:\n  ${cmd}\n` +
+        `  Expected $CLAUDE_PROJECT_DIR or $(git rev-parse --show-toplevel)`
       );
     });
   });

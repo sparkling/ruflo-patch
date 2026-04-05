@@ -233,6 +233,14 @@ source "$checks_lib"
 adr0059_lib="${PROJECT_DIR}/lib/acceptance-adr0059-checks.sh"
 [[ -f "$adr0059_lib" ]] && source "$adr0059_lib"
 
+# ADR-0062: Storage & Configuration Unification
+adr0062_lib="${PROJECT_DIR}/lib/acceptance-adr0062-checks.sh"
+[[ -f "$adr0062_lib" ]] && source "$adr0062_lib"
+
+# ADR-0063: Storage Audit Remediation
+adr0063_lib="${PROJECT_DIR}/lib/acceptance-adr0063-checks.sh"
+[[ -f "$adr0063_lib" ]] && source "$adr0063_lib"
+
 # ADR-0059 Phase 3: Unified MCP search
 adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 [[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
@@ -334,6 +342,27 @@ run_check_bg "ctrl-batch"       "Batch operations"       check_batch_operations 
 run_check_bg "ctrl-synthesis"   "Context synthesis"      check_context_synthesis   "controller"
 run_check_bg "ctrl-sl-health"   "Self-learning health"   check_self_learning_health "controller"
 run_check_bg "ctrl-sl-search"   "Self-learning search"   check_self_learning_search "controller"
+run_check_bg "ctrl-adr0061"     "ADR-0061 controllers"   check_adr0061_controller_types "controller"
+
+# ADR-0062: Storage & Configuration Unification
+run_check_bg "adr0062-causal"      "Causal graph level 3"         check_adr0062_causal_graph_level3     "adr0062"
+run_check_bg "adr0062-busy"        "SQLite busy_timeout"          check_adr0062_busy_timeout            "adr0062"
+run_check_bg "adr0062-rl-cfg"      "RateLimiter/CB config"        check_adr0062_configurable_ratelimiter "adr0062"
+run_check_bg "adr0062-hnsw"        "deriveHNSWParams wired"       check_adr0062_derive_hnsw_params      "adr0062"
+
+# ADR-0063: Storage Audit Remediation
+run_check_bg "adr0063-c1-import"    "Embedding import agentdb"     check_adr0063_embedding_import_agentdb  "adr0063"
+run_check_bg "adr0063-c2-accessor"  "getEmbeddingService()"        check_adr0063_get_embedding_service     "adr0063"
+run_check_bg "adr0063-c3-dim768"    "Dimension 768 default"        check_adr0063_dimension_768             "adr0063"
+run_check_bg "adr0063-h1-rl"        "RateLimiter semantics"        check_adr0063_ratelimiter_semantics     "adr0063"
+run_check_bg "adr0063-h2-maxel"     "maxElements 100K"             check_adr0063_max_elements              "adr0063"
+run_check_bg "adr0063-h3-rvf"       "rvf optional dep"             check_adr0063_rvf_optional_dep          "adr0063"
+run_check_bg "adr0063-m1m3-busy"    "busy_timeout broad"           check_adr0063_sqlite_busy_timeout       "adr0063"
+run_check_bg "adr0063-m4-hnsw"      "deriveHNSWParams broad"       check_adr0063_derive_hnsw_broad         "adr0063"
+run_check_bg "adr0063-m5-noenable"  "enableHNSW removed"           check_adr0063_no_enable_hnsw            "adr0063"
+run_check_bg "adr0063-m6-lbdim"     "Learning-bridge dim"          check_adr0063_learning_bridge_dim       "adr0063"
+run_check_bg "adr0063-m7-cache"     "Cache cleanup timers"         check_adr0063_cache_cleanup             "adr0063"
+run_check_bg "adr0063-m8-tiered"    "tieredCache maxSize"          check_adr0063_tiered_cache_maxsize      "adr0063"
 
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
@@ -372,6 +401,14 @@ collect_parallel "all" \
   "ctrl-reflexion|Reflexion lifecycle" \
   "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
   "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \
+  "adr0062-causal|Causal graph level 3" "adr0062-busy|SQLite busy_timeout" \
+  "adr0062-rl-cfg|RateLimiter/CB config" "adr0062-hnsw|deriveHNSWParams wired" \
+  "adr0063-c1-import|Embedding import agentdb" "adr0063-c2-accessor|getEmbeddingService()" \
+  "adr0063-c3-dim768|Dimension 768 default" "adr0063-h1-rl|RateLimiter semantics" \
+  "adr0063-h2-maxel|maxElements 100K" "adr0063-h3-rvf|rvf optional dep" \
+  "adr0063-m1m3-busy|busy_timeout broad" "adr0063-m4-hnsw|deriveHNSWParams broad" \
+  "adr0063-m5-noenable|enableHNSW removed" "adr0063-m6-lbdim|Learning-bridge dim" \
+  "adr0063-m7-cache|Cache cleanup timers" "adr0063-m8-tiered|tieredCache maxSize" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \

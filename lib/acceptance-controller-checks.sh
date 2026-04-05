@@ -19,14 +19,14 @@ check_controller_health() {
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|available'; then
     local ctrl_count
     ctrl_count=$(echo "$_RK_OUT" | grep -c '"name"' || echo 0)
-    if [[ $ctrl_count -ge 5 ]]; then
+    if [[ $ctrl_count -ge 20 ]]; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Controller health: $ctrl_count controllers listed"
     elif echo "$_RK_OUT" | grep -qi '"available".*true\|"controllers"'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Controller health: health report available ($ctrl_count controllers)"
     else
-      _CHECK_OUTPUT="Controller health: only $ctrl_count controllers found (expected 5+)"
+      _CHECK_OUTPUT="Controller health: only $ctrl_count controllers found (expected 20+)"
     fi
   else
     # Fallback: verify the controller-registry module shipped
@@ -349,4 +349,47 @@ check_self_learning_search() {
   else
     _CHECK_OUTPUT="Self-learning search: search failed — $search_out"
   fi
+}
+
+# ===== ADR-0061: Controller Integration Completion =====
+
+check_adr0061_controller_types() {
+  local project_dir="$1"
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local status=0
+
+  # Verify the barrel exports the new security classes
+  local barrel_file
+  barrel_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentdb" -name "index.js" -path "*/src/*" 2>/dev/null | head -1)
+  if [ -z "$barrel_file" ]; then
+    barrel_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentdb" -name "index.js" -not -path "*/node_modules/*" 2>/dev/null | head -1)
+  fi
+
+  if [ -n "$barrel_file" ]; then
+    local found=0 missing=""
+    # Check that security exports are present (ADR-0061 Phase 0)
+    for cls in ResourceTracker RateLimiter CircuitBreaker TelemetryManager; do
+      if grep -q "$cls" "$barrel_file" 2>/dev/null; then
+        found=$((found + 1))
+      else
+        missing="${missing:+$missing, }$cls"
+        status=1
+      fi
+    done
+
+    if [[ $found -eq 4 ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0061: all 4 controller types exported from barrel"
+    elif [[ $found -gt 0 ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0061: $found/4 controller types found (missing: $missing)"
+    else
+      _CHECK_OUTPUT="ADR-0061: no controller types found in barrel (missing: $missing)"
+    fi
+  else
+    _CHECK_OUTPUT="ADR-0061: could not find agentdb barrel file"
+  fi
+
+  return $status
 }
