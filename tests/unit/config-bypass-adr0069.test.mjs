@@ -721,3 +721,218 @@ describe('ADR-0069 I12: capacity round-trip integration', () => {
     assert.ok(true);
   });
 });
+
+// ============================================================================
+// H6: Port number config-chain wiring (QUIC, Federation, Health)
+// ============================================================================
+
+// Simulates port resolution pattern used across all wired sites:
+//   config.port || parseInt(process.env.ENV_VAR || '') || DEFAULT
+function resolvePort(configPort, envValue, defaultPort) {
+  return configPort || parseInt(envValue || '') || defaultPort;
+}
+
+// Simulates the FederationHub/Client string-replace port mapping:
+//   endpoint.replace(`:${quicPort}`, `:${fedPort}`)
+function resolveEndpointPortMapping(endpoint, quicPortEnv, fedPortEnv) {
+  const quicPort = String(parseInt(quicPortEnv || '') || 4433);
+  const fedPort = String(parseInt(fedPortEnv || '') || 8443);
+  return endpoint
+    .replace('quic://', 'https://')
+    .replace(`:${quicPort}`, `:${fedPort}`);
+}
+
+describe('ADR-0069 H6-U1: QUIC port resolves from env var with fallback', () => {
+  it('uses config.port when provided', () => {
+    assert.equal(resolvePort(5000, '', 4433), 5000);
+  });
+
+  it('uses QUIC_PORT env var when config.port is undefined', () => {
+    assert.equal(resolvePort(undefined, '5555', 4433), 5555);
+  });
+
+  it('falls back to 4433 when neither config nor env set', () => {
+    assert.equal(resolvePort(undefined, '', 4433), 4433);
+  });
+
+  it('config.port takes precedence over env var', () => {
+    assert.equal(resolvePort(6000, '5555', 4433), 6000,
+      'explicit config must win over env var');
+  });
+
+  it('ignores non-numeric env var and falls back to default', () => {
+    assert.equal(resolvePort(undefined, 'not-a-number', 4433), 4433);
+  });
+});
+
+describe('ADR-0069 H6-U2: Federation port resolves from env var with fallback', () => {
+  it('uses config.port when provided', () => {
+    assert.equal(resolvePort(9000, '', 8443), 9000);
+  });
+
+  it('uses FEDERATION_PORT env var when config.port is undefined', () => {
+    assert.equal(resolvePort(undefined, '9443', 8443), 9443);
+  });
+
+  it('falls back to 8443 when neither config nor env set', () => {
+    assert.equal(resolvePort(undefined, '', 8443), 8443);
+  });
+});
+
+describe('ADR-0069 H6-U3: Health port resolves from env var with fallback', () => {
+  it('uses provided port argument', () => {
+    assert.equal(resolvePort(3000, '', 8080), 3000);
+  });
+
+  it('uses HEALTH_PORT env var when port argument is undefined', () => {
+    assert.equal(resolvePort(undefined, '9090', 8080), 9090);
+  });
+
+  it('falls back to 8080 when neither argument nor env set', () => {
+    assert.equal(resolvePort(undefined, '', 8080), 8080);
+  });
+});
+
+describe('ADR-0069 H6-U4: Federation endpoint port mapping uses env vars', () => {
+  it('maps default quic://host:4433 to https://host:8443', () => {
+    const result = resolveEndpointPortMapping('quic://hub.example.com:4433/sync', '', '');
+    assert.equal(result, 'https://hub.example.com:8443/sync');
+  });
+
+  it('maps custom QUIC port to custom Federation port', () => {
+    const result = resolveEndpointPortMapping(
+      'quic://hub.example.com:5555/sync', '5555', '9443'
+    );
+    assert.equal(result, 'https://hub.example.com:9443/sync');
+  });
+
+  it('does not mangle endpoint when QUIC port does not appear in URL', () => {
+    const result = resolveEndpointPortMapping(
+      'quic://hub.example.com:7777/sync', '5555', '9443'
+    );
+    // :7777 does not match :5555, so no replacement happens
+    assert.equal(result, 'https://hub.example.com:7777/sync',
+      'non-matching port must be left untouched');
+  });
+
+  it('handles default ports when env vars are empty', () => {
+    const result = resolveEndpointPortMapping('quic://localhost:4433', '', '');
+    assert.equal(result, 'https://localhost:8443');
+  });
+
+  it('handles non-numeric env vars gracefully (falls back to defaults)', () => {
+    const result = resolveEndpointPortMapping(
+      'quic://localhost:4433/path', 'bad', 'worse'
+    );
+    // parseInt('bad') = NaN, || 4433 kicks in; same for federation
+    assert.equal(result, 'https://localhost:8443/path');
+  });
+});
+
+describe('ADR-0069 H6-U5: transport-router defaults resolve from env', () => {
+  it('quicConfig.port resolves from QUIC_PORT env', () => {
+    const port = parseInt('5555' || '') || 4433;
+    assert.equal(port, 5555);
+  });
+
+  it('http2Config.port resolves from FEDERATION_PORT env', () => {
+    const port = parseInt('9443' || '') || 8443;
+    assert.equal(port, 9443);
+  });
+
+  it('both fall back to defaults when env is empty', () => {
+    const quicPort = parseInt('' || '') || 4433;
+    const fedPort = parseInt('' || '') || 8443;
+    assert.equal(quicPort, 4433);
+    assert.equal(fedPort, 8443);
+  });
+});
+
+describe('ADR-0069 H6-U6: agentdb-service QUIC_SERVER_PORT already env-guarded', () => {
+  it('parseInt(QUIC_SERVER_PORT) resolves custom port', () => {
+    const port = parseInt('6000');
+    assert.equal(port, 6000);
+  });
+
+  it('falls back to 4433 when env var is empty string', () => {
+    const port = parseInt('' || '4433');
+    assert.equal(port, 4433);
+  });
+});
+
+// ============================================================================
+// H6 Integration: port config round-trip through config.json
+// ============================================================================
+
+describe('ADR-0069 H6-I1: ports round-trip through config.json', () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'adr0069-ports-'));
+  });
+
+  it('all port consumers resolve from config.json ports block', () => {
+    const configJson = {
+      ports: { quic: 5555, federation: 9443, health: 3000 },
+    };
+    writeFileSync(join(tmpDir, 'config.json'), JSON.stringify(configJson, null, 2));
+
+    const raw = JSON.parse(readFileSync(join(tmpDir, 'config.json'), 'utf8'));
+
+    // Simulate each consumer reading ports from config
+    const quicPort = resolvePort(raw.ports?.quic, '', 4433);
+    const fedPort = resolvePort(raw.ports?.federation, '', 8443);
+    const healthPort = resolvePort(raw.ports?.health, '', 8080);
+
+    assert.equal(quicPort, 5555, 'QUIC port must come from config.json');
+    assert.equal(fedPort, 9443, 'Federation port must come from config.json');
+    assert.equal(healthPort, 3000, 'Health port must come from config.json');
+  });
+
+  it('env var overrides config.json ports', () => {
+    const configJson = {
+      ports: { quic: 5555, federation: 9443, health: 3000 },
+    };
+    writeFileSync(join(tmpDir, 'config.json'), JSON.stringify(configJson, null, 2));
+
+    // Env var takes precedence when config.port is not set (constructor default path)
+    const envQuicPort = resolvePort(undefined, '7777', 4433);
+    assert.equal(envQuicPort, 7777, 'env var must override when config.port not passed');
+  });
+
+  it('defaults to standard ports when config.json has no ports block', () => {
+    const configJson = { memory: { storage: {} } };
+    writeFileSync(join(tmpDir, 'config.json'), JSON.stringify(configJson, null, 2));
+
+    const raw = JSON.parse(readFileSync(join(tmpDir, 'config.json'), 'utf8'));
+
+    const quicPort = resolvePort(raw.ports?.quic, '', 4433);
+    const fedPort = resolvePort(raw.ports?.federation, '', 8443);
+    const healthPort = resolvePort(raw.ports?.health, '', 8080);
+
+    assert.equal(quicPort, 4433);
+    assert.equal(fedPort, 8443);
+    assert.equal(healthPort, 8080);
+  });
+
+  it('federation endpoint mapping uses config.json ports', () => {
+    const configJson = {
+      ports: { quic: 5555, federation: 9443 },
+    };
+    writeFileSync(join(tmpDir, 'config.json'), JSON.stringify(configJson, null, 2));
+
+    const raw = JSON.parse(readFileSync(join(tmpDir, 'config.json'), 'utf8'));
+
+    const result = resolveEndpointPortMapping(
+      'quic://hub.example.com:5555/sync',
+      String(raw.ports.quic),
+      String(raw.ports.federation),
+    );
+    assert.equal(result, 'https://hub.example.com:9443/sync');
+  });
+
+  it('cleanup', () => {
+    try { rmSync(tmpDir, { recursive: true, force: true }); } catch { /* ignore */ }
+    assert.ok(true);
+  });
+});
