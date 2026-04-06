@@ -468,7 +468,7 @@ describe('RvfBackend WAL write path (ADR-0073 Phase 1)', () => {
     await backend2.shutdown();
   });
 
-  it('old-format RVF file is readable via TS fallback (format detection)', async () => {
+  it('manually-crafted RVF file with no WAL is readable on open', async () => {
     if (!RvfBackend) return;
 
     const oldPath = freshPath('old-format');
