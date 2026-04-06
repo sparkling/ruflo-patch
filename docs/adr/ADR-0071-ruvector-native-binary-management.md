@@ -1,7 +1,8 @@
 # ADR-0071: RuVector Native Binary Management
 
-- **Status**: Accepted
+- **Status**: Implemented
 - **Date**: 2026-04-06
+- **Implemented**: 2026-04-06
 - **Depends on**: ADR-0069 (F1 consolidation, config chain)
 
 ## Context
@@ -159,12 +160,13 @@ This renames `@ruvector/core` → `@sparkleideas/ruvector-core`, etc.
 6. Update `install-native-deps.sh` to produce `@sparkleideas/ruvector-*` package names
 7. Update unscoped `ruvector-core-darwin-arm64` to `@sparkleideas/ruvector-core-darwin-arm64`
 
-**Phase 3: Rebuild + publish**
-1. Rebuild all 10 NAPI binaries from fork HEAD (now includes P1 cherry-picks)
-2. Verify 13/13 packages load, SIMD works
-3. Publish all renamed `@sparkleideas/ruvector-*` packages to Verdaccio
-4. Acceptance test: `npx @sparkleideas/cli@latest init` + `memory store` + `memory search`
-5. Run full test suite (unit + acceptance)
+**Phase 3: Rebuild + publish** (DONE 2026-04-06)
+1. Rebuilt all 10 NAPI binaries from fork HEAD (sona includes persistence fix)
+2. Verified 13/13 packages load, SIMD works
+3. Published all 12 `@sparkleideas/ruvector-*` packages to Verdaccio
+4. Increased Verdaccio `max_body_size` to 100mb (ruvector-core is 35MB with all platform binaries)
+5. Updated publish-levels.json (level 1: 6 → 17 packages) and publish-order tests (42 → 53)
+6. 1265 tests pass (0 fail)
 
 ## Consequences
 
