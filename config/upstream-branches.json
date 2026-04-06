@@ -7,9 +7,9 @@
   },
   "agentic-flow": {
     "dir": "/Users/henrik/source/forks/agentic-flow",
-    "branch": "feature/agentic-flow-v2",
+    "branch": "main",
     "url": "https://github.com/ruvnet/agentic-flow.git",
-    "notes": "v3/agentdb development on feature branch, +27 commits ahead of main (includes 6 missing classes, alpha.10)"
+    "notes": "All forks build from main"
   },
   "ruv-FANN": {
     "dir": "/Users/henrik/source/forks/ruv-FANN",
