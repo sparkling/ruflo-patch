@@ -12,6 +12,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { performance } from 'node:perf_hooks';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -359,21 +360,169 @@ describe('RvfBackend WAL write path (ADR-0073 Phase 1)', () => {
     await backend2.shutdown();
   });
 
-  it('WAL performance: 100 sequential stores complete in <500ms', async () => {
+  it('WAL performance: 500 sequential stores complete in <2500ms (5ms SLA per store)', async () => {
     if (!RvfBackend) return;
 
+    // Use a high compaction threshold to avoid compaction during the perf test
+    const perfPath = freshPath('perf');
+    const perfBackend = new RvfBackend({
+      databasePath: perfPath,
+      dimensions: 4,
+      autoPersistInterval: 0,
+      walCompactionThreshold: 10000,
+    });
+    await perfBackend.initialize();
+
     const start = performance.now();
-    for (let i = 0; i < 100; i++) {
-      await backend.store(makeEntry());
+    for (let i = 0; i < 500; i++) {
+      await perfBackend.store(makeEntry());
     }
     const duration = performance.now() - start;
 
     assert.ok(
-      duration < 500,
-      `100 stores took ${duration.toFixed(1)}ms, expected <500ms (WAL append should be fast)`,
+      duration < 2500,
+      `500 stores took ${duration.toFixed(1)}ms, expected <2500ms (ADR-0073 SLA: <5ms per store at 500+ entries)`,
     );
 
+    await perfBackend.shutdown();
+  });
+
+  it('concurrent store() calls do not corrupt WAL', async () => {
+    if (!RvfBackend) return;
+
+    // Fire 20 concurrent stores — they share the single-threaded event loop
+    // but the WAL append must serialize correctly
+    const promises = [];
+    for (let i = 0; i < 20; i++) {
+      promises.push(backend.store(makeEntry({ id: `concurrent-${i}` })));
+    }
+    await Promise.all(promises);
+
+    // All 20 entries should be retrievable
+    for (let i = 0; i < 20; i++) {
+      const e = await backend.get(`concurrent-${i}`);
+      assert.ok(e, `Entry concurrent-${i} should exist after concurrent stores`);
+    }
+
+    // Verify count
+    const count = await backend.count();
+    assert.equal(count, 20, 'All 20 concurrent entries should be stored');
+
+    // Shutdown and re-open to verify WAL integrity
     await backend.shutdown();
+    const backend2 = new RvfBackend({
+      databasePath: rvfPath,
+      dimensions: 4,
+      autoPersistInterval: 0,
+    });
+    await backend2.initialize();
+    const count2 = await backend2.count();
+    assert.equal(count2, 20, 'All 20 entries should survive WAL replay');
+    await backend2.shutdown();
+  });
+
+  it(':memory: mode does not create WAL sidecar file', async () => {
+    if (!RvfBackend) return;
+
+    const memBackend = new RvfBackend({
+      databasePath: ':memory:',
+      dimensions: 4,
+      autoPersistInterval: 0,
+    });
+    await memBackend.initialize();
+
+    // Store several entries
+    for (let i = 0; i < 5; i++) {
+      await memBackend.store(makeEntry());
+    }
+
+    // No WAL file should exist anywhere — :memory: has no disk path
+    assert.ok(!existsSync(':memory:.wal'), 'No WAL file should be created for :memory: mode');
+
+    await memBackend.shutdown();
+  });
+
+  it('WAL replay preserves Float32Array embedding type', async () => {
+    if (!RvfBackend) return;
+
+    const emb = makeEmbedding(4);
+    const entry = makeEntry({ embedding: emb });
+    await backend.store(entry);
+    await backend.shutdown();
+
+    // Re-open and check embedding type
+    const backend2 = new RvfBackend({
+      databasePath: rvfPath,
+      dimensions: 4,
+      autoPersistInterval: 0,
+    });
+    await backend2.initialize();
+
+    const retrieved = await backend2.get(entry.id);
+    assert.ok(retrieved, 'Entry should survive WAL replay');
+    assert.ok(
+      retrieved.embedding instanceof Float32Array,
+      `Embedding should be Float32Array after WAL replay, got ${retrieved.embedding?.constructor?.name}`,
+    );
+    assert.equal(retrieved.embedding.length, 4, 'Embedding dimension should be preserved');
+    await backend2.shutdown();
+  });
+
+  it('old-format RVF file is readable via TS fallback (format detection)', async () => {
+    if (!RvfBackend) return;
+
+    const oldPath = freshPath('old-format');
+    // Manually write a valid old-format RVF file: magic + header + 1 entry
+    const entry = {
+      id: 'old-1',
+      key: 'key-old-1',
+      namespace: 'default',
+      content: 'old format entry',
+      type: 'semantic',
+      tags: [],
+      metadata: {},
+      accessLevel: 'private',
+      ownerId: 'test',
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      accessCount: 0,
+      lastAccessedAt: Date.now(),
+      version: 1,
+      references: [],
+    };
+    const header = JSON.stringify({
+      magic: 'RVF\0',
+      version: 1,
+      dimensions: 4,
+      metric: 'cosine',
+      quantization: 'fp32',
+      entryCount: 1,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+    });
+    const headerBuf = Buffer.from(header, 'utf-8');
+    const entryBuf = Buffer.from(JSON.stringify(entry), 'utf-8');
+    const magic = Buffer.from([0x52, 0x56, 0x46, 0x00]);
+    const headerLen = Buffer.alloc(4);
+    headerLen.writeUInt32LE(headerBuf.length, 0);
+    const entryLen = Buffer.alloc(4);
+    entryLen.writeUInt32LE(entryBuf.length, 0);
+    writeFileSync(oldPath, Buffer.concat([magic, headerLen, headerBuf, entryLen, entryBuf]));
+
+    // Open with RvfBackend — should read old format via TS path
+    const oldBackend = new RvfBackend({
+      databasePath: oldPath,
+      dimensions: 4,
+      autoPersistInterval: 0,
+    });
+    await oldBackend.initialize();
+
+    const retrieved = await oldBackend.get('old-1');
+    assert.ok(retrieved, 'Should read entry from old-format RVF file');
+    assert.equal(retrieved.content, 'old format entry');
+    assert.equal(retrieved.namespace, 'default');
+
+    await oldBackend.shutdown();
   });
 });
 

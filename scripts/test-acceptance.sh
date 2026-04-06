@@ -362,6 +362,10 @@ adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 adr0059_p4_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase4-checks.sh"
 [[ -f "$adr0059_p4_lib" ]] && source "$adr0059_p4_lib"
 
+# ADR-0073: RVF Storage Backend Upgrade (WAL + native activation)
+adr0073_lib="${PROJECT_DIR}/lib/acceptance-adr0073-checks.sh"
+[[ -f "$adr0073_lib" ]] && source "$adr0073_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -574,6 +578,11 @@ run_check_bg "adr0074-scope"        "Scope fix (ADR-0074)"                  chec
 run_check_bg "adr0074-drain"        "Drain wired (ADR-0074)"                check_adr0074_drain_wired          "adr0074"
 run_check_bg "adr0074-evict-cap"    "Eviction cap (ADR-0074)"               check_adr0074_eviction_cap         "adr0074"
 run_check_bg "adr0074-consolidate"  "Consolidate evicts (ADR-0074)"         check_adr0074_consolidate_evicts   "adr0074"
+
+# ADR-0073: RVF Storage Backend Upgrade
+run_check_bg "adr0073-wal"         "WAL methods (ADR-0073)"                check_adr0073_wal_methods          "adr0073"
+run_check_bg "adr0073-native"      "Native package (ADR-0073)"             check_adr0073_native_package       "adr0073"
+run_check_bg "adr0073-metric"      "Metric remap (ADR-0073)"               check_adr0073_metric_remap         "adr0073"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
