@@ -79,10 +79,10 @@ Wholesale merges would delete source for binaries we ship.
 
 | Priority | Branch | Files | What |
 |----------|--------|-------|------|
-| P1 | `fix/sona-persistence-273-274` | `crates/sona/src/reasoning_bank.rs`, `types.rs` | Persistence fix #274, cluster optimization |
-| P2 | `feat/ruvltra-v2.4-ecosystem-training` | `crates/sona/src/napi.rs`, `napi_simple.rs` | `getStats()` JSON fix (was Debug-formatted) |
-| P3 | `feat/ruvltra-v2.4-ecosystem-training` | `crates/ruvector-core/src/simd_intrinsics.rs` | NEON SIMD improvements (2.96-5.96x) |
-| P4 | `feat/ruvltra-v2.4-ecosystem-training` | `examples/ruvLLM/src/`, `crates/ruvllm/src/` | Security: GGUF DoS cap, shell injection block, path traversal guard |
+| P1 | `fix/sona-persistence-273-274` | `crates/sona/src/reasoning_bank.rs`, `types.rs`, `loops/coordinator.rs` | **APPLIED** — persistence fix #274, cluster optimization |
+| P2 | `feat/ruvltra-v2.4-ecosystem-training` | `crates/sona/src/napi.rs`, `napi_simple.rs` | **ALREADY ON MAIN** — merged upstream before fork sync |
+| P3 | `feat/ruvltra-v2.4-ecosystem-training` | `crates/ruvector-core/src/simd_intrinsics.rs` | **SKIP** — branch only deletes AVX2 code, zero NEON additions. Main already has all NEON opts. |
+| P4 | `feat/ruvltra-v2.4-ecosystem-training` | `examples/ruvLLM/src/`, `crates/ruvllm/src/` | **ALREADY ON MAIN** — all 8 security fixes from commit 7e61d76d present |
 
 **Irrelevant branches (confirmed by hive):**
 - 41 branches touch only unrelated crates (postgres, mincut, cognitum-gate, brain-server, etc.)

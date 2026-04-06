@@ -33,16 +33,18 @@
     "agentic-flow": "@sparkleideas/agentic-flow",
     "ruv-swarm": "@sparkleideas/ruv-swarm"
   },
-  "excluded": [
-    "ruvector",
-    "@ruvector/core",
-    "@ruvector/router",
-    "@ruvector/graph-transformer",
-    "@ruvector/ruvllm",
-    "@ruvector/sona",
-    "@ruvector/memory",
-    "@ruvector/embeddings"
-  ],
+  "ruvectorScope": {
+    "from": "@ruvector/",
+    "to": "@sparkleideas/ruvector-"
+  },
+  "ruvectorUnscoped": {
+    "ruvector": "@sparkleideas/ruvector",
+    "ruvector-core-darwin-arm64": "@sparkleideas/ruvector-core-darwin-arm64",
+    "ruvector-core-darwin-x64": "@sparkleideas/ruvector-core-darwin-x64",
+    "ruvector-core-linux-x64-gnu": "@sparkleideas/ruvector-core-linux-x64-gnu",
+    "ruvector-core-linux-arm64-gnu": "@sparkleideas/ruvector-core-linux-arm64-gnu",
+    "ruvector-core-win32-x64-msvc": "@sparkleideas/ruvector-core-win32-x64-msvc"
+  },
   "upstreamRepos": {
     "ruvnet/ruflo": {
       "packages": [

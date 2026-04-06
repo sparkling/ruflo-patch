@@ -13,6 +13,13 @@
 # Requires: Rust toolchain (cargo), @napi-rs/cli (napi), ruvector fork
 # Idempotent: skips if binary already exists with matching SHA.
 #
+# IMPORTANT: This script uses @ruvector/* package names deliberately.
+# It runs pre-codemod (before copy-source + scope rename), installing into the
+# fork's node_modules where the code still imports @ruvector/*.  The codemod
+# step (scripts/codemod.sh) later renames @ruvector/* → @sparkleideas/ruvector-*
+# in the built output.  Do NOT change these names to @sparkleideas/* here —
+# the fork source code would not find the binaries.  See ADR-0071.
+#
 # Usage: npm run setup:native   OR   bash scripts/install-native-deps.sh
 
 set -euo pipefail

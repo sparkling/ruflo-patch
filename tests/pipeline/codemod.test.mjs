@@ -162,7 +162,7 @@ describe('codemod: ruvector scopes', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('does not transform @ruvector/core (different scope), but transforms bare ruvector in imports', async () => {
+  it('transforms @ruvector/core to @sparkleideas/ruvector-core (ADR-0071), and bare ruvector in imports', async () => {
     tmp = makeTmpDir();
     const source = [
       "import { vec } from '@ruvector/core';",
@@ -173,8 +173,8 @@ describe('codemod: ruvector scopes', () => {
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'ruvector.js'), 'utf8');
-    // @ruvector/* scope is NOT in the codemod — untouched
-    assert.ok(result.includes("from '@ruvector/core'"), '@ruvector/core untouched');
+    // ADR-0071: @ruvector/* scope IS now renamed to @sparkleideas/ruvector-*
+    assert.ok(result.includes("from '@sparkleideas/ruvector-core'"), '@ruvector/core → @sparkleideas/ruvector-core');
     // bare 'ruvector' in require IS renamed (it's in UNSCOPED_MAP)
     assert.ok(result.includes("require('@sparkleideas/ruvector')"), 'bare ruvector in require transformed');
   });

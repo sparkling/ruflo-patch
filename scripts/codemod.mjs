@@ -26,6 +26,10 @@ import { fileURLToPath } from 'node:url';
 const SCOPED_PREFIX_FROM = '@claude-flow/';
 const SCOPED_PREFIX_TO = '@sparkleideas/';
 
+// RuVector scope: @ruvector/foo -> @sparkleideas/ruvector-foo
+const RUVECTOR_PREFIX_FROM = '@ruvector/';
+const RUVECTOR_PREFIX_TO = '@sparkleideas/ruvector-';
+
 /** Unscoped exact-name mappings (used in package.json name/dep key transforms). */
 const UNSCOPED_MAP = {
   'claude-flow': '@sparkleideas/claude-flow',
@@ -38,6 +42,12 @@ const UNSCOPED_MAP = {
   'agentdb-onnx': '@sparkleideas/agentdb-onnx',
   'cuda-wasm': '@sparkleideas/cuda-wasm',
   'ruvector': '@sparkleideas/ruvector',
+  // RuVector unscoped platform packages
+  'ruvector-core-darwin-arm64': '@sparkleideas/ruvector-core-darwin-arm64',
+  'ruvector-core-darwin-x64': '@sparkleideas/ruvector-core-darwin-x64',
+  'ruvector-core-linux-x64-gnu': '@sparkleideas/ruvector-core-linux-x64-gnu',
+  'ruvector-core-linux-arm64-gnu': '@sparkleideas/ruvector-core-linux-arm64-gnu',
+  'ruvector-core-win32-x64-msvc': '@sparkleideas/ruvector-core-win32-x64-msvc',
 };
 
 // -- File filters -------------------------------------------------------------
@@ -72,6 +82,9 @@ function applyNameMapping(name) {
   if (name.startsWith('@sparkleideas/')) return name; // already transformed
   if (name.startsWith(SCOPED_PREFIX_FROM)) {
     return SCOPED_PREFIX_TO + name.slice(SCOPED_PREFIX_FROM.length);
+  }
+  if (name.startsWith(RUVECTOR_PREFIX_FROM)) {
+    return RUVECTOR_PREFIX_TO + name.slice(RUVECTOR_PREFIX_FROM.length);
   }
   return UNSCOPED_MAP[name] ?? name;
 }
@@ -155,6 +168,10 @@ function renameObjectKeys(obj) {
 // Only match @claude-flow/ that is NOT already part of @sparkleideas/
 const SCOPED_RE = /@claude-flow\//g;
 
+// Step 1b: RuVector scoped replacement -- @ruvector/ -> @sparkleideas/ruvector-
+// Transforms @ruvector/core -> @sparkleideas/ruvector-core, etc.
+const RUVECTOR_SCOPED_RE = /@ruvector\//g;
+
 // Step 2: Unscoped import replacements -- rename bare unscoped package names
 // ONLY inside import/require contexts (string literals following import/from/require).
 // Bare names as variables, property keys, or object shorthand are NOT renamed.
@@ -180,15 +197,19 @@ const UNSCOPED_IMPORT_RE = new RegExp(
 /**
  * Apply scope renaming to source file content.
  *
- * Two passes:
+ * Three passes:
  *  1. @claude-flow/* -> @sparkleideas/* (all occurrences)
- *  2. Bare unscoped names in import/require/from contexts only
+ *  2. @ruvector/* -> @sparkleideas/ruvector-* (all occurrences)
+ *  3. Bare unscoped names in import/require/from contexts only
  */
 function transformSource(content) {
-  // Pass 1: scoped prefix
+  // Pass 1: scoped prefix (@claude-flow/ -> @sparkleideas/)
   let result = content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
 
-  // Pass 2: unscoped names in import contexts
+  // Pass 2: ruvector scoped prefix (@ruvector/ -> @sparkleideas/ruvector-)
+  result = result.replace(RUVECTOR_SCOPED_RE, RUVECTOR_PREFIX_TO);
+
+  // Pass 3: unscoped names in import contexts
   result = result.replace(UNSCOPED_IMPORT_RE, (match, prefix, name, suffix) => {
     const mapped = UNSCOPED_MAP[name];
     if (!mapped) return match;
