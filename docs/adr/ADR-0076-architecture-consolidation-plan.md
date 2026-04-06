@@ -229,3 +229,44 @@ freeze window — do it while the repo is dormant.
 decides to hard-fork. The dead code (HybridBackend, sql.js fallbacks, VectorDb HNSW) costs
 build time but doesn't cost correctness. The upstream merge conflicts from deleting it cost
 more than the dead code itself.
+
+## Net Impact (from Queen's analysis)
+
+Full consolidation removes **~9,555 lines** of production code:
+
+| Phase | Lines deleted | Lines new | Net |
+|-------|-------------|-----------|-----|
+| 0 (dead code) | ~1,000 | 0 | -1,000 |
+| 1 (config) | 0 | ~270 | +270 |
+| 2 (embedding) | ~200 | ~380 | +180 |
+| 3 (storage) | ~1,140 | ~590 | -550 |
+| 4 (controllers) | ~2,048 | ~120 | -1,928 |
+| 5 (data flow) | ~6,527 | 0 | -6,527 |
+
+## Test Strategy (from test strategist)
+
+### Tests that break per phase
+- Phase S (storage): 8 test files need updating (storage-audit, config-bypass x6, adr0062)
+- Phase C (controllers): 6 test files (agentdb-service-f1 x2, controller-chaos, controller-properties, activation, synthesize)
+- Phase E (embeddings): 5 test files (embeddings-compliance, attention-f3, config-dead-keys, getcontroller-coverage, ruvector-scope)
+- Phase F (config): 4 test files (config-centralization, config-unification, config-bypass-full, config-forwarding)
+
+### New tests required: 11 files
+- `istorage-contract.test.mjs` — IStorage interface + factory
+- `istorage-migration.test.mjs` — RVF backward read compatibility
+- `storage-dead-backends.test.mjs` — absence of deleted code
+- `single-registry-contract.test.mjs` — sole source of truth
+- `registry-singleton-proof.test.mjs` — constructor count = 1
+- `embedding-pipeline-contract.test.mjs` — singleton + dimension guard
+- `dimension-startup-validation.test.mjs` — fail-loud on mismatch
+- `resolve-config-contract.test.mjs` — frozen immutable config
+- `perf-baseline-adr0075.test.mjs` — latency capture + regression
+- `dead-code-absence-adr0075.test.mjs` — source grep for deleted symbols
+- `acceptance-adr0075-checks.sh` — runtime acceptance checks
+
+### Performance regression budget
+| Operation | Budget | Trigger |
+|-----------|--------|---------|
+| `store()` p99 | <5ms at 1000 entries | >10ms |
+| `search()` k=10, p99 | <20ms at 1000 entries | >2x baseline |
+| `embed()` p99 | <50ms | >100ms |
