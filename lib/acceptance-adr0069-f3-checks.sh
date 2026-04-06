@@ -257,30 +257,14 @@ check_attention_mechanisms_count() {
         const mod = await import('$pkg');
         // Use module namespace directly — default export is the init() function, not the API
 
-        // Try various API shapes for mechanism discovery
-        let count = 0;
-        let source = 'unknown';
-
-        if (typeof mod.availableMechanisms === 'function') {
-          const mechs = mod.availableMechanisms();
-          count = Array.isArray(mechs) ? mechs.length : 0;
-          source = 'availableMechanisms()';
-        } else if (typeof mod.getStats === 'function') {
-          const stats = mod.getStats();
-          count = stats.mechanisms || stats.mechanismCount || stats.count || 0;
-          source = 'getStats()';
-        } else if (typeof mod.mechanisms === 'object') {
-          count = Array.isArray(mod.mechanisms) ? mod.mechanisms.length : Object.keys(mod.mechanisms).length;
-          source = 'mechanisms property';
-        } else {
-          // Count exported function/class names that look like mechanisms
-          const exports = Object.keys(mod);
-          const mechNames = exports.filter(k =>
-            /attention|flash|hyperbolic|linear|moe|local.global|sheaf|dag|graph|mamba|ssm|multi.head|cross|self/i.test(k)
-          );
-          count = mechNames.length;
-          source = 'export name heuristic (' + mechNames.slice(0, 5).join(', ') + (mechNames.length > 5 ? '...' : '') + ')';
-        }
+        // Count exported classes/functions that match attention mechanism names
+        // (no WASM init needed — just inspects the JS module namespace)
+        const exports = Object.keys(mod);
+        const mechNames = exports.filter(k =>
+          /Attention|Flash|Hyperbolic|Linear|Moe|LocalGlobal|Sheaf|Dag|Graph|Mamba|SSM|MultiHead|DifferentiableSearch|scaledDot/i.test(k)
+        );
+        const count = mechNames.length;
+        const source = 'named exports (' + mechNames.slice(0, 5).join(', ') + (mechNames.length > 5 ? '...' : '') + ')';
 
         console.log(JSON.stringify({ ok: true, count: count, source: source, totalExports: Object.keys(mod).length }));
       } catch (e) {
