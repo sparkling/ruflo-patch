@@ -569,6 +569,12 @@ run_check_bg "f3-mech-count"    "Attention mechanisms >= 18 (F3)"       check_at
 run_check_bg "adr0071-no-ruvector"  "No @ruvector/ import refs (ADR-0071)"  check_adr0071_no_ruvector_refs     "adr0071"
 run_check_bg "adr0071-node-binary"  ".node binary bundled (ADR-0071)"       check_adr0071_node_binary_exists   "adr0071"
 
+# ADR-0074: CJS/ESM Dual Silo Fix
+run_check_bg "adr0074-scope"        "Scope fix (ADR-0074)"                  check_adr0074_scope_fix            "adr0074"
+run_check_bg "adr0074-drain"        "Drain wired (ADR-0074)"                check_adr0074_drain_wired          "adr0074"
+run_check_bg "adr0074-evict-cap"    "Eviction cap (ADR-0074)"               check_adr0074_eviction_cap         "adr0074"
+run_check_bg "adr0074-consolidate"  "Consolidate evicts (ADR-0074)"         check_adr0074_consolidate_evicts   "adr0074"
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -871,6 +877,10 @@ collect_parallel "all" \
   "f3-mech-count|Attention mechanisms >= 18 (F3)" \
   "adr0071-no-ruvector|No @ruvector/ import refs (ADR-0071)" \
   "adr0071-node-binary|.node binary bundled (ADR-0071)" \
+  "adr0074-scope|Scope fix (ADR-0074)" \
+  "adr0074-drain|Drain wired (ADR-0074)" \
+  "adr0074-evict-cap|Eviction cap (ADR-0074)" \
+  "adr0074-consolidate|Consolidate evicts (ADR-0074)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
