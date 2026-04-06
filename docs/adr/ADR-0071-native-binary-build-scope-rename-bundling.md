@@ -1,4 +1,4 @@
-# ADR-0071: RuVector Native Binary Management
+# ADR-0071: Native Binary Build, Scope Rename, and Bundling
 
 - **Status**: Implemented
 - **Date**: 2026-04-06
@@ -160,16 +160,40 @@ This renames `@ruvector/core` → `@sparkleideas/ruvector-core`, etc.
 6. Update `install-native-deps.sh` to produce `@sparkleideas/ruvector-*` package names
 7. Update unscoped `ruvector-core-darwin-arm64` to `@sparkleideas/ruvector-core-darwin-arm64`
 
-**Phase 3: Rebuild + publish** (DONE 2026-04-06)
-1. Rebuilt all 10 NAPI binaries from fork HEAD (sona includes persistence fix)
-2. Verified 13/13 packages load, SIMD works
-3. Published all 12 `@sparkleideas/ruvector-*` packages to Verdaccio
-4. Increased Verdaccio `max_body_size` to 100mb (ruvector-core is 35MB with all platform binaries)
-5. Updated publish-levels.json (level 1: 6 → 17 packages) and publish-order tests (42 → 53)
-6. 1265 unit tests pass (0 fail)
-7. Acceptance: 124/148 pass, 24 fail (all p5 — pre-existing init config issues from ADR-0070, not caused by ADR-0071)
-8. Duplicate package issue: `npm/core` (0.1.17) vs `npm/packages/core` (0.1.30) — the ruvector repo
-   has two copies. Publish script must use `npm/packages/*` (the correct versions). `npm/core` is stale.
+**Phase 3: Rebuild + publish + bundle** (DONE 2026-04-06)
+
+Key insight from 7-agent hive: NAPI-RS loaders check for a LOCAL `.node` file first
+(step 1), then fall back to requiring a platform-specific package (step 2). By bundling
+the `.node` binary inside each parent package tarball, step 1 always succeeds and ~80
+platform-specific packages are never needed.
+
+Implementation:
+1. Created `scripts/bundle-native-binaries.sh` — copies `.node` from crate build dirs
+   to parent package dirs in the build tree (runs after copy-source, before codemod)
+2. Updated `files` field in 7 parent package.json files to include `"*.node"`
+3. Removed `*.node` from `.npmignore` in 3 crate dirs
+4. Fixed `npm/packages/core/index.js` — added local file check (was the only loader without one)
+5. Wired into pipeline: `copy-source.sh` calls `bundle-native-binaries.sh` after rsync
+
+Tarball fixes for 3 broken packages:
+- **sona**: missing `index.js` loader — copied from `crates/sona/`
+- **ruvllm**: missing `dist/` (TypeScript never compiled) — built with tsc
+- **tiny-dancer**: was complete but not in CLI's deps — added to optionalDependencies
+
+Acceptance test fixes (ADR-0070 Phase 5):
+- Used `$CLI_BIN` instead of `npx` (avoids npm 11 crash on missing optional WASM deps)
+- Used `Xenova/all-mpnet-base-v2` (full canonical model name, ADR-0069)
+- Fixed `config set` syntax to use `--key`/`--value` flags
+- Fixed embeddings checks to read from `config.json` embeddings section (not separate file)
+- Fixed CLI flag parsing: `ctx.flags` uses camelCase (`similarityThreshold`), not kebab-case
+- Added `memory.similarityThreshold` to settings-generator output
+
+Results:
+- **10/10 native NAPI binaries load** from fresh `npm install @sparkleideas/cli`
+- **148/148 acceptance tests pass** (0 failures)
+- **1265 unit tests pass**
+- Verdaccio `max_body_size` increased to 100mb (ruvector-core is 5.2MB with binary)
+- Duplicate package issue documented: `npm/core` (stale) vs `npm/packages/core` (correct)
 
 ## Consequences
 
@@ -179,14 +203,19 @@ This renames `@ruvector/core` → `@sparkleideas/ruvector-core`, etc.
 - No dependency on upstream npm publish cadence
 - Missing/broken build configs fixed in fork
 - Build is reproducible from any checkout of the fork
+- `.node` bundled in parent packages — no separate platform packages needed (~80 eliminated)
+- 10/10 native binaries verified from fresh install
 
 ### Negative
 - Requires Rust toolchain + NAPI-RS CLI for development setup
 - First build takes ~5 minutes (subsequent builds use cargo cache, ~10s)
 - Must rebuild after pulling fork changes (script is idempotent — only rebuilds if SHA changes)
 - Linux/Windows binaries not built (only darwin-arm64 tested); cross-compilation needed for CI
+- Parent package tarballs are larger (0.5-5.2MB each with bundled binary)
 
 ### Risks
 - Upstream Cargo.toml workspace changes could break our builds
 - Some crates may gain new Rust dependencies that need native libs (e.g., Metal framework for ruvllm)
 - The 4 packages with no upstream tag have no baseline to diff against
+- Duplicate package.json files in ruvector repo (`npm/core` vs `npm/packages/core`) —
+  publish script must use `npm/packages/*` (the correct versions)

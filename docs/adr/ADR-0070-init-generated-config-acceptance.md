@@ -1,10 +1,11 @@
 # ADR-0070: Init-Generated Config Acceptance Tests
 
-- **Status**: Implemented
+- **Status**: Implemented (fully wired 2026-04-06)
 - **Date**: 2026-04-05
+- **Updated**: 2026-04-06 (function naming, config format, CLI flag fixes — see ADR-0071)
 - **Depends on**: ADR-0069 (config chain), ADR-0068 (controller wiring)
 - **Deciders**: Henrik Pettersen
-- **Relates to**: ADR-0038 (Cascading Pipeline)
+- **Relates to**: ADR-0038 (Cascading Pipeline), ADR-0071 (native binary bundling)
 
 ## Context
 
@@ -103,13 +104,28 @@ Each creates a sub-directory under `$_P5_DIR` and runs init with specific flags.
 | `p5-compat-no-overwrite` | `check_p5_compat_no_overwrite` | Existing config.yaml project: `init` without `--force` does NOT overwrite |
 | `p5-compat-config-set` | `check_p5_compat_config_set` | `config set neural.ewcLambda 1500` then `config get neural.ewcLambda` returns 1500 |
 
-### Total: 23 checks
+### Total: 23 checks (all passing as of 2026-04-06)
 
 ### Implementation structure
 
 ```
 lib/acceptance-init-generated-checks.sh    # All 23 check functions
 ```
+
+### Fixes applied 2026-04-06 (ADR-0071 session)
+
+The original implementation had several issues discovered during acceptance testing:
+
+1. **Function name mismatch**: lib defined `check_p5_ewc_lambda` etc., but `test-acceptance.sh`
+   called `check_p5_config_neural_keys` etc. (ADR-0070 names). Renamed all lib functions to match ADR.
+2. **Config format**: init generates `config.json` (not `config.yaml`). Embeddings are under
+   `config.json` `embeddings` key, not a separate `embeddings.json`. All checks updated.
+3. **P5 harness**: used `npx` (crashed on missing optional WASM deps). Fixed to use `$CLI_BIN`.
+   `2>/dev/null || true` masked init failures — now logs to `$_P5_INIT_LOG`.
+4. **CLI flag parsing**: `ctx.flags` uses camelCase (`similarityThreshold`), not kebab-case.
+   Fixed in fork's `init.ts`. Added `memory.similarityThreshold` to settings-generator.
+5. **config set syntax**: CLI requires `--key`/`--value` flags, not positional args.
+6. **Model name**: Must use `Xenova/all-mpnet-base-v2` (full canonical, ADR-0069).
 
 ### Wiring into test-acceptance.sh
 
