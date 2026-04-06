@@ -24,7 +24,8 @@
     "validate": "bash scripts/validate-ci.sh",
     "upstream-log": "node scripts/upstream-log.mjs",
     "audit:imports": "bash scripts/audit-dynamic-imports.sh",
-    "systemd:install": "sudo bash scripts/install-systemd.sh"
+    "systemd:install": "sudo bash scripts/install-systemd.sh",
+    "setup:native": "bash scripts/install-native-deps.sh"
   },
   "config": {
     "packageMap": "config/package-map.json",

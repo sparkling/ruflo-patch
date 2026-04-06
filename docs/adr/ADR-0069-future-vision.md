@@ -1,7 +1,9 @@
 # ADR-0069: Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
 
-- **Status**: Partially Implemented (config chain bypass remediation complete)
+- **Status**: F1 Complete (12/12 controllers delegated, config chain wired, 3 improvements + 3 fixes)
 - **Date**: 2026-04-05
+- **Implemented**: 2026-04-06 (F1 final — config chain for hierarchical memory, full 12-controller delegation)
+- **Implemented**: 2026-04-06 (F1 — 10 controllers delegated to AgentDB.getController(), 2 kept direct, ~30 lines removed)
 - **Implemented**: 2026-04-05 (bypass inventory remediation — 12 sites across both forks)
 - **Depends on**: ADR-0068 (must be completed first)
 - **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
@@ -122,6 +124,109 @@ ADR-0068 built the chain `embeddings.json → memory-bridge → RuntimeConfig �
 ### Why ADR-0068 partially addresses this
 
 The AgentDB.initialize() singleton wiring fix (ADR-0068 W1-1) ensures that even AgentDBService's directly-constructed controllers get correct internal wiring. When AgentDBService creates `new NightlyLearner(db, embedder)`, the NightlyLearner constructor will now accept optional singletons -- but AgentDBService does not pass them. The fix makes AgentDB's own copies correct, which matters when tools use `agentdb.getController()` directly. But AgentDBService's copies remain duplicates with their own state.
+
+### F1 implementation summary (2026-04-06)
+
+10 controllers now delegate to `AgentDB.getController()`: reflexion, skills, reasoning, causal,
+causalRecall, learning, vectorBackend, attentionService, nightlyLearner, explainableRecall.
+2 controllers (HierarchicalMemory, MemoryConsolidation) remain directly constructed because
+AgentDB's lazy init passes fewer parameters (no vectorBackend, graphBackend, or tuning config).
+13 agentic-flow-specific controllers unchanged (Phase 2/4 distributed, WASM, embedding).
+Note: delegated controllers receive AgentDB's plain EmbeddingService, not the Enhanced version.
+
+Additional changes:
+- Removed dead MutationGuard/GuardedVectorBackend construction block (~30 lines)
+- Removed dead `deriveHNSWParams` import
+- Added `getHierarchicalMemory()` and `getMemoryConsolidation()` public accessors
+- Fixed `memory-tools.ts` to use public accessors instead of `(agentdb as any)` casts (6 sites)
+- In-memory fallback stores preserved unchanged
+
+Validation (2026-04-06, 8-agent swarm): all 10 getController keys confirmed in AgentDB switch,
+zero broken caller references, no behavioral regressions. EmbeddingService asymmetry (plain vs
+Enhanced in delegated controllers) is pre-existing, not introduced by F1. 1192 tests pass (0 fail).
+
+### F1 follow-up improvements (2026-04-06)
+
+Three improvements wired:
+1. **Embedder propagation**: `AgentDB.replaceEmbeddingService()` added; `upgradeEmbeddingService()`
+   now propagates Enhanced/ONNX embedder to all delegated controllers, eliminating the asymmetry.
+2. **Agent-booster MCP tools**: `registerEnhancedBoosterTools()` added to `stdio-full.ts` —
+   WASM-accelerated <1ms code editing now available as MCP tools.
+3. **ONNX embeddings**: `ONNXEmbeddingService` wired as highest-priority embedder in the upgrade
+   chain (ONNX → Enhanced → Basic). 100% local, GPU-accelerated semantic embeddings.
+
+Three pre-existing bugs fixed:
+1. **embCfg scope leak**: `initializePhase2RuVectorPackages()` now calls `getEmbeddingConfig()`
+   inline instead of referencing out-of-scope `embCfg` variable.
+2. **getInstance() race**: Cached init promise prevents concurrent double-initialization.
+3. **Core controller try/catch**: 6 core `getController()` calls individually wrapped for
+   partial-failure resilience.
+
+### F1 final step: Complete delegation via config chain (2026-04-06)
+
+The last 2 controllers (HierarchicalMemory, MemoryConsolidation) remain directly constructed in
+AgentDBService because AgentDB's `getController()` lazy-init passes fewer params (no vectorBackend,
+graphBackend, or tuning config). This step completes the delegation by:
+
+1. **Add `memory.hierarchical.*` config keys** to the config chain:
+   - `memory.hierarchical.workingMemoryLimit` (default: 1048576 = 1MB)
+   - `memory.hierarchical.episodicWindow` (default: 604800000 = 7 days)
+   - `memory.hierarchical.autoConsolidate` (default: true)
+   - `memory.consolidation.clusterThreshold` (default: 0.75)
+   - `memory.consolidation.importanceThreshold` (default: 0.6)
+   - `memory.consolidation.enableSpacedRepetition` (default: true)
+
+2. **Extend AgentDB's getController() lazy-init** to pass `this.vectorBackend`, `this.graphAdapter`,
+   and the config values from the chain when constructing HierarchicalMemory and MemoryConsolidation.
+
+3. **Delegate the 2 controllers** in AgentDBService to `getController()`, replacing direct
+   construction — completing the full 12-controller delegation.
+
+4. **Update init template** (`settings-generator.ts`) to emit the new keys so `init --wizard`
+   produces a config.json with memory tuning defaults.
+
+After this step, AgentDBService delegates all 12 migratable controllers. Only 13 agentic-flow-specific
+controllers remain directly constructed (Phase 2/4 distributed, WASM, embedding services).
+
+### graphBackend assessment (2026-04-06, 6-agent hive + queen)
+
+**Decision: Leave `graphBackend` as null. Do not wire `@ruvector/graph-node`.**
+
+A dedicated hive (1 queen + 5 specialist agents) audited every aspect of the graphBackend:
+
+| Finding | Agent | Conclusion |
+|---------|-------|------------|
+| `@ruvector/graph-node` not installed — Phase 2.3 always fails | graph-pkg | graphAdapter is always null regardless of config |
+| `graphBackend` stored but never read in HierarchicalMemory/MemoryConsolidation | graph-controllers | Passing it is literally a no-op (stored at construction, never accessed) |
+| Write-only bug: `storeGraphState()` writes to graphAdapter, `queryGraph()` ignores it | graph-writeonly | Data written to native graph is unqueryable through the service |
+| SQLite CausalMemoryGraph already handles traversal, A/B experiments, do-calculus, HNSW similarity | causal-sqlite | No capability gap at current scale (recursive CTE, uplift stats, confounder detection) |
+| Only 2 generic MCP tools use storeGraphState/queryGraph; all causal tools bypass graph entirely | graph-user | Users would not notice a fix |
+
+**Why not fix the write-only bug?** Three compounding reasons:
+1. The package isn't installed, so the adapter is always null — the bug is unreachable.
+2. `GraphDatabaseAdapter.searchSimilarEpisodes()` uses unvalidated Cypher `vector_similarity()` — the
+   dialect may not support it, and there are zero integration tests for this path.
+3. Even if wired, HierarchicalMemory and MemoryConsolidation accept `graphBackend` in their constructors
+   but never call any method on it — the parameter is accepted and immediately discarded.
+
+**Trigger to reconsider:**
+- A user needs native graph traversal patterns that SQLite recursive CTEs cannot express (bidirectional
+  pathfinding, subgraph pattern matching, cycle detection at scale)
+- AND `@ruvector/graph-node` is installed and its Cypher dialect validated
+- AND `queryGraph()` is wired to read from graphAdapter (the ~3 line fix)
+- AND integration tests cover the store→query round-trip
+
+**SQLite CausalMemoryGraph capabilities (confirmed sufficient):**
+- `addCausalEdge` — edge storage with optional vector embedding
+- `createExperiment` / `recordObservation` / `calculateUplift` — full A/B experiment pipeline with t-test
+- `getCausalChain` — multi-hop recursive CTE traversal with HyperbolicAttention re-ranking
+- `calculateCausalGain` — do-calculus estimation: `E[Y|do(X)] - E[Y]`
+- `detectConfounders` — session-overlap correlation analysis
+- `findSimilarCausalPatterns` — HNSW vector similarity via VectorBackend
+
+The only performance concern is the cycle-guard LIKE pattern (`path NOT LIKE '%' || id || '%'`) which
+is O(path_length * edges) per CTE iteration. This would degrade at tens of thousands of densely
+connected nodes — well beyond current agent memory scale.
 
 ## F2: RVF as Single Storage Format
 
@@ -275,6 +380,26 @@ Agentic-flow ADR-056 says 8 ruvector packages are installed but only ~30% wired.
 | Federation/QUIC | Distributed features | No multi-node deployment target |
 
 **Principle**: Activate capabilities when users need them, not because packages are installed. The full roadmap is the SPARC rewrite in smaller chunks — same risk of activating features nobody uses.
+
+#### Deep-dive audit of all 6 packages (2026-04-06, 8-agent hive)
+
+Unanimous verdict: **DEFER all six.** Each package was audited by a specialist agent
+and cross-validated by a user-impact analyst. Detailed findings per package:
+
+| Package | Actual State | Blocker | Trigger to Reconsider |
+|---------|-------------|---------|----------------------|
+| `@ruvector/attention` | Upstream's own fallback files say "completely broken." 5 mechanisms work via JS fallback. `attention-native.ts` uses unconditional `import *` that throws if binary absent. Version split: root locks 0.1.4, agentdb locks 0.1.31. | Native module broken; static import crashes | Upstream fixes native module + integration tests pass on all 3 platforms |
+| `@ruvector/gnn` | `RuVectorLearning` is real code (not stubs), wraps `@ruvector/gnn` for GNN forward pass. But `LearningSystem.calculateActionScores()` computes the enhanced embedding and **discards the result** (line 594: logged, never fed back into scoring). Optional dep — may not be installed. | Compute-and-discard; zero behavioral effect | Fix `calculateActionScores` consume-side to use enhanced embedding |
+| `@ruvector/router` | Package declared at `^0.1.28` but **not installed** (`import()` always fails). Keyword fallback in `routeSemantic()` is the live path. TinyDancer would add real ONNX-based semantic routing. | Package not installed; no ONNX model artifact | Install package + pin in build + expand route descriptions |
+| `@ruvector/graph` | `GraphDatabaseAdapter` wraps `@ruvector/graph-node`. `storeGraphState()` writes to native graph DB, but `queryGraph()` **ignores graphAdapter entirely** — delegates to `causalRecall` (SQLite). Data written to native graph is unqueryable. Cypher `vector_similarity()` call is unvalidated. | Write-only; no read path from native graph | Wire `graphAdapter.query()` into `queryGraph()` + validate Cypher dialect |
+| SONA trajectory | `SonaTrajectoryService` has a full pure-JS RL fallback (REINFORCE, TD, experience replay). `recordTrajectory()` and `predictAction()` work unconditionally via `LearningSystem` fallback. `ENABLE_FLASH_CONSOLIDATION` controls NightlyLearner flash-attention, **not** SONA. | Already functional via JS fallback; flag is orthogonal | No action needed — SONA is already active |
+| Federation/QUIC | `QUICClient.sendRequest()` does `await this.sleep(100)` and returns hardcoded `{success: true, data: [], count: 0}`. `QUICServer` has same stub note. No real QUIC transport. Enabling produces **silent fake-success responses**, not real sync. | Stub implementation; no real network layer | Real QUIC transport library wired into sendRequest/bind |
+
+#### Pre-existing issues found during audit (not blocking, tracked for reference)
+
+- `embCfg` scope leak: `initializePhase2RuVectorPackages()` references `embCfg` from `initialize()`'s local scope. Silently caught by try/catch — `graphEnabled` always false. Does not affect functionality.
+- 6 core `getController()` calls share one try/catch — one failure aborts all six. Pre-existing pattern (same before F1 with `new agentdb.X()`).
+- No race guard on `getInstance()` — concurrent callers could double-init. Pre-existing.
 
 #### README vs implementation gap
 
