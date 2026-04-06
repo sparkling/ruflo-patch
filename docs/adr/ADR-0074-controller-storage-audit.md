@@ -250,14 +250,246 @@ nightlyLearner, causalRecall, queryOptimizer, selfLearningRvfBackend, mutationGu
 
 ## Decision
 
-This ADR records the audit findings as the authoritative post-implementation state after the ADR-0068-0072 wave. No new implementation work is proposed — this is a snapshot for future reference.
+This ADR records the audit findings as the authoritative post-implementation state after the ADR-0068-0072 wave, plus a detailed fix plan for Issue #1 (CJS/ESM dual silo).
 
 ### Recommended Priority for Follow-Up
 
-1. **ADR-0059 Phase 1** (HIGH): Fix CJS/ESM dual silo — replace AgentDBBackend with RvfBackend in hook subprocess
+1. **Issue #1 fix** (HIGH): CJS/ESM dual silo — detailed plan below
 2. **Feature flag expansion** (MEDIUM): Add `controllers.enabled` entries for the 33 un-flagged controllers
 3. **ADR-0061 bug fixes** (MEDIUM): Fix 6 broken getController() cases
 4. **rvf-runtime HNSW wiring** (MEDIUM): Wire rvf-index into rvf-runtime Cargo.toml — turns queries from O(n) to O(log n)
+
+## 6. Issue #1 Fix Plan: CJS/ESM Dual Silo
+
+### Analysis Method
+
+Hive analysis — Queen (Reuven Cohen) + 4 silo-fix specialists:
+- Agent 1: Hook backend resolution tracing
+- Agent 2: RvfBackend export chain verification
+- Agent 3: Intelligence.cjs silo architecture
+
+### Root Cause Chain
+
+The dual silo has two independent root causes that compound:
+
+**Root Cause A: `loadMemoryPackage()` returns null**
+
+`auto-memory-hook.mjs` lines 133-169 try 4 strategies to load `@sparkleideas/memory`:
+
+| Strategy | Path | Why It Fails |
+|----------|------|-------------|
+| 1. Local dev dist | `v3/@sparkleideas/memory/dist/index.js` | Doesn't exist in ruflo-patch (we BUILD it, not consume it) |
+| 2. CJS require | `require('@sparkleideas/memory')` | Not in ruflo-patch's `node_modules` |
+| 3. ESM import | `import('@sparkleideas/memory')` | Same — not installed |
+| 4. Walk-up tree | `node_modules/@claude-flow/memory/dist/index.js` | Not installed anywhere in tree |
+
+When all 4 fail, `loadMemoryPackage()` returns `null`. The hook prints "Memory package not available — skipping auto memory import" and exits. `createBackend()` is never reached. The RvfBackend preference code (ADR-0059, lines 295-298) is dead — it can never execute.
+
+**In user-installed projects** (via `npx @sparkleideas/cli init`), `@sparkleideas/memory` IS installed as a transitive dependency of `@sparkleideas/cli`. Strategy 2 or 3 succeeds, RvfBackend loads, and data persists to `.swarm/agentdb-memory.rvf`. The silo does NOT exist for end users with packages installed.
+
+**In this dev repo** (ruflo-patch), the package is never installed because we build it from fork source and publish it. The hook always falls through to the inline `JsonFileBackend` fallback at the top of the file, or skips entirely.
+
+**Root Cause B: intelligence.cjs has zero AgentDB integration**
+
+`intelligence.cjs` is a pure CJS system with no imports of `@sparkleideas/memory`, `agentdb`, or `sql.js`. Its data flow is entirely JSON-to-JSON:
+
+```
+auto-memory-store.json → intelligence.cjs → graph-state.json
+                                           → ranked-context.json
+                                           → pending-insights.jsonl
+                                           → intelligence-snapshot.json
+```
+
+There is no drain path. PageRank scores, confidence boosts, access counts, and pattern insights computed by intelligence.cjs are invisible to AgentDB. The `consolidate()` function (session-end) writes back to `auto-memory-store.json` but never to `.swarm/memory.db`.
+
+### intelligence.cjs Data Lifecycle
+
+```
+SessionStart:
+  intelligence.init()
+  ├─ Reads auto-memory-store.json (4,485 entries, 1.9MB)
+  ├─ Builds graph (160 nodes, trigram Jaccard similarity edges)
+  ├─ Computes PageRank (0.85 damping, 30 iterations)
+  └─ Writes graph-state.json + ranked-context.json
+
+UserPromptSubmit (every prompt):
+  intelligence.getContext(prompt)
+  ├─ Reads ranked-context.json
+  ├─ Matches via trigram similarity → top-5
+  └─ Returns formatted context to hook router
+
+PostEdit (every file edit):
+  intelligence.recordEdit(file)
+  └─ Appends to pending-insights.jsonl
+
+PostTask (agent completes):
+  intelligence.feedback(success)
+  ├─ Boosts confidence of matched patterns (+0.05 success, -0.02 fail)
+  └─ Writes cjs-intelligence-signals.json (capped at 100)
+
+SessionEnd:
+  intelligence.consolidate()
+  ├─ Processes pending-insights.jsonl (hot files → insight entries)
+  ├─ Applies confidence decay to unaccessed entries (0.005/day, floor 0.05)
+  ├─ Rebuilds edges + recomputes PageRank
+  └─ Writes updated graph-state.json + ranked-context.json + auto-memory-store.json
+```
+
+### Accumulation Bounds
+
+| File | Bounded? | Mechanism | Current Size |
+|------|----------|-----------|-------------|
+| `auto-memory-store.json` | **NO** | Grows every `doImport()` | 4,485 entries, 1.9 MB |
+| `graph-state.json` | Soft | Rebuild proportional to store | 160 nodes, 84 KB |
+| `ranked-context.json` | Soft | Same size as store | 212 KB |
+| `pending-insights.jsonl` | **YES** | Cleared on `consolidate()` | 153 lines, 24 KB |
+| `intelligence-snapshot.json` | **YES** | Capped at 50 snapshots | 292 KB |
+| `cjs-intelligence-signals.json` | **YES** | Capped at 100 entries each | 705 lines |
+
+The primary accumulator (`auto-memory-store.json`) has no eviction policy and will grow indefinitely.
+
+### Fix Plan
+
+The fix is a 3-phase approach that addresses both root causes independently:
+
+#### Phase 1: Make the memory package loadable in dev (Root Cause A)
+
+**File**: `.claude/helpers/auto-memory-hook.mjs`, function `loadMemoryPackage()`
+
+Add a Strategy 0 that resolves the package from the fork source via the build tree:
+
+```javascript
+// Strategy 0: Dev mode — resolve from fork source (ruflo-patch builds this package)
+const forkDist = join(PROJECT_ROOT, '..', 'forks', 'ruflo', 'v3',
+  '@claude-flow', 'memory', 'dist', 'index.js');
+if (existsSync(forkDist)) {
+  try { return await import(`file://${forkDist}`); } catch { /* fall through */ }
+}
+
+// Strategy 0b: Verdaccio-installed (after npm run build / npm run publish:verdaccio)
+const verdaccioPath = join(PROJECT_ROOT, 'node_modules', '@sparkleideas',
+  'memory', 'dist', 'index.js');
+if (existsSync(verdaccioPath)) {
+  try { return await import(`file://${verdaccioPath}`); } catch { /* fall through */ }
+}
+```
+
+**Why this works**: In dev, the fork is always at `/Users/henrik/source/forks/ruflo/`. The dist exists after `npm run build` in the fork. For users, existing Strategies 1-4 continue to work.
+
+**Risk**: LOW — adds two `existsSync` checks before the existing strategies. Falls through on failure. No behavioral change for users.
+
+**Alternative (simpler)**: Add `@sparkleideas/memory` as a `devDependency` of ruflo-patch, installed from Verdaccio. This makes Strategies 2/3 work in dev. Requires Verdaccio to be running at `npm install` time.
+
+#### Phase 2: Add drain path from intelligence.cjs → AgentDB (Root Cause B)
+
+**File**: `.claude/helpers/intelligence.cjs`, function `consolidate()`
+
+At the end of `consolidate()`, after graph rebuild + PageRank recomputation, add a drain step that writes enriched entries to the RVF/AgentDB store:
+
+```javascript
+// Phase 2: Drain enriched entries to persistent store at session boundary
+async function drainToBackend(enrichedEntries) {
+  const memPkg = await loadMemoryPackage(); // Reuse from auto-memory-hook.mjs
+  if (!memPkg?.RvfBackend) return; // No drain if package unavailable
+
+  const swarmDir = path.join(PROJECT_ROOT, '.swarm');
+  const backend = new memPkg.RvfBackend({
+    databasePath: path.join(swarmDir, 'agentdb-memory.rvf')
+  });
+  await backend.initialize();
+
+  // Upsert top-N entries with PageRank + confidence metadata
+  const topEntries = enrichedEntries
+    .sort((a, b) => b.compositeScore - a.compositeScore)
+    .slice(0, 500); // Cap drain to top 500
+
+  for (const entry of topEntries) {
+    await backend.store({
+      ...entry,
+      metadata: {
+        ...entry.metadata,
+        pageRank: entry.pageRank,
+        confidence: entry.confidence,
+        accessCount: entry.accessCount,
+        drainedAt: Date.now(),
+      }
+    });
+  }
+
+  await backend.shutdown();
+}
+```
+
+**Why this works**: intelligence.cjs already has the enriched entries (with PageRank, confidence, access counts) in memory at `consolidate()` time. The drain writes the top 500 to `.swarm/agentdb-memory.rvf`, which is the same file `auto-memory-hook.mjs` reads. This closes the loop: patterns learned by intelligence.cjs become visible to CLI `memory search`.
+
+**Challenge**: intelligence.cjs is CJS, but `loadMemoryPackage()` is ESM. The drain function needs to either:
+- (a) Use dynamic `import()` (supported in CJS via `.then()` syntax) to load the ESM module
+- (b) Be called from `auto-memory-hook.mjs` `doSync()` instead, passing the enriched data via a shared JSON file
+- (c) Use a new `intelligence-drain.mjs` ESM wrapper called from `hook-handler.cjs`
+
+Option (b) is lowest risk: `intelligence.consolidate()` writes `ranked-context.json` (already does this), then `doSync()` in `auto-memory-hook.mjs` reads `ranked-context.json` and upserts top entries into RvfBackend. No CJS/ESM boundary crossing needed.
+
+**Risk**: MEDIUM — adds write load at session-end. Capped at 500 entries. RvfBackend atomic persist prevents corruption.
+
+#### Phase 3: Cap auto-memory-store.json accumulation
+
+**File**: `.claude/helpers/intelligence.cjs`, function `consolidate()`
+
+After rebuild, evict entries with confidence below the decay floor (0.05) AND age > 30 days AND accessCount === 0:
+
+```javascript
+// Evict stale entries
+const thirtyDaysAgo = Date.now() - (30 * 24 * 60 * 60 * 1000);
+const before = this.entries.size;
+for (const [id, entry] of this.entries) {
+  if (entry.confidence <= 0.05 &&
+      entry.createdAt < thirtyDaysAgo &&
+      (entry.accessCount || 0) === 0) {
+    this.entries.delete(id);
+  }
+}
+const evicted = before - this.entries.size;
+if (evicted > 0) log(`Evicted ${evicted} stale entries`);
+```
+
+**Also cap the store at 2000 entries**: After eviction, if still > 2000, drop the lowest-PageRank entries.
+
+**Risk**: LOW — only evicts entries that are old, unaccessed, and at minimum confidence. Reversible via MEMORY.md re-import.
+
+### Fix Sequence
+
+| Phase | Where | Change | Risk | Effort |
+|-------|-------|--------|------|--------|
+| 1 | `auto-memory-hook.mjs` | Add Strategy 0 for dev-mode resolution | LOW | ~10 lines |
+| 2 | `auto-memory-hook.mjs` `doSync()` | Read `ranked-context.json`, upsert top 500 to RvfBackend | MEDIUM | ~40 lines |
+| 3 | `intelligence.cjs` `consolidate()` | Evict stale entries + cap at 2000 | LOW | ~15 lines |
+
+### Acceptance Criteria
+
+1. In dev (ruflo-patch), `doImport()` successfully loads `@sparkleideas/memory` and RvfBackend
+2. After session, `.swarm/agentdb-memory.rvf` exists with size > 0
+3. `memory search --query "pattern"` returns entries that were learned by intelligence.cjs
+4. `auto-memory-store.json` does not exceed 2000 entries after consolidation
+5. No regression: 148/148 acceptance tests still pass
+6. Hook execution stays within 50ms budget (Phase 2 drain runs at session-end, not per-prompt)
+
+### Where Fixes Live
+
+All fixes are in the **ruflo fork** at `v3/@claude-flow/cli/.claude/helpers/`:
+
+| File | Phase | Fix |
+|------|-------|-----|
+| `auto-memory-hook.mjs` | 1 | Strategy 0 dev-mode resolution |
+| `auto-memory-hook.mjs` | 2 | `doSync()` reads ranked-context.json → RvfBackend upsert |
+| `intelligence.cjs` | 3 | Eviction policy + 2000 entry cap |
+
+### Tests Required
+
+| Level | File | What |
+|-------|------|------|
+| Unit | `tests/unit/dual-silo-fix-adr0074.test.mjs` | Mock `loadMemoryPackage` Strategy 0; mock RvfBackend upsert; verify eviction logic |
+| Integration | Same file | Real `ranked-context.json` → real RvfBackend → verify round-trip |
+| Acceptance | `lib/acceptance-adr0074-checks.sh` | `check_adr0074_rvf_exists`: `.swarm/agentdb-memory.rvf` exists post-session; `check_adr0074_drain_works`: `memory search` returns intelligence-learned pattern; `check_adr0074_store_capped`: `auto-memory-store.json` <= 2000 entries after consolidate |
 
 ## Consequences
 
@@ -268,6 +500,7 @@ This ADR records the audit findings as the authoritative post-implementation sta
 - Config chain verified end-to-end (14 keys, zero residual bypass sites)
 - All upstream ADR dependencies mapped and status-tracked
 - Clear priority list for remaining work
+- **Issue #1 fix plan**: 3-phase approach with specific code locations, acceptance criteria, and risk assessment
 
 ### Negative
 
@@ -279,3 +512,4 @@ This ADR records the audit findings as the authoritative post-implementation sta
 
 - The dual silo will cause user confusion when hook-learned patterns don't appear in CLI memory searches
 - Silent HNSW param ignoring in rvf-runtime could lead to false performance assumptions
+- Phase 2 drain adds ~200ms to session-end (500 upserts × ~0.4ms each) — acceptable for a session-boundary operation
