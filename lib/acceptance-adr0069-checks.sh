@@ -249,10 +249,10 @@ check_adr0069_no_hardcoded_swarm_dir() {
   fi
 
   # Published swarm-tools should use .swarm not .claude-flow/swarm.
-  # The fix lives in the fork source; if the fork hasn't been rebuilt yet,
-  # the old path may still be present. Pass if:
+  # Pass if:
   #   (a) the new '.swarm' dir reference is found, OR
   #   (b) the old '.claude-flow/swarm' path is absent from the published code
+  # Fail if old path is still present and new path is not found.
   if grep -qE "'\\.swarm'|\"\.swarm\"|SWARM_DIR\s*=\s*['\"]\.swarm['\"]" "$swarm_tools_file" 2>/dev/null; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0069 H4: swarm-tools uses .swarm directory"
@@ -260,10 +260,7 @@ check_adr0069_no_hardcoded_swarm_dir() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0069 H4: swarm-tools has no hardcoded .claude-flow/swarm path"
   else
-    # Old path still present and new path not found — fork patch not yet rebuilt
-    # This is a known transient state; pass with a note
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0069 H4: swarm-tools still has .claude-flow/swarm (fork patch pending rebuild)"
+    _CHECK_OUTPUT="ADR-0069 H4: swarm-tools still has .claude-flow/swarm — fork patch must be rebuilt"
   fi
 }
 
@@ -344,8 +341,6 @@ check_adr0069_migration_batch_aligned() {
 
   # Check for the old mismatched value (batchSize: 100 in migration.ts).
   # After ADR-0069, should be 500 or config-driven (_configBatchSize).
-  # The fork patch may not have been rebuilt yet, so also pass if the old
-  # value is absent from DEFAULT_MIGRATION_CONFIG context.
   local mig_has_100="false"
   if [[ -n "$mig_file" ]] && grep -qE 'batchSize\s*:\s*100\b|batchSize:\s*100\b' "$mig_file" 2>/dev/null; then
     # Check if 500 or config-driven value is also present (fork patch applied)
@@ -358,14 +353,110 @@ check_adr0069_migration_batch_aligned() {
   fi
 
   if [[ "$mig_has_100" == "true" ]]; then
-    # batchSize: 100 present with no config-driven replacement — this is a
-    # known transient state if the fork patch hasn't been rebuilt yet.
-    # Pass with a note rather than failing, since the fix exists in fork source.
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0069 H10: migration.js has batchSize=100 (fork patch pending rebuild)"
+    _CHECK_OUTPUT="ADR-0069 H10: migration.js has bare batchSize=100 — fork patch must be rebuilt"
   else
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0069 H10: migration batch sizes aligned (no bare batchSize=100 in migration.js)"
+  fi
+}
+
+check_f1_agentdbservice_delegates() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local svc_file
+  svc_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/agentic-flow" "agentdb-service.js")
+
+  if [[ -z "$svc_file" ]]; then
+    svc_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentic-flow" -name "agentdb-service.js" -path "*/dist/*" 2>/dev/null | head -1)
+  fi
+  if [[ -z "$svc_file" ]]; then
+    svc_file=$(find "$TEMP_DIR/node_modules/@sparkleideas/agentic-flow" -name "agentdb-service.js" 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$svc_file" ]]; then
+    _CHECK_OUTPUT="ADR-0069 F1: agentdb-service.js not found in published agentic-flow package"
+    return
+  fi
+
+  # F1 requirement: agentdb-service delegates to getController(), not direct construction
+  local has_delegation="false"
+  local has_direct_ctor="false"
+
+  if grep -qE 'getController' "$svc_file" 2>/dev/null; then
+    has_delegation="true"
+  fi
+
+  # Check for direct construction of controllers that should be delegated
+  if grep -qE 'new\s+ReasoningBank\s*\(|new\s+CausalRecall\s*\(|new\s+CausalGraph\s*\(|new\s+SkillLibrary\s*\(' "$svc_file" 2>/dev/null; then
+    has_direct_ctor="true"
+  fi
+
+  if [[ "$has_delegation" == "true" && "$has_direct_ctor" == "false" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069 F1: agentdb-service uses getController() delegation, no direct construction"
+  elif [[ "$has_delegation" == "true" && "$has_direct_ctor" == "true" ]]; then
+    _CHECK_OUTPUT="ADR-0069 F1: agentdb-service has getController() but also direct construction (partial migration)"
+  else
+    _CHECK_OUTPUT="ADR-0069 F1: agentdb-service lacks getController() delegation"
+  fi
+}
+
+check_adr0069_sarsa_key_path() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local cli_dir="$TEMP_DIR/node_modules/@sparkleideas/cli"
+  if [[ ! -d "$cli_dir" ]]; then
+    _CHECK_OUTPUT="ADR-0069 A8: @sparkleideas/cli not found in TEMP_DIR"
+    return
+  fi
+
+  # The fix changed sarsa.ts to read neural.learningRates.sarsa (not .qLearning)
+  # Scan all dist JS for the correct key path
+  local has_sarsa_path="false"
+  local has_qlearning_sarsa="false"
+
+  if grep -rlE 'learningRates\.sarsa|learningRates\[.sarsa.\]' "$cli_dir" --include='*.js' 2>/dev/null | grep -qv node_modules; then
+    has_sarsa_path="true"
+  fi
+
+  # Check for the OLD buggy pattern where sarsa reads from .qLearning
+  # This would appear as sarsa code accessing learningRates.qLearning
+  # (we can't distinguish sarsa-reading-qLearning from qLearning-reading-qLearning
+  #  in compiled JS, so we check the positive: learningRates.sarsa must exist)
+  if [[ "$has_sarsa_path" == "true" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069 A8: CLI dist has learningRates.sarsa key path (fix applied)"
+  else
+    _CHECK_OUTPUT="ADR-0069 A8: learningRates.sarsa not found in CLI dist — sarsa may still read from .qLearning"
+  fi
+}
+
+check_adr0069_cache_size_consistent() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local mem_dir="$TEMP_DIR/node_modules/@sparkleideas/memory"
+  if [[ ! -d "$mem_dir" ]]; then
+    _CHECK_OUTPUT="ADR-0069 A9: @sparkleideas/memory not found in TEMP_DIR"
+    return
+  fi
+
+  # The fix aligned primary and secondary LRU to the same config-driven size.
+  # The OLD bug had secondary cache hardcoded to 10000.
+  # Check for cacheSize.*10000 or cache_size.*10000 in embedding-related files.
+  local old_10k_files
+  old_10k_files=$(grep -rlE 'cacheSize\s*[:=]\s*10000|cache_size\s*[:=]\s*10000|LRU.*10000|new.*Cache.*10000' "$mem_dir" --include='*.js' 2>/dev/null \
+    | grep -vE 'node_modules|\.map$' || true)
+
+  if [[ -z "$old_10k_files" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0069 A9: no hardcoded cacheSize=10000 in memory package (caches aligned)"
+  else
+    local count
+    count=$(echo "$old_10k_files" | wc -l | tr -d ' ')
+    _CHECK_OUTPUT="ADR-0069 A9: cacheSize=10000 still present in ${count} file(s) in memory package"
   fi
 }
 

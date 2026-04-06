@@ -17,14 +17,7 @@ check_init_config_is_json() {
       _CHECK_OUTPUT="ADR-0069: config.json exists but is invalid JSON"
     fi
   else
-    # config.json may not exist yet if init hasn't been re-run with new code
-    # Check if config.yaml exists as fallback
-    if [[ -f "$TEMP_DIR/.claude-flow/config.yaml" ]]; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0069: config.yaml exists (pre-ADR-0069 init); config.json will be generated on next init"
-    else
-      _CHECK_OUTPUT="ADR-0069: neither config.json nor config.yaml found"
-    fi
+    _CHECK_OUTPUT="ADR-0069: config.json not found — init must generate config.json"
   fi
 }
 

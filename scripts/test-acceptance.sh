@@ -25,6 +25,7 @@
 #                attn-wiring
 #   adr0069-f3 — f3-wasm-pub, f3-unified-pub, f3-wasm-bin, f3-unified-bin,
 #                f3-wasm-load, f3-mech-count
+#   adr0071    — adr0071-no-ruvector, adr0071-node-binary
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
 #
@@ -519,6 +520,9 @@ run_check_bg "adr0069-swarm-dir"   "No hardcoded swarm dir (ADR-0069 H4)"   chec
 run_check_bg "adr0069-thresh-07"   "Search threshold not 0.5 (ADR-0069 H7)" check_adr0069_search_threshold_not_05    "adr0069"
 run_check_bg "adr0069-mig-batch"   "Migration batch aligned (ADR-0069 H10)" check_adr0069_migration_batch_aligned    "adr0069"
 run_check_bg "adr0069-dedup-098"   "Dedup threshold aligned (ADR-0069 H11)" check_adr0069_dedup_threshold_aligned    "adr0069"
+run_check_bg "adr0069-f1-deleg"  "F1 getController delegation (ADR-0069)" check_f1_agentdbservice_delegates         "adr0069"
+run_check_bg "adr0069-sarsa-key" "SARSA key path (ADR-0069 A8)"           check_adr0069_sarsa_key_path             "adr0069"
+run_check_bg "adr0069-cache-10k" "Cache size consistent (ADR-0069 A9)"    check_adr0069_cache_size_consistent      "adr0069"
 run_check_bg "adr0069-init-json"  "Init config is JSON (ADR-0069)"         check_init_config_is_json                "adr0069"
 run_check_bg "adr0069-init-sql"   "Init has sqlite keys (ADR-0069)"        check_init_has_sqlite_keys               "adr0069"
 run_check_bg "adr0069-init-neur"  "Init has neural keys (ADR-0069)"        check_init_has_neural_keys               "adr0069"
@@ -560,6 +564,10 @@ run_check_bg "f3-wasm-bin"      "Attention WASM has binary (F3)"        check_at
 run_check_bg "f3-unified-bin"   "Attention unified WASM binary (F3)"    check_attention_unified_wasm_has_binary "adr0069-f3"
 run_check_bg "f3-wasm-load"     "Attention WASM loadable (F3)"          check_attention_wasm_loadable           "adr0069-f3"
 run_check_bg "f3-mech-count"    "Attention mechanisms >= 18 (F3)"       check_attention_mechanisms_count        "adr0069-f3"
+
+# ADR-0071/0072: scope cleanup + native binary bundling
+run_check_bg "adr0071-no-ruvector"  "No @ruvector/ import refs (ADR-0071)"  check_adr0071_no_ruvector_refs     "adr0071"
+run_check_bg "adr0071-node-binary"  ".node binary bundled (ADR-0071)"       check_adr0071_node_binary_exists   "adr0071"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
@@ -834,6 +842,9 @@ collect_parallel "all" \
   "adr0069-thresh-07|Search threshold not 0.5 (ADR-0069 H7)" \
   "adr0069-mig-batch|Migration batch aligned (ADR-0069 H10)" \
   "adr0069-dedup-098|Dedup threshold aligned (ADR-0069 H11)" \
+  "adr0069-f1-deleg|F1 getController delegation (ADR-0069)" \
+  "adr0069-sarsa-key|SARSA key path (ADR-0069 A8)" \
+  "adr0069-cache-10k|Cache size consistent (ADR-0069 A9)" \
   "adr0069-init-json|Init config is JSON (ADR-0069)" \
   "adr0069-init-sql|Init has sqlite keys (ADR-0069)" \
   "adr0069-init-neur|Init has neural keys (ADR-0069)" \
@@ -858,6 +869,8 @@ collect_parallel "all" \
   "f3-unified-bin|Attention unified WASM binary (F3)" \
   "f3-wasm-load|Attention WASM loadable (F3)" \
   "f3-mech-count|Attention mechanisms >= 18 (F3)" \
+  "adr0071-no-ruvector|No @ruvector/ import refs (ADR-0071)" \
+  "adr0071-node-binary|.node binary bundled (ADR-0071)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
@@ -1074,6 +1087,12 @@ done
 log "  $(printf '%-22s %6dms (%3ds)' 'TOTAL' "$ACCEPT_TOTAL_MS" "$(( ACCEPT_END_S - ACCEPT_START_S ))")"
 log "════════════════════════════════════════════"
 log "Results: ${results_dir}/acceptance-results.json"
+
+# ADR-0072: Baseline regression guard
+BASELINE_COUNT=148
+if [[ "$pass_count" -lt "$BASELINE_COUNT" ]]; then
+  log "[WARN] Regression: $pass_count passed < baseline $BASELINE_COUNT"
+fi
 
 printf '{"phase":"TOTAL","duration_ms":%d}\n' "$ACCEPT_TOTAL_MS" >> "$TIMING_FILE"
 

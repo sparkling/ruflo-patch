@@ -136,24 +136,37 @@ if [[ "$_FAST_RUN_GROUPS" == *"p5"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
     (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force --with-embeddings --embedding-model all-mpnet-base-v2 2>/dev/null) || true
 
     echo "  ── config.json checks ──"
-    _fast_run "p5-cfg-ewclambda"  check_p5_ewc_lambda
-    _fast_run "p5-cfg-cachesize"  check_p5_cache_size
-    _fast_run "p5-cfg-mcpport"    check_p5_mcp_port
-    _fast_run "p5-cfg-windowms"   check_p5_window_ms
-    _fast_run "p5-cfg-opttimeout" check_p5_optimize_timeout
-    _fast_run "p5-cfg-simthresh"  check_p5_similarity_threshold
-    _fast_run "p5-cfg-dedup"      check_p5_dedup_threshold
-    _fast_run "p5-cfg-cpuload"    check_p5_cpu_load
-    _fast_run "p5-cfg-maxel"      check_p5_max_elements
+    _fast_run "p5-cfg-valid"      check_p5_config_valid_json
+    _fast_run "p5-cfg-sqlite"     check_p5_config_sqlite_keys
+    _fast_run "p5-cfg-neural"     check_p5_config_neural_keys
+    _fast_run "p5-cfg-ports"      check_p5_config_ports
+    _fast_run "p5-cfg-ratelimit"  check_p5_config_ratelimiter
+    _fast_run "p5-cfg-workers"    check_p5_config_workers
+    _fast_run "p5-cfg-simthresh"  check_p5_config_similarity
+    _fast_run "p5-cfg-dedup"      check_p5_config_dedup
+    _fast_run "p5-cfg-cpuload"    check_p5_config_maxcpu
 
-    echo "  ── embeddings.json checks ──"
-    _fast_run "p5-emb-model"      check_p5_emb_model
-    _fast_run "p5-emb-dim"        check_p5_emb_dimension
-    _fast_run "p5-emb-hnswm"      check_p5_emb_hnsw_m
-    _fast_run "p5-emb-efcon"      check_p5_emb_ef_construction
-    _fast_run "p5-emb-efsearch"   check_p5_emb_ef_search
-    _fast_run "p5-emb-maxel"      check_p5_emb_max_elements
-    _fast_run "p5-emb-hashfb"     check_p5_emb_hash_fallback
+    echo "  ── embeddings checks ──"
+    _fast_run "p5-emb-valid"      check_p5_embeddings_valid_json
+    _fast_run "p5-emb-model"      check_p5_embeddings_model
+    _fast_run "p5-emb-dim"        check_p5_embeddings_dimension
+    _fast_run "p5-emb-hnswm"      check_p5_embeddings_hnsw_m
+    _fast_run "p5-emb-efcon"      check_p5_embeddings_hnsw_efc
+    _fast_run "p5-emb-efsearch"   check_p5_embeddings_hnsw_efs
+    _fast_run "p5-emb-maxel"      check_p5_embeddings_maxel
+
+    echo "  ── runtime checks ──"
+    _fast_run "p5-rt-store"       check_p5_runtime_memory_store
+    _fast_run "p5-rt-search"      check_p5_runtime_memory_search
+
+    echo "  ── flag override checks ──"
+    _fast_run "p5-flag-port"      check_p5_flag_port
+    _fast_run "p5-flag-simthresh" check_p5_flag_similarity
+    _fast_run "p5-flag-maxagents" check_p5_flag_maxagents
+
+    echo "  ── backward compat checks ──"
+    _fast_run "p5-compat-noforce" check_p5_compat_no_overwrite
+    _fast_run "p5-compat-cfgset"  check_p5_compat_config_set
 
     # Cleanup
     rm -rf "$_P5_DIR" 2>/dev/null

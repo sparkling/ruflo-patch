@@ -14,23 +14,28 @@ check_adr0068_no_384_fallbacks() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local found_384=0
+  local found_bad=0
+  local bad_details=""
   local pkgs=("cli" "memory" "shared" "hooks" "embeddings")
 
   for pkg in "${pkgs[@]}"; do
     local pkg_dir="$TEMP_DIR/node_modules/@sparkleideas/$pkg"
     if [[ -d "$pkg_dir" ]]; then
-      if grep -r '|| 384\|?? 384' "$pkg_dir" --include='*.js' 2>/dev/null | grep -v node_modules | head -3; then
-        found_384=1
+      # Check for both 384 and 1536 hardcoded fallbacks
+      local hits
+      hits=$(grep -r '|| 384\|?? 384\||| 1536\|?? 1536' "$pkg_dir" --include='*.js' 2>/dev/null | grep -v node_modules | head -5)
+      if [[ -n "$hits" ]]; then
+        found_bad=1
+        bad_details="${bad_details}${hits}\n"
       fi
     fi
   done
 
-  if [[ "$found_384" -eq 0 ]]; then
+  if [[ "$found_bad" -eq 0 ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0068 P0: no 384 fallbacks in any published package"
+    _CHECK_OUTPUT="ADR-0068 P0: no 384/1536 fallbacks in any published package"
   else
-    _CHECK_OUTPUT="ADR-0068 P0: hardcoded 384 fallback(s) found in published packages"
+    _CHECK_OUTPUT="ADR-0068 P0: hardcoded 384/1536 fallback(s) found in published packages"
   fi
 }
 
