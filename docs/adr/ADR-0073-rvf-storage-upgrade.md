@@ -1,6 +1,6 @@
 # ADR-0073: RVF Storage Backend Upgrade — WAL Write Path, Rust HNSW, Native Activation
 
-- **Status**: Planned
+- **Status**: Implemented (Phases 1-3)
 - **Date**: 2026-04-06
 - **Extracted from**: ADR-0069 F2 (RVF as Single Storage Format)
 - **Depends on**: ADR-0068 (config chain), ADR-0069 F1 (AgentDBService delegation)
