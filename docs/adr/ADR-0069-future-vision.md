@@ -352,19 +352,46 @@ The ruflo `RvfBackend` is the default storage for all CLI memory operations. It 
 
 Key merged branches: `fix/rvf-backend-stubs` (fixed NAPI/WASM binding layer), `claude/rvf-wasm-integration` (CJS/ESM dual-format, E2E tested), `fix/rvf-string-id-mapping` (numeric↔string ID mapping for HNSW compatibility).
 
-#### Revised F2 path (post-deep-dive)
+#### Revised F2 path (post-deep-dive, re-evaluated 2026-04-06)
 
-The original F2 migration sequence assumed blocked prerequisites. Revised path:
+The original F2 path assumed tryNativeInit was a simple API mismatch fix. A 5-agent hive
+re-evaluated F2 and found it's more involved than described. Key corrections:
 
-1. **Fix ruflo `tryNativeInit()` API mismatch** (~50 lines in `rvf-backend.ts`). The code opens `@ruvector/rvf` but never routes reads/writes through it. Fix: align the API call (`RvfDatabase.create(path, {dimension})` vs `new RvfDatabase({path, dimensions})`), then delegate `search()` to native when available. Immediate perf win on the backend that's already selected by default. **This is the lowest-effort, highest-impact F2 step.**
-2. **Wire rvf-index into rvf-runtime** (ruvector fork Rust patch, ~200 lines in `store.rs` + `Cargo.toml`). Turns every RVF query from O(n) to O(log n).
-   - Rust: add `rvf-index` dependency to `rvf-runtime/Cargo.toml`, add `HnswGraph` field to `RvfStore`, wire `ingest_batch()` to insert into graph, wire `query()` to use HNSW search
-   - Build for all 3 platforms: macOS ARM (`cargo build --release && napi build --release`), cross-compile Linux x64 (`--target x86_64-unknown-linux-gnu`), cross-compile Windows x64 (`--target x86_64-pc-windows-msvc`). Commit all `.node` binaries (same pattern as upstream's checked-in binaries at `npm/packages/rvf-node/`)
-   - Platform selection is automatic via NAPI-RS's `optionalDependencies` mechanism: `@ruvector/rvf-node-darwin-arm64`, `@ruvector/rvf-node-linux-x64-gnu`, `@ruvector/rvf-node-win32-x64-msvc`. npm installs only the matching platform package. `tryNativeInit()` falls back to pure-TS `HnswLite` if no native binary available.
-   - Linux and Windows binaries not acceptance-tested (no test infra on those platforms). macOS ARM tested locally. All platforms have pure-TS fallback as safety net.
-3. **Build SQLite→RVF migration tool** — automatic on first access. When a project has `.swarm/memory.db` (SQLite) but no `.swarm/agentdb-memory.rvf`, migrate on startup. Use the existing `RvfMigrator.fromSqlite()` path + `rvf-import` patterns. User-facing: zero manual steps, migration logged to console.
-4. **Keep two RvfBackend classes** — ruflo's for `IMemoryBackend` (full MemoryEntry), agentdb's for `VectorBackendAsync` (raw vectors). Different interfaces, different purposes.
-5. **Do not wait for upstream bug fixes** — #315/#316/#323 have zero maintainer engagement.
+**What the ADR said vs reality:**
+
+| ADR claimed | Actual state (verified 2026-04-06) |
+|-------------|-----------------------------------|
+| "~50 line tryNativeInit fix" | 4 bugs: wrong package name (`@ruvector/rvf` vs `@ruvector/rvf-node`), wrong constructor form (`new` vs `RvfDatabase.create`), wrong key names (`dimensions` vs `dimension`), wrong method chain (`.open()` is static, not instance) |
+| "@ruvector/rvf is available" | **Not installed.** Neither `@ruvector/rvf` nor `@ruvector/rvf-node` in fork's node_modules |
+| "Immediate perf win" | Read path: negligible at typical scale (hundreds of entries). **Write path** is the real bottleneck — every `memory store` rewrites the ENTIRE file as JSON |
+| "Lowest-effort, highest-impact" | F3 (attention WASM) is lower effort (1-2 days pipeline wiring) and higher capability impact (18+ attention mechanisms) |
+
+**Revised priority (F3 before F2):**
+
+F2 and F3 are architecturally independent — AttentionService is pure stateless compute,
+doesn't need RVF storage. F3 is 1-2 days of mechanical pipeline wiring with zero regression
+risk. F2 requires package installation, API fixes, and ideally the rvf-index Rust patch.
+
+**Revised F2 steps:**
+
+1. **Install `@ruvector/rvf-node`** into fork via `install-native-deps.sh` (we already build
+   it from source with the `build.rs` fix). Verify it loads.
+2. **Fix tryNativeInit()** (~50 lines): use `@ruvector/rvf-node` import, `RvfDatabase.create()`
+   factory, `dimension` (singular), bridge `store/search/delete` to native CRUD API.
+3. **Wire rvf-index into rvf-runtime** (Rust patch ~200 lines): turns queries from O(n) to
+   O(log n). Without this, native RVF is still brute-force — faster than JS but not HNSW-fast.
+4. **Fix the write path**: replace full-file JSON rewrite with append/WAL semantics. THIS is
+   the real user-impact bottleneck — at 500+ entries, `memory store` becomes measurably slow.
+5. **Keep two RvfBackend classes** — ruflo's for `IMemoryBackend`, agentdb's for
+   `VectorBackendAsync`. Different interfaces, different purposes.
+
+**Performance reality check:**
+- "150x pattern search" — plausible at 10K+ entries with Rust HNSW vs TS linear scan.
+  Irrelevant at typical agent memory scale (hundreds of entries).
+- "500x batch operations" — not benchmarked. The real win is eliminating the O(n) full-file
+  rewrite on every mutation, which is measurable at 500+ entries.
+- Native RVF won't noticeably speed up `memory search` for typical usage — the bottleneck
+  is file load + process startup, not HNSW traversal.
 
 #### What NOT to wire from the RVF/RuVector integration roadmap
 
