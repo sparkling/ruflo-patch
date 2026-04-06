@@ -23,6 +23,8 @@
 #                sec-composition, sec-wiring, sec-quantize, sec-health-rpt
 #   attention  — attn-compute, attn-benchmark, attn-configure, attn-metrics,
 #                attn-wiring
+#   adr0069-f3 — f3-wasm-pub, f3-unified-pub, f3-wasm-bin, f3-unified-bin,
+#                f3-wasm-load, f3-mech-count
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
 #
@@ -551,6 +553,14 @@ run_check_bg "attn-configure"   "Attention configure"      check_attention_confi
 run_check_bg "attn-metrics"     "Attention metrics (D2)"   check_attention_metrics           "attention"
 run_check_bg "attn-wiring"      "Attention controllers"    check_attention_controllers_wired "attention"
 
+# ADR-0069 F3: WASM attention packages
+run_check_bg "f3-wasm-pub"      "Attention WASM published (F3)"         check_attention_wasm_published          "adr0069-f3"
+run_check_bg "f3-unified-pub"   "Attention unified WASM published (F3)" check_attention_unified_wasm_published  "adr0069-f3"
+run_check_bg "f3-wasm-bin"      "Attention WASM has binary (F3)"        check_attention_wasm_has_binary         "adr0069-f3"
+run_check_bg "f3-unified-bin"   "Attention unified WASM binary (F3)"    check_attention_unified_wasm_has_binary "adr0069-f3"
+run_check_bg "f3-wasm-load"     "Attention WASM loadable (F3)"          check_attention_wasm_loadable           "adr0069-f3"
+run_check_bg "f3-mech-count"    "Attention mechanisms >= 18 (F3)"       check_attention_mechanisms_count        "adr0069-f3"
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -842,6 +852,12 @@ collect_parallel "all" \
   "attn-compute|Attention compute" "attn-benchmark|Attention benchmark" \
   "attn-configure|Attention configure" "attn-metrics|Attention metrics (D2)" \
   "attn-wiring|Attention controllers" \
+  "f3-wasm-pub|Attention WASM published (F3)" \
+  "f3-unified-pub|Attention unified WASM published (F3)" \
+  "f3-wasm-bin|Attention WASM has binary (F3)" \
+  "f3-unified-bin|Attention unified WASM binary (F3)" \
+  "f3-wasm-load|Attention WASM loadable (F3)" \
+  "f3-mech-count|Attention mechanisms >= 18 (F3)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

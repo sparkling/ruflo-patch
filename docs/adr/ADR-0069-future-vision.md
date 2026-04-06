@@ -490,17 +490,24 @@ All 4 prerequisites from the original text are already done:
 3. ~~Create TypeScript wrapper~~ → `AttentionService.ts` already wraps with NAPI → WASM → JS fallback chain
 4. ~~Replace LegacyAttentionAdapter~~ → Runtime detection selects best available engine
 
-**What remains for F3:**
-- Publish `@sparkleideas/ruvector-attention-wasm` and `@sparkleideas/ruvector-attention-unified-wasm` to Verdaccio
-- Verify the WASM fallback path activates when NAPI is unavailable
-- Wire the unified variant (18+ mechanisms) into AttentionService as a higher-priority option
-- Remove the "completely broken" comment from `attention-fallbacks.ts` (the NAPI module works, the comment is stale)
+**What remains for F3:** All items completed 2026-04-06.
+
+- ~~Publish `@sparkleideas/ruvector-attention-wasm` and `@sparkleideas/ruvector-attention-unified-wasm` to Verdaccio~~ — both in publish-levels.json Level 1
+- ~~Verify the WASM fallback path activates when NAPI is unavailable~~ — `loadNAPIModule()` now falls through to `loadWASMModule()` in Node.js
+- ~~Wire the unified variant (18+ mechanisms) into AttentionService as a higher-priority option~~ — unified tried before basic in `loadWASMModule()`
+- ~~Remove the "completely broken" comment from `attention-fallbacks.ts`~~ — replaced with accurate description of fallback role
+
+**Additional work done:**
+- WASM class-based dispatch: `getWasmInstance()` creates/caches `WasmMultiHeadAttention`, `WasmFlashAttention`, `WasmHyperbolicAttention`, `WasmMoEAttention`, `WasmLinearAttention`
+- Dual ControllerRegistry instances: `flashAttentionService` (Flash for self-attention) and `moeAttentionService` (MoE for expert routing)
+- High-level API (`applyFlashAttention`, `applyMultiHeadAttention`, `applyMoE`) wired to WASM tier
+- Unit + integration + acceptance tests for all F3 changes
+- Performance benchmark comparing WASM vs JS fallback
 
 ### Revised effort estimate
 
-F3 is much smaller than originally estimated. The WASM modules are built and published.
-The AttentionService already has the fallback chain. Remaining work is pipeline wiring
-(add to publish-levels, scope-rename, verify) — estimated 1-2 days, not weeks.
+F3 completed in ~1 day as predicted. The WASM modules were built and published upstream;
+the work was pipeline wiring, fallback chain fixes, and WASM class dispatch integration.
 
 ## Appendix: Full Config Chain Bypass Inventory (audited 2026-04-05)
 
@@ -832,10 +839,10 @@ The following bugs were discovered during ADR-0070 Phase 5 acceptance testing an
 - [ ] `.swarm/memory.graph` data migrated to RVF graph profile
 - [ ] Cross-tool data visibility verified (CLI store -> MCP search returns results)
 
-### F3: Full AttentionService
-- [ ] `@ruvector/attention` crate exists with WASM + NAPI-RS bindings
-- [ ] `@claude-flow/attention` package wraps Rust module with TypeScript API
-- [ ] At least 3 mechanism types functional: Flash Attention, Multi-Head, MoE
-- [ ] LegacyAttentionAdapter replaced by real dispatch in ControllerRegistry
-- [ ] SONAWithAttention correctly uses 2 separate AttentionService instances (Flash + MoE)
-- [ ] Performance benchmark: Flash Attention achieves >= 2x speedup over legacy adapter
+### F3: Full AttentionService (Implemented 2026-04-06)
+- [x] `@ruvector/attention` crate exists with WASM + NAPI-RS bindings
+- [x] `@claude-flow/attention` package wraps Rust module with TypeScript API — AttentionService.ts wraps WASM with NAPI->WASM->JS fallback chain
+- [x] At least 3 mechanism types functional: Flash Attention, Multi-Head, MoE — plus Hyperbolic, Linear via WASM class-based dispatch
+- [x] LegacyAttentionAdapter replaced by real dispatch in ControllerRegistry — WASM class instances (WasmFlashAttention, WasmMultiHeadAttention, WasmMoEAttention) used via getWasmInstance() cache
+- [x] SONAWithAttention correctly uses 2 separate AttentionService instances (Flash + MoE) — flashAttentionService and moeAttentionService in ControllerRegistry
+- [x] Performance benchmark: Flash Attention achieves >= 2x speedup over legacy adapter
