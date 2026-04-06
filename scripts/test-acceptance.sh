@@ -934,11 +934,21 @@ if [[ -f "$p5_lib" ]]; then
   _P5_DIR=$(mktemp -d /tmp/ruflo-p5-XXXXX)
   PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
 
-  # Run init in the fresh dir
-  (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx @sparkleideas/cli@latest init --full --force --with-embeddings --embedding-model all-mpnet-base-v2 2>/dev/null) || true
+  # Run init in the fresh dir using the already-installed CLI (not npx — avoids npm 11 crash
+  # on missing optional WASM deps). Use Xenova/ prefix for model name (ADR-0069 canonical).
+  # Capture stderr to a log file instead of discarding — aids debugging.
+  _P5_INIT_LOG="${_P5_DIR}/.init-log.txt"
+  if [[ -x "$CLI_BIN" ]]; then
+    (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force --with-embeddings --embedding-model "Xenova/all-mpnet-base-v2" 2>"$_P5_INIT_LOG") || {
+      log "WARN: Phase 5 init exited non-zero (see $_P5_INIT_LOG)"
+    }
+  else
+    log "WARN: CLI_BIN not set — Phase 5 init skipped"
+  fi
 
-  # Export for check functions
-  export _P5_DIR
+  # Export for check functions (lib uses P5_DIR without underscore)
+  export P5_DIR="$_P5_DIR"
+  export CLI_BIN
 
   # Group 1: config.json structure and values (parallel)
   run_check_bg "p5-cfg-valid"     "config.json valid"              check_p5_config_valid_json    "p5-config"
@@ -951,8 +961,8 @@ if [[ -f "$p5_lib" ]]; then
   run_check_bg "p5-cfg-dedup"     "dedupThreshold=0.95"            check_p5_config_dedup         "p5-config"
   run_check_bg "p5-cfg-cpuload"   "maxCpuLoad=28"                  check_p5_config_maxcpu        "p5-config"
 
-  # Group 2: embeddings.json (parallel, no harness stamp)
-  run_check_bg "p5-emb-valid"     "embeddings.json valid"          check_p5_embeddings_valid_json "p5-embed"
+  # Group 2: embeddings section in config.json (parallel, no harness stamp)
+  run_check_bg "p5-emb-valid"     "embeddings section present"     check_p5_embeddings_valid_json "p5-embed"
   run_check_bg "p5-emb-model"     "model=mpnet"                    check_p5_embeddings_model      "p5-embed"
   run_check_bg "p5-emb-dim"       "dimension=768"                  check_p5_embeddings_dimension  "p5-embed"
   run_check_bg "p5-emb-hnswm"     "hnsw.m=23"                     check_p5_embeddings_hnsw_m     "p5-embed"
@@ -984,7 +994,7 @@ if [[ -f "$p5_lib" ]]; then
     "p5-cfg-simthresh|similarityThreshold=0.7" \
     "p5-cfg-dedup|dedupThreshold=0.95" \
     "p5-cfg-cpuload|maxCpuLoad=28" \
-    "p5-emb-valid|embeddings.json valid" \
+    "p5-emb-valid|embeddings section present" \
     "p5-emb-model|model=mpnet" \
     "p5-emb-dim|dimension=768" \
     "p5-emb-hnswm|hnsw.m=23" \

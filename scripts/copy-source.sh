@@ -137,6 +137,11 @@ copy_source() {
       fi
     fi
   done
+
+  # ADR-0071: Bundle .node binaries into parent NAPI packages
+  if [[ -x "${SCRIPT_DIR}/bundle-native-binaries.sh" ]]; then
+    bash "${SCRIPT_DIR}/bundle-native-binaries.sh" "${TEMP_DIR}" || log "WARN: bundle-native-binaries failed (non-fatal)"
+  fi
 }
 
 # ---------------------------------------------------------------------------

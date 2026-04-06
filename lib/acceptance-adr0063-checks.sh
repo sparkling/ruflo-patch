@@ -131,15 +131,15 @@ check_adr0063_rvf_optional_dep() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # H3: @ruvector/rvf in optionalDependencies
+  # H3: rvf in optionalDependencies (ADR-0071: renamed to @sparkleideas/ruvector-rvf)
   local pkg_file="$TEMP_DIR/node_modules/@sparkleideas/agentdb/package.json"
 
   if [[ -f "$pkg_file" ]]; then
-    if grep -q 'ruvector/rvf' "$pkg_file" 2>/dev/null; then
+    if grep -q 'ruvector-rvf\|ruvector/rvf' "$pkg_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0063 H3: @ruvector/rvf declared in agentdb package.json"
+      _CHECK_OUTPUT="ADR-0063 H3: rvf declared in agentdb package.json"
     else
-      _CHECK_OUTPUT="ADR-0063 H3: @ruvector/rvf not found in agentdb package.json"
+      _CHECK_OUTPUT="ADR-0063 H3: rvf not found in agentdb package.json"
     fi
   else
     _CHECK_OUTPUT="ADR-0063 H3: agentdb package.json not found"
