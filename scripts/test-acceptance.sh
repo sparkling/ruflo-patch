@@ -583,6 +583,9 @@ run_check_bg "adr0074-consolidate"  "Consolidate evicts (ADR-0074)"         chec
 run_check_bg "adr0073-wal"         "WAL methods (ADR-0073)"                check_adr0073_wal_methods          "adr0073"
 run_check_bg "adr0073-native"      "Native package (ADR-0073)"             check_adr0073_native_package       "adr0073"
 run_check_bg "adr0073-metric"      "Metric remap (ADR-0073)"               check_adr0073_metric_remap         "adr0073"
+run_check_bg "adr0073-rvf-dep"     "rvf-node in dep tree (ADR-0073)"       check_adr0073_rvf_node_dep         "adr0073"
+run_check_bg "adr0073-native-rt"   "Native store+query (ADR-0073)"         check_adr0073_native_runtime       "adr0073"
+run_check_bg "adr0073-wal-rt"      "WAL round-trip (ADR-0073)"             check_adr0073_wal_roundtrip        "adr0073"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
