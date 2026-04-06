@@ -893,6 +893,12 @@ collect_parallel "all" \
   "adr0074-drain|Drain wired (ADR-0074)" \
   "adr0074-evict-cap|Eviction cap (ADR-0074)" \
   "adr0074-consolidate|Consolidate evicts (ADR-0074)" \
+  "adr0073-wal|WAL methods (ADR-0073)" \
+  "adr0073-native|Native package (ADR-0073)" \
+  "adr0073-metric|Metric remap (ADR-0073)" \
+  "adr0073-rvf-dep|rvf-node in dep tree (ADR-0073)" \
+  "adr0073-native-rt|Native store+query (ADR-0073)" \
+  "adr0073-wal-rt|WAL round-trip (ADR-0073)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
