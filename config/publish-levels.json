@@ -17,6 +17,8 @@
         "@sparkleideas/ruvector-rvf-node",
         "@sparkleideas/ruvector-sona",
         "@sparkleideas/ruvector-tiny-dancer",
+        "@sparkleideas/ruvector-attention-wasm",
+        "@sparkleideas/ruvector-attention-unified-wasm",
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
         "@sparkleideas/ruv-swarm",

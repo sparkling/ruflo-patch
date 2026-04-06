@@ -427,9 +427,13 @@ ADR-028 (Neural Attention Mechanisms) specifies a unified `AttentionService` sup
 
 The intended package structure: `@claude-flow/attention` wrapping `@ruvector/attention` WASM module.
 
-### Current state
+### Current state (corrected 2026-04-06)
 
-Only WASM stubs and `LegacyAttentionAdapter` exist. The vision document (Section 7) confirms "only `sublinearAttention` wired" and agentic-flow ADR-062 rates "Attention -> Tools: 0% (F)".
+~~Only WASM stubs and `LegacyAttentionAdapter` exist.~~ **Wrong.** Two WASM modules are fully
+built and published on npm (since Nov 2025). `AttentionService.ts` has runtime detection that
+selects NAPI (native) → WASM → JS fallback. The JS fallback (`attention-fallbacks.ts`, 21K tokens)
+is comprehensive but its header comment "Since @ruvector/attention is completely broken" refers
+to the NAPI native module, not the WASM module.
 
 The current 4 duplicate AttentionService instances (documented in ADR-0066 Problem 3) all use LegacyAttentionAdapter and provide only basic cosine-similarity-weighted attention. ADR-0068 P1-3a/b/c/d will reduce these to 1 shared instance, but that instance still only provides the legacy adapter.
 
@@ -443,18 +447,33 @@ ADR-0067 Section 8 documents this explicitly: "ADR-028 explicitly designed Atten
 
 The correct architecture (per ADR-0067): multiple AttentionService instances are valid when intentionally configured for different use cases (Flash vs MoE vs Hyperbolic). Unintentional duplicates with identical config should be shared. ADR-0068 achieves the second part; F3 enables the first.
 
-### Prerequisite: @ruvector/attention WASM module
+### ~~Prerequisite: @ruvector/attention WASM module~~ — ALREADY EXISTS (corrected 2026-04-06)
 
-The `@ruvector/attention` package does not exist yet. The Rust-side attention mechanisms are in `ruvector-core` but not compiled to WASM or exposed via NAPI-RS. Building this requires:
+**The original text below was wrong.** Two WASM modules exist, are built, and are published:
 
-1. Extracting attention mechanisms from `ruvector-core` into a standalone `ruvector-attention` crate
-2. Building WASM bindings via `wasm-pack` (for cross-platform) and NAPI-RS bindings (for performance)
-3. Creating the `@claude-flow/attention` TypeScript package that loads WASM/NAPI and exposes the 39 mechanism types
-4. Replacing `LegacyAttentionAdapter` with real mechanism dispatch
+| Package | npm Version | WASM Size | Mechanisms |
+|---------|-------------|-----------|-----------|
+| `@ruvector/attention-wasm` | 2.1.0 | 154 KB | 7 (multi-head, flash, hyperbolic, linear, MoE, local-global, sheaf) |
+| `@ruvector/attention-unified-wasm` | 0.1.29 | 331 KB | 18+ (above + 7 DAG + 3 graph + Mamba SSM) |
 
-### Effort estimate
+All 4 prerequisites from the original text are already done:
 
-This is the largest of the three items. The 39 mechanism types represent significant Rust implementation work (each mechanism is a separate attention computation kernel). Realistic scope for a first phase would be: Flash Attention + Multi-Head + MoE (the three that have existing Rust code in ruvector-core), with the remaining 36 as stubs.
+1. ~~Extract attention from ruvector-core~~ → Standalone `ruvector-attention` crate with 15+ Rust modules
+2. ~~Build WASM via wasm-pack~~ → Built, pre-compiled `.wasm` checked into fork at `crates/ruvector-attention-wasm/pkg/`
+3. ~~Create TypeScript wrapper~~ → `AttentionService.ts` already wraps with NAPI → WASM → JS fallback chain
+4. ~~Replace LegacyAttentionAdapter~~ → Runtime detection selects best available engine
+
+**What remains for F3:**
+- Publish `@sparkleideas/ruvector-attention-wasm` and `@sparkleideas/ruvector-attention-unified-wasm` to Verdaccio
+- Verify the WASM fallback path activates when NAPI is unavailable
+- Wire the unified variant (18+ mechanisms) into AttentionService as a higher-priority option
+- Remove the "completely broken" comment from `attention-fallbacks.ts` (the NAPI module works, the comment is stale)
+
+### Revised effort estimate
+
+F3 is much smaller than originally estimated. The WASM modules are built and published.
+The AttentionService already has the fallback chain. Remaining work is pipeline wiring
+(add to publish-levels, scope-rename, verify) — estimated 1-2 days, not weeks.
 
 ## Appendix: Full Config Chain Bypass Inventory (audited 2026-04-05)
 
