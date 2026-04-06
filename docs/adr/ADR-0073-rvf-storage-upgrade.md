@@ -315,7 +315,44 @@ rewrite risk.
 
 ruvector upstream synced (68 commits). Impact: NO IMPACT on implementation plan.
 - RVF crate: hash algorithm upgraded from CRC32C to SHAKE-256 (cryptographic). No structural changes.
-- rvf-index: unchanged, HNSW still disconnected from rvf-runtime (Phase 2 blocker unchanged)
-- rvf-node NAPI: binaries rebuilt, but 4 tryNativeInit() API bugs persist (Phase 3 unchanged)
+- rvf-index: ~~unchanged, HNSW still disconnected from rvf-runtime~~ **RESOLVED** — Phase 2 wired rvf-index into rvf-runtime
+- rvf-node NAPI: ~~binaries rebuilt, but 4 tryNativeInit() API bugs persist~~ **RESOLVED** — Phase 3 fixed all 4 bugs
 - RVM witness chain: reference pattern for append-only log design, but NOT a dependency for Phase 1 WAL
 - Upstream creator assessment: "Ship Phases 1-3. The disconnected rvf-index is embarrassing."
+
+## Implementation Notes (2026-04-06)
+
+All 3 phases implemented and validated by 2 review swarms (7 agents, 10 bugs found and fixed).
+
+### Phase 1 implementation details (not in original design)
+- WAL frame format: `[4-byte LE length][UTF-8 JSON]` per entry
+- HNSW stale-edge fix on replay: `remove()` before `add()` when entry already loaded from disk
+- WAL truncate-before-persist on delete paths: prevents resurrection on crash
+- Concurrent persist guard: `persisting` flag prevents data loss in `compactWal()`
+- `:memory:` mode: walPath set to empty string, all WAL ops no-op
+
+### Phase 2 implementation details (not in original design)
+- `VectorDataAdapter`: bridge implementing `rvf_index::VectorStore` for existing `VectorData`
+- `deterministic_hash()`: splitmix64 finalizer for reproducible HNSW level selection
+- `boot()` always initializes `HnswGraph` even for empty stores (first ingest works immediately)
+- Filtered queries request `ef_search * 4` candidates from HNSW to compensate post-filter attrition
+- `ef_search` clamped to at least `k` before HNSW call
+
+### Phase 3 implementation details (not in original design)
+- Metric remapping: `'euclidean'→'l2'`, `'dot'→'inner_product'` before NAPI `create()`
+- Metric-aware score: cosine `1-d`, euclidean `1/(1+d)`, dot `d` (raw)
+- `.meta` sidecar: `persistToDisk()` writes to `${path}.meta` when nativeDb active (avoids overwriting native binary)
+- `tryNativeInit()` returns `false` on success — native augments TS path, doesn't replace it
+- `update()` re-ingests embedding into native index (delete + ingestBatch)
+- `@ruvector/rvf-node` added as `optionalDependencies` (v0.1.8, not v0.1.7)
+- `ef_search` passed to native `query()` via options object
+
+### Known limitations
+- Native ID mapping (`nativeIdMap`) is in-memory only — cold index on every restart
+- Ghost vectors possible on restart when native binary file already exists with prior-session data
+- `#315` is resolved in fork (rvf-index now wired); `#316` and `#323` remain upstream issues
+
+### Test coverage
+- 20 unit tests (`rvf-backend-wal.test.mjs`: 15 original + 5 gap-fill)
+- 6 acceptance checks (`acceptance-adr0073-checks.sh`: 3 static grep + 3 runtime)
+- 6 Rust tests in `rvf-runtime/src/store.rs` (HNSW recall, reopen, deletions, filters, compaction, hash range)

@@ -1,7 +1,8 @@
 # ADR-0074: Controller Wiring & Storage Architecture Audit
 
-- **Status**: Accepted
+- **Status**: Implemented
 - **Date**: 2026-04-06
+- **Implemented**: 2026-04-06 (CJS/ESM silo fix Phases 1-3, 4 acceptance checks)
 - **Scope**: ADR-0068 through ADR-0072 post-implementation audit
 - **Method**: Hive analysis — Queen (Reuven Cohen) + 5 ruflo specialist agents + 3 Explore agents
 - **Deciders**: Henrik Pettersen
@@ -503,7 +504,7 @@ All fixes are in the **ruflo fork** at `v3/@claude-flow/cli/.claude/helpers/`:
 
 | Level | File | What |
 |-------|------|------|
-| Unit | `tests/unit/dual-silo-fix-adr0074.test.mjs` | Mock `loadMemoryPackage` Strategy 0; mock RvfBackend upsert; verify eviction logic |
+| Unit | `tests/unit/adr0074-silo-fix.test.mjs` | Mock `loadMemoryPackage` Strategy 0; mock RvfBackend upsert; verify eviction logic |
 | Integration | Same file | Real `ranked-context.json` → real RvfBackend → verify round-trip |
 | Acceptance | `lib/acceptance-adr0074-checks.sh` | `check_adr0074_rvf_exists`: `.swarm/agentdb-memory.rvf` exists post-session; `check_adr0074_drain_works`: `memory search` returns intelligence-learned pattern; `check_adr0074_store_capped`: `auto-memory-store.json` <= 2000 entries after consolidate |
 

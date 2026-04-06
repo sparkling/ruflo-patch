@@ -1,7 +1,8 @@
 # ADR-0068: Implementation of Controller Configuration Unification
 
-- **Status**: Proposed
+- **Status**: Implemented
 - **Date**: 2026-04-05
+- **Implemented**: 2026-04-05 (W1-W5 complete; CLI flag defaults + registry HNSW plumbing deferred)
 - **Implements**: ADR-0066
 - **Builds on**: ADR-0065 (config centralization)
 - **Analysis**: ADR-0067 (original vision for controller wiring)

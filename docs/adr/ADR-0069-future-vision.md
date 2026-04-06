@@ -1,8 +1,7 @@
 # ADR-0069: Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
 
-- **Status**: F1 Complete, F2 Extracted to ADR-0073, F3 Complete
+- **Status**: F1 Partial (config chain only — controller delegation not landed), F2 Extracted to ADR-0073 (Implemented), F3 Mostly Complete (WASM/NAPI wiring done, ONNX chain + registerEnhancedBoosterTools not wired)
 - **Date**: 2026-04-05
-- **Implemented**: 2026-04-06 (F1 final — config chain for hierarchical memory, full 12-controller delegation)
 - **Implemented**: 2026-04-06 (F1 — 10 controllers delegated to AgentDB.getController(), 2 kept direct, ~30 lines removed)
 - **Implemented**: 2026-04-05 (bypass inventory remediation — 12 sites across both forks)
 - **Depends on**: ADR-0068 (must be completed first)
