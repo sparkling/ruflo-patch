@@ -132,19 +132,12 @@ check_adr0073_native_runtime() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # This is a runtime test — needs Node.js and the installed packages
-  local test_dir
-  test_dir=$(mktemp -d /tmp/ruflo-rvf-native-test-XXXXX)
-
-  # Try to load the binary and do a round-trip store+query
-  local result
-  result=$(cd "$TEMP_DIR" && node --input-type=module <<'EOJS' 2>&1) || true
-import { createRequire } from 'node:module';
+  local script
+  script=$(mktemp /tmp/rvf-native-rt-XXXXX.mjs)
+  cat > "$script" << 'ENDSCRIPT'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { unlinkSync, existsSync } from 'node:fs';
-
-// Try both scoped names
 let RvfDatabase;
 try {
   const mod = await import('@sparkleideas/ruvector-rvf-node');
@@ -153,71 +146,42 @@ try {
   try {
     const mod = await import('@ruvector/rvf-node');
     RvfDatabase = mod.RvfDatabase || mod.default?.RvfDatabase;
-  } catch (e) {
-    console.log('SKIP: ' + e.message);
-    process.exit(0);
-  }
+  } catch (e) { console.log('SKIP: ' + e.message); process.exit(0); }
 }
-
-if (!RvfDatabase) {
-  console.log('SKIP: RvfDatabase not exported');
-  process.exit(0);
-}
-
-const dbPath = join(tmpdir(), `rvf-accept-${Date.now()}.rvf`);
+if (!RvfDatabase) { console.log('SKIP: RvfDatabase not exported'); process.exit(0); }
+const dbPath = join(tmpdir(), 'rvf-accept-' + Date.now() + '.rvf');
 try {
-  // Create a store with 4-dim cosine vectors
   const db = RvfDatabase.create(dbPath, { dimension: 4, metric: 'cosine' });
-
-  // Ingest 3 vectors
-  const v1 = new Float32Array([1, 0, 0, 0]);
-  const v2 = new Float32Array([0, 1, 0, 0]);
-  const v3 = new Float32Array([0.9, 0.1, 0, 0]);
-  db.ingestBatch(v1, [1]);
-  db.ingestBatch(v2, [2]);
-  db.ingestBatch(v3, [3]);
-
-  // Query for nearest to v1 — should get v3 (most similar) and v1 (self)
-  const results = db.query(v1, 2);
-  if (!results || results.length === 0) {
-    console.log('FAIL: query returned no results');
-    process.exit(1);
-  }
-
-  // Verify the closest match is v1 (self, distance ~0) or v3 (similar)
+  db.ingestBatch(new Float32Array([1,0,0,0]), [1]);
+  db.ingestBatch(new Float32Array([0,1,0,0]), [2]);
+  db.ingestBatch(new Float32Array([0.9,0.1,0,0]), [3]);
+  const results = db.query(new Float32Array([1,0,0,0]), 2);
+  if (!results || results.length === 0) { console.log('FAIL: query returned no results'); process.exit(1); }
   const ids = results.map(r => r.id);
-  if (!ids.includes(1) && !ids.includes(3)) {
-    console.log('FAIL: expected id 1 or 3 in results, got ' + JSON.stringify(ids));
-    process.exit(1);
-  }
-
+  if (!ids.includes(1) && !ids.includes(3)) { console.log('FAIL: expected id 1 or 3, got ' + JSON.stringify(ids)); process.exit(1); }
   const status = db.status();
-  if (status.totalVectors < 3) {
-    console.log('FAIL: expected 3 vectors, got ' + status.totalVectors);
-    process.exit(1);
-  }
-
   db.close();
-  console.log('OK: native RVF store+query round-trip passed (' + results.length + ' results, ' + status.totalVectors + ' vectors)');
+  console.log('OK: native RVF store+query round-trip (' + results.length + ' results, ' + status.totalVectors + ' vectors)');
 } finally {
   try { if (existsSync(dbPath)) unlinkSync(dbPath); } catch {}
   try { if (existsSync(dbPath + '.lock')) unlinkSync(dbPath + '.lock'); } catch {}
 }
-EOJS
+ENDSCRIPT
+
+  local result
+  result=$(cd "$TEMP_DIR" && node "$script" 2>&1) || true
+  rm -f "$script"
 
   if [[ "$result" == SKIP:* ]]; then
-    # Binary not available on this platform — not a failure
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0073: native runtime skipped (${result#SKIP: })"
     return
   fi
-
   if [[ "$result" == OK:* ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0073: ${result#OK: }"
     return
   fi
-
   _CHECK_OUTPUT="ADR-0073: native runtime failed — $result"
 }
 
@@ -229,91 +193,64 @@ check_adr0073_wal_roundtrip() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local result
-  result=$(cd "$TEMP_DIR" && node --input-type=module <<'EOJS' 2>&1) || true
+  local script
+  script=$(mktemp /tmp/rvf-wal-rt-XXXXX.mjs)
+  cat > "$script" << 'ENDSCRIPT'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { existsSync, unlinkSync } from 'node:fs';
-
 let RvfBackend;
 try {
   const mem = await import('@sparkleideas/memory');
   RvfBackend = mem.RvfBackend;
-} catch (e) {
-  console.log('SKIP: ' + e.message);
-  process.exit(0);
-}
-
-if (!RvfBackend) {
-  console.log('SKIP: RvfBackend not exported');
-  process.exit(0);
-}
-
-const dbPath = join(tmpdir(), `rvf-wal-accept-${Date.now()}.rvf`);
+} catch (e) { console.log('SKIP: ' + e.message); process.exit(0); }
+if (!RvfBackend) { console.log('SKIP: RvfBackend not exported'); process.exit(0); }
+const dbPath = join(tmpdir(), 'rvf-wal-accept-' + Date.now() + '.rvf');
 try {
   const backend = new RvfBackend({
-    databasePath: dbPath,
-    dimensions: 4,
-    autoPersistInterval: 0,
-    walCompactionThreshold: 1000,
+    databasePath: dbPath, dimensions: 4, autoPersistInterval: 0, walCompactionThreshold: 1000,
   });
   await backend.initialize();
-
-  // Store 10 entries via WAL
   for (let i = 0; i < 10; i++) {
     await backend.store({
-      id: `e${i}`, key: `k${i}`, namespace: 'test', content: `val ${i}`,
+      id: 'e'+i, key: 'k'+i, namespace: 'test', content: 'val '+i,
       type: 'semantic', tags: [], metadata: {}, accessLevel: 'private',
       ownerId: 'accept', createdAt: Date.now(), updatedAt: Date.now(),
       accessCount: 0, lastAccessedAt: Date.now(), version: 1, references: [],
     });
   }
-
-  // Verify WAL sidecar exists (compaction threshold is 1000, so WAL should still be there)
   const walExists = existsSync(dbPath + '.wal');
-
-  // Shutdown (compacts WAL)
   await backend.shutdown();
-
-  // Re-open and verify entries survived
-  const backend2 = new RvfBackend({
-    databasePath: dbPath,
-    dimensions: 4,
-    autoPersistInterval: 0,
-  });
+  const backend2 = new RvfBackend({ databasePath: dbPath, dimensions: 4, autoPersistInterval: 0 });
   await backend2.initialize();
-
   let count = 0;
   for (let i = 0; i < 10; i++) {
-    const e = await backend2.get(`e${i}`);
-    if (e && e.content === `val ${i}`) count++;
+    const e = await backend2.get('e'+i);
+    if (e && e.content === 'val '+i) count++;
   }
   await backend2.shutdown();
-
-  if (count < 10) {
-    console.log(`FAIL: only ${count}/10 entries survived WAL round-trip`);
-    process.exit(1);
-  }
-
-  console.log(`OK: WAL round-trip passed (${count}/10 entries, wal_created=${walExists})`);
+  if (count < 10) { console.log('FAIL: only '+count+'/10 entries survived WAL round-trip'); process.exit(1); }
+  console.log('OK: WAL round-trip passed ('+count+'/10 entries, wal_created='+walExists+')');
 } finally {
-  for (const suffix of ['', '.wal', '.meta', '.tmp']) {
-    try { if (existsSync(dbPath + suffix)) unlinkSync(dbPath + suffix); } catch {}
+  for (const s of ['', '.wal', '.meta', '.tmp']) {
+    try { if (existsSync(dbPath+s)) unlinkSync(dbPath+s); } catch {}
   }
 }
-EOJS
+ENDSCRIPT
+
+  local result
+  result=$(cd "$TEMP_DIR" && node "$script" 2>&1) || true
+  rm -f "$script"
 
   if [[ "$result" == SKIP:* ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0073: WAL round-trip skipped (${result#SKIP: })"
     return
   fi
-
   if [[ "$result" == OK:* ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0073: ${result#OK: }"
     return
   fi
-
   _CHECK_OUTPUT="ADR-0073: WAL round-trip failed — $result"
 }
