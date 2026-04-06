@@ -87,7 +87,7 @@ Same `.rvf` extension used by two incompatible binary formats. No migration on b
 | Controllers <-> Embeddings | LOOSE (3 embedding service instances in one process) |
 | Storage <-> Embeddings | LOOSE (dimension bypass in memory-bridge.ts) |
 | Config <-> Everything | LOOSE (5 independent resolution chains) |
-| HybridBackend <-> anything | **DEAD** |
+| HybridBackend <-> anything | **DEFERRED** (upstream plans to revive as production default) |
 
 ### The Devil's Advocate's Uncomfortable Truths
 
@@ -166,5 +166,21 @@ baseline for future simplification work. The findings should inform prioritizati
 1. ~~**Highest impact / lowest effort**: Fix the live 384-dim MiniLM defaults in hooks.ts~~ **DONE** (2026-04-06)
 2. ~~**Highest impact / medium effort**: Wire AgentDBService's 15 constructors through
    getController() (complete ADR-0069 F1)~~ **DONE** (2026-04-06)
-3. **Highest impact / highest effort**: Delete AgentDBService and route all MCP tools
-   through ControllerRegistry
+3. **Highest impact / highest effort**: ~~Delete AgentDBService~~ Create additive shim
+   alongside AgentDBService delegating to ControllerRegistry (ADR-0076 B4)
+
+## Upstream Creator Corrections (2026-04-06)
+
+The following ADR-0075 findings were re-evaluated with upstream creator perspective:
+
+- **HybridBackend is NOT dead code** — it is deferred. Upstream plans to revive it as the
+  production default: SQLite for structured queries + RVF for vector search, routed by query type.
+  `testRvf()=true` is a temporary short-circuit while RVF path was being stabilized.
+- **sql.js fallback is intentional** — serves real edge environments (Vercel, Cloudflare Workers,
+  Docker minimal) where native better-sqlite3 is unavailable
+- **VectorDb (@ruvector/core) HNSW is the performance tier** — not redundant with HnswLite
+  (which is the JS fallback). Different performance tiers, both intentional.
+- **AgentDBService IS scaffolding** — upstream confirms it's going away; shim approach aligns
+  with their roadmap
+- **memory-bridge.ts encapsulates edge-case handling** — wholesale deletion risks regression;
+  upstream recommends extracting specific functions, not deleting
