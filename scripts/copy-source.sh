@@ -48,6 +48,31 @@ TEMP_DIR=""  # set in create_temp_dir
 # Functions
 # ---------------------------------------------------------------------------
 
+# ADR-0072 Phase 4: Verify fork branches match upstream-branches.json
+# Non-blocking — warns on mismatch but never exits non-zero.
+verify_fork_branches() {
+  local i name dir expected actual
+  for i in "${!FORK_NAMES[@]}"; do
+    name="${FORK_NAMES[$i]}"
+    dir="${FORK_DIRS[$i]}"
+    expected="${UPSTREAM_BRANCHES[$i]}"
+
+    if [[ ! -d "$dir/.git" ]]; then
+      printf '  [branch-check] %s: \033[33m(missing)\033[0m \u26a0 dir not found\n' "$name" >&2
+      continue
+    fi
+
+    actual="$(git -C "$dir" branch --show-current 2>/dev/null)"
+    if [[ -z "$actual" ]]; then
+      printf '  [branch-check] %s: \033[33m(detached)\033[0m \u26a0 expected %s\n' "$name" "$expected" >&2
+    elif [[ "$actual" == "$expected" ]]; then
+      printf '  [branch-check] %s: %s \033[32m\u2713\033[0m\n' "$name" "$actual" >&2
+    else
+      printf '  [branch-check] %s: \033[33m%s\033[0m \u26a0 expected %s\n' "$name" "$actual" "$expected" >&2
+    fi
+  done
+}
+
 create_temp_dir() {
   TEMP_DIR="/tmp/ruflo-build"
   mkdir -p "${TEMP_DIR}"
@@ -149,4 +174,5 @@ copy_source() {
 # ---------------------------------------------------------------------------
 
 create_temp_dir
+verify_fork_branches
 copy_source
