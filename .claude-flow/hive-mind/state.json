@@ -19,7 +19,16 @@
     "impl-worker-1773777955071-koab",
     "impl-worker-1773777955071-chfd",
     "impl-worker-1773777955071-tlq2",
-    "impl-worker-1773777955071-lde6"
+    "impl-worker-1773777955071-lde6",
+    "ruflo-expert-1775478881576-fn15",
+    "ruflo-expert-1775478881576-pdkv",
+    "ruflo-expert-1775478881576-1vkq",
+    "ruflo-expert-1775478881576-s2yz",
+    "ruflo-expert-1775478881576-t60h",
+    "silo-fix-1775480661601-x7yz",
+    "silo-fix-1775480661601-cxro",
+    "silo-fix-1775480661601-u7eo",
+    "silo-fix-1775480661601-tfpf"
   ],
   "consensus": {
     "pending": [
@@ -178,11 +187,11 @@
       }
     ]
   },
-  "createdAt": "2026-03-17T20:05:49.694Z",
-  "updatedAt": "2026-03-17T20:05:55.071Z",
+  "createdAt": "2026-04-06T13:04:18.432Z",
+  "updatedAt": "2026-04-06T13:04:21.601Z",
   "queen": {
-    "agentId": "queen-implementer",
-    "electedAt": "2026-03-17T20:05:49.694Z",
+    "agentId": "reuven-cohen-silo-fix",
+    "electedAt": "2026-04-06T13:04:18.432Z",
     "term": 1
   }
 }
