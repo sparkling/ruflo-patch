@@ -166,7 +166,10 @@ This renames `@ruvector/core` → `@sparkleideas/ruvector-core`, etc.
 3. Published all 12 `@sparkleideas/ruvector-*` packages to Verdaccio
 4. Increased Verdaccio `max_body_size` to 100mb (ruvector-core is 35MB with all platform binaries)
 5. Updated publish-levels.json (level 1: 6 → 17 packages) and publish-order tests (42 → 53)
-6. 1265 tests pass (0 fail)
+6. 1265 unit tests pass (0 fail)
+7. Acceptance: 124/148 pass, 24 fail (all p5 — pre-existing init config issues from ADR-0070, not caused by ADR-0071)
+8. Duplicate package issue: `npm/core` (0.1.17) vs `npm/packages/core` (0.1.30) — the ruvector repo
+   has two copies. Publish script must use `npm/packages/*` (the correct versions). `npm/core` is stale.
 
 ## Consequences
 
