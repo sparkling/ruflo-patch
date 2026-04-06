@@ -281,7 +281,11 @@ The dual silo has two independent root causes that compound:
 | 1. Local dev dist | `v3/@sparkleideas/memory/dist/index.js` | Doesn't exist in ruflo-patch (we BUILD it, not consume it) |
 | 2. CJS require | `require('@sparkleideas/memory')` | Not in ruflo-patch's `node_modules` |
 | 3. ESM import | `import('@sparkleideas/memory')` | Same — not installed |
-| 4. Walk-up tree | `node_modules/@claude-flow/memory/dist/index.js` | Not installed anywhere in tree |
+| 4. Walk-up tree | `node_modules/@claude-flow/memory/dist/index.js` | **BUG**: searches for `@claude-flow/memory` (line 159), not `@sparkleideas/memory` — wrong package name after scope rename. Even if installed, this strategy would never find it. |
+
+**Bug in Strategy 4** (line 159): The walk-up path uses the pre-rename scope `@claude-flow/memory` instead of the published name `@sparkleideas/memory`. This is a codemod gap — the hook file lives in `.claude/helpers/` which is outside the codemod's source tree. Even if the package were installed in a parent `node_modules`, Strategy 4 would miss it.
+
+The package DOES exist in the npm npx cache (`~/.npm/_npx/.../node_modules/@sparkleideas/memory/`) but none of the 4 strategies search there.
 
 When all 4 fail, `loadMemoryPackage()` returns `null`. The hook prints "Memory package not available — skipping auto memory import" and exits. `createBackend()` is never reached. The RvfBackend preference code (ADR-0059, lines 295-298) is dead — it can never execute.
 
@@ -356,7 +360,19 @@ The fix is a 3-phase approach that addresses both root causes independently:
 
 **File**: `.claude/helpers/auto-memory-hook.mjs`, function `loadMemoryPackage()`
 
-Add a Strategy 0 that resolves the package from the fork source via the build tree:
+Two changes:
+
+**1a. Fix Strategy 4 bug** (line 159): Change `@claude-flow/memory` to `@sparkleideas/memory`:
+
+```javascript
+// BEFORE (wrong scope — codemod gap):
+const candidate = join(searchDir, 'node_modules', '@claude-flow', 'memory', 'dist', 'index.js');
+
+// AFTER (correct published scope):
+const candidate = join(searchDir, 'node_modules', '@sparkleideas', 'memory', 'dist', 'index.js');
+```
+
+**1b. Add Strategy 0** for dev-mode resolution from fork source:
 
 ```javascript
 // Strategy 0: Dev mode — resolve from fork source (ruflo-patch builds this package)
@@ -374,9 +390,9 @@ if (existsSync(verdaccioPath)) {
 }
 ```
 
-**Why this works**: In dev, the fork is always at `/Users/henrik/source/forks/ruflo/`. The dist exists after `npm run build` in the fork. For users, existing Strategies 1-4 continue to work.
+**Why this works**: In dev, the fork is always at `/Users/henrik/source/forks/ruflo/`. The dist exists after `npm run build` in the fork. For users, existing Strategies 1-4 (with bug fix) continue to work. The Strategy 4 fix also unblocks users who have `@sparkleideas/memory` installed in a parent `node_modules`.
 
-**Risk**: LOW — adds two `existsSync` checks before the existing strategies. Falls through on failure. No behavioral change for users.
+**Risk**: LOW — adds two `existsSync` checks before the existing strategies. Falls through on failure. No behavioral change for users except the Strategy 4 bug fix.
 
 **Alternative (simpler)**: Add `@sparkleideas/memory` as a `devDependency` of ruflo-patch, installed from Verdaccio. This makes Strategies 2/3 work in dev. Requires Verdaccio to be running at `npm install` time.
 
