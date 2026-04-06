@@ -63,17 +63,23 @@ describe('Phase 2 wiring: cosineSim delegates to canonical cosineSimilarity', ()
   ];
 
   for (const [path, name] of files) {
-    it(`${name} cosineSim tries canonical cosineSimilarity first`, () => {
+    it(`${name} cosineSim uses canonical cosineSimilarity`, () => {
       if (!existsSync(path)) return;
       const src = readFileSync(path, 'utf-8');
-      // Find the cosineSim function
+      // The canonical cosineSimilarity must be imported at module level (lazy cache)
+      // or used inside the function — either pattern counts
+      assert.ok(
+        src.includes('_canonicalCosineSim') || (src.includes('cosineSimilarity') && src.includes('@claude-flow/memory')),
+        `${name} must use canonical cosineSimilarity from @claude-flow/memory`,
+      );
+      // The cosineSim function must check the cached canonical before inline
       const fnMatch = src.match(/cosineSim\(a.*?\).*?\{/);
       assert.ok(fnMatch, `${name} must have a cosineSim function`);
       const fnStart = src.indexOf(fnMatch[0]);
-      const afterFn = src.slice(fnStart, fnStart + 400);
+      const afterFn = src.slice(fnStart, fnStart + 300);
       assert.ok(
-        afterFn.includes('cosineSimilarity') && afterFn.includes('@claude-flow/memory'),
-        `${name} cosineSim must delegate to cosineSimilarity from @claude-flow/memory`,
+        afterFn.includes('_canonicalCosineSim') || afterFn.includes('cosineSimilarity'),
+        `${name} cosineSim must try canonical before inline`,
       );
     });
 
