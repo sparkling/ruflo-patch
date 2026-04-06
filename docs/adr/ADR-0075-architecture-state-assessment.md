@@ -169,6 +169,21 @@ baseline for future simplification work. The findings should inform prioritizati
 3. **Highest impact / highest effort**: ~~Delete AgentDBService~~ Create additive shim
    alongside AgentDBService delegating to ControllerRegistry (ADR-0076 B4)
 
+## Tracked Issues
+
+All findings tracked as GitHub issues on fork repos:
+
+| Issue | Bug | Status |
+|-------|-----|--------|
+| sparkling/ruflo#25 | cosineSim silent truncation | Fixed |
+| sparkling/ruflo#26 | circuitBreaker Level 0 null | Fixed |
+| sparkling/ruflo#27 | MiniLM 384-dim defaults | Fixed |
+| sparkling/ruflo#28 | Startup dimension validation | Fixed |
+| sparkling/ruflo#29 | hybridSearch Level 1→3 | Open |
+| sparkling/agentic-flow#4 | InMemoryStore data loss | Open |
+| sparkling/agentic-flow#5 | Dual-instance guard | Fixed |
+| sparkling/agentic-flow#6 | wasmVectorSearch getController | Open |
+
 ## Upstream Creator Corrections (2026-04-06)
 
 The following ADR-0075 findings were re-evaluated with upstream creator perspective:

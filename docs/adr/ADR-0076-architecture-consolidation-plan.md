@@ -239,7 +239,17 @@ Three additional upstream PRs identified:
 | 4 | testRvf() document + escape hatch | ruvnet/ruflo | Medium |
 | 5 | hybridSearch Level 1→3 ordering fix | ruvnet/ruflo | Low |
 
-PRs 1, 2, 5 are strongest candidates — unambiguous correctness bugs.
+All tracked as GitHub issues (not upstream PRs — filed on fork repos with fix commit links):
+
+**sparkling/ruflo**: [#25](https://github.com/sparkling/ruflo/issues/25) cosineSim (fixed),
+[#26](https://github.com/sparkling/ruflo/issues/26) circuitBreaker (fixed),
+[#27](https://github.com/sparkling/ruflo/issues/27) MiniLM defaults (fixed),
+[#28](https://github.com/sparkling/ruflo/issues/28) dimension validation (fixed),
+[#29](https://github.com/sparkling/ruflo/issues/29) hybridSearch ordering (identified)
+
+**sparkling/agentic-flow**: [#4](https://github.com/sparkling/agentic-flow/issues/4) InMemoryStore data loss (identified),
+[#5](https://github.com/sparkling/agentic-flow/issues/5) dual-instance guard (fixed),
+[#6](https://github.com/sparkling/agentic-flow/issues/6) wasmVectorSearch gap (identified)
 
 ### Data Flow (agent 10): unified-memory.ts interceptor
 
