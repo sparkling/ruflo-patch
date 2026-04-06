@@ -214,3 +214,37 @@ B1 and B2 can start concurrently. B5 requires B2+B3+B4.
 | `store()` p99 | <5ms at 1000 entries | >10ms |
 | `search()` k=10, p99 | <20ms at 1000 entries | >2x baseline |
 | `embed()` p99 | <50ms | >100ms |
+
+## Additional Findings from Second Hive Council
+
+### Controller Bridge (agent 7): InMemoryStore is a data-loss bug
+
+AgentDBService's InMemoryStore fallback silently accepts writes when AgentDB init fails.
+Data vanishes on process restart with no warning. Fix: add `initError` field, throw on
+write attempts when init failed. This is a **critical upstream PR candidate** — it's a
+real data-loss bug that upstream would want to know about.
+
+Three additional upstream PRs identified:
+- `AgentDB.getController('wasmVectorSearch')` — prevents "Unknown controller" throw
+- `AgentDBService.getFallbackStatus()` — health check surfaces degraded state
+- InMemoryStore fail-loud guard — throw instead of silently discarding data
+
+### PR Strategist (agent 9): 5 concrete upstream PRs
+
+| # | PR | Target | Risk |
+|---|---|--------|------|
+| 1 | cosineSim throw on dimension mismatch | ruvnet/ruflo | Low |
+| 2 | circuitBreaker inline fallback | ruvnet/ruflo | Low |
+| 3 | MiniLM→mpnet default change | ruvnet/ruflo | Medium |
+| 4 | testRvf() document + escape hatch | ruvnet/ruflo | Medium |
+| 5 | hybridSearch Level 1→3 ordering fix | ruvnet/ruflo | Low |
+
+PRs 1, 2, 5 are strongest candidates — unambiguous correctness bugs.
+
+### Data Flow (agent 10): unified-memory.ts interceptor
+
+`unified-memory.ts` wraps bridge exports directly. Early-return guard in memory-tools.ts
+handlers: `const unified = await getUnifiedMemory(); if (unified) return unified.store(...)`.
+Falls through to existing `getMemoryFunctions()` path when registry unavailable. Fixes the
+`bridgeSearchEntries` empty-result fallthrough bug (Scenario C) where bridge returns `[]`
+and sql.js fallback sees different data.
