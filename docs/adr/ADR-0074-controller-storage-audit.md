@@ -534,12 +534,14 @@ All fixes are in the **ruflo fork** at `v3/@claude-flow/cli/.claude/helpers/`:
 
 Upstream v3.5.52-v3.5.58 + ruvector 68 commits merged. Impact: SIGNIFICANT.
 
-### Upstream creator deprecation notice
-4 controllers officially deprecated (no upstream implementation path):
-- graphAdapter / graphTransformer — dead code, SQLite CTEs handle all graph ops
-- federatedSession — QUIC federation is a stub (sleep + success:true)
-- federatedLearningManager — differential privacy federation is research, not implementation
-- learningBridge — v2→v3 compatibility shim, intentionally disabled
+### Upstream creator deprecation notice (corrected after deep audit)
+2 controllers confirmed deprecated (safe to remove):
+- federatedSession — dead code, import target doesn't exist (already removed in ADR-0040)
+- federatedLearningManager — explicitly disabled (`isEnabled() return false`), stub only
+
+2 controllers KEPT (upstream assessment corrected):
+- graphAdapter — stub but has MCP bridge function + test coverage; kept for future graph integration
+- learningBridge — **NOT deprecated.** 493 lines real implementation (EWC++ consolidation, confidence decay, insight recording). Deeply wired into AutoMemoryBridge. Upstream called it "v2→v3 shim" — incorrect; it's the active learning system.
 
 ### Priority fix list (upstream creator)
 - nightlyLearner: missing singleton args (HIGH)
