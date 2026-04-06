@@ -163,8 +163,8 @@ No sql.js fallback. No parallel AgentDBService. No bridge functions. One path, e
 This ADR is informational — no implementation decision. It captures the current state as a
 baseline for future simplification work. The findings should inform prioritization:
 
-1. **Highest impact / lowest effort**: Fix the live 384-dim MiniLM defaults in hooks.ts
-2. **Highest impact / medium effort**: Wire AgentDBService's 15 constructors through
-   getController() (complete ADR-0069 F1)
+1. ~~**Highest impact / lowest effort**: Fix the live 384-dim MiniLM defaults in hooks.ts~~ **DONE** (2026-04-06)
+2. ~~**Highest impact / medium effort**: Wire AgentDBService's 15 constructors through
+   getController() (complete ADR-0069 F1)~~ **DONE** (2026-04-06)
 3. **Highest impact / highest effort**: Delete AgentDBService and route all MCP tools
    through ControllerRegistry
