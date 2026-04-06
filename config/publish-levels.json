@@ -3,9 +3,20 @@
   "levels": [
     {
       "level": 1,
-      "description": "No internal dependencies (only @ruvector/* from public npm)",
+      "description": "No internal dependencies (foundational packages)",
       "packages": [
         "@sparkleideas/ruvector",
+        "@sparkleideas/ruvector-core",
+        "@sparkleideas/ruvector-attention",
+        "@sparkleideas/ruvector-gnn",
+        "@sparkleideas/ruvector-graph-node",
+        "@sparkleideas/ruvector-graph-transformer",
+        "@sparkleideas/ruvector-router",
+        "@sparkleideas/ruvector-ruvllm",
+        "@sparkleideas/ruvector-rvf",
+        "@sparkleideas/ruvector-rvf-node",
+        "@sparkleideas/ruvector-sona",
+        "@sparkleideas/ruvector-tiny-dancer",
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
         "@sparkleideas/ruv-swarm",
