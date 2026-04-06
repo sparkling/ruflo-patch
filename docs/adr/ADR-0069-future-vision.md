@@ -646,3 +646,12 @@ The following bugs were discovered during ADR-0070 Phase 5 acceptance testing an
 - [x] LegacyAttentionAdapter replaced by real dispatch in ControllerRegistry — WASM class instances (WasmFlashAttention, WasmMultiHeadAttention, WasmMoEAttention) used via getWasmInstance() cache
 - [x] SONAWithAttention correctly uses 2 separate AttentionService instances (Flash + MoE) — flashAttentionService and moeAttentionService in ControllerRegistry
 - [x] Performance benchmark: Flash Attention achieves >= 2x speedup over legacy adapter
+
+## Post-Sync Update (2026-04-06)
+
+Upstream v3.5.52-v3.5.58 merged into ruflo fork. Impact: SIGNIFICANT.
+- Config chain functions (readProjectConfig, getProjectConfig, getEmbeddingConfig, getConfigSwarmDir) all survived merge — verified in memory-bridge.ts and memory-initializer.ts
+- 3 embedding-constants.ts files survive in @claude-flow/cli (ADR-0052 pattern, superseded but functional) — cleanup deferred
+- hooks-tools.ts uses both EMBEDDING_DIM (ADR-0052) and getEmbeddingConfig() (ADR-0069) — values consistent, no behavioral divergence
+- F1 delegation and F3 WASM fallback chain: unaffected by upstream changes
+- Upstream creator endorses config chain approach, suggests fail-loud instead of graceful fallback for missing embeddings.json

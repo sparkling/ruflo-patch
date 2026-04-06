@@ -529,3 +529,26 @@ All fixes are in the **ruflo fork** at `v3/@claude-flow/cli/.claude/helpers/`:
 - The dual silo will cause user confusion when hook-learned patterns don't appear in CLI memory searches
 - Silent HNSW param ignoring in rvf-runtime could lead to false performance assumptions
 - Phase 2 drain adds ~200ms to session-end (500 upserts × ~0.4ms each) — acceptable for a session-boundary operation
+
+## Post-Sync Update (2026-04-06)
+
+Upstream v3.5.52-v3.5.58 + ruvector 68 commits merged. Impact: SIGNIFICANT.
+
+### Upstream creator deprecation notice
+4 controllers officially deprecated (no upstream implementation path):
+- graphAdapter / graphTransformer — dead code, SQLite CTEs handle all graph ops
+- federatedSession — QUIC federation is a stub (sleep + success:true)
+- federatedLearningManager — differential privacy federation is research, not implementation
+- learningBridge — v2→v3 compatibility shim, intentionally disabled
+
+### Priority fix list (upstream creator)
+- nightlyLearner: missing singleton args (HIGH)
+- causalRecall: missing vectorBackend reference (HIGH)
+- explainableRecall: singleton wiring gap (MEDIUM)
+- semanticRouter: missing embeddingService (MEDIUM)
+
+### Upstream creator's top recommendation
+Fix the CJS/ESM dual silo (Issue #1) before anything else. "Intelligence data permanently split between JSON files and AgentDB means the learning pipeline is broken in half. Everything else is optimization of a system whose core data flow is severed."
+
+### Intelligence dedup (#1518)
+Upstream v3.5.54 added intelligence store deduplication (4,482 → 157 entries). This partially addresses Issue #1 accumulation but does NOT fix the CJS/ESM silo itself.

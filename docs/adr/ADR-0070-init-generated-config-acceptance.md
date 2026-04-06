@@ -333,3 +333,11 @@ because it catches a class of bug that no existing test covers.
 - **Migration**: Existing ADR-0069 init checks (`adr0069-init-*`) continue
   running; they serve as a fast sanity check in the mega-parallel wave. Phase 5
   checks are the authoritative source of truth for init output correctness.
+
+## Post-Sync Update (2026-04-06)
+
+Upstream sync merged. Impact: MINOR.
+- Phase 5 checks: 157/159 passing (2 failures are new gap checks, not regressions)
+- CLI flag parsing camelCase fix (discovered independently, also fixed upstream in v3.5.52)
+- test-acceptance-fast.sh P5 group: 16 undefined function calls fixed (was calling wrong names)
+- Baseline regression guard added to test-acceptance.sh (warns if < 148 passed)

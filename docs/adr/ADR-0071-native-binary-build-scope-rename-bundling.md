@@ -219,3 +219,13 @@ Results:
 - The 4 packages with no upstream tag have no baseline to diff against
 - Duplicate package.json files in ruvector repo (`npm/core` vs `npm/packages/core`) —
   publish script must use `npm/packages/*` (the correct versions)
+
+## Post-Sync Update (2026-04-06)
+
+ruvector fork synced: 68 upstream commits merged including NAPI binary updates.
+Impact: SIGNIFICANT — needs verification.
+- NAPI-RS binaries rebuilt for all platforms (commits eeb3d860, 364f5449)
+- 98 new crates added upstream (RVM, decompiler, quantum, robotics) — must verify these don't break Cargo workspace builds
+- RVM is a bare-metal OS — NOT an npm package, should NOT be published by the fork
+- Decompiler (ruDevolution) could be published as @sparkleideas/ruvector-decompiler if user demand exists
+- New acceptance checks added: check_adr0071_no_ruvector_refs, check_adr0071_node_binary_exists

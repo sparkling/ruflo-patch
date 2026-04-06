@@ -238,3 +238,11 @@ These changes must land first because they fix AgentDB internals that all three 
 - [ ] config.json has controllers.enabled section (W4-2)
 - [ ] hybridSearch, agentMemoryScope, federatedSession stubs replaced with implementations (W4-3)
 - [ ] All unit, integration, and acceptance tests pass (W5)
+
+## Post-Sync Update (2026-04-06)
+
+Upstream v3.5.52-v3.5.58 "honesty audit" merged. Impact: MINOR.
+- Honesty audit removes fake metrics from tool outputs — complementary to config chain, not conflicting
+- Config chain (getEmbeddingConfig, getProjectConfig, RuntimeConfig) survived merge intact
+- New `analyze` commands (v3.5.58) should be audited for config chain bypass (new code paths)
+- Upstream creator assessment: "config chain is more disciplined than anything I shipped upstream"

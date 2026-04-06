@@ -310,3 +310,12 @@ rewrite risk.
 | `ruvector-dag/src/qudag/network.rs:14`, `client.rs:17` | `qudag.network:8443` | HIGH |
 | `ruvector-graph/src/distributed/replication.rs:111,121` | Port `:9001` | HIGH |
 | `ruvector-core` vs `ruvector-postgres` | m:32/efC:200 vs m:16/efC:64 | MEDIUM |
+
+## Post-Sync Update (2026-04-06)
+
+ruvector upstream synced (68 commits). Impact: NO IMPACT on implementation plan.
+- RVF crate: hash algorithm upgraded from CRC32C to SHAKE-256 (cryptographic). No structural changes.
+- rvf-index: unchanged, HNSW still disconnected from rvf-runtime (Phase 2 blocker unchanged)
+- rvf-node NAPI: binaries rebuilt, but 4 tryNativeInit() API bugs persist (Phase 3 unchanged)
+- RVM witness chain: reference pattern for append-only log design, but NOT a dependency for Phase 1 WAL
+- Upstream creator assessment: "Ship Phases 1-3. The disconnected rvf-index is embarrassing."

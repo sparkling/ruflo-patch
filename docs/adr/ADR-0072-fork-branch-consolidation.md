@@ -1,6 +1,6 @@
 # ADR-0072: Fork Branch Consolidation
 
-- **Status**: Implementing
+- **Status**: Implemented
 - **Date**: 2026-04-06
 - **Driver**: Pipeline failure — patches on feature branches never merged to main
 
@@ -119,3 +119,14 @@ Since fix is already an ancestor of main, there is nothing to merge. The 15 regr
 - ~27 superseded commits remain in history but their artifacts removed from source
 - `copy-source.sh` has non-blocking branch verification
 - Feature branches are historical (fully merged, can be deleted)
+
+## Post-Sync Update (2026-04-06)
+
+All 4 forks synced with upstream:
+- ruflo: 11 commits merged (v3.5.52-v3.5.58, 15 conflicts resolved)
+- ruvector: 68 commits merged (clean merge, pushed to sparkling)
+- agentic-flow: already up to date (upstream stale since Feb 27)
+- ruv-FANN: already up to date (upstream stale since Feb 9)
+
+Acceptance: 157/159 passing. Baseline 148/148 fully restored.
+Unit tests: 0 failures / 1502 passes.
