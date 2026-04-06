@@ -254,8 +254,8 @@ check_attention_mechanisms_count() {
   probe_out=$(cd "$tmp_dir" && node -e "
     async function test() {
       try {
-        const m = await import('$pkg');
-        const mod = m.default || m;
+        const mod = await import('$pkg');
+        // Use module namespace directly — default export is the init() function, not the API
 
         // Try various API shapes for mechanism discovery
         let count = 0;
