@@ -194,12 +194,12 @@ check_p5_embeddings_hnsw_m() {
   _CHECK_PASSED="false"
   local cfg="$P5_DIR/.claude-flow/config.json"
   [[ ! -f "$cfg" ]] && { _CHECK_OUTPUT="P5: config.json not found"; return; }
-  local val; val=$(_p5_emb "c.embeddings?.hnsw?.m")
+  local val; val=$(_p5_emb "c.embeddings?.hnsw?.M ?? c.embeddings?.hnsw?.m")
   if [[ "$val" == "23" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P5: embeddings.hnsw.m = 23"
+    _CHECK_OUTPUT="P5: embeddings.hnsw.M = 23"
   else
-    _CHECK_OUTPUT="P5: embeddings.hnsw.m = ${val:-missing} (expected 23)"
+    _CHECK_OUTPUT="P5: embeddings.hnsw.M = ${val:-missing} (expected 23)"
   fi
 }
 
