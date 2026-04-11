@@ -224,9 +224,16 @@ function getEmbeddingsTemplate() {
   return {
     model: 'Xenova/all-mpnet-base-v2',
     dimension: 768,
-    provider: 'transformers',
+    provider: 'transformers.js', // ADR-0080: aligned with resolve-config canonical
     taskPrefixQuery: '',
     taskPrefixIndex: '',
+    storageProvider: 'rvf', // ADR-0080: 7 missing fields added
+    databasePath: '.swarm/memory.rvf',
+    walMode: true,
+    autoPersistInterval: 30000,
+    maxEntries: 100000,
+    defaultNamespace: 'default',
+    dedupThreshold: 0.95,
     cache: '~/.cache/transformers',
     batchSize: 32,
     quantization: 'none',
@@ -235,7 +242,7 @@ function getEmbeddingsTemplate() {
       maxElements: 100000,
       persistIndex: true,
       rebuildThreshold: 0.1,
-      m: 23,
+      M: 23, // ADR-0080: uppercase to match resolve-config
       efConstruction: 100,
       efSearch: 50,
     },
@@ -357,8 +364,8 @@ describe('V2: Embeddings template defaults', () => {
     assert.strictEqual(emb.hnsw.maxElements, 100000);
   });
 
-  it('embeddings.hnsw.m === 23', () => {
-    assert.strictEqual(emb.hnsw.m, 23);
+  it('embeddings.hnsw.M === 23', () => {
+    assert.strictEqual(emb.hnsw.M, 23);
   });
 
   it('embeddings.hnsw.efConstruction === 100', () => {
@@ -369,8 +376,8 @@ describe('V2: Embeddings template defaults', () => {
     assert.strictEqual(emb.hnsw.efSearch, 50);
   });
 
-  it('embeddings.provider === "transformers"', () => {
-    assert.strictEqual(emb.provider, 'transformers');
+  it('embeddings.provider === "transformers.js"', () => {
+    assert.strictEqual(emb.provider, 'transformers.js');
   });
 });
 
