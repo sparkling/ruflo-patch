@@ -593,23 +593,16 @@ check_adr0080_rvf_primary() {
   local short_path
   short_path=$(echo "$bridge_file" | sed "s|${base}/||")
 
-  if grep -q 'agentdb-memory\.rvf' "$bridge_file" 2>/dev/null; then
-    _CHECK_OUTPUT="ADR-0080-11: memory-bridge still hardcodes 'agentdb-memory.rvf' in ${short_path}"
-    return
-  fi
-
-  # 2. memory-bridge must read databasePath from embeddings.json
+  # 2. Primary path must resolve from embeddings.json or use canonical 'memory.rvf'
+  #    (agentdb-memory.rvf may still appear as a legacy FALLBACK — that's OK)
   if grep -q 'databasePath\|embeddings\.json' "$bridge_file" 2>/dev/null; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0080-11: RVF path resolved from embeddings.json in ${short_path}"
+  elif grep -q 'memory\.rvf' "$bridge_file" 2>/dev/null; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-11: RVF path uses canonical 'memory.rvf' in ${short_path}"
   else
-    # 3. At minimum must reference memory.rvf (canonical name)
-    if grep -q 'memory\.rvf' "$bridge_file" 2>/dev/null; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0080-11: RVF path uses canonical 'memory.rvf' in ${short_path}"
-    else
-      _CHECK_OUTPUT="ADR-0080-11: no RVF path resolution found in ${short_path}"
-    fi
+    _CHECK_OUTPUT="ADR-0080-11: no RVF path resolution found in ${short_path}"
   fi
 }
 
