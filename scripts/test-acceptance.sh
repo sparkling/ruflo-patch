@@ -325,10 +325,10 @@ _E2E_READY_FILE=$(mktemp /tmp/ruflo-e2e-ready-XXXXX)
 _E2E_HEALTH_FILE=$(mktemp /tmp/ruflo-e2e-health-XXXXX)
 (
   if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init --force" "" 15
-    # Ensure memory_entries table exists (upstream schema gap)
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init --force" "" 30
+    # ADR-0080: ensure memory_entries table with full schema (status, content, type needed by store/list)
     [[ -f "$E2E_DIR/.swarm/memory.db" ]] && sqlite3 "$E2E_DIR/.swarm/memory.db" \
-      "CREATE TABLE IF NOT EXISTS memory_entries (id TEXT PRIMARY KEY, key TEXT, value TEXT, namespace TEXT, tags TEXT, embedding BLOB, metadata TEXT, created_at TEXT, updated_at TEXT);" 2>/dev/null || true
+      "CREATE TABLE IF NOT EXISTS memory_entries (id TEXT PRIMARY KEY, key TEXT NOT NULL, namespace TEXT DEFAULT 'default', content TEXT NOT NULL DEFAULT '', type TEXT DEFAULT 'semantic', embedding TEXT, embedding_model TEXT DEFAULT 'local', embedding_dimensions INTEGER, tags TEXT, metadata TEXT, owner_id TEXT, created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000), updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000), expires_at INTEGER, last_accessed_at INTEGER, access_count INTEGER DEFAULT 0, status TEXT DEFAULT 'active', UNIQUE(namespace, key));" 2>/dev/null || true
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health" "" 15
     echo "$_RK_OUT" > "$_E2E_HEALTH_FILE"
   fi
