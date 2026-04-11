@@ -418,24 +418,24 @@ describe('ADR-0080: memory-initializer creates memory_entries after RVF init', (
   const createStorageIdx = memoryInitSrc.indexOf('createStorage({');
   const rvfReturnIdx = memoryInitSrc.indexOf("backend: 'rvf'", createStorageIdx);
 
-  it('RVF success path contains CREATE TABLE IF NOT EXISTS memory_entries', () => {
+  it('RVF success path runs MEMORY_SCHEMA_V3 against SQLite', () => {
     assert.ok(createStorageIdx > -1, 'memory-initializer must call createStorage()');
     assert.ok(rvfReturnIdx > -1, "memory-initializer must return backend: 'rvf'");
     const rvfBlock = memoryInitSrc.slice(createStorageIdx, rvfReturnIdx);
     assert.ok(
-      rvfBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
-      'RVF success path must CREATE TABLE IF NOT EXISTS memory_entries',
+      rvfBlock.includes('MEMORY_SCHEMA_V3'),
+      'RVF success path must run MEMORY_SCHEMA_V3 against SQLite',
     );
   });
 
-  it('CREATE TABLE appears before the return statement, not after', () => {
-    const createTableIdx = memoryInitSrc.indexOf(
-      'CREATE TABLE IF NOT EXISTS memory_entries',
+  it('MEMORY_SCHEMA_V3 reference appears before the return statement', () => {
+    const schemaIdx = memoryInitSrc.indexOf(
+      'MEMORY_SCHEMA_V3',
       createStorageIdx,
     );
     assert.ok(
-      createTableIdx < rvfReturnIdx,
-      'CREATE TABLE must appear before the return { success, backend: rvf } block',
+      schemaIdx > -1 && schemaIdx < rvfReturnIdx,
+      'MEMORY_SCHEMA_V3 must appear before the return { success, backend: rvf } block',
     );
   });
 
@@ -459,12 +459,11 @@ describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
     assert.ok(fnStart > -1, 'memory-initializer must export ensureSchemaColumns');
   });
 
-  it('contains CREATE TABLE IF NOT EXISTS memory_entries', () => {
-    // Scope to the function body (next 1500 chars covers the table-create logic)
+  it('runs MEMORY_SCHEMA_V3 to create tables', () => {
     const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 1500);
     assert.ok(
-      fnBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
-      'ensureSchemaColumns must CREATE TABLE IF NOT EXISTS memory_entries',
+      fnBlock.includes('MEMORY_SCHEMA_V3'),
+      'ensureSchemaColumns must run MEMORY_SCHEMA_V3',
     );
   });
 
@@ -526,6 +525,73 @@ describe('ADR-0080: intelligence.ts directory traversal for embeddings.json', ()
     assert.ok(
       ewcBlock.includes('.claude-flow') && ewcBlock.includes('embeddings.json'),
       'must look for .claude-flow/embeddings.json in traversal',
+    );
+  });
+});
+
+// ============================================================================
+// 19. memory-bridge resolves RVF path from embeddings.json (not hardcoded)
+// ============================================================================
+
+describe('ADR-0080: memory-bridge RVF path resolution', () => {
+  it('does NOT use agentdb-memory.rvf as the PRIMARY path', () => {
+    const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
+    // The first rvfPath assignment must NOT be agentdb-memory.rvf
+    // It should reference embeddings.json databasePath or 'memory.rvf'
+    // (agentdb-memory.rvf may still appear as a legacy fallback, which is OK)
+    const rvfSection = bridgeSrc.slice(
+      bridgeSrc.indexOf('rvfStorePromise'),
+      bridgeSrc.indexOf('rvfStorePromise') + 3000,
+    );
+    // The primary path resolution must use embeddings.json or memory.rvf
+    assert.ok(
+      rvfSection.includes('embeddings.json') || rvfSection.includes("'memory.rvf'"),
+      'memory-bridge primary RVF path must come from embeddings.json or canonical memory.rvf',
+    );
+  });
+
+  it('reads databasePath from embeddings.json', () => {
+    const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
+    const rvfSection = bridgeSrc.slice(
+      bridgeSrc.indexOf('rvfStorePromise'),
+      bridgeSrc.indexOf('rvfStorePromise') + 1500,
+    );
+    assert.ok(
+      rvfSection.includes('databasePath') && rvfSection.includes('embeddings.json'),
+      'memory-bridge must resolve RVF path from embeddings.json databasePath',
+    );
+  });
+
+  it('falls back to memory.rvf (canonical name)', () => {
+    const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
+    const rvfSection = bridgeSrc.slice(
+      bridgeSrc.indexOf('rvfStorePromise'),
+      bridgeSrc.indexOf('rvfStorePromise') + 1500,
+    );
+    assert.ok(
+      rvfSection.includes("'memory.rvf'"),
+      'memory-bridge must fall back to canonical memory.rvf name',
+    );
+  });
+});
+
+// ============================================================================
+// 20. memory.ts does not copy to .claude/memory.db
+// ============================================================================
+
+const memoryCmdSrc = readFileSync(
+  resolve(FORK_CLI_SRC, 'commands/memory.ts'),
+  'utf-8',
+);
+
+describe('ADR-0080: no dead .claude/memory.db copy', () => {
+  it('initMemoryCommand does not copyFileSync to .claude/', () => {
+    const initSection = memoryCmdSrc.slice(
+      memoryCmdSrc.indexOf('initMemoryCommand'),
+    );
+    assert.ok(
+      !initSection.includes('copyFileSync'),
+      'memory init must NOT copyFileSync to .claude/memory.db',
     );
   });
 });

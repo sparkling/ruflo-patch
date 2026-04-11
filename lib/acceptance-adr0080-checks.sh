@@ -565,3 +565,87 @@ check_adr0080_store_after_init() {
     _CHECK_OUTPUT="ADR-0080-10: memory store failed: ${err:-unknown error}"
   fi
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-11: RVF is primary storage — bridge resolves correct path
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_rvf_primary() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-11: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # 1. memory-bridge must NOT hardcode 'agentdb-memory.rvf'
+  local bridge_file=""
+  bridge_file=$(find "$base" -name 'memory-bridge*' -name '*.js' \
+    -path '*/node_modules' -prune -o -name '*.js' -print 2>/dev/null \
+    | grep 'memory-bridge' | head -1)
+
+  if [[ -z "$bridge_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-11: memory-bridge*.js not found"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$bridge_file" | sed "s|${base}/||")
+
+  if grep -q 'agentdb-memory\.rvf' "$bridge_file" 2>/dev/null; then
+    _CHECK_OUTPUT="ADR-0080-11: memory-bridge still hardcodes 'agentdb-memory.rvf' in ${short_path}"
+    return
+  fi
+
+  # 2. memory-bridge must read databasePath from embeddings.json
+  if grep -q 'databasePath\|embeddings\.json' "$bridge_file" 2>/dev/null; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-11: RVF path resolved from embeddings.json in ${short_path}"
+  else
+    # 3. At minimum must reference memory.rvf (canonical name)
+    if grep -q 'memory\.rvf' "$bridge_file" 2>/dev/null; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0080-11: RVF path uses canonical 'memory.rvf' in ${short_path}"
+    else
+      _CHECK_OUTPUT="ADR-0080-11: no RVF path resolution found in ${short_path}"
+    fi
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-12: No dead .claude/memory.db copy
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_no_dead_copy() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-12: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # memory.ts (the memory command) must NOT copyFileSync to .claude/memory.db
+  local mem_cmd=""
+  mem_cmd=$(find "$base" -name 'memory.js' -path '*/commands/*' \
+    -path '*/node_modules' -prune -o -name '*.js' -print 2>/dev/null \
+    | grep 'commands.*memory' | head -1)
+
+  if [[ -z "$mem_cmd" ]]; then
+    _CHECK_OUTPUT="ADR-0080-12: commands/memory.js not found"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$mem_cmd" | sed "s|${base}/||")
+
+  if grep -q 'copyFileSync.*claudeDbPath\|copyFileSync.*claude.*memory' "$mem_cmd" 2>/dev/null; then
+    _CHECK_OUTPUT="ADR-0080-12: commands/memory.js still copies to .claude/memory.db in ${short_path}"
+  else
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-12: no dead .claude/memory.db copy in ${short_path}"
+  fi
+}

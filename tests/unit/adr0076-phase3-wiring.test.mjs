@@ -80,7 +80,7 @@ describe('Phase 3 wiring: memory-bridge uses createStorage', () => {
     // Find the getRvfStore function
     const fnStart = src.indexOf('async function getRvfStore');
     assert.ok(fnStart > 0, 'getRvfStore must exist');
-    const fnBody = src.slice(fnStart, fnStart + 800);
+    const fnBody = src.slice(fnStart, fnStart + 3000);
     assert.ok(
       fnBody.includes('createStorage'),
       'getRvfStore must use createStorage factory',
@@ -91,7 +91,7 @@ describe('Phase 3 wiring: memory-bridge uses createStorage', () => {
     if (!existsSync(file)) return;
     const src = readFileSync(file, 'utf-8');
     const fnStart = src.indexOf('async function getRvfStore');
-    const fnBody = src.slice(fnStart, fnStart + 1000);
+    const fnBody = src.slice(fnStart, fnStart + 3000);
     assert.ok(
       fnBody.includes('RvfBackend'),
       'getRvfStore must retain RvfBackend as fallback',
