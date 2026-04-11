@@ -388,6 +388,10 @@ adr0079_t1_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier1-checks.sh"
 adr0079_t2_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier2-checks.sh"
 [[ -f "$adr0079_t2_lib" ]] && source "$adr0079_t2_lib"
 
+# ADR-0080: Storage consolidation verdict
+adr0080_lib="${PROJECT_DIR}/lib/acceptance-adr0080-checks.sh"
+[[ -f "$adr0080_lib" ]] && source "$adr0080_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -624,6 +628,13 @@ run_check_bg "t2-2-session"         "Session lifecycle (ADR-0079)"         check
 run_check_bg "t2-4-embed-dim"       "Embedding dimension (ADR-0079)"       check_t2_4_embedding_dimension         "adr0079"
 run_check_bg "t2-5-embed-stored"    "Embedding stored (ADR-0079)"          check_t2_5_embedding_stored            "adr0079"
 run_check_bg "t2-6-claudemd"        "CLAUDE.md structure (ADR-0079)"       check_t2_6_claudemd_structure          "adr0079"
+
+# ADR-0080: Storage consolidation verdict
+run_check_bg "adr0080-no-1m"       "No 1M maxEntries (ADR-0080)"          check_adr0080_no_1m_maxentries         "adr0080"
+run_check_bg "adr0080-100k"        "100K maxElements (ADR-0080)"          check_adr0080_maxelements_100k         "adr0080"
+run_check_bg "adr0080-atomic"      "Atomic writes (ADR-0080)"             check_adr0080_atomic_writes            "adr0080"
+run_check_bg "adr0080-cap"         "Store entry cap (ADR-0080)"           check_adr0080_store_cap                "adr0080"
+run_check_bg "adr0080-factory"     "Factory convergence (ADR-0080)"       check_adr0080_factory_convergence      "adr0080"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
@@ -951,6 +962,11 @@ collect_parallel "all" \
   "t2-4-embed-dim|Embedding dimension (ADR-0079)" \
   "t2-5-embed-stored|Embedding stored (ADR-0079)" \
   "t2-6-claudemd|CLAUDE.md structure (ADR-0079)" \
+  "adr0080-no-1m|No 1M maxEntries (ADR-0080)" \
+  "adr0080-100k|100K maxElements (ADR-0080)" \
+  "adr0080-atomic|Atomic writes (ADR-0080)" \
+  "adr0080-cap|Store entry cap (ADR-0080)" \
+  "adr0080-factory|Factory convergence (ADR-0080)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
