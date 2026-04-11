@@ -203,6 +203,8 @@ check_t1_3_config_propagation() {
 # ════════════════════════════════════════════════════════════════════
 check_t1_4_sqlite_verify() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  # Wait for e2e memory init — memory.db is only created after memory init completes
+  if type _wait_e2e_ready &>/dev/null; then _wait_e2e_ready; fi
   local dir="${E2E_DIR:-${ACCEPT_TEMP:-$TEMP_DIR}}"
   if ! command -v sqlite3 &>/dev/null; then
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-4: SKIP — sqlite3 not installed"; return
@@ -247,7 +249,15 @@ check_t1_4_sqlite_verify() {
     # DB exists but uses different schema — init created the file, schema differs
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-4: PASS (DB exists at $db_path, schema differs)"
   else
-    _CHECK_OUTPUT="T1-4: DB empty or unreadable — ${sql_out:0:200}"
+    # ADR-0080: storage may now be RVF-primary — SQLite exists for schema but
+    # writes go to .rvf. Check for a non-empty .rvf file alongside the .db.
+    local rvf_path="$dir/.swarm/memory.rvf"
+    if [[ -f "$rvf_path" ]] && [[ $(wc -c < "$rvf_path") -gt 100 ]]; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="T1-4: PASS (RVF backend active — ${rvf_path} exists, SQLite is schema-only)"
+    else
+      _CHECK_OUTPUT="T1-4: DB empty or unreadable — ${sql_out:0:200}"
+    fi
   fi
 }
 
