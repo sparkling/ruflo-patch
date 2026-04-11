@@ -204,7 +204,7 @@ check_t1_3_config_propagation() {
 check_t1_4_sqlite_verify() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local cli; cli=$(_cli_cmd)
-  local dir="${E2E_DIR:-$TEMP_DIR}"
+  local dir="${ACCEPT_TEMP:-${E2E_DIR:-$TEMP_DIR}}"
   if ! command -v sqlite3 &>/dev/null; then
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-4: SKIP — sqlite3 not installed"; return
   fi
