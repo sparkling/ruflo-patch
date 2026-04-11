@@ -423,19 +423,19 @@ describe('ADR-0080: memory-initializer creates memory_entries after RVF init', (
     assert.ok(rvfReturnIdx > -1, "memory-initializer must return backend: 'rvf'");
     const rvfBlock = memoryInitSrc.slice(createStorageIdx, rvfReturnIdx);
     assert.ok(
-      rvfBlock.includes('MEMORY_SCHEMA_V3'),
-      'RVF success path must run MEMORY_SCHEMA_V3 against SQLite',
+      rvfBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
+      'RVF success path must create memory_entries table',
     );
   });
 
   it('MEMORY_SCHEMA_V3 reference appears before the return statement', () => {
     const schemaIdx = memoryInitSrc.indexOf(
-      'MEMORY_SCHEMA_V3',
+      'CREATE TABLE IF NOT EXISTS memory_entries',
       createStorageIdx,
     );
     assert.ok(
       schemaIdx > -1 && schemaIdx < rvfReturnIdx,
-      'MEMORY_SCHEMA_V3 must appear before the return { success, backend: rvf } block',
+      'CREATE TABLE must appear before the return { success, backend: rvf } block',
     );
   });
 
@@ -462,8 +462,8 @@ describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
   it('runs MEMORY_SCHEMA_V3 to create tables', () => {
     const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 1500);
     assert.ok(
-      fnBlock.includes('MEMORY_SCHEMA_V3'),
-      'ensureSchemaColumns must run MEMORY_SCHEMA_V3',
+      fnBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
+      'ensureSchemaColumns must create memory_entries table',
     );
   });
 

@@ -582,8 +582,8 @@ check_adr0080_rvf_primary() {
 
   # 1. memory-bridge must NOT hardcode 'agentdb-memory.rvf'
   local bridge_file=""
-  bridge_file=$(find "$base" -name 'memory-bridge.js' -o -name 'memory-bridge.js.map' \
-    2>/dev/null | grep -v node_modules/ | grep 'memory-bridge\.js$' | head -1)
+  bridge_file=$(find "$base" -path '*/node_modules' -prune -o \
+    -name 'memory-bridge.js' -print 2>/dev/null | grep 'memory-bridge\.js$' | head -1)
 
   if [[ -z "$bridge_file" ]]; then
     _CHECK_OUTPUT="ADR-0080-11: memory-bridge*.js not found"
