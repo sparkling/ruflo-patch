@@ -380,6 +380,14 @@ adr0059_p4_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase4-checks.sh"
 adr0073_lib="${PROJECT_DIR}/lib/acceptance-adr0073-checks.sh"
 [[ -f "$adr0073_lib" ]] && source "$adr0073_lib"
 
+# ADR-0079: Acceptance test completeness (Tier 1)
+adr0079_t1_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier1-checks.sh"
+[[ -f "$adr0079_t1_lib" ]] && source "$adr0079_t1_lib"
+
+# ADR-0079: Acceptance test completeness (Tier 2)
+adr0079_t2_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier2-checks.sh"
+[[ -f "$adr0079_t2_lib" ]] && source "$adr0079_t2_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -600,6 +608,22 @@ run_check_bg "adr0073-metric"      "Metric remap (ADR-0073)"               check
 run_check_bg "adr0073-rvf-dep"     "rvf-node in dep tree (ADR-0073)"       check_adr0073_rvf_node_dep         "adr0073"
 run_check_bg "adr0073-native-rt"   "Native store+query (ADR-0073)"         check_adr0073_native_runtime       "adr0073"
 run_check_bg "adr0073-wal-rt"      "WAL round-trip (ADR-0073)"             check_adr0073_wal_roundtrip        "adr0073"
+
+# ADR-0079: Test completeness (Tier 1 + Tier 2)
+run_check_bg "t1-1-semantic"        "Semantic ranking (ADR-0079)"          check_t1_1_semantic_ranking            "adr0079"
+run_check_bg "t1-2-learning"        "Learning feedback (ADR-0079)"         check_t1_2_learning_feedback_improves  "adr0079"
+run_check_bg "t1-3-config-prop"     "Config propagation (ADR-0079)"        check_t1_3_config_propagation          "adr0079"
+run_check_bg "t1-4-sqlite"          "SQLite verify (ADR-0079)"             check_t1_4_sqlite_verify               "adr0079"
+run_check_bg "t1-5-mcp-stdio"       "MCP stdio (ADR-0079)"                check_t1_5_mcp_stdio                   "adr0079"
+run_check_bg "t1-6-empty-search"    "Empty search (ADR-0079)"              check_t1_6_empty_search                "adr0079"
+run_check_bg "t1-7-invalid-input"   "Invalid input (ADR-0079)"             check_t1_7_invalid_input               "adr0079"
+run_check_bg "t1-8-codemod"         "Codemod scan (ADR-0079)"              check_t1_8_codemod_scan                "adr0079"
+run_check_bg "t1-9-version-pins"    "Version pins (ADR-0079)"              check_t1_9_version_pins                "adr0079"
+run_check_bg "t2-1-swarm"           "Swarm init (ADR-0079)"                check_t2_1_swarm_init                  "adr0079"
+run_check_bg "t2-2-session"         "Session lifecycle (ADR-0079)"         check_t2_2_session_lifecycle            "adr0079"
+run_check_bg "t2-4-embed-dim"       "Embedding dimension (ADR-0079)"       check_t2_4_embedding_dimension         "adr0079"
+run_check_bg "t2-5-embed-stored"    "Embedding stored (ADR-0079)"          check_t2_5_embedding_stored            "adr0079"
+run_check_bg "t2-6-claudemd"        "CLAUDE.md structure (ADR-0079)"       check_t2_6_claudemd_structure          "adr0079"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
@@ -913,6 +937,20 @@ collect_parallel "all" \
   "adr0073-rvf-dep|rvf-node in dep tree (ADR-0073)" \
   "adr0073-native-rt|Native store+query (ADR-0073)" \
   "adr0073-wal-rt|WAL round-trip (ADR-0073)" \
+  "t1-1-semantic|Semantic ranking (ADR-0079)" \
+  "t1-2-learning|Learning feedback (ADR-0079)" \
+  "t1-3-config-prop|Config propagation (ADR-0079)" \
+  "t1-4-sqlite|SQLite verify (ADR-0079)" \
+  "t1-5-mcp-stdio|MCP stdio (ADR-0079)" \
+  "t1-6-empty-search|Empty search (ADR-0079)" \
+  "t1-7-invalid-input|Invalid input (ADR-0079)" \
+  "t1-8-codemod|Codemod scan (ADR-0079)" \
+  "t1-9-version-pins|Version pins (ADR-0079)" \
+  "t2-1-swarm|Swarm init (ADR-0079)" \
+  "t2-2-session|Session lifecycle (ADR-0079)" \
+  "t2-4-embed-dim|Embedding dimension (ADR-0079)" \
+  "t2-5-embed-stored|Embedding stored (ADR-0079)" \
+  "t2-6-claudemd|CLAUDE.md structure (ADR-0079)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
