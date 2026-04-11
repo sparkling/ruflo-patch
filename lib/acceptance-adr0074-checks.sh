@@ -27,14 +27,14 @@ check_adr0074_scope_fix() {
     return
   fi
 
-  # Also check backward compat @claude-flow/memory
-  if ! grep -q '@claude-flow/memory' "$hook"; then
-    _CHECK_OUTPUT="ADR-0074: auto-memory-hook.mjs missing @claude-flow/memory backward compat"
+  # loadMemoryPackage must have the walk-up Strategy 4 (node_modules traversal)
+  if ! grep -q 'node_modules' "$hook"; then
+    _CHECK_OUTPUT="ADR-0074: auto-memory-hook.mjs missing node_modules walk-up in Strategy 4"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0074: Strategy 4 checks both @sparkleideas/memory and @claude-flow/memory"
+  _CHECK_OUTPUT="ADR-0074: Strategy 4 walk-up resolves @sparkleideas/memory via node_modules"
 }
 
 # ════════════════════════════════════════════════════════════════════

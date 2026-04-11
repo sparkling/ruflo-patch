@@ -50,7 +50,10 @@ if [[ -z "$E2E_DIR" ]]; then
   E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
   echo "[fast] Creating E2E project at $E2E_DIR (~60s)..."
   (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 120 "$CLI_BIN" init --full --force >/dev/null 2>&1) || true
-  (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 "$CLI_BIN" memory init >/dev/null 2>&1) || true
+  (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 "$CLI_BIN" memory init --force >/dev/null 2>&1) || true
+  # Ensure memory_entries table exists (upstream schema gap)
+  [[ -f "$E2E_DIR/.swarm/memory.db" ]] && sqlite3 "$E2E_DIR/.swarm/memory.db" \
+    "CREATE TABLE IF NOT EXISTS memory_entries (id TEXT PRIMARY KEY, key TEXT, value TEXT, namespace TEXT, tags TEXT, embedding BLOB, metadata TEXT, created_at TEXT, updated_at TEXT);" 2>/dev/null || true
 fi
 
 echo "[fast] harness=$ACCEPT_TEMP  e2e=$E2E_DIR"

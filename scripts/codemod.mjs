@@ -48,6 +48,9 @@ const UNSCOPED_MAP = {
   'ruvector-core-linux-x64-gnu': '@sparkleideas/ruvector-core-linux-x64-gnu',
   'ruvector-core-linux-arm64-gnu': '@sparkleideas/ruvector-core-linux-arm64-gnu',
   'ruvector-core-win32-x64-msvc': '@sparkleideas/ruvector-core-win32-x64-msvc',
+  // RuVector WASM packages (wasm-pack generates unscoped names)
+  'ruvector-attention-wasm': '@sparkleideas/ruvector-attention-wasm',
+  'ruvector-attention-unified-wasm': '@sparkleideas/ruvector-attention-unified-wasm',
 };
 
 // -- File filters -------------------------------------------------------------

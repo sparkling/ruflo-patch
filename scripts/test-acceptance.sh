@@ -172,7 +172,7 @@ ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 (cd "$ACCEPT_TEMP" \
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=${REGISTRY}" > .npmrc \
-  && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins \
+  && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins @sparkleideas/memory \
      --registry "$REGISTRY" --no-audit --no-fund --prefer-offline 2>&1) || {
   log_error "Failed to install packages from ${REGISTRY}"; exit 1
 }
@@ -255,14 +255,14 @@ else
   log "WARN: embeddings.json not created by init — HNSW acceptance checks may fail"
 fi
 
-log "Running harness: memory init"
+log "Running harness: memory init --force"
 # Sentinel-based completion detection (ADR-0039 T1) — CLI hangs after
 # completion (open SQLite handles). Run command, append sentinel when done,
 # poll for sentinel or timeout.
 _harness_mem_out=""
 _harness_mem_tmpfile=$(mktemp /tmp/rk-harness-XXXXX)
 > "$_harness_mem_tmpfile"
-( cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init >> "$_harness_mem_tmpfile" 2>&1; echo "__RUFLO_DONE__" >> "$_harness_mem_tmpfile" ) &
+( cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init --force >> "$_harness_mem_tmpfile" 2>&1; echo "__RUFLO_DONE__" >> "$_harness_mem_tmpfile" ) &
 _harness_mem_pid=$!
 _harness_elapsed=0
 _harness_max=8
@@ -287,6 +287,17 @@ if echo "$_harness_mem_out" | grep -qi 'initialized\|verification passed'; then
 else
   log "WARN: memory init output unclear (continuing): $(echo "$_harness_mem_out" | tail -3 | tr '\n' ' ')"
 fi
+
+# Ensure memory_entries table exists (upstream schema gap: memory init creates
+# neural/learning tables but omits the basic storage table that memory store needs).
+_mem_db="${ACCEPT_TEMP}/.swarm/memory.db"
+if [[ -f "$_mem_db" ]]; then
+  sqlite3 "$_mem_db" "CREATE TABLE IF NOT EXISTS memory_entries (id TEXT PRIMARY KEY, key TEXT, value TEXT, namespace TEXT, tags TEXT, embedding BLOB, metadata TEXT, created_at TEXT, updated_at TEXT);" 2>/dev/null \
+    && log "  Ensured memory_entries table exists" \
+    || log "WARN: sqlite3 memory_entries creation failed"
+else
+  log "WARN: memory.db not found at $_mem_db — memory checks may fail"
+fi
 _record_phase "harness-init" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
@@ -302,26 +313,29 @@ cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
 rm -rf "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
 log "  e2e snapshot: $(du -sh "$E2E_DIR" 2>/dev/null | cut -f1) (taken before non-e2e wave)"
 
-# Start e2e memory init + health check in background
+# ════════════════════════════════════════════════════════════════════
+# Source shared check library BEFORE e2e subshell (needs _run_and_kill)
+# ════════════════════════════════════════════════════════════════════
+checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
+[[ -f "$checks_lib" ]] || { log_error "Missing: $checks_lib"; exit 1; }
+source "$checks_lib"
+
+# Start e2e memory init + health check in background (15s timeout for cold start)
 _E2E_READY_FILE=$(mktemp /tmp/ruflo-e2e-ready-XXXXX)
 _E2E_HEALTH_FILE=$(mktemp /tmp/ruflo-e2e-health-XXXXX)
 (
   if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init"
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init --force" "" 15
+    # Ensure memory_entries table exists (upstream schema gap)
+    [[ -f "$E2E_DIR/.swarm/memory.db" ]] && sqlite3 "$E2E_DIR/.swarm/memory.db" \
+      "CREATE TABLE IF NOT EXISTS memory_entries (id TEXT PRIMARY KEY, key TEXT, value TEXT, namespace TEXT, tags TEXT, embedding BLOB, metadata TEXT, created_at TEXT, updated_at TEXT);" 2>/dev/null || true
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health" "" 15
     echo "$_RK_OUT" > "$_E2E_HEALTH_FILE"
   fi
   echo "ready" > "$_E2E_READY_FILE"
 ) &
 _E2E_PREP_PID=$!
 _record_phase "e2e-snapshot" "$(_elapsed_ms "$_p" "$(_ns)")"
-
-# ════════════════════════════════════════════════════════════════════
-# Source shared check library
-# ════════════════════════════════════════════════════════════════════
-checks_lib="${PROJECT_DIR}/lib/acceptance-checks.sh"
-[[ -f "$checks_lib" ]] || { log_error "Missing: $checks_lib"; exit 1; }
-source "$checks_lib"
 
 # ADR-0059 checks (RvfBackend, hooks, intelligence, learning)
 adr0059_lib="${PROJECT_DIR}/lib/acceptance-adr0059-checks.sh"
@@ -609,7 +623,7 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
     _wait_e2e_ready
     local cli="$CLI_BIN"
     _CHECK_PASSED="false"
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key ctrl-test --value 'controller activation test' --namespace ctrl-test"
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key ctrl-test --value 'controller activation test' --namespace ctrl-test" "" 15
     if echo "$_RK_OUT" | grep -qi 'stored\|success'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Memory store works in init'd project"

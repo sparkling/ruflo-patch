@@ -56,10 +56,10 @@ check_adr0059_memory_search() {
   _CHECK_PASSED="false"
   local cli; cli=$(_cli_cmd)
 
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'jwt-auth' --value 'Use JWT with refresh tokens for stateless auth' --namespace adr0059-s"
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'error-types' --value 'Use Result type for error propagation' --namespace adr0059-s"
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'jwt-auth' --value 'Use JWT with refresh tokens for stateless auth' --namespace adr0059-s" "" 15
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'error-types' --value 'Use Result type for error propagation' --namespace adr0059-s" "" 15
 
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication JWT tokens' --namespace adr0059-s --limit 5"
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication JWT tokens' --namespace adr0059-s --limit 5" "" 15
   if echo "$_RK_OUT" | grep -qi 'jwt\|auth\|results\|entries'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Search returned relevant results"
@@ -77,12 +77,12 @@ check_adr0059_storage_persistence() {
   local cli; cli=$(_cli_cmd)
   local k="adr0059-p-$(date +%s)"
 
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$k' --value 'persist-val' --namespace adr0059-p"
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$k' --value 'persist-val' --namespace adr0059-p" "" 15
   if ! echo "$_RK_OUT" | grep -qi 'stored\|success'; then
     _CHECK_OUTPUT="Store failed: $_RK_OUT"; return
   fi
 
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-p --limit 5"
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-p --limit 5" "" 15
   if echo "$_RK_OUT" | grep -q "$k"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Data persisted across process boundaries"

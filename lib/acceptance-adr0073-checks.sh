@@ -4,7 +4,7 @@
 # Phase 1: WAL write path — rvf-backend.ts has appendToWal, replayWal, compactWal
 # Phase 3: Native RVF activation — tryNativeInit uses correct API
 #
-# Requires: E2E_DIR set by caller (init'd project with published packages)
+# Requires: TEMP_DIR set by caller (install dir with node_modules/@sparkleideas/*)
 
 # ════════════════════════════════════════════════════════════════════
 # ADR-0073-1: WAL methods exist in rvf-backend source
@@ -16,7 +16,7 @@ check_adr0073_wal_methods() {
 
   # Find rvf-backend in the published memory package
   local rvf_src
-  rvf_src=$(find "$E2E_DIR/node_modules/@sparkleideas" -name "rvf-backend.*" -type f 2>/dev/null | head -1)
+  rvf_src=$(find "$TEMP_DIR/node_modules/@sparkleideas" -name "rvf-backend.js" -type f 2>/dev/null | head -1)
   if [[ -z "$rvf_src" ]]; then
     _CHECK_OUTPUT="ADR-0073: rvf-backend not found in published @sparkleideas/memory"
     return
@@ -51,20 +51,20 @@ check_adr0073_native_package() {
   _CHECK_OUTPUT=""
 
   local rvf_src
-  rvf_src=$(find "$E2E_DIR/node_modules/@sparkleideas" -name "rvf-backend.*" -type f 2>/dev/null | head -1)
+  rvf_src=$(find "$TEMP_DIR/node_modules/@sparkleideas" -name "rvf-backend.js" -type f 2>/dev/null | head -1)
   if [[ -z "$rvf_src" ]]; then
     _CHECK_OUTPUT="ADR-0073: rvf-backend not found"
     return
   fi
 
-  # Must import @ruvector/rvf-node (not bare @ruvector/rvf)
-  if ! grep -q 'ruvector/rvf-node\|ruvector/rvf_node' "$rvf_src"; then
-    _CHECK_OUTPUT="ADR-0073: rvf-backend not importing @ruvector/rvf-node"
+  # Must import rvf-node native package (post-codemod: @sparkleideas/ruvector-rvf-node)
+  if ! grep -q 'ruvector-rvf-node\|ruvector/rvf-node\|ruvector/rvf_node' "$rvf_src"; then
+    _CHECK_OUTPUT="ADR-0073: rvf-backend not importing native rvf-node package"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0073: tryNativeInit uses @ruvector/rvf-node"
+  _CHECK_OUTPUT="ADR-0073: tryNativeInit uses native rvf-node package"
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -76,7 +76,7 @@ check_adr0073_metric_remap() {
   _CHECK_OUTPUT=""
 
   local rvf_src
-  rvf_src=$(find "$E2E_DIR/node_modules/@sparkleideas" -name "rvf-backend.*" -type f 2>/dev/null | head -1)
+  rvf_src=$(find "$TEMP_DIR/node_modules/@sparkleideas" -name "rvf-backend.js" -type f 2>/dev/null | head -1)
   if [[ -z "$rvf_src" ]]; then
     _CHECK_OUTPUT="ADR-0073: rvf-backend not found"
     return

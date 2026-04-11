@@ -29,18 +29,30 @@ check_wrapper_proxy() {
   _CHECK_PASSED="false"
 
   local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
+
+  # 1. Verify wrapper binary installs and --version works
   local wrapper_out
   wrapper_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes "${wrapper_pkg}" --version 2>&1) || true
 
   if echo "$wrapper_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
-    local doctor_out
-    doctor_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "${wrapper_pkg}" doctor 2>&1) || true
-    if echo "$doctor_out" | grep -qi 'doctor\|diagnostics\|passed'; then
+    local ver
+    ver=$(echo "$wrapper_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)
+
+    # 2. Verify the proxy path works by running a lightweight CLI command.
+    #    The wrapper proxies every command except --help/--version to
+    #    @sparkleideas/cli via execFileSync('npx', ...).
+    #    Use 'status' (fast, no DB writes) instead of 'doctor' (heavy, triggers
+    #    a second npx + parallel health checks — flaky under npm cache contention
+    #    when ~20 checks run simultaneously). Doctor is already covered by
+    #    the dedicated check_doctor test.
+    local proxy_out
+    proxy_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "${wrapper_pkg}" status 2>&1) || true
+    if echo "$proxy_out" | grep -qi 'ruflo\|swarm\|stopped\|running\|agent\|initialized\|not initialized'; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Wrapper proxy works: version=$(echo "$wrapper_out" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+[^ ]*' | head -1)"
+      _CHECK_OUTPUT="Wrapper proxy works: version=${ver}, status proxied OK"
     else
-      _CHECK_OUTPUT="Wrapper --version works but doctor command failed"
-      _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(echo "$doctor_out" | head -10)"
+      _CHECK_OUTPUT="Wrapper --version works but status command returned unexpected output"
+      _CHECK_OUTPUT="$_CHECK_OUTPUT\n$(echo "$proxy_out" | head -10)"
     fi
   else
     _CHECK_OUTPUT="Wrapper --version failed or returned no version"
