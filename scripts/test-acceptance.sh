@@ -639,6 +639,7 @@ run_check_bg "adr0080-provider"   "Provider transformers.js (ADR-0080)"  check_a
 run_check_bg "adr0080-embjson"    "Embeddings.json complete (ADR-0080)"  check_adr0080_embeddings_json_complete  "adr0080"
 run_check_bg "adr0080-wizard"     "Wizard canonical model (ADR-0080)"    check_adr0080_wizard_canonical_model    "adr0080"
 run_check_bg "adr0080-bridge"     "Memory-bridge 100K (ADR-0080)"        check_adr0080_memory_bridge_100k        "adr0080"
+run_check_bg "adr0080-store-init" "Memory store after init (ADR-0080)"   check_adr0080_store_after_init         "adr0080"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
@@ -975,6 +976,7 @@ collect_parallel "all" \
   "adr0080-embjson|Embeddings.json complete (ADR-0080)" \
   "adr0080-wizard|Wizard canonical model (ADR-0080)" \
   "adr0080-bridge|Memory-bridge 100K (ADR-0080)" \
+  "adr0080-store-init|Memory store after init (ADR-0080)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

@@ -536,3 +536,32 @@ check_adr0080_memory_bridge_100k() {
     fi
   fi
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-10: memory store works after init (no manual sqlite3 needed)
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_store_after_init() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local e2e="${E2E_DIR}"
+  if [[ -z "$e2e" || ! -d "$e2e" ]]; then
+    _CHECK_OUTPUT="ADR-0080-10: E2E_DIR not set or missing"
+    return
+  fi
+
+  # Try storing an entry — should succeed without manual table creation
+  local store_out
+  store_out=$(cd "$e2e" && npx @sparkleideas/cli@latest memory store \
+    --key "adr0080-test" --value "acceptance test entry" --namespace test 2>&1) || true
+
+  if echo "$store_out" | grep -qi 'stored\|success'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-10: memory store works after init"
+  else
+    local err
+    err=$(echo "$store_out" | grep -i 'error\|no such table' | head -1)
+    _CHECK_OUTPUT="ADR-0080-10: memory store failed: ${err:-unknown error}"
+  fi
+}

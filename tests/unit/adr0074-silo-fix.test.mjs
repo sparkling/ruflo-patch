@@ -141,10 +141,10 @@ describe('ADR-0074 Phase 3: consolidate() eviction + cap', () => {
   const consolidateEnd = intelligenceCjs.indexOf('module.exports');
   const consolidateBody = intelligenceCjs.slice(consolidateStart, consolidateEnd);
 
-  it('MAX_STORE_ENTRIES = 2000', () => {
+  it('MAX_STORE_ENTRIES = 1000', () => {
     assert.ok(
-      consolidateBody.includes('MAX_STORE_ENTRIES = 2000'),
-      'consolidate() must define MAX_STORE_ENTRIES = 2000',
+      consolidateBody.includes('MAX_STORE_ENTRIES = 1000'),
+      'consolidate() must define MAX_STORE_ENTRIES = 1000 (ADR-0080)',
     );
   });
 

@@ -400,3 +400,132 @@ describe('ADR-0080: config-adapter cacheSize fallback', () => {
     );
   });
 });
+
+// ============================================================================
+// 16. memory-initializer creates memory_entries after RVF init
+// ============================================================================
+
+const memoryInitSrc = readFileSync(
+  resolve(FORK_CLI_SRC, 'memory/memory-initializer.ts'),
+  'utf-8',
+);
+
+describe('ADR-0080: memory-initializer creates memory_entries after RVF init', () => {
+  // The RVF success path starts at `createStorage(` and ends at the next
+  // `return { success: true, backend: 'rvf'`. The CREATE TABLE must appear
+  // between those two landmarks, BEFORE the return statement.
+
+  const createStorageIdx = memoryInitSrc.indexOf('createStorage({');
+  const rvfReturnIdx = memoryInitSrc.indexOf("backend: 'rvf'", createStorageIdx);
+
+  it('RVF success path contains CREATE TABLE IF NOT EXISTS memory_entries', () => {
+    assert.ok(createStorageIdx > -1, 'memory-initializer must call createStorage()');
+    assert.ok(rvfReturnIdx > -1, "memory-initializer must return backend: 'rvf'");
+    const rvfBlock = memoryInitSrc.slice(createStorageIdx, rvfReturnIdx);
+    assert.ok(
+      rvfBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
+      'RVF success path must CREATE TABLE IF NOT EXISTS memory_entries',
+    );
+  });
+
+  it('CREATE TABLE appears before the return statement, not after', () => {
+    const createTableIdx = memoryInitSrc.indexOf(
+      'CREATE TABLE IF NOT EXISTS memory_entries',
+      createStorageIdx,
+    );
+    assert.ok(
+      createTableIdx < rvfReturnIdx,
+      'CREATE TABLE must appear before the return { success, backend: rvf } block',
+    );
+  });
+
+  it('ADR-0080 comment marks the create-table block', () => {
+    const rvfBlock = memoryInitSrc.slice(createStorageIdx, rvfReturnIdx);
+    assert.ok(
+      rvfBlock.includes('ADR-0080'),
+      'RVF success path must reference ADR-0080 in a comment',
+    );
+  });
+});
+
+// ============================================================================
+// 17. ensureSchemaColumns creates table if missing
+// ============================================================================
+
+describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
+  const fnStart = memoryInitSrc.indexOf('export async function ensureSchemaColumns');
+
+  it('ensureSchemaColumns is exported', () => {
+    assert.ok(fnStart > -1, 'memory-initializer must export ensureSchemaColumns');
+  });
+
+  it('contains CREATE TABLE IF NOT EXISTS memory_entries', () => {
+    // Scope to the function body (next 1500 chars covers the table-create logic)
+    const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 1500);
+    assert.ok(
+      fnBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
+      'ensureSchemaColumns must CREATE TABLE IF NOT EXISTS memory_entries',
+    );
+  });
+
+  it('ADR-0080 comment marks the table-creation block', () => {
+    const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 500);
+    assert.ok(
+      fnBlock.includes('ADR-0080'),
+      'ensureSchemaColumns must reference ADR-0080 in a comment',
+    );
+  });
+
+  it('is listed in the module exports', () => {
+    assert.ok(
+      memoryInitSrc.includes('ensureSchemaColumns,') ||
+      memoryInitSrc.includes('ensureSchemaColumns }'),
+      'ensureSchemaColumns must appear in the module export list',
+    );
+  });
+});
+
+// ============================================================================
+// 18. intelligence.ts uses directory traversal for embeddings.json
+// ============================================================================
+
+const intelligenceSrc = readFileSync(
+  resolve(FORK_CLI_SRC, 'memory/intelligence.ts'),
+  'utf-8',
+);
+
+describe('ADR-0080: intelligence.ts directory traversal for embeddings.json', () => {
+  // Find the EWC dimension block that reads embeddings.json
+  const ewcDimIdx = intelligenceSrc.indexOf('ewcDim');
+
+  it('has an ewcDim variable that reads embedding dimension', () => {
+    assert.ok(ewcDimIdx > -1, 'intelligence.ts must define ewcDim for EWC consolidator');
+  });
+
+  it('uses a while-loop to walk up directories (not bare process.cwd())', () => {
+    // The embeddings.json lookup must use a while loop walking up dirs,
+    // not just process.cwd() + hard-coded relative path.
+    const ewcBlock = intelligenceSrc.slice(ewcDimIdx, ewcDimIdx + 600);
+    assert.ok(
+      ewcBlock.includes('while') && ewcBlock.includes('dirname'),
+      'embeddings.json lookup must use while-loop directory traversal',
+    );
+  });
+
+  it('walks up via path.dirname (not bare process.cwd() alone)', () => {
+    const ewcBlock = intelligenceSrc.slice(ewcDimIdx, ewcDimIdx + 600);
+    // Must contain the walk-up pattern: _dir !== _path.dirname(_dir)
+    assert.ok(
+      ewcBlock.includes('dirname(') && ewcBlock.includes('embeddings.json'),
+      'must walk up with dirname() looking for embeddings.json',
+    );
+  });
+
+  it('reads .claude-flow/embeddings.json, not a bare cwd path', () => {
+    const ewcBlock = intelligenceSrc.slice(ewcDimIdx, ewcDimIdx + 600);
+    assert.ok(
+      ewcBlock.includes('.claude-flow') && ewcBlock.includes('embeddings.json'),
+      'must look for .claude-flow/embeddings.json in traversal',
+    );
+  });
+});
