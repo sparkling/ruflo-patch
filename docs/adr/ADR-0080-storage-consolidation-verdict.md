@@ -48,12 +48,13 @@ The controller-registry hot path uses `createStorage()`, but historical data fil
 
 **Action:** Make `createDatabase()` delegate to `createStorageFromConfig()` so all callers
 converge on one factory path. Do NOT migrate historical data — let RVF accumulate going
-forward while SQLite serves reads for legacy entries. Alternatively, accept SQLite as
-primary and remove RVF initialization from the controller-registry hot path.
+forward while SQLite serves reads for legacy entries.
 
-**Decision deferred** — requires measuring whether RVF provides value over SQLite at
-current scale. Expert 7's analysis says no: brute-force cosine similarity on <10K entries
-takes 1-5ms. HNSW speedup only manifests above ~50K vectors.
+**Implemented:** `database-provider.ts` RVF case now delegates to
+`createStorageFromConfig(getConfig(), overrides)` with caller options forwarded.
+`maxEntries` parameter default aligned to 100000. Init template generates
+`storage.maxEntries: 100000`. Also fixed: `config-adapter.ts` cacheSize fallback
+and `agentdb-backend.ts` FALLBACK_CONFIG.
 
 #### P2: `auto-memory-store.json` is unbounded and unprotected
 
