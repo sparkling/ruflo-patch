@@ -59,9 +59,12 @@ fi
 echo "[fast] harness=$ACCEPT_TEMP  e2e=$E2E_DIR"
 echo ""
 
-# ── Source libraries ────────────────────────────────────────────────
+# ── Source ALL libraries ────────────────────────────────────────────
 source "$PROJECT_DIR/lib/acceptance-harness.sh"
 source "$PROJECT_DIR/lib/acceptance-checks.sh"
+for f in "$PROJECT_DIR"/lib/acceptance-*-checks.sh; do
+  [[ -f "$f" ]] && source "$f"
+done
 
 pass_count=0 fail_count=0 total_count=0
 results_json="[]"
@@ -83,6 +86,31 @@ _fast_run() {
     printf "  \033[31mFAIL\033[0m  %s (%sms): %s\n" "$name" "$ms" "${_CHECK_OUTPUT:-no output}"
   fi
 }
+
+# ── Generic single-test mode: run any check_* function by name ─────
+# Usage: bash scripts/test-acceptance-fast.sh check_t1_4_sqlite_verify
+#        bash scripts/test-acceptance-fast.sh t1-4  (fuzzy match)
+if [[ "$_FAST_GROUPS" == check_* ]] && declare -f "$_FAST_GROUPS" &>/dev/null; then
+  echo "── Running single test: $_FAST_GROUPS ──"
+  _fast_run "$_FAST_GROUPS" "$_FAST_GROUPS"
+  echo ""
+  echo "Result: $pass_count/$total_count passed, $fail_count failed"
+  rm -rf "$PARALLEL_DIR"
+  exit $fail_count
+fi
+# Fuzzy: map short name like "t1-4" to function "check_t1_4_*"
+if [[ "$_FAST_GROUPS" == t[0-9]* ]]; then
+  _fuzzy=$(echo "$_FAST_GROUPS" | tr '-' '_')
+  _match=$(declare -F | awk '{print $3}' | grep "check_${_fuzzy}" | head -1)
+  if [[ -n "$_match" ]]; then
+    echo "── Running single test: $_match (matched from $_FAST_GROUPS) ──"
+    _fast_run "$_FAST_GROUPS" "$_match"
+    echo ""
+    echo "Result: $pass_count/$total_count passed, $fail_count failed"
+    rm -rf "$PARALLEL_DIR"
+    exit $fail_count
+  fi
+fi
 
 # ── Run selected groups ─────────────────────────────────────────────
 [[ -f "$PROJECT_DIR/lib/acceptance-adr0059-checks.sh" ]] && source "$PROJECT_DIR/lib/acceptance-adr0059-checks.sh"

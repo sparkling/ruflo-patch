@@ -173,7 +173,7 @@ check_t1_7_invalid_input() {
 # ════════════════════════════════════════════════════════════════════
 check_t1_3_config_propagation() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
-  local dir="${ACCEPT_TEMP:-${E2E_DIR:-$TEMP_DIR}}"
+  local dir="${E2E_DIR:-${ACCEPT_TEMP:-$TEMP_DIR}}"
   local cfg="$dir/.claude-flow/config.json"
   if [[ ! -f "$cfg" ]]; then _CHECK_OUTPUT="T1-3: config.json not found at $cfg"; return; fi
 
@@ -203,7 +203,7 @@ check_t1_3_config_propagation() {
 # ════════════════════════════════════════════════════════════════════
 check_t1_4_sqlite_verify() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
-  local dir="${ACCEPT_TEMP:-${E2E_DIR:-$TEMP_DIR}}"
+  local dir="${E2E_DIR:-${ACCEPT_TEMP:-$TEMP_DIR}}"
   if ! command -v sqlite3 &>/dev/null; then
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-4: SKIP — sqlite3 not installed"; return
   fi
