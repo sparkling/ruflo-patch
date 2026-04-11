@@ -3,7 +3,7 @@
 #
 # Phase 1a: loadMemoryPackage() checks both @sparkleideas/memory and @claude-flow/memory
 # Phase 2:  doSync() intelligence drain wired (ranked-context.json -> backend)
-# Phase 3:  consolidate() eviction cap at 2000 entries
+# Phase 3:  consolidate() eviction cap at 1000 entries (ADR-0080 reduced from 2000)
 #
 # Requires: E2E_DIR set by caller (init'd project with .claude/helpers/)
 
@@ -81,14 +81,14 @@ check_adr0074_eviction_cap() {
     return
   fi
 
-  # MAX_STORE_ENTRIES must be 2000
-  if ! grep -q 'MAX_STORE_ENTRIES.*=.*2000' "$intel"; then
-    _CHECK_OUTPUT="ADR-0074: intelligence.cjs missing MAX_STORE_ENTRIES = 2000"
+  # MAX_STORE_ENTRIES must be 1000 (ADR-0080 reduced from 2000)
+  if ! grep -q 'MAX_STORE_ENTRIES.*=.*1000' "$intel"; then
+    _CHECK_OUTPUT="ADR-0074: intelligence.cjs missing MAX_STORE_ENTRIES = 1000"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0074: consolidate() has MAX_STORE_ENTRIES = 2000 cap"
+  _CHECK_OUTPUT="ADR-0074: consolidate() has MAX_STORE_ENTRIES = 1000 cap"
 }
 
 # ════════════════════════════════════════════════════════════════════
