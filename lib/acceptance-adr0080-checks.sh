@@ -69,8 +69,8 @@ check_adr0080_maxelements_100k() {
   local rc_file=""
   for pkg in cli memory agentdb; do
     local candidate
-    candidate=$(find "${base}/${pkg}" -name 'resolve-config*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    candidate=$(find "${base}/${pkg}" -path '*/node_modules' -prune -o \
+      -name 'resolve-config*' -name '*.js' -print 2>/dev/null | head -1)
     if [[ -n "$candidate" ]]; then
       rc_file="$candidate"
       break
@@ -79,8 +79,8 @@ check_adr0080_maxelements_100k() {
 
   if [[ -z "$rc_file" ]]; then
     # Broader search across all packages
-    rc_file=$(find "$base" -name 'resolve-config*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    rc_file=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'resolve-config*' -name '*.js' -print 2>/dev/null | head -1)
   fi
 
   if [[ -z "$rc_file" ]]; then
@@ -88,8 +88,9 @@ check_adr0080_maxelements_100k() {
     return
   fi
 
-  # Check for maxElements or maxEntries set to 100000
-  if grep -qE 'max(Elements|Entries).*100000|100000.*max(Elements|Entries)' "$rc_file" 2>/dev/null; then
+  # Check for maxElements or maxEntries set to 100000 (compiled JS may use 100_000
+  # or uppercase MAX_ENTRIES)
+  if grep -qiE 'max.*(elements|entries).*(100000|100_000)|(100000|100_000).*max.*(elements|entries)' "$rc_file" 2>/dev/null; then
     _CHECK_PASSED="true"
     local short_path
     short_path=$(echo "$rc_file" | sed "s|${base}/||")
@@ -125,21 +126,24 @@ check_adr0080_atomic_writes() {
     local pkg_dir="${base}/${pkg}"
     [[ -d "$pkg_dir" ]] || continue
 
-    # Find files containing writeJSON
-    local wj_files
-    wj_files=$(grep -rl 'writeJSON\|write_json\|writeJson' "$pkg_dir" \
-      --include='*.js' --include='*.mjs' --include='*.cjs' 2>/dev/null \
-      | grep -v node_modules || true)
+    # Find files containing writeJSON (exclude nested node_modules only).
+    # Collect into a temp file to avoid subshell variable scoping issues.
+    local wj_list
+    wj_list=$(mktemp)
+    find "$pkg_dir" -path '*/node_modules' -prune -o \
+      \( -name '*.js' -o -name '*.mjs' -o -name '*.cjs' \) -print 2>/dev/null \
+      | xargs grep -l 'writeJSON\|write_json\|writeJson' 2>/dev/null > "$wj_list" 2>/dev/null || true
 
-    for f in $wj_files; do
-      if grep -q '\.tmp' "$f" 2>/dev/null; then
+    if [[ -s "$wj_list" ]]; then
+      if xargs grep -q '\.tmp' < "$wj_list" 2>/dev/null; then
         found_tmp="true"
         found_in="$pkg"
       fi
-      if grep -q 'renameSync\|rename(' "$f" 2>/dev/null; then
+      if xargs grep -q 'renameSync\|rename(' < "$wj_list" 2>/dev/null; then
         found_rename="true"
       fi
-    done
+    fi
+    rm -f "$wj_list"
   done
 
   # Also check init'd project helpers (intelligence.cjs, auto-memory-hook.mjs)
@@ -191,8 +195,9 @@ check_adr0080_store_cap() {
   local base="${TEMP_DIR}/node_modules/@sparkleideas"
   if [[ -d "$base" ]]; then
     local intel_pub
-    intel_pub=$(find "$base" -name 'intelligence*' -name '*.js' -o -name 'intelligence*' -name '*.cjs' \
-      2>/dev/null | grep -v node_modules | head -1)
+    intel_pub=$(find "$base" -path '*/node_modules' -prune -o \
+      \( -name 'intelligence*' \( -name '*.js' -o -name '*.cjs' \) \) -print \
+      2>/dev/null | head -1)
 
     if [[ -n "$intel_pub" && -f "$intel_pub" ]]; then
       if grep -qE 'MAX_STORE_ENTRIES|maxStoreEntries' "$intel_pub" 2>/dev/null; then
@@ -208,8 +213,9 @@ check_adr0080_store_cap() {
 
     # Broader search: any file with MAX_STORE_ENTRIES or a 1000 cap near store
     local cap_file
-    cap_file=$(grep -rl 'MAX_STORE_ENTRIES' "$base" --include='*.js' --include='*.cjs' \
-      2>/dev/null | grep -v node_modules | head -1)
+    cap_file=$(find "$base" -path '*/node_modules' -prune -o \
+      \( -name '*.js' -o -name '*.cjs' \) -print 2>/dev/null \
+      | xargs grep -l 'MAX_STORE_ENTRIES' 2>/dev/null | head -1)
     if [[ -n "$cap_file" ]]; then
       local short_path
       short_path=$(echo "$cap_file" | sed "s|${base}/||")
@@ -244,8 +250,8 @@ check_adr0080_factory_convergence() {
   local dbprov=""
   for pkg in memory cli agentdb; do
     local candidate
-    candidate=$(find "${base}/${pkg}" -name 'database-provider*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    candidate=$(find "${base}/${pkg}" -path '*/node_modules' -prune -o \
+      -name 'database-provider*' -name '*.js' -print 2>/dev/null | head -1)
     if [[ -n "$candidate" ]]; then
       dbprov="$candidate"
       break
@@ -254,8 +260,8 @@ check_adr0080_factory_convergence() {
 
   if [[ -z "$dbprov" ]]; then
     # Broader search
-    dbprov=$(find "$base" -name 'database-provider*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    dbprov=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'database-provider*' -name '*.js' -print 2>/dev/null | head -1)
   fi
 
   if [[ -z "$dbprov" ]]; then
@@ -292,8 +298,8 @@ check_adr0080_provider_transformers_js() {
   local tpl_file=""
   for pkg in cli memory agentdb; do
     local candidate
-    candidate=$(find "${base}/${pkg}" -name 'config-template*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    candidate=$(find "${base}/${pkg}" -path '*/node_modules' -prune -o \
+      -name 'config-template*' -name '*.js' -print 2>/dev/null | head -1)
     if [[ -n "$candidate" ]]; then
       tpl_file="$candidate"
       break
@@ -302,8 +308,8 @@ check_adr0080_provider_transformers_js() {
 
   if [[ -z "$tpl_file" ]]; then
     # Broader search
-    tpl_file=$(find "$base" -name 'config-template*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    tpl_file=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'config-template*' -name '*.js' -print 2>/dev/null | head -1)
   fi
 
   if [[ -z "$tpl_file" ]]; then
@@ -331,60 +337,92 @@ check_adr0080_embeddings_json_complete() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local required_fields="storageProvider databasePath walMode maxElements efConstruction efSearch dimensions"
+  # Fields written by executor.js into .claude-flow/embeddings.json (ADR-0080)
+  local required_fields="storageProvider databasePath walMode maxEntries defaultNamespace dedupThreshold dimension"
 
-  # First try init'd project embeddings.json
-  local emb_file="${E2E_DIR:+${E2E_DIR}/.claude/embeddings.json}"
-  local search_label="init'd project"
+  # Build list of candidate files to check (first match with all fields wins)
+  local candidates=()
+  local labels=()
 
-  if [[ -z "$emb_file" || ! -f "$emb_file" ]]; then
-    # Fall back to published executor or CLI package
-    local base="${TEMP_DIR}/node_modules/@sparkleideas"
-    if [[ -d "$base" ]]; then
-      emb_file=$(find "$base" \( -name 'embeddings.json' -o -name 'executor*' \) \
-        -name '*.js' -o -name '*.json' 2>/dev/null \
-        | grep -v node_modules | head -1)
-      search_label="published packages"
+  # 1. Init'd project embeddings.json (.claude-flow/ is the init'd location)
+  for emb_subdir in .claude-flow .claude; do
+    local emb_candidate="${E2E_DIR:+${E2E_DIR}/${emb_subdir}/embeddings.json}"
+    if [[ -n "$emb_candidate" && -f "$emb_candidate" ]]; then
+      candidates+=("$emb_candidate")
+      labels+=("init'd project")
+      break
+    fi
+  done
+
+  # 2. Published executor.js (contains the embeddings.json template)
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ -d "$base" ]]; then
+    local executor
+    executor=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'executor*' -name '*.js' -print 2>/dev/null | head -1)
+    if [[ -n "$executor" && -f "$executor" ]]; then
+      candidates+=("$executor")
+      labels+=("published executor")
+    fi
+
+    # 3. Broader: any file containing storageProvider
+    local broad_file
+    broad_file=$(find "$base" -path '*/node_modules' -prune -o \
+      \( -name '*.js' -o -name '*.json' \) -print 2>/dev/null \
+      | xargs grep -l 'storageProvider' 2>/dev/null | head -1)
+    if [[ -n "$broad_file" && -f "$broad_file" ]]; then
+      candidates+=("$broad_file")
+      labels+=("published packages (broad)")
     fi
   fi
 
-  if [[ -z "$emb_file" || ! -f "$emb_file" ]]; then
-    # Try broader search in published packages for files containing storage fields
-    local base="${TEMP_DIR}/node_modules/@sparkleideas"
-    if [[ -d "$base" ]]; then
-      emb_file=$(grep -rl 'storageProvider' "$base" --include='*.js' --include='*.json' \
-        2>/dev/null | grep -v node_modules | head -1)
-      search_label="published packages (broad)"
-    fi
-  fi
-
-  if [[ -z "$emb_file" || ! -f "$emb_file" ]]; then
-    _CHECK_OUTPUT="ADR-0080-7: no embeddings.json or storage-field source found in ${search_label}"
+  if [[ ${#candidates[@]} -eq 0 ]]; then
+    _CHECK_OUTPUT="ADR-0080-7: no embeddings.json or storage-field source found"
     return
   fi
 
-  local missing=""
-  local found=0
-  local total=0
-  for field in $required_fields; do
-    total=$((total + 1))
-    if grep -q "$field" "$emb_file" 2>/dev/null; then
-      found=$((found + 1))
-    else
-      missing="${missing:+${missing}, }${field}"
+  # Check each candidate; pass on first one with all required fields
+  local best_file="" best_label="" best_found=0 best_missing="" best_total=0
+  local idx=0
+  for emb_file in "${candidates[@]}"; do
+    local label="${labels[$idx]}"
+    idx=$((idx + 1))
+
+    local missing=""
+    local found=0
+    local total=0
+    for field in $required_fields; do
+      total=$((total + 1))
+      if grep -q "$field" "$emb_file" 2>/dev/null; then
+        found=$((found + 1))
+      else
+        missing="${missing:+${missing}, }${field}"
+      fi
+    done
+
+    if [[ "$found" -eq "$total" ]]; then
+      local short_path
+      short_path=$(echo "$emb_file" | sed "s|${TEMP_DIR}/node_modules/@sparkleideas/||" \
+        | sed "s|${E2E_DIR}/||")
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0080-7: all ${total} storage fields present in ${short_path}"
+      return
+    fi
+
+    # Track best candidate for error reporting
+    if [[ "$found" -gt "$best_found" ]]; then
+      best_file="$emb_file"
+      best_label="$label"
+      best_found="$found"
+      best_missing="$missing"
+      best_total="$total"
     fi
   done
 
   local short_path
-  short_path=$(echo "$emb_file" | sed "s|${TEMP_DIR}/node_modules/@sparkleideas/||" \
+  short_path=$(echo "$best_file" | sed "s|${TEMP_DIR}/node_modules/@sparkleideas/||" \
     | sed "s|${E2E_DIR}/||")
-
-  if [[ "$found" -eq "$total" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0080-7: all ${total} storage fields present in ${short_path}"
-  else
-    _CHECK_OUTPUT="ADR-0080-7: ${found}/${total} fields in ${short_path}, missing: ${missing}"
-  fi
+  _CHECK_OUTPUT="ADR-0080-7: ${best_found}/${best_total} fields in ${short_path} (${best_label}), missing: ${best_missing}"
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -405,8 +443,8 @@ check_adr0080_wizard_canonical_model() {
   local init_file=""
   for candidate_name in 'init*' 'wizard*' 'setup*'; do
     local candidate
-    candidate=$(find "${base}/cli" -name "${candidate_name}" -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    candidate=$(find "${base}/cli" -path '*/node_modules' -prune -o \
+      -name "${candidate_name}" -name '*.js' -print 2>/dev/null | head -1)
     if [[ -n "$candidate" ]]; then
       init_file="$candidate"
       break
@@ -415,14 +453,16 @@ check_adr0080_wizard_canonical_model() {
 
   if [[ -z "$init_file" ]]; then
     # Broader search: any .js file containing both "wizard" and "embedding"
-    init_file=$(grep -rl 'embedding.*model\|embeddingModel' "${base}/cli" \
-      --include='*.js' 2>/dev/null | grep -v node_modules | head -1)
+    init_file=$(find "${base}/cli" -path '*/node_modules' -prune -o \
+      -name '*.js' -print 2>/dev/null \
+      | xargs grep -l 'embedding.*model\|embeddingModel' 2>/dev/null | head -1)
   fi
 
   if [[ -z "$init_file" ]]; then
     # Even broader: search all packages
-    init_file=$(grep -rl 'all-mpnet-base-v2' "$base" \
-      --include='*.js' 2>/dev/null | grep -v node_modules | head -1)
+    init_file=$(find "$base" -path '*/node_modules' -prune -o \
+      -name '*.js' -print 2>/dev/null \
+      | xargs grep -l 'all-mpnet-base-v2' 2>/dev/null | head -1)
   fi
 
   if [[ -z "$init_file" ]]; then
@@ -459,8 +499,8 @@ check_adr0080_memory_bridge_100k() {
   local bridge_file=""
   for pkg in cli memory agentdb; do
     local candidate
-    candidate=$(find "${base}/${pkg}" -name 'memory-bridge*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    candidate=$(find "${base}/${pkg}" -path '*/node_modules' -prune -o \
+      -name 'memory-bridge*' -name '*.js' -print 2>/dev/null | head -1)
     if [[ -n "$candidate" ]]; then
       bridge_file="$candidate"
       break
@@ -469,8 +509,8 @@ check_adr0080_memory_bridge_100k() {
 
   if [[ -z "$bridge_file" ]]; then
     # Broader search
-    bridge_file=$(find "$base" -name 'memory-bridge*' -name '*.js' \
-      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    bridge_file=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'memory-bridge*' -name '*.js' -print 2>/dev/null | head -1)
   fi
 
   if [[ -z "$bridge_file" ]]; then
