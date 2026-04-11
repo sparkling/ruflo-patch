@@ -69,101 +69,68 @@ check_t2_2_session_lifecycle() {
   _CHECK_OUTPUT="T2-2: session restore failed: ${rout:0:200}"
 }
 
-# ════════════════════════════════════════════════════════════════════
-# T2-4: Embedding dimension match — agentdb_embed must return 768-dim
-# ════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# T2-4: Embedding dimension match — agentdb_embed must return 768
+# ═══════════════════════════════════════════════════════════════
 check_t2_4_embedding_dimension() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local dir="$ACCEPT_TEMP" cli="$CLI_BIN"
-
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_embed --params '{\"text\":\"hello world\"}'" "" 15
   local out="$_RK_OUT"
-
-  if [[ -z "$out" ]]; then
-    _CHECK_OUTPUT="T2-4: agentdb_embed returned no output"; return
-  fi
+  if [[ -z "$out" ]]; then _CHECK_OUTPUT="T2-4: agentdb_embed returned no output"; return; fi
   # Tool not registered — accept if status mentions 768
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
     if echo "$out" | grep -qi 'dimension.*768'; then
-      _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-4: tool unavailable but status confirms 768-dim"; return
-    fi
+      _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-4: tool unavailable, status confirms 768-dim"; return; fi
     _CHECK_OUTPUT="T2-4: agentdb_embed not registered, no 768-dim in status"; return
   fi
-  # Parse dimension from JSON
   local dim
-  dim=$(echo "$out" | node -e "
-    const r=require('fs').readFileSync('/dev/stdin','utf8');
+  dim=$(echo "$out" | node -e "const r=require('fs').readFileSync('/dev/stdin','utf8');
     const m=r.match(/\"dimension\"\\s*:\\s*(\\d+)/);
-    if(m){process.stdout.write(m[1])}
-    else{const a=r.match(/\"embedding\"\\s*:\\s*\\[([\\d.,e+\\-\\s]+)\\]/);
-      if(a)process.stdout.write(String(a[1].split(',').length))}" 2>/dev/null)
-
-  if [[ "$dim" == "768" ]]; then
-    _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-4: embedding dimension is 768"
-  elif [[ -n "$dim" ]]; then
-    _CHECK_OUTPUT="T2-4: dimension mismatch: got $dim, want 768"
-  else
-    _CHECK_OUTPUT="T2-4: could not parse dimension from: ${out:0:200}"
-  fi
+    if(m){process.stdout.write(m[1])}else{const a=r.match(/\"embedding\"\\s*:\\s*\\[([\\d.,e+\\-\\s]+)\\]/);
+    if(a)process.stdout.write(String(a[1].split(',').length))}" 2>/dev/null)
+  if [[ "$dim" == "768" ]]; then _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-4: embedding dimension is 768"
+  elif [[ -n "$dim" ]]; then _CHECK_OUTPUT="T2-4: dimension mismatch: got $dim, want 768"
+  else _CHECK_OUTPUT="T2-4: could not parse dimension from: ${out:0:200}"; fi
 }
 
-# ════════════════════════════════════════════════════════════════════
-# T2-5: Memory store with real embedding — verify 768-dim in sqlite
-# ════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
+# T2-5: Memory store with real embedding — verify 768-dim Float32
+# ═══════════════════════════════════════════════════════════════
 check_t2_5_embedding_stored() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local dir="$ACCEPT_TEMP" cli="$CLI_BIN"
-
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key embed-verify --value 'test embedding generation'" "" 15
   if ! echo "$_RK_OUT" | grep -qi 'stored\|success\|ok'; then
-    _CHECK_OUTPUT="T2-5: store failed: ${_RK_OUT:0:120}"; return
-  fi
-
-  # Locate sqlite db
+    _CHECK_OUTPUT="T2-5: store failed: ${_RK_OUT:0:120}"; return; fi
   local db=""
   for c in "$dir/.swarm/memory.db" "$dir/.claude-flow/memory.db" "$dir/memory.db"; do
-    [[ -f "$c" ]] && db="$c" && break
-  done
-  if [[ -z "$db" ]]; then
-    _CHECK_OUTPUT="T2-5: no memory.db found in project"; return
-  fi
-
+    [[ -f "$c" ]] && db="$c" && break; done
+  if [[ -z "$db" ]]; then _CHECK_OUTPUT="T2-5: no memory.db found"; return; fi
   local blob_len
   blob_len=$(sqlite3 "$db" "SELECT length(embedding) FROM memory_entries WHERE key='embed-verify'" 2>/dev/null)
-
   if [[ -z "$blob_len" || "$blob_len" == "" ]]; then
-    # NULL embedding acceptable (hash fallback)
-    _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-5: embedding NULL (hash fallback)"; return
-  fi
+    _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-5: embedding NULL (hash fallback)"; return; fi
   local dim=$(( blob_len / 4 ))
   if [[ "$dim" -eq 768 ]]; then
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-5: stored embedding is 768-dim Float32 (${blob_len}B)"
-  else
-    _CHECK_OUTPUT="T2-5: dimension mismatch: ${blob_len}/4=$dim, want 768"
-  fi
+  else _CHECK_OUTPUT="T2-5: dimension mismatch: ${blob_len}/4=$dim, want 768"; fi
 }
 
-# ════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 # T2-6: CLAUDE.md structure — required sections, tool name, scope
-# ════════════════════════════════════════════════════════════════════
+# ═══════════════════════════════════════════════════════════════
 check_t2_6_claudemd_structure() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local md="$ACCEPT_TEMP/CLAUDE.md"
-  if [[ ! -f "$md" ]]; then
-    _CHECK_OUTPUT="T2-6: CLAUDE.md not found in init'd project"; return
-  fi
-
+  if [[ ! -f "$md" ]]; then _CHECK_OUTPUT="T2-6: CLAUDE.md not found"; return; fi
   local err=""
   grep -q '## Behavioral Rules' "$md"    || err="${err} missing-behavioral-rules"
   grep -q '## File Organization' "$md"   || err="${err} missing-file-organization"
   grep -qE '## Build( & Test)?' "$md"    || err="${err} missing-build-section"
   grep -q '@sparkleideas' "$md"          || err="${err} missing-sparkleideas-scope"
   grep -q 'Task tool' "$md" && err="${err} contains-task-tool(should-be-agent-tool)"
-
   if [[ -z "$err" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T2-6: CLAUDE.md has required sections, correct tool name, correct scope"
-  else
-    _CHECK_OUTPUT="T2-6: CLAUDE.md issues:${err}"
-  fi
+    _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-6: CLAUDE.md structure valid"
+  else _CHECK_OUTPUT="T2-6: CLAUDE.md issues:${err}"; fi
 }
