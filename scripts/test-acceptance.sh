@@ -635,6 +635,10 @@ run_check_bg "adr0080-100k"        "100K maxElements (ADR-0080)"          check_
 run_check_bg "adr0080-atomic"      "Atomic writes (ADR-0080)"             check_adr0080_atomic_writes            "adr0080"
 run_check_bg "adr0080-cap"         "Store entry cap (ADR-0080)"           check_adr0080_store_cap                "adr0080"
 run_check_bg "adr0080-factory"     "Factory convergence (ADR-0080)"       check_adr0080_factory_convergence      "adr0080"
+run_check_bg "adr0080-provider"   "Provider transformers.js (ADR-0080)"  check_adr0080_provider_transformers_js  "adr0080"
+run_check_bg "adr0080-embjson"    "Embeddings.json complete (ADR-0080)"  check_adr0080_embeddings_json_complete  "adr0080"
+run_check_bg "adr0080-wizard"     "Wizard canonical model (ADR-0080)"    check_adr0080_wizard_canonical_model    "adr0080"
+run_check_bg "adr0080-bridge"     "Memory-bridge 100K (ADR-0080)"        check_adr0080_memory_bridge_100k        "adr0080"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
@@ -967,6 +971,10 @@ collect_parallel "all" \
   "adr0080-atomic|Atomic writes (ADR-0080)" \
   "adr0080-cap|Store entry cap (ADR-0080)" \
   "adr0080-factory|Factory convergence (ADR-0080)" \
+  "adr0080-provider|Provider transformers.js (ADR-0080)" \
+  "adr0080-embjson|Embeddings.json complete (ADR-0080)" \
+  "adr0080-wizard|Wizard canonical model (ADR-0080)" \
+  "adr0080-bridge|Memory-bridge 100K (ADR-0080)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

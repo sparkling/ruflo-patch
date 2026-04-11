@@ -314,3 +314,89 @@ describe('ADR-0080 P2: config-tools DEFAULT_CONFIG maxEntries', () => {
     );
   });
 });
+
+// ============================================================================
+// 12. P6-A: helpers-generator consolidate writes flat array
+// ============================================================================
+
+const helpersGenSrc = readFileSync(resolve(FORK_CLI_SRC, 'init/helpers-generator.ts'), 'utf-8');
+
+describe('ADR-0080 P6-A: helpers-generator store format', () => {
+  it('consolidate writes flat array, not wrapped { entries: [] }', () => {
+    // Find the generated consolidate method (object method style: "consolidate: function()")
+    const consolidateStart = helpersGenSrc.indexOf('consolidate: function()');
+    assert.ok(consolidateStart > -1, 'helpers-generator must contain a consolidate method');
+    const consolidateBlock = helpersGenSrc.slice(consolidateStart, consolidateStart + 2000);
+    // Should write entries directly, not { entries: entries }
+    assert.ok(
+      consolidateBlock.includes('writeJSON(STORE_PATH, entries)'),
+      'generated consolidate must write flat array: writeJSON(STORE_PATH, entries)',
+    );
+    assert.ok(
+      !consolidateBlock.includes('writeJSON(STORE_PATH, { entries'),
+      'generated consolidate must NOT write wrapped object { entries: ... }',
+    );
+  });
+});
+
+// ============================================================================
+// 13. P7-A: settings-generator maxNodes reads from options
+// ============================================================================
+
+const settingsGenSrc = readFileSync(resolve(FORK_CLI_SRC, 'init/settings-generator.ts'), 'utf-8');
+
+describe('ADR-0080 P7-A: settings-generator maxNodes', () => {
+  it('maxNodes reads from options.runtime.maxNodes', () => {
+    assert.ok(
+      settingsGenSrc.includes('options?.runtime?.maxNodes') ||
+      settingsGenSrc.includes('options.runtime?.maxNodes') ||
+      settingsGenSrc.includes('options.runtime.maxNodes'),
+      'settings-generator maxNodes must read from options.runtime.maxNodes',
+    );
+  });
+});
+
+// ============================================================================
+// 14. P7-B: types.ts FULL_INIT_OPTIONS cacheSize is 256
+// ============================================================================
+
+const typesSrc = readFileSync(resolve(FORK_CLI_SRC, 'init/types.ts'), 'utf-8');
+
+describe('ADR-0080 P7-B: FULL_INIT_OPTIONS cacheSize', () => {
+  it('cacheSize is 256 (not 384)', () => {
+    const fullOptsStart = typesSrc.indexOf('FULL_INIT_OPTIONS');
+    assert.ok(fullOptsStart > -1, 'types.ts must define FULL_INIT_OPTIONS');
+    const fullOptsBlock = typesSrc.slice(fullOptsStart, fullOptsStart + 2000);
+    const cacheLine = fullOptsBlock.split('\n').find(l => l.includes('cacheSize:'));
+    assert.ok(cacheLine, 'FULL_INIT_OPTIONS must have a cacheSize field');
+    assert.ok(
+      cacheLine.includes('256'),
+      'FULL_INIT_OPTIONS.runtime.cacheSize must be 256 (not 384)',
+    );
+    assert.ok(
+      !cacheLine.includes('384'),
+      'FULL_INIT_OPTIONS.runtime.cacheSize must NOT be 384',
+    );
+  });
+});
+
+// ============================================================================
+// 15. config-adapter cacheSize fallback is 100000
+// ============================================================================
+
+const configAdapterSrc = readFileSync(resolve(FORK_CLI_SRC, 'config-adapter.ts'), 'utf-8');
+
+describe('ADR-0080: config-adapter cacheSize fallback', () => {
+  it('cacheSize fallback is 100000 (not 1000000)', () => {
+    const cacheLine = configAdapterSrc.split('\n').find(l => l.includes('cacheSize:') && l.includes('??'));
+    assert.ok(cacheLine, 'config-adapter must have cacheSize with ?? fallback');
+    assert.ok(
+      cacheLine.includes('100000'),
+      'config-adapter cacheSize fallback must be 100000',
+    );
+    assert.ok(
+      !cacheLine.includes('1000000'),
+      'config-adapter cacheSize fallback must NOT be 1000000',
+    );
+  });
+});
