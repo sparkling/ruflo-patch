@@ -121,61 +121,34 @@ check_t1_7_invalid_input() {
 
 # ════════════════════════════════════════════════════════════════════
 # T1-3: Config -> runtime propagation
-#   Modify similarityThreshold to 0.99, verify search returns fewer
-#   results than at the original (low) threshold, then restore.
 # ════════════════════════════════════════════════════════════════════
-
 check_t1_3_config_propagation() {
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT=""
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local cli; cli=$(_cli_cmd)
-  local dir="${E2E_DIR:-$TEMP_DIR}"
-  local ns="test-cfgprop-$$"
+  local dir="${E2E_DIR:-$TEMP_DIR}" ns="test-cfgprop-$$"
   local cfg="$dir/.claude-flow/config.json"
+  if [[ ! -f "$cfg" ]]; then _CHECK_OUTPUT="T1-3: config.json not found"; return; fi
 
   # Read original threshold
-  local orig="0.7"
-  if [[ -f "$cfg" ]]; then
-    orig=$(node -e "const c=JSON.parse(require('fs').readFileSync('$cfg','utf-8')); console.log(c.memory?.similarityThreshold ?? 0.7)" 2>/dev/null) || orig="0.7"
-  fi
+  local orig; orig=$(node -e "const c=JSON.parse(require('fs').readFileSync('$cfg','utf-8'));console.log(c.memory?.similarityThreshold??0.7)" 2>/dev/null) || orig="0.7"
 
-  # Seed two entries
+  # Seed entries
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key cfg-alpha --value 'Alpha config propagation test value' --namespace '$ns'" "" 15
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key cfg-beta --value 'Beta config propagation test entry' --namespace '$ns'" "" 15
 
   # Search at original (low) threshold
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'config propagation test' --namespace '$ns'" "" 15
-  local low_out="$_RK_OUT"
-  local low_count
-  low_count=$(echo "$low_out" | grep -ciE 'cfg-|alpha|beta|key|result' || echo 0)
+  local low_count; low_count=$(echo "$_RK_OUT" | grep -ciE 'cfg-|alpha|beta|key|result' || echo 0)
 
-  # Set threshold to 0.99 via node (works even if CLI config set is absent)
-  if [[ ! -f "$cfg" ]]; then
-    _CHECK_OUTPUT="T1-3: config.json not found at $cfg"
-    return
-  fi
-  node -e "
-    const fs=require('fs');
-    const c=JSON.parse(fs.readFileSync('$cfg','utf-8'));
-    c.memory=c.memory||{};
-    c.memory.similarityThreshold=0.99;
-    fs.writeFileSync('$cfg',JSON.stringify(c,null,4));
-  " 2>/dev/null
+  # Set threshold to 0.99
+  node -e "const fs=require('fs'),c=JSON.parse(fs.readFileSync('$cfg','utf-8'));c.memory=c.memory||{};c.memory.similarityThreshold=0.99;fs.writeFileSync('$cfg',JSON.stringify(c,null,4))" 2>/dev/null
 
-  # Search at high threshold (0.99 filters most fuzzy matches)
+  # Search at high threshold
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'config propagation test' --namespace '$ns'" "" 15
-  local high_out="$_RK_OUT"
-  local high_count
-  high_count=$(echo "$high_out" | grep -ciE 'cfg-|alpha|beta|key|result' || echo 0)
+  local high_count; high_count=$(echo "$_RK_OUT" | grep -ciE 'cfg-|alpha|beta|key|result' || echo 0)
 
   # Restore original threshold
-  node -e "
-    const fs=require('fs');
-    const c=JSON.parse(fs.readFileSync('$cfg','utf-8'));
-    c.memory=c.memory||{};
-    c.memory.similarityThreshold=$orig;
-    fs.writeFileSync('$cfg',JSON.stringify(c,null,4));
-  " 2>/dev/null
+  node -e "const fs=require('fs'),c=JSON.parse(fs.readFileSync('$cfg','utf-8'));c.memory=c.memory||{};c.memory.similarityThreshold=$orig;fs.writeFileSync('$cfg',JSON.stringify(c,null,4))" 2>/dev/null
 
   if (( high_count < low_count )); then
     _CHECK_PASSED="true"
@@ -187,47 +160,150 @@ check_t1_3_config_propagation() {
 
 # ════════════════════════════════════════════════════════════════════
 # T1-4: SQLite data verification
-#   Store an entry, then SELECT it from the database directly to
-#   prove data was persisted (not just printed to stdout).
 # ════════════════════════════════════════════════════════════════════
-
 check_t1_4_sqlite_verify() {
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT=""
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local cli; cli=$(_cli_cmd)
   local dir="${E2E_DIR:-$TEMP_DIR}"
-
   if ! command -v sqlite3 &>/dev/null; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T1-4: SKIP — sqlite3 not installed"
-    return
+    _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-4: SKIP — sqlite3 not installed"; return
   fi
 
   # Store a known entry
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'sqlite-verify-test' --value 'ADR-0079 data verification'" "" 15
   if ! echo "$_RK_OUT" | grep -qi 'stored\|success\|ok'; then
-    _CHECK_OUTPUT="T1-4: memory store failed: ${_RK_OUT:0:120}"
-    return
+    _CHECK_OUTPUT="T1-4: memory store failed: ${_RK_OUT:0:120}"; return
   fi
 
   # Locate the SQLite database
   local db_path="$dir/.swarm/memory.db"
-  if [[ ! -f "$db_path" ]]; then
-    db_path=$(find "$dir" -name "memory.db" -path "*/.swarm/*" 2>/dev/null | head -1)
-  fi
+  [[ ! -f "$db_path" ]] && db_path=$(find "$dir" -name "memory.db" -path "*/.swarm/*" 2>/dev/null | head -1)
   if [[ -z "$db_path" || ! -f "$db_path" ]]; then
-    _CHECK_OUTPUT="T1-4: memory.db not found under $dir/.swarm/"
-    return
+    _CHECK_OUTPUT="T1-4: memory.db not found under $dir/.swarm/"; return
   fi
 
   # Query the row directly
-  local sql_out
-  sql_out=$(sqlite3 "$db_path" "SELECT key, value FROM memory_entries WHERE key='sqlite-verify-test'" 2>&1) || true
-
+  local sql_out; sql_out=$(sqlite3 "$db_path" "SELECT key, value FROM memory_entries WHERE key='sqlite-verify-test'" 2>&1) || true
   if echo "$sql_out" | grep -q 'sqlite-verify-test' && echo "$sql_out" | grep -q 'ADR-0079'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T1-4: SELECT confirmed key + value in SQLite"
+    _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-4: SELECT confirmed key + value in SQLite"
   else
     _CHECK_OUTPUT="T1-4: SELECT did not match — got: ${sql_out:0:200}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# T1-8: Codemod completeness scan
+#   Scan all .js files in @sparkleideas/* for residual @claude-flow/
+#   or @ruvector/ references. Assert zero stale scope references.
+# ════════════════════════════════════════════════════════════════════
+
+check_t1_8_codemod_scan() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR:-$E2E_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="T1-8: @sparkleideas not installed at $base"
+    return
+  fi
+
+  # Find all .js files, excluding nested node_modules and comment lines
+  local stale_refs
+  stale_refs=$(find "$base" -path '*/node_modules' -prune -o \
+    -name '*.js' -print0 2>/dev/null \
+    | xargs -0 grep -Hn '@claude-flow/\|@ruvector/' 2>/dev/null \
+    | grep -v '^\s*//' \
+    | grep -v '^\s*\*' \
+    | grep -v '^\s*#' \
+    || true)
+
+  local count=0
+  if [[ -n "$stale_refs" ]]; then
+    count=$(echo "$stale_refs" | wc -l | tr -d ' ')
+  fi
+
+  if [[ "$count" -eq 0 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="T1-8: zero stale @claude-flow/ or @ruvector/ refs in published packages"
+  else
+    local files
+    files=$(echo "$stale_refs" | cut -d: -f1 | sort -u \
+      | sed "s|${base}/||" | head -10 | tr '\n' ', ')
+    _CHECK_OUTPUT="T1-8: ${count} stale scope ref(s) found in: ${files%,}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# T1-9: Version pin consistency
+#   All @sparkleideas/* internal deps must reference the same
+#   -patch.N version. Mixed patch versions cause split-brain imports.
+# ════════════════════════════════════════════════════════════════════
+
+check_t1_9_version_pins() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR:-$E2E_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="T1-9: @sparkleideas not installed at $base"
+    return
+  fi
+
+  # Extract all @sparkleideas/* dep versions, collect -patch.N suffixes,
+  # assert they all use the same patch number.
+  local result
+  result=$(node -e "
+    const fs = require('fs'), path = require('path');
+    const base = process.argv[1];
+    const pkgs = fs.readdirSync(base).filter(d =>
+      fs.statSync(path.join(base, d)).isDirectory()
+    );
+    const patches = new Map();
+    let total = 0;
+    for (const pkg of pkgs) {
+      const pj = path.join(base, pkg, 'package.json');
+      if (!fs.existsSync(pj)) continue;
+      const json = JSON.parse(fs.readFileSync(pj, 'utf8'));
+      for (const dt of ['dependencies','devDependencies','peerDependencies']) {
+        const deps = json[dt] || {};
+        for (const [name, ver] of Object.entries(deps)) {
+          if (!name.startsWith('@sparkleideas/')) continue;
+          total++;
+          const m = String(ver).match(/-patch\.(\d+)/);
+          const pn = m ? m[1] : 'none';
+          if (!patches.has(pn)) patches.set(pn, []);
+          patches.get(pn).push(pkg + ' -> ' + name + '@' + ver);
+        }
+      }
+    }
+    if (total === 0) { console.log('NO_DEPS'); }
+    else if (patches.size === 1) {
+      const [pn] = patches.keys();
+      console.log('OK|' + total + '|patch.' + pn);
+    } else {
+      const detail = [];
+      for (const [pn, refs] of patches) {
+        detail.push('patch.' + pn + ': ' + refs.slice(0,3).join('; '));
+      }
+      console.log('MISMATCH|' + total + '|' + patches.size + '|' + detail.join(' / '));
+    }
+  " "$base" 2>&1)
+
+  if echo "$result" | grep -q '^OK|'; then
+    local total patch_ver
+    total=$(echo "$result" | cut -d'|' -f2)
+    patch_ver=$(echo "$result" | cut -d'|' -f3)
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="T1-9: all ${total} internal deps pin to ${patch_ver}"
+  elif echo "$result" | grep -q '^NO_DEPS'; then
+    _CHECK_OUTPUT="T1-9: no @sparkleideas/* internal deps found to verify"
+  elif echo "$result" | grep -q '^MISMATCH|'; then
+    local total groups detail
+    total=$(echo "$result" | cut -d'|' -f2)
+    groups=$(echo "$result" | cut -d'|' -f3)
+    detail=$(echo "$result" | cut -d'|' -f4-)
+    _CHECK_OUTPUT="T1-9: ${groups} different patch versions across ${total} deps: ${detail}"
+  else
+    _CHECK_OUTPUT="T1-9: unexpected output: ${result:0:200}"
   fi
 }
