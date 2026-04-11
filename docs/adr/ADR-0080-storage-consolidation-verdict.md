@@ -268,6 +268,77 @@ instead.
 | Data flow layer count | Excessive | Low | Don't add more; don't rewire |
 | Per-subsystem caps (SONA, QueryCache) | Yes | None | Correctly tuned to their access patterns |
 
+## Phase 2: Init Script Audit Findings
+
+A 5-agent audit swarm examined the init scripts, config generation, and remaining
+divergences after Phase 1 implementation. Findings:
+
+### P4: Init script config generation gaps (HIGH)
+
+#### P4-A: `embedding.provider` mismatch
+`config-template.ts` generates `provider: 'transformers'` but resolve-config canonical
+default is `'transformers.js'`. Every init'd project gets the wrong provider string via
+Layer 2 of resolveConfig.
+
+**Fix:** Change `config-template.ts` provider from `'transformers'` to `'transformers.js'`.
+
+#### P4-B: `embeddings.json` missing 7 fields resolveConfig reads
+`executor.ts` writes only `model`, `dimension`, `provider` to `embeddings.json`.
+resolveConfig Layer 2 also reads: `storageProvider`, `databasePath`, `walMode`,
+`autoPersistInterval`, `maxEntries`, `defaultNamespace`, `dedupThreshold`. None of
+these are written, so they always fall through to Layer 4 hardcoded defaults.
+
+**Fix:** Add the 7 missing fields to the `embeddings.json` write block in `executor.ts`.
+
+#### P4-C: `embeddingModel`/`embeddingDim` never passed to ConfigOverrides
+`executor.ts:1219-1223` builds ConfigOverrides but never passes `embeddingModel` or
+`embeddingDim` from user options. `config.json` embeddings block always gets template
+defaults, ignoring `--embedding-model`.
+
+**Fix:** Pass `options.embeddings.model` and `options.embeddings.dimension` into
+ConfigOverrides.
+
+#### P4-D: Wizard default model is non-canonical
+`commands/init.ts:511` wizard `--embedding-model` defaults to
+`nomic-ai/nomic-embed-text-v1.5`, not `Xenova/all-mpnet-base-v2`.
+
+**Fix:** Change wizard default to `Xenova/all-mpnet-base-v2`.
+
+### P5: Remaining maxEntries divergences (MEDIUM)
+
+#### P5-A: `memory-bridge.ts:238` fallback 1000000 + wrong key path
+Reads from `cfgJson.memory?.storage?.maxEntries` (nested `.storage.` subkey that init
+doesn't generate), falls back to 1000000.
+
+**Fix:** Change to `cfgJson.memory?.maxEntries ?? 100000` and drop `.storage.` nesting.
+
+#### P5-B: `config-tools.ts:27` MCP DEFAULT_CONFIG stale
+Has `memory.maxEntries: 10000` — flat key, wrong value (should be 100000).
+
+**Fix:** Change to `100000`.
+
+### P6: Store format mismatch (MEDIUM)
+
+#### P6-A: Generated consolidate writes `{ entries: [] }`, runtime expects flat array
+`helpers-generator.ts` consolidate writes `{ entries: entries }` but runtime
+`intelligence.cjs` init reads with `Array.isArray(store)`. Mismatch causes silent
+data discard when upgrading from generated stub to full runtime.
+
+**Fix:** Change generated consolidate to write flat array: `writeJSON(STORE_PATH, entries)`.
+
+### P7: Minor init issues (LOW)
+
+#### P7-A: `settings-generator.ts:133` — `maxNodes: 10000` hardcoded
+Ignores `options.runtime.maxNodes`. Fix: use `options.runtime.maxNodes ?? 10000`.
+
+#### P7-B: `types.ts:597` — `cacheSize: 384` dead value
+`FULL_INIT_OPTIONS.runtime.cacheSize` is never read by settings-generator (which
+hardcodes 256). Fix: change to `256` or remove.
+
+#### P7-C: `config-template.ts` — `hnsw.m` lowercase
+resolve-config uses `M` uppercase. Cosmetic — HNSW params are derived, not read
+from config.
+
 ## Consequences
 
 - P3 fix eliminates the AgentDB 10K hard-throw time bomb and the 10x memory over-allocation

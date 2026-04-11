@@ -143,3 +143,174 @@ describe('ADR-0080 P3: rvf-backend DEFAULT_MAX_ELEMENTS', () => {
     );
   });
 });
+
+// ============================================================================
+// 5. config-template embeddings provider is 'transformers.js'
+// ============================================================================
+
+const executorSrc = readFileSync(resolve(FORK_CLI_SRC, 'init/executor.ts'), 'utf-8');
+const initCmdSrc = readFileSync(resolve(FORK_CLI_SRC, 'commands/init.ts'), 'utf-8');
+const memoryBridgeSrc = readFileSync(
+  resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'),
+  'utf-8',
+);
+const configToolsSrc = readFileSync(resolve(FORK_CLI_SRC, 'mcp-tools/config-tools.ts'), 'utf-8');
+
+describe('ADR-0080 P2: config-template embeddings.provider', () => {
+  it('provider is transformers.js (not bare transformers)', () => {
+    const embBlock = configTemplateSrc.slice(
+      configTemplateSrc.indexOf('embeddings:'),
+    );
+    assert.ok(
+      embBlock.includes("provider: 'transformers.js'"),
+      "config-template embeddings.provider must be 'transformers.js'",
+    );
+    // Ensure the old bare value is NOT present in the embeddings block
+    const providerLine = embBlock.split('\n').find(l => l.includes('provider:'));
+    assert.ok(
+      !providerLine.includes("'transformers'") || providerLine.includes("'transformers.js'"),
+      "config-template must not use bare 'transformers' as provider",
+    );
+  });
+});
+
+// ============================================================================
+// 6. config-template hnsw.M is uppercase
+// ============================================================================
+
+describe('ADR-0080 P2: config-template hnsw.M casing', () => {
+  it('uses uppercase M: (not lowercase m:)', () => {
+    const hnswBlock = configTemplateSrc.slice(
+      configTemplateSrc.indexOf('hnsw:'),
+      configTemplateSrc.indexOf('hnsw:') + 200,
+    );
+    assert.ok(
+      hnswBlock.includes('M:'),
+      'config-template hnsw block must use uppercase M:',
+    );
+    // Verify no lowercase m: on its own line (would be a separate key)
+    const mLine = hnswBlock.split('\n').find(l => /^\s+m:/.test(l));
+    assert.equal(mLine, undefined, 'config-template hnsw block must NOT have lowercase m: key');
+  });
+});
+
+// ============================================================================
+// 7. executor.ts embeddings.json includes storage fields
+// ============================================================================
+
+describe('ADR-0080 P2: executor embeddings.json write block', () => {
+  // Locate the embeddings.json write block (between the JSON.stringify call
+  // and the writeFileSync for embeddingsJsonPath)
+  const embJsonStart = executorSrc.indexOf('storageProvider:');
+  const embJsonBlock = executorSrc.slice(
+    executorSrc.lastIndexOf('JSON.stringify', embJsonStart),
+    executorSrc.indexOf('writeFileSync(embeddingsJsonPath'),
+  );
+
+  for (const field of [
+    'storageProvider',
+    'databasePath',
+    'walMode',
+    'autoPersistInterval',
+    'maxEntries',
+    'defaultNamespace',
+    'dedupThreshold',
+  ]) {
+    it(`includes ${field}`, () => {
+      assert.ok(
+        embJsonBlock.includes(field),
+        `executor embeddings.json block must include ${field}`,
+      );
+    });
+  }
+});
+
+// ============================================================================
+// 8. executor.ts ConfigOverrides includes embeddingModel
+// ============================================================================
+
+describe('ADR-0080 P2: executor ConfigOverrides construction', () => {
+  const overridesStart = executorSrc.indexOf('const overrides: ConfigOverrides');
+  const overridesBlock = executorSrc.slice(overridesStart, overridesStart + 300);
+
+  it('passes embeddingModel', () => {
+    assert.ok(
+      overridesBlock.includes('embeddingModel:'),
+      'executor ConfigOverrides must include embeddingModel',
+    );
+  });
+
+  it('passes embeddingDim', () => {
+    assert.ok(
+      overridesBlock.includes('embeddingDim:'),
+      'executor ConfigOverrides must include embeddingDim',
+    );
+  });
+});
+
+// ============================================================================
+// 9. wizard default model is canonical Xenova/all-mpnet-base-v2
+// ============================================================================
+
+describe('ADR-0080 P2: wizard embedding-model default', () => {
+  it('wizard flags default is Xenova/all-mpnet-base-v2', () => {
+    // The wizard sub-command defines its flags with a default for embedding-model
+    const wizardFlagsBlock = initCmdSrc.slice(
+      initCmdSrc.indexOf("name: 'embedding-model'"),
+      initCmdSrc.indexOf("name: 'embedding-model'") + 200,
+    );
+    assert.ok(
+      wizardFlagsBlock.includes("default: 'Xenova/all-mpnet-base-v2'"),
+      "wizard embedding-model default must be 'Xenova/all-mpnet-base-v2'",
+    );
+  });
+
+  it('wizard agentdb fallback is Xenova/all-mpnet-base-v2', () => {
+    // The wizard dynamically imports agentdb with a catch fallback
+    assert.ok(
+      initCmdSrc.includes("model: 'Xenova/all-mpnet-base-v2'"),
+      "wizard agentdb catch fallback must use 'Xenova/all-mpnet-base-v2'",
+    );
+  });
+});
+
+// ============================================================================
+// 10. memory-bridge maxEntries fallback is 100000
+// ============================================================================
+
+describe('ADR-0080 P2: memory-bridge maxEntries fallback', () => {
+  it('maxEntries fallback is 100000 (not 1000000)', () => {
+    const maxEntriesLine = memoryBridgeSrc
+      .split('\n')
+      .find(l => l.includes('maxEntries:') && l.includes('??'));
+    assert.ok(maxEntriesLine, 'memory-bridge must have a maxEntries line with ?? fallback');
+    assert.ok(
+      maxEntriesLine.includes('100000'),
+      'memory-bridge maxEntries fallback must be 100000',
+    );
+    assert.ok(
+      !maxEntriesLine.includes('1000000'),
+      'memory-bridge maxEntries fallback must NOT be 1000000',
+    );
+  });
+});
+
+// ============================================================================
+// 11. config-tools DEFAULT_CONFIG memory.maxEntries is 100000
+// ============================================================================
+
+describe('ADR-0080 P2: config-tools DEFAULT_CONFIG maxEntries', () => {
+  it('memory.maxEntries is 100000', () => {
+    assert.ok(
+      configToolsSrc.includes("'memory.maxEntries': 100000"),
+      "config-tools DEFAULT_CONFIG must set 'memory.maxEntries': 100000",
+    );
+  });
+
+  it('memory.maxEntries is not 1000000', () => {
+    assert.ok(
+      !configToolsSrc.includes("'memory.maxEntries': 1000000"),
+      "config-tools DEFAULT_CONFIG must NOT have 'memory.maxEntries': 1000000",
+    );
+  });
+});

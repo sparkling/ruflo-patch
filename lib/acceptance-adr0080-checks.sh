@@ -273,3 +273,226 @@ check_adr0080_factory_convergence() {
     _CHECK_OUTPUT="ADR-0080-5: createStorageFromConfig not found in ${short_path}"
   fi
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-6: Provider must reference transformers.js (not bare transformers)
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_provider_transformers_js() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-6: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find config-template files across published packages
+  local tpl_file=""
+  for pkg in cli memory agentdb; do
+    local candidate
+    candidate=$(find "${base}/${pkg}" -name 'config-template*' -name '*.js' \
+      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    if [[ -n "$candidate" ]]; then
+      tpl_file="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$tpl_file" ]]; then
+    # Broader search
+    tpl_file=$(find "$base" -name 'config-template*' -name '*.js' \
+      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$tpl_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-6: config-template*.js not found in published packages"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$tpl_file" | sed "s|${base}/||")
+
+  # Must contain "transformers.js" (the npm package name), not bare "transformers"
+  if grep -q 'transformers\.js' "$tpl_file" 2>/dev/null; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-6: provider references transformers.js in ${short_path}"
+  else
+    _CHECK_OUTPUT="ADR-0080-6: transformers.js not found in ${short_path} (may use bare 'transformers')"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-7: embeddings.json has all 7 storage fields
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_embeddings_json_complete() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local required_fields="storageProvider databasePath walMode maxElements efConstruction efSearch dimensions"
+
+  # First try init'd project embeddings.json
+  local emb_file="${E2E_DIR:+${E2E_DIR}/.claude/embeddings.json}"
+  local search_label="init'd project"
+
+  if [[ -z "$emb_file" || ! -f "$emb_file" ]]; then
+    # Fall back to published executor or CLI package
+    local base="${TEMP_DIR}/node_modules/@sparkleideas"
+    if [[ -d "$base" ]]; then
+      emb_file=$(find "$base" \( -name 'embeddings.json' -o -name 'executor*' \) \
+        -name '*.js' -o -name '*.json' 2>/dev/null \
+        | grep -v node_modules | head -1)
+      search_label="published packages"
+    fi
+  fi
+
+  if [[ -z "$emb_file" || ! -f "$emb_file" ]]; then
+    # Try broader search in published packages for files containing storage fields
+    local base="${TEMP_DIR}/node_modules/@sparkleideas"
+    if [[ -d "$base" ]]; then
+      emb_file=$(grep -rl 'storageProvider' "$base" --include='*.js' --include='*.json' \
+        2>/dev/null | grep -v node_modules | head -1)
+      search_label="published packages (broad)"
+    fi
+  fi
+
+  if [[ -z "$emb_file" || ! -f "$emb_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-7: no embeddings.json or storage-field source found in ${search_label}"
+    return
+  fi
+
+  local missing=""
+  local found=0
+  local total=0
+  for field in $required_fields; do
+    total=$((total + 1))
+    if grep -q "$field" "$emb_file" 2>/dev/null; then
+      found=$((found + 1))
+    else
+      missing="${missing:+${missing}, }${field}"
+    fi
+  done
+
+  local short_path
+  short_path=$(echo "$emb_file" | sed "s|${TEMP_DIR}/node_modules/@sparkleideas/||" \
+    | sed "s|${E2E_DIR}/||")
+
+  if [[ "$found" -eq "$total" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-7: all ${total} storage fields present in ${short_path}"
+  else
+    _CHECK_OUTPUT="ADR-0080-7: ${found}/${total} fields in ${short_path}, missing: ${missing}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-8: Wizard embedding-model default is all-mpnet-base-v2
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_wizard_canonical_model() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-8: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find init command files (wizard lives in CLI init)
+  local init_file=""
+  for candidate_name in 'init*' 'wizard*' 'setup*'; do
+    local candidate
+    candidate=$(find "${base}/cli" -name "${candidate_name}" -name '*.js' \
+      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    if [[ -n "$candidate" ]]; then
+      init_file="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$init_file" ]]; then
+    # Broader search: any .js file containing both "wizard" and "embedding"
+    init_file=$(grep -rl 'embedding.*model\|embeddingModel' "${base}/cli" \
+      --include='*.js' 2>/dev/null | grep -v node_modules | head -1)
+  fi
+
+  if [[ -z "$init_file" ]]; then
+    # Even broader: search all packages
+    init_file=$(grep -rl 'all-mpnet-base-v2' "$base" \
+      --include='*.js' 2>/dev/null | grep -v node_modules | head -1)
+  fi
+
+  if [[ -z "$init_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-8: no init/wizard file with embedding model reference found"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$init_file" | sed "s|${base}/||")
+
+  if grep -q 'all-mpnet-base-v2' "$init_file" 2>/dev/null; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-8: wizard default all-mpnet-base-v2 found in ${short_path}"
+  else
+    _CHECK_OUTPUT="ADR-0080-8: all-mpnet-base-v2 not found in ${short_path}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-9: memory-bridge maxEntries fallback is 100000
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_memory_bridge_100k() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-9: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find memory-bridge in published packages
+  local bridge_file=""
+  for pkg in cli memory agentdb; do
+    local candidate
+    candidate=$(find "${base}/${pkg}" -name 'memory-bridge*' -name '*.js' \
+      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+    if [[ -n "$candidate" ]]; then
+      bridge_file="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$bridge_file" ]]; then
+    # Broader search
+    bridge_file=$(find "$base" -name 'memory-bridge*' -name '*.js' \
+      -not -path '*/node_modules/*' 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$bridge_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-9: memory-bridge*.js not found in published packages"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$bridge_file" | sed "s|${base}/||")
+
+  # Check for maxEntries fallback of 100000
+  if grep -qE 'maxEntries.*100000|100000.*maxEntries' "$bridge_file" 2>/dev/null; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-9: maxEntries fallback 100000 found in ${short_path}"
+  else
+    # Also check for the pattern: || 100000 or ?? 100000 near maxEntries
+    if grep -qE '100000' "$bridge_file" 2>/dev/null && \
+       grep -qE 'maxEntries' "$bridge_file" 2>/dev/null; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0080-9: maxEntries and 100000 both present in ${short_path}"
+    else
+      _CHECK_OUTPUT="ADR-0080-9: maxEntries fallback 100000 not found in ${short_path}"
+    fi
+  fi
+}
