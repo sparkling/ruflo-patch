@@ -1,6 +1,6 @@
 # ADR-0057: CLAUDE.md Generator Redesign
 
-- **Status**: Partially Implemented (2026-04-11). Output clean, dead code removal in progress.
+- **Status**: Implemented (2026-04-11). Dead code removed, full template fixed as strict superset of standard, output clean across all 6 templates.
 - **Date**: 2026-04-03
 - **Implemented**: 2026-04-11
 - **Deciders**: ruflo-patch maintainers

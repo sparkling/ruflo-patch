@@ -1,6 +1,6 @@
 # ADR-0064: Controller Configuration Alignment
 
-- **Status**: P0-P3 Implemented (2026-04-11). Residual: solverBandit factory still ignores config, || vs ?? in 6 initAgentDB lines.
+- **Status**: Implemented (2026-04-11). P0-P3 complete. || vs ?? fixed (7 lines). solverBandit already config-driven.
 - **Date**: 2026-04-05
 - **Implemented**: 2026-04-11
 - **Deciders**: Henrik Pettersen

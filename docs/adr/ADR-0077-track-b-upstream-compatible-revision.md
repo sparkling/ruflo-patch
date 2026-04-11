@@ -213,9 +213,11 @@ Rated HIGH upstream risk for ruflo fork, LOW for agentic-flow fork.
 merge-conflict file in the ruflo fork. Splitting it into 5 files guarantees conflicts
 on every sync.
 
-**Compatible for agentic-flow.** The agentic-flow fork has been frozen since 2026-02-27.
-However, "delete and replace" is still risky -- if upstream resumes development, we
-have a permanent divergence.
+**Compatible for agentic-flow.** The agentic-flow fork has been upstream-inactive since
+2026-02-27 (1 upstream commit in 6 weeks). Our fork has 30+ commits touching 88 files --
+"upstream-inactive" refers to upstream activity, not our patch surface. However, "delete
+and replace" is still risky -- if upstream resumes development, we have a permanent
+divergence.
 
 ### Revised approach: Intercept at Boundaries
 

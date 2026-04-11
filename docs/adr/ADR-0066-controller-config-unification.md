@@ -1,7 +1,8 @@
 # ADR-0066: Controller Configuration Unification
 
-- **Status**: Proposed
+- **Status**: Implemented (2026-04-11)
 - **Date**: 2026-04-05
+- **Implemented**: 2026-04-11. P0 dimension/model via getEmbeddingConfig() across ruflo + agentic-flow. P1 controller dedup via getOrCreate(). P2 config-driven thresholds + dimension-mismatch detector.
 - **Deciders**: Henrik Pettersen
 - **Builds on**: ADR-0065 (config centralization), ADR-0062 (storage config), ADR-0064 (controller config alignment)
 - **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)

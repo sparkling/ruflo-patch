@@ -26,7 +26,7 @@ Reuven Cohen (simulated upstream creator perspective) confirmed:
 - **AgentDBService IS going away** — was always scaffolding; shim approach aligns with upstream roadmap
 - **Would accept PRs**: A1 (cosineSim), A3 (dimension validation), B1 (config), B4 (shim)
 - **Would NOT accept**: Deleting HybridBackend, memory-bridge.ts, sql.js fallback, VectorDb HNSW
-- **Top contribution request**: AgentDBService shim while agentic-flow is frozen
+- **Top contribution request**: AgentDBService shim while agentic-flow is upstream-inactive
 
 ## Track A — Correctness Fixes (IMPLEMENTED)
 
@@ -124,8 +124,9 @@ existing 6-implementation fallback chain runs unchanged.
 
 **Files NOT touched**: controller-registry.ts (no split — highest merge conflict risk),
 agentdb-service.ts (shim sits alongside, not replacing)
-**CRITICAL**: agentic-flow fork is frozen since 2026-02-27. The shim must be created NOW
-while the window is open. This is the highest-value Track B item per upstream creator.
+**CRITICAL**: agentic-flow fork has been upstream-inactive since 2026-02-27 (1 upstream
+commit in 6 weeks; our fork has 30+ commits touching 88 files). The shim must be created
+NOW while the window is open. This is the highest-value Track B item per upstream creator.
 **Upstream PR**: Partial — RegistryBridge is a convenience layer upstream might accept
 
 ### Phase B5: Unified Data Flow (1 week, additive)

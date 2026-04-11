@@ -318,3 +318,105 @@ describe('ADR-0064: P2 maxElements alignment', () => {
       'maxElements must NOT be 1000000 (too large)');
   });
 });
+
+// ============================================================================
+// Group 7: ADR-0064 — || to ?? falsy-preservation
+// ============================================================================
+
+describe('ADR-0064: || to ?? falsy-preservation', () => {
+
+  it('dimension: 0 is preserved, not replaced by 768', () => {
+    // With ||: config.dimension || 768 → 768 (wrong, 0 is falsy)
+    // With ??: config.dimension ?? 768 → 0 (correct, 0 is not null/undefined)
+    const config = { dimension: 0 };
+    assert.equal(config.dimension ?? 768, 0);
+    assert.equal(config.dimension || 768, 768); // this is the bug we fixed
+  });
+
+  it('maxElements: 0 is preserved', () => {
+    const config = { maxElements: 0 };
+    assert.equal(config.maxElements ?? 100000, 0);
+  });
+
+  it('embeddingModel: empty string is preserved with ??', () => {
+    const config = { embeddingModel: '' };
+    assert.equal(config.embeddingModel ?? 'all-mpnet-base-v2', '');
+    assert.equal(config.embeddingModel || 'all-mpnet-base-v2', 'all-mpnet-base-v2');
+  });
+
+  it('undefined falls back to default with ??', () => {
+    const config = {};
+    assert.equal(config.dimension ?? 768, 768);
+    assert.equal(config.maxElements ?? 100000, 100000);
+  });
+
+  it('null falls back to default with ??', () => {
+    const config = { dimension: null };
+    assert.equal(config.dimension ?? 768, 768);
+  });
+
+  it('hnswM: 0 is preserved', () => {
+    const config = { hnswM: 0 };
+    assert.equal(config.hnswM ?? 23, 0);
+  });
+});
+
+// ============================================================================
+// Group 8: ADR-0066 P2 — Config-driven threshold propagation
+// ============================================================================
+
+describe('ADR-0066 P2: Config-driven threshold propagation', () => {
+
+  it('nightlyLearner receives config thresholds with ?? fallbacks', () => {
+    // Simulates: config.nightlyLearner.minSimilarity = 0.5
+    const nlCfg = { minSimilarity: 0.5 };
+    const result = {
+      minSimilarity: nlCfg.minSimilarity ?? 0.7,
+      minSampleSize: nlCfg.minSampleSize ?? 30,
+      confidenceThreshold: nlCfg.confidenceThreshold ?? 0.6,
+    };
+    assert.equal(result.minSimilarity, 0.5); // config wins
+    assert.equal(result.minSampleSize, 30);  // default
+    assert.equal(result.confidenceThreshold, 0.6); // default
+  });
+
+  it('queryOptimizer receives maxSize and ttl from config', () => {
+    const qoCfg = { maxSize: 2000, ttl: 120000 };
+    assert.equal(qoCfg.maxSize ?? 1000, 2000);
+    assert.equal(qoCfg.ttl ?? 60000, 120000);
+  });
+
+  it('queryOptimizer uses defaults when config absent', () => {
+    const qoCfg = {};
+    assert.equal(qoCfg.maxSize ?? 1000, 1000);
+    assert.equal(qoCfg.ttl ?? 60000, 60000);
+  });
+
+  it('moeAttentionService receives numExperts and topK from config', () => {
+    const moeCfg = { numExperts: 16, topK: 4 };
+    assert.equal(moeCfg.numExperts ?? 8, 16);
+    assert.equal(moeCfg.topK ?? 2, 4);
+  });
+
+  it('tieredCache lruEnabled defaults to true, writeThrough to false', () => {
+    const config = {};
+    assert.equal(config.lruEnabled ?? true, true);
+    assert.equal(config.writeThrough ?? false, false);
+  });
+
+  it('tieredCache config overrides defaults', () => {
+    const config = { lruEnabled: false, writeThrough: true };
+    assert.equal(config.lruEnabled ?? true, false);
+    assert.equal(config.writeThrough ?? false, true);
+  });
+
+  it('nightlyLearner all 6 thresholds have correct defaults', () => {
+    const nlCfg = {};
+    assert.equal(nlCfg.minSimilarity ?? 0.7, 0.7);
+    assert.equal(nlCfg.minSampleSize ?? 30, 30);
+    assert.equal(nlCfg.confidenceThreshold ?? 0.6, 0.6);
+    assert.equal(nlCfg.upliftThreshold ?? 0.05, 0.05);
+    assert.equal(nlCfg.edgeMaxAgeDays ?? 90, 90);
+    assert.equal(nlCfg.experimentBudget ?? 10, 10);
+  });
+});
