@@ -459,15 +459,15 @@ describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
     assert.ok(fnStart > -1, 'memory-initializer must export ensureSchemaColumns');
   });
 
-  it('runs MEMORY_SCHEMA_V3 to create tables', () => {
+  it('does NOT use sql.js to modify existing WAL-mode .db files', () => {
     const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 1500);
     assert.ok(
-      fnBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
-      'ensureSchemaColumns must create memory_entries table',
+      fnBlock.includes('Do NOT use sql.js') || !fnBlock.includes('new SQL.Database(buf)'),
+      'ensureSchemaColumns must NOT read existing .db with sql.js (WAL corruption)',
     );
   });
 
-  it('ADR-0080 comment marks the table-creation block', () => {
+  it('ADR-0080 comment explains WAL safety', () => {
     const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 500);
     assert.ok(
       fnBlock.includes('ADR-0080'),
