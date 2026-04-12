@@ -14,6 +14,32 @@ settings to determine optimal values for the development machine:
 **Machine**: M5 Max MacBook Pro, 36GB unified RAM, macOS Tahoe
 **Use case**: Single-user CLI tool, daily developer workflow, code analysis + memory ops
 
+## M5 Max AI Hardware Capabilities
+
+The Apple M5 Max introduces architecture changes relevant to SONA/ONNX workloads:
+
+- **GPU Neural Accelerators**: Dedicated neural accelerators built into each GPU core.
+  AI tasks can run directly on GPU hardware instead of routing through the Neural Engine.
+  Up to **4x faster AI performance** vs M4, with **4x speedup on time-to-first-token**
+  for language models.
+- **16-Core Neural Engine**: Optimized for faster, more energy-efficient inference.
+- **Distributed processing**: CPU, GPU, and Neural Accelerators process AI workloads
+  simultaneously — different silicon blocks handle whatever workload type they're best
+  suited for.
+- **153 GB/s memory bandwidth** (30% more than M4): Unified memory lets the entire chip
+  share one pool. Critical for large embedding models and HNSW indices that benefit from
+  fast random access across vector data.
+- **Core ML / Metal 4**: Apps using Core ML and Metal Performance Shaders automatically
+  benefit. ONNX Runtime on macOS uses the CoreML execution provider, which routes to the
+  GPU (not the Neural Engine directly — ONNX models are not compiled for ANE format).
+
+**Implication for SONA**: When `@claude-flow/neural` is enabled, the M5 Max can handle
+`research` mode (LoRA rank 16, 100MB budget, 100ms latency) with negligible resource
+impact. The 36GB unified memory and 153 GB/s bandwidth make even the most demanding
+mode trivial. The GPU Neural Accelerators would accelerate ONNX embedding inference
+if routed through Metal, though the current `@xenova/transformers` pipeline uses the
+CoreML WASM path.
+
 ## Critical Finding: Neural System Is Dead Code
 
 `@claude-flow/neural` is not installed as a dependency of `@claude-flow/memory`.
@@ -80,7 +106,8 @@ threshold 0.5 lets patterns emerge. `research` for explicit deep analysis only.
 ### Hardware Expert
 `research` mode recommended for M5 Max. 100MB is negligible. LoRA rank 16 gives
 materially better pattern retention. Latency irrelevant for CLI. ONNX uses CoreML
-GPU execution provider on Apple Silicon, not Neural Engine.
+GPU Neural Accelerators on M5 (4x faster than M4). The 153 GB/s memory
+bandwidth makes 768-dim vector operations trivial.
 
 ### Decay Expert
 Current confidence values (0.0008 decay, 0.05 boost) are well-tuned. 36-day half-life
