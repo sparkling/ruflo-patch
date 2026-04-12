@@ -18,13 +18,13 @@ check_t1_1_semantic_ranking() {
   local dir="${E2E_DIR:-$TEMP_DIR}"
   local ns="test-semantic-$$"
 
-  # Step 1: Store 3 entries (matches T1-2 pattern — explicit calls, no loop)
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'cooking-pasta' --value 'How to cook perfect al dente pasta with olive oil' --namespace '$ns'" "" 15
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'quantum-physics' --value 'Quantum entanglement and superposition experiments' --namespace '$ns'" "" 15
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'dog-training' --value 'Teaching your puppy to sit using positive reinforcement' --namespace '$ns'" "" 15
+  # Step 1: Store 3 entries — 45s timeout for cold model load on first store
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'cooking-pasta' --value 'How to cook perfect al dente pasta with olive oil' --namespace '$ns'" "" 45
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'quantum-physics' --value 'Quantum entanglement and superposition experiments' --namespace '$ns'" "" 45
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'dog-training' --value 'Teaching your puppy to sit using positive reinforcement' --namespace '$ns'" "" 45
 
   # Step 2: Search for cooking-related content
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian food recipes for dinner' --namespace '$ns'" "" 15
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian food recipes for dinner' --namespace '$ns'" "" 45
 
   if echo "$_RK_OUT" | grep -qi 'cooking\|pasta\|bread\|soup'; then
     _CHECK_PASSED="true"
@@ -68,13 +68,13 @@ check_t1_2_learning_feedback_improves() {
   local dir="${E2E_DIR:-$TEMP_DIR}"
   local ns="test-learning-$$"
 
-  # Step 1: Store 3 entries
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'learn-alpha' --value 'authentication with OAuth2 tokens' --namespace '$ns'" "" 15
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'learn-beta' --value 'database connection pooling setup' --namespace '$ns'" "" 15
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'learn-gamma' --value 'authentication JWT middleware layer' --namespace '$ns'" "" 15
+  # Step 1: Store 3 entries — 45s timeout for cold model load
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'learn-alpha' --value 'authentication with OAuth2 tokens' --namespace '$ns'" "" 45
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'learn-beta' --value 'database connection pooling setup' --namespace '$ns'" "" 45
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'learn-gamma' --value 'authentication JWT middleware layer' --namespace '$ns'" "" 45
 
   # Step 2: Search and capture initial ranking
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace '$ns' --limit 5" "" 15
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace '$ns' --limit 5" "" 45
   local initial_out="$_RK_OUT"
 
   # Determine last-ranked key
