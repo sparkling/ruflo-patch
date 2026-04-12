@@ -401,8 +401,8 @@ check_f1_agentdbservice_delegates() {
     _CHECK_OUTPUT="ADR-0069 F1: agentdb-service has direct construction without getController() (regression)"
   else
     # Neither delegation nor direct construction — F1 patches not yet in published build
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0069 F1: agentdb-service has no direct construction (F1 delegation not yet published — deferred)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="ADR-0069 F1: agentdb-service has no getController() delegation — F1 patch not in published build"
   fi
 }
 
@@ -449,8 +449,8 @@ check_adr0069_sarsa_key_path() {
       _CHECK_OUTPUT="ADR-0069 A8: sarsa code still reads learningRates.qLearning (regression — bug present)"
     else
       # Neither correct path nor buggy path — sarsa config-chain not yet in published build
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0069 A8: sarsa config-chain not yet in published CLI build (deferred)"
+      _CHECK_PASSED="false"
+      _CHECK_OUTPUT="ADR-0069 A8: sarsa config-chain not in published CLI build — learningRates.sarsa key path missing"
     fi
   fi
 }

@@ -29,7 +29,7 @@ check_t2_1_swarm_init() {
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-1: swarm state directory created"; return
   fi
   if [[ -n "$out" ]]; then
-    _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-1: swarm init completed without crash"; return
+    _CHECK_PASSED="false"; _CHECK_OUTPUT="T2-1: swarm init produced output but no initialized/ready confirmation: ${out:0:200}"; return
   fi
   _CHECK_OUTPUT="T2-1: swarm init produced no output and no state"
 }
@@ -64,7 +64,7 @@ check_t2_2_session_lifecycle() {
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-2: session data persisted across cycle"; return
   fi
   if [[ -n "$rout" ]] && ! echo "$rout" | grep -qiE 'fatal|crash'; then
-    _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-2: session lifecycle ran without crash"; return
+    _CHECK_PASSED="false"; _CHECK_OUTPUT="T2-2: session lifecycle ran but no session ID in output: ${rout:0:200}"; return
   fi
   _CHECK_OUTPUT="T2-2: session restore failed: ${rout:0:200}"
 }
@@ -119,7 +119,7 @@ check_t2_5_embedding_stored() {
     if [[ "$dim" -eq 768 ]]; then
       _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-5: embedding is 768-dim Float32 (${blob_len}B)"
     else
-      _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-5: PASS (embedding ${dim}-dim, type=$blob_type — may be hash)"
+      _CHECK_PASSED="false"; _CHECK_OUTPUT="T2-5: embedding dimension mismatch: got ${dim}-dim (${blob_len}B), want 768"
     fi
   else
     # Text-encoded embedding (JSON array) — different format, still valid

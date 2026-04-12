@@ -27,11 +27,11 @@ check_init_config_format() {
       _CHECK_OUTPUT="config.json exists but is not valid JSON"
     fi
   elif [[ -f "$config_yaml" || -f "$config_yml" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Config is YAML not JSON (SG-008 not yet fixed)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Config is YAML not JSON (SG-008 not yet fixed — must be JSON)"
   else
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="No .claude-flow/config file present (init may not generate one)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="No .claude-flow/config file present — init must generate config.json"
   fi
 
   end_ns=$(date +%s%N 2>/dev/null || echo 0)
@@ -183,8 +183,8 @@ check_init_config_values() {
 
   local config_json="$TEMP_DIR/.claude-flow/config.json"
   if [[ ! -f "$config_json" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="No config.json to validate values"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="No config.json to validate values — init must generate config.json"
   else
     local issues=""
     local vals

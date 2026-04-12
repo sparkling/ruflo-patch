@@ -83,8 +83,8 @@ check_rate_limit_status() {
 
   # RateLimiter may not be active (registry available but controller not registered)
   if echo "$rl_out" | grep -qi 'not active\|not available\|Registry not available'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Rate limiter: not active (expected — controller not yet registered)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Rate limiter: not active — controller must be registered"
     return
   fi
 
@@ -150,9 +150,9 @@ check_rate_limit_consumed() {
   " 2>/dev/null) || result="parse-error"
 
   if [[ "$result" == "no-json" || "$result" == "no-insert" || "$result" == "parse-error" ]]; then
-    # Token parsing failed — but store succeeded, which proves bridge is functional
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Rate limit consumed: store succeeded (token count not parseable: $result)"
+    # Token parsing failed — cannot verify consumption
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Rate limit consumed: token count not parseable ($result) — must verify tokens < max"
     return
   fi
 
@@ -163,12 +163,12 @@ check_rate_limit_consumed() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Rate limit consumed: insert tokens=$tokens/$max (consumed by memory_store)"
   elif [[ "$tokens" == "$max" ]]; then
-    # Tokens refill fast (100/s) — if we're at max, the store may have refilled already
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Rate limit consumed: insert tokens=$tokens/$max (refilled before check — store succeeded)"
+    # Tokens at max means no consumption was recorded
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Rate limit consumed: insert tokens=$tokens/$max (not consumed) — must show tokens < max"
   else
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Rate limit consumed: store succeeded, tokens=$tokens max=$max"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Rate limit consumed: tokens=$tokens max=$max — must show tokens < max"
   fi
 }
 
