@@ -1077,3 +1077,92 @@ check_adr0081_config_template_balanced() {
     _CHECK_OUTPUT="ADR-0081-3: sonaMode or 'balanced' not found in ${short_path}"
   fi
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-P4-1: No raw sql.js imports in published CLI .js files
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_no_raw_sqljs() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-P4-1: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Grep ALL published CLI .js files for raw import('sql.js') or require('sql.js').
+  # The only allowed reference is inside open-database.js itself (the wrapper).
+  local hits
+  hits=$(find "$base/cli" -path '*/node_modules' -prune -o \
+    -name '*.js' -not -name '*.test.*' -not -name '*.spec.*' -print0 2>/dev/null \
+    | xargs -0 grep -Hn "import('sql\.js')\|require('sql\.js')" 2>/dev/null \
+    | grep -v 'open-database\.js' \
+    || true)
+
+  local count=0
+  if [[ -n "$hits" ]]; then
+    count=$(echo "$hits" | wc -l | tr -d ' ')
+  fi
+
+  if [[ "$count" -eq 0 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-P4-1: zero raw sql.js imports outside open-database.js in published CLI"
+  else
+    local files
+    files=$(echo "$hits" | cut -d: -f1 | sort -u \
+      | sed "s|${base}/||" | head -5 | tr '\n' ', ')
+    _CHECK_OUTPUT="ADR-0080-P4-1: ${count} raw sql.js import(s) outside open-database.js: ${files%,}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-P4-2: open-database.js exists in published CLI package
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_open_database_exists() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-P4-2: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Search for open-database.js in the CLI package dist
+  local od_file=""
+  for d in "$base"/cli/dist/memory "$base"/cli/dist/src/memory "$base"/cli/memory; do
+    if [[ -f "$d/open-database.js" ]]; then
+      od_file="$d/open-database.js"
+      break
+    fi
+  done
+
+  # Broader search if not in expected locations
+  if [[ -z "$od_file" ]]; then
+    od_file=$(find "$base/cli" -path '*/node_modules' -prune -o \
+      -name 'open-database.js' -print 2>/dev/null | head -1)
+  fi
+
+  if [[ -n "$od_file" ]]; then
+    local short_path
+    short_path=$(echo "$od_file" | sed "s|${base}/||")
+
+    # Verify it contains the key exports (openDatabase function)
+    if grep -q 'openDatabase' "$od_file" 2>/dev/null; then
+      # Verify it mentions better-sqlite3 (the preferred engine)
+      if grep -q 'better-sqlite3' "$od_file" 2>/dev/null; then
+        _CHECK_PASSED="true"
+        _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js found with openDatabase + better-sqlite3 in ${short_path}"
+      else
+        _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js found but missing better-sqlite3 in ${short_path}"
+      fi
+    else
+      _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js found but missing openDatabase export in ${short_path}"
+    fi
+  else
+    _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js not found in published CLI package"
+  fi
+}

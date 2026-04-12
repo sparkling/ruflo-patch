@@ -651,6 +651,8 @@ run_check_bg "adr0080-no-graph"  "No .graph file (ADR-0080)"            check_ad
 run_check_bg "adr0080-emb-dflt"  "Embeddings default on (ADR-0080)"     check_adr0080_embeddings_default_on    "adr0080"
 run_check_bg "adr0080-sona"      "sonaMode balanced (ADR-0080)"         check_adr0080_sona_balanced            "adr0080"
 run_check_bg "adr0080-decay"     "Decay rate aligned (ADR-0080)"        check_adr0080_decay_rate_aligned       "adr0080"
+run_check_bg "adr0080-no-sqljs" "No raw sql.js imports (ADR-0080)"     check_adr0080_no_raw_sqljs             "adr0080"
+run_check_bg "adr0080-opendb"   "open-database.js exists (ADR-0080)"   check_adr0080_open_database_exists     "adr0080"
 
 # ADR-0081: M5 Max Configuration Profile
 run_check_bg "adr0081-neural"   "Neural optional dep (ADR-0081)"       check_adr0081_neural_optional_dep      "adr0081"
@@ -1022,6 +1024,8 @@ collect_parallel "all" \
   "adr0080-emb-dflt|Embeddings default on (ADR-0080)" \
   "adr0080-sona|sonaMode balanced (ADR-0080)" \
   "adr0080-decay|Decay rate aligned (ADR-0080)" \
+  "adr0080-no-sqljs|No raw sql.js imports (ADR-0080)" \
+  "adr0080-opendb|open-database.js exists (ADR-0080)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \
