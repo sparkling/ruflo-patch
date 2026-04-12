@@ -636,14 +636,14 @@ describe('ADR-0080: dual-write pattern in memory-bridge storeEntry', () => {
     );
   });
 
-  it('dual-write occurs AFTER SQLite commit (after ctx.db.save)', () => {
-    const saveIdx = bridgeSrc.indexOf('ctx.db.save');
+  it('dual-write occurs AFTER SQLite INSERT (after prepare/run)', () => {
+    const insertIdx = bridgeSrc.indexOf('prepare(insertSql)');
     const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
-    assert.ok(saveIdx > -1, 'ctx.db.save must exist');
+    assert.ok(insertIdx > -1, 'prepare(insertSql) must exist');
     assert.ok(dualIdx > -1, 'dual-write comment must exist');
     assert.ok(
-      dualIdx > saveIdx,
-      'dual-write must come AFTER ctx.db.save (SQLite is primary)',
+      dualIdx > insertIdx,
+      'dual-write must come AFTER SQLite INSERT (SQLite is primary)',
     );
   });
 

@@ -135,13 +135,13 @@ Files requiring "sql.js" string updates (from hive audit):
 
 ### Phase 1: Dead code cleanup (immediate)
 
-- [ ] **T1.1** Remove 4 dead `.save()` guards in `memory-bridge.ts`
-- [ ] **T1.2** Update `memory-tools.ts` — change 6 `'sql.js + HNSW'` → `'SQLite + HNSW'`
-- [ ] **T1.3** Update `guidance-tools.ts` — fix tool descriptions mentioning sql.js
-- [ ] **T1.4** Update `migration-legacy.ts` — fix user-visible log messages
-- [ ] **T1.5** Sweep remaining ~17 files for stale sql.js comments
-- [ ] **T1.6** Unit tests: verify all 1738 still pass after string changes
-- [ ] **T1.7** Acceptance: verify `backend:` output no longer says sql.js
+- [x] **T1.1** Remove 4 dead `.save()` guards in `memory-bridge.ts`
+- [x] **T1.2** Update `memory-tools.ts` — change 6 `'sql.js + HNSW'` → `'SQLite + HNSW'`
+- [x] **T1.3** Update `guidance-tools.ts` — fix tool descriptions mentioning sql.js
+- [x] **T1.4** Update `migration-legacy.ts` — fix user-visible log messages
+- [x] **T1.5** Sweep remaining ~17 files for stale sql.js comments (15 files cleaned; 2 accurate historical comments in memory-initializer.ts left intentionally)
+- [x] **T1.6** Unit tests: verify all 1738 still pass after string changes
+- [x] **T1.7** Acceptance: verify `backend:` output no longer says sql.js (acceptance-adr0084-checks.sh created + wired)
 
 ### Phase 2: Router methods for bridge-only functions
 

@@ -29,6 +29,7 @@
 #   e2e-storage — e2e-store-rvf, e2e-semantic, e2e-list-store,
 #                e2e-dual-write, e2e-dim768, e2e-no-dead-files,
 #                e2e-cfg-roundtrip
+#   adr0084    — adr0084-no-sqljs-desc, e2e-0084-no-sqljs
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -374,6 +375,10 @@ adr0080_lib="${PROJECT_DIR}/lib/acceptance-adr0080-checks.sh"
 adr0083_lib="${PROJECT_DIR}/lib/acceptance-adr0083-checks.sh"
 [[ -f "$adr0083_lib" ]] && source "$adr0083_lib"
 
+# ADR-0084: Dead Code Cleanup — sql.js ghost refs
+adr0084_lib="${PROJECT_DIR}/lib/acceptance-adr0084-checks.sh"
+[[ -f "$adr0084_lib" ]] && source "$adr0084_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -642,6 +647,9 @@ run_check_bg "adr0083-no-bridge"  "No bridge in migrated (ADR-0083)"     check_a
 run_check_bg "adr0083-no-append"  "No appendToAutoMemory (ADR-0083)"     check_adr0083_no_append_fn_in_initializer "adr0083"
 run_check_bg "adr0083-no-dosync" "No doSync drain (ADR-0083)"          check_adr0083_no_dosync_drain            "adr0083"
 
+# ADR-0084: Dead Code Cleanup — sql.js ghost refs
+run_check_bg "adr0084-no-sqljs-desc" "No sql.js in tool descs (ADR-0084)" check_no_sqljs_in_tool_descriptions     "adr0084"
+
 # ADR-0081: M5 Max Configuration Profile
 run_check_bg "adr0081-neural"   "Neural optional dep (ADR-0081)"       check_adr0081_neural_optional_dep      "adr0081"
 run_check_bg "adr0081-learning" "Unified learning config (ADR-0081)"   check_adr0081_unified_learning_config  "adr0081"
@@ -860,6 +868,12 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
     run_check_bg "e2e-0083-sidecar"   "E2E JSON sidecar (ADR-0083)"    _e2e_0083_sidecar   "adr0083"
     run_check_bg "e2e-0083-roundtrip" "E2E single path (ADR-0083)"     _e2e_0083_roundtrip  "adr0083"
   fi
+
+  # ADR-0084: Dead Code Cleanup — sql.js ghost refs (e2e: runtime output check)
+  if [[ -f "$adr0084_lib" ]]; then
+    _e2e_0084_backend() { _wait_e2e_ready; check_no_sqljs_in_backend_output; }
+    run_check_bg "e2e-0084-no-sqljs" "E2E no sql.js in output (ADR-0084)" _e2e_0084_backend "adr0084"
+  fi
 fi
 
 # ════════════════════════════════════════════════════════════════════
@@ -901,6 +915,12 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
     _e2e_specs+=(
       "e2e-0083-sidecar|E2E JSON sidecar (ADR-0083)"
       "e2e-0083-roundtrip|E2E single path (ADR-0083)"
+    )
+  fi
+  # ADR-0084 e2e specs
+  if [[ -f "$adr0084_lib" ]]; then
+    _e2e_specs+=(
+      "e2e-0084-no-sqljs|E2E no sql.js in output (ADR-0084)"
     )
   fi
 fi
@@ -1023,6 +1043,7 @@ collect_parallel "all" \
   "adr0083-no-bridge|No bridge in migrated (ADR-0083)" \
   "adr0083-no-append|No appendToAutoMemory (ADR-0083)" \
   "adr0083-no-dosync|No doSync drain (ADR-0083)" \
+  "adr0084-no-sqljs-desc|No sql.js in tool descs (ADR-0084)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \
