@@ -695,8 +695,8 @@ describe('ADR-0080: dual-write pattern in memory-bridge storeEntry', () => {
   it('dual-write is best-effort (wrapped in try/catch)', () => {
     const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
     // The try statement follows immediately after the comment line;
-    // the catch is ~534 chars later so we need a 600-char window
-    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 600);
+    // the catch includes persistToDisk + store, so needs an 800-char window
+    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 800);
     assert.ok(
       afterDual.includes('try') && afterDual.includes('catch'),
       'dual-write block must be wrapped in try/catch for best-effort',
