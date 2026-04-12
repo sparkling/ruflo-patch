@@ -268,13 +268,18 @@ check_p5_runtime_memory_search() {
     _CHECK_OUTPUT="P5: CLI_BIN not set"
     return
   fi
+  # Store our own entry first — this check runs in a parallel subshell, so it
+  # cannot rely on p5-rt-store having finished.  Using a unique key avoids
+  # collision with the store check.
+  local store_out
+  store_out=$(cd "$P5_DIR" && timeout 15 "$CLI_BIN" memory store --key "p5-search-$$" --value "search-roundtrip" --namespace p5 2>&1) || true
   local out
-  out=$(cd "$P5_DIR" && timeout 15 "$CLI_BIN" memory search --query "acceptance" --namespace p5 2>&1) || true
-  if echo "$out" | grep -qi "p5-test\|acceptance-test"; then
+  out=$(cd "$P5_DIR" && timeout 15 "$CLI_BIN" memory search --query "search-roundtrip" --namespace p5 2>&1) || true
+  if echo "$out" | grep -qi "p5-search\|search-roundtrip"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="P5: memory search returned results"
   else
-    _CHECK_OUTPUT="P5: memory search failed: ${out:0:120}"
+    _CHECK_OUTPUT="P5: memory search failed (store: ${store_out:0:60}): ${out:0:120}"
   fi
 }
 
