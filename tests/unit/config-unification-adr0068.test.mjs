@@ -113,9 +113,9 @@ describe('ADR-0068 P1: HNSW tuning params in embeddings.json', () => {
 
   beforeEach(() => { emb = readJson(EMBEDDINGS_PATH); });
 
-  it('hnsw.m is 23', () => {
+  it('hnsw.M is 23', () => {
     assert.ok(emb.hnsw, 'hnsw section must exist');
-    assert.equal(emb.hnsw.m, 23, 'hnsw.m must be 23');
+    assert.equal(emb.hnsw.M ?? emb.hnsw.m, 23, 'hnsw.M must be 23');
   });
 
   it('hnsw.efConstruction is 100', () => {
@@ -316,7 +316,7 @@ describe('ADR-0068 Integration: embeddings.json propagation', () => {
 
   it('all HNSW fields are present and numeric', () => {
     assert.ok(emb.hnsw, 'hnsw section must exist');
-    assert.equal(typeof emb.hnsw.m, 'number', 'hnsw.m must be numeric');
+    assert.equal(typeof (emb.hnsw.M ?? emb.hnsw.m), 'number', 'hnsw.M (or m) must be numeric');
     assert.equal(typeof emb.hnsw.efConstruction, 'number', 'hnsw.efConstruction must be numeric');
     assert.equal(typeof emb.hnsw.efSearch, 'number', 'hnsw.efSearch must be numeric');
     assert.equal(typeof emb.hnsw.maxElements, 'number', 'hnsw.maxElements must be numeric');
@@ -333,9 +333,10 @@ describe('ADR-0068 Integration: embeddings.json propagation', () => {
   });
 
   it('HNSW params satisfy invariants (m >= 8, efConstruction >= m, efSearch >= m)', () => {
-    assert.ok(emb.hnsw.m >= 8, 'hnsw.m must be >= 8');
-    assert.ok(emb.hnsw.efConstruction >= emb.hnsw.m, 'efConstruction must be >= m');
-    assert.ok(emb.hnsw.efSearch >= emb.hnsw.m, 'efSearch must be >= m');
+    const m = emb.hnsw.M ?? emb.hnsw.m;
+    assert.ok(m >= 8, 'hnsw.M must be >= 8');
+    assert.ok(emb.hnsw.efConstruction >= m, 'efConstruction must be >= M');
+    assert.ok(emb.hnsw.efSearch >= m, 'efSearch must be >= M');
   });
 });
 

@@ -643,53 +643,10 @@ check_adr0080_no_dead_copy() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0080-13: RVF shim file exists in published CLI package
+# ADR-0080-13: (REMOVED — superseded by check_adr0083_no_rvf_shim)
+# rvf-shim.ts was deleted in ADR-0083 Wave 1; regression guard now
+# lives in acceptance-adr0083-checks.sh.
 # ════════════════════════════════════════════════════════════════════
-
-check_adr0080_rvf_shim_exists() {
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT=""
-
-  local base="${TEMP_DIR}/node_modules/@sparkleideas"
-  if [[ ! -d "$base" ]]; then
-    _CHECK_OUTPUT="ADR-0080-13: @sparkleideas not installed in TEMP_DIR"
-    return
-  fi
-
-  # Find rvf-shim in published CLI package
-  local shim_file=""
-  shim_file=$(find "${base}/cli" -path '*/node_modules' -prune -o \
-    -name 'rvf-shim*' \( -name '*.js' -o -name '*.cjs' \) -print 2>/dev/null | head -1)
-
-  if [[ -z "$shim_file" ]]; then
-    # Broader search
-    shim_file=$(find "$base" -path '*/node_modules' -prune -o \
-      -name 'rvf-shim*' \( -name '*.js' -o -name '*.cjs' \) -print 2>/dev/null | head -1)
-  fi
-
-  if [[ -z "$shim_file" ]]; then
-    _CHECK_OUTPUT="ADR-0080-13: rvf-shim*.js not found in published packages"
-    return
-  fi
-
-  local short_path
-  short_path=$(echo "$shim_file" | sed "s|${base}/||")
-
-  # Verify it exports init, store, search, shutdown
-  local found=0
-  for fn in init store search shutdown; do
-    if grep -q "$fn" "$shim_file" 2>/dev/null; then
-      found=$((found + 1))
-    fi
-  done
-
-  if [[ "$found" -ge 4 ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0080-13: rvf-shim found in ${short_path} with all 4 exports"
-  else
-    _CHECK_OUTPUT="ADR-0080-13: rvf-shim in ${short_path} only has ${found}/4 expected exports"
-  fi
-}
 
 # ════════════════════════════════════════════════════════════════════
 # ADR-0080-14: RVF file has entries (>1KB) after init+store
@@ -1093,12 +1050,12 @@ check_adr0080_no_raw_sqljs() {
   fi
 
   # Grep ALL published CLI .js files for raw import('sql.js') or require('sql.js').
-  # The only allowed reference is inside open-database.js itself (the wrapper).
+  # After ADR-0083 Wave 2, open-database.ts was deleted so there is no allowed
+  # wrapper — ALL raw sql.js imports are now invalid.
   local hits
   hits=$(find "$base/cli" -path '*/node_modules' -prune -o \
     -name '*.js' -not -name '*.test.*' -not -name '*.spec.*' -print0 2>/dev/null \
     | xargs -0 grep -Hn "import('sql\.js')\|require('sql\.js')" 2>/dev/null \
-    | grep -v 'open-database\.js' \
     || true)
 
   local count=0
@@ -1108,61 +1065,17 @@ check_adr0080_no_raw_sqljs() {
 
   if [[ "$count" -eq 0 ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0080-P4-1: zero raw sql.js imports outside open-database.js in published CLI"
+    _CHECK_OUTPUT="ADR-0080-P4-1: zero raw sql.js imports in published CLI"
   else
     local files
     files=$(echo "$hits" | cut -d: -f1 | sort -u \
       | sed "s|${base}/||" | head -5 | tr '\n' ', ')
-    _CHECK_OUTPUT="ADR-0080-P4-1: ${count} raw sql.js import(s) outside open-database.js: ${files%,}"
+    _CHECK_OUTPUT="ADR-0080-P4-1: ${count} raw sql.js import(s) in published CLI: ${files%,}"
   fi
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0080-P4-2: open-database.js exists in published CLI package
+# ADR-0080-P4-2: (REMOVED — superseded by check_adr0083_no_open_database)
+# open-database.ts was deleted in ADR-0083 Wave 2; regression guard now
+# lives in acceptance-adr0083-checks.sh.
 # ════════════════════════════════════════════════════════════════════
-
-check_adr0080_open_database_exists() {
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT=""
-
-  local base="${TEMP_DIR}/node_modules/@sparkleideas"
-  if [[ ! -d "$base" ]]; then
-    _CHECK_OUTPUT="ADR-0080-P4-2: @sparkleideas not installed in TEMP_DIR"
-    return
-  fi
-
-  # Search for open-database.js in the CLI package dist
-  local od_file=""
-  for d in "$base"/cli/dist/memory "$base"/cli/dist/src/memory "$base"/cli/memory; do
-    if [[ -f "$d/open-database.js" ]]; then
-      od_file="$d/open-database.js"
-      break
-    fi
-  done
-
-  # Broader search if not in expected locations
-  if [[ -z "$od_file" ]]; then
-    od_file=$(find "$base/cli" -path '*/node_modules' -prune -o \
-      -name 'open-database.js' -print 2>/dev/null | head -1)
-  fi
-
-  if [[ -n "$od_file" ]]; then
-    local short_path
-    short_path=$(echo "$od_file" | sed "s|${base}/||")
-
-    # Verify it contains the key exports (openDatabase function)
-    if grep -q 'openDatabase' "$od_file" 2>/dev/null; then
-      # Verify it mentions better-sqlite3 (the preferred engine)
-      if grep -q 'better-sqlite3' "$od_file" 2>/dev/null; then
-        _CHECK_PASSED="true"
-        _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js found with openDatabase + better-sqlite3 in ${short_path}"
-      else
-        _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js found but missing better-sqlite3 in ${short_path}"
-      fi
-    else
-      _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js found but missing openDatabase export in ${short_path}"
-    fi
-  else
-    _CHECK_OUTPUT="ADR-0080-P4-2: open-database.js not found in published CLI package"
-  fi
-}

@@ -2,7 +2,7 @@
 # lib/acceptance-adr0074-checks.sh — ADR-0074 CJS/ESM Dual Silo Fix
 #
 # Phase 1a: loadMemoryPackage() checks both @sparkleideas/memory and @claude-flow/memory
-# Phase 2:  doSync() intelligence drain wired (ranked-context.json -> backend)
+# Phase 2:  doSync() removed by ADR-0083 (drain centralized in memory-router.ts)
 # Phase 3:  consolidate() eviction cap at 1000 entries (ADR-0080 reduced from 2000)
 #
 # Requires: E2E_DIR set by caller (init'd project with .claude/helpers/)
@@ -38,7 +38,8 @@ check_adr0074_scope_fix() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0074-2: Intelligence drain wired in doSync()
+# ADR-0074-2: Intelligence drain removed by ADR-0083
+# (doSync() centralized in memory-router.ts writeJsonSidecar)
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0074_drain_wired() {
@@ -51,20 +52,20 @@ check_adr0074_drain_wired() {
     return
   fi
 
-  # doSync() must read ranked-context.json
-  if ! grep -q 'ranked-context.json' "$hook"; then
-    _CHECK_OUTPUT="ADR-0074: doSync() missing ranked-context.json read"
+  # ADR-0083 Phase 5 Wave 2: doSync() removed — drain centralized in router.
+  # Verify the old drain artifacts are absent from the published hook.
+  if grep -q 'async function doSync' "$hook"; then
+    _CHECK_OUTPUT="ADR-0074: doSync() still present in published hook (should be removed by ADR-0083)"
     return
   fi
 
-  # Must tag entries with cjs-intelligence-drain
-  if ! grep -q 'cjs-intelligence-drain' "$hook"; then
-    _CHECK_OUTPUT="ADR-0074: doSync() missing cjs-intelligence-drain metadata tag"
+  if grep -q 'cjs-intelligence-drain' "$hook"; then
+    _CHECK_OUTPUT="ADR-0074: cjs-intelligence-drain tag still present (should be removed by ADR-0083)"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0074: intelligence drain wired (ranked-context.json + cjs-intelligence-drain)"
+  _CHECK_OUTPUT="ADR-0074: doSync() removed — drain centralized in memory-router.ts (ADR-0083)"
 }
 
 # ════════════════════════════════════════════════════════════════════

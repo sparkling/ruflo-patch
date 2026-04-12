@@ -3,7 +3,7 @@
 //
 // Tests that the three ADR-0074 phases are wired correctly in the fork source:
 //   Phase 1a: loadMemoryPackage() Strategy 4 checks both @sparkleideas/memory and @claude-flow/memory
-//   Phase 2:  doSync() drains ranked-context.json into RvfBackend
+//   Phase 2:  doSync() removed by ADR-0083 (drain centralized in memory-router.ts)
 //   Phase 3:  consolidate() evicts stale entries + caps at 2000
 
 import { describe, it } from 'node:test';
@@ -62,72 +62,28 @@ describe('ADR-0074 Phase 1a: loadMemoryPackage() Strategy 4 scope walk-up', () =
 // Phase 2: Intelligence drain in doSync()
 // ============================================================================
 
-describe('ADR-0074 Phase 2: doSync() intelligence drain', () => {
-  it('doSync() reads ranked-context.json', () => {
+// ADR-0083 supersedes Phase 2: doSync() removed — router centralizes JSON
+// sidecar writes, eliminating the separate CJS→RVF drain path.
+describe('ADR-0074 Phase 2: doSync() removed by ADR-0083', () => {
+  it('doSync() function no longer exists', () => {
     assert.ok(
-      autoMemoryHook.includes('ranked-context.json'),
-      'doSync() must reference ranked-context.json for the intelligence drain',
+      !autoMemoryHook.includes('async function doSync()'),
+      'doSync() must be removed — ADR-0083 centralizes the drain in memory-router',
     );
   });
 
-  it('drain has MAX_DRAIN = 500 limit', () => {
+  it('sync case handler no longer exists', () => {
     assert.ok(
-      autoMemoryHook.includes('MAX_DRAIN = 500'),
-      'drain must cap at 500 entries (MAX_DRAIN = 500)',
+      !autoMemoryHook.includes("case 'sync'"),
+      "case 'sync' must be removed from the switch — doSync is gone",
     );
   });
 
-  it('drain sets metadata.source to cjs-intelligence-drain', () => {
+  it('ADR-0083 removal comment exists', () => {
     assert.ok(
-      autoMemoryHook.includes("'cjs-intelligence-drain'"),
-      'drain entries must be tagged with source: cjs-intelligence-drain',
+      autoMemoryHook.includes('ADR-0083'),
+      'ADR-0083 removal comment must exist where doSync was',
     );
-  });
-
-  it('drain sets metadata.drainedAt timestamp', () => {
-    assert.ok(
-      autoMemoryHook.includes('drainedAt:'),
-      'drain entries must include drainedAt timestamp in metadata',
-    );
-    // Verify it uses Date.now()
-    const drainSection = autoMemoryHook.slice(
-      autoMemoryHook.indexOf('cjs-intelligence-drain'),
-    );
-    assert.ok(
-      drainSection.includes('drainedAt: Date.now()'),
-      'drainedAt must be set to Date.now()',
-    );
-  });
-
-  it('drain uses backend.store() for persistence', () => {
-    // The drain must go through backend.store(), not writeFileSync or other paths
-    const drainStart = autoMemoryHook.indexOf('MAX_DRAIN');
-    const drainEnd = autoMemoryHook.indexOf('Intelligence drain skipped');
-    assert.ok(drainStart > -1 && drainEnd > -1, 'drain section must exist');
-    const drainSection = autoMemoryHook.slice(drainStart, drainEnd);
-    assert.ok(
-      drainSection.includes('backend.store('),
-      'drain must use backend.store() (not a file-based write path)',
-    );
-  });
-
-  it('drain is wrapped in try/catch (non-fatal)', () => {
-    // The entire drain block must be wrapped in try/catch so failures do not
-    // break the session-end sync
-    const drainStart = autoMemoryHook.indexOf('ADR-0074 Phase 2');
-    assert.ok(drainStart > -1, 'ADR-0074 Phase 2 comment must exist');
-    const afterComment = autoMemoryHook.slice(drainStart);
-    // try { must appear after the Phase 2 comment
-    const tryIndex = afterComment.indexOf('try {');
-    assert.ok(tryIndex > -1, 'drain must be inside a try block');
-    // The rankedPath code reference must appear inside the try block
-    const rankedCodeIndex = afterComment.indexOf("'ranked-context.json'", tryIndex);
-    assert.ok(rankedCodeIndex > -1,
-      'ranked-context.json read must be inside the try block (non-fatal on error)',
-    );
-    // Verify catch block follows the drain code
-    const catchIndex = afterComment.indexOf('catch', rankedCodeIndex);
-    assert.ok(catchIndex > -1, 'drain must have a catch block');
   });
 });
 

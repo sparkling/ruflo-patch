@@ -601,77 +601,6 @@ describe('ADR-0080: no dead .claude/memory.db copy', () => {
 });
 
 // ============================================================================
-// 21. RVF shim exists and is wired into memory-bridge
-// ============================================================================
-
-const rvfShimSrc = readFileSync(
-  resolve(FORK_CLI_SRC, 'memory/rvf-shim.ts'),
-  'utf-8',
-);
-
-describe('ADR-0080 P5: RVF shim exists and is wired', () => {
-  it('rvf-shim.ts file exists and has content', () => {
-    assert.ok(rvfShimSrc.length > 100, 'rvf-shim.ts must exist with substantial content');
-  });
-
-  it('exports init function', () => {
-    assert.ok(
-      rvfShimSrc.includes('export async function init'),
-      'rvf-shim must export an init function',
-    );
-  });
-
-  it('exports isReady function', () => {
-    assert.ok(
-      rvfShimSrc.includes('export function isReady'),
-      'rvf-shim must export an isReady function',
-    );
-  });
-
-  it('exports store function', () => {
-    assert.ok(
-      rvfShimSrc.includes('export async function store'),
-      'rvf-shim must export a store function',
-    );
-  });
-
-  it('exports search function', () => {
-    assert.ok(
-      rvfShimSrc.includes('export async function search'),
-      'rvf-shim must export a search function',
-    );
-  });
-
-  it('exports shutdown function', () => {
-    assert.ok(
-      rvfShimSrc.includes('export async function shutdown'),
-      'rvf-shim must export a shutdown function',
-    );
-  });
-
-  it('resolves RVF path from embeddings.json', () => {
-    assert.ok(
-      rvfShimSrc.includes('embeddings.json') && rvfShimSrc.includes('databasePath'),
-      'rvf-shim must resolve RVF path from embeddings.json databasePath',
-    );
-  });
-
-  it('falls back to memory.rvf in swarm dir', () => {
-    assert.ok(
-      rvfShimSrc.includes("'memory.rvf'"),
-      'rvf-shim must fall back to memory.rvf',
-    );
-  });
-
-  it('is referenced by the ADR-0080 Phase 5 header comment', () => {
-    assert.ok(
-      rvfShimSrc.includes('ADR-0080'),
-      'rvf-shim must reference ADR-0080 in its header',
-    );
-  });
-});
-
-// ============================================================================
 // 22. Dual-write pattern: storeEntry writes to SQLite then RVF
 // ============================================================================
 
@@ -1427,49 +1356,13 @@ const embeddingsSrc = embeddingsExists
   ? readFileSync(embeddingsPath, 'utf-8')
   : '';
 
-// ── 1. open-database.ts exists and exports openDatabase ─────────────
+// ── 1. open-database.ts deleted by ADR-0083 (router manages DB lifecycle) ──
 
-describe('ADR-0080 P4: open-database.ts wrapper', () => {
-  it('open-database.ts exists in CLI memory directory', () => {
+describe('ADR-0080 P4: open-database.ts superseded by ADR-0083', () => {
+  it('open-database.ts has been deleted (ADR-0083 Wave 2)', () => {
     assert.ok(
-      openDatabaseExists,
-      `open-database.ts must exist at ${openDatabasePath}`,
-    );
-  });
-
-  it('exports openDatabase function', () => {
-    assert.ok(
-      openDatabaseSrc.includes('export async function openDatabase'),
-      'open-database.ts must export async function openDatabase',
-    );
-  });
-
-  it('tries better-sqlite3 first', () => {
-    const betterIdx = openDatabaseSrc.indexOf("import('better-sqlite3')");
-    const sqljsIdx = openDatabaseSrc.indexOf("import('sql.js')");
-    assert.ok(betterIdx > -1, 'must import better-sqlite3');
-    assert.ok(sqljsIdx > -1, 'must import sql.js as fallback');
-    assert.ok(
-      betterIdx < sqljsIdx,
-      'better-sqlite3 import must come before sql.js import (try first)',
-    );
-  });
-
-  it('has journal_mode=DELETE for sql.js fallback', () => {
-    assert.ok(
-      openDatabaseSrc.includes('journal_mode=DELETE'),
-      'open-database.ts must set PRAGMA journal_mode=DELETE for sql.js fallback',
-    );
-  });
-
-  it('exports SafeDatabase interface with engine field', () => {
-    assert.ok(
-      openDatabaseSrc.includes('export interface SafeDatabase'),
-      'must export SafeDatabase interface',
-    );
-    assert.ok(
-      openDatabaseSrc.includes("engine: 'better-sqlite3' | 'sql.js'"),
-      'SafeDatabase must have engine discriminant field',
+      !openDatabaseExists,
+      'open-database.ts must not exist — deleted by ADR-0083 (router manages DB lifecycle)',
     );
   });
 });
@@ -1484,17 +1377,9 @@ describe('ADR-0080 P4: memory-initializer.ts sql.js migration', () => {
     );
   });
 
-  it('has zero raw import(\'sql.js\') calls (all replaced with open-database)', () => {
-    // Count raw import('sql.js') occurrences (the ones NOT in open-database.ts itself)
+  it('has zero raw import(\'sql.js\') calls (ADR-0083: direct better-sqlite3)', () => {
+    // ADR-0083 deleted open-database.ts — memory-initializer now uses better-sqlite3 directly
     const rawImports = (memoryInitializerSrc.match(/import\('sql\.js'\)/g) || []);
-    // Migration target: zero raw sql.js imports (all go through open-database)
-    // Current state: some raw imports remain (migration in progress)
-    // This test documents the current count and will enforce zero once migration completes
-    assert.ok(
-      memoryInitializerSrc.includes('open-database'),
-      'memory-initializer.ts must reference open-database wrapper (migration started)',
-    );
-    // Track regression: count must not increase from current baseline
     const currentCount = rawImports.length;
     assert.ok(
       currentCount <= 4,
@@ -1502,11 +1387,11 @@ describe('ADR-0080 P4: memory-initializer.ts sql.js migration', () => {
     );
   });
 
-  it('uses open-database wrapper for at least some database opens', () => {
-    const wrapperImports = (memoryInitializerSrc.match(/import\(['"]\.\/open-database\.js['"]\)/g) || []);
+  it('does not reference deleted open-database wrapper (ADR-0083)', () => {
+    // ADR-0083 Wave 2 deleted open-database.ts — initializer uses better-sqlite3 directly
     assert.ok(
-      wrapperImports.length >= 2,
-      `must have at least 2 open-database wrapper imports (got ${wrapperImports.length})`,
+      !memoryInitializerSrc.includes("import('./open-database.js')"),
+      'memory-initializer.ts must not import deleted open-database.js (ADR-0083)',
     );
   });
 });
@@ -1530,36 +1415,16 @@ describe('ADR-0080 P4: embeddings.ts sql.js migration', () => {
     );
   });
 
-  it('uses open-database wrapper for database opens', () => {
-    const wrapperRefs = (embeddingsSrc.match(/open-database/g) || []);
-    assert.ok(
-      wrapperRefs.length >= 3,
-      `must reference open-database at least 3 times (got ${wrapperRefs.length})`,
+  it('does not reference deleted open-database (ADR-0083)', () => {
+    // ADR-0083 Wave 2 deleted open-database.ts
+    const wrapperRefs = (embeddingsSrc.match(/import\(['"].*open-database/g) || []);
+    assert.strictEqual(
+      wrapperRefs.length,
+      0,
+      `embeddings.ts must not import deleted open-database (got ${wrapperRefs.length})`,
     );
   });
 });
 
-// ── 4. open-database.ts has journal_mode=DELETE after sql.js Database creation ──
-
-describe('ADR-0080 P4: journal_mode=DELETE in sql.js fallback path', () => {
-  it('PRAGMA journal_mode=DELETE appears after SQL.Database creation', () => {
-    const dbCreationIdx = openDatabaseSrc.indexOf('new SQL.Database');
-    // Search for the actual PRAGMA call, not the comment at top of file
-    const pragmaCall = "sqlDb.run('PRAGMA journal_mode=DELETE')";
-    const journalIdx = openDatabaseSrc.indexOf(pragmaCall);
-    assert.ok(dbCreationIdx > -1, 'must create SQL.Database in fallback path');
-    assert.ok(journalIdx > -1, 'must call PRAGMA journal_mode=DELETE');
-    assert.ok(
-      journalIdx > dbCreationIdx,
-      'PRAGMA journal_mode=DELETE call must come after SQL.Database creation',
-    );
-  });
-
-  it('forces DELETE mode to prevent WAL corruption', () => {
-    // The PRAGMA must be explicit — not just WAL, not just a comment
-    assert.ok(
-      openDatabaseSrc.includes("sqlDb.run('PRAGMA journal_mode=DELETE')"),
-      'must call sqlDb.run(PRAGMA journal_mode=DELETE) on the sql.js instance',
-    );
-  });
-});
+// ── 4. open-database.ts deleted — journal_mode tests superseded by ADR-0083 ──
+// (open-database.ts was deleted in ADR-0083 Wave 2; sql.js fallback path is gone)

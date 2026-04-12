@@ -301,6 +301,14 @@ _E2E_HEALTH_FILE=$(mktemp /tmp/ruflo-e2e-health-XXXXX)
     # ADR-0082: removed manual DDL — product must create memory_entries or fail
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health" "" 15
     echo "$_RK_OUT" > "$_E2E_HEALTH_FILE"
+
+    # ADR-0083: Pre-seed JSON sidecar for intelligence checks.
+    # Under parallel contention, individual checks' CLI store calls can time out
+    # before writeJsonSidecar() completes. Seeding here (single process, no contention)
+    # ensures auto-memory-store.json has data for intelligence.cjs graph checks.
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory store --key 'e2e-seed-intel' --value 'memory storage patterns and database optimization' --namespace e2e-seed" "" 20
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory store --key 'e2e-seed-config' --value 'project configuration and settings management' --namespace e2e-seed" "" 15
+    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory store --key 'e2e-seed-sidecar' --value 'phase5 single data flow sidecar seed' --namespace e2e-seed" "" 15
   fi
   echo "ready" > "$_E2E_READY_FILE"
 ) &
@@ -361,6 +369,10 @@ adr0079_t2_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier2-checks.sh"
 # ADR-0080: Storage consolidation verdict
 adr0080_lib="${PROJECT_DIR}/lib/acceptance-adr0080-checks.sh"
 [[ -f "$adr0080_lib" ]] && source "$adr0080_lib"
+
+# ADR-0083: Phase 5 — Single Data Flow Path
+adr0083_lib="${PROJECT_DIR}/lib/acceptance-adr0083-checks.sh"
+[[ -f "$adr0083_lib" ]] && source "$adr0083_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -615,14 +627,20 @@ run_check_bg "adr0080-bridge"     "Memory-bridge 100K (ADR-0080)"        check_a
 run_check_bg "adr0080-store-init" "Memory store after init (ADR-0080)"   check_adr0080_store_after_init         "adr0080"
 run_check_bg "adr0080-rvf"        "RVF primary storage (ADR-0080)"       check_adr0080_rvf_primary              "adr0080"
 run_check_bg "adr0080-no-copy"    "No dead .claude/memory.db (ADR-0080)" check_adr0080_no_dead_copy             "adr0080"
-run_check_bg "adr0080-shim"      "RVF shim exists (ADR-0080)"           check_adr0080_rvf_shim_exists          "adr0080"
 run_check_bg "adr0080-rvf-size"  "RVF has entries (ADR-0080)"           check_adr0080_rvf_has_entries          "adr0080"
 run_check_bg "adr0080-no-graph"  "No .graph file (ADR-0080)"            check_adr0080_no_graph_file            "adr0080"
 run_check_bg "adr0080-emb-dflt"  "Embeddings default on (ADR-0080)"     check_adr0080_embeddings_default_on    "adr0080"
 run_check_bg "adr0080-sona"      "sonaMode balanced (ADR-0080)"         check_adr0080_sona_balanced            "adr0080"
 run_check_bg "adr0080-decay"     "Decay rate aligned (ADR-0080)"        check_adr0080_decay_rate_aligned       "adr0080"
 run_check_bg "adr0080-no-sqljs" "No raw sql.js imports (ADR-0080)"     check_adr0080_no_raw_sqljs             "adr0080"
-run_check_bg "adr0080-opendb"   "open-database.js exists (ADR-0080)"   check_adr0080_open_database_exists     "adr0080"
+
+# ADR-0083: Phase 5 — Single Data Flow Path
+run_check_bg "adr0083-no-rvf"     "No rvf-shim (ADR-0083)"               check_adr0083_no_rvf_shim              "adr0083"
+run_check_bg "adr0083-no-opendb"  "No open-database (ADR-0083)"          check_adr0083_no_open_database         "adr0083"
+run_check_bg "adr0083-router"     "Router exports (ADR-0083)"            check_adr0083_router_exports           "adr0083"
+run_check_bg "adr0083-no-bridge"  "No bridge in migrated (ADR-0083)"     check_adr0083_no_bridge_in_migrated    "adr0083"
+run_check_bg "adr0083-no-append"  "No appendToAutoMemory (ADR-0083)"     check_adr0083_no_append_fn_in_initializer "adr0083"
+run_check_bg "adr0083-no-dosync" "No doSync drain (ADR-0083)"          check_adr0083_no_dosync_drain            "adr0083"
 
 # ADR-0081: M5 Max Configuration Profile
 run_check_bg "adr0081-neural"   "Neural optional dep (ADR-0081)"       check_adr0081_neural_optional_dep      "adr0081"
@@ -834,6 +852,14 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
 
     # Phase 4: Daemon IPC — runs AFTER collect_parallel (sequential, shared daemon)
   fi
+
+  # ADR-0083: Phase 5 e2e checks
+  if [[ -f "$adr0083_lib" ]]; then
+    _e2e_0083_sidecar()   { _wait_e2e_ready; check_adr0083_json_sidecar_contract; }
+    _e2e_0083_roundtrip() { _wait_e2e_ready; check_adr0083_single_path_roundtrip; }
+    run_check_bg "e2e-0083-sidecar"   "E2E JSON sidecar (ADR-0083)"    _e2e_0083_sidecar   "adr0083"
+    run_check_bg "e2e-0083-roundtrip" "E2E single path (ADR-0083)"     _e2e_0083_roundtrip  "adr0083"
+  fi
 fi
 
 # ════════════════════════════════════════════════════════════════════
@@ -869,6 +895,13 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
       )
     fi
     # Phase 4 runs sequentially after collect_parallel — not in _e2e_specs
+  fi
+  # ADR-0083 e2e specs
+  if [[ -f "$adr0083_lib" ]]; then
+    _e2e_specs+=(
+      "e2e-0083-sidecar|E2E JSON sidecar (ADR-0083)"
+      "e2e-0083-roundtrip|E2E single path (ADR-0083)"
+    )
   fi
 fi
 
@@ -978,14 +1011,18 @@ collect_parallel "all" \
   "adr0080-store-init|Memory store after init (ADR-0080)" \
   "adr0080-rvf|RVF primary storage (ADR-0080)" \
   "adr0080-no-copy|No dead .claude/memory.db (ADR-0080)" \
-  "adr0080-shim|RVF shim exists (ADR-0080)" \
   "adr0080-rvf-size|RVF has entries (ADR-0080)" \
   "adr0080-no-graph|No .graph file (ADR-0080)" \
   "adr0080-emb-dflt|Embeddings default on (ADR-0080)" \
   "adr0080-sona|sonaMode balanced (ADR-0080)" \
   "adr0080-decay|Decay rate aligned (ADR-0080)" \
   "adr0080-no-sqljs|No raw sql.js imports (ADR-0080)" \
-  "adr0080-opendb|open-database.js exists (ADR-0080)" \
+  "adr0083-no-rvf|No rvf-shim (ADR-0083)" \
+  "adr0083-no-opendb|No open-database (ADR-0083)" \
+  "adr0083-router|Router exports (ADR-0083)" \
+  "adr0083-no-bridge|No bridge in migrated (ADR-0083)" \
+  "adr0083-no-append|No appendToAutoMemory (ADR-0083)" \
+  "adr0083-no-dosync|No doSync drain (ADR-0083)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \
@@ -1207,7 +1244,7 @@ log "═════════════════════════
 log "Results: ${results_dir}/acceptance-results.json"
 
 # ADR-0072: Baseline regression guard
-BASELINE_COUNT=148
+BASELINE_COUNT=155
 if [[ "$pass_count" -lt "$BASELINE_COUNT" ]]; then
   log "[WARN] Regression: $pass_count passed < baseline $BASELINE_COUNT"
 fi
