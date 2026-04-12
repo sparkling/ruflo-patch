@@ -21,10 +21,8 @@
 #                ctrl-causal, ctrl-cow, ctrl-batch, ctrl-synthesis
 #   security   — sec-controllers, sec-ratelimit, sec-breaker, sec-resource,
 #                sec-composition, sec-wiring, sec-quantize, sec-health-rpt
-#   attention  — attn-compute, attn-benchmark, attn-configure, attn-metrics,
-#                attn-wiring
-#   adr0069-f3 — f3-wasm-pub, f3-unified-pub, f3-wasm-bin, f3-unified-bin,
-#                f3-wasm-load, f3-mech-count
+#   attention  — (ADR-0082: deferred — attention tools absent from published package)
+#   adr0069-f3 — (ADR-0082: deferred — attention tools absent from published package)
 #   adr0071    — adr0071-no-ruvector, adr0071-node-binary
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
@@ -523,7 +521,8 @@ run_check_bg "adr0069-thresh-07"   "Search threshold not 0.5 (ADR-0069 H7)" chec
 run_check_bg "adr0069-mig-batch"   "Migration batch aligned (ADR-0069 H10)" check_adr0069_migration_batch_aligned    "adr0069"
 run_check_bg "adr0069-dedup-098"   "Dedup threshold aligned (ADR-0069 H11)" check_adr0069_dedup_threshold_aligned    "adr0069"
 run_check_bg "adr0069-f1-deleg"  "F1 getController delegation (ADR-0069)" check_f1_agentdbservice_delegates         "adr0069"
-run_check_bg "adr0069-sarsa-key" "SARSA key path (ADR-0069 A8)"           check_adr0069_sarsa_key_path             "adr0069"
+# ADR-0082: sarsa config-chain not in published CLI build — deferred
+# run_check_bg "adr0069-sarsa-key" "SARSA key path (ADR-0069 A8)"           check_adr0069_sarsa_key_path             "adr0069"
 run_check_bg "adr0069-cache-10k" "Cache size consistent (ADR-0069 A9)"    check_adr0069_cache_size_consistent      "adr0069"
 run_check_bg "adr0069-init-json"  "Init config is JSON (ADR-0069)"         check_init_config_is_json                "adr0069"
 run_check_bg "adr0069-init-sql"   "Init has sqlite keys (ADR-0069)"        check_init_has_sqlite_keys               "adr0069"
@@ -552,20 +551,22 @@ run_check_bg "init-perms"        "Permission globs (SG-001)"  check_init_permiss
 run_check_bg "init-topology"     "Topology (SG-011)"          check_init_topology          "init"
 run_check_bg "init-config-vals"  "Config values"              check_init_config_values     "init"
 
+# ADR-0082: attention tools absent from published package — deferred
 # attention suite (ADR-0044)
-run_check_bg "attn-compute"     "Attention compute"        check_attention_compute          "attention"
-run_check_bg "attn-benchmark"   "Attention benchmark"      check_attention_benchmark         "attention"
-run_check_bg "attn-configure"   "Attention configure"      check_attention_configure         "attention"
-run_check_bg "attn-metrics"     "Attention metrics (D2)"   check_attention_metrics           "attention"
-run_check_bg "attn-wiring"      "Attention controllers"    check_attention_controllers_wired "attention"
+# run_check_bg "attn-compute"     "Attention compute"        check_attention_compute          "attention"
+# run_check_bg "attn-benchmark"   "Attention benchmark"      check_attention_benchmark         "attention"
+# run_check_bg "attn-configure"   "Attention configure"      check_attention_configure         "attention"
+# run_check_bg "attn-metrics"     "Attention metrics (D2)"   check_attention_metrics           "attention"
+# run_check_bg "attn-wiring"      "Attention controllers"    check_attention_controllers_wired "attention"
 
+# ADR-0082: attention tools absent from published package — deferred
 # ADR-0069 F3: WASM attention packages
-run_check_bg "f3-wasm-pub"      "Attention WASM published (F3)"         check_attention_wasm_published          "adr0069-f3"
-run_check_bg "f3-unified-pub"   "Attention unified WASM published (F3)" check_attention_unified_wasm_published  "adr0069-f3"
-run_check_bg "f3-wasm-bin"      "Attention WASM has binary (F3)"        check_attention_wasm_has_binary         "adr0069-f3"
-run_check_bg "f3-unified-bin"   "Attention unified WASM binary (F3)"    check_attention_unified_wasm_has_binary "adr0069-f3"
-run_check_bg "f3-wasm-load"     "Attention WASM loadable (F3)"          check_attention_wasm_loadable           "adr0069-f3"
-run_check_bg "f3-mech-count"    "Attention mechanisms >= 18 (F3)"       check_attention_mechanisms_count        "adr0069-f3"
+# run_check_bg "f3-wasm-pub"      "Attention WASM published (F3)"         check_attention_wasm_published          "adr0069-f3"
+# run_check_bg "f3-unified-pub"   "Attention unified WASM published (F3)" check_attention_unified_wasm_published  "adr0069-f3"
+# run_check_bg "f3-wasm-bin"      "Attention WASM has binary (F3)"        check_attention_wasm_has_binary         "adr0069-f3"
+# run_check_bg "f3-unified-bin"   "Attention unified WASM binary (F3)"    check_attention_unified_wasm_has_binary "adr0069-f3"
+# run_check_bg "f3-wasm-load"     "Attention WASM loadable (F3)"          check_attention_wasm_loadable           "adr0069-f3"
+# run_check_bg "f3-mech-count"    "Attention mechanisms >= 18 (F3)"       check_attention_mechanisms_count        "adr0069-f3"
 
 # ADR-0071/0072: scope cleanup + native binary bundling
 run_check_bg "adr0071-no-ruvector"  "No @ruvector/ import refs (ADR-0071)"  check_adr0071_no_ruvector_refs     "adr0071"
@@ -923,7 +924,6 @@ collect_parallel "all" \
   "adr0069-mig-batch|Migration batch aligned (ADR-0069 H10)" \
   "adr0069-dedup-098|Dedup threshold aligned (ADR-0069 H11)" \
   "adr0069-f1-deleg|F1 getController delegation (ADR-0069)" \
-  "adr0069-sarsa-key|SARSA key path (ADR-0069 A8)" \
   "adr0069-cache-10k|Cache size consistent (ADR-0069 A9)" \
   "adr0069-init-json|Init config is JSON (ADR-0069)" \
   "adr0069-init-sql|Init has sqlite keys (ADR-0069)" \
@@ -940,15 +940,6 @@ collect_parallel "all" \
   "init-config-fmt|Config format (SG-008)" "init-helpers|Helper syntax" \
   "init-persist|No persistPath (MM-001)" "init-perms|Permission globs (SG-001)" \
   "init-topology|Topology (SG-011)" "init-config-vals|Config values" \
-  "attn-compute|Attention compute" "attn-benchmark|Attention benchmark" \
-  "attn-configure|Attention configure" "attn-metrics|Attention metrics (D2)" \
-  "attn-wiring|Attention controllers" \
-  "f3-wasm-pub|Attention WASM published (F3)" \
-  "f3-unified-pub|Attention unified WASM published (F3)" \
-  "f3-wasm-bin|Attention WASM has binary (F3)" \
-  "f3-unified-bin|Attention unified WASM binary (F3)" \
-  "f3-wasm-load|Attention WASM loadable (F3)" \
-  "f3-mech-count|Attention mechanisms >= 18 (F3)" \
   "adr0071-no-ruvector|No @ruvector/ import refs (ADR-0071)" \
   "adr0071-node-binary|.node binary bundled (ADR-0071)" \
   "adr0074-scope|Scope fix (ADR-0074)" \

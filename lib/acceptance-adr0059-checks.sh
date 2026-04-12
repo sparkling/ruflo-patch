@@ -119,9 +119,17 @@ check_adr0059_intelligence_graph() {
   local h="$E2E_DIR/.claude/helpers"
   [[ -f "$h/intelligence.cjs" ]] || { _CHECK_PASSED="true"; _CHECK_OUTPUT="intelligence.cjs not present"; return; }
 
+  # Seed data: store memory via CLI so intelligence graph has content to index
+  local cli; cli=$(_cli_cmd)
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'intel-graph-seed' --value 'seed content for intelligence graph indexing' --namespace adr0059-intel" "" 15
+
   local out
   out=$(_adr0059_node "
     const i = require('$h/intelligence.cjs');
+    // Populate graph: record edits + consolidate to create nodes and edges
+    for (let j = 0; j < 5; j++) i.recordEdit('/tmp/adr0059-graph-hot.ts');
+    i.recordEdit('/tmp/adr0059-graph-cold.ts');
+    i.consolidate();
     const r = i.init();
     if (r.nodes === 0) { console.log('EMPTY'); process.exit(0); }
     const fs = require('fs');
@@ -148,9 +156,17 @@ check_adr0059_retrieval_relevance() {
   local h="$E2E_DIR/.claude/helpers"
   [[ -f "$h/intelligence.cjs" ]] || { _CHECK_PASSED="true"; _CHECK_OUTPUT="intelligence.cjs not present"; return; }
 
+  # Seed data: store memory via CLI so retrieval has content to find
+  local cli; cli=$(_cli_cmd)
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'retrieval-seed' --value 'seed content for retrieval relevance testing' --namespace adr0059-retr" "" 15
+
   local out
   out=$(_adr0059_node "
     const i = require('$h/intelligence.cjs');
+    // Populate graph: record edits + consolidate to create indexed content
+    for (let j = 0; j < 5; j++) i.recordEdit('/tmp/adr0059-retr-hot.ts');
+    i.recordEdit('/tmp/adr0059-retr-cold.ts');
+    i.consolidate();
     const r = i.init();
     if (r.nodes === 0) { console.log('NO_DATA'); process.exit(0); }
     const prompts = ['memory storage', 'project configuration', 'hook handler', 'authentication JWT'];
@@ -213,11 +229,19 @@ check_adr0059_learning_feedback() {
   local h="$E2E_DIR/.claude/helpers"
   [[ -f "$h/intelligence.cjs" ]] || { _CHECK_PASSED="true"; _CHECK_OUTPUT="intelligence.cjs not present"; return; }
 
+  # Seed data: store memory via CLI so feedback has entries to boost/decay
+  local cli; cli=$(_cli_cmd)
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'feedback-seed' --value 'seed content for feedback loop testing' --namespace adr0059-fb" "" 15
+
   local out
   out=$(_adr0059_node "
     const fs = require('fs');
     const path = require('path');
     const i = require('$h/intelligence.cjs');
+    // Populate graph: record edits + consolidate to create ranked entries
+    for (let j = 0; j < 5; j++) i.recordEdit('/tmp/adr0059-fb-hot.ts');
+    i.recordEdit('/tmp/adr0059-fb-cold.ts');
+    i.consolidate();
     const r = i.init();
     if (r.nodes === 0) { console.log('EMPTY'); process.exit(0); }
     const rp = path.join(process.cwd(), '.claude-flow', 'data', 'ranked-context.json');
@@ -258,6 +282,15 @@ check_adr0059_learning_feedback() {
 
 check_adr0059_hook_import_populates() {
   _CHECK_PASSED="false"
+
+  # Seed a test memory topic file so importFromAutoMemory has something to import.
+  # Fresh init'd projects have an empty memory dir — without this, import returns 0.
+  local topic_dir="$E2E_DIR/.claude/projects/-$(echo "$E2E_DIR" | tr '/' '-')/memory"
+  mkdir -p "$topic_dir" 2>/dev/null || true
+  cat > "$topic_dir/adr0059-import-test.md" << 'TOPIC'
+- [ADR-0059 import test](adr0059-import-test.md) — Seeded entry to verify auto-memory import hook
+TOPIC
+
   local out
   out=$(_adr0059_run_hook "auto-memory-hook.mjs" "import") || true
   [[ "$out" == "SKIP" ]] && { _CHECK_PASSED="true"; _CHECK_OUTPUT="Hook not present"; return; }
@@ -302,6 +335,14 @@ check_adr0059_hook_edit_records_file() {
 check_adr0059_hook_full_lifecycle() {
   _CHECK_PASSED="false"
   local import_out sync_out
+
+  # Seed a test memory topic file so the import step has data to work with.
+  # Without this, import returns 0 in a fresh init'd project and sync has nothing.
+  local topic_dir="$E2E_DIR/.claude/projects/-$(echo "$E2E_DIR" | tr '/' '-')/memory"
+  mkdir -p "$topic_dir" 2>/dev/null || true
+  cat > "$topic_dir/adr0059-lifecycle-test.md" << 'TOPIC'
+- [ADR-0059 lifecycle test](adr0059-lifecycle-test.md) — Seeded entry to verify full hook lifecycle
+TOPIC
 
   import_out=$(_adr0059_run_hook "auto-memory-hook.mjs" "import") || true
   [[ "$import_out" == "SKIP" ]] && { _CHECK_PASSED="false"; _CHECK_OUTPUT="Hooks not present — auto-memory-hook.mjs missing"; return; }

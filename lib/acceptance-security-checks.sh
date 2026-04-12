@@ -113,8 +113,20 @@ check_rate_limit_consumed() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
+  # This check does memory store (needs a fully-initialised DB with memory_entries
+  # table). Use E2E_DIR (which runs memory init --force) instead of TEMP_DIR.
+  local work_dir="${E2E_DIR:-$TEMP_DIR}"
+
+  # Wait for e2e memory init to finish (background task writes sentinel file)
+  if [[ -n "${_E2E_READY_FILE:-}" ]]; then
+    local _ew=0
+    while [[ ! -f "$_E2E_READY_FILE" ]] && (( _ew < 30 )); do
+      sleep 0.25; _ew=$((_ew + 1))
+    done
+  fi
+
   # Step 1: Do a memory store via CLI command (consumes 1 insert token via bridge)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key rl-test --value 'rate-limit-token-check' --namespace rl-test"
+  _run_and_kill "cd '$work_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key rl-test --value 'rate-limit-token-check' --namespace rl-test"
   local store_out="$_RK_OUT"
 
   if [[ -z "$store_out" ]] || ! echo "$store_out" | grep -qi "stored\|success"; then
@@ -123,7 +135,7 @@ check_rate_limit_consumed() {
   fi
 
   # Step 2: Check rate limit status — insert bucket should show tokens < maxTokens
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
+  _run_and_kill "cd '$work_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
   local rl_out="$_RK_OUT"
 
   if [[ -z "$rl_out" ]]; then
