@@ -349,6 +349,59 @@ hardcodes 256). Fix: change to `256` or remove.
 resolve-config uses `M` uppercase. Cosmetic — HNSW params are derived, not read
 from config.
 
+## Phase 4: sql.js → better-sqlite3 Migration
+
+### Problem: sql.js corrupts WAL-mode databases
+
+sql.js (WASM SQLite) reads only the main `.db` file via `readFileSync`, ignoring
+`-wal` and `-shm` journal files. When it writes the database back, WAL data is lost,
+producing "database disk image is malformed." This affects every site where sql.js
+opens a file that `better-sqlite3` (native SQLite) created in WAL mode.
+
+### Inventory: 21 sql.js import sites across 4 packages
+
+| Location | Sites | WAL Risk |
+|----------|-------|----------|
+| `memory-initializer.ts` | 13 | HIGH — store/search/list/delete all read existing WAL-mode .db |
+| `embeddings.ts` | 3 | Medium — embedding operations |
+| `agentdb/db-fallback.ts` | 2 | LOW — fallback for environments without better-sqlite3 |
+| `agentdb/SqlJsRvfBackend.ts` | 2 | LOW — RVF WASM fallback |
+| `rvf-migration.ts` | 1 | LOW — migration reader fallback |
+
+### Decision: Full replacement (Option C)
+
+Replace ALL 17 CLI sql.js sites with `better-sqlite3`. `better-sqlite3` is already
+a dependency and handles WAL natively. Create a shared `openDatabase(path)` wrapper
+that tries `better-sqlite3` first, falls back to sql.js with forced
+`PRAGMA journal_mode=DELETE` (prevents WAL creation, eliminates corruption vector).
+
+**Keep sql.js only in:**
+- `agentdb/db-fallback.ts` — environments without native build tools
+- `agentdb/SqlJsRvfBackend.ts` — WASM RVF fallback
+
+**Guard sql.js fallback with:** `PRAGMA journal_mode=DELETE` forced on every open,
+preventing WAL mode entirely in the fallback path.
+
+### Hive Council Positions
+
+**Queen**: Replace all 17 CLI sites. One-pass migration via shared wrapper. The
+corruption bug means every day with mixed usage is a risk.
+
+**Devil's Advocate**: Only 1 site (line 1358 post-controller-activation) is the
+proven corruption source. The other 12 are either creating new files, reading
+non-WAL files, or in fallback-only paths. However: the store/search/list/delete
+fallbacks (lines 2164-3012) also read existing WAL-mode `.db` files and are
+dangerous. Full replacement is warranted.
+
+### Implementation Plan
+
+1. Create `cli/src/memory/open-database.ts` — shared wrapper, tries better-sqlite3,
+   falls back to sql.js with `journal_mode=DELETE`
+2. Replace all 17 CLI `import('sql.js')` sites with `openDatabase()` calls
+3. Guard agentdb fallback with `journal_mode=DELETE`
+4. Add unit test: open WAL-mode .db through wrapper, verify no corruption
+5. Add acceptance test: `memory store` → `memory list` round-trip on fresh init
+
 ## Consequences
 
 - P3 fix eliminates the AgentDB 10K hard-throw time bomb and the 10x memory over-allocation
