@@ -1,6 +1,6 @@
 {
   "initialized": true,
-  "topology": "hierarchical",
+  "topology": "star",
   "workers": [
     "architect-1772719627699-olfq",
     "architect-1772719627699-uyim",
@@ -187,11 +187,11 @@
       }
     ]
   },
-  "createdAt": "2026-04-06T13:04:18.432Z",
-  "updatedAt": "2026-04-06T13:04:21.601Z",
+  "createdAt": "2026-04-06T18:05:36.132Z",
+  "updatedAt": "2026-04-06T18:05:36.132Z",
   "queen": {
-    "agentId": "reuven-cohen-silo-fix",
-    "electedAt": "2026-04-06T13:04:18.432Z",
+    "agentId": "queen-meridian",
+    "electedAt": "2026-04-06T18:05:36.132Z",
     "term": 1
   }
 }

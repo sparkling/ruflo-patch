@@ -1,8 +1,6 @@
 {
-  "timestamp": "2026-03-18T21:30:03.209Z",
+  "timestamp": "2026-04-12T11:50:00.824Z",
   "patternsConsolidated": 0,
-  "memoryCleaned": 1,
-  "duplicatesRemoved": 0,
-  "hnswRebuilt": 0,
-  "bridgeConsolidated": false
+  "memoryCleaned": 0,
+  "duplicatesRemoved": 0
 }

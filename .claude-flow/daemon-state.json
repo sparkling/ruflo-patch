@@ -1,51 +1,51 @@
 {
   "running": true,
-  "startedAt": "2026-03-04T21:23:52.198Z",
+  "startedAt": "2026-04-05T12:24:05.516Z",
   "workers": {
     "map": {
-      "runCount": 1353,
-      "successCount": 1353,
+      "runCount": 2018,
+      "successCount": 2018,
       "failureCount": 0,
-      "averageDurationMs": 0.21359940872135977,
-      "isRunning": false,
-      "nextRun": "2026-03-18T23:40:16.534Z",
-      "lastRun": "2026-03-18T23:25:16.534Z"
+      "averageDurationMs": 6.186818632309217,
+      "lastRun": "2026-04-12T12:18:36.894Z",
+      "nextRun": "2026-04-12T12:22:36.422Z",
+      "isRunning": false
     },
     "audit": {
-      "runCount": 335,
-      "successCount": 335,
+      "runCount": 1322,
+      "successCount": 1322,
       "failureCount": 0,
-      "averageDurationMs": 43239.35223880597,
-      "isRunning": false,
-      "nextRun": "2026-03-18T23:26:19.041Z",
-      "lastRun": "2026-03-18T23:26:57.247Z"
+      "averageDurationMs": 11016.487140695926,
+      "lastRun": "2026-04-12T12:18:36.894Z",
+      "nextRun": "2026-04-12T12:28:36.891Z",
+      "isRunning": false
     },
     "optimize": {
-      "runCount": 628,
-      "successCount": 627,
+      "runCount": 1290,
+      "successCount": 1289,
       "failureCount": 1,
-      "averageDurationMs": 137629.10996810105,
-      "isRunning": false,
-      "nextRun": "2026-03-18T23:36:43.385Z",
-      "lastRun": "2026-03-18T23:06:43.385Z"
+      "averageDurationMs": 67115.83958137016,
+      "lastRun": "2026-04-12T12:18:36.894Z",
+      "nextRun": "2026-04-12T12:22:36.573Z",
+      "isRunning": false
     },
     "consolidate": {
-      "runCount": 169,
-      "successCount": 169,
+      "runCount": 502,
+      "successCount": 502,
       "failureCount": 0,
-      "averageDurationMs": 3.2781065088757395,
-      "isRunning": false,
-      "nextRun": "2026-03-18T23:30:03.213Z",
-      "lastRun": "2026-03-18T21:30:03.212Z"
+      "averageDurationMs": 13.27091633466135,
+      "lastRun": "2026-04-12T11:50:00.824Z",
+      "nextRun": "2026-04-12T12:20:00.824Z",
+      "isRunning": false
     },
     "testgaps": {
-      "runCount": 325,
-      "successCount": 325,
+      "runCount": 822,
+      "successCount": 822,
       "failureCount": 0,
-      "averageDurationMs": 154363.5815384616,
-      "isRunning": false,
-      "nextRun": "2026-03-19T00:26:00.407Z",
-      "lastRun": "2026-03-18T23:26:00.407Z"
+      "averageDurationMs": 61240.93430656956,
+      "lastRun": "2026-04-12T12:18:36.894Z",
+      "nextRun": "2026-04-12T12:20:01.119Z",
+      "isRunning": false
     },
     "predict": {
       "runCount": 0,
@@ -94,15 +94,14 @@
       "successCount": 2029,
       "failureCount": 0,
       "averageDurationMs": 0.1986200098570725,
-      "isRunning": false,
-      "nextRun": "2026-03-18T23:35:17.788Z",
-      "lastRun": "2026-03-18T23:25:17.787Z"
+      "lastRun": "2026-03-18T23:25:17.787Z",
+      "isRunning": false
     }
   },
   "config": {
     "autoStart": false,
-    "logDir": "/home/claude/src/ruflo-patch/.claude-flow/logs",
-    "stateFile": "/home/claude/src/ruflo-patch/.claude-flow/daemon-state.json",
+    "logDir": "/Users/henrik/source/ruflo-patch/.claude-flow/logs",
+    "stateFile": "/Users/henrik/source/ruflo-patch/.claude-flow/daemon-state.json",
     "maxConcurrent": 2,
     "workerTimeoutMs": 960000,
     "resourceThresholds": {
@@ -120,7 +119,7 @@
       },
       {
         "type": "audit",
-        "intervalMs": 3600000,
+        "intervalMs": 600000,
         "offsetMs": 120000,
         "priority": "critical",
         "description": "Security analysis",
@@ -128,7 +127,7 @@
       },
       {
         "type": "optimize",
-        "intervalMs": 1800000,
+        "intervalMs": 900000,
         "offsetMs": 240000,
         "priority": "high",
         "description": "Performance optimization",
@@ -136,7 +135,7 @@
       },
       {
         "type": "consolidate",
-        "intervalMs": 7200000,
+        "intervalMs": 1800000,
         "offsetMs": 360000,
         "priority": "low",
         "description": "Memory consolidation",
@@ -144,7 +143,7 @@
       },
       {
         "type": "testgaps",
-        "intervalMs": 3600000,
+        "intervalMs": 1200000,
         "offsetMs": 480000,
         "priority": "normal",
         "description": "Test coverage analysis",
@@ -165,48 +164,8 @@
         "priority": "low",
         "description": "Auto-documentation",
         "enabled": false
-      },
-      {
-        "type": "ultralearn",
-        "intervalMs": 3600000,
-        "offsetMs": 0,
-        "priority": "normal",
-        "description": "Deep knowledge acquisition (headless, manual trigger)",
-        "enabled": false
-      },
-      {
-        "type": "deepdive",
-        "intervalMs": 14400000,
-        "offsetMs": 0,
-        "priority": "low",
-        "description": "Deep code analysis",
-        "enabled": false
-      },
-      {
-        "type": "refactor",
-        "intervalMs": 14400000,
-        "offsetMs": 0,
-        "priority": "low",
-        "description": "Refactoring suggestions",
-        "enabled": false
-      },
-      {
-        "type": "benchmark",
-        "intervalMs": 7200000,
-        "offsetMs": 0,
-        "priority": "low",
-        "description": "Performance benchmarking",
-        "enabled": false
-      },
-      {
-        "type": "preload",
-        "intervalMs": 600000,
-        "offsetMs": 0,
-        "priority": "high",
-        "description": "Embedding model + HNSW preload",
-        "enabled": true
       }
     ]
   },
-  "savedAt": "2026-03-18T23:26:57.247Z"
+  "savedAt": "2026-04-12T12:18:36.894Z"
 }

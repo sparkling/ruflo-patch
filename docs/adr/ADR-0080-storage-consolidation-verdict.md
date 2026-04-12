@@ -402,6 +402,122 @@ dangerous. Full replacement is warranted.
 4. Add unit test: open WAL-mode .db through wrapper, verify no corruption
 5. Add acceptance test: `memory store` → `memory list` round-trip on fresh init
 
+## Phase 6: CJS/ESM Storage Silo — The Reverse Bridge Gap
+
+**Date**: 2026-04-12
+**Methodology**: 9-agent hive (4 data-flow tracers + 5 ADR readers) + queen + devil's advocate
+
+### Problem: Three disconnected storage systems
+
+A hive traced the complete data flow for every memory write path. Finding: there are
+three storage systems that never share data:
+
+| System | Storage file | Written by | Read by |
+|--------|-------------|------------|---------|
+| **CLI memory** | `.swarm/memory.db` (SQLite) | `memory store` CLI, MCP `memory_store` | `memory search`, `memory list` |
+| **CJS intelligence** | `.claude-flow/data/auto-memory-store.json` | `intelligence.cjs` (bootstrap + consolidate) | `intelligence.cjs` (graph, rank, context) |
+| **ESM hooks** | `.swarm/agentdb-memory.rvf` | `auto-memory-hook.mjs` import/sync | `auto-memory-hook.mjs`, search (read-only merge) |
+
+### Existing bridges (one-way only)
+
+| Bridge | Direction | Mechanism | ADR |
+|--------|-----------|-----------|-----|
+| Intelligence → RVF | CJS → ESM | `doSync()` drains `ranked-context.json` → RVF backend (top 500 entries) | ADR-0074 Phase 2 |
+| MEMORY.md → Intelligence | Files → CJS | `bootstrapFromMemoryFiles()` reads `~/.claude/projects/<slug>/memory/*.md` | Built-in |
+| MEMORY.md → RVF | Files → ESM | `doImport()` reads same MEMORY.md files → RVF backend | Built-in |
+
+### Missing bridge: CLI memory → intelligence.cjs
+
+**No ADR ever planned this direction.** ADR-0074 focused on draining intelligence OUT
+to AgentDB. ADR-0076 Phase 5 planned to rewire `intelligence.ts` to use
+ControllerRegistry directly, but Phase 5 was abandoned (this ADR, Priority Scorecard).
+
+The consequence: when a user runs `memory store --key "auth" --value "JWT patterns"`,
+the data goes to SQLite only. `intelligence.cjs init()` reads `auto-memory-store.json`,
+finds nothing, returns `{nodes: 0}`. The intelligence layer is blind to all CLI-stored
+memory.
+
+This was exposed by ADR-0082 acceptance tests: a clean init'd project stores data via
+CLI, then tests intelligence graph/retrieval/feedback — all fail because
+`auto-memory-store.json` is empty.
+
+### ADR history on this gap
+
+| ADR | What it says | What it does |
+|-----|-------------|--------------|
+| **0058** | "P0 bridge bug — JSON cache never drains to SQLite" | Identified silo, focused on CJS→AgentDB direction |
+| **0074** | "No drain path. intelligence.cjs is invisible to AgentDB" | Implemented drain: intelligence→RVF. Reverse not addressed |
+| **0075** | Documents 7 backends, 1 reachable | Does not mention intelligence.cjs silo |
+| **0076** | Phase 5: "rewire intelligence.ts to use ControllerRegistry" | Phase 5 never started |
+| **0077** | "intelligence.ts — 4 bridge calls, low priority" | Deferred |
+| **0080** | "CJS subprocess workers can't import TypeScript modules — JSON is the IPC contract" | Rules out direct consolidation. Confirms JSON stays |
+
+### Constraint: JSON IS the IPC contract
+
+ADR-0080 Phase 2 (this document) established: CJS helper processes cannot import
+TypeScript modules. `intelligence.cjs` will always read JSON files. Any bridge must
+write JSON artifacts that intelligence.cjs can consume.
+
+### Decision: Reverse drain — storeEntry() dual-writes to JSON
+
+After `storeEntry()` writes to SQLite (and optionally RVF), also append the entry to
+`auto-memory-store.json`. This matches the existing dual-write precedent (P1: SQLite +
+RVF shim) and respects the JSON IPC contract.
+
+**Implementation** (in ruflo fork, `memory-initializer.ts`):
+
+```
+storeEntry() succeeds in SQLite
+  → read auto-memory-store.json (or [])
+  → append {id, key, value, namespace, metadata, created_at}
+  → dedup by id, cap at 1000 entries (P2 eviction)
+  → atomic write (write .tmp, renameSync)
+```
+
+~20 lines. Uses the P2 infrastructure (cap, dedup, atomic write) already specified.
+
+**Why not session-boundary drain**: A session-boundary drain (dump SQLite → JSON at
+session end) would work but delays visibility. With the dual-write, `intelligence.cjs`
+sees new entries immediately on next `init()` call within the same session.
+
+### Devil's Advocate
+
+*"Every store now writes to three places (SQLite + RVF + JSON). More I/O, more TOCTOU."*
+
+The JSON write is ~1ms for a 1000-entry file with atomic rename. TOCTOU is mitigated
+by P2's write-then-rename pattern. The precedent is the RVF dual-write in Phase 5 of
+this same ADR. The alternative (intelligence layer blind to CLI memory) is worse.
+
+### Acceptance test implications
+
+With this fix, a clean init'd project can:
+1. `memory store --key X --value Y` → SQLite + auto-memory-store.json
+2. `intelligence.cjs init()` → reads auto-memory-store.json → builds graph with nodes > 0
+3. `intelligence.cjs getContext(prompt)` → returns ranked matches
+4. `intelligence.cjs feedback(true)` → boosts confidence
+
+All 6 currently-failing acceptance tests (intel-graph, retrieval, feedback,
+hook-import, hook-lifecycle, rate-limit-consumed) should be re-evaluated after this fix.
+
+### Hook tests (import/lifecycle)
+
+In a clean init'd project, `importFromAutoMemory` reads from
+`~/.claude/projects/<slug>/memory/`. This directory is empty for a brand-new project
+(no prior Claude Code sessions). The hook runs correctly and imports 0 entries. This is
+**correct behavior** — the hook is designed for session-start import of existing memory
+files. A fresh project has none.
+
+The acceptance test should verify:
+- Hook executes without error
+- Hook returns a valid result (imported: N, skipped: M)
+- NOT that it imports > 0 (that requires prior session data that doesn't exist in a clean project)
+
+### Rate limit test
+
+`agentdb_rate_limit_status` returns `{success: true}` with no per-bucket token detail.
+The test cannot verify token consumption because the product doesn't expose it. This is
+a separate product gap — tracked but not blocking.
+
 ## Consequences
 
 - P3 fix eliminates the AgentDB 10K hard-throw time bomb and the 10x memory over-allocation
