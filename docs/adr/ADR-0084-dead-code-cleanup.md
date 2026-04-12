@@ -131,6 +131,54 @@ Files requiring "sql.js" string updates (from hive audit):
 - Zero behavioral impact
 - 30 minutes estimated
 
+## Tasks: Path to a Single Controller
+
+### Phase 1: Dead code cleanup (immediate)
+
+- [ ] **T1.1** Remove 4 dead `.save()` guards in `memory-bridge.ts`
+- [ ] **T1.2** Update `memory-tools.ts` — change 6 `'sql.js + HNSW'` → `'SQLite + HNSW'`
+- [ ] **T1.3** Update `guidance-tools.ts` — fix tool descriptions mentioning sql.js
+- [ ] **T1.4** Update `migration-legacy.ts` — fix user-visible log messages
+- [ ] **T1.5** Sweep remaining ~17 files for stale sql.js comments
+- [ ] **T1.6** Unit tests: verify all 1738 still pass after string changes
+- [ ] **T1.7** Acceptance: verify `backend:` output no longer says sql.js
+
+### Phase 2: Router methods for bridge-only functions
+
+Add missing methods to `memory-router.ts` so all callers can use the router:
+
+- [ ] **T2.1** Add `routePatternOp()` — wraps `bridgeStorePattern` / `bridgeSearchPatterns`
+- [ ] **T2.2** Add `routeFeedbackOp()` — wraps `bridgeRecordFeedback`
+- [ ] **T2.3** Add `routeSessionOp()` — wraps `bridgeSessionStart` / `bridgeSessionEnd`
+- [ ] **T2.4** Add `routeLearningOp()` — wraps `bridgeSelfLearningSearch` / `bridgeConsolidate`
+- [ ] **T2.5** Add `routeReflexionOp()` — wraps `bridgeReflexionStore` / `bridgeReflexionRetrieve`
+- [ ] **T2.6** Add `routeCausalOp()` — wraps `bridgeCausalEdge` / `bridgeCausalRecall`
+- [ ] **T2.7** Unit tests for each new router method (London School TDD)
+- [ ] **T2.8** Integration tests: verify router methods produce same results as bridge
+
+### Phase 3: Migrate callers to router (Wave 3 scope)
+
+- [ ] **T3.1** Migrate `worker-daemon.ts` — 6 bridge call sites → router
+- [ ] **T3.2** Migrate `hooks-tools.ts` — 20+ bridge call sites → router (HIGH risk, defer until upstream stabilizes)
+- [ ] **T3.3** Merge or remove `agentdb-orchestration.ts` 15 shadow functions
+- [ ] **T3.4** Remove router's 5 bridge fallback paths (once no external callers remain)
+- [ ] **T3.5** Unit + integration + acceptance tests for all migrated files
+
+### Phase 4: Single controller (bridge removal)
+
+- [ ] **T4.1** Verify zero external imports of `memory-bridge.ts` (only router uses it internally)
+- [ ] **T4.2** Inline remaining bridge logic into router or delete entirely
+- [ ] **T4.3** Remove `memory-bridge.ts` from the codebase
+- [ ] **T4.4** Final acceptance: single controller path, zero bridge references in dist
+
+### Completion criteria
+
+- All memory operations route through `memory-router.ts` exclusively
+- `memory-bridge.ts` deleted or reduced to internal router implementation detail
+- Zero direct bridge imports outside of `memory-router.ts`
+- All user-facing output says "SQLite" not "sql.js"
+- No shadow/duplicate function paths (agentdb-orchestration consolidated)
+
 ## Consequences
 
 - Users see accurate backend information ("SQLite + HNSW" not "sql.js + HNSW")
