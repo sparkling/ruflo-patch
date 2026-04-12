@@ -7,7 +7,7 @@
 # Usage:
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
-# Groups: all, p3, p4, p5, adr0059, e2e-core
+# Groups: all, p3, p4, p5, adr0059, e2e-core, e2e-storage
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -152,6 +152,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0059"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   _fast_run "hook-edit"      check_adr0059_hook_edit_records_file
   _fast_run "hook-lifecycle" check_adr0059_hook_full_lifecycle
   _fast_run "no-collisions"  check_adr0059_no_id_collisions
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"e2e-storage"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  echo "── E2E Storage Pipeline ──"
+  _fast_run "store-rvf"       check_e2e_store_creates_rvf
+  _fast_run "semantic"        check_e2e_search_semantic_quality
+  _fast_run "list-store"      check_e2e_list_after_store
+  _fast_run "dual-write"      check_e2e_dual_write_consistency
+  _fast_run "dim768"          check_e2e_embeddings_768_dim
+  _fast_run "no-dead-files"   check_e2e_init_no_dead_files
+  _fast_run "cfg-roundtrip"   check_e2e_config_round_trip
 fi
 
 if [[ "$_FAST_RUN_GROUPS" == *"p5"* || "$_FAST_RUN_GROUPS" == "all" ]]; then

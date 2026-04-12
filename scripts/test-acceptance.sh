@@ -28,6 +28,9 @@
 #   adr0071    — adr0071-no-ruvector, adr0071-node-binary
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
+#   e2e-storage — e2e-store-rvf, e2e-semantic, e2e-list-store,
+#                e2e-dual-write, e2e-dim768, e2e-no-dead-files,
+#                e2e-cfg-roundtrip
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -642,6 +645,12 @@ run_check_bg "adr0080-bridge"     "Memory-bridge 100K (ADR-0080)"        check_a
 run_check_bg "adr0080-store-init" "Memory store after init (ADR-0080)"   check_adr0080_store_after_init         "adr0080"
 run_check_bg "adr0080-rvf"        "RVF primary storage (ADR-0080)"       check_adr0080_rvf_primary              "adr0080"
 run_check_bg "adr0080-no-copy"    "No dead .claude/memory.db (ADR-0080)" check_adr0080_no_dead_copy             "adr0080"
+run_check_bg "adr0080-shim"      "RVF shim exists (ADR-0080)"           check_adr0080_rvf_shim_exists          "adr0080"
+run_check_bg "adr0080-rvf-size"  "RVF has entries (ADR-0080)"           check_adr0080_rvf_has_entries          "adr0080"
+run_check_bg "adr0080-no-graph"  "No .graph file (ADR-0080)"            check_adr0080_no_graph_file            "adr0080"
+run_check_bg "adr0080-emb-dflt"  "Embeddings default on (ADR-0080)"     check_adr0080_embeddings_default_on    "adr0080"
+run_check_bg "adr0080-sona"      "sonaMode balanced (ADR-0080)"         check_adr0080_sona_balanced            "adr0080"
+run_check_bg "adr0080-decay"     "Decay rate aligned (ADR-0080)"        check_adr0080_decay_rate_aligned       "adr0080"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
@@ -790,6 +799,23 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   run_check_bg "e2e-batch-optimize"  "E2E batch optimize"     _e2e_batch_optimize     "e2e"
   run_check_bg "e2e-filtered-search" "E2E filtered search"    _e2e_filtered_search    "e2e"
 
+  # ── E2E storage pipeline checks (acceptance-e2e-checks.sh) ────────
+  _e2e_store_rvf()    { _wait_e2e_ready; check_e2e_store_creates_rvf; }
+  _e2e_semantic()     { _wait_e2e_ready; check_e2e_search_semantic_quality; }
+  _e2e_list_store()   { _wait_e2e_ready; check_e2e_list_after_store; }
+  _e2e_dual_write()   { _wait_e2e_ready; check_e2e_dual_write_consistency; }
+  _e2e_dim768()       { _wait_e2e_ready; check_e2e_embeddings_768_dim; }
+  _e2e_no_dead()      { _wait_e2e_ready; check_e2e_init_no_dead_files; }
+  _e2e_cfg_rt()       { _wait_e2e_ready; check_e2e_config_round_trip; }
+
+  run_check_bg "e2e-store-rvf"      "E2E store creates RVF"          _e2e_store_rvf    "e2e-storage"
+  run_check_bg "e2e-semantic"       "E2E semantic search quality"    _e2e_semantic      "e2e-storage"
+  run_check_bg "e2e-list-store"     "E2E list after store"           _e2e_list_store    "e2e-storage"
+  run_check_bg "e2e-dual-write"     "E2E dual write consistency"     _e2e_dual_write    "e2e-storage"
+  run_check_bg "e2e-dim768"         "E2E embeddings 768-dim"         _e2e_dim768        "e2e-storage"
+  run_check_bg "e2e-no-dead-files"  "E2E init no dead files"         _e2e_no_dead       "e2e-storage"
+  run_check_bg "e2e-cfg-roundtrip"  "E2E config round-trip"          _e2e_cfg_rt        "e2e-storage"
+
   # ADR-0059 Phase 1+2: memory, storage, learning, hooks
   # Wrap each external check with _wait_e2e_ready gate
   if [[ -f "$adr0059_lib" ]]; then
@@ -844,6 +870,10 @@ if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
     "e2e-memory-store|E2E memory store" "e2e-hooks-route|E2E hooks route"
     "e2e-causal-edge|E2E causal edge" "e2e-reflexion-store|E2E reflexion store"
     "e2e-batch-optimize|E2E batch optimize" "e2e-filtered-search|E2E filtered search"
+    "e2e-store-rvf|E2E store creates RVF" "e2e-semantic|E2E semantic search quality"
+    "e2e-list-store|E2E list after store" "e2e-dual-write|E2E dual write consistency"
+    "e2e-dim768|E2E embeddings 768-dim" "e2e-no-dead-files|E2E init no dead files"
+    "e2e-cfg-roundtrip|E2E config round-trip"
   )
   if [[ -f "$adr0059_lib" ]]; then
     _e2e_specs+=(
@@ -981,6 +1011,12 @@ collect_parallel "all" \
   "adr0080-store-init|Memory store after init (ADR-0080)" \
   "adr0080-rvf|RVF primary storage (ADR-0080)" \
   "adr0080-no-copy|No dead .claude/memory.db (ADR-0080)" \
+  "adr0080-shim|RVF shim exists (ADR-0080)" \
+  "adr0080-rvf-size|RVF has entries (ADR-0080)" \
+  "adr0080-no-graph|No .graph file (ADR-0080)" \
+  "adr0080-emb-dflt|Embeddings default on (ADR-0080)" \
+  "adr0080-sona|sonaMode balanced (ADR-0080)" \
+  "adr0080-decay|Decay rate aligned (ADR-0080)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

@@ -641,3 +641,288 @@ check_adr0080_no_dead_copy() {
     _CHECK_OUTPUT="ADR-0080-12: no dead .claude/memory.db copy in ${short_path}"
   fi
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-13: RVF shim file exists in published CLI package
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_rvf_shim_exists() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-13: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find rvf-shim in published CLI package
+  local shim_file=""
+  shim_file=$(find "${base}/cli" -path '*/node_modules' -prune -o \
+    -name 'rvf-shim*' \( -name '*.js' -o -name '*.cjs' \) -print 2>/dev/null | head -1)
+
+  if [[ -z "$shim_file" ]]; then
+    # Broader search
+    shim_file=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'rvf-shim*' \( -name '*.js' -o -name '*.cjs' \) -print 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$shim_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-13: rvf-shim*.js not found in published packages"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$shim_file" | sed "s|${base}/||")
+
+  # Verify it exports init, store, search, shutdown
+  local found=0
+  for fn in init store search shutdown; do
+    if grep -q "$fn" "$shim_file" 2>/dev/null; then
+      found=$((found + 1))
+    fi
+  done
+
+  if [[ "$found" -ge 4 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-13: rvf-shim found in ${short_path} with all 4 exports"
+  else
+    _CHECK_OUTPUT="ADR-0080-13: rvf-shim in ${short_path} only has ${found}/4 expected exports"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-14: RVF file has entries (>1KB) after init+store
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_rvf_has_entries() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local e2e="${E2E_DIR}"
+  if [[ -z "$e2e" || ! -d "$e2e" ]]; then
+    _CHECK_OUTPUT="ADR-0080-14: E2E_DIR not set or missing"
+    return
+  fi
+
+  # Look for RVF file in .swarm/ or at path specified in embeddings.json
+  local rvf_path=""
+
+  # Try embeddings.json databasePath first
+  local emb_json="${e2e}/.claude-flow/embeddings.json"
+  if [[ -f "$emb_json" ]]; then
+    rvf_path=$(grep -o '"databasePath"[[:space:]]*:[[:space:]]*"[^"]*"' "$emb_json" 2>/dev/null \
+      | sed 's/.*"databasePath"[[:space:]]*:[[:space:]]*"//;s/"//' | head -1)
+    if [[ -n "$rvf_path" && ! "$rvf_path" = /* ]]; then
+      rvf_path="${e2e}/${rvf_path}"
+    fi
+  fi
+
+  # Fallback to canonical paths
+  if [[ -z "$rvf_path" || ! -f "$rvf_path" ]]; then
+    for candidate in "${e2e}/.swarm/memory.rvf" "${e2e}/.swarm/agentdb-memory.rvf"; do
+      if [[ -f "$candidate" ]]; then
+        rvf_path="$candidate"
+        break
+      fi
+    done
+  fi
+
+  if [[ -z "$rvf_path" || ! -f "$rvf_path" ]]; then
+    _CHECK_OUTPUT="ADR-0080-14: no RVF file found in E2E_DIR"
+    return
+  fi
+
+  local size
+  size=$(wc -c < "$rvf_path" 2>/dev/null | tr -d ' ')
+
+  if [[ "$size" -gt 1024 ]]; then
+    _CHECK_PASSED="true"
+    local short_path
+    short_path=$(echo "$rvf_path" | sed "s|${e2e}/||")
+    _CHECK_OUTPUT="ADR-0080-14: RVF file ${short_path} has ${size} bytes (>1KB)"
+  else
+    _CHECK_OUTPUT="ADR-0080-14: RVF file too small (${size} bytes, expected >1KB)"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-15: No .graph file created (enableGraph guard)
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_no_graph_file() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local e2e="${E2E_DIR}"
+  if [[ -z "$e2e" || ! -d "$e2e" ]]; then
+    _CHECK_OUTPUT="ADR-0080-15: E2E_DIR not set or missing"
+    return
+  fi
+
+  # Search for any .graph files in the init'd project
+  local graph_files
+  graph_files=$(find "$e2e" -maxdepth 3 -name '*.graph' -not -path '*/node_modules/*' 2>/dev/null || true)
+
+  if [[ -z "$graph_files" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-15: no .graph file created (enableGraph guard working)"
+  else
+    local count
+    count=$(echo "$graph_files" | wc -l | tr -d ' ')
+    local first
+    first=$(echo "$graph_files" | head -1 | sed "s|${e2e}/||")
+    _CHECK_OUTPUT="ADR-0080-15: ${count} unexpected .graph file(s) found: ${first}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-16: Embeddings default on (--with-embeddings default true)
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_embeddings_default_on() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-16: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find init command in CLI package
+  local init_file=""
+  init_file=$(find "${base}/cli" -path '*/node_modules' -prune -o \
+    -name 'init*' -name '*.js' -path '*/commands/*' -print 2>/dev/null | head -1)
+
+  if [[ -z "$init_file" ]]; then
+    # Broader: any file with 'with-embeddings' flag definition
+    init_file=$(find "${base}/cli" -path '*/node_modules' -prune -o \
+      -name '*.js' -print 2>/dev/null \
+      | xargs grep -l 'with-embeddings' 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$init_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-16: init command file not found in published CLI"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$init_file" | sed "s|${base}/||")
+
+  # Check for default: true near with-embeddings
+  if grep -A5 'with-embeddings' "$init_file" 2>/dev/null | grep -q 'default.*true\|true.*default'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-16: --with-embeddings defaults to true in ${short_path}"
+  else
+    _CHECK_OUTPUT="ADR-0080-16: --with-embeddings does not default to true in ${short_path}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-17: sonaMode is 'balanced' in init'd project config
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_sona_balanced() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local e2e="${E2E_DIR}"
+  if [[ -z "$e2e" || ! -d "$e2e" ]]; then
+    _CHECK_OUTPUT="ADR-0080-17: E2E_DIR not set or missing"
+    return
+  fi
+
+  # Check settings.json for sonaMode: balanced
+  local settings="${e2e}/.claude/settings.json"
+  if [[ ! -f "$settings" ]]; then
+    settings="${e2e}/.claude-flow/config.json"
+  fi
+
+  if [[ -f "$settings" ]]; then
+    if grep -q '"sonaMode".*"balanced"\|sonaMode.*balanced' "$settings" 2>/dev/null; then
+      _CHECK_PASSED="true"
+      local short_path
+      short_path=$(echo "$settings" | sed "s|${e2e}/||")
+      _CHECK_OUTPUT="ADR-0080-17: sonaMode is 'balanced' in ${short_path}"
+      return
+    fi
+  fi
+
+  # Fallback: check published config-template for sonaMode: balanced
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ -d "$base" ]]; then
+    local tpl_file
+    tpl_file=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'config-template*' -name '*.js' -print 2>/dev/null | head -1)
+    if [[ -n "$tpl_file" ]]; then
+      if grep -q 'balanced' "$tpl_file" 2>/dev/null; then
+        _CHECK_PASSED="true"
+        local short_path
+        short_path=$(echo "$tpl_file" | sed "s|${base}/||")
+        _CHECK_OUTPUT="ADR-0080-17: sonaMode 'balanced' found in published ${short_path}"
+        return
+      fi
+    fi
+  fi
+
+  _CHECK_OUTPUT="ADR-0080-17: sonaMode 'balanced' not found in settings or config-template"
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0080-18: Decay rate aligned across config-template + learning-bridge
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0080_decay_rate_aligned() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0080-18: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Check config-template for 0.0008
+  local tpl_has_rate="false"
+  local tpl_file
+  tpl_file=$(find "$base" -path '*/node_modules' -prune -o \
+    -name 'config-template*' -name '*.js' -print 2>/dev/null | head -1)
+  if [[ -n "$tpl_file" ]] && grep -q '0\.0008\|0.0008' "$tpl_file" 2>/dev/null; then
+    tpl_has_rate="true"
+  fi
+
+  # Check learning-bridge for 0.0008
+  local bridge_has_rate="false"
+  local bridge_file
+  bridge_file=$(find "$base" -path '*/node_modules' -prune -o \
+    -name 'learning-bridge*' -name '*.js' -print 2>/dev/null | head -1)
+  if [[ -n "$bridge_file" ]] && grep -q '0\.0008\|0.0008' "$bridge_file" 2>/dev/null; then
+    bridge_has_rate="true"
+  fi
+
+  # Check settings-generator for 0.0008
+  local settings_has_rate="false"
+  local settings_file
+  settings_file=$(find "$base" -path '*/node_modules' -prune -o \
+    -name 'settings-generator*' -name '*.js' -print 2>/dev/null | head -1)
+  if [[ -n "$settings_file" ]] && grep -q '0\.0008\|0.0008' "$settings_file" 2>/dev/null; then
+    settings_has_rate="true"
+  fi
+
+  local count=0
+  [[ "$tpl_has_rate" == "true" ]] && count=$((count + 1))
+  [[ "$bridge_has_rate" == "true" ]] && count=$((count + 1))
+  [[ "$settings_has_rate" == "true" ]] && count=$((count + 1))
+
+  if [[ "$count" -ge 2 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0080-18: confidenceDecayRate 0.0008 aligned in ${count}/3 sources"
+  else
+    local details=""
+    [[ "$tpl_has_rate" == "false" ]] && details="${details}config-template "
+    [[ "$bridge_has_rate" == "false" ]] && details="${details}learning-bridge "
+    [[ "$settings_has_rate" == "false" ]] && details="${details}settings-generator "
+    _CHECK_OUTPUT="ADR-0080-18: confidenceDecayRate 0.0008 missing from: ${details}"
+  fi
+}

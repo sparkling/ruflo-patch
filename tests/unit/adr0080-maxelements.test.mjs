@@ -595,3 +595,427 @@ describe('ADR-0080: no dead .claude/memory.db copy', () => {
     );
   });
 });
+
+// ============================================================================
+// 21. RVF shim exists and is wired into memory-bridge
+// ============================================================================
+
+const rvfShimSrc = readFileSync(
+  resolve(FORK_CLI_SRC, 'memory/rvf-shim.ts'),
+  'utf-8',
+);
+
+describe('ADR-0080 P5: RVF shim exists and is wired', () => {
+  it('rvf-shim.ts file exists and has content', () => {
+    assert.ok(rvfShimSrc.length > 100, 'rvf-shim.ts must exist with substantial content');
+  });
+
+  it('exports init function', () => {
+    assert.ok(
+      rvfShimSrc.includes('export async function init'),
+      'rvf-shim must export an init function',
+    );
+  });
+
+  it('exports isReady function', () => {
+    assert.ok(
+      rvfShimSrc.includes('export function isReady'),
+      'rvf-shim must export an isReady function',
+    );
+  });
+
+  it('exports store function', () => {
+    assert.ok(
+      rvfShimSrc.includes('export async function store'),
+      'rvf-shim must export a store function',
+    );
+  });
+
+  it('exports search function', () => {
+    assert.ok(
+      rvfShimSrc.includes('export async function search'),
+      'rvf-shim must export a search function',
+    );
+  });
+
+  it('exports shutdown function', () => {
+    assert.ok(
+      rvfShimSrc.includes('export async function shutdown'),
+      'rvf-shim must export a shutdown function',
+    );
+  });
+
+  it('resolves RVF path from embeddings.json', () => {
+    assert.ok(
+      rvfShimSrc.includes('embeddings.json') && rvfShimSrc.includes('databasePath'),
+      'rvf-shim must resolve RVF path from embeddings.json databasePath',
+    );
+  });
+
+  it('falls back to memory.rvf in swarm dir', () => {
+    assert.ok(
+      rvfShimSrc.includes("'memory.rvf'"),
+      'rvf-shim must fall back to memory.rvf',
+    );
+  });
+
+  it('is referenced by the ADR-0080 Phase 5 header comment', () => {
+    assert.ok(
+      rvfShimSrc.includes('ADR-0080'),
+      'rvf-shim must reference ADR-0080 in its header',
+    );
+  });
+});
+
+// ============================================================================
+// 22. Dual-write pattern: storeEntry writes to SQLite then RVF
+// ============================================================================
+
+describe('ADR-0080: dual-write pattern in memory-bridge storeEntry', () => {
+  // Re-read fresh to get the dual-write block
+  const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
+
+  it('has ADR-0080 dual-write comment', () => {
+    assert.ok(
+      bridgeSrc.includes('ADR-0080: dual-write'),
+      'memory-bridge must have ADR-0080 dual-write comment',
+    );
+  });
+
+  it('dual-write block calls getRvfStore()', () => {
+    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
+    assert.ok(dualIdx > -1, 'dual-write comment must exist');
+    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 500);
+    assert.ok(
+      afterDual.includes('getRvfStore()'),
+      'dual-write block must call getRvfStore()',
+    );
+  });
+
+  it('dual-write is best-effort (wrapped in try/catch)', () => {
+    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
+    // The try statement follows immediately after the comment line;
+    // the catch is ~534 chars later so we need a 600-char window
+    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 600);
+    assert.ok(
+      afterDual.includes('try') && afterDual.includes('catch'),
+      'dual-write block must be wrapped in try/catch for best-effort',
+    );
+  });
+
+  it('dual-write occurs AFTER SQLite commit (after ctx.db.save)', () => {
+    const saveIdx = bridgeSrc.indexOf('ctx.db.save');
+    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
+    assert.ok(saveIdx > -1, 'ctx.db.save must exist');
+    assert.ok(dualIdx > -1, 'dual-write comment must exist');
+    assert.ok(
+      dualIdx > saveIdx,
+      'dual-write must come AFTER ctx.db.save (SQLite is primary)',
+    );
+  });
+
+  it('dual-write stores embedding as Float32Array', () => {
+    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
+    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 500);
+    assert.ok(
+      afterDual.includes('Float32Array'),
+      'dual-write must convert embedding to Float32Array for RVF',
+    );
+  });
+});
+
+// ============================================================================
+// 23. Embedding pipeline warns on fallback (not silent)
+// ============================================================================
+
+const embPipelineSrc = readFileSync(
+  resolve(FORK_MEMORY_SRC, 'embedding-pipeline.ts'),
+  'utf-8',
+);
+
+describe('ADR-0080: embedding pipeline warns on fallback', () => {
+  it('logs warning when transformers.js fails', () => {
+    assert.ok(
+      embPipelineSrc.includes("console.warn(`[embedding-pipeline] transformers.js failed"),
+      'embedding-pipeline must warn when transformers.js fails',
+    );
+  });
+
+  it('logs warning when falling back to hash', () => {
+    assert.ok(
+      embPipelineSrc.includes('hash-fallback (search quality degraded)'),
+      'embedding-pipeline must warn about degraded search quality on hash fallback',
+    );
+  });
+
+  it('tries @xenova/transformers as first provider', () => {
+    const tryIdx = embPipelineSrc.indexOf("@xenova/transformers");
+    assert.ok(tryIdx > -1, 'embedding-pipeline must reference @xenova/transformers');
+    // Verify it comes before ruvector attempt
+    const ruvectorIdx = embPipelineSrc.indexOf("import('ruvector')", tryIdx);
+    assert.ok(
+      ruvectorIdx > tryIdx,
+      '@xenova/transformers must be tried before ruvector',
+    );
+  });
+
+  it('has three-tier fallback chain: transformers.js -> ruvector -> hash-fallback', () => {
+    assert.ok(
+      embPipelineSrc.includes("this.provider = 'transformers.js'"),
+      'must set provider to transformers.js on success',
+    );
+    assert.ok(
+      embPipelineSrc.includes("this.provider = 'ruvector'"),
+      'must set provider to ruvector on second-tier success',
+    );
+    assert.ok(
+      embPipelineSrc.includes("'hash-fallback'"),
+      'must have hash-fallback as final tier',
+    );
+  });
+});
+
+// ============================================================================
+// 24. Config alignment: settings-generator + learning-bridge + config-template
+// ============================================================================
+
+const learningBridgeSrc = readFileSync(
+  resolve(FORK_MEMORY_SRC, 'learning-bridge.ts'),
+  'utf-8',
+);
+
+describe('ADR-0080: config alignment across settings-generator, config-template, and learning-bridge', () => {
+  // sonaMode alignment
+  it('settings-generator sonaMode is balanced', () => {
+    assert.ok(
+      settingsGenSrc.includes("sonaMode: 'balanced'"),
+      "settings-generator must set sonaMode: 'balanced'",
+    );
+  });
+
+  it('config-template sonaMode is balanced', () => {
+    assert.ok(
+      configTemplateSrc.includes("sonaMode: 'balanced'"),
+      "config-template must set sonaMode: 'balanced'",
+    );
+  });
+
+  it('learning-bridge DEFAULT_CONFIG sonaMode is balanced', () => {
+    const defaultCfgStart = learningBridgeSrc.indexOf('DEFAULT_CONFIG');
+    assert.ok(defaultCfgStart > -1, 'learning-bridge must define DEFAULT_CONFIG');
+    const defaultBlock = learningBridgeSrc.slice(defaultCfgStart, defaultCfgStart + 300);
+    assert.ok(
+      defaultBlock.includes("sonaMode: 'balanced'"),
+      "learning-bridge DEFAULT_CONFIG must set sonaMode: 'balanced'",
+    );
+  });
+
+  // confidenceDecayRate alignment
+  it('settings-generator confidenceDecayRate is 0.0008', () => {
+    assert.ok(
+      settingsGenSrc.includes('confidenceDecayRate: 0.0008'),
+      'settings-generator must set confidenceDecayRate: 0.0008',
+    );
+  });
+
+  it('config-template confidenceDecayRate is 0.0008', () => {
+    assert.ok(
+      configTemplateSrc.includes('confidenceDecayRate: 0.0008'),
+      'config-template must set confidenceDecayRate: 0.0008',
+    );
+  });
+
+  it('learning-bridge DEFAULT_CONFIG confidenceDecayRate is 0.0008', () => {
+    const defaultCfgStart = learningBridgeSrc.indexOf('DEFAULT_CONFIG');
+    const defaultBlock = learningBridgeSrc.slice(defaultCfgStart, defaultCfgStart + 300);
+    assert.ok(
+      defaultBlock.includes('confidenceDecayRate: 0.0008'),
+      'learning-bridge DEFAULT_CONFIG must set confidenceDecayRate: 0.0008',
+    );
+  });
+
+  // accessBoostAmount alignment
+  it('settings-generator accessBoostAmount is 0.05', () => {
+    assert.ok(
+      settingsGenSrc.includes('accessBoostAmount: 0.05'),
+      'settings-generator must set accessBoostAmount: 0.05',
+    );
+  });
+
+  it('config-template accessBoostAmount is 0.05', () => {
+    assert.ok(
+      configTemplateSrc.includes('accessBoostAmount: 0.05'),
+      'config-template must set accessBoostAmount: 0.05',
+    );
+  });
+
+  it('learning-bridge DEFAULT_CONFIG accessBoostAmount is 0.05', () => {
+    const defaultCfgStart = learningBridgeSrc.indexOf('DEFAULT_CONFIG');
+    const defaultBlock = learningBridgeSrc.slice(defaultCfgStart, defaultCfgStart + 300);
+    assert.ok(
+      defaultBlock.includes('accessBoostAmount: 0.05'),
+      'learning-bridge DEFAULT_CONFIG must set accessBoostAmount: 0.05',
+    );
+  });
+});
+
+// ============================================================================
+// 25. enableGraph guard: AgentDB only creates .graph file when enableGraph=true
+// ============================================================================
+
+const agentDbSrc = readFileSync(
+  resolve('/Users/henrik/source/forks/agentic-flow/packages/agentdb/src', 'core/AgentDB.ts'),
+  'utf-8',
+);
+const ctrlRegistrySrc = readFileSync(
+  resolve(FORK_MEMORY_SRC, 'controller-registry.ts'),
+  'utf-8',
+);
+
+describe('ADR-0080: enableGraph guard prevents unwanted .graph file', () => {
+  it('AgentDB config interface defines enableGraph as optional boolean', () => {
+    assert.ok(
+      agentDbSrc.includes('enableGraph?: boolean'),
+      'AgentDB config must define enableGraph?: boolean',
+    );
+  });
+
+  it('AgentDB gates graph adapter creation on enableGraph', () => {
+    assert.ok(
+      agentDbSrc.includes('if (this.config.enableGraph)'),
+      'AgentDB must guard graph adapter creation with if (this.config.enableGraph)',
+    );
+  });
+
+  it('AgentDB only imports GraphDatabaseAdapter inside the guard', () => {
+    const guardIdx = agentDbSrc.indexOf('if (this.config.enableGraph)');
+    assert.ok(guardIdx > -1, 'enableGraph guard must exist');
+    const guardBlock = agentDbSrc.slice(guardIdx, guardIdx + 500);
+    assert.ok(
+      guardBlock.includes('GraphDatabaseAdapter'),
+      'GraphDatabaseAdapter import must be inside the enableGraph guard',
+    );
+  });
+
+  it('controller-registry passes enableGraph from config.controllers.graphAdapter', () => {
+    assert.ok(
+      ctrlRegistrySrc.includes("enableGraph: config.controllers?.graphAdapter === true"),
+      'controller-registry must pass enableGraph: config.controllers?.graphAdapter === true',
+    );
+  });
+});
+
+// ============================================================================
+// 26. @xenova/transformers in optionalDependencies of @claude-flow/memory
+// ============================================================================
+
+const memoryPkgJson = readFileSync(
+  resolve('/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory', 'package.json'),
+  'utf-8',
+);
+
+describe('ADR-0080: @xenova/transformers in optionalDependencies', () => {
+  it('@xenova/transformers is in optionalDependencies', () => {
+    const pkg = JSON.parse(memoryPkgJson);
+    assert.ok(
+      pkg.optionalDependencies && pkg.optionalDependencies['@xenova/transformers'],
+      '@xenova/transformers must be in optionalDependencies of @claude-flow/memory',
+    );
+  });
+
+  it('@xenova/transformers version is ^2.17.0 or higher', () => {
+    const pkg = JSON.parse(memoryPkgJson);
+    const version = pkg.optionalDependencies['@xenova/transformers'];
+    assert.ok(
+      version.includes('2.17') || version.includes('2.18') || version.includes('2.19') || version.includes('3.'),
+      `@xenova/transformers version must be >=2.17.0, got: ${version}`,
+    );
+  });
+
+  it('@xenova/transformers is NOT in regular dependencies', () => {
+    const pkg = JSON.parse(memoryPkgJson);
+    assert.ok(
+      !pkg.dependencies || !pkg.dependencies['@xenova/transformers'],
+      '@xenova/transformers must NOT be in regular dependencies (it is optional)',
+    );
+  });
+});
+
+// ============================================================================
+// 27. --with-embeddings defaults to true in init command
+// ============================================================================
+
+describe('ADR-0080: --with-embeddings default is true', () => {
+  it('main init subcommand defines with-embeddings flag defaulting true', () => {
+    // Look for the flag definition in init.ts
+    const flagBlock = initCmdSrc.slice(
+      initCmdSrc.indexOf("name: 'with-embeddings'"),
+      initCmdSrc.indexOf("name: 'with-embeddings'") + 200,
+    );
+    assert.ok(
+      flagBlock.includes('default: true'),
+      '--with-embeddings flag must default to true in main init subcommand',
+    );
+  });
+
+  it('wizard subcommand also defines with-embeddings flag defaulting true', () => {
+    // There are TWO with-embeddings flag definitions — main init and wizard
+    const firstIdx = initCmdSrc.indexOf("name: 'with-embeddings'");
+    const secondIdx = initCmdSrc.indexOf("name: 'with-embeddings'", firstIdx + 1);
+    assert.ok(secondIdx > firstIdx, 'wizard must also define with-embeddings flag');
+    const secondFlagBlock = initCmdSrc.slice(secondIdx, secondIdx + 200);
+    assert.ok(
+      secondFlagBlock.includes('default: true'),
+      '--with-embeddings flag must default to true in wizard subcommand',
+    );
+  });
+
+  it('ADR-0080 comment explains why embeddings default to on', () => {
+    const flagBlock = initCmdSrc.slice(
+      initCmdSrc.lastIndexOf("name: 'with-embeddings'"),
+    );
+    const nearbyBlock = flagBlock.slice(0, 300);
+    assert.ok(
+      nearbyBlock.includes('ADR-0080'),
+      'with-embeddings flag must reference ADR-0080 explaining why default is true',
+    );
+  });
+});
+
+// ============================================================================
+// 28. No --no-download in main init (only wizard uses it)
+// ============================================================================
+
+describe('ADR-0080: no --no-download in main init embeddings path', () => {
+  it('main init embeddings exec does NOT use --no-download', () => {
+    // Find the main init's embeddings init block (not the wizard's)
+    // The main init is in the first subcommand, wizard is later
+    const mainInitStart = initCmdSrc.indexOf("Handle --with-embeddings");
+    assert.ok(mainInitStart > -1, 'main init must have a --with-embeddings handler');
+    const mainBlock = initCmdSrc.slice(mainInitStart, mainInitStart + 500);
+    assert.ok(
+      !mainBlock.includes('--no-download'),
+      'main init embeddings path must NOT use --no-download (downloads the model)',
+    );
+  });
+
+  it('main init allows 120s timeout for model download', () => {
+    const mainInitStart = initCmdSrc.indexOf("Handle --with-embeddings");
+    const mainBlock = initCmdSrc.slice(mainInitStart, mainInitStart + 1200);
+    assert.ok(
+      mainBlock.includes('120000'),
+      'main init must allow 120s (120000ms) timeout for model download',
+    );
+  });
+
+  it('wizard init DOES use --no-download (metadata-only)', () => {
+    // The wizard subcommand uses --no-download because it only configures, doesn't download
+    const wizardEmbStart = initCmdSrc.indexOf('wizard');
+    assert.ok(wizardEmbStart > -1, 'wizard subcommand must exist');
+    const wizardSection = initCmdSrc.slice(wizardEmbStart);
+    assert.ok(
+      wizardSection.includes('--no-download'),
+      'wizard init must use --no-download for metadata-only configuration',
+    );
+  });
+});
