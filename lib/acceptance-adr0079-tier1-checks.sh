@@ -20,6 +20,11 @@ check_t1_1_semantic_ranking() {
 
   # Step 1: Store 3 entries — 45s timeout for cold model load on first store
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'cooking-pasta' --value 'How to cook perfect al dente pasta with olive oil' --namespace '$ns'" "" 45
+  local store1="$_RK_OUT"
+  if ! echo "$store1" | grep -qi 'stored\|success'; then
+    _CHECK_OUTPUT="T1-1: first store failed: ${store1:0:200}"
+    return
+  fi
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'quantum-physics' --value 'Quantum entanglement and superposition experiments' --namespace '$ns'" "" 45
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'dog-training' --value 'Teaching your puppy to sit using positive reinforcement' --namespace '$ns'" "" 45
 
@@ -31,9 +36,9 @@ check_t1_1_semantic_ranking() {
     _CHECK_OUTPUT="T1-1: search returned cooking-related entries"
   elif echo "$_RK_OUT" | grep -qiE '(results|entries|score|key)'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T1-1: PASS (search operational, hash embeddings)"
+    _CHECK_OUTPUT="T1-1: PASS (search operational)"
   else
-    _CHECK_OUTPUT="T1-1: no cooking entries: ${_RK_OUT:0:200}"
+    _CHECK_OUTPUT="T1-1: search returned no results: ${_RK_OUT:0:200}"
   fi
 }
 
