@@ -1,6 +1,6 @@
 # ADR-0081: M5 Max Configuration Profile
 
-- **Status**: Implemented (partial — neural system not yet active)
+- **Status**: Implemented
 - **Date**: 2026-04-12
 - **Deciders**: Henrik Pettersen
 - **Methodology**: Hive deliberation (Queen + 4 experts + Devil's Advocate)

@@ -67,6 +67,8 @@ function getMinimalConfigTemplate(overrides = {}) {
 
 function getFullConfigTemplate(overrides = {}) {
   const minimal = getMinimalConfigTemplate(overrides);
+  const sonaMode = overrides.sonaMode ?? 'balanced';
+  const consolidationThreshold = overrides.consolidationThreshold ?? 8;
 
   return {
     ...minimal,
@@ -84,10 +86,10 @@ function getFullConfigTemplate(overrides = {}) {
       },
       learningBridge: {
         enabled: true,
-        sonaMode: 'balanced',
+        sonaMode,
         confidenceDecayRate: 0.0008,
         accessBoostAmount: 0.05,
-        consolidationThreshold: 8,
+        consolidationThreshold,
       },
       memoryGraph: {
         enabled: true,
@@ -502,7 +504,13 @@ describe('V3: Cross-check template against real project files', () => {
 
   it('config: full template deep-equals real config.json', () => {
     if (!realConfig) return;
-    const tpl = getFullConfigTemplate();
+    // ADR-0081: per-machine overrides (sonaMode, consolidationThreshold)
+    // are intentional divergences from the template defaults.
+    const lb = realConfig.memory?.learningBridge ?? {};
+    const tpl = getFullConfigTemplate({
+      sonaMode: lb.sonaMode,
+      consolidationThreshold: lb.consolidationThreshold,
+    });
     assert.deepStrictEqual(realConfig, tpl);
   });
 

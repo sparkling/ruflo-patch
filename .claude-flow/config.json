@@ -27,10 +27,10 @@
         },
         "learningBridge": {
             "enabled": true,
-            "sonaMode": "balanced",
+            "sonaMode": "research",
             "confidenceDecayRate": 0.0008,
             "accessBoostAmount": 0.05,
-            "consolidationThreshold": 8
+            "consolidationThreshold": 6
         },
         "memoryGraph": {
             "enabled": true,
