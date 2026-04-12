@@ -114,19 +114,28 @@ Per-subsystem caps (SONA=1,000 patterns, QueryCache=1,000 entries, agent-memory-
 transfer=20) are fine as-is — they are tuned to their specific access patterns, use LRU
 eviction, and do not interact with `maxElements`.
 
-### Phase 5: Do NOT implement as designed
+### Phase 5: RVF-Primary Shim (revised approach)
 
-The memory-router (`routeMemoryOp()`) **added a layer** to the data flow path instead of
-reducing layers. Before Phase 5, `memory-tools.ts` imported from `memory-initializer.ts`
-directly (3 layers). After Phase 5 partial wiring, the path is: MCP tool -> router ->
-initializer -> bridge/fallback -> controller -> backend (4 mandatory + 2 conditional
-layers).
+The original Phase 5 design (memory-router rewiring 18 MCP tool import sites) was
+abandoned due to merge conflict risk. The revised approach uses a **shim pattern**:
 
-Rewiring the remaining 18 MCP tool import sites is high-risk (upstream file modifications
-= merge conflicts) for low reward (Phase 4 already fixed the cache-divergence bug).
+**New file**: `cli/src/memory/rvf-shim.ts` (we own it, upstream doesn't, zero conflicts)
 
-**Action:** Abandon Phase 5 as designed. The memory-router file may remain for the 3
-already-wired tool files, but no further import-site migrations.
+**3-line guards** in `memory-initializer.ts`:
+- `storeEntry()`: tries RVF shim first, then dual-writes to SQLite via bridge
+- `searchEntries()`: tries RVF HNSW first, falls through to bridge/SQLite
+
+**Architecture**:
+- `store` → RVF primary (HNSW index) + SQLite secondary (structured queries)
+- `search` → RVF HNSW first, SQLite brute-force fallback
+- `list/stats/count/delete` → SQLite only (needs relational queries)
+
+**Why SQLite can't be removed**: `memory list` needs `WHERE status = 'active'
+ORDER BY updated_at LIMIT N OFFSET M`. RVF is a vector index, not a relational
+database. Both engines are needed — RVF for similarity, SQLite for structure.
+
+**Merge risk**: 1 new file (zero conflict) + 2 guard insertions in the high-churn
+file (3 lines each, additive, wrapped in try/catch).
 
 ### What NOT to do
 
