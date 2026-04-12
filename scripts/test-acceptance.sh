@@ -652,6 +652,11 @@ run_check_bg "adr0080-emb-dflt"  "Embeddings default on (ADR-0080)"     check_ad
 run_check_bg "adr0080-sona"      "sonaMode balanced (ADR-0080)"         check_adr0080_sona_balanced            "adr0080"
 run_check_bg "adr0080-decay"     "Decay rate aligned (ADR-0080)"        check_adr0080_decay_rate_aligned       "adr0080"
 
+# ADR-0081: M5 Max Configuration Profile
+run_check_bg "adr0081-neural"   "Neural optional dep (ADR-0081)"       check_adr0081_neural_optional_dep      "adr0081"
+run_check_bg "adr0081-learning" "Unified learning config (ADR-0081)"   check_adr0081_unified_learning_config  "adr0081"
+run_check_bg "adr0081-balanced" "Config template balanced (ADR-0081)"  check_adr0081_config_template_balanced "adr0081"
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1017,6 +1022,9 @@ collect_parallel "all" \
   "adr0080-emb-dflt|Embeddings default on (ADR-0080)" \
   "adr0080-sona|sonaMode balanced (ADR-0080)" \
   "adr0080-decay|Decay rate aligned (ADR-0080)" \
+  "adr0081-neural|Neural optional dep (ADR-0081)" \
+  "adr0081-learning|Unified learning config (ADR-0081)" \
+  "adr0081-balanced|Config template balanced (ADR-0081)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

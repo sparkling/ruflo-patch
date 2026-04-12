@@ -1277,3 +1277,123 @@ describe('ADR-0080: no --no-download in main init embeddings path', () => {
     );
   });
 });
+
+// ============================================================================
+// ADR-0081 A: @claude-flow/neural in optionalDependencies
+// ============================================================================
+
+const memoryPkgJsonParsed = JSON.parse(memoryPkgJson);
+
+describe('ADR-0081: @claude-flow/neural in optionalDependencies', () => {
+  it('@claude-flow/neural is a truthy string in optionalDependencies', () => {
+    const neuralVer = memoryPkgJsonParsed.optionalDependencies &&
+      memoryPkgJsonParsed.optionalDependencies['@claude-flow/neural'];
+    assert.ok(
+      typeof neuralVer === 'string' && neuralVer.length > 0,
+      `@claude-flow/neural must be a truthy string in optionalDependencies, got: ${neuralVer}`,
+    );
+  });
+
+  it('@claude-flow/neural is NOT in regular dependencies', () => {
+    const inDeps = memoryPkgJsonParsed.dependencies &&
+      memoryPkgJsonParsed.dependencies['@claude-flow/neural'];
+    assert.ok(
+      !inDeps,
+      '@claude-flow/neural must NOT be in regular dependencies (it is optional)',
+    );
+  });
+});
+
+// ============================================================================
+// ADR-0081 B: resolve-config learning defaults are canonical
+// ============================================================================
+
+describe('ADR-0081: resolve-config learning defaults are canonical', () => {
+  it("DEFAULT_SONA_MODE = 'balanced'", () => {
+    assert.ok(
+      resolveConfigSrc.includes("DEFAULT_SONA_MODE = 'balanced'"),
+      "resolve-config must define DEFAULT_SONA_MODE = 'balanced'",
+    );
+  });
+
+  it('DEFAULT_CONFIDENCE_DECAY_RATE = 0.0008', () => {
+    assert.ok(
+      resolveConfigSrc.includes('DEFAULT_CONFIDENCE_DECAY_RATE = 0.0008'),
+      'resolve-config must define DEFAULT_CONFIDENCE_DECAY_RATE = 0.0008',
+    );
+  });
+
+  it('DEFAULT_CONSOLIDATION_THRESHOLD exists', () => {
+    assert.ok(
+      /DEFAULT_CONSOLIDATION_THRESHOLD\s*=\s*\d+/.test(resolveConfigSrc),
+      'resolve-config must define DEFAULT_CONSOLIDATION_THRESHOLD with a numeric value',
+    );
+  });
+});
+
+// ============================================================================
+// ADR-0081 C: this machine's config uses research mode
+// ============================================================================
+
+const machineConfigJson = JSON.parse(
+  readFileSync('/Users/henrik/source/ruflo-patch/.claude-flow/config.json', 'utf-8'),
+);
+
+describe('ADR-0081: this machine config uses research mode', () => {
+  it('memory.learningBridge.sonaMode is research', () => {
+    assert.equal(
+      machineConfigJson.memory?.learningBridge?.sonaMode,
+      'research',
+      "machine config sonaMode must be 'research'",
+    );
+  });
+
+  it('memory.learningBridge.consolidationThreshold is 6', () => {
+    assert.equal(
+      machineConfigJson.memory?.learningBridge?.consolidationThreshold,
+      6,
+      'machine config consolidationThreshold must be 6',
+    );
+  });
+
+  it('published default (config-template) is still balanced, not research', () => {
+    assert.ok(
+      configTemplateSrc.includes("sonaMode:") && configTemplateSrc.includes("'balanced'"),
+      "config-template sonaMode default must remain 'balanced' (not 'research')",
+    );
+    // Ensure config-template does not hardcode 'research' as the default
+    const sonaLine = configTemplateSrc.split('\n').find(l =>
+      l.includes('sonaMode:') && !l.trimStart().startsWith('//'),
+    );
+    assert.ok(
+      sonaLine && !sonaLine.includes("'research'"),
+      "config-template sonaMode default must not be 'research'",
+    );
+  });
+});
+
+// ============================================================================
+// ADR-0081 D: unified config chain has learning section
+// ============================================================================
+
+describe('ADR-0081: unified config chain has learning section', () => {
+  it('ResolvedConfig has readonly learning: with sonaMode', () => {
+    const learningIdx = resolveConfigSrc.indexOf('readonly learning:');
+    assert.ok(learningIdx > -1, 'ResolvedConfig must have readonly learning: block');
+    const learningBlock = resolveConfigSrc.slice(learningIdx, learningIdx + 300);
+    assert.ok(
+      learningBlock.includes('sonaMode'),
+      'learning block in ResolvedConfig must include sonaMode',
+    );
+  });
+
+  it('ResolvedConfig has readonly graph: with pageRankDamping', () => {
+    const graphIdx = resolveConfigSrc.indexOf('readonly graph:');
+    assert.ok(graphIdx > -1, 'ResolvedConfig must have readonly graph: block');
+    const graphBlock = resolveConfigSrc.slice(graphIdx, graphIdx + 300);
+    assert.ok(
+      graphBlock.includes('pageRankDamping'),
+      'graph block in ResolvedConfig must include pageRankDamping',
+    );
+  });
+});

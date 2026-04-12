@@ -932,3 +932,148 @@ check_adr0080_decay_rate_aligned() {
     _CHECK_OUTPUT="ADR-0080-18: confidenceDecayRate 0.0008 missing from: ${details}"
   fi
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0081-1: @claude-flow/neural (=> @sparkleideas/neural) in optionalDependencies
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0081_neural_optional_dep() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0081-1: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  local mem_pkg="${base}/memory/package.json"
+  if [[ ! -f "$mem_pkg" ]]; then
+    _CHECK_OUTPUT="ADR-0081-1: @sparkleideas/memory/package.json not found"
+    return
+  fi
+
+  # Check that optionalDependencies contains @sparkleideas/neural
+  if grep -q '"optionalDependencies"' "$mem_pkg" 2>/dev/null; then
+    # Extract the optionalDependencies block and check for neural
+    local opt_block
+    opt_block=$(sed -n '/"optionalDependencies"/,/}/p' "$mem_pkg" 2>/dev/null)
+    if echo "$opt_block" | grep -q '@sparkleideas/neural' 2>/dev/null; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0081-1: @sparkleideas/neural found in optionalDependencies of memory/package.json"
+    else
+      _CHECK_OUTPUT="ADR-0081-1: @sparkleideas/neural NOT in optionalDependencies of memory/package.json"
+    fi
+  else
+    _CHECK_OUTPUT="ADR-0081-1: no optionalDependencies block in memory/package.json"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0081-2: Unified learning config in resolve-config
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0081_unified_learning_config() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0081-2: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find resolve-config in published packages
+  local rc_file=""
+  for pkg in memory cli agentdb; do
+    local candidate
+    candidate=$(find "${base}/${pkg}" -path '*/node_modules' -prune -o \
+      -name 'resolve-config*' -name '*.js' -print 2>/dev/null | head -1)
+    if [[ -n "$candidate" ]]; then
+      rc_file="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$rc_file" ]]; then
+    _CHECK_OUTPUT="ADR-0081-2: resolve-config*.js not found in published packages"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$rc_file" | sed "s|${base}/||")
+
+  local has_sona="false"
+  local has_decay="false"
+  if grep -q 'sonaMode' "$rc_file" 2>/dev/null; then
+    has_sona="true"
+  fi
+  if grep -q 'confidenceDecayRate' "$rc_file" 2>/dev/null; then
+    has_decay="true"
+  fi
+
+  if [[ "$has_sona" == "true" && "$has_decay" == "true" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0081-2: learning section with sonaMode + confidenceDecayRate in ${short_path}"
+  else
+    local missing=""
+    [[ "$has_sona" == "false" ]] && missing="${missing}sonaMode "
+    [[ "$has_decay" == "false" ]] && missing="${missing}confidenceDecayRate "
+    _CHECK_OUTPUT="ADR-0081-2: missing ${missing}in ${short_path}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0081-3: config-template default sonaMode is balanced (not research)
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0081_config_template_balanced() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0081-3: @sparkleideas not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find config-template in published packages
+  local tpl_file=""
+  for pkg in cli memory agentdb; do
+    local candidate
+    candidate=$(find "${base}/${pkg}" -path '*/node_modules' -prune -o \
+      -name 'config-template*' -name '*.js' -print 2>/dev/null | head -1)
+    if [[ -n "$candidate" ]]; then
+      tpl_file="$candidate"
+      break
+    fi
+  done
+
+  if [[ -z "$tpl_file" ]]; then
+    # Broader search
+    tpl_file=$(find "$base" -path '*/node_modules' -prune -o \
+      -name 'config-template*' -name '*.js' -print 2>/dev/null | head -1)
+  fi
+
+  if [[ -z "$tpl_file" ]]; then
+    _CHECK_OUTPUT="ADR-0081-3: config-template*.js not found in published packages"
+    return
+  fi
+
+  local short_path
+  short_path=$(echo "$tpl_file" | sed "s|${base}/||")
+
+  # Check for sonaMode near balanced
+  if grep -q 'sonaMode' "$tpl_file" 2>/dev/null && \
+     grep -q 'balanced' "$tpl_file" 2>/dev/null; then
+    # Also verify it does not hardcode 'research' as the default
+    if grep -qE "sonaMode.*'research'" "$tpl_file" 2>/dev/null; then
+      _CHECK_OUTPUT="ADR-0081-3: config-template sonaMode is 'research' (should be 'balanced') in ${short_path}"
+    else
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="ADR-0081-3: config-template sonaMode default is 'balanced' in ${short_path}"
+    fi
+  else
+    _CHECK_OUTPUT="ADR-0081-3: sonaMode or 'balanced' not found in ${short_path}"
+  fi
+}

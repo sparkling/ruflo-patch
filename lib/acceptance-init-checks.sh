@@ -208,7 +208,7 @@ check_init_config_values() {
     # maxNodes should be set
     [[ "${nodes:-0}" -gt 0 ]] || issues="${issues}maxNodes=0 "
     # sonaMode should be a known value
-    [[ "$sona" == "balanced" || "$sona" == "instant" || "$sona" == "real-time" ]] || issues="${issues}sonaMode='${sona}' "
+    [[ "$sona" == "balanced" || "$sona" == "real-time" || "$sona" == "research" || "$sona" == "edge" || "$sona" == "batch" ]] || issues="${issues}sonaMode='${sona}' "
     # HNSW should be enabled (explicit flag or backend=hybrid)
     [[ "$hnsw" == "true" ]] || issues="${issues}enableHNSW=false "
     # learningBridge should be enabled

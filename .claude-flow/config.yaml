@@ -17,9 +17,9 @@ memory:
   # ADR-049: Self-Learning Memory
   learningBridge:
     enabled: true
-    sonaMode: instant                  # OPT-004: was balanced (32 idle threads)
-    confidenceDecayRate: 0.005
-    accessBoostAmount: 0.06            # was 0.03 (faster reinforcement)
+    sonaMode: research                  # ADR-0081: M5 Max profile (was 'instant' — invalid)
+    confidenceDecayRate: 0.0008        # ADR-0080: ~26 day half-life (was 0.005 — too aggressive)
+    accessBoostAmount: 0.05            # ADR-0080: aligned with config-template (was 0.06)
     consolidationThreshold: 5          # was 10 (CPU handles it in <1ms)
   memoryGraph:
     enabled: true
