@@ -1,0 +1,16 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-04-03T21:22:06.856Z",
+  "plugins": {
+    "@sparkleideas/plugin-prime-radiant": {
+      "name": "@sparkleideas/plugin-prime-radiant",
+      "version": "0.1.5-patch.8",
+      "installedAt": "2026-04-03T21:22:06.856Z",
+      "enabled": true,
+      "source": "npm",
+      "path": "/Users/henrik/source/ruflo-patch/.claude-flow/plugins/node_modules/@sparkleideas/plugin-prime-radiant",
+      "commands": [],
+      "hooks": []
+    }
+  }
+}

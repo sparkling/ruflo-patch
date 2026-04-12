@@ -23,7 +23,10 @@ CLAUDE.local.md
 
 # Node
 node_modules/
-package-lock.json
+/package-lock.json
+
+# Swarm runtime databases
+.swarm/
 
 # npm packaging artifacts
 npm/dist/

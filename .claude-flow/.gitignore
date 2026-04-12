@@ -1,5 +1,5 @@
 # Claude Flow runtime files
-data/
+data/graph-state.json
 logs/
 sessions/
 neural/
