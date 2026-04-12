@@ -179,10 +179,56 @@ Add missing methods to `memory-router.ts` so all callers can use the router:
 - All user-facing output says "SQLite" not "sql.js"
 - No shadow/duplicate function paths (agentdb-orchestration consolidated)
 
+## Relationship to ADR-0075 Ideal End State
+
+ADR-0075 defined 5 unified layers as the ideal architecture. This ADR addresses
+**Layer 2 (Single Controller Registry)** and completes **Layer 5 (Single Data Flow)**:
+
+| ADR-0075 Layer | Status before ADR-0084 | ADR-0084 contribution | Remaining gap |
+|----------------|----------------------|----------------------|---------------|
+| **L1: Single Storage** | SQLite primary, RVF sidecar | Not addressed | Replace SQLite with RVF+HNSW as sole backend (future ADR-0085, ~2600 lines in memory-initializer) |
+| **L2: Single Controller Registry** | Router exists but 45+ callers bypass it via memory-bridge | **Phases 2-4 close this** — migrate all callers, remove bridge | None after Phase 4 |
+| **L3: Single Embedding Pipeline** | Done (ADR-0076 Phase 2) | Not needed | None |
+| **L4: Single Config Resolution** | Done (ADR-0076 Phase 1) | Not needed | None |
+| **L5: Single Data Flow** | Mostly done (ADR-0083), but bridge fallbacks remain | **Phase 4 finishes this** — remove 5 router→bridge fallback paths | None after Phase 4 |
+
+### What ADR-0084 does NOT do
+
+- **Layer 1 (Storage)**: SQLite remains the primary store. ADR-0075's ideal state says
+  `NativeStorage (RVF + HNSW)` as sole backend — that requires rewriting the 2600-line
+  `memory-initializer.ts` storage layer. Separate ADR scope.
+- **JSON sidecar elimination**: The CJS constraint (intelligence.cjs cannot import
+  TypeScript/ESM/native addons) means the JSON sidecar persists. ADR-0075's ideal
+  implicitly assumes intelligence.cjs doesn't exist or is ESM — we're not there.
+- **AgentDBService deletion**: ADR-0075 says "AgentDB becomes a library, not a
+  self-contained app." That's upstream structural work beyond fork patching scope.
+
+### Architecture after ADR-0084 completion
+
+```
+ALL callers ──→ memory-router.ts ──→ getController() ──→ controller-intercept (sole registry)
+                    │
+                    ├── routeMemoryOp()       → storeEntry() → SQLite
+                    ├── routeEmbeddingOp()    → EmbeddingPipeline → HNSW
+                    ├── routePatternOp()      → pattern controllers
+                    ├── routeFeedbackOp()     → learning controllers
+                    ├── routeSessionOp()      → session lifecycle
+                    └── writeJsonSidecar()    → auto-memory-store.json (CJS contract)
+
+memory-bridge.ts: DELETED (or inlined as private router detail)
+hooks-tools.ts:   migrated to router (20+ sites)
+worker-daemon.ts: migrated to router (6 sites)
+```
+
+Two of five ADR-0075 layers fully resolved. Three layers already done from prior ADRs.
+Remaining gap to ideal: Layer 1 (SQLite → RVF primary storage).
+
 ## Consequences
 
 - Users see accurate backend information ("SQLite + HNSW" not "sql.js + HNSW")
 - 50 lines of dead `.save()` code removed
 - Clearer codebase — no false signals about sql.js being in use
-- Phase 2 migration path documented for hooks-tools.ts (Wave 3)
+- Phase 2-4 migration collapses dual controller path into single router
+- After completion: Layers 2-5 of ADR-0075 ideal state fully achieved
+- Remaining architectural gap: Layer 1 (storage backend consolidation)
 - No runtime behavioral changes in Phase 1
