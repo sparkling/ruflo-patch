@@ -270,7 +270,7 @@ check_p5_runtime_memory_search() {
   fi
   local out
   out=$(cd "$P5_DIR" && timeout 15 "$CLI_BIN" memory search --query "acceptance" --namespace p5 2>&1) || true
-  if echo "$out" | grep -qi "result\|found\|p5-test\|acceptance"; then
+  if echo "$out" | grep -qi "p5-test\|acceptance-test"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="P5: memory search returned results"
   else

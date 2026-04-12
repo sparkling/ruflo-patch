@@ -52,9 +52,9 @@ check_hooks_route() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Hooks route: returned routing decision"
   elif echo "$_RK_OUT" | grep -qi 'error' && ! echo "$_RK_OUT" | grep -qi 'MODULE_NOT_FOUND\|Cannot find'; then
-    # Graceful error (cold-start) is acceptable
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Hooks route: cold-start error (expected on first run)"
+    # Graceful error (cold-start) — NOT acceptable, must route
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Hooks route: graceful error (cold-start) — must return routing decision"
   else
     _CHECK_OUTPUT="Hooks route: failed — $_RK_OUT"
   fi
@@ -93,9 +93,9 @@ check_memory_scoping() {
   elif echo "$store_out" | grep -qi 'unknown\|unrecognized.*scope'; then
     _CHECK_OUTPUT="Memory scoping: --scope flag not recognized by CLI"
   else
-    # Scope params may not be CLI flags yet -- check if store worked without scope
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Memory scoping: store accepted (scope may be MCP-only param)"
+    # Scope params may not be CLI flags yet -- store without scope is not scoping
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Memory scoping: store accepted (scope may be MCP-only param) — scoping not verified"
   fi
 }
 
@@ -125,8 +125,8 @@ check_reflexion_lifecycle() {
       _CHECK_OUTPUT="Reflexion lifecycle: store succeeded, retrieve returned (cold-start expected)"
     fi
   elif echo "$store_out" | grep -qi 'not available\|not found'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Reflexion lifecycle: MCP tool registered but controller not initialized (cold-start)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Reflexion lifecycle: controller not initialized (cold-start) — must store reflexion"
   else
     _CHECK_OUTPUT="Reflexion lifecycle: store failed — $store_out"
   fi
@@ -190,8 +190,8 @@ check_cow_branching() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="COW branching: branch creation works"
   elif echo "$create_out" | grep -qi 'not supported\|not available'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="COW branching: tool registered but backend does not support derive (expected)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="COW branching: not supported / not available — must create branch"
   else
     _CHECK_OUTPUT="COW branching: creation failed — $create_out"
   fi
@@ -223,8 +223,8 @@ check_batch_operations() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Batch operations: stats/optimize accepted"
   elif echo "$stats_out$opt_out" | grep -qi 'not available'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Batch operations: tool registered but controller not initialized"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Batch operations: tool registered but controller not initialized — must respond"
   else
     _CHECK_OUTPUT="Batch operations: both stats and optimize failed"
   fi
@@ -261,8 +261,8 @@ check_context_synthesis() {
       _CHECK_OUTPUT="Context synthesis: --synthesize accepted, results returned"
     fi
   elif echo "$synth_out" | grep -qi 'success.*true' && ! echo "$synth_out" | grep -qi 'error'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Context synthesis: accepted (empty results on cold-start)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Context synthesis: synthesis absent (empty results on cold-start) — must return results"
   elif echo "$synth_out" | grep -qi 'unknown.*synthesize\|unrecognized'; then
     # --synthesize not a CLI flag -- may be MCP-only
     if echo "$plain_out" | grep -qi 'synth-accept\|authentication'; then
@@ -314,8 +314,8 @@ check_self_learning_health() {
     # These are upstream classes not yet in agentdb's public export — their absence
     # is expected. Verify the registry module ships and the health tool itself works.
     if echo "$health_out" | grep -qi '"name"\|controller\|health'; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Self-learning health: A6/B4 not yet exported by agentdb (registry functional, $( echo "$health_out" | grep -c '"name"' ) controllers listed)"
+      _CHECK_PASSED="false"
+      _CHECK_OUTPUT="Self-learning health: A6/B4 absent (registry functional, $( echo "$health_out" | grep -c '"name"' ) controllers listed) — must export both"
     else
       _CHECK_OUTPUT="Self-learning health: agentdb_health returned unexpected output"
     fi
@@ -344,8 +344,8 @@ check_self_learning_search() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Self-learning search: store + search returns results (A6 transparent)"
   elif echo "$search_out" | grep -qi 'success.*true' && ! echo "$search_out" | grep -qi 'error'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Self-learning search: search accepted (empty results on cold-start)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Self-learning search: 0 results (cold-start) — must return stored entries"
   else
     _CHECK_OUTPUT="Self-learning search: search failed — $search_out"
   fi

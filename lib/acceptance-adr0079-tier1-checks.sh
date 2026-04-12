@@ -31,14 +31,11 @@ check_t1_1_semantic_ranking() {
   # Step 2: Search for cooking-related content
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian food recipes for dinner' --namespace '$ns'" "" 45
 
-  if echo "$_RK_OUT" | grep -qi 'cooking\|pasta\|bread\|soup'; then
+  if echo "$_RK_OUT" | grep -qi 'cooking\|pasta'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="T1-1: search returned cooking-related entries"
-  elif echo "$_RK_OUT" | grep -qiE '(results|entries|score|key)'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T1-1: PASS (search operational)"
   else
-    _CHECK_OUTPUT="T1-1: search returned no results: ${_RK_OUT:0:200}"
+    _CHECK_OUTPUT="T1-1: FAILED — expected cooking/pasta content in results: ${_RK_OUT:0:200}"
   fi
 }
 
@@ -98,15 +95,12 @@ check_t1_2_learning_feedback_improves() {
   # Step 4: Re-search
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace '$ns' --limit 5" "" 15
 
-  # Step 5: Verify -- re-ranking or at minimum feedback was recorded
-  if echo "$fb_out" | grep -qiE '(recorded|stored|success|completed|saved)'; then
+  # Step 5: Verify -- search must return the stored auth-related content
+  if echo "$_RK_OUT" | grep -qi 'learn-alpha\|auth'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T1-2: feedback recorded for $last_key"
-  elif echo "$_RK_OUT" | grep -qiE '(results|score|key)'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T1-2: search operational after feedback (hash embeddings — re-rank not verifiable)"
+    _CHECK_OUTPUT="T1-2: search returned expected auth-related content after feedback"
   else
-    _CHECK_OUTPUT="T1-2: feedback not recorded and search returned no results: $fb_out"
+    _CHECK_OUTPUT="T1-2: FAILED — expected learn-alpha/auth content in results: ${_RK_OUT:0:200}"
   fi
 }
 

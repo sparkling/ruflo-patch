@@ -236,27 +236,7 @@ if [[ ! -f "${ACCEPT_TEMP}/.claude-flow/config.json" && ! -f "${ACCEPT_TEMP}/.cl
   exit 1
 fi
 
-# Stamp the init'd embeddings.json with explicit HNSW values.
-# The CLI template should already write these, but we overwrite to make the
-# contract between harness and acceptance checks ironclad — no hidden defaults.
-_emb_json="${ACCEPT_TEMP}/.claude-flow/embeddings.json"
-if [[ -f "$_emb_json" ]]; then
-  _emb_tmp=$(mktemp)
-  python3 -c "
-import json, sys
-with open('$_emb_json') as f: cfg = json.load(f)
-cfg['model'] = '${RUFLO_EMBEDDING_MODEL}'
-cfg['dimension'] = ${RUFLO_EMBEDDING_DIM}
-cfg.setdefault('hnsw', {})
-cfg['hnsw']['m'] = ${RUFLO_HNSW_M}
-cfg['hnsw']['efConstruction'] = ${RUFLO_HNSW_EF_CONSTRUCTION}
-cfg['hnsw']['efSearch'] = ${RUFLO_HNSW_EF_SEARCH}
-json.dump(cfg, sys.stdout, indent=2)
-" > "$_emb_tmp" 2>/dev/null && mv "$_emb_tmp" "$_emb_json"
-  log "  Stamped embeddings.json: model=${RUFLO_EMBEDDING_MODEL} dim=${RUFLO_EMBEDDING_DIM} hnsw=(m=${RUFLO_HNSW_M} efC=${RUFLO_HNSW_EF_CONSTRUCTION} efS=${RUFLO_HNSW_EF_SEARCH})"
-else
-  log "WARN: embeddings.json not created by init — HNSW acceptance checks may fail"
-fi
+# ADR-0082: removed embeddings.json stamping — init must write correct values
 
 log "Running harness: memory init --force"
 # Sentinel-based completion detection (ADR-0039 T1) — CLI hangs after
@@ -291,16 +271,7 @@ else
   log "WARN: memory init output unclear (continuing): $(echo "$_harness_mem_out" | tail -3 | tr '\n' ' ')"
 fi
 
-# Ensure memory_entries table exists (upstream schema gap: memory init creates
-# neural/learning tables but omits the basic storage table that memory store needs).
-_mem_db="${ACCEPT_TEMP}/.swarm/memory.db"
-if [[ -f "$_mem_db" ]]; then
-  sqlite3 "$_mem_db" "CREATE TABLE IF NOT EXISTS memory_entries (id TEXT PRIMARY KEY, key TEXT, value TEXT, namespace TEXT, tags TEXT, embedding BLOB, metadata TEXT, created_at TEXT, updated_at TEXT);" 2>/dev/null \
-    && log "  Ensured memory_entries table exists" \
-    || log "WARN: sqlite3 memory_entries creation failed"
-else
-  log "WARN: memory.db not found at $_mem_db — memory checks may fail"
-fi
+# ADR-0082: removed manual DDL — product must create memory_entries or fail
 _record_phase "harness-init" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
@@ -329,9 +300,7 @@ _E2E_HEALTH_FILE=$(mktemp /tmp/ruflo-e2e-health-XXXXX)
 (
   if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory init --force" "" 30
-    # ADR-0080: ensure memory_entries table with full schema (status, content, type needed by store/list)
-    [[ -f "$E2E_DIR/.swarm/memory.db" ]] && sqlite3 "$E2E_DIR/.swarm/memory.db" \
-      "CREATE TABLE IF NOT EXISTS memory_entries (id TEXT PRIMARY KEY, key TEXT NOT NULL, namespace TEXT DEFAULT 'default', content TEXT NOT NULL DEFAULT '', type TEXT DEFAULT 'semantic', embedding TEXT, embedding_model TEXT DEFAULT 'local', embedding_dimensions INTEGER, tags TEXT, metadata TEXT, owner_id TEXT, created_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000), updated_at INTEGER NOT NULL DEFAULT (strftime('%s','now')*1000), expires_at INTEGER, last_accessed_at INTEGER, access_count INTEGER DEFAULT 0, status TEXT DEFAULT 'active', UNIQUE(namespace, key));" 2>/dev/null || true
+    # ADR-0082: removed manual DDL — product must create memory_entries or fail
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN mcp exec --tool agentdb_health" "" 15
     echo "$_RK_OUT" > "$_E2E_HEALTH_FILE"
   fi

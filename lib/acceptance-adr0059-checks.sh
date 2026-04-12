@@ -60,11 +60,11 @@ check_adr0059_memory_search() {
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'error-types' --value 'Use Result type for error propagation' --namespace adr0059-s" "" 15
 
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication JWT tokens' --namespace adr0059-s --limit 5" "" 15
-  if echo "$_RK_OUT" | grep -qi 'jwt\|auth\|results\|entries'; then
+  if echo "$_RK_OUT" | grep -q 'jwt-auth'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Search returned relevant results"
+    _CHECK_OUTPUT="Search returned stored key 'jwt-auth'"
   else
-    _CHECK_OUTPUT="Search returned no results: $_RK_OUT"
+    _CHECK_OUTPUT="Stored key 'jwt-auth' not found in search output: $_RK_OUT"
   fi
 }
 
@@ -86,11 +86,8 @@ check_adr0059_storage_persistence() {
   if echo "$_RK_OUT" | grep -q "$k"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Data persisted across process boundaries"
-  elif echo "$_RK_OUT" | grep -qi 'entries\|total'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Data persisted (list shows entries in namespace)"
   else
-    _CHECK_OUTPUT="Data not found in separate process: $_RK_OUT"
+    _CHECK_OUTPUT="Stored key '$k' not found in list output: $_RK_OUT"
   fi
 }
 
@@ -136,8 +133,8 @@ check_adr0059_intelligence_graph() {
   ")
 
   if echo "$out" | grep -q 'EMPTY\|NO_GRAPH'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Fresh project, no memory to index (expected)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="No memory to index — intelligence graph not populated"
   elif echo "$out" | grep -q '"nodes"'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Graph built: $out"
@@ -168,8 +165,8 @@ check_adr0059_retrieval_relevance() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Retrieval: $(echo "$out" | grep 'MATCH:' | sed 's/MATCH:/found results for: /')"
   elif echo "$out" | grep -q 'NO_DATA\|NO_MATCH'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Fresh project — no data to retrieve (expected)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Fresh project — no data to retrieve (retrieval requires indexed content)"
   else
     _CHECK_OUTPUT="Retrieval failed: $(echo "$out" | head -3)"
   fi
@@ -242,8 +239,8 @@ check_adr0059_learning_feedback() {
   ")
 
   if echo "$out" | grep -q 'EMPTY\|NO_RANKED'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Fresh project — no entries for feedback test (expected)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="No ranked entries for feedback test — learning feedback requires populated data"
   elif echo "$out" | grep -q '"ok":true'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Feedback loop: $out"
@@ -265,9 +262,12 @@ check_adr0059_hook_import_populates() {
   out=$(_adr0059_run_hook "auto-memory-hook.mjs" "import") || true
   [[ "$out" == "SKIP" ]] && { _CHECK_PASSED="true"; _CHECK_OUTPUT="Hook not present"; return; }
 
-  if echo "$out" | grep -qi 'Imported [1-9]\|AutoMemory'; then
+  if echo "$out" | grep -qi 'Imported [1-9]'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Hook import ran: $(echo "$out" | tail -1)"
+  elif echo "$out" | grep -qi 'AutoMemory'; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Hook loaded AutoMemory but imported 0 entries: $(echo "$out" | tail -1)"
   else
     _CHECK_OUTPUT="Hook import failed: $out"
   fi
@@ -304,16 +304,19 @@ check_adr0059_hook_full_lifecycle() {
   local import_out sync_out
 
   import_out=$(_adr0059_run_hook "auto-memory-hook.mjs" "import") || true
-  [[ "$import_out" == "SKIP" ]] && { _CHECK_PASSED="true"; _CHECK_OUTPUT="Hooks not present"; return; }
+  [[ "$import_out" == "SKIP" ]] && { _CHECK_PASSED="false"; _CHECK_OUTPUT="Hooks not present — auto-memory-hook.mjs missing"; return; }
 
   for f in "/tmp/lc-a.ts" "/tmp/lc-b.ts" "/tmp/lc-a.ts"; do
     _adr0059_run_hook "hook-handler.cjs" "post-edit" "{\"tool_input\":{\"file_path\":\"$f\"}}" >/dev/null 2>&1 || true
   done
 
   sync_out=$(_adr0059_run_hook "auto-memory-hook.mjs" "sync") || true
-  if echo "$sync_out" | grep -qi 'AutoMemory'; then
+  if echo "$sync_out" | grep -qi 'synced [1-9]\|stored [1-9]\|updated [1-9]'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Full lifecycle: import → 3 edits → sync completed"
+    _CHECK_OUTPUT="Full lifecycle: import → 3 edits → sync completed with data"
+  elif echo "$sync_out" | grep -qi 'AutoMemory'; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="Lifecycle ran but sync stored 0 entries: $sync_out"
   else
     _CHECK_OUTPUT="Sync failed: $sync_out"
   fi

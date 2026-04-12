@@ -27,11 +27,11 @@ check_adr0059_daemon_ipc_socket_exists() {
   else
     _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon status" "" 5
     if echo "$_RK_OUT" | grep -qi "running"; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Daemon running, socket may be disabled in this build"
+      _CHECK_PASSED="false"
+      _CHECK_OUTPUT="SKIP: daemon running but socket not found"
     else
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Daemon start may require foreground mode (non-fatal)"
+      _CHECK_PASSED="false"
+      _CHECK_OUTPUT="SKIP: daemon socket not found"
     fi
   fi
 }
@@ -58,11 +58,11 @@ check_adr0059_daemon_ipc_probe() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Node connected to daemon socket"
   elif echo "$result" | grep -q "NO_SOCKET"; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Socket not created — IPC may be disabled in this build"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: daemon socket not found"
   else
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Probe result: $result (non-fatal)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: daemon socket not found (probe: $result)"
   fi
 }
 
@@ -75,8 +75,8 @@ check_adr0059_daemon_ipc_store() {
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
   if [[ ! -e "$socket_path" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="No socket — IPC store test skipped (non-fatal)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: daemon socket not found"
     return
   fi
 
@@ -112,8 +112,8 @@ check_adr0059_daemon_ipc_search() {
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
   if [[ ! -e "$socket_path" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="No socket — IPC search test skipped (non-fatal)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: daemon socket not found"
     return
   fi
 
@@ -163,8 +163,8 @@ check_adr0059_daemon_ipc_count() {
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
   if [[ ! -e "$socket_path" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="No socket — IPC count test skipped (non-fatal)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: daemon socket not found"
     return
   fi
 

@@ -46,22 +46,12 @@ TOPIC
   # Search for a term that should match entries from both stores
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'token refresh' --namespace 'phase3-test' --limit 5" "" 15
 
-  # Accept: at least one result found (from either store)
-  if echo "$_RK_OUT" | grep -qiE '(results|score|key|token|refresh)'; then
+  # PASS only if the stored key appears in search results
+  if echo "$_RK_OUT" | grep -q 'sqlite-entry-p3'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Unified search returned results from stores"
-  elif echo "$_RK_OUT" | grep -qi 'sqlite-entry-p3'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Unified search found SQLite entry"
+    _CHECK_OUTPUT="Unified search found stored key 'sqlite-entry-p3'"
   else
-    # Unified search may not have results in fresh project — accept gracefully
-    # The key check is that it does not crash
-    if echo "$_RK_OUT" | grep -qiE '(error|crash|fatal)'; then
-      _CHECK_OUTPUT="Search crashed: $_RK_OUT"
-    else
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="No results in fresh project — search ran without errors"
-    fi
+    _CHECK_OUTPUT="Stored key 'sqlite-entry-p3' not found in search output: $_RK_OUT"
   fi
 }
 
@@ -79,11 +69,11 @@ check_adr0059_unified_search_dedup() {
   local count
   count=$(echo "$_RK_OUT" | grep -c "dedup-test-key" 2>/dev/null) || count=0
 
-  if [[ "$count" -le 1 ]]; then
+  if [[ "$count" -eq 1 ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Dedup OK: key appeared $count time(s) (expected <=1)"
+    _CHECK_OUTPUT="Dedup OK: key appeared exactly 1 time"
   else
-    _CHECK_OUTPUT="Key appeared $count times (expected <=1)"
+    _CHECK_OUTPUT="Key appeared $count times (expected exactly 1)"
   fi
 }
 

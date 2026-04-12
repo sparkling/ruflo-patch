@@ -27,8 +27,8 @@ check_attention_compute() {
 
   # Tool may not be registered (upstream build truncation)
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Attention compute: tool not in published build (upstream truncation — A5 deferred)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: tool not found in published package"
     return
   fi
 
@@ -76,8 +76,8 @@ check_attention_benchmark() {
 
   # Tool may not be registered (upstream build truncation)
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Attention benchmark: tool not in published build (upstream truncation — A5 deferred)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: tool not found in published package"
     return
   fi
 
@@ -124,8 +124,8 @@ check_attention_configure() {
 
   # Tool may not be registered (upstream build truncation)
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Attention configure: tool not in published build (upstream truncation)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: tool not found in published package"
     return
   fi
 
@@ -163,8 +163,8 @@ check_attention_metrics() {
 
   # Tool may not be registered (upstream build truncation)
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Attention metrics: tool not in published build (upstream truncation)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="SKIP: tool not found in published package"
     return
   fi
 

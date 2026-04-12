@@ -111,16 +111,8 @@ check_e2e_search_semantic_quality() {
   if [[ "$has_auth" == "true" && "$has_pasta" == "false" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="E2E-2: semantic search returned auth entries, excluded pasta — real vector search"
-  elif [[ "$has_auth" == "true" && "$has_pasta" == "true" ]]; then
-    # Auth found but pasta also present — still passes if auth is the primary result
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="E2E-2: auth entries found (pasta also present — may be within limit)"
-  elif echo "$search_out" | grep -qi 'results\|entries\|total'; then
-    # Search returned structured output but keywords differ
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="E2E-2: search returned structured results (keyword match inconclusive)"
   else
-    _CHECK_OUTPUT="E2E-2: search did not return auth-related results: $search_out"
+    _CHECK_OUTPUT="E2E-2: FAIL — has_auth=$has_auth has_pasta=$has_pasta — output: $search_out"
   fi
 }
 
@@ -149,12 +141,8 @@ check_e2e_list_after_store() {
   if echo "$list_out" | grep -q "$test_key"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="E2E-3: stored key '$test_key' found in list output"
-  elif echo "$list_out" | grep -qi 'entries\|total\|1'; then
-    # Key name may be transformed — but list shows entries in the namespace
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="E2E-3: list shows entries in namespace (key format may differ)"
   else
-    _CHECK_OUTPUT="E2E-3: key not found in list: $list_out"
+    _CHECK_OUTPUT="E2E-3: FAIL — key '$test_key' not found in list output: $list_out"
   fi
 }
 
@@ -180,28 +168,24 @@ check_e2e_dual_write_consistency() {
   # Path 1: search (RVF / vector path)
   local search_ok="false"
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory search --query 'dual write consistency verification' --namespace '$ns' --limit 5" "" 45
-  if echo "$_RK_OUT" | grep -qi 'dual\|consistency\|verification\|results\|entries'; then
+  local search_out="$_RK_OUT"
+  if echo "$search_out" | grep -qi 'dual\|consistency\|verification'; then
     search_ok="true"
   fi
 
   # Path 2: list (SQLite path)
   local list_ok="false"
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 45
-  if echo "$_RK_OUT" | grep -q "$test_key" || echo "$_RK_OUT" | grep -qi 'entries\|total\|1'; then
+  local list_out="$_RK_OUT"
+  if echo "$list_out" | grep -q "$test_key"; then
     list_ok="true"
   fi
 
   if [[ "$search_ok" == "true" && "$list_ok" == "true" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="E2E-4: entry found via BOTH search (RVF) and list (SQLite) — dual write consistent"
-  elif [[ "$search_ok" == "true" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="E2E-4: entry found via search; list path inconclusive (RVF-primary mode)"
-  elif [[ "$list_ok" == "true" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="E2E-4: entry found via list; search path inconclusive (SQLite-primary mode)"
   else
-    _CHECK_OUTPUT="E2E-4: entry not found via search or list after store"
+    _CHECK_OUTPUT="E2E-4: FAIL — search_ok=$search_ok list_ok=$list_ok — search: $search_out — list: $list_out"
   fi
 }
 
