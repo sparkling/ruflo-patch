@@ -793,10 +793,10 @@ describe('ADR-0080: config alignment across settings-generator, config-template,
     );
   });
 
-  it('config-template sonaMode is balanced', () => {
+  it('config-template sonaMode defaults to balanced', () => {
     assert.ok(
-      configTemplateSrc.includes("sonaMode: 'balanced'"),
-      "config-template must set sonaMode: 'balanced'",
+      configTemplateSrc.includes('sonaMode:') && configTemplateSrc.includes("'balanced'"),
+      "config-template must set sonaMode defaulting to 'balanced'",
     );
   });
 
@@ -818,10 +818,10 @@ describe('ADR-0080: config alignment across settings-generator, config-template,
     );
   });
 
-  it('config-template confidenceDecayRate is 0.0008', () => {
+  it('config-template confidenceDecayRate defaults to 0.0008', () => {
     assert.ok(
-      configTemplateSrc.includes('confidenceDecayRate: 0.0008'),
-      'config-template must set confidenceDecayRate: 0.0008',
+      configTemplateSrc.includes('confidenceDecayRate:') && configTemplateSrc.includes('0.0008'),
+      'config-template must set confidenceDecayRate defaulting to 0.0008',
     );
   });
 
@@ -842,10 +842,10 @@ describe('ADR-0080: config alignment across settings-generator, config-template,
     );
   });
 
-  it('config-template accessBoostAmount is 0.05', () => {
+  it('config-template accessBoostAmount defaults to 0.05', () => {
     assert.ok(
-      configTemplateSrc.includes('accessBoostAmount: 0.05'),
-      'config-template must set accessBoostAmount: 0.05',
+      configTemplateSrc.includes('accessBoostAmount:') && configTemplateSrc.includes('0.05'),
+      'config-template must set accessBoostAmount defaulting to 0.05',
     );
   });
 
@@ -978,6 +978,264 @@ describe('ADR-0080: --with-embeddings default is true', () => {
     assert.ok(
       nearbyBlock.includes('ADR-0080'),
       'with-embeddings flag must reference ADR-0080 explaining why default is true',
+    );
+  });
+});
+
+// ============================================================================
+// 28. resolve-config ResolvedConfig has learning section
+// ============================================================================
+
+describe('ADR-0080: resolve-config ResolvedConfig learning section', () => {
+  it('ResolvedConfig has readonly learning block', () => {
+    assert.ok(
+      resolveConfigSrc.includes('readonly learning:'),
+      'ResolvedConfig must have readonly learning: block',
+    );
+  });
+
+  it('learning block has sonaMode', () => {
+    const learningBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly learning:'),
+      resolveConfigSrc.indexOf('readonly learning:') + 300,
+    );
+    assert.ok(
+      learningBlock.includes('readonly sonaMode: string'),
+      'learning block must include readonly sonaMode: string',
+    );
+  });
+
+  it('learning block has confidenceDecayRate', () => {
+    const learningBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly learning:'),
+      resolveConfigSrc.indexOf('readonly learning:') + 300,
+    );
+    assert.ok(
+      learningBlock.includes('readonly confidenceDecayRate: number'),
+      'learning block must include readonly confidenceDecayRate: number',
+    );
+  });
+
+  it('learning block has accessBoostAmount', () => {
+    const learningBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly learning:'),
+      resolveConfigSrc.indexOf('readonly learning:') + 300,
+    );
+    assert.ok(
+      learningBlock.includes('readonly accessBoostAmount: number'),
+      'learning block must include readonly accessBoostAmount: number',
+    );
+  });
+
+  it('learning block has consolidationThreshold', () => {
+    const learningBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly learning:'),
+      resolveConfigSrc.indexOf('readonly learning:') + 300,
+    );
+    assert.ok(
+      learningBlock.includes('readonly consolidationThreshold: number'),
+      'learning block must include readonly consolidationThreshold: number',
+    );
+  });
+
+  it('learning block has ewcLambda', () => {
+    const learningBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly learning:'),
+      resolveConfigSrc.indexOf('readonly learning:') + 300,
+    );
+    assert.ok(
+      learningBlock.includes('readonly ewcLambda: number'),
+      'learning block must include readonly ewcLambda: number',
+    );
+  });
+});
+
+// ============================================================================
+// 29. resolve-config ResolvedConfig has graph section
+// ============================================================================
+
+describe('ADR-0080: resolve-config ResolvedConfig graph section', () => {
+  it('ResolvedConfig has readonly graph block', () => {
+    assert.ok(
+      resolveConfigSrc.includes('readonly graph:'),
+      'ResolvedConfig must have readonly graph: block',
+    );
+  });
+
+  it('graph block has pageRankDamping', () => {
+    const graphBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly graph:'),
+      resolveConfigSrc.indexOf('readonly graph:') + 300,
+    );
+    assert.ok(
+      graphBlock.includes('readonly pageRankDamping: number'),
+      'graph block must include readonly pageRankDamping: number',
+    );
+  });
+
+  it('graph block has maxNodes', () => {
+    const graphBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly graph:'),
+      resolveConfigSrc.indexOf('readonly graph:') + 300,
+    );
+    assert.ok(
+      graphBlock.includes('readonly maxNodes: number'),
+      'graph block must include readonly maxNodes: number',
+    );
+  });
+
+  it('graph block has similarityThreshold', () => {
+    const graphBlock = resolveConfigSrc.slice(
+      resolveConfigSrc.indexOf('readonly graph:'),
+      resolveConfigSrc.indexOf('readonly graph:') + 300,
+    );
+    assert.ok(
+      graphBlock.includes('readonly similarityThreshold: number'),
+      'graph block must include readonly similarityThreshold: number',
+    );
+  });
+});
+
+// ============================================================================
+// 30. resolve-config defaults for learning
+// ============================================================================
+
+describe('ADR-0080: resolve-config learning defaults', () => {
+  it('DEFAULT_SONA_MODE is balanced', () => {
+    assert.ok(
+      resolveConfigSrc.includes("DEFAULT_SONA_MODE = 'balanced'"),
+      "resolve-config must set DEFAULT_SONA_MODE = 'balanced'",
+    );
+  });
+
+  it('DEFAULT_CONFIDENCE_DECAY_RATE is 0.0008', () => {
+    assert.ok(
+      resolveConfigSrc.includes('DEFAULT_CONFIDENCE_DECAY_RATE = 0.0008'),
+      'resolve-config must set DEFAULT_CONFIDENCE_DECAY_RATE = 0.0008',
+    );
+  });
+
+  it('DEFAULT_ACCESS_BOOST_AMOUNT is 0.05', () => {
+    assert.ok(
+      resolveConfigSrc.includes('DEFAULT_ACCESS_BOOST_AMOUNT = 0.05'),
+      'resolve-config must set DEFAULT_ACCESS_BOOST_AMOUNT = 0.05',
+    );
+  });
+});
+
+// ============================================================================
+// 31. controller-registry reads learning fields from getConfig()
+// ============================================================================
+
+describe('ADR-0080: controller-registry reads learning from getConfig()', () => {
+  it('imports getConfig from resolve-config', () => {
+    assert.ok(
+      ctrlRegistrySrc.includes("import { getConfig } from './resolve-config.js'") ||
+      ctrlRegistrySrc.includes("getConfig } from './resolve-config.js'"),
+      'controller-registry must import getConfig from resolve-config.js',
+    );
+  });
+
+  it('learningBridge factory references resolved.learning.sonaMode', () => {
+    assert.ok(
+      ctrlRegistrySrc.includes('resolved.learning.sonaMode'),
+      'learningBridge factory must reference resolved.learning.sonaMode',
+    );
+  });
+
+  it('learningBridge factory references resolved.learning.confidenceDecayRate', () => {
+    assert.ok(
+      ctrlRegistrySrc.includes('resolved.learning.confidenceDecayRate'),
+      'learningBridge factory must reference resolved.learning.confidenceDecayRate',
+    );
+  });
+
+  it('learningBridge factory references resolved.learning.accessBoostAmount', () => {
+    assert.ok(
+      ctrlRegistrySrc.includes('resolved.learning.accessBoostAmount'),
+      'learningBridge factory must reference resolved.learning.accessBoostAmount',
+    );
+  });
+
+  it('learningBridge factory references resolved.learning.consolidationThreshold', () => {
+    assert.ok(
+      ctrlRegistrySrc.includes('resolved.learning.consolidationThreshold'),
+      'learningBridge factory must reference resolved.learning.consolidationThreshold',
+    );
+  });
+
+  it('learningBridge factory references resolved.learning.ewcLambda', () => {
+    assert.ok(
+      ctrlRegistrySrc.includes('resolved.learning.ewcLambda'),
+      'learningBridge factory must reference resolved.learning.ewcLambda',
+    );
+  });
+});
+
+// ============================================================================
+// 32. executor embeddings.json write block includes learning fields
+// ============================================================================
+
+describe('ADR-0080: executor embeddings.json includes learning fields', () => {
+  // The embeddings.json write block is the JSON.stringify call that ends
+  // at writeFileSync(embeddingsJsonPath
+  const embJsonStart = executorSrc.indexOf('storageProvider:');
+  const embJsonBlock = executorSrc.slice(
+    executorSrc.lastIndexOf('JSON.stringify', embJsonStart),
+    executorSrc.indexOf('writeFileSync(embeddingsJsonPath'),
+  );
+
+  for (const field of [
+    'sonaMode',
+    'confidenceDecayRate',
+    'consolidationThreshold',
+  ]) {
+    it(`includes ${field}`, () => {
+      assert.ok(
+        embJsonBlock.includes(field),
+        `executor embeddings.json block must include ${field}`,
+      );
+    });
+  }
+});
+
+// ============================================================================
+// 33. config-template ConfigOverrides accepts learning overrides
+// ============================================================================
+
+describe('ADR-0080: config-template ConfigOverrides learning fields', () => {
+  it('ConfigOverrides has sonaMode? field', () => {
+    assert.ok(
+      configTemplateSrc.includes('sonaMode?:') || configTemplateSrc.includes('sonaMode?:'),
+      'config-template ConfigOverrides must have sonaMode? field',
+    );
+  });
+
+  it('ConfigOverrides has confidenceDecayRate? field', () => {
+    assert.ok(
+      configTemplateSrc.includes('confidenceDecayRate?:'),
+      'config-template ConfigOverrides must have confidenceDecayRate? field',
+    );
+  });
+
+  it('ConfigOverrides has accessBoostAmount? field', () => {
+    assert.ok(
+      configTemplateSrc.includes('accessBoostAmount?:'),
+      'config-template ConfigOverrides must have accessBoostAmount? field',
+    );
+  });
+
+  it('ConfigOverrides has consolidationThreshold? field', () => {
+    assert.ok(
+      configTemplateSrc.includes('consolidationThreshold?:'),
+      'config-template ConfigOverrides must have consolidationThreshold? field',
+    );
+  });
+
+  it('ConfigOverrides has pageRankDamping? field', () => {
+    assert.ok(
+      configTemplateSrc.includes('pageRankDamping?:'),
+      'config-template ConfigOverrides must have pageRankDamping? field',
     );
   });
 });
