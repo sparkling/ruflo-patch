@@ -213,9 +213,11 @@ The bridge deletion breaks 14 test files. Categorized by action:
 | memory-bridge.ts (deleted) | 3,650 |
 | memory-initializer.ts getBridge + 11 try-blocks | ~136 |
 | activateControllerRegistry | ~30 |
-| **Total deleted** | **~3,816** |
-| getRegistry() + helpers moved to router (relocated, not deleted) | ~226 |
-| **Net reduction** | **~3,590** |
+| writeJsonSidecar + call sites (sidecar elimination) | ~46 |
+| **Total deleted** | **~3,862** |
+| getRegistry() + helpers moved to router (relocated, not deleted) | ~272 |
+| **Net production reduction** | **~3,590** |
+| Test lines removed (sidecar tests + bridge tests) | ~2,280 |
 
 ## Swarm implementation plan
 
@@ -260,17 +262,30 @@ The bridge deletion breaks 14 test files. Categorized by action:
 - **Layer 1 (RVF primary storage)** — memory-initializer.ts remains as the SQLite CRUD
   layer. Replacing it with IStorage + NativeStorage(RVF+HNSW) is a separate, larger effort
   (~2,600 lines to rewrite). That is the remaining gap to ADR-0075's full ideal.
-- **AgentDBService deletion** — wrapped via controller-intercept, not deleted. This is an
-  upstream merge compatibility decision, not a technical blocker. If upstream confirms
-  AgentDBService is going away (they have), we can delete our wrapper in a future PR.
-- **JSON sidecar elimination** — blocked by CJS constraint (intelligence.cjs).
+
+## Resolved post-proposal
+
+- **AgentDBService deletion** — RESOLVED. Investigation revealed no concrete
+  `AgentDBService` class exists in the codebase. The term referred to a conceptual
+  role that was never implemented. The only reference was a 2-line comment in
+  `controller-intercept.ts`, which has been updated. The `IAgentDBService` interface
+  in gastown-bridge is a separate, live plugin contract — unrelated.
+- **JSON sidecar elimination** — RESOLVED (Path A). Converted `hook-handler.cjs` to
+  ESM (`.mjs`) with `await import()`, added `readStoreFromDb()` to `intelligence.cjs`
+  for direct SQLite reads via better-sqlite3, deleted `writeJsonSidecar()` from the
+  router (46 lines), updated `statusline.cjs` to use SQLite `COUNT(*)`, and updated
+  all 3 init generators. The `auto-memory-store.json` file is no longer written or read.
+  Note: `pending-insights.jsonl` is NOT a sidecar — it is a write-ahead event journal
+  (primary store for pending edit events, truncated on consolidation). No action needed.
 
 ## Consequences
 
-- **3,654 net lines eliminated** from the codebase
+- **~3,588 net production lines eliminated** from the codebase
 - **Single registry bootstrap** — router owns it, no dual-path confusion
-- **Zero bridge code executed** at runtime (currently 11 try-first paths run uselessly)
-- **Cleaner initializer** — memory-initializer becomes pure SQLite CRUD, no AgentDB coupling
+- **Zero bridge code executed** at runtime (11 try-first paths eliminated)
+- **Cleaner initializer** — memory-initializer is pure SQLite CRUD, no AgentDB coupling
+- **No JSON sidecar** — intelligence reads SQLite directly, no redundant file-based IPC
+- **ESM hook handler** — unblocks future async hook improvements
 - **ADR-0075 gap closure**: L2 100%, L5 ~95% (initializer hop remains until L1)
 - **Merge risk**: upstream changes to memory-bridge.ts will cause git conflicts on the
   deletion. This is a one-time cost — once merged, the file stays deleted and future
@@ -287,10 +302,12 @@ ALL callers ──→ memory-router.ts ──→ initControllerRegistry() ──
                     ├── routeEmbeddingOp()    → EmbeddingPipeline → HNSW
                     ├── routePatternOp()      → reasoningBank (controller-direct)
                     ├── routeFeedbackOp()     → learningSystem + reasoningBank
-                    ├── routeSessionOp()      → reflexion + nightlyLearner
-                    └── writeJsonSidecar()    → auto-memory-store.json (CJS contract)
+                    └── routeSessionOp()      → reflexion + nightlyLearner
+
+hook-handler.mjs ──→ import() ──→ intelligence.cjs ──→ better-sqlite3 ──→ memory.db (direct read)
 
 memory-bridge.ts:       DELETED
 memory-initializer.ts:  Pure SQLite CRUD (zero bridge dependency)
-AgentDBService:         Wrapped (deferred deletion)
+writeJsonSidecar:       DELETED (sidecar file no longer written)
+AgentDBService:         Never existed as a class (comment reference removed)
 ```
