@@ -46,6 +46,7 @@ const router = safeRequire(path.join(helpersDir, 'router.js'));
 const session = safeRequire(path.join(helpersDir, 'session.js'));
 const memory = safeRequire(path.join(helpersDir, 'memory.js'));
 const intelligence = safeRequire(path.join(helpersDir, 'intelligence.cjs'));
+const adversarial = safeRequire(path.join(helpersDir, 'adversarial.cjs'));
 
 // Get the command from argv
 const [,, command, ...args] = process.argv;
@@ -90,6 +91,14 @@ const handlers = {
       try {
         const ctx = intelligence.getContext(prompt);
         if (ctx) console.log(ctx);
+      } catch (e) { /* non-fatal */ }
+    }
+    // ADR-0087: Adversarial prompting check
+    if (adversarial && adversarial.classify) {
+      try {
+        const cls = adversarial.classify(prompt);
+        const advice = adversarial.advisory(cls);
+        if (advice) console.log(advice);
       } catch (e) { /* non-fatal */ }
     }
     if (router && router.routeTask) {

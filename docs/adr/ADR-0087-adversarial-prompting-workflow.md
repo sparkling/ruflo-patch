@@ -1,7 +1,8 @@
 # ADR-0087: Adversarial Prompting Workflow
 
-- **Status**: Proposed
+- **Status**: Phase 1 Complete
 - **Date**: 2026-04-13
+- **Phase 1**: 2026-04-13 — Adversarial prompting hook (`.claude/helpers/adversarial.cjs`)
 - **Source**: Michael Truell (Cursor co-founder), Lenny's Podcast, late 2025; Medium article by Adi Insights and Innovations, Mar 21 2026
 
 ## Context
