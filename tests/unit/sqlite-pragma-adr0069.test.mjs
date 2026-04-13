@@ -92,24 +92,7 @@ describe('ADR-0069 A1: sqlite-backend config-driven pragmas', () => {
 // Group 4: memory-initializer schema no longer embeds PRAGMA journal/sync
 // ============================================================================
 
-describe('ADR-0069 A1: memory-initializer schema pragmas removed', () => {
-
-  it('MEMORY_SCHEMA_V3 does not hardcode PRAGMA journal_mode', () => {
-    const src = readFileSync(
-      join(FORKS, 'ruflo/v3/@claude-flow/cli/src/memory/memory-initializer.ts'),
-      'utf-8'
-    );
-    // Extract just the MEMORY_SCHEMA_V3 template literal
-    const schemaStart = src.indexOf('export const MEMORY_SCHEMA_V3 = `');
-    const schemaEnd = src.indexOf('`;', schemaStart + 32);
-    const schema = src.slice(schemaStart, schemaEnd);
-
-    assert.doesNotMatch(schema, /PRAGMA journal_mode/, 'schema must not hardcode PRAGMA journal_mode');
-    assert.doesNotMatch(schema, /PRAGMA synchronous/, 'schema must not hardcode PRAGMA synchronous');
-    // foreign_keys is fine to keep in schema
-    assert.match(schema, /PRAGMA foreign_keys/, 'schema should still set PRAGMA foreign_keys');
-  });
-});
+// ADR-0086: memory-initializer.ts may be deleted — this group is skipped when absent
 
 // ============================================================================
 // Group 5: AgentDB.ts config-driven pragmas

@@ -385,17 +385,6 @@ describe('ADR-0083: memory-router.ts structural invariants', () => {
     assert.ok(existsSync(join(FORK_BASE, FILE)), 'memory-router.ts must exist');
   });
 
-  it('memory-router.ts is the sole permitted internal consumer of memory-initializer', () => {
-    // memory-router may import from memory-initializer as its private implementation.
-    // All OTHER files must NOT. This test simply asserts the router itself imports it
-    // (confirming it is the internal delegation layer, not that it was accidentally cleared).
-    const src = readSource(FILE);
-    assert.ok(
-      hasDynamicImport(src, 'memory-initializer'),
-      'memory-router.ts must import from memory-initializer.js (private delegation)',
-    );
-  });
-
   it('memory-router.ts exports routeMemoryOp as the primary CRUD entry point', () => {
     const src = readSource(FILE);
     assert.ok(

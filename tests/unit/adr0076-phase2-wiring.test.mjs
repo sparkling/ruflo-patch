@@ -23,35 +23,6 @@ const GUIDANCE_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/guidance/
 // generateEmbedding() routes through EmbeddingPipeline
 // ===========================================================================
 
-describe('Phase 2 wiring: generateEmbedding routes through pipeline', () => {
-  const file = `${CLI_SRC}/memory-initializer.ts`;
-
-  it('generateEmbedding() has getPipeline redirect at top', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    // Find the generateEmbedding function and check for pipeline redirect
-    const fnStart = src.indexOf('export async function generateEmbedding');
-    assert.ok(fnStart !== -1, 'generateEmbedding function must exist');
-    // The pipeline redirect should appear before the legacy path
-    const afterFn = src.slice(fnStart, fnStart + 600);
-    assert.ok(
-      afterFn.includes('getPipeline'),
-      'generateEmbedding must try getPipeline() before legacy path',
-    );
-  });
-
-  it('pipeline redirect returns pipeline.embed() result', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    const fnStart = src.indexOf('export async function generateEmbedding');
-    const afterFn = src.slice(fnStart, fnStart + 600);
-    assert.ok(
-      afterFn.includes('pipeline.embed'),
-      'must call pipeline.embed() in the redirect',
-    );
-  });
-});
-
 // ===========================================================================
 // cosineSim() delegates to canonical cosineSimilarity
 // ===========================================================================

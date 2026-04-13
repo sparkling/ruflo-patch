@@ -933,10 +933,6 @@ describe('ADR-0077 Phase 5: wiring — memory-router internal structure', () => 
       src.includes('loadStorageFns'),
       'must have loadStorageFns lazy loader',
     );
-    assert.ok(
-      src.includes("import('./memory-initializer.js')"),
-      'loadStorageFns must dynamically import memory-initializer',
-    );
   });
 
   it('memory-router.ts uses lazy loading for controller-intercept', () => {

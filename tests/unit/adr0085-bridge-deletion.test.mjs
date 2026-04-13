@@ -195,13 +195,9 @@ describe('ADR-0085 T1.5 unit: getController with mock registry', () => {
 // ============================================================================
 
 describe('ADR-0085 T2.4: initializer has zero bridge dependency', () => {
-  let initSrc;
-
-  beforeEach(() => {
-    initSrc = readFileSync(INITIALIZER_PATH, 'utf-8');
-  });
-
-  it('initializer does NOT import from memory-bridge', () => {
+  it('initializer is deleted or has zero bridge imports', () => {
+    if (!existsSync(INITIALIZER_PATH)) return; // ADR-0086: file may be deleted
+    const initSrc = readFileSync(INITIALIZER_PATH, 'utf-8');
     const lines = initSrc.split('\n');
     const bridgeImports = lines.filter(l =>
       l.includes('memory-bridge') && (l.includes('import') || l.includes('require'))
@@ -210,29 +206,36 @@ describe('ADR-0085 T2.4: initializer has zero bridge dependency', () => {
       `Expected ZERO bridge imports, found: ${bridgeImports.join('; ')}`);
   });
 
-  it('initializer does NOT contain getBridge function', () => {
+  it('initializer is deleted or does NOT contain getBridge function', () => {
+    if (!existsSync(INITIALIZER_PATH)) return;
+    const initSrc = readFileSync(INITIALIZER_PATH, 'utf-8');
     assert.ok(
       !initSrc.includes('async function getBridge'),
       'memory-initializer.ts must not define getBridge()',
     );
   });
 
-  it('initializer does NOT contain _bridge variable', () => {
-    // Match "let _bridge" but not the ADR-0085 comment
+  it('initializer is deleted or does NOT contain _bridge variable', () => {
+    if (!existsSync(INITIALIZER_PATH)) return;
+    const initSrc = readFileSync(INITIALIZER_PATH, 'utf-8');
     const lines = initSrc.split('\n');
     const bridgeVarLines = lines.filter(l => l.match(/^\s*let _bridge\b/));
     assert.equal(bridgeVarLines.length, 0,
       `Expected no _bridge variable declaration, found: ${bridgeVarLines.join('; ')}`);
   });
 
-  it('initializer does NOT contain activateControllerRegistry function', () => {
+  it('initializer is deleted or does NOT contain activateControllerRegistry function', () => {
+    if (!existsSync(INITIALIZER_PATH)) return;
+    const initSrc = readFileSync(INITIALIZER_PATH, 'utf-8');
     assert.ok(
       !initSrc.includes('async function activateControllerRegistry'),
       'memory-initializer.ts must not define activateControllerRegistry()',
     );
   });
 
-  it('initializer does NOT call getBridge()', () => {
+  it('initializer is deleted or does NOT call getBridge()', () => {
+    if (!existsSync(INITIALIZER_PATH)) return;
+    const initSrc = readFileSync(INITIALIZER_PATH, 'utf-8');
     const lines = initSrc.split('\n');
     const callLines = lines.filter(l =>
       l.includes('getBridge()') && !l.trimStart().startsWith('//')

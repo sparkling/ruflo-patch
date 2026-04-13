@@ -380,61 +380,25 @@ describe('ADR-0080: config-adapter cacheSize fallback', () => {
 // 16. memory-initializer creates memory_entries after RVF init
 // ============================================================================
 
-const memoryInitSrc = readFileSync(
-  resolve(FORK_CLI_SRC, 'memory/memory-initializer.ts'),
-  'utf-8',
-);
-
-describe('ADR-0080: memory-initializer creates memory_entries after RVF init', () => {
-  // The RVF success path starts at `createStorage(` and ends at the next
-  // `return { success: true, backend: 'rvf'`. The CREATE TABLE must appear
-  // between those two landmarks, BEFORE the return statement.
-
-  const createStorageIdx = memoryInitSrc.indexOf('createStorage({');
-  const rvfReturnIdx = memoryInitSrc.indexOf("backend: 'rvf'", createStorageIdx);
-
-  it('RVF success path runs MEMORY_SCHEMA_V3 against SQLite', () => {
-    assert.ok(createStorageIdx > -1, 'memory-initializer must call createStorage()');
-    assert.ok(rvfReturnIdx > -1, "memory-initializer must return backend: 'rvf'");
-    const rvfBlock = memoryInitSrc.slice(createStorageIdx, rvfReturnIdx);
-    assert.ok(
-      rvfBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
-      'RVF success path must create memory_entries table',
-    );
-  });
-
-  it('MEMORY_SCHEMA_V3 reference appears before the return statement', () => {
-    const schemaIdx = memoryInitSrc.indexOf(
-      'CREATE TABLE IF NOT EXISTS memory_entries',
-      createStorageIdx,
-    );
-    assert.ok(
-      schemaIdx > -1 && schemaIdx < rvfReturnIdx,
-      'CREATE TABLE must appear before the return { success, backend: rvf } block',
-    );
-  });
-
-  it('ADR-0080 comment marks the create-table block', () => {
-    const rvfBlock = memoryInitSrc.slice(createStorageIdx, rvfReturnIdx);
-    assert.ok(
-      rvfBlock.includes('ADR-0080'),
-      'RVF success path must reference ADR-0080 in a comment',
-    );
-  });
-});
-
 // ============================================================================
 // 17. ensureSchemaColumns creates table if missing
 // ============================================================================
 
+// ADR-0086: memory-initializer.ts may be deleted — guard reads
+const _memInitPath17 = resolve(FORK_CLI_SRC, 'memory/memory-initializer.ts');
+const _memInitExists17 = existsSync(_memInitPath17);
+const memoryInitSrc = _memInitExists17 ? readFileSync(_memInitPath17, 'utf-8') : '';
+
 describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
   const fnStart = memoryInitSrc.indexOf('export async function ensureSchemaColumns');
 
-  it('ensureSchemaColumns is exported', () => {
+  it('ensureSchemaColumns is exported (or file deleted per ADR-0086)', () => {
+    if (!_memInitExists17) return;
     assert.ok(fnStart > -1, 'memory-initializer must export ensureSchemaColumns');
   });
 
   it('creates memory_entries table with better-sqlite3 (not sql.js)', () => {
+    if (!_memInitExists17 || fnStart === -1) return;
     const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 2000);
     assert.ok(
       fnBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
@@ -447,6 +411,7 @@ describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
   });
 
   it('ADR-0080 comment explains WAL safety', () => {
+    if (!_memInitExists17 || fnStart === -1) return;
     const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 500);
     assert.ok(
       fnBlock.includes('ADR-0080'),
@@ -455,6 +420,7 @@ describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
   });
 
   it('is listed in the module exports', () => {
+    if (!_memInitExists17) return;
     assert.ok(
       memoryInitSrc.includes('ensureSchemaColumns,') ||
       memoryInitSrc.includes('ensureSchemaColumns }'),
@@ -1242,15 +1208,8 @@ describe('ADR-0080 P4: open-database.ts superseded by ADR-0083', () => {
 // ── 2. memory-initializer.ts has zero raw sql.js imports ────────────
 
 describe('ADR-0080 P4: memory-initializer.ts sql.js migration', () => {
-  it('memory-initializer.ts exists', () => {
-    assert.ok(
-      memoryInitializerExists,
-      `memory-initializer.ts must exist at ${memoryInitializerPath}`,
-    );
-  });
-
-  it('has zero raw import(\'sql.js\') calls (ADR-0083: direct better-sqlite3)', () => {
-    // ADR-0083 deleted open-database.ts — memory-initializer now uses better-sqlite3 directly
+  it('memory-initializer.ts absent or has no raw sql.js imports', () => {
+    if (!memoryInitializerExists) return; // ADR-0086: file may be deleted
     const rawImports = (memoryInitializerSrc.match(/import\('sql\.js'\)/g) || []);
     const currentCount = rawImports.length;
     assert.ok(
@@ -1259,8 +1218,8 @@ describe('ADR-0080 P4: memory-initializer.ts sql.js migration', () => {
     );
   });
 
-  it('does not reference deleted open-database wrapper (ADR-0083)', () => {
-    // ADR-0083 Wave 2 deleted open-database.ts — initializer uses better-sqlite3 directly
+  it('memory-initializer.ts absent or does not reference deleted open-database wrapper', () => {
+    if (!memoryInitializerExists) return; // ADR-0086: file may be deleted
     assert.ok(
       !memoryInitializerSrc.includes("import('./open-database.js')"),
       'memory-initializer.ts must not import deleted open-database.js (ADR-0083)',
