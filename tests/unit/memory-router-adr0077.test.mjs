@@ -594,10 +594,11 @@ describe('ADR-0077 Phase 5: resetRouter clears state (unit)', () => {
 
     assert.ok(src.includes('export function resetRouter'), 'must export resetRouter');
 
-    // Verify it clears all four state variables
+    // Verify it clears state variables
+    // ADR-0086 Phase 2: _fns replaced by _storage
     const fnStart = src.indexOf('export function resetRouter');
     const fnBody = src.slice(fnStart, fnStart + 300);
-    assert.ok(fnBody.includes('_fns = null'), 'must clear _fns');
+    assert.ok(fnBody.includes('_storage = null') || fnBody.includes('_fns = null'), 'must clear storage state');
     assert.ok(fnBody.includes('_interceptMod = null'), 'must clear _interceptMod');
     assert.ok(fnBody.includes('_initialized = false'), 'must clear _initialized');
     assert.ok(fnBody.includes('_initPromise = null'), 'must clear _initPromise');

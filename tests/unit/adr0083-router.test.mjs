@@ -378,15 +378,14 @@ describe('ADR-0083 resetRouter: clears cached module references', () => {
     assert.equal(loadCount, 3, 'loader must be called once per reset/reload cycle');
   });
 
-  it('should clear all 6 internal state variables (mirrors resetRouter() in source)', () => {
-    // The real resetRouter() in memory-router.ts resets 6 vars:
-    // _fns, _embeddingFns, _allFns, _interceptMod, _initialized, _initPromise
+  it('should clear all internal state variables (mirrors resetRouter() in source)', () => {
+    // ADR-0086 Phase 2: _fns replaced by _storage
     const routerPath = `${MEMORY_SRC}/memory-router.ts`;
     assert.ok(existsSync(routerPath), 'memory-router.ts must exist');
 
     const src = readFileSync(routerPath, 'utf8');
     assert.ok(src.includes('export function resetRouter'), 'must export resetRouter');
-    assert.ok(src.includes('_fns = null'), 'must reset _fns to null');
+    assert.ok(src.includes('_storage = null') || src.includes('_fns = null'), 'must reset storage state to null');
     assert.ok(src.includes('_embeddingFns = null'), 'must reset _embeddingFns to null');
     assert.ok(src.includes('_allFns = null'), 'must reset _allFns to null');
     assert.ok(src.includes('_interceptMod = null'), 'must reset _interceptMod to null');

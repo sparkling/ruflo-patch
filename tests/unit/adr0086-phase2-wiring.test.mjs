@@ -1,0 +1,163 @@
+// @tier unit
+// ADR-0086 Phase 2: Verify RvfBackend wired into memory-router.
+//
+// Checks:
+//   Group 1: _doInit uses RvfBackend (T2.2)
+//   Group 2: routeMemoryOp uses IStorageContract (T2.3)
+//   Group 3: routeEmbeddingOp uses adapter directly (T2.4)
+//   Group 4: shutdownRouter calls storage.shutdown (T2.5)
+//   Group 5: No StorageFns interface remains (T2.2)
+
+import { describe, it } from 'node:test';
+import { strict as assert } from 'node:assert';
+import { readFileSync } from 'node:fs';
+
+const CLI_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
+const routerPath = `${CLI_SRC}/memory/memory-router.ts`;
+const rvfPath = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts';
+
+const routerSrc = readFileSync(routerPath, 'utf-8');
+const rvfSrc = readFileSync(rvfPath, 'utf-8');
+
+// ============================================================================
+// Group 1: _doInit uses RvfBackend
+// ============================================================================
+
+describe('ADR-0086 T2.2: _doInit creates RvfBackend', () => {
+  it('_doInit calls createStorage', () => {
+    assert.ok(
+      routerSrc.includes('_storage = await createStorage('),
+      '_doInit does not create RvfBackend via createStorage',
+    );
+  });
+
+  it('createStorage imports rvf-backend', () => {
+    assert.ok(
+      routerSrc.includes("rvf-backend.js"),
+      'createStorage does not import rvf-backend',
+    );
+  });
+
+  it('no loadStorageFns function exists', () => {
+    assert.ok(
+      !routerSrc.includes('async function loadStorageFns'),
+      'loadStorageFns still exists — should be replaced by createStorage',
+    );
+  });
+
+  it('no StorageFns interface exists', () => {
+    assert.ok(
+      !routerSrc.includes('interface StorageFns'),
+      'StorageFns interface still present',
+    );
+  });
+});
+
+// ============================================================================
+// Group 2: routeMemoryOp uses IStorageContract
+// ============================================================================
+
+describe('ADR-0086 T2.3: routeMemoryOp uses IStorageContract', () => {
+  it('store case calls storage.store', () => {
+    assert.ok(
+      routerSrc.includes('await storage.store(entry)'),
+      'routeMemoryOp store case does not call storage.store',
+    );
+  });
+
+  it('search case calls storage.search with embedding', () => {
+    assert.ok(
+      routerSrc.includes('await storage.search(embedding'),
+      'routeMemoryOp search case does not call storage.search',
+    );
+  });
+
+  it('get case calls storage.getByKey', () => {
+    assert.ok(
+      routerSrc.includes('storage.getByKey('),
+      'routeMemoryOp get case does not call storage.getByKey',
+    );
+  });
+
+  it('delete case calls storage.delete', () => {
+    assert.ok(
+      routerSrc.includes('await storage.delete(entry.id)'),
+      'routeMemoryOp delete case does not call storage.delete',
+    );
+  });
+
+  it('count case calls storage.count', () => {
+    assert.ok(
+      routerSrc.includes('storage.count('),
+      'routeMemoryOp count case does not call storage.count',
+    );
+  });
+
+  it('listNamespaces case calls storage.listNamespaces', () => {
+    assert.ok(
+      routerSrc.includes('storage.listNamespaces()'),
+      'routeMemoryOp listNamespaces case does not call storage.listNamespaces',
+    );
+  });
+
+  it('no fns.storeEntry calls remain', () => {
+    assert.ok(
+      !routerSrc.includes('fns.storeEntry'),
+      'routeMemoryOp still uses fns.storeEntry',
+    );
+  });
+});
+
+// ============================================================================
+// Group 3: routeEmbeddingOp uses adapter directly
+// ============================================================================
+
+describe('ADR-0086 T2.4: routeEmbeddingOp uses embedding-adapter', () => {
+  it('generate case imports adapter directly', () => {
+    // The embedding-adapter import should appear in routeEmbeddingOp
+    assert.ok(
+      routerSrc.includes("adapter.generateEmbedding("),
+      'routeEmbeddingOp generate case does not use adapter',
+    );
+  });
+
+  it('HNSW cases still use loadEmbeddingFns (Phase 3 cleanup)', () => {
+    assert.ok(
+      routerSrc.includes('loadEmbeddingFns()'),
+      'HNSW cases no longer use loadEmbeddingFns — removed too early',
+    );
+  });
+});
+
+// ============================================================================
+// Group 4: shutdownRouter calls storage.shutdown
+// ============================================================================
+
+describe('ADR-0086 T2.5: shutdownRouter', () => {
+  it('calls _storage.shutdown()', () => {
+    assert.ok(
+      routerSrc.includes('_storage.shutdown()'),
+      'shutdownRouter does not call _storage.shutdown()',
+    );
+  });
+});
+
+// ============================================================================
+// Group 5: RvfBackend implements IStorageContract
+// ============================================================================
+
+describe('ADR-0086 T2.1: RvfBackend implements IStorageContract', () => {
+  it('class declaration includes IStorageContract', () => {
+    assert.ok(
+      rvfSrc.includes('implements IMemoryBackend, IStorageContract'),
+      'RvfBackend does not explicitly implement IStorageContract',
+    );
+  });
+
+  it('imports IStorageContract', () => {
+    assert.ok(
+      rvfSrc.includes("import type { IStorageContract }"),
+      'RvfBackend does not import IStorageContract',
+    );
+  });
+});

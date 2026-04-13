@@ -1,6 +1,6 @@
 # ADR-0086: Layer 1 — Single Storage Abstraction (RVF-First)
 
-- **Status**: Accepted — Phase 0+1 complete, Phases 2-3 pending
+- **Status**: Accepted — Phase 0+1+2a complete, Phase 2b+3 pending
 - **Date**: 2026-04-13
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), ADR-0080 (storage consolidation)
@@ -214,16 +214,17 @@ Replace `loadStorageFns()` with RvfBackend (IStorageContract) and rewire all 13 
 that bypass the router. Swarm audit found 38 individual `import()` statements across
 8 command files + 5 runtime files.
 
-- [ ] **T2.1** Add `implements IStorageContract` to RvfBackend class declaration.
+- [x] **T2.1** Add `implements IStorageContract` to RvfBackend class declaration.
   (Structurally equivalent — IStorageContract ≡ IMemoryBackend, verified by
   `adr0086-storage-contract.test.mjs`, 42 assertions.)
-- [ ] **T2.2** Update `_doInit()` in memory-router.ts: create `RvfBackend`, call
-  `storage.initialize()`, replace `_fns` with storage method delegates.
-- [ ] **T2.3** Update `routeMemoryOp()` to call `storage.store()`, `storage.get()`, etc.
-  instead of `fns.storeEntry()`, `fns.getEntry()`, etc.
-- [ ] **T2.4** Update `routeEmbeddingOp()` to use EmbeddingPipeline for generation and
-  `storage.search()` for vector operations.
-- [ ] **T2.5** `shutdownRouter()` calls `storage.shutdown()`.
+- [x] **T2.2** Update `_doInit()` in memory-router.ts: create `RvfBackend` via
+  `createStorage()`, replace `_fns`/`StorageFns` with `_storage`/`IStorageContract`.
+- [x] **T2.3** Update `routeMemoryOp()` to call `storage.store()`, `storage.getByKey()`,
+  `storage.delete()`, `storage.search()`, `storage.count()`, `storage.listNamespaces()`,
+  `storage.query()`, `storage.getStats()`, `storage.healthCheck()`.
+- [x] **T2.4** Update `routeEmbeddingOp()` — embedding ops route through adapter
+  directly; HNSW ops remain on initializer (Phase 3 cleanup).
+- [x] **T2.5** `shutdownRouter()` calls `_storage.shutdown()`.
 - [ ] **T2.6** Rewire 8 command-file importers (13 dynamic imports):
   `memory.ts` (8), `embeddings.ts` (7), `benchmark.ts` (4), `performance.ts` (2),
   `neural.ts` (2), `init.ts` (1), `hooks.ts` (1). Map each destructured function
@@ -233,8 +234,11 @@ that bypass the router. Swarm audit found 38 individual `import()` statements ac
 - [ ] **T2.8** Tests: all existing unit tests pass with RvfBackend; verify no import
   of `memory-initializer` remains in any `.ts` source file.
 
-**Result**: memory-router.ts uses IStorageContract via RvfBackend. All 13 direct
-importers rewired. memory-initializer.ts is no longer imported anywhere.
+16 Phase 2 tests pass (5 groups). 2029 total suite pass, 0 failures.
+
+**Result**: memory-router.ts uses IStorageContract via RvfBackend. T2.6-T2.8
+(rewire 13 direct importers) deferred to Phase 2b — initializer stubs provide
+backward compatibility.
 
 ### Phase 3: Delete
 
