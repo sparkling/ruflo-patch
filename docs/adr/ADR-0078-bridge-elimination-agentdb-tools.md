@@ -309,3 +309,13 @@ with integration tests before merging.
 | 1 Correctness fixes | -- | Done (2026-04-11) |
 | 2 Category A migration | -- | Done (2026-04-11) |
 | 3 Category B/C migration | -- | Done (2026-04-11) |
+
+## ADR-0085 Note (2026-04-13)
+
+ADR-0085 deleted memory-bridge.ts entirely, which completes the elimination this ADR
+began. ADR-0078 migrated agentdb-tools.ts callers from bridge to router (Phases 1-3).
+ADR-0085 then removed the bridge file itself, the registry bootstrap (`getRegistry()`
+moved to router as `initControllerRegistry()`), and the 11 remaining try-bridge
+paths in memory-initializer.ts. The `bridgeRecordFeedback` and `bridgeSessionStart/End`
+patterns identified in Upstream PR Candidates above are now implemented as
+`routeFeedbackOp` and `routeSessionOp` in memory-router.ts.

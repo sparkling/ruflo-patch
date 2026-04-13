@@ -197,5 +197,12 @@ The following ADR-0075 findings were re-evaluated with upstream creator perspect
   (which is the JS fallback). Different performance tiers, both intentional.
 - **AgentDBService IS scaffolding** — upstream confirms it's going away; shim approach aligns
   with their roadmap
+  - *ADR-0085 finding (2026-04-13)*: No concrete AgentDBService class ever existed.
+    The term was a conceptual role. Comment reference removed from controller-intercept.
 - **memory-bridge.ts encapsulates edge-case handling** — wholesale deletion risks regression;
   upstream recommends extracting specific functions, not deleting
+  - *ADR-0085 resolution (2026-04-13)*: Followed this recommendation exactly — extracted
+    `getRegistry()` + 8 helpers into memory-router.ts, then deleted the remaining 3,424
+    lines. All 9 local fallback paths verified safe by 12-agent validation swarm.
+    The `listEntries` empty-result fallthrough bug (identified by this ADR) was confirmed
+    fixed by the deletion.

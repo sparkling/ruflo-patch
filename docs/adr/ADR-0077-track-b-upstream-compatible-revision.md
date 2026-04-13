@@ -553,10 +553,23 @@ and initializer's ControllerRegistry instances.
 - `@claude-flow/cli/src/mcp-tools/memory-tools.ts` -- all 6 handlers routed through `routeMemoryOp()`
 - `@claude-flow/cli/src/mcp-tools/agentdb-tools.ts` -- 20 call sites migrated to router
 
-### Files NOT modified (upstream compatible)
-- `memory-bridge.ts` -- untouched, zero ADR-0077 changes
-- `memory-initializer.ts` -- untouched except Phase 3's 4-line pipeline redirect
+### Files NOT modified by ADR-0077 (upstream compatible)
+- `memory-bridge.ts` -- untouched by ADR-0077; **deleted by ADR-0085** (2026-04-13)
+- `memory-initializer.ts` -- untouched except Phase 3's 4-line pipeline redirect;
+  **11 bridge try-blocks removed by ADR-0085**, now pure SQLite CRUD
 
 ### Test coverage
 - 44 new tests (unit + integration + wiring) in `tests/unit/memory-router-adr0077.test.mjs`
 - All 1437 unit tests pass, 0 regressions
+
+## ADR-0085 Supersession Note (2026-04-13)
+
+ADR-0077's design deliberately left memory-bridge.ts and memory-initializer.ts untouched
+for upstream compatibility. ADR-0085 revisited this decision after ADR-0084 Phase 4
+eliminated all external callers, finding:
+- memory-bridge.ts had zero external callers — keeping it provided no merge benefit
+- All 11 try-bridge fallback paths in memory-initializer.ts were redundant
+- The JSON sidecar (`auto-memory-store.json`) was a CJS workaround, now eliminated
+
+ADR-0077's Phases 1-5 remain valid as implemented. ADR-0085 extends Phase 5 by
+completing the dead code removal that ADR-0077 deferred.

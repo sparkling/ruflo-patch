@@ -1,6 +1,6 @@
 # ADR-0076: Architecture Consolidation — Implementation Plan
 
-- **Status**: Implemented (Phases 0-4), Phase 5 in progress
+- **Status**: Implemented (all phases complete)
 - **Date**: 2026-04-06 (proposed), 2026-04-07 (Phases 0-4 implemented)
 - **Depends on**: ADR-0075 (Architecture State Assessment)
 - **Revised by**: ADR-0077 (upstream-compatible approach adopted for Phases 1-5)
@@ -548,7 +548,7 @@ Total: 11-18 working days.
 | **2** | Single embedding pipeline | **Complete** | New `embedding-pipeline.ts` + lazy-cache redirects in 4 consumers + 4 constants consolidated | 20 pass |
 | **3** | Single storage abstraction | **Complete** | New `storage.ts` + `storage-factory.ts` + `createStorage()` wired into controller-registry, memory-bridge, memory-initializer | 14 pass |
 | **4** | Shared controller instances | **Complete** | New `controller-intercept.ts` with `getOrCreate()` pool, wired into both registries (45 + 6 wraps) + bridge connected at startup | 21 pass |
-| **5** | Single data flow path | **Not started** | New `memory-router.ts` + rewire 21 import sites in MCP tools (ADR-0077 approach) | — |
+| **5** | Single data flow path | **Complete** | ADR-0083 Waves 1-2 (memory-router.ts, 825 lines eliminated) + ADR-0083 Wave 3 via ADR-0084 T3.2 (hooks-tools.ts 18 sites) + ADR-0084 Phase 4 (route methods controller-direct, bridge removed from route layer) | 1933 pass |
 
 ### New files created (Phases 0-4)
 
@@ -592,11 +592,13 @@ Every MCP tool call follows one path:
 - `session-tools.ts` — 1 initializer import → routeMemoryOp
 - `embeddings-tools.ts` — 2 initializer imports → pipeline.embed
 
-**Files NOT modified:**
-- `memory-bridge.ts` — becomes dead code when tool files stop importing it
-- `memory-initializer.ts` — becomes dead code (except pipeline/createStorage redirects from Phases 2-3)
+**Files NOT modified (by this ADR):**
+- `memory-bridge.ts` — became dead code after Phases 0-4; **deleted by ADR-0085** (2026-04-13)
+- `memory-initializer.ts` — 11 bridge try-blocks **removed by ADR-0085**; remains as pure SQLite CRUD
 
 ## Decision
 
 Implement the 6-phase plan using the ADR-0077 intercept approach. Each phase is gated on
-a passing test suite. Phases 0-4 are complete. Phase 5 is next.
+a passing test suite. Phases 0-4 are complete. Phase 5 (bridge+initializer dead code removal)
+was implemented by **ADR-0085**, which deleted memory-bridge.ts, moved registry bootstrap
+to the router, and eliminated the JSON sidecar.

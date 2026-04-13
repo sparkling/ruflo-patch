@@ -1,8 +1,9 @@
 # ADR-0076: Architecture Consolidation Plan
 
-- **Status**: Track A Implemented, Track B Revised
+- **Status**: Track A Implemented, Track B Completed (via ADR-0077 + ADR-0085)
 - **Date**: 2026-04-06
 - **Revised**: 2026-04-06 (upstream-compatible constraint applied)
+- **Completed**: 2026-04-13 (ADR-0085 deleted bridge, eliminated sidecar, closed all gaps)
 - **Depends on**: ADR-0075 (assessment), ADR-0073 (storage upgrade), ADR-0069 F1 (controller delegation)
 - **Analysis**: Two hive councils (10 + 10 agents), including Reuven Cohen perspective
 
