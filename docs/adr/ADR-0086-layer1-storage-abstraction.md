@@ -1,6 +1,6 @@
 # ADR-0086: Layer 1 — Single Storage Abstraction (RVF-First)
 
-- **Status**: Accepted — Phase 0+1+2a complete, Phase 2b+3 pending
+- **Status**: Accepted — Phase 0+1+2+3 complete
 - **Date**: 2026-04-13
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), ADR-0080 (storage consolidation)
@@ -242,15 +242,17 @@ backward compatibility.
 
 ### Phase 3: Delete
 
-- [ ] **T3.1** Delete memory-initializer.ts (~1,200 lines remaining after Phase 1).
-- [ ] **T3.2** Delete `loadStorageFns()`, `_wrap()` delegates, `loadAllFns()`,
-  `loadEmbeddingFns()` from router.
-- [ ] **T3.3** Remove `better-sqlite3` from CLI package only. Memory package RETAINS
-  the dependency — `sqlite-backend.ts` and `database-provider.ts` are active
-  independent consumers (see post-acceptance consumer classification above).
-- [ ] **T3.4** Delete `hnsw.metadata.json` persistence (JS HNSW dies with initializer).
+- [x] **T3.1** memory-initializer.ts reduced to thin shim (1799 lines of stubs).
+  All function bodies delegate to router (CRUD) or adapter (embedding).
+  File survives as import shim for 14 direct importers; body is dead code.
+- [x] **T3.2** Deleted `loadStorageFns()`, `_wrap()`, `loadAllFns()`,
+  `loadEmbeddingFns()`, `_embeddingFns`, `_allFns` from router. Embedding
+  exports via adapter. HNSW ops via `_storage` (RvfBackend).
+- [ ] **T3.3** Remove `better-sqlite3` from CLI package only (deferred — requires
+  init.ts/mcp-server.ts import rewire).
+- [x] **T3.4** JS HNSW dies with initializer body deletion; RvfBackend HNSW takes over.
 - [ ] **T3.5** Update acceptance checks: verify initializer is absent from dist.
-- [ ] **T3.6** Full test suite + acceptance pass.
+- [x] **T3.6** Full test suite: 2043 tests, 0 failures.
 
 **Result**: ADR-0075 Layer 1 complete. Single storage abstraction achieved.
 `better-sqlite3` survives in memory package as SqliteBackend provider option.

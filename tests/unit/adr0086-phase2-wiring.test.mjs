@@ -121,10 +121,10 @@ describe('ADR-0086 T2.4: routeEmbeddingOp uses embedding-adapter', () => {
     );
   });
 
-  it('HNSW cases still use loadEmbeddingFns (Phase 3 cleanup)', () => {
+  it('HNSW cases use RvfBackend (Phase 3 complete)', () => {
     assert.ok(
-      routerSrc.includes('loadEmbeddingFns()'),
-      'HNSW cases no longer use loadEmbeddingFns — removed too early',
+      routerSrc.includes('_storage.search') || routerSrc.includes('_storage.getStats'),
+      'HNSW cases should use _storage (RvfBackend)',
     );
   });
 });

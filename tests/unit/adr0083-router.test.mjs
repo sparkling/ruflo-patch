@@ -385,9 +385,8 @@ describe('ADR-0083 resetRouter: clears cached module references', () => {
 
     const src = readFileSync(routerPath, 'utf8');
     assert.ok(src.includes('export function resetRouter'), 'must export resetRouter');
+    // ADR-0086 Phase 3: _embeddingFns + _allFns removed (no more initializer)
     assert.ok(src.includes('_storage = null') || src.includes('_fns = null'), 'must reset storage state to null');
-    assert.ok(src.includes('_embeddingFns = null'), 'must reset _embeddingFns to null');
-    assert.ok(src.includes('_allFns = null'), 'must reset _allFns to null');
     assert.ok(src.includes('_interceptMod = null'), 'must reset _interceptMod to null');
     assert.ok(src.includes('_initialized = false'), 'must reset _initialized to false');
     assert.ok(src.includes('_initPromise = null'), 'must reset _initPromise to null');
@@ -421,13 +420,12 @@ describe('ADR-0083 Integration: memory-router.ts source structure', () => {
     );
   });
 
-  it('exports generateEmbedding via _wrap (lazy const export)', () => {
+  it('exports generateEmbedding as const (via adapter)', () => {
     const src = readFileSync(routerPath, 'utf8');
-    // ADR-0083: generateEmbedding is exported as a const via the _wrap helper,
-    // not as an explicit async function declaration.
+    // ADR-0086 Phase 3: generateEmbedding exported via adapter, not _wrap
     assert.ok(
-      src.includes("export const generateEmbedding = _wrap('generateEmbedding')"),
-      'generateEmbedding must be exported as a _wrap const',
+      src.includes('export const generateEmbedding'),
+      'generateEmbedding must be exported as a const',
     );
   });
 
@@ -446,10 +444,10 @@ describe('ADR-0083 Integration: memory-router.ts source structure', () => {
 
   // ADR-0085: writeJsonSidecar + AUTO_MEMORY_STORE_MAX removed (sidecar eliminated)
 
-  it('loadEmbeddingFns lazy-caches via _embeddingFns variable', () => {
+  it('embedding functions load from adapter (not initializer)', () => {
     const src = readFileSync(routerPath, 'utf8');
-    assert.ok(src.includes('_embeddingFns'), 'must have _embeddingFns lazy-cache variable');
-    assert.ok(src.includes('if (_embeddingFns) return _embeddingFns'), 'must short-circuit if cached');
+    // ADR-0086 Phase 3: embedding functions load from adapter
+    assert.ok(src.includes('embedding-adapter'), 'must reference embedding-adapter');
   });
 
   it('does not import memory-bridge.ts at the top level (lazy only)', () => {
