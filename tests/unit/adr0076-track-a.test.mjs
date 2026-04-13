@@ -77,6 +77,8 @@ describe('A1: cosineSim throws on dimension mismatch', () => {
     it(`${basename(file)} cosineSim checks dimension equality and throws`, () => {
       if (!existsSync(file)) return;
       const src = readFileSync(file, 'utf-8');
+      // ADR-0086: cosineSim deleted from initializer (dead code). Skip if absent.
+      if (!src.includes('function cosineSim(')) return;
       assert.ok(
         src.includes('a.length !== b.length') || src.includes('a.length != b.length'),
         'Should check dimension equality',

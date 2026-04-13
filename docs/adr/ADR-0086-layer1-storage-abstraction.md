@@ -1,6 +1,6 @@
 # ADR-0086: Layer 1 — Single Storage Abstraction (RVF-First)
 
-- **Status**: Accepted — Phase 0+1+2+3 complete
+- **Status**: Accepted — Phase 0+1 complete, Phase 2 core (T2.1-T2.5) + Phase 3 core (T3.1-T3.2, T3.4, T3.6) complete. T2.6-T2.8, T3.3, T3.5 deferred.
 - **Date**: 2026-04-13
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), ADR-0080 (storage consolidation)
@@ -237,8 +237,17 @@ that bypass the router. Swarm audit found 38 individual `import()` statements ac
 16 Phase 2 tests pass (5 groups). 2029 total suite pass, 0 failures.
 
 **Result**: memory-router.ts uses IStorageContract via RvfBackend. T2.6-T2.8
-(rewire 13 direct importers) deferred to Phase 2b — initializer stubs provide
+(rewire 13 direct importers) deferred to Phase 2b -- initializer stubs provide
 backward compatibility.
+
+#### Phase 2b: Stub delegation
+
+Rather than rewriting 38 import statements across 14 files, all initializer
+function bodies were replaced with thin stubs that delegate to `routeMemoryOp()`
+(CRUD operations) or `embedding-adapter` (embedding operations). The file
+survives as an import shim so that existing `import(...)` call sites continue
+to resolve without code changes. This was the pragmatic alternative to a bulk
+import rewire; T2.6-T2.8 track eliminating the shim entirely.
 
 ### Phase 3: Delete
 
@@ -261,18 +270,15 @@ backward compatibility.
 
 | Source | Lines |
 |--------|-------|
-| memory-initializer.ts (deleted) | ~2,814 |
+| memory-initializer.ts (stubbed, not deleted) | 2,814 -> 1,799 (bodies replaced with stubs) |
 | Router _wrap delegates + loadStorageFns (replaced) | ~80 |
 | Schema/migration functions (deleted, not relocated) | ~200 |
 | Quantization functions (deleted, not extracted) | ~100 |
 | Attention functions (deleted, not extracted) | ~120 |
-| **Total deleted** | **~3,314** |
+| **Total deleted** | **~1,515** |
 | Embedding adapter (relocated from initializer) | ~400 (relocated) |
 | Init functions (relocated from initializer) | ~100 (relocated) |
-| **Net reduction** | **~2,814** |
-
-Also removed: `better-sqlite3` from CLI package. Memory package retains the dependency
-for `sqlite-backend.ts` and `database-provider.ts`.
+| **Net reduction** | **~1,015** |
 
 ## Performance impact
 
@@ -303,9 +309,10 @@ score monotonicity. Never assert full result ordering.
 | Risk | Mitigation |
 |------|------------|
 | Search quality regression | Integration tests with unambiguous nearest-neighbor queries |
-| Embedding pipeline gaps | Phase 1 T1.3 keeps initializer chain as degraded fallback |
+| Embedding pipeline gaps | Adapter handles embedding ops directly; initializer chain no longer in the path |
 | Single-write latency increase | Acceptable at 300μs; batch path is faster |
 | Scale beyond in-memory Maps | META_IDX_SEG available as escape hatch; not needed today |
+| Shim persistence | T2.6-T2.8 rewire 14 direct importers to eliminate shim. Track as tech debt. |
 
 ## What this achieves
 
@@ -332,6 +339,15 @@ AFTER (Phase 3):
 ```
 
 ADR-0075's full 5-layer ideal state is achieved. Every memory operation follows one path:
-`MCP Tool → router → IStorageContract (RvfBackend) → in-memory Maps + HNSW`.
+`MCP Tool -> router -> IStorageContract (RvfBackend) -> in-memory Maps + HNSW`.
 
 No SQLite. No dual backends. No migration.
+
+## Known debt
+
+1. **IStorageContract and IMemoryBackend are identical** -- merge into single interface
+   when all consumers migrate.
+2. **In-memory Maps need scale tripwire at 100K entries** -- current Map-scan approach
+   works at present scale but has no guard against silent degradation at larger sizes.
+3. **14 direct importers still go through initializer shim** -- rewire tracked as
+   T2.6-T2.8; shim is dead code kept only for import compatibility.

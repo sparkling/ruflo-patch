@@ -389,42 +389,21 @@ const _memInitPath17 = resolve(FORK_CLI_SRC, 'memory/memory-initializer.ts');
 const _memInitExists17 = existsSync(_memInitPath17);
 const memoryInitSrc = _memInitExists17 ? readFileSync(_memInitPath17, 'utf-8') : '';
 
-describe('ADR-0080: ensureSchemaColumns creates table if missing', () => {
+describe('ADR-0080: ensureSchemaColumns (deleted in ADR-0086 — dead code)', () => {
+  // ADR-0086 swarm finding V11: ensureSchemaColumns had zero external callers,
+  // deleted as dead code. Schema creation now handled by MEMORY_SCHEMA_V3 in
+  // initializeMemoryDatabase. These tests skip when the function is absent.
   const fnStart = memoryInitSrc.indexOf('export async function ensureSchemaColumns');
 
-  it('ensureSchemaColumns is exported (or file deleted per ADR-0086)', () => {
+  it('ensureSchemaColumns deleted or file absent per ADR-0086', () => {
     if (!_memInitExists17) return;
-    assert.ok(fnStart > -1, 'memory-initializer must export ensureSchemaColumns');
-  });
-
-  it('creates memory_entries table with better-sqlite3 (not sql.js)', () => {
-    if (!_memInitExists17 || fnStart === -1) return;
+    // Function was deleted as dead code — fnStart === -1 is the expected state
+    if (fnStart === -1) return; // expected: deleted
+    // If still present, the old checks apply
     const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 2000);
     assert.ok(
       fnBlock.includes('CREATE TABLE IF NOT EXISTS memory_entries'),
       'ensureSchemaColumns must create memory_entries table',
-    );
-    assert.ok(
-      fnBlock.includes('better-sqlite3') && !fnBlock.includes('new SQL.Database('),
-      'ensureSchemaColumns must use better-sqlite3, NOT sql.js (WAL safety)',
-    );
-  });
-
-  it('ADR-0080 comment explains WAL safety', () => {
-    if (!_memInitExists17 || fnStart === -1) return;
-    const fnBlock = memoryInitSrc.slice(fnStart, fnStart + 500);
-    assert.ok(
-      fnBlock.includes('ADR-0080'),
-      'ensureSchemaColumns must reference ADR-0080 in a comment',
-    );
-  });
-
-  it('is listed in the module exports', () => {
-    if (!_memInitExists17) return;
-    assert.ok(
-      memoryInitSrc.includes('ensureSchemaColumns,') ||
-      memoryInitSrc.includes('ensureSchemaColumns }'),
-      'ensureSchemaColumns must appear in the module export list',
     );
   });
 });

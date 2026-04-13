@@ -176,12 +176,8 @@ describe('ADR-0086 T1.4: Schema/migration delegates removed', () => {
     });
   }
 
-  it('functions remain internally in initializer (used by CRUD)', () => {
-    // These are internal-only until Phase 3 deletes the file
-    assert.ok(
-      initializerSrc.includes('export async function ensureSchemaColumns('),
-      'ensureSchemaColumns should still exist internally',
-    );
+  it('MEMORY_SCHEMA_V3 remains internally in initializer', () => {
+    // ensureSchemaColumns deleted (dead code, V11). MEMORY_SCHEMA_V3 still used by initializeMemoryDatabase.
     assert.ok(
       initializerSrc.includes('export const MEMORY_SCHEMA_V3'),
       'MEMORY_SCHEMA_V3 should still exist internally',
