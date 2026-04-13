@@ -115,12 +115,12 @@ describe('Phase 3 wiring: memory-initializer uses createStorage', () => {
     );
   });
 
-  it('sql.js fallback is retained (not deleted)', () => {
+  it('sql.js references cleaned (ADR-0084)', () => {
     if (!existsSync(file)) return;
     const src = readFileSync(file, 'utf-8');
     assert.ok(
-      src.includes("sql.js"),
-      'sql.js fallback must be retained as upstream-compatible path',
+      !src.includes("sql.js"),
+      'sql.js references must be removed per ADR-0084 dead code cleanup',
     );
   });
 });

@@ -29,7 +29,7 @@ check_no_sqljs_in_backend_output() {
   local cli; cli=$(_cli_cmd)
   local ns="adr0084-sqljs-$(date +%s)"
   local test_key="adr0084-check"
-  local test_val="verify no sql.js in user-facing output"
+  local test_val="verify no leaked backend name in user-facing output"
 
   # Accumulate all output from store + search + doctor
   local combined_output=""
@@ -44,7 +44,7 @@ check_no_sqljs_in_backend_output() {
   fi
 
   # 2. memory search
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'sql.js output check' --namespace '$ns' --limit 5" "" 15
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'backend output check' --namespace '$ns' --limit 5" "" 15
   combined_output="${combined_output}${_RK_OUT}"$'\n'
 
   # 3. doctor --fix (captures diagnostic output about backends)
@@ -118,5 +118,99 @@ check_no_sqljs_in_tool_descriptions() {
     local sample
     sample=$(echo "$hits" | head -3 | sed "s|${base}/||")
     _CHECK_OUTPUT="ADR-0084-2: ${count} 'sql.js' string reference(s) in published CLI dist: ${files%,}"$'\n'"  Sample: ${sample}"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0084-3: Phase 2 router methods exported in published CLI
+#
+# Verifies that the 6 new route methods from ADR-0084 Phase 2 are
+# present in the compiled memory-router.js in the published dist.
+# These methods are the bridge-caller migration layer that Phase 3
+# will use to redirect hooks-tools.ts and worker-daemon.ts away from
+# direct memory-bridge imports.
+# ════════════════════════════════════════════════════════════════════
+
+check_phase2_router_exports() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas/cli"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0084-3: @sparkleideas/cli not installed in TEMP_DIR"
+    return
+  fi
+
+  # Find the compiled memory-router.js in dist (lives under dist/src/memory/).
+  # Use -prune for node_modules inside dist, not -not -path which matches
+  # the full path and falsely excludes results when $base is under node_modules.
+  local router_js
+  router_js=$(find "$base/dist" -path '*/node_modules' -prune -o -name 'memory-router.js' -print 2>/dev/null | head -1)
+  if [[ -z "$router_js" ]]; then
+    _CHECK_OUTPUT="ADR-0084-3: memory-router.js not found in published CLI dist"
+    return
+  fi
+
+  # Check for all 6 Phase 2 route method exports
+  local methods=("routePatternOp" "routeFeedbackOp" "routeSessionOp" "routeLearningOp" "routeReflexionOp" "routeCausalOp")
+  local missing=""
+  local found=0
+
+  for method in "${methods[@]}"; do
+    if grep -q "$method" "$router_js"; then
+      ((found++))
+    else
+      missing="${missing}${method}, "
+    fi
+  done
+
+  if [[ "$found" -eq 6 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0084-3: all 6 Phase 2 route methods present in published memory-router.js"
+  else
+    _CHECK_OUTPUT="ADR-0084-3: ${found}/6 Phase 2 route methods found. Missing: ${missing%, }"
+  fi
+}
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0084-4: Phase 2 bridge loader in published CLI
+#
+# Verifies that the bridge module loader (loadBridge) and cache
+# (_bridgeMod) exist in the compiled router, confirming the lazy
+# loading infrastructure for Phase 3 caller migration.
+# ════════════════════════════════════════════════════════════════════
+
+check_phase2_bridge_loader() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local base="${TEMP_DIR}/node_modules/@sparkleideas/cli"
+  if [[ ! -d "$base" ]]; then
+    _CHECK_OUTPUT="ADR-0084-4: @sparkleideas/cli not installed in TEMP_DIR"
+    return
+  fi
+
+  # Use -prune (not -not -path) to avoid false exclusion when $base is under node_modules
+  local router_js
+  router_js=$(find "$base/dist" -path '*/node_modules' -prune -o -name 'memory-router.js' -print 2>/dev/null | head -1)
+  if [[ -z "$router_js" ]]; then
+    _CHECK_OUTPUT="ADR-0084-4: memory-router.js not found in published CLI dist"
+    return
+  fi
+
+  local has_loader=0
+  local has_cache=0
+
+  grep -q 'loadBridge' "$router_js" && has_loader=1
+  grep -q '_bridgeMod' "$router_js" && has_cache=1
+
+  if [[ "$has_loader" -eq 1 ]] && [[ "$has_cache" -eq 1 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0084-4: bridge loader (loadBridge + _bridgeMod cache) present in published memory-router.js"
+  else
+    local detail=""
+    [[ "$has_loader" -eq 0 ]] && detail="${detail}loadBridge missing, "
+    [[ "$has_cache" -eq 0 ]] && detail="${detail}_bridgeMod cache missing, "
+    _CHECK_OUTPUT="ADR-0084-4: bridge loader incomplete in published memory-router.js: ${detail%, }"
   fi
 }

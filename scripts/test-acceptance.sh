@@ -29,7 +29,8 @@
 #   e2e-storage — e2e-store-rvf, e2e-semantic, e2e-list-store,
 #                e2e-dual-write, e2e-dim768, e2e-no-dead-files,
 #                e2e-cfg-roundtrip
-#   adr0084    — adr0084-no-sqljs-desc, e2e-0084-no-sqljs
+#   adr0084    — adr0084-no-sqljs-desc, adr0084-p2-exports,
+#                adr0084-p2-bridge, e2e-0084-no-sqljs
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -295,6 +296,7 @@ source "$checks_lib"
 
 # Start e2e memory init + health check in background (15s timeout for cold start)
 _E2E_READY_FILE=$(mktemp /tmp/ruflo-e2e-ready-XXXXX)
+rm -f "$_E2E_READY_FILE"  # remove so _wait_e2e_ready blocks until prep writes it
 _E2E_HEALTH_FILE=$(mktemp /tmp/ruflo-e2e-health-XXXXX)
 (
   if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
@@ -647,8 +649,10 @@ run_check_bg "adr0083-no-bridge"  "No bridge in migrated (ADR-0083)"     check_a
 run_check_bg "adr0083-no-append"  "No appendToAutoMemory (ADR-0083)"     check_adr0083_no_append_fn_in_initializer "adr0083"
 run_check_bg "adr0083-no-dosync" "No doSync drain (ADR-0083)"          check_adr0083_no_dosync_drain            "adr0083"
 
-# ADR-0084: Dead Code Cleanup — sql.js ghost refs
+# ADR-0084: Dead Code Cleanup — sql.js ghost refs + Phase 2 router methods
 run_check_bg "adr0084-no-sqljs-desc" "No sql.js in tool descs (ADR-0084)" check_no_sqljs_in_tool_descriptions     "adr0084"
+run_check_bg "adr0084-p2-exports"    "Phase 2 router exports (ADR-0084)"   check_phase2_router_exports              "adr0084"
+run_check_bg "adr0084-p2-bridge"     "Phase 2 bridge loader (ADR-0084)"    check_phase2_bridge_loader               "adr0084"
 
 # ADR-0081: M5 Max Configuration Profile
 run_check_bg "adr0081-neural"   "Neural optional dep (ADR-0081)"       check_adr0081_neural_optional_dep      "adr0081"
@@ -658,16 +662,19 @@ run_check_bg "adr0081-balanced" "Config template balanced (ADR-0081)"  check_adr
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
-# so they block only until background memory init completes (~8s) while
-# non-e2e grep checks execute immediately. All 85 checks run in parallel.
+# so they block until background memory init + seed completes (~15-30s)
+# while non-e2e grep checks execute immediately. All checks run in parallel.
 # ════════════════════════════════════════════════════════════════════
 
 # Wrapper: e2e checks wait for prep, then run the actual check
+# Bug fix: elapsed was counting iterations (0.25s each), not seconds.
+# 30 iterations * 0.25s = 7.5s actual wait, but prep can take 20-40s.
+# Fix: max_iters = max_wait_secs / poll_interval = 30 / 0.25 = 120.
 _wait_e2e_ready() {
-  local max_wait=30 elapsed=0
-  while [[ ! -f "$_E2E_READY_FILE" ]] && (( elapsed < max_wait )); do
+  local max_iters=120 i=0
+  while [[ ! -f "$_E2E_READY_FILE" ]] && (( i < max_iters )); do
     sleep 0.25
-    elapsed=$((elapsed + 1))
+    i=$((i + 1))
   done
 }
 
@@ -1044,6 +1051,8 @@ collect_parallel "all" \
   "adr0083-no-append|No appendToAutoMemory (ADR-0083)" \
   "adr0083-no-dosync|No doSync drain (ADR-0083)" \
   "adr0084-no-sqljs-desc|No sql.js in tool descs (ADR-0084)" \
+  "adr0084-p2-exports|Phase 2 router exports (ADR-0084)" \
+  "adr0084-p2-bridge|Phase 2 bridge loader (ADR-0084)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \
