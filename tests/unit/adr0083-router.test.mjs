@@ -4,13 +4,11 @@
 // London School TDD: no real imports of memory-router.ts or memory-initializer.ts.
 // All storage, fs, and embedding dependencies are replaced with inline mock factories.
 //
-// Coverage:
-//   1. writeJsonSidecar — written after successful store, capped at 1000 entries,
-//      failure is best-effort (does not fail the store)
-//   2. routeEmbeddingOp — delegates generate to generateEmbedding, hnswSearch to
+// Coverage (ADR-0085: Groups 1-3 writeJsonSidecar removed — sidecar eliminated):
+//   4. routeEmbeddingOp — delegates generate to generateEmbedding, hnswSearch to
 //      searchHNSWIndex, returns error for unknown op types
-//   3. generateEmbedding lazy wrapper — loads module once, reuses cached ref
-//   4. resetRouter — clears all cached module references
+//   5. generateEmbedding lazy wrapper — loads module once, reuses cached ref
+//   6. resetRouter — clears all cached module references
 
 import { describe, it, beforeEach } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -44,97 +42,7 @@ function asyncMock(value) {
 const CLI_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
 const MEMORY_SRC = `${CLI_SRC}/memory`;
 
-// ============================================================================
-// Simulated writeJsonSidecar (mirrors memory-router.ts logic exactly)
-// ============================================================================
-
-const AUTO_MEMORY_STORE_MAX = 1000;
-
-/**
- * Build a writeJsonSidecar function backed by injected fs mocks.
- * The real implementation lives in memory-router.ts — this replica lets us
- * verify every branch in isolation without touching the filesystem.
- */
-function createJsonSidecar(fsMock, cwdFn) {
-  const path = { join: (...parts) => parts.join('/') };
-
-  return function writeJsonSidecar(entry) {
-    try {
-      const dataDir = path.join(cwdFn(), '.claude-flow', 'data');
-      const storePath = path.join(dataDir, 'auto-memory-store.json');
-      const tmpPath = storePath + '.tmp';
-
-      if (!fsMock.existsSync(dataDir)) fsMock.mkdirSync(dataDir, { recursive: true });
-
-      let store = [];
-      if (fsMock.existsSync(storePath)) {
-        try {
-          const raw = JSON.parse(fsMock.readFileSync(storePath, 'utf-8'));
-          store = Array.isArray(raw) ? raw : (raw?.entries ?? []);
-        } catch { /* corrupt — start fresh */ }
-      }
-
-      store = store.filter((e) => e.id !== entry.id);
-
-      store.push({
-        id: entry.id,
-        key: entry.key,
-        value: entry.value,
-        namespace: entry.namespace,
-        metadata: { source: 'cli-memory-store' },
-        created_at: new Date().toISOString(),
-      });
-
-      if (store.length > AUTO_MEMORY_STORE_MAX) {
-        store = store.slice(store.length - AUTO_MEMORY_STORE_MAX);
-      }
-
-      fsMock.writeFileSync(tmpPath, JSON.stringify(store, null, 2));
-      fsMock.renameSync(tmpPath, storePath);
-    } catch {
-      // best-effort — never throws
-    }
-  };
-}
-
-/**
- * Build a routeMemoryOp that calls writeJsonSidecar after successful store.
- * Accepts injected sidecar function so we can spy on it.
- */
-function createRouterWithSidecar(fns, sidecarFn) {
-  return async function routeMemoryOp(op) {
-    if (op.type === 'store') {
-      const result = await fns.storeEntry({
-        key: op.key,
-        value: op.value,
-        namespace: op.namespace || 'default',
-        generateEmbeddingFlag: op.generateEmbedding !== false,
-        tags: op.tags,
-        ttl: op.ttl,
-        upsert: op.upsert,
-      });
-      const storeSuccess = !!result.success;
-      if (storeSuccess && op.key && op.value) {
-        sidecarFn({
-          id: op.key,
-          key: op.key,
-          value: op.value,
-          namespace: op.namespace || 'default',
-        });
-      }
-      return {
-        success: storeSuccess,
-        key: op.key,
-        stored: storeSuccess,
-        storedAt: new Date().toISOString(),
-        hasEmbedding: !!result.embedding,
-        embeddingDimensions: result.embedding?.dimensions || null,
-        error: result.error,
-      };
-    }
-    return { success: false, error: `Not handled in test stub: ${op.type}` };
-  };
-}
+// ADR-0085: createJsonSidecar + createRouterWithSidecar removed (sidecar eliminated)
 
 // ============================================================================
 // Simulated routeEmbeddingOp (the ADR-0083 addition to memory-router.ts)
@@ -204,277 +112,17 @@ function createLazyAllFnsWrapper(loaderFn) {
 }
 
 // ============================================================================
-// Group 1: writeJsonSidecar — written after successful store
+// Groups 1-3 removed (ADR-0085): writeJsonSidecar deleted — intelligence reads SQLite directly
 // ============================================================================
 
-describe('ADR-0083 writeJsonSidecar: written after successful store', () => {
-  let fsMock;
-  let storage;
-  let sidecarCalls;
-  let routeMemoryOp;
-
-  beforeEach(() => {
-    sidecarCalls = [];
-    const sidecarSpy = mockFn((entry) => { sidecarCalls.push(entry); });
-
-    fsMock = {
-      existsSync: mockFn(() => false),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => '[]'),
-      writeFileSync: mockFn(() => undefined),
-      renameSync: mockFn(() => undefined),
-    };
-
-    storage = {
-      storeEntry: asyncMock({ success: true, embedding: { dimensions: 768 } }),
-    };
-
-    routeMemoryOp = createRouterWithSidecar(storage, sidecarSpy);
-  });
-
-  it('should call writeJsonSidecar exactly once after a successful store', async () => {
-    await routeMemoryOp({ type: 'store', key: 'k1', value: 'v1', namespace: 'patterns' });
-    assert.equal(sidecarCalls.length, 1, 'sidecar must be called once');
-  });
-
-  it('should pass the correct entry shape to writeJsonSidecar', async () => {
-    await routeMemoryOp({ type: 'store', key: 'auth-key', value: 'jwt', namespace: 'secrets' });
-    const entry = sidecarCalls[0];
-    assert.equal(entry.id, 'auth-key');
-    assert.equal(entry.key, 'auth-key');
-    assert.equal(entry.value, 'jwt');
-    assert.equal(entry.namespace, 'secrets');
-  });
-
-  it('should default namespace to "default" when not provided', async () => {
-    await routeMemoryOp({ type: 'store', key: 'bare-key', value: 'bare-value' });
-    assert.equal(sidecarCalls[0].namespace, 'default');
-  });
-
-  it('should NOT call writeJsonSidecar when storeEntry returns success: false', async () => {
-    storage.storeEntry = asyncMock({ success: false, error: 'disk full' });
-    routeMemoryOp = createRouterWithSidecar(storage, mockFn((e) => { sidecarCalls.push(e); }));
-
-    const result = await routeMemoryOp({ type: 'store', key: 'k2', value: 'v2' });
-    assert.equal(result.success, false);
-    assert.equal(sidecarCalls.length, 0, 'sidecar must NOT be called on failure');
-  });
-
-  it('should NOT call writeJsonSidecar when key is missing', async () => {
-    const spy = mockFn((e) => { sidecarCalls.push(e); });
-    routeMemoryOp = createRouterWithSidecar(storage, spy);
-
-    await routeMemoryOp({ type: 'store', key: undefined, value: 'v3', namespace: 'ns' });
-    assert.equal(sidecarCalls.length, 0, 'sidecar must NOT be called without a key');
-  });
-
-  it('should NOT call writeJsonSidecar when value is missing', async () => {
-    const spy = mockFn((e) => { sidecarCalls.push(e); });
-    routeMemoryOp = createRouterWithSidecar(storage, spy);
-
-    await routeMemoryOp({ type: 'store', key: 'k4', value: undefined, namespace: 'ns' });
-    assert.equal(sidecarCalls.length, 0, 'sidecar must NOT be called without a value');
-  });
-});
-
 // ============================================================================
-// Group 2: writeJsonSidecar — sidecar capped at 1000 entries
+// Group 4: routeEmbeddingOp — delegation (renumbered from original)
 // ============================================================================
 
-describe('ADR-0083 writeJsonSidecar: caps store at 1000 entries', () => {
-  it('should keep only the last 1000 entries when the store exceeds 1000', () => {
-    // Pre-populate store with 1001 entries
-    const existingEntries = Array.from({ length: 1001 }, (_, i) => ({
-      id: `entry-${i}`,
-      key: `key-${i}`,
-      value: `val-${i}`,
-      namespace: 'default',
-    }));
-
-    let writtenData = null;
-    const fsMock = {
-      existsSync: mockFn((p) => !p.endsWith('data')), // dataDir exists, storePath exists
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => JSON.stringify(existingEntries)),
-      writeFileSync: mockFn((p, data) => { writtenData = data; }),
-      renameSync: mockFn(() => undefined),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-
-    writeJsonSidecar({ id: 'new-entry', key: 'new-entry', value: 'new-val', namespace: 'default' });
-
-    assert.ok(writtenData !== null, 'writeFileSync must be called');
-    const stored = JSON.parse(writtenData);
-    assert.equal(stored.length, 1000, 'must cap at exactly 1000 entries');
-  });
-
-  it('should keep the most recent entries (tail) when trimming to 1000', () => {
-    // 999 existing + 1 new = 1000 (no trim needed)
-    const existingEntries = Array.from({ length: 999 }, (_, i) => ({
-      id: `entry-${i}`,
-      key: `key-${i}`,
-      value: `val-${i}`,
-      namespace: 'default',
-    }));
-
-    let writtenData = null;
-    const fsMock = {
-      existsSync: mockFn((p) => !p.endsWith('data')),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => JSON.stringify(existingEntries)),
-      writeFileSync: mockFn((p, data) => { writtenData = data; }),
-      renameSync: mockFn(() => undefined),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-    writeJsonSidecar({ id: 'latest', key: 'latest', value: 'latest-val', namespace: 'ns' });
-
-    const stored = JSON.parse(writtenData);
-    assert.equal(stored.length, 1000, 'exactly 1000 entries after adding one to 999');
-    assert.equal(stored[stored.length - 1].id, 'latest', 'the newest entry must be last');
-  });
-
-  it('should de-duplicate by id before appending (upsert semantics)', () => {
-    const existingEntries = [
-      { id: 'dup-key', key: 'dup-key', value: 'old-value', namespace: 'default' },
-      { id: 'other-key', key: 'other-key', value: 'v', namespace: 'default' },
-    ];
-
-    let writtenData = null;
-    const fsMock = {
-      existsSync: mockFn((p) => !p.endsWith('data')),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => JSON.stringify(existingEntries)),
-      writeFileSync: mockFn((p, data) => { writtenData = data; }),
-      renameSync: mockFn(() => undefined),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-    writeJsonSidecar({ id: 'dup-key', key: 'dup-key', value: 'new-value', namespace: 'default' });
-
-    const stored = JSON.parse(writtenData);
-    assert.equal(stored.length, 2, 'must not grow when upserting an existing id');
-    const updated = stored.find(e => e.id === 'dup-key');
-    assert.equal(updated.value, 'new-value', 'updated entry must have new value');
-  });
-
-  it('should write via a tmp file then rename (atomic write)', () => {
-    const fsMock = {
-      existsSync: mockFn(() => false),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => '[]'),
-      writeFileSync: mockFn(() => undefined),
-      renameSync: mockFn(() => undefined),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-    writeJsonSidecar({ id: 'k', key: 'k', value: 'v', namespace: 'ns' });
-
-    assert.equal(fsMock.writeFileSync.calls.length, 1, 'must call writeFileSync once');
-    assert.equal(fsMock.renameSync.calls.length, 1, 'must call renameSync once (atomic write)');
-
-    const writtenPath = fsMock.writeFileSync.calls[0][0];
-    const finalPath = fsMock.renameSync.calls[0][1];
-    assert.ok(writtenPath.endsWith('.tmp'), 'must write to a .tmp file first');
-    assert.ok(!finalPath.endsWith('.tmp'), 'must rename to the final path (no .tmp suffix)');
-  });
-});
-
+// Placeholder end-of-removed-groups marker
 // ============================================================================
-// Group 3: writeJsonSidecar — failure is best-effort (never throws)
+// Groups 1-3 removed (ADR-0085): writeJsonSidecar deleted — intelligence reads SQLite directly
 // ============================================================================
-
-describe('ADR-0083 writeJsonSidecar: failure does not propagate', () => {
-  it('should not throw when writeFileSync throws', () => {
-    const fsMock = {
-      existsSync: mockFn(() => false),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => '[]'),
-      writeFileSync: mockFn(() => { throw new Error('ENOSPC: no space left on device'); }),
-      renameSync: mockFn(() => undefined),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-
-    assert.doesNotThrow(() => {
-      writeJsonSidecar({ id: 'k', key: 'k', value: 'v', namespace: 'ns' });
-    }, 'writeJsonSidecar must swallow all errors');
-  });
-
-  it('should not throw when renameSync throws', () => {
-    const fsMock = {
-      existsSync: mockFn(() => false),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => '[]'),
-      writeFileSync: mockFn(() => undefined),
-      renameSync: mockFn(() => { throw new Error('EXDEV: cross-device link not permitted'); }),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-
-    assert.doesNotThrow(() => {
-      writeJsonSidecar({ id: 'k', key: 'k', value: 'v', namespace: 'ns' });
-    }, 'writeJsonSidecar must swallow renameSync errors');
-  });
-
-  it('should not throw when the existing store file contains corrupt JSON', () => {
-    const fsMock = {
-      existsSync: mockFn(() => true),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => '{corrupt: json'),
-      writeFileSync: mockFn(() => undefined),
-      renameSync: mockFn(() => undefined),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-
-    assert.doesNotThrow(() => {
-      writeJsonSidecar({ id: 'k', key: 'k', value: 'v', namespace: 'ns' });
-    }, 'writeJsonSidecar must recover from corrupt existing file');
-  });
-
-  it('should still write a valid store after recovering from corrupt JSON', () => {
-    let writtenData = null;
-    const fsMock = {
-      existsSync: mockFn(() => true),
-      mkdirSync: mockFn(() => undefined),
-      readFileSync: mockFn(() => 'NOT JSON AT ALL'),
-      writeFileSync: mockFn((p, data) => { writtenData = data; }),
-      renameSync: mockFn(() => undefined),
-    };
-
-    const writeJsonSidecar = createJsonSidecar(fsMock, () => '/project');
-    writeJsonSidecar({ id: 'k', key: 'k', value: 'fresh', namespace: 'ns' });
-
-    assert.ok(writtenData !== null, 'writeFileSync must still be called');
-    const stored = JSON.parse(writtenData);
-    assert.equal(stored.length, 1, 'must have exactly 1 entry after corrupt-file recovery');
-    assert.equal(stored[0].value, 'fresh');
-  });
-
-  it('should not affect the store result when sidecar throws', async () => {
-    const throwingSidecar = () => { throw new Error('sidecar exploded'); };
-    const storage = {
-      storeEntry: asyncMock({ success: true, embedding: { dimensions: 768 } }),
-    };
-
-    // routeMemoryOp catches sidecar errors inside writeJsonSidecar (best-effort wrapper)
-    // Here we test using the raw sidecar — create a router that calls a throwing sidecar
-    // but wraps it like the real implementation does (inside writeJsonSidecar's try/catch)
-    const routeMemoryOp = createRouterWithSidecar(storage, throwingSidecar);
-
-    // The router itself should NOT throw — writeJsonSidecar swallows errors
-    // However createRouterWithSidecar calls sidecarFn directly. We verify the
-    // real writeJsonSidecar wrapping behaviour in the corrupt-JSON test above.
-    // Here, we confirm the store result shape is correct when sidecar is a no-op stub.
-    const noopRouter = createRouterWithSidecar(storage, () => { /* no-op */ });
-    const result = await noopRouter({ type: 'store', key: 'k', value: 'v', namespace: 'ns' });
-
-    assert.equal(result.success, true, 'store result must be success regardless of sidecar');
-    assert.equal(result.stored, true);
-  });
-});
 
 // ============================================================================
 // Group 4: routeEmbeddingOp — delegation
@@ -797,26 +445,7 @@ describe('ADR-0083 Integration: memory-router.ts source structure', () => {
     );
   });
 
-  it('declares AUTO_MEMORY_STORE_MAX constant at 1000', () => {
-    const src = readFileSync(routerPath, 'utf8');
-    assert.ok(
-      src.includes('AUTO_MEMORY_STORE_MAX = 1000'),
-      'must declare AUTO_MEMORY_STORE_MAX = 1000',
-    );
-  });
-
-  it('writeJsonSidecar is defined as a best-effort function (has try/catch)', () => {
-    const src = readFileSync(routerPath, 'utf8');
-    assert.ok(src.includes('function writeJsonSidecar'), 'must define writeJsonSidecar');
-    // The outer try/catch pattern makes it best-effort
-    assert.ok(src.includes('} catch {'), 'writeJsonSidecar must have a catch block for best-effort behaviour');
-  });
-
-  it('writeJsonSidecar uses atomic write (tmp + rename)', () => {
-    const src = readFileSync(routerPath, 'utf8');
-    assert.ok(src.includes('.tmp'), 'must write to a .tmp path before renaming');
-    assert.ok(src.includes('renameSync'), 'must use renameSync for atomic write');
-  });
+  // ADR-0085: writeJsonSidecar + AUTO_MEMORY_STORE_MAX removed (sidecar eliminated)
 
   it('loadEmbeddingFns lazy-caches via _embeddingFns variable', () => {
     const src = readFileSync(routerPath, 'utf8');
