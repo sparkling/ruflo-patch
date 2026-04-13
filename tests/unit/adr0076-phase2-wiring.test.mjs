@@ -28,8 +28,8 @@ const GUIDANCE_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/guidance/
 // ===========================================================================
 
 describe('Phase 2 wiring: cosineSim delegates to canonical cosineSimilarity', () => {
+  // ADR-0085: memory-bridge.ts deleted — only intelligence.ts remains
   const files = [
-    [`${CLI_SRC}/memory-bridge.ts`, 'memory-bridge.ts'],
     [`${CLI_SRC}/intelligence.ts`, 'intelligence.ts'],
   ];
 

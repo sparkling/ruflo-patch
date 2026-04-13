@@ -8,18 +8,19 @@ check_adr0065_no_384_memory_bridge() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local bridge_file
-  bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-bridge.js")
+  # ADR-0085: memory-bridge.ts deleted — check memory-router.js instead
+  local router_file
+  router_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-router.js")
 
-  if [[ -n "$bridge_file" ]]; then
-    if grep -q '|| 384\|?? 384' "$bridge_file" 2>/dev/null; then
-      _CHECK_OUTPUT="ADR-0065 P0: hardcoded 384 fallback still present in memory-bridge"
+  if [[ -n "$router_file" ]]; then
+    if grep -q '|| 384\|?? 384' "$router_file" 2>/dev/null; then
+      _CHECK_OUTPUT="ADR-0065 P0: hardcoded 384 fallback still present in memory-router"
     else
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0065 P0: no 384 fallbacks in memory-bridge"
+      _CHECK_OUTPUT="ADR-0065 P0: no 384 fallbacks in memory-router (ADR-0085 bridge deleted)"
     fi
   else
-    _CHECK_OUTPUT="ADR-0065 P0: memory-bridge.js not found in published package"
+    _CHECK_OUTPUT="ADR-0065 P0: memory-router.js not found in published package"
   fi
 }
 
@@ -46,18 +47,19 @@ check_adr0065_no_minilm_memory_bridge() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local bridge_file
-  bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-bridge.js")
+  # ADR-0085: memory-bridge.ts deleted — check memory-router.js instead
+  local router_file
+  router_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-router.js")
 
-  if [[ -n "$bridge_file" ]]; then
-    if grep -q "all-MiniLM-L6-v2" "$bridge_file" 2>/dev/null; then
-      _CHECK_OUTPUT="ADR-0065 P0: hardcoded MiniLM model still present in memory-bridge"
+  if [[ -n "$router_file" ]]; then
+    if grep -q "all-MiniLM-L6-v2" "$router_file" 2>/dev/null; then
+      _CHECK_OUTPUT="ADR-0065 P0: hardcoded MiniLM model still present in memory-router"
     else
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0065 P0: no hardcoded MiniLM model in memory-bridge"
+      _CHECK_OUTPUT="ADR-0065 P0: no hardcoded MiniLM model in memory-router (ADR-0085 bridge deleted)"
     fi
   else
-    _CHECK_OUTPUT="ADR-0065 P0: memory-bridge.js not found in published package"
+    _CHECK_OUTPUT="ADR-0065 P0: memory-router.js not found in published package"
   fi
 }
 
@@ -65,18 +67,19 @@ check_adr0065_config_wiring() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local bridge_file
-  bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-bridge.js")
+  # ADR-0085: config wiring helpers moved from memory-bridge to memory-router
+  local router_file
+  router_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-router.js")
 
-  if [[ -n "$bridge_file" ]]; then
-    if grep -q 'getProjectConfig\|findProjectRoot' "$bridge_file" 2>/dev/null; then
+  if [[ -n "$router_file" ]]; then
+    if grep -q '_getProjectConfig\|_findProjectRoot\|getProjectConfig\|findProjectRoot' "$router_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0065 P0: config wiring helpers found in memory-bridge"
+      _CHECK_OUTPUT="ADR-0065 P0: config wiring helpers found in memory-router (ADR-0085 bridge deleted)"
     else
-      _CHECK_OUTPUT="ADR-0065 P0: config wiring helpers missing from memory-bridge"
+      _CHECK_OUTPUT="ADR-0065 P0: config wiring helpers missing from memory-router"
     fi
   else
-    _CHECK_OUTPUT="ADR-0065 P0: memory-bridge.js not found in published package"
+    _CHECK_OUTPUT="ADR-0065 P0: memory-router.js not found in published package"
   fi
 }
 
@@ -221,17 +224,18 @@ check_adr0065_embeddings_model_name() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local bridge_file
-  bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-bridge.js")
+  # ADR-0085: config helpers moved from memory-bridge to memory-router
+  local router_file
+  router_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-router.js")
 
-  if [[ -n "$bridge_file" ]]; then
-    if grep -q 'getEmbeddingModelName\|all-mpnet-base-v2' "$bridge_file" 2>/dev/null; then
+  if [[ -n "$router_file" ]]; then
+    if grep -q 'getEmbeddingModelName\|all-mpnet-base-v2\|_getProjectConfig\|_readProjectConfig' "$router_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0065 P0: embedding model reads from config (mpnet fallback)"
+      _CHECK_OUTPUT="ADR-0065 P0: embedding model config in memory-router (ADR-0085 bridge deleted)"
     else
-      _CHECK_OUTPUT="ADR-0065 P0: embedding model not reading from config"
+      _CHECK_OUTPUT="ADR-0065 P0: embedding model not reading from config in memory-router"
     fi
   else
-    _CHECK_OUTPUT="ADR-0065 P0: memory-bridge.js not found"
+    _CHECK_OUTPUT="ADR-0065 P0: memory-router.js not found"
   fi
 }

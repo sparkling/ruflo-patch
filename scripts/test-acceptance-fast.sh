@@ -7,7 +7,7 @@
 # Usage:
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
-# Groups: all, p3, p4, p5, adr0059, e2e-core, e2e-storage
+# Groups: all, p3, p4, p5, adr0059, adr0085, e2e-core, e2e-storage
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -152,6 +152,13 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0059"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   _fast_run "hook-edit"      check_adr0059_hook_edit_records_file
   _fast_run "hook-lifecycle" check_adr0059_hook_full_lifecycle
   _fast_run "no-collisions"  check_adr0059_no_id_collisions
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0085"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  echo "── ADR-0085 (Bridge Deletion) ──"
+  _fast_run "adr0085-no-bridge"  check_no_bridge_in_dist
+  _fast_run "adr0085-init-zero"  check_initializer_zero_bridge_imports
+  _fast_run "adr0085-router-reg" check_router_has_init_controller_registry
 fi
 
 if [[ "$_FAST_RUN_GROUPS" == *"e2e-storage"* || "$_FAST_RUN_GROUPS" == "all" ]]; then

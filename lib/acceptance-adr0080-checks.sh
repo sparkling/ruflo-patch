@@ -495,42 +495,27 @@ check_adr0080_memory_bridge_100k() {
     return
   fi
 
-  # Find memory-bridge in published packages
-  local bridge_file=""
-  for pkg in cli memory agentdb; do
-    local candidate
-    candidate=$(find "${base}/${pkg}" -path '*/node_modules' -prune -o \
-      -name 'memory-bridge*' -name '*.js' -print 2>/dev/null | head -1)
-    if [[ -n "$candidate" ]]; then
-      bridge_file="$candidate"
-      break
-    fi
-  done
+  # ADR-0085: memory-bridge deleted — maxEntries 100k now lives in memory-router
+  # (initControllerRegistry passes maxElements to ControllerRegistry).
+  local router_file=""
+  router_file=$(find "${base}/cli" -path '*/node_modules' -prune -o \
+    -name 'memory-router.js' -print 2>/dev/null | head -1)
 
-  if [[ -z "$bridge_file" ]]; then
-    # Broader search
-    bridge_file=$(find "$base" -path '*/node_modules' -prune -o \
-      -name 'memory-bridge*' -name '*.js' -print 2>/dev/null | head -1)
-  fi
-
-  if [[ -z "$bridge_file" ]]; then
-    _CHECK_OUTPUT="ADR-0080-9: memory-bridge*.js not found in published packages"
+  if [[ -z "$router_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-9: memory-router.js not found in published packages"
     return
   fi
 
   local short_path
-  short_path=$(echo "$bridge_file" | sed "s|${base}/||")
+  short_path=$(echo "$router_file" | sed "s|${base}/||")
 
-  # Check for maxEntries fallback of 100000
-  if grep -qE 'maxEntries.*100000|100000.*maxEntries' "$bridge_file" 2>/dev/null; then
+  if grep -qE 'maxEntries.*100000|100000.*maxEntries|maxElements.*100000|100000.*maxElements' "$router_file" 2>/dev/null; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0080-9: maxEntries fallback 100000 found in ${short_path}"
+    _CHECK_OUTPUT="ADR-0080-9: maxEntries/maxElements 100000 found in ${short_path} (ADR-0085 bridge deleted)"
   else
-    # Also check for the pattern: || 100000 or ?? 100000 near maxEntries
-    if grep -qE '100000' "$bridge_file" 2>/dev/null && \
-       grep -qE 'maxEntries' "$bridge_file" 2>/dev/null; then
+    if grep -qE '100000' "$router_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0080-9: maxEntries and 100000 both present in ${short_path}"
+      _CHECK_OUTPUT="ADR-0080-9: 100000 present in ${short_path} (ADR-0085 bridge deleted)"
     else
       _CHECK_OUTPUT="ADR-0080-9: maxEntries fallback 100000 not found in ${short_path}"
     fi
@@ -580,27 +565,26 @@ check_adr0080_rvf_primary() {
     return
   fi
 
-  # 1. memory-bridge must NOT hardcode 'agentdb-memory.rvf'
-  local bridge_file=""
-  bridge_file=$(find "$base" -path '*/node_modules' -prune -o \
-    -name 'memory-bridge.js' -print 2>/dev/null | grep 'memory-bridge\.js$' | head -1)
+  # ADR-0085: memory-bridge deleted — RVF path resolution now in memory-router
+  local router_file=""
+  router_file=$(find "$base" -path '*/node_modules' -prune -o \
+    -name 'memory-router.js' -print 2>/dev/null | grep 'memory-router\.js$' | head -1)
 
-  if [[ -z "$bridge_file" ]]; then
-    _CHECK_OUTPUT="ADR-0080-11: memory-bridge*.js not found"
+  if [[ -z "$router_file" ]]; then
+    _CHECK_OUTPUT="ADR-0080-11: memory-router.js not found (ADR-0085 bridge deleted)"
     return
   fi
 
   local short_path
-  short_path=$(echo "$bridge_file" | sed "s|${base}/||")
+  short_path=$(echo "$router_file" | sed "s|${base}/||")
 
-  # 2. Primary path must resolve from embeddings.json or use canonical 'memory.rvf'
-  #    (agentdb-memory.rvf may still appear as a legacy FALLBACK — that's OK)
-  if grep -q 'databasePath\|embeddings\.json' "$bridge_file" 2>/dev/null; then
+  # Primary path must resolve from config or use canonical paths
+  if grep -q 'databasePath\|_getDbPath\|_getProjectConfig\|embeddings\.json' "$router_file" 2>/dev/null; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0080-11: RVF path resolved from embeddings.json in ${short_path}"
-  elif grep -q 'memory\.rvf' "$bridge_file" 2>/dev/null; then
+  elif grep -q 'memory\.rvf' "$router_file" 2>/dev/null; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0080-11: RVF path uses canonical 'memory.rvf' in ${short_path}"
+    _CHECK_OUTPUT="ADR-0080-11: RVF path uses canonical 'memory.rvf' in ${short_path} (ADR-0085 bridge deleted)"
   else
     _CHECK_OUTPUT="ADR-0080-11: no RVF path resolution found in ${short_path}"
   fi

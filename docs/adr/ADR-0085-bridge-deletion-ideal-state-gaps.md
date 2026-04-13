@@ -117,22 +117,22 @@ initializer hop remains until L1 storage work.
 
 ### Phase 1: Move ControllerRegistry bootstrap to router
 
-- [ ] **T1.1** Extract `getRegistry()` (~226 lines including 8 helper functions) from
+- [x] **T1.1** Extract `getRegistry()` (~226 lines including 8 helper functions) from
   memory-bridge.ts into memory-router.ts as `initControllerRegistry()`. Includes:
   `readProjectConfig`, `getProjectConfig`, `findProjectRoot`, `readJsonFile`,
   `getDbPath`, `getConfigSwarmDir`, `ensureExitHook`, and 5 module-level variables.
-- [ ] **T1.2** Wire `initControllerRegistry()` into `ensureRouter()` — call after
+- [x] **T1.2** Wire `initControllerRegistry()` into `ensureRouter()` — call after
   storage init, before route methods become available. Handle console suppression
   carefully: the 120s timeout must not silence unrelated CLI output.
-- [ ] **T1.3** Resolve dual-registry conflict: ensure the router's `registryInstance`
+- [x] **T1.3** Resolve dual-registry conflict: ensure the router's `registryInstance`
   is the SAME instance that controller-intercept uses. Options: (a) router exports
   the registry and intercept reads it, (b) intercept initializes via router instead
   of bridge, (c) router calls intercept's init with its own registry. Must be exactly
   one ControllerRegistry instance per process.
-- [ ] **T1.4** Update `getController()` to use the router-local registry instead of
+- [x] **T1.4** Update `getController()` to use the router-local registry instead of
   controller-intercept if the registry is available (controller-intercept becomes
   the fallback, not the primary).
-- [ ] **T1.5** Unit + integration tests: registry bootstrap in router, getController
+- [x] **T1.5** Unit + integration tests: registry bootstrap in router, getController
   resolves from local registry, no dual-instance creation.
 
 ### Phase 2: Remove memory-initializer bridge dependency
@@ -140,8 +140,8 @@ initializer hop remains until L1 storage work.
 Remove all 11 `getBridge()` calls. Each follows the same pattern: try bridge function,
 fall back to local code. Removing the try-bridge block leaves only the local code.
 
-- [ ] **T2.1** Delete `getBridge()` helper and `_bridge` variable from memory-initializer.ts
-- [ ] **T2.2** Remove 11 try-bridge blocks:
+- [x] **T2.1** Delete `getBridge()` helper and `_bridge` variable from memory-initializer.ts
+- [x] **T2.2** Remove 11 try-bridge blocks:
 
 | Line | Bridge function | Try-block size |
 |------|-----------------|----------------|
@@ -156,42 +156,47 @@ fall back to local code. Removing the try-bridge block leaves only the local cod
 | 2721 | bridgeGetEntry | 8 lines |
 | 2821 | bridgeDeleteEntry | 22 lines |
 
-- [ ] **T2.3** Remove `activateControllerRegistry()` from memory-initializer.ts —
+- [x] **T2.3** Remove `activateControllerRegistry()` from memory-initializer.ts —
   the router now handles registry bootstrap (Phase 1).
-- [ ] **T2.4** Unit + integration tests: all CRUD operations work without bridge.
+- [x] **T2.4** Unit + integration tests: all CRUD operations work without bridge.
 
 ### Phase 3: Delete memory-bridge.ts
 
-- [ ] **T3.1** Delete `memory-bridge.ts` (3,650 lines)
-- [ ] **T3.2** Remove any remaining `memory-bridge` comment references from:
+- [x] **T3.1** Delete `memory-bridge.ts` (3,650 lines)
+- [x] **T3.2** Remove any remaining `memory-bridge` comment references from:
   memory-router.ts, memory-initializer.ts, ewc-consolidation.ts, intelligence.ts,
   agentdb-orchestration.ts
-- [ ] **T3.3** Update acceptance checks: ADR-0084-4 (bridge loader) and ADR-0084-8
-  (controller fallback) to reflect bridge absence
-- [ ] **T3.4** Final acceptance: `grep -r "memory-bridge" cli/src/ --include="*.ts"`
-  returns zero hits in production code
+- [x] **T3.3** Update acceptance checks: ADR-0084-4 (bridge loader) and ADR-0084-8
+  (controller fallback) to reflect bridge absence. Also redirected 8 old acceptance
+  checks (ADR-0063, ADR-0065, ADR-0068, ADR-0080) from memory-bridge to memory-router.
+- [x] **T3.4** Final acceptance: `grep -r "memory-bridge" cli/src/ --include="*.ts"`
+  returns zero hits in production code (only provenance comments remain in router)
 
 ### Phase 3.5: Test cleanup (14 files affected)
 
 The bridge deletion breaks 14 test files. Categorized by action:
 
 **Delete entirely (3 files):**
-- [ ] **T3.5.1** `memory-bridge-activation.test.mjs` — tests bridge activation directly
-- [ ] **T3.5.2** `adr0084-router-phase2.test.mjs` — Phase 2 bridge loader tests (superseded by Phase 4)
-- [ ] **T3.5.3** `tests/fork/cli/memory-bridge-activation.test.ts` — fork-level bridge tests
+- [x] **T3.5.1** `memory-bridge-activation.test.mjs` — deleted
+- [x] **T3.5.2** `adr0084-router-phase2.test.mjs` — deleted
+- [x] **T3.5.3** `tests/fork/cli/memory-bridge-activation.test.ts` — deleted
 
 **Remove describe blocks (5 files):**
-- [ ] **T3.5.4** `adr0076-phase3-wiring` — bridge-specific wiring checks
-- [ ] **T3.5.5** `adr0080-maxelements` — 3 bridge-dependent describe blocks
-- [ ] **T3.5.6** `sqlite-pragma-adr0069` — bridge pragma checks
-- [ ] **T3.5.7** `config-centralization-adr0065` — bridge config reads
-- [ ] **T3.5.8** `memory-router-adr0077` — bridge import pattern checks
+- [x] **T3.5.4** `adr0076-phase3-wiring` — no bridge refs remain
+- [x] **T3.5.5** `adr0080-maxelements` — only `learningBridge` refs (separate module)
+- [x] **T3.5.6** `sqlite-pragma-adr0069` — no bridge refs remain
+- [x] **T3.5.7** `config-centralization-adr0065` — no bridge refs remain
+- [x] **T3.5.8** `memory-router-adr0077` — bridge negative assertions kept (valid)
 
 **Rewrite mocks (4 files):**
-- [ ] **T3.5.9** `hooks-tools-activation.test.mjs` — 30+ bridge references → router mocks
-- [ ] **T3.5.10** `controller-chaos.test.mjs` — bridge chaos injection → router
-- [ ] **T3.5.11** `tests/fork/cli/agentdb-tools-activation.test.ts` — bridge mocks
-- [ ] **T3.5.12** `tests/fork/cli/hooks-tools-activation.test.ts` — bridge mocks
+- [x] **T3.5.9** `hooks-tools-activation.test.mjs` — no memory-bridge refs remain
+- [x] **T3.5.10** `controller-chaos.test.mjs` — only `learningBridge` refs (separate module)
+- [x] **T3.5.11** `tests/fork/cli/agentdb-tools-activation.test.ts` — no memory-bridge refs
+- [x] **T3.5.12** `tests/fork/cli/hooks-tools-activation.test.ts` — no memory-bridge refs
+
+**Dead bridge entries removed from file arrays:**
+- [x] `adr0076-phase2-wiring.test.mjs` — removed memory-bridge.ts from cosineSim file list
+- [x] `adr0076-track-a.test.mjs` — removed memory-bridge.ts from cosineSim file list
 
 **Keep as negative tests (2 files):**
 - `adr0083-migrations.test.mjs` — assertions that files do NOT import deleted module (still valid)
@@ -199,11 +204,12 @@ The bridge deletion breaks 14 test files. Categorized by action:
 
 ### Phase 4: Tests and verification
 
-- [ ] **T4.1** Full unit suite passes (adjusted count after test file deletions)
+- [x] **T4.1** Full unit suite passes: 1945 tests, 0 failures
 - [ ] **T4.2** Build produces zero new errors
 - [ ] **T4.3** Acceptance checks pass (all ADR-0084 + new ADR-0085 checks)
-- [ ] **T4.4** New acceptance checks: ADR-0085-1 (bridge absent from dist),
-  ADR-0085-2 (initializer zero bridge imports), ADR-0085-3 (router has initControllerRegistry)
+- [x] **T4.4** New acceptance checks: ADR-0085-1 (bridge absent from dist),
+  ADR-0085-2 (initializer zero bridge imports), ADR-0085-3 (router has initControllerRegistry).
+  Also wired into `test-acceptance-fast.sh` as `adr0085` group.
 - [ ] **T4.5** Update ADR-0076 and ADR-0084 completion notes
 
 ## Lines eliminated

@@ -16,20 +16,20 @@ check_adr0063_embedding_import_agentdb() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # C1: memory-bridge must resolve embedding config — either via agentdb's
-  # getEmbeddingConfig or via ADR-0065's getProjectConfig (reads embeddings.json)
-  local bridge_file
-  bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-bridge.js")
+  # C1: embedding config must be resolved — ADR-0085 moved helpers to memory-router.
+  # Check memory-router.js for getProjectConfig/getEmbeddingConfig.
+  local router_file
+  router_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-router.js")
 
-  if [[ -n "$bridge_file" ]]; then
-    if grep -q "getEmbeddingConfig\|getProjectConfig\|getEmbeddingModelName" "$bridge_file" 2>/dev/null; then
+  if [[ -n "$router_file" ]]; then
+    if grep -q "getEmbeddingConfig\|getProjectConfig\|_getProjectConfig\|_readProjectConfig" "$router_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0063 C1: embedding config resolved in memory-bridge"
+      _CHECK_OUTPUT="ADR-0063 C1: embedding config resolved in memory-router (ADR-0085 bridge deleted)"
     else
-      _CHECK_OUTPUT="ADR-0063 C1: no embedding config resolution found in memory-bridge"
+      _CHECK_OUTPUT="ADR-0063 C1: no embedding config resolution found in memory-router"
     fi
   else
-    _CHECK_OUTPUT="ADR-0063 C1: memory-bridge.js not found in published CLI package"
+    _CHECK_OUTPUT="ADR-0063 C1: memory-router.js not found in published CLI package"
   fi
 }
 

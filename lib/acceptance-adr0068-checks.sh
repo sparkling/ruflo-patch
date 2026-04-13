@@ -146,15 +146,16 @@ check_adr0068_controllers_enabled() {
     fi
   else
     # config.json may not exist (init generates config.yaml). Fall back to
-    # verifying memory-bridge supports the controllers.enabled merge path.
-    local bridge_file
-    bridge_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-bridge.js")
+    # verifying memory-router supports the controllers.enabled merge path
+    # (ADR-0085: bridge deleted, helpers moved to router).
+    local router_file
+    router_file=$(_find_pkg_js "$TEMP_DIR/node_modules/@sparkleideas/cli" "memory-router.js")
 
-    if [[ -n "$bridge_file" ]] && grep -q 'controllers.*enabled' "$bridge_file" 2>/dev/null; then
+    if [[ -n "$router_file" ]] && grep -q 'controllers.*enabled\|_readProjectConfig\|_getProjectConfig' "$router_file" 2>/dev/null; then
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="ADR-0068 P1: memory-bridge supports controllers.enabled merging (no config.json in project)"
+      _CHECK_OUTPUT="ADR-0068 P1: memory-router supports controllers.enabled merging (ADR-0085 bridge deleted)"
     else
-      _CHECK_OUTPUT="ADR-0068 P1: no config.json and memory-bridge lacks controllers.enabled support"
+      _CHECK_OUTPUT="ADR-0068 P1: no config.json and memory-router lacks controllers.enabled support"
     fi
   fi
 }

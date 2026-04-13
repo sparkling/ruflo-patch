@@ -49,9 +49,9 @@ function freshPath(label) {
 // A1: cosineSim dimension guard (source verification)
 // ===========================================================================
 describe('A1: cosineSim throws on dimension mismatch', () => {
+  // ADR-0085: memory-bridge.ts deleted — only initializer + intelligence remain
   const files = [
     '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/memory/memory-initializer.ts',
-    '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/memory/memory-bridge.ts',
     '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts',
   ];
 
