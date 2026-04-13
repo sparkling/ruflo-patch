@@ -783,12 +783,10 @@ describe('ADR-0084 T4.2: routeCausalOp recall calls causalRecall.search with tim
 // ============================================================================
 
 // Factory: shutdownRouter calls intercept.shutdown if available, resets caches
+// ADR-0086 Phase 3: Mirrors current resetRouter() state variables
 function createShutdownRouter(intercept) {
   let _interceptMod = intercept;
-  let _bridgeMod = { some: 'bridge' };
-  let _fns = { some: 'fns' };
-  let _embeddingFns = { some: 'embed' };
-  let _allFns = { some: 'all' };
+  let _storage = { some: 'storage' };
   let _initialized = true;
   let _initPromise = Promise.resolve();
 
@@ -798,21 +796,15 @@ function createShutdownRouter(intercept) {
         await _interceptMod.shutdown();
       }
       // Reset all module caches
-      _fns = null;
-      _embeddingFns = null;
-      _allFns = null;
+      _storage = null;
       _interceptMod = null;
-      _bridgeMod = null;
       _initialized = false;
       _initPromise = null;
     },
     getState() {
       return {
-        fns: _fns,
-        embeddingFns: _embeddingFns,
-        allFns: _allFns,
+        storage: _storage,
         interceptMod: _interceptMod,
-        bridgeMod: _bridgeMod,
         initialized: _initialized,
         initPromise: _initPromise,
       };
@@ -862,23 +854,17 @@ describe('ADR-0084 T4.2: shutdownRouter resets module caches', () => {
   });
 
   it('should reset all caches to null after shutdown', async () => {
-    // Before shutdown: caches are populated
+    // ADR-0086 Phase 3: only _storage + _interceptMod + _initialized + _initPromise
     const before = router.getState();
-    assert.ok(before.fns !== null);
-    assert.ok(before.embeddingFns !== null);
-    assert.ok(before.allFns !== null);
+    assert.ok(before.storage !== null);
     assert.ok(before.interceptMod !== null);
     assert.ok(before.initialized === true);
 
     await router.shutdownRouter();
 
-    // After shutdown: all caches are null
     const after = router.getState();
-    assert.equal(after.fns, null);
-    assert.equal(after.embeddingFns, null);
-    assert.equal(after.allFns, null);
+    assert.equal(after.storage, null);
     assert.equal(after.interceptMod, null);
-    assert.equal(after.bridgeMod, null);
     assert.equal(after.initialized, false);
     assert.equal(after.initPromise, null);
   });

@@ -925,14 +925,15 @@ describe('ADR-0077 Phase 5: wiring — import graph (source verification)', () =
 
 describe('ADR-0077 Phase 5: wiring — memory-router internal structure', () => {
 
-  it('memory-router.ts uses lazy loading for storage functions', () => {
+  it('memory-router.ts uses RvfBackend via createStorage', () => {
+    // ADR-0086 Phase 3: loadStorageFns replaced by createStorage (RvfBackend)
     const file = `${MEMORY_SRC}/memory-router.ts`;
     if (!existsSync(file)) return;
     const src = readFileSync(file, 'utf-8');
 
     assert.ok(
-      src.includes('loadStorageFns'),
-      'must have loadStorageFns lazy loader',
+      src.includes('createStorage'),
+      'must have createStorage (RvfBackend) lazy loader',
     );
   });
 

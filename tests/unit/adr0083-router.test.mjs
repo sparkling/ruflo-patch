@@ -80,7 +80,8 @@ function createEmbeddingRouter(embFns) {
 }
 
 // ============================================================================
-// Simulated lazy-wrapper module cache (mirrors _allFns / _embeddingFns pattern)
+// Simulated lazy-wrapper module cache (mirrors _loadAdapter / createStorage pattern)
+// Historical: originally tested _allFns / _wrap; now tests the same lazy-loading concept
 // ============================================================================
 
 /**
