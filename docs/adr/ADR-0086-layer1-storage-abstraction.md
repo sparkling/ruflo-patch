@@ -59,7 +59,8 @@ After ADR-0085:
 
 ### Adversarial review findings (ADR-0087)
 
-A hive of 8 experts (including devil's advocate) stress-tested this plan:
+Two hive discussions (8 experts each, including devil's advocate and Reuven Cohen as
+RVF domain expert) stress-tested this plan using ADR-0087's adversarial technique:
 
 1. **IStorageContract was designed for SQL** — 6 methods (getByKey, listNamespaces,
    clearNamespace, count, query, bulkDelete) assume relational semantics. RvfBackend
@@ -73,12 +74,50 @@ A hive of 8 experts (including devil's advocate) stress-tested this plan:
 3. **Progressive HNSW (70% → 95% recall)** — non-issue at current dataset sizes
    (hundreds to low thousands). Entries reach Layer C essentially immediately.
 
+4. **12 direct importers bypass the router** — `cli/index.ts`, `commands/memory.ts` (6),
+   `commands/embeddings.ts` (7), `commands/benchmark.ts` (4), `commands/performance.ts`,
+   `runtime/headless.ts`, `mcp-server.ts`, `worker-daemon.ts`, `commands/neural.ts`,
+   `commands/hooks.ts`, `commands/init.ts`. Phase 2 must rewire all of these.
+
+5. **better-sqlite3 has 5 surviving consumers** — `sqlite-backend.ts`,
+   `database-provider.ts`, `rvf-migration.ts`, `migration.ts`, `@claude-flow/hooks`.
+   Phase 3 must handle all of them before dropping the dependency.
+
+6. **T1.4 (schema) has 6+ external callers** — `initializeMemoryDatabase` is called
+   from `commands/init.ts`, `commands/memory.ts`, `mcp-server.ts`, `worker-daemon.ts`,
+   `index.ts`, router. Cannot blindly delete — callers must be replaced first.
+
+### Implementation guidance (Reuven Cohen, RVF creator)
+
+- **Do NOT touch `tryNativeInit()` return false** — intentional; skipping it would lose
+  persisted entries because `loadFromDisk()` would not run.
+- **Do NOT change `store()` ingest order** — Map→keyIndex→HNSW→native→WAL is correct.
+- **Do NOT manually rebuild HNSW** — let the native runtime own progressive index lifecycle.
+- **Do NOT add schema migration** — RVF has no schema; just open and use.
+- **Leave fragile areas alone**: `loadFromDisk()`/`replayWal()`, `persistToDisk()` atomic
+  rename, `nativeIdMap`/`nativeReverseMap`, `metadataPath` getter.
+
 ## Decision
 
-Replace memory-initializer.ts with RvfBackend in 3 phases. No SqliteStorage adapter.
-No migration. No dual-backend. RvfBackend already satisfies IStorageContract.
+Replace memory-initializer.ts with RvfBackend in 3 phases + pre-work. No SqliteStorage
+adapter. No migration. No dual-backend. RvfBackend already satisfies IStorageContract.
 
 ## Tasks
+
+### Phase 0: Pre-work — Fix breaking tests
+
+Update 7 test files to tolerate memory-initializer.ts absence before any source changes.
+This prevents the test suite from going red during implementation.
+
+- [x] **T0.1** `adr0083-migrations.test.mjs` — remove "sole permitted consumer" assertion
+- [x] **T0.2** `adr0076-phase2-wiring.test.mjs` — remove generateEmbedding pipeline wiring block
+- [x] **T0.3** `adr0076-phase3-wiring.test.mjs` — remove createStorage wiring block
+- [x] **T0.4** `adr0080-maxelements.test.mjs` — guard sql.js migration + RVF init blocks with existsSync
+- [x] **T0.5** `sqlite-pragma-adr0069.test.mjs` — remove schema pragmas block
+- [x] **T0.6** `adr0085-bridge-deletion.test.mjs` — guard Group 5 bridge-dependency checks with existsSync
+- [x] **T0.7** `memory-router-adr0077.test.mjs` — remove loadStorageFns import assertion
+
+**Result**: All 1,806 tests pass. Test suite is safe for subsequent phases.
 
 ### Phase 1: Extract non-storage functions (~620 lines)
 
