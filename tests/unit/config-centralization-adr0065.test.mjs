@@ -147,7 +147,6 @@ describe('ADR-0065 P0/P1: embeddings.json correctness', () => {
 
 describe('ADR-0065 P0: no hardcoded 384 dimension fallbacks', () => {
   const filesToCheck = [
-    { path: join(FORK_ROOT, '@claude-flow/cli/src/memory/memory-bridge.ts'), name: 'memory-bridge.ts' },
     { path: join(FORK_ROOT, '@claude-flow/cli/src/config-adapter.ts'), name: 'config-adapter.ts' },
     { path: join(FORK_ROOT, '@claude-flow/memory/src/controller-registry.ts'), name: 'controller-registry.ts' },
   ];
@@ -185,9 +184,7 @@ describe('ADR-0065 P0: no hardcoded 384 dimension fallbacks', () => {
 // ============================================================================
 
 describe('ADR-0065 P0: no hardcoded all-MiniLM-L6-v2 model strings', () => {
-  const filesToCheck = [
-    { path: join(FORK_ROOT, '@claude-flow/cli/src/memory/memory-bridge.ts'), name: 'memory-bridge.ts' },
-  ];
+  const filesToCheck = [];
 
   for (const { path: fpath, name } of filesToCheck) {
     it(`${name}: no hardcoded MiniLM-L6-v2 model name`, () => {
@@ -206,45 +203,6 @@ describe('ADR-0065 P0: no hardcoded all-MiniLM-L6-v2 model strings', () => {
     // Check the pipeline('feature-extraction', ...) call
     const pipelineCalls = src.match(/pipeline\(['"]feature-extraction['"],\s*['"]Xenova\/all-MiniLM-L6-v2['"]\)/g);
     assert.equal(pipelineCalls, null, 'pipeline() must not hardcode MiniLM model');
-  });
-});
-
-// ============================================================================
-// Group 5: P0 — Config wiring in memory-bridge.ts
-// ============================================================================
-
-describe('ADR-0065 P0: memory-bridge wires config.json into registry.initialize()', () => {
-  it('memory-bridge.ts has getProjectConfig() helper', () => {
-    const fpath = join(FORK_ROOT, '@claude-flow/cli/src/memory/memory-bridge.ts');
-    if (!existsSync(fpath)) { assert.ok(true, 'skip'); return; }
-    const src = readFileSync(fpath, 'utf8');
-    assert.ok(src.includes('getProjectConfig'), 'must have getProjectConfig helper');
-    assert.ok(src.includes('findProjectRoot'), 'must have findProjectRoot helper');
-  });
-
-  it('registry.initialize() receives config fields (not just controllers map)', () => {
-    const fpath = join(FORK_ROOT, '@claude-flow/cli/src/memory/memory-bridge.ts');
-    if (!existsSync(fpath)) { assert.ok(true, 'skip'); return; }
-    const src = readFileSync(fpath, 'utf8');
-
-    // The initialize call should include forwarded config fields
-    const initBlock = src.match(/registry\.initialize\(\{[\s\S]*?\}\)/);
-    assert.ok(initBlock, 'registry.initialize() call must exist');
-    const block = initBlock[0];
-
-    assert.ok(block.includes('attentionService'), 'must forward attentionService');
-    assert.ok(block.includes('rateLimiter'), 'must forward rateLimiter');
-    assert.ok(block.includes('circuitBreaker'), 'must forward circuitBreaker');
-    assert.ok(block.includes('solverBandit'), 'must forward solverBandit');
-    assert.ok(block.includes('maxElements'), 'must forward maxElements');
-  });
-
-  it('getEmbeddingModelName() reads from embeddings.json', () => {
-    const fpath = join(FORK_ROOT, '@claude-flow/cli/src/memory/memory-bridge.ts');
-    if (!existsSync(fpath)) { assert.ok(true, 'skip'); return; }
-    const src = readFileSync(fpath, 'utf8');
-    assert.ok(src.includes('getEmbeddingModelName'), 'must have getEmbeddingModelName helper');
-    assert.ok(src.includes('all-mpnet-base-v2'), 'fallback model must be mpnet');
   });
 });
 

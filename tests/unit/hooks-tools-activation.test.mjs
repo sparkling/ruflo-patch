@@ -40,7 +40,7 @@ function rejectMock(err) {
 }
 
 // ============================================================================
-// Simulated handler logic (mirrors hooks-tools.ts wiring)
+// Simulated handler logic (mirrors hooks-tools.ts wiring via memory-router)
 // ============================================================================
 
 const TIMEOUT_MS = 50; // Production uses 2000ms; 50ms proves the same wiring contract
@@ -60,17 +60,17 @@ function withTimeout(promise, ms) {
   ]);
 }
 
-// --- hooks_route handler simulation ---
-function createHooksRouteHandler(bridgeMock) {
+// --- hooks_route handler simulation (via memory-router) ---
+function createHooksRouteHandler(routerMock) {
   return async (params) => {
     const task = params.task || '';
     const routingMetadata = {};
 
     // Phase 2: SolverBandit
-    if (typeof bridgeMock.bridgeSolverBanditSelect === 'function') {
+    if (typeof routerMock.routeSolverBanditSelect === 'function') {
       try {
         const banditResult = await withTimeout(
-          bridgeMock.bridgeSolverBanditSelect(task, DEFAULT_ARMS),
+          routerMock.routeSolverBanditSelect(task, DEFAULT_ARMS),
           TIMEOUT_MS,
         );
         if (banditResult &&
@@ -89,7 +89,7 @@ function createHooksRouteHandler(bridgeMock) {
 
     // Phase 4: SkillLibrary search
     try {
-      const skills = await bridgeMock.bridgeGetController('skills');
+      const skills = await routerMock.getController('skills');
       if (skills && typeof skills.search === 'function') {
         const matches = await skills.search(task, 3);
         if (matches && matches.length > 0) {
@@ -111,7 +111,7 @@ function createHooksRouteHandler(bridgeMock) {
 
     // Phase 4: LearningSystem recommendation
     try {
-      const ls = await bridgeMock.bridgeGetController('learningSystem');
+      const ls = await routerMock.getController('learningSystem');
       if (ls && typeof ls.recommendAlgorithm === 'function') {
         const rec = await ls.recommendAlgorithm(task);
         if (rec) {
@@ -123,9 +123,9 @@ function createHooksRouteHandler(bridgeMock) {
     }
 
     // Phase 5: SemanticRouter
-    if (typeof bridgeMock.bridgeSemanticRoute === 'function') {
+    if (typeof routerMock.routeSemanticRoute === 'function') {
       try {
-        const semResult = await bridgeMock.bridgeSemanticRoute({ input: task });
+        const semResult = await routerMock.routeSemanticRoute({ input: task });
         if (semResult && semResult.route && !semResult.error) {
           return makeRouteResult({
             recommended_agent: semResult.route,
@@ -139,9 +139,9 @@ function createHooksRouteHandler(bridgeMock) {
       }
     }
 
-    // Fallback: use bridgeRouteTask
+    // Fallback: use routeTask
     try {
-      const fallback = await bridgeMock.bridgeRouteTask(task);
+      const fallback = await routerMock.routeTask(task);
       return makeRouteResult({
         recommended_agent: fallback.agents?.[0] || 'coder',
         confidence: fallback.confidence || 0.3,
@@ -170,8 +170,8 @@ function parseRouteResult(result) {
   return result;
 }
 
-// --- hooks_post-task handler simulation ---
-function createHooksPostTaskHandler(bridgeMock) {
+// --- hooks_post-task handler simulation (via memory-router) ---
+function createHooksPostTaskHandler(routerMock) {
   return async (params) => {
     const taskType = params.task_type || params.task || 'unknown';
     const agent = params.agent || 'coder';
@@ -179,9 +179,9 @@ function createHooksPostTaskHandler(bridgeMock) {
       : (params.success ? DEFAULT_SUCCESS_QUALITY : DEFAULT_FAILURE_QUALITY);
 
     // Phase 2: SolverBandit update (fire-and-forget)
-    if (typeof bridgeMock.bridgeSolverBanditUpdate === 'function') {
+    if (typeof routerMock.routeSolverBanditUpdate === 'function') {
       try {
-        await bridgeMock.bridgeSolverBanditUpdate(taskType, agent, quality);
+        await routerMock.routeSolverBanditUpdate(taskType, agent, quality);
       } catch (_) {
         // fire-and-forget
       }
@@ -190,7 +190,7 @@ function createHooksPostTaskHandler(bridgeMock) {
     // Phase 4: SkillLibrary creation
     if (quality > SKILL_CREATION_QUALITY_THRESHOLD) {
       try {
-        const skills = await bridgeMock.bridgeGetController('skills');
+        const skills = await routerMock.getController('skills');
         if (skills && typeof skills.create === 'function') {
           await skills.create({
             name: `${taskType}-${agent}`,
@@ -209,7 +209,7 @@ function createHooksPostTaskHandler(bridgeMock) {
 
     // Phase 5: SonaTrajectory recording (fire-and-forget)
     try {
-      const traj = await bridgeMock.bridgeGetController('sonaTrajectory');
+      const traj = await routerMock.getController('sonaTrajectory');
       if (traj && typeof traj.recordStep === 'function') {
         await traj.recordStep({
           task: taskType,
@@ -225,7 +225,7 @@ function createHooksPostTaskHandler(bridgeMock) {
 
     // Record feedback
     try {
-      await bridgeMock.bridgeRecordFeedback({
+      await routerMock.routeRecordFeedback({
         taskId: params.taskId,
         quality,
         success: params.success,
@@ -236,7 +236,7 @@ function createHooksPostTaskHandler(bridgeMock) {
 
     // Record causal edge
     try {
-      await bridgeMock.bridgeRecordCausalEdge({
+      await routerMock.routeRecordCausalEdge({
         cause: taskType,
         effect: params.success ? 'success' : 'failure',
         uplift: quality,
@@ -253,12 +253,12 @@ function createHooksPostTaskHandler(bridgeMock) {
   };
 }
 
-// --- hooks_session-end handler simulation ---
-function createHooksSessionEndHandler(bridgeMock) {
+// --- hooks_session-end handler simulation (via memory-router) ---
+function createHooksSessionEndHandler(routerMock) {
   return async (params) => {
     // Phase 3: NightlyLearner consolidation (fire-and-forget)
     try {
-      const nl = await bridgeMock.bridgeGetController('nightlyLearner');
+      const nl = await routerMock.getController('nightlyLearner');
       if (nl && typeof nl.consolidate === 'function') {
         await nl.consolidate();
       }
@@ -269,7 +269,7 @@ function createHooksSessionEndHandler(bridgeMock) {
     // Session persistence
     let sessionPersistence;
     try {
-      sessionPersistence = await bridgeMock.bridgeSessionEnd({
+      sessionPersistence = await routerMock.routeSessionEnd({
         saveState: params.saveState,
       });
     } catch (_) {
@@ -283,13 +283,13 @@ function createHooksSessionEndHandler(bridgeMock) {
   };
 }
 
-// --- hooks_intelligence_stats handler simulation ---
-function createHooksIntelligenceStatsHandler(bridgeMock) {
+// --- hooks_intelligence_stats handler simulation (via memory-router) ---
+function createHooksIntelligenceStatsHandler(routerMock) {
   return async () => {
     const stats = {};
 
     try {
-      const traj = await bridgeMock.bridgeGetController('sonaTrajectory');
+      const traj = await routerMock.getController('sonaTrajectory');
       if (traj) {
         stats.sonaTrajectory = traj;
       }
@@ -305,19 +305,19 @@ function createHooksIntelligenceStatsHandler(bridgeMock) {
 // Tests
 // ============================================================================
 
-describe('ADR-0033: hooks-tools controller activation', () => {
-  let bridgeMock;
+describe('ADR-0033: hooks-tools controller activation (router)', () => {
+  let routerMock;
 
   beforeEach(() => {
-    bridgeMock = {
-      bridgeSolverBanditSelect: asyncMock(undefined),
-      bridgeSolverBanditUpdate: asyncMock(undefined),
-      bridgeGetController: asyncMock(null),
-      bridgeSemanticRoute: asyncMock({ route: null }),
-      bridgeRouteTask: asyncMock({ route: 'general', confidence: 0.3, agents: ['coder'], controller: 'none' }),
-      bridgeRecordFeedback: asyncMock({ success: true, controller: 'mock', updated: 1 }),
-      bridgeRecordCausalEdge: asyncMock({ success: true }),
-      bridgeSessionEnd: asyncMock({ success: true, controller: 'mock', persisted: true }),
+    routerMock = {
+      routeSolverBanditSelect: asyncMock(undefined),
+      routeSolverBanditUpdate: asyncMock(undefined),
+      getController: asyncMock(null),
+      routeSemanticRoute: asyncMock({ route: null }),
+      routeTask: asyncMock({ route: 'general', confidence: 0.3, agents: ['coder'], controller: 'none' }),
+      routeRecordFeedback: asyncMock({ success: true, controller: 'mock', updated: 1 }),
+      routeRecordCausalEdge: asyncMock({ success: true }),
+      routeSessionEnd: asyncMock({ success: true, controller: 'mock', persisted: true }),
     };
   });
 
@@ -327,12 +327,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
   describe('hooks_route -- SolverBandit routing', () => {
     it('should return early via SolverBandit when confidence > 0.6', async () => {
-      bridgeMock.bridgeSolverBanditSelect = asyncMock({
+      routerMock.routeSolverBanditSelect = asyncMock({
         arm: 'coder',
         confidence: 0.8,
         controller: 'solverBandit',
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write unit tests' });
       const parsed = parseRouteResult(result);
@@ -340,20 +340,20 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       assert.equal(parsed.recommended_agent, 'coder');
       assert.equal(parsed.confidence, 0.8);
       assert.equal(parsed.routing_method, 'solverBandit');
-      assert.deepEqual(bridgeMock.bridgeSolverBanditSelect.calls[0][0], 'write unit tests');
-      assert.ok(Array.isArray(bridgeMock.bridgeSolverBanditSelect.calls[0][1]));
-      assert.ok(bridgeMock.bridgeSolverBanditSelect.calls[0][1].includes('coder'));
-      assert.ok(bridgeMock.bridgeSolverBanditSelect.calls[0][1].includes('reviewer'));
-      assert.ok(bridgeMock.bridgeSolverBanditSelect.calls[0][1].includes('tester'));
+      assert.deepEqual(routerMock.routeSolverBanditSelect.calls[0][0], 'write unit tests');
+      assert.ok(Array.isArray(routerMock.routeSolverBanditSelect.calls[0][1]));
+      assert.ok(routerMock.routeSolverBanditSelect.calls[0][1].includes('coder'));
+      assert.ok(routerMock.routeSolverBanditSelect.calls[0][1].includes('reviewer'));
+      assert.ok(routerMock.routeSolverBanditSelect.calls[0][1].includes('tester'));
     });
 
     it('should fall through when SolverBandit confidence <= 0.6', async () => {
-      bridgeMock.bridgeSolverBanditSelect = asyncMock({
+      routerMock.routeSolverBanditSelect = asyncMock({
         arm: 'coder',
         confidence: 0.4,
         controller: 'fallback',
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write code' });
       const parsed = parseRouteResult(result);
@@ -362,12 +362,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through when SolverBandit confidence > 0.6 but controller is fallback', async () => {
-      bridgeMock.bridgeSolverBanditSelect = asyncMock({
+      routerMock.routeSolverBanditSelect = asyncMock({
         arm: 'coder',
         confidence: 0.9,
         controller: 'fallback',
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write code' });
       const parsed = parseRouteResult(result);
@@ -375,9 +375,9 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       assert.notEqual(parsed.routing_method, 'solverBandit');
     });
 
-    it('should fall through when bridgeSolverBanditSelect is undefined', async () => {
-      bridgeMock.bridgeSolverBanditSelect = undefined;
-      const handler = createHooksRouteHandler(bridgeMock);
+    it('should fall through when routeSolverBanditSelect is undefined', async () => {
+      routerMock.routeSolverBanditSelect = undefined;
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'review security' });
 
@@ -385,8 +385,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through when SolverBandit throws', async () => {
-      bridgeMock.bridgeSolverBanditSelect = rejectMock('bandit crashed');
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.routeSolverBanditSelect = rejectMock('bandit crashed');
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'fix bug' });
 
@@ -396,8 +396,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through when SolverBandit times out', async () => {
-      bridgeMock.bridgeSolverBanditSelect = mockFn(() => new Promise(() => {}));
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.routeSolverBanditSelect = mockFn(() => new Promise(() => {}));
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'optimize performance' });
 
@@ -416,11 +416,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       const mockSkillSearch = asyncMock([
         { name: 'auth-handler', agent: 'security-architect', confidence: 0.85, pattern: 'authentication' },
       ]);
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { search: mockSkillSearch };
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'implement authentication' });
       const parsed = parseRouteResult(result);
@@ -436,11 +436,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       const mockSkillSearch = asyncMock([
         { name: 'test-skill', pattern: 'testing', score: 0.9 },
       ]);
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { search: mockSkillSearch };
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write tests', task_type: 'testing' });
       const parsed = parseRouteResult(result);
@@ -452,11 +452,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should fall through when no matching skills', async () => {
       const mockSkillSearch = asyncMock([]);
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { search: mockSkillSearch };
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'do something unique' });
       const parsed = parseRouteResult(result);
@@ -468,11 +468,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       const mockSkillSearch = asyncMock([
         { name: 'weak-match', agent: 'coder', confidence: 0.5, score: 0.5 },
       ]);
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { search: mockSkillSearch };
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'ambiguous task' });
       const parsed = parseRouteResult(result);
@@ -481,8 +481,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through when skills controller is null', async () => {
-      bridgeMock.bridgeGetController = asyncMock(null);
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.getController = asyncMock(null);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'any task' });
 
@@ -491,11 +491,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should fall through when skills.search throws', async () => {
       const mockSkillSearch = rejectMock('search failed');
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { search: mockSkillSearch };
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'any task' });
 
@@ -515,15 +515,15 @@ describe('ADR-0033: hooks-tools controller activation', () => {
         algorithm: 'ucb1',
         reason: 'best exploration-exploitation trade-off',
       });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'learningSystem') return { recommendAlgorithm: mockRecommendAlgorithm };
         return null;
       });
-      bridgeMock.bridgeSemanticRoute = asyncMock({
+      routerMock.routeSemanticRoute = asyncMock({
         route: 'tester',
         confidence: 0.75,
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'optimize search' });
       const parsed = parseRouteResult(result);
@@ -535,15 +535,15 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should not add metadata when recommendAlgorithm returns null', async () => {
       const mockRecommendAlgorithm = asyncMock(null);
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'learningSystem') return { recommendAlgorithm: mockRecommendAlgorithm };
         return null;
       });
-      bridgeMock.bridgeSemanticRoute = asyncMock({
+      routerMock.routeSemanticRoute = asyncMock({
         route: 'coder',
         confidence: 0.8,
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write code' });
       const parsed = parseRouteResult(result);
@@ -552,11 +552,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should not crash when learningSystem throws', async () => {
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'learningSystem') throw new Error('LS crashed');
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'any task' });
 
@@ -570,11 +570,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
   describe('hooks_route -- SemanticRouter', () => {
     it('should return route from SemanticRouter when available', async () => {
-      bridgeMock.bridgeSemanticRoute = asyncMock({
+      routerMock.routeSemanticRoute = asyncMock({
         route: 'tester',
         confidence: 0.9,
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'test the auth module' });
       const parsed = parseRouteResult(result);
@@ -582,12 +582,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       assert.equal(parsed.recommended_agent, 'tester');
       assert.equal(parsed.confidence, 0.9);
       assert.equal(parsed.routing_method, 'semanticRouter');
-      assert.deepEqual(bridgeMock.bridgeSemanticRoute.calls[0], [{ input: 'test the auth module' }]);
+      assert.deepEqual(routerMock.routeSemanticRoute.calls[0], [{ input: 'test the auth module' }]);
     });
 
     it('should use default confidence 0.7 when not provided', async () => {
-      bridgeMock.bridgeSemanticRoute = asyncMock({ route: 'coder' });
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.routeSemanticRoute = asyncMock({ route: 'coder' });
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write a parser' });
       const parsed = parseRouteResult(result);
@@ -596,8 +596,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through when SemanticRouter returns null route', async () => {
-      bridgeMock.bridgeSemanticRoute = asyncMock({ route: null });
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.routeSemanticRoute = asyncMock({ route: null });
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'general task' });
       const parsed = parseRouteResult(result);
@@ -606,8 +606,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through when SemanticRouter returns error', async () => {
-      bridgeMock.bridgeSemanticRoute = asyncMock({ route: 'coder', error: 'something wrong' });
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.routeSemanticRoute = asyncMock({ route: 'coder', error: 'something wrong' });
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'general task' });
       const parsed = parseRouteResult(result);
@@ -615,9 +615,9 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       assert.notEqual(parsed.routing_method, 'semanticRouter');
     });
 
-    it('should fall through when bridgeSemanticRoute is undefined', async () => {
-      bridgeMock.bridgeSemanticRoute = undefined;
-      const handler = createHooksRouteHandler(bridgeMock);
+    it('should fall through when routeSemanticRoute is undefined', async () => {
+      routerMock.routeSemanticRoute = undefined;
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'any task' });
 
@@ -625,8 +625,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through when SemanticRouter throws', async () => {
-      bridgeMock.bridgeSemanticRoute = rejectMock('router crashed');
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.routeSemanticRoute = rejectMock('router crashed');
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'any task' });
 
@@ -641,9 +641,9 @@ describe('ADR-0033: hooks-tools controller activation', () => {
   // ===========================================================================
 
   describe('hooks_post-task -- SolverBandit feedback', () => {
-    it('should call bridgeSolverBanditUpdate fire-and-forget on task completion', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      const handler = createHooksPostTaskHandler(bridgeMock);
+    it('should call routeSolverBanditUpdate fire-and-forget on task completion', async () => {
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       const result = await handler({
         taskId: 'task-123',
@@ -654,12 +654,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       });
 
       assert.ok(result !== undefined);
-      assert.deepEqual(bridgeMock.bridgeSolverBanditUpdate.calls[0], ['coding', 'coder', 0.9]);
+      assert.deepEqual(routerMock.routeSolverBanditUpdate.calls[0], ['coding', 'coder', 0.9]);
     });
 
     it('should use task as taskType when task_type not provided', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-456',
@@ -669,12 +669,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
         task: 'review PR',
       });
 
-      assert.deepEqual(bridgeMock.bridgeSolverBanditUpdate.calls[0], ['review PR', 'reviewer', 0.7]);
+      assert.deepEqual(routerMock.routeSolverBanditUpdate.calls[0], ['review PR', 'reviewer', 0.7]);
     });
 
-    it('should not block response when bridgeSolverBanditUpdate rejects', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = rejectMock('update failed');
-      const handler = createHooksPostTaskHandler(bridgeMock);
+    it('should not block response when routeSolverBanditUpdate rejects', async () => {
+      routerMock.routeSolverBanditUpdate = rejectMock('update failed');
+      const handler = createHooksPostTaskHandler(routerMock);
 
       const result = await handler({
         taskId: 'task-789',
@@ -687,9 +687,9 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       assert.equal(result.taskId, 'task-789');
     });
 
-    it('should not crash when bridgeSolverBanditUpdate is undefined', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = undefined;
-      const handler = createHooksPostTaskHandler(bridgeMock);
+    it('should not crash when routeSolverBanditUpdate is undefined', async () => {
+      routerMock.routeSolverBanditUpdate = undefined;
+      const handler = createHooksPostTaskHandler(routerMock);
 
       const result = await handler({
         taskId: 'task-noupdate',
@@ -709,11 +709,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
   describe('hooks_post-task -- SkillLibrary creation', () => {
     it('should create skill when quality > 0.8', async () => {
       const mockCreate = asyncMock({ success: true });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: mockCreate };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-skill',
@@ -732,11 +732,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should NOT create skill when quality <= 0.8', async () => {
       const mockCreate = asyncMock({ success: true });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: mockCreate };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-lowq',
@@ -750,11 +750,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should NOT create skill when quality is exactly 0.8', async () => {
       const mockCreate = asyncMock({ success: true });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: mockCreate };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-boundary',
@@ -768,11 +768,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should not block response when skills.create rejects', async () => {
       const mockCreate = rejectMock('create failed');
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: mockCreate };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       const result = await handler({
         taskId: 'task-fail-create',
@@ -787,11 +787,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should include context with agent, quality, and timestamp', async () => {
       const mockCreate = asyncMock({ success: true });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: mockCreate };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-ctx',
@@ -816,11 +816,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
   describe('hooks_post-task -- SonaTrajectory recording', () => {
     it('should record trajectory step fire-and-forget', async () => {
       const mockRecordStep = asyncMock({ success: true });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'sonaTrajectory') return { recordStep: mockRecordStep };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-traj',
@@ -841,11 +841,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should not block response when recordStep rejects', async () => {
       const mockRecordStep = rejectMock('record failed');
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'sonaTrajectory') return { recordStep: mockRecordStep };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       const result = await handler({
         taskId: 'task-traj-fail',
@@ -859,8 +859,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should skip recording when sonaTrajectory is null', async () => {
-      bridgeMock.bridgeGetController = asyncMock(null);
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      routerMock.getController = asyncMock(null);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       const result = await handler({
         taskId: 'task-no-traj',
@@ -880,11 +880,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
   describe('hooks_session-end -- NightlyLearner consolidation', () => {
     it('should trigger consolidation fire-and-forget on session end', async () => {
       const mockConsolidate = asyncMock({ success: true });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'nightlyLearner') return { consolidate: mockConsolidate };
         return null;
       });
-      const handler = createHooksSessionEndHandler(bridgeMock);
+      const handler = createHooksSessionEndHandler(routerMock);
 
       const result = await handler({ saveState: true, stopDaemon: false });
 
@@ -893,8 +893,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should not block session end when NightlyLearner unavailable', async () => {
-      bridgeMock.bridgeGetController = asyncMock(null);
-      const handler = createHooksSessionEndHandler(bridgeMock);
+      routerMock.getController = asyncMock(null);
+      const handler = createHooksSessionEndHandler(routerMock);
 
       const result = await handler({ saveState: false, stopDaemon: false });
 
@@ -904,20 +904,20 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should not block session end when consolidate rejects', async () => {
       const mockConsolidate = rejectMock('consolidation failed');
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'nightlyLearner') return { consolidate: mockConsolidate };
         return null;
       });
-      const handler = createHooksSessionEndHandler(bridgeMock);
+      const handler = createHooksSessionEndHandler(routerMock);
 
       const result = await handler({ saveState: true, stopDaemon: false });
 
       assert.ok(result !== undefined);
     });
 
-    it('should not block when bridgeGetController throws', async () => {
-      bridgeMock.bridgeGetController = rejectMock('controller registry crashed');
-      const handler = createHooksSessionEndHandler(bridgeMock);
+    it('should not block when getController throws', async () => {
+      routerMock.getController = rejectMock('controller registry crashed');
+      const handler = createHooksSessionEndHandler(routerMock);
 
       const result = await handler({ saveState: false, stopDaemon: false });
 
@@ -931,7 +931,7 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
   describe('hooks_intelligence_stats -- SonaTrajectory stats', () => {
     it('should include sonaTrajectory key in stats when controller is available', async () => {
-      const handler = createHooksIntelligenceStatsHandler(bridgeMock);
+      const handler = createHooksIntelligenceStatsHandler(routerMock);
 
       const result = await handler({});
 
@@ -949,8 +949,8 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
   describe('hooks_post-task -- quality defaults', () => {
     it('should use 0.85 default quality for successful tasks without explicit quality', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-default-q',
@@ -958,12 +958,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
         agent: 'coder',
       });
 
-      assert.equal(bridgeMock.bridgeSolverBanditUpdate.calls[0][2], 0.85);
+      assert.equal(routerMock.routeSolverBanditUpdate.calls[0][2], 0.85);
     });
 
     it('should use 0.2 default quality for failed tasks without explicit quality', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-fail-q',
@@ -971,12 +971,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
         agent: 'coder',
       });
 
-      assert.equal(bridgeMock.bridgeSolverBanditUpdate.calls[0][2], 0.2);
+      assert.equal(routerMock.routeSolverBanditUpdate.calls[0][2], 0.2);
     });
 
     it('should preserve explicit quality=0.0 (not coerce to default)', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'task-zero-q',
@@ -985,7 +985,7 @@ describe('ADR-0033: hooks-tools controller activation', () => {
         quality: 0.0,
       });
 
-      assert.equal(bridgeMock.bridgeSolverBanditUpdate.calls[0][2], 0.0);
+      assert.equal(routerMock.routeSolverBanditUpdate.calls[0][2], 0.0);
     });
   });
 
@@ -996,16 +996,16 @@ describe('ADR-0033: hooks-tools controller activation', () => {
   describe('hooks_route -- routing cascade order', () => {
     it('should try SolverBandit before SkillLibrary', async () => {
       // Both controllers available with high confidence
-      bridgeMock.bridgeSolverBanditSelect = asyncMock({
+      routerMock.routeSolverBanditSelect = asyncMock({
         arm: 'reviewer', confidence: 0.9, controller: 'solverBandit',
       });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return {
           search: asyncMock([{ agent: 'tester', confidence: 0.95 }]),
         };
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write tests' });
       const parsed = parseRouteResult(result);
@@ -1016,16 +1016,16 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should fall through SolverBandit to SkillLibrary on low confidence', async () => {
-      bridgeMock.bridgeSolverBanditSelect = asyncMock({
+      routerMock.routeSolverBanditSelect = asyncMock({
         arm: 'coder', confidence: 0.3, controller: 'solverBandit',
       });
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return {
           search: asyncMock([{ agent: 'tester', confidence: 0.85 }]),
         };
         return null;
       });
-      const handler = createHooksRouteHandler(bridgeMock);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'write tests' });
       const parsed = parseRouteResult(result);
@@ -1036,12 +1036,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should fall through all controllers to fallback', async () => {
       // All controllers unavailable or low confidence
-      bridgeMock.bridgeSolverBanditSelect = asyncMock({
+      routerMock.routeSolverBanditSelect = asyncMock({
         arm: 'coder', confidence: 0.3, controller: 'fallback',
       });
-      bridgeMock.bridgeGetController = asyncMock(null);
-      bridgeMock.bridgeSemanticRoute = asyncMock(null);
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.getController = asyncMock(null);
+      routerMock.routeSemanticRoute = asyncMock(null);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: 'do something' });
       const parsed = parseRouteResult(result);
@@ -1051,11 +1051,11 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should handle empty task string', async () => {
-      bridgeMock.bridgeSolverBanditSelect = asyncMock({
+      routerMock.routeSolverBanditSelect = asyncMock({
         arm: 'coder', confidence: 0.5, controller: 'fallback',
       });
-      bridgeMock.bridgeGetController = asyncMock(null);
-      const handler = createHooksRouteHandler(bridgeMock);
+      routerMock.getController = asyncMock(null);
+      const handler = createHooksRouteHandler(routerMock);
 
       const result = await handler({ task: '' });
 
@@ -1070,15 +1070,15 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
   describe('hooks_post-task -- fire-and-forget guarantees', () => {
     it('should complete when ALL fire-and-forget calls reject simultaneously', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = rejectMock('bandit failed');
-      bridgeMock.bridgeRecordFeedback = rejectMock('feedback failed');
-      bridgeMock.bridgeRecordCausalEdge = rejectMock('causal failed');
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.routeSolverBanditUpdate = rejectMock('bandit failed');
+      routerMock.routeRecordFeedback = rejectMock('feedback failed');
+      routerMock.routeRecordCausalEdge = rejectMock('causal failed');
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: rejectMock('skill create failed') };
         if (name === 'sonaTrajectory') return { recordStep: rejectMock('trajectory failed') };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       // Should NOT throw even with all fire-and-forget calls failing
       const result = await handler({
@@ -1094,12 +1094,12 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should not create skill when quality <= 0.8', async () => {
       const skillCreate = asyncMock(undefined);
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: skillCreate };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'low-quality',
@@ -1114,13 +1114,13 @@ describe('ADR-0033: hooks-tools controller activation', () => {
 
     it('should create skill when quality > 0.8', async () => {
       const skillCreate = asyncMock(undefined);
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      bridgeMock.bridgeGetController = mockFn(async (name) => {
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      routerMock.getController = mockFn(async (name) => {
         if (name === 'skills') return { create: skillCreate };
         if (name === 'sonaTrajectory') return { recordStep: asyncMock(undefined) };
         return null;
       });
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'high-quality',
@@ -1134,9 +1134,9 @@ describe('ADR-0033: hooks-tools controller activation', () => {
     });
 
     it('should use default agent "coder" when agent param missing', async () => {
-      bridgeMock.bridgeSolverBanditUpdate = asyncMock(undefined);
-      bridgeMock.bridgeGetController = asyncMock(null);
-      const handler = createHooksPostTaskHandler(bridgeMock);
+      routerMock.routeSolverBanditUpdate = asyncMock(undefined);
+      routerMock.getController = asyncMock(null);
+      const handler = createHooksPostTaskHandler(routerMock);
 
       await handler({
         taskId: 'no-agent',
@@ -1145,7 +1145,7 @@ describe('ADR-0033: hooks-tools controller activation', () => {
       });
 
       // SolverBandit update should use agent param or fallback to 'coder'
-      assert.equal(bridgeMock.bridgeSolverBanditUpdate.calls[0][1], 'coder');
+      assert.equal(routerMock.routeSolverBanditUpdate.calls[0][1], 'coder');
     });
   });
 });

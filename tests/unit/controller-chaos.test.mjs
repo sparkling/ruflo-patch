@@ -135,11 +135,11 @@ function createAgentMemoryScopeFactory() {
   };
 }
 
-function createScopeSearchHandler(bridge) {
+function createScopeSearchHandler(router) {
   return async (params) => {
-    const allResults = await bridge.search(params.query);
+    const allResults = await router.search(params.query);
     if (params.scope) {
-      const scopeCtrl = await bridge.getController('agentMemoryScope');
+      const scopeCtrl = await router.getController('agentMemoryScope');
       if (scopeCtrl) {
         return scopeCtrl.filterByScope(allResults, params.scope, params.scope_id);
       }
@@ -159,7 +159,7 @@ describe('ADR-0033: controller chaos tests', () => {
   // ===========================================================================
 
   describe('Concurrent controller access', () => {
-    it('should handle 50 simultaneous bridgeSolverBanditSelect calls', async () => {
+    it('should handle 50 simultaneous routeSolverBanditSelect calls', async () => {
       const banditSelect = slowMock(
         { arm: 'coder', confidence: 0.7, controller: 'solverBandit' },
         2,
@@ -478,18 +478,18 @@ describe('ADR-0033: controller chaos tests', () => {
         { key: 'agent:a1:secret', value: 'hidden' },
         { key: 'global:public', value: 'visible' },
       ];
-      const bridge = {
+      const router = {
         search: asyncMock(entries),
         getController: asyncMock(null), // no scope controller for unscoped search
       };
-      const handler = createScopeSearchHandler(bridge);
+      const handler = createScopeSearchHandler(router);
 
       // Search without scope — returns all (no filtering applied)
       const result = await handler({ query: 'test' });
 
       assert.equal(result.length, 2); // unscoped returns all raw results
       // The point: without scope param, filterByScope is NOT called
-      assert.equal(bridge.getController.calls.length, 0);
+      assert.equal(router.getController.calls.length, 0);
     });
 
     it('should NOT find agent:a1 entries when searching with scope agent:a2', async () => {
@@ -498,14 +498,14 @@ describe('ADR-0033: controller chaos tests', () => {
         { key: 'agent:a2:data', value: 'visible' },
         { key: 'agent:a1:other', value: 'also hidden' },
       ];
-      const bridge = {
+      const router = {
         search: asyncMock(entries),
         getController: mockFn(async (name) => {
           if (name === 'agentMemoryScope') return scopeFactory;
           return null;
         }),
       };
-      const handler = createScopeSearchHandler(bridge);
+      const handler = createScopeSearchHandler(router);
 
       const result = await handler({ query: 'test', scope: 'agent', scope_id: 'a2' });
 
@@ -518,14 +518,14 @@ describe('ADR-0033: controller chaos tests', () => {
         { key: 'global:shared', value: 'accessible' },
         { key: 'agent:a1:private', value: 'private' },
       ];
-      const bridge = {
+      const router = {
         search: asyncMock(entries),
         getController: mockFn(async (name) => {
           if (name === 'agentMemoryScope') return scopeFactory;
           return null;
         }),
       };
-      const handler = createScopeSearchHandler(bridge);
+      const handler = createScopeSearchHandler(router);
 
       // Searching with scope 'global' should find global: prefixed entries
       const result = await handler({ query: 'test', scope: 'global', scope_id: undefined });
@@ -543,19 +543,19 @@ describe('ADR-0033: controller chaos tests', () => {
     it('should not call skills.create twice for same post-task event', async () => {
       const mockCreate = asyncMock({ success: true });
       const mockRecordStep = asyncMock({ success: true });
-      const bridgeMock = {
-        bridgeSolverBanditUpdate: asyncMock(undefined),
-        bridgeGetController: mockFn(async (name) => {
+      const routerMock = {
+        routeSolverBanditUpdate: asyncMock(undefined),
+        getController: mockFn(async (name) => {
           if (name === 'skills') return { create: mockCreate };
           if (name === 'sonaTrajectory') return { recordStep: mockRecordStep };
           return null;
         }),
-        bridgeRecordFeedback: asyncMock({ success: true }),
-        bridgeRecordCausalEdge: asyncMock({ success: true }),
+        routeRecordFeedback: asyncMock({ success: true }),
+        routeRecordCausalEdge: asyncMock({ success: true }),
       };
 
       // Simulate post-task handler (mirrors 08 pattern)
-      const handler = createPostTaskHandler(bridgeMock);
+      const handler = createPostTaskHandler(routerMock);
       await handler({
         taskId: 'task-1',
         success: true,
@@ -570,18 +570,18 @@ describe('ADR-0033: controller chaos tests', () => {
     it('should not call sonaTrajectory.recordStep twice for same post-task event', async () => {
       const mockCreate = asyncMock({ success: true });
       const mockRecordStep = asyncMock({ success: true });
-      const bridgeMock = {
-        bridgeSolverBanditUpdate: asyncMock(undefined),
-        bridgeGetController: mockFn(async (name) => {
+      const routerMock = {
+        routeSolverBanditUpdate: asyncMock(undefined),
+        getController: mockFn(async (name) => {
           if (name === 'skills') return { create: mockCreate };
           if (name === 'sonaTrajectory') return { recordStep: mockRecordStep };
           return null;
         }),
-        bridgeRecordFeedback: asyncMock({ success: true }),
-        bridgeRecordCausalEdge: asyncMock({ success: true }),
+        routeRecordFeedback: asyncMock({ success: true }),
+        routeRecordCausalEdge: asyncMock({ success: true }),
       };
 
-      const handler = createPostTaskHandler(bridgeMock);
+      const handler = createPostTaskHandler(routerMock);
       await handler({
         taskId: 'task-2',
         success: true,
@@ -656,7 +656,7 @@ describe('ADR-0033: controller chaos tests', () => {
 // Post-task handler (used by double-fire tests)
 // ============================================================================
 
-function createPostTaskHandler(bridgeMock) {
+function createPostTaskHandler(routerMock) {
   const SKILL_CREATION_QUALITY_THRESHOLD = 0.8;
   const DEFAULT_SUCCESS_QUALITY = 0.85;
   const DEFAULT_FAILURE_QUALITY = 0.2;
@@ -668,16 +668,16 @@ function createPostTaskHandler(bridgeMock) {
       : (params.success ? DEFAULT_SUCCESS_QUALITY : DEFAULT_FAILURE_QUALITY);
 
     // Phase 2: SolverBandit update
-    if (typeof bridgeMock.bridgeSolverBanditUpdate === 'function') {
+    if (typeof routerMock.routeSolverBanditUpdate === 'function') {
       try {
-        await bridgeMock.bridgeSolverBanditUpdate(taskType, agent, quality);
+        await routerMock.routeSolverBanditUpdate(taskType, agent, quality);
       } catch { /* fire-and-forget */ }
     }
 
     // Phase 4: SkillLibrary creation
     if (quality > SKILL_CREATION_QUALITY_THRESHOLD) {
       try {
-        const skills = await bridgeMock.bridgeGetController('skills');
+        const skills = await routerMock.getController('skills');
         if (skills && typeof skills.create === 'function') {
           await skills.create({
             name: `${taskType}-${agent}`,
@@ -690,7 +690,7 @@ function createPostTaskHandler(bridgeMock) {
 
     // Phase 5: SonaTrajectory recording
     try {
-      const traj = await bridgeMock.bridgeGetController('sonaTrajectory');
+      const traj = await routerMock.getController('sonaTrajectory');
       if (traj && typeof traj.recordStep === 'function') {
         await traj.recordStep({
           task: taskType,
@@ -704,12 +704,12 @@ function createPostTaskHandler(bridgeMock) {
 
     // Record feedback
     try {
-      await bridgeMock.bridgeRecordFeedback({ taskId: params.taskId, quality, success: params.success });
+      await routerMock.routeRecordFeedback({ taskId: params.taskId, quality, success: params.success });
     } catch { /* non-blocking */ }
 
     // Record causal edge
     try {
-      await bridgeMock.bridgeRecordCausalEdge({
+      await routerMock.routeRecordCausalEdge({
         cause: taskType,
         effect: params.success ? 'success' : 'failure',
         uplift: quality,

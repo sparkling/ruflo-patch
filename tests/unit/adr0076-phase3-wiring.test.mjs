@@ -1,8 +1,8 @@
 // @tier unit
 // ADR-0076 Phase 3: Verify consumers are wired to createStorage()
 //
-// Source verification tests — check that controller-registry, memory-bridge,
-// and memory-initializer use the storage factory instead of direct construction.
+// Source verification tests — check that controller-registry and
+// memory-initializer use the storage factory instead of direct construction.
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -63,38 +63,6 @@ describe('Phase 3 wiring: controller-registry uses createStorage', () => {
     assert.ok(
       blockStart > 0 && blockEnd > factoryIdx && (factoryIdx - blockStart) < 300,
       'factory call must be in try/catch for graceful degradation',
-    );
-  });
-});
-
-// ===========================================================================
-// memory-bridge.ts uses createStorage
-// ===========================================================================
-
-describe('Phase 3 wiring: memory-bridge uses createStorage', () => {
-  const file = `${CLI_SRC}/memory-bridge.ts`;
-
-  it('getRvfStore() uses createStorage instead of new RvfBackend', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    // Find the getRvfStore function
-    const fnStart = src.indexOf('async function getRvfStore');
-    assert.ok(fnStart > 0, 'getRvfStore must exist');
-    const fnBody = src.slice(fnStart, fnStart + 3000);
-    assert.ok(
-      fnBody.includes('createStorage'),
-      'getRvfStore must use createStorage factory',
-    );
-  });
-
-  it('getRvfStore() still has RvfBackend fallback', () => {
-    if (!existsSync(file)) return;
-    const src = readFileSync(file, 'utf-8');
-    const fnStart = src.indexOf('async function getRvfStore');
-    const fnBody = src.slice(fnStart, fnStart + 3000);
-    assert.ok(
-      fnBody.includes('RvfBackend'),
-      'getRvfStore must retain RvfBackend as fallback',
     );
   });
 });

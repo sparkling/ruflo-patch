@@ -6,8 +6,8 @@
 // operations through memory-router.ts, and do NOT directly import from
 // memory-initializer.ts or memory-bridge.ts as external callers.
 //
-// memory-router.ts itself is the one permitted internal consumer of both; tests
-// for that file verify it imports from both as its private implementation detail.
+// memory-router.ts itself is the one permitted internal consumer of memory-initializer;
+// ADR-0085 deleted memory-bridge.ts — bridge-absence assertions now pass trivially.
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -169,18 +169,22 @@ describe('ADR-0083 Wave 1: agentdb-orchestration.ts import migration', () => {
     );
   });
 
-  it('agentdb-orchestration.ts uses a static import from memory-router', () => {
+  // ADR-0084 Phase 3: agentdb-orchestration now uses lazy dynamic imports
+  // (await import('../memory/memory-router.js')) inside function bodies,
+  // not static top-level imports. Updated to match the new pattern.
+
+  it('agentdb-orchestration.ts imports from memory-router', () => {
     const src = readSource(FILE);
     assert.ok(
-      hasStaticImport(src, 'memory-router'),
-      'agentdb-orchestration.ts must have a static import from memory-router.js',
+      hasDynamicImport(src, 'memory-router'),
+      'agentdb-orchestration.ts must dynamically import from memory-router.js',
     );
   });
 
   it('agentdb-orchestration.ts imports getController from memory-router', () => {
     const src = readSource(FILE);
     assert.ok(
-      src.includes('getController') && hasStaticImport(src, 'memory-router'),
+      src.includes('getController') && hasDynamicImport(src, 'memory-router'),
       'agentdb-orchestration.ts must import getController from memory-router.js',
     );
   });
@@ -188,7 +192,7 @@ describe('ADR-0083 Wave 1: agentdb-orchestration.ts import migration', () => {
   it('agentdb-orchestration.ts imports routeMemoryOp from memory-router', () => {
     const src = readSource(FILE);
     assert.ok(
-      src.includes('routeMemoryOp') && hasStaticImport(src, 'memory-router'),
+      src.includes('routeMemoryOp') && hasDynamicImport(src, 'memory-router'),
       'agentdb-orchestration.ts must import routeMemoryOp from memory-router.js',
     );
   });

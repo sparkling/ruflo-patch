@@ -54,23 +54,6 @@ describe('ADR-0069 A1: RuntimeConfig has sqlite field', () => {
 });
 
 // ============================================================================
-// Group 2: memory-bridge passes sqlite config through
-// ============================================================================
-
-describe('ADR-0069 A1: memory-bridge wires sqlite config', () => {
-
-  it('memory-bridge.ts reads cfgJson.memory?.sqlite', () => {
-    const src = readFileSync(
-      join(FORKS, 'ruflo/v3/@claude-flow/cli/src/memory/memory-bridge.ts'),
-      'utf-8'
-    );
-    assert.match(src, /cfgJson\.memory\?\.sqlite/, 'bridge must read cfgJson.memory?.sqlite');
-    assert.match(src, /cacheSize:\s*-64000/, 'fallback cacheSize must be -64000');
-    assert.match(src, /busyTimeoutMs:\s*5000/, 'fallback busyTimeoutMs must be 5000');
-  });
-});
-
-// ============================================================================
 // Group 3: sqlite-backend uses config-driven pragmas
 // ============================================================================
 

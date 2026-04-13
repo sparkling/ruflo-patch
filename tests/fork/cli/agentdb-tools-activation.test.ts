@@ -9,7 +9,7 @@
  * - agentdb_batch_optimize (ADR-0033)
  * - agentdb_branch (P6-B COW)
  *
- * Uses London School TDD (mock-first): all bridge interactions are mocked.
+ * Uses London School TDD (mock-first): all router interactions are mocked.
  *
  * Moved from ruflo fork cli/__tests__/ to ruflo-patch (patch tests belong here).
  */
@@ -40,7 +40,7 @@ const mockVectorBackend = {
   getByKey: vi.fn(),
 };
 
-const mockBridgeGetController = vi.fn(async (name: string) => {
+const mockGetController = vi.fn(async (name: string) => {
   switch (name) {
     case 'reflexion': return mockReflexionController;
     case 'causalGraph': return mockCausalGraphController;
@@ -49,30 +49,26 @@ const mockBridgeGetController = vi.fn(async (name: string) => {
   }
 });
 
-const mockBridgeCausalRecall = vi.fn();
-const mockBridgeBatchOptimize = vi.fn();
-const mockBridgeBatchPrune = vi.fn();
+const mockRouteCausalRecall = vi.fn();
+const mockRouteBatchOptimize = vi.fn();
+const mockRouteBatchPrune = vi.fn();
 
-vi.mock('@fork-cli/src/memory/memory-bridge.js', () => ({
-  bridgeHealthCheck: vi.fn(async () => ({ available: true })),
-  bridgeListControllers: vi.fn(async () => []),
-  bridgeStorePattern: vi.fn(async () => ({ success: true })),
-  bridgeSearchPatterns: vi.fn(async () => ({ results: [] })),
-  bridgeRecordFeedback: vi.fn(async () => ({ success: true })),
-  bridgeRecordCausalEdge: vi.fn(async () => ({ success: true })),
-  bridgeRouteTask: vi.fn(async () => ({ route: 'general' })),
-  bridgeSessionStart: vi.fn(async () => ({ success: true })),
-  bridgeSessionEnd: vi.fn(async () => ({ success: true })),
-  bridgeHierarchicalStore: vi.fn(async () => ({ success: true })),
-  bridgeHierarchicalRecall: vi.fn(async () => ({ results: [] })),
-  bridgeConsolidate: vi.fn(async () => ({ success: true })),
-  bridgeBatchOperation: vi.fn(async () => ({ success: true })),
-  bridgeContextSynthesize: vi.fn(async () => ({ success: true })),
-  bridgeSemanticRoute: vi.fn(async () => ({ route: null })),
-  bridgeGetController: mockBridgeGetController,
-  bridgeCausalRecall: mockBridgeCausalRecall,
-  bridgeBatchOptimize: mockBridgeBatchOptimize,
-  bridgeBatchPrune: mockBridgeBatchPrune,
+vi.mock('@fork-cli/src/memory/memory-router.js', () => ({
+  routeHealthCheck: vi.fn(async () => ({ available: true })),
+  routeListControllers: vi.fn(async () => []),
+  routePatternOp: vi.fn(async () => ({ success: true })),
+  routeRecordFeedback: vi.fn(async () => ({ success: true })),
+  routeRecordCausalEdge: vi.fn(async () => ({ success: true })),
+  routeTask: vi.fn(async () => ({ route: 'general' })),
+  routeSessionStart: vi.fn(async () => ({ success: true })),
+  routeSessionEnd: vi.fn(async () => ({ success: true })),
+  routeMemoryOp: vi.fn(async () => ({ success: true })),
+  routeConsolidate: vi.fn(async () => ({ success: true })),
+  routeSemanticRoute: vi.fn(async () => ({ route: null })),
+  getController: mockGetController,
+  routeCausalRecall: mockRouteCausalRecall,
+  routeBatchOptimize: mockRouteBatchOptimize,
+  routeBatchPrune: mockRouteBatchPrune,
 }));
 
 // ============================================================================
@@ -109,7 +105,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
 
       const result = await agentdbReflexionRetrieve.handler({ task: 'write unit tests', k: 5 });
 
-      expect(mockBridgeGetController).toHaveBeenCalledWith('reflexion');
+      expect(mockGetController).toHaveBeenCalledWith('reflexion');
       expect(mockReflexionController.retrieve).toHaveBeenCalledWith('write unit tests', 5);
       expect(result).toEqual({
         success: true,
@@ -127,7 +123,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should return error when ReflexionMemory unavailable', async () => {
-      mockBridgeGetController.mockResolvedValueOnce(null);
+      mockGetController.mockResolvedValueOnce(null);
 
       const result = await agentdbReflexionRetrieve.handler({ task: 'test' });
 
@@ -139,7 +135,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should return error when retrieve method missing', async () => {
-      mockBridgeGetController.mockResolvedValueOnce({ noRetrieve: true });
+      mockGetController.mockResolvedValueOnce({ noRetrieve: true });
 
       const result = await agentdbReflexionRetrieve.handler({ task: 'test' });
 
@@ -195,7 +191,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
         success: true,
       });
 
-      expect(mockBridgeGetController).toHaveBeenCalledWith('reflexion');
+      expect(mockGetController).toHaveBeenCalledWith('reflexion');
       expect(mockReflexionController.store).toHaveBeenCalledWith({
         session_id: 's1',
         task: 'write tests',
@@ -232,7 +228,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should return error when ReflexionMemory unavailable', async () => {
-      mockBridgeGetController.mockResolvedValueOnce(null);
+      mockGetController.mockResolvedValueOnce(null);
 
       const result = await agentdbReflexionStore.handler({
         session_id: 's1',
@@ -292,7 +288,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
 
       const result = await agentdbCausalQuery.handler({ cause: 'refactor', k: 5 });
 
-      expect(mockBridgeGetController).toHaveBeenCalledWith('causalGraph');
+      expect(mockGetController).toHaveBeenCalledWith('causalGraph');
       expect(mockCausalGraphController.getEffects).toHaveBeenCalledWith('refactor', 5);
       expect(result).toEqual({
         success: true,
@@ -358,7 +354,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should return error when CausalMemoryGraph unavailable', async () => {
-      mockBridgeGetController.mockResolvedValueOnce(null);
+      mockGetController.mockResolvedValueOnce(null);
 
       const result = await agentdbCausalQuery.handler({ cause: 'x' });
 
@@ -385,8 +381,8 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
   // ---------- agentdb_causal_recall ----------
 
   describe('agentdb_causal_recall', () => {
-    it('should call bridgeCausalRecall with query and params', async () => {
-      mockBridgeCausalRecall.mockResolvedValue({
+    it('should call routeCausalRecall with query and params', async () => {
+      mockRouteCausalRecall.mockResolvedValue({
         success: true,
         results: [{ key: 'auth-pattern', score: 0.9 }],
       });
@@ -396,7 +392,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
         k: 10,
       });
 
-      expect(mockBridgeCausalRecall).toHaveBeenCalledWith({
+      expect(mockRouteCausalRecall).toHaveBeenCalledWith({
         query: 'authentication pattern',
         k: 10,
         includeEvidence: false,
@@ -408,20 +404,20 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should pass includeEvidence when include_evidence=true', async () => {
-      mockBridgeCausalRecall.mockResolvedValue({ success: true, results: [] });
+      mockRouteCausalRecall.mockResolvedValue({ success: true, results: [] });
 
       await agentdbCausalRecall.handler({
         query: 'test',
         include_evidence: true,
       });
 
-      expect(mockBridgeCausalRecall).toHaveBeenCalledWith(
+      expect(mockRouteCausalRecall).toHaveBeenCalledWith(
         expect.objectContaining({ includeEvidence: true }),
       );
     });
 
-    it('should handle cold-start warning from bridge', async () => {
-      mockBridgeCausalRecall.mockResolvedValue({
+    it('should handle cold-start warning from router', async () => {
+      mockRouteCausalRecall.mockResolvedValue({
         success: true,
         results: [],
         warning: 'Cold start: insufficient causal edges',
@@ -445,11 +441,11 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
       });
     });
 
-    it('should return error when bridgeCausalRecall unavailable', async () => {
-      // Temporarily remove bridgeCausalRecall from bridge
-      const bridge = await import('@fork-cli/src/memory/memory-bridge.js');
-      const original = bridge.bridgeCausalRecall;
-      (bridge as any).bridgeCausalRecall = undefined;
+    it('should return error when routeCausalRecall unavailable', async () => {
+      // Temporarily remove routeCausalRecall from router
+      const router = await import('@fork-cli/src/memory/memory-router.js');
+      const original = router.routeCausalRecall;
+      (router as any).routeCausalRecall = undefined;
 
       const result = await agentdbCausalRecall.handler({ query: 'test' });
 
@@ -459,17 +455,17 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
       });
 
       // Restore
-      (bridge as any).bridgeCausalRecall = original;
+      (router as any).routeCausalRecall = original;
     });
 
-    it('should handle errors from bridgeCausalRecall', async () => {
-      mockBridgeCausalRecall.mockRejectedValue(new Error('Bridge failure'));
+    it('should handle errors from routeCausalRecall', async () => {
+      mockRouteCausalRecall.mockRejectedValue(new Error('Router failure'));
 
       const result = await agentdbCausalRecall.handler({ query: 'test' });
 
       expect(result).toMatchObject({
         success: false,
-        error: expect.stringContaining('Bridge failure'),
+        error: expect.stringContaining('Router failure'),
       });
     });
   });
@@ -478,19 +474,19 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
 
   describe('agentdb_batch_optimize', () => {
     it('should dispatch optimize action', async () => {
-      mockBridgeBatchOptimize.mockResolvedValue({
+      mockRouteBatchOptimize.mockResolvedValue({
         success: true,
         optimized: 42,
       });
 
       const result = await agentdbBatchOptimize.handler({ action: 'optimize' });
 
-      expect(mockBridgeBatchOptimize).toHaveBeenCalled();
+      expect(mockRouteBatchOptimize).toHaveBeenCalled();
       expect(result).toEqual({ success: true, optimized: 42 });
     });
 
     it('should dispatch prune action with config', async () => {
-      mockBridgeBatchPrune.mockResolvedValue({
+      mockRouteBatchPrune.mockResolvedValue({
         success: true,
         pruned: 15,
       });
@@ -501,7 +497,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
         min_reward: 0.3,
       });
 
-      expect(mockBridgeBatchPrune).toHaveBeenCalledWith({
+      expect(mockRouteBatchPrune).toHaveBeenCalledWith({
         maxAge: 30,
         minReward: 0.3,
       });
@@ -509,14 +505,14 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should dispatch stats action (uses optimize endpoint)', async () => {
-      mockBridgeBatchOptimize.mockResolvedValue({
+      mockRouteBatchOptimize.mockResolvedValue({
         success: true,
         totalEntries: 100,
       });
 
       const result = await agentdbBatchOptimize.handler({ action: 'stats' });
 
-      expect(mockBridgeBatchOptimize).toHaveBeenCalled();
+      expect(mockRouteBatchOptimize).toHaveBeenCalled();
       expect(result).toMatchObject({ success: true });
     });
 
@@ -538,10 +534,10 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
       });
     });
 
-    it('should return error when bridgeBatchOptimize unavailable', async () => {
-      const bridge = await import('@fork-cli/src/memory/memory-bridge.js');
-      const original = bridge.bridgeBatchOptimize;
-      (bridge as any).bridgeBatchOptimize = undefined;
+    it('should return error when routeBatchOptimize unavailable', async () => {
+      const router = await import('@fork-cli/src/memory/memory-router.js');
+      const original = router.routeBatchOptimize;
+      (router as any).routeBatchOptimize = undefined;
 
       const result = await agentdbBatchOptimize.handler({ action: 'optimize' });
 
@@ -550,13 +546,13 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
         error: expect.stringContaining('not available'),
       });
 
-      (bridge as any).bridgeBatchOptimize = original;
+      (router as any).routeBatchOptimize = original;
     });
 
-    it('should return error when bridgeBatchPrune unavailable', async () => {
-      const bridge = await import('@fork-cli/src/memory/memory-bridge.js');
-      const original = bridge.bridgeBatchPrune;
-      (bridge as any).bridgeBatchPrune = undefined;
+    it('should return error when routeBatchPrune unavailable', async () => {
+      const router = await import('@fork-cli/src/memory/memory-router.js');
+      const original = router.routeBatchPrune;
+      (router as any).routeBatchPrune = undefined;
 
       const result = await agentdbBatchOptimize.handler({ action: 'prune' });
 
@@ -565,24 +561,24 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
         error: expect.stringContaining('not available'),
       });
 
-      (bridge as any).bridgeBatchPrune = original;
+      (router as any).routeBatchPrune = original;
     });
 
     it('should clamp negative max_age to 0', async () => {
-      mockBridgeBatchPrune.mockResolvedValue({ success: true });
+      mockRouteBatchPrune.mockResolvedValue({ success: true });
 
       await agentdbBatchOptimize.handler({
         action: 'prune',
         max_age: -5,
       });
 
-      expect(mockBridgeBatchPrune).toHaveBeenCalledWith(
+      expect(mockRouteBatchPrune).toHaveBeenCalledWith(
         expect.objectContaining({ maxAge: 0 }),
       );
     });
 
     it('should handle errors from batch operations', async () => {
-      mockBridgeBatchOptimize.mockRejectedValue(new Error('DB locked'));
+      mockRouteBatchOptimize.mockRejectedValue(new Error('DB locked'));
 
       const result = await agentdbBatchOptimize.handler({ action: 'optimize' });
 
@@ -608,7 +604,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
         branch_name: 'experiment-1',
       });
 
-      expect(mockBridgeGetController).toHaveBeenCalledWith('vectorBackend');
+      expect(mockGetController).toHaveBeenCalledWith('vectorBackend');
       expect(mockVectorBackend.derive).toHaveBeenCalledWith('experiment-1');
       expect(result).toMatchObject({
         success: true,
@@ -762,7 +758,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should return error when backend unavailable', async () => {
-      mockBridgeGetController.mockResolvedValueOnce(null);
+      mockGetController.mockResolvedValueOnce(null);
 
       const result = await agentdbBranch.handler({
         action: 'create',
@@ -776,7 +772,7 @@ describe('ADR-0033: agentdb-tools new MCP tools', () => {
     });
 
     it('should return error when derive not supported', async () => {
-      mockBridgeGetController.mockResolvedValueOnce({});
+      mockGetController.mockResolvedValueOnce({});
 
       const result = await agentdbBranch.handler({
         action: 'create',

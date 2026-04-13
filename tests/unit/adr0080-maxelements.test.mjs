@@ -150,10 +150,6 @@ describe('ADR-0080 P3: rvf-backend DEFAULT_MAX_ELEMENTS', () => {
 
 const executorSrc = readFileSync(resolve(FORK_CLI_SRC, 'init/executor.ts'), 'utf-8');
 const initCmdSrc = readFileSync(resolve(FORK_CLI_SRC, 'commands/init.ts'), 'utf-8');
-const memoryBridgeSrc = readFileSync(
-  resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'),
-  'utf-8',
-);
 const configToolsSrc = readFileSync(resolve(FORK_CLI_SRC, 'mcp-tools/config-tools.ts'), 'utf-8');
 
 describe('ADR-0080 P2: config-template embeddings.provider', () => {
@@ -270,27 +266,6 @@ describe('ADR-0080 P2: wizard embedding-model default', () => {
     assert.ok(
       initCmdSrc.includes("model: 'Xenova/all-mpnet-base-v2'"),
       "wizard agentdb catch fallback must use 'Xenova/all-mpnet-base-v2'",
-    );
-  });
-});
-
-// ============================================================================
-// 10. memory-bridge maxEntries fallback is 100000
-// ============================================================================
-
-describe('ADR-0080 P2: memory-bridge maxEntries fallback', () => {
-  it('maxEntries fallback is 100000 (not 1000000)', () => {
-    const maxEntriesLine = memoryBridgeSrc
-      .split('\n')
-      .find(l => l.includes('maxEntries:') && l.includes('??'));
-    assert.ok(maxEntriesLine, 'memory-bridge must have a maxEntries line with ?? fallback');
-    assert.ok(
-      maxEntriesLine.includes('100000'),
-      'memory-bridge maxEntries fallback must be 100000',
-    );
-    assert.ok(
-      !maxEntriesLine.includes('1000000'),
-      'memory-bridge maxEntries fallback must NOT be 1000000',
     );
   });
 });
@@ -534,52 +509,6 @@ describe('ADR-0080: intelligence.ts directory traversal for embeddings.json', ()
 });
 
 // ============================================================================
-// 19. memory-bridge resolves RVF path from embeddings.json (not hardcoded)
-// ============================================================================
-
-describe('ADR-0080: memory-bridge RVF path resolution', () => {
-  it('does NOT use agentdb-memory.rvf as the PRIMARY path', () => {
-    const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
-    // The first rvfPath assignment must NOT be agentdb-memory.rvf
-    // It should reference embeddings.json databasePath or 'memory.rvf'
-    // (agentdb-memory.rvf may still appear as a legacy fallback, which is OK)
-    const rvfSection = bridgeSrc.slice(
-      bridgeSrc.indexOf('rvfStorePromise'),
-      bridgeSrc.indexOf('rvfStorePromise') + 3000,
-    );
-    // The primary path resolution must use embeddings.json or memory.rvf
-    assert.ok(
-      rvfSection.includes('embeddings.json') || rvfSection.includes("'memory.rvf'"),
-      'memory-bridge primary RVF path must come from embeddings.json or canonical memory.rvf',
-    );
-  });
-
-  it('reads databasePath from embeddings.json', () => {
-    const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
-    const rvfSection = bridgeSrc.slice(
-      bridgeSrc.indexOf('rvfStorePromise'),
-      bridgeSrc.indexOf('rvfStorePromise') + 1500,
-    );
-    assert.ok(
-      rvfSection.includes('databasePath') && rvfSection.includes('embeddings.json'),
-      'memory-bridge must resolve RVF path from embeddings.json databasePath',
-    );
-  });
-
-  it('falls back to memory.rvf (canonical name)', () => {
-    const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
-    const rvfSection = bridgeSrc.slice(
-      bridgeSrc.indexOf('rvfStorePromise'),
-      bridgeSrc.indexOf('rvfStorePromise') + 1500,
-    );
-    assert.ok(
-      rvfSection.includes("'memory.rvf'"),
-      'memory-bridge must fall back to canonical memory.rvf name',
-    );
-  });
-});
-
-// ============================================================================
 // 20. memory.ts does not copy to .claude/memory.db
 // ============================================================================
 
@@ -596,63 +525,6 @@ describe('ADR-0080: no dead .claude/memory.db copy', () => {
     assert.ok(
       !initSection.includes('copyFileSync'),
       'memory init must NOT copyFileSync to .claude/memory.db',
-    );
-  });
-});
-
-// ============================================================================
-// 22. Dual-write pattern: storeEntry writes to SQLite then RVF
-// ============================================================================
-
-describe('ADR-0080: dual-write pattern in memory-bridge storeEntry', () => {
-  // Re-read fresh to get the dual-write block
-  const bridgeSrc = readFileSync(resolve(FORK_CLI_SRC, 'memory/memory-bridge.ts'), 'utf-8');
-
-  it('has ADR-0080 dual-write comment', () => {
-    assert.ok(
-      bridgeSrc.includes('ADR-0080: dual-write'),
-      'memory-bridge must have ADR-0080 dual-write comment',
-    );
-  });
-
-  it('dual-write block calls getRvfStore()', () => {
-    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
-    assert.ok(dualIdx > -1, 'dual-write comment must exist');
-    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 500);
-    assert.ok(
-      afterDual.includes('getRvfStore()'),
-      'dual-write block must call getRvfStore()',
-    );
-  });
-
-  it('dual-write is best-effort (wrapped in try/catch)', () => {
-    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
-    // The try statement follows immediately after the comment line;
-    // the catch includes persistToDisk + store, so needs an 800-char window
-    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 800);
-    assert.ok(
-      afterDual.includes('try') && afterDual.includes('catch'),
-      'dual-write block must be wrapped in try/catch for best-effort',
-    );
-  });
-
-  it('dual-write occurs AFTER SQLite INSERT (after prepare/run)', () => {
-    const insertIdx = bridgeSrc.indexOf('prepare(insertSql)');
-    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
-    assert.ok(insertIdx > -1, 'prepare(insertSql) must exist');
-    assert.ok(dualIdx > -1, 'dual-write comment must exist');
-    assert.ok(
-      dualIdx > insertIdx,
-      'dual-write must come AFTER SQLite INSERT (SQLite is primary)',
-    );
-  });
-
-  it('dual-write stores embedding as Float32Array', () => {
-    const dualIdx = bridgeSrc.indexOf('ADR-0080: dual-write');
-    const afterDual = bridgeSrc.slice(dualIdx, dualIdx + 500);
-    assert.ok(
-      afterDual.includes('Float32Array'),
-      'dual-write must convert embedding to Float32Array for RVF',
     );
   });
 });

@@ -30,7 +30,12 @@
 #                e2e-dual-write, e2e-dim768, e2e-no-dead-files,
 #                e2e-cfg-roundtrip
 #   adr0084    — adr0084-no-sqljs-desc, adr0084-p2-exports,
-#                adr0084-p2-bridge, e2e-0084-no-sqljs
+#                adr0084-p2-bridge, e2e-0084-no-sqljs,
+#                adr0084-p3-worker, adr0084-p3-hooks,
+#                adr0084-p3-shadows, adr0084-p3-fallback,
+#                adr0084-p4-nobridge, adr0084-p4-shutdown,
+#                adr0084-p4-zero-ext, adr0084-p4-export
+#   adr0085    — adr0085-no-bridge, adr0085-init-zero, adr0085-router-reg
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -381,6 +386,10 @@ adr0083_lib="${PROJECT_DIR}/lib/acceptance-adr0083-checks.sh"
 adr0084_lib="${PROJECT_DIR}/lib/acceptance-adr0084-checks.sh"
 [[ -f "$adr0084_lib" ]] && source "$adr0084_lib"
 
+# ADR-0085: Bridge Deletion & Ideal State Gap Closure
+adr0085_lib="${PROJECT_DIR}/lib/acceptance-adr0085-checks.sh"
+[[ -f "$adr0085_lib" ]] && source "$adr0085_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -653,6 +662,25 @@ run_check_bg "adr0083-no-dosync" "No doSync drain (ADR-0083)"          check_adr
 run_check_bg "adr0084-no-sqljs-desc" "No sql.js in tool descs (ADR-0084)" check_no_sqljs_in_tool_descriptions     "adr0084"
 run_check_bg "adr0084-p2-exports"    "Phase 2 router exports (ADR-0084)"   check_phase2_router_exports              "adr0084"
 run_check_bg "adr0084-p2-bridge"     "Phase 2 bridge loader (ADR-0084)"    check_phase2_bridge_loader               "adr0084"
+
+# ADR-0084 Phase 3: Bridge caller migration
+run_check_bg "adr0084-p3-worker"   "Worker-daemon router-only (ADR-0084)" check_phase3_worker_daemon_no_bridge   "adr0084"
+run_check_bg "adr0084-p3-hooks"    "Hooks-tools router-only (ADR-0084)"   check_phase3_hooks_tools_no_bridge     "adr0084"
+run_check_bg "adr0084-p3-shadows"  "No shadow replicates (ADR-0084)"      check_phase3_no_shadow_replicates      "adr0084"
+run_check_bg "adr0084-p3-fallback" "Router no ctrl fallback (ADR-0084)"   check_phase3_router_no_controller_fallback "adr0084"
+
+# ADR-0084 Phase 4: Single controller — bridge removal from route layer
+run_check_bg "adr0084-p4-nobridge"  "Route methods no loadBridge (ADR-0084)"  check_phase4_router_no_loadbridge_in_routes   "adr0084"
+run_check_bg "adr0084-p4-shutdown"  "Worker shutdown via router (ADR-0084)"   check_phase4_worker_daemon_shutdown_router    "adr0084"
+run_check_bg "adr0084-p4-zero-ext"  "Zero external bridge imports (ADR-0084)" check_phase4_zero_external_bridge_imports     "adr0084"
+run_check_bg "adr0084-p4-export"    "Router exports shutdown (ADR-0084)"      check_phase4_router_exports_shutdown          "adr0084"
+
+# ADR-0085: Bridge Deletion & Ideal State Gap Closure
+if [[ -f "$adr0085_lib" ]]; then
+  run_check_bg "adr0085-no-bridge"  "Bridge absent from dist (ADR-0085)"        check_no_bridge_in_dist                  "adr0085"
+  run_check_bg "adr0085-init-zero"  "Initializer zero bridge refs (ADR-0085)"   check_initializer_zero_bridge_imports     "adr0085"
+  run_check_bg "adr0085-router-reg" "Router has initCtrlRegistry (ADR-0085)"    check_router_has_init_controller_registry "adr0085"
+fi
 
 # ADR-0081: M5 Max Configuration Profile
 run_check_bg "adr0081-neural"   "Neural optional dep (ADR-0081)"       check_adr0081_neural_optional_dep      "adr0081"
@@ -1053,6 +1081,14 @@ collect_parallel "all" \
   "adr0084-no-sqljs-desc|No sql.js in tool descs (ADR-0084)" \
   "adr0084-p2-exports|Phase 2 router exports (ADR-0084)" \
   "adr0084-p2-bridge|Phase 2 bridge loader (ADR-0084)" \
+  "adr0084-p3-worker|Worker-daemon router-only (ADR-0084)" \
+  "adr0084-p3-hooks|Hooks-tools router-only (ADR-0084)" \
+  "adr0084-p3-shadows|No shadow replicates (ADR-0084)" \
+  "adr0084-p3-fallback|Router no ctrl fallback (ADR-0084)" \
+  "adr0084-p4-nobridge|Route methods no loadBridge (ADR-0084)" \
+  "adr0084-p4-shutdown|Worker shutdown via router (ADR-0084)" \
+  "adr0084-p4-zero-ext|Zero external bridge imports (ADR-0084)" \
+  "adr0084-p4-export|Router exports shutdown (ADR-0084)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \

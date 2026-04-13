@@ -1,9 +1,9 @@
 // @tier unit
 // ADR-0077 Phase 5: memory-router.ts — single entry point for all memory operations
 //
-// London School TDD: inline mocks for storage functions, controller-intercept,
-// and memory-bridge. No real imports of the router module (it has dynamic
-// imports to packages that may not be built).
+// London School TDD: inline mocks for storage functions and controller-intercept.
+// No real imports of the router module (it has dynamic imports to packages
+// that may not be built).
 //
 // Integration tests use real I/O for migration-legacy and wiring checks.
 
@@ -501,83 +501,6 @@ describe('ADR-0077 Phase 5: routeMemoryOp store error path (unit)', () => {
 });
 
 // ============================================================================
-// Group 4: UNIT TESTS — getController fallback
-// ============================================================================
-
-describe('ADR-0077 Phase 5: getController fallback (unit)', () => {
-
-  /**
-   * Simulated getController logic from memory-router.ts:
-   * 1. Try controller-intercept.getExisting()
-   * 2. Fall back to memory-bridge.bridgeGetController()
-   * 3. Return undefined if both fail
-   */
-  function createGetController(interceptMod, bridgeMod) {
-    return async function getController(name) {
-      if (interceptMod?.getExisting) {
-        const ctrl = interceptMod.getExisting(name);
-        if (ctrl !== undefined) return ctrl;
-      }
-      try {
-        if (bridgeMod?.bridgeGetController) {
-          return await bridgeMod.bridgeGetController(name);
-        }
-      } catch {
-        // fall through
-      }
-      return undefined;
-    };
-  }
-
-  // Test 10
-  it('returns controller from intercept when available', async () => {
-    const mockCtrl = { storePattern: mockFn() };
-    const interceptMod = { getExisting: mockFn(() => mockCtrl) };
-    const bridgeMod = { bridgeGetController: asyncMock(null) };
-
-    const getCtrl = createGetController(interceptMod, bridgeMod);
-    const result = await getCtrl('reasoningBank');
-
-    assert.equal(result, mockCtrl, 'must return intercept controller');
-    assert.equal(interceptMod.getExisting.calls.length, 1);
-    assert.equal(bridgeMod.bridgeGetController.calls.length, 0,
-      'bridge must NOT be called when intercept succeeds');
-  });
-
-  it('falls back to bridge when intercept returns undefined', async () => {
-    const bridgeCtrl = { name: 'from-bridge' };
-    const interceptMod = { getExisting: mockFn(() => undefined) };
-    const bridgeMod = { bridgeGetController: asyncMock(bridgeCtrl) };
-
-    const getCtrl = createGetController(interceptMod, bridgeMod);
-    const result = await getCtrl('reasoningBank');
-
-    assert.equal(result, bridgeCtrl, 'must fall back to bridge');
-    assert.equal(interceptMod.getExisting.calls.length, 1);
-    assert.equal(bridgeMod.bridgeGetController.calls.length, 1);
-  });
-
-  it('falls back to bridge when intercept module is null', async () => {
-    const bridgeCtrl = { name: 'from-bridge' };
-    const bridgeMod = { bridgeGetController: asyncMock(bridgeCtrl) };
-
-    const getCtrl = createGetController(null, bridgeMod);
-    const result = await getCtrl('reasoningBank');
-
-    assert.equal(result, bridgeCtrl, 'must use bridge when intercept unavailable');
-  });
-
-  it('returns undefined when both intercept and bridge fail', async () => {
-    const interceptMod = { getExisting: mockFn(() => undefined) };
-
-    const getCtrl = createGetController(interceptMod, null);
-    const result = await getCtrl('nonexistent');
-
-    assert.equal(result, undefined);
-  });
-});
-
-// ============================================================================
 // Group 5: UNIT TESTS — ensureRouter idempotency
 // ============================================================================
 
@@ -946,24 +869,23 @@ describe('ADR-0077 Phase 5: wiring — import graph (source verification)', () =
   });
 
   // Test 20
-  it('memory-router.ts does NOT import memory-bridge at module level', () => {
+  it('memory-router.ts does NOT import memory-bridge (Phase 4: controller-direct)', () => {
     const file = `${MEMORY_SRC}/memory-router.ts`;
     if (!existsSync(file)) return;
     const src = readFileSync(file, 'utf-8');
 
-    // Extract top-level import statements (lines starting with 'import')
+    // Phase 4 removed bridge dependency from router — route methods use getController directly.
     const topLevelImports = src.split('\n').filter(l => l.startsWith('import '));
     const hasBridgeImport = topLevelImports.some(l => l.includes('memory-bridge'));
     assert.ok(
       !hasBridgeImport,
-      'memory-router must NOT have top-level memory-bridge import (only dynamic)',
+      'memory-router must NOT have top-level memory-bridge import',
     );
 
-    // Verify bridge is used only via dynamic import()
-    const dynamicBridgeImports = src.match(/await import\(['"]\.\/memory-bridge\.js['"]\)/g);
+    // Verify router uses getController (controller-direct) instead of bridge
     assert.ok(
-      dynamicBridgeImports && dynamicBridgeImports.length > 0,
-      'memory-router must use dynamic import() for memory-bridge',
+      src.includes('getController'),
+      'memory-router must use getController for controller-direct access (ADR-0084 Phase 4)',
     );
   });
 
