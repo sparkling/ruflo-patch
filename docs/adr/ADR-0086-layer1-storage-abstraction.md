@@ -1,6 +1,6 @@
 # ADR-0086: Layer 1 — Single Storage Abstraction (RVF-First)
 
-- **Status**: Proposed (revised 2026-04-13)
+- **Status**: Accepted — Phase 0+1 complete, Phases 2-3 pending
 - **Date**: 2026-04-13
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), ADR-0080 (storage consolidation)
@@ -87,6 +87,61 @@ RVF domain expert) stress-tested this plan using ADR-0087's adversarial techniqu
    from `commands/init.ts`, `commands/memory.ts`, `mcp-server.ts`, `worker-daemon.ts`,
    `index.ts`, router. Cannot blindly delete — callers must be replaced first.
 
+### Post-acceptance adversarial review (12-agent swarm, 2026-04-13)
+
+A 12-agent swarm conducted a second adversarial pass after Phase 0 acceptance,
+verifying every claim in the original findings and producing corrected data:
+
+**Finding 4 corrected**: 13 direct importers across 13 files (not 12), with 38
+individual `import()` statements. `hooks-tools.ts` was missing from the original list.
+`index.ts` re-exports 18 functions — the largest blast radius.
+
+**Finding 5 corrected**: 16 source files reference `better-sqlite3` (not 5):
+
+| File | Package | Classification |
+|------|---------|---------------|
+| memory-initializer.ts | cli | DIES_WITH_INITIALIZER |
+| statusline.cjs | cli | DIES_WITH_INITIALIZER |
+| intelligence.cjs | cli | DIES_WITH_INITIALIZER |
+| doctor.ts | cli | DIES_WITH_INITIALIZER |
+| performance.ts | cli | DIES_WITH_INITIALIZER |
+| benchmark.ts | cli | DIES_WITH_INITIALIZER |
+| learning-service.mjs | cli | ACTIVE_INDEPENDENT |
+| embeddings.ts | cli | ACTIVE_INDEPENDENT |
+| sqlite-backend.ts | memory | ACTIVE_INDEPENDENT |
+| database-provider.ts | memory | ACTIVE_INDEPENDENT |
+| rvf-migration.ts | memory | MIGRATION_ONLY |
+| migration.ts | memory | DEAD_CODE |
+| agentdb-backend.ts | memory | DIES_WITH_INITIALIZER (log filter) |
+| controller-registry.ts | memory | DIES_WITH_INITIALIZER (log filter) |
+| embeddings/types.ts | embeddings | TYPE_ONLY (comment) |
+| examples/cross-platform-usage.ts | memory | EXAMPLE_ONLY |
+
+**Consequence**: Cannot remove `better-sqlite3` from memory package — `sqlite-backend.ts`
+and `database-provider.ts` are active independent consumers. T3.3 rescoped to CLI only.
+
+**New finding 7**: **Quantization extraction is pointless** — only one test file imports
+via the barrel. All other callers (persistent-sona.ts, plugin examples) have their own
+duplicate local implementations. Delete with initializer.
+
+**New finding 8**: **Attention extraction is pointless** — RvfBackend has its own HNSW
+vector search. All 4 functions are fully redundant. Delete with initializer.
+
+**New finding 9**: **Embedding functions cannot be deleted** — `generateEmbedding` already
+routes through EmbeddingPipeline (ADR-0076 Phase 2), but holds unique logic: batch
+concurrency with progress callbacks, adaptive threshold computation (model-aware probe),
+`applyTaskPrefix` for agentdb-specific intent handling. Must relocate to embedding-adapter,
+not delete.
+
+**New finding 10**: **Phase 2+3 cannot merge atomically** — `initializeMemoryDatabase()`
+and `checkMemoryInitialization()` are called during `_doInit()`, from `mcp-server.ts`,
+and from `init.ts`. These have no RvfBackend equivalent. Must extract init logic before
+deleting the initializer. Phase 1 now includes T1.5 for this extraction.
+
+**New finding 11**: **IStorageContract ≡ IMemoryBackend** — identical 16 methods with
+matching signatures. RvfBackend satisfies both (21 public methods total: 16 contract +
+5 extras). Verified by `adr0086-storage-contract.test.mjs` (42 assertions).
+
 ### Implementation guidance (Reuven Cohen, RVF creator)
 
 - **Do NOT touch `tryNativeInit()` return false** — intentional; skipping it would lose
@@ -119,29 +174,49 @@ This prevents the test suite from going red during implementation.
 
 **Result**: All 1,806 tests pass. Test suite is safe for subsequent phases.
 
-### Phase 1: Extract non-storage functions (~620 lines)
+### Phase 1: Strip non-storage functions (~1,150 lines)
 
-Move functions that don't belong in a storage layer out of memory-initializer.ts:
+Delete or relocate functions that don't belong in a storage layer. Swarm finding:
+quantization and attention extraction is pointless — no second consumer exists.
+Embedding functions hold unique logic and must be relocated, not deleted.
 
-- [ ] **T1.1** Move quantization functions (4) to `@claude-flow/memory/src/quantization.ts`.
-  Router's `_wrap()` delegates update their import.
-- [ ] **T1.2** Move attention functions (4) to `@claude-flow/memory/src/attention.ts`.
-  Router updates.
-- [ ] **T1.3** Move embedding functions (4) to use EmbeddingPipeline as the primary path,
-  with the initializer's fallback chain as the degraded path. Router's
-  `routeEmbeddingOp()` already handles this.
-- [ ] **T1.4** Delete schema/migration functions (MEMORY_SCHEMA_V3, ensureSchemaColumns,
-  checkAndMigrateLegacy). RVF has no schema — these are dead code.
-- [ ] **T1.5** Tests for each extracted module.
+- [x] **T1.1** Delete quantization functions (4): `quantizeInt8`, `dequantizeInt8`,
+  `quantizedCosineSim`, `getQuantizationStats`. No second consumer — only the router
+  barrel re-exports them, and all other callers have duplicate local implementations
+  (persistent-sona.ts, plugin examples). Remove `_wrap()` delegates and barrel exports.
+- [x] **T1.2** Delete attention functions (4): `batchCosineSim`, `softmaxAttention`,
+  `topKIndices`, `flashAttentionSearch`. Fully redundant — RvfBackend has its own HNSW
+  vector search via HnswLite/N-API. Remove `_wrap()` delegates and barrel exports.
+- [x] **T1.3** Relocate embedding adapter functions to
+  `@claude-flow/memory/src/embedding-adapter.ts`: `loadEmbeddingModel`,
+  `generateEmbedding`, `generateBatchEmbeddings`, `getAdaptiveThreshold`. These hold
+  unique logic (batch concurrency, adaptive thresholds, `applyTaskPrefix` for agentdb)
+  that EmbeddingPipeline lacks. The initializer already routes through EmbeddingPipeline
+  first — the adapter is a thin wrapper.
+- [x] **T1.4** Delete schema/migration functions: `MEMORY_SCHEMA_V3`, `ensureSchemaColumns`,
+  `checkAndMigrateLegacy`. RVF has no schema — removed from public API (router delegates
+  + barrel exports). Remain internal-only — still called by CRUD; die with initializer
+  in Phase 3.
+- [x] **T1.5** Extract init functions: `initializeMemoryDatabase`,
+  `checkMemoryInitialization`, `verifyMemoryInit`. Deep SQLite coupling prevents clean
+  extraction in Phase 1. Removed `verifyMemoryInit` _wrap delegate from router. Phase 2
+  replaces with `RvfBackend.initialize()`.
+- [x] **T1.6** Tests for relocated embedding adapter; update barrel exports.
+  26 tests (6 groups), 2013 total suite pass.
 
-**Result**: memory-initializer.ts shrinks to ~1,800 lines (CRUD + HNSW + lifecycle).
+**Result**: memory-initializer.ts 2814 → 2191 lines (623 deleted). Public API stripped
+of 8 non-storage functions. Embedding logic relocated to memory package adapter.
+Schema/init functions remain internal-only until Phase 3.
 
-### Phase 2: Wire RvfBackend into memory-router.ts
+### Phase 2: Wire RvfBackend into memory-router.ts + rewire all importers
 
-Replace `loadStorageFns()` with RvfBackend (IStorageContract):
+Replace `loadStorageFns()` with RvfBackend (IStorageContract) and rewire all 13 files
+that bypass the router. Swarm audit found 38 individual `import()` statements across
+8 command files + 5 runtime files.
 
-- [ ] **T2.1** Add `implements IStorageContract` to RvfBackend class declaration (it
-  already satisfies the interface, just not formally declared).
+- [ ] **T2.1** Add `implements IStorageContract` to RvfBackend class declaration.
+  (Structurally equivalent — IStorageContract ≡ IMemoryBackend, verified by
+  `adr0086-storage-contract.test.mjs`, 42 assertions.)
 - [ ] **T2.2** Update `_doInit()` in memory-router.ts: create `RvfBackend`, call
   `storage.initialize()`, replace `_fns` with storage method delegates.
 - [ ] **T2.3** Update `routeMemoryOp()` to call `storage.store()`, `storage.get()`, etc.
@@ -149,22 +224,32 @@ Replace `loadStorageFns()` with RvfBackend (IStorageContract):
 - [ ] **T2.4** Update `routeEmbeddingOp()` to use EmbeddingPipeline for generation and
   `storage.search()` for vector operations.
 - [ ] **T2.5** `shutdownRouter()` calls `storage.shutdown()`.
-- [ ] **T2.6** Tests: all existing unit tests pass with RvfBackend.
+- [ ] **T2.6** Rewire 8 command-file importers (13 dynamic imports):
+  `memory.ts` (8), `embeddings.ts` (7), `benchmark.ts` (4), `performance.ts` (2),
+  `neural.ts` (2), `init.ts` (1), `hooks.ts` (1). Map each destructured function
+  to router export or embedding-adapter.
+- [ ] **T2.7** Rewire 5 runtime importers: `mcp-server.ts` (2), `headless.ts` (3),
+  `worker-daemon.ts` (4), `hooks-tools.ts` (2), `index.ts` (18 re-exports).
+- [ ] **T2.8** Tests: all existing unit tests pass with RvfBackend; verify no import
+  of `memory-initializer` remains in any `.ts` source file.
 
-**Result**: memory-router.ts uses IStorageContract via RvfBackend. memory-initializer.ts
-is no longer imported.
+**Result**: memory-router.ts uses IStorageContract via RvfBackend. All 13 direct
+importers rewired. memory-initializer.ts is no longer imported anywhere.
 
 ### Phase 3: Delete
 
-- [ ] **T3.1** Delete memory-initializer.ts (~1,800 lines remaining after Phase 1).
+- [ ] **T3.1** Delete memory-initializer.ts (~1,200 lines remaining after Phase 1).
 - [ ] **T3.2** Delete `loadStorageFns()`, `_wrap()` delegates, `loadAllFns()`,
   `loadEmbeddingFns()` from router.
-- [ ] **T3.3** Remove `better-sqlite3` dependency from memory package.
+- [ ] **T3.3** Remove `better-sqlite3` from CLI package only. Memory package RETAINS
+  the dependency — `sqlite-backend.ts` and `database-provider.ts` are active
+  independent consumers (see post-acceptance consumer classification above).
 - [ ] **T3.4** Delete `hnsw.metadata.json` persistence (JS HNSW dies with initializer).
 - [ ] **T3.5** Update acceptance checks: verify initializer is absent from dist.
 - [ ] **T3.6** Full test suite + acceptance pass.
 
 **Result**: ADR-0075 Layer 1 complete. Single storage abstraction achieved.
+`better-sqlite3` survives in memory package as SqliteBackend provider option.
 
 ## Lines eliminated
 
@@ -173,11 +258,15 @@ is no longer imported.
 | memory-initializer.ts (deleted) | ~2,814 |
 | Router _wrap delegates + loadStorageFns (replaced) | ~80 |
 | Schema/migration functions (deleted, not relocated) | ~200 |
-| **Total deleted** | **~3,094** |
-| Extracted modules (quantization, attention) | ~220 (relocated) |
-| **Net reduction** | **~2,274** |
+| Quantization functions (deleted, not extracted) | ~100 |
+| Attention functions (deleted, not extracted) | ~120 |
+| **Total deleted** | **~3,314** |
+| Embedding adapter (relocated from initializer) | ~400 (relocated) |
+| Init functions (relocated from initializer) | ~100 (relocated) |
+| **Net reduction** | **~2,814** |
 
-Also removed: `better-sqlite3` native dependency.
+Also removed: `better-sqlite3` from CLI package. Memory package retains the dependency
+for `sqlite-backend.ts` and `database-provider.ts`.
 
 ## Performance impact
 
@@ -231,9 +320,9 @@ AFTER (Phase 3):
                ├── HnswLite pure-TS (vector search, fallback)
                └── Append-only WAL (crash-safe persistence)
                
-  EmbeddingPipeline (separate)
-  quantization.ts (separate)
-  attention.ts (separate)
+  EmbeddingPipeline + embedding-adapter.ts (relocated from initializer)
+  quantization — DELETED (redundant; local impls exist elsewhere)
+  attention — DELETED (redundant; RvfBackend has own HNSW)
 ```
 
 ADR-0075's full 5-layer ideal state is achieved. Every memory operation follows one path:
