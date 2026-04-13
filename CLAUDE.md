@@ -38,6 +38,26 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 - Use `/scripts` for utility scripts
 - Use `/examples` for example code
 
+## Adversarial Prompting Workflow (ADR-0087)
+
+Before implementing any non-trivial feature or architectural change:
+
+1. Describe the proposed approach to the AI
+2. Ask it to find the **3 best reasons the architecture is wrong**
+3. Ask what a **senior engineer would say 3 years from now**
+4. Only after this adversarial pass, proceed with implementation
+
+Use AI to be **less wrong**, not to go faster.
+
+When running parallel sessions, frame them as **thinking types** (implementation, adversarial review, test generation, simplification) — not arbitrary task splits.
+
+## What We Tried and Won't Try Again
+
+- [2026-03] SPARC-style upstream rewrite — 44-49 week scope covers 15-20%; fork-patch ships immediately (ADR-0055)
+- [2026-04] SQLite-first storage — RVF is primary; SQLite is fallback only (ADR-0086)
+- [2026-04] Silent fallback paths in tests — masks real failures; tests must fail loudly (ADR-0082)
+- [2026-04] Sidecar JSON files — eliminated in favor of single storage abstraction (ADR-0085)
+
 ## Project Architecture
 
 - Follow Domain-Driven Design with bounded contexts

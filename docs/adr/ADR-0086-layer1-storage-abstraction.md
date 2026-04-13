@@ -1,9 +1,10 @@
-# ADR-0086: Layer 1 — Single Storage Abstraction
+# ADR-0086: Layer 1 — Single Storage Abstraction (RVF-First)
 
-- **Status**: Proposed
+- **Status**: Proposed (revised 2026-04-13)
 - **Date**: 2026-04-13
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), ADR-0080 (storage consolidation)
+- **Informed by**: ADR-0087 (adversarial prompting workflow), hive discussion 2026-04-13
 - **Closes**: ADR-0075 Layer 1 (the last remaining gap to the ideal state)
 
 ## Context
@@ -30,54 +31,52 @@ quantization, schema migration, and temporal decay. None of this goes through th
 | Lifecycle | initializeMemoryDatabase, checkMemoryInitialization, ensureSchemaColumns, checkAndMigrateLegacy, applyTemporalDecay, verifyMemoryInit, getInitialMetadata, MEMORY_SCHEMA_V3 | ~500 |
 
 **IStorageContract** (16 methods) already exists in `@claude-flow/memory/src/storage.ts`.
-It documents the narrow interface controllers actually call: initialize, shutdown, store,
-get, getByKey, update, delete, search, query, bulkInsert, bulkDelete, count,
-listNamespaces, clearNamespace, getStats, healthCheck.
 
-**RvfBackend** (532 lines) already implements most of IStorageContract and uses WAL writes
-(ADR-0073 Phase 1), Rust HNSW (Phase 2), and native activation (Phase 3) — all complete.
+**RvfBackend** (~998 lines) already implements all 16 IStorageContract methods using:
+- In-memory `Map<string, MemoryEntry>` for document storage and structured queries
+- In-memory `Map<string, string>` keyIndex for O(1) exact key lookups
+- Native `@ruvector/rvf-node` N-API for vector HNSW (primary)
+- HnswLite pure-TS fallback when native unavailable
+- Append-only WAL for crash-safe persistence
 
-**memory-router.ts** (1,400 lines) already wraps memory-initializer.ts via `loadStorageFns()`
+**memory-router.ts** (1,400 lines) wraps memory-initializer.ts via `loadStorageFns()`
 and routes all CRUD through `routeMemoryOp()`. It also wraps all 23 named exports via
 `_wrap()` lazy delegates.
 
-### Why the initializer is hard to replace
-
-1. **Schema ownership** — `MEMORY_SCHEMA_V3` and `ensureSchemaColumns()` create the
-   SQLite tables that everything depends on. RvfBackend creates its own tables but NOT
-   `memory_entries`.
-
-2. **HNSW management** — The initializer manages its own in-memory HNSW index (persisted
-   to `hnsw.metadata.json`). This is separate from RvfBackend's HNSW. Consolidating them
-   requires deciding which HNSW implementation wins.
-
-3. **Embedding model loading** — 4-tier fallback chain: agentdb config, @xenova/transformers
-   ONNX, ruvector ONNX, hash-fallback. This is memory-initializer's responsibility, not
-   storage's. It should move to the EmbeddingPipeline (ADR-0076 Phase 3, already exists).
-
-4. **Quantization + attention** — 8 functions (quantizeInt8, softmaxAttention, etc.) are
-   computational utilities that don't belong in a storage layer at all.
-
-5. **Search combines embedding + storage** — `searchEntries()` generates the query embedding,
-   tries HNSW fast path, falls back to brute-force SQLite with `cosineSim()`. This
-   interleaving makes it hard to separate storage from embedding.
-
-### What makes it achievable now
+### Why the initializer can be replaced now
 
 After ADR-0085:
 - **Single entry point** — all callers go through memory-router.ts, never directly to
   the initializer. Changing the implementation behind the router is invisible to callers.
 - **No bridge dependency** — the initializer is pure SQLite CRUD, no AgentDB coupling.
 - **IStorageContract exists** — the target interface is defined and documented.
-- **RvfBackend works** — WAL writes, Rust HNSW, native activation all tested.
-- **EmbeddingPipeline exists** — `@claude-flow/memory/src/embedding-pipeline.ts` handles
-  model loading and generation. The initializer's embedding code is redundant.
+- **RvfBackend implements all 16 methods** — verified by hive discussion (Queen, Storage
+  Expert, Migration Strategist independently confirmed). The "structured query gap" does
+  not exist in practice; in-memory Maps handle getByKey, listNamespaces, count, and query.
+- **EmbeddingPipeline exists** — handles model loading and generation. The initializer's
+  embedding code is redundant.
+- **No migration needed** — nobody uses the current storage until the work is complete.
+
+### Adversarial review findings (ADR-0087)
+
+A hive of 8 experts (including devil's advocate) stress-tested this plan:
+
+1. **IStorageContract was designed for SQL** — 6 methods (getByKey, listNamespaces,
+   clearNamespace, count, query, bulkDelete) assume relational semantics. RvfBackend
+   handles them via in-memory Map scans, which is fine at current scale (<100K entries)
+   but would need META_IDX_SEG acceleration at larger scale.
+
+2. **Three HNSW implementations exist, not two** — JS HNSW (memory-initializer),
+   HnswLite (RvfBackend pure-TS), Rust HNSW (N-API). Resolution: JS HNSW dies with
+   the initializer. No data migration — vectors are already in RvfBackend's format.
+
+3. **Progressive HNSW (70% → 95% recall)** — non-issue at current dataset sizes
+   (hundreds to low thousands). Entries reach Layer C essentially immediately.
 
 ## Decision
 
-Replace memory-initializer.ts with IStorageContract-backed implementations in 4 phases.
-Each phase is independently deployable and testable. The router's `loadStorageFns()`
-provides the seam: swap the import target, callers don't change.
+Replace memory-initializer.ts with RvfBackend in 3 phases. No SqliteStorage adapter.
+No migration. No dual-backend. RvfBackend already satisfies IStorageContract.
 
 ## Tasks
 
@@ -85,62 +84,46 @@ provides the seam: swap the import target, callers don't change.
 
 Move functions that don't belong in a storage layer out of memory-initializer.ts:
 
-- [ ] **T1.1** Move quantization functions (4) to `@claude-flow/memory/src/quantization.ts`
-  (already has types). Router's `_wrap()` delegates update their import.
+- [ ] **T1.1** Move quantization functions (4) to `@claude-flow/memory/src/quantization.ts`.
+  Router's `_wrap()` delegates update their import.
 - [ ] **T1.2** Move attention functions (4) to `@claude-flow/memory/src/attention.ts`.
   Router updates.
 - [ ] **T1.3** Move embedding functions (4) to use EmbeddingPipeline as the primary path,
   with the initializer's fallback chain as the degraded path. Router's
   `routeEmbeddingOp()` already handles this.
-- [ ] **T1.4** Move schema/migration functions to `memory-schema.ts` (new file, ~200 lines).
-  The initializer's `initializeMemoryDatabase()` becomes a thin call to schema init +
-  storage init.
+- [ ] **T1.4** Delete schema/migration functions (MEMORY_SCHEMA_V3, ensureSchemaColumns,
+  checkAndMigrateLegacy). RVF has no schema — these are dead code.
 - [ ] **T1.5** Tests for each extracted module.
 
 **Result**: memory-initializer.ts shrinks to ~1,800 lines (CRUD + HNSW + lifecycle).
 
-### Phase 2: Implement IStorageContract adapter over better-sqlite3 (~400 lines)
+### Phase 2: Wire RvfBackend into memory-router.ts
 
-Create `sqlite-storage.ts` that implements IStorageContract using the same better-sqlite3
-queries the initializer uses today:
+Replace `loadStorageFns()` with RvfBackend (IStorageContract):
 
-- [ ] **T2.1** Implement `SqliteStorage` class: initialize, shutdown, store, get, getByKey,
-  update, delete, search (embedding-aware), query, bulkInsert, bulkDelete, count,
-  listNamespaces, clearNamespace, getStats, healthCheck.
-- [ ] **T2.2** The `search()` method accepts a pre-computed embedding vector and does
-  brute-force cosine similarity against stored embeddings (same as today). HNSW
-  acceleration is added in Phase 3.
-- [ ] **T2.3** Schema creation uses the extracted `memory-schema.ts` from Phase 1.
-- [ ] **T2.4** Full unit + integration tests against a real SQLite DB.
-
-**Result**: A clean IStorageContract implementation exists alongside the initializer.
-
-### Phase 3: Wire SqliteStorage into memory-router.ts
-
-Replace `loadStorageFns()` with IStorageContract:
-
-- [ ] **T3.1** Update `_doInit()` in memory-router.ts: create `SqliteStorage`, call
+- [ ] **T2.1** Add `implements IStorageContract` to RvfBackend class declaration (it
+  already satisfies the interface, just not formally declared).
+- [ ] **T2.2** Update `_doInit()` in memory-router.ts: create `RvfBackend`, call
   `storage.initialize()`, replace `_fns` with storage method delegates.
-- [ ] **T3.2** Update `routeMemoryOp()` to call `storage.store()`, `storage.get()`, etc.
+- [ ] **T2.3** Update `routeMemoryOp()` to call `storage.store()`, `storage.get()`, etc.
   instead of `fns.storeEntry()`, `fns.getEntry()`, etc.
-- [ ] **T3.3** Update `routeEmbeddingOp()` to use EmbeddingPipeline for generation and
-  `storage.search()` for HNSW/vector operations.
-- [ ] **T3.4** Add HNSW fast-path: if RvfBackend is available (native or HnswLite),
-  `storage.search()` delegates to it. Otherwise falls back to brute-force.
-- [ ] **T3.5** `shutdownRouter()` calls `storage.shutdown()`.
-- [ ] **T3.6** Tests: all existing unit tests pass with new storage backend.
+- [ ] **T2.4** Update `routeEmbeddingOp()` to use EmbeddingPipeline for generation and
+  `storage.search()` for vector operations.
+- [ ] **T2.5** `shutdownRouter()` calls `storage.shutdown()`.
+- [ ] **T2.6** Tests: all existing unit tests pass with RvfBackend.
 
-**Result**: memory-router.ts uses IStorageContract. memory-initializer.ts is no longer
-imported.
+**Result**: memory-router.ts uses IStorageContract via RvfBackend. memory-initializer.ts
+is no longer imported.
 
-### Phase 4: Delete memory-initializer.ts
+### Phase 3: Delete
 
-- [ ] **T4.1** Delete memory-initializer.ts (~1,800 lines remaining after Phase 1 extraction).
-- [ ] **T4.2** Remove `_wrap()` delegates and `loadStorageFns()` from router (replaced by
-  direct IStorageContract calls).
-- [ ] **T4.3** Remove `loadAllFns()` and `loadEmbeddingFns()` from router.
-- [ ] **T4.4** Update acceptance checks: verify initializer is absent from dist.
-- [ ] **T4.5** Full test suite + acceptance pass.
+- [ ] **T3.1** Delete memory-initializer.ts (~1,800 lines remaining after Phase 1).
+- [ ] **T3.2** Delete `loadStorageFns()`, `_wrap()` delegates, `loadAllFns()`,
+  `loadEmbeddingFns()` from router.
+- [ ] **T3.3** Remove `better-sqlite3` dependency from memory package.
+- [ ] **T3.4** Delete `hnsw.metadata.json` persistence (JS HNSW dies with initializer).
+- [ ] **T3.5** Update acceptance checks: verify initializer is absent from dist.
+- [ ] **T3.6** Full test suite + acceptance pass.
 
 **Result**: ADR-0075 Layer 1 complete. Single storage abstraction achieved.
 
@@ -150,20 +133,45 @@ imported.
 |--------|-------|
 | memory-initializer.ts (deleted) | ~2,814 |
 | Router _wrap delegates + loadStorageFns (replaced) | ~80 |
-| **Total deleted** | **~2,894** |
-| SqliteStorage (new) | ~400 |
-| Extracted modules (quantization, attention, schema) | ~620 (relocated) |
-| **Net reduction** | **~1,874** |
+| Schema/migration functions (deleted, not relocated) | ~200 |
+| **Total deleted** | **~3,094** |
+| Extracted modules (quantization, attention) | ~220 (relocated) |
+| **Net reduction** | **~2,274** |
+
+Also removed: `better-sqlite3` native dependency.
+
+## Performance impact
+
+| Metric | Before (SQLite+JS-HNSW) | After (RVF) |
+|--------|------------------------|-------------|
+| Cold start (1000 entries) | ~400ms | <5ms |
+| Single write latency | ~80μs | ~300μs |
+| Batch write (100 entries) | ~15ms | ~8ms |
+| Steady-state RSS | ~9MB | ~4MB |
+| Rust quantization | N/A | 5-10x faster (SIMD) |
+
+Startup time and memory footprint improve significantly. Single writes are slower
+(append-only binary vs. prepared SQL), acceptable for the use case.
+
+## Testing strategy
+
+| Level | What to test | Key rule |
+|-------|-------------|----------|
+| Unit | Mock at IStorageContract boundary, not N-API. Verify router delegates correctly. | London School — `mockCtor()`/`mockFn()` |
+| Integration | Real `.rvf` file. Store, search, persist, reopen. | Assert only top-1 for HNSW (geometrically unambiguous queries). Never assert full result-set ordering. |
+| Acceptance | `check_no_initializer_in_dist()`, `check_storage_contract_exports()`, `check_quantization_extracted()`, `check_memory_search_works()` | Run in fresh init'd project against published packages |
+
+**Progressive HNSW testing rule**: Assert top-1 correctness, result count bounds,
+score monotonicity. Never assert full result ordering.
 
 ## Risks
 
 | Risk | Mitigation |
 |------|------------|
-| Search quality regression | Phase 2 T2.2 uses identical SQL + cosine logic; tests compare results |
-| Schema migration breakage | Phase 1 T1.4 extracts schema as-is; no logic changes |
+| Search quality regression | Integration tests with unambiguous nearest-neighbor queries |
 | Embedding pipeline gaps | Phase 1 T1.3 keeps initializer chain as degraded fallback |
-| HNSW dual-index confusion | Phase 3 T3.4 explicitly picks one (RvfBackend's or initializer's) |
-| Large diff, merge conflicts | 4 independent phases; each deployable separately |
+| Single-write latency increase | Acceptable at 300μs; batch path is faster |
+| Scale beyond in-memory Maps | META_IDX_SEG available as escape hatch; not needed today |
 
 ## What this achieves
 
@@ -171,27 +179,25 @@ imported.
 BEFORE (current):
   router → loadStorageFns() → memory-initializer.ts → better-sqlite3
                                      │
-                                     ├── own HNSW index
+                                     ├── own JS HNSW index
                                      ├── own embedding model
                                      ├── own quantization
                                      └── own schema management
 
-AFTER (Phase 4):
-  router → SqliteStorage (IStorageContract) → better-sqlite3
+AFTER (Phase 3):
+  router → RvfBackend (IStorageContract)
                │
-               └── EmbeddingPipeline (separate)
-               └── HNSW via RvfBackend (separate)
-               └── Schema via memory-schema.ts (separate)
+               ├── In-memory Maps (structured queries)
+               ├── Rust HNSW via N-API (vector search, primary)
+               ├── HnswLite pure-TS (vector search, fallback)
+               └── Append-only WAL (crash-safe persistence)
+               
+  EmbeddingPipeline (separate)
+  quantization.ts (separate)
+  attention.ts (separate)
 ```
 
 ADR-0075's full 5-layer ideal state is achieved. Every memory operation follows one path:
-`MCP Tool → router → IStorageContract → backend`.
+`MCP Tool → router → IStorageContract (RvfBackend) → in-memory Maps + HNSW`.
 
-## What this does NOT address
-
-- **RvfBackend as primary over SQLite** — this ADR uses SQLite as the IStorageContract
-  implementation. Swapping to RvfBackend as primary is a future decision once RVF's
-  structured query support matures. The IStorageContract interface makes this swap trivial.
-- **HybridBackend revival** — upstream plans to revive it for dual-engine routing. The
-  IStorageContract interface supports this: implement `HybridStorage` that delegates
-  structured queries to SQLite and vector queries to RVF.
+No SQLite. No dual backends. No migration.
