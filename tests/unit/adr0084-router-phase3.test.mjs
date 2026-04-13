@@ -83,7 +83,7 @@ function createIPCHandlerRegistry(router) {
 function createConsolidationWorker(router) {
   return async function runConsolidation() {
     const routerResult = await router.routeLearningOp({ type: 'consolidate' });
-    return { bridgeConsolidated: routerResult?.success ?? false };
+    return { routerConsolidated: routerResult?.success ?? false };
   };
 }
 
@@ -221,17 +221,17 @@ describe('ADR-0084 T3.1: consolidation worker delegates to routeLearningOp', () 
     assert.equal(router.routeLearningOp.calls[0][0].type, 'consolidate');
   });
 
-  it('should return bridgeConsolidated true on success', async () => {
+  it('should return routerConsolidated true on success', async () => {
     const result = await runConsolidation();
-    assert.equal(result.bridgeConsolidated, true);
+    assert.equal(result.routerConsolidated, true);
   });
 
-  it('should return bridgeConsolidated false when router returns null', async () => {
+  it('should return routerConsolidated false when router returns null', async () => {
     router.routeLearningOp = asyncMock(null);
     runConsolidation = createConsolidationWorker(router);
 
     const result = await runConsolidation();
-    assert.equal(result.bridgeConsolidated, false);
+    assert.equal(result.routerConsolidated, false);
   });
 });
 
@@ -254,16 +254,29 @@ describe('ADR-0084 T3.1 integration: worker-daemon.ts has no direct bridge calls
     assert.ok(!source.includes('bridgeListEntries'), 'bridgeListEntries must be removed');
   });
 
-  it('should NOT call bridgeConsolidate() (result.bridgeConsolidated property is OK)', () => {
-    // The property name `bridgeConsolidated` is a result field, not a bridge call.
-    // We check that the actual function call `bridgeConsolidate(` is absent.
+  it('should NOT call bridgeConsolidate() and should use routerConsolidated field name', () => {
     const hasFunctionCall = /bridgeConsolidate\s*\(/.test(source);
-    assert.ok(!hasFunctionCall, 'bridgeConsolidate() call must be removed — only bridgeConsolidated property is acceptable');
+    assert.ok(!hasFunctionCall, 'bridgeConsolidate() call must be removed');
+    assert.ok(!source.includes('bridgeConsolidated'), 'bridgeConsolidated field must be renamed to routerConsolidated');
+    assert.ok(source.includes('routerConsolidated'), 'routerConsolidated field must be present');
   });
 
   it('should use shutdownRouter (Phase 4 migrated from shutdownBridge)', () => {
     assert.ok(source.includes('shutdownRouter'), 'worker-daemon must use shutdownRouter from memory-router');
     assert.ok(!source.includes('shutdownBridge'), 'shutdownBridge must be removed — Phase 4 migrated to shutdownRouter');
+  });
+
+  it('should NOT import from memory-bridge', () => {
+    const lines = source.split('\n');
+    const bridgeImports = lines.filter(l =>
+      l.includes('memory-bridge') && (l.includes('import') || l.includes('require'))
+    );
+    assert.equal(bridgeImports.length, 0,
+      `Expected ZERO memory-bridge imports, found ${bridgeImports.length}: ${bridgeImports.join('; ')}`);
+  });
+
+  it('should register memory.list IPC handler', () => {
+    assert.ok(source.includes("'memory.list'"), 'memory.list IPC handler must be registered');
   });
 });
 

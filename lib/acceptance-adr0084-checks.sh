@@ -337,11 +337,12 @@ check_phase3_no_shadow_replicates() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0084-8: Phase 3 router has no controller fallback functions
+# ADR-0084-8: Router has no controller fallback functions
 #
 # Verifies that memory-router.js does NOT contain the 5 legacy
-# controller-fallback bridge functions (bridgeGetController, etc.)
-# while still retaining loadBridge and _bridgeMod (Phase 2 infra).
+# controller-fallback bridge functions (bridgeGetController, etc.).
+# Phase 4 removed loadBridge/_bridgeMod — controller-access functions
+# use getController (from controller-intercept) directly.
 # ════════════════════════════════════════════════════════════════════
 
 check_phase3_router_no_controller_fallback() {
