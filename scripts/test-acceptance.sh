@@ -36,6 +36,10 @@
 #                adr0084-p4-nobridge, adr0084-p4-shutdown,
 #                adr0084-p4-zero-ext, adr0084-p4-export
 #   adr0085    — adr0085-no-bridge, adr0085-init-zero, adr0085-router-reg
+#   adr0086    — adr0086-init-shim, adr0086-router-api, adr0086-roundtrip,
+#                adr0086-no-imports, adr0086-no-quant, adr0086-no-attn,
+#                adr0086-adapter, adr0086-bulkdel, adr0086-b1-decay,
+#                adr0086-b3-health, adr0086-t33-track
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -390,6 +394,10 @@ adr0084_lib="${PROJECT_DIR}/lib/acceptance-adr0084-checks.sh"
 adr0085_lib="${PROJECT_DIR}/lib/acceptance-adr0085-checks.sh"
 [[ -f "$adr0085_lib" ]] && source "$adr0085_lib"
 
+# ADR-0086: Layer 1 Storage Abstraction
+adr0086_lib="${PROJECT_DIR}/lib/acceptance-adr0086-checks.sh"
+[[ -f "$adr0086_lib" ]] && source "$adr0086_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -680,6 +688,21 @@ if [[ -f "$adr0085_lib" ]]; then
   run_check_bg "adr0085-no-bridge"  "Bridge absent from dist (ADR-0085)"        check_no_bridge_in_dist                  "adr0085"
   run_check_bg "adr0085-init-zero"  "Initializer zero bridge refs (ADR-0085)"   check_initializer_zero_bridge_imports     "adr0085"
   run_check_bg "adr0085-router-reg" "Router has initCtrlRegistry (ADR-0085)"    check_router_has_init_controller_registry "adr0085"
+fi
+
+# ADR-0086: Layer 1 Storage Abstraction
+if [[ -f "$adr0086_lib" ]]; then
+  run_check_bg "adr0086-init-shim"  "Initializer is thin shim (ADR-0086)"       check_no_initializer_in_dist             "adr0086"
+  run_check_bg "adr0086-router-api" "Router exports API (ADR-0086)"             check_storage_contract_exports           "adr0086"
+  run_check_bg "adr0086-roundtrip"  "Memory store+search (ADR-0086)"            check_memory_search_works                "adr0086"
+  run_check_bg "adr0086-no-imports" "No initializer imports in dist (ADR-0086)" check_no_initializer_imports_in_dist     "adr0086"
+  run_check_bg "adr0086-no-quant"   "No quantization exports (ADR-0086)"        check_quantization_not_exported          "adr0086"
+  run_check_bg "adr0086-no-attn"    "No attention exports (ADR-0086)"            check_attention_not_exported             "adr0086"
+  run_check_bg "adr0086-adapter"    "Embedding adapter present (ADR-0086)"       check_embedding_adapter_present          "adr0086"
+  run_check_bg "adr0086-bulkdel"    "bulkDelete+clearNamespace (ADR-0086)"       check_bulkdelete_clearnamespace          "adr0086"
+  run_check_bg "adr0086-b1-decay"   "Temporal decay stub (ADR-0086)"             check_temporal_decay_stub                "adr0086"
+  run_check_bg "adr0086-b3-health"  "healthCheck not checkInit (ADR-0086)"       check_healthcheck_not_check_init         "adr0086"
+  run_check_bg "adr0086-t33-track"  "T3.3 sqlite3 blockers (ADR-0086)"          check_real_sqlite3_blockers              "adr0086"
 fi
 
 # ADR-0081: M5 Max Configuration Profile
@@ -1089,6 +1112,20 @@ collect_parallel "all" \
   "adr0084-p4-shutdown|Worker shutdown via router (ADR-0084)" \
   "adr0084-p4-zero-ext|Zero external bridge imports (ADR-0084)" \
   "adr0084-p4-export|Router exports shutdown (ADR-0084)" \
+  "adr0085-no-bridge|Bridge absent from dist (ADR-0085)" \
+  "adr0085-init-zero|Initializer zero bridge refs (ADR-0085)" \
+  "adr0085-router-reg|Router has initCtrlRegistry (ADR-0085)" \
+  "adr0086-init-shim|Initializer is thin shim (ADR-0086)" \
+  "adr0086-router-api|Router exports API (ADR-0086)" \
+  "adr0086-roundtrip|Memory store+search (ADR-0086)" \
+  "adr0086-no-imports|No initializer imports in dist (ADR-0086)" \
+  "adr0086-no-quant|No quantization exports (ADR-0086)" \
+  "adr0086-no-attn|No attention exports (ADR-0086)" \
+  "adr0086-adapter|Embedding adapter present (ADR-0086)" \
+  "adr0086-bulkdel|bulkDelete+clearNamespace (ADR-0086)" \
+  "adr0086-b1-decay|Temporal decay stub (ADR-0086)" \
+  "adr0086-b3-health|healthCheck not checkInit (ADR-0086)" \
+  "adr0086-t33-track|T3.3 sqlite3 blockers (ADR-0086)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \

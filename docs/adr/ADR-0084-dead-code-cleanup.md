@@ -188,6 +188,7 @@ ADR-0075 defined 5 unified layers as the ideal architecture. This ADR addresses
 | ADR-0075 Layer | Status before ADR-0084 | ADR-0084 contribution | Remaining gap |
 |----------------|----------------------|----------------------|---------------|
 | **L1: Single Storage** | SQLite primary, RVF sidecar | Not addressed | Replace SQLite with RVF+HNSW as sole backend (future ADR-0085, ~2600 lines in memory-initializer) |
+(Correction: Layer 1 was addressed by ADR-0086 (not ADR-0085). Final line count: 1,396 (down from 2,814).)
 | **L2: Single Controller Registry** | Router exists but 45+ callers bypass it via memory-bridge | **Phases 2-4 close this** — migrate all callers, remove bridge | None after Phase 4 |
 | **L3: Single Embedding Pipeline** | Done (ADR-0076 Phase 2) | Not needed | None |
 | **L4: Single Config Resolution** | Done (ADR-0076 Phase 1) | Not needed | None |
@@ -198,6 +199,8 @@ ADR-0075 defined 5 unified layers as the ideal architecture. This ADR addresses
 - **Layer 1 (Storage)**: SQLite remains the primary store. ADR-0075's ideal state says
   `NativeStorage (RVF + HNSW)` as sole backend — that requires rewriting the 2600-line
   `memory-initializer.ts` storage layer. Separate ADR scope.
+  (Correction: Layer 1 was addressed by ADR-0086 (2026-04-13). memory-initializer.ts
+  reduced to a 1,394-line import shim; CRUD routes through RvfBackend via IStorageContract.)
 - **JSON sidecar elimination**: The CJS constraint (intelligence.cjs cannot import
   TypeScript/ESM/native addons) means the JSON sidecar persists. ADR-0075's ideal
   implicitly assumes intelligence.cjs doesn't exist or is ESM — we're not there.

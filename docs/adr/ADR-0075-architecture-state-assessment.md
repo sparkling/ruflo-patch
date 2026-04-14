@@ -1,6 +1,6 @@
 # ADR-0075: Architecture State Assessment — Storage, Controllers, Embeddings
 
-- **Status**: Informational
+- **Status**: Closed — all 5 layers addressed (L2-L5 by ADR-0085, L1 by ADR-0086). See ADR-0086 for remaining debt.
 - **Date**: 2026-04-06
 - **Analysis**: 5-agent hive council (queen architect + storage/controller/embedding specialists + devil's advocate)
 

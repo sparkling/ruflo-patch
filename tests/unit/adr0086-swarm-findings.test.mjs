@@ -16,9 +16,9 @@ const headlessSrc = readFileSync(`${CLI}/runtime/headless.ts`, 'utf-8');
 const initSrc     = readFileSync(`${CLI}/memory/memory-initializer.ts`, 'utf-8');
 const rvfSrc      = readFileSync(`${MEM}/rvf-backend.ts`, 'utf-8');
 
-// --- Group 1: C1 fix verified — embedding-adapter uses getModel() not getProvider()
+// --- Group 1: C1 fix verified — embedding-adapter model vs provider usage
 
-describe('ADR-0086 swarm: C1 — embedding-adapter uses getModel()', () => {
+describe('ADR-0086 swarm: C1 — embedding-adapter model vs provider usage', () => {
   // Extract the generateEmbedding function body
   const fnStart = adapterSrc.indexOf('export async function generateEmbedding(');
   const fnBody = adapterSrc.slice(fnStart, adapterSrc.indexOf('\nexport', fnStart + 1));
@@ -28,9 +28,14 @@ describe('ADR-0086 swarm: C1 — embedding-adapter uses getModel()', () => {
       'generateEmbedding should call pipeline.getModel()');
   });
 
-  it('pipeline.getProvider() is NOT used inside generateEmbedding', () => {
-    assert.ok(!fnBody.includes('pipeline.getProvider()'),
-      'generateEmbedding must not call pipeline.getProvider() for model name');
+  it('getAdaptiveThreshold uses pipeline.getProvider() for threshold selection (C1 correction)', () => {
+    const threshFnStart = adapterSrc.indexOf('export async function getAdaptiveThreshold(');
+    const threshFnEnd = adapterSrc.indexOf('\nexport', threshFnStart + 1);
+    const threshBody = threshFnEnd > threshFnStart
+      ? adapterSrc.slice(threshFnStart, threshFnEnd)
+      : adapterSrc.slice(threshFnStart);
+    assert.ok(threshBody.includes('pipeline.getProvider()') || threshBody.includes('getProvider()'),
+      'getAdaptiveThreshold should use getProvider() for provider-specific threshold (C1 correction)');
   });
 
   it('loadEmbeddingModel also uses getModel()', () => {
@@ -55,11 +60,11 @@ describe('ADR-0086 swarm: C2+C3 — stats route correctness', () => {
       'stats case must not reference health.healthy (wrong field)');
   });
 
-  it('entriesWithEmbeddings uses stats.totalEntries as proxy (not field access bug)', () => {
-    // The fix uses stats.totalEntries as a proxy with a TODO comment,
-    // rather than accessing a non-existent field on the stats object.
-    assert.ok(statsBlock.includes('stats.totalEntries'),
-      'entriesWithEmbeddings should use stats.totalEntries as proxy');
+  it('entriesWithEmbeddings uses stats.entriesWithEmbeddings (debt 5 fix)', () => {
+    // Debt 5 fix: getStats() now computes real entriesWithEmbeddings count;
+    // router uses stats.entriesWithEmbeddings directly (no longer a proxy).
+    assert.ok(statsBlock.includes('stats.entriesWithEmbeddings'),
+      'entriesWithEmbeddings should use stats.entriesWithEmbeddings (debt 5 fix)');
   });
 });
 

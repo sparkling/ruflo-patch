@@ -1,9 +1,10 @@
 // @tier unit
-// ADR-0087 Phase 1: Adversarial Prompting Before Implementation
+// ADR-0087: Adversarial Prompting Workflow
 //
-// London School TDD: tests classify() and advisory() in isolation.
+// London School TDD: tests classify(), advisory(), recommendSessions(),
+// sessionAdvisory(), reviewChecklist(), and reviewAdvisory() in isolation.
 //
-// Coverage:
+// Phase 1 Coverage:
 //   T1.1  classify — architectural prompts flagged
 //   T1.2  classify — trivial prompts not flagged
 //   T1.3  classify — edge cases (short, empty, no match)
@@ -18,6 +19,26 @@
 //   T1.12 advisory — defensive: missing triggers array
 //   T1.13 integration — hook-handler route emits advisory
 //   T1.14 integration — hook-handler route survives without adversarial module
+//
+// Phase 2 Coverage:
+//   T2.1  THINKING_SESSIONS — canonical list
+//   T2.2  SESSION_MAP — all triggers mapped, all get 5 sessions
+//   T2.3  recommendSessions — maps triggers to sessions
+//   T2.4  recommendSessions — edge cases
+//   T2.5  sessionAdvisory — format
+//   T2.6  composition — classify → recommendSessions → sessionAdvisory
+//   T2.7  integration — hook-handler emits session advisory
+//   T2.8  integration — adversarial advisory precedes session advisory
+//
+// Phase 3 Coverage:
+//   T3.1  REVIEW_CATEGORIES — canonical list
+//   T3.2  TRIGGER_REVIEWS — all triggers mapped, valid categories, frozen
+//   T3.3  reviewChecklist — maps triggers to review categories
+//   T3.4  reviewChecklist — edge cases
+//   T3.5  reviewAdvisory — format
+//   T3.6  composition — classify → reviewChecklist → reviewAdvisory
+//   T3.7  integration — hook-handler emits review advisory
+//   T3.8  integration — advisory ordering (adversarial < session < review)
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -27,7 +48,14 @@ import { resolve } from 'node:path';
 // Direct require of CJS module from ESM
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { classify, advisory } = require('../../.claude/helpers/adversarial.cjs');
+const {
+  classify, advisory,
+  recommendSessions, sessionAdvisory,
+  reviewChecklist, reviewAdvisory,
+  ARCHITECTURAL_PATTERNS, TRIVIAL_PATTERNS,
+  THINKING_SESSIONS, SESSION_MAP,
+  REVIEW_CATEGORIES, TRIGGER_REVIEWS,
+} = require('../../.claude/helpers/adversarial.cjs');
 
 // ============================================================================
 // T1.1 classify — architectural prompts flagged
@@ -409,5 +437,675 @@ describe('ADR-0087 integration — graceful degradation', () => {
     });
     // Should still produce router output, no crash
     assert.ok(!output.includes('[ADR-0087]'));
+  });
+});
+
+// ============================================================================
+// Phase 2: Parallel Thinking Sessions
+// ============================================================================
+
+// ============================================================================
+// T2.1 THINKING_SESSIONS — canonical list
+// ============================================================================
+
+describe('ADR-0087 Phase 2 — THINKING_SESSIONS constant', () => {
+  it('exports exactly 5 session types in canonical order', () => {
+    assert.deepStrictEqual(THINKING_SESSIONS, [
+      'implementation',
+      'adversarial-review',
+      'test-generation',
+      'documentation',
+      'simplification',
+    ]);
+  });
+
+  it('is frozen (immutable)', () => {
+    assert.ok(Object.isFrozen(THINKING_SESSIONS));
+  });
+});
+
+// ============================================================================
+// T2.2 SESSION_MAP — all triggers mapped
+// ============================================================================
+
+describe('ADR-0087 Phase 2 — SESSION_MAP coverage', () => {
+  it('every architectural trigger has a SESSION_MAP entry', () => {
+    for (const [, label] of ARCHITECTURAL_PATTERNS) {
+      assert.ok(
+        SESSION_MAP[label],
+        `SESSION_MAP missing entry for trigger "${label}"`,
+      );
+    }
+  });
+
+  it('all triggers get all 5 sessions', () => {
+    for (const [, label] of ARCHITECTURAL_PATTERNS) {
+      const sessions = SESSION_MAP[label];
+      assert.equal(sessions.length, 5, `expected 5 sessions for "${label}"`);
+      for (const s of THINKING_SESSIONS) {
+        assert.ok(sessions.includes(s), `"${label}" missing session "${s}"`);
+      }
+    }
+  });
+
+  it('SESSION_MAP entries are independent arrays (no shared references)', () => {
+    const entries = Object.values(SESSION_MAP);
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        assert.notStrictEqual(entries[i], entries[j],
+          'SESSION_MAP entries must not share array references');
+      }
+      // Also verify no entry IS the THINKING_SESSIONS constant
+      assert.notStrictEqual(entries[i], THINKING_SESSIONS,
+        'SESSION_MAP entry must not be the THINKING_SESSIONS constant');
+    }
+  });
+
+  it('SESSION_MAP and all entries are frozen (immutable)', () => {
+    assert.ok(Object.isFrozen(SESSION_MAP), 'SESSION_MAP itself must be frozen');
+    for (const [key, arr] of Object.entries(SESSION_MAP)) {
+      assert.ok(Object.isFrozen(arr), `SESSION_MAP["${key}"] must be frozen`);
+    }
+  });
+});
+
+// ============================================================================
+// T2.3 recommendSessions — maps triggers to sessions
+// ============================================================================
+
+describe('ADR-0087 Phase 2 — recommendSessions', () => {
+  it('architecture trigger → all 5 sessions', () => {
+    const result = recommendSessions({ adversarial: true, triggers: ['architecture'] });
+    assert.deepStrictEqual(result, THINKING_SESSIONS);
+  });
+
+  it('refactor trigger → all 5 sessions', () => {
+    const result = recommendSessions({ adversarial: true, triggers: ['refactor'] });
+    assert.deepStrictEqual(result, THINKING_SESSIONS);
+  });
+
+  it('phased-work trigger → all 5 sessions', () => {
+    const result = recommendSessions({ adversarial: true, triggers: ['phased-work'] });
+    assert.deepStrictEqual(result, THINKING_SESSIONS);
+  });
+
+  it('multiple triggers de-duplicate and return canonical order', () => {
+    // adr-reference (3) + architecture (5) → union = all 5
+    const result = recommendSessions({
+      adversarial: true,
+      triggers: ['adr-reference', 'architecture'],
+    });
+    assert.deepStrictEqual(result, THINKING_SESSIONS);
+  });
+
+  it('refactor + phased-work → still all 5 (union of identical sets)', () => {
+    const result = recommendSessions({
+      adversarial: true,
+      triggers: ['phased-work', 'refactor'],
+    });
+    assert.deepStrictEqual(result, THINKING_SESSIONS);
+  });
+});
+
+// ============================================================================
+// T2.4 recommendSessions — edge cases
+// ============================================================================
+
+describe('ADR-0087 Phase 2 — recommendSessions edge cases', () => {
+  it('returns [] for non-adversarial result', () => {
+    assert.deepStrictEqual(recommendSessions({ adversarial: false }), []);
+  });
+
+  it('returns [] for null input', () => {
+    assert.deepStrictEqual(recommendSessions(null), []);
+  });
+
+  it('returns [] for undefined input', () => {
+    assert.deepStrictEqual(recommendSessions(undefined), []);
+  });
+
+  it('returns [] for adversarial:true with empty triggers', () => {
+    assert.deepStrictEqual(
+      recommendSessions({ adversarial: true, triggers: [] }),
+      [],
+    );
+  });
+
+  it('returns [] for adversarial:true with no triggers array', () => {
+    assert.deepStrictEqual(
+      recommendSessions({ adversarial: true }),
+      [],
+    );
+  });
+
+  it('skips unknown triggers gracefully', () => {
+    const result = recommendSessions({
+      adversarial: true,
+      triggers: ['unknown-trigger', 'refactor'],
+    });
+    // Should still return refactor's sessions, ignoring unknown
+    assert.deepStrictEqual(result, [...THINKING_SESSIONS]);
+  });
+
+  it('returns [] for adversarial:true with only unknown triggers', () => {
+    assert.deepStrictEqual(
+      recommendSessions({ adversarial: true, triggers: ['totally-unknown', 'also-unknown'] }),
+      [],
+    );
+  });
+});
+
+// ============================================================================
+// T2.5 sessionAdvisory — format
+// ============================================================================
+
+describe('ADR-0087 Phase 2 — sessionAdvisory format', () => {
+  it('returns single-line advisory with session list', () => {
+    const result = sessionAdvisory(['implementation', 'adversarial-review', 'test-generation']);
+    assert.equal(result, '[ADR-0087] Parallel sessions: implementation, adversarial-review, test-generation');
+  });
+
+  it('includes all 5 sessions when given full list', () => {
+    const result = sessionAdvisory([...THINKING_SESSIONS]);
+    assert.equal(
+      result,
+      '[ADR-0087] Parallel sessions: implementation, adversarial-review, test-generation, documentation, simplification',
+    );
+  });
+
+  it('returns single-session advisory with no trailing comma', () => {
+    assert.equal(
+      sessionAdvisory(['implementation']),
+      '[ADR-0087] Parallel sessions: implementation',
+    );
+  });
+
+  it('returns null for empty array', () => {
+    assert.equal(sessionAdvisory([]), null);
+  });
+
+  it('returns null for null', () => {
+    assert.equal(sessionAdvisory(null), null);
+  });
+
+  it('returns null for undefined', () => {
+    assert.equal(sessionAdvisory(undefined), null);
+  });
+
+  it('returns null for string input (not an array)', () => {
+    assert.equal(sessionAdvisory('implementation'), null);
+  });
+});
+
+// ============================================================================
+// T2.6 composition — classify → recommendSessions → sessionAdvisory
+// ============================================================================
+
+describe('ADR-0087 Phase 2 — composition pipeline', () => {
+  const expectedFullAdvisory =
+    '[ADR-0087] Parallel sessions: implementation, adversarial-review, test-generation, documentation, simplification';
+
+  it('architectural prompt → all 5 sessions → full advisory', () => {
+    const cls = classify('architect the new event sourcing system');
+    const sessions = recommendSessions(cls);
+    assert.deepStrictEqual(sessions, [...THINKING_SESSIONS]);
+    assert.equal(sessionAdvisory(sessions), expectedFullAdvisory);
+  });
+
+  it('refactor prompt → all 5 sessions → full advisory', () => {
+    const cls = classify('refactor the storage layer completely');
+    const sessions = recommendSessions(cls);
+    assert.deepStrictEqual(sessions, [...THINKING_SESSIONS]);
+    assert.equal(sessionAdvisory(sessions), expectedFullAdvisory);
+  });
+
+  it('trivial prompt → no sessions → null advisory', () => {
+    const cls = classify('fix typo in the readme');
+    const sessions = recommendSessions(cls);
+    assert.deepStrictEqual(sessions, []);
+    assert.equal(sessionAdvisory(sessions), null);
+  });
+
+  it('adr + phased-work prompt → all 5 sessions', () => {
+    const cls = classify('implement phase 2 of adr 87');
+    const sessions = recommendSessions(cls);
+    assert.deepStrictEqual(sessions, [...THINKING_SESSIONS]);
+    assert.equal(sessionAdvisory(sessions), expectedFullAdvisory);
+  });
+});
+
+// ============================================================================
+// T2.7 integration — hook-handler route emits session advisory
+// ============================================================================
+
+describe('ADR-0087 Phase 2 integration — hook-handler session advisory', () => {
+  const hookHandler = resolve(import.meta.dirname, '../../.claude/helpers/hook-handler.cjs');
+
+  it('emits parallel sessions advisory for architectural prompt', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'architect the new event sourcing system' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(
+      output.includes('[ADR-0087] Parallel sessions:'),
+      `expected session advisory in output, got:\n${output}`,
+    );
+    assert.ok(output.includes('implementation'));
+  });
+
+  it('emits BOTH adversarial advisory AND session advisory', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'refactor the entire storage layer now' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(output.includes('Adversarial review recommended'));
+    assert.ok(output.includes('Parallel sessions:'));
+  });
+
+  it('does NOT emit session advisory for trivial prompt', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'fix typo in the readme' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(!output.includes('Parallel sessions:'));
+  });
+
+  it('does NOT emit session advisory for generic prompt', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'what files are in the src directory' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(!output.includes('Parallel sessions:'));
+  });
+});
+
+// ============================================================================
+// T2.8 integration — adversarial advisory precedes session advisory
+// ============================================================================
+
+describe('ADR-0087 Phase 2 integration — advisory ordering', () => {
+  const hookHandler = resolve(import.meta.dirname, '../../.claude/helpers/hook-handler.cjs');
+
+  it('adversarial advisory appears before session advisory', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'architect the new event sourcing system' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    const adversarialIdx = output.indexOf('Adversarial review recommended');
+    const sessionIdx = output.indexOf('Parallel sessions:');
+    assert.ok(adversarialIdx >= 0, 'adversarial advisory must be present');
+    assert.ok(sessionIdx >= 0, 'session advisory must be present');
+    assert.ok(
+      adversarialIdx < sessionIdx,
+      `adversarial advisory (pos ${adversarialIdx}) must precede session advisory (pos ${sessionIdx})`,
+    );
+  });
+});
+
+// ============================================================================
+// Phase 3: AI-First Review
+// ============================================================================
+
+// ============================================================================
+// T3.1 REVIEW_CATEGORIES — canonical list
+// ============================================================================
+
+describe('ADR-0087 Phase 3 — REVIEW_CATEGORIES constant', () => {
+  it('exports exactly 6 review categories in canonical order', () => {
+    assert.deepStrictEqual(REVIEW_CATEGORIES, [
+      'conventions',
+      'edge-cases',
+      'architecture',
+      'security',
+      'test-coverage',
+      'compatibility',
+    ]);
+  });
+
+  it('is frozen (immutable)', () => {
+    assert.ok(Object.isFrozen(REVIEW_CATEGORIES));
+  });
+});
+
+// ============================================================================
+// T3.2 TRIGGER_REVIEWS — all triggers mapped, valid categories, frozen
+// ============================================================================
+
+describe('ADR-0087 Phase 3 — TRIGGER_REVIEWS coverage', () => {
+  it('every architectural trigger has a TRIGGER_REVIEWS entry', () => {
+    for (const [, label] of ARCHITECTURAL_PATTERNS) {
+      assert.ok(
+        TRIGGER_REVIEWS[label],
+        `TRIGGER_REVIEWS missing entry for trigger "${label}"`,
+      );
+    }
+  });
+
+  it('all entries contain only valid REVIEW_CATEGORIES ids', () => {
+    for (const [label, cats] of Object.entries(TRIGGER_REVIEWS)) {
+      for (const c of cats) {
+        assert.ok(
+          REVIEW_CATEGORIES.includes(c),
+          `TRIGGER_REVIEWS["${label}"] contains unknown category "${c}"`,
+        );
+      }
+    }
+  });
+
+  it('no entry has duplicate categories', () => {
+    for (const [label, cats] of Object.entries(TRIGGER_REVIEWS)) {
+      const unique = new Set(cats);
+      assert.equal(unique.size, cats.length,
+        `TRIGGER_REVIEWS["${label}"] has duplicate categories`);
+    }
+  });
+
+  it('TRIGGER_REVIEWS and all entries are frozen (immutable)', () => {
+    assert.ok(Object.isFrozen(TRIGGER_REVIEWS), 'TRIGGER_REVIEWS itself must be frozen');
+    for (const [key, arr] of Object.entries(TRIGGER_REVIEWS)) {
+      assert.ok(Object.isFrozen(arr), `TRIGGER_REVIEWS["${key}"] must be frozen`);
+    }
+  });
+});
+
+// ============================================================================
+// T3.3 reviewChecklist — maps triggers to review categories
+// ============================================================================
+
+describe('ADR-0087 Phase 3 — reviewChecklist', () => {
+  it('architecture trigger → conventions, architecture, security, test-coverage', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['architecture'] });
+    assert.deepStrictEqual(result, ['conventions', 'architecture', 'security', 'test-coverage']);
+  });
+
+  it('new-feature trigger → conventions, edge-cases, security, test-coverage', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['new-feature'] });
+    assert.deepStrictEqual(result, ['conventions', 'edge-cases', 'security', 'test-coverage']);
+  });
+
+  it('refactor trigger → conventions, architecture, test-coverage, compatibility', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['refactor'] });
+    assert.deepStrictEqual(result, ['conventions', 'architecture', 'test-coverage', 'compatibility']);
+  });
+
+  it('removal trigger → test-coverage, compatibility', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['removal'] });
+    assert.deepStrictEqual(result, ['test-coverage', 'compatibility']);
+  });
+
+  it('data-model trigger → edge-cases, security, test-coverage, compatibility', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['data-model'] });
+    assert.deepStrictEqual(result, ['edge-cases', 'security', 'test-coverage', 'compatibility']);
+  });
+
+  it('api-change trigger → edge-cases, security, test-coverage, compatibility', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['api-change'] });
+    assert.deepStrictEqual(result, ['edge-cases', 'security', 'test-coverage', 'compatibility']);
+  });
+
+  it('multi-scope trigger → conventions, architecture, test-coverage', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['multi-scope'] });
+    assert.deepStrictEqual(result, ['conventions', 'architecture', 'test-coverage']);
+  });
+
+  it('cross-cutting trigger → conventions, architecture, test-coverage', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['cross-cutting'] });
+    assert.deepStrictEqual(result, ['conventions', 'architecture', 'test-coverage']);
+  });
+
+  it('adr-reference trigger → conventions, architecture, test-coverage', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['adr-reference'] });
+    assert.deepStrictEqual(result, ['conventions', 'architecture', 'test-coverage']);
+  });
+
+  it('phased-work trigger → conventions, test-coverage, compatibility', () => {
+    const result = reviewChecklist({ adversarial: true, triggers: ['phased-work'] });
+    assert.deepStrictEqual(result, ['conventions', 'test-coverage', 'compatibility']);
+  });
+
+  it('multiple triggers de-duplicate and return canonical order', () => {
+    // architecture (conventions, architecture, security, test-coverage)
+    // + new-feature (conventions, edge-cases, security, test-coverage)
+    // = conventions, edge-cases, architecture, security, test-coverage
+    const result = reviewChecklist({
+      adversarial: true,
+      triggers: ['architecture', 'new-feature'],
+    });
+    assert.deepStrictEqual(result, [
+      'conventions', 'edge-cases', 'architecture', 'security', 'test-coverage',
+    ]);
+  });
+
+  it('data-model + api-change → union with compatibility', () => {
+    const result = reviewChecklist({
+      adversarial: true,
+      triggers: ['data-model', 'api-change'],
+    });
+    assert.deepStrictEqual(result, ['edge-cases', 'security', 'test-coverage', 'compatibility']);
+  });
+});
+
+// ============================================================================
+// T3.4 reviewChecklist — edge cases
+// ============================================================================
+
+describe('ADR-0087 Phase 3 — reviewChecklist edge cases', () => {
+  it('returns [] for non-adversarial result', () => {
+    assert.deepStrictEqual(reviewChecklist({ adversarial: false }), []);
+  });
+
+  it('returns [] for null input', () => {
+    assert.deepStrictEqual(reviewChecklist(null), []);
+  });
+
+  it('returns [] for undefined input', () => {
+    assert.deepStrictEqual(reviewChecklist(undefined), []);
+  });
+
+  it('returns [] for adversarial:true with empty triggers', () => {
+    assert.deepStrictEqual(
+      reviewChecklist({ adversarial: true, triggers: [] }),
+      [],
+    );
+  });
+
+  it('returns [] for adversarial:true with no triggers array', () => {
+    assert.deepStrictEqual(
+      reviewChecklist({ adversarial: true }),
+      [],
+    );
+  });
+
+  it('skips unknown triggers gracefully', () => {
+    const result = reviewChecklist({
+      adversarial: true,
+      triggers: ['unknown-trigger', 'removal'],
+    });
+    assert.deepStrictEqual(result, ['test-coverage', 'compatibility']);
+  });
+
+  it('returns [] for adversarial:true with only unknown triggers', () => {
+    assert.deepStrictEqual(
+      reviewChecklist({ adversarial: true, triggers: ['totally-unknown'] }),
+      [],
+    );
+  });
+});
+
+// ============================================================================
+// T3.5 reviewAdvisory — format
+// ============================================================================
+
+describe('ADR-0087 Phase 3 — reviewAdvisory format', () => {
+  it('returns single-line advisory with category list', () => {
+    const result = reviewAdvisory(['conventions', 'architecture', 'test-coverage']);
+    assert.equal(result, '[ADR-0087] AI-first review: conventions, architecture, test-coverage');
+  });
+
+  it('includes all 6 categories when given full list', () => {
+    const result = reviewAdvisory([...REVIEW_CATEGORIES]);
+    assert.equal(
+      result,
+      '[ADR-0087] AI-first review: conventions, edge-cases, architecture, security, test-coverage, compatibility',
+    );
+  });
+
+  it('returns single-category advisory with no trailing comma', () => {
+    assert.equal(
+      reviewAdvisory(['test-coverage']),
+      '[ADR-0087] AI-first review: test-coverage',
+    );
+  });
+
+  it('returns null for empty array', () => {
+    assert.equal(reviewAdvisory([]), null);
+  });
+
+  it('returns null for null', () => {
+    assert.equal(reviewAdvisory(null), null);
+  });
+
+  it('returns null for undefined', () => {
+    assert.equal(reviewAdvisory(undefined), null);
+  });
+
+  it('returns null for string input (not an array)', () => {
+    assert.equal(reviewAdvisory('conventions'), null);
+  });
+});
+
+// ============================================================================
+// T3.6 composition — classify → reviewChecklist → reviewAdvisory
+// ============================================================================
+
+describe('ADR-0087 Phase 3 — composition pipeline', () => {
+  it('architectural prompt → review checklist → advisory', () => {
+    const cls = classify('architect the new event sourcing system');
+    const checklist = reviewChecklist(cls);
+    assert.deepStrictEqual(checklist, ['conventions', 'architecture', 'security', 'test-coverage']);
+    assert.equal(
+      reviewAdvisory(checklist),
+      '[ADR-0087] AI-first review: conventions, architecture, security, test-coverage',
+    );
+  });
+
+  it('new-feature prompt → review with edge-cases and security', () => {
+    const cls = classify('build a new feature for authentication');
+    const checklist = reviewChecklist(cls);
+    assert.ok(checklist.includes('edge-cases'));
+    assert.ok(checklist.includes('security'));
+    assert.ok(reviewAdvisory(checklist).includes('[ADR-0087] AI-first review:'));
+  });
+
+  it('refactor prompt → review with compatibility', () => {
+    const cls = classify('refactor the storage layer completely');
+    const checklist = reviewChecklist(cls);
+    assert.ok(checklist.includes('compatibility'));
+    assert.ok(checklist.includes('architecture'));
+  });
+
+  it('trivial prompt → no checklist → null advisory', () => {
+    const cls = classify('fix typo in the readme');
+    const checklist = reviewChecklist(cls);
+    assert.deepStrictEqual(checklist, []);
+    assert.equal(reviewAdvisory(checklist), null);
+  });
+
+  it('multi-trigger prompt → union of review categories', () => {
+    const cls = classify('implement phase 2 of adr 87');
+    const checklist = reviewChecklist(cls);
+    // adr-reference → conventions, architecture, test-coverage
+    // phased-work → conventions, compatibility, test-coverage
+    // union → conventions, architecture, test-coverage, compatibility
+    assert.ok(checklist.includes('conventions'));
+    assert.ok(checklist.includes('architecture'));
+    assert.ok(checklist.includes('test-coverage'));
+    assert.ok(checklist.includes('compatibility'));
+  });
+});
+
+// ============================================================================
+// T3.7 integration — hook-handler emits review advisory
+// ============================================================================
+
+describe('ADR-0087 Phase 3 integration — hook-handler review advisory', () => {
+  const hookHandler = resolve(import.meta.dirname, '../../.claude/helpers/hook-handler.cjs');
+
+  it('emits review advisory for architectural prompt', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'architect the new event sourcing system' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(
+      output.includes('[ADR-0087] AI-first review:'),
+      `expected review advisory in output, got:\n${output}`,
+    );
+    assert.ok(output.includes('conventions'));
+    assert.ok(output.includes('test-coverage'));
+  });
+
+  it('emits ALL three advisories for architectural prompt', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'refactor the entire storage layer now' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(output.includes('Adversarial review recommended'));
+    assert.ok(output.includes('Parallel sessions:'));
+    assert.ok(output.includes('AI-first review:'));
+  });
+
+  it('does NOT emit review advisory for trivial prompt', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'fix typo in the readme' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(!output.includes('AI-first review:'));
+  });
+
+  it('does NOT emit review advisory for generic prompt', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'what files are in the src directory' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    assert.ok(!output.includes('AI-first review:'));
+  });
+});
+
+// ============================================================================
+// T3.8 integration — advisory ordering (adversarial < session < review)
+// ============================================================================
+
+describe('ADR-0087 Phase 3 integration — advisory ordering', () => {
+  const hookHandler = resolve(import.meta.dirname, '../../.claude/helpers/hook-handler.cjs');
+
+  it('adversarial < session < review in output', () => {
+    const output = execFileSync('node', [hookHandler, 'route'], {
+      env: { ...process.env, PROMPT: 'architect the new event sourcing system' },
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+    const adversarialIdx = output.indexOf('Adversarial review recommended');
+    const sessionIdx = output.indexOf('Parallel sessions:');
+    const reviewIdx = output.indexOf('AI-first review:');
+    assert.ok(adversarialIdx >= 0, 'adversarial advisory must be present');
+    assert.ok(sessionIdx >= 0, 'session advisory must be present');
+    assert.ok(reviewIdx >= 0, 'review advisory must be present');
+    assert.ok(
+      adversarialIdx < sessionIdx,
+      `adversarial (pos ${adversarialIdx}) must precede session (pos ${sessionIdx})`,
+    );
+    assert.ok(
+      sessionIdx < reviewIdx,
+      `session (pos ${sessionIdx}) must precede review (pos ${reviewIdx})`,
+    );
   });
 });

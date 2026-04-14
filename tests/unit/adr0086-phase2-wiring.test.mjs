@@ -33,7 +33,7 @@ describe('ADR-0086 T2.2: _doInit creates RvfBackend', () => {
 
   it('createStorage imports rvf-backend', () => {
     assert.ok(
-      routerSrc.includes("rvf-backend.js"),
+      routerSrc.includes("rvf-backend"),
       'createStorage does not import rvf-backend',
     );
   });

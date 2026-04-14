@@ -290,7 +290,60 @@ describe('ADR-0085 T1.5: shutdownRouter resets registry state', () => {
 });
 
 // ============================================================================
-// Group 7: Integration — router has no bridge references as dependencies
+// Group 7: Flaw 2 — deferred timeout calls .unref()
+// ============================================================================
+
+describe('ADR-0085 flaw 2: deferred timeout does not keep process alive', () => {
+  let routerSrc;
+
+  beforeEach(() => {
+    routerSrc = readFileSync(ROUTER_PATH, 'utf-8');
+  });
+
+  it('setTimeout for console restore is followed by .unref()', () => {
+    const idx = routerSrc.indexOf('setTimeout(_restoreConsole, 120_000)');
+    assert.ok(idx > -1, 'must have the 120s deferred timeout');
+    const after = routerSrc.slice(idx, idx + 120);
+    assert.ok(
+      after.includes('.unref()'),
+      'deferred timeout must call .unref() to prevent keeping the process alive',
+    );
+  });
+});
+
+// ============================================================================
+// Group 8: Flaw 3 — getController documents shared-singleton contract
+// ============================================================================
+
+describe('ADR-0085 flaw 3: getController dual-path is documented', () => {
+  let routerSrc;
+
+  beforeEach(() => {
+    routerSrc = readFileSync(ROUTER_PATH, 'utf-8');
+  });
+
+  it('getController JSDoc explains shared-singleton relationship', () => {
+    const fnStart = routerSrc.indexOf('export async function getController');
+    const docStart = routerSrc.lastIndexOf('/**', fnStart);
+    const docBlock = routerSrc.slice(docStart, fnStart);
+    assert.ok(
+      docBlock.includes('same ControllerRegistry singleton'),
+      'getController JSDoc must document that both paths share the same singleton',
+    );
+  });
+
+  it('intercept fallback comment explains when it is reached', () => {
+    const fnStart = routerSrc.indexOf('export async function getController');
+    const fnBlock = routerSrc.slice(fnStart, fnStart + 600);
+    assert.ok(
+      fnBlock.includes('init failed') || fnBlock.includes('neural disabled'),
+      'intercept fallback must document when it activates (init failed / neural disabled)',
+    );
+  });
+});
+
+// ============================================================================
+// Group 9: Integration — router has no bridge references as dependencies
 // ============================================================================
 
 describe('ADR-0085 integration: router does NOT import from memory-bridge', () => {

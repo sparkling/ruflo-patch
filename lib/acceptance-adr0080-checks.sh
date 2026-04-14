@@ -538,7 +538,8 @@ check_adr0080_store_after_init() {
 
   # Try storing an entry — should succeed without manual table creation
   local store_out
-  store_out=$(cd "$e2e" && npx @sparkleideas/cli@latest memory store \
+  store_out=$(cd "$e2e" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+    npx @sparkleideas/cli@latest memory store \
     --key "adr0080-test" --value "acceptance test entry" --namespace test 2>&1) || true
 
   if echo "$store_out" | grep -qi 'stored\|success'; then

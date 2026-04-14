@@ -1,6 +1,6 @@
 # ADR-0083: Phase 5 — Single Data Flow Path
 
-- **Status**: Accepted
+- **Status**: Implemented (Waves 1-2 completed 2026-04-12; Wave 3 completed via ADR-0084 Phase 3 T3.2, 2026-04-13)
 - **Date**: 2026-04-12
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent hive (spec reader, bridge inventory, conflict assessor, architect, devil's advocate, advocate, CJS analyst, effort estimator) + queen synthesis
@@ -173,6 +173,7 @@ ALL callers → memory-router.ts → backend
                             memory-initializer.ts  (private impl, never imported externally)
                             memory-bridge.ts       (private impl, never imported externally)
 ```
+(Note: Superseded by ADR-0086. Router now uses RvfBackend directly; memory-initializer.ts is an import shim.)
 
 One entry point. One store path. One JSON side-effect for the CJS contract.
 
@@ -280,8 +281,8 @@ all storage goes through one router.
 - memory-initializer.ts: removed appendToAutoMemoryStore, rvf-shim imports, openDatabase wrapper calls
 - auto-memory-hook.mjs: removed doSync() drain
 
-**Wave 3 (High-risk): Deferred**
-- hooks-tools.ts: 19 import sites, deferred per plan (20 upstream commits/6 weeks)
+**Wave 3 (High-risk): Completed via ADR-0084 Phase 3 (2026-04-13)**
+- hooks-tools.ts: 18 bridge call sites migrated to router (T3.2) — 8 getController, 2 feedback, 2 session, 1 causal, 2 pattern, 3 solver/route via controller-direct
 
 ### Lines eliminated
 - rvf-shim.ts: 182

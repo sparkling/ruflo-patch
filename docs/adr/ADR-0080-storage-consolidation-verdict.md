@@ -142,6 +142,7 @@ file (3 lines each, additive, wrapped in try/catch).
 | Action | Why not |
 |--------|---------|
 | Delete upstream files (`memory-bridge.ts`, `memory-initializer.ts`) | Fork-patching model — merge conflicts |
+(Note: Overridden by ADR-0083 → ADR-0086. memory-initializer.ts is now a stub shim, not deleted but effectively replaced by RvfBackend.)
 | Consolidate JSON intelligence files into SQLite | CJS subprocess workers can't import TypeScript modules — JSON is the IPC contract |
 | Add more abstraction interfaces | 5 exist already (`IStorage`, `IMemoryBackend`, `IStorageContract`, `VectorBackend`, `VectorBackendAsync`) — four too many |
 | Radically simplify to 3 files | Correct diagnosis but impossible under upstream-compatibility constraint |

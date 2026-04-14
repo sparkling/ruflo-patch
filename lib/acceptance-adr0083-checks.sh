@@ -8,7 +8,7 @@
 # ADR-0083 decisions tested here:
 #   - rvf-shim.ts DELETED (Wave 1)
 #   - open-database.ts DELETED (Wave 2)
-#   - memory-router.js exports routeEmbeddingOp + 23 lazy wrappers
+#   - memory-router.js exports routeEmbeddingOp, routePatternOp + lazy wrappers
 #   - Migrated tool files do NOT import memory-bridge directly
 #   - CLI memory store still dual-writes JSON sidecar for intelligence.cjs
 #
@@ -133,7 +133,7 @@ check_adr0083_router_exports() {
 
   # Verify routeEmbeddingOp is exported (added in Wave 1 for HNSW/embedding routing)
   local found_exports=()
-  for sym in routeEmbeddingOp generateEmbedding getHNSWIndex routeMemoryOp; do
+  for sym in routeEmbeddingOp generateEmbedding routePatternOp routeMemoryOp; do
     if grep -q "$sym" "$router_file" 2>/dev/null; then
       found_exports+=("$sym")
     fi
@@ -199,50 +199,42 @@ check_adr0083_no_bridge_in_migrated() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0083-5: JSON sidecar contract intact (intelligence.cjs can read CLI-stored data)
+# ADR-0083-5: Memory data persists via RVF (replaces JSON sidecar contract)
 #
-# This tests the core CJS contract: routeMemoryOp('store') now centralizes
-# the JSON dual-write in memory-router.ts. After a CLI memory store,
-# auto-memory-store.json must contain the entry so intelligence.cjs works.
+# ADR-0085 deleted writeJsonSidecar(); ADR-0086 moved storage to RvfBackend.
+# This check verifies CLI memory store persists to .rvf/.wal so subsequent
+# CLI invocations can retrieve the data (the core single-path contract).
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0083_json_sidecar_contract() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # The e2e prep phase pre-seeds entries via CLI (single process, no contention),
-  # which populates auto-memory-store.json via writeJsonSidecar() in the router.
-  # We verify the pre-seeded key exists. Under parallel contention, individual
-  # CLI store calls can time out, so we also attempt our own store as a bonus.
   local cli; cli=$(_cli_cmd)
-  local test_key="adr0083-sidecar-$(date +%s)"
-  local test_val="phase5 single data flow sidecar test"
+  local iso; iso=$(_e2e_isolate "0083-sidecar")
+  local test_key="adr0083-rvf-$(date +%s)"
+  local test_val="phase5 single data flow RVF persistence test"
 
-  # Best-effort own store (may time out under contention — that's OK)
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$test_key' --value '$test_val' --namespace adr0083-sidecar" "" 15
+  # Store via CLI (isolated dir)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$test_key' --value '$test_val' --namespace adr0083-rvf" "" 60
 
-  # Verify the sidecar file exists and contains data
-  local sidecar="$E2E_DIR/.claude-flow/data/auto-memory-store.json"
-  if [[ ! -f "$sidecar" ]]; then
-    _CHECK_OUTPUT="ADR-0083-5: auto-memory-store.json not created (prep seed may have failed)"
-    return
-  fi
+  sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
-  # Check for our own key first, then pre-seeded key, then any entries
-  if grep -q "$test_key" "$sidecar" 2>/dev/null; then
+  # Verify data persists by listing
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0083-rvf" "" 60
+  local list_out="$_RK_OUT"
+
+  if echo "$list_out" | grep -q "$test_key"; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0083-5: CLI memory store writes JSON sidecar — key '$test_key' found"
-  elif grep -q 'e2e-seed-sidecar' "$sidecar" 2>/dev/null; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0083-5: JSON sidecar contains pre-seeded entry (prep phase store confirmed)"
-  elif grep -q "$(echo "$test_val" | cut -c1-20)" "$sidecar" 2>/dev/null; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0083-5: CLI memory store writes JSON sidecar — value found"
+    _CHECK_OUTPUT="ADR-0083-5: CLI memory store persists to RVF — key '$test_key' found in list"
   else
-    local entry_count
-    entry_count=$(grep -c '"key"' "$sidecar" 2>/dev/null || echo 0)
-    _CHECK_OUTPUT="ADR-0083-5: no known keys found in auto-memory-store.json (${entry_count} entries present)"
+    local rvf_exists="false"
+    if find "$iso" -name "*.rvf" -o -name "*.wal" 2>/dev/null | grep -q .; then
+      rvf_exists="true"
+    fi
+    _CHECK_OUTPUT="ADR-0083-5: key '$test_key' not found in list output (rvf_files=$rvf_exists)"
   fi
+  rm -rf "$iso" 2>/dev/null
 }
 
 # ════════════════════════════════════════════════════════════════════

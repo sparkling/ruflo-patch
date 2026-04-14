@@ -1,8 +1,10 @@
 # ADR-0087: Adversarial Prompting Workflow
 
-- **Status**: Phase 1 Complete
+- **Status**: Implemented (Phases 1-3 complete, all principles active)
 - **Date**: 2026-04-13
 - **Phase 1**: 2026-04-13 — Adversarial prompting hook (`.claude/helpers/adversarial.cjs`)
+- **Phase 2**: 2026-04-13 — Parallel thinking sessions (`recommendSessions()`, `sessionAdvisory()`)
+- **Phase 3**: 2026-04-13 — AI-first review (`reviewChecklist()`, `reviewAdvisory()`)
 - **Source**: Michael Truell (Cursor co-founder), Lenny's Podcast, late 2025; Medium article by Adi Insights and Innovations, Mar 21 2026
 
 ## Context
@@ -60,9 +62,12 @@ Working proof-of-concept built with AI replaces written specification documents 
 
 The bottleneck in AI-assisted development is **reviewing** code, not writing it. AI performs first-pass review before any human sees the code:
 
-- Catches style/convention violations
-- Identifies missing edge cases
-- Flags architectural concerns
+- Catches style/convention violations (`conventions`)
+- Identifies missing edge cases (`edge-cases`)
+- Flags architectural concerns (`architecture`)
+- Checks security at system boundaries (`security`)
+- Verifies test coverage at all levels (`test-coverage`)
+- Assesses backward compatibility and migration impact (`compatibility`)
 - Reduces human review to judgment calls only
 
 ## Measured Impact (Cursor team metrics)
@@ -77,13 +82,40 @@ The bottleneck in AI-assisted development is **reviewing** code, not writing it.
 
 ## How This Applies to ruflo-patch
 
-| Principle | Current practice | Change |
-|-----------|-----------------|--------|
-| Adversarial prompting | Plan mode exists but optional | Use adversarial pass in plan mode for architectural changes |
-| Parallel sessions | Swarm agents exist | Frame agent sessions as thinking types, not just task splits |
-| Living constitution | CLAUDE.md is comprehensive | Add "What We Tried and Won't Try Again" section |
-| Prototypes > specs | ADRs document decisions | Keep ADRs, but prototype first when exploring alternatives |
-| AI-first review | Manual review | Add adversarial review step before human review |
+| Principle | Status | Implementation |
+|-----------|--------|----------------|
+| Adversarial prompting | **Phase 1 done** | `classify()` + `advisory()` in route hook; auto-flags architectural prompts |
+| Parallel sessions | **Phase 2 done** | `recommendSessions()` + `sessionAdvisory()` emit session types in route hook |
+| Living constitution | **Done** | CLAUDE.md has "What We Tried" section, adversarial workflow, behavioral rules |
+| Prototypes > specs | Process guideline | Keep ADRs, but prototype first when exploring alternatives |
+| AI-first review | **Phase 3 done** | `reviewChecklist()` + `reviewAdvisory()` emit review focus areas in route hook |
+
+## Phase 3 Validation (8-agent swarm, 2026-04-13)
+
+Phase 3 was validated by an 8-agent swarm (its own AI-first review principle applied to itself). Agents and findings:
+
+| Agent | Focus | Verdict |
+|-------|-------|---------|
+| code-quality | Bugs, logic errors | Clean — no issues |
+| test-completeness | Path coverage audit | Pass — all branches covered, 10/10 triggers tested |
+| pattern-consistency | Phase 1/2/3 alignment | 10/10 checks pass |
+| integration-tracer | Hook wiring paths | 6/6 paths verified |
+| security-review | Injection, ReDoS, pollution | 1 fix: ReDoS in `removal` regex (Phase 1, pre-existing) |
+| adr-accuracy | Document vs code | 2 fixes: CLAUDE.md gap, ADR category list |
+| edge-case-analysis | Boundary conditions | 1 fix: `Array.isArray` guard on advisory functions |
+| regression-check | Phase 1/2 unchanged | 8/8 checks pass |
+
+Fixes applied: bounded `removal` regex `{0,5}`, `Array.isArray` guards on `sessionAdvisory`/`reviewAdvisory`, CLAUDE.md updated, ADR principle 5 expanded to list all 6 categories.
+
+## What's Next
+
+All 5 principles are implemented or established as process. Potential future work:
+
+- **Metrics collection** — track advisory hit rates (which triggers fire most), effectiveness (do advised tasks have fewer regressions), and coverage (% of architectural prompts that get adversarial review)
+- **Enforcement** — post-task hook checks whether advised review areas were actually addressed before marking complete
+- **Living constitution automation** — auto-capture adversarial findings into CLAUDE.md "What We Tried" section after each pass
+
+These are enhancements, not required for the ADR to be considered implemented.
 
 ## Consequences
 

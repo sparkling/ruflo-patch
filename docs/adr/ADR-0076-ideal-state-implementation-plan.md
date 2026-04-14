@@ -595,6 +595,7 @@ Every MCP tool call follows one path:
 **Files NOT modified (by this ADR):**
 - `memory-bridge.ts` — became dead code after Phases 0-4; **deleted by ADR-0085** (2026-04-13)
 - `memory-initializer.ts` — 11 bridge try-blocks **removed by ADR-0085**; remains as pure SQLite CRUD
+(Update: ADR-0086 replaced CRUD paths with RvfBackend stubs. memory-initializer.ts is now an import shim.)
 
 ## Decision
 

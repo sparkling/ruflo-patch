@@ -8,6 +8,24 @@
 # Requires: acceptance-checks.sh sourced first (_run_and_kill available)
 # Caller MUST set: E2E_DIR, CLI_BIN, REGISTRY
 
+# Per-check isolation: create a private copy of E2E_DIR so parallel checks
+# don't contend on the same .swarm/memory.rvf file.
+_e2e_isolate() {
+  local check_id="$1"
+  local iso_dir="$E2E_DIR/.iso-${check_id}-$$"
+  if [[ -d "$iso_dir" ]]; then rm -rf "$iso_dir"; fi
+  mkdir -p "$iso_dir"
+  # Copy config + node_modules (symlink node_modules to save space)
+  cp -r "$E2E_DIR/.claude-flow" "$iso_dir/.claude-flow" 2>/dev/null || true
+  cp -r "$E2E_DIR/.swarm" "$iso_dir/.swarm" 2>/dev/null || true
+  cp "$E2E_DIR/package.json" "$iso_dir/" 2>/dev/null || true
+  ln -sf "$E2E_DIR/node_modules" "$iso_dir/node_modules" 2>/dev/null || true
+  # Remove any stale RVF/WAL/lock from the copy so we start clean
+  rm -f "$iso_dir/.claude-flow/memory.rvf"* "$iso_dir/.swarm/memory.rvf"* 2>/dev/null
+  rm -f "$iso_dir/.swarm/memory.db"* 2>/dev/null
+  echo "$iso_dir"
+}
+
 # ════════════════════════════════════════════════════════════════════
 # E2E-1: memory store creates .swarm/memory.rvf
 # ════════════════════════════════════════════════════════════════════
@@ -124,26 +142,36 @@ check_e2e_list_after_store() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
+  local iso; iso=$(_e2e_isolate "list-store")
   local ns="e2e-list-$(date +%s)"
   local test_key="e2e-list-entry"
 
-  # Store
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory store --key '$test_key' --value 'entry for list verification' --namespace '$ns'" "" 45
+  # Store (isolated dir — no parallel contention)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory store --key '$test_key' --value 'entry for list verification' --namespace '$ns'" "" 60
   if ! echo "$_RK_OUT" | grep -qi 'stored\|success'; then
     _CHECK_OUTPUT="E2E-3: store failed: $_RK_OUT"
-    return
+    rm -rf "$iso" 2>/dev/null; return
   fi
 
-  # List
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 45
+  # Brief pause for WAL flush + lock release between separate CLI processes
+  sleep 1
+
+  # Remove stale lock if present
+  rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
+
+  # List (same isolated dir)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 60
   local list_out="$_RK_OUT"
 
   if echo "$list_out" | grep -q "$test_key"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="E2E-3: stored key '$test_key' found in list output"
   else
-    _CHECK_OUTPUT="E2E-3: FAIL — key '$test_key' not found in list output: $list_out"
+    local rvf_files
+    rvf_files=$(find "$iso" -name '*.rvf' -o -name '*.wal' 2>/dev/null | sort)
+    _CHECK_OUTPUT="E2E-3: FAIL — key '$test_key' not found in list output: $list_out (rvf_files: $rvf_files)"
   fi
+  rm -rf "$iso" 2>/dev/null
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -154,28 +182,32 @@ check_e2e_dual_write_consistency() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
+  local iso; iso=$(_e2e_isolate "dual-write")
   local ns="e2e-dual-$(date +%s)"
   local test_key="e2e-dual-entry"
   local test_value="dual write consistency verification entry"
 
-  # Store
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory store --key '$test_key' --value '$test_value' --namespace '$ns'" "" 45
+  # Store (isolated dir)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory store --key '$test_key' --value '$test_value' --namespace '$ns'" "" 60
   if ! echo "$_RK_OUT" | grep -qi 'stored\|success'; then
     _CHECK_OUTPUT="E2E-4: store failed: $_RK_OUT"
-    return
+    rm -rf "$iso" 2>/dev/null; return
   fi
+
+  sleep 1
+  rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Path 1: search (RVF / vector path)
   local search_ok="false"
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory search --query 'dual write consistency verification' --namespace '$ns' --limit 5" "" 45
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory search --query 'dual write consistency verification' --namespace '$ns' --limit 5" "" 60
   local search_out="$_RK_OUT"
   if echo "$search_out" | grep -qi 'dual\|consistency\|verification'; then
     search_ok="true"
   fi
 
-  # Path 2: list (SQLite path)
+  # Path 2: list
   local list_ok="false"
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 45
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 60
   local list_out="$_RK_OUT"
   if echo "$list_out" | grep -q "$test_key"; then
     list_ok="true"
@@ -183,10 +215,11 @@ check_e2e_dual_write_consistency() {
 
   if [[ "$search_ok" == "true" && "$list_ok" == "true" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="E2E-4: entry found via BOTH search (RVF) and list (SQLite) — dual write consistent"
+    _CHECK_OUTPUT="E2E-4: entry found via BOTH search and list — consistent"
   else
     _CHECK_OUTPUT="E2E-4: FAIL — search_ok=$search_ok list_ok=$list_ok — search: $search_out — list: $list_out"
   fi
+  rm -rf "$iso" 2>/dev/null
 }
 
 # ════════════════════════════════════════════════════════════════════

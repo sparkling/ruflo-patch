@@ -49,7 +49,9 @@ Before implementing any non-trivial feature or architectural change:
 
 Use AI to be **less wrong**, not to go faster.
 
-When running parallel sessions, frame them as **thinking types** (implementation, adversarial review, test generation, simplification) — not arbitrary task splits.
+When running parallel sessions, frame them as **thinking types** (implementation, adversarial review, test generation, documentation, simplification) — not arbitrary task splits. The `route` hook emits `[ADR-0087] Parallel sessions:` advisories automatically for architectural prompts.
+
+The `route` hook also emits `[ADR-0087] AI-first review:` advisories listing review focus areas (conventions, edge-cases, architecture, security, test-coverage, compatibility) tailored to the type of change. AI performs first-pass review before any human sees the code.
 
 ## What We Tried and Won't Try Again
 
@@ -57,6 +59,7 @@ When running parallel sessions, frame them as **thinking types** (implementation
 - [2026-04] SQLite-first storage — RVF is primary; SQLite is fallback only (ADR-0086)
 - [2026-04] Silent fallback paths in tests — masks real failures; tests must fail loudly (ADR-0082)
 - [2026-04] Sidecar JSON files — eliminated in favor of single storage abstraction (ADR-0085)
+- [2026-04] Subtracted parallel sessions per trigger — refactors need docs (stale risk), phased work needs simplification (cruft accumulates); all triggers get all 5 sessions (ADR-0087)
 
 ## Project Architecture
 

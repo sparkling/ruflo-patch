@@ -268,6 +268,7 @@ The bridge deletion breaks 14 test files. Categorized by action:
 - **Layer 1 (RVF primary storage)** — memory-initializer.ts remains as the SQLite CRUD
   layer. Replacing it with IStorage + NativeStorage(RVF+HNSW) is a separate, larger effort
   (~2,600 lines to rewrite). That is the remaining gap to ADR-0075's full ideal.
+(Update: Layer 1 substantially closed by ADR-0086 (2026-04-13). T3.3 (better-sqlite3 CLI removal) remains blocked.)
 
 ## Resolved post-proposal
 
@@ -290,6 +291,7 @@ The bridge deletion breaks 14 test files. Categorized by action:
 - **Single registry bootstrap** — router owns it, no dual-path confusion
 - **Zero bridge code executed** at runtime (11 try-first paths eliminated)
 - **Cleaner initializer** — memory-initializer is pure SQLite CRUD, no AgentDB coupling
+  (Update: ADR-0086 (2026-04-13) replaced CRUD bodies with RvfBackend stubs. memory-initializer.ts is now an import shim, not pure SQLite CRUD.)
 - **No JSON sidecar** — intelligence reads SQLite directly, no redundant file-based IPC
 - **ESM hook handler** — unblocks future async hook improvements
 - **ADR-0075 gap closure**: L2 100%, L5 ~95% (initializer hop remains until L1)

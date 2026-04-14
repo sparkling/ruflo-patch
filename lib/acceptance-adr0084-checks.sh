@@ -27,6 +27,7 @@ check_no_sqljs_in_backend_output() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
+  local iso; iso=$(_e2e_isolate "0084-sqljs")
   local ns="adr0084-sqljs-$(date +%s)"
   local test_key="adr0084-check"
   local test_val="verify no leaked backend name in user-facing output"
@@ -34,21 +35,23 @@ check_no_sqljs_in_backend_output() {
   # Accumulate all output from store + search + doctor
   local combined_output=""
 
-  # 1. memory store
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$test_key' --value '$test_val' --namespace '$ns'" "" 15
+  # 1. memory store (isolated dir, 60s for cold embedding load)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$test_key' --value '$test_val' --namespace '$ns'" "" 60
   combined_output="${combined_output}${_RK_OUT}"$'\n'
 
   if ! echo "$_RK_OUT" | grep -qi 'stored\|success'; then
     _CHECK_OUTPUT="ADR-0084-1: memory store did not report success — cannot verify output (store: ${_RK_OUT:0:120})"
-    return
+    rm -rf "$iso" 2>/dev/null; return
   fi
 
+  sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
+
   # 2. memory search
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'backend output check' --namespace '$ns' --limit 5" "" 15
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'backend output check' --namespace '$ns' --limit 5" "" 60
   combined_output="${combined_output}${_RK_OUT}"$'\n'
 
   # 3. doctor --fix (captures diagnostic output about backends)
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor --fix" "" 20
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor --fix" "" 30
   combined_output="${combined_output}${_RK_OUT}"$'\n'
 
   # Check: "sql.js" must NOT appear anywhere in the combined output.
@@ -243,10 +246,14 @@ check_phase3_worker_daemon_no_bridge() {
   fi
 
   # Count memory-bridge imports that are NOT shutdownBridge
+  # Note: grep -c outputs "0" AND exits 1 when no matches, so || echo 0
+  # would produce "0\n0". Use ${var:-0} fallback instead.
   local non_shutdown
-  non_shutdown=$(grep -c 'memory-bridge' "$worker_js" 2>/dev/null || echo 0)
+  non_shutdown=$(grep -c 'memory-bridge' "$worker_js" 2>/dev/null)
+  non_shutdown=${non_shutdown:-0}
   local shutdown_refs
-  shutdown_refs=$(grep -c 'shutdownBridge' "$worker_js" 2>/dev/null || echo 0)
+  shutdown_refs=$(grep -c 'shutdownBridge' "$worker_js" 2>/dev/null)
+  shutdown_refs=${shutdown_refs:-0}
   local bad=$(( non_shutdown - shutdown_refs ))
   if [[ "$bad" -lt 0 ]]; then bad=0; fi
 
@@ -283,7 +290,8 @@ check_phase3_hooks_tools_no_bridge() {
   fi
 
   local count
-  count=$(grep -c 'memory-bridge' "$hooks_js" 2>/dev/null || echo 0)
+  count=$(grep -c 'memory-bridge' "$hooks_js" 2>/dev/null)
+  count=${count:-0}
 
   if [[ "$count" -eq 0 ]]; then
     _CHECK_PASSED="true"
@@ -321,9 +329,11 @@ check_phase3_no_shadow_replicates() {
   fi
 
   local repl_count
-  repl_count=$(grep -c 'Replicates:' "$orch_js" 2>/dev/null || echo 0)
+  repl_count=$(grep -c 'Replicates:' "$orch_js" 2>/dev/null)
+  repl_count=${repl_count:-0}
   local router_count
-  router_count=$(grep -c 'memory-router' "$orch_js" 2>/dev/null || echo 0)
+  router_count=$(grep -c 'memory-router' "$orch_js" 2>/dev/null)
+  router_count=${router_count:-0}
 
   if [[ "$repl_count" -eq 0 ]] && [[ "$router_count" -ge 1 ]]; then
     _CHECK_PASSED="true"
@@ -362,11 +372,12 @@ check_phase3_router_no_controller_fallback() {
     return
   fi
 
-  # These 5 legacy functions must NOT be present
+  # These 5 legacy functions must NOT be present in executable code.
+  # Exclude comment lines (// ...) that may reference old names for context.
   local banned=("bridgeGetController" "bridgeHasController" "bridgeListControllers" "bridgeWaitForDeferred" "bridgeHealthCheck")
   local found_banned=""
   for fn in "${banned[@]}"; do
-    if grep -q "$fn" "$router_js"; then
+    if grep -v '^\s*//' "$router_js" | grep -q "$fn"; then
       found_banned="${found_banned}${fn}, "
     fi
   done
@@ -496,7 +507,8 @@ check_phase4_worker_daemon_shutdown_router() {
 
   # Verify NO memory-bridge imports
   local bridge_count
-  bridge_count=$(grep -c 'memory-bridge' "$worker_js" 2>/dev/null || echo 0)
+  bridge_count=$(grep -c 'memory-bridge' "$worker_js" 2>/dev/null)
+  bridge_count=${bridge_count:-0}
 
   if [[ "$bridge_count" -gt 0 ]]; then
     _CHECK_OUTPUT="ADR-0084-10: worker-daemon.js still has ${bridge_count} memory-bridge reference(s)"
@@ -540,7 +552,8 @@ check_phase4_zero_external_bridge_imports() {
     ((checked++))
 
     local count
-    count=$(grep -c 'memory-bridge' "$fpath" 2>/dev/null || echo 0)
+    count=$(grep -c 'memory-bridge' "$fpath" 2>/dev/null)
+    count=${count:-0}
     if [[ "$count" -gt 0 ]]; then
       dirty="${dirty}${fname}(${count}), "
     fi

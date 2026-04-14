@@ -176,11 +176,15 @@ describe('ADR-0086 T1.4: Schema/migration delegates removed', () => {
     });
   }
 
-  it('MEMORY_SCHEMA_V3 remains internally in initializer', () => {
-    // ensureSchemaColumns deleted (dead code, V11). MEMORY_SCHEMA_V3 still used by initializeMemoryDatabase.
+  it('MEMORY_SCHEMA_V3 remains internally in initializer (not exported)', () => {
+    // T1.4 complete: un-exported but still used by initializeMemoryDatabase.
     assert.ok(
-      initializerSrc.includes('export const MEMORY_SCHEMA_V3'),
+      initializerSrc.includes('const MEMORY_SCHEMA_V3'),
       'MEMORY_SCHEMA_V3 should still exist internally',
+    );
+    assert.ok(
+      !initializerSrc.includes('export const MEMORY_SCHEMA_V3'),
+      'MEMORY_SCHEMA_V3 must not be exported (T1.4)',
     );
   });
 });

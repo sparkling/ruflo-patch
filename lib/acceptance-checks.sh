@@ -75,6 +75,12 @@ _run_and_kill() {
     fi
   done
 
+  # Grace period for Node.js WAL flush + shutdown before killing
+  # (RvfBackend.shutdown compacts WAL on beforeExit — needs ~1s)
+  if kill -0 "$pid" 2>/dev/null; then
+    sleep 1
+  fi
+
   # Kill process tree if still running (prevents orphaned node children)
   if kill -0 "$pid" 2>/dev/null; then
     pkill -P "$pid" 2>/dev/null || true   # kill children first
