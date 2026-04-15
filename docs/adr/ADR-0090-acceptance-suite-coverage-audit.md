@@ -245,18 +245,43 @@ This ADR is load-bearing for three specific claims made earlier in this session:
 2. **ADR-0088 Implementation Results** (`241/242` and then `242/242`) are not revised — those numbers remain accurate as counts. The audit exposed that three of the passing checks were silent-pass anti-patterns; all three were rewritten in Tier A (commits `be70f29`, `feb3d2a`, `727571f`). Tier A2 additionally eliminated the harness-level silent-pass gap by adding a `skip_accepted` bucket distinct from `pass`.
 3. **ADR-0089** Layer 2 100% claim is re-classified from "100% against revised criteria" to "100% against revised criteria PLUS 1 of 15 controllers (`episodes`) verified by Tier A1, 14 pending B5". Until B5 lands, Layer 2 is honestly 72%.
 
-## Tier A4 upstream discovery
+## Tier A4 upstream discovery — and fix (B7 closed in the same session)
 
-While implementing Tier A4, the new `check_t3_2_rvf_concurrent_writes` check exposed what appears to be a real multi-writer race in `RvfBackend` itself. Observations from the integration test at N=4–6 concurrent writers:
+While implementing Tier A4, the new `check_t3_2_rvf_concurrent_writes` check exposed what turned out to be two real bugs in `RvfBackend`. A 2-agent ruflo hive (Queen + Devil's Advocate) investigated them independently, then a deterministic in-process repro (`scripts/diag-rvf-inproc-race.mjs`) ruled out the Devil's Advocate's three confounds (cold-start contention, `timeout 90` SIGTERM, `walCompactionThreshold` mid-store compaction). Pre-fix observations from the repro (20 trials per scenario):
 
-- **Data loss on `initialize()`/`compactWal` overlap**: `initialize()` snapshots in-memory state before another writer's `compactWal` runs, then shutdown's own `compactWal` rewrites `.rvf` from the stale snapshot. Final `entryCount` consistently `< N` (observed 1–3 surviving entries from 4 writers).
-- **`persistToDiskInner` tmp→rename race**: writers occasionally crash with `ENOENT: rename '<path>.tmp'` when a peer renames its tmp over the target mid-flight. `persisting` is an in-process flag; the advisory `.rvf.lock` is held only around WAL-append and WAL-compact, not across the full init→shutdown window. Observed ~1-in-5 runs at N=4.
+| Scenario | foundKeys / N | Loss rate | Crashed writers |
+|---|---|---|---|
+| N=2, wal=1000 | 1/2 in 20/20 | 50% | 0/20 |
+| N=4, wal=1000 | 1/4 in 20/20 | 75% | 0/20 |
+| N=8, wal=1000 | 1/8 in 20/20 | 87.5% | 20/20 (lock starvation) |
+| N=4, wal=10   | 1/4 in 20/20 | 75% | 0/20 |
 
-**This is not a test bug.** The old check passed green because it scanned for `SQLITE_BUSY` (wrong backend), silently hiding a real data-loss bug in the primary storage path. ADR-0090 considers this finding **validation of Tier A** — the audit's core claim was that the old checks proved less than advertised, and Tier A4 immediately exposed concrete evidence.
+**Exactly `1/N` surviving in every single trial.** Not a distribution — deterministic. At N=2/4, zero crashes, zero dangling locks, callers got no signal at all. At N=8, a secondary bug (lock retry starvation) surfaced on top of the primary race.
 
-**Promoted to Tier B as B7** (new item, added post-implementation 2026-04-15):
+**Two bugs**:
 
-> **B7. RVF multi-writer lock contract fix.** Widen `.rvf.lock` coverage from WAL-append/compact to the full `initialize → persistToDiskInner → shutdown` window, OR serialize writers through a single owner process. Must pass `check_t3_2_rvf_concurrent_writes` at N ≥ 6 with zero data loss. Fix lives in fork source (`@claude-flow/memory/src/rvf-backend.ts`), not in ruflo-patch. GitHub issue filed against upstream repo is the tracking mechanism.
+1. **Snapshot-overwrite race in `persistToDiskInner`**. Each writer's `this.entries` is a snapshot taken at `initialize()` time. When a peer compacted its WAL between our init and our shutdown, their entries landed in `.rvf`. Then our `shutdown()` → `compactWal()` → `persistToDiskInner()` rewrote `.rvf` from our stale snapshot, silently discarding peer writes.
+2. **Lock retry starvation in `acquireLock`**. The 5-retry × 100ms fixed budget (~500ms total) starved 3-of-8 writers at N=8. Comment said "Retries up to 3 times with 50ms delay" — doubly stale: wrong count, wrong delay.
+
+**Both fixed in fork commit `03ecec5e0`** (`fix: ADR-0090 B7 — RvfBackend multi-writer convergence + lock retry budget`):
+
+- New `mergePeerStateBeforePersist()` called at top of `persistToDiskInner` (under the existing advisory lock). Re-reads `.rvf`/`.meta` with set-if-absent (our writes win on key conflict, peer entries we didn't have are merged), then replays the current WAL via the existing `replayWal()` path. HNSW/native index updates are intentionally skipped — this is the terminal persist for the instance.
+- `acquireLock()` rewritten as time-budgeted retry: 5s total budget, exponential backoff (20ms → 500ms cap), ±50% jitter. Dead holders / stale locks (>5s) are cleared without waiting. Error message reports actual attempts + elapsed ms + budget.
+
+**Post-fix observations from the same repro** (20 trials per scenario):
+
+| Scenario | foundKeys / N | Loss rate | Crashed writers |
+|---|---|---|---|
+| N=2, wal=1000 | 2/2 in 20/20 | **0%** | 0/20 |
+| N=4, wal=1000 | 4/4 in 20/20 | **0%** | 0/20 |
+| N=8, wal=1000 | 8/8 in 20/20 | **0%** | 0/20 |
+| N=4, wal=10   | 4/4 in 20/20 | **0%** | 0/20 |
+
+Both bugs eliminated. N=8 also runs faster (5.7s vs 8.3s — exponential backoff is more efficient than fixed 100ms polling).
+
+**B7 is closed in-session**, not promoted to upstream escalation backlog. `scripts/diag-rvf-inproc-race.mjs` now serves as the regression guard — it exits 1 on any future loss or crash, so any upstream regression that re-breaks the convergence or retry logic will fail loudly.
+
+This also partially upgrades **ADR-0086 Debt 9** ("Concurrent WAL corruption — FIXED"). The original fix addressed byte-level WAL append integrity, not logical state convergence. B7 closes the state-convergence gap. Debt 9 is now honest rather than marketing.
 
 ## Acceptance criteria for ADR-0090 itself
 
