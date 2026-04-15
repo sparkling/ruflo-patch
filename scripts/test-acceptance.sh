@@ -409,6 +409,10 @@ adr0086_lib="${PROJECT_DIR}/lib/acceptance-adr0086-checks.sh"
 adr0088_lib="${PROJECT_DIR}/lib/acceptance-adr0088-checks.sh"
 [[ -f "$adr0088_lib" ]] && source "$adr0088_lib"
 
+# ADR-0089: Controller Intercept Pattern Permanent
+adr0089_lib="${PROJECT_DIR}/lib/acceptance-adr0089-checks.sh"
+[[ -f "$adr0089_lib" ]] && source "$adr0089_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -735,6 +739,14 @@ if [[ -f "$adr0088_lib" ]]; then
   run_check_bg "adr0088-init-no"     "Init no-claude no daemon (ADR-0088)"      check_adr0088_conditional_init_no_claude "adr0088"
   run_check_bg "adr0088-init-yes"    "Init with-claude wires daemon (ADR-0088)" check_adr0088_conditional_init_with_claude "adr0088"
   run_check_bg "adr0088-daemon-ok"   "Daemon still works local (ADR-0088)"      check_adr0088_daemon_still_works        "adr0088"
+fi
+
+# ADR-0089: Controller Intercept Pattern Permanent
+if [[ -f "$adr0089_lib" ]]; then
+  run_check_bg "adr0089-shipped"    "Intercept pool shipped (ADR-0089)"        check_adr0089_intercept_shipped         "adr0089"
+  run_check_bg "adr0089-svc"        "AgentDBService wraps (ADR-0089)"          check_adr0089_agentdb_service_wraps     "adr0089"
+  run_check_bg "adr0089-reg"        "ControllerRegistry wraps (ADR-0089)"      check_adr0089_controller_registry_wraps "adr0089"
+  run_check_bg "adr0089-live"       "Pool deterministic (ADR-0089)"            check_adr0089_pool_live                 "adr0089"
 fi
 
 # ADR-0081: M5 Max Configuration Profile
@@ -1171,6 +1183,10 @@ collect_parallel "all" \
   "adr0088-init-no|Init no-claude no daemon (ADR-0088)" \
   "adr0088-init-yes|Init with-claude wires daemon (ADR-0088)" \
   "adr0088-daemon-ok|Daemon still works local (ADR-0088)" \
+  "adr0089-shipped|Intercept pool shipped (ADR-0089)" \
+  "adr0089-svc|AgentDBService wraps (ADR-0089)" \
+  "adr0089-reg|ControllerRegistry wraps (ADR-0089)" \
+  "adr0089-live|Pool deterministic (ADR-0089)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \
