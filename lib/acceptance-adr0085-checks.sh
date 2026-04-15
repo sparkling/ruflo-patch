@@ -81,7 +81,10 @@ check_initializer_zero_bridge_imports() {
   fi
 
   local bridge_refs
-  bridge_refs=$(grep -c 'memory-bridge' "$init_file" 2>/dev/null || echo 0)
+  # grep -c always prints a count and exits 1 on zero matches; `|| echo 0`
+  # would append a second "0" producing "0\n0". Use ${var:-0} fallback.
+  bridge_refs=$(grep -c 'memory-bridge' "$init_file" 2>/dev/null)
+  bridge_refs=${bridge_refs:-0}
 
   if [ "$bridge_refs" -gt 0 ]; then
     local lines

@@ -38,7 +38,10 @@ check_scope() {
   _CHECK_PASSED="false"
   if [[ -f "$TEMP_DIR/CLAUDE.md" ]]; then
     local matches
-    matches=$(grep -c '@sparkleideas' "$TEMP_DIR/CLAUDE.md" 2>/dev/null || echo "0")
+    # grep -c always prints a count and exits 1 on zero matches; `|| echo "0"`
+    # would append a second "0" producing "0\n0". Use ${var:-0} fallback.
+    matches=$(grep -c '@sparkleideas' "$TEMP_DIR/CLAUDE.md" 2>/dev/null)
+    matches=${matches:-0}
     if [[ "$matches" -ge 1 ]]; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Found $matches @sparkleideas references in CLAUDE.md"

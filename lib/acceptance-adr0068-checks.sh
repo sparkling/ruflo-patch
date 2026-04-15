@@ -135,8 +135,13 @@ check_adr0068_controllers_enabled() {
 
   if [[ -f "$cfg_file" ]]; then
     local has_controllers has_enabled
-    has_controllers=$(grep -c '"controllers"' "$cfg_file" 2>/dev/null || echo 0)
-    has_enabled=$(grep -c '"enabled"' "$cfg_file" 2>/dev/null || echo 0)
+    # grep -c always prints a count (even 0) and exits 1 on zero matches;
+    # `|| echo 0` appends a second "0" producing "0\n0" which trips bash
+    # arithmetic. Use ${var:-0} for defensive empty fallback instead.
+    has_controllers=$(grep -c '"controllers"' "$cfg_file" 2>/dev/null)
+    has_controllers=${has_controllers:-0}
+    has_enabled=$(grep -c '"enabled"' "$cfg_file" 2>/dev/null)
+    has_enabled=${has_enabled:-0}
 
     if [[ "$has_controllers" -gt 0 && "$has_enabled" -gt 0 ]]; then
       _CHECK_PASSED="true"

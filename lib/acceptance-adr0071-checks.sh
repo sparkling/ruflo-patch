@@ -75,7 +75,10 @@ check_adr0071_node_binary_exists() {
   local node_files
   node_files=$(find "$base" -name '*.node' -type f 2>/dev/null || true)
   local count
-  count=$(echo "$node_files" | grep -c '\.node$' 2>/dev/null || echo 0)
+  # grep -c always prints a count and exits 1 on zero matches; `|| echo 0`
+  # would append a second "0" producing "0\n0". Use ${var:-0} fallback.
+  count=$(echo "$node_files" | grep -c '\.node$' 2>/dev/null)
+  count=${count:-0}
 
   if [[ "$count" -ge 1 ]]; then
     # Show which package(s) contain native binaries

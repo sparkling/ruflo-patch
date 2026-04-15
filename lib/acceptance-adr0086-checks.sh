@@ -58,7 +58,10 @@ check_no_initializer_in_dist() {
   # for store/search/list/get/delete operations.
   # Allow SQLite in schema creation (initializeMemoryDatabase) — that is intentional.
   local raw_sqlite_count
-  raw_sqlite_count=$(grep -c 'db\.prepare\|db\.exec\|\.run(' "$init_file" 2>/dev/null || echo 0)
+  # grep -c always prints a count and exits 1 on zero matches; `|| echo 0`
+  # would append a second "0" producing "0\n0". Use ${var:-0} fallback.
+  raw_sqlite_count=$(grep -c 'db\.prepare\|db\.exec\|\.run(' "$init_file" 2>/dev/null)
+  raw_sqlite_count=${raw_sqlite_count:-0}
 
   # Threshold: schema creation uses db.exec for DDL. Over 3 hits means
   # CRUD paths still have raw SQLite instead of delegating to the router.
