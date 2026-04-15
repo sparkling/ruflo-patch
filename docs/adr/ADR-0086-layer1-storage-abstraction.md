@@ -526,11 +526,17 @@ uses `pipeline.getProvider()` for threshold selection.
     `tryNativeInit()` now returns `true` when native available; `query()` now supports
     native HNSW search path; exclusive indexing means only native OR HnswLite is
     populated, not both. (Third validation swarm, agent 14.)
-15. **ControllerRegistry dual-backend** — **ACCEPTED TRADE-OFF**. `memory-router.ts`
-    bootstraps `ControllerRegistry` with its own SQLite configuration via agentdb.
-    This is a separate domain concern for neural/learning controllers. Unifying with
-    RvfBackend would require rewriting controller persistence — high effort, low value
-    for the CRUD memory path. (Sixth debt-fix swarm — reclassified.)
+15. **ControllerRegistry dual-backend** — **ACCEPTED TRADE-OFF with real round-trip guard**.
+    `memory-router.ts` bootstraps `ControllerRegistry` with its own SQLite configuration
+    via agentdb. This is a separate domain concern for neural/learning controllers.
+    Unifying with RvfBackend would require rewriting controller persistence — high effort,
+    low value for the CRUD memory path. (Sixth debt-fix swarm — reclassified.)
+    **2026-04-15 update**: Original "regression guard" (`check_adr0086_debt15_sqlite_path`)
+    was audited in ADR-0090 and found to be a facade (only verified agentdb init,
+    not controller persistence). Upgraded in Tier A1 (commit `be70f29`) to a real
+    controller round-trip: store via `agentdb_reflexion_store`, query `episodes` via
+    `sqlite3` CLI, kill CLI and re-query to prove cross-restart persistence. See
+    ADR-0090 Tier A1 for rationale and test coverage.
 16. **~~Monorepo fallback paths in published dist~~** — **FIXED**. All
     `.catch(() => import('../../../memory/src/...'))` fallbacks removed from
     memory-router.ts. These were monorepo dev-time shortcuts that resolved inside

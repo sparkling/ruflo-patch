@@ -1,6 +1,6 @@
 # ADR-0090: Acceptance Test Suite Coverage Audit — Database Backend Paths
 
-- **Status**: Proposed
+- **Status**: Implemented (Tier A) — 2026-04-15
 - **Date**: 2026-04-15
 - **Scope**: `ruflo-patch/lib/acceptance-*.sh` and `scripts/test-acceptance.sh`
 - **Methodology**: 4-agent ruflo swarm audit (RVF backend, SQLite/agentdb, sql.js fallback, JSON state files)
@@ -89,7 +89,7 @@ Auditor: `a824a24f77fb11046` (SQLite/agentdb auditor).
 
 **Zero runtime coverage**:
 
-- No check queries any controller-specific SQLite table (`reflexion_log`, `causal_edges`, `skill_library`, `hierarchical_memory`, etc.) for row counts after a controller write
+- No check queries any controller-specific SQLite table (`episodes`, `causal_edges`, `skill_library`, `hierarchical_memory`, etc.) for row counts after a controller write — *resolved for `episodes` by Tier A1 (2026-04-15)*
 - `check_reflexion_lifecycle` (`controller-checks.sh:107`) greps CLI stdout for `success|stored|true`; accepts empty retrieve as pass (`cold-start expected`). Never inspects the SQLite file.
 - `check_causal_graph` (`controller-checks.sh:140`) explicitly accepts `results.*\[\]` (empty) as pass.
 - `check_adr0059_intelligence_graph` explicitly **whitelists empty graph** as pass citing "debt 17 — intelligence.cjs reads SQLite, CLI writes RVF". This muzzles the only runtime signal for graphAdapter.
@@ -158,11 +158,9 @@ Honest-labeling fixes that remove false coverage and resolve the sql.js divergen
 Currently verifies agentdb init. Upgrade to:
 
 1. Run `cli mcp exec --tool agentdb_reflexion_store --params '{"insight":"acceptance test reflexion","embedding":"..."}'`
-2. Use `better-sqlite3` (as a test-only dev dependency, NOT a product dep) to query `SELECT COUNT(*) FROM reflexion_log WHERE insight LIKE 'acceptance test%'` → must be `>= 1`
+2. Use the `sqlite3` CLI binary (present on developer Macs + CI — no new product or test deps) to query `SELECT COUNT(*) FROM episodes WHERE task LIKE 'acceptance test reflexion adr0090%'` → must be `>= 1`. (The actual agentdb schema uses `episodes`, not `reflexion_log` — verified in `agentdb/dist/schemas/schema.sql:21` and `ReflexionMemory.js:22` during Tier A1 implementation.)
 3. Kill CLI, reopen, query again → still `>= 1` (persistence proof)
 4. Keep the source-grep guards as additional checks; don't remove them.
-
-Alternative if `better-sqlite3` test dep is undesired: shell out to the `sqlite3` CLI binary (usually present on developer Macs + CI) via `_run_and_kill "sqlite3 .swarm/memory.db 'SELECT COUNT(*) FROM reflexion_log'"`.
 
 **A2. Fix `check_adr0073_native_runtime` silent-pass.**
 
@@ -223,36 +221,54 @@ These are listed for completeness. Each can be reopened by a future ADR if a spe
 
 ## Revised layer scoring (post-ADR-0090 honest)
 
-| Layer | Before audit (claimed) | After audit (honest) | After Tier A (committed) | After Tier A+B (planned) |
+| Layer | Before audit (claimed) | After audit (honest) | After Tier A (actual) | After Tier A+B (planned) |
 |---|---|---|---|---|
-| L1 (Storage) | 95% | **60%** (Debt 15 facade + 8 RVF gaps) | 75% | 90% |
-| L2 (Controllers) | 100% (ADR-0089) | **65%** (no SQLite row-count verification for 15 controllers) | 70% | 95% |
-| L3 (Embeddings) | 90% | **70%** (no dimension-mismatch fail-loud) | 70% | 85% |
-| L4 (Config) | 95% | 90% (init-time only, no runtime path check) | 90% | 90% |
-| L5 (Data Flow) | 98% | **80%** (file-existence theater in multiple checks) | 85% | 95% |
-| **Weighted total** | **~94%** | **~75%** | **~80%** | **~91%** |
+| L1 (Storage) | 95% | **60%** (Debt 15 facade + 8 RVF gaps) | **78%** (Debt 15 real-row-count proof + A2 silent-pass eliminated + A4 real `.rvf.lock` contention) | 90% |
+| L2 (Controllers) | 100% (ADR-0089) | **65%** (no SQLite row-count verification for 15 controllers) | **72%** (1 of 15 controllers — `episodes` via A1 — has real round-trip; 14 still gap) | 95% |
+| L3 (Embeddings) | 90% | **70%** (no dimension-mismatch fail-loud) | 70% (unchanged — Tier B1) | 85% |
+| L4 (Config) | 95% | 90% (init-time only, no runtime path check) | 90% (unchanged) | 90% |
+| L5 (Data Flow) | 98% | **80%** (file-existence theater in multiple checks) | **86%** (A4 now reads `.rvf` bytes via header inspection; harness gained `skip_accepted` bucket so SKIP no longer masks FAIL) | 95% |
+| **Weighted total** | **~94%** | **~75%** | **~81%** | **~91%** |
 
-**The drop from 94% to 75% is not new failures — it's honesty.** The 94% claim relied on checks that proved less than advertised. ADR-0090 refreshes the scoring to match what the audit actually demonstrated.
+**The drop from 94% to 75% was honesty, not new failures.** Tier A lifted the honest number to ~81% by:
+- Adding three-way status in the harness (`pass`/`fail`/`skip_accepted`) so ADR-0082's no-silent-pass rule is enforceable at the runner level, not just in check bodies
+- Replacing the Debt 15 facade with a real row-count round-trip against the `episodes` table (across a CLI restart)
+- Retargeting `check_t3_2_*_concurrent_writes` from `SQLITE_BUSY` (wrong backend) to real multi-writer contention against the primary RVF store
+
+**The A4 check is actively failing against live CLI** — see "Tier A4 upstream discovery" below. That failure is real, not a test bug, and is a Tier B follow-up candidate rather than a Tier A regression.
 
 ## Explicit acceptance
 
 This ADR is load-bearing for three specific claims made earlier in this session:
 
-1. **ADR-0086 Debt 15** is re-classified from "Accepted Trade-Off with regression guard" to "Accepted Trade-Off with facade guard, upgraded by Tier A1".
-2. **ADR-0088 Implementation Results** (`241/242` and then `242/242`) are not revised — those numbers remain accurate as counts. The audit doesn't invalidate the count, it exposes that several of the passing checks are silent-pass anti-patterns. Those specific checks (`adr0073-native`, `t3_2_concurrent`, `debt15`) are marked for Tier A upgrade.
-3. **ADR-0089** Layer 2 100% claim is re-classified from "100% against revised criteria" to "100% against revised criteria PLUS pending B5 (controller row-count round-trips)". Until B5 lands, Layer 2 is 65-70% honestly.
+1. **ADR-0086 Debt 15** is re-classified from "Accepted Trade-Off with regression guard" to **"Accepted Trade-Off with real controller-persistence round-trip"** (Tier A1 implemented 2026-04-15, commit `be70f29`).
+2. **ADR-0088 Implementation Results** (`241/242` and then `242/242`) are not revised — those numbers remain accurate as counts. The audit exposed that three of the passing checks were silent-pass anti-patterns; all three were rewritten in Tier A (commits `be70f29`, `feb3d2a`, `727571f`). Tier A2 additionally eliminated the harness-level silent-pass gap by adding a `skip_accepted` bucket distinct from `pass`.
+3. **ADR-0089** Layer 2 100% claim is re-classified from "100% against revised criteria" to "100% against revised criteria PLUS 1 of 15 controllers (`episodes`) verified by Tier A1, 14 pending B5". Until B5 lands, Layer 2 is honestly 72%.
+
+## Tier A4 upstream discovery
+
+While implementing Tier A4, the new `check_t3_2_rvf_concurrent_writes` check exposed what appears to be a real multi-writer race in `RvfBackend` itself. Observations from the integration test at N=4–6 concurrent writers:
+
+- **Data loss on `initialize()`/`compactWal` overlap**: `initialize()` snapshots in-memory state before another writer's `compactWal` runs, then shutdown's own `compactWal` rewrites `.rvf` from the stale snapshot. Final `entryCount` consistently `< N` (observed 1–3 surviving entries from 4 writers).
+- **`persistToDiskInner` tmp→rename race**: writers occasionally crash with `ENOENT: rename '<path>.tmp'` when a peer renames its tmp over the target mid-flight. `persisting` is an in-process flag; the advisory `.rvf.lock` is held only around WAL-append and WAL-compact, not across the full init→shutdown window. Observed ~1-in-5 runs at N=4.
+
+**This is not a test bug.** The old check passed green because it scanned for `SQLITE_BUSY` (wrong backend), silently hiding a real data-loss bug in the primary storage path. ADR-0090 considers this finding **validation of Tier A** — the audit's core claim was that the old checks proved less than advertised, and Tier A4 immediately exposed concrete evidence.
+
+**Promoted to Tier B as B7** (new item, added post-implementation 2026-04-15):
+
+> **B7. RVF multi-writer lock contract fix.** Widen `.rvf.lock` coverage from WAL-append/compact to the full `initialize → persistToDiskInner → shutdown` window, OR serialize writers through a single owner process. Must pass `check_t3_2_rvf_concurrent_writes` at N ≥ 6 with zero data loss. Fix lives in fork source (`@claude-flow/memory/src/rvf-backend.ts`), not in ruflo-patch. GitHub issue filed against upstream repo is the tracking mechanism.
 
 ## Acceptance criteria for ADR-0090 itself
 
 ADR-0090 is not implemented when it's committed — it's implemented when Tier A lands. Specifically:
 
-1. Tier A1 (Debt 15 upgrade): new unit + acceptance check pair that verifies at least 1 row in `reflexion_log` after a controller write
-2. Tier A2 (`adr0073-native-runtime` silent-pass fix): check no longer passes on SKIP
-3. Tier A3 (sql.js reconciliation): ADR-0091 written OR `SqlJsBackend` restored with runtime check
-4. Tier A4 (`t3_2_concurrent_writes` fix): check renamed or rewritten for correct contract
-5. Layer scoring table in this ADR updated with post-Tier-A actuals
+1. ✅ Tier A1 (Debt 15 upgrade): new unit + acceptance check pair that verifies at least 1 row in `episodes` after a controller write. **Commit `be70f29`**, 22 new unit tests + upgraded acceptance check. (Spec originally said `reflexion_log`; implementation verified actual agentdb table name is `episodes`.)
+2. ✅ Tier A2 (`adr0073-native-runtime` silent-pass fix): check no longer passes on SKIP. **Commit `feb3d2a`**, 16 new unit tests, plus harness-level `skip_accepted` bucket added to `lib/acceptance-harness.sh` + `scripts/test-acceptance.sh`.
+3. ✅ Tier A3 (sql.js reconciliation): ADR-0091 written. **Commit `a6dfc01`**, ADR-0075 creator-correction marked stale.
+4. ✅ Tier A4 (`t3_2_concurrent_writes` fix): check renamed to `check_t3_2_rvf_concurrent_writes` and rewritten for real `.rvf.lock` contention. **Commit `727571f`**, 10 unit + 2 real-writer integration tests. Full unit+pipeline suite: 2815/2815 pass.
+5. ✅ Layer scoring table in this ADR updated with post-Tier-A actuals. **This commit.** Weighted total: 75% → 81%.
 
-When all 5 criteria hold, ADR-0090 status flips to `Implemented (Tier A)`. Tier B is a separate tracking gate.
+All 5 criteria hold. ADR-0090 status is now `Implemented (Tier A)`. Tier B is a separate tracking gate (with new item B7 added from the Tier A4 upstream discovery).
 
 ## Alternatives Considered
 
