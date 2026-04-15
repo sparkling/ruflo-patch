@@ -112,6 +112,12 @@ AgentDBBackend wrapper, no in-memory Map fallback.
 One registry owns all controller lifecycles. AgentDB becomes a library the registry calls, not
 a self-contained app. AgentDBService is deleted. The 7-level init ordering is preserved.
 
+> **SUPERSEDED IN PART by ADR-0089** (2026-04-15): the structural criteria (delete
+> AgentDBService, split controller-registry.ts) are replaced with behavioral criteria
+> (intercept pattern + shared pool). See ADR-0089 for the revised Layer 2 definition,
+> the accepted trade-off (file-size rule ↔ upstream merge compatibility), and the
+> revisit trigger tied to upstream AgentDBService removal.
+
 ### Layer 3: Single Embedding Pipeline
 
 One `EmbeddingPipeline` instance created once, injected everywhere. Dimension validated at

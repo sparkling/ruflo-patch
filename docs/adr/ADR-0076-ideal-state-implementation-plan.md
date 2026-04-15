@@ -417,9 +417,16 @@ transition.
 
 ### Acceptance criteria
 
-- `agentdb-service.ts` is deleted
-- `grep -r "AgentDBService" agentic-flow/src/` returns zero hits in production code
-- `wc -l controller-registry.ts` is under 500 lines
+> **ADR-0089 supersedes criteria #1-#3 below** (2026-04-15). The structural
+> criteria are replaced with behavioral ones: intercept pattern + shared pool
+> + `getOrCreate()` wrapping verified by unit test. The file-size rule on
+> `controller-registry.ts` is formally accepted as a trade-off for upstream
+> merge compatibility. See ADR-0089.
+
+- ~~`agentdb-service.ts` is deleted~~ **SUPERSEDED** — AgentDBService wraps
+  every `new FooController(...)` in `getOrCreate('foo', () => new FooController(...))`
+- ~~`grep -r "AgentDBService" agentic-flow/src/` returns zero hits in production code~~ **SUPERSEDED** — `ControllerRegistry.get()` and `AgentDBService.getInstance()` return the same object reference
+- ~~`wc -l controller-registry.ts` is under 500 lines~~ **SUPERSEDED** — accepted trade-off (ADR-0089)
 - All 16+ MCP tool call sites route through ControllerRegistry
 - No `InMemoryStore` class exists in production code
 - The 7-level init ordering is preserved (verified by unit test)
