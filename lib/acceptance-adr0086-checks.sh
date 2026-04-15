@@ -543,30 +543,100 @@ check_real_sqlite3_blockers() {
 # ADR-0086 Debt 15: ControllerRegistry SQLite path regression guard
 #
 # ADR-0086 accepts ControllerRegistry's independent SQLite path via
-# agentdb as a trade-off — neural/learning controllers (learningBridge,
-# graphAdapter) have relational query needs that RVF does not serve.
-# This check is the ONLY acceptance guard for that trade-off.
+# agentdb as a trade-off — neural/learning controllers (reflexion,
+# skillLibrary, causalGraph, learningSystem, etc.) have relational query
+# needs that RVF does not serve. This check is the ONLY acceptance
+# guard for that trade-off.
 #
-# Validates the live SQLite-backed neural path end-to-end:
-#   1. After init --full, `$TEMP_DIR/.swarm/memory.db` must exist
-#      (or get created after a CLI op that triggers ControllerRegistry init)
-#   2. The file must have the SQLite magic header "SQLite format 3"
-#   3. The file must be non-empty (has at least schema tables after init)
-#   4. memory-router.ts source must pass the sqlite: config block to
-#      ControllerRegistry.initialize() — grep guard against a future
-#      merge silently dropping the config pass-through
+# ADR-0090 Tier A1 upgrade:
+#   The previous version of this check only verified that agentdb's
+#   cold-start init produced a schema file (file exists, SQLite magic,
+#   size > 4096, memory-router.js grep). That proves the backend is
+#   *wired*, but not that any controller actually *persisted* anything.
+#   If all 15 neural controllers silently fell back to in-memory state
+#   after an upstream merge, the old check would still report green.
 #
-# If this check fails after an upstream merge, investigate:
-#   - Did `memory-router.ts` change around line 332 (sqlite config)?
-#   - Did `controller-registry.ts` change around line 985 (dbPath -> AgentDB)?
-#   - Did `.swarm/memory.db` path resolution change in `_getDbPath()`?
+#   This version layers runtime *controller persistence* on top of the
+#   original facade guards:
+#
+#     Step 1 (prereq): require `sqlite3` CLI binary. If missing, emit
+#       _CHECK_PASSED="skip_accepted" + SKIP_ACCEPTED marker (ADR-0082:
+#       no silent passes). Harness buckets as warning, not PASS.
+#     Step 2 (facade guards — kept intact): file exists, SQLite magic,
+#       size >= 4096, memory-router.js has sqlite config pass-through.
+#       These defend four distinct properties and stay as additional
+#       checks on top of the new runtime proof.
+#     Step 3 (runtime proof — the new teeth): invoke
+#       `agentdb_reflexion_store` via MCP with a uniquely-marked task
+#       string, then query `SELECT COUNT(*) FROM episodes WHERE task
+#       LIKE 'acceptance test reflexion adr0090%'`. Must be >= 1.
+#     Step 4 (persistence proof): kill the CLI (_run_and_kill already
+#       exits after the store op), reopen via `agentdb_health`, query
+#       episodes row count again. Must still be >= 1 — proves the row
+#       survived process restart (wasn't just in-memory state).
+#
+# Reflexion was chosen as the controller-under-test because:
+#   - It is one of the 15 neural controllers the Debt 15 trade-off
+#     defends (see ADR-0086 §Debt 15 — neural/learning path)
+#   - agentdb persists reflexion into the `episodes` table (schema at
+#     agentdb/dist/schemas/schema.sql:21), which is created only when
+#     the controller actually runs — its presence is itself a signal
+#     that the controller path was taken
+#   - The MCP tool `agentdb_reflexion_store` routes through
+#     getController('reflexion') → ControllerRegistry → agentdb.database,
+#     exercising the exact code path Debt 15 describes
+#
+# If this check fails after an upstream merge, investigate in order:
+#   - Is `sqlite3` available on the machine?  (SKIP_ACCEPTED path)
+#   - Did the MCP tool name change?  (store op fails)
+#   - Did `.swarm/memory.db` path change?  (file-not-found fail)
+#   - Did the `episodes` table rename?  (row-count 0 fail)
+#   - Did reflexion silently fall back to in-memory?  (row-count 0)
+#   - Did `memory-router.ts` change around the sqlite config block?
+#   - Did `controller-registry.ts` change the agentdb.getController path?
 # ════════════════════════════════════════════════════════════════════
+
+# Helper: count rows where task matches our ADR-0090 A1 marker string.
+# Returns the numeric count on stdout, or empty string on any failure.
+# Caller must handle empty / non-numeric output.
+# Isolated into a helper so the unit test can mock just this one call
+# via a PATH shim for `sqlite3` without re-implementing the whole check.
+_debt15_count_reflexion_rows() {
+  local db_file="$1"
+  # Guard: the `episodes` table is created by agentdb's schema.sql on
+  # first reflexion controller use. If the reflexion controller silently
+  # bailed, the table may not exist yet — return empty (caller FAILs).
+  local has_table
+  has_table=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name='episodes';" 2>/dev/null)
+  if [[ -z "$has_table" ]]; then
+    echo ""
+    return 0
+  fi
+  local count
+  count=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM episodes WHERE task LIKE 'acceptance test reflexion adr0090%';" 2>/dev/null)
+  # Strip anything non-numeric for safety (trailing newline, blanks)
+  count=$(echo "$count" | tr -dc '0-9')
+  echo "${count:-0}"
+}
 
 check_adr0086_debt15_sqlite_path() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # ─── 1. Verify the SQLite file exists after harness init ───────────
+  # ─── Step 1: sqlite3 binary prereq (ADR-0090 A1 + ADR-0082 rule) ───
+  # This check requires the `sqlite3` binary to query the SQLite file
+  # directly. better-sqlite3 would be a node dep (contradicts Tier B4
+  # which bans better-sqlite3 outside optionalDependencies); the sqlite3
+  # CLI is present on most dev macs + CI. If missing, we cannot verify
+  # controller persistence — emit SKIP_ACCEPTED so the gap is visible
+  # but not reported as silent-pass (ADR-0082).
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="Debt 15: SKIP_ACCEPTED: sqlite3 binary not installed — cannot verify controller persistence (ADR-0090 A1 requires sqlite3 to query episodes table; install with 'brew install sqlite' or 'apt-get install sqlite3')"
+    return
+  fi
+
+  # ─── Step 2a (facade guard): SQLite file must exist after init ─────
   local db_file="$TEMP_DIR/.swarm/memory.db"
 
   if [[ ! -f "$db_file" ]]; then
@@ -581,8 +651,7 @@ check_adr0086_debt15_sqlite_path() {
     return
   fi
 
-  # ─── 2. Verify it's a real SQLite file (magic header) ──────────────
-  # SQLite format 3 files start with the ASCII string "SQLite format 3\0"
+  # ─── Step 2b (facade guard): real SQLite magic header ──────────────
   local magic
   magic=$(head -c 15 "$db_file" 2>/dev/null)
   if [[ "$magic" != "SQLite format 3" ]]; then
@@ -592,20 +661,15 @@ check_adr0086_debt15_sqlite_path() {
     return
   fi
 
-  # ─── 3. Verify it's non-empty (has at least schema tables) ─────────
+  # ─── Step 2c (facade guard): non-empty schema ──────────────────────
   local size
   size=$(wc -c < "$db_file" 2>/dev/null | tr -d ' ')
   if [[ "$size" -lt 4096 ]]; then
-    # 4096 = SQLite default page size. A file with schema but no data is
-    # typically 16-40KB. Under 4KB suggests only a page header was written.
     _CHECK_OUTPUT="Debt 15: .swarm/memory.db is suspiciously small (${size} bytes — expected >4096 for any real schema)"
     return
   fi
 
-  # ─── 4. Source-level guard against regressions ─────────────────────
-  # If the sqlite config stops flowing from memory-router.ts to
-  # ControllerRegistry.initialize(), the neural controllers silently
-  # fall back to in-memory state. Grep for the wiring.
+  # ─── Step 2d (facade guard): memory-router.js sqlite wiring ────────
   local cli_pkg_dir
   cli_pkg_dir=$(_adr0086_find_cli_pkg)
 
@@ -621,12 +685,55 @@ check_adr0086_debt15_sqlite_path() {
     return
   fi
 
-  # The published dist must still pass a sqlite config block to the registry
   if ! grep -q 'sqlite' "$router_js" 2>/dev/null; then
     _CHECK_OUTPUT="Debt 15: memory-router.js has no sqlite config pass-through — regression risk"
     return
   fi
 
+  # ─── Step 3: Runtime controller-write proof (ADR-0090 A1) ──────────
+  # Store a reflexion memory with a uniquely-marked task string. The
+  # MCP tool handler routes through getController('reflexion') which
+  # goes via ControllerRegistry → agentdb.database → SQLite episodes
+  # table. If ControllerRegistry silently fell back to in-memory state,
+  # this row will not reach disk and the post-query row count will be 0.
+  local cli; cli=$(_cli_cmd)
+  local marker_task="acceptance test reflexion adr0090 a1"
+  local marker_session="adr0090-a1-debt15-$(date +%s)-$$"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
+    --tool agentdb_reflexion_store \
+    --params '{\"session_id\":\"$marker_session\",\"task\":\"$marker_task\",\"reward\":0.9,\"success\":true}' 2>&1" "" 30
+  local store_out="${_RK_OUT:-}"
+
+  # Count rows after store. Missing episodes table = controller fallback.
+  local count_after_store
+  count_after_store=$(_debt15_count_reflexion_rows "$db_file")
+  if [[ -z "$count_after_store" ]]; then
+    _CHECK_OUTPUT="Debt 15: episodes table does not exist in .swarm/memory.db — reflexion controller never reached SQLite (silent in-memory fallback). store_out=$(echo "$store_out" | head -3 | tr '\n' ' ')"
+    return
+  fi
+  if [[ "$count_after_store" -lt 1 ]]; then
+    _CHECK_OUTPUT="Debt 15: reflexion store succeeded via MCP but 0 rows in episodes table (marker='$marker_task') — controller wrote to in-memory state, not SQLite. store_out=$(echo "$store_out" | head -3 | tr '\n' ' ')"
+    return
+  fi
+
+  # ─── Step 4: Kill-and-reopen persistence proof (ADR-0090 A1) ───────
+  # _run_and_kill already exited the CLI process after the store op.
+  # Reopen with a fresh CLI invocation and query again — if the row
+  # was only in-memory state that didn't hit disk, it would be gone
+  # now that the process is dead and a new one is starting up.
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "" 30
+
+  local count_after_reopen
+  count_after_reopen=$(_debt15_count_reflexion_rows "$db_file")
+  if [[ -z "$count_after_reopen" ]]; then
+    _CHECK_OUTPUT="Debt 15: episodes table disappeared after CLI restart — severe persistence regression"
+    return
+  fi
+  if [[ "$count_after_reopen" -lt 1 ]]; then
+    _CHECK_OUTPUT="Debt 15: reflexion row present after store ($count_after_store) but 0 after CLI restart — persistence broken (row was in-memory only)"
+    return
+  fi
+
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="Debt 15: .swarm/memory.db exists (${size} bytes, SQLite magic OK), sqlite config wired in memory-router.js"
+  _CHECK_OUTPUT="Debt 15: .swarm/memory.db (${size} bytes) + episodes row persisted across CLI restart (count_after_store=$count_after_store, count_after_reopen=$count_after_reopen), sqlite config wired in memory-router.js"
 }
