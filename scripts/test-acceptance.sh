@@ -497,6 +497,7 @@ run_check_bg "booster-cli"     "Agent Booster CLI"   check_agent_booster_bin  "p
 run_check_bg "plugins-sdk"     "Plugins SDK"         check_plugins_sdk        "packages"
 run_check_bg "plugin-install"  "Plugin install"      check_plugin_install     "packages"
 run_check_bg "adr0090-b4-bsqlite3" "better-sqlite3 required (B4)" check_adr0090_b4_better_sqlite3_required "packages"
+run_check_bg "adr0090-b1-dim-fatal" "Dim-mismatch fail-loud (B1)" check_adr0090_b1_dimension_mismatch_fatal "storage"
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"

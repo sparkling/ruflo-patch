@@ -181,7 +181,17 @@ Currently scans for `SQLITE_BUSY` / `database is locked` — the wrong error sha
 
 ### Tier B — Close the critical gaps (planned, committed to within next 2 sessions)
 
-**B1. L3 dimension-mismatch fail-loud test.** Pre-seed `.claude-flow/memory.rvf` with a doctored 384-dim entry, start CLI with 768-dim pipeline config, run `cli memory search` → assert exits non-zero with clear "dimension mismatch" error message. ~40 LOC.
+**B1. L3 dimension-mismatch fail-loud test (implemented 2026-04-15).** Pre-seed `$iso/.claude-flow/memory.rvf` + `$iso/.swarm/memory.rvf` with a doctored 384-dim entry (built via real `@sparkleideas/memory` `RvfBackend` so the header format stays honest to upstream), start CLI with 768-dim pipeline config, run `cli memory search` → assert exits non-zero with a diagnostic containing "dimension mismatch".
+
+**Fork patch required.** Before this check could pass end-to-end, two fork bugs had to be fixed:
+
+1. **Silent-swallow regression** (memory-router.ts): ADR-0085's "ControllerRegistry init is best-effort — non-fatal" wrapper caught `EmbeddingDimensionError` and returned `null`, which meant `cli memory search` would load a partially-initialized RVF (non-matching dimensions), produce garbage-scored results, and exit 0. Fix: propagate `EmbeddingDimensionError` through all three catch layers (inner `initControllerRegistry` catch, outer IIFE catch, `_doInit` wrapper). Every other error type is still swallowed by the best-effort wrapper — dimension mismatch is the one exception, because "run without controllers" produces silently-incorrect results, not degraded-but-correct ones.
+
+2. **B7 followup — `seenIds` tombstone** (rvf-backend.ts): the original B7 fix (commit `03ecec5e0`) introduced `mergePeerStateBeforePersist` with `!this.entries.has(id)` set-if-absent semantics, which cannot distinguish "peer wrote this new entry" from "we deleted this entry and haven't persisted yet". The `bulkDelete` integration test in `adr0086-rvf-real-integration.test.mjs` surfaced the regression (deletes became no-ops) when the ruflo-patch unit suite was forced to run against a fresh dist by the B1 work. Fix: add `private seenIds = new Set<string>()` populated at every insertion site (initial load, store, update, bulkInsert, replayWal, merge-add); change the merge condition to `!this.seenIds.has(id)`. The set is append-only during an instance's lifetime — deletes do not remove from it. That's the point: a deleted entry stays in `seenIds` so the merge refuses to resurrect it from disk.
+
+**Additional harness fix.** `_run_and_kill` in `lib/acceptance-checks.sh` has a pre-existing bug where `_RK_EXIT` captures `$?` from a subsequent `cat` call, not from the actual CLI. The B1 check bypasses `_run_and_kill` and invokes the CLI directly with `timeout 45` to get the real exit code — annotated in the check source with a pointer to the harness bug for a future cleanup pass.
+
+Implementation: `check_adr0090_b1_dimension_mismatch_fatal` in `lib/acceptance-adr0090-b1-checks.sh`, wired as `adr0090-b1-dim-fatal` in the `storage` group. 17 unit + integration tests in `tests/unit/adr0090-b1-dimension-mismatch.test.mjs` cover: happy path, silent-pass regression, masked diagnostic, seed-step failure, self-test false-positive, fork-source assertions for the three catch layers, fork-dist assertion that the compiled JS contains the re-throw, and harness plumbing. End-to-end verified against `3.5.58-patch.112` of `@sparkleideas/cli` via `test-acceptance-fast.sh`.
 
 **B2. RVF corruption recovery suite.** Three checks:
 
