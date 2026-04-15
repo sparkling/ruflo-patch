@@ -17,8 +17,13 @@ check_controller_health() {
   _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|available'; then
+    # Note: `grep -c` always prints a count (even "0") AND exits 1 when zero
+    # matches. The naive `|| echo 0` fallback APPENDS a second "0" to stdout,
+    # producing "0\n0" which bash arithmetic rejects with a syntax error.
+    # Use ${var:-0} for defensive empty-fallback without double output.
     local ctrl_count
-    ctrl_count=$(echo "$_RK_OUT" | grep -c '"name"' || echo 0)
+    ctrl_count=$(echo "$_RK_OUT" | grep -c '"name"' 2>/dev/null)
+    ctrl_count=${ctrl_count:-0}
     if [[ $ctrl_count -ge 20 ]]; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Controller health: $ctrl_count controllers listed"
