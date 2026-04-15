@@ -132,23 +132,78 @@ check_adr0073_native_runtime() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
+  # ADR-0090 Tier A2: eliminate silent-pass on SKIP.
+  #
+  # Previously this check set _CHECK_PASSED="true" whenever the native import
+  # failed with "SKIP:". Per ADR-0082 that is the exact silent-fallback
+  # anti-pattern the project bans — if native broke in CI, this check
+  # silently became a no-op and still reported PASS.
+  #
+  # New contract:
+  #   1. Default: any import/runtime failure → _CHECK_PASSED="false" with a
+  #      clear "Expected native RVF runtime available, got: $err" message.
+  #   2. The ONLY acceptable skip is when the native binary is explicitly
+  #      absent from the build (detected by a file-existence check on the
+  #      binary path). That emits _CHECK_PASSED="skip_accepted" + a
+  #      "SKIP_ACCEPTED:" output marker. The harness buckets this as a
+  #      warning, NOT as PASS.
+  #
+  # The file-existence probe runs BEFORE the Node.js import attempt so a
+  # completely missing build is classified as skip_accepted, while a
+  # present-but-broken build (import error, export mismatch, API change,
+  # query failure) is classified as FAIL.
+
+  # ── Step 1: Binary-present probe (shell file-existence check) ──────
+  local rvf_node_dir_primary="${TEMP_DIR}/node_modules/@sparkleideas/ruvector-rvf-node"
+  local rvf_node_dir_alt="${TEMP_DIR}/node_modules/@ruvector/rvf-node"
+  local rvf_node_dir=""
+  if [[ -d "$rvf_node_dir_primary" ]]; then
+    rvf_node_dir="$rvf_node_dir_primary"
+  elif [[ -d "$rvf_node_dir_alt" ]]; then
+    rvf_node_dir="$rvf_node_dir_alt"
+  fi
+
+  if [[ -z "$rvf_node_dir" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="ADR-0073: SKIP_ACCEPTED: native binary not present in build at ${rvf_node_dir_primary} or ${rvf_node_dir_alt}"
+    return
+  fi
+
+  local node_file
+  node_file=$(find "$rvf_node_dir" -name '*.node' -type f 2>/dev/null | head -1)
+  if [[ -z "$node_file" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="ADR-0073: SKIP_ACCEPTED: native binary not present in build at ${rvf_node_dir} (no .node file for $(uname -m))"
+    return
+  fi
+
+  # ── Step 2: Binary is present — the runtime MUST work ─────────────
+  # The script MUST be created inside TEMP_DIR. Node.js ES module resolution
+  # is script-path relative, NOT cwd-relative — a script in /tmp cannot find
+  # packages in TEMP_DIR/node_modules even with `cd "$TEMP_DIR"`. This was
+  # the actual bug the old SKIP-silent-pass was hiding. (ADR-0090 Tier A2)
   local script
-  script=$(mktemp /tmp/rvf-native-rt-XXXXX.mjs)
+  script=$(mktemp "${TEMP_DIR}/rvf-native-rt-XXXXX.mjs")
   cat > "$script" << 'ENDSCRIPT'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { unlinkSync, existsSync } from 'node:fs';
 let RvfDatabase;
+let lastErr = '';
 try {
   const mod = await import('@sparkleideas/ruvector-rvf-node');
   RvfDatabase = mod.RvfDatabase || mod.default?.RvfDatabase;
-} catch {
+} catch (e1) {
+  lastErr = String(e1?.message || e1);
   try {
     const mod = await import('@ruvector/rvf-node');
     RvfDatabase = mod.RvfDatabase || mod.default?.RvfDatabase;
-  } catch (e) { console.log('SKIP: ' + e.message); process.exit(0); }
+  } catch (e2) {
+    console.log('FAIL: native import failed: ' + (e2?.message || e2));
+    process.exit(1);
+  }
 }
-if (!RvfDatabase) { console.log('SKIP: RvfDatabase not exported'); process.exit(0); }
+if (!RvfDatabase) { console.log('FAIL: native loaded but RvfDatabase not exported'); process.exit(1); }
 const dbPath = join(tmpdir(), 'rvf-accept-' + Date.now() + '.rvf');
 try {
   const db = RvfDatabase.create(dbPath, { dimension: 4, metric: 'cosine' });
@@ -162,6 +217,9 @@ try {
   const status = db.status();
   db.close();
   console.log('OK: native RVF store+query round-trip (' + results.length + ' results, ' + status.totalVectors + ' vectors)');
+} catch (e) {
+  console.log('FAIL: native runtime threw: ' + (e?.message || e));
+  process.exit(1);
 } finally {
   try { if (existsSync(dbPath)) unlinkSync(dbPath); } catch {}
   try { if (existsSync(dbPath + '.lock')) unlinkSync(dbPath + '.lock'); } catch {}
@@ -172,17 +230,16 @@ ENDSCRIPT
   result=$(cd "$TEMP_DIR" && node "$script" 2>&1) || true
   rm -f "$script"
 
-  if [[ "$result" == SKIP:* ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0073: native runtime skipped (${result#SKIP: })"
-    return
-  fi
   if [[ "$result" == OK:* ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0073: ${result#OK: }"
     return
   fi
-  _CHECK_OUTPUT="ADR-0073: native runtime failed — $result"
+  # Any non-OK output (including FAIL:, blank, or unexpected strings) is
+  # a hard failure now. The binary was present — the runtime was expected
+  # to work end-to-end.
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="ADR-0073: Expected native RVF runtime available, got: ${result:-<empty output>}"
 }
 
 # ════════════════════════════════════════════════════════════════════

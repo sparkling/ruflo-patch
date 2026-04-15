@@ -656,7 +656,7 @@ run_check_bg "t2-6-claudemd"        "CLAUDE.md structure (ADR-0079)"       check
 # ADR-0079 Tier 3: nice-to-have checks (wired if tier3 lib is present)
 if [[ -f "$adr0079_t3_lib" ]]; then
   run_check_bg "t3-1-bulk-corpus"     "Bulk corpus ranking (ADR-0079)"       check_t3_1_bulk_corpus_ranking         "adr0079"
-  run_check_bg "t3-2-concurrent"      "Concurrent writes (ADR-0079)"         check_t3_2_concurrent_writes           "adr0079"
+  run_check_bg "t3-2-concurrent"      "RVF concurrent writes (ADR-0079)"     check_t3_2_rvf_concurrent_writes       "adr0079"
   run_check_bg "t3-3-plugin"          "Plugin load/execute (ADR-0079)"       check_t3_3_plugin_load_execute         "adr0079"
   run_check_bg "t3-4-reasoningbank"   "ReasoningBank cycle (ADR-0079)"       check_t3_4_reasoningbank_cycle         "adr0079"
   run_check_bg "t3-5-consolidation"   "Nightly consolidation (ADR-0079)"     check_t3_5_nightly_consolidation       "adr0079"
@@ -1385,14 +1385,22 @@ cat > "$results_dir/acceptance-results.json" <<JSONEOF
   "summary": {
     "total": $total_count,
     "passed": $pass_count,
-    "failed": $fail_count
+    "failed": $fail_count,
+    "skip_accepted": ${skip_count:-0}
   }
 }
 JSONEOF
 
 log ""
 log "════════════════════════════════════════════"
-log "Acceptance Results: ${pass_count}/${total_count} passed, ${fail_count} failed"
+# ADR-0090 Tier A2: show skip_accepted count as a separate bucket.
+# skip_accepted is NOT pass — it is a warning that a prerequisite was
+# legitimately absent (e.g. native binary not in build).
+if [[ "${skip_count:-0}" -gt 0 ]]; then
+  log "Acceptance Results: ${pass_count}/${total_count} passed, ${fail_count} failed, ${skip_count} skip_accepted"
+else
+  log "Acceptance Results: ${pass_count}/${total_count} passed, ${fail_count} failed"
+fi
 log "════════════════════════════════════════════"
 log ""
 log "Phase timing:"

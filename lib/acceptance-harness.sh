@@ -15,6 +15,7 @@
 # ══════════════════════════════════════════════════════════════════════════════
 pass_count=0
 fail_count=0
+skip_count=0   # ADR-0090 Tier A2: accepted-skip bucket (NOT counted as PASS)
 total_count=0
 results_json="[]"
 
@@ -62,10 +63,21 @@ run_check() {
   c_end=$(_ns)
   c_ms=$(_elapsed_ms "$c_start" "$c_end")
 
+  # ADR-0090 Tier A2: three-way result (pass / fail / skip_accepted).
+  # skip_accepted is ONLY for checks where a prerequisite is legitimately
+  # absent from the build (e.g. native binary missing). It is NOT PASS —
+  # it is bucketed as a WARNING so missing coverage stays visible.
   local passed_bool="false"
+  local status_field="\"failed\""
   if [[ "$_CHECK_PASSED" == "true" ]]; then
     pass_count=$((pass_count + 1)); passed_bool="true"
+    status_field="\"passed\""
     log "  PASS  ${id}: ${name} (${c_ms}ms)"
+  elif [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
+    skip_count=$((skip_count + 1))
+    status_field="\"skip_accepted\""
+    log "  SKIP  ${id}: ${name} (${c_ms}ms)  [accepted]"
+    echo "${_CHECK_OUTPUT:-}" | head -3 | while IFS= read -r line; do log "        $line"; done
   else
     fail_count=$((fail_count + 1))
     log "  FAIL  ${id}: ${name} (${c_ms}ms)"
@@ -74,8 +86,8 @@ run_check() {
   [[ $c_ms -gt 15000 ]] && log "  SLOW  ${id}: ${c_ms}ms"
 
   local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")
-  local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
-    "$id" "$name" "$group" "$passed_bool" "$escaped" "$c_ms")
+  local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"status":%s,"output":%s,"duration_ms":%d}' \
+    "$id" "$name" "$group" "$passed_bool" "$status_field" "$escaped" "$c_ms")
   [[ "$results_json" == "[]" ]] && results_json="[$entry]" || results_json="${results_json%]}, $entry]"
 }
 
@@ -111,17 +123,24 @@ collect_parallel() {
     local result_file="${PARALLEL_DIR}/${id}"
     if [[ -f "$result_file" ]]; then
       IFS='|' read -r passed dur_ms escaped_output < "$result_file"
+      # ADR-0090 Tier A2: three-way bucketing (see run_check above)
       local passed_bool="false"
+      local status_field="\"failed\""
       if [[ "$passed" == "true" ]]; then
         pass_count=$((pass_count + 1)); passed_bool="true"
+        status_field="\"passed\""
         log "  PASS  ${id}: ${name} (${dur_ms:-0}ms)"
+      elif [[ "$passed" == "skip_accepted" ]]; then
+        skip_count=$((skip_count + 1))
+        status_field="\"skip_accepted\""
+        log "  SKIP  ${id}: ${name} (${dur_ms:-0}ms)  [accepted]"
       else
         fail_count=$((fail_count + 1))
         log "  FAIL  ${id}: ${name} (${dur_ms:-0}ms)"
       fi
       [[ "${dur_ms:-0}" -gt 15000 ]] && log "  SLOW  ${id}: ${dur_ms}ms"
-      local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"output":%s,"duration_ms":%d}' \
-        "$id" "$name" "$group" "$passed_bool" "${escaped_output:-\"\"}" "${dur_ms:-0}")
+      local entry; entry=$(printf '{"id":"%s","name":"%s","group":"%s","passed":%s,"status":%s,"output":%s,"duration_ms":%d}' \
+        "$id" "$name" "$group" "$passed_bool" "$status_field" "${escaped_output:-\"\"}" "${dur_ms:-0}")
       [[ "$results_json" == "[]" ]] && results_json="[$entry]" || results_json="${results_json%]}, $entry]"
     else
       fail_count=$((fail_count + 1))
