@@ -8,7 +8,8 @@
 #
 # Tier 3 covers (per ADR-0079):
 #   T3-1: Bulk corpus search ranking (10+ entries across 3 topics)
-#   T3-2: Concurrent write safety (10 parallel stores, no SQLITE_BUSY)
+#   T3-2: RVF .rvf.lock contention safety (N parallel stores, all persisted,
+#         lock file cleaned up)
 #   T3-3: Plugin load and execute
 #   T3-4: ReasoningBank full cycle (store -> search -> feedback -> re-search)
 #   T3-5: NightlyLearner consolidation
@@ -99,64 +100,161 @@ check_t3_1_bulk_corpus_ranking() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# T3-2: Concurrent write safety — 10 parallel stores, no SQLITE_BUSY
+# T3-2: RVF .rvf.lock contention safety (ADR-0090 Tier A4)
 # ════════════════════════════════════════════════════════════════════
-# Spawns 10 parallel store commands. Verifies none fails with SQLITE_BUSY
-# or WAL lock contention errors. Validates that sqlite3 busy_timeout and
-# RVF file-lock handling survive real contention.
-check_t3_2_concurrent_writes() {
+# RVF uses a PID-based `.rvf.lock` advisory lock, NOT SQLite busy-timeout.
+# The old check scanned for 'SQLITE_BUSY' / 'database is locked' — the
+# wrong error shape for RVF — and could not detect `.rvf.lock` regressions
+# (ADR-0090 Tier A4).
+#
+# This check:
+#  1. Spawns N (=6) concurrent `cli memory store` processes writing distinct
+#     keys to the same `.rvf` backing store in an isolated project dir.
+#  2. Reads the RVF JSON header after all writers complete and verifies
+#     `entryCount` >= N — proving the file-lock serialized writers without
+#     data loss (races are resolved by `wx` flag retries, not overwrites).
+#  3. Verifies no dangling `.rvf.lock` file remains after all writers exit
+#     (cleanup regression guard — the old ADR-0082 "silent catch" pattern
+#     would have left orphaned locks here).
+#  4. Fails loudly if 0 writes landed, if the header is absent/garbage, or
+#     if the lock file is still present after completion.
+#
+# Does NOT scan for SQLITE_BUSY / database is locked — those strings are
+# not in the RVF failure mode vocabulary.
+check_t3_2_rvf_concurrent_writes() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
   local cli; cli=$(_cli_cmd)
-  local iso; iso=$(_e2e_isolate "t3-concurrent")
-  local ns="test-concurrent-$$"
-  local log_dir; log_dir=$(mktemp -d /tmp/t3-2-XXXXX)
+  local iso; iso=$(_e2e_isolate "t3-rvf-concurrent")
+  local ns="test-rvf-concurrent-$$"
+  local log_dir; log_dir=$(mktemp -d /tmp/t3-2-rvf-XXXXX)
+  local N=6
 
-  # Launch 10 stores in parallel backgrounded directly (not through
-  # _run_and_kill since we need true concurrency, not serial kills).
+  # The RVF path used by `init --full` projects. Both paths may exist;
+  # the CLI writes to whichever the memory service resolved to. Detect
+  # which one is being touched so we can read entry count from the right
+  # file after the race.
+  local rvf_candidates=(
+    "$iso/.swarm/memory.rvf"
+    "$iso/.claude-flow/memory.rvf"
+  )
+
+  # Remove any stale lock / .rvf before racing so we race against a clean
+  # starting state (the _e2e_isolate already wipes these, but be explicit).
+  local p
+  for p in "${rvf_candidates[@]}"; do
+    rm -f "$p" "$p.lock" "$p.wal" "$p.meta" "$p.tmp" 2>/dev/null
+  done
+
+  # Launch N stores in parallel backgrounded directly (true concurrency).
   local pids=()
   local i
-  for i in 1 2 3 4 5 6 7 8 9 10; do
+  for i in $(seq 1 "$N"); do
     (
-      cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 $cli memory store \
-        --key "concurrent-$i" \
-        --value "parallel write test $i" \
+      cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 90 $cli memory store \
+        --key "rvf-concurrent-$i" \
+        --value "rvf lock contention probe $i" \
         --namespace "$ns" > "$log_dir/store-$i.log" 2>&1
     ) &
     pids+=($!)
   done
 
   # Wait for every background store
-  local busy=0
-  local ok=0
-  local other_err=0
+  local pid
   for pid in "${pids[@]}"; do
     wait "$pid" 2>/dev/null || true
   done
 
-  # Scan outputs for SQLITE_BUSY / lock errors vs successful stores
-  for i in 1 2 3 4 5 6 7 8 9 10; do
+  # Count CLI success markers (for diagnostics — entry count is authoritative)
+  local cli_ok=0
+  local cli_err=0
+  for i in $(seq 1 "$N"); do
     local log="$log_dir/store-$i.log"
     [[ -f "$log" ]] || continue
-    if grep -qi 'SQLITE_BUSY\|database is locked\|BUSY\|SQLITE_LOCKED' "$log"; then
-      busy=$((busy + 1))
-    elif grep -qi 'stored\|success' "$log"; then
-      ok=$((ok + 1))
-    elif grep -qi 'error\|fatal\|crash' "$log"; then
-      other_err=$((other_err + 1))
+    if grep -qi 'stored\|success' "$log"; then
+      cli_ok=$((cli_ok + 1))
+    elif grep -qiE 'error|fatal|crash|unhandled' "$log"; then
+      cli_err=$((cli_err + 1))
     fi
   done
 
-  if [[ $busy -eq 0 && $ok -ge 5 ]]; then
+  # Find the RVF file the CLI actually wrote to.
+  local rvf_path=""
+  for p in "${rvf_candidates[@]}"; do
+    if [[ -f "$p" ]]; then
+      rvf_path="$p"
+      break
+    fi
+  done
+
+  if [[ -z "$rvf_path" ]]; then
+    _CHECK_OUTPUT="T3-2: no .rvf file written by any of ${N} concurrent stores (cli_ok=${cli_ok} cli_err=${cli_err})"
+    rm -rf "$iso" "$log_dir" 2>/dev/null
+    return
+  fi
+
+  # Check dangling .rvf.lock — must be cleaned up after every writer exits.
+  # A dangling lock means either a writer crashed (bad) or releaseLock()
+  # regressed (worse — silent data-loss risk).
+  local dangling_lock="no"
+  if [[ -f "${rvf_path}.lock" ]]; then
+    dangling_lock="yes"
+  fi
+
+  # Parse RVF header to read entryCount. The format is:
+  #   magic (4) + headerLen u32le (4) + JSON header of that length
+  # The JSON header has `entryCount` as an integer field.
+  local entry_count
+  entry_count=$(node -e '
+    const fs = require("fs");
+    const path = process.argv[1];
+    try {
+      const raw = fs.readFileSync(path);
+      if (raw.length < 8) { console.log("ERR:file-too-small"); process.exit(0); }
+      const magic = String.fromCharCode(raw[0], raw[1], raw[2], raw[3]);
+      if (magic !== "RVF\0") { console.log("ERR:bad-magic:" + JSON.stringify(magic)); process.exit(0); }
+      const headerLen = raw.readUInt32LE(4);
+      if (8 + headerLen > raw.length) { console.log("ERR:truncated-header"); process.exit(0); }
+      const header = JSON.parse(raw.subarray(8, 8 + headerLen).toString("utf-8"));
+      if (typeof header.entryCount !== "number") { console.log("ERR:no-entryCount"); process.exit(0); }
+      console.log(String(header.entryCount));
+    } catch (e) {
+      console.log("ERR:" + e.message);
+    }
+  ' "$rvf_path" 2>&1)
+
+  if [[ "$entry_count" == ERR:* ]]; then
+    _CHECK_OUTPUT="T3-2: unable to parse RVF header at ${rvf_path}: ${entry_count}"
+    rm -rf "$iso" "$log_dir" 2>/dev/null
+    return
+  fi
+
+  # Count stored entries for our namespace via CLI list (authoritative
+  # cross-check — header entryCount may include seed entries from
+  # _e2e_isolate's snapshot, but namespace list is scoped to our keys).
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace '$ns' --limit 20" "" 30
+  local ns_out="$_RK_OUT"
+  local ns_hits=0
+  local k
+  for k in $(seq 1 "$N"); do
+    if echo "$ns_out" | grep -q "rvf-concurrent-$k"; then
+      ns_hits=$((ns_hits + 1))
+    fi
+  done
+
+  # Acceptance criteria (fail-loud per ADR-0082):
+  #  - All N writers' entries must be persisted (ns_hits == N)
+  #  - RVF header entryCount must be >= N (cross-check — no partial writes)
+  #  - No dangling .rvf.lock after completion
+  if [[ "$ns_hits" -eq "$N" && "$entry_count" -ge "$N" && "$dangling_lock" == "no" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T3-2: ${ok}/10 concurrent stores succeeded, zero SQLITE_BUSY"
-  elif [[ $busy -eq 0 ]]; then
-    # No lock contention, but fewer successes — still validates the contract
-    # (no lock-error regressions); count as pass with note.
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T3-2: zero SQLITE_BUSY across 10 parallel stores (ok=${ok}, other_err=${other_err})"
+    _CHECK_OUTPUT="T3-2: ${N}/${N} RVF concurrent writers persisted (header entryCount=${entry_count}, no dangling .rvf.lock, cli_ok=${cli_ok})"
+  elif [[ "$dangling_lock" == "yes" ]]; then
+    _CHECK_OUTPUT="T3-2: dangling .rvf.lock after ${N} concurrent writers completed (ns_hits=${ns_hits}, entryCount=${entry_count}, cli_err=${cli_err}) — releaseLock regression"
+  elif [[ "$ns_hits" -eq 0 ]]; then
+    _CHECK_OUTPUT="T3-2: zero entries persisted after ${N} concurrent stores (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — lock acquisition broken"
   else
-    _CHECK_OUTPUT="T3-2: ${busy}/10 stores hit SQLITE_BUSY under contention"
+    _CHECK_OUTPUT="T3-2: only ${ns_hits}/${N} RVF concurrent writers persisted (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — partial writes / lock serialization regression"
   fi
 
   rm -rf "$iso" "$log_dir" 2>/dev/null
