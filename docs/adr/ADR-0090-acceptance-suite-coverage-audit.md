@@ -194,7 +194,22 @@ Currently scans for `SQLITE_BUSY` / `database is locked` — the wrong error sha
 - After `hooks worker dispatch --trigger map`, open `.claude-flow/metrics/codebase-map.json`, verify valid JSON + required fields
 - Same for audit, optimize, consolidate, testgaps
 
-**B4. `better-sqlite3` absence guard.** New check in `acceptance-package-checks.sh`: fail if `better-sqlite3` appears in `@sparkleideas/cli/package.json` `dependencies` or `devDependencies`. Must ONLY appear in `optionalDependencies` (per ADR-0086 Debt 7).
+**B4. `better-sqlite3` REQUIRED guard (spec flipped 2026-04-15).** New check in `acceptance-package-checks.sh`.
+
+> **Original spec (void-ab-initio):** *"fail if `better-sqlite3` appears in `@sparkleideas/cli/package.json` `dependencies` or `devDependencies`. Must ONLY appear in `optionalDependencies` (per ADR-0086 Debt 7)."*
+>
+> This spec contradicted fork commit `d5fe53522` ("fix: add better-sqlite3 as direct CLI dependency", 2026-04-12 — three days before ADR-0090 was written). The original Debt 7 diagnosis (remove `better-sqlite3` from CLI) turned out to be wrong: `open-database.ts` in the CLI package does `await import('better-sqlite3')`, and when the binding was only in the memory package's deps, npm hoisting failures caused the import to fail silently. `open-database.ts` then fell back to `sql.js`, which corrupts WAL-mode databases on close. Real user data loss was observed before `d5fe53522` reverted the removal.
+
+**Actual B4 spec (as implemented):** positive, four-layer runtime check — fail **unless** all of the following hold in the published CLI:
+
+1. `@sparkleideas/cli/package.json` declares `better-sqlite3` in **`dependencies`** (not `optionalDependencies`, which npm can silently skip on cross-platform installs; not `devDependencies`, which consumers' `npm install` does not pull).
+2. `open-database.js` is present in the published dist AND still references `better-sqlite3` (guards against an upstream refactor silently switching the WAL opener to `sql.js`-only).
+3. `require.resolve('better-sqlite3')` succeeds when run from the CLI package dir (proves npm actually installed the native binding, not just wrote it to `package.json`).
+4. The resolved path is a real file on disk.
+
+Failure of any layer emits a loud diagnostic naming the exact invariant violated. This is the positive counterpart to the original Debt 7 intent ("no silent `sql.js` fallback") and captures what the old package.json-movement guard could not: a runtime proof that `open-database.ts` will take the `better-sqlite3` branch.
+
+Implementation: `check_adr0090_b4_better_sqlite3_required` in `lib/acceptance-package-checks.sh`, wired as `adr0090-b4-bsqlite3` in the `packages` group. 19 unit + integration tests in `tests/unit/adr0090-b4-better-sqlite3-required.test.mjs`. ADR-0086 Debt 7's "better-sqlite3 removed from CLI" claim is re-classified as stale — see commit history for the real trajectory.
 
 **B5. Controller-specific row-count round-trips.** For each of the 15 neural controllers, add a check that:
 
