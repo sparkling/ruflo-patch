@@ -268,13 +268,19 @@ check_adr0059_learning_feedback() {
   local h="$E2E_DIR/.claude/helpers"
   [[ -f "$h/intelligence.cjs" ]] || { _CHECK_PASSED="true"; _CHECK_OUTPUT="intelligence.cjs not present"; return; }
 
-  # ADR-0080 Phase 6: CLI memory store dual-writes to auto-memory-store.json.
-  # Each check stores its own data (checks run in parallel subshells).
+  # Isolate to avoid race with other parallel intelligence.cjs checks
+  # (intel-graph, retrieval, insight) on the shared
+  # $E2E_DIR/.claude-flow/data/ranked-context.json file. Each parallel
+  # check runs its own feedback/consolidate which writes the same file;
+  # without isolation this check flakes ~33% of the time when a
+  # concurrent writer clobbers ranked-context.json mid-read.
+  local iso; iso=$(_e2e_isolate "0059-feedback")
+
   local cli; cli=$(_cli_cmd)
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'feedback-seed' --value 'search ranking and scoring optimization' --namespace adr0059-fb" "" 60
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'feedback-seed' --value 'search ranking and scoring optimization' --namespace adr0059-fb" "" 60
 
   local out
-  out=$(_adr0059_node "
+  out=$((cd "$iso" && node -e "
     const fs = require('fs');
     const path = require('path');
     const i = require('$h/intelligence.cjs');
@@ -299,7 +305,9 @@ check_adr0059_learning_feedback() {
     const r3 = JSON.parse(fs.readFileSync(rp, 'utf-8'));
     const final = (r3.entries.find(e => e.id === tid) || {}).confidence || 0;
     console.log(JSON.stringify({ before: before, boosted: after, decayed: final, ok: after >= before && final <= after }));
-  ")
+  " 2>&1) || true)
+
+  rm -rf "$iso" 2>/dev/null || true
 
   if echo "$out" | grep -q 'EMPTY\|NO_RANKED'; then
     # ADR-0086 debt 17: intelligence.cjs reads SQLite, CLI writes RVF
