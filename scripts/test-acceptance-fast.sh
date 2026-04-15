@@ -129,11 +129,10 @@ if [[ "$_FAST_RUN_GROUPS" == *"p4"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0059-phase4-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0059-phase4-checks.sh"
     echo "── Phase 4 (daemon IPC) ──"
+    # ADR-0088: memory.* IPC handlers removed. Only socket/probe/fallback
+    # remain meaningful.
     _fast_run "socket-exists"  check_adr0059_daemon_ipc_socket_exists
     _fast_run "ipc-probe"      check_adr0059_daemon_ipc_probe
-    _fast_run "ipc-store"      check_adr0059_daemon_ipc_store
-    _fast_run "ipc-search"     check_adr0059_daemon_ipc_search
-    _fast_run "ipc-count"      check_adr0059_daemon_ipc_count
     _fast_run "ipc-fallback"   check_adr0059_daemon_ipc_fallback
   fi
 fi

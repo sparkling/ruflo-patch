@@ -1214,17 +1214,15 @@ if [[ -f "${adr0059_p4_lib:-}" && -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/sett
     _p4_waited=$((_p4_waited + 1))
   done
 
-  # Run 5 daemon-present checks sequentially
+  # ADR-0088 supersedes ADR-0059 Phase 4: memory.* IPC handlers removed.
+  # The daemon socket and probe still work (server stays up for future
+  # non-memory RPC methods), but memory.store/search/count handlers are
+  # gone per ADR-0088 §Decision item 2. Only socket/probe/fallback
+  # checks remain meaningful.
   run_check "e2e-0059-p4-socket-exists" "Daemon IPC socket exists" \
     check_adr0059_daemon_ipc_socket_exists "adr0059-p4"
   run_check "e2e-0059-p4-ipc-probe" "Daemon IPC probe" \
     check_adr0059_daemon_ipc_probe "adr0059-p4"
-  run_check "e2e-0059-p4-store" "Daemon IPC store" \
-    check_adr0059_daemon_ipc_store "adr0059-p4"
-  run_check "e2e-0059-p4-search" "Daemon IPC search" \
-    check_adr0059_daemon_ipc_search "adr0059-p4"
-  run_check "e2e-0059-p4-count" "Daemon IPC count" \
-    check_adr0059_daemon_ipc_count "adr0059-p4"
 
   # Stop daemon cleanly
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon stop" "" 5
