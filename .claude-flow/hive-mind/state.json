@@ -1,6 +1,6 @@
 {
   "initialized": true,
-  "topology": "star",
+  "topology": "hierarchical",
   "workers": [
     "architect-1772719627699-olfq",
     "architect-1772719627699-uyim",
@@ -28,7 +28,42 @@
     "silo-fix-1775480661601-x7yz",
     "silo-fix-1775480661601-cxro",
     "silo-fix-1775480661601-u7eo",
-    "silo-fix-1775480661601-tfpf"
+    "silo-fix-1775480661601-tfpf",
+    "ruflo-expert-1776085539766-9rnq",
+    "ruflo-expert-1776085539766-iero",
+    "ruflo-expert-1776085539766-i8p9",
+    "ruflo-expert-1776085539766-hm32",
+    "ruflo-expert-1776085539766-epf6",
+    "ruflo-expert-1776085539766-tl79",
+    "ruflo-expert-1776085539766-7jvy",
+    "impl-expert-1776086231437-2w19",
+    "impl-expert-1776086231437-mpqm",
+    "impl-expert-1776086231437-dlm5",
+    "impl-expert-1776086231437-1w9c",
+    "impl-expert-1776086231438-bnb2",
+    "impl-expert-1776086231438-uhzv",
+    "impl-expert-1776086231438-jyt5",
+    "adr0086-v-1776107910207-cos6",
+    "adr0086-v-1776107910207-k6qv",
+    "adr0086-v-1776107910207-15g5",
+    "adr0086-v-1776107910207-g5e2",
+    "adr0086-v-1776107910207-2kv7",
+    "adr0086-v-1776107910207-qsdo",
+    "adr0086-v-1776107910207-55kx",
+    "adr0086-v-1776107910207-hptx",
+    "adr0086-v-1776107910207-t4fc",
+    "adr0086-v-1776107910207-vrxt",
+    "adr0086-v-1776107910207-vgfs",
+    "adr0086-v-1776107910207-oace",
+    "adr0086-v-1776107910207-qpvm",
+    "adr0086-v-1776107910207-qnkp",
+    "adr0086-v-1776107910207-eyif",
+    "wal-expert-1776182806367-g30u",
+    "wal-expert-1776182806367-yegl",
+    "wal-expert-1776182806368-hvnj",
+    "wal-expert-1776182806368-ssbb",
+    "wal-expert-1776182806368-frrs",
+    "wal-expert-1776182806368-xys3"
   ],
   "consensus": {
     "pending": [
@@ -165,6 +200,30 @@
           "adr-debater-1773774235096-yh3y": true
         },
         "status": "pending"
+      },
+      {
+        "proposalId": "proposal-1776085796315-jd0o9m",
+        "type": "architecture",
+        "value": "ADR-0086 revised: Skip SqliteStorage, wire existing RvfBackend as IStorageContract implementation directly. 3 phases instead of 4. Config-driven backend selection as safety valve.",
+        "proposedBy": "system",
+        "proposedAt": "2026-04-13T13:09:56.316Z",
+        "votes": {},
+        "status": "pending",
+        "strategy": "raft",
+        "term": 1,
+        "timeoutAt": "2026-04-13T13:10:26.316Z"
+      },
+      {
+        "proposalId": "proposal-1776086601572-got10u",
+        "type": "implementation-plan",
+        "value": "ADR-0086 implementation plan finalized: 3 phases, ~170 min, max 4 concurrent agents, 6 critical discoveries integrated",
+        "proposedBy": "system",
+        "proposedAt": "2026-04-13T13:23:21.573Z",
+        "votes": {},
+        "status": "pending",
+        "strategy": "raft",
+        "term": 2,
+        "timeoutAt": "2026-04-13T13:23:51.573Z"
       }
     ],
     "history": []
@@ -184,14 +243,105 @@
         "priority": "high",
         "fromId": "queen-pi-integration",
         "timestamp": "2026-03-15T10:20:39.136Z"
+      },
+      {
+        "messageId": "msg-1776085557335-nmzf63",
+        "message": "DISCUSSION: ADR-0086 implementation with RVF as primary storage. RVF replacement is a GIVEN — use ADR-0087 adversarial technique to stress-test HOW to implement, not WHETHER. Each expert analyzes from their role perspective. Queen synthesizes.",
+        "priority": "critical",
+        "fromId": "queen-architect",
+        "timestamp": "2026-04-13T13:05:57.335Z"
+      },
+      {
+        "messageId": "msg-1776086251081-oicz61",
+        "message": "IMPLEMENTATION PLANNING: ADR-0086 concrete execution plan. Goals are decided — focus ONLY on implementation details, file paths, agent orchestration, parallelism. Optimize for M5 Max 36GB with 6-8 parallel agents.",
+        "priority": "critical",
+        "fromId": "queen-implementor",
+        "timestamp": "2026-04-13T13:17:31.081Z"
+      },
+      {
+        "messageId": "msg-1776183363294-gkwtnj",
+        "message": "HIVE VERDICT: 3 root causes confirmed by 6/6 experts. WAL replay fix IS published (eliminate). Real causes: (1) 15s timeout kills store before embedding completes, (2) parallel e2e contention on shared .swarm/memory.rvf, (3) hash-fallback embeddings produce junk similarity. Fixing now.",
+        "priority": "critical",
+        "fromId": "queen-wal-analyst",
+        "timestamp": "2026-04-14T16:16:03.294Z"
+      },
+      {
+        "messageId": "msg-1776185948345-mpf6ad",
+        "message": "ALL 233 ACCEPTANCE TESTS PASS. Zero failures. Session started at 190/233, now 233/233. Hive investigation identified 3 root causes (parallel contention, timeout kills, bin/dist path mismatch) — all fixed.",
+        "priority": "critical",
+        "fromId": "queen-wal-analyst",
+        "timestamp": "2026-04-14T16:59:08.345Z"
+      },
+      {
+        "messageId": "msg-1776191927068-wh08xl",
+        "message": "ALL DEBT FIXED. 233/233 acceptance, 2291 unit tests. Debts 1/2/6/7/17 fixed, T3.3 complete, 918-line shim DELETED, better-sqlite3 removed from CLI. Debt 15 accepted as trade-off. ADR-0075 ideal state achieved for CRUD memory path.",
+        "priority": "critical",
+        "fromId": "debt-coordinator",
+        "timestamp": "2026-04-14T18:38:47.068Z"
       }
-    ]
+    ],
+    "discussion-context": {
+      "topic": "ADR-0086 implementation: Replace memory-initializer.ts with RVF-backed IStorageContract",
+      "constraint": "RVF replacement is a given — do not argue against it. Use ADR-0087 adversarial technique to stress-test HOW, not WHETHER.",
+      "adr086_summary": "4-phase plan to replace 2814-line memory-initializer.ts monolith. Phase 1: extract non-storage (quantization, attention, embedding, schema). Phase 2: implement IStorageContract adapter. Phase 3: wire into memory-router.ts. Phase 4: delete initializer.",
+      "adr086_gap": "ADR-0086 proposes SqliteStorage as the IStorageContract impl. We want RvfBackend as primary instead.",
+      "rvf_capabilities": "Binary substrate with VEC_SEG (embeddings), INDEX_SEG (progressive HNSW A/B/C layers), QUANT (scalar/product/binary), META_IDX_SEG (metadata filtering), WAL (append-only crash-safe), COW branching, witness chains, WASM runtime. Node.js N-API bindings exist (@ruvector/rvf-node). 384-dim cosine default.",
+      "rvf_query": "k-NN with distance metric selection, optional metadata filtering, progressive retrieval (70% recall immediate → 95%+ as layers load)",
+      "rvf_structured_query_gap": "RVF does vector similarity + metadata filter but NOT arbitrary SQL-style structured queries (SELECT WHERE field=value without vector component)",
+      "rvm_context": "RVM hypervisor uses coherence domains for AI agent workloads. Integrates with RuVector. Relevant for understanding the full stack but not directly part of storage replacement.",
+      "experts": [
+        "queen-architect (leads)",
+        "reuven-cohen (RVF/RVM creator)",
+        "devils-advocate (adversarial)",
+        "storage-expert (IStorageContract)",
+        "rust-native (HNSW/WAL/bindings)",
+        "migration-strategist (phasing)",
+        "test-architect (test pyramid)",
+        "perf-engineer (benchmarks)"
+      ]
+    },
+    "consensus-findings": {
+      "key_discovery": "RvfBackend (998 lines) already implements all 16 IStorageContract methods. Phase 2 (SqliteStorage) is unnecessary for the RVF path.",
+      "tension": "Queen+StorageExpert say skip SqliteStorage. MigrationStrategist says keep it for zero blast radius. DevilsAdvocate says spike first.",
+      "resolution": "Given user constraint (RVF replacement is a given), skip SqliteStorage but add config-driven backend selection as safety valve.",
+      "three_hnsw": "JS HNSW (initializer), HnswLite (pure-TS), Rust HNSW (N-API) — all three exist. JS HNSW dies with initializer. HnswLite + Rust HNSW coexist in RvfBackend already.",
+      "structured_query_gap": "Non-issue. In-memory Map handles getByKey, listNamespaces, count, query. N-API handles vectors only.",
+      "perf_wins": "Startup 200-800ms→<5ms, memory -5MB V8 heap, Rust quantization 5-10x faster. Single writes 2-5x slower (acceptable).",
+      "revised_phases": "P1: extract non-storage (unchanged). P2: declare RvfBackend implements IStorageContract + verify. P3: wire into router. P4: delete initializer + better-sqlite3."
+    },
+    "impl-context": {
+      "goal": "Produce a concrete implementation plan for ADR-0086 (3 phases, RVF-first). Include ruflo MCP orchestration commands. Optimize for M5 Max 36GB parallel execution.",
+      "constraint": "Do NOT question the goals. RVF replacement is decided. Focus only on implementation details: file paths, function signatures, agent orchestration, parallelism, test commands.",
+      "machine": "Apple M5 Max, 36GB unified memory, 16 GPU cores, macOS Tahoe. Node v24. Rust toolchain present.",
+      "parallelism": "M5 Max can run 6-8 Claude Code agents in parallel without memory pressure. 12 performance cores. Use hierarchical swarm with specialized roles.",
+      "fork_repo": "Changes go in forks at ~/source/forks/ruflo/v3/@claude-flow/. Build branch, push to sparkling remote. ruflo-patch repo handles tests/ADRs/acceptance.",
+      "key_files": {
+        "initializer": "@claude-flow/memory/src/memory-initializer.ts (2814 lines, DELETE target)",
+        "router": "@claude-flow/memory/src/memory-router.ts (1400 lines, REWIRE target)",
+        "rvf_backend": "@claude-flow/memory/src/rvf-backend.ts (998 lines, KEEP as IStorageContract impl)",
+        "storage_contract": "@claude-flow/memory/src/storage.ts (IStorageContract, 16 methods)",
+        "embedding_pipeline": "@claude-flow/memory/src/embedding-pipeline.ts (KEEP, absorbs embedding functions)"
+      }
+    },
+    "impl-plan-consensus": {
+      "total_wall_clock": "~170 min (2h 50m) with parallelism",
+      "phases": 3,
+      "critical_discoveries": [
+        "12 direct importers outside router (ADR incorrect)",
+        "better-sqlite3 has 5 surviving consumers",
+        "T1.4 schema has 6+ external callers - can't blindly delete",
+        "IStorageContract + RvfBackend live in memory package not fork CLI",
+        "10 test files need rewriting BEFORE Phase 2",
+        "tryNativeInit returning false is intentional - do not fix"
+      ],
+      "memory_budget": "Never exceeds 6GB of 36GB - RAM unconstrained"
+    }
   },
-  "createdAt": "2026-04-06T18:05:36.132Z",
-  "updatedAt": "2026-04-06T18:05:36.132Z",
+  "createdAt": "2026-04-14T20:27:44.703Z",
+  "updatedAt": "2026-04-14T20:27:44.703Z",
   "queen": {
-    "agentId": "queen-meridian",
-    "electedAt": "2026-04-06T18:05:36.132Z",
+    "agentId": "adr-update-queen",
+    "electedAt": "2026-04-14T20:27:44.703Z",
     "term": 1
   }
 }

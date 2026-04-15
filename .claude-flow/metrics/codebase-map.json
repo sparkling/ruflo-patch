@@ -1,5 +1,5 @@
 {
-  "timestamp": "2026-04-12T12:18:36.893Z",
+  "timestamp": "2026-04-14T23:40:01.323Z",
   "projectRoot": "/Users/henrik/source/ruflo-patch",
   "structure": {
     "hasPackageJson": true,
@@ -7,5 +7,5 @@
     "hasClaudeConfig": true,
     "hasClaudeFlow": true
   },
-  "scannedAt": 1775996316893
+  "scannedAt": 1776210001323
 }

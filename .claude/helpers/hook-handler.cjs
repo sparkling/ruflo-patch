@@ -93,12 +93,30 @@ const handlers = {
         if (ctx) console.log(ctx);
       } catch (e) { /* non-fatal */ }
     }
-    // ADR-0087: Adversarial prompting check
+    // ADR-0087: Adversarial prompting check + parallel session recommendation
     if (adversarial && adversarial.classify) {
       try {
         const cls = adversarial.classify(prompt);
         const advice = adversarial.advisory(cls);
-        if (advice) console.log(advice);
+        if (advice) {
+          console.log(advice);
+          // Phase 2: session advisory nested inside Phase 1 — structural ordering guarantee
+          if (adversarial.recommendSessions && adversarial.sessionAdvisory) {
+            const sessions = adversarial.recommendSessions(cls);
+            const sessionAdvice = adversarial.sessionAdvisory(sessions);
+            if (sessionAdvice) console.log(sessionAdvice);
+          }
+          // Phase 3: AI-first review advisory — review focus areas for this change type.
+          // Nested inside `if (advice)` intentionally: review categories only make sense
+          // when Phase 1 already flagged the prompt as adversarial. advisory() returns
+          // null iff adversarial is false, so this nesting is equivalent to gating on
+          // cls.adversarial while guaranteeing output order (Phase 1 < 2 < 3).
+          if (adversarial.reviewChecklist && adversarial.reviewAdvisory) {
+            const checklist = adversarial.reviewChecklist(cls);
+            const reviewAdvice = adversarial.reviewAdvisory(checklist);
+            if (reviewAdvice) console.log(reviewAdvice);
+          }
+        }
       } catch (e) { /* non-fatal */ }
     }
     if (router && router.routeTask) {
