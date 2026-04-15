@@ -40,6 +40,8 @@
 #                adr0086-no-imports, adr0086-no-quant, adr0086-no-attn,
 #                adr0086-adapter, adr0086-bulkdel, adr0086-b1-decay,
 #                adr0086-b3-health, adr0086-t33-track
+#   adr0088    — adr0088-no-ipc, adr0088-status, adr0088-init-no,
+#                adr0088-init-yes, adr0088-daemon-ok
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -403,6 +405,10 @@ adr0085_lib="${PROJECT_DIR}/lib/acceptance-adr0085-checks.sh"
 adr0086_lib="${PROJECT_DIR}/lib/acceptance-adr0086-checks.sh"
 [[ -f "$adr0086_lib" ]] && source "$adr0086_lib"
 
+# ADR-0088: Daemon Scope Alignment — scheduler only, never hot path
+adr0088_lib="${PROJECT_DIR}/lib/acceptance-adr0088-checks.sh"
+[[ -f "$adr0088_lib" ]] && source "$adr0088_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -719,6 +725,15 @@ if [[ -f "$adr0086_lib" ]]; then
   run_check_bg "adr0086-b1-decay"   "Temporal decay stub (ADR-0086)"             check_temporal_decay_stub                "adr0086"
   run_check_bg "adr0086-b3-health"  "healthCheck not checkInit (ADR-0086)"       check_healthcheck_not_check_init         "adr0086"
   run_check_bg "adr0086-t33-track"  "T3.3 sqlite3 blockers (ADR-0086)"          check_real_sqlite3_blockers              "adr0086"
+fi
+
+# ADR-0088: Daemon Scope Alignment
+if [[ -f "$adr0088_lib" ]]; then
+  run_check_bg "adr0088-no-ipc"      "No DaemonIPCClient (ADR-0088)"            check_adr0088_no_ipc_client             "adr0088"
+  run_check_bg "adr0088-status"      "daemon status AI Mode (ADR-0088)"         check_adr0088_status_output             "adr0088"
+  run_check_bg "adr0088-init-no"     "Init no-claude no daemon (ADR-0088)"      check_adr0088_conditional_init_no_claude "adr0088"
+  run_check_bg "adr0088-init-yes"    "Init with-claude wires daemon (ADR-0088)" check_adr0088_conditional_init_with_claude "adr0088"
+  run_check_bg "adr0088-daemon-ok"   "Daemon still works local (ADR-0088)"      check_adr0088_daemon_still_works        "adr0088"
 fi
 
 # ADR-0081: M5 Max Configuration Profile
@@ -1149,6 +1164,11 @@ collect_parallel "all" \
   "adr0086-b1-decay|Temporal decay stub (ADR-0086)" \
   "adr0086-b3-health|healthCheck not checkInit (ADR-0086)" \
   "adr0086-t33-track|T3.3 sqlite3 blockers (ADR-0086)" \
+  "adr0088-no-ipc|No DaemonIPCClient (ADR-0088)" \
+  "adr0088-status|daemon status AI Mode (ADR-0088)" \
+  "adr0088-init-no|Init no-claude no daemon (ADR-0088)" \
+  "adr0088-init-yes|Init with-claude wires daemon (ADR-0088)" \
+  "adr0088-daemon-ok|Daemon still works local (ADR-0088)" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \

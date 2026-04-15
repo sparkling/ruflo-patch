@@ -275,8 +275,12 @@ describe('ADR-0084 T3.1 integration: worker-daemon.ts has no direct bridge calls
       `Expected ZERO memory-bridge imports, found ${bridgeImports.length}: ${bridgeImports.join('; ')}`);
   });
 
-  it('should register memory.list IPC handler', () => {
-    assert.ok(source.includes("'memory.list'"), 'memory.list IPC handler must be registered');
+  it('SUPERSEDED by ADR-0088: memory.list IPC handler removed (never had callers)', () => {
+    // ADR-0088 §Decision item 1: memory.* IPC method registrations deleted
+    // from worker-daemon.ts. DaemonIPCClient had zero callers across both
+    // repos; the registration contradicted ADR-050 (hot path is file-based).
+    assert.ok(!source.includes("registerMethod('memory.list'"),
+      'memory.list IPC handler must be removed per ADR-0088');
   });
 });
 
