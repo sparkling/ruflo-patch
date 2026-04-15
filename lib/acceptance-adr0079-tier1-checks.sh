@@ -31,7 +31,7 @@ check_t1_1_semantic_ranking() {
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Step 2: Search for cooking-related content
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian food recipes for dinner' --namespace '$ns'" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian food recipes for dinner' --namespace '$ns'" "" 60
 
   if echo "$_RK_OUT" | grep -qi 'cooking\|pasta'; then
     _CHECK_PASSED="true"
@@ -39,7 +39,7 @@ check_t1_1_semantic_ranking() {
   else
     # Hash-fallback embeddings may not capture cooking↔Italian semantic link.
     # Verify entries exist via list (proves store+persistence works).
-    _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace '$ns'" "" 60
+    _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace '$ns'" "" 60
     if echo "$_RK_OUT" | grep -qi 'cooking-pasta'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="T1-1: entries stored and listable (hash-fallback — semantic match unavailable)"
@@ -57,12 +57,12 @@ check_t1_5_mcp_stdio() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local cli; cli=$(_cli_cmd)
   local dir="${E2E_DIR:-$TEMP_DIR}"
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool system_info" "" 15
+  _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool system_info" "" 15
   if echo "$_RK_OUT" | grep -qi 'version\|tools\|status\|system\|info\|available'; then
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-5: MCP tool registry responds"
     return
   fi
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health" "" 15
+  _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health" "" 15
   if echo "$_RK_OUT" | grep -qi 'available\|controllers\|success\|health'; then
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T1-5: MCP responds (agentdb_health fallback)"
     return
@@ -87,7 +87,7 @@ check_t1_2_learning_feedback_improves() {
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'learn-gamma' --value 'authentication JWT middleware layer' --namespace '$ns'" "" 45
 
   # Step 2: Search and capture initial ranking
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace '$ns' --limit 5" "" 45
+  _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace '$ns' --limit 5" "" 45
   local initial_out="$_RK_OUT"
 
   # Determine last-ranked key
@@ -104,7 +104,7 @@ check_t1_2_learning_feedback_improves() {
   local fb_out="$_RK_OUT"
 
   # Step 4: Re-search
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace '$ns' --limit 5" "" 15
+  _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace '$ns' --limit 5" "" 15
 
   # Step 5: Verify -- search must return the stored auth-related content
   if echo "$_RK_OUT" | grep -qi 'learn-alpha\|auth'; then
@@ -125,7 +125,7 @@ check_t1_6_empty_search() {
   local cli; cli=$(_cli_cmd)
   local dir="${E2E_DIR:-$TEMP_DIR}"
 
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'xyzzy' --namespace 'nonexistent-namespace-xyz'" "" 15
+  _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'xyzzy' --namespace 'nonexistent-namespace-xyz'" "" 15
   local out="$_RK_OUT"
 
   # Must not contain actual entry content (no keys/values from other namespaces)
@@ -161,7 +161,7 @@ check_t1_7_invalid_input() {
   fi
 
   # Test 2: memory search with no --query flag
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search 2>&1; echo EXIT:\$?" "" 15
+  _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search 2>&1; echo EXIT:\$?" "" 15
   local search_out="$_RK_OUT"
   if echo "$search_out" | grep -qiE '(error|required|missing|invalid|EXIT:[1-9])'; then
     ok=$((ok + 1))

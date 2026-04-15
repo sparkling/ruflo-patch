@@ -25,7 +25,7 @@ check_adr0059_daemon_ipc_socket_exists() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Socket file created at $socket_path"
   else
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon status" "" 5
+    _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon status" "" 5
     if echo "$_RK_OUT" | grep -qi "running"; then
       _CHECK_PASSED="false"
       _CHECK_OUTPUT="SKIP: daemon running but socket not found"

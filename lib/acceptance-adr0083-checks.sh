@@ -221,7 +221,7 @@ check_adr0083_json_sidecar_contract() {
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Verify data persists by listing
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0083-rvf" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0083-rvf" "" 60
   local list_out="$_RK_OUT"
 
   if echo "$list_out" | grep -q "$test_key"; then
@@ -258,13 +258,13 @@ check_adr0083_single_path_roundtrip() {
     return
   fi
 
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'single data flow path' --namespace adr0083-rt --limit 5" "" 15
+  _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'single data flow path' --namespace adr0083-rt --limit 5" "" 15
   if echo "$_RK_OUT" | grep -qi "$test_key\|single data flow\|roundtrip"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="ADR-0083-6: store→search round-trip succeeds via single router path"
   else
     # Fall back to list check — more reliable across CLI versions
-    _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0083-rt --limit 10" "" 15
+    _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0083-rt --limit 10" "" 15
     if echo "$_RK_OUT" | grep -q "$test_key"; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="ADR-0083-6: store→list round-trip succeeds via single router path"

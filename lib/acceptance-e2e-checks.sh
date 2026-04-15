@@ -106,7 +106,7 @@ check_e2e_search_semantic_quality() {
   fi
 
   # Search for authentication — expect auth entries, not pasta
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory search --query 'authentication login tokens' --namespace '$ns' --limit 5" "" 45
+  _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory search --query 'authentication login tokens' --namespace '$ns' --limit 5" "" 45
   local search_out="$_RK_OUT"
 
   if [[ -z "$search_out" ]]; then
@@ -160,7 +160,7 @@ check_e2e_list_after_store() {
   rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # List (same isolated dir)
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 60
   local list_out="$_RK_OUT"
 
   if echo "$list_out" | grep -q "$test_key"; then
@@ -199,7 +199,7 @@ check_e2e_dual_write_consistency() {
 
   # Path 1: search (RVF / vector path)
   local search_ok="false"
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory search --query 'dual write consistency verification' --namespace '$ns' --limit 5" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory search --query 'dual write consistency verification' --namespace '$ns' --limit 5" "" 60
   local search_out="$_RK_OUT"
   if echo "$search_out" | grep -qi 'dual\|consistency\|verification'; then
     search_ok="true"
@@ -207,7 +207,7 @@ check_e2e_dual_write_consistency() {
 
   # Path 2: list
   local list_ok="false"
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN memory list --namespace '$ns' --limit 10" "" 60
   local list_out="$_RK_OUT"
   if echo "$list_out" | grep -q "$test_key"; then
     list_ok="true"

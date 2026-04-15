@@ -101,6 +101,57 @@ _run_and_kill() {
   fi
 }
 
+# ─────────────────────────────────────────────────────────────
+# Read-only variant: same as _run_and_kill but skips the 1s
+# WAL-flush grace period. Use for memory list/search, mcp exec
+# queries, doctor, --version, health checks — anything that
+# doesn't write.
+# Usage: _run_and_kill_ro "command string" [out_file] [max_seconds]
+# Sets: _RK_OUT, _RK_EXIT
+# ─────────────────────────────────────────────────────────────
+_run_and_kill_ro() {
+  local cmd="$1" out_file="${2:-}" max_wait="${3:-8}"
+
+  if [[ -z "$out_file" ]]; then
+    out_file=$(mktemp /tmp/rk-XXXXX)
+    local _rk_own_file="true"
+  else
+    local _rk_own_file="false"
+  fi
+  > "$out_file"
+
+  ( eval "$cmd" >> "$out_file" 2>&1; echo "__RUFLO_DONE__" >> "$out_file" ) &
+  local pid=$!
+
+  local elapsed=0
+  while (( $(echo "$elapsed < $max_wait" | bc) )); do
+    sleep 0.25
+    elapsed=$(echo "$elapsed + 0.25" | bc)
+    if grep -q '__RUFLO_DONE__' "$out_file" 2>/dev/null; then
+      break
+    fi
+    if ! kill -0 "$pid" 2>/dev/null; then
+      break
+    fi
+  done
+
+  # NO grace period — read-only ops have no WAL to flush
+  if kill -0 "$pid" 2>/dev/null; then
+    pkill -P "$pid" 2>/dev/null || true
+    kill "$pid" 2>/dev/null || true
+    wait "$pid" 2>/dev/null || true
+  fi
+
+  sed '/__RUFLO_DONE__/d' "$out_file" > "${out_file}.tmp" && mv "${out_file}.tmp" "$out_file"
+
+  _RK_OUT=$(cat "$out_file")
+  _RK_EXIT=$?
+
+  if [[ "$_rk_own_file" == "true" ]]; then
+    rm -f "$out_file"
+  fi
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Source check group files
 # ══════════════════════════════════════════════════════════════════════════════

@@ -47,7 +47,7 @@ check_no_sqljs_in_backend_output() {
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # 2. memory search
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'backend output check' --namespace '$ns' --limit 5" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'backend output check' --namespace '$ns' --limit 5" "" 60
   combined_output="${combined_output}${_RK_OUT}"$'\n'
 
   # 3. doctor --fix (captures diagnostic output about backends)

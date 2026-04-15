@@ -16,7 +16,7 @@ check_security_controllers() {
   _CHECK_OUTPUT=""
 
   # Use agentdb_controllers (registry entries only) — NOT agentdb_health
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -68,7 +68,7 @@ check_rate_limit_status() {
   _CHECK_OUTPUT=""
 
   # Use dedicated agentdb_rate_limit_status — NOT agentdb_health
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
   local rl_out="$_RK_OUT"
 
   if [[ -z "$rl_out" ]]; then
@@ -135,7 +135,7 @@ check_rate_limit_consumed() {
   fi
 
   # Step 2: Check rate limit status
-  _run_and_kill "cd '$work_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
+  _run_and_kill_ro "cd '$work_dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
   local rl_out="$_RK_OUT"
 
   if [[ -z "$rl_out" ]]; then
@@ -217,7 +217,7 @@ check_health_composite_count() {
   _CHECK_OUTPUT=""
 
   # agentdb_health includes composite children in its output (controller-registry.ts lines 483-534)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
   local health_out="$_RK_OUT"
 
   if [[ -z "$health_out" ]]; then
@@ -230,7 +230,7 @@ check_health_composite_count() {
   health_count=$(echo "$health_out" | grep -c '"name"') || health_count="0"
 
   # agentdb_controllers returns only registry entries (no composite children)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
   local ctrl_out="$_RK_OUT"
   local ctrl_count
   ctrl_count=$(echo "$ctrl_out" | grep -c '"name"') || ctrl_count="0"
@@ -261,7 +261,7 @@ check_circuit_breaker_status() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_circuit_status"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_circuit_status"
   local cb_out="$_RK_OUT"
 
   if [[ -z "$cb_out" ]]; then
@@ -298,7 +298,7 @@ check_resource_tracker() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_resource_usage"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_resource_usage"
   local ru_out="$_RK_OUT"
 
   if [[ -z "$ru_out" ]]; then
@@ -337,7 +337,7 @@ check_controller_composition() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -395,7 +395,7 @@ check_quantize_status() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_quantize_status is not in the
   # published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_quantize_status"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_quantize_status"
   local qs_out="$_RK_OUT"
 
   if [[ -z "$qs_out" ]]; then
@@ -450,7 +450,7 @@ check_health_report() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_health_report is not in the
   # published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health_report"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health_report"
   local hr_out="$_RK_OUT"
 
   if [[ -z "$hr_out" ]]; then
@@ -502,7 +502,7 @@ check_wiring_remediation() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -553,13 +553,13 @@ check_filtered_search() {
   # Upstream build truncated agentdb-tools.js — agentdb_filtered_search is not in the
   # published export array. Try agentdb_filtered_search first, then fall back to
   # memory_search (which supports metadata_filter param natively).
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_filtered_search --params '{\"query\":\"authentication patterns\"}'"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_filtered_search --params '{\"query\":\"authentication patterns\"}'"
   local fs_out="$_RK_OUT"
 
   # Tool may not be registered (upstream build truncation)
   if echo "$fs_out" | grep -qi 'Tool not found\|not found'; then
     # Fallback: verify memory_search works (it has metadata_filter support built in)
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool memory_search --params '{\"query\":\"authentication patterns\"}'"
+    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool memory_search --params '{\"query\":\"authentication patterns\"}'"
     local ms_out="$_RK_OUT"
 
     if echo "$ms_out" | grep -qi 'results\|query\|total'; then
@@ -599,7 +599,7 @@ check_query_stats() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_query_stats is not in the
   # published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_query_stats"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_query_stats"
   local qs_out="$_RK_OUT"
 
   if [[ -z "$qs_out" ]]; then
@@ -649,7 +649,7 @@ check_metadata_filter_controllers() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -834,7 +834,7 @@ check_embedding_controller_registered() {
   # Verify ADR-0045 controllers appear in agentdb_controllers.
   # Upstream build truncation removed agentdb_embed/embed_status/telemetry tools,
   # but the controllers may still register via the bridge. Check what's available.
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then

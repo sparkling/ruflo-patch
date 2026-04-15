@@ -14,7 +14,7 @@ check_controller_health() {
   _CHECK_OUTPUT=""
 
   # Try MCP exec for agentdb_health
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|available'; then
     local ctrl_count
@@ -78,7 +78,7 @@ check_memory_scoping() {
       --namespace scope-accept --scope global"
 
     # Search with scope
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
+    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
       --query 'acceptance test' --namespace scope-accept --scope agent --scope-id accept-agent-1"
 
     if echo "$_RK_OUT" | grep -qi 'scoped-accept\|acceptance'; then
@@ -113,7 +113,7 @@ check_reflexion_lifecycle() {
 
   if echo "$store_out" | grep -qi 'success\|stored\|true'; then
     # Retrieve reflexion via MCP (hyphenated tool name)
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
+    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
       --tool agentdb_reflexion-retrieve \
       --params '{\"task\":\"write acceptance tests\",\"k\":5}'"
 
@@ -139,7 +139,7 @@ check_causal_graph() {
 
   # Query causal graph (harness already ran memory init)
   # Upstream renamed tools: agentdb_causal_query -> agentdb_causal_query (hyphenated)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_causal_query \
     --params '{\"cause\":\"refactor tests\"}'"
   local query_out="$_RK_OUT"
@@ -183,7 +183,7 @@ check_cow_branching() {
 
   if echo "$create_out" | grep -qi 'success\|branchId\|created\|true'; then
     # Try branch status
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
+    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
       --tool agentdb_branch \
       --params '{\"action\":\"status\",\"branch_id\":\"branch:accept-experiment\"}'"
 
@@ -207,7 +207,7 @@ check_batch_operations() {
     --key batch-accept-1 --value 'batch entry 1' --namespace batch-accept"
 
   # Run stats via MCP
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_batch-optimize \
     --params '{\"action\":\"stats\"}'"
   local stats_out="$_RK_OUT"
@@ -244,12 +244,12 @@ check_context_synthesis() {
     --namespace synth-accept"
 
   # Search with synthesize flag
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
     --query 'authentication best practices' --namespace synth-accept --synthesize"
   local synth_out="$_RK_OUT"
 
   # Search without synthesize (control)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
     --query 'authentication best practices' --namespace synth-accept"
   local plain_out="$_RK_OUT"
 
@@ -284,7 +284,7 @@ check_self_learning_health() {
   _CHECK_OUTPUT=""
 
   # agentdb_health includes A6 + B4 + composite children (controller-registry.ts)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
   local health_out="$_RK_OUT"
 
   if [[ -z "$health_out" ]]; then
@@ -356,7 +356,7 @@ check_self_learning_search() {
     --namespace sl-accept"
 
   # Search — A6 transparently replaces vectorBackend if active
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
     --query 'authentication tokens' --namespace sl-accept"
   local search_out="$_RK_OUT"
 

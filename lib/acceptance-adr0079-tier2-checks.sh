@@ -59,7 +59,7 @@ check_t2_2_session_lifecycle() {
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-2: session save/restore succeeded"; return
   fi
   # Fallback: verify stored memory survived
-  _run_and_kill "$_rk memory search --query lifecycle-check --namespace sessions" "" 15
+  _run_and_kill_ro "$_rk memory search --query lifecycle-check --namespace sessions" "" 15
   if echo "$_RK_OUT" | grep -qi 'lifecycle-check\|sess-'; then
     _CHECK_PASSED="true"; _CHECK_OUTPUT="T2-2: session data persisted across cycle"; return
   fi

@@ -43,7 +43,7 @@ check_adr0059_memory_store_retrieve() {
   fi
 
   # Use list to verify — more reliable than retrieve across CLI versions
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-rt --limit 10" "" 60
+  _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-rt --limit 10" "" 60
   if echo "$_RK_OUT" | grep -q "$test_key"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Store→list round-trip: key found in namespace"
@@ -77,7 +77,7 @@ check_adr0059_memory_search() {
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Verify via list FIRST (deterministic — doesn't depend on embedding similarity)
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-s --limit 10" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-s --limit 10" "" 60
   local list_out="$_RK_OUT"
   if ! echo "$list_out" | grep -q 'jwt-auth'; then
     _CHECK_OUTPUT="List did not find stored jwt-auth after 2 stores — persistence failed. list: ${list_out:0:200}"
@@ -85,7 +85,7 @@ check_adr0059_memory_search() {
   fi
 
   # Now semantic search — may fail on hash-fallback due to poor similarity
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication JWT tokens' --namespace adr0059-s --limit 5" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication JWT tokens' --namespace adr0059-s --limit 5" "" 60
   if echo "$_RK_OUT" | grep -q 'jwt-auth'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Search returned stored key 'jwt-auth' (semantic match)"
@@ -115,7 +115,7 @@ check_adr0059_storage_persistence() {
 
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-p --limit 5" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-p --limit 5" "" 60
   if echo "$_RK_OUT" | grep -q "$k"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Data persisted across process boundaries"

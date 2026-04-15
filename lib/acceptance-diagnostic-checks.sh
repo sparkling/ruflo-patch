@@ -96,7 +96,7 @@ check_memory_lifecycle() {
 
   # Search (semantic) — may fail with mock embeddings (sql.js WASM path)
   local search_out search_found="false"
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace test-ns"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace test-ns"
   search_out="$_RK_OUT"
   if echo "$search_out" | grep -q 'test-pattern'; then
     search_found="true"
@@ -105,7 +105,7 @@ check_memory_lifecycle() {
   # Fallback: key-based retrieve (semantic search requires real embeddings;
   # mock/hash embeddings on sql.js WASM path may not produce meaningful similarity)
   if [[ "$search_found" == "false" ]]; then
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns"
+    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns"
     if echo "$_RK_OUT" | grep -qi 'JWT auth\|test-pattern\|value'; then
       search_found="true"
     fi
@@ -139,7 +139,7 @@ check_memory_lifecycle() {
 
   # Retrieve
   local retrieve_out
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns"
   retrieve_out="$_RK_OUT"
   if echo "$retrieve_out" | grep -q 'JWT auth'; then
     _CHECK_PASSED="true"

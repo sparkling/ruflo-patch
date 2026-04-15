@@ -66,7 +66,7 @@ check_t3_1_bulk_corpus_ranking() {
   rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Verify all 12 are listable (proves persistence)
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace '$ns' --limit 20" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace '$ns' --limit 20" "" 60
   local list_out="$_RK_OUT"
   local found=0
   for prefix in cooking-1 cooking-2 auth-1 auth-2 space-1 space-2; do
@@ -80,7 +80,7 @@ check_t3_1_bulk_corpus_ranking() {
   fi
 
   # Search for cooking — expect cooking-* to dominate top results
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian pasta recipes' --namespace '$ns' --limit 5" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian pasta recipes' --namespace '$ns' --limit 5" "" 60
   local cook_out="$_RK_OUT"
 
   local cook_hits=0
@@ -176,11 +176,11 @@ check_t3_3_plugin_load_execute() {
   local dir="${E2E_DIR:-${ACCEPT_TEMP:-$TEMP_DIR}}"
 
   # Step 1: list available plugins (may be 'plugin list' or 'plugins list')
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugin list" "" 15
+  _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugin list" "" 15
   local list_out="$_RK_OUT"
 
   if echo "$list_out" | grep -qi 'unknown command\|not found' && [[ -n "$list_out" ]]; then
-    _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugins list" "" 15
+    _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugins list" "" 15
     list_out="$_RK_OUT"
   fi
 
@@ -194,7 +194,7 @@ check_t3_3_plugin_load_execute() {
   _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugin load --name example" "" 15
   local load_out="$_RK_OUT"
   if echo "$load_out" | grep -qi 'unknown command'; then
-    _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugin info example" "" 15
+    _run_and_kill_ro "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli plugin info example" "" 15
     load_out="$_RK_OUT"
   fi
 
@@ -239,7 +239,7 @@ check_t3_4_reasoningbank_cycle() {
   rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Step 2: first search
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'handling api failures' --namespace '$ns' --limit 5" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'handling api failures' --namespace '$ns' --limit 5" "" 60
   local search1_out="$_RK_OUT"
 
   # Step 3: record feedback on pattern-retry
@@ -247,7 +247,7 @@ check_t3_4_reasoningbank_cycle() {
   local fb_out="$_RK_OUT"
 
   # Step 4: re-search
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'handling api failures' --namespace '$ns' --limit 5" "" 30
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'handling api failures' --namespace '$ns' --limit 5" "" 30
   local search2_out="$_RK_OUT"
 
   # Acceptance: all 4 cycle steps must run without crash, and search must

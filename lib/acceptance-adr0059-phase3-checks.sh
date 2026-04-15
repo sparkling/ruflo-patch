@@ -47,7 +47,7 @@ TOPIC
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Search for a term that should match entries from both stores
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'token refresh' --namespace 'phase3-test' --limit 5" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'token refresh' --namespace 'phase3-test' --limit 5" "" 60
 
   # PASS only if the stored key appears in search results
   if echo "$_RK_OUT" | grep -q 'sqlite-entry-p3'; then
@@ -69,7 +69,7 @@ check_adr0059_unified_search_dedup() {
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
   # Search and count results for this specific key
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication middleware' --namespace 'dedup-test' --limit 20" "" 60
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication middleware' --namespace 'dedup-test' --limit 20" "" 60
 
   # Count how many times the key appears — should be at most 1
   local count
@@ -92,7 +92,7 @@ check_adr0059_unified_search_no_crash() {
   rm -f "$E2E_DIR/.claude-flow/memory.rvf" 2>/dev/null || true
 
   # Search should still work (re-initializes storage)
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'test pattern'" "" 60
+  _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'test pattern'" "" 60
 
   # Should not crash
   if echo "$_RK_OUT" | grep -qiE '(fatal|unhandled|SIGSEGV|Cannot read prop)'; then
