@@ -206,3 +206,17 @@ The following ADR-0075 findings were re-evaluated with upstream creator perspect
     lines. All 9 local fallback paths verified safe by 12-agent validation swarm.
     The `listEntries` empty-result fallthrough bug (identified by this ADR) was confirmed
     fixed by the deletion.
+
+## Post-closure update (2026-04-14)
+
+All 5 ideal-state layers are now fully addressed. Remaining ADR-0086 debt items resolved:
+
+- **L1 fully achieved**: `memory-initializer.ts` deleted (not shimmed — the file no longer
+  exists). `RvfBackend` is the sole CRUD backend for memory operations.
+- **better-sqlite3 removed** from CLI `package.json` (Debt 7). No SQLite dependency in the
+  memory path.
+- **IStorageContract merged** into `IMemoryBackend` (type alias, Debt 1). Single contract
+  surface for all storage implementations.
+- **ControllerRegistry retains independent SQLite** for neural controllers (`learningBridge`,
+  `graphAdapter`, etc.). This is an accepted trade-off — neural controllers have legitimate
+  relational query needs that RVF does not serve.

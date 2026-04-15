@@ -16,7 +16,8 @@ After Phase 5, `agentdb-tools.ts` had 24 `getBridge()` call sites importing
 `memory-bridge.ts`. A hive deliberation analyzed these and categorized the bridge
 functions into 3 tiers by migration complexity.
 
-Phases 1 and 2 were implemented immediately. Phase 3 remains proposed.
+Phases 1 and 2 were implemented immediately. Phase 3 was completed by
+ADR-0083 Wave 1 (2026-04-12).
 
 ## Decision
 
@@ -55,7 +56,7 @@ Note: `bridgeQueryStats` uses method-name probing (`getCacheStats` first, fallba
 
 ---
 
-## Phase 3: Orchestration Migration (proposed, 3-4 weeks)
+## Phase 3: Orchestration Migration -- DONE (completed by ADR-0083 Wave 1, 2026-04-12)
 
 ### Goal
 Migrate the remaining 16 `getBridge()` call sites in `agentdb-tools.ts` to direct
@@ -85,6 +86,10 @@ internally. Only controller access bypasses the bridge (via the intercept pool).
 Forking `memory-initializer.ts` to make the bridge dead code is not justified while
 upstream actively develops the file. The trigger to reconsider is upstream stalling
 (3+ months with no commits).
+
+> **Superseded (2026-04-13):** `memory-bridge.ts` was deleted by ADR-0085.
+> `memory-initializer.ts` was deleted by ADR-0086 Debt 6. The "bridge can never
+> become dead code" reasoning above is now moot — both files are gone.
 
 ### Runtime path (updated 2026-04-11)
 
@@ -288,7 +293,7 @@ with integration tests before merging.
 |--------|--------------------------|---------------|
 | `getBridge()` calls in agentdb-tools.ts | 16 | 0 |
 | Bridge calls in memory-tools.ts | 0 | 0 |
-| memory-bridge.ts status | Live (agentdb-tools + 7 other files) | Live (7 other files -- NOT dead code) |
+| memory-bridge.ts status | Live (agentdb-tools + 7 other files) | Live (7 other files -- NOT dead code) -- **Deleted by ADR-0085 (2026-04-13)** |
 | Error re-throws in memory-tools.ts | 0 | 0 |
 
 ---

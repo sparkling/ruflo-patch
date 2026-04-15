@@ -534,9 +534,16 @@ describe('ADR-0086 RVF integration: Group 5 — file format constants', () => {
       'DEFAULT_DIMENSIONS must be 768 to match all-mpnet-base-v2');
   });
 
-  it('RvfBackend implements IMemoryBackend and IStorageContract', () => {
-    assert.ok(rvfSrc.includes('implements IMemoryBackend, IStorageContract'),
-      'RvfBackend must implement both IMemoryBackend and IStorageContract');
+  it('RvfBackend implements IMemoryBackend (Debt 1: IStorageContract is type alias)', () => {
+    assert.ok(rvfSrc.includes('implements IMemoryBackend'),
+      'RvfBackend must implement IMemoryBackend');
+    // After Debt 1, IStorageContract is a type alias — cannot appear in implements clause
+    const classLine = rvfSrc.match(/export\s+class\s+RvfBackend\s+implements\s+([^{]+)\{/);
+    assert.ok(classLine, 'RvfBackend class declaration not found');
+    assert.ok(
+      !classLine[1].includes('IStorageContract'),
+      'RvfBackend must NOT implement IStorageContract (it is a type alias after Debt 1)',
+    );
   });
 
   it('validatePath rejects null bytes in paths', () => {

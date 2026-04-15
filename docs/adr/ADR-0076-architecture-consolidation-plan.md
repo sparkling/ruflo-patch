@@ -1,5 +1,7 @@
 # ADR-0076: Architecture Consolidation Plan
 
+> See also [ADR-0076-ideal-state-implementation-plan.md](ADR-0076-ideal-state-implementation-plan.md) for detailed phase tracking.
+
 - **Status**: Track A Implemented, Track B Completed (via ADR-0077 + ADR-0085)
 - **Date**: 2026-04-06
 - **Revised**: 2026-04-06 (upstream-compatible constraint applied)

@@ -8,35 +8,13 @@ import { readFileSync, existsSync } from 'node:fs';
 
 const CLI = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
 
-// --- B1 guard: applyTemporalDecay must be a no-op stub
+// --- B1 guard: memory-initializer.ts deleted (ADR-0086 Debt 6)
 
-describe('ADR-0086 B1 guard: applyTemporalDecay is a no-op stub', () => {
-  const initPath = `${CLI}/memory/memory-initializer.ts`;
-
-  it('memory-initializer.ts exists', () => {
-    assert.ok(existsSync(initPath), 'memory-initializer.ts must exist (shim)');
-  });
-
-  it('applyTemporalDecay returns stub response', () => {
-    const src = readFileSync(initPath, 'utf-8');
-    const fnStart = src.indexOf('applyTemporalDecay');
-    assert.ok(fnStart !== -1, 'applyTemporalDecay function must exist');
-
-    // Extract ~500 chars after the function name to find the body
-    const fnSlice = src.slice(fnStart, fnStart + 500);
-    assert.ok(
-      fnSlice.includes('patternsDecayed: 0') || fnSlice.includes('patternsDecayed:0'),
-      'applyTemporalDecay must return patternsDecayed: 0 (B1 stub fix)'
-    );
-  });
-
-  it('applyTemporalDecay does NOT contain raw SQLite calls', () => {
-    const src = readFileSync(initPath, 'utf-8');
-    const fnStart = src.indexOf('applyTemporalDecay');
-    const fnEnd = src.indexOf('\nexport', fnStart + 1);
-    const fnBody = fnEnd > fnStart ? src.slice(fnStart, fnEnd) : src.slice(fnStart, fnStart + 800);
-    assert.ok(!fnBody.includes('db.prepare('), 'applyTemporalDecay must not use db.prepare() (B1 — old SQLite body removed)');
-    assert.ok(!fnBody.includes('.run('), 'applyTemporalDecay must not use .run() (B1 — old SQLite body removed)');
+describe('ADR-0086 B1 guard: applyTemporalDecay — shim deleted', () => {
+  it('memory-initializer.ts is deleted (ADR-0086 Debt 6)', () => {
+    const initPath = `${CLI}/memory/memory-initializer.ts`;
+    assert.ok(!existsSync(initPath),
+      'memory-initializer.ts should be deleted (Debt 6 — all stubs removed)');
   });
 });
 

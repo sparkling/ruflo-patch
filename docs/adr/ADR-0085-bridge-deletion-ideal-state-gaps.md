@@ -205,12 +205,12 @@ The bridge deletion breaks 14 test files. Categorized by action:
 ### Phase 4: Tests and verification
 
 - [x] **T4.1** Full unit suite passes: 1945 tests, 0 failures
-- [ ] **T4.2** Build produces zero new errors
-- [ ] **T4.3** Acceptance checks pass (all ADR-0084 + new ADR-0085 checks)
+- [x] **T4.2** Build produces zero new errors — verified 2026-04-14 (build succeeded in deploy pipeline)
+- [x] **T4.3** Acceptance checks pass (all ADR-0084 + new ADR-0085 checks) — 233/233 passed 2026-04-14
 - [x] **T4.4** New acceptance checks: ADR-0085-1 (bridge absent from dist),
   ADR-0085-2 (initializer zero bridge imports), ADR-0085-3 (router has initControllerRegistry).
   Also wired into `test-acceptance-fast.sh` as `adr0085` group.
-- [ ] **T4.5** Update ADR-0076 and ADR-0084 completion notes
+- [x] **T4.5** Update ADR-0076 and ADR-0084 completion notes
 
 ## Lines eliminated
 
@@ -268,7 +268,7 @@ The bridge deletion breaks 14 test files. Categorized by action:
 - **Layer 1 (RVF primary storage)** — memory-initializer.ts remains as the SQLite CRUD
   layer. Replacing it with IStorage + NativeStorage(RVF+HNSW) is a separate, larger effort
   (~2,600 lines to rewrite). That is the remaining gap to ADR-0075's full ideal.
-(Update: Layer 1 substantially closed by ADR-0086 (2026-04-13). T3.3 (better-sqlite3 CLI removal) remains blocked.)
+(Update: Layer 1 fully closed by ADR-0086 (2026-04-14). memory-initializer.ts DELETED (Debt 6); better-sqlite3 removed from CLI (T3.3 unblocked by Debt 7). No remaining L1 gap.)
 
 ## Resolved post-proposal
 
@@ -291,10 +291,10 @@ The bridge deletion breaks 14 test files. Categorized by action:
 - **Single registry bootstrap** — router owns it, no dual-path confusion
 - **Zero bridge code executed** at runtime (11 try-first paths eliminated)
 - **Cleaner initializer** — memory-initializer is pure SQLite CRUD, no AgentDB coupling
-  (Update: ADR-0086 (2026-04-13) replaced CRUD bodies with RvfBackend stubs. memory-initializer.ts is now an import shim, not pure SQLite CRUD.)
-- **No JSON sidecar** — intelligence reads SQLite directly, no redundant file-based IPC
+  (Update: ADR-0086 (2026-04-14) DELETED memory-initializer.ts entirely (Debt 6). All callers rewired to memory-router.ts. The file no longer exists.)
+- **No JSON sidecar** — intelligence reads RVF directly (ADR-0086 Debt 17 replaced SQLite with RVF reads), no redundant file-based IPC
 - **ESM hook handler** — unblocks future async hook improvements
-- **ADR-0075 gap closure**: L2 100%, L5 ~95% (initializer hop remains until L1)
+- **ADR-0075 gap closure**: L2 100%, L5 100% (initializer hop eliminated — file deleted by ADR-0086)
 - **Merge risk**: upstream changes to memory-bridge.ts will cause git conflicts on the
   deletion. This is a one-time cost — once merged, the file stays deleted and future
   upstream changes to it are irrelevant (we never executed them anyway).
@@ -306,16 +306,16 @@ ALL callers ──→ memory-router.ts ──→ initControllerRegistry() ──
                     │                         │
                     │                         └── getController() ──→ controllers
                     │
-                    ├── routeMemoryOp()       → storeEntry() → SQLite
+                    ├── routeMemoryOp()       → RvfBackend → memory.rvf
                     ├── routeEmbeddingOp()    → EmbeddingPipeline → HNSW
                     ├── routePatternOp()      → reasoningBank (controller-direct)
                     ├── routeFeedbackOp()     → learningSystem + reasoningBank
                     └── routeSessionOp()      → reflexion + nightlyLearner
 
-hook-handler.mjs ──→ import() ──→ intelligence.cjs ──→ better-sqlite3 ──→ memory.db (direct read)
+hook-handler.mjs ──→ import() ──→ intelligence.cjs ──→ readStoreFromRvf() ──→ memory.rvf (direct read)
 
-memory-bridge.ts:       DELETED
-memory-initializer.ts:  Pure SQLite CRUD (zero bridge dependency)
+memory-bridge.ts:       DELETED (ADR-0085)
+memory-initializer.ts:  DELETED (ADR-0086 Debt 6 — 918-line shim removed after all callers rewired)
 writeJsonSidecar:       DELETED (sidecar file no longer written)
 AgentDBService:         Never existed as a class (comment reference removed)
 ```

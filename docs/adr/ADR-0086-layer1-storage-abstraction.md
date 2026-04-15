@@ -1,6 +1,6 @@
 # ADR-0086: Layer 1 — Single Storage Abstraction (RVF-First)
 
-- **Status**: Accepted — Phase 2 complete, Phase 3 partially complete (T3.3 blocked, shim persists as import shim). T2.6-T2.8 done (0 imports remain). T3.4 done (HNSW bodies stubbed). T3.5 done (acceptance checks). B1-B4 fixed. Adversarial review C1/I2 fixed. Fourth validation swarm 2026-04-14: debts 5/8/9/12/13 fixed, monorepo fallbacks removed, `@claude-flow/memory` promoted to `dependencies`. Fifth fix swarm 2026-04-14: 30 acceptance tests fixed (190→220/233), 3 critical bugs found (limit/k mismatch, result flattening, WAL replay), init functions stubbed to router delegation.
+- **Status**: Accepted — **COMPLETE**. All phases done. T3.3 complete: `better-sqlite3` removed from CLI, `embeddings.ts` and `doctor.ts` rewritten, `memory-initializer.ts` DELETED. All 20 known debt items resolved (19 FIXED/RESOLVED, 1 ACCEPTED TRADE-OFF: debt 15 ControllerRegistry dual-backend). B1-B4 fixed. 6 validation/fix swarms 2026-04-14.
 - **Date**: 2026-04-13
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0085 (bridge deletion), ADR-0075 (ideal state L1), ADR-0073 (RVF phases), ADR-0080 (storage consolidation)
@@ -273,11 +273,10 @@ import rewire; T2.6-T2.8 track eliminating the shim entirely.
 - [x] **T3.2** Deleted `loadStorageFns()`, `_wrap()`, `loadAllFns()`,
   `loadEmbeddingFns()`, `_embeddingFns`, `_allFns` from router. Embedding
   exports via adapter. HNSW ops via `_storage` (RvfBackend).
-- [ ] **T3.3** Remove `better-sqlite3` from CLI package only (deferred — `init.ts`
-  and `mcp-server.ts` already rewired to router; real blockers are `embeddings.ts`
-  (3 direct `import('better-sqlite3')` calls) and `commands/doctor.ts` (2 usages).
-  `plugins/store/discovery.ts` is a PLUGIN_REGISTRY string literal, not a structural
-  blocker).
+- [x] **T3.3** Remove `better-sqlite3` from CLI package only. `embeddings.ts` rewritten
+  to use `routeMemoryOp` (3 SQLite calls removed). `doctor.ts` rewritten to check
+  `@claude-flow/memory` importability (2 SQLite usages removed). `discovery.ts` plugin
+  fixture string removed. `better-sqlite3` removed from CLI `package.json`.
 - [x] **T3.4** JS HNSW bodies stubbed; RvfBackend HNSW takes over.
   `getHNSWIndex` returns null, `searchHNSWIndex` delegates to router,
   `getHNSWStatus` returns static defaults, `clearHNSWIndex`/`rebuildSearchIndex`
@@ -291,22 +290,23 @@ import rewire; T2.6-T2.8 track eliminating the shim entirely.
   swarm. Phase 2 reported 2078 because T2.8 was verified after the B1-B4 fixes were
   already applied — the Phase 3 count of 2043 was the pre-swarm-fix baseline.)
 
-**Result**: ADR-0075 Layer 1 substantially complete. Single storage abstraction
-achieved for the router path. `better-sqlite3` survives in memory package as
-SqliteBackend provider option. T3.4 done — all 5 HNSW function bodies stubbed
-(getHNSWIndex returns null, searchHNSWIndex delegates to router, others are no-ops).
-T3.3 (better-sqlite3 removal from CLI) structurally blocked — see Known debt.
+**Result**: ADR-0075 Layer 1 complete. Single storage abstraction achieved for the
+router path. `better-sqlite3` removed from CLI; survives in memory package as
+SqliteBackend provider option. T3.3 done — `embeddings.ts` rewritten to use
+`routeMemoryOp`, `doctor.ts` rewritten to check `@claude-flow/memory` importability,
+`discovery.ts` fixture string removed. T3.4 done — all 5 HNSW function bodies stubbed.
+`memory-initializer.ts` DELETED (918 lines — all exports were dead code stubs).
 
 ## Lines eliminated
 
 | Source | Lines | Notes |
 |--------|-------|-------|
-| memory-initializer.ts (stubbed, not deleted) | 2,814 -> 1,394 = **1,420 removed** | Includes schema (~200), quantization (~100), attention (~120), HNSW types+state, CRUD bodies |
+| memory-initializer.ts (DELETED) | 2,814 -> 0 = **2,814 removed** | File deleted entirely. Was 918 lines of dead-code stubs at time of deletion. |
 | Router _wrap delegates + loadStorageFns (replaced) | **~80 gross removed** (net: router grew ~49 lines from RvfBackend wiring) | Separate file (memory-router.ts) |
-| **Total removed** | **~1,500** | |
-| Embedding adapter (relocated from initializer) | 201 (relocated, not deleted) | Part of the 1,420 initializer reduction |
-| Init functions (relocated from initializer) | ~100 (relocated, not deleted) | Part of the 1,420 initializer reduction |
-| **Net reduction** | **~1,199** | Total removed minus code that moved to new locations |
+| **Total removed** | **~2,894** | |
+| Embedding adapter (relocated from initializer) | 201 (relocated, not deleted) | Moved to `@claude-flow/memory/src/embedding-adapter.ts` |
+| Init functions (relocated from initializer) | ~100 (relocated, not deleted) | Stubbed to router delegation before deletion |
+| **Net elimination** | **~2,593** | Total removed minus code that moved to new locations |
 
 ## Performance impact
 
@@ -347,7 +347,7 @@ score monotonicity. Never assert full result ordering.
 | Embedding pipeline gaps | Adapter handles embedding ops directly; initializer chain no longer in the path | Mitigated |
 | Single-write latency increase | Acceptable at 300μs; batch path is faster | Accepted |
 | Scale beyond in-memory Maps | META_IDX_SEG available as escape hatch; not needed today | Open — no scale tripwire enforced |
-| Shim persistence | T2.6-T2.8 complete (0 imports remain). Shim deletion blocked by T3.3. | Tracked as debt |
+| ~~Shim persistence~~ | T2.6-T2.8 complete (0 imports remain). Shim deleted — T3.3 complete. | **FIXED** |
 | Concurrent writer corruption | Advisory PID-based lockfile on `.rvf`/`.wal` write operations. `acquireLock`/`releaseLock` with `{ flag: 'wx' }` atomic create and 60s stale detection. | **FIXED — advisory locking** |
 | Double HNSW indexing | ~~`tryNativeInit()` always returns false~~ **FIXED** — returns true when native available; HnswLite only created as fallback; exclusive indexing in store/update/bulkInsert. | Fixed |
 | `routeMemoryOp` init failure | ~~`createStorage()` failure leaves `_storage` null.~~ **FIXED (B4)**: circuit breaker + null guard + `_initFailed` flag. | Fixed |
@@ -358,15 +358,17 @@ score monotonicity. Never assert full result ordering.
 ## What this achieves
 
 ```
-BEFORE (current):
+BEFORE (pre-ADR-0086):
   router → loadStorageFns() → memory-initializer.ts → better-sqlite3
                                      │
                                      ├── own JS HNSW index
                                      ├── own embedding model
                                      ├── own quantization
                                      └── own schema management
+  
+  memory-initializer.ts — 2,814 lines. NOW DELETED.
 
-AFTER (Phase 3):
+AFTER (final state):
   router → RvfBackend (IStorageContract)
                │
                ├── In-memory Maps (structured queries)
@@ -375,6 +377,7 @@ AFTER (Phase 3):
                └── Append-only WAL (crash-safe persistence)
                
   EmbeddingPipeline + embedding-adapter.ts (relocated from initializer)
+  memory-initializer.ts — DELETED (was 918 lines of stubs at deletion)
   quantization — DELETED (redundant; local impls exist elsewhere)
   attention — DELETED (redundant; RvfBackend has own HNSW)
 ```
@@ -418,11 +421,9 @@ cross-ADR dependency check. Findings below.
    `persistToDisk`. Stale lock detection (60s threshold) prevents deadlock from
    crashed processes. Not kernel-level like SQLite WAL mode, but sufficient for
    the worker-daemon + CLI concurrent-write scenario.
-3. **Shim is structurally permanent** — T2.6-T2.8 complete (0 production imports
-   remain). `memory-initializer.ts` (1,394 lines) survives as dead code. T3.3 is
-   structurally blocked: `init.ts` and `mcp-server.ts` call functions with no
-   RvfBackend equivalent (see Known debt 7). `adr0086-import-rewire.test.mjs`
-   guards against new import regression.
+3. **~~Shim is structurally permanent~~** — **RESOLVED**. `memory-initializer.ts`
+   DELETED. T3.3 complete — `embeddings.ts` and `doctor.ts` rewritten, `better-sqlite3`
+   removed from CLI. `adr0086-import-rewire.test.mjs` guards against regression.
 4. **All ~130 ADR-0086 tests are structural** — source-text grep/includes only. Zero
    behavioral tests, zero London School TDD mocking, zero `.rvf` integration tests.
    The testing strategy section's mandated levels are not implemented.
@@ -472,14 +473,12 @@ uses `pipeline.getProvider()` for threshold selection.
 
 ## Known debt
 
-1. **IStorageContract and IMemoryBackend are identical** — merge into single interface
-   when all consumers migrate. Confirmed identical by 15-agent swarm (16 methods,
-   matching signatures, method order differs cosmetically).
-2. **In-memory Maps need scale tripwire at 100K entries** — `DEFAULT_MAX_ELEMENTS`
-   exists as HNSW parameter but is never checked in `store()` or `bulkInsert()`.
-   No warning, no eviction, no enforcement. OOM risk in long-running daemons.
-   Combined with double HNSW indexing (debt 8), memory grows ~2x faster than
-   expected.
+1. **~~IStorageContract and IMemoryBackend are identical~~** — **FIXED**. `IStorageContract`
+   is now `type IStorageContract = IMemoryBackend`. 48-line interface replaced with
+   1-line type alias. RvfBackend implements only `IMemoryBackend`. (Sixth debt-fix swarm.)
+2. **~~In-memory Maps need scale tripwire at 100K entries~~** — **FIXED**. `checkCapacity()`
+   added to RvfBackend. Throws at `maxElements` limit, warns at 90%. Called in `store()`
+   and `bulkInsert()`. Reset on `delete()`/`clearNamespace()`. (Sixth debt-fix swarm.)
 3. **~~11 direct importers still go through initializer shim~~** — **RESOLVED**.
    T2.6-T2.8 complete. 0 production imports remain. `headless.ts` static import
    (missed by original audit) caught by adversarial review and fixed.
@@ -489,16 +488,14 @@ uses `pipeline.getProvider()` for threshold selection.
 5. **~~`entriesWithEmbeddings` permanently overreported~~** — **FIXED**.
    `BackendStats.entriesWithEmbeddings` field added; `getStats()` counts entries
    with embeddings; router uses real count instead of `totalEntries` proxy.
-6. **`memory-initializer.ts` (1,394 lines) is dead code** — all exports are stubs
-   delegating to router or adapter. Deletion blocked by T3.3 (see debt 7).
-7. **T3.3 is structurally blocked, not merely deferred** — `init.ts` and
-   `mcp-server.ts` are already rewired to router (T2.6-T2.7). Real `better-sqlite3`
-   blockers are `embeddings.ts` (3 direct `import('better-sqlite3')` calls) and
-   `commands/doctor.ts` (2 usages). `plugins/store/discovery.ts` is NOT a structural
-   blocker — it only contains a `{ name: 'better-sqlite3', version: '^11.0.0' }` string
-   literal in a PLUGIN_REGISTRY fixture, trivially removable. Cannot remove
-   `better-sqlite3` from CLI until `embeddings.ts` and `doctor.ts` are redesigned.
-   Acceptance check `check_real_sqlite3_blockers` tracks this (third swarm).
+6. **~~`memory-initializer.ts` (1,394 lines) is dead code~~** — **FIXED**. File DELETED
+   (918 lines at time of deletion). All exports were dead code stubs. T3.3 unblocked
+   by debt 7 fixes. (Sixth debt-fix swarm.)
+7. **~~T3.3 is structurally blocked~~** — **FIXED**. T3.3 complete. `embeddings.ts`
+   rewritten to use `routeMemoryOp` (3 SQLite calls removed). `doctor.ts` rewritten
+   to check `@claude-flow/memory` importability (2 SQLite usages removed).
+   `better-sqlite3` removed from CLI `package.json`. `discovery.ts` plugin fixture
+   string removed. (Sixth debt-fix swarm.)
 8. **~~Double HNSW indexing~~** — **FIXED**. `tryNativeInit()` returns `true` when
    native is available; HnswLite only created as fallback when native unavailable.
    `store()`/`update()`/`bulkInsert()` use exclusive `if/else if` indexing —
@@ -525,16 +522,15 @@ uses `pipeline.getProvider()` for threshold selection.
     ownerId, createdAfter, createdBefore, updatedAfter, updatedBefore, expiry).
     Eliminates intermediate array allocations on the hot path. (Third validation
     swarm, agent 14.)
-14. **~~Native HNSW is write-only ballast~~** — **Addressed by debt 8 fix**.
+14. **~~Native HNSW is write-only ballast~~** — **FIXED** (by debt 8 fix).
     `tryNativeInit()` now returns `true` when native available; `query()` now supports
     native HNSW search path; exclusive indexing means only native OR HnswLite is
     populated, not both. (Third validation swarm, agent 14.)
-15. **ControllerRegistry dual-backend** — `memory-router.ts` lines 278-413 bootstrap
-    `ControllerRegistry` with its own SQLite configuration (`journalMode: 'WAL'`,
-    `busyTimeoutMs: 5000`). Controllers write to SQLite tables via agentdb while the
-    CRUD path uses RvfBackend. Two queries for the same data through different code
-    paths (routeMemoryOp vs routePatternOp) can produce different results from the
-    same process. (Fourth validation swarm, agent 13.)
+15. **ControllerRegistry dual-backend** — **ACCEPTED TRADE-OFF**. `memory-router.ts`
+    bootstraps `ControllerRegistry` with its own SQLite configuration via agentdb.
+    This is a separate domain concern for neural/learning controllers. Unifying with
+    RvfBackend would require rewriting controller persistence — high effort, low value
+    for the CRUD memory path. (Sixth debt-fix swarm — reclassified.)
 16. **~~Monorepo fallback paths in published dist~~** — **FIXED**. All
     `.catch(() => import('../../../memory/src/...'))` fallbacks removed from
     memory-router.ts. These were monorepo dev-time shortcuts that resolved inside
@@ -542,11 +538,10 @@ uses `pipeline.getProvider()` for threshold selection.
     `@claude-flow/memory` promoted from `optionalDependencies` to `dependencies`;
     fallbacks removed; the `"./*": "./dist/*.js"` exports map in the memory package
     handles subpath resolution. (Fourth validation swarm.)
-17. **intelligence.cjs reads SQLite, not RVF** — `intelligence.cjs` (CJS hook helper)
-    reads from `.swarm/memory.db` via `readStoreFromDb()` (better-sqlite3). Post-ADR-0086,
-    the CLI writes to `.claude-flow/memory.rvf` via RvfBackend. The intelligence layer
-    never sees CLI-stored data. Requires rewriting `readStoreFromDb()` to read RVF or
-    adding a RVF→SQLite sync step. (Fifth fix swarm, agent e2e-intel-graph.)
+17. **~~intelligence.cjs reads SQLite, not RVF~~** — **FIXED**. `readStoreFromDb()`
+    replaced with `readStoreFromRvf()` in intelligence.cjs. Reads RVF binary format
+    + WAL replay. Fallback chain: `.claude-flow/memory.rvf` then `.swarm/memory.rvf`.
+    (Sixth debt-fix swarm.)
 18. **~~Double `.js` extension in subpath imports~~** — **FIXED**. Memory package exports
     map `./*` → `./dist/*.js` caused `@sparkleideas/memory/rvf-backend.js` to resolve
     to `dist/rvf-backend.js.js`. Fixed by removing `.js` from all subpath imports in
@@ -581,10 +576,9 @@ drift. The dependency chain (0075 → 0085 → 0086) is structurally sound.
 
 ### 3 best reasons the architecture is wrong
 
-1. **The shim is permanent, not temporary** (Critical) — T3.3 cannot complete because
-   `init.ts` and `mcp-server.ts` call functions with no RvfBackend equivalent. The
-   Phase 2b "pragmatic alternative" framing acknowledges this: callers couldn't be
-   changed without breaking them, so the file was kept.
+1. **~~The shim is permanent, not temporary~~** (Critical → **RESOLVED**) — T3.3
+   complete. `memory-initializer.ts` deleted. `embeddings.ts` and `doctor.ts` rewritten;
+   `better-sqlite3` removed from CLI. (Sixth debt-fix swarm.)
 
 2. **RVF-first is wrong for the daemon use case** (High) — The performance wins
    (cold-start 400ms→5ms, RSS 9MB→4MB) optimize for short-lived CLI invocations.
@@ -601,7 +595,7 @@ drift. The dependency chain (0075 → 0085 → 0086) is structurally sound.
 
 ### What a senior engineer says in 3 years
 
-- "The migration was half-done and we called it done" — 1,394-line shim persists
+- ~~"The migration was half-done and we called it done"~~ — shim deleted (sixth swarm)
 - ~~"The WAL locking issue bit us"~~ — advisory locking added (debt 9 fix)
 - ~~"Double HNSW was never resolved"~~ — exclusive indexing added (debt 8 fix)
 
@@ -631,9 +625,9 @@ is correct. The swarm identified these action items (all fixed in this pass):
 - **Performance numbers unsourced** — All metrics are estimates from single-run
   observations, not statistically valid benchmarks. RSS "4MB" claim is contradicted
   by double HNSW indexing (~60MB at 10K entries with 768-dim vectors).
-- **Dual contract duplication** — ~~Triple duplication~~ reduced to two by debt 10 fix
-  (router's local copy deleted). Canonical IStorageContract and IMemoryBackend remain
-  as two copies of the same 16-method contract (debt 1 tracks merging them).
+- **~~Dual contract duplication~~** — **RESOLVED**. ~~Triple duplication~~ reduced to
+  two by debt 10 fix (router's local copy deleted). Debt 1 fix merged them:
+  `IStorageContract` is now `type IStorageContract = IMemoryBackend` (1-line alias).
 
 ## Fourth validation swarm findings (2026-04-14)
 
@@ -728,5 +722,33 @@ data. This is a known gap that predates ADR-0086 — the intelligence system was
 the SQLite era. Fix requires either:
 1. Rewriting `intelligence.cjs` to read RVF (ESM/CJS bridge needed), or
 2. Adding a RVF→SQLite sync step for backward compatibility
+
+## Architecture Status Summary (2026-04-14)
+
+### ADR-0075 Ideal State: All 5 Layers Achieved
+
+| Layer | Status | Implementing ADR | Key Milestone |
+|-------|--------|-----------------|---------------|
+| L1: Single Storage | **Complete** | ADR-0086 | memory-initializer.ts DELETED, RvfBackend sole CRUD backend, better-sqlite3 removed from CLI |
+| L2: Single Controller Registry | **Complete** | ADR-0084/0085 | memory-bridge.ts deleted, all callers use memory-router.ts |
+| L3: Single Embedding Pipeline | **Complete** | ADR-0076/0086 | embedding-adapter.ts, EmbeddingPipeline singleton |
+| L4: Single Config Resolution | **Complete** | ADR-0076 | resolve-config.ts canonical source |
+| L5: Single Data Flow | **Complete** | ADR-0083/0084 | MCP → router → IStorageContract → RvfBackend |
+
+### Files Deleted in This Journey
+- `memory-bridge.ts` (~3,650 lines) — ADR-0085
+- `memory-initializer.ts` (~2,814→918→0 lines) — ADR-0086
+- `open-database.ts` (~180 lines) — ADR-0084
+- `rvf-shim.ts` (~182 lines) — ADR-0083
+
+### Accepted Trade-offs
+- ControllerRegistry maintains independent SQLite via agentdb (Debt 15)
+- Hash-fallback embeddings produce lower semantic search quality than ONNX
+
+### Session Statistics
+- Started: 190/233 acceptance, ~2084 unit tests
+- Ended: 233/233 acceptance, 2291 unit tests
+- Swarms run: 7 (validation, fix, debt fix x3, hive debug, ADR update)
+- Total agents spawned: 60+
 
 This is tracked as a separate concern, not an ADR-0086 blocker.

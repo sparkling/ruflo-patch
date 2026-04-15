@@ -74,7 +74,9 @@ check_initializer_zero_bridge_imports() {
   init_file=$(find "$cli_pkg_dir" -name "memory-initializer.js" -type f 2>/dev/null | head -1)
 
   if [ -z "$init_file" ]; then
-    _CHECK_OUTPUT="ADR-0085-2: memory-initializer.js not found in dist"
+    # ADR-0086 Debt 6: memory-initializer.ts deleted — zero bridge refs by definition
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0085-2: memory-initializer.js absent from dist (deleted by ADR-0086 Debt 6)"
     return
   fi
 

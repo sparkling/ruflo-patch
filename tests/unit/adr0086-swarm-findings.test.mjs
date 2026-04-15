@@ -4,7 +4,7 @@
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 const MEM = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src';
 const CLI = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
@@ -13,7 +13,7 @@ const adapterSrc  = readFileSync(`${MEM}/embedding-adapter.ts`, 'utf-8');
 const routerSrc   = readFileSync(`${CLI}/memory/memory-router.ts`, 'utf-8');
 const perfSrc     = readFileSync(`${CLI}/commands/performance.ts`, 'utf-8');
 const headlessSrc = readFileSync(`${CLI}/runtime/headless.ts`, 'utf-8');
-const initSrc     = readFileSync(`${CLI}/memory/memory-initializer.ts`, 'utf-8');
+const initPath    = `${CLI}/memory/memory-initializer.ts`;
 const rvfSrc      = readFileSync(`${MEM}/rvf-backend.ts`, 'utf-8');
 
 // --- Group 1: C1 fix verified — embedding-adapter model vs provider usage
@@ -141,28 +141,12 @@ describe('ADR-0086 swarm: I3 — search catch returns success: false', () => {
   });
 });
 
-// --- Group 6: Dead code removed from memory-initializer
+// --- Group 6: memory-initializer deleted (dead code removal complete)
 
-describe('ADR-0086 swarm: dead code removed from memory-initializer', () => {
-  it('cosineSim function definition removed', () => {
-    assert.ok(!initSrc.includes('function cosineSim('),
-      'cosineSim function must be deleted from memory-initializer');
-    assert.ok(initSrc.includes('cosineSim deleted'),
-      'tombstone comment should document deletion');
-  });
-
-  it('saveHNSWMetadata function definition removed', () => {
-    assert.ok(!initSrc.includes('function saveHNSWMetadata('),
-      'saveHNSWMetadata function must be deleted from memory-initializer');
-    assert.ok(initSrc.includes('saveHNSWMetadata deleted'),
-      'tombstone comment should document deletion');
-  });
-
-  it('addToHNSWIndex function definition removed', () => {
-    assert.ok(!initSrc.includes('function addToHNSWIndex('),
-      'addToHNSWIndex function must be deleted from memory-initializer');
-    assert.ok(initSrc.includes('addToHNSWIndex deleted'),
-      'tombstone comment should document deletion');
+describe('ADR-0086 swarm: memory-initializer deleted (dead code removal complete)', () => {
+  it('memory-initializer.ts is absent (Debt 6)', () => {
+    assert.ok(!existsSync(initPath),
+      'memory-initializer.ts should be deleted (ADR-0086 Debt 6)');
   });
 
   it('memory-router does NOT import from memory-initializer', () => {

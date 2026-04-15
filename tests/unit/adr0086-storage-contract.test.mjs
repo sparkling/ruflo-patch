@@ -22,14 +22,18 @@ const MEMORY_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src'
 
 const STORAGE_PATH     = `${MEMORY_SRC}/storage.ts`;
 const RVF_BACKEND_PATH = `${MEMORY_SRC}/rvf-backend.ts`;
+const TYPES_PATH       = `${MEMORY_SRC}/types.ts`;
 
 // ============================================================================
 // Parser helpers
 // ============================================================================
 
 /**
- * Extract method signatures from IStorageContract interface block.
+ * Extract method signatures from IMemoryBackend interface block in types.ts.
  * Returns Map<methodName, paramCount>.
+ *
+ * Since ADR-0086 Debt 1, IStorageContract is a type alias for IMemoryBackend,
+ * so the canonical method list lives in the IMemoryBackend interface.
  *
  * Matches lines like:
  *   initialize(): Promise<void>;
@@ -37,9 +41,9 @@ const RVF_BACKEND_PATH = `${MEMORY_SRC}/rvf-backend.ts`;
  *   getByKey(namespace: string, key: string): Promise<MemoryEntry | null>;
  */
 function parseContractMethods(source) {
-  // Grab the IStorageContract block
-  const ifaceStart = source.indexOf('export interface IStorageContract');
-  assert.ok(ifaceStart !== -1, 'IStorageContract not found in storage.ts');
+  // Parse IMemoryBackend (the canonical interface after Debt 1 merge)
+  const ifaceStart = source.indexOf('export interface IMemoryBackend');
+  assert.ok(ifaceStart !== -1, 'IMemoryBackend not found in types.ts');
 
   // Find the matching closing brace — count braces from the opening one
   let braceDepth = 0;
@@ -57,7 +61,7 @@ function parseContractMethods(source) {
       }
     }
   }
-  assert.ok(blockStart !== -1 && blockEnd !== -1, 'Could not delimit IStorageContract body');
+  assert.ok(blockStart !== -1 && blockEnd !== -1, 'Could not delimit IMemoryBackend body');
 
   const block = source.slice(blockStart, blockEnd + 1);
   const methods = new Map();
@@ -114,9 +118,10 @@ function parseBackendMethods(source) {
 // ============================================================================
 
 const storageSrc = readFileSync(STORAGE_PATH, 'utf-8');
+const typesSrc   = readFileSync(TYPES_PATH, 'utf-8');
 const backendSrc = readFileSync(RVF_BACKEND_PATH, 'utf-8');
 
-const contractMethods = parseContractMethods(storageSrc);
+const contractMethods = parseContractMethods(typesSrc);
 const backendMethods  = parseBackendMethods(backendSrc);
 
 // ============================================================================

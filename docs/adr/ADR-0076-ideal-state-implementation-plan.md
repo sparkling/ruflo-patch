@@ -1,5 +1,7 @@
 # ADR-0076: Architecture Consolidation — Implementation Plan
 
+> See also [ADR-0076-architecture-consolidation-plan.md](ADR-0076-architecture-consolidation-plan.md) for high-level plan.
+
 - **Status**: Implemented (all phases complete)
 - **Date**: 2026-04-06 (proposed), 2026-04-07 (Phases 0-4 implemented)
 - **Depends on**: ADR-0075 (Architecture State Assessment)
@@ -594,8 +596,7 @@ Every MCP tool call follows one path:
 
 **Files NOT modified (by this ADR):**
 - `memory-bridge.ts` — became dead code after Phases 0-4; **deleted by ADR-0085** (2026-04-13)
-- `memory-initializer.ts` — 11 bridge try-blocks **removed by ADR-0085**; remains as pure SQLite CRUD
-(Update: ADR-0086 replaced CRUD paths with RvfBackend stubs. memory-initializer.ts is now an import shim.)
+- `memory-initializer.ts` — 11 bridge try-blocks **removed by ADR-0085**; DELETED by ADR-0086 Debt 6 (2026-04-14). 918-line shim removed after all callers rewired to memory-router.ts.
 
 ## Decision
 

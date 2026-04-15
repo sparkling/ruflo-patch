@@ -1,6 +1,6 @@
 # ADR-0082: Test Integrity — No Fallbacks, Fail Loudly
 
-- **Status**: Proposed
+- **Status**: Partially Implemented
 - **Date**: 2026-04-12
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 4-agent audit of 150+ acceptance checks
@@ -160,6 +160,34 @@ The 70% noise weight drowns the signal.
 
 **Fix**: When `model === 'hash-fallback'`, use `score = bm25ScoreVal` (BM25-only).
 The threshold (0.05) is correct — the scoring formula is the problem.
+
+## Post-proposal implementation (2026-04-14)
+
+Significant test integrity work was completed under ADR-0086 and related efforts, addressing several categories from this ADR:
+
+### Rule 1 progress: Silent-pass patterns eliminated
+
+- 17 silent-pass patterns converted from `if (!src) return` to `assert.ok` — tests now fail loudly when the feature under test is absent
+- Acceptance check grep patterns fixed to match actual output, not comments (e.g., patterns that matched their own source code or zero-result framing text)
+
+### Rule 2 progress: Harness workarounds reduced
+
+- `|| true` exit code swallowing removed from test scripts — failures now propagate correctly instead of being silently absorbed
+
+### ADR-0086 behavioral test coverage
+
+ADR-0086 (Layer 1 storage abstraction) added 174 tests across three categories:
+- 91 behavioral tests (contract verification, wiring, fallback chains)
+- 69 integration tests (real I/O, file persistence, subprocess execution)
+- 14 circuit breaker tests (failure mode validation)
+
+These tests were written under the ADR-0082 "fail loudly" discipline: no silent fallbacks, no harness workarounds, mock-first London School TDD for unit level.
+
+### What remains
+
+- Layer 1 product fixes (BM25-only scoring for hash-fallback) — not yet implemented
+- Layer 2 harness workaround removal (manual DDL, embeddings.json stamping) — not yet removed
+- Layer 3 cheating test fixes — the 46-check inventory has not been systematically addressed; individual checks were fixed ad hoc as encountered
 
 ## Consequences
 

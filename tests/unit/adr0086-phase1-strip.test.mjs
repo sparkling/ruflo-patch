@@ -1,12 +1,9 @@
 // @tier unit
 // ADR-0086 Phase 1: Verify non-storage functions stripped from memory-initializer.
 //
-// Checks:
-//   Group 1: Quantization functions deleted (T1.1)
-//   Group 2: Attention functions deleted (T1.2)
-//   Group 3: Embedding adapter created (T1.3)
-//   Group 4: Schema/migration delegates removed from router (T1.4)
-//   Group 5: Router _wrap surface reduced (T1.1-T1.5)
+// memory-initializer.ts was deleted (ADR-0086 Debt 6). Tests that read its
+// contents are replaced with a single absence check. Tests targeting
+// other files (router, barrel, adapter) remain unchanged.
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -21,12 +18,22 @@ const barrelPath      = `${CLI_SRC}/index.ts`;
 const adapterPath     = `${MEM_SRC}/embedding-adapter.ts`;
 const memBarrelPath   = `${MEM_SRC}/index.ts`;
 
-const initializerSrc = readFileSync(initializerPath, 'utf-8');
 const routerSrc      = readFileSync(routerPath, 'utf-8');
 const barrelSrc      = readFileSync(barrelPath, 'utf-8');
 
 // ============================================================================
-// Group 1: Quantization functions deleted (T1.1)
+// Guard: memory-initializer.ts is deleted (ADR-0086 Debt 6)
+// ============================================================================
+
+describe('ADR-0086 Phase 1: memory-initializer deleted', () => {
+  it('memory-initializer.ts is absent (Debt 6 — all stubs removed)', () => {
+    assert.ok(!existsSync(initializerPath),
+      'memory-initializer.ts should be deleted (ADR-0086 Debt 6)');
+  });
+});
+
+// ============================================================================
+// Group 1: Quantization functions deleted (T1.1) — router + barrel checks
 // ============================================================================
 
 describe('ADR-0086 T1.1: Quantization functions removed', () => {
@@ -51,18 +58,10 @@ describe('ADR-0086 T1.1: Quantization functions removed', () => {
     assert.ok(!routerSrc.includes("case 'quantizedSim':"), 'Router still has quantizedSim case');
     assert.ok(!routerSrc.includes("case 'quantizationStats':"), 'Router still has quantizationStats case');
   });
-
-  it('no quantization function bodies in initializer', () => {
-    // Bodies deleted — function definition should not exist
-    assert.ok(
-      !initializerSrc.includes('export function quantizeInt8('),
-      'Initializer still has quantizeInt8 body',
-    );
-  });
 });
 
 // ============================================================================
-// Group 2: Attention functions deleted (T1.2)
+// Group 2: Attention functions deleted (T1.2) — router + barrel checks
 // ============================================================================
 
 describe('ADR-0086 T1.2: Attention functions removed', () => {
@@ -86,17 +85,6 @@ describe('ADR-0086 T1.2: Attention functions removed', () => {
     assert.ok(!routerSrc.includes("case 'softmax':"), 'Router still has softmax case');
     assert.ok(!routerSrc.includes("case 'topK':"), 'Router still has topK case');
     assert.ok(!routerSrc.includes("case 'flashSearch':"), 'Router still has flashSearch case');
-  });
-
-  it('no attention function bodies in initializer', () => {
-    assert.ok(
-      !initializerSrc.includes('export function batchCosineSim('),
-      'Initializer still has batchCosineSim body',
-    );
-    assert.ok(
-      !initializerSrc.includes('export function flashAttentionSearch('),
-      'Initializer still has flashAttentionSearch body',
-    );
   });
 });
 
@@ -127,37 +115,6 @@ describe('ADR-0086 T1.3: Embedding adapter', () => {
       assert.ok(memBarrel.includes(fn), `Memory barrel missing: ${fn}`);
     }
   });
-
-  it('initializer embedding functions are stubs (delegate to adapter)', () => {
-    // loadEmbeddingModel body should be a _loadAdapter() delegation, not the old body
-    assert.ok(
-      initializerSrc.includes('(await _loadAdapter()).loadEmbeddingModel('),
-      'loadEmbeddingModel is not a stub — still has old body',
-    );
-    assert.ok(
-      initializerSrc.includes('(await _loadAdapter()).generateEmbedding('),
-      'generateEmbedding is not a stub — still has old body',
-    );
-    assert.ok(
-      initializerSrc.includes('(await _loadAdapter()).generateBatchEmbeddings('),
-      'generateBatchEmbeddings is not a stub — still has old body',
-    );
-    assert.ok(
-      initializerSrc.includes('(await _loadAdapter()).getAdaptiveThreshold('),
-      'getAdaptiveThreshold is not a stub — still has old body',
-    );
-  });
-
-  it('old embedding module state removed from initializer', () => {
-    assert.ok(
-      !initializerSrc.includes('let embeddingModelState'),
-      'embeddingModelState still present in initializer',
-    );
-    assert.ok(
-      !initializerSrc.includes('function generateHashEmbedding('),
-      'generateHashEmbedding still present in initializer (exists in EmbeddingPipeline)',
-    );
-  });
 });
 
 // ============================================================================
@@ -175,18 +132,6 @@ describe('ADR-0086 T1.4: Schema/migration delegates removed', () => {
       );
     });
   }
-
-  it('MEMORY_SCHEMA_V3 remains internally in initializer (not exported)', () => {
-    // T1.4 complete: un-exported but still used by initializeMemoryDatabase.
-    assert.ok(
-      initializerSrc.includes('const MEMORY_SCHEMA_V3'),
-      'MEMORY_SCHEMA_V3 should still exist internally',
-    );
-    assert.ok(
-      !initializerSrc.includes('export const MEMORY_SCHEMA_V3'),
-      'MEMORY_SCHEMA_V3 must not be exported (T1.4)',
-    );
-  });
 });
 
 // ============================================================================
@@ -196,8 +141,6 @@ describe('ADR-0086 T1.4: Schema/migration delegates removed', () => {
 describe('ADR-0086 Phase 1: Router _wrap surface', () => {
   // Count remaining _wrap delegates
   const wrapMatches = routerSrc.match(/_wrap\('/g) || [];
-  // After Phase 1: HNSW (6) + Embedding (4) + applyTemporalDecay (1) = 11
-  // Plus the _wrap function definition itself = 12 matches
 
   it('_wrap delegates reduced to <= 12 (HNSW + embedding + decay + definition)', () => {
     assert.ok(
@@ -210,21 +153,6 @@ describe('ADR-0086 Phase 1: Router _wrap surface', () => {
     assert.ok(
       !routerSrc.includes("_wrap('verifyMemoryInit')"),
       'Router still has verifyMemoryInit _wrap delegate',
-    );
-  });
-});
-
-// ============================================================================
-// Group 6: Line count reduction
-// ============================================================================
-
-describe('ADR-0086 Phase 1: Line count', () => {
-  const lines = initializerSrc.split('\n').length;
-
-  it('initializer reduced from 2814 lines', () => {
-    assert.ok(
-      lines < 2300,
-      `Expected < 2300 lines after Phase 1 strip, got ${lines}`,
     );
   });
 });

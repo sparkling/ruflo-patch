@@ -139,7 +139,7 @@ Files requiring "sql.js" string updates (from hive audit):
 - [x] **T1.2** Update `memory-tools.ts` — change 6 `'sql.js + HNSW'` → `'SQLite + HNSW'`
 - [x] **T1.3** Update `guidance-tools.ts` — fix tool descriptions mentioning sql.js
 - [x] **T1.4** Update `migration-legacy.ts` — fix user-visible log messages
-- [x] **T1.5** Sweep remaining ~17 files for stale sql.js comments (15 files cleaned; 2 accurate historical comments in memory-initializer.ts left intentionally)
+- [x] **T1.5** Sweep remaining ~17 files for stale sql.js comments (15 files cleaned; 2 historical comments in memory-initializer.ts were left intentionally but are now moot — file deleted by ADR-0086 Phase 3)
 - [x] **T1.6** Unit tests: verify all 1738 still pass after string changes
 - [x] **T1.7** Acceptance: verify `backend:` output no longer says sql.js (acceptance-adr0084-checks.sh created + wired)
 
@@ -167,9 +167,11 @@ Add missing methods to `memory-router.ts` so all callers can use the router:
 ### Phase 4: Single controller (bridge removal from route layer)
 
 - [x] **T4.1** Verify zero external imports of `memory-bridge.ts` — hooks-tools, worker-daemon, agentdb-orchestration all clean; memory-initializer retains bridge as internal detail (all 11 calls are "try AgentDB first, fallback exists" patterns)
+  (Note: memory-initializer.ts subsequently DELETED by ADR-0086 Phase 3 — bridge internal detail is now fully gone.)
 - [x] **T4.2** Inline 9 bridge function calls in router's 5 route methods → controller-direct via `getController()`. Added `generateId()`, `getCallableMethod()`, `shutdownRouter()`. Removed `loadBridge()` and `_bridgeMod` from router.
 - [x] **T4.2b** Worker-daemon: `shutdownBridge` → `shutdownRouter` from memory-router (zero bridge imports)
 - [x] **T4.3** Bridge retained as internal memory-subsystem detail (memory-initializer uses it for registry bootstrap). All external consumers migrated. Route methods are fully controller-direct.
+  (Note: memory-initializer.ts subsequently DELETED by ADR-0086 Phase 3 — bridge is no longer used for registry bootstrap.)
 - [x] **T4.4** Unit + integration + acceptance tests: 64 unit/integration tests (Phase 4 file) + 4 acceptance checks (ADR-0084-9 through ADR-0084-12) + updated Phase 2/3 checks for Phase 4 state
 
 ### Completion criteria
@@ -188,7 +190,7 @@ ADR-0075 defined 5 unified layers as the ideal architecture. This ADR addresses
 | ADR-0075 Layer | Status before ADR-0084 | ADR-0084 contribution | Remaining gap |
 |----------------|----------------------|----------------------|---------------|
 | **L1: Single Storage** | SQLite primary, RVF sidecar | Not addressed | Replace SQLite with RVF+HNSW as sole backend (future ADR-0085, ~2600 lines in memory-initializer) |
-(Correction: Layer 1 was addressed by ADR-0086 (not ADR-0085). Final line count: 1,396 (down from 2,814).)
+(Correction: Layer 1 was addressed by ADR-0086 (not ADR-0085). memory-initializer.ts was subsequently DELETED by ADR-0086 Phase 3.)
 | **L2: Single Controller Registry** | Router exists but 45+ callers bypass it via memory-bridge | **Phases 2-4 close this** — migrate all callers, remove bridge | None after Phase 4 |
 | **L3: Single Embedding Pipeline** | Done (ADR-0076 Phase 2) | Not needed | None |
 | **L4: Single Config Resolution** | Done (ADR-0076 Phase 1) | Not needed | None |
@@ -199,8 +201,7 @@ ADR-0075 defined 5 unified layers as the ideal architecture. This ADR addresses
 - **Layer 1 (Storage)**: SQLite remains the primary store. ADR-0075's ideal state says
   `NativeStorage (RVF + HNSW)` as sole backend — that requires rewriting the 2600-line
   `memory-initializer.ts` storage layer. Separate ADR scope.
-  (Correction: Layer 1 was addressed by ADR-0086 (2026-04-13). memory-initializer.ts
-  reduced to a 1,394-line import shim; CRUD routes through RvfBackend via IStorageContract.)
+  (Correction: Layer 1 completed by ADR-0086 (2026-04-13). memory-initializer.ts DELETED in ADR-0086 Phase 3.)
 - **JSON sidecar elimination**: The CJS constraint (intelligence.cjs cannot import
   TypeScript/ESM/native addons) means the JSON sidecar persists. ADR-0075's ideal
   implicitly assumes intelligence.cjs doesn't exist or is ESM — we're not there.
@@ -225,7 +226,7 @@ worker-daemon.ts: migrated to router (6 sites)
 ```
 
 Two of five ADR-0075 layers fully resolved. Three layers already done from prior ADRs.
-Remaining gap to ideal: Layer 1 (SQLite → RVF primary storage).
+(Correction: Layer 1 gap closed by ADR-0086. All 5 layers now resolved.)
 
 ## Consequences
 
@@ -234,5 +235,5 @@ Remaining gap to ideal: Layer 1 (SQLite → RVF primary storage).
 - Clearer codebase — no false signals about sql.js being in use
 - Phase 2-4 migration collapses dual controller path into single router
 - After completion: Layers 2-5 of ADR-0075 ideal state fully achieved
-- Remaining architectural gap: Layer 1 (storage backend consolidation)
+- Layer 1 gap (storage backend consolidation) subsequently closed by ADR-0086
 - No runtime behavioral changes in Phase 1

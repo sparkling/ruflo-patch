@@ -20,13 +20,13 @@ const CLI_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
 const MEM_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src';
 
 const routerPath = `${CLI_SRC}/memory/memory-router.ts`;
-const storagePath = `${MEM_SRC}/storage.ts`;
+const typesPath  = `${MEM_SRC}/types.ts`;
 
 assert.ok(existsSync(routerPath), `Router source missing: ${routerPath}`);
-assert.ok(existsSync(storagePath), `Storage interface missing: ${storagePath}`);
+assert.ok(existsSync(typesPath), `Types file missing: ${typesPath}`);
 
 const routerSrc = readFileSync(routerPath, 'utf-8');
-const storageSrc = readFileSync(storagePath, 'utf-8');
+const typesSrc  = readFileSync(typesPath, 'utf-8');
 
 // ---------------------------------------------------------------------------
 // Helpers: extract switch-case blocks from routeMemoryOp / routeEmbeddingOp
@@ -89,10 +89,13 @@ function extractSwitchCases(src, fnName) {
 }
 
 /**
- * Extract IStorageContract method names from the interface definition.
+ * Extract IMemoryBackend method names from the interface definition in types.ts.
+ *
+ * Since ADR-0086 Debt 1, IStorageContract is a type alias for IMemoryBackend,
+ * so the canonical method list lives in the IMemoryBackend interface.
  */
 function extractContractMethods(src) {
-  const ifaceStart = src.indexOf('export interface IStorageContract');
+  const ifaceStart = src.indexOf('export interface IMemoryBackend');
   if (ifaceStart === -1) return [];
 
   // Find the closing brace of the interface
@@ -575,12 +578,12 @@ describe('ADR-0086 behavioral: no silent fallback paths', () => {
 // Group 5: IStorageContract method coverage in routeMemoryOp
 // ============================================================================
 
-describe('ADR-0086 behavioral: IStorageContract method coverage', () => {
-  const contractMethods = extractContractMethods(storageSrc);
+describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', () => {
+  const contractMethods = extractContractMethods(typesSrc);
 
-  it('IStorageContract has 16 methods', () => {
+  it('IMemoryBackend has 16 methods', () => {
     assert.equal(contractMethods.length, 16,
-      `Expected 16 IStorageContract methods, got ${contractMethods.length}: ${contractMethods.join(', ')}`);
+      `Expected 16 IMemoryBackend methods, got ${contractMethods.length}: ${contractMethods.join(', ')}`);
   });
 
   // Extract the full routeMemoryOp body for method call checking

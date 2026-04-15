@@ -100,10 +100,10 @@ fi
 # ── Source acceptance harness framework ────────────────────────────
 source "${PROJECT_DIR}/lib/acceptance-harness.sh"
 
-# ── Global timeout: 300s ────────────────────────────────────────────
+# ── Global timeout: 600s ────────────────────────────────────────────
 # Close fd 9 (flock) so orphaned timeout process cannot hold the pipeline lock
 # Close ALL inherited fds so timeout sleep doesn't hold pipes open
-( exec 9>&- 1>/dev/null 2>/dev/null; sleep 300; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+( exec 9>&- 1>/dev/null 2>/dev/null; sleep 600; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup ─────────────────────────────────────────────────────────
@@ -146,7 +146,8 @@ cleanup() {
   [[ -n "${PARALLEL_DIR:-}" && -d "${PARALLEL_DIR:-}" ]] && rm -rf "$PARALLEL_DIR"
   [[ -n "${E2E_DIR:-}" && -d "${E2E_DIR:-}" ]] && rm -rf "$E2E_DIR"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT
+trap 'cleanup; exit 143' INT TERM
 
 ACCEPT_START_NS=$(_ns)
 ACCEPT_START_S=$(date +%s)
@@ -377,6 +378,10 @@ adr0079_t1_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier1-checks.sh"
 # ADR-0079: Acceptance test completeness (Tier 2)
 adr0079_t2_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier2-checks.sh"
 [[ -f "$adr0079_t2_lib" ]] && source "$adr0079_t2_lib"
+
+# ADR-0079: Acceptance test completeness (Tier 3)
+adr0079_t3_lib="${PROJECT_DIR}/lib/acceptance-adr0079-tier3-checks.sh"
+[[ -f "$adr0079_t3_lib" ]] && source "$adr0079_t3_lib"
 
 # ADR-0080: Storage consolidation verdict
 adr0080_lib="${PROJECT_DIR}/lib/acceptance-adr0080-checks.sh"
@@ -637,6 +642,17 @@ run_check_bg "t2-2-session"         "Session lifecycle (ADR-0079)"         check
 run_check_bg "t2-4-embed-dim"       "Embedding dimension (ADR-0079)"       check_t2_4_embedding_dimension         "adr0079"
 run_check_bg "t2-5-embed-stored"    "Embedding stored (ADR-0079)"          check_t2_5_embedding_stored            "adr0079"
 run_check_bg "t2-6-claudemd"        "CLAUDE.md structure (ADR-0079)"       check_t2_6_claudemd_structure          "adr0079"
+
+# ADR-0079 Tier 3: nice-to-have checks (wired if tier3 lib is present)
+if [[ -f "$adr0079_t3_lib" ]]; then
+  run_check_bg "t3-1-bulk-corpus"     "Bulk corpus ranking (ADR-0079)"       check_t3_1_bulk_corpus_ranking         "adr0079"
+  run_check_bg "t3-2-concurrent"      "Concurrent writes (ADR-0079)"         check_t3_2_concurrent_writes           "adr0079"
+  run_check_bg "t3-3-plugin"          "Plugin load/execute (ADR-0079)"       check_t3_3_plugin_load_execute         "adr0079"
+  run_check_bg "t3-4-reasoningbank"   "ReasoningBank cycle (ADR-0079)"       check_t3_4_reasoningbank_cycle         "adr0079"
+  run_check_bg "t3-5-consolidation"   "Nightly consolidation (ADR-0079)"     check_t3_5_nightly_consolidation       "adr0079"
+  run_check_bg "t3-6-esm-import"      "ESM import (ADR-0079)"                check_t3_6_esm_import                  "adr0079"
+  run_check_bg "t3-7-publish-compl"   "Publish completeness (ADR-0079)"      check_t3_7_publish_completeness        "adr0079"
+fi
 
 # ADR-0080: Storage consolidation verdict
 run_check_bg "adr0080-no-1m"       "No 1M maxEntries (ADR-0080)"          check_adr0080_no_1m_maxentries         "adr0080"
@@ -1077,6 +1093,13 @@ collect_parallel "all" \
   "t2-4-embed-dim|Embedding dimension (ADR-0079)" \
   "t2-5-embed-stored|Embedding stored (ADR-0079)" \
   "t2-6-claudemd|CLAUDE.md structure (ADR-0079)" \
+  "t3-1-bulk-corpus|Bulk corpus ranking (ADR-0079)" \
+  "t3-2-concurrent|Concurrent writes (ADR-0079)" \
+  "t3-3-plugin|Plugin load/execute (ADR-0079)" \
+  "t3-4-reasoningbank|ReasoningBank cycle (ADR-0079)" \
+  "t3-5-consolidation|Nightly consolidation (ADR-0079)" \
+  "t3-6-esm-import|ESM import (ADR-0079)" \
+  "t3-7-publish-compl|Publish completeness (ADR-0079)" \
   "adr0080-no-1m|No 1M maxEntries (ADR-0080)" \
   "adr0080-100k|100K maxElements (ADR-0080)" \
   "adr0080-atomic|Atomic writes (ADR-0080)" \
@@ -1225,6 +1248,10 @@ if [[ -f "$p5_lib" ]]; then
   # on missing optional WASM deps). Use Xenova/ prefix for model name (ADR-0069 canonical).
   # Capture stderr to a log file instead of discarding — aids debugging.
   _P5_INIT_LOG="${_P5_DIR}/.init-log.txt"
+  if [[ ! -d "$ACCEPT_TEMP" ]]; then
+    log_error "Phase 5: ACCEPT_TEMP torn down (global timeout fired?) — aborting"
+    exit 1
+  fi
   if [[ -x "$CLI_BIN" ]]; then
     (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force --with-embeddings --embedding-model "Xenova/all-mpnet-base-v2" 2>"$_P5_INIT_LOG") || {
       log "WARN: Phase 5 init exited non-zero (see $_P5_INIT_LOG)"

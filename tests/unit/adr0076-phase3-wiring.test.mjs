@@ -83,10 +83,19 @@ describe('Phase 3: storage abstraction files', () => {
     assert.ok(src.includes('IStorage'), 'must export IStorage');
   });
 
-  it('IStorageContract has all IMemoryBackend methods', () => {
-    const path = `${MEMORY_SRC}/storage.ts`;
-    if (!existsSync(path)) return;
-    const src = readFileSync(path, 'utf-8');
+  it('IStorageContract is a type alias for IMemoryBackend (Debt 1)', () => {
+    const storagePath = `${MEMORY_SRC}/storage.ts`;
+    if (!existsSync(storagePath)) return;
+    const storageSrc = readFileSync(storagePath, 'utf-8');
+    const aliasPattern = /export\s+type\s+IStorageContract\s*=\s*IMemoryBackend\s*;/;
+    assert.ok(aliasPattern.test(storageSrc),
+      'IStorageContract must be a type alias for IMemoryBackend');
+  });
+
+  it('IMemoryBackend has all 16 canonical methods', () => {
+    const typesPath = `${MEMORY_SRC}/types.ts`;
+    if (!existsSync(typesPath)) return;
+    const src = readFileSync(typesPath, 'utf-8');
     const methods = [
       'initialize', 'shutdown', 'store', 'get', 'getByKey',
       'update', 'delete', 'search', 'query', 'count',
@@ -96,7 +105,7 @@ describe('Phase 3: storage abstraction files', () => {
     for (const method of methods) {
       assert.ok(
         src.includes(method),
-        `IStorageContract must include ${method}`,
+        `IMemoryBackend must include ${method}`,
       );
     }
   });

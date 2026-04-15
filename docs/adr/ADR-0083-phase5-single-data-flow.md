@@ -154,6 +154,10 @@ JSON files in `.claude-flow/data/`.
 **Conclusion**: intelligence.cjs will always read JSON. The fix is to centralize the JSON
 write in memory-router.ts as a controlled side-effect, not to rewrite the CJS helper.
 
+(Note: This conclusion was overturned by ADR-0085, which converted `intelligence.cjs` to
+read SQLite directly via better-sqlite3, proving the native binary and WAL concerns
+manageable in practice. The JSON sidecar was fully eliminated.)
+
 ## Decision
 
 Implement Phase 5 in 3 waves, migrating low-risk files first and deferring the
@@ -173,7 +177,10 @@ ALL callers → memory-router.ts → backend
                             memory-initializer.ts  (private impl, never imported externally)
                             memory-bridge.ts       (private impl, never imported externally)
 ```
-(Note: Superseded by ADR-0086. Router now uses RvfBackend directly; memory-initializer.ts is an import shim.)
+(Note: Superseded by ADR-0086 and ADR-0085. Router now uses RvfBackend directly;
+`memory-initializer.ts` was fully DELETED in ADR-0086 Phase 3 (not just a shim).
+`writeJsonSidecar()` and the `auto-memory-store.json` sidecar were eliminated by ADR-0085;
+`intelligence.cjs` now reads SQLite directly via better-sqlite3.)
 
 One entry point. One store path. One JSON side-effect for the CJS contract.
 
@@ -217,12 +224,17 @@ OR a sync merge creates a natural conflict resolution point.
 intelligence.cjs is pure CJS — it cannot import TypeScript or ESM packages.
 It will always read from `.claude-flow/data/auto-memory-store.json`.
 
-Phase 5 does NOT eliminate this JSON file. Instead, it **centralizes** the write:
+Phase 5 centralized the write into `writeJsonSidecar()` in memory-router:
 
 ```
 Current:  storeEntry() → appendToAutoMemoryStore()  (scattered in memory-initializer)
 Phase 5:  routeMemoryOp('store') → writeJsonSidecar()  (centralized in memory-router)
 ```
+
+(Note: Superseded by ADR-0085. The CJS constraint was resolved: `intelligence.cjs` was
+rewritten to read SQLite directly via better-sqlite3, eliminating the JSON sidecar entirely.
+`writeJsonSidecar()` was deleted and `auto-memory-store.json` is no longer written or read.
+The original CJS analyst finding below is preserved for historical context.)
 
 One write, one place, one try/catch. The CJS analyst confirmed that rewriting
 intelligence.cjs to use better-sqlite3 is impractical (native binary portability,
@@ -344,9 +356,9 @@ framing in Phase 3 unified search checks.
 ## Consequences
 
 - ~825 lines of bridge code eliminated
-- Store path collapses from 3 writes to 1 write + 1 JSON side-effect
+- Store path collapses from 3 writes to 1 write (JSON side-effect also eliminated by ADR-0085)
 - Fallback chains reduced from 39 to ~5
-- memory-bridge.ts and memory-initializer.ts become private implementation details
+- memory-bridge.ts becomes a private implementation detail; memory-initializer.ts fully deleted (ADR-0086 Phase 3)
 - Merge conflict risk managed via 3-wave approach (low → medium → high)
-- intelligence.cjs continues reading JSON (immutable CJS constraint)
+- intelligence.cjs now reads SQLite directly (CJS constraint resolved by ADR-0085)
 - Future features wire into one router, not 3 storage systems

@@ -235,93 +235,13 @@ describe('ADR-0086 B4: routeMemoryOp _storage null guard', () => {
 });
 
 // ============================================================================
-// Group 4: T3.4 — HNSW functions in memory-initializer are stubs
+// Group 4: T3.4 — memory-initializer deleted (HNSW stubs obsolete)
 // ============================================================================
 
-describe('ADR-0086 T3.4: memory-initializer HNSW functions are stubs', () => {
-  let initSrc;
-
-  beforeEach(() => {
-    if (!existsSync(INITIALIZER_PATH)) return;
-    initSrc = readFileSync(INITIALIZER_PATH, 'utf-8');
-  });
-
-  it('memory-initializer.ts exists', () => {
-    assert.ok(
-      existsSync(INITIALIZER_PATH),
-      `memory-initializer.ts not found at ${INITIALIZER_PATH}`,
-    );
-  });
-
-  it('memory-initializer has NO @ruvector/core import', () => {
-    assert.ok(initSrc, 'Fork not checked out — memory-initializer.ts required for this test');
-    const lines = initSrc.split('\n');
-    const ruvectorImports = lines.filter(l => {
-      if (/^\s*\/\//.test(l)) return false; // skip comments
-      return l.includes('@ruvector/core') && (l.includes('import') || l.includes('require'));
-    });
-    assert.equal(
-      ruvectorImports.length,
-      0,
-      `memory-initializer.ts must not import @ruvector/core. Found: ${ruvectorImports.join('; ')}`,
-    );
-  });
-
-  it('getHNSWIndex returns null (stub)', () => {
-    assert.ok(initSrc, 'Fork not checked out — memory-initializer.ts required for this test');
-    const fnStart = initSrc.indexOf('export async function getHNSWIndex');
-    assert.ok(fnStart > -1, 'getHNSWIndex not found');
-    const fnBlock = initSrc.slice(fnStart, fnStart + 300);
-    assert.ok(
-      fnBlock.includes('return null'),
-      'getHNSWIndex must return null (ADR-0086 T3.4 stub)',
-    );
-  });
-
-  it('getHNSWStatus returns static defaults (stub)', () => {
-    assert.ok(initSrc, 'Fork not checked out — memory-initializer.ts required for this test');
-    const fnStart = initSrc.indexOf('export function getHNSWStatus');
-    assert.ok(fnStart > -1, 'getHNSWStatus not found');
-    const fnBlock = initSrc.slice(fnStart, fnStart + 300);
-    assert.ok(
-      fnBlock.includes('available: true') && fnBlock.includes('initialized: true'),
-      'getHNSWStatus must return static defaults { available: true, initialized: true }',
-    );
-  });
-
-  it('clearHNSWIndex is a no-op', () => {
-    assert.ok(initSrc, 'Fork not checked out — memory-initializer.ts required for this test');
-    const fnStart = initSrc.indexOf('export function clearHNSWIndex');
-    assert.ok(fnStart > -1, 'clearHNSWIndex not found');
-    // The function body should be essentially empty (just a comment + closing brace)
-    const fnBlock = initSrc.slice(fnStart, fnStart + 200);
-    // No return statement with data, no method calls on _index, etc.
-    assert.ok(
-      !fnBlock.includes('_index') && !fnBlock.includes('await'),
-      'clearHNSWIndex must be a no-op stub (no _index access, no await)',
-    );
-  });
-
-  it('rebuildSearchIndex is a no-op', () => {
-    assert.ok(initSrc, 'Fork not checked out — memory-initializer.ts required for this test');
-    const fnStart = initSrc.indexOf('export function rebuildSearchIndex');
-    assert.ok(fnStart > -1, 'rebuildSearchIndex not found');
-    const fnBlock = initSrc.slice(fnStart, fnStart + 200);
-    assert.ok(
-      !fnBlock.includes('_index') && !fnBlock.includes('await'),
-      'rebuildSearchIndex must be a no-op stub (no _index access, no await)',
-    );
-  });
-
-  it('searchHNSWIndex delegates to router (not direct HNSW)', () => {
-    assert.ok(initSrc, 'Fork not checked out — memory-initializer.ts required for this test');
-    const fnStart = initSrc.indexOf('export async function searchHNSWIndex');
-    assert.ok(fnStart > -1, 'searchHNSWIndex not found');
-    const fnBlock = initSrc.slice(fnStart, fnStart + 400);
-    assert.ok(
-      fnBlock.includes('_loadRouter') || fnBlock.includes('routeEmbeddingOp'),
-      'searchHNSWIndex must delegate to the router (via _loadRouter or routeEmbeddingOp)',
-    );
+describe('ADR-0086 T3.4: memory-initializer deleted (HNSW stubs obsolete)', () => {
+  it('memory-initializer.ts is absent (Debt 6)', () => {
+    assert.ok(!existsSync(INITIALIZER_PATH),
+      'memory-initializer.ts should be deleted');
   });
 });
 

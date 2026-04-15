@@ -146,18 +146,31 @@ describe('ADR-0086 T2.5: shutdownRouter', () => {
 // Group 5: RvfBackend implements IStorageContract
 // ============================================================================
 
-describe('ADR-0086 T2.1: RvfBackend implements IStorageContract', () => {
-  it('class declaration includes IStorageContract', () => {
+describe('ADR-0086 T2.1: RvfBackend implements IMemoryBackend (Debt 1 merged)', () => {
+  it('class declaration includes IMemoryBackend', () => {
     assert.ok(
-      rvfSrc.includes('implements IMemoryBackend, IStorageContract'),
-      'RvfBackend does not explicitly implement IStorageContract',
+      rvfSrc.includes('implements IMemoryBackend'),
+      'RvfBackend must implement IMemoryBackend',
     );
   });
 
-  it('imports IStorageContract', () => {
+  it('class declaration does NOT include IStorageContract (Debt 1 type alias)', () => {
+    // After Debt 1, IStorageContract is a type alias — cannot appear in implements clause
+    const classLine = rvfSrc.match(/export\s+class\s+RvfBackend\s+implements\s+([^{]+)\{/);
+    assert.ok(classLine, 'RvfBackend class declaration not found');
     assert.ok(
-      rvfSrc.includes("import type { IStorageContract }"),
-      'RvfBackend does not import IStorageContract',
+      !classLine[1].includes('IStorageContract'),
+      'RvfBackend must NOT implement IStorageContract (it is a type alias after Debt 1)',
+    );
+  });
+
+  it('IStorageContract is a type alias in storage.ts', () => {
+    const storageSrc = readFileSync(
+      '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src/storage.ts', 'utf-8');
+    const aliasPattern = /export\s+type\s+IStorageContract\s*=\s*IMemoryBackend\s*;/;
+    assert.ok(
+      aliasPattern.test(storageSrc),
+      'IStorageContract must be a type alias for IMemoryBackend in storage.ts',
     );
   });
 });

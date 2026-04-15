@@ -33,7 +33,7 @@ consolidation).
 | 2 | Single embedding pipeline (`embedding-pipeline.ts`) | Complete |
 | 3 | Single storage abstraction (`storage-factory.ts`) | Complete |
 | 4 | Shared controller instances (`controller-intercept.ts`) | Complete |
-| 5 | Single data flow path (`memory-router.ts`) | ~30% — router exists, 3 of 21 MCP tool files wired |
+| 5 | Single data flow path (`memory-router.ts`) | **Complete** (ADR-0083 reversed "Abandon"; ADR-0086 implemented. Router delegates to RvfBackend. memory-initializer.ts deleted.) |
 
 ## Decision
 
@@ -116,6 +116,8 @@ eviction, and do not interact with `maxElements`.
 
 ### Phase 5: RVF-Primary Shim (revised approach)
 
+(Note: This section describes the original Phase 5 shim design. It was superseded by ADR-0083 which reversed the "Abandon" decision, then fully implemented by ADR-0086 which deleted memory-initializer.ts entirely and made RvfBackend the sole CRUD backend. The shim pattern below is historical — no shim exists in the current codebase.)
+
 The original Phase 5 design (memory-router rewiring 18 MCP tool import sites) was
 abandoned due to merge conflict risk. The revised approach uses a **shim pattern**:
 
@@ -142,7 +144,7 @@ file (3 lines each, additive, wrapped in try/catch).
 | Action | Why not |
 |--------|---------|
 | Delete upstream files (`memory-bridge.ts`, `memory-initializer.ts`) | Fork-patching model — merge conflicts |
-(Note: Overridden by ADR-0083 → ADR-0086. memory-initializer.ts is now a stub shim, not deleted but effectively replaced by RvfBackend.)
+(Note: Overridden by ADR-0083 → ADR-0086. ADR-0083 reversed this guidance; ADR-0086 Debt 6 completed the deletion. memory-initializer.ts is DELETED — all exports were dead code stubs. RvfBackend is the sole CRUD backend.)
 | Consolidate JSON intelligence files into SQLite | CJS subprocess workers can't import TypeScript modules — JSON is the IPC contract |
 | Add more abstraction interfaces | 5 exist already (`IStorage`, `IMemoryBackend`, `IStorageContract`, `VectorBackend`, `VectorBackendAsync`) — four too many |
 | Radically simplify to 3 files | Correct diagnosis but impossible under upstream-compatibility constraint |
@@ -269,14 +271,14 @@ instead.
 
 | Aspect | Optimal? | Priority | Action |
 |--------|----------|----------|--------|
-| `maxElements` divergence (P3) | No — **crash risk** | **Critical** | Single source via `resolveConfig()`, kill AgentDB 10K fallback |
-| JSON races / unbounded growth (P2) | No — **data loss risk** | **High** | Cap, dedup, atomic writes |
-| RVF half-migration (P1) | No | **High** | Converge factory paths |
-| Phase 5 data flow | Excessive | **Abandon** | Do not rewire remaining 18 tool files |
+| `maxElements` divergence (P3) | No — **crash risk** | **DONE** (ADR-0086 Phase 1) | Single source via `resolveConfig()`, kill AgentDB 10K fallback |
+| JSON races / unbounded growth (P2) | No — **data loss risk** | **DONE** (ADR-0086 Debt 17) | Cap, dedup, atomic writes. intelligence.cjs reads RVF directly via `readStoreFromRvf()` |
+| RVF half-migration (P1) | No | **DONE** (ADR-0086 Phase 3) | RvfBackend is sole CRUD backend. memory-initializer.ts DELETED (Debt 6). better-sqlite3 removed from CLI (Debt 7) |
+| Phase 5 data flow | Excessive | **DONE** (ADR-0083 → ADR-0086) | ADR-0083 overrode "Abandon". ADR-0086 completed the rewire: router delegates to RvfBackend directly |
 | Controller intercept (Phase 4) | Yes | Done | No action needed |
 | HnswLite at current scale | Fine | Low | Irrelevant below 50K vectors |
 | Graph storage | Unknown | Low | Check if `@ruvector/graph-node` is installed |
-| Data flow layer count | Excessive | Low | Don't add more; don't rewire |
+| Data flow layer count | Excessive | **DONE** (ADR-0086) | Collapsed: MCP tools → router → RvfBackend. No bridge/initializer layers remain |
 | Per-subsystem caps (SONA, QueryCache) | Yes | None | Correctly tuned to their access patterns |
 
 ## Phase 2: Init Script Audit Findings
@@ -351,6 +353,8 @@ resolve-config uses `M` uppercase. Cosmetic — HNSW params are derived, not rea
 from config.
 
 ## Phase 4: sql.js → better-sqlite3 Migration
+
+(Note: ADR-0086 Debt 7 subsequently removed better-sqlite3 from CLI entirely. RvfBackend is the sole CRUD backend; no SQLite dependency remains in the CLI package. better-sqlite3 survives only in the memory package as SqliteBackend provider option.)
 
 ### Problem: sql.js corrupts WAL-mode databases
 
