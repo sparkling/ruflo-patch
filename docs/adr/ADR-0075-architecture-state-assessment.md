@@ -199,6 +199,8 @@ The following ADR-0075 findings were re-evaluated with upstream creator perspect
   `testRvf()=true` is a temporary short-circuit while RVF path was being stabilized.
 - **sql.js fallback is intentional** — serves real edge environments (Vercel, Cloudflare Workers,
   Docker minimal) where native better-sqlite3 is unavailable
+  - **2026-04-15 update**: The sql.js edge fallback claim in this correction is stale. See
+    ADR-0091 for the current state — memory fallback no longer exists in code.
 - **VectorDb (@ruvector/core) HNSW is the performance tier** — not redundant with HnswLite
   (which is the JS fallback). Different performance tiers, both intentional.
 - **AgentDBService IS scaffolding** — upstream confirms it's going away; shim approach aligns
