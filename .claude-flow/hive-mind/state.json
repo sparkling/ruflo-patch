@@ -337,11 +337,11 @@
       "memory_budget": "Never exceeds 6GB of 36GB - RAM unconstrained"
     }
   },
-  "createdAt": "2026-04-14T20:27:44.703Z",
-  "updatedAt": "2026-04-14T20:27:44.703Z",
+  "createdAt": "2026-04-15T12:15:32.181Z",
+  "updatedAt": "2026-04-15T12:15:32.181Z",
   "queen": {
-    "agentId": "adr-update-queen",
-    "electedAt": "2026-04-14T20:27:44.703Z",
+    "agentId": "ux-daemon-queen",
+    "electedAt": "2026-04-15T12:15:32.181Z",
     "term": 1
   }
 }
