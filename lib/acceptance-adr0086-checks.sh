@@ -538,3 +538,95 @@ check_real_sqlite3_blockers() {
   _CHECK_PASSED="true"
   _CHECK_OUTPUT="ADR-0086-11: $count dist files still use better-sqlite3 directly (T3.3 blocker tracking)"
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0086 Debt 15: ControllerRegistry SQLite path regression guard
+#
+# ADR-0086 accepts ControllerRegistry's independent SQLite path via
+# agentdb as a trade-off — neural/learning controllers (learningBridge,
+# graphAdapter) have relational query needs that RVF does not serve.
+# This check is the ONLY acceptance guard for that trade-off.
+#
+# Validates the live SQLite-backed neural path end-to-end:
+#   1. After init --full, `$TEMP_DIR/.swarm/memory.db` must exist
+#      (or get created after a CLI op that triggers ControllerRegistry init)
+#   2. The file must have the SQLite magic header "SQLite format 3"
+#   3. The file must be non-empty (has at least schema tables after init)
+#   4. memory-router.ts source must pass the sqlite: config block to
+#      ControllerRegistry.initialize() — grep guard against a future
+#      merge silently dropping the config pass-through
+#
+# If this check fails after an upstream merge, investigate:
+#   - Did `memory-router.ts` change around line 332 (sqlite config)?
+#   - Did `controller-registry.ts` change around line 985 (dbPath -> AgentDB)?
+#   - Did `.swarm/memory.db` path resolution change in `_getDbPath()`?
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0086_debt15_sqlite_path() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # ─── 1. Verify the SQLite file exists after harness init ───────────
+  local db_file="$TEMP_DIR/.swarm/memory.db"
+
+  if [[ ! -f "$db_file" ]]; then
+    # Trigger controller registry init — agentdb_health forces full init
+    # per commands/daemon.ts and acceptance-controller-checks.sh pattern
+    local cli; cli=$(_cli_cmd)
+    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "" 30
+  fi
+
+  if [[ ! -f "$db_file" ]]; then
+    _CHECK_OUTPUT="Debt 15: .swarm/memory.db not created — agentdb SQLite path not reached (controller init may have silently bailed)"
+    return
+  fi
+
+  # ─── 2. Verify it's a real SQLite file (magic header) ──────────────
+  # SQLite format 3 files start with the ASCII string "SQLite format 3\0"
+  local magic
+  magic=$(head -c 15 "$db_file" 2>/dev/null)
+  if [[ "$magic" != "SQLite format 3" ]]; then
+    local size
+    size=$(wc -c < "$db_file" 2>/dev/null | tr -d ' ')
+    _CHECK_OUTPUT="Debt 15: .swarm/memory.db exists but is not a SQLite file (size=${size}, magic=$(echo -n "$magic" | od -c | head -1))"
+    return
+  fi
+
+  # ─── 3. Verify it's non-empty (has at least schema tables) ─────────
+  local size
+  size=$(wc -c < "$db_file" 2>/dev/null | tr -d ' ')
+  if [[ "$size" -lt 4096 ]]; then
+    # 4096 = SQLite default page size. A file with schema but no data is
+    # typically 16-40KB. Under 4KB suggests only a page header was written.
+    _CHECK_OUTPUT="Debt 15: .swarm/memory.db is suspiciously small (${size} bytes — expected >4096 for any real schema)"
+    return
+  fi
+
+  # ─── 4. Source-level guard against regressions ─────────────────────
+  # If the sqlite config stops flowing from memory-router.ts to
+  # ControllerRegistry.initialize(), the neural controllers silently
+  # fall back to in-memory state. Grep for the wiring.
+  local cli_pkg_dir
+  cli_pkg_dir=$(_adr0086_find_cli_pkg)
+
+  if [[ -z "$cli_pkg_dir" ]]; then
+    _CHECK_OUTPUT="Debt 15: runtime file exists (size=${size}) but cannot find @sparkleideas/cli for source guard"
+    return
+  fi
+
+  local router_js
+  router_js=$(find "$cli_pkg_dir" -name 'memory-router.js' 2>/dev/null | head -1)
+  if [[ -z "$router_js" ]]; then
+    _CHECK_OUTPUT="Debt 15: runtime OK (size=${size}) but memory-router.js not found in dist"
+    return
+  fi
+
+  # The published dist must still pass a sqlite config block to the registry
+  if ! grep -q 'sqlite' "$router_js" 2>/dev/null; then
+    _CHECK_OUTPUT="Debt 15: memory-router.js has no sqlite config pass-through — regression risk"
+    return
+  fi
+
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="Debt 15: .swarm/memory.db exists (${size} bytes, SQLite magic OK), sqlite config wired in memory-router.js"
+}

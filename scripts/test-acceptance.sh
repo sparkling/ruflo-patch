@@ -39,7 +39,7 @@
 #   adr0086    — adr0086-init-shim, adr0086-router-api, adr0086-roundtrip,
 #                adr0086-no-imports, adr0086-no-quant, adr0086-no-attn,
 #                adr0086-adapter, adr0086-bulkdel, adr0086-b1-decay,
-#                adr0086-b3-health, adr0086-t33-track
+#                adr0086-b3-health, adr0086-t33-track, adr0086-debt15
 #   adr0088    — adr0088-no-ipc, adr0088-status, adr0088-init-no,
 #                adr0088-init-yes, adr0088-daemon-ok
 #
@@ -725,6 +725,7 @@ if [[ -f "$adr0086_lib" ]]; then
   run_check_bg "adr0086-b1-decay"   "Temporal decay stub (ADR-0086)"             check_temporal_decay_stub                "adr0086"
   run_check_bg "adr0086-b3-health"  "healthCheck not checkInit (ADR-0086)"       check_healthcheck_not_check_init         "adr0086"
   run_check_bg "adr0086-t33-track"  "T3.3 sqlite3 blockers (ADR-0086)"          check_real_sqlite3_blockers              "adr0086"
+  run_check_bg "adr0086-debt15"     "Debt 15 SQLite neural path (ADR-0086)"     check_adr0086_debt15_sqlite_path         "adr0086"
 fi
 
 # ADR-0088: Daemon Scope Alignment
@@ -1164,6 +1165,7 @@ collect_parallel "all" \
   "adr0086-b1-decay|Temporal decay stub (ADR-0086)" \
   "adr0086-b3-health|healthCheck not checkInit (ADR-0086)" \
   "adr0086-t33-track|T3.3 sqlite3 blockers (ADR-0086)" \
+  "adr0086-debt15|Debt 15 SQLite neural path (ADR-0086)" \
   "adr0088-no-ipc|No DaemonIPCClient (ADR-0088)" \
   "adr0088-status|daemon status AI Mode (ADR-0088)" \
   "adr0088-init-no|Init no-claude no daemon (ADR-0088)" \
