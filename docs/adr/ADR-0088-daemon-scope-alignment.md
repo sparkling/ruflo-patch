@@ -1,7 +1,8 @@
 # ADR-0088: Daemon Scope Alignment — Scheduler Only, Never Hot Path
 
-- **Status**: Proposed
+- **Status**: Implemented (2026-04-15)
 - **Date**: 2026-04-15
+- **Implementation commits**: fork `c3ad3ebc9` + `f182ab90d`; patch `62d4f22` + `1c790d4`
 - **Scope**: Fork (`@claude-flow/cli`), Patch repo (`ruflo-patch` acceptance tests)
 - **Related**: upstream ADR-014, ADR-019, ADR-020, ADR-050; our ADR-0082, ADR-0086
 
@@ -141,6 +142,32 @@ Leave `DaemonIPCClient`, the probe, the misleading status lines. Don't wire Sess
 ### Option D (chosen): Scoped scheduler + capability-gated auto-start + dead code removal
 
 ~120 net LOC across 3 packages. No new architecture. Restores upstream's own stated design. Aligns with both ADR-014 (daemon exists as scheduler) and ADR-050 (no daemon in hot path).
+
+## Implementation Results (2026-04-15)
+
+**Unit tests**: 2615 pass, 0 fail
+- `adr0088-dead-code-removal.test.mjs` — 17 tests, all pass
+- `adr0088-capability-detection.test.mjs` — 15 tests, all pass
+- `adr0088-init-conditional-wiring.test.mjs` — 14 tests, all pass
+- `adr0084-router-phase3.test.mjs` — updated stale assertion to verify
+  `memory.list` IPC handler is now ABSENT (superseded by ADR-0088)
+
+**Acceptance tests**: 241/242 pass (3 runs)
+- All 5 ADR-0088 acceptance checks pass consistently across all runs
+- Retained ADR-0059 Phase 4 checks (socket-exists, ipc-probe, ipc-fallback) pass
+- Removed stale ADR-0059 Phase 4 checks (store, search, count) — they tested
+  handlers that no longer exist per ADR-0088 §Decision item 2
+
+**Pre-existing flakes observed (NOT caused by ADR-0088)**:
+- `adr0080-store-init` (SLOW 277-317s) — flaked 1/3 runs, hang-style failure
+- `e2e-0059-feedback` — flaked 1/3 runs, parallel-check race on
+  ranked-context.json
+
+Both flakes are pre-existing issues in unrelated ADRs. They are tracked
+for follow-up but out of scope for ADR-0088.
+
+**LOC change**: fork −140 / +60 = −80 net. Patch +1046 / −67 across ADR
+doc + 3 unit tests + 5 acceptance checks + 1 stale test fix.
 
 ## Acceptance Criteria
 
