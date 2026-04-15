@@ -2,7 +2,9 @@
 
 - **Status**: Implemented (2026-04-15)
 - **Date**: 2026-04-15
-- **Implementation commits**: fork `c3ad3ebc9` + `f182ab90d`; patch `62d4f22` + `1c790d4`
+- **Implementation commits**:
+  - fork: `c3ad3ebc9` (daemon scope alignment), `f182ab90d` (comment fix)
+  - patch: `62d4f22` (ADR + tests + acceptance), `1c790d4` (stale Phase 4 check removal), `99a6418` (status → Implemented), `3ecc509` (flake root-cause fixes), `6e0379a` + `bbf78f8` (bash arithmetic bugs uncovered while debugging)
 - **Scope**: Fork (`@claude-flow/cli`), Patch repo (`ruflo-patch` acceptance tests)
 - **Related**: upstream ADR-014, ADR-019, ADR-020, ADR-050; our ADR-0082, ADR-0086
 
@@ -152,22 +154,50 @@ Leave `DaemonIPCClient`, the probe, the misleading status lines. Don't wire Sess
 - `adr0084-router-phase3.test.mjs` — updated stale assertion to verify
   `memory.list` IPC handler is now ABSENT (superseded by ADR-0088)
 
-**Acceptance tests**: 241/242 pass (3 runs)
-- All 5 ADR-0088 acceptance checks pass consistently across all runs
+**Acceptance tests**: **242/242 pass** (verified across 4 runs after
+flake fixes)
+- All 5 ADR-0088 acceptance checks pass consistently
 - Retained ADR-0059 Phase 4 checks (socket-exists, ipc-probe, ipc-fallback) pass
 - Removed stale ADR-0059 Phase 4 checks (store, search, count) — they tested
   handlers that no longer exist per ADR-0088 §Decision item 2
 
-**Pre-existing flakes observed (NOT caused by ADR-0088)**:
-- `adr0080-store-init` (SLOW 277-317s) — flaked 1/3 runs, hang-style failure
-- `e2e-0059-feedback` — flaked 1/3 runs, parallel-check race on
-  ranked-context.json
+**Pre-existing flakes surfaced and root-cause fixed** while validating
+ADR-0088 (commit `3ecc509`):
 
-Both flakes are pre-existing issues in unrelated ADRs. They are tracked
-for follow-up but out of scope for ADR-0088.
+- `adr0080-store-init` — 277-317s hang, 1/3 runs failed. **Root cause**:
+  the check hardcoded `npx @sparkleideas/cli@latest` instead of
+  `$(_cli_cmd)`. Under parallel acceptance load (50+ concurrent checks),
+  raw npx queued behind npm's internal lock on a 23GB cache directory;
+  every other memory-store check bypassed this via the installed
+  symlink at `$TEMP_DIR/node_modules/.bin/cli`. **Fix**: use `_cli_cmd`.
+  Runtime: 277-317s → **7.7s** (36x).
+- `e2e-0059-feedback` — 1/3 runs failed. **Root cause**: five parallel
+  ADR-0059 checks all wrote to the same `$E2E_DIR/.claude-flow/data/
+  ranked-context.json` via intelligence.cjs, causing read-during-write
+  races. **Fix**: wrap the check body in `_e2e_isolate "0059-feedback"`
+  so intelligence.cjs state lives in a private copy.
+
+**Bash arithmetic bugs surfaced and fixed** while debugging the above
+(commits `6e0379a`, `bbf78f8`): six acceptance check files used the
+anti-pattern `var=$(grep -c 'pat' file 2>/dev/null || echo 0)`. Because
+`grep -c` always prints a count (even "0") AND exits 1 when zero
+matches, the `|| echo 0` fallback appends a second "0" to the subshell
+stdout — producing "0\n0" which any subsequent `[[ $var -ge N ]]`
+rejects with a syntax error. Canonical replacement (matching the
+existing ADR-0084 convention):
+
+```bash
+var=$(grep -c 'pat' file 2>/dev/null)
+var=${var:-0}
+```
+
+Files fixed: `acceptance-controller-checks.sh`, `acceptance-adr0068-checks.sh`,
+`acceptance-adr0071-checks.sh`, `acceptance-adr0085-checks.sh`,
+`acceptance-adr0086-checks.sh`, `acceptance-structure-checks.sh`.
 
 **LOC change**: fork −140 / +60 = −80 net. Patch +1046 / −67 across ADR
-doc + 3 unit tests + 5 acceptance checks + 1 stale test fix.
+doc + 3 unit tests + 5 acceptance checks + 1 stale test fix + 2 flake
+root-cause fixes + 6 bash-arithmetic fixes.
 
 ## Acceptance Criteria
 

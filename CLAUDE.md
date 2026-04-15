@@ -60,6 +60,9 @@ The `route` hook also emits `[ADR-0087] AI-first review:` advisories listing rev
 - [2026-04] Silent fallback paths in tests — masks real failures; tests must fail loudly (ADR-0082)
 - [2026-04] Sidecar JSON files — eliminated in favor of single storage abstraction (ADR-0085)
 - [2026-04] Subtracted parallel sessions per trigger — refactors need docs (stale risk), phased work needs simplification (cruft accumulates); all triggers get all 5 sessions (ADR-0087)
+- [2026-04] Daemon in CLI hot path — ADR-0059 Phase 4's "single writer via IPC" contradicted upstream ADR-050 ("daemon adds process mgmt + health check + IPC complexity; file-based is simpler, more reliable"). `DaemonIPCClient` shipped with zero callers for months. Daemon now scoped to cross-platform timer scheduler only (ADR-0088).
+- [2026-04] `npx @sparkleideas/cli@latest` in parallel acceptance checks — serializes 50+ concurrent checks behind npm's 23GB cache lock. Always use `$(_cli_cmd)` which resolves the installed symlink at `$TEMP_DIR/node_modules/.bin/cli`. 36x difference observed (277-317s → 7.7s in adr0080-store-init flake).
+- [2026-04] `var=$(grep -c 'pat' file || echo 0)` bash anti-pattern — `grep -c` already prints "0" on zero matches AND exits 1, so `|| echo 0` appends a second "0" producing "0\n0" which trips bash arithmetic. Always use `var=$(grep -c 'pat' 2>/dev/null); var=${var:-0}`.
 
 ## Project Architecture
 

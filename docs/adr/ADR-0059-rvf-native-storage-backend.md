@@ -184,7 +184,7 @@ Phase 1 fixes Path B (drain). Phase 2 fixes Path A (CJS cache). They never cross
 | 1 | **Phase 1** | Swap AgentDBBackend → RvfBackend in `createBackend()` | ~15 | Patch + upstream | Yes — see below |
 | 2 | **Phase 2** | Fix CJS bugs: ID collision, ML-006 scope, `tool_input` snake_case | ~25 | Patch + upstream | Yes (separate PRs) |
 | 3 | **Phase 3** | Wire MCP server to also query `.rvf` — unified search | ~180 | Fork-level | **✓ Complete** |
-| 4 | **Phase 4** | Daemon IPC: hooks call Unix domain socket, daemon owns stores | ~265 | Fork-level | **✓ Complete** |
+| 4 | **Phase 4** | Daemon IPC: hooks call Unix domain socket, daemon owns stores | ~265 | Fork-level | **✗ Superseded by ADR-0088** (2026-04-15) — never had in-tree callers; contradicted upstream ADR-050 (hot path is file-based, no daemon). Server class + socket/probe/fallback retained; memory.* handlers and `DaemonIPCClient` deleted. |
 | 5 | **Future** | Converge CLI onto RVF for vectors (upstream-ruflo:ADR-057) | TBD | Upstream | N/A |
 
 ### Why Not Skip to Daemon?
