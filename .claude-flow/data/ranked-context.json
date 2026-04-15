@@ -9,7 +9,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.1420435412858697,
-      "accessCount": 276,
+      "accessCount": 288,
       "words": [
         "file",
         "unknown",
@@ -33,7 +33,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.07677679838586905,
-      "accessCount": 688,
+      "accessCount": 733,
       "words": [
         "file",
         "users",
@@ -63,7 +63,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.05387695085955647,
-      "accessCount": 640,
+      "accessCount": 686,
       "words": [
         "file",
         "users",
@@ -97,7 +97,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.04198120783005593,
-      "accessCount": 401,
+      "accessCount": 437,
       "words": [
         "file",
         "users",
@@ -126,7 +126,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.03462314998765881,
-      "accessCount": 171,
+      "accessCount": 180,
       "words": [
         "file",
         "users",
@@ -4183,7 +4183,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.01759424518413623,
-      "accessCount": 355,
+      "accessCount": 387,
       "words": [
         "file",
         "users",
@@ -4216,7 +4216,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.016332122061885203,
-      "accessCount": 54,
+      "accessCount": 56,
       "words": [
         "file",
         "users",
@@ -4835,7 +4835,7 @@
       "category": "insights",
       "confidence": 1,
       "pageRank": 0.004529002269693419,
-      "accessCount": 228,
+      "accessCount": 246,
       "words": [
         "file",
         "users",
@@ -13155,9 +13155,9 @@
       "content": "File /Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts was edited 4 times this session — likely a hot path worth monitoring.",
       "summary": "Frequently edited: init.ts (4x)",
       "category": "insights",
-      "confidence": 0.7200000000000002,
+      "confidence": 0.7500000000000002,
       "pageRank": 0.02089294348038838,
-      "accessCount": 6,
+      "accessCount": 7,
       "words": [
         "file",
         "users",
@@ -13344,9 +13344,9 @@
       "content": "File /Users/henrik/source/ruflo-patch/lib/acceptance-adr0059-phase4-checks.sh was edited 5 times this session — likely a hot path worth monitoring.",
       "summary": "Frequently edited: acceptance-adr0059-phase4-checks.sh (5x)",
       "category": "insights",
-      "confidence": 0.6600000000000001,
+      "confidence": 0.6900000000000002,
       "pageRank": 0.008727635960364006,
-      "accessCount": 4,
+      "accessCount": 5,
       "words": [
         "file",
         "users",
@@ -13600,9 +13600,9 @@
       "content": "File /Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src/sqlite-backend.ts was edited 3 times this session — likely a hot path worth monitoring.",
       "summary": "Frequently edited: sqlite-backend.ts (3x)",
       "category": "insights",
-      "confidence": 0.6100000000000001,
+      "confidence": 0.6900000000000002,
       "pageRank": 0.01055722037924476,
-      "accessCount": 3,
+      "accessCount": 5,
       "words": [
         "file",
         "users",
@@ -13632,9 +13632,9 @@
       "content": "File /Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/commands/memory.ts was edited 6 times this session — likely a hot path worth monitoring.",
       "summary": "Frequently edited: memory.ts (6x)",
       "category": "insights",
-      "confidence": 0.53,
+      "confidence": 0.56,
       "pageRank": 0.0056095324285603525,
-      "accessCount": 1,
+      "accessCount": 2,
       "words": [
         "file",
         "users",
