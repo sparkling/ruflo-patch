@@ -333,3 +333,7 @@ This shape.
 - `lib/acceptance-adr0086-checks.sh:542-632` — the Debt 15 facade check to upgrade
 - `lib/acceptance-adr0073-checks.sh:131-186` — the silent-pass anti-pattern to fix
 - `lib/acceptance-adr0079-tier3-checks.sh:107-163` — the concurrency-check contract mismatch
+- 2-agent ruflo hive, 2026-04-15 (hive ID `hive-1776289218933-jesi5v`) — Queen + Devil's Advocate analysis of Tier A4 upstream finding
+- `scripts/diag-rvf-inproc-race.mjs` — deterministic in-process repro / regression guard for B7
+- Fork commit `03ecec5e0` — `fix: ADR-0090 B7 — RvfBackend multi-writer convergence + lock retry budget` (in `forks/ruflo` main)
+- Upstream issue: https://github.com/ruvnet/ruflo/issues/1614 — filed 2026-04-15 with the repro, measurement tables, and the fix diff offered as a PR
