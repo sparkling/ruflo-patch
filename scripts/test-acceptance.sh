@@ -508,6 +508,23 @@ run_check_bg "adr0090-b3-consolidate" "Worker consolidate metrics (B3)" check_ad
 run_check_bg "adr0090-b3-testgaps"    "Worker testgaps metrics (B3)"    check_adr0090_b3_testgaps    "data"
 run_check_bg "adr0090-b6a-daemon"     "Daemon-state round-trip (B6a)"   check_adr0090_b6a_daemon_state "daemon"
 
+# ADR-0090 Tier B5: 15-controller SQLite row-count round-trips (controller group)
+run_check_bg "adr0090-b5-reflexion"           "B5 reflexion roundtrip"           check_adr0090_b5_reflexion           "controller"
+run_check_bg "adr0090-b5-skillLibrary"        "B5 skillLibrary roundtrip"        check_adr0090_b5_skillLibrary        "controller"
+run_check_bg "adr0090-b5-reasoningBank"       "B5 reasoningBank roundtrip"       check_adr0090_b5_reasoningBank       "controller"
+run_check_bg "adr0090-b5-causalGraph"         "B5 causalGraph roundtrip"         check_adr0090_b5_causalGraph         "controller"
+run_check_bg "adr0090-b5-causalRecall"        "B5 causalRecall roundtrip"        check_adr0090_b5_causalRecall        "controller"
+run_check_bg "adr0090-b5-learningSystem"      "B5 learningSystem roundtrip"      check_adr0090_b5_learningSystem      "controller"
+run_check_bg "adr0090-b5-hierarchicalMemory"  "B5 hierarchicalMemory roundtrip"  check_adr0090_b5_hierarchicalMemory  "controller"
+run_check_bg "adr0090-b5-memoryConsolidation" "B5 memoryConsolidation roundtrip" check_adr0090_b5_memoryConsolidation "controller"
+run_check_bg "adr0090-b5-attentionService"    "B5 attentionService roundtrip"    check_adr0090_b5_attentionService    "controller"
+run_check_bg "adr0090-b5-gnnService"          "B5 gnnService roundtrip"          check_adr0090_b5_gnnService          "controller"
+run_check_bg "adr0090-b5-semanticRouter"      "B5 semanticRouter roundtrip"      check_adr0090_b5_semanticRouter      "controller"
+run_check_bg "adr0090-b5-graphAdapter"        "B5 graphAdapter roundtrip"        check_adr0090_b5_graphAdapter        "controller"
+run_check_bg "adr0090-b5-sonaTrajectory"      "B5 sonaTrajectory roundtrip"      check_adr0090_b5_sonaTrajectory      "controller"
+run_check_bg "adr0090-b5-nightlyLearner"      "B5 nightlyLearner roundtrip"      check_adr0090_b5_nightlyLearner      "controller"
+run_check_bg "adr0090-b5-explainableRecall"   "B5 explainableRecall roundtrip"   check_adr0090_b5_explainableRecall   "controller"
+
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
 run_check_bg "ctrl-routing"     "Learned routing"        check_hooks_route         "controller"
@@ -1201,6 +1218,21 @@ collect_parallel "all" \
   "adr0081-neural|Neural optional dep (ADR-0081)" \
   "adr0081-learning|Unified learning config (ADR-0081)" \
   "adr0081-balanced|Config template balanced (ADR-0081)" \
+  "adr0090-b5-reflexion|B5 reflexion roundtrip" \
+  "adr0090-b5-skillLibrary|B5 skillLibrary roundtrip" \
+  "adr0090-b5-reasoningBank|B5 reasoningBank roundtrip" \
+  "adr0090-b5-causalGraph|B5 causalGraph roundtrip" \
+  "adr0090-b5-causalRecall|B5 causalRecall roundtrip" \
+  "adr0090-b5-learningSystem|B5 learningSystem roundtrip" \
+  "adr0090-b5-hierarchicalMemory|B5 hierarchicalMemory roundtrip" \
+  "adr0090-b5-memoryConsolidation|B5 memoryConsolidation roundtrip" \
+  "adr0090-b5-attentionService|B5 attentionService roundtrip" \
+  "adr0090-b5-gnnService|B5 gnnService roundtrip" \
+  "adr0090-b5-semanticRouter|B5 semanticRouter roundtrip" \
+  "adr0090-b5-graphAdapter|B5 graphAdapter roundtrip" \
+  "adr0090-b5-sonaTrajectory|B5 sonaTrajectory roundtrip" \
+  "adr0090-b5-nightlyLearner|B5 nightlyLearner roundtrip" \
+  "adr0090-b5-explainableRecall|B5 explainableRecall roundtrip" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
