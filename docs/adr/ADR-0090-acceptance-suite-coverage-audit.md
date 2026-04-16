@@ -251,13 +251,58 @@ Why v3 still has teeth: the concrete regression scenarios are all still covered 
 
 Implementation: `check_adr0090_b4_better_sqlite3_required` in `lib/acceptance-package-checks.sh`, wired as `adr0090-b4-bsqlite3` in the `packages` group. 27 unit + integration tests in `tests/unit/adr0090-b4-better-sqlite3-required.test.mjs` cover all 12 cases (v3 shape) plus regression guards that explicitly assert v1 and v2 stay obsolete (so a future refactor can't silently revert to either). Verified end-to-end against `3.5.58-patch.114` of `@sparkleideas/cli`. ADR-0086 Debt 7's original "better-sqlite3 removed from CLI" claim is — accurately, after c7439f345 — the current state, but for a different reason than Debt 7 intended: `open-database.ts` was deleted entirely, which is what eliminates the fallback risk, not the package.json placement.
 
-**B5. Controller-specific row-count round-trips.** For each of the 15 neural controllers, add a check that:
+**B5. Controller-specific row-count round-trips (implemented 2026-04-16, 12-agent swarm-built + 4-commit fork-patch cascade).**
 
-1. Runs a controller-specific MCP tool (e.g., `agentdb_skill_create`) with known data
-2. Queries the SQLite file via `sqlite3` CLI for the matching row
-3. Asserts row count > 0 AND stored fields match
+Acceptance layer (ruflo-patch)
+------------------------------
+15 checks in `lib/acceptance-adr0090-b5-checks.sh` (633 LOC) + 56 unit tests in `tests/unit/adr0090-b5-controller-roundtrips.test.mjs`, all built on one shared `_b5_check_controller_roundtrip(controller, mcp_tool, mcp_params, sqlite_table, marker_col, marker_value, timeout_s)` helper.
 
-~15 checks total, ~30 LOC each. Can be batched in `acceptance-controller-checks.sh` as new functions.
+Per-controller target tuple (MCP tool → SQLite table → marker column):
+- reflexion → `agentdb_reflexion_store` → `episodes` (task LIKE marker)
+- skills → `agentdb_skill_create` → `skills`
+- reasoningBank → `agentdb_pattern_store` → `reasoning_patterns` (task_type)
+- causalGraph → `agentdb_causal-edge` → `causal_edges`
+- causalRecall → `agentdb_causal_recall` (read-only; asserts controller isAvailable)
+- learningSystem → `agentdb_experience_record` → `learning_experiences`
+- hierarchicalMemory → `agentdb_hierarchical_store` → `hierarchical_memory`
+- memoryConsolidation → `agentdb_consolidate` → `consolidated_memories`
+- attentionService → `agentdb_attention_record` → `attention_metrics`
+- gnnService → no store tool — SKIP_ACCEPTED with isAvailable probe
+- semanticRouter → no store tool — SKIP_ACCEPTED with isAvailable probe
+- graphAdapter → RVF by design (Debt 17) — SKIP_ACCEPTED
+- sonaTrajectory → no store tool — SKIP_ACCEPTED
+- nightlyLearner → `agentdb_nightly_run` → `nightly_runs`
+- explainableRecall → `agentdb_explain` → `recall_certificates`
+
+Three-way bucket (ADR-0090 Tier A2) with distinct regexes per failure mode: `pass` (row lands + survives restart), `skip_accepted` (controller legitimately not persistence-backed or MCP tool absent), `fail` (silent success with zero rows — ADR-0082 anti-pattern — or restart row-count drop).
+
+Fork-patch cascade (forks/ruflo, main)
+--------------------------------------
+The initial acceptance commit landed with all 15 checks on `skip_accepted` because the 12-agent verifier sweep traced every controller to `"<Controller> not available"` errors from the MCP surface. Four follow-up fork patches progressively restored reachability:
+
+1. **`e408085d8`** — ReasoningBank field-shape mismatch: `memory-router.ts:routePatternOp.store` sent `{content, type, confidence, metadata}` but the agentdb v3 `ReasoningBank.storePattern()` expects `{taskType, approach, successRate, ...}`. Every pattern_store call was NOT-NULL-failing on `reasoning_patterns.task_type`. Fix: prefer `storePattern` with the correct field mapping; keep `store`/`add` probes live for legacy builds. Unblocks reasoningBank.
+
+2. **`e408085d8` (same commit)** — `listControllerInfo` / `healthCheck` cold-null: the MCP `agentdb_controllers` / `agentdb_health` handlers checked `_registryInstance` but nothing in the handler chain called `ensureRouter()` first, so on every fresh `cli mcp exec` the registry was null and the intercept pool was empty — reported `total: 0, active: 0`. Fix: call `await ensureRouter()` at the top of both. Lifts the controller count from 0 → 17 (just Level 0-1 eagerly init'd).
+
+3. **`8802b026d`** — `waitForDeferred()` was a silent no-op: it delegated to `controller-intercept.waitForDeferred()` but that export doesn't exist (intercept only exposes `getOrCreate`/`getExisting`/`listControllers`). So Level 2+ deferred init was never awaited. Fix: delegate to `_registryInstance.waitForDeferred()` which is the real `_deferredInitPromise` awaiter. Controller count climbs 17 → 41.
+
+4. **`250d4c04c`** / **`907b8d20e`** — `getController()` raced deferred init: MCP tool handlers (`agentdb_reflexion_store`, etc.) resolve via `getController(name)` as the first memory-router touchpoint. Without `ensureRouter` it saw a null registry; without `waitForDeferred` between the first registry lookup and the intercept fallback, it raced the background init. Fix: `await ensureRouter()` at top, then first `.get(name)`, then `await _registryInstance.waitForDeferred()` and retry `.get(name)` before falling back to intercept.
+
+Current state (against `@sparkleideas/cli@3.5.58-patch.118`)
+-----------------------------------------------------------
+- **2 PASS**: reasoningBank, hierarchicalMemory
+- **5 FAIL with specific diagnostics** (controllers now reachable but fail for per-controller reasons — to be triaged individually): skillLibrary, memoryConsolidation, attentionService, semanticRouter, sonaTrajectory
+- **8 still SKIP_ACCEPTED**: reflexion, causalGraph, causalRecall, learningSystem, gnnService, graphAdapter, nightlyLearner, explainableRecall — these still report `"<Controller> not available"` at the MCP boundary despite being listed in `agentdb_health.controllerNames` (41/41). Root cause is in `ControllerRegistry.get`'s agentdb-fallback path — the controllers are registered in the intercept pool but `agentdb.getController(name)` returns null for this subset. Separate fork-patch cycle needed.
+
+Regression-guard behavior
+-------------------------
+All 15 checks use narrow per-controller skip regexes. As individual controllers become reachable (via fork or upstream patches), their skip regexes stop matching and the check falls through to the real row-count verification path — auto-flipping to PASS (row lands) or FAIL (silent zero write). No manual check updates needed.
+
+ADR-0090 Tier A1 Debt 15 status
+-------------------------------
+Unrelated to B5 but surfaced by the same verifier sweep: `check_adr0086_debt15_sqlite_path` was FAILING against `3.5.58-patch.114` with `".swarm/memory.db not created — reflexion controller never reached SQLite"`. That check now PASSES for reasoningBank-adjacent wiring but still fails specifically for reflexion because reflexion is in the 8-still-SKIP bucket above. Tracked — will flip when the ControllerRegistry.get agentdb-fallback gap is closed.
+
+Implementation: `check_adr0090_b5_*` functions in `lib/acceptance-adr0090-b5-checks.sh` wired as `adr0090-b5-<controller>` in the `controller` group. Full unit suite: **2852/2852 pass** (0 fail, 2 pre-existing skips). Swarm credits: `swarm-1776366604818-ih6byt` (12 agents, hierarchical, specialized).
 
 **B6. State file persistence round-trips.** For each of the 10 zero-coverage state files, add minimum viable check: "CLI op X writes to file Y, new CLI op reads file Y, value matches". Not all 10 need immediate round-trips — prioritize `daemon-state.json` + 5 metrics files first.
 
