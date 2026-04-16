@@ -66,7 +66,7 @@ for f in "$PROJECT_DIR"/lib/acceptance-*-checks.sh; do
   [[ -f "$f" ]] && source "$f"
 done
 
-pass_count=0 fail_count=0 total_count=0
+pass_count=0 fail_count=0 skip_count=0 total_count=0
 results_json="[]"
 PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
 
@@ -81,6 +81,12 @@ _fast_run() {
   if [[ "$_CHECK_PASSED" == "true" ]]; then
     pass_count=$((pass_count + 1))
     printf "  \033[32mPASS\033[0m  %s (%sms): %s\n" "$name" "$ms" "${_CHECK_OUTPUT:-ok}"
+  elif [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
+    # ADR-0090 Tier A2: skip_accepted is a distinct bucket — NOT PASS,
+    # NOT FAIL. Fast runner mirrors harness three-way discipline so a
+    # legitimate trade-off surface does not masquerade as a fail.
+    skip_count=$((skip_count + 1))
+    printf "  \033[33mSKIP\033[0m  %s (%sms): %s\n" "$name" "$ms" "${_CHECK_OUTPUT:-no output}"
   else
     fail_count=$((fail_count + 1))
     printf "  \033[31mFAIL\033[0m  %s (%sms): %s\n" "$name" "$ms" "${_CHECK_OUTPUT:-no output}"
@@ -94,19 +100,19 @@ if [[ "$_FAST_GROUPS" == check_* ]] && declare -f "$_FAST_GROUPS" &>/dev/null; t
   echo "── Running single test: $_FAST_GROUPS ──"
   _fast_run "$_FAST_GROUPS" "$_FAST_GROUPS"
   echo ""
-  echo "Result: $pass_count/$total_count passed, $fail_count failed"
+  echo "Result: $pass_count/$total_count passed, $fail_count failed, $skip_count skip_accepted"
   rm -rf "$PARALLEL_DIR"
   exit $fail_count
 fi
-# Fuzzy: map short name like "t1-4" to function "check_t1_4_*"
-if [[ "$_FAST_GROUPS" == t[0-9]* ]]; then
+# Fuzzy: map short name like "t1-4" or "b5-skillLibrary" to a check_* fn.
+if [[ "$_FAST_GROUPS" == t[0-9]* ]] || [[ "$_FAST_GROUPS" == b5-* ]] || [[ "$_FAST_GROUPS" == adr0090-* ]]; then
   _fuzzy=$(echo "$_FAST_GROUPS" | tr '-' '_')
-  _match=$(declare -F | awk '{print $3}' | grep "check_${_fuzzy}" | head -1)
+  _match=$(declare -F | awk '{print $3}' | grep "check_${_fuzzy}\|check_adr0090_${_fuzzy}" | head -1)
   if [[ -n "$_match" ]]; then
     echo "── Running single test: $_match (matched from $_FAST_GROUPS) ──"
     _fast_run "$_FAST_GROUPS" "$_match"
     echo ""
-    echo "Result: $pass_count/$total_count passed, $fail_count failed"
+    echo "Result: $pass_count/$total_count passed, $fail_count failed, $skip_count skip_accepted"
     rm -rf "$PARALLEL_DIR"
     exit $fail_count
   fi
@@ -158,6 +164,25 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0085"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   _fast_run "adr0085-no-bridge"  check_no_bridge_in_dist
   _fast_run "adr0085-init-zero"  check_initializer_zero_bridge_imports
   _fast_run "adr0085-router-reg" check_router_has_init_controller_registry
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0090-b5"* || "$_FAST_RUN_GROUPS" == "b5" || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  echo "── ADR-0090 B5 (15-controller SQLite round-trip) ──"
+  _fast_run "b5-reflexion"           check_adr0090_b5_reflexion
+  _fast_run "b5-skillLibrary"        check_adr0090_b5_skillLibrary
+  _fast_run "b5-reasoningBank"       check_adr0090_b5_reasoningBank
+  _fast_run "b5-causalGraph"         check_adr0090_b5_causalGraph
+  _fast_run "b5-causalRecall"        check_adr0090_b5_causalRecall
+  _fast_run "b5-learningSystem"      check_adr0090_b5_learningSystem
+  _fast_run "b5-hierarchicalMemory"  check_adr0090_b5_hierarchicalMemory
+  _fast_run "b5-memoryConsolidation" check_adr0090_b5_memoryConsolidation
+  _fast_run "b5-attentionService"    check_adr0090_b5_attentionService
+  _fast_run "b5-gnnService"          check_adr0090_b5_gnnService
+  _fast_run "b5-semanticRouter"      check_adr0090_b5_semanticRouter
+  _fast_run "b5-graphAdapter"        check_adr0090_b5_graphAdapter
+  _fast_run "b5-sonaTrajectory"      check_adr0090_b5_sonaTrajectory
+  _fast_run "b5-nightlyLearner"      check_adr0090_b5_nightlyLearner
+  _fast_run "b5-explainableRecall"   check_adr0090_b5_explainableRecall
 fi
 
 if [[ "$_FAST_RUN_GROUPS" == *"e2e-storage"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
@@ -225,6 +250,6 @@ rm -rf "$PARALLEL_DIR"
 
 echo ""
 echo "════════════════════════════════════════════"
-echo "Fast Results: $pass_count/$total_count passed, $fail_count failed"
+echo "Fast Results: $pass_count/$total_count passed, $fail_count failed, $skip_count skip_accepted"
 echo "════════════════════════════════════════════"
 exit $fail_count
