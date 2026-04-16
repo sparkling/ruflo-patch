@@ -498,6 +498,9 @@ run_check_bg "plugins-sdk"     "Plugins SDK"         check_plugins_sdk        "p
 run_check_bg "plugin-install"  "Plugin install"      check_plugin_install     "packages"
 run_check_bg "adr0090-b4-bsqlite3" "better-sqlite3 required (B4)" check_adr0090_b4_better_sqlite3_required "packages"
 run_check_bg "adr0090-b1-dim-fatal" "Dim-mismatch fail-loud (B1)" check_adr0090_b1_dimension_mismatch_fatal "storage"
+run_check_bg "adr0090-b2-trunc"     "Truncated .rvf fail-loud (B2)" check_adr0090_b2_rvf_truncated "storage"
+run_check_bg "adr0090-b2-magic"     "Bad-magic .rvf fail-loud (B2)" check_adr0090_b2_rvf_bad_magic "storage"
+run_check_bg "adr0090-b2-wal"       "Partial-WAL recovery (B2)"     check_adr0090_b2_rvf_partial_wal "storage"
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"

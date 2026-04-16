@@ -77,7 +77,13 @@ describe('ADR-0086 B4: failure path sets _initFailed', () => {
 
   it('catch block re-throws (does not silently swallow)', () => {
     const catchIdx = doInitBody.indexOf('} catch (e) {');
-    const afterCatch = doInitBody.slice(catchIdx, catchIdx + 300);
+    // Window widened 2026-04-16 for ADR-0090 Tier B2: the catch block
+    // now preserves `RvfCorruptError` (name-tagged re-throw) before the
+    // generic rewrap, which pushed the `throw` keyword past the old
+    // 300-char window. A 1500-char window still safely bounds the catch
+    // body (which ends at the next closing `}`) while allowing the
+    // discriminator logic to breathe.
+    const afterCatch = doInitBody.slice(catchIdx, catchIdx + 1500);
     assert.ok(
       afterCatch.includes('throw '),
       'catch block must re-throw — silent swallowing would hide the failure'

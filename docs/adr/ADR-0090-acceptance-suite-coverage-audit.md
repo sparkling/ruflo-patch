@@ -193,11 +193,21 @@ Currently scans for `SQLITE_BUSY` / `database is locked` — the wrong error sha
 
 Implementation: `check_adr0090_b1_dimension_mismatch_fatal` in `lib/acceptance-adr0090-b1-checks.sh`, wired as `adr0090-b1-dim-fatal` in the `storage` group. 17 unit + integration tests in `tests/unit/adr0090-b1-dimension-mismatch.test.mjs` cover: happy path, silent-pass regression, masked diagnostic, seed-step failure, self-test false-positive, fork-source assertions for the three catch layers, fork-dist assertion that the compiled JS contains the re-throw, and harness plumbing. End-to-end verified against `3.5.58-patch.112` of `@sparkleideas/cli` via `test-acceptance-fast.sh`.
 
-**B2. RVF corruption recovery suite.** Three checks:
+**B2. RVF corruption recovery suite (implemented 2026-04-16).** Three checks in `lib/acceptance-adr0090-b2-checks.sh`:
 
-- `check_rvf_truncated` — truncate `.rvf` to half its size, run `cli memory search` → verify fail-loud or recovery
-- `check_rvf_bad_magic` — overwrite first 8 bytes with zeros, run same → verify fail-loud
-- `check_rvf_partial_wal` — truncate `.rvf.wal` mid-record, run → verify clean recovery (WAL's reason to exist)
+- `check_adr0090_b2_rvf_truncated` — let the CLI create natural initial state, truncate every on-disk RVF file to half its size, verify CLI exits non-zero with corruption diagnostic.
+- `check_adr0090_b2_rvf_bad_magic` — same seeding, zero the first 8 bytes of every on-disk RVF file, verify CLI exits non-zero with corruption/magic diagnostic.
+- `check_adr0090_b2_rvf_partial_wal` — seed WAL-only state via a direct `RvfBackend` script (no shutdown → entries live in WAL), delete main file, truncate WAL mid-second-entry, verify CLI `memory list` recovers exactly 1 entry (the valid prefix) and reports that count consistently (no silent zero).
+
+**Fork patches required.** Before these checks could pass end-to-end, two fork bugs had to be fixed:
+
+1. **`loadFromDisk` silent-swallow regression** (rvf-backend.ts): every parse-failure branch (bad magic, truncated header, truncated entries body, JSON parse errors, EIO) silently skipped the load and returned an empty backend. If WAL recovery also yielded nothing, `initialize()` returned with zero entries and no error. A subsequent `store()` + `shutdown()` would OVERWRITE the corrupt file with only the new entry — destroying recovery options. Fix (fork commit `f6f8f8b92`): track `loadFailed` across every parse-failure branch with a specific `loadFailReason`; after `replayWal`, if `loadFailed && this.entries.size === 0`, throw a `RvfCorruptError` naming the file, the reason, and a recovery hint ("Move or delete the file to start fresh, or restore from a backup"). `memory-router.ts:createStorage` preserves the `RvfCorruptError` name through its wrapper catch (same pattern as B1's `EmbeddingDimensionError`).
+
+2. **Native/pure-TS path confusion** (rvf-backend.ts): the B2 fail-loud fix initially broke every user with `@ruvector/rvf-node` installed — `tryNativeInit()` writes native binary to the main path (magic `SFVR`), then `loadFromDisk` tried to parse that same path as pure-TS (magic `RVF\0`), failed, and threw on every init. Fix (fork commit `12aa4cb33`): when `this.nativeDb` is set, `loadFromDisk` and `mergePeerStateBeforePersist` only read the `.meta` sidecar — never the main path. When native is absent, the existing `.meta`-first-then-main fallback is preserved. This is a minimal fix scoped to the ADR-0090 B2 gate; the fuller native+pure-TS coexistence concerns are tracked in ADR-0092.
+
+Also required a minor scope widening in `tests/unit/adr0086-circuit-breaker.test.mjs`: the catch-body scanner for `createStorage`'s error rewrap used a 300-char window, but the new `RvfCorruptError` discriminator + explanatory comment pushed the generic-error `throw` past that window. Widened to 1500 chars with a comment pointing back to this ADR entry.
+
+Implementation: 12 unit + integration tests in `tests/unit/adr0090-b2-corruption.test.mjs` cover every corruption mode (bad magic on main, bad magic on `.meta`, truncated <8 bytes, truncated mid-header, corrupt header JSON, truncated entries body) as MUST-throw cases, plus four MUST-not-throw cases (absent file, 0-byte file, corrupt main + valid WAL, clean reopen). Plus dist-level assertions that the patch physically shipped. End-to-end verified against `3.5.58-patch.114` of `@sparkleideas/cli` via `test-acceptance-fast.sh`.
 
 **B3. Daemon metrics file read-back checks** (5 checks, one per worker):
 
