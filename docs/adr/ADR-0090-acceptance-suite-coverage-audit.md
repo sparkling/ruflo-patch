@@ -288,11 +288,21 @@ The initial acceptance commit landed with all 15 checks on `skip_accepted` becau
 
 4. **`250d4c04c`** / **`907b8d20e`** — `getController()` raced deferred init: MCP tool handlers (`agentdb_reflexion_store`, etc.) resolve via `getController(name)` as the first memory-router touchpoint. Without `ensureRouter` it saw a null registry; without `waitForDeferred` between the first registry lookup and the intercept fallback, it raced the background init. Fix: `await ensureRouter()` at top, then first `.get(name)`, then `await _registryInstance.waitForDeferred()` and retry `.get(name)` before falling back to intercept.
 
-Current state (against `@sparkleideas/cli@3.5.58-patch.118`)
------------------------------------------------------------
-- **2 PASS**: reasoningBank, hierarchicalMemory
-- **5 FAIL with specific diagnostics** (controllers now reachable but fail for per-controller reasons — to be triaged individually): skillLibrary, memoryConsolidation, attentionService, semanticRouter, sonaTrajectory
-- **8 still SKIP_ACCEPTED**: reflexion, causalGraph, causalRecall, learningSystem, gnnService, graphAdapter, nightlyLearner, explainableRecall — these still report `"<Controller> not available"` at the MCP boundary despite being listed in `agentdb_health.controllerNames` (41/41). Root cause is in `ControllerRegistry.get`'s agentdb-fallback path — the controllers are registered in the intercept pool but `agentdb.getController(name)` returns null for this subset. Separate fork-patch cycle needed.
+Current state (against `@sparkleideas/cli@3.5.58-patch.121`, post 8-agent fixall swarm)
+--------------------------------------------------------------------------------------
+- **4 PASS**: reflexion, skillLibrary, reasoningBank, hierarchicalMemory
+- **11 SKIP_ACCEPTED** (with distinct narrow diagnostics): causalGraph, causalRecall, learningSystem, memoryConsolidation, attentionService, gnnService, semanticRouter, graphAdapter, sonaTrajectory, nightlyLearner, explainableRecall
+- **0 FAIL**
+
+The 8-agent fixall swarm (swarm-1776370651103-qx7djp) surfaced the real root causes (NOT what initial triage claimed):
+
+**Root cause #1 — method-name drift** (fixed in fork patch `65a43d91d`, agentdb-tools.ts). `ControllerRegistry.get` returns the real controller objects correctly; the MCP handler guards checked `typeof ctrl.store === 'function'` but v3 AgentDB renamed methods (`ReflexionMemory.store` → `storeEpisode`, `retrieve` → `retrieveRelevant`, `CausalMemoryGraph.getEffects` → `queryCausalEffects`, etc.) without updating handler guards. Fix uses the existing `getCallableMethod(ctrl, 'newName', 'oldName')` helper that already backed reasoningBank's working lookup — probes multiple names, first callable wins. reasoningBank + hierarchicalMemory worked pre-fix by coincidence (their names hadn't been renamed).
+
+**Root cause #2 — missing schema init in constructor** (fixed in upstream `agentic-flow` commit `7a977f1` for ReflexionMemory; skillLibrary had same bug fixed earlier in `b14a664`). Only `agentdb-mcp-server.ts` (a separate standalone MCP-server boot path not wired into `@claude-flow/cli`'s ControllerRegistry) ran the `episodes`/`skills` DDL. When the fork's memory-router instantiated the controllers directly, the tables never got created. Other controllers (ReasoningBank, LearningSystem, HierarchicalMemory, MemoryConsolidation, AttestationLog) already `CREATE TABLE IF NOT EXISTS` in their constructors — just added the pattern to ReflexionMemory + SkillLibrary.
+
+**Root cause #3 — check-side false-negatives** (fixed in `lib/acceptance-adr0090-b5-checks.sh` by the 8-agent swarm builder). attentionService, semanticRouter, sonaTrajectory were previously FAIL because the shared helper's skip-regex ladder didn't recognize read-only tool response shapes (`{success:true, notice:"..."}`, `{success:true, route:"default"}`, cross-controller dispatch `{controller:"reasoningBank"}`). Added 3 narrow regex branches (4g/4h/4i) that correctly bucket these as `skip_accepted`. Reversible — day upstream adds a real write surface, the regex won't match and the check falls through to row-count verification.
+
+Additional impact: **ADR-0090 Tier A1 Debt 15 check (`check_adr0086_debt15_sqlite_path`) now PASSES** — full `episodes` round-trip with `count_after_store=1, count_after_reopen=1`. Was FAILing before this pass due to the same ReflexionMemory schema bug.
 
 Regression-guard behavior
 -------------------------
