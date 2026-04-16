@@ -214,22 +214,28 @@ Implementation: 12 unit + integration tests in `tests/unit/adr0090-b2-corruption
 - After `hooks worker dispatch --trigger map`, open `.claude-flow/metrics/codebase-map.json`, verify valid JSON + required fields
 - Same for audit, optimize, consolidate, testgaps
 
-**B4. `better-sqlite3` REQUIRED guard (spec flipped 2026-04-15).** New check in `acceptance-package-checks.sh`.
+**B4. Silent `sql.js` fallback guard (spec revised twice; current v3).** New check in `acceptance-package-checks.sh`.
 
-> **Original spec (void-ab-initio):** *"fail if `better-sqlite3` appears in `@sparkleideas/cli/package.json` `dependencies` or `devDependencies`. Must ONLY appear in `optionalDependencies` (per ADR-0086 Debt 7)."*
+This check has been through three revisions as fork reality shifted under us:
+
+> **v1 (original ADR-0090 spec, void-ab-initio):** *"fail if `better-sqlite3` appears in `@sparkleideas/cli/package.json` `dependencies` or `devDependencies`. Must ONLY appear in `optionalDependencies` (per ADR-0086 Debt 7)."*
 >
-> This spec contradicted fork commit `d5fe53522` ("fix: add better-sqlite3 as direct CLI dependency", 2026-04-12 — three days before ADR-0090 was written). The original Debt 7 diagnosis (remove `better-sqlite3` from CLI) turned out to be wrong: `open-database.ts` in the CLI package does `await import('better-sqlite3')`, and when the binding was only in the memory package's deps, npm hoisting failures caused the import to fail silently. `open-database.ts` then fell back to `sql.js`, which corrupts WAL-mode databases on close. Real user data loss was observed before `d5fe53522` reverted the removal.
+> Contradicted fork commit `d5fe53522` ("fix: add better-sqlite3 as direct CLI dependency", 2026-04-12). The Debt 7 claim that `better-sqlite3` was "removed from CLI" was stale — `open-database.ts` needed it; removal caused WAL corruption via silent `sql.js` fallback. `d5fe53522` re-added it to `dependencies`.
 
-**Actual B4 spec (as implemented):** positive, four-layer runtime check — fail **unless** all of the following hold in the published CLI:
+> **v2 (2026-04-15, positive flip):** "better-sqlite3 MUST be in `dependencies` AND `require.resolve` MUST succeed AND `open-database.js` MUST reference it."
+>
+> Correct for the moment in time, but obsoleted the next day by fork commit `c7439f345` ("feat: memory migrate --from-sqlite command"), which moved `better-sqlite3` back to `optionalDependencies` AND DELETED `open-database.ts` from source. The v2 check started failing on the first build after c7439f345 because the spec no longer matched reality.
 
-1. `@sparkleideas/cli/package.json` declares `better-sqlite3` in **`dependencies`** (not `optionalDependencies`, which npm can silently skip on cross-platform installs; not `devDependencies`, which consumers' `npm install` does not pull).
-2. `open-database.js` is present in the published dist AND still references `better-sqlite3` (guards against an upstream refactor silently switching the WAL opener to `sql.js`-only).
-3. `require.resolve('better-sqlite3')` succeeds when run from the CLI package dir (proves npm actually installed the native binding, not just wrote it to `package.json`).
-4. The resolved path is a real file on disk.
+**v3 (2026-04-16, current):** instead of pinning the contract to one specific `package.json` placement, the check now enforces the underlying invariant directly — **"no silent `sql.js` fallback path exists in the published dist"**:
 
-Failure of any layer emits a loud diagnostic naming the exact invariant violated. This is the positive counterpart to the original Debt 7 intent ("no silent `sql.js` fallback") and captures what the old package.json-movement guard could not: a runtime proof that `open-database.ts` will take the `better-sqlite3` branch.
+1. `better-sqlite3` is declared in **either** `dependencies` or `optionalDependencies`. Missing entirely → fail (`memory migrate --from-sqlite` would break). `devDependencies`-only → fail (consumers don't pull dev deps).
+2. If `open-database.js` exists in the dist, it must NOT import BOTH `better-sqlite3` AND `sql.js` (that co-location IS the ADR-0086 Debt 7 silent-fallback signature). The file is *allowed* to be absent — that's the current c7439f345 reality.
+3. No OTHER dist file has the same co-location signature (catches future refactors that spread the pattern to a different module).
+4. If `better-sqlite3` is in `dependencies`, `require.resolve` MUST succeed (deps are guaranteed-install). If in `optionalDependencies`, resolve failure is acceptable (optional = optional).
 
-Implementation: `check_adr0090_b4_better_sqlite3_required` in `lib/acceptance-package-checks.sh`, wired as `adr0090-b4-bsqlite3` in the `packages` group. 19 unit + integration tests in `tests/unit/adr0090-b4-better-sqlite3-required.test.mjs`. ADR-0086 Debt 7's "better-sqlite3 removed from CLI" claim is re-classified as stale — see commit history for the real trajectory.
+Why v3 still has teeth: the concrete regression scenarios are all still covered — a future refactor that re-introduces the try/catch-from-bsqlite-to-sqljs pattern (check #2/#3), a fork revert that removes `better-sqlite3` entirely (check #1), or a broken npm install in `dependencies` mode (check #4) all trip distinct failure modes with specific diagnostics.
+
+Implementation: `check_adr0090_b4_better_sqlite3_required` in `lib/acceptance-package-checks.sh`, wired as `adr0090-b4-bsqlite3` in the `packages` group. 27 unit + integration tests in `tests/unit/adr0090-b4-better-sqlite3-required.test.mjs` cover all 12 cases (v3 shape) plus regression guards that explicitly assert v1 and v2 stay obsolete (so a future refactor can't silently revert to either). Verified end-to-end against `3.5.58-patch.114` of `@sparkleideas/cli`. ADR-0086 Debt 7's original "better-sqlite3 removed from CLI" claim is — accurately, after c7439f345 — the current state, but for a different reason than Debt 7 intended: `open-database.ts` was deleted entirely, which is what eliminates the fallback risk, not the package.json placement.
 
 **B5. Controller-specific row-count round-trips.** For each of the 15 neural controllers, add a check that:
 

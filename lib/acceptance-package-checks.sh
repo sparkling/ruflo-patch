@@ -105,51 +105,69 @@ check_plugins_sdk() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0090 Tier B4: better-sqlite3 must be a REQUIRED CLI dependency
+# ADR-0090 Tier B4: no silent sql.js fallback on the CLI's better-sqlite3
+# consumers
 #
 # History
 # -------
-# The original Tier B4 spec in ADR-0090 said:
+# Three revisions of this check:
+#
+# (v1, obsolete) Original ADR-0090 spec:
 #   "fail if better-sqlite3 appears in @sparkleideas/cli dependencies.
-#    Must ONLY appear in optionalDependencies (per ADR-0086 Debt 7)."
+#    Must ONLY appear in optionalDependencies."
+#   Void-ab-initio — contradicted fork commit d5fe53522 (2026-04-12)
+#   which re-added better-sqlite3 to `dependencies` because
+#   open-database.ts's dynamic `import('better-sqlite3')` fell back to
+#   sql.js on resolve failure, corrupting WAL databases.
 #
-# That spec was void-ab-initio. ADR-0086 Debt 7's claim that
-# better-sqlite3 was removed from the CLI is stale — fork commit
-# d5fe53522 on 2026-04-12 ("fix: add better-sqlite3 as direct CLI
-# dependency", three days before ADR-0090 was written) re-added it
-# because:
+# (v2, 2026-04-15) Flipped positive: better-sqlite3 MUST be in
+#   `dependencies` AND `require.resolve` MUST succeed AND
+#   `open-database.js` MUST reference better-sqlite3.
 #
-#   open-database.ts (CLI pkg) does `await import('better-sqlite3')`.
-#   When better-sqlite3 was only in the MEMORY package's deps, npm
-#   hoisting failures meant the dynamic import could fail at runtime.
-#   open-database.ts then fell back to sql.js, which corrupts WAL-mode
-#   databases on close. This caused real user data loss.
+# (v3, 2026-04-16, THIS VERSION) Reality changed again. Fork commit
+#   c7439f345 ("feat: memory migrate --from-sqlite command") moved
+#   better-sqlite3 back to `optionalDependencies` and DELETED
+#   `open-database.ts`. The WAL-corrupting silent-fallback path that
+#   motivated the entire Debt 7 saga is GONE at the source level.
+#   Surviving consumers (memory.js `memory migrate --from-sqlite`,
+#   doctor.js diagnostic) use explicit fail-loud:
+#     try { await import('better-sqlite3'); }
+#     catch { output.printError('better-sqlite3 is required... Install:
+#       npm install better-sqlite3'); return { exitCode: 1 }; }
+#   No silent sql.js fallthrough anywhere. So better-sqlite3 in
+#   `optionalDependencies` is now SAFE — it only affects user-invoked
+#   migration commands, never auto-triggered CRUD paths.
 #
-# The original Debt 7 intent ("no silent sql.js fallback") was valid,
-# but the diagnosis ("remove better-sqlite3 from CLI") was wrong. The
-# correct invariant to enforce is a positive one: better-sqlite3 MUST
-# be resolvable from the CLI package context at runtime, so open-
-# database.ts takes the better-sqlite3 branch and never the WAL-
-# corrupting sql.js fallback.
-#
-# What this check verifies (four layers)
-# --------------------------------------
+# What v3 verifies
+# ----------------
 #   1. Static: @sparkleideas/cli/package.json declares better-sqlite3
-#      in `dependencies` (not only optionalDependencies — those can
-#      silently fail to install on cross-platform npm ci).
-#   2. Static: open-database.js is present in the published dist and
-#      still references better-sqlite3 (not replaced by an sql.js-only
-#      shim or removed in an upstream refactor).
-#   3. Runtime: a Node subprocess rooted at the CLI package dir can
-#      `require.resolve('better-sqlite3')` — proves npm actually
-#      installed the native binding, not just wrote it to package.json.
-#   4. Runtime: the resolved path is a real file on disk (guards against
-#      resolve-but-missing-binary — fs check on the resolved .node file).
+#      SOMEWHERE (dependencies OR optionalDependencies). Missing
+#      entirely → fail (migrate command won't work).
+#      `devDependencies`-only → fail (consumers don't pull dev deps).
+#   2. Static: `open-database.js` does NOT exist in the published dist.
+#      If it reappears, the old silent-fallback regression is back
+#      and we need to re-enable the runtime resolve check.
+#   3. Static: every dist file that imports `better-sqlite3` must NOT
+#      also import `sql.js` — the co-location of both imports in the
+#      same file is the silent-fallback signature (open-database.ts
+#      pattern: `try { import bsqlite } catch { import sqljs }`).
+#   4. Runtime: IF better-sqlite3 is in `dependencies`, require.resolve
+#      must succeed (deps are MUST-install). If in
+#      `optionalDependencies`, the resolve is informational only —
+#      optional means "OK to skip on this platform".
 #
-# If any layer fails, we FAIL loudly with a diagnostic — this is the
-# exact regression signal ADR-0086 Debt 7 was supposed to provide but
-# never did (because the facade of "remove it from package.json"
-# couldn't express the runtime requirement).
+# Why the invariant still has teeth
+# ---------------------------------
+# The point of B4 is to prevent the ADR-0086 Debt 7 regression from
+# silently returning. If a future upstream refactor re-adds a
+# silent-fallback path (e.g. `open-database.ts` v2), check #3 fires
+# because the new file will import both better-sqlite3 and sql.js in
+# the same module. If a future upstream removes better-sqlite3
+# entirely, check #1 fires (`memory migrate --from-sqlite` would break
+# for real users who do need the migration path). If a future refactor
+# moves better-sqlite3 into `devDependencies` (same-package npm hosts
+# that pattern is visible during dev but never installed for users),
+# check #1 fires with a clear diagnostic naming the wrong field.
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0090_b4_better_sqlite3_required() {
@@ -173,8 +191,9 @@ check_adr0090_b4_better_sqlite3_required() {
   fi
 
   # ─── Layer 1: static package.json declaration ──────────────────────
-  # Parse with node so a nested "dependencies": {} is unambiguous and
-  # we don't false-positive on devDependencies matches in the same file.
+  # better-sqlite3 must be declared in `dependencies` OR
+  # `optionalDependencies` — either is now valid (see docblock). Fail
+  # if missing entirely or if only in `devDependencies`.
   local dep_kind
   dep_kind=$(node -e "
     const p = require('$pkg_json');
@@ -184,28 +203,60 @@ check_adr0090_b4_better_sqlite3_required() {
     console.log('missing');
   " 2>/dev/null)
 
-  if [[ "$dep_kind" != "dependencies" ]]; then
-    _CHECK_OUTPUT="B4: @sparkleideas/cli/package.json must declare better-sqlite3 in 'dependencies' (found in '$dep_kind'). optionalDependencies are not reliable — npm may silently skip them on cross-platform installs, causing open-database.ts to fall back to sql.js and corrupt WAL databases (see fork commit d5fe53522)."
+  if [[ "$dep_kind" == "missing" ]]; then
+    _CHECK_OUTPUT="B4: @sparkleideas/cli/package.json does not declare better-sqlite3 anywhere. Expected in 'dependencies' (required install) or 'optionalDependencies' (for user-invoked memory migrate --from-sqlite). Without it, the migration path fails with a module-not-found error rather than the expected 'Install better-sqlite3' diagnostic."
+    return
+  fi
+  if [[ "$dep_kind" == "devDependencies" ]]; then
+    _CHECK_OUTPUT="B4: @sparkleideas/cli/package.json declares better-sqlite3 ONLY in 'devDependencies'. Consumers' \`npm install\` does not pull devDependencies, so better-sqlite3 won't be available to the published CLI. Move to 'dependencies' or 'optionalDependencies'."
     return
   fi
 
-  # ─── Layer 2: static open-database.js still uses better-sqlite3 ────
+  # ─── Layer 2: open-database.js must be absent ──────────────────────
+  # This file was the ADR-0086 silent sql.js fallback path. Fork
+  # commit c7439f345 deleted its source (2026-04). If it's back in
+  # the dist, upstream re-introduced the WAL-corrupting regression
+  # and this check must alert loudly.
   local opendb_file
-  opendb_file=$(find "$cli_pkg_dir" -name "open-database.js" -type f 2>/dev/null | head -1)
-  if [[ -z "$opendb_file" ]]; then
-    _CHECK_OUTPUT="B4: open-database.js not found in published CLI dist (expected at cli/dist/src/memory/open-database.js). The WAL-safe SQLite opener may have been removed — if so, the check needs to be re-scoped to wherever WAL opens now happen."
-    return
+  opendb_file=$(find "$cli_pkg_dir" -name "open-database.js" -type f -not -path "*/.iso-*" 2>/dev/null | head -1)
+  if [[ -n "$opendb_file" ]]; then
+    # Presence alone isn't fatal — only fatal if it has the
+    # silent-fallback signature (both better-sqlite3 AND sql.js
+    # imports in the same file).
+    local has_bsqlite has_sqljs
+    has_bsqlite=$(grep -c "better-sqlite3" "$opendb_file" 2>/dev/null); has_bsqlite=${has_bsqlite:-0}
+    has_sqljs=$(grep -c "sql\\.js" "$opendb_file" 2>/dev/null); has_sqljs=${has_sqljs:-0}
+    if (( has_bsqlite > 0 && has_sqljs > 0 )); then
+      _CHECK_OUTPUT="B4: open-database.js reappeared at $opendb_file with BOTH better-sqlite3 AND sql.js imports. This is the ADR-0086 Debt 7 silent-fallback signature — WAL corruption risk is BACK. Review the file for try/catch fallthrough from better-sqlite3 to sql.js; if present, either re-pin better-sqlite3 to 'dependencies' or (preferred) remove the sql.js fallback path entirely."
+      return
+    fi
   fi
-  if ! grep -q "better-sqlite3" "$opendb_file" 2>/dev/null; then
-    _CHECK_OUTPUT="B4: open-database.js exists at $opendb_file but does not reference better-sqlite3 — upstream may have switched to sql.js-only (regression) or to a different engine entirely. Investigate before green-lighting."
+
+  # ─── Layer 3: no dist file has the silent-fallback signature ──────
+  # Scan every .js file under dist for files that import BOTH
+  # better-sqlite3 AND sql.js. That co-location is the canonical
+  # silent-fallback pattern (open-database.ts's shape). If it appears
+  # in a NEW file after a future refactor, flag it.
+  local culprit
+  culprit=$(
+    find "$cli_pkg_dir/dist" -name "*.js" -type f 2>/dev/null | while read -r f; do
+      if grep -q "better-sqlite3" "$f" 2>/dev/null && grep -q "sql\\.js" "$f" 2>/dev/null; then
+        echo "$f"
+        break
+      fi
+    done
+  )
+  if [[ -n "$culprit" ]]; then
+    _CHECK_OUTPUT="B4: dist file $culprit imports BOTH better-sqlite3 AND sql.js. That's the ADR-0086 Debt 7 silent-fallback signature. Review for try/catch fallthrough and either pin better-sqlite3 to 'dependencies' or remove the sql.js path."
     return
   fi
 
-  # ─── Layer 3: runtime require.resolve from CLI package context ─────
-  # Run node rooted at the CLI package dir so npm's node_modules
-  # resolution matches the runtime. `require.resolve` is stricter than
-  # a dynamic import catch — it throws synchronously if the binding
-  # was not installed.
+  # ─── Layer 4: runtime resolve (strict only when in dependencies) ──
+  # If better-sqlite3 is in `dependencies`, it MUST resolve — deps
+  # are guaranteed installed. If in `optionalDependencies`, resolution
+  # may legitimately fail on some platforms (that's what "optional"
+  # means). We still TRY to resolve, but a failure is informational
+  # rather than fatal when dep_kind=optionalDependencies.
   local resolve_out
   resolve_out=$(cd "$cli_pkg_dir" && node -e "
     try {
@@ -217,19 +268,24 @@ check_adr0090_b4_better_sqlite3_required() {
     }
   " 2>&1) || true
 
-  if ! echo "$resolve_out" | grep -q '^RESOLVED:'; then
-    _CHECK_OUTPUT="B4: better-sqlite3 is declared in CLI dependencies but require.resolve FAILED from $cli_pkg_dir — native binding was not installed (this is exactly the silent sql.js fallback path that corrupts WAL databases): $(echo "$resolve_out" | head -3)"
-    return
-  fi
-
-  # ─── Layer 4: resolved path is a real file on disk ─────────────────
-  local resolved_path
-  resolved_path=$(echo "$resolve_out" | sed -n 's/^RESOLVED://p' | head -1)
-  if [[ -z "$resolved_path" || ! -f "$resolved_path" ]]; then
-    _CHECK_OUTPUT="B4: better-sqlite3 resolved to '$resolved_path' but file does not exist — broken install"
-    return
+  local resolve_note=""
+  if echo "$resolve_out" | grep -q '^RESOLVED:'; then
+    local resolved_path
+    resolved_path=$(echo "$resolve_out" | sed -n 's/^RESOLVED://p' | head -1)
+    if [[ -z "$resolved_path" || ! -f "$resolved_path" ]]; then
+      _CHECK_OUTPUT="B4: better-sqlite3 resolved to '$resolved_path' but file does not exist — broken install"
+      return
+    fi
+    resolve_note="resolves to $resolved_path"
+  else
+    # Resolve failed. Fatal only in 'dependencies' mode.
+    if [[ "$dep_kind" == "dependencies" ]]; then
+      _CHECK_OUTPUT="B4: better-sqlite3 is declared in CLI 'dependencies' but require.resolve FAILED from $cli_pkg_dir — npm install should have landed it: $(echo "$resolve_out" | head -3)"
+      return
+    fi
+    resolve_note="declared optional + NOT installed on this host (acceptable for optionalDependencies)"
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="B4: better-sqlite3 declared in CLI 'dependencies', resolvable from CLI package context ($resolved_path), open-database.js references it — silent sql.js fallback path is blocked."
+  _CHECK_OUTPUT="B4: better-sqlite3 declared in '$dep_kind' ($resolve_note); open-database.js silent-fallback absent from dist; no other dist file imports both better-sqlite3 and sql.js."
 }
