@@ -209,10 +209,24 @@ Also required a minor scope widening in `tests/unit/adr0086-circuit-breaker.test
 
 Implementation: 12 unit + integration tests in `tests/unit/adr0090-b2-corruption.test.mjs` cover every corruption mode (bad magic on main, bad magic on `.meta`, truncated <8 bytes, truncated mid-header, corrupt header JSON, truncated entries body) as MUST-throw cases, plus four MUST-not-throw cases (absent file, 0-byte file, corrupt main + valid WAL, clean reopen). Plus dist-level assertions that the patch physically shipped. End-to-end verified against `3.5.58-patch.114` of `@sparkleideas/cli` via `test-acceptance-fast.sh`.
 
-**B3. Daemon metrics file read-back checks** (5 checks, one per worker):
+**B3+B6a. Daemon worker output read-back (implemented 2026-04-16, swarm-built).** Six checks in `lib/acceptance-adr0090-b3-checks.sh`, all built on a single shared helper `_b3_check_worker_output_json(trigger, rel_path, required_fields_csv, timeout_s)`:
 
-- After `hooks worker dispatch --trigger map`, open `.claude-flow/metrics/codebase-map.json`, verify valid JSON + required fields
-- Same for audit, optimize, consolidate, testgaps
+- `check_adr0090_b3_map` — `.claude-flow/metrics/codebase-map.json` (trigger: `map`); fields: `timestamp,projectRoot,structure,scannedAt,structure.hasPackageJson`
+- `check_adr0090_b3_audit` — `.claude-flow/metrics/security-audit.json` (trigger: `audit`); fields: `timestamp,mode,checks,riskLevel,recommendations,checks.envFilesProtected`
+- `check_adr0090_b3_optimize` — `.claude-flow/metrics/performance.json` (trigger: `optimize`); fields: `timestamp,mode,memoryUsage,uptime,optimizations,memoryUsage.rss`
+- `check_adr0090_b3_consolidate` — `.claude-flow/metrics/consolidation.json` (trigger: `consolidate`); fields: `timestamp,patternsConsolidated,memoryCleaned,duplicatesRemoved`; 45 s timeout (exercises the real learning router + embedding model)
+- `check_adr0090_b3_testgaps` — `.claude-flow/metrics/test-gaps.json` (trigger: `testgaps`); fields: `timestamp,mode,hasTestDir,estimatedCoverage,gaps`
+- `check_adr0090_b6a_daemon_state` — `.claude-flow/daemon-state.json` (written by `WorkerDaemon.saveState()`); fields: `running,workers,config,savedAt,workers.map`. Implemented via the same helper + a prefix rewrite so the B6a id surfaces in logs/telemetry.
+
+**Dispatch-command deviation from original ADR text.** The ADR originally said "After `hooks worker dispatch --trigger map`". All three swarm agents (researcher, adversarial-reviewer, builder) independently confirmed that `cli hooks worker dispatch` is a `setTimeout`-only MCP-accounting stub at `hooks-tools.ts:3499-3594` that never invokes the real `WorkerDaemon.runXxxWorker()` functions. The synchronous, file-producing command is `cli daemon trigger -w <trigger>` (see fork `worker-daemon.ts:766-843` for `triggerWorker()` and `949-1103` for the per-worker `writeFileSync` paths). Using the stub command would have been an ADR-0082 silent-pass anti-pattern — the check would pass against a no-op because the metrics files from `init --full` are already on disk from cold start. The B3 checks pre-delete the target file before triggering, and the helper uses the real synchronous command, so the "valid JSON + required fields" assertion is a real signal.
+
+**Helper architecture (extracted lesson from B2).** Per the B2 adversarial review's copy-paste-rot concern, B3 uses a single 100-LOC helper with 6 ≤6-line thin wrappers, each of which only declares its `(trigger, path, fields, timeout)` tuple. Adding a new worker check is one function call; changing the dispatch contract is one place.
+
+**Three-way bucket (ADR-0090 Tier A2).** If the CLI rejects a trigger as "Unknown worker" (regex: `unknown worker|not .*valid.*worker|worker.*not found|worker type.*not found`) — the case an ADR-0088-style future narrowing would produce — the check emits `_CHECK_PASSED="skip_accepted"` with a `SKIP_ACCEPTED:` marker, NOT `true` (which would mask removal) and NOT `false` (which would drown in noise). As of 2026-04-16 all 5 B3 workers + B6a are present in the build, so the skip path is latent.
+
+**Pre-existing bug flagged (outside B3 scope).** The researcher surfaced that `lib/acceptance-adr0079-tier3-checks.sh:398` uses `hooks worker dispatch --trigger consolidation` — the stub command AND the wrong trigger name (actual is `consolidate`). The check passes by grepping for "dispatched" in the stub's output: classic ADR-0082 silent-pass. Tracked as follow-up, not fixed in this commit so the B3 change stays surgical.
+
+Implementation: 411-LOC check file, 778-LOC test file with 41 unit tests (static-source × 7, behavioral × 24 = 4 cases × 6 checks, three-way bucket × 2, B6a prefix rewrite × 1, stub CLI self-test × 2). End-to-end verified against `@sparkleideas/cli@3.5.58-patch.114` via `test-acceptance-fast.sh`: all 6 PASS with elapsed 344–1187 ms per check.
 
 **B4. Silent `sql.js` fallback guard (spec revised twice; current v3).** New check in `acceptance-package-checks.sh`.
 

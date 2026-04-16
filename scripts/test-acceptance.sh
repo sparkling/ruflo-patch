@@ -501,6 +501,12 @@ run_check_bg "adr0090-b1-dim-fatal" "Dim-mismatch fail-loud (B1)" check_adr0090_
 run_check_bg "adr0090-b2-trunc"     "Truncated .rvf fail-loud (B2)" check_adr0090_b2_rvf_truncated "storage"
 run_check_bg "adr0090-b2-magic"     "Bad-magic .rvf fail-loud (B2)" check_adr0090_b2_rvf_bad_magic "storage"
 run_check_bg "adr0090-b2-wal"       "Partial-WAL recovery (B2)"     check_adr0090_b2_rvf_partial_wal "storage"
+run_check_bg "adr0090-b3-map"         "Worker map metrics (B3)"         check_adr0090_b3_map         "data"
+run_check_bg "adr0090-b3-audit"       "Worker audit metrics (B3)"       check_adr0090_b3_audit       "data"
+run_check_bg "adr0090-b3-optimize"    "Worker optimize metrics (B3)"    check_adr0090_b3_optimize    "data"
+run_check_bg "adr0090-b3-consolidate" "Worker consolidate metrics (B3)" check_adr0090_b3_consolidate "data"
+run_check_bg "adr0090-b3-testgaps"    "Worker testgaps metrics (B3)"    check_adr0090_b3_testgaps    "data"
+run_check_bg "adr0090-b6a-daemon"     "Daemon-state round-trip (B6a)"   check_adr0090_b6a_daemon_state "daemon"
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
