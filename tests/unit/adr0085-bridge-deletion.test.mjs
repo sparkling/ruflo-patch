@@ -130,9 +130,13 @@ describe('ADR-0085 T1.5: getController local registry priority', () => {
   });
 
   it('getController checks _registryInstance before intercept', () => {
+    // Window widened twice for ADR-0090 B5 fixes (2026-04-16):
+    // getController now awaits ensureRouter + waitForDeferred before
+    // the intercept fallback. 3000-char window is safely past the end
+    // of the function body (~2000 chars).
     const getControllerBlock = routerSrc.slice(
       routerSrc.indexOf('export async function getController'),
-      routerSrc.indexOf('export async function getController') + 600,
+      routerSrc.indexOf('export async function getController') + 3000,
     );
     const registryIdx = getControllerBlock.indexOf('_registryInstance');
     const interceptIdx = getControllerBlock.indexOf('loadIntercept');
@@ -333,8 +337,12 @@ describe('ADR-0085 flaw 3: getController dual-path is documented', () => {
   });
 
   it('intercept fallback comment explains when it is reached', () => {
+    // Window widened 2026-04-16 for ADR-0090 B5 fix (see note in T1.5
+    // test above): `getController` body now includes a deferred-init
+    // await block before the intercept fallback, pushing its comment
+    // past the old 600-char window.
     const fnStart = routerSrc.indexOf('export async function getController');
-    const fnBlock = routerSrc.slice(fnStart, fnStart + 600);
+    const fnBlock = routerSrc.slice(fnStart, fnStart + 3000);
     assert.ok(
       fnBlock.includes('init failed') || fnBlock.includes('neural disabled'),
       'intercept fallback must document when it activates (init failed / neural disabled)',
