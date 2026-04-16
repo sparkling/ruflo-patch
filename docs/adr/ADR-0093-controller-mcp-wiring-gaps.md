@@ -89,21 +89,42 @@ Pure-compute controller (Flash Attention configuration, benchmarking, metrics co
 
 #### 7. gnnService
 
-WASM bridge to `@sparkleideas/ruvector-gnn`. Ephemeral in-memory graph neural network. No SQLite persistence by design. Zero `agentdb_gnn*` MCP tools exist. Controller name is actually `gnnService` in the fork (ADR-0090 B5 spec said `gnnLearning` — naming mismatch documented in architect report).
+**NAPI-RS** bridge (not WASM — correction from the 6-agent verification swarm) to `@sparkleideas/ruvector-gnn`. `GNNService.js` (639 LOC) has zero matches for persist/save/store/write/INSERT/sqlite/CREATE TABLE/this.db — pure compute (forward passes, cosine similarity, attention weights). The native `.node` binary (`strings` scan) also has zero SQL. Controller-registry passes only `{inputDim}` — no db handle. Zero `agentdb_gnn*` MCP tools exist.
+
+**Verified**: 2026-04-16 (`/tmp/verify-gnnService.md`). CONFIRMED_NO_PERSIST.
 
 **Verdict**: SKIP_ACCEPTED.
 
 #### 8. semanticRouter
 
-Routes queries to optimal handling paths. `SemanticRouter.route()` is a pure lookup/dispatch — no `store`/`add`/`record` method. No `semantic_routes` table exists or is created. `agentdb_semantic_route` and `agentdb_route` are both read-only dispatchers.
+**⚠️ Corrected by 6-agent verification swarm (2026-04-16).** The original claim "routes queries, doesn't store" is WRONG for one of four SemanticRouter classes.
 
-**Verdict**: SKIP_ACCEPTED.
+Three classes are genuinely stateless (in-memory `Map`, zero I/O):
+- `agentdb/services/SemanticRouter` — `addRoute`/`route`/`removeRoute`
+- `agentic-flow/routing/SemanticRouter` — `registerAgent`/`route`/`detectMultiIntent`
+- `cli/ruvector/semantic-router` — in-memory intents + embeddings
+
+One class HAS full persistence: `agentdb/backends/rvf/SemanticQueryRouter` (verified at `/tmp/verify-semanticRouter.md`):
+- `save(path)` / `load(path)` via `node:fs/promises`
+- `persist()` for immediate flush to `_persistencePath`
+- `schedulePersist()` with 5-second debounce, auto-triggered on `addIntent`/`removeIntent`
+- Wired from `SelfLearningRvfBackend` via `routerPersistencePath` config
+
+**Currently dormant** because `routerPersistencePath` is optional (`string | undefined`) and never set by any caller in the CLI, memory package, or init-generated config. Zero semantic/router files on disk in live probes.
+
+**Verdict**: SKIP_ACCEPTED for B5 (persistence is **JSON file**, not SQLite — B5 checks are SQLite-scoped). But the documented reason is "has JSON persistence but no SQLite path; dormant in current config" NOT "read-only by design."
+
+**Follow-up**: If `routerPersistencePath` is ever wired into the init template, a file-based round-trip check (not SQLite) should be added. Track in Tier C.
 
 #### 9. graphAdapter
 
-RVF-backed by architectural intent per ADR-0086 Debt 17 ("intelligence.cjs reads SQLite, CLI writes RVF"). `GraphDatabaseAdapter.d.ts` states: *"Primary Database for AgentDB v2. Replaces SQLite with RuVector's graph database."* Memory operations go to `.swarm/memory.rvf` or `.claude-flow/memory.rvf`, not to `.swarm/memory.db`. No MCP store tool exists; generic `memory store` exercises a different controller entirely.
+**Correction from verification swarm**: graphAdapter does NOT use RVF (`.rvf` file format with SFVR/RVF\0 magic). It uses `@sparkleideas/ruvector-graph-node`, a NAPI-RS native addon backed by **redb** (a pure-Rust embedded B-tree KV store). Storage path: `{dbPath}.graph`. Zero SQLite operations in `GraphDatabaseAdapter.js` (verified: 0 matches for INSERT/CREATE TABLE/.prepare/.exec/sqlite/memory.db). The `strings` scan of the native binary also returned 0 SQLite hits.
 
-**Verdict**: SKIP_ACCEPTED. A graphAdapter B5 check would need an RVF-based verification strategy (not SQLite), which is Tier C scope per ADR-0090.
+Routing is fully isolated: `AgentDB.initialize()` gates graph via `config.enableGraph` (separate branch from SQLite). `db-unified.js` mode `'graph'` uses `GraphDatabaseAdapter`; mode `'sqlite-legacy'` uses sql.js — completely separate branches.
+
+**Verified**: 2026-04-16 (`/tmp/verify-graphAdapter.md`). CONFIRMED_RVF_ONLY (technically redb, not RVF — but non-SQLite either way).
+
+**Verdict**: SKIP_ACCEPTED for B5. A graphAdapter round-trip check would need a redb-native probe, which is Tier C scope.
 
 #### 10. sonaTrajectory
 
