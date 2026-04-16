@@ -44,6 +44,16 @@ _booster_cmd() {
 # the process immediately instead of waiting for timeout.
 # Usage: _run_and_kill "command string" [out_file] [max_seconds]
 # Sets: _RK_OUT, _RK_EXIT
+#
+# Exit-code capture (fixed 2026-04-16): the backgrounded subshell records
+# the command's exit code into the sentinel line as `__RUFLO_DONE__:<rc>`.
+# On completion we parse it out. If the process was killed by us (sentinel
+# not written), _RK_EXIT is set to 137 (SIGKILL convention) so callers can
+# distinguish "command finished with some exit code" from "we had to kill
+# it because it hung past the sentinel". Prior to this fix, _RK_EXIT was
+# ALWAYS 0 because it captured $? from the immediately-preceding `cat`
+# call, not from the command — silently defeating every `_RK_EXIT -eq 0`
+# check in the acceptance suite.
 _run_and_kill() {
   local cmd="$1" out_file="${2:-}" max_wait="${3:-8}"
 
@@ -56,8 +66,12 @@ _run_and_kill() {
   fi
   > "$out_file"
 
-  # Run command in background; append sentinel when done
-  ( eval "$cmd" >> "$out_file" 2>&1; echo "__RUFLO_DONE__" >> "$out_file" ) &
+  # Run command in background; append sentinel with exit code when done.
+  # The `rc=$?` capture happens IMMEDIATELY after the command, before any
+  # other subshell statement can overwrite it. The sentinel line format
+  # is stable (`__RUFLO_DONE__:<digits>`) — callers must not emit this
+  # prefix in their own output (no known collisions in the suite).
+  ( eval "$cmd" >> "$out_file" 2>&1; rc=$?; echo "__RUFLO_DONE__:$rc" >> "$out_file" ) &
   local pid=$!
 
   # Poll for sentinel or timeout
@@ -82,18 +96,34 @@ _run_and_kill() {
   fi
 
   # Kill process tree if still running (prevents orphaned node children)
+  # Record whether we had to kill it, so we can set _RK_EXIT=137 if the
+  # sentinel is missing (differentiates "hung and killed" from "exited 0").
+  local _rk_killed="false"
   if kill -0 "$pid" 2>/dev/null; then
+    _rk_killed="true"
     pkill -P "$pid" 2>/dev/null || true   # kill children first
     kill "$pid" 2>/dev/null || true
     wait "$pid" 2>/dev/null || true
   fi
 
-  # Strip sentinel from output
-  sed '/__RUFLO_DONE__/d' "$out_file" > "${out_file}.tmp" && mv "${out_file}.tmp" "$out_file"
+  # Extract the exit code from the sentinel before stripping.
+  # If no sentinel (killed or crashed before writing), _RK_EXIT=137.
+  local _rk_sentinel_line
+  _rk_sentinel_line=$(grep '^__RUFLO_DONE__:' "$out_file" 2>/dev/null | tail -1)
+  if [[ -n "$_rk_sentinel_line" ]]; then
+    _RK_EXIT="${_rk_sentinel_line##__RUFLO_DONE__:}"
+    # Defensive: if the captured value isn't a valid integer (somehow), fall
+    # back to 0 so arithmetic comparisons don't throw a bash error.
+    [[ "$_RK_EXIT" =~ ^-?[0-9]+$ ]] || _RK_EXIT=0
+  else
+    _RK_EXIT=137
+  fi
+
+  # Strip sentinel line(s) from output
+  sed '/^__RUFLO_DONE__:/d' "$out_file" > "${out_file}.tmp" && mv "${out_file}.tmp" "$out_file"
 
   # Set output variable for callers
   _RK_OUT=$(cat "$out_file")
-  _RK_EXIT=$?
 
   # Clean up temp file if we created it
   if [[ "$_rk_own_file" == "true" ]]; then
@@ -120,7 +150,8 @@ _run_and_kill_ro() {
   fi
   > "$out_file"
 
-  ( eval "$cmd" >> "$out_file" 2>&1; echo "__RUFLO_DONE__" >> "$out_file" ) &
+  # Same exit-code sentinel format as _run_and_kill (see docblock there).
+  ( eval "$cmd" >> "$out_file" 2>&1; rc=$?; echo "__RUFLO_DONE__:$rc" >> "$out_file" ) &
   local pid=$!
 
   local elapsed=0
@@ -142,10 +173,19 @@ _run_and_kill_ro() {
     wait "$pid" 2>/dev/null || true
   fi
 
-  sed '/__RUFLO_DONE__/d' "$out_file" > "${out_file}.tmp" && mv "${out_file}.tmp" "$out_file"
+  # Extract exit code from sentinel before stripping (see _run_and_kill)
+  local _rk_sentinel_line
+  _rk_sentinel_line=$(grep '^__RUFLO_DONE__:' "$out_file" 2>/dev/null | tail -1)
+  if [[ -n "$_rk_sentinel_line" ]]; then
+    _RK_EXIT="${_rk_sentinel_line##__RUFLO_DONE__:}"
+    [[ "$_RK_EXIT" =~ ^-?[0-9]+$ ]] || _RK_EXIT=0
+  else
+    _RK_EXIT=137
+  fi
+
+  sed '/^__RUFLO_DONE__:/d' "$out_file" > "${out_file}.tmp" && mv "${out_file}.tmp" "$out_file"
 
   _RK_OUT=$(cat "$out_file")
-  _RK_EXIT=$?
 
   if [[ "$_rk_own_file" == "true" ]]; then
     rm -f "$out_file"
