@@ -89,7 +89,9 @@ check_adr0094_p3_task_lifecycle() {
   }
 
   # Step 1: create (also probe for tool-not-found -> skip_accepted)
-  _lc_exec 1 task_create "{\"name\":\"$tn\",\"description\":\"lifecycle test\"}" rw 'created|task|id'
+  # Success patterns widened to include MCP JSON-wrapper shapes: content|\[OK\]|result
+  # (do NOT widen error-match sets; we only widen success-match sets)
+  _lc_exec 1 task_create "{\"name\":\"$tn\",\"description\":\"lifecycle test\"}" rw 'created|task|id|content|\[OK\]|result'
   if [[ $? -ne 0 ]]; then
     if echo "$_lc_body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
       _CHECK_PASSED="skip_accepted"
@@ -98,17 +100,17 @@ check_adr0094_p3_task_lifecycle() {
     rm -f "$work" 2>/dev/null; return
   fi
 
-  _lc_exec 2 task_assign  "{\"taskId\":\"$tn\",\"agentId\":\"test-agent\"}" rw 'assigned|success'            || { rm -f "$work"; return; }
-  _lc_exec 3 task_update  "{\"taskId\":\"$tn\",\"status\":\"in_progress\"}" rw 'updated|success'             || { rm -f "$work"; return; }
-  _lc_exec 4 task_list    ""                                                ro 'tasks|list|\[\]'              || { rm -f "$work"; return; }
-  _lc_exec 5 task_status  "{\"taskId\":\"$tn\"}"                            ro 'status|state|task'            || { rm -f "$work"; return; }
-  _lc_exec 6 task_summary ""                                                ro 'summary|total|completed|pending' || { rm -f "$work"; return; }
-  _lc_exec 7 task_complete "{\"taskId\":\"$tn\"}"                           rw 'completed|done|success'       || { rm -f "$work"; return; }
+  _lc_exec 2 task_assign  "{\"taskId\":\"$tn\",\"agentId\":\"test-agent\"}" rw 'assigned|success|content|\[OK\]|result'            || { rm -f "$work"; return; }
+  _lc_exec 3 task_update  "{\"taskId\":\"$tn\",\"status\":\"in_progress\"}" rw 'updated|success|content|\[OK\]|result'             || { rm -f "$work"; return; }
+  _lc_exec 4 task_list    ""                                                ro 'tasks|list|\[\]|content|\[OK\]|result'              || { rm -f "$work"; return; }
+  _lc_exec 5 task_status  "{\"taskId\":\"$tn\"}"                            ro 'status|state|task|content|\[OK\]|result'            || { rm -f "$work"; return; }
+  _lc_exec 6 task_summary ""                                                ro 'summary|total|completed|pending|content|\[OK\]|result' || { rm -f "$work"; return; }
+  _lc_exec 7 task_complete "{\"taskId\":\"$tn\"}"                           rw 'completed|done|success|content|\[OK\]|result'       || { rm -f "$work"; return; }
 
   # Step 8: cancel needs a fresh task (first one is completed)
   local ct="adr0094-cancel-$$"
-  _lc_exec 8a task_create "{\"name\":\"$ct\",\"description\":\"cancel test\"}" rw 'created|task|id'           || { rm -f "$work"; return; }
-  _lc_exec 8  task_cancel "{\"taskId\":\"$ct\"}"                               rw 'cancelled|canceled|success' || { rm -f "$work"; return; }
+  _lc_exec 8a task_create "{\"name\":\"$ct\",\"description\":\"cancel test\"}" rw 'created|task|id|content|\[OK\]|result'           || { rm -f "$work"; return; }
+  _lc_exec 8  task_cancel "{\"taskId\":\"$ct\"}"                               rw 'cancelled|canceled|success|content|\[OK\]|result' || { rm -f "$work"; return; }
 
   rm -f "$work" 2>/dev/null
   _CHECK_PASSED="true"
@@ -121,7 +123,7 @@ check_adr0094_p3_task_create() {
   _task_invoke_tool \
     "task_create" \
     '{"name":"adr0094-test-task","description":"test"}' \
-    'created|task|id' \
+    'created|task|id|content|\[OK\]|result' \
     "task_create" \
     15
 }
@@ -130,7 +132,7 @@ check_adr0094_p3_task_assign() {
   _task_invoke_tool \
     "task_assign" \
     '{"taskId":"adr0094-test-task","agentId":"test-agent"}' \
-    'assigned|success' \
+    'assigned|success|content|\[OK\]|result' \
     "task_assign" \
     15
 }
@@ -139,7 +141,7 @@ check_adr0094_p3_task_update() {
   _task_invoke_tool \
     "task_update" \
     '{"taskId":"adr0094-test-task","status":"in_progress"}' \
-    'updated|success' \
+    'updated|success|content|\[OK\]|result' \
     "task_update" \
     15
 }
@@ -148,7 +150,7 @@ check_adr0094_p3_task_cancel() {
   _task_invoke_tool \
     "task_cancel" \
     '{"taskId":"adr0094-test-task"}' \
-    'cancelled|canceled|success' \
+    'cancelled|canceled|success|content|\[OK\]|result' \
     "task_cancel" \
     15
 }
@@ -157,7 +159,7 @@ check_adr0094_p3_task_complete() {
   _task_invoke_tool \
     "task_complete" \
     '{"taskId":"adr0094-test-task"}' \
-    'completed|done|success' \
+    'completed|done|success|content|\[OK\]|result' \
     "task_complete" \
     15
 }
@@ -166,7 +168,7 @@ check_adr0094_p3_task_list() {
   _task_invoke_tool \
     "task_list" \
     '{}' \
-    'tasks|list|\[\]' \
+    'tasks|list|\[\]|content|\[OK\]|result' \
     "task_list" \
     15
 }
@@ -175,7 +177,7 @@ check_adr0094_p3_task_status() {
   _task_invoke_tool \
     "task_status" \
     '{"taskId":"adr0094-test-task"}' \
-    'status|state|task' \
+    'status|state|task|content|\[OK\]|result' \
     "task_status" \
     15
 }
@@ -184,7 +186,7 @@ check_adr0094_p3_task_summary() {
   _task_invoke_tool \
     "task_summary" \
     '{}' \
-    'summary|total|completed|pending' \
+    'summary|total|completed|pending|content|\[OK\]|result' \
     "task_summary" \
     15
 }

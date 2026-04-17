@@ -151,8 +151,19 @@ check_adr0094_p6_corrupted_state() {
 # P6-err-4: Permission denied on config directory
 # ════════════════════════════════════════════════════════════════════
 #
-# chmod 000 on .claude-flow, then run memory search. Expect non-zero exit
-# or diagnostic. ALWAYS restore permissions in cleanup.
+# chmod 000 on .claude-flow, then run an operation that MUST read/write
+# the config dir (doctor enumerates keys; memory store persists there).
+# Expect non-zero exit OR a clear permission diagnostic.
+#
+# History: the original version exercised `memory search`, which succeeds
+# on cached embeddings and never touches the config dir — so the check
+# silent-passed on exit 0. See ADR-0094 P6 fix notes.
+#
+# If NO CLI operation fails on chmod 000 config in this environment,
+# report SKIP_ACCEPTED (NOT silent-pass) per ADR-0082 / ADR-0090 Tier A2.
+#
+# Permission restoration is guaranteed via a trap so we never leak an
+# unreadable dir that blocks later cleanup.
 check_adr0094_p6_permission_denied() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
@@ -164,37 +175,79 @@ check_adr0094_p6_permission_denied() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/p6-perms-XXXXX)
 
-  # Lock down the config dir
-  if [[ -d "$iso/.claude-flow" ]]; then
-    chmod 000 "$iso/.claude-flow"
+  # Guarantee chmod restoration + iso cleanup on every exit path (including
+  # kill/interrupt). Restore BEFORE rm -rf so the rm itself doesn't fail.
+  # shellcheck disable=SC2064
+  trap "chmod -R u+rwX '$iso' 2>/dev/null; rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
+
+  # Lock down the config dir. If it doesn't exist, we can't exercise the
+  # permission path at all — skip_accepted.
+  if [[ ! -d "$iso/.claude-flow" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="P6-err/permission-denied: SKIP_ACCEPTED: no .claude-flow dir in isolated copy — cannot exercise permission path"
+    return
   fi
+  chmod 000 "$iso/.claude-flow"
 
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query test 2>&1" "$work" 15
-  local exit_code="${_RK_EXIT:-1}"
-  local body; body=$(cat "$work" 2>/dev/null || echo "")
-  body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
+  # Primary probe: `doctor` enumerates config keys → must read .claude-flow.
+  local work1; work1=$(mktemp /tmp/p6-perms-doctor-XXXXX)
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor 2>&1" "$work1" 20
+  local exit1="${_RK_EXIT:-1}"
+  local body1; body1=$(cat "$work1" 2>/dev/null || echo "")
+  body1=$(echo "$body1" | grep -v '^__RUFLO_DONE__:')
+  rm -f "$work1" 2>/dev/null
 
-  rm -f "$work" 2>/dev/null
-
-  # ALWAYS restore permissions before any exit path
-  chmod 755 "$iso/.claude-flow" 2>/dev/null
-
-  # Crash detection
-  if echo "$body" | grep -qiE 'SIGSEGV|unhandled.*exception'; then
-    _CHECK_OUTPUT="P6-err/permission-denied: CRASH on permission denied: $(echo "$body" | head -5 | tr '\n' ' ')"
-    rm -rf "$iso" 2>/dev/null
+  # Crash detection on probe 1
+  if echo "$body1" | grep -qiE 'SIGSEGV|unhandled.*exception'; then
+    _CHECK_OUTPUT="P6-err/permission-denied: CRASH on doctor with chmod 000: $(echo "$body1" | head -5 | tr '\n' ' ')"
     return
   fi
 
-  # Accept: non-zero exit OR any error/permission diagnostic
-  if [[ "$exit_code" -ne 0 ]] || echo "$body" | grep -qiE 'error|permission|denied|EACCES|access|fail'; then
+  # Accept probe 1 as pass if it failed loudly (non-zero + diagnostic, or
+  # clear permission/EACCES string). Note: non-zero alone is NOT enough —
+  # doctor may fail for unrelated reasons; require exit!=0 AND a diagnostic,
+  # OR a permission-specific string regardless of exit code.
+  if echo "$body1" | grep -qiE 'permission|EACCES|denied|cannot (access|read|open)'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P6-err/permission-denied: CLI handled permission denied gracefully (exit=$exit_code)"
-  else
-    _CHECK_OUTPUT="P6-err/permission-denied: CLI exited 0 with no diagnostic for chmod 000 config. Output: $(echo "$body" | head -5 | tr '\n' ' ')"
+    _CHECK_OUTPUT="P6-err/permission-denied: doctor reported permission diagnostic (exit=$exit1)"
+    return
+  fi
+  if [[ "$exit1" -ne 0 ]] && echo "$body1" | grep -qiE 'error|fail|invalid'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="P6-err/permission-denied: doctor exited non-zero with diagnostic (exit=$exit1)"
+    return
   fi
 
-  rm -rf "$iso" 2>/dev/null
+  # Probe 2: `memory store` MUST persist into .claude-flow or .swarm. With
+  # .claude-flow unreadable, the config-load path should trip EACCES.
+  local work2; work2=$(mktemp /tmp/p6-perms-store-XXXXX)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key p6-perm-test --value 'should fail on chmod 000' --namespace p6-perms 2>&1" "$work2" 20
+  local exit2="${_RK_EXIT:-1}"
+  local body2; body2=$(cat "$work2" 2>/dev/null || echo "")
+  body2=$(echo "$body2" | grep -v '^__RUFLO_DONE__:')
+  rm -f "$work2" 2>/dev/null
+
+  # Crash detection on probe 2
+  if echo "$body2" | grep -qiE 'SIGSEGV|unhandled.*exception'; then
+    _CHECK_OUTPUT="P6-err/permission-denied: CRASH on memory store with chmod 000: $(echo "$body2" | head -5 | tr '\n' ' ')"
+    return
+  fi
+
+  if echo "$body2" | grep -qiE 'permission|EACCES|denied|cannot (access|read|open|write)'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="P6-err/permission-denied: memory store reported permission diagnostic (exit=$exit2)"
+    return
+  fi
+  if [[ "$exit2" -ne 0 ]] && echo "$body2" | grep -qiE 'error|fail|invalid'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="P6-err/permission-denied: memory store exited non-zero with diagnostic (exit=$exit2)"
+    return
+  fi
+
+  # Both probes tolerated chmod 000 without a loud failure. Per ADR-0082
+  # (no silent pass) and ADR-0090 Tier A2 (skip_accepted bucket), report
+  # skip_accepted rather than fabricate a pass.
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="P6-err/permission-denied: SKIP_ACCEPTED: CLI tolerates unreadable config dir — no fail-loud path available (doctor exit=$exit1, memory store exit=$exit2)"
 }

@@ -51,7 +51,7 @@ check_hooks_route() {
   _CHECK_OUTPUT=""
 
   # Try MCP exec for hooks_route (harness already ran memory init)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests for authentication\"}'"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool hooks_route --params '{\"task\":\"write unit tests for authentication\"}'" "" 60
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'agent\|route\|coder\|tester\|reviewer\|pattern\|fallback'; then
     _CHECK_PASSED="true"
@@ -70,37 +70,34 @@ check_memory_scoping() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # Store with agent scope (harness already ran memory init)
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
-    --key scoped-accept-key --value 'scoped acceptance test value' \
-    --namespace scope-accept --scope agent --scope-id accept-agent-1"
-  local store_out="$_RK_OUT"
+  # ADR-0082 rework: verify scoping via MCP `memory_store` tool. The MCP
+  # response echoes the final storage key, which the backend prefixes with
+  # `agent:<scope_id>:` when scope=agent and leaves bare when unscoped.
+  # That key difference is the real, verifiable signal — CLI-only flag
+  # acceptance is not sufficient proof (ADR-0082 forbids silent-pass
+  # fallbacks that don't verify the actual behavior).
 
-  if echo "$store_out" | grep -qi 'stored\|success\|created'; then
-    # Store with global scope
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
-      --key global-accept-key --value 'global acceptance test value' \
-      --namespace scope-accept --scope global"
+  # Scoped store (60s: memory_store loads embedding model + writes RVF)
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
+    --tool memory_store \
+    --params '{\"key\":\"scoped-accept-key\",\"value\":\"scoped acceptance test value\",\"namespace\":\"scope-accept\",\"scope\":\"agent\",\"scope_id\":\"accept-agent-1\"}'" "" 60
+  local scoped_out="$_RK_OUT"
 
-    # Search with scope
-    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
-      --query 'acceptance test' --namespace scope-accept --scope agent --scope-id accept-agent-1"
+  # Unscoped store (contrast case)
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
+    --tool memory_store \
+    --params '{\"key\":\"unscoped-accept-key\",\"value\":\"unscoped acceptance test value\",\"namespace\":\"scope-accept\"}'" "" 60
+  local unscoped_out="$_RK_OUT"
 
-    if echo "$_RK_OUT" | grep -qi 'scoped-accept\|acceptance'; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Memory scoping: store + scoped search works"
-    elif ! echo "$_RK_OUT" | grep -qi 'error\|fail\|unknown'; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="Memory scoping: scope params accepted (filtering may be partial)"
-    else
-      _CHECK_OUTPUT="Memory scoping: scoped search failed — $_RK_OUT"
-    fi
-  elif echo "$store_out" | grep -qi 'unknown\|unrecognized.*scope'; then
-    _CHECK_OUTPUT="Memory scoping: --scope flag not recognized by CLI"
+  # Scoped store must report the agent-prefixed key; unscoped must report bare key.
+  if echo "$scoped_out" | grep -q '"key"[[:space:]]*:[[:space:]]*"agent:accept-agent-1:scoped-accept-key"' && \
+     echo "$unscoped_out" | grep -q '"key"[[:space:]]*:[[:space:]]*"unscoped-accept-key"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Memory scoping: scope=agent produced key prefix 'agent:accept-agent-1:', unscoped stayed bare"
+  elif echo "$scoped_out" | grep -qi 'error\|fail\|unknown tool'; then
+    _CHECK_OUTPUT="Memory scoping: MCP memory_store failed — $scoped_out"
   else
-    # Scope params may not be CLI flags yet -- store without scope is not scoping
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="Memory scoping: store accepted (scope may be MCP-only param) — scoping not verified"
+    _CHECK_OUTPUT="Memory scoping: MCP memory_store did not apply scope prefix — scoped_out=$scoped_out / unscoped_out=$unscoped_out"
   fi
 }
 

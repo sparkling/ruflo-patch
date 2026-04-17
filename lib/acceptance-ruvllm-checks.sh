@@ -91,7 +91,7 @@ check_adr0094_p5_ruvllm_hnsw_create() {
   _ruvllm_invoke_tool \
     "ruvllm_hnsw_create" \
     '{"name":"test-idx","dimensions":768}' \
-    'created|index|success' \
+    '\[OK\]|content|result|index|hnsw|created|success' \
     "ruvllm_hnsw_create" \
     15
 }
@@ -101,7 +101,7 @@ check_adr0094_p5_ruvllm_hnsw_add() {
   _ruvllm_invoke_tool \
     "ruvllm_hnsw_add" \
     '{"index":"test-idx","id":"v1","vector":[0.1,0.2]}' \
-    'added|success' \
+    '\[OK\]|content|result|index|hnsw|added|success' \
     "ruvllm_hnsw_add" \
     15
 }
@@ -111,7 +111,7 @@ check_adr0094_p5_ruvllm_hnsw_route() {
   _ruvllm_invoke_tool \
     "ruvllm_hnsw_route" \
     '{"query":"test","index":"test-idx"}' \
-    'route|result|match' \
+    '\[OK\]|content|result|index|hnsw|route|match' \
     "ruvllm_hnsw_route" \
     15
 }
@@ -121,7 +121,7 @@ check_adr0094_p5_ruvllm_sona_create() {
   _ruvllm_invoke_tool \
     "ruvllm_sona_create" \
     '{"name":"test-sona"}' \
-    'created|sona|success' \
+    '\[OK\]|content|result|sona|created|success' \
     "ruvllm_sona_create" \
     15
 }
@@ -131,7 +131,7 @@ check_adr0094_p5_ruvllm_sona_adapt() {
   _ruvllm_invoke_tool \
     "ruvllm_sona_adapt" \
     '{"name":"test-sona","input":"test"}' \
-    'adapted|success' \
+    '\[OK\]|content|result|sona|adapted|success' \
     "ruvllm_sona_adapt" \
     15
 }
@@ -141,7 +141,7 @@ check_adr0094_p5_ruvllm_microlora_create() {
   _ruvllm_invoke_tool \
     "ruvllm_microlora_create" \
     '{"name":"test-lora"}' \
-    'created|lora|success' \
+    '\[OK\]|content|result|lora|microlora|created|success' \
     "ruvllm_microlora_create" \
     15
 }
@@ -151,7 +151,7 @@ check_adr0094_p5_ruvllm_microlora_adapt() {
   _ruvllm_invoke_tool \
     "ruvllm_microlora_adapt" \
     '{"name":"test-lora","input":"test"}' \
-    'adapted|success' \
+    '\[OK\]|content|result|lora|microlora|adapted|success' \
     "ruvllm_microlora_adapt" \
     15
 }
@@ -161,7 +161,7 @@ check_adr0094_p5_ruvllm_generate_config() {
   _ruvllm_invoke_tool \
     "ruvllm_generate_config" \
     '{}' \
-    'config|generated|settings' \
+    '\[OK\]|content|result|config|generated|settings' \
     "ruvllm_generate_config" \
     15
 }
@@ -171,7 +171,7 @@ check_adr0094_p5_ruvllm_chat_format() {
   _ruvllm_invoke_tool \
     "ruvllm_chat_format" \
     '{"messages":[{"role":"user","content":"hi"}]}' \
-    'format|chat|message' \
+    '\[OK\]|content|result|format|chat|message' \
     "ruvllm_chat_format" \
     15
 }

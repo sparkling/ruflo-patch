@@ -82,8 +82,12 @@ check_memory_lifecycle() {
   local cli; cli=$(_cli_cmd)
 
   # Store
+  # Timeout 60s: under the parallel acceptance wave 80+ CLI subprocesses run
+  # concurrently; the default 8s budget is exceeded when embedding generation
+  # + RVF/SQLite write contend for CPU. Matches the convention used by every
+  # other memory-store acceptance check (acceptance-adr0059-checks.sh etc).
   local store_out
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key test-pattern --value 'Integration test: JWT auth with refresh tokens for stateless APIs' --namespace test-ns --tags test,acceptance"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key test-pattern --value 'Integration test: JWT auth with refresh tokens for stateless APIs' --namespace test-ns --tags test,acceptance" "" 60
   store_out="$_RK_OUT"
   if ! echo "$store_out" | grep -qi 'stored\|success'; then
     _CHECK_OUTPUT="Memory store failed:\n$(echo "$store_out" | tail -10)"
@@ -95,8 +99,9 @@ check_memory_lifecycle() {
   fi
 
   # Search (semantic) — may fail with mock embeddings (sql.js WASM path)
+  # Timeout 30s: matches parallel-load budget; default 8s is insufficient.
   local search_out search_found="false"
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace test-ns"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication tokens' --namespace test-ns" "" 30
   search_out="$_RK_OUT"
   if echo "$search_out" | grep -q 'test-pattern'; then
     search_found="true"
@@ -105,7 +110,7 @@ check_memory_lifecycle() {
   # Fallback: key-based retrieve (semantic search requires real embeddings;
   # mock/hash embeddings on sql.js WASM path may not produce meaningful similarity)
   if [[ "$search_found" == "false" ]]; then
-    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns"
+    _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns" "" 30
     if echo "$_RK_OUT" | grep -qi 'JWT auth\|test-pattern\|value'; then
       search_found="true"
     fi

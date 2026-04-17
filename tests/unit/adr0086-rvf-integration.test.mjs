@@ -319,9 +319,17 @@ describe('ADR-0086 RVF integration: Group 2 — persistence round-trip', () => {
       'replayWal must reconstruct Float32Array from serialized arrays');
   });
 
-  it('replayWal removes stale HNSW edges before re-adding', () => {
-    assert.ok(walReplayBody.includes('this.hnswIndex.remove(entry.id)'),
-      'replayWal must remove stale edges to prevent graph corruption');
+  it('replayWal preserves HNSW graph integrity for already-loaded entries', () => {
+    // Two valid strategies to prevent graph corruption when the entry is already
+    // in the index (from loadFromDisk OR from our own store() call this session):
+    //   (a) remove-then-readd: `this.hnswIndex.remove(entry.id)` before re-add, OR
+    //   (b) skip-if-loaded: `if (alreadyLoaded) ... continue` — no re-add needed.
+    // Strategy (b) was adopted in commit 2f3a832d6 (single-writer durability fix
+    // for native @ruvector/rvf-node backend). Either satisfies the invariant.
+    const hasRemove = walReplayBody.includes('this.hnswIndex.remove(entry.id)');
+    const hasSkip = /alreadyLoaded\s*\)\s*\{[\s\S]*?continue\s*;/.test(walReplayBody);
+    assert.ok(hasRemove || hasSkip,
+      'replayWal must either remove stale edges OR skip already-loaded entries to prevent graph corruption');
   });
 
   it('replayWal handles truncated entries gracefully', () => {

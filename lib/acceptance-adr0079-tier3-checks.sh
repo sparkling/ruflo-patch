@@ -178,10 +178,17 @@ check_t3_2_rvf_concurrent_writes() {
     fi
   done
 
-  # Find the RVF file the CLI actually wrote to.
+  # Find the RVF file the CLI actually wrote to. When the native
+  # @ruvector/rvf-node backend is active, the main `.rvf` path holds the
+  # native `SFVR` binary and pure-TS metadata (with the entryCount JSON
+  # header this check inspects) is sidecarred to `.rvf.meta`. Prefer the
+  # `.meta` sidecar if it exists — otherwise fall back to the main path.
   local rvf_path=""
   for p in "${rvf_candidates[@]}"; do
-    if [[ -f "$p" ]]; then
+    if [[ -f "${p}.meta" ]]; then
+      rvf_path="${p}.meta"
+      break
+    elif [[ -f "$p" ]]; then
       rvf_path="$p"
       break
     fi
@@ -195,9 +202,12 @@ check_t3_2_rvf_concurrent_writes() {
 
   # Check dangling .rvf.lock — must be cleaned up after every writer exits.
   # A dangling lock means either a writer crashed (bad) or releaseLock()
-  # regressed (worse — silent data-loss risk).
+  # regressed (worse — silent data-loss risk). The lock file lives next
+  # to the main `.rvf`, not the `.meta` sidecar, so strip a trailing
+  # `.meta` before computing the lock path.
+  local main_rvf_path="${rvf_path%.meta}"
   local dangling_lock="no"
-  if [[ -f "${rvf_path}.lock" ]]; then
+  if [[ -f "${main_rvf_path}.lock" ]]; then
     dangling_lock="yes"
   fi
 

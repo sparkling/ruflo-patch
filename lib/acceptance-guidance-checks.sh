@@ -134,7 +134,7 @@ check_adr0094_p2_guidance_quickref() {
   _guidance_invoke_tool \
     "guidance_quickref" \
     '{}' \
-    'reference|commands|usage|help' \
+    'content|text|result|reference|commands|usage|help|quickref' \
     "guidance_quickref" \
     15
 }

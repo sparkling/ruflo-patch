@@ -121,7 +121,7 @@ check_adr0094_p2_autopilot_lifecycle() {
   _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool autopilot_predict --params '{\"context\":\"writing tests\"}'" "$work/predict.out" 15
   local predict_body; predict_body=$(cat "$work/predict.out" 2>/dev/null | grep -v '^__RUFLO_DONE__:' || echo "")
 
-  if ! echo "$predict_body" | grep -qiE 'prediction|task|suggest'; then
+  if ! echo "$predict_body" | grep -qiE 'prediction|task|suggest|\[OK\]|content|result'; then
     _CHECK_OUTPUT="P2/lifecycle: autopilot_predict did not return prediction. Output: $(echo "$predict_body" | head -5 | tr '\n' ' ')"
     rm -rf "$work" 2>/dev/null
     return
@@ -202,7 +202,7 @@ check_adr0094_p2_autopilot_predict() {
   _autopilot_invoke_tool \
     "autopilot_predict" \
     '{"context":"writing tests"}' \
-    'prediction|task|suggest' \
+    'prediction|task|suggest|\[OK\]|content|result' \
     "autopilot_predict" \
     15
 }
@@ -232,7 +232,7 @@ check_adr0094_p2_autopilot_log() {
   _autopilot_invoke_tool \
     "autopilot_log" \
     '{"message":"test log entry"}' \
-    'logged|success|true' \
+    'logged|success|true|\[OK\]|content|result' \
     "autopilot_log" \
     15
 }

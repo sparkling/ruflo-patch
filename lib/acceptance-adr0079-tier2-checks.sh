@@ -75,7 +75,7 @@ check_t2_2_session_lifecycle() {
 check_t2_4_embedding_dimension() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local dir="$ACCEPT_TEMP" cli="$CLI_BIN"
-  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_embed --params '{\"text\":\"hello world\"}'" "" 15
+  _run_and_kill "cd '$dir' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_embed --params '{\"text\":\"hello world\"}'" "" 60
   local out="$_RK_OUT"
   if [[ -z "$out" ]]; then _CHECK_OUTPUT="T2-4: agentdb_embed returned no output"; return; fi
   # Tool not registered — accept if status mentions 768

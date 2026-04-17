@@ -164,12 +164,20 @@ check_adr0094_p7_cli_mcp_status() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Check 10: system info
+# Check 10: status (system-level runtime info)
+#
+# NOTE: The CLI has no `system` subcommand (the error-suggested list is
+# status / swarm / route). `status` is the closest semantic match — it
+# reports RuFlo runtime state (swarm, agents, tasks, memory backend,
+# MCP server) from within an init'd project (E2E_DIR is init'd).
+# Function name is preserved so the test-acceptance.sh wiring
+# (run_check_bg "p7-cli-system" → check_adr0094_p7_cli_system_info)
+# stays intact; the check now exercises `status` instead.
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p7_cli_system_info() {
   _p7_cli_check \
-    "system info" \
-    'system|info|version|node|platform|memory|os' \
-    "cli_system_info" \
+    "status" \
+    'ruflo|swarm|agents|tasks|memory|backend|mcp|status|stopped|running' \
+    "cli_status" \
     15
 }

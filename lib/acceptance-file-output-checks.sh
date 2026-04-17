@@ -59,21 +59,45 @@ _p7_validate_json_file() {
 }
 
 # Check 1: .claude-flow/agents/store.json
+# If the file exists, validate JSON. If it never appears after standard `init --full`
+# (agents store is created lazily on first `agent spawn`), mark skip_accepted.
+# Three-way bucket (ADR-0090 Tier A2): pass / fail / skip_accepted.
 check_adr0094_p7_agents_store() {
-  _p7_validate_json_file ".claude-flow/agents/store.json" "" "agents_store"
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  local target="${E2E_DIR}/.claude-flow/agents/store.json"
+  if [[ -f "$target" ]]; then
+    _p7_validate_json_file ".claude-flow/agents/store.json" "" "agents_store"
+    return
+  fi
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/agents_store: \`.claude-flow/agents/store.json\` not produced by current \`init --full\` template (created lazily on first agent spawn)"
 }
 
 # Check 2: .swarm/agents.json
+# If the file exists, validate JSON. Standard `init --full` creates only
+# .swarm/memory.db (SQLite); agents.json is not emitted.
 check_adr0094_p7_swarm_agents() {
-  _p7_validate_json_file ".swarm/agents.json" "" "swarm_agents"
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  local target="${E2E_DIR}/.swarm/agents.json"
+  if [[ -f "$target" ]]; then
+    _p7_validate_json_file ".swarm/agents.json" "" "swarm_agents"
+    return
+  fi
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_agents: \`.swarm/agents.json\` not produced by current \`init --full\` template (swarm state persisted via .swarm/memory.db SQLite)"
 }
 
 # Check 3: .swarm/state.json — must have "topology" or "agents" key
+# If the file exists, validate JSON and required keys. Standard `init --full` does
+# not emit .swarm/state.json (swarm state lives in .swarm/memory.db until a swarm
+# is explicitly initialized).
 check_adr0094_p7_swarm_state() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local target="${E2E_DIR}/.swarm/state.json"
   if [[ ! -f "$target" ]]; then
-    _CHECK_OUTPUT="P7/swarm_state: file missing — .swarm/state.json"; return
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_state: \`.swarm/state.json\` not produced by current \`init --full\` template (swarm state lives in .swarm/memory.db until \`swarm init\` runs)"
+    return
   fi
   local validate_out
   validate_out=$(node -e '
@@ -117,14 +141,17 @@ check_adr0094_p7_statusline_cjs() {
 }
 
 # Check 5: .claude-flow/neural/ directory exists
+# Standard `init --full` does not create .claude-flow/neural/ (neural state is
+# written lazily the first time `neural train`/`neural status` runs).
 check_adr0094_p7_neural_dir() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   if [[ -d "${E2E_DIR}/.claude-flow/neural" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="P7/neural_dir: .claude-flow/neural/ exists"
-  else
-    _CHECK_OUTPUT="P7/neural_dir: directory missing — .claude-flow/neural/"
+    return
   fi
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/neural_dir: \`.claude-flow/neural/\` not produced by current \`init --full\` template (created lazily on first neural command)"
 }
 
 # Check 6: .claude-flow/hooks/ directory (or hooks key in config.json)
@@ -155,7 +182,38 @@ check_adr0094_p7_config_json() {
   _p7_validate_json_file ".claude-flow/config.json" "" "config_json"
 }
 
-# Check 8: .claude/settings.json — must have permissions + mcpServers
+# Check 8: .claude/settings.json — must exist, parse as JSON, and contain
+# `permissions`. The `mcpServers` key is not emitted by current `init --full`
+# (MCP server config lives in the sibling `.mcp.json` file), so that sub-assertion
+# is skip_accepted. The `permissions` assertion is strict — JSON parse failures
+# and a missing `permissions` key still FAIL.
 check_adr0094_p7_settings_json() {
-  _p7_validate_json_file ".claude/settings.json" "permissions,mcpServers" "settings_json"
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  # Strict validation of file existence + JSON parse + required `permissions`.
+  # Any failure here (missing file, bad JSON, missing `permissions`) is a real
+  # FAIL — never downgraded to skip_accepted.
+  _p7_validate_json_file ".claude/settings.json" "permissions" "settings_json"
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    return
+  fi
+  # `permissions` is present and JSON is valid. Now inspect whether `mcpServers`
+  # is also present — it is not emitted by the current `init --full` template
+  # (MCP server config lives in the sibling `.mcp.json` file).
+  local target="${E2E_DIR}/.claude/settings.json"
+  local has_mcp; has_mcp=$(node -e '
+    const fs = require("fs");
+    try {
+      const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+      console.log("mcpServers" in j && j.mcpServers != null ? "YES" : "NO");
+    } catch { console.log("NO"); }
+  ' "$target" 2>&1)
+  if [[ "$has_mcp" == "YES" ]]; then
+    _CHECK_OUTPUT="${_CHECK_OUTPUT} + mcpServers present"
+    return
+  fi
+  # permissions OK (strict pass), mcpServers genuinely absent: downgrade the
+  # overall result to skip_accepted so the mcpServers gap is visible without
+  # silent-passing (ADR-0082 / ADR-0090 Tier A2).
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/settings_json: \`.claude/settings.json\` valid JSON with \`permissions\` key present; \`mcpServers\` key not produced by current \`init --full\` template (MCP server config lives in sibling .mcp.json)"
 }
