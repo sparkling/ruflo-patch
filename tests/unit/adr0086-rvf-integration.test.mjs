@@ -647,7 +647,7 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
     // Even when we reuse a cached CLI binary, we ALWAYS create a fresh .swarm
     // dir inside a fresh sandbox for the write test itself — we cannot let
     // previous trial state leak into the invariant check.
-    const CLI_VERSION = process.env.CLI_VERSION || '3.5.58-patch.136';
+    const CLI_VERSION = process.env.CLI_VERSION || 'latest';
     let workDir;
     try {
       workDir = mkdtempSync(join(tmpdir(), 'adr0095-sub-'));
@@ -804,53 +804,67 @@ describe('ADR-0095 in-process N=6 — backend dedupe / cache invariant', () => {
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
 
-    // Try fork dist first; fall back to published @sparkleideas/memory (bundled)
-    // which is the same pattern adr0090-a4-rvf-concurrent.integration.test.mjs uses.
-    const FORK_DIST = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/rvf-backend.js';
+    // Load order (freshest first):
+    //   1. ruflo-patch's copy+build output at /tmp/ruflo-build — always
+    //      fresh after `npm run build` on ruflo-patch; the canonical build
+    //      path per reference-fork-workflow (fork workspace tsc requires
+    //      node_modules which may be absent).
+    //   2. Fork's own dist — only fresh if fork workspace was built
+    //      separately; usually stale.
+    //   3. Any /tmp/ruflo-fast-* / ruflo-accept-* sandboxes from prior
+    //      cascade runs — can be stale. Ordered by directory mtime DESC.
+    const { statSync } = await import('node:fs');
     let RvfBackend = null;
     let loadSource = null;
+    const candidates = [];
+    const BUILD_DIST = '/tmp/ruflo-build/v3/@claude-flow/memory/dist/rvf-backend.js';
+    const FORK_DIST  = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/rvf-backend.js';
+    if (existsSync(BUILD_DIST)) candidates.push(BUILD_DIST);
+    if (existsSync(FORK_DIST))  candidates.push(FORK_DIST);
     try {
-      if (existsSync(FORK_DIST)) {
-        const mod = await import(FORK_DIST);
-        if (mod.RvfBackend) { RvfBackend = mod.RvfBackend; loadSource = 'fork-dist'; }
-      }
-    } catch { /* fall through */ }
-    if (!RvfBackend) {
-      // Try published memory package via existing acceptance harnesses.
-      const candidates = [];
+      const sandboxes = readdirSync('/tmp')
+        .filter(d => d.startsWith('ruflo-fast-') || d.startsWith('ruflo-accept-'))
+        .map(d => {
+          const p = `/tmp/${d}/node_modules/@sparkleideas/memory/dist/rvf-backend.js`;
+          try { return existsSync(p) ? { p, mt: statSync(p).mtimeMs } : null; } catch { return null; }
+        })
+        .filter(Boolean)
+        .sort((a, b) => b.mt - a.mt)
+        .map(x => x.p);
+      candidates.push(...sandboxes);
+    } catch { /* no /tmp listing */ }
+    for (const path of candidates) {
       try {
-        for (const d of readdirSync('/tmp')) {
-          if (d.startsWith('ruflo-fast-') || d.startsWith('ruflo-accept-')) {
-            const p = `/tmp/${d}/node_modules/@sparkleideas/memory/dist/rvf-backend.js`;
-            if (existsSync(p)) candidates.push(p);
-          }
-        }
-      } catch { /* no /tmp listing */ }
-      for (const path of candidates) {
-        try {
-          const mod = await import(path);
-          if (mod.RvfBackend) { RvfBackend = mod.RvfBackend; loadSource = path; break; }
-        } catch { /* try next */ }
-      }
+        const mod = await import(path);
+        if (mod.RvfBackend) { RvfBackend = mod.RvfBackend; loadSource = path; break; }
+      } catch { /* try next */ }
     }
     if (!RvfBackend) {
       t.skip('SKIP_ACCEPTED: RvfBackend unavailable (fork dist incomplete AND no /tmp/ruflo-{fast,accept}-* harness with @sparkleideas/memory installed) — infra, not product');
       return;
     }
 
-    // Fix-marker gate (ADR-0082): same rationale as Group 6. If the loaded
-    // module source doesn't contain the ADR-0095 fix symbols, skip_accepted
-    // rather than fail-and-block the cascade. Once the fork is rebuilt
-    // (either via `npm run build` in ruflo-patch → /tmp/ruflo-build, or via
-    // fork workspace install + tsc), the markers appear and the test runs.
+    // Fix-marker gate (ADR-0082): check rvf-backend.js for the distinctive
+    // reapStaleTmpFiles marker (items a/b are IN this file). backendCache
+    // lives in storage-factory.js so we check it there if available.
+    // Missing → skip_accepted; present → assert the invariant.
     {
       const { readFileSync } = await import('node:fs');
       let src = '';
       try { src = readFileSync(loadSource, 'utf8'); } catch {}
-      if (!src.includes('reapStaleTmpFiles') || !src.includes('backendCache')) {
-        t.skip(`SKIP_ACCEPTED: RvfBackend at ${loadSource} lacks ADR-0095 fix markers (reapStaleTmpFiles/backendCache). Rebuild fork dist: cd /Users/henrik/source/ruflo-patch && npm run build`);
+      if (!src.includes('reapStaleTmpFiles')) {
+        t.skip(`SKIP_ACCEPTED: RvfBackend at ${loadSource} lacks ADR-0095 fix marker (reapStaleTmpFiles). Rebuild fork dist: cd /Users/henrik/source/ruflo-patch && npm run build`);
         return;
       }
+      // Best-effort check of factory cache (item c). Not fatal if not found —
+      // rvf-backend itself is the invariant surface for this test.
+      const factoryPath = loadSource.replace('rvf-backend.js', 'storage-factory.js');
+      try {
+        const factorySrc = readFileSync(factoryPath, 'utf8');
+        if (!factorySrc.includes('backendCache')) {
+          console.warn(`[ADR-0095 Group 7] storage-factory.js at ${factoryPath} lacks backendCache marker — factory dedupe may be stale`);
+        }
+      } catch {}
     }
 
     const N = 6;
