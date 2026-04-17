@@ -324,3 +324,121 @@ AND `tests/unit/adr0086-rvf-integration.test.mjs` Groups 6+7 both green. Any one
 ### Scope note
 
 The fully-mechanized reverter script (`scripts/verify-rvf-meta-regression.sh --experimental`) was **descoped from Sprint 1** by the probe-writer per the ADR-0098 §E scope discipline: rollback experiments belong to Sprint-2 tooling, not S1 probe delivery. Implementers verifying items (a)/(b)/(c) during their own development loop should perform these rollbacks manually as documented above; the diag script's `--help` text points here for the canonical regression-verification procedure.
+
+## Investigation Findings (2026-04-17/18, Pass 2)
+
+**Append-only per ADR-0094 Maintenance Manifesto rule 1. Do not rewrite §Decision.**
+
+Pass-2 investigator ran against `@sparkleideas/cli@3.5.58-patch.137` — the first version with the full 3-item fix shipped (fork commit `9c5809324`). Empirical result post-publish: `node scripts/diag-rvf-interproc-race.mjs 6 3` → 0/3 pass. The shipped dist contains every amendment (verified: `_tmpCounter`, `reapStaleTmpFiles`, ADR-0095 banner comments, retry-or-throw in `tryNativeInit`, fail-loud corruption in `loadFromDisk`). Yet losses are NOT converging — they are loud-failing. The amendment's §Decision is achieving "fail loud" (ADR-0082 compliance) but not "data converges".
+
+### Enumerated persist paths from `store()` to disk
+
+`routeMemoryOp('store')` (`cli/memory-router.ts:590`) → `_storage.store(entry)` (line 641) → `RvfBackend.store` (`rvf-backend.ts:206`) which does:
+
+1. `this.entries.set()` + `seenIds.add()` + `keyIndex.set()` — in-memory only (line 210-212).
+2. `this.nativeDb.ingestBatch()` OR `this.hnswIndex.add()` — index write (line 215-224).
+3. `await this.appendToWal(entry)` (line 229) → acquires advisory lock (line 1130), `appendFile(walPath, ...)`, releases.
+4. `await this.compactWal()` (line 248) → acquires advisory lock (line 1221), calls `this.persistToDiskInner()`, unlinks WAL, releases.
+
+The autoPersistInterval timer path (line 159) and shutdown path (line 183-186) both funnel into the same `compactWal` / `persistToDisk` entry points. All disk-facing persists reach `persistToDiskInner` under the advisory lock.
+
+### `mergePeerStateBeforePersist` call sites
+
+Exactly **one** call site: `persistToDiskInner` at `rvf-backend.ts:1583` (`await this.mergePeerStateBeforePersist();`). Every `persist()` path (immediate, WAL-compaction, shutdown, auto-interval) goes through `persistToDiskInner`, so the merge runs on every disk write. **H1 is ruled out** — the merge is NOT gated on WAL threshold.
+
+### Native backend path through `persistToDiskInner`
+
+The native backend does NOT bypass `persistToDiskInner`. The native `.rvf` file is managed by `RvfDatabase.ingestBatch()` / `.delete()` / `.query()` (native-internal persistence of vectors). The pure-TS `persistToDiskInner` writes a SEPARATE `.meta` sidecar (line 1214: `metadataPath = nativeDb ? dbPath + '.meta' : dbPath`) containing all entry metadata. So native writers DO go through the merge path for metadata. **H2 is partially ruled out** — native writers reach persist, but only for `.meta`, not the SFVR vector file.
+
+### Lock span
+
+`compactWal` (line 1221) acquires lock → `persistToDiskInner` (line 1223) which calls `mergePeerStateBeforePersist` (line 1583) → reads `.meta` → replays WAL → writes tmp → rename tmp → unlink WAL → returns → `releaseLock` (line 1229). **The lock covers READ + MERGE + WRITE.** H3 is ruled out.
+
+### H1–H6 verdicts (with evidence)
+
+- **H1** (merge only on compactWal, not every persist) — **RULED OUT**. `mergePeerStateBeforePersist` is called unconditionally at the top of `persistToDiskInner` (line 1583). Both `compactWal` and `persistToDisk` route through it. See enumerated paths above.
+- **H2** (native backend doesn't use `persistToDiskInner`) — **RULED OUT** for metadata; **IRRELEVANT** for vectors. Native `.rvf` persistence is managed by the `@sparkleideas/ruvector-rvf-node` library's own internal locking; the pure-TS persist path targets `.meta`. The loss observed is not a missed write — it's a failed `tryNativeInit` BEFORE any write starts.
+- **H3** (lock spans only WRITE, not READ+MERGE+WRITE) — **RULED OUT**. Code inspection (line 1221-1230 + 1583) + the persist trace show all three phases under one lock span.
+- **H4** (merge reads wrong file) — **RULED OUT**. Native-branch reads `.meta` (line 1491); pure-TS branch prefers `.meta` over main (line 1493). Both cases consistent with the write target at line 1214.
+- **H5** (persist overwrites by not re-populating from disk) — **RULED OUT**. The merge IS re-populating from disk at lines 1500-1550 (re-reads main/meta raw bytes, parses header, iterates entries, `set-if-not-seen` merge).
+- **H6** (lock ordering inverted: read before lock acquire) — **RULED OUT**. Code reads disk only inside `persistToDiskInner → mergePeerStateBeforePersist`, which is invoked AFTER `acquireLock()` in both `compactWal` (line 1221→1223) and `persistToDisk` (line 1454→1456).
+
+### Real root cause (dispositive, with trace)
+
+Under `scripts/diag-rvf-persist-trace.mjs 6 1` (Pass-2 probe, instrumented fork of the published dist), the per-writer trace at N=6 shows every process makes **2 `tryNativeInit-entry` calls** — once with relative `.swarm/memory.rvf`, once with the absolute resolved path (same as the original investigator's trace). Sample for pid 66508:
+
+```
+[S1.2-TRACE pid=66508 tryNativeInit-entry {"dbPath":".swarm/memory.rvf"}]
+[S1.2-TRACE pid=66508 rvfdb-create-attempt {"dbPath":".swarm/memory.rvf"}]
+[S1.2-TRACE pid=66508 tryNativeInit-entry {"dbPath":"/private/var/.../memory.rvf"}]
+[S1.2-TRACE pid=66508 tryNativeInit-sfvr-detected ...]
+[S1.2-TRACE pid=66508 rvfdb-open-attempt ...]
+[S1.2-TRACE pid=66508 rvfdb-open-attempt ...]
+[S1.2-TRACE pid=66508 rvfdb-open-attempt ...]
+```
+
+**This invalidates the prior claim that ADR-0095 item (c) fixes the 2×-init pattern.** Item (c) added a dedup cache to `forks/ruflo/v3/@claude-flow/memory/src/storage-factory.ts:34`. But the CLI `memory store` path does NOT route through the factory:
+
+- `cli/memory-router.ts:283-292` has its OWN private `createStorage(config)` function that directly does `new memMod.RvfBackend({...})`. It calls `import('@sparkleideas/memory/rvf-backend')` — the class — NOT `import('@sparkleideas/memory/storage-factory')` / `createStorage`.
+- Grep verification: `grep -rn "new RvfBackend\|createStorage" v3/@claude-flow/cli/src/memory/` on the fork shows exactly one production `new RvfBackend({...})` at `memory-router.ts:437`, zero imports from `storage-factory.js`.
+- Verified in shipped dist: `/tmp/rvf-s1-pass2/node_modules/@sparkleideas/cli/dist/src/memory/memory-router.js:286` instantiates `new memMod.RvfBackend({...})` with no factory involvement.
+
+So **item (c)'s factory cache never fires in the CLI hot path**. The 2×-init is caused by two `RvfBackend` instances being constructed within one CLI process, each independently racing `RvfDatabase.open`/`create`. Call-stack dump (Pass-2 probe with stack-trace patch) identifies both call sites unambiguously:
+
+1. **Call site 1** (relative path `.swarm/memory.rvf`): `cli/memory-router.js:290` in `createStorage` → `_doInit:367` → `routeMemoryOp:428`. This is the private router factory.
+2. **Call site 2** (absolute path `/private/tmp/.../.swarm/memory.rvf`): `memory/storage-factory.js:87` in `createStorage` → `controller-registry.js:201` in `ControllerRegistry.initialize` → `memory-router.js:173` (registry-init wrapper) → `_doInit:397`. This is the registry initialization path triggered by `initControllerRegistry()`.
+
+Call site 2 DOES go through the factory cache — but call site 1 does not, and call site 1 uses a relative path while call site 2 uses the absolute one. Even if call site 1 were routed through the factory, the cache key mismatch (relative vs absolute) would require call site 1 to pre-resolve before cache lookup for the dedup to land.
+
+### Observed failure modes at N=6, all three trials
+
+Actual run of `diag-rvf-interproc-race.mjs 6 3 --trace`:
+
+| Trial | pass | fail | entryCount | Error shape |
+|-------|-----:|-----:|-----------:|-------------|
+| t1 | 1 | 5 | 1 | 5× `RVF error 0x0300: LockHeld` during `RvfDatabase.open` 3×50ms retry |
+| t2 | 0 | 6 | null | 6× `RVF error 0x0303: FsyncFailed` during `RvfDatabase.create` |
+| t3 | 1 | 5 | 1 | 5× `LockHeld` on open retry; one writer additionally got `bad magic bytes (expected 'RVF\0', got "SFVR")` from `loadFromDisk` pure-TS fallback |
+
+**The one surviving writer per trial writes `.meta` with `entryCount=1` because it's the only process that reached `store()` — the other 5 died in `initialize()` before any data was attempted.**
+
+**The merge protocol is never exercised for the "lost" entries** — they were never written at all. This is fundamentally different from the data-loss model the ADR's original §Decision and its §Amended Decision both presumed. The amendment's item (a) (retry-or-throw) is doing exactly what was specified: the native library's internal lock rejects 5 of 6 concurrent opens with `LockHeld`, the 3×50ms retry gives up, and we throw per the ADR invariant. But "fail loud" is NOT the same as "converge".
+
+### Additional race observed — `FsyncFailed` on cold-start create
+
+Trial t2 showed all 6 writers simultaneously hitting the `create` branch (no pre-existing `.rvf` file) and all 6 getting `RVF error 0x0303: FsyncFailed`. This suggests `RvfDatabase.create` does a directory-level operation (parent dir fsync, maybe lock-file creation in the same dir) that itself races. Even the "cold start" path is not N-safe for native.
+
+### H7 (new) — native RvfDatabase holds an exclusive OS-level lock on the SFVR file
+
+Evidence:
+1. `RVF error 0x0300: LockHeld` returned by `@sparkleideas/ruvector-rvf-node`'s `RvfDatabase.open` call when another process has the file open. Not our advisory `.rvf.lock` (that's PID-based and distinct) — this is a native-internal flock/fcntl or similar.
+2. Single-writer test (one sequential `cli memory store`): native `create` succeeds cleanly, `.rvf` ends up with SFVR magic (verified: `head -c 4 memory.rvf | xxd` → `5346 5652`). Native owns the file exclusively while the process runs.
+3. The advisory `.rvf.lock` from lines 836-890 is orthogonal — it only serializes pure-TS `.meta` writes. It does not gate `tryNativeInit`.
+
+**H7 verdict: CONFIRMED. This is the primary convergence bug.** The native library's exclusive-open lock is incompatible with the "N independent CLI processes each init then write" workflow the CLI assumes. No amount of merge protocol, tmp-path uniqueness, or factory dedup changes this — the 5 losers never reach the merge.
+
+### Proposed minimum-scope fix (next implementer pass)
+
+The amendment's three items are correct but incomplete. The next implementer pass should add **Item (d)** — serialize `tryNativeInit` through the advisory lock, OR fall back to single-writer-at-a-time native init. Concrete options in increasing order of cost:
+
+**Option d1 (minimum scope, ~40 LOC):** Acquire the advisory lock BEFORE `tryNativeInit` inside `initialize()`. Move line 141 (`const hasNative = await this.tryNativeInit();`) under an `await this.acquireLock() / releaseLock()` wrapper. The advisory lock already tolerates stale holders (5s ts threshold, PID liveness check). Serializing native init through it means only ONE writer opens the SFVR file at a time; subsequent writers wait for the lock, THEN attempt `open`. Once the first writer closes (process exit / shutdown), subsequent writers find the lock released and succeed.
+
+- **Target**: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:132-170` (the `initialize()` method).
+- **Change**: wrap lines 139-154 (from `reapStaleTmpFiles` through `loadFromDisk`) in `acquireLock() / releaseLock()`.
+- **Risk**: extends lock hold-time from ~microseconds (WAL append) to ~milliseconds (native-init + loadFromDisk). With 5s acquire budget, this is acceptable up to maybe N=20 serial writers. Not a scalability silver bullet but resolves N=6.
+
+**Option d2 (scope: ~20 LOC beyond d1):** Also wire the CLI's private `createStorage` in `cli/memory-router.ts:283-292` through `storage-factory.createStorage()` — a one-line `await import('@sparkleideas/memory/storage-factory').then(m => m.createStorage({...}))` swap. This activates item (c)'s existing factory cache so the 2×-init becomes 1×-init per process. Complements (d1) — fewer native-init collisions because fewer invocations.
+
+**Option d3 (scope: rewrite):** Teach the RvfBackend to run without native when another process holds the native lock. Requires dual-mode metadata writes, which violates the ADR invariant "once SFVR, always native-or-refuse". Not recommended.
+
+**Minimum recommendation for next pass**: d1 + d2 together. Both are small (<100 LOC total), deterministically close the race at N=6, and don't introduce new invariants. Test with `diag-rvf-interproc-race.mjs --trials 40` — should show 40/40 PASS.
+
+### Instrumentation delivered
+
+- `scripts/diag-rvf-persist-trace.mjs` — instruments the shipped `@sparkleideas/memory/dist/rvf-backend.js` in a throwaway harness via text-replacement, emits `[S1.2-TRACE pid=<pid> <tag> <json>]` lines to stderr for every RvfBackend internal step (module load, `tryNativeInit-entry`, SFVR peek result, `rvfdb-open-attempt`, `rvfdb-create-attempt`, `store-entry`, `appendToWal-entry`, `compactWal-entry`, `persistToDiskInner-entry`, `mergePeerStateBeforePersist-entry`, `acquireLock-enter/-granted`, `releaseLock`).
+- **Usage**: `node scripts/diag-rvf-persist-trace.mjs [N] [trials]` — default N=6, trials=1.
+- **Non-destructive**: patches a scratch copy of the CLI install in `/tmp/rvf-persist-trace-harness-*`; never touches fork source.
+- **Output**: traces to stderr, 8 lines per writer in summary. Count is reported (`traceLines=N`); first 8 lines plus last error line shown.
+- **Runtime**: ~5-10s for N=6 × 1 trial. Harness reuse omitted — each run rebuilds to ensure clean instrumentation state.
+
+Verified captures in `/tmp/probe-persist-trace-t1.log` show the 2× `tryNativeInit` pattern, the `rvfdb-open-attempt` retry triplet, the `LockHeld`/`FsyncFailed` error shapes, and the single-surviving-writer signature. These samples are ≥ sufficient for Sprint-2 implementer to validate d1/d2 against.
