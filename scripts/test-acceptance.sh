@@ -1715,6 +1715,36 @@ fi
 _record_phase "phase5-init-config" "$(_elapsed_ms "$_p5_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0096: Coverage catalog + skip hygiene (parallel group, <=10s budget)
+# Runs the catalog-rebuild + skip-reverify pipeline against a sandboxed
+# RUFLO_CATALOG_RESULTS_DIR so no real test-results state is mutated.
+# Checks bucket as skip_accepted when sibling scripts aren't yet present.
+# ════════════════════════════════════════════════════════════════════
+_adr0096_start=$(_ns)
+log "── ADR-0096: coverage catalog + skip hygiene ──"
+PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+run_check_bg "adr0096-populated"   "ADR-0096 catalog populated"        check_adr0096_catalog_populated        "adr0096"
+run_check_bg "adr0096-verify"      "ADR-0096 catalog --verify"         check_adr0096_catalog_verify           "adr0096"
+run_check_bg "adr0096-fingerprint" "ADR-0096 fingerprint determinism"  check_adr0096_fingerprint_determinism  "adr0096"
+run_check_bg "adr0096-skip-streak" "ADR-0096 skip_streak tracking"     check_adr0096_skip_streak_tracking     "adr0096"
+run_check_bg "adr0096-reconcile"   "ADR-0096 JSONL↔SQLite reconcile"   check_adr0096_jsonl_sqlite_reconcile   "adr0096"
+run_check_bg "adr0096-dry-run"     "ADR-0096 skip-reverify --dry-run"  check_adr0096_skip_reverify_dry_run    "adr0096"
+run_check_bg "adr0096-skip-rot"    "ADR-0096 skip-rot gate"            check_adr0096_skip_rot_gate            "adr0096"
+
+collect_parallel "adr0096" \
+  "adr0096-populated|ADR-0096 catalog populated" \
+  "adr0096-verify|ADR-0096 catalog --verify" \
+  "adr0096-fingerprint|ADR-0096 fingerprint determinism" \
+  "adr0096-skip-streak|ADR-0096 skip_streak tracking" \
+  "adr0096-reconcile|ADR-0096 JSONL↔SQLite reconcile" \
+  "adr0096-dry-run|ADR-0096 skip-reverify --dry-run" \
+  "adr0096-skip-rot|ADR-0096 skip-rot gate"
+
+rm -rf "$PARALLEL_DIR" 2>/dev/null
+_record_phase "phase-adr0096-catalog" "$(_elapsed_ms "$_adr0096_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
 # Results
 # ════════════════════════════════════════════════════════════════════
 ACCEPT_END_NS=$(_ns)
@@ -1769,6 +1799,17 @@ log "Results: ${results_dir}/acceptance-results.json"
 BASELINE_COUNT=155
 if [[ "$pass_count" -lt "$BASELINE_COUNT" ]]; then
   log "[WARN] Regression: $pass_count passed < baseline $BASELINE_COUNT"
+fi
+
+# ADR-0096 Sprint 2: re-probe every skip_accepted row after catalog append.
+# Folded into the cascade (no separate cron per ADR-0088). Emits SKIP_ROT
+# lines when a previously-honest skip flips to pass (prereq arrived =
+# stale skip = coverage regression per ADR-0082). Runs silently on a clean
+# suite. Does NOT alter the acceptance exit code — harness already exits
+# on fail_count below.
+if [[ -x "$(command -v node)" ]] && [[ -f "${PROJECT_DIR}/scripts/skip-reverify.mjs" ]]; then
+  node "${PROJECT_DIR}/scripts/skip-reverify.mjs" --run --fail-on-flip || \
+    log "[SKIP_ROT] skip-reverify flagged stale skips; see output above"
 fi
 
 printf '{"phase":"TOTAL","duration_ms":%d}\n' "$ACCEPT_TOTAL_MS" >> "$TIMING_FILE"

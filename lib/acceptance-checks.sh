@@ -242,3 +242,6 @@ source "${_CHECKS_DIR}/acceptance-input-validation-checks.sh"
 source "${_CHECKS_DIR}/acceptance-model-routing-checks.sh"
 source "${_CHECKS_DIR}/acceptance-file-output-checks.sh"
 source "${_CHECKS_DIR}/acceptance-cli-commands-checks.sh"
+
+# ADR-0096: Coverage catalog + skip hygiene
+source "${_CHECKS_DIR}/acceptance-catalog-checks.sh"
