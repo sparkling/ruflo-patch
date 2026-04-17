@@ -782,6 +782,210 @@ run_check_bg "adr0081-neural"   "Neural optional dep (ADR-0081)"       check_adr
 run_check_bg "adr0081-learning" "Unified learning config (ADR-0081)"   check_adr0081_unified_learning_config  "adr0081"
 run_check_bg "adr0081-balanced" "Config template balanced (ADR-0081)"  check_adr0081_config_template_balanced "adr0081"
 
+# ADR-0094 Phase 1: Security & Safety
+run_check_bg "p1-ai-scan"        "AI Defence scan (P1)"              check_adr0094_p1_aidefence_scan        "adr0094-p1"
+run_check_bg "p1-ai-analyze"     "AI Defence analyze (P1)"           check_adr0094_p1_aidefence_analyze     "adr0094-p1"
+run_check_bg "p1-ai-pii"         "AI Defence has_pii (P1)"           check_adr0094_p1_aidefence_has_pii     "adr0094-p1"
+run_check_bg "p1-ai-safe"        "AI Defence is_safe (P1)"           check_adr0094_p1_aidefence_is_safe     "adr0094-p1"
+run_check_bg "p1-ai-learn"       "AI Defence learn (P1)"             check_adr0094_p1_aidefence_learn       "adr0094-p1"
+run_check_bg "p1-ai-stats"       "AI Defence stats (P1)"             check_adr0094_p1_aidefence_stats       "adr0094-p1"
+run_check_bg "p1-cl-lifecycle"   "Claims lifecycle (P1)"             check_adr0094_p1_claims_lifecycle      "adr0094-p1"
+run_check_bg "p1-cl-claim"       "Claims claim (P1)"                 check_adr0094_p1_claims_claim          "adr0094-p1"
+run_check_bg "p1-cl-status"      "Claims status (P1)"                check_adr0094_p1_claims_status         "adr0094-p1"
+run_check_bg "p1-cl-list"        "Claims list (P1)"                  check_adr0094_p1_claims_list           "adr0094-p1"
+run_check_bg "p1-cl-board"       "Claims board (P1)"                 check_adr0094_p1_claims_board          "adr0094-p1"
+run_check_bg "p1-cl-load"        "Claims load (P1)"                  check_adr0094_p1_claims_load           "adr0094-p1"
+run_check_bg "p1-cl-handoff"     "Claims handoff (P1)"               check_adr0094_p1_claims_handoff        "adr0094-p1"
+run_check_bg "p1-cl-accept"      "Claims accept-handoff (P1)"        check_adr0094_p1_claims_accept_handoff "adr0094-p1"
+run_check_bg "p1-cl-steal"       "Claims steal (P1)"                 check_adr0094_p1_claims_steal          "adr0094-p1"
+run_check_bg "p1-cl-stealable"   "Claims mark-stealable (P1)"        check_adr0094_p1_claims_mark_stealable "adr0094-p1"
+run_check_bg "p1-cl-rebalance"   "Claims rebalance (P1)"             check_adr0094_p1_claims_rebalance      "adr0094-p1"
+run_check_bg "p1-cl-release"     "Claims release (P1)"               check_adr0094_p1_claims_release        "adr0094-p1"
+
+# ADR-0094 Phase 2: Core Runtime
+run_check_bg "p2-ag-lifecycle"   "Agent lifecycle (P2)"              check_adr0094_p2_agent_lifecycle       "adr0094-p2"
+run_check_bg "p2-ag-spawn"       "Agent spawn (P2)"                  check_adr0094_p2_agent_spawn           "adr0094-p2"
+run_check_bg "p2-ag-list"        "Agent list (P2)"                   check_adr0094_p2_agent_list            "adr0094-p2"
+run_check_bg "p2-ag-status"      "Agent status (P2)"                 check_adr0094_p2_agent_status          "adr0094-p2"
+run_check_bg "p2-ag-health"      "Agent health (P2)"                 check_adr0094_p2_agent_health          "adr0094-p2"
+run_check_bg "p2-ag-terminate"   "Agent terminate (P2)"              check_adr0094_p2_agent_terminate       "adr0094-p2"
+run_check_bg "p2-ag-update"      "Agent update (P2)"                 check_adr0094_p2_agent_update          "adr0094-p2"
+run_check_bg "p2-ag-pool"        "Agent pool (P2)"                   check_adr0094_p2_agent_pool            "adr0094-p2"
+run_check_bg "p2-ap-lifecycle"   "Autopilot lifecycle (P2)"          check_adr0094_p2_autopilot_lifecycle   "adr0094-p2"
+run_check_bg "p2-ap-enable"      "Autopilot enable (P2)"             check_adr0094_p2_autopilot_enable      "adr0094-p2"
+run_check_bg "p2-ap-disable"     "Autopilot disable (P2)"            check_adr0094_p2_autopilot_disable     "adr0094-p2"
+run_check_bg "p2-ap-status"      "Autopilot status (P2)"             check_adr0094_p2_autopilot_status      "adr0094-p2"
+run_check_bg "p2-ap-config"      "Autopilot config (P2)"             check_adr0094_p2_autopilot_config      "adr0094-p2"
+run_check_bg "p2-ap-predict"     "Autopilot predict (P2)"            check_adr0094_p2_autopilot_predict     "adr0094-p2"
+run_check_bg "p2-ap-history"     "Autopilot history (P2)"            check_adr0094_p2_autopilot_history     "adr0094-p2"
+run_check_bg "p2-ap-learn"       "Autopilot learn (P2)"              check_adr0094_p2_autopilot_learn       "adr0094-p2"
+run_check_bg "p2-ap-log"         "Autopilot log (P2)"                check_adr0094_p2_autopilot_log         "adr0094-p2"
+run_check_bg "p2-ap-reset"       "Autopilot reset (P2)"              check_adr0094_p2_autopilot_reset       "adr0094-p2"
+run_check_bg "p2-wf-lifecycle"   "Workflow lifecycle (P2)"            check_adr0094_p2_workflow_lifecycle     "adr0094-p2"
+run_check_bg "p2-wf-run"         "Workflow run (P2)"                  check_adr0094_p2_workflow_run           "adr0094-p2"
+run_check_bg "p2-wf-pause"       "Workflow pause (P2)"                check_adr0094_p2_workflow_pause         "adr0094-p2"
+run_check_bg "p2-wf-resume"      "Workflow resume (P2)"               check_adr0094_p2_workflow_resume        "adr0094-p2"
+run_check_bg "p2-wf-template"    "Workflow template (P2)"             check_adr0094_p2_workflow_template      "adr0094-p2"
+run_check_bg "p2-gu-capabilities" "Guidance capabilities (P2)"        check_adr0094_p2_guidance_capabilities  "adr0094-p2"
+run_check_bg "p2-gu-discover"    "Guidance discover (P2)"             check_adr0094_p2_guidance_discover      "adr0094-p2"
+run_check_bg "p2-gu-recommend"   "Guidance recommend (P2)"            check_adr0094_p2_guidance_recommend     "adr0094-p2"
+run_check_bg "p2-gu-workflow"    "Guidance workflow (P2)"              check_adr0094_p2_guidance_workflow      "adr0094-p2"
+run_check_bg "p2-gu-quickref"    "Guidance quickref (P2)"              check_adr0094_p2_guidance_quickref      "adr0094-p2"
+
+# ADR-0094 Phase 3: Distributed Systems
+run_check_bg "p3-hm-init"        "Hive-mind init (P3)"               check_adr0094_p3_hivemind_init          "adr0094-p3"
+run_check_bg "p3-hm-join"        "Hive-mind join (P3)"               check_adr0094_p3_hivemind_join          "adr0094-p3"
+run_check_bg "p3-hm-leave"       "Hive-mind leave (P3)"              check_adr0094_p3_hivemind_leave         "adr0094-p3"
+run_check_bg "p3-hm-status"      "Hive-mind status (P3)"             check_adr0094_p3_hivemind_status        "adr0094-p3"
+run_check_bg "p3-hm-spawn"       "Hive-mind spawn (P3)"              check_adr0094_p3_hivemind_spawn         "adr0094-p3"
+run_check_bg "p3-hm-broadcast"   "Hive-mind broadcast (P3)"          check_adr0094_p3_hivemind_broadcast     "adr0094-p3"
+run_check_bg "p3-hm-consensus"   "Hive-mind consensus (P3)"          check_adr0094_p3_hivemind_consensus     "adr0094-p3"
+run_check_bg "p3-hm-memory"      "Hive-mind memory (P3)"             check_adr0094_p3_hivemind_memory        "adr0094-p3"
+run_check_bg "p3-hm-shutdown"    "Hive-mind shutdown (P3)"            check_adr0094_p3_hivemind_shutdown      "adr0094-p3"
+run_check_bg "p3-hm-lifecycle"   "Hive-mind lifecycle (P3)"           check_adr0094_p3_hivemind_lifecycle     "adr0094-p3"
+run_check_bg "p3-co-consensus"   "Coordination consensus (P3)"       check_adr0094_p3_coordination_consensus "adr0094-p3"
+run_check_bg "p3-co-loadbal"     "Coordination load_balance (P3)"    check_adr0094_p3_coordination_load_balance "adr0094-p3"
+run_check_bg "p3-co-node"        "Coordination node (P3)"            check_adr0094_p3_coordination_node      "adr0094-p3"
+run_check_bg "p3-co-orchestrate" "Coordination orchestrate (P3)"     check_adr0094_p3_coordination_orchestrate "adr0094-p3"
+run_check_bg "p3-co-sync"        "Coordination sync (P3)"            check_adr0094_p3_coordination_sync      "adr0094-p3"
+run_check_bg "p3-co-topology"    "Coordination topology (P3)"        check_adr0094_p3_coordination_topology  "adr0094-p3"
+run_check_bg "p3-co-metrics"     "Coordination metrics (P3)"         check_adr0094_p3_coordination_metrics   "adr0094-p3"
+run_check_bg "p3-da-create"      "DAA agent create (P3)"             check_adr0094_p3_daa_agent_create       "adr0094-p3"
+run_check_bg "p3-da-adapt"       "DAA agent adapt (P3)"              check_adr0094_p3_daa_agent_adapt        "adr0094-p3"
+run_check_bg "p3-da-cognitive"   "DAA cognitive pattern (P3)"        check_adr0094_p3_daa_cognitive_pattern  "adr0094-p3"
+run_check_bg "p3-da-knowledge"   "DAA knowledge share (P3)"          check_adr0094_p3_daa_knowledge_share    "adr0094-p3"
+run_check_bg "p3-da-learning"    "DAA learning status (P3)"          check_adr0094_p3_daa_learning_status    "adr0094-p3"
+run_check_bg "p3-da-perf"        "DAA performance metrics (P3)"      check_adr0094_p3_daa_performance_metrics "adr0094-p3"
+run_check_bg "p3-da-wf-create"   "DAA workflow create (P3)"          check_adr0094_p3_daa_workflow_create    "adr0094-p3"
+run_check_bg "p3-da-wf-exec"     "DAA workflow execute (P3)"         check_adr0094_p3_daa_workflow_execute   "adr0094-p3"
+run_check_bg "p3-se-lifecycle"   "Session lifecycle (P3)"            check_adr0094_p3_session_lifecycle      "adr0094-p3"
+run_check_bg "p3-se-save"        "Session save (P3)"                 check_adr0094_p3_session_save           "adr0094-p3"
+run_check_bg "p3-se-restore"     "Session restore (P3)"              check_adr0094_p3_session_restore        "adr0094-p3"
+run_check_bg "p3-se-list"        "Session list (P3)"                 check_adr0094_p3_session_list           "adr0094-p3"
+run_check_bg "p3-se-delete"      "Session delete (P3)"               check_adr0094_p3_session_delete         "adr0094-p3"
+run_check_bg "p3-se-info"        "Session info (P3)"                 check_adr0094_p3_session_info           "adr0094-p3"
+run_check_bg "p3-ta-lifecycle"   "Task lifecycle (P3)"               check_adr0094_p3_task_lifecycle         "adr0094-p3"
+run_check_bg "p3-ta-create"      "Task create (P3)"                  check_adr0094_p3_task_create            "adr0094-p3"
+run_check_bg "p3-ta-assign"      "Task assign (P3)"                  check_adr0094_p3_task_assign            "adr0094-p3"
+run_check_bg "p3-ta-update"      "Task update (P3)"                  check_adr0094_p3_task_update            "adr0094-p3"
+run_check_bg "p3-ta-cancel"      "Task cancel (P3)"                  check_adr0094_p3_task_cancel            "adr0094-p3"
+run_check_bg "p3-ta-complete"    "Task complete (P3)"                check_adr0094_p3_task_complete          "adr0094-p3"
+run_check_bg "p3-ta-list"        "Task list (P3)"                    check_adr0094_p3_task_list              "adr0094-p3"
+run_check_bg "p3-ta-status"      "Task status (P3)"                  check_adr0094_p3_task_status            "adr0094-p3"
+run_check_bg "p3-ta-summary"     "Task summary (P3)"                 check_adr0094_p3_task_summary           "adr0094-p3"
+
+# ADR-0094 Phase 4: Integration & I/O
+run_check_bg "p4-br-session"     "Browser session (P4)"              check_adr0094_p4_browser_session        "adr0094-p4"
+run_check_bg "p4-br-eval"        "Browser eval (P4)"                 check_adr0094_p4_browser_eval           "adr0094-p4"
+run_check_bg "p4-br-navigation"  "Browser navigation (P4)"           check_adr0094_p4_browser_navigation     "adr0094-p4"
+run_check_bg "p4-br-interaction" "Browser interaction (P4)"          check_adr0094_p4_browser_interaction    "adr0094-p4"
+run_check_bg "p4-br-snapshot"    "Browser snapshot (P4)"             check_adr0094_p4_browser_snapshot       "adr0094-p4"
+run_check_bg "p4-te-create"      "Terminal create (P4)"              check_adr0094_p4_terminal_create        "adr0094-p4"
+run_check_bg "p4-te-execute"     "Terminal execute (P4)"             check_adr0094_p4_terminal_execute       "adr0094-p4"
+run_check_bg "p4-te-list"        "Terminal list (P4)"                check_adr0094_p4_terminal_list          "adr0094-p4"
+run_check_bg "p4-te-history"     "Terminal history (P4)"             check_adr0094_p4_terminal_history       "adr0094-p4"
+run_check_bg "p4-te-close"       "Terminal close (P4)"               check_adr0094_p4_terminal_close         "adr0094-p4"
+run_check_bg "p4-em-init"        "Embeddings init (P4)"              check_adr0094_p4_embeddings_init        "adr0094-p4"
+run_check_bg "p4-em-generate"    "Embeddings generate (P4)"          check_adr0094_p4_embeddings_generate    "adr0094-p4"
+run_check_bg "p4-em-compare"     "Embeddings compare (P4)"           check_adr0094_p4_embeddings_compare     "adr0094-p4"
+run_check_bg "p4-em-search"      "Embeddings search (P4)"            check_adr0094_p4_embeddings_search      "adr0094-p4"
+run_check_bg "p4-em-hyperbolic"  "Embeddings hyperbolic (P4)"        check_adr0094_p4_embeddings_hyperbolic  "adr0094-p4"
+run_check_bg "p4-em-neural"      "Embeddings neural (P4)"            check_adr0094_p4_embeddings_neural      "adr0094-p4"
+run_check_bg "p4-em-status"      "Embeddings status (P4)"            check_adr0094_p4_embeddings_status      "adr0094-p4"
+run_check_bg "p4-tr-store-srch"  "Transfer store-search (P4)"        check_adr0094_p4_transfer_store_search  "adr0094-p4"
+run_check_bg "p4-tr-store-info"  "Transfer store-info (P4)"          check_adr0094_p4_transfer_store_info    "adr0094-p4"
+run_check_bg "p4-tr-store-feat"  "Transfer store-featured (P4)"      check_adr0094_p4_transfer_store_featured "adr0094-p4"
+run_check_bg "p4-tr-store-trend" "Transfer store-trending (P4)"      check_adr0094_p4_transfer_store_trending "adr0094-p4"
+run_check_bg "p4-tr-plug-srch"   "Transfer plugin-search (P4)"       check_adr0094_p4_transfer_plugin_search "adr0094-p4"
+run_check_bg "p4-tr-plug-info"   "Transfer plugin-info (P4)"         check_adr0094_p4_transfer_plugin_info   "adr0094-p4"
+run_check_bg "p4-tr-plug-feat"   "Transfer plugin-featured (P4)"     check_adr0094_p4_transfer_plugin_featured "adr0094-p4"
+run_check_bg "p4-tr-plug-off"    "Transfer plugin-official (P4)"     check_adr0094_p4_transfer_plugin_official "adr0094-p4"
+run_check_bg "p4-tr-pii"         "Transfer detect-pii (P4)"          check_adr0094_p4_transfer_detect_pii    "adr0094-p4"
+run_check_bg "p4-gh-issue"       "GitHub issue track (P4)"           check_adr0094_p4_github_issue_track     "adr0094-p4"
+run_check_bg "p4-gh-pr"          "GitHub PR manage (P4)"             check_adr0094_p4_github_pr_manage       "adr0094-p4"
+run_check_bg "p4-gh-metrics"     "GitHub metrics (P4)"               check_adr0094_p4_github_metrics         "adr0094-p4"
+run_check_bg "p4-gh-repo"        "GitHub repo analyze (P4)"          check_adr0094_p4_github_repo_analyze    "adr0094-p4"
+run_check_bg "p4-gh-workflow"    "GitHub workflow (P4)"              check_adr0094_p4_github_workflow        "adr0094-p4"
+run_check_bg "p4-wa-create"      "WASM agent create (P4)"            check_adr0094_p4_wasm_agent_create      "adr0094-p4"
+run_check_bg "p4-wa-list"        "WASM agent list (P4)"              check_adr0094_p4_wasm_agent_list        "adr0094-p4"
+run_check_bg "p4-wa-prompt"      "WASM agent prompt (P4)"            check_adr0094_p4_wasm_agent_prompt      "adr0094-p4"
+run_check_bg "p4-wa-tool"        "WASM agent tool (P4)"              check_adr0094_p4_wasm_agent_tool        "adr0094-p4"
+run_check_bg "p4-wa-export"      "WASM agent export (P4)"            check_adr0094_p4_wasm_agent_export      "adr0094-p4"
+run_check_bg "p4-wa-files"       "WASM agent files (P4)"             check_adr0094_p4_wasm_agent_files       "adr0094-p4"
+run_check_bg "p4-wa-terminate"   "WASM agent terminate (P4)"         check_adr0094_p4_wasm_agent_terminate   "adr0094-p4"
+run_check_bg "p4-wa-gal-list"    "WASM gallery list (P4)"            check_adr0094_p4_wasm_gallery_list      "adr0094-p4"
+run_check_bg "p4-wa-gal-search"  "WASM gallery search (P4)"          check_adr0094_p4_wasm_gallery_search    "adr0094-p4"
+run_check_bg "p4-wa-gal-create"  "WASM gallery create (P4)"          check_adr0094_p4_wasm_gallery_create    "adr0094-p4"
+
+# ADR-0094 Phase 5: ML & Advanced
+run_check_bg "p5-ne-train"       "Neural train (P5)"                 check_adr0094_p5_neural_train           "adr0094-p5"
+run_check_bg "p5-ne-optimize"    "Neural optimize (P5)"              check_adr0094_p5_neural_optimize        "adr0094-p5"
+run_check_bg "p5-ne-compress"    "Neural compress (P5)"              check_adr0094_p5_neural_compress        "adr0094-p5"
+run_check_bg "p5-ne-predict"     "Neural predict (P5)"               check_adr0094_p5_neural_predict         "adr0094-p5"
+run_check_bg "p5-ne-patterns"    "Neural patterns (P5)"              check_adr0094_p5_neural_patterns        "adr0094-p5"
+run_check_bg "p5-ne-status"      "Neural status (P5)"                check_adr0094_p5_neural_status          "adr0094-p5"
+run_check_bg "p5-rv-status"      "RuVLLM status (P5)"                check_adr0094_p5_ruvllm_status          "adr0094-p5"
+run_check_bg "p5-rv-hnsw-create" "RuVLLM HNSW create (P5)"           check_adr0094_p5_ruvllm_hnsw_create     "adr0094-p5"
+run_check_bg "p5-rv-hnsw-add"    "RuVLLM HNSW add (P5)"              check_adr0094_p5_ruvllm_hnsw_add        "adr0094-p5"
+run_check_bg "p5-rv-hnsw-route"  "RuVLLM HNSW route (P5)"            check_adr0094_p5_ruvllm_hnsw_route      "adr0094-p5"
+run_check_bg "p5-rv-sona-create" "RuVLLM SONA create (P5)"           check_adr0094_p5_ruvllm_sona_create     "adr0094-p5"
+run_check_bg "p5-rv-sona-adapt"  "RuVLLM SONA adapt (P5)"            check_adr0094_p5_ruvllm_sona_adapt      "adr0094-p5"
+run_check_bg "p5-rv-lora-create" "RuVLLM MicroLoRA create (P5)"      check_adr0094_p5_ruvllm_microlora_create "adr0094-p5"
+run_check_bg "p5-rv-lora-adapt"  "RuVLLM MicroLoRA adapt (P5)"       check_adr0094_p5_ruvllm_microlora_adapt "adr0094-p5"
+run_check_bg "p5-rv-gen-config"  "RuVLLM generate config (P5)"       check_adr0094_p5_ruvllm_generate_config "adr0094-p5"
+run_check_bg "p5-rv-chat-fmt"    "RuVLLM chat format (P5)"           check_adr0094_p5_ruvllm_chat_format     "adr0094-p5"
+run_check_bg "p5-pf-benchmark"   "Performance benchmark (P5)"        check_adr0094_p5_performance_benchmark  "adr0094-p5"
+run_check_bg "p5-pf-bottleneck"  "Performance bottleneck (P5)"       check_adr0094_p5_performance_bottleneck "adr0094-p5"
+run_check_bg "p5-pf-profile"     "Performance profile (P5)"          check_adr0094_p5_performance_profile    "adr0094-p5"
+run_check_bg "p5-pf-optimize"    "Performance optimize (P5)"         check_adr0094_p5_performance_optimize   "adr0094-p5"
+run_check_bg "p5-pf-metrics"     "Performance metrics (P5)"          check_adr0094_p5_performance_metrics    "adr0094-p5"
+run_check_bg "p5-pf-report"      "Performance report (P5)"           check_adr0094_p5_performance_report     "adr0094-p5"
+run_check_bg "p5-pr-check"       "Progress check (P5)"               check_adr0094_p5_progress_check         "adr0094-p5"
+run_check_bg "p5-pr-summary"     "Progress summary (P5)"             check_adr0094_p5_progress_summary       "adr0094-p5"
+run_check_bg "p5-pr-sync"        "Progress sync (P5)"                check_adr0094_p5_progress_sync          "adr0094-p5"
+run_check_bg "p5-pr-watch"       "Progress watch (P5)"               check_adr0094_p5_progress_watch         "adr0094-p5"
+
+# ADR-0094 Phase 6: Hooks, Error Paths & Validation
+run_check_bg "p6-hk-pre-task"    "Hooks pre-task (P6)"               check_adr0094_p6_hooks_pre_task         "adr0094-p6"
+run_check_bg "p6-hk-post-task"   "Hooks post-task (P6)"              check_adr0094_p6_hooks_post_task        "adr0094-p6"
+run_check_bg "p6-hk-pre-edit"    "Hooks pre-edit (P6)"               check_adr0094_p6_hooks_pre_edit         "adr0094-p6"
+run_check_bg "p6-hk-post-edit"   "Hooks post-edit (P6)"              check_adr0094_p6_hooks_post_edit        "adr0094-p6"
+run_check_bg "p6-hk-pre-cmd"     "Hooks pre-command (P6)"            check_adr0094_p6_hooks_pre_command      "adr0094-p6"
+run_check_bg "p6-hk-post-cmd"    "Hooks post-command (P6)"           check_adr0094_p6_hooks_post_command     "adr0094-p6"
+run_check_bg "p6-hk-sess-start"  "Hooks session-start (P6)"          check_adr0094_p6_hooks_session_start    "adr0094-p6"
+run_check_bg "p6-hk-sess-end"    "Hooks session-end (P6)"            check_adr0094_p6_hooks_session_end      "adr0094-p6"
+run_check_bg "p6-err-badconfig"  "Error: invalid config (P6)"        check_adr0094_p6_invalid_config         "adr0094-p6"
+run_check_bg "p6-err-noconfig"   "Error: missing config (P6)"        check_adr0094_p6_missing_config         "adr0094-p6"
+run_check_bg "p6-err-corrupt"    "Error: corrupted state (P6)"       check_adr0094_p6_corrupted_state        "adr0094-p6"
+run_check_bg "p6-err-perms"      "Error: permission denied (P6)"     check_adr0094_p6_permission_denied      "adr0094-p6"
+run_check_bg "p6-val-traversal"  "Input: path traversal (P6)"        check_adr0094_p6_path_traversal         "adr0094-p6"
+run_check_bg "p6-val-unicode"    "Input: unicode (P6)"               check_adr0094_p6_unicode_input          "adr0094-p6"
+run_check_bg "p6-val-empty"      "Input: empty (P6)"                 check_adr0094_p6_empty_input            "adr0094-p6"
+run_check_bg "p6-val-oversize"   "Input: oversized (P6)"             check_adr0094_p6_oversized_input        "adr0094-p6"
+run_check_bg "p6-mr-route"       "Model route (P6)"                  check_adr0094_p6_model_route            "adr0094-p6"
+run_check_bg "p6-mr-outcome"     "Model outcome (P6)"                check_adr0094_p6_model_outcome          "adr0094-p6"
+run_check_bg "p6-mr-stats"       "Model stats (P6)"                  check_adr0094_p6_model_stats            "adr0094-p6"
+
+# ADR-0094 Phase 7: File Output & CLI Commands
+run_check_bg "p7-fo-agents"      "File: agents store.json (P7)"      check_adr0094_p7_agents_store           "adr0094-p7"
+run_check_bg "p7-fo-swarm-ag"    "File: swarm agents.json (P7)"      check_adr0094_p7_swarm_agents           "adr0094-p7"
+run_check_bg "p7-fo-swarm-st"    "File: swarm state.json (P7)"       check_adr0094_p7_swarm_state            "adr0094-p7"
+run_check_bg "p7-fo-statusline"  "File: statusline.cjs (P7)"         check_adr0094_p7_statusline_cjs         "adr0094-p7"
+run_check_bg "p7-fo-neural"      "File: neural dir (P7)"             check_adr0094_p7_neural_dir             "adr0094-p7"
+run_check_bg "p7-fo-hooks"       "File: hooks dir (P7)"              check_adr0094_p7_hooks_dir              "adr0094-p7"
+run_check_bg "p7-fo-config"      "File: config.json (P7)"            check_adr0094_p7_config_json            "adr0094-p7"
+run_check_bg "p7-fo-settings"    "File: settings.json (P7)"          check_adr0094_p7_settings_json          "adr0094-p7"
+run_check_bg "p7-cli-version"    "CLI --version (P7)"                check_adr0094_p7_cli_version            "adr0094-p7"
+run_check_bg "p7-cli-doctor"     "CLI doctor (P7)"                   check_adr0094_p7_cli_doctor             "adr0094-p7"
+run_check_bg "p7-cli-init"       "CLI init --help (P7)"              check_adr0094_p7_cli_init_help          "adr0094-p7"
+run_check_bg "p7-cli-agent"      "CLI agent --help (P7)"             check_adr0094_p7_cli_agent_help         "adr0094-p7"
+run_check_bg "p7-cli-swarm"      "CLI swarm --help (P7)"             check_adr0094_p7_cli_swarm_help         "adr0094-p7"
+run_check_bg "p7-cli-memory"     "CLI memory --help (P7)"            check_adr0094_p7_cli_memory_help        "adr0094-p7"
+run_check_bg "p7-cli-session"    "CLI session --help (P7)"           check_adr0094_p7_cli_session_help       "adr0094-p7"
+run_check_bg "p7-cli-hooks"      "CLI hooks --help (P7)"             check_adr0094_p7_cli_hooks_help         "adr0094-p7"
+run_check_bg "p7-cli-mcp"        "CLI mcp status (P7)"               check_adr0094_p7_cli_mcp_status         "adr0094-p7"
+run_check_bg "p7-cli-system"     "CLI system info (P7)"              check_adr0094_p7_cli_system_info        "adr0094-p7"
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1233,6 +1437,107 @@ collect_parallel "all" \
   "adr0090-b5-sonaTrajectory|B5 sonaTrajectory roundtrip" \
   "adr0090-b5-nightlyLearner|B5 nightlyLearner roundtrip" \
   "adr0090-b5-explainableRecall|B5 explainableRecall roundtrip" \
+  "p1-ai-scan|AI Defence scan (P1)" "p1-ai-analyze|AI Defence analyze (P1)" \
+  "p1-ai-pii|AI Defence has_pii (P1)" "p1-ai-safe|AI Defence is_safe (P1)" \
+  "p1-ai-learn|AI Defence learn (P1)" "p1-ai-stats|AI Defence stats (P1)" \
+  "p1-cl-lifecycle|Claims lifecycle (P1)" "p1-cl-claim|Claims claim (P1)" \
+  "p1-cl-status|Claims status (P1)" "p1-cl-list|Claims list (P1)" \
+  "p1-cl-board|Claims board (P1)" "p1-cl-load|Claims load (P1)" \
+  "p1-cl-handoff|Claims handoff (P1)" "p1-cl-accept|Claims accept-handoff (P1)" \
+  "p1-cl-steal|Claims steal (P1)" "p1-cl-stealable|Claims mark-stealable (P1)" \
+  "p1-cl-rebalance|Claims rebalance (P1)" "p1-cl-release|Claims release (P1)" \
+  "p2-ag-lifecycle|Agent lifecycle (P2)" "p2-ag-spawn|Agent spawn (P2)" \
+  "p2-ag-list|Agent list (P2)" "p2-ag-status|Agent status (P2)" \
+  "p2-ag-health|Agent health (P2)" "p2-ag-terminate|Agent terminate (P2)" \
+  "p2-ag-update|Agent update (P2)" "p2-ag-pool|Agent pool (P2)" \
+  "p2-ap-lifecycle|Autopilot lifecycle (P2)" "p2-ap-enable|Autopilot enable (P2)" \
+  "p2-ap-disable|Autopilot disable (P2)" "p2-ap-status|Autopilot status (P2)" \
+  "p2-ap-config|Autopilot config (P2)" "p2-ap-predict|Autopilot predict (P2)" \
+  "p2-ap-history|Autopilot history (P2)" "p2-ap-learn|Autopilot learn (P2)" \
+  "p2-ap-log|Autopilot log (P2)" "p2-ap-reset|Autopilot reset (P2)" \
+  "p2-wf-lifecycle|Workflow lifecycle (P2)" "p2-wf-run|Workflow run (P2)" \
+  "p2-wf-pause|Workflow pause (P2)" "p2-wf-resume|Workflow resume (P2)" \
+  "p2-wf-template|Workflow template (P2)" \
+  "p2-gu-capabilities|Guidance capabilities (P2)" "p2-gu-discover|Guidance discover (P2)" \
+  "p2-gu-recommend|Guidance recommend (P2)" "p2-gu-workflow|Guidance workflow (P2)" \
+  "p2-gu-quickref|Guidance quickref (P2)" \
+  "p3-hm-init|Hive-mind init (P3)" "p3-hm-join|Hive-mind join (P3)" \
+  "p3-hm-leave|Hive-mind leave (P3)" "p3-hm-status|Hive-mind status (P3)" \
+  "p3-hm-spawn|Hive-mind spawn (P3)" "p3-hm-broadcast|Hive-mind broadcast (P3)" \
+  "p3-hm-consensus|Hive-mind consensus (P3)" "p3-hm-memory|Hive-mind memory (P3)" \
+  "p3-hm-shutdown|Hive-mind shutdown (P3)" "p3-hm-lifecycle|Hive-mind lifecycle (P3)" \
+  "p3-co-consensus|Coordination consensus (P3)" "p3-co-loadbal|Coordination load_balance (P3)" \
+  "p3-co-node|Coordination node (P3)" "p3-co-orchestrate|Coordination orchestrate (P3)" \
+  "p3-co-sync|Coordination sync (P3)" "p3-co-topology|Coordination topology (P3)" \
+  "p3-co-metrics|Coordination metrics (P3)" \
+  "p3-da-create|DAA agent create (P3)" "p3-da-adapt|DAA agent adapt (P3)" \
+  "p3-da-cognitive|DAA cognitive pattern (P3)" "p3-da-knowledge|DAA knowledge share (P3)" \
+  "p3-da-learning|DAA learning status (P3)" "p3-da-perf|DAA performance metrics (P3)" \
+  "p3-da-wf-create|DAA workflow create (P3)" "p3-da-wf-exec|DAA workflow execute (P3)" \
+  "p3-se-lifecycle|Session lifecycle (P3)" "p3-se-save|Session save (P3)" \
+  "p3-se-restore|Session restore (P3)" "p3-se-list|Session list (P3)" \
+  "p3-se-delete|Session delete (P3)" "p3-se-info|Session info (P3)" \
+  "p3-ta-lifecycle|Task lifecycle (P3)" "p3-ta-create|Task create (P3)" \
+  "p3-ta-assign|Task assign (P3)" "p3-ta-update|Task update (P3)" \
+  "p3-ta-cancel|Task cancel (P3)" "p3-ta-complete|Task complete (P3)" \
+  "p3-ta-list|Task list (P3)" "p3-ta-status|Task status (P3)" \
+  "p3-ta-summary|Task summary (P3)" \
+  "p4-br-session|Browser session (P4)" "p4-br-eval|Browser eval (P4)" \
+  "p4-br-navigation|Browser navigation (P4)" "p4-br-interaction|Browser interaction (P4)" \
+  "p4-br-snapshot|Browser snapshot (P4)" \
+  "p4-te-create|Terminal create (P4)" "p4-te-execute|Terminal execute (P4)" \
+  "p4-te-list|Terminal list (P4)" "p4-te-history|Terminal history (P4)" \
+  "p4-te-close|Terminal close (P4)" \
+  "p4-em-init|Embeddings init (P4)" "p4-em-generate|Embeddings generate (P4)" \
+  "p4-em-compare|Embeddings compare (P4)" "p4-em-search|Embeddings search (P4)" \
+  "p4-em-hyperbolic|Embeddings hyperbolic (P4)" "p4-em-neural|Embeddings neural (P4)" \
+  "p4-em-status|Embeddings status (P4)" \
+  "p4-tr-store-srch|Transfer store-search (P4)" "p4-tr-store-info|Transfer store-info (P4)" \
+  "p4-tr-store-feat|Transfer store-featured (P4)" "p4-tr-store-trend|Transfer store-trending (P4)" \
+  "p4-tr-plug-srch|Transfer plugin-search (P4)" "p4-tr-plug-info|Transfer plugin-info (P4)" \
+  "p4-tr-plug-feat|Transfer plugin-featured (P4)" "p4-tr-plug-off|Transfer plugin-official (P4)" \
+  "p4-tr-pii|Transfer detect-pii (P4)" \
+  "p4-gh-issue|GitHub issue track (P4)" "p4-gh-pr|GitHub PR manage (P4)" \
+  "p4-gh-metrics|GitHub metrics (P4)" "p4-gh-repo|GitHub repo analyze (P4)" \
+  "p4-gh-workflow|GitHub workflow (P4)" \
+  "p4-wa-create|WASM agent create (P4)" "p4-wa-list|WASM agent list (P4)" \
+  "p4-wa-prompt|WASM agent prompt (P4)" "p4-wa-tool|WASM agent tool (P4)" \
+  "p4-wa-export|WASM agent export (P4)" "p4-wa-files|WASM agent files (P4)" \
+  "p4-wa-terminate|WASM agent terminate (P4)" \
+  "p4-wa-gal-list|WASM gallery list (P4)" "p4-wa-gal-search|WASM gallery search (P4)" \
+  "p4-wa-gal-create|WASM gallery create (P4)" \
+  "p5-ne-train|Neural train (P5)" "p5-ne-optimize|Neural optimize (P5)" \
+  "p5-ne-compress|Neural compress (P5)" "p5-ne-predict|Neural predict (P5)" \
+  "p5-ne-patterns|Neural patterns (P5)" "p5-ne-status|Neural status (P5)" \
+  "p5-rv-status|RuVLLM status (P5)" "p5-rv-hnsw-create|RuVLLM HNSW create (P5)" \
+  "p5-rv-hnsw-add|RuVLLM HNSW add (P5)" "p5-rv-hnsw-route|RuVLLM HNSW route (P5)" \
+  "p5-rv-sona-create|RuVLLM SONA create (P5)" "p5-rv-sona-adapt|RuVLLM SONA adapt (P5)" \
+  "p5-rv-lora-create|RuVLLM MicroLoRA create (P5)" "p5-rv-lora-adapt|RuVLLM MicroLoRA adapt (P5)" \
+  "p5-rv-gen-config|RuVLLM generate config (P5)" "p5-rv-chat-fmt|RuVLLM chat format (P5)" \
+  "p5-pf-benchmark|Performance benchmark (P5)" "p5-pf-bottleneck|Performance bottleneck (P5)" \
+  "p5-pf-profile|Performance profile (P5)" "p5-pf-optimize|Performance optimize (P5)" \
+  "p5-pf-metrics|Performance metrics (P5)" "p5-pf-report|Performance report (P5)" \
+  "p5-pr-check|Progress check (P5)" "p5-pr-summary|Progress summary (P5)" \
+  "p5-pr-sync|Progress sync (P5)" "p5-pr-watch|Progress watch (P5)" \
+  "p6-hk-pre-task|Hooks pre-task (P6)" "p6-hk-post-task|Hooks post-task (P6)" \
+  "p6-hk-pre-edit|Hooks pre-edit (P6)" "p6-hk-post-edit|Hooks post-edit (P6)" \
+  "p6-hk-pre-cmd|Hooks pre-command (P6)" "p6-hk-post-cmd|Hooks post-command (P6)" \
+  "p6-hk-sess-start|Hooks session-start (P6)" "p6-hk-sess-end|Hooks session-end (P6)" \
+  "p6-err-badconfig|Error: invalid config (P6)" "p6-err-noconfig|Error: missing config (P6)" \
+  "p6-err-corrupt|Error: corrupted state (P6)" "p6-err-perms|Error: permission denied (P6)" \
+  "p6-val-traversal|Input: path traversal (P6)" "p6-val-unicode|Input: unicode (P6)" \
+  "p6-val-empty|Input: empty (P6)" "p6-val-oversize|Input: oversized (P6)" \
+  "p6-mr-route|Model route (P6)" "p6-mr-outcome|Model outcome (P6)" \
+  "p6-mr-stats|Model stats (P6)" \
+  "p7-fo-agents|File: agents store.json (P7)" "p7-fo-swarm-ag|File: swarm agents.json (P7)" \
+  "p7-fo-swarm-st|File: swarm state.json (P7)" "p7-fo-statusline|File: statusline.cjs (P7)" \
+  "p7-fo-neural|File: neural dir (P7)" "p7-fo-hooks|File: hooks dir (P7)" \
+  "p7-fo-config|File: config.json (P7)" "p7-fo-settings|File: settings.json (P7)" \
+  "p7-cli-version|CLI --version (P7)" "p7-cli-doctor|CLI doctor (P7)" \
+  "p7-cli-init|CLI init --help (P7)" "p7-cli-agent|CLI agent --help (P7)" \
+  "p7-cli-swarm|CLI swarm --help (P7)" "p7-cli-memory|CLI memory --help (P7)" \
+  "p7-cli-session|CLI session --help (P7)" "p7-cli-hooks|CLI hooks --help (P7)" \
+  "p7-cli-mcp|CLI mcp status (P7)" "p7-cli-system|CLI system info (P7)" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
