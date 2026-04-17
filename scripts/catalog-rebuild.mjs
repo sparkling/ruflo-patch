@@ -71,7 +71,7 @@ process.emitWarning = function emitWarningFiltered(warning, ...rest) {
 // Lazy-import so tests that never touch SQLite don't pay the cost and so a
 // Node <22 runtime produces a clean "requires Node >=22" error at first use.
 let _DatabaseSync = null;
-function getDatabaseSync() {
+export function getDatabaseSync() {
   if (_DatabaseSync) return _DatabaseSync;
   try {
     const mod = require('node:sqlite');
@@ -103,6 +103,8 @@ const ADR0094LOG = resolve(REPO_ROOT, 'docs/adr/ADR-0094-log.md');
 // SQLite schema (ADR-0096 §Decision Layer 2)
 // ---------------------------------------------------------------------------
 
+export const SCHEMA_VERSION = 2;
+
 export const SCHEMA_SQL = `
 CREATE TABLE IF NOT EXISTS runs (
   run_id      TEXT PRIMARY KEY,
@@ -115,11 +117,18 @@ CREATE TABLE IF NOT EXISTS runs (
 );
 
 CREATE TABLE IF NOT EXISTS check_history (
-  run_id         TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
-  check_id       TEXT NOT NULL,
-  status         TEXT NOT NULL CHECK(status IN ('passed','failed','skip_accepted')),
-  duration_ms    INTEGER,
-  output_excerpt TEXT,
+  run_id           TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  check_id         TEXT NOT NULL,
+  status           TEXT NOT NULL CHECK(status IN ('passed','failed','skip_accepted')),
+  duration_ms      INTEGER,
+  output_excerpt   TEXT,
+  name             TEXT,
+  group_name       TEXT,
+  passed           INTEGER,
+  fork_file        TEXT,
+  fingerprint      TEXT,
+  first_error_line TEXT,
+  phase            TEXT,
   PRIMARY KEY(run_id, check_id)
 );
 
@@ -140,14 +149,23 @@ CREATE TABLE IF NOT EXISTS skip_streaks (
   bug_link        TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_check_history_status    ON check_history(status);
-CREATE INDEX IF NOT EXISTS idx_check_history_check_id  ON check_history(check_id);
+CREATE INDEX IF NOT EXISTS idx_check_history_status    ON check_history(status, run_id);
+CREATE INDEX IF NOT EXISTS idx_check_history_check_id  ON check_history(check_id, run_id);
+CREATE INDEX IF NOT EXISTS idx_check_history_phase     ON check_history(phase);
+CREATE INDEX IF NOT EXISTS idx_check_history_fp        ON check_history(fingerprint);
 CREATE INDEX IF NOT EXISTS idx_fingerprints_bug_id     ON fingerprints(bug_id);
+CREATE INDEX IF NOT EXISTS idx_fingerprints_last_seen  ON fingerprints(last_seen DESC);
+CREATE INDEX IF NOT EXISTS idx_skip_streaks_days       ON skip_streaks(streak_days DESC);
 `;
 
 /**
  * Open (or create) a DatabaseSync at the given path with FKs on and WAL mode.
  * Returns the open handle; caller must .close() it.
+ *
+ * Schema version (`PRAGMA user_version`) is checked against SCHEMA_VERSION.
+ * On mismatch, refuses to open (ADR-0082 — no silent schema drift). Rebuild
+ * with: rm <path>; node scripts/catalog-rebuild.mjs --promote-to-sqlite.
+ *
  * @param {string} path
  */
 export function openDb(path) {
@@ -155,7 +173,18 @@ export function openDb(path) {
   const db = new DatabaseSync(path);
   db.exec('PRAGMA foreign_keys = ON');
   db.exec('PRAGMA journal_mode = WAL');
+
+  const current = db.prepare('PRAGMA user_version').get()?.user_version ?? 0;
+  if (current !== 0 && current !== SCHEMA_VERSION) {
+    db.close();
+    throw new Error(
+      `catalog.db schema v${current} != expected v${SCHEMA_VERSION}. ` +
+      `Rebuild: rm ${path}*; node scripts/catalog-rebuild.mjs --promote-to-sqlite`
+    );
+  }
+
   db.exec(SCHEMA_SQL);
+  db.exec(`PRAGMA user_version = ${SCHEMA_VERSION}`);
   return db;
 }
 
@@ -203,8 +232,31 @@ export function stripControlChars(raw) {
 }
 
 /**
- * sha1(check_id + '\u0001' + first_error_line + '\u0001' + fork_file).
- * Stable for the same failure across runs; changes if any component does.
+ * Normalize a first_error_line to strip run-specific entropy (ANSI, ruflo
+ * tmp paths, ISO timestamps, large numbers, hex hashes) before hashing.
+ * Per ADR-0096 §Fingerprints — same failure must produce the same hash
+ * across runs even when the surface error carries a PID, port, or temp
+ * dir suffix that churns.
+ * @param {string} s
+ */
+export function normalizeForFingerprint(s) {
+  if (!s) return '';
+  return String(s)
+    .replace(/\x1B\[[0-9;]*m/g, '')                            // ANSI CSI
+    .replace(/\/tmp\/ruflo[-_a-zA-Z0-9]+/g, '<tmp>')            // ruflo tmp dirs
+    .replace(/\/private\/tmp\/[^\s'"]+/g, '<tmp>')               // macOS symlink'd tmp
+    .replace(/\/var\/folders\/[^\s'"]+/g, '<tmp>')               // macOS per-user tmp
+    .replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?/g, '<ts>')
+    .replace(/\b[0-9a-f]{10,}\b/gi, '<hash>')                   // hex >= 10
+    .replace(/\b\d{5,}\b/g, '<n>')                               // PIDs, ports
+    .trim();
+}
+
+/**
+ * sha256(check_id + '\u0001' + normalized_first_error_line + '\u0001' +
+ *   fork_file).slice(0, 12). Stable for the same failure across runs per
+ * ADR-0096 §Fingerprints — normalized input + sha256-trunc-12 match the
+ * impl-plan spec (was sha1 full hex, which churned on PID/path noise).
  * @param {{id:string, output?:string, fork_file?:string}} test
  */
 export function fingerprint(test) {
@@ -212,7 +264,35 @@ export function fingerprint(test) {
   const out  = String(test?.output ?? '');
   const first = out.split('\n').find(l => l.trim().length > 0) || '';
   const fork = String(test?.fork_file ?? '');
-  return createHash('sha1').update(`${id}\u0001${first}\u0001${fork}`).digest('hex');
+  const seed = `${id}\u0001${normalizeForFingerprint(first)}\u0001${fork}`;
+  return createHash('sha256').update(seed).digest('hex').slice(0, 12);
+}
+
+/**
+ * Extract the first non-blank line from an output blob, preserving the
+ * original text (no normalization). Stored alongside the fingerprint so
+ * future fingerprint-function changes can re-hash without losing source.
+ * @param {string} output
+ */
+export function firstErrorLine(output) {
+  if (!output) return '';
+  return String(output).split('\n').find(l => l.trim().length > 0) || '';
+}
+
+/**
+ * Derive a phase label from a check_id. Accepts `check_adr<NNNN>_...`,
+ * `p<N>-...`, `phase-<N>-...`, or falls back to 'unknown'. Enables the
+ * check_history.phase column + index (ADR-0096 Schema).
+ * @param {string} checkId
+ */
+export function derivePhase(checkId) {
+  if (!checkId) return 'unknown';
+  const s = String(checkId);
+  const adr = /^check_adr(\d{4})_/.exec(s);
+  if (adr) return `adr${adr[1]}`;
+  const pN  = /^p(\d+)[-_]/.exec(s) || /^phase[-_]?(\d+)/.exec(s);
+  if (pN) return `p${pN[1]}`;
+  return 'unknown';
 }
 
 /**
@@ -253,18 +333,20 @@ export function flattenRun(runId, data) {
   const ts = data?.timestamp || null;
   const wall = data?.total_duration_ms ?? null;
   return (data?.tests || []).map(t => ({
-    run_id:      runId,
-    ts_utc:      ts,
-    wall_ms:     wall,
-    check_id:    t.id,
-    name:        t.name,
-    group:       t.group,
-    status:      t.status,
-    passed:      !!t.passed,
-    duration_ms: t.duration_ms ?? null,
-    output:      t.output ?? '',
-    fork_file:   t.fork_file ?? null,
-    fingerprint: fingerprint(t),
+    run_id:            runId,
+    ts_utc:            ts,
+    wall_ms:           wall,
+    check_id:          t.id,
+    name:              t.name,
+    group:             t.group,
+    status:            t.status,
+    passed:            !!t.passed,
+    duration_ms:       t.duration_ms ?? null,
+    output:            t.output ?? '',
+    fork_file:         t.fork_file ?? null,
+    fingerprint:       fingerprint(t),
+    first_error_line:  firstErrorLine(t.output),
+    phase:             derivePhase(t.id),
   }));
 }
 
@@ -326,6 +408,12 @@ export function upsertRun(db, runId, rows) {
   if (!rows?.length) return { runs: 0, check_history: 0, fingerprints: 0 };
   const first = rows[0];
 
+  // ADR-0082: empty ts_utc would silently produce days=NaN in skip_streak
+  // calculation. Reject loudly instead.
+  if (!first.ts_utc) {
+    throw new Error(`upsertRun: run ${runId} has empty/missing ts_utc; refusing to write`);
+  }
+
   const passed  = rows.filter(r => coerceStatus(r) === 'passed').length;
   const failed  = rows.filter(r => coerceStatus(r) === 'failed').length;
   const skipped = rows.filter(r => coerceStatus(r) === 'skip_accepted').length;
@@ -333,22 +421,26 @@ export function upsertRun(db, runId, rows) {
   db.prepare(`
     INSERT OR REPLACE INTO runs (run_id, ts_utc, total, passed, failed, skipped, wall_ms)
     VALUES (?, ?, ?, ?, ?, ?, ?)
-  `).run(runId, first.ts_utc ?? '', rows.length, passed, failed, skipped, first.wall_ms ?? null);
+  `).run(runId, first.ts_utc, rows.length, passed, failed, skipped, first.wall_ms ?? null);
 
   // Clear out previous check_history for this run (handles --promote re-runs).
   db.prepare(`DELETE FROM check_history WHERE run_id = ?`).run(runId);
 
   const insertHist = db.prepare(`
-    INSERT INTO check_history (run_id, check_id, status, duration_ms, output_excerpt)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO check_history
+      (run_id, check_id, status, duration_ms, output_excerpt,
+       name, group_name, passed, fork_file, fingerprint, first_error_line, phase)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
+  // last_seen = MAX, first_seen = MIN via CASE (SQLite lacks per-column
+  // MAX in UPSERT SET). Fixes the last-write-wins bug (review nit 5).
   const upsertFp = db.prepare(`
     INSERT INTO fingerprints (fingerprint, first_seen, last_seen, occurrences)
     VALUES (?, ?, ?, 1)
     ON CONFLICT(fingerprint) DO UPDATE SET
-      last_seen   = excluded.last_seen,
-      occurrences = occurrences + 1,
-      first_seen  = MIN(first_seen, excluded.first_seen)
+      last_seen   = CASE WHEN excluded.last_seen  > last_seen  THEN excluded.last_seen  ELSE last_seen  END,
+      first_seen  = CASE WHEN excluded.first_seen < first_seen THEN excluded.first_seen ELSE first_seen END,
+      occurrences = occurrences + 1
   `);
 
   let histRows = 0;
@@ -360,6 +452,13 @@ export function upsertRun(db, runId, rows) {
       coerceStatus(r),
       r.duration_ms ?? null,
       buildExcerpt(r.output),
+      r.name ?? null,
+      r.group ?? null,
+      r.passed ? 1 : 0,
+      r.fork_file ?? null,
+      r.fingerprint ?? null,
+      r.first_error_line ?? firstErrorLine(r.output),
+      r.phase ?? derivePhase(r.check_id),
     );
     histRows++;
     // Only index fingerprints for non-pass rows — pass fingerprints are noisy
@@ -368,7 +467,7 @@ export function upsertRun(db, runId, rows) {
     // skipped checks"). Older JSONL rows without explicit status fall back to
     // coerceStatus which returns 'failed' for !passed — correct behaviour.
     if (coerceStatus(r) !== 'passed' && r.fingerprint) {
-      upsertFp.run(r.fingerprint, r.ts_utc ?? '', r.ts_utc ?? '');
+      upsertFp.run(r.fingerprint, r.ts_utc, r.ts_utc);
       fpRows++;
     }
   }
@@ -439,7 +538,35 @@ function cmdAppend() {
     process.exit(1);
   }
   mkdirSync(RESULTS, { recursive: true });
-  const existing = ingestedRunIds(readCatalog());
+
+  // Layer-drift detection (review finding 3 — "layer drift on --append
+  // compensation"). If JSONL and SQLite disagree on which runs are
+  // ingested, the append logic can't safely pick a pending set. Fail loud
+  // per ADR-0082; user reconciles via --promote-to-sqlite.
+  const jsonlRuns = ingestedRunIds(readCatalog());
+  let sqliteRuns = new Set();
+  if (existsSync(CATALOG_DB)) {
+    const db0 = openDb(CATALOG_DB);
+    try {
+      const rs = db0.prepare('SELECT run_id FROM runs').all();
+      sqliteRuns = new Set(rs.map(r => r.run_id));
+    } finally {
+      db0.close();
+    }
+    const jsonlOnly = [...jsonlRuns].filter(r => !sqliteRuns.has(r));
+    const sqlOnly = [...sqliteRuns].filter(r => !jsonlRuns.has(r));
+    if (sqlOnly.length || jsonlOnly.length) {
+      console.error('[catalog-rebuild --append] LAYER DRIFT between catalog.jsonl and catalog.db:');
+      console.error(`  JSONL runs: ${jsonlRuns.size}    SQLite runs: ${sqliteRuns.size}`);
+      if (jsonlOnly.length) console.error(`  only in JSONL (${jsonlOnly.length}): ${jsonlOnly.slice(0, 5).join(', ')}${jsonlOnly.length > 5 ? ', …' : ''}`);
+      if (sqlOnly.length)   console.error(`  only in SQLite (${sqlOnly.length}): ${sqlOnly.slice(0, 5).join(', ')}${sqlOnly.length > 5 ? ', …' : ''}`);
+      console.error('[catalog-rebuild --append] reconcile: rm -f test-results/catalog.db* && node scripts/catalog-rebuild.mjs --promote-to-sqlite');
+      process.exit(3);
+    }
+  }
+
+  // Use the union so a run present in either layer counts as ingested.
+  const existing = new Set([...jsonlRuns, ...sqliteRuns]);
   const pending  = runs.filter(r => !existing.has(r));
   if (!pending.length) {
     const newest = runs[runs.length - 1];
@@ -484,9 +611,22 @@ function cmdAppend() {
         appendFileSync(CATALOG, jsonlLine);
       } catch (err) {
         // Reverse the SQLite insert so the two layers stay in sync.
-        db.exec('BEGIN IMMEDIATE');
-        db.prepare('DELETE FROM runs WHERE run_id = ?').run(runId);
-        db.exec('COMMIT');
+        // Compensation itself can fail (disk full, FK, power loss) — if it
+        // does we CANNOT auto-recover without re-reading raw. Surface loudly
+        // (ADR-0082) with the reconcile instructions; exit 3 distinguishes
+        // from --verify's drift (exit 1) and generic infra (exit 2).
+        try {
+          db.exec('BEGIN IMMEDIATE');
+          db.prepare('DELETE FROM runs WHERE run_id = ?').run(runId);
+          db.exec('COMMIT');
+        } catch (compErr) {
+          try { db.exec('ROLLBACK'); } catch { /* already closed */ }
+          console.error(`[catalog-rebuild --append] FATAL: JSONL append failed (${err.message})`);
+          console.error(`[catalog-rebuild --append]        AND compensation DELETE failed (${compErr.message})`);
+          console.error(`[catalog-rebuild --append]        catalog.jsonl and catalog.db now inconsistent for run ${runId}`);
+          console.error(`[catalog-rebuild --append]        reconcile: rm -f test-results/catalog.db* && node scripts/catalog-rebuild.mjs --promote-to-sqlite`);
+          process.exit(3);
+        }
         throw err;
       }
 
@@ -582,8 +722,17 @@ function cmdExportJsonl() {
     process.exit(1);
   }
   const db = openDb(CATALOG_DB);
+  // Persisted columns-only round-trip. The raw `output` blob is NOT stored
+  // in SQLite (only the 500-char `output_excerpt` is), so the export emits
+  // `output_excerpt` — the naming is explicit to avoid pretending the export
+  // is byte-identical to `catalog.jsonl`'s raw-output rows. All other
+  // persisted columns DO round-trip: name, group, passed, fork_file,
+  // fingerprint, first_error_line, phase.
   const rows = db.prepare(`
-    SELECT ch.run_id, r.ts_utc, r.wall_ms, ch.check_id, ch.status, ch.duration_ms, ch.output_excerpt
+    SELECT ch.run_id, r.ts_utc, r.wall_ms,
+           ch.check_id, ch.name, ch.group_name, ch.status, ch.passed,
+           ch.duration_ms, ch.output_excerpt,
+           ch.fork_file, ch.fingerprint, ch.first_error_line, ch.phase
     FROM check_history ch
     JOIN runs r ON r.run_id = ch.run_id
     ORDER BY r.ts_utc ASC, ch.run_id ASC, ch.check_id ASC
@@ -591,13 +740,20 @@ function cmdExportJsonl() {
   db.close();
   for (const r of rows) {
     process.stdout.write(JSON.stringify({
-      run_id:      r.run_id,
-      ts_utc:      r.ts_utc,
-      wall_ms:     r.wall_ms,
-      check_id:    r.check_id,
-      status:      r.status,
-      duration_ms: r.duration_ms,
-      output:      r.output_excerpt || '',
+      run_id:           r.run_id,
+      ts_utc:           r.ts_utc,
+      wall_ms:          r.wall_ms,
+      check_id:         r.check_id,
+      name:             r.name,
+      group:            r.group_name,
+      status:           r.status,
+      passed:           !!r.passed,
+      duration_ms:      r.duration_ms,
+      output_excerpt:   r.output_excerpt || '',
+      fork_file:        r.fork_file,
+      fingerprint:      r.fingerprint,
+      first_error_line: r.first_error_line,
+      phase:            r.phase,
     }) + '\n');
   }
 }

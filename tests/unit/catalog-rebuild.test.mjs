@@ -225,7 +225,8 @@ describe('readAcceptanceJson + flattenRun', () => {
     assert.equal(rows[0].run_id, 'accept-2026-04-17T150342Z');
     assert.equal(rows[0].wall_ms, 101892);
     assert.equal(rows[1].status, 'failed');
-    assert.ok(rows[1].fingerprint.length === 40, 'fingerprint should be sha1 hex (40 chars)');
+    assert.ok(rows[1].fingerprint.length === 12, 'fingerprint should be sha256 truncated to 12 chars (ADR-0096)');
+    assert.match(rows[1].fingerprint, /^[0-9a-f]{12}$/);
   });
 
   it('summariseRun produces the same counts the dashboard prints', () => {

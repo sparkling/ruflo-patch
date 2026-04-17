@@ -28,9 +28,11 @@ import { fileURLToPath } from 'node:url';
 import {
   buildExcerpt,
   coerceStatus,
+  getDatabaseSync,
   openDb,
   rebuildSkipStreaks,
   SCHEMA_SQL,
+  SCHEMA_VERSION,
   upsertRun,
 } from '../../scripts/catalog-rebuild.mjs';
 
@@ -223,7 +225,7 @@ describe('upsertRun', () => {
     db.close();
   });
 
-  it('fingerprint upsert: occurrences increment; first_seen is MIN; last_seen moves', () => {
+  it('fingerprint upsert: occurrences++, first_seen=MIN, last_seen=MAX (semantic)', () => {
     const db = openDb(':memory:');
     upsertRun(db, 'r1', [
       { run_id: 'r1', ts_utc: '2026-04-17T00:00:00Z', wall_ms: 100, check_id: 'c1', status: 'failed', output: 'boom', fingerprint: 'fp-shared' },
@@ -237,7 +239,17 @@ describe('upsertRun', () => {
     const fp = db.prepare('SELECT * FROM fingerprints WHERE fingerprint = ?').get('fp-shared');
     assert.equal(fp.occurrences, 3);
     assert.equal(fp.first_seen, '2026-04-16T00:00:00Z', 'first_seen must be MIN across upserts');
-    assert.equal(fp.last_seen,  '2026-04-16T00:00:00Z', 'last_seen tracks the latest upsert call');
+    assert.equal(fp.last_seen,  '2026-04-18T00:00:00Z', 'last_seen must be MAX across upserts (not last-write-wins)');
+    db.close();
+  });
+
+  it('upsertRun rejects empty ts_utc (ADR-0082 no silent fallback)', () => {
+    const db = openDb(':memory:');
+    assert.throws(() => {
+      upsertRun(db, 'r-empty', [
+        { run_id: 'r-empty', ts_utc: '', check_id: 'c1', status: 'passed', output: '' },
+      ]);
+    }, /empty\/missing ts_utc/);
     db.close();
   });
 });
@@ -343,7 +355,7 @@ describe('catalog-rebuild --promote-to-sqlite (integration)', () => {
     db.close();
   });
 
-  it('--export-jsonl round-trips row counts from the DB', () => {
+  it('--export-jsonl round-trips all persisted columns (name/group/fork_file/fingerprint/phase)', () => {
     sandbox = makeSandbox();
     makeRun(resolve(sandbox, 'test-results'), 'accept-2026-04-16T000000Z', basePayload('2026-04-16T00:00:00Z'));
     makeRun(resolve(sandbox, 'test-results'), 'accept-2026-04-17T150342Z', basePayload('2026-04-17T15:03:42Z'));
@@ -355,16 +367,42 @@ describe('catalog-rebuild --promote-to-sqlite (integration)', () => {
     assert.equal(rows.length, 6, 'two runs × 3 tests each');
     // The original JSONL carries the same total.
     const original = readFileSync(resolve(sandbox, 'test-results/catalog.jsonl'), 'utf-8')
-      .split('\n').filter(Boolean);
+      .split('\n').filter(Boolean).map(l => JSON.parse(l));
     assert.equal(original.length, rows.length, 'SQLite export must match JSONL row count');
-    // Round-trip the check_id/status columns exactly.
-    const originalTriples = new Set(original.map(l => {
-      const r = JSON.parse(l);
-      return `${r.run_id}|${r.check_id}|${r.status}`;
-    }));
+
+    // Index originals by (run_id, check_id) so we can compare per-row fields.
+    const byKey = new Map(original.map(o => [`${o.run_id}|${o.check_id}`, o]));
+
     for (const r of rows) {
-      assert.ok(originalTriples.has(`${r.run_id}|${r.check_id}|${r.status}`), `missing triple: ${r.run_id}|${r.check_id}|${r.status}`);
+      const o = byKey.get(`${r.run_id}|${r.check_id}`);
+      assert.ok(o, `missing original row: ${r.run_id}|${r.check_id}`);
+
+      // Persisted columns must round-trip exactly.
+      assert.equal(r.status, o.status, `status mismatch for ${r.check_id}`);
+      assert.equal(r.name, o.name ?? null, `name mismatch for ${r.check_id}`);
+      assert.equal(r.group, o.group ?? null, `group mismatch for ${r.check_id}`);
+      assert.equal(r.passed, !!o.passed, `passed mismatch for ${r.check_id}`);
+      assert.equal(r.fork_file, o.fork_file ?? null, `fork_file mismatch for ${r.check_id}`);
+      assert.equal(r.fingerprint, o.fingerprint, `fingerprint mismatch for ${r.check_id}`);
+      assert.equal(r.first_error_line, o.first_error_line, `first_error_line mismatch for ${r.check_id}`);
+      assert.equal(r.phase, o.phase, `phase mismatch for ${r.check_id}`);
+
+      // output_excerpt is truncated (max 500 chars); explicit field name so
+      // callers don't confuse it with the raw `output` in catalog.jsonl.
+      assert.ok(Object.prototype.hasOwnProperty.call(r, 'output_excerpt'));
+      assert.ok(!Object.prototype.hasOwnProperty.call(r, 'output'),
+        'export must NOT ship `output` (that is the raw 500+ char blob only in JSONL)');
     }
+  });
+
+  it('openDb rejects schema version mismatch', () => {
+    sandbox = makeSandbox();
+    const DatabaseSync = getDatabaseSync();
+    const dbPath = resolve(sandbox, 'catalog.db');
+    const stale = new DatabaseSync(dbPath);
+    stale.exec('PRAGMA user_version = 99');
+    stale.close();
+    assert.throws(() => openDb(dbPath), /schema v99 != expected v2/);
   });
 
   it('--show reconciles JSONL and SQLite totals', () => {
