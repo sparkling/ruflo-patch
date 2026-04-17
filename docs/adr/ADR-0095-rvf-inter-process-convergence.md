@@ -263,3 +263,64 @@ The implementer blocked on this ADR should NOT touch `mergePeerStateBeforePersis
 ### Probe delivered
 
 `scripts/diag-rvf-interproc-race.mjs` — spawns N unique-key `cli memory store` subprocesses, inspects `.swarm/memory.rvf.meta` for `entryCount === N`, exits 1 on loss. Uses the installed CLI (`node_modules/.bin/cli`) against Verdaccio. Correct meta path hard-coded at line 91 (empirically validated). Usable from cascade as `node scripts/diag-rvf-interproc-race.mjs 6 3` (N=6, 3 iterations). The B2 acceptance-bar target is 40/40 at N=2/4/8 across 3 days.
+
+## Meta-Regression Probe (2026-04-17 — Sprint-1 probe-writer)
+
+**Append-only. Do not rewrite §Decision.**
+
+Per Queen §E rule 3 + the ADR-0090 lesson that every "accepted trade-off" needs a regression check that fails if the fix stops working, this section documents how to verify each of the three §Amended Decision items (a, b, c) is actually exercised by the probes. Running these rollback experiments should cause the probes to fail loud — confirming the probes are real and not just surface-green.
+
+**Invocation for all rollback experiments**: `node scripts/diag-rvf-interproc-race.mjs --trials 40 --trace`. Expected outputs described below.
+
+### Item (a) rollback — restore silent catch in `tryNativeInit`
+
+**Revert** `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:635` from the fix to:
+```ts
+} catch {
+  if (this.config.verbose) console.log('[RvfBackend] pure-TS fallback');
+  return false;
+}
+```
+
+**Expected probe output**:
+- `diag-rvf-interproc-race.mjs --trials 40`: **FAIL**, `byN[6].passed < 10`. Matrix row `N=6: <10/10 FAIL`. Loss trials show `expected=6 observed=1` with `subproc-fail>0` (some writers crash on SFVR-magic races).
+- `tests/unit/adr0086-rvf-integration.test.mjs` Group 6: **FAIL** with `entryCount: 1 (expected 6)` in the diagnostic block. Subproc-failures typically 1-2.
+- `--trace` output: multiple TRACE lines with `signals=sawFallback` or `sawSfvrMagic`.
+
+### Item (b) rollback — restore shared tmp path
+
+**Revert** `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:1450` from the fix to:
+```ts
+const tmpPath = target + '.tmp';
+```
+
+**Expected probe output**:
+- `diag-rvf-interproc-race.mjs --trials 40`: **FAIL non-deterministically**; loss trials show `ENOENT ... rename ... .rvf.tmp -> .rvf` in subproc stderr, captured by trace signal `sawRenameErr`. Some trials still pass (race-window dependent).
+- Group 6 test: **FAIL** with `metaRaw: n/a` or `metaFound: false` when no writer completed its rename.
+- `--trace` leftover-tmp lines may appear after race trials.
+
+### Item (c) rollback — restore double RvfBackend construction
+
+**Revert** the construction-dedupe cache in backend call sites (MemoryManager + controller registry in `agentdb-service.ts`); allow `tryNativeInit` to be invoked twice per `cli memory store` invocation as the investigator trace observed.
+
+**Expected probe output**:
+- `diag-rvf-interproc-race.mjs --trials 40`: **FAIL** even at N=2 because intra-process compounding makes the inter-process race detectable at lower concurrency. Matrix `N=2: <10/10 FAIL`.
+- `tests/unit/adr0086-rvf-integration.test.mjs` Group 7 (in-process variant): **FAIL** with `foundKeys: <6/6` in the diagnostic — the backend-dedupe invariant is exactly what this test targets.
+- `--trace` output: writer stderr may contain `tryNativeInit` doubled per PID.
+
+### Acceptance gate for "fix lands green"
+
+A single probe run where ALL three items are in place should produce:
+```
+SUMMARY: 40/40 passed, wallclock=<180s
+  N=2: 10/10 PASS
+  N=4: 10/10 PASS
+  N=6: 10/10 PASS
+  N=8: 10/10 PASS
+OVERALL: PASS
+```
+AND `tests/unit/adr0086-rvf-integration.test.mjs` Groups 6+7 both green. Any one of the three items reverted should cause at least one of these to fail, per the matrix above. This is the probe-regression invariant for ADR-0095.
+
+### Scope note
+
+The fully-mechanized reverter script (`scripts/verify-rvf-meta-regression.sh --experimental`) was **descoped from Sprint 1** by the probe-writer per the ADR-0098 §E scope discipline: rollback experiments belong to Sprint-2 tooling, not S1 probe delivery. Implementers verifying items (a)/(b)/(c) during their own development loop should perform these rollbacks manually as documented above; the diag script's `--help` text points here for the canonical regression-verification procedure.

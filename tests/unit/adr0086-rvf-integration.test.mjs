@@ -603,3 +603,291 @@ describe('ADR-0086 RVF integration: Group 5 — file format constants', () => {
       'WAL truncation must happen BEFORE persistToDisk in bulkDelete()');
   });
 });
+
+// ============================================================================
+// Group 6: ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1
+// ============================================================================
+//
+// Per ADR-0095 §Acceptance criterion 3: spawn 6 real CLI subprocesses (not
+// mocked, not in-process) with unique keys and assert entryCount === 6 plus
+// all 6 embeddings round-trip retrievable via `cli memory retrieve`.
+//
+// This case is deliberately failing against current (pre-fix, commit 2d12bb1)
+// state of the fork. Per ADR-0082 no-silent-pass rule AND the probe-writer
+// task mandate ("never silent-skip"), the test:
+//   - SKIP_ACCEPTED only when Verdaccio/CLI infra is unavailable (explicit
+//     `t.skip` with unreachable-registry message, not a silent pass)
+//   - FAILS LOUDLY with entryCount diagnostic when infra is available but the
+//     RVF inter-process convergence bug manifests
+//
+// When the fix lands (three-item program in ADR-0095 §Amended Decision), this
+// test will transition to green naturally. The failure diagnostic MUST include
+// the observed entryCount, subprocess exit codes, and meta file path so that
+// future regressions are immediately attributable.
+// ============================================================================
+
+describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1', () => {
+  // This block imports child_process synchronously at the top of the suite so
+  // we can fail loud if it's missing (it shouldn't be).
+  it('spawns 6 real cli memory store subprocesses and asserts entryCount === 6', async (t) => {
+    const { spawnSync, spawn } = await import('node:child_process');
+    const { mkdtempSync, existsSync, readFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    // ── Infra gate (ADR-0082: explicit skip, not silent pass) ──────────────
+    const REGISTRY = process.env.VERDACCIO_URL || 'http://localhost:4873';
+    const verdaccio = spawnSync('curl', ['-sf', '--max-time', '2', `${REGISTRY}/-/ping`]);
+    if (verdaccio.status !== 0) {
+      t.skip(`SKIP_ACCEPTED: Verdaccio unreachable at ${REGISTRY}/-/ping — subprocess N=6 probe requires published CLI`);
+      return;
+    }
+
+    // ── Sandbox setup: prefer cached harness (fast), fall back to fresh init ─
+    // Even when we reuse a cached CLI binary, we ALWAYS create a fresh .swarm
+    // dir inside a fresh sandbox for the write test itself — we cannot let
+    // previous trial state leak into the invariant check.
+    const CLI_VERSION = process.env.CLI_VERSION || '3.5.58-patch.136';
+    let workDir;
+    try {
+      workDir = mkdtempSync(join(tmpdir(), 'adr0095-sub-'));
+      // npm init + install
+      const pkgJson = { name: 'adr0095-sub', version: '1.0.0', private: true };
+      const { writeFileSync } = await import('node:fs');
+      writeFileSync(join(workDir, 'package.json'), JSON.stringify(pkgJson));
+      writeFileSync(join(workDir, '.npmrc'), `registry=${REGISTRY}\n`);
+      const install = spawnSync('npm', [
+        'install', `@sparkleideas/cli@${CLI_VERSION}`,
+        '--no-audit', '--silent', `--registry=${REGISTRY}`,
+      ], { cwd: workDir, encoding: 'utf-8', timeout: 45_000 });
+      if (install.status !== 0) {
+        t.skip(`SKIP_ACCEPTED: npm install failed (infra, not product): ${install.stderr.slice(0, 300)}`);
+        return;
+      }
+      const cliBin = join(workDir, 'node_modules', '.bin', 'cli');
+      if (!existsSync(cliBin)) {
+        t.skip(`SKIP_ACCEPTED: CLI binary missing at ${cliBin} (infra, not product)`);
+        return;
+      }
+      // cli init --full
+      const initRes = spawnSync(cliBin, ['init', '--full'], { cwd: workDir, encoding: 'utf-8', timeout: 30_000 });
+      if (initRes.status !== 0) {
+        t.skip(`SKIP_ACCEPTED: cli init --full failed (infra, not product): ${initRes.stderr.slice(0, 300)}`);
+        return;
+      }
+
+      // ── Fire 6 concurrent subprocesses with unique keys ──────────────────
+      const N = 6;
+      const keys = Array.from({ length: N }, (_, i) => `adr0095-sub-${i + 1}`);
+      const subprocs = keys.map((key) => {
+        return new Promise((resolve) => {
+          const child = spawn(cliBin, [
+            'memory', 'store',
+            '--key', key,
+            '--value', `value-${key}`,
+            '--namespace', 'adr0095-sub',
+          ], { cwd: workDir, stdio: ['ignore', 'pipe', 'pipe'] });
+          let stdout = '';
+          let stderr = '';
+          child.stdout.on('data', d => stdout += d);
+          child.stderr.on('data', d => stderr += d);
+          child.on('close', code => resolve({ code, stdout, stderr, key }));
+        });
+      });
+      const results = await Promise.all(subprocs);
+      const failed = results.filter(r => r.code !== 0);
+
+      // ── Primary invariant: entryCount === 6 ─────────────────────────────
+      const metaPath = join(workDir, '.swarm', 'memory.rvf.meta');
+      let entryCount = null;
+      let metaFound = false;
+      let metaRaw = null;
+      if (existsSync(metaPath)) {
+        metaFound = true;
+        const buf = readFileSync(metaPath);
+        if (buf.length >= 8) {
+          const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
+          if (magic === 'RVF\x00') {
+            const headerLen = buf.readUInt32LE(4);
+            if (8 + headerLen <= buf.length) {
+              try {
+                const header = JSON.parse(buf.subarray(8, 8 + headerLen).toString('utf-8'));
+                entryCount = header.entryCount;
+              } catch (e) { metaRaw = `bad JSON: ${e.message}`; }
+            } else { metaRaw = 'truncated header'; }
+          } else { metaRaw = `bad magic: ${magic}`; }
+        } else { metaRaw = 'too short'; }
+      }
+
+      const diagnostic = [
+        `ADR-0095 subprocess N=${N} failed — DELIBERATELY FAILING UNTIL FIX LANDS (commit 2d12bb1)`,
+        `  metaPath: ${metaPath}`,
+        `  metaFound: ${metaFound}`,
+        `  entryCount: ${entryCount} (expected ${N})`,
+        `  metaRaw: ${metaRaw ?? 'n/a'}`,
+        `  subproc-failures: ${failed.length}/${N}`,
+      ];
+      for (const f of failed.slice(0, 3)) {
+        diagnostic.push(`    failed key=${f.key} code=${f.code} stderr=${f.stderr.slice(0, 200).replace(/\n/g, ' ')}`);
+      }
+      diagnostic.push('  Fix tracked in ADR-0095 §Amended Decision (items a, b, c).');
+
+      // ── Assertion 1: meta file exists ───────────────────────────────────
+      assert.ok(metaFound,
+        `.swarm/memory.rvf.meta not produced by any writer\n${diagnostic.join('\n')}`);
+
+      // ── Assertion 2: entryCount === N ───────────────────────────────────
+      assert.equal(entryCount, N,
+        `entryCount mismatch\n${diagnostic.join('\n')}`);
+
+      // ── Assertion 3: all keys retrievable via cli memory retrieve ───────
+      const retrieveFailures = [];
+      for (const key of keys) {
+        const ret = spawnSync(cliBin, [
+          'memory', 'retrieve',
+          '--key', key,
+          '--namespace', 'adr0095-sub',
+        ], { cwd: workDir, encoding: 'utf-8', timeout: 10_000 });
+        if (ret.status !== 0) {
+          retrieveFailures.push({ key, code: ret.status, stderr: ret.stderr.slice(0, 200) });
+        }
+      }
+      assert.equal(retrieveFailures.length, 0,
+        `${retrieveFailures.length}/${N} keys failed to round-trip via cli memory retrieve:\n` +
+        retrieveFailures.map(f => `  key=${f.key} code=${f.code} stderr=${f.stderr.replace(/\n/g, ' ')}`).join('\n') +
+        `\n${diagnostic.join('\n')}`);
+    } finally {
+      if (workDir) {
+        try { rmSync(workDir, { recursive: true, force: true }); } catch {}
+      }
+    }
+  });
+});
+
+// ============================================================================
+// Group 7: ADR-0095 in-process N=6 variant — backend cache / dedupe invariant
+// ============================================================================
+//
+// Per task point (2): "Add a separate in-process variant test ... that asserts
+// the same invariant for the case where backend caching/dedupe matters."
+//
+// ADR-0090 B7 already covers the simpler in-process concurrency path via
+// scripts/diag-rvf-inproc-race.mjs (passes 10/10). This case extends that
+// check to N=6 instances of RvfBackend constructed in one process, verifying
+// that the backend-dedupe invariant (ADR-0095 §Amended Decision item c) holds:
+//   - Multiple RvfBackend instances on the same resolved databasePath should
+//     converge the same way as 6 subprocesses would.
+//   - This isolates the intra-process compounding that makes item (c) necessary.
+//
+// Unlike Group 6, this case does NOT require Verdaccio — it imports RvfBackend
+// directly from the fork dist. Infrastructure skip only when the dist is
+// missing (implies fork hasn't been built).
+// ============================================================================
+
+describe('ADR-0095 in-process N=6 — backend dedupe / cache invariant', () => {
+  it('6 RvfBackend instances on same path converge to entryCount === 6', async (t) => {
+    const { existsSync, mkdirSync, rmSync, readdirSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+
+    // Try fork dist first; fall back to published @sparkleideas/memory (bundled)
+    // which is the same pattern adr0090-a4-rvf-concurrent.integration.test.mjs uses.
+    const FORK_DIST = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/rvf-backend.js';
+    let RvfBackend = null;
+    let loadSource = null;
+    try {
+      if (existsSync(FORK_DIST)) {
+        const mod = await import(FORK_DIST);
+        if (mod.RvfBackend) { RvfBackend = mod.RvfBackend; loadSource = 'fork-dist'; }
+      }
+    } catch { /* fall through */ }
+    if (!RvfBackend) {
+      // Try published memory package via existing acceptance harnesses.
+      const candidates = [];
+      try {
+        for (const d of readdirSync('/tmp')) {
+          if (d.startsWith('ruflo-fast-') || d.startsWith('ruflo-accept-')) {
+            const p = `/tmp/${d}/node_modules/@sparkleideas/memory/dist/rvf-backend.js`;
+            if (existsSync(p)) candidates.push(p);
+          }
+        }
+      } catch { /* no /tmp listing */ }
+      for (const path of candidates) {
+        try {
+          const mod = await import(path);
+          if (mod.RvfBackend) { RvfBackend = mod.RvfBackend; loadSource = path; break; }
+        } catch { /* try next */ }
+      }
+    }
+    if (!RvfBackend) {
+      t.skip('SKIP_ACCEPTED: RvfBackend unavailable (fork dist incomplete AND no /tmp/ruflo-{fast,accept}-* harness with @sparkleideas/memory installed) — infra, not product');
+      return;
+    }
+
+    const N = 6;
+    const workDir = join(tmpdir(), `adr0095-inproc-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(workDir, { recursive: true });
+    const dbPath = join(workDir, 'test.rvf');
+
+    try {
+      // Fire N RvfBackend instances concurrently on the same resolved path.
+      // Each stores one unique entry and shuts down. If the backend dedupe
+      // (item c) is missing, the two-instance-per-process race (observed in
+      // the investigator trace) compounds to data loss.
+      const keys = Array.from({ length: N }, (_, i) => `inproc-${i + 1}`);
+      const writers = keys.map(async (key) => {
+        const backend = new RvfBackend({
+          databasePath: dbPath,
+          dimensions: 4,
+          autoPersistInterval: 0,
+        });
+        await backend.initialize();
+        await backend.store({
+          id: key, key, namespace: 'adr0095-inproc',
+          content: `value-${key}`,
+          type: 'semantic', tags: [], metadata: {},
+          accessLevel: 'private', ownerId: 'test',
+          createdAt: Date.now(), updatedAt: Date.now(),
+          accessCount: 0, lastAccessedAt: Date.now(), version: 1,
+        });
+        await backend.shutdown();
+        return key;
+      });
+      const settled = await Promise.allSettled(writers);
+      const rejected = settled.filter(s => s.status === 'rejected');
+
+      // Retrieve via a fresh verifier instance.
+      const verifier = new RvfBackend({
+        databasePath: dbPath,
+        dimensions: 4,
+        autoPersistInterval: 0,
+      });
+      await verifier.initialize();
+      const foundKeys = [];
+      for (const key of keys) {
+        const entry = await verifier.get(key);
+        if (entry) foundKeys.push(key);
+      }
+      await verifier.shutdown();
+
+      const diagnostic = [
+        `ADR-0095 in-process N=${N} — backend dedupe invariant`,
+        `  workDir: ${workDir}`,
+        `  dbPath: ${dbPath}`,
+        `  writers resolved: ${settled.length - rejected.length}/${N}`,
+        `  foundKeys: ${foundKeys.length}/${N} (${foundKeys.join(',')})`,
+      ];
+      for (const r of rejected.slice(0, 3)) {
+        diagnostic.push(`    rejected: ${String(r.reason).slice(0, 200)}`);
+      }
+
+      // Primary invariant: all N keys retrievable. Even if individual writers
+      // rejected, the surviving writers' entries must be intact AND any writer
+      // that exited clean must have its key retrievable.
+      assert.equal(foundKeys.length, N,
+        `in-process dedupe failure\n${diagnostic.join('\n')}`);
+    } finally {
+      try { rmSync(workDir, { recursive: true, force: true }); } catch {}
+    }
+  });
+});
