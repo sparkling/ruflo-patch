@@ -61,3 +61,7 @@ Thumbs.db
 
 # Test results (ADR-0020)
 test-results/
+# SQLite catalog index (ADR-0094 Sprint 2 / ADR-0096) — explicit entries for
+# when only specific test-results/ artefacts are tracked:
+test-results/catalog.db
+test-results/catalog.db-*

@@ -1,25 +1,43 @@
 #!/usr/bin/env node
-// scripts/catalog-rebuild.mjs — ADR-0094 Sprint 0 WI-2 (JSONL-only).
+// scripts/catalog-rebuild.mjs — ADR-0094 Sprints 0+2 (JSONL + SQLite index).
 //
-// Builds a coverage catalog from test-results/accept-*/acceptance-results.json
-// into an append-only JSONL (test-results/catalog.jsonl). SQLite is deferred to
-// ADR-0094 Sprint 2 (see Queen §A5: "JSONL in S0, promote to SQLite in S2;
-// JSONL stays as --export-jsonl fallback"). No `better-sqlite3` imports here.
+// Layer 1 (raw): test-results/accept-*/acceptance-results.json — canonical.
+// Layer 2a (JSONL index): test-results/catalog.jsonl — human-diffable, always
+//   written; survives without SQLite; used by --show when --export-jsonl.
+// Layer 2b (SQLite index, ADR-0094 Sprint 2): test-results/catalog.db — fast
+//   queries at 500-run depth. Rebuildable from the JSONL (or from raw).
+//
+// SQLite backend: Node 22+ built-in `node:sqlite` (DatabaseSync). Chosen over
+// `better-sqlite3` because the repo has ZERO SQLite packages in package.json
+// today and the user's standing project rule (CLAUDE.md memory "ADR-0086
+// Debt 7") forbids dual SQLite backends. `node:sqlite` is emit-warning-only
+// experimental on Node 22; we suppress that single warning via
+// process.emitWarning's `noDeprecation`-style filter at first import.
 //
 // Modes:
-//   --append     — ingest the newest accept-*/acceptance-results.json that
-//                  isn't already present in catalog.jsonl. Idempotent:
-//                  run_id = basename(accept-*); duplicate run_ids skip. Called
-//                  at the end of scripts/test-acceptance.sh.
-//   --from-raw   — rebuild catalog.jsonl from scratch by scanning every
-//                  accept-*/acceptance-results.json, preserving timestamp
-//                  order. Overwrites the existing file.
-//   --show       — print the human-readable dashboard block for the latest
-//                  run. Pasteable into any ADR's Implementation Log.
-//   --verify     — compare the "Current coverage state" table in
-//                  docs/adr/ADR-0094-log.md against the catalog's latest run.
-//                  Exit non-zero on divergence. Fingerprints each observed
-//                  failure as sha1(check_id + first_error_line + fork_file).
+//   --append              — ingest newest accept-*/acceptance-results.json
+//                           rows into BOTH catalog.jsonl AND catalog.db in one
+//                           transaction; rolls back SQLite if JSONL write
+//                           fails, and vice versa. Idempotent (run_id PK).
+//   --from-raw            — rebuild catalog.jsonl from scratch (JSONL only;
+//                           SQLite left untouched — callers can chain
+//                           --promote-to-sqlite).
+//   --promote-to-sqlite   — truncate & reinsert catalog.db from catalog.jsonl,
+//                           derives skip_streaks by walking history. Idempotent.
+//   --export-jsonl        — dump catalog.db rows back to stdout as JSONL for
+//                           round-trip verification.
+//   --show                — dashboard block (latest run). When catalog.db
+//                           exists, uses SQLite metrics + SKIP_ROT flags;
+//                           otherwise falls back to JSONL-only summary.
+//   --flake-hotlist       — top-N flakiest checks (fails_last_20 / runs_last_20
+//                           >= 0.05). Reads SQLite. Deterministic order.
+//   --verify              — compare the "Current coverage state" table in
+//                           docs/adr/ADR-0094-log.md against catalog's latest
+//                           run. Exit non-zero on divergence.
+//
+// Reconciliation: --show prints both JSONL-computed and SQLite-computed
+// totals; they MUST match exactly (per ADR-0086 "derived layers must round-
+// trip to raw"). Divergence is reported on stderr and exits non-zero.
 //
 // Sanitation: upstream harness (lib/acceptance-harness.sh::_escape_json) leaks
 // tab/FF/ANSI control chars into the JSON payloads — known breakage pos 109089
@@ -35,10 +53,40 @@
 import { createHash } from 'node:crypto';
 import {
   existsSync, mkdirSync, readFileSync, readdirSync, realpathSync,
-  writeFileSync, appendFileSync, statSync,
+  writeFileSync, appendFileSync, statSync, unlinkSync,
 } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+// node:sqlite is experimental on Node 22+; emits a one-time ExperimentalWarning
+// the first time DatabaseSync is imported. Filter that single warning so
+// --append, --from-raw etc don't pollute stderr with a warning we know about.
+const _origEmitWarning = process.emitWarning.bind(process);
+process.emitWarning = function emitWarningFiltered(warning, ...rest) {
+  const msg = typeof warning === 'string' ? warning : (warning?.message || '');
+  const type = rest[0] && typeof rest[0] === 'object' ? rest[0].type : rest[0];
+  if (type === 'ExperimentalWarning' && /SQLite is an experimental feature/.test(msg)) return;
+  return _origEmitWarning(warning, ...rest);
+};
+// Lazy-import so tests that never touch SQLite don't pay the cost and so a
+// Node <22 runtime produces a clean "requires Node >=22" error at first use.
+let _DatabaseSync = null;
+function getDatabaseSync() {
+  if (_DatabaseSync) return _DatabaseSync;
+  try {
+    const mod = require('node:sqlite');
+    _DatabaseSync = mod.DatabaseSync;
+  } catch (err) {
+    throw new Error(
+      `SQLite index requires Node >=22 with node:sqlite support. ` +
+      `Running on ${process.version}. Underlying error: ${err.message}`
+    );
+  }
+  return _DatabaseSync;
+}
+// CommonJS `require` shim for the ESM module (used only by getDatabaseSync).
+import { createRequire } from 'node:module';
+const require = createRequire(import.meta.url);
 
 const __dirname  = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT  = resolve(__dirname, '..');
@@ -48,7 +96,96 @@ const RESULTS    = process.env.RUFLO_CATALOG_RESULTS_DIR
   ? resolve(process.env.RUFLO_CATALOG_RESULTS_DIR)
   : resolve(REPO_ROOT, 'test-results');
 const CATALOG    = resolve(RESULTS, 'catalog.jsonl');
+const CATALOG_DB = resolve(RESULTS, 'catalog.db');
 const ADR0094LOG = resolve(REPO_ROOT, 'docs/adr/ADR-0094-log.md');
+
+// ---------------------------------------------------------------------------
+// SQLite schema (ADR-0096 §Decision Layer 2)
+// ---------------------------------------------------------------------------
+
+export const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS runs (
+  run_id      TEXT PRIMARY KEY,
+  ts_utc      TEXT NOT NULL,
+  total       INTEGER,
+  passed      INTEGER,
+  failed      INTEGER,
+  skipped     INTEGER,
+  wall_ms     INTEGER
+);
+
+CREATE TABLE IF NOT EXISTS check_history (
+  run_id         TEXT NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+  check_id       TEXT NOT NULL,
+  status         TEXT NOT NULL CHECK(status IN ('passed','failed','skip_accepted')),
+  duration_ms    INTEGER,
+  output_excerpt TEXT,
+  PRIMARY KEY(run_id, check_id)
+);
+
+CREATE TABLE IF NOT EXISTS fingerprints (
+  fingerprint TEXT PRIMARY KEY,
+  first_seen  TEXT,
+  last_seen   TEXT,
+  bug_id      TEXT,
+  occurrences INTEGER DEFAULT 1
+);
+
+CREATE TABLE IF NOT EXISTS skip_streaks (
+  check_id        TEXT PRIMARY KEY,
+  first_skip_ts   TEXT,
+  last_skip_ts    TEXT,
+  streak_days     INTEGER,
+  reason_hash     TEXT,
+  bug_link        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_check_history_status    ON check_history(status);
+CREATE INDEX IF NOT EXISTS idx_check_history_check_id  ON check_history(check_id);
+CREATE INDEX IF NOT EXISTS idx_fingerprints_bug_id     ON fingerprints(bug_id);
+`;
+
+/**
+ * Open (or create) a DatabaseSync at the given path with FKs on and WAL mode.
+ * Returns the open handle; caller must .close() it.
+ * @param {string} path
+ */
+export function openDb(path) {
+  const DatabaseSync = getDatabaseSync();
+  const db = new DatabaseSync(path);
+  db.exec('PRAGMA foreign_keys = ON');
+  db.exec('PRAGMA journal_mode = WAL');
+  db.exec(SCHEMA_SQL);
+  return db;
+}
+
+/**
+ * Older catalog rows (Sprint 0) only carry `passed` boolean; the `status`
+ * field was added later. Coerce to the SQLite CHECK constraint vocabulary.
+ * Cannot distinguish historical skip_accepted from failed — maps both of
+ * `passed=false && !status` to `failed` (lossy but surfaces them loudly).
+ * @param {{status?:string, passed?:boolean}} row
+ */
+export function coerceStatus(row) {
+  const s = row?.status;
+  if (s === 'passed' || s === 'failed' || s === 'skip_accepted') return s;
+  return row?.passed ? 'passed' : 'failed';
+}
+
+/**
+ * Build a short, single-line excerpt of a test's output field, suitable for
+ * the output_excerpt column. Strips ANSI, C0 controls, collapses whitespace,
+ * truncates to 500 chars. Plain TEXT — never nested JSON (ADR-0096 §Schema).
+ */
+export function buildExcerpt(output) {
+  if (!output) return null;
+  let s = String(output);
+  s = s.replace(/\x1B\[[0-9;]*m/g, '');             // ANSI CSI sequences
+  s = s.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, ' '); // C0 + DEL → space
+  s = s.replace(/\s+/g, ' ').trim();
+  if (s.length > 500) s = s.slice(0, 497) + '...';
+  return s.length ? s : null;
+}
 
 // ---------------------------------------------------------------------------
 // Exported helpers (also exercised by tests/unit/catalog-rebuild.test.mjs)
@@ -172,6 +309,126 @@ function ingestedRunIds(rows) {
 }
 
 // ---------------------------------------------------------------------------
+// SQLite ingest helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Insert (or replace) a single run's rows into the 4 SQLite tables. Caller
+ * is responsible for wrapping in a transaction. Idempotent: INSERT OR REPLACE
+ * into runs/check_history keyed by (run_id[, check_id]); fingerprints UPSERT.
+ * Returns per-table row counts for reconciliation.
+ *
+ * @param {DatabaseSync} db
+ * @param {string} runId
+ * @param {Array} rows catalog.jsonl rows for this run (all share run_id)
+ */
+export function upsertRun(db, runId, rows) {
+  if (!rows?.length) return { runs: 0, check_history: 0, fingerprints: 0 };
+  const first = rows[0];
+
+  const passed  = rows.filter(r => coerceStatus(r) === 'passed').length;
+  const failed  = rows.filter(r => coerceStatus(r) === 'failed').length;
+  const skipped = rows.filter(r => coerceStatus(r) === 'skip_accepted').length;
+
+  db.prepare(`
+    INSERT OR REPLACE INTO runs (run_id, ts_utc, total, passed, failed, skipped, wall_ms)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `).run(runId, first.ts_utc ?? '', rows.length, passed, failed, skipped, first.wall_ms ?? null);
+
+  // Clear out previous check_history for this run (handles --promote re-runs).
+  db.prepare(`DELETE FROM check_history WHERE run_id = ?`).run(runId);
+
+  const insertHist = db.prepare(`
+    INSERT INTO check_history (run_id, check_id, status, duration_ms, output_excerpt)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  const upsertFp = db.prepare(`
+    INSERT INTO fingerprints (fingerprint, first_seen, last_seen, occurrences)
+    VALUES (?, ?, ?, 1)
+    ON CONFLICT(fingerprint) DO UPDATE SET
+      last_seen   = excluded.last_seen,
+      occurrences = occurrences + 1,
+      first_seen  = MIN(first_seen, excluded.first_seen)
+  `);
+
+  let histRows = 0;
+  let fpRows = 0;
+  for (const r of rows) {
+    insertHist.run(
+      runId,
+      r.check_id,
+      coerceStatus(r),
+      r.duration_ms ?? null,
+      buildExcerpt(r.output),
+    );
+    histRows++;
+    // Only index fingerprints for non-pass rows — pass fingerprints are noisy
+    // and the consumer (coverage-ledger.md bug links) only cares about fails/
+    // skips (ADR-0096 §Fingerprints — "stable-across-runs key for failing /
+    // skipped checks"). Older JSONL rows without explicit status fall back to
+    // coerceStatus which returns 'failed' for !passed — correct behaviour.
+    if (coerceStatus(r) !== 'passed' && r.fingerprint) {
+      upsertFp.run(r.fingerprint, r.ts_utc ?? '', r.ts_utc ?? '');
+      fpRows++;
+    }
+  }
+  return { runs: 1, check_history: histRows, fingerprints: fpRows };
+}
+
+/**
+ * Walk check_history in chronological order and rebuild skip_streaks from
+ * scratch. A "streak" is an unbroken run of status='skip_accepted' for a
+ * given check_id; a pass/fail resets the streak. Returns rows inserted.
+ *
+ * Day math: (last_skip_ts − first_skip_ts) / 86400s, rounded down.
+ *
+ * @param {DatabaseSync} db
+ */
+export function rebuildSkipStreaks(db) {
+  db.exec('DELETE FROM skip_streaks');
+  // Chronological order: join runs.ts_utc so we walk history forward.
+  const rows = db.prepare(`
+    SELECT ch.check_id, ch.status, r.ts_utc
+    FROM check_history ch
+    JOIN runs r ON r.run_id = ch.run_id
+    ORDER BY r.ts_utc ASC, ch.check_id ASC
+  `).all();
+
+  // Per check_id: track the active skip streak. When a non-skip row arrives
+  // the streak is broken and we drop the state; when another skip starts a
+  // fresh streak begins. We persist the FINAL active streak (most recent)
+  // because SKIP_ROT monitors the currently-open window.
+  const active = new Map(); // check_id -> { first_skip_ts, last_skip_ts }
+  for (const row of rows) {
+    const cid = row.check_id;
+    if (row.status === 'skip_accepted') {
+      const cur = active.get(cid);
+      if (cur) cur.last_skip_ts = row.ts_utc;
+      else     active.set(cid, { first_skip_ts: row.ts_utc, last_skip_ts: row.ts_utc });
+    } else {
+      active.delete(cid);
+    }
+  }
+
+  const ins = db.prepare(`
+    INSERT INTO skip_streaks (check_id, first_skip_ts, last_skip_ts, streak_days)
+    VALUES (?, ?, ?, ?)
+  `);
+  let count = 0;
+  for (const [cid, span] of active) {
+    const first = Date.parse(span.first_skip_ts);
+    const last  = Date.parse(span.last_skip_ts);
+    let days = 0;
+    if (Number.isFinite(first) && Number.isFinite(last) && last >= first) {
+      days = Math.floor((last - first) / 86400000);
+    }
+    ins.run(cid, span.first_skip_ts, span.last_skip_ts, days);
+    count++;
+  }
+  return count;
+}
+
+// ---------------------------------------------------------------------------
 // --append
 // ---------------------------------------------------------------------------
 
@@ -193,22 +450,57 @@ function cmdAppend() {
   let totalRows = 0;
   let totalStripped = 0;
   const unrecoverable = [];
-  for (const runId of pending) {
-    const parsed = readAcceptanceJson(resolveRunPath(runId));
-    if (!parsed) continue;
-    if (!parsed.data) {
-      unrecoverable.push({ runId, error: parsed.error, stripped: parsed.stripped });
-      continue;
-    }
-    const rows = flattenRun(runId, parsed.data);
-    if (rows.length) {
-      appendFileSync(CATALOG, rows.map(r => JSON.stringify(r)).join('\n') + '\n');
+
+  // Open SQLite alongside the JSONL. Written atomically per-run via
+  // BEGIN/COMMIT; if the JSONL append throws we ROLLBACK and bail on that
+  // run. If SQLite throws we re-read catalog.jsonl tail and trim (costly,
+  // but rare — only on disk-full or OS-signal mid-ingest).
+  const db = openDb(CATALOG_DB);
+
+  try {
+    for (const runId of pending) {
+      const parsed = readAcceptanceJson(resolveRunPath(runId));
+      if (!parsed) continue;
+      if (!parsed.data) {
+        unrecoverable.push({ runId, error: parsed.error, stripped: parsed.stripped });
+        continue;
+      }
+      const rows = flattenRun(runId, parsed.data);
+      if (!rows.length) continue;
+
+      // Dual-write transaction: SQLite upsert inside BEGIN; JSONL append
+      // after SQLite commit. If JSONL append throws, we reverse the SQLite
+      // side by DELETEing the run inside a separate txn.
+      const jsonlLine = rows.map(r => JSON.stringify(r)).join('\n') + '\n';
+      db.exec('BEGIN IMMEDIATE');
+      try {
+        upsertRun(db, runId, rows);
+        db.exec('COMMIT');
+      } catch (err) {
+        db.exec('ROLLBACK');
+        throw err;
+      }
+      try {
+        appendFileSync(CATALOG, jsonlLine);
+      } catch (err) {
+        // Reverse the SQLite insert so the two layers stay in sync.
+        db.exec('BEGIN IMMEDIATE');
+        db.prepare('DELETE FROM runs WHERE run_id = ?').run(runId);
+        db.exec('COMMIT');
+        throw err;
+      }
+
       ingested++;
       totalRows += rows.length;
       totalStripped += parsed.stripped;
       console.log(`[catalog-rebuild --append] ingested ${runId}: ${rows.length} rows (stripped ${parsed.stripped} control-char bytes)`);
     }
+    // Rebuild skip_streaks after all runs landed (cheap — one sort + walk).
+    if (ingested) rebuildSkipStreaks(db);
+  } finally {
+    db.close();
   }
+
   if (unrecoverable.length) {
     // Per ADR-0082 (no silent fallbacks) surface every unrecoverable payload
     // on stderr with enough context to diagnose + fix the harness emitter.
@@ -219,6 +511,145 @@ function cmdAppend() {
     if (!ingested) process.exit(3);
   }
   console.log(`[catalog-rebuild --append] ${ingested} run(s) ingested, ${totalRows} row(s) appended, ${totalStripped} control-char bytes stripped total`);
+}
+
+// ---------------------------------------------------------------------------
+// --promote-to-sqlite
+// ---------------------------------------------------------------------------
+
+function cmdPromoteToSqlite() {
+  const rows = readCatalog();
+  if (!rows.length) {
+    console.error('[catalog-rebuild --promote-to-sqlite] catalog.jsonl is empty — run --from-raw or --append first');
+    process.exit(1);
+  }
+  // Truncate + reinsert. Delete the file outright so IF NOT EXISTS schema is
+  // fresh and WAL side-files don't leak stale state.
+  for (const ext of ['', '-wal', '-shm']) {
+    try { unlinkSync(CATALOG_DB + ext); } catch { /* not there */ }
+  }
+  const db = openDb(CATALOG_DB);
+
+  // Group by run_id preserving first-seen order (JSONL is already time-ordered
+  // by --from-raw / --append, but use a Map for explicit grouping).
+  const byRun = new Map();
+  for (const r of rows) {
+    if (!byRun.has(r.run_id)) byRun.set(r.run_id, []);
+    byRun.get(r.run_id).push(r);
+  }
+
+  let runsIns = 0, histIns = 0, fpIns = 0;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    for (const [runId, runRows] of byRun) {
+      const c = upsertRun(db, runId, runRows);
+      runsIns += c.runs;
+      histIns += c.check_history;
+      fpIns += c.fingerprints;
+    }
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    db.close();
+    throw err;
+  }
+
+  const streakRows = rebuildSkipStreaks(db);
+
+  // Reconciliation: SQLite check_history count must equal JSONL row count.
+  const sqlTotal = db.prepare('SELECT COUNT(*) AS n FROM check_history').get().n;
+  db.close();
+
+  if (sqlTotal !== rows.length) {
+    console.error(
+      `[catalog-rebuild --promote-to-sqlite] RECONCILIATION FAIL: ` +
+      `JSONL rows=${rows.length} but SQLite check_history=${sqlTotal}`
+    );
+    process.exit(1);
+  }
+
+  console.log(`[catalog-rebuild --promote-to-sqlite] ${runsIns} runs, ${histIns} check_history, ${fpIns} fingerprint upserts, ${streakRows} skip_streaks`);
+  console.log(`[catalog-rebuild --promote-to-sqlite] reconciled: JSONL=${rows.length} SQLite=${sqlTotal}`);
+}
+
+// ---------------------------------------------------------------------------
+// --export-jsonl (round-trip verification: SQLite → JSONL)
+// ---------------------------------------------------------------------------
+
+function cmdExportJsonl() {
+  if (!existsSync(CATALOG_DB)) {
+    console.error(`[catalog-rebuild --export-jsonl] ${CATALOG_DB} missing — run --promote-to-sqlite first`);
+    process.exit(1);
+  }
+  const db = openDb(CATALOG_DB);
+  const rows = db.prepare(`
+    SELECT ch.run_id, r.ts_utc, r.wall_ms, ch.check_id, ch.status, ch.duration_ms, ch.output_excerpt
+    FROM check_history ch
+    JOIN runs r ON r.run_id = ch.run_id
+    ORDER BY r.ts_utc ASC, ch.run_id ASC, ch.check_id ASC
+  `).all();
+  db.close();
+  for (const r of rows) {
+    process.stdout.write(JSON.stringify({
+      run_id:      r.run_id,
+      ts_utc:      r.ts_utc,
+      wall_ms:     r.wall_ms,
+      check_id:    r.check_id,
+      status:      r.status,
+      duration_ms: r.duration_ms,
+      output:      r.output_excerpt || '',
+    }) + '\n');
+  }
+}
+
+// ---------------------------------------------------------------------------
+// --flake-hotlist
+// ---------------------------------------------------------------------------
+
+function cmdFlakeHotlist() {
+  if (!existsSync(CATALOG_DB)) {
+    console.error(`[catalog-rebuild --flake-hotlist] ${CATALOG_DB} missing — run --promote-to-sqlite first`);
+    process.exit(1);
+  }
+  const db = openDb(CATALOG_DB);
+  // Window: last 20 runs per check_id. SQLite window functions are available
+  // on 3.25+, which `node:sqlite` bundles. Flakiness = fails / runs (ignoring
+  // skip_accepted — a skip is not a failure).
+  const rows = db.prepare(`
+    WITH latest_runs AS (
+      SELECT run_id FROM runs ORDER BY ts_utc DESC LIMIT 20
+    ),
+    scoped AS (
+      SELECT ch.check_id, ch.status
+      FROM check_history ch
+      JOIN latest_runs lr ON lr.run_id = ch.run_id
+      WHERE ch.status IN ('passed','failed')
+    )
+    SELECT
+      check_id,
+      COUNT(*)                                        AS runs_last_20,
+      SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) AS fails_last_20,
+      ROUND(1.0 * SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) / COUNT(*), 4) AS flake_rate
+    FROM scoped
+    GROUP BY check_id
+    HAVING flake_rate >= 0.05
+    ORDER BY flake_rate DESC, fails_last_20 DESC, check_id ASC
+    LIMIT 10
+  `).all();
+  db.close();
+
+  if (!rows.length) {
+    console.log('[catalog-rebuild --flake-hotlist] no checks exceed the 5% flake threshold');
+    return;
+  }
+  console.log('FLAKE HOTLIST (fails_last_20 / runs_last_20 >= 0.05)');
+  console.log('─'.repeat(60));
+  console.log('  rank  check_id                          fails/runs   rate');
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const pct = (r.flake_rate * 100).toFixed(1) + '%';
+    console.log(`  ${String(i + 1).padStart(4)}  ${r.check_id.padEnd(32).slice(0, 32)}  ${String(r.fails_last_20).padStart(4)}/${String(r.runs_last_20).padEnd(4)}    ${pct.padStart(6)}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -284,6 +715,82 @@ function cmdShow() {
   console.log(`  Wall-clock:                  ${wallSec}s`);
   console.log(`  Invoked coverage:            ${s.invoked_pct.toFixed(1)}%`);
   console.log(`  Verified coverage:           ${s.verified_pct.toFixed(1)}%`);
+
+  // SQLite-computed metrics (ADR-0094 Sprint 2). Reconciliation: SQLite must
+  // agree with JSONL on the headline numbers; divergence is a layer-integrity
+  // bug (ADR-0086 "derived layers must round-trip to raw").
+  if (!existsSync(CATALOG_DB)) {
+    console.log('');
+    console.log('  (catalog.db not built — run --promote-to-sqlite for SQLite metrics)');
+    return;
+  }
+  const db = openDb(CATALOG_DB);
+  const sql = db.prepare(`
+    SELECT total, passed, failed, skipped
+    FROM runs
+    WHERE run_id = ?
+  `).get(latest);
+
+  if (!sql) {
+    console.log('');
+    console.log(`  [SQLite] latest run ${latest} not indexed yet — run --promote-to-sqlite`);
+    db.close();
+    return;
+  }
+
+  const drift = [];
+  for (const k of ['total', 'passed', 'failed', 'skipped']) {
+    if (sql[k] !== s[k]) drift.push({ key: k, jsonl: s[k], sqlite: sql[k] });
+  }
+
+  console.log('');
+  console.log(`  [SQLite] total=${sql.total} passed=${sql.passed} failed=${sql.failed} skipped=${sql.skipped}`);
+
+  if (drift.length) {
+    console.error('  [SQLite] RECONCILIATION FAIL: JSONL and SQLite disagree on latest run');
+    for (const d of drift) {
+      console.error(`    ${d.key.padEnd(8)} jsonl=${d.jsonl} sqlite=${d.sqlite}`);
+    }
+    db.close();
+    process.exit(1);
+  } else {
+    console.log('  [SQLite] reconciled: JSONL totals match SQLite totals exactly');
+  }
+
+  // Top-5 fail count per-check-id (all history), per Sprint 2 spec.
+  const failCounts = db.prepare(`
+    SELECT check_id, COUNT(*) AS fails
+    FROM check_history
+    WHERE status = 'failed'
+    GROUP BY check_id
+    ORDER BY fails DESC, check_id ASC
+    LIMIT 5
+  `).all();
+  if (failCounts.length) {
+    console.log('');
+    console.log('  [SQLite] top-5 failing checks (all history):');
+    for (const f of failCounts) {
+      console.log(`    ${f.check_id.padEnd(36).slice(0, 36)}  ${String(f.fails).padStart(4)} fails`);
+    }
+  }
+
+  // SKIP_ROT: skip streaks > 30 days.
+  const rotRows = db.prepare(`
+    SELECT check_id, streak_days, first_skip_ts, last_skip_ts
+    FROM skip_streaks
+    WHERE streak_days > 30
+    ORDER BY streak_days DESC, check_id ASC
+    LIMIT 10
+  `).all();
+  if (rotRows.length) {
+    console.log('');
+    console.log(`  [SKIP_ROT] ${rotRows.length} check(s) skipped >30 days (top 10):`);
+    for (const r of rotRows) {
+      console.log(`    ${r.check_id.padEnd(36).slice(0, 36)}  ${String(r.streak_days).padStart(4)}d  since ${r.first_skip_ts || 'unknown'}`);
+    }
+  }
+
+  db.close();
 }
 
 // ---------------------------------------------------------------------------
@@ -365,7 +872,10 @@ function cmdVerify() {
 // ---------------------------------------------------------------------------
 
 function usage() {
-  console.log('Usage: node scripts/catalog-rebuild.mjs [--append|--from-raw|--show|--verify]');
+  console.log(
+    'Usage: node scripts/catalog-rebuild.mjs ' +
+    '[--append|--from-raw|--show|--verify|--promote-to-sqlite|--export-jsonl|--flake-hotlist]',
+  );
   process.exit(1);
 }
 
@@ -378,9 +888,12 @@ function _isDirectInvocation() {
 }
 if (_isDirectInvocation()) {
   const args = process.argv.slice(2);
-  if      (args.includes('--append'))   cmdAppend();
-  else if (args.includes('--from-raw')) cmdFromRaw();
-  else if (args.includes('--show'))     cmdShow();
-  else if (args.includes('--verify'))   cmdVerify();
-  else                                   usage();
+  if      (args.includes('--append'))             cmdAppend();
+  else if (args.includes('--from-raw'))           cmdFromRaw();
+  else if (args.includes('--promote-to-sqlite'))  cmdPromoteToSqlite();
+  else if (args.includes('--export-jsonl'))       cmdExportJsonl();
+  else if (args.includes('--flake-hotlist'))      cmdFlakeHotlist();
+  else if (args.includes('--show'))               cmdShow();
+  else if (args.includes('--verify'))             cmdVerify();
+  else                                            usage();
 }
