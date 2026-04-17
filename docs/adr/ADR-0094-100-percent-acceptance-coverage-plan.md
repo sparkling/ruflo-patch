@@ -7,7 +7,7 @@
   - Implementation Log → `docs/adr/ADR-0094-log.md`
   - Bug table → `docs/bugs/coverage-ledger.md`
   - Per-check history + dashboard → `test-results/catalog.db` + `test-results/CATALOG.md` (via `scripts/catalog-rebuild.mjs`; see ADR-0096)
-- **Related**: ADR-0082 (no silent fallbacks — foundation), ADR-0087 (adversarial prompting — amended with §out-of-scope probe rule), ADR-0090 (Tier A+B baseline), ADR-0093 (controller wiring gaps), ADR-0095 (RVF inter-process convergence — carries BUG-0008), ADR-0096 (coverage catalog + skip hygiene), ADR-0097 (check-code quality program)
+- **Related**: ADR-0082 (no silent fallbacks — foundation), ADR-0087 (adversarial prompting — amended with §out-of-scope probe rule), ADR-0090 (Tier A+B baseline), ADR-0093 (controller wiring gaps), ADR-0095 (RVF inter-process convergence — carries BUG-0008), ADR-0096 (coverage catalog + skip hygiene), ADR-0097 (check-code quality program), ADR-0098 (execution methodology — sprint DAG + shared-premise defenses + fork-patch ceiling)
 - **Surfaced by**: Coverage gap audit (`/tmp/coverage-gap-audit.md`, 2026-04-16) — found 26/239 MCP tools exercised (11%)
 
 ## Context
@@ -164,6 +164,7 @@ Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Lo
 - **ADR-0096** — Coverage catalog + skip hygiene. Required for the `<from catalog>` metric pointers and the `skip_streak_days` rule.
 - **ADR-0097** — Check-code quality program. Required before Phase 9+ to avoid repeating the 33% first-run-failure rate from Phase 7.
 - **ADR-0087 addendum** — Out-of-scope probe rule (in-place edit, tracked in the ADR-0094-log.md 2026-04-17 t3-2 post-mortem).
+- **ADR-0098** — Execution methodology (sprint DAG, hive-then-swarm pattern, shared-premise defenses, ship line, fork-patch ceiling). Auto-sunsets when this ADR flips `Implemented` per ADR-0098 §Acceptance.
 
 ## Maintenance Manifesto
 
