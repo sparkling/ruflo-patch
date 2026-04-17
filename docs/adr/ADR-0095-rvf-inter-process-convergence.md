@@ -1,10 +1,15 @@
 # ADR-0095: RVF Inter-Process Write Convergence
 
-- **Status**: Proposed — 2026-04-17
-- **Date**: 2026-04-17
-- **Scope**: `v3/@claude-flow/memory/src/rvf-backend.ts` — `persistToDisk`, `persistToDiskInner`, `mergePeerStateBeforePersist`, `compactWal`, `acquireLock`
+- **Status**: Accepted — Amended 2026-04-17
+- **Date**: 2026-04-17 (authored), 2026-04-17 (amended after Sprint-1 investigation)
+- **Scope**: `v3/@claude-flow/memory/src/rvf-backend.ts` — `tryNativeInit` (line 605), `persistToDiskInner` (line 1384 — specifically the shared-tmp-path at line 1450), backend construction call sites (MemoryManager + controller registry). `mergePeerStateBeforePersist` is explicitly **out of scope** for this ADR — the shipped implementation (lines 1298–1382) already does what the original §Decision proposed.
 - **Forked from**: ADR-0094 Open Item #1
-- **Related**: ADR-0086 (Storage Layer), ADR-0090 B7 (in-process multi-writer fix), ADR-0092 (native/pure-TS coexistence), ADR-0082 (no silent fallbacks), BUG-0008 (ledger)
+- **Related**: ADR-0086 (Storage Layer), ADR-0090 B7 (in-process multi-writer fix), ADR-0092 (native/pure-TS coexistence), ADR-0082 (no silent fallbacks), ADR-0088 (no daemon in CLI hot path), BUG-0008 (ledger)
+
+## Changelog
+
+- **2026-04-17 (authored)** — Proposed "read-meta-under-lock + merge + write" protocol.
+- **2026-04-17 (amended, same day)** — Sprint-1 investigator (`f4dd1ec`) established that the proposed protocol is already implemented at lines 1298–1382 and does not close the observed inter-process data-loss bug. Real root cause is a **3-layer backend flip race**: (1) silent catch in `tryNativeInit` (line 635) masks native-init races so 5 of 6 concurrent writers silently fall back to pure-TS (ADR-0082 violation); (2) native writers target the `.meta` sidecar while pure-TS writers target the main `.rvf` path — disjoint write targets mean the peer-merge never sees peer writes; (3) shared `.rvf.tmp` path at line 1450 causes cross-process `rename()` ENOENT collisions and transient SFVR-corruption reads. Amended §Decision replaces the merge-protocol proposal with a three-item program: fail-loud on native init once SFVR bytes exist, per-writer unique tmp paths, and dedupe RvfBackend construction per process. See §Investigation Findings (appended below) for the dispositive trace.
 
 ## Context
 
@@ -28,63 +33,169 @@ This is not an in-process race the B7 fix was designed for. It's a missing read-
 - `t3-2-concurrent` — the primary acceptance check. 6 parallel `cli memory store` with unique keys; expect `.meta.entryCount=6`, observe `1`.
 - `scripts/diag-rvf-interproc-race.mjs` — to be written as the regression guard for this ADR (the in-process diag cannot detect this).
 
-## Decision (Proposed)
+## Decision
 
-Adopt a **read-meta-under-lock + merge + write** protocol in `persistToDiskInner`. Under the advisory lock:
-1. Re-read `.meta` (or `.meta` sidecar under native coexistence).
-2. Replay WAL.
-3. Merge both sources into `this.entries` using `seenIds`-gated set-if-absent (inherits ADR-0090 B7 tombstone semantics).
-4. Write `.meta.tmp`, atomic rename.
-5. Unlink WAL.
+> **~~Struck 2026-04-17 — original proposal obsolete.~~** The original §Decision below proposed a "read-meta-under-lock + merge + write" protocol in `persistToDiskInner`. Sprint-1 investigation (see §Investigation Findings below) confirmed that `mergePeerStateBeforePersist` at `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:1298-1382` **already implements exactly this protocol**, including `.meta`/main-path fallback (lines 1309–1317), header validation (lines 1322–1331), entry replay (lines 1332–1343), and `seenIds`-gated set-if-absent merge (lines 1354–1361). Shipping the original proposal would be a no-op. Per ADR-0094 Maintenance Manifesto rule 1, the superseded text is preserved verbatim below.
+>
+> <details>
+> <summary>Original §Decision (superseded)</summary>
+>
+> > Adopt a **read-meta-under-lock + merge + write** protocol in `persistToDiskInner`. Under the advisory lock:
+> > 1. Re-read `.meta` (or `.meta` sidecar under native coexistence).
+> > 2. Replay WAL.
+> > 3. Merge both sources into `this.entries` using `seenIds`-gated set-if-absent (inherits ADR-0090 B7 tombstone semantics).
+> > 4. Write `.meta.tmp`, atomic rename.
+> > 5. Unlink WAL.
+>
+> </details>
+
+### Amended Decision (2026-04-17) — three-item program
+
+The real bug is a 3-layer backend-identity race occurring **before** the merge path is reached. The amended decision is a three-item program targeting the three distinct failure modes identified in §Investigation Findings. Each item is paired with the exact source location to edit and the invariant it enforces.
+
+#### a. Remove silent catch in `tryNativeInit`; enforce "once SFVR, always native-or-refuse"
+
+**Target**: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:605-641` — specifically the bare `catch {}` at line 635.
+
+**Current code** (quoted for the implementer):
+
+```ts
+// line 619
+if (fileExists(this.config.databasePath)) {
+  this.nativeDb = rvf.RvfDatabase.open(this.config.databasePath);
+} else {
+  this.nativeDb = rvf.RvfDatabase.create(this.config.databasePath, { ... });
+}
+...
+return true;
+} catch {                                               // line 635 — silent
+  if (this.config.verbose) {
+    console.log('[RvfBackend] @ruvector/rvf-node not available, using pure-TS fallback');
+  }
+  return false;
+}
+```
+
+**Problem**: at N=6 the investigator observed 5 of 6 processes returning `false` from this method because `RvfDatabase.open` races with a peer's in-flight `RvfDatabase.create` write and throws. The catch-all swallows every error shape — `MODULE_NOT_FOUND` (legitimate, falls back to pure-TS) is indistinguishable from `SFVR partial write` / `EBUSY` / `EAGAIN` (transient, should retry-or-refuse) or from the catastrophic "file has SFVR magic but open errored for some other reason" (fatal, must not fall back). This is the ADR-0082 violation called out in BUG-0008.
+
+**Expected behavior** after amendment:
+1. Detect whether `@ruvector/rvf-node` is installed **before** the `RvfDatabase.open/create` call (a module-resolution probe). If not installed → pure-TS fallback is legitimate, return `false` with no log suppression.
+2. If the module is installed **and** `this.config.databasePath` exists with the native SFVR magic at offset 0 (peek the first 4 bytes), enforce the **"once SFVR, always native-or-refuse"** invariant: retry `RvfDatabase.open` with bounded backoff (e.g. 3 tries × 50ms), and on final failure **throw** rather than return `false`. Pure-TS fallback in this state is silent data loss — it would write `RVF\0` bytes to a file that native readers will reject.
+3. If the module is installed and the file does not exist (or exists without SFVR magic), legitimate `RvfDatabase.create` path; on failure distinguish ENOENT-on-cold-start (benign — pure-TS is fine for fresh repo) from other I/O errors (fatal).
+4. Emit a single structured log line on any non-module-resolution failure (`[RvfBackend] native init failed: <code>` — never silent), even in non-verbose mode.
+
+**Why this closes the bug**: the 3-layer race exists because `tryNativeInit` returns `false` for transient cross-process races, flipping the backend identity. Once fail-loud, a peer's mid-write state either resolves (retry succeeds) or halts the caller (no pure-TS fallback writing to the main path). The "disjoint write targets" layer (item a's root cause) cannot form.
+
+#### b. Unique tmp path per writer
+
+**Target**: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:1449-1452` — specifically the shared `target + '.tmp'` literal.
+
+**Current code**:
+
+```ts
+// line 1449-1452
+// Atomic write: write to temp file then rename (crash-safe)
+const tmpPath = target + '.tmp';
+await writeFile(tmpPath, output);
+await rename(tmpPath, target);
+```
+
+**Problem**: all concurrent writers targeting the same `target` share a single `.tmp` file. When writer A's `rename(tmp, target)` wins, writer B's next `writeFile(tmpPath, ...)` is immediately followed by an `fs.rename(tmpPath, target)`, but B's tmp inode was replaced by A's (or already unlinked), producing either ENOENT or a corrupted-partial-write rename. Observed as the `ENOENT ... rename '.swarm/memory.rvf.tmp' -> '.swarm/memory.rvf'` crash.
+
+**Expected behavior** after amendment:
+
+```ts
+const tmpCounter = RvfBackend.nextTmpCounter();  // module-level atomic u32
+const tmpPath = `${target}.tmp.${process.pid}.${tmpCounter}`;
+await writeFile(tmpPath, output);
+await rename(tmpPath, target);
+```
+
+The atomic rename-to-final-target semantic is preserved (POSIX `rename(2)` is atomic whether source and destination have the same basename or not). Each writer owns its tmp inode until the rename instant. On process crash, a `reaper` at `initialize()` scans `dirname(target)` for `*.tmp.PID.*` files with stat `mtime` older than 10 minutes and unlinks them.
+
+**Why this closes the bug**: eliminates the cross-process rename race entirely. No two writers can observe each other's tmp path. This layer is independent of the native/pure-TS fix — it must land even if item (a) succeeds, because in-process concurrent writers (ADR-0090 B7's regime) share the same issue at a smaller blast radius.
+
+#### c. Dedupe RvfBackend construction per process
+
+**Target**: backend construction call sites — `v3/@claude-flow/memory/src/*.ts` (MemoryManager) and the controller registry path in agentdb-service.ts. Investigator traced **two** `tryNativeInit` invocations per `cli memory store` run (once with relative dbPath, once with resolved absolute path) indicating two RvfBackend instances race inside one process before any persist.
+
+**Expected behavior** after amendment:
+1. Normalize `this.config.databasePath` via `path.resolve()` at construction.
+2. Cache RvfBackend instances in a module-scope `Map<resolvedPath, RvfBackend>`. On repeat construction with the same resolved path, return the existing instance.
+3. Invalidate the cache entry if a subsequent operation throws ENOENT on the resolved path (foreign process deleted the file — treat as fresh-start and re-initialize).
+
+**Why this closes the bug**: eliminates the intra-process compounding of the inter-process race. Two instances in one process racing on `RvfDatabase.create`/`RvfDatabase.open` is a strict superset of what (a) guards against; deduping means only one native-init attempt per process per path, so (a)'s invariant is enforced without flapping.
+
+### Why these three items, together
+
+Items (a)+(b)+(c) form a closed set: (a) prevents silent identity flip, (c) prevents intra-process identity flapping, (b) handles the residual file-system-level race that exists even when backend identity is coherent. Removing any one item leaves a non-deterministic leak path visible in `scripts/diag-rvf-interproc-race.mjs`.
 
 ## Alternatives
 
-### A. Read-meta-under-lock + merge + write (recommended)
+The alternatives below (A/B/C/D) were authored against the wrong problem — they assumed the merge protocol was missing, which the shipped code contradicts. They are preserved as historical record and a lens on the design space; none of them close the 3-layer backend-identity race identified in §Investigation Findings.
+
+### A. Read-meta-under-lock + merge + write (original recommended — **wrong problem**)
 
 Every persist under the lock does a `loadFromDisk(mergeOnly=true)` before writing. Closes the inter-process hole deterministically.
 
 **Pros**: simple conceptual model ("lock + read-merge-write"); no new file artifacts; preserves WAL compaction semantics.
 **Cons**: double-read cost per persist (but we already hold the lock, so serialized writes amortize it).
 
-### B. WAL-tailing: don't unlink WAL, use offset watermarks
+**Amendment verdict**: already shipped at lines 1298–1382. Re-proposing it is a no-op.
+
+### B. WAL-tailing: don't unlink WAL, use offset watermarks — **wrong problem**
 
 Each writer tracks a WAL read offset. Subsequent writers read WAL from their watermark, merge peer entries, advance watermark. WAL never unlinks; compaction rewrites with offset 0.
 
 **Pros**: no extra disk reads during persist.
 **Cons**: WAL grows unbounded between full compactions; new "safe compaction" rule required; complicated cross-process offset state.
 
-### C. OS-level file-lock primitive (flock / fcntl) + single-writer serialization
+**Amendment verdict**: doesn't address backend identity flips. If 5 of 6 writers target the main path while 1 targets the sidecar, WAL tailing sees the same mis-partitioned writes.
+
+### C. OS-level file-lock primitive (flock / fcntl) + single-writer serialization — **wrong problem**
 
 Use `flock` instead of the current PID-based `.rvf.lock`. Writers queue; when it's your turn, you re-read everything fresh.
 
 **Pros**: OS guarantees; no application-level protocol risk.
 **Cons**: `flock` semantics differ across POSIX/macOS/NFS; Node.js has no built-in binding (needs native addon or external process); breaks the "simple advisory lock file" model ADR-0090 adopted deliberately.
 
-### D. Central writer process (daemon)
+**Amendment verdict**: stronger lock does not repair a backend that silently swallows init errors. A properly-queued pure-TS writer still writes to the wrong path.
+
+### D. Central writer process (daemon) — **wrong problem**
 
 One writer process owns `.rvf`; CLI processes send entries via IPC. Eliminates the race by eliminating concurrency.
 
 **Pros**: perfect correctness.
 **Cons**: contradicts ADR-0088 ("daemon in CLI hot path was eliminated in favor of file-based simplicity"); huge scope growth.
 
-## Recommendation
+**Amendment verdict**: architectural U-turn relative to ADR-0088. Not proportionate given items (a)+(b)+(c) fix the root cause in <200 LOC.
 
-Option **A**. Smallest diff, inherits existing lock + seenIds + tombstone infrastructure, closes the hole without new architectural debt.
+## Recommendation (amended)
+
+Adopt items (a), (b), (c) above as the chosen path — fail-loud native init, unique tmp paths per writer, dedupe RvfBackend per process. Explicit rejections:
+
+- **"Keep silent catch + migrate pure-TS to `.meta` sidecar."** Rejected: makes the two backends co-write to the same file, which accelerates rather than cures the race. Also masks the ADR-0082 violation in `tryNativeInit` — the silent catch would still be a latent silent-fallback hazard for future bugs.
+- **"Switch to Linux/macOS flock() or fcntl()."** Rejected: contradicts ADR-0090's deliberate simple-advisory-lock choice; introduces OS-binding complexity (Node has no stdlib `flock`, requires native addon or external binary); does not fix backend identity flips.
+- **"Single-writer daemon."** Rejected: contradicts ADR-0088 ("daemon in CLI hot path eliminated in favor of file-based simplicity"); huge scope growth for a bug that has a surgical fix.
 
 ## Acceptance criteria
 
 This ADR is Implemented when:
-1. `t3-2-concurrent` acceptance check passes green for 3 consecutive cascade runs across 3 days.
-2. A new `scripts/diag-rvf-interproc-race.mjs` (out-of-process N-subprocess race) passes 40/40 at N=2/4/8 (matches the B7 in-process diagnostic bar).
-3. `adr0086-rvf-integration.test.mjs` adds a case that spawns 6 subprocesses and verifies `entryCount=6` + all 6 embeddings retrievable.
-4. BUG-0008 transitions from `regressed` → `verified-green` → `closed` per the bug ledger state machine.
-5. ADR-0094 Open Item #1 strikes through with a link back to this ADR.
+
+1. **Subprocess race diag.** `scripts/diag-rvf-interproc-race.mjs` exits 0 at N=2, N=4, N=6, N=8 — **40 trials total** (10 per N) across a single cascade run, and 0 trials loud-failed with ENOENT or SFVR-corruption reads. Invocation: `node scripts/diag-rvf-interproc-race.mjs <N> 10`.
+2. **Acceptance stability bar (Queen Decision 5).** `t3-2-concurrent` acceptance check passes green for **3 runs per day × 3 consecutive days** against published `@sparkleideas/*` packages. Failure or SKIP on any run resets the counter.
+3. **Integration-level subprocess case.** `tests/unit/adr0086-rvf-integration.test.mjs` adds a new case that **spawns 6 subprocesses** (not mocked — real `child_process.spawn` of the installed CLI) with unique keys, and asserts `entryCount === 6` plus all 6 embeddings round-trip retrievable via `cli memory retrieve`. Existing in-process cases must continue to pass unchanged.
+4. **Ledger transition.** `BUG-0008` in `docs/bugs/coverage-ledger.md` transitions `regressed` → `verified-green` → `closed` per the ledger state machine, with references to this ADR's amended §Decision and the diag-script run that closed it.
+5. **No-pure-TS-on-SFVR invariant (grep/AST guard).** An acceptance guard in `lib/acceptance-adr0095-checks.sh` asserts: if `RvfBackend.metadataPath` resolution traced over a run shows any writer selecting the main `.rvf` path while SFVR bytes exist at that path, the check fails. Implementable as: after the diag run, inspect any `memory.rvf` + `memory.rvf.meta` residue — if the main file contains `SFVR` magic **and** the pure-TS `RVF\0` header coexists, that is a mixed-backend write pattern and the check fails.
+6. **No-shared-tmp invariant.** Running `scripts/diag-rvf-interproc-race.mjs --trace` (new flag) emits per-writer tmp-path samples; no two concurrent writers emit the same `.tmp` path. Enforced by inspecting the trace log after each N=8 run.
+7. **ADR-0094 Open Item #1** strikes through in `docs/adr/ADR-0094-100-percent-acceptance-coverage-plan.md` with a link to this ADR's amended §Decision.
 
 ## Risks
 
-- **Double-read cost** — mitigated by the amortization note above; measure with a micro-benchmark and fail CI if persist time exceeds 50ms under N=8.
-- **Cross-ADR coupling** — ADR-0086 ("Layer 1 Storage") implicitly assumes one writer-per-process. If this ADR changes the invariants, ADR-0086 needs a cross-link note.
-- **Native coexistence (ADR-0092)** — the re-read must use the `.meta` sidecar when native owns the main file. The current NATIVE_MAGIC peek logic already handles this; verify integration.
+- **Fail-loud in `tryNativeInit` may turn transient startup errors into fatal CLI exits.** An `open()` failure due to a peer's in-flight write is a real event. Mitigation: bounded retry (e.g. 3× 50ms) on transient error codes (EBUSY, EAGAIN, short-read / partial-magic detected); typed error check that distinguishes (i) `MODULE_NOT_FOUND` — pure-TS OK; (ii) ENOENT on cold start — pure-TS OK; (iii) transient retryable — bounded retry; (iv) file-present-with-SFVR-magic open-failure after retry — throw. The throw path must include the peer PID list read from `.rvf.lock` to aid diagnosis.
+- **Unique tmp path leaks on crash → tmp-dir cleanup drift.** Leftover `*.tmp.PID.N` files accumulate if a writer crashes between `writeFile` and `rename`. Mitigation: reaper at `initialize()` scans `dirname(target)` for `*.tmp.*` files older than 10 minutes and unlinks them. The mtime threshold is conservative — much longer than any legitimate persist — so a running peer's in-flight tmp is never reaped.
+- **Per-process RvfBackend cache staleness when a foreign process deletes the file.** Once the cache holds an instance tied to a now-deleted inode, subsequent operations fail with ENOENT. Mitigation: cache-invalidate on ENOENT; re-construct on next call (the cache is a keyed memoization, not ownership). Covered by AC #1 (N=2 with delete-racer is a trivial follow-on probe).
+- **Cross-ADR coupling (ADR-0082, ADR-0086, ADR-0088, ADR-0090, ADR-0092).** The amendment makes `tryNativeInit` a new ADR-0082 regression surface (silent-fallback elimination); ADR-0086 Layer-1-storage invariant gains an "SFVR owner" constraint; ADR-0088's "no daemon" guideline is re-affirmed (option D rejected); ADR-0090's advisory-lock choice is re-affirmed (option C rejected); ADR-0092's native/pure-TS coexistence model is tightened from "either backend is fine per call" to "once SFVR, always native-or-refuse." Cross-link notes must be added to each referenced ADR after this amendment ships.
 
 ## References
 
