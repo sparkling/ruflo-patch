@@ -117,9 +117,39 @@ All 5 principles are implemented or established as process. Potential future wor
 
 These are enhancements, not required for the ADR to be considered implemented.
 
+## Addendum (2026-04-17) — Out-of-scope probe rule
+
+**Trigger**: the ADR-0094 t3-2-concurrent failure survived TWO swarm fix attempts under the same architectural blind spot.
+
+1. Pre-session: ADR-0090 B7 shipped `scripts/diag-rvf-inproc-race.mjs` as a regression guard. The diag is an **in-process** race (4 RvfBackend instances in 1 node process, shared module state). The guard passes cleanly.
+2. This session (2026-04-17): the `fix-t3-2-rvf-concurrent` agent reported "CLI-simulation harness: 10/10 trials PASS". The simulation also ran **in-process subprocess-spawned**, but each subprocess did a single `store → process.exit(0)` — not the real acceptance scenario of 6 concurrent writers racing over a shared `.rvf.lock` across independent node processes with their own this.entries.
+
+Both "passing" guards hid the same bug class: **the guards confirmed the assumed architectural model (in-process shared state) rather than probing whether the model matched reality (inter-process no-shared-state)**. The real CLI test failed because the fix addressed the wrong scope.
+
+### The rule
+
+Every swarm-generated fix MUST ship with an **out-of-scope probe**: a test that would fail under the *opposite* architectural assumption. Before declaring a fix complete, the agent answers:
+
+1. **What architectural assumption does this fix rely on?** (e.g., "WAL is the merge source of truth"; "the race is in-process"; "store() is synchronous"; "compactWal runs on shutdown".)
+2. **What probe would fail if the opposite assumption held?** (e.g., "kill the process between store and compactWal"; "run N independent subprocesses"; "make WAL empty before persist".)
+3. **Does that probe pass?** If not, the fix is wrong-scope. Iterate before claiming victory.
+
+The probe goes in the same commit as the fix, named conspicuously (e.g., `scripts/diag-<adr>-<scope>-race.mjs`). `--opposite-assumption` is an encouraged CLI flag.
+
+### Why this rule matters more than "write tests"
+
+A targeted test with a shared architectural premise merely confirms the premise. The out-of-scope probe is the **adversarial prompting principle applied to fix verification**: ask what a senior engineer reviewing this in 3 years would say, and find the 3 ways the fix could be wrong. In-process guard ≠ inter-process proof. Simulation ≠ production. Mock ≠ real binding.
+
+### Integration
+
+- ADR-0094's Principle #5 ("Swarm-buildable") now requires this probe for every fix.
+- ADR-0094-log.md will carry a `### <date> — <bug-id> out-of-scope probe` subsection for each swarm-discovered bug.
+- ADR-0097 (Check-Code Quality Program) lint rule L-future: reject a fix commit that touches a scripts/diag-*.mjs file without a matching "opposite-assumption" assertion (manual review, not automated).
+
 ## Consequences
 
 - Slightly slower start to implementation (adversarial pass adds 5-10 minutes)
 - Significantly fewer wrong-direction implementations
 - CLAUDE.md becomes an increasingly valuable asset over time
 - Review bottleneck shifts from human throughput to AI context quality
+- (2026-04-17 addendum) Swarm fix verification time grows modestly (one extra probe per fix); false-confidence rate drops — measurable by the ratio of "swarm declared fix; real test still fails" events, target zero going forward.
