@@ -1,7 +1,7 @@
 # ADR-0095: RVF Inter-Process Write Convergence
 
-- **Status**: Accepted — Amended 2026-04-17
-- **Date**: 2026-04-17 (authored), 2026-04-17 (amended after Sprint-1 investigation)
+- **Status**: Accepted — Amended 2026-04-18
+- **Date**: 2026-04-17 (authored), 2026-04-17 (amended after Sprint-1 investigation), 2026-04-18 (amended after Sprint-1.2 Pass-2 investigation — items d1+d2 appended)
 - **Scope**: `v3/@claude-flow/memory/src/rvf-backend.ts` — `tryNativeInit` (line 605), `persistToDiskInner` (line 1384 — specifically the shared-tmp-path at line 1450), backend construction call sites (MemoryManager + controller registry). `mergePeerStateBeforePersist` is explicitly **out of scope** for this ADR — the shipped implementation (lines 1298–1382) already does what the original §Decision proposed.
 - **Forked from**: ADR-0094 Open Item #1
 - **Related**: ADR-0086 (Storage Layer), ADR-0090 B7 (in-process multi-writer fix), ADR-0092 (native/pure-TS coexistence), ADR-0082 (no silent fallbacks), ADR-0088 (no daemon in CLI hot path), BUG-0008 (ledger)
@@ -10,6 +10,7 @@
 
 - **2026-04-17 (authored)** — Proposed "read-meta-under-lock + merge + write" protocol.
 - **2026-04-17 (amended, same day)** — Sprint-1 investigator (`f4dd1ec`) established that the proposed protocol is already implemented at lines 1298–1382 and does not close the observed inter-process data-loss bug. Real root cause is a **3-layer backend flip race**: (1) silent catch in `tryNativeInit` (line 635) masks native-init races so 5 of 6 concurrent writers silently fall back to pure-TS (ADR-0082 violation); (2) native writers target the `.meta` sidecar while pure-TS writers target the main `.rvf` path — disjoint write targets mean the peer-merge never sees peer writes; (3) shared `.rvf.tmp` path at line 1450 causes cross-process `rename()` ENOENT collisions and transient SFVR-corruption reads. Amended §Decision replaces the merge-protocol proposal with a three-item program: fail-loud on native init once SFVR bytes exist, per-writer unique tmp paths, and dedupe RvfBackend construction per process. See §Investigation Findings (appended below) for the dispositive trace.
+- **2026-04-18 (amended, Sprint-1.2 Pass-2)** — Pass-2 investigator (`ef5d357`) validated items (a)+(b)+(c) landed in `@sparkleideas/cli@3.5.58-patch.137` (fork `9c5809324`), confirmed in-process N=6 now PASSES, but subprocess N=6 still fails with `entryCount=1/6`. Root cause of the residual loss is **H7**: the native `RvfDatabase` holds an exclusive OS-level lock on the SFVR file during `open`/`create`. At N=6 only one writer acquires the native lock; the other 5 fail LOUDLY (item a working as designed) with `RVF error 0x0300: LockHeld` or `0x0303: FsyncFailed` inside `initialize()` — **before** any `store()` call, so the merge protocol is never reached. Item (c)'s factory cache does NOT fire on the CLI hot path because `cli/memory-router.ts:435-443`'s private `createStorage` bypasses `@sparkleideas/memory/storage-factory`. Amendment appends items **d1** (serialize `tryNativeInit` through the advisory lock) and **d2** (route the CLI's private `createStorage` through the shared factory). Items (a)/(b)/(c) stand unchanged.
 
 ## Context
 
@@ -126,9 +127,74 @@ The atomic rename-to-final-target semantic is preserved (POSIX `rename(2)` is at
 
 **Why this closes the bug**: eliminates the intra-process compounding of the inter-process race. Two instances in one process racing on `RvfDatabase.create`/`RvfDatabase.open` is a strict superset of what (a) guards against; deduping means only one native-init attempt per process per path, so (a)'s invariant is enforced without flapping.
 
-### Why these three items, together
+#### d1. Serialize `tryNativeInit` through the advisory lock
 
-Items (a)+(b)+(c) form a closed set: (a) prevents silent identity flip, (c) prevents intra-process identity flapping, (b) handles the residual file-system-level race that exists even when backend identity is coherent. Removing any one item leaves a non-deterministic leak path visible in `scripts/diag-rvf-interproc-race.mjs`.
+**Target**: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:132-170` — specifically the `initialize()` method. Current code at lines 139-154 runs `reapStaleTmpFiles` → `tryNativeInit` → `loadFromDisk` without holding the advisory lock. The native `RvfDatabase.open`/`.create` call at line 141 (inside `tryNativeInit`) hits an **exclusive OS-level lock** owned by `@sparkleideas/ruvector-rvf-node`, which returns `RVF error 0x0300: LockHeld` to every concurrent peer at N=6 (Pass-2 §H7, trial t1 — 5 of 6 writers rejected; trial t2 — all 6 hit `0x0303: FsyncFailed` on `create`). Items (a)/(b)/(c) make these failures fail LOUD (per ADR-0082), but "fail loud" is not "converge" — the 5 losers never reach `store()`, so the merge protocol at line 1583 is never exercised for their entries.
+
+**Expected behavior** after amendment: wrap lines 139-154 of `initialize()` inside the existing advisory-lock span:
+
+```ts
+await this.acquireLock();
+try {
+  await this.reapStaleTmpFiles().catch(() => {});
+  const hasNative = await this.tryNativeInit();
+  if (!hasNative) {
+    this.hnswIndex = new HnswLite(/* ... */);
+  }
+  await this.loadFromDisk();
+} finally {
+  await this.releaseLock();
+}
+```
+
+Only one process at a time attempts `RvfDatabase.open`/`create`; subsequent writers block on the advisory lock (5s acquire budget, PID-liveness stale-holder detection per ADR-0090), then open after the first writer's `initialize()` releases. The native library's internal exclusive lock is released when each process closes its handle — so serialized init means serial `open` succeeds across all N writers.
+
+**Why this closes the residual bug**: H7 (confirmed in Pass-2) established that the native backend's exclusive lock denies 5 of 6 concurrent opens. Item (a) correctly throws, but this converts data-loss into CLI-exit-failure. Serializing through the advisory lock means every writer eventually gets its turn at native `open`, reaches `store()`, and participates in the merge protocol already validated by items (a)/(b)/(c). This is the one change that restores convergence at N≥2 without weakening any ADR-0082 invariant.
+
+#### d2. Route CLI's private `createStorage` through the shared factory
+
+**Target**: `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:435-443` — the private `createStorage(config)` function. Current code does `new memMod.RvfBackend({...})` directly, bypassing `@sparkleideas/memory/storage-factory`'s `backendCache`. Pass-2 trace confirmed: call site 1 (`memory-router.js:290` → private `createStorage`) uses a relative path and skips the cache entirely, while call site 2 (controller-registry path) uses the absolute path and hits the cache — resulting in **2× `tryNativeInit`** per CLI invocation.
+
+**Current code**:
+
+```ts
+// line 435-443
+async function createStorage(config: { databasePath: string; dimensions?: number }): Promise<IStorageContract> {
+  const memMod = await import('@claude-flow/memory/rvf-backend' as string);
+  const backend = new memMod.RvfBackend({
+    databasePath: config.databasePath,
+    dimensions: config.dimensions,
+  });
+  await backend.initialize();
+  return backend;
+}
+```
+
+**Expected behavior** after amendment: one-line swap to route through item (c)'s existing factory cache, with explicit `path.resolve()` at the call boundary so call site 1's relative path and call site 2's absolute path share a cache key:
+
+```ts
+async function createStorage(config: { databasePath: string; dimensions?: number }): Promise<IStorageContract> {
+  const memMod = await import('@claude-flow/memory/storage-factory' as string);
+  const backend = await memMod.createStorage({
+    databasePath: path.resolve(config.databasePath),
+    dimensions: config.dimensions,
+  });
+  return backend;
+}
+```
+
+**Why this closes the residual bug**: item (c) already shipped a module-scope `Map<resolvedPath, RvfBackend>` in `storage-factory.ts:34`, but the CLI hot path never consumed it — so the 2×-init pattern the investigator found at commit `f4dd1ec` is still present at `ef5d357`. d2 makes call site 1 go through the factory; combined with path normalization, call site 2's registry-init finds the cached instance and skips its own `tryNativeInit`. Each process now performs exactly one native-init attempt per resolved path, which shrinks the d1 lock-queue depth from 2N to N and eliminates intra-process `LockHeld` collisions. d2 is independently valuable (halves native-init count even without d1) and strictly amplifies d1's effectiveness.
+
+### Why these five items, together
+
+Items (a)+(b)+(c)+(d1)+(d2) form a closed set targeting five distinct failure layers:
+- (a) prevents silent identity flip on transient native-init error (ADR-0082 compliance).
+- (b) eliminates the shared-tmp-path rename race (file-system-level, orthogonal to backend choice).
+- (c) provides in-process backend-instance dedup (module-scope `Map` in the factory).
+- (d1) serializes inter-process native-init through the advisory lock, closing H7's exclusive-OS-lock race.
+- (d2) wires the CLI's private `createStorage` into (c)'s cache, halving native-init invocations per process.
+
+Removing any one item leaves a non-deterministic leak path visible in `scripts/diag-rvf-interproc-race.mjs`. Specifically: without d1, N=6 shows `LockHeld`/`FsyncFailed` cascades (Pass-2 trials t1-t3); without d2, the 2×-init amplifies d1's lock-queue depth and can trip the 5s acquire budget at higher N.
 
 ## Alternatives
 
@@ -189,6 +255,12 @@ This ADR is Implemented when:
 5. **No-pure-TS-on-SFVR invariant (grep/AST guard).** An acceptance guard in `lib/acceptance-adr0095-checks.sh` asserts: if `RvfBackend.metadataPath` resolution traced over a run shows any writer selecting the main `.rvf` path while SFVR bytes exist at that path, the check fails. Implementable as: after the diag run, inspect any `memory.rvf` + `memory.rvf.meta` residue — if the main file contains `SFVR` magic **and** the pure-TS `RVF\0` header coexists, that is a mixed-backend write pattern and the check fails.
 6. **No-shared-tmp invariant.** Running `scripts/diag-rvf-interproc-race.mjs --trace` (new flag) emits per-writer tmp-path samples; no two concurrent writers emit the same `.tmp` path. Enforced by inspecting the trace log after each N=8 run.
 7. **ADR-0094 Open Item #1** strikes through in `docs/adr/ADR-0094-100-percent-acceptance-coverage-plan.md` with a link to this ADR's amended §Decision.
+8. **Subprocess N=6 convergence (new — Pass-2).** All 6 of N=6 `cli memory store` subprocesses exit 0 and the final `.swarm/memory.rvf.meta` has `entryCount === 6`. No writer dies in `initialize()` with `LockHeld`/`FsyncFailed`.
+9. **40-trial stability across concurrency matrix (new — Pass-2).** `node scripts/diag-rvf-interproc-race.mjs --trials 40` reaches 40/40 PASS at each of N=2, N=4, N=6, N=8 in a single cascade run.
+10. **Clean stderr on parallel writers (new — Pass-2).** No occurrences of `RVF error 0x0300: LockHeld` or `RVF error 0x0303: FsyncFailed` in stderr of 6 parallel `cli memory store` subprocesses. (These were the two dominant fail-loud shapes at Pass-2 Trial t1/t2.)
+11. **Integration test greens (new — Pass-2).** `tests/unit/adr0086-rvf-integration.test.mjs` Group 6 (subprocess N=6 test) passes. Currently red at HEAD.
+12. **Stability bar on `t3-2-concurrent` (new — Pass-2).** Once Group 6 greens, the existing 3×/day × 3-day stability rule (AC #2) applies specifically to `t3-2-concurrent` before BUG-0008 can transition to `closed`.
+13. **Factory cache fires for both call sites (new — Pass-2).** Two guards: (a) grep assertion — `memory-router.ts` contains no `new memMod.RvfBackend` after d2 (only `storage-factory.createStorage` wiring); (b) runtime probe — with d1+d2 landed, `diag-rvf-persist-trace.mjs 6 1` shows exactly ONE `tryNativeInit-entry` per PID (not two as observed pre-d2).
 
 ## Risks
 
@@ -196,6 +268,8 @@ This ADR is Implemented when:
 - **Unique tmp path leaks on crash → tmp-dir cleanup drift.** Leftover `*.tmp.PID.N` files accumulate if a writer crashes between `writeFile` and `rename`. Mitigation: reaper at `initialize()` scans `dirname(target)` for `*.tmp.*` files older than 10 minutes and unlinks them. The mtime threshold is conservative — much longer than any legitimate persist — so a running peer's in-flight tmp is never reaped.
 - **Per-process RvfBackend cache staleness when a foreign process deletes the file.** Once the cache holds an instance tied to a now-deleted inode, subsequent operations fail with ENOENT. Mitigation: cache-invalidate on ENOENT; re-construct on next call (the cache is a keyed memoization, not ownership). Covered by AC #1 (N=2 with delete-racer is a trivial follow-on probe).
 - **Cross-ADR coupling (ADR-0082, ADR-0086, ADR-0088, ADR-0090, ADR-0092).** The amendment makes `tryNativeInit` a new ADR-0082 regression surface (silent-fallback elimination); ADR-0086 Layer-1-storage invariant gains an "SFVR owner" constraint; ADR-0088's "no daemon" guideline is re-affirmed (option D rejected); ADR-0090's advisory-lock choice is re-affirmed (option C rejected); ADR-0092's native/pure-TS coexistence model is tightened from "either backend is fine per call" to "once SFVR, always native-or-refuse." Cross-link notes must be added to each referenced ADR after this amendment ships.
+- **d1 cold-start wall-clock grows linearly with N concurrent writers.** Serializing `tryNativeInit` through the advisory lock means only one process runs `reapStaleTmpFiles` → `tryNativeInit` → `loadFromDisk` at a time. Expected hold-time per process is ~10-50ms (native `open` + small meta-read); at N=8 the tail-writer therefore waits ~80-400ms before its own init begins. The existing 5s `acquireLock()` budget absorbs this comfortably up to roughly N=50 serial writers, but the wall-clock penalty is real and user-visible on cold start. **Mitigation**: measure cold-start penalty at N=8 during AC #9 validation and assert `< 5s` total per subprocess. If the budget is exceeded, design review is required — candidates include shortening `loadFromDisk` under lock (move disk IO outside the lock after the native-open phase completes) or introducing a shared-lock/exclusive-lock two-phase acquire. Do NOT raise the 5s budget without re-evaluating stale-holder semantics.
+- **Factory cache is per-process; d1 is what closes the inter-process race.** Item (c)'s module-scope `Map<resolvedPath, RvfBackend>` in `storage-factory.ts` lives in each process's own heap — it provides **zero** inter-process coordination. d2 activates this cache on the CLI hot path (reducing 2×-init → 1×-init per process), but the N-process race is closed by d1's advisory-lock serialization, not by any cache. Architects reviewing future ADRs must not conflate "backend-instance dedup" (c/d2, in-process) with "backend-init serialization" (d1, inter-process) — they address orthogonal failure modes. Documented explicitly to prevent future regressions where the cache is assumed to cover inter-process scenarios.
 
 ## References
 
