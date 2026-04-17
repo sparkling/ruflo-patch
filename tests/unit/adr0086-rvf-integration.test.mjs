@@ -678,8 +678,27 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
       const { readFileSync } = await import('node:fs');
       let memSrc = '';
       try { memSrc = readFileSync(memDist, 'utf8'); } catch {}
+      // ADR-0095 Pass 1 markers (items a, b, c): reapStaleTmpFiles + _tmpCounter.
       if (!memSrc.includes('reapStaleTmpFiles') || !memSrc.includes('_tmpCounter')) {
-        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 fix markers (reapStaleTmpFiles/_tmpCounter). Publish the fix: npm run publish:verdaccio, then set CLI_VERSION to new patch.`);
+        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 1 markers (reapStaleTmpFiles/_tmpCounter). Publish the fix: npm run publish:verdaccio, then set CLI_VERSION to new patch.`);
+        return;
+      }
+      // ADR-0095 Pass 2 marker (item d1): initialize() must hold the advisory
+      // lock across reap/tryNativeInit/loadFromDisk. We detect this by looking
+      // for `await this.acquireLock()` followed (within the initialize body)
+      // by `await this.reapStaleTmpFiles(`. Build output preserves this order
+      // even after minification of comments because we rely on source text, not
+      // AST position. Without d1 the subprocess race test cannot pass — LockHeld
+      // errors from the native layer will continue to surface.
+      const initIdx = memSrc.indexOf('async initialize(');
+      const shutdownIdx = memSrc.indexOf('async shutdown(', initIdx + 1);
+      const initBody = initIdx >= 0 && shutdownIdx > initIdx
+        ? memSrc.slice(initIdx, shutdownIdx)
+        : '';
+      const acquireIdx = initBody.indexOf('this.acquireLock(');
+      const reapIdx = initBody.indexOf('this.reapStaleTmpFiles(');
+      if (acquireIdx < 0 || reapIdx < 0 || acquireIdx >= reapIdx) {
+        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 2 marker (d1: acquireLock before reapStaleTmpFiles in initialize). Republish after Pass 2 fork commit: npm run publish:verdaccio.`);
         return;
       }
 

@@ -31,10 +31,22 @@ describe('ADR-0086 T2.2: _doInit creates RvfBackend', () => {
     );
   });
 
-  it('createStorage imports rvf-backend', () => {
+  it('createStorage routes through storage-factory (ADR-0095 d2)', () => {
+    // ADR-0095 amendment d2: createStorage in the CLI router now delegates to
+    // @claude-flow/memory/storage-factory instead of constructing RvfBackend
+    // directly. The factory's resolved-path cache deduplicates init work
+    // between this call site and controller-registry's call site.
     assert.ok(
-      routerSrc.includes("rvf-backend"),
-      'createStorage does not import rvf-backend',
+      routerSrc.includes('@claude-flow/memory/storage-factory'),
+      'createStorage does not import storage-factory',
+    );
+    assert.ok(
+      /memMod\.createStorage\s*\(/.test(routerSrc),
+      'createStorage does not invoke factory.createStorage',
+    );
+    assert.ok(
+      /path\.resolve\(\s*config\.databasePath/.test(routerSrc),
+      'createStorage does not path.resolve() the dbPath (required for cache-key stability)',
     );
   });
 

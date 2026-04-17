@@ -617,7 +617,7 @@ describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', 
 
   // Methods with informational coverage notes
   const informationalMethods = [
-    { name: 'initialize', reason: 'called in createStorage, not routeMemoryOp' },
+    { name: 'initialize', reason: 'invoked by storage-factory (ADR-0095 d2), not by the CLI router directly' },
     { name: 'shutdown', reason: 'called in shutdownRouter, not routeMemoryOp' },
     { name: 'get', reason: 'router uses getByKey instead (by-namespace-and-key access pattern)' },
     { name: 'bulkInsert', reason: 'not yet wired — no MCP tool exposes batch insert' },
@@ -629,13 +629,21 @@ describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', 
         // Even better — it IS called
         assert.ok(true, `${name} is called in routeMemoryOp (exceeds expectation)`);
       } else {
-        // Verify the method IS called elsewhere (initialize, shutdown) or
-        // is genuinely uncovered (get, bulkInsert)
+        // Verify the method IS called elsewhere OR the factory owns it.
         const callRegex = new RegExp(`(?:storage|_storage|backend)\\.${name}\\s*\\(`);
         const calledElsewhere = callRegex.test(routerSrc);
-        if (name === 'initialize' || name === 'shutdown') {
+        if (name === 'shutdown') {
           assert.ok(calledElsewhere,
             `${name}() must be called somewhere in the router (${reason})`);
+        }
+        if (name === 'initialize') {
+          // ADR-0095 d2: initialize is performed by
+          // @claude-flow/memory/storage-factory.createStorage(), which the
+          // router delegates to. It's legitimate for `backend.initialize()`
+          // to be absent from the router body.
+          const usesFactory = routerSrc.includes('@claude-flow/memory/storage-factory');
+          assert.ok(calledElsewhere || usesFactory,
+            `${name}() must be called in the router OR the router must route through storage-factory (${reason})`);
         }
         // For get and bulkInsert — just document, don't fail
         assert.ok(true, `${name}() not in routeMemoryOp: ${reason}`);
@@ -652,13 +660,24 @@ describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', 
       'shutdownRouter must call _storage.shutdown()');
   });
 
-  it('createStorage calls backend.initialize()', () => {
+  it('createStorage produces an initialized backend (ADR-0095 d2: via factory)', () => {
     const createIdx = routerSrc.indexOf('async function createStorage(');
     assert.ok(createIdx !== -1, 'createStorage must exist');
 
-    const createBody = routerSrc.slice(createIdx, createIdx + 500);
-    assert.ok(createBody.includes('backend.initialize()'),
-      'createStorage must call backend.initialize() before returning');
+    const createBody = routerSrc.slice(createIdx, createIdx + 800);
+    // ADR-0095 amendment d2: initialization is now performed by
+    // @claude-flow/memory/storage-factory's createStorage, which internally
+    // calls backend.initialize() before returning (storage-factory.ts line
+    // 139 at the time of this amendment). The CLI router no longer
+    // constructs RvfBackend directly, so `backend.initialize()` does not
+    // appear in this function body. Assert the factory route instead.
+    const usesFactory = (
+      createBody.includes('@claude-flow/memory/storage-factory') &&
+      /memMod\.createStorage\s*\(/.test(createBody)
+    );
+    const directInit = createBody.includes('backend.initialize()');
+    assert.ok(usesFactory || directInit,
+      'createStorage must either route through the factory (ADR-0095 d2) or call backend.initialize() directly');
   });
 
   it('routeEmbeddingOp HNSW cases use _storage for search/stats', () => {
@@ -686,8 +705,13 @@ describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', 
       }
     }
 
-    // get(id) and bulkInsert are the only known-uncovered methods
-    const expectedUncovered = ['get', 'bulkInsert'];
+    // get(id) and bulkInsert are the only known-uncovered methods for
+    // routing entry points. `initialize` is now handled by the storage-factory
+    // (ADR-0095 d2) rather than the router — the factory calls
+    // backend.initialize() before returning, so the router never needs to
+    // call it explicitly. This is expected and desirable: dedupe at the
+    // factory collapses 2× init per CLI invocation to 1×.
+    const expectedUncovered = ['get', 'bulkInsert', 'initialize'];
     const unexpectedUncovered = uncovered.filter(m => !expectedUncovered.includes(m));
 
     assert.deepEqual(unexpectedUncovered, [],

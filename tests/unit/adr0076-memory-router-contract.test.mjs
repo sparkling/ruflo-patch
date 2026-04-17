@@ -348,18 +348,27 @@ describe('ADR-0076 memory-router: Phase 3 lift (no _wrap, no loadStorageFns)', (
     );
   });
 
-  it('createStorage instantiates RvfBackend via dynamic import', () => {
+  it('createStorage produces an RvfBackend (via factory after ADR-0095 d2)', () => {
     const fnStart = routerSrc.indexOf('async function createStorage');
     assert.ok(fnStart > -1, 'createStorage not found');
     const fnBody = routerSrc.slice(fnStart, fnStart + 800);
-    assert.ok(
-      fnBody.includes('rvf-backend'),
-      'createStorage must dynamically import @claude-flow/memory/rvf-backend',
+    // ADR-0095 amendment d2: the CLI router now routes through
+    // @claude-flow/memory/storage-factory so both CLI and controller-registry
+    // hit the same resolved-path cache. The factory itself constructs
+    // RvfBackend (storage-factory.ts → `new RvfBackend(...)`) and invokes
+    // `await backend.initialize()` before returning. Accept either the new
+    // factory route OR the legacy direct construction; both produce an
+    // initialized RvfBackend.
+    const viaFactory = (
+      fnBody.includes('@claude-flow/memory/storage-factory') &&
+      /memMod\.createStorage\s*\(/.test(fnBody)
     );
-    assert.ok(
-      /new\s+\w*\.RvfBackend\s*\(/.test(fnBody) || fnBody.includes('new memMod.RvfBackend('),
-      'createStorage must construct RvfBackend',
+    const direct = (
+      fnBody.includes('rvf-backend') &&
+      (/new\s+\w*\.RvfBackend\s*\(/.test(fnBody) || fnBody.includes('new memMod.RvfBackend('))
     );
+    assert.ok(viaFactory || direct,
+      'createStorage must produce an RvfBackend — either via storage-factory (ADR-0095 d2) or direct construction');
   });
 });
 
