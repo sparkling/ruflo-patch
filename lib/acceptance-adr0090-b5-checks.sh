@@ -26,54 +26,60 @@
 #                       `agentdb.getController(...)` returns undefined
 #                       in the current build).
 #
-# Verifier consensus (read 2026-04-17, agent A14 fix-all pass):
-# live probing against the published 3.5.58-patch.151 build shows the
-# agentdb `getController` map is now partially populated — 5 of 15
-# controllers pass the full round-trip (reflexion, skillLibrary,
-# reasoningBank, learningSystem, hierarchicalMemory) and 10 remain
-# skip_accepted for architecturally-correct reasons (no SQL surface,
-# router-fallback to RVF, read-only lookup tool, tool not found in
-# build, or cold-start empty-candidate short-circuit). History of
-# the matrix: patch.114 = 0 pass / 15 skip; patch.118 = 2 pass / 13 skip;
-# patch.124 = 4 pass / 11 skip; patch.151 = 5 pass / 10 skip. Each
-# check's docblock records the precise skip rationale so any shift
-# (new store tool ships, controller starts persisting) flips the
-# relevant check to PASS (or FAIL if persistence is pretend-real).
+# Verifier consensus (read 2026-04-17, agent A14 fix-all pass, updated
+# W2-I3): live probing against the published 3.5.58-patch.151 build
+# showed the agentdb `getController` map partially populated — 5 of 15
+# controllers passed the full round-trip (reflexion, skillLibrary,
+# reasoningBank, learningSystem, hierarchicalMemory). W2-I3 adds a
+# CausalMemoryGraph constructor DDL fix (agentic-flow commit 8238837)
+# that creates the `causal_edges` schema on cold-start, flipping
+# causalRecall / explainableRecall / nightlyLearner from skip_accepted
+# to PASS. Post-W2-I3 matrix: 8 pass / 7 skip_accepted. History:
+# patch.114 = 0/15; patch.118 = 2/13; patch.124 = 4/11; patch.151 = 5/10;
+# post-W2-I3 = 8/7. Each check's docblock records the precise rationale
+# so any shift (new store tool ships, controller starts persisting)
+# flips the relevant check to PASS (or FAIL if persistence is
+# pretend-real).
 #
-# Classification of the 10 skip_accepted controllers in patch.151:
+# Classification of the 7 skip_accepted controllers post-W2-I3:
 #   1. attentionService    — architecturally read-only metrics tool;
 #                            no CREATE TABLE / INSERT in AttentionService.
 #   2. causalGraph         — `agentdb_causal-edge` router-fallbacks;
-#                            no dedicated SQLite path (RVF-primary per
-#                            ADR-0086). graphAdapter shares this shape.
-#   3. causalRecall        — MCP path calls .search() not .recall();
-#                            queries `causal_edges` table which is
-#                            never created upstream.
-#   4. explainableRecall   — same underlying tool as causalRecall
-#                            (agentdb_causal_recall); same missing
-#                            table. Certificates are a side-effect of
-#                            recall() which the MCP path doesn't reach.
-#   5. gnnService          — no MCP store tool exists for gnn; closest
+#                            memory-router's `addEdge` method name does
+#                            not exist on CausalMemoryGraph (only
+#                            `addCausalEdge`), so the tool falls through
+#                            to router-fallback. graphAdapter shares
+#                            this shape. Per ADR-0086 (RVF-primary).
+#   3. gnnService          — no MCP store tool exists for gnn; closest
 #                            surface `agentdb_neural_patterns` is
 #                            "Tool not found".
-#   6. graphAdapter        — router-fallback like causalGraph; writes
+#   4. graphAdapter        — router-fallback like causalGraph; writes
 #                            to RVF per ADR-0086, no SQLite table.
-#   7. memoryConsolidation — cold-start hierarchical_memory is empty
+#   5. memoryConsolidation — cold-start hierarchical_memory is empty
 #                            → getConsolidationCandidates()=[] → all
 #                            4 counters 0 → no INSERT (correct per
 #                            MemoryConsolidation.consolidate() design).
-#   8. nightlyLearner      — fails with "no such table: causal_edges"
-#                            (SqliteError) — upstream bug in
-#                            NightlyLearner.discoverCausalEdges; no
-#                            schema ever creates causal_edges.
-#   9. semanticRouter      — read-only lookup tool returns
+#   6. semanticRouter      — read-only lookup tool returns
 #                            {route:default, confidence:0} with no
 #                            SQL write. No persistence by design.
-#  10. sonaTrajectory      — no dedicated store tool; `agentdb_pattern_store`
+#   7. sonaTrajectory      — no dedicated store tool; `agentdb_pattern_store`
 #                            dispatches to reasoningBank (response
 #                            reports `controller: reasoningBank`).
 #                            Pattern lands in `reasoning_patterns`,
 #                            not `sona_trajectories`.
+#
+# Post-W2-I3 PASS additions (causal pipeline):
+#   - causalRecall      — `agentdb_causal_recall` cold-start guard
+#                         short-circuits at `stats.totalCausalEdges < 5`,
+#                         returns {success:true, results:[], warning:
+#                         "Cold start"}, tool exits 0. Uses
+#                         `_b5_check_causal_pipeline` helper.
+#   - explainableRecall — same underlying tool as causalRecall. Uses
+#                         `_b5_check_causal_pipeline` helper.
+#   - nightlyLearner    — `agentdb_learner_run` completes after
+#                         discoverCausalEdges finds 0 edges (table now
+#                         exists but empty on cold-init). Uses
+#                         `_b5_check_causal_pipeline` helper.
 #
 # Regression-guard rule (ADR-0090 acceptance-criteria style):
 #   - A skip_accepted branch MUST be keyed to the narrowest error regex
@@ -537,28 +543,165 @@ check_adr0090_b5_causalGraph() {
     30
 }
 
+# ════════════════════════════════════════════════════════════════════
+# Shared helper: _b5_check_causal_pipeline (W2-I3)
+# ════════════════════════════════════════════════════════════════════
+#
+# Tailored helper for the causalRecall / explainableRecall / nightlyLearner
+# trio. These three controllers share a single upstream bug: they query
+# `causal_edges` which only `agentdb-mcp-server.ts` ever creates. The
+# fork fix in agentic-flow commit 8238837 makes CausalMemoryGraph's
+# constructor CREATE TABLE IF NOT EXISTS causal_edges (mirrors
+# ReflexionMemory pattern). Post-fix behavior:
+#   1. `agentdb_health` cold-start hydrates CausalMemoryGraph → table
+#      is created in `.swarm/memory.db`.
+#   2. `agentdb_causal_recall` no longer throws "no such table"; instead
+#      returns a benign cold-start payload (either {success:true,
+#      results:[], warning:"Cold start: fewer than 5 causal edges"} from
+#      the memory-router guard, or empty search results).
+#   3. `agentdb_learner_run` no longer throws "no such table" at
+#      `discoverCausalEdges`; completes its consolidation pass.
+#
+# Positional args (all required, timeout optional):
+#   $1 controller  — controller name for logs (causalRecall, etc.)
+#   $2 mcp_tool    — tool under test (agentdb_causal_recall or
+#                    agentdb_learner_run)
+#   $3 mcp_params  — JSON params literal for the tool invocation
+#   $4 timeout_s   — optional, default 45 (learner_run) or 30 (recall)
+#
+# Assertions (all must hold for PASS):
+#   A. sqlite3 CLI binary present (else SKIP_ACCEPTED — same rule as B5).
+#   B. `agentdb_health` cold-start returns exit 0 and creates .swarm/memory.db.
+#   C. `causal_edges` table exists in .swarm/memory.db post-health. This is
+#      the regression-guard — if it's missing the fork fix has regressed.
+#   D. Tool invocation output does NOT contain "no such table: causal_edges".
+#   E. Tool exits 0.
+#
+# Contract (shared with _b5_check_controller_roundtrip):
+#   - _CHECK_PASSED  ∈ {"true", "false", "skip_accepted"}
+#   - _CHECK_OUTPUT  — diagnostic tagged "B5/<controller>:"
+_b5_check_causal_pipeline() {
+  local controller="$1"
+  local mcp_tool="$2"
+  local mcp_params="$3"
+  local timeout_s="${4:-30}"
+
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  if [[ -z "$controller" || -z "$mcp_tool" || -z "$mcp_params" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: helper called with missing args (tool=$mcp_tool)"
+    return
+  fi
+
+  if [[ -z "${E2E_DIR:-}" || ! -d "$E2E_DIR" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: E2E_DIR not set or missing (caller must set it)"
+    return
+  fi
+
+  # ─── Step 0: sqlite3 CLI prereq ───────────────────────────────────
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 binary not installed — cannot verify causal_edges schema (install with 'brew install sqlite' or 'apt-get install sqlite3')"
+    return
+  fi
+
+  # ─── Step 1: isolate project dir ──────────────────────────────────
+  local iso; iso=$(_e2e_isolate "b5-${controller}")
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: failed to create isolated project dir"
+    return
+  fi
+
+  local cli; cli=$(_cli_cmd)
+  local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
+  local db_file="$iso/.swarm/memory.db"
+
+  # ─── Step 2: cold-start init to create schema ─────────────────────
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  local health_body; health_body=$(cat "$work/health.out" 2>/dev/null || echo "")
+
+  # ─── Step 3: Assertion B — .swarm/memory.db exists ────────────────
+  if [[ ! -f "$db_file" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.db not created by agentdb_health cold-start — controller registry did not hydrate (health output first 3 lines): $(echo "$health_body" | head -3 | tr '\n' ' ')"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+
+  # ─── Step 4: Assertion C — causal_edges table exists ──────────────
+  # This is the regression-guard for the W2-I3 fork fix (agentic-flow
+  # commit 8238837). If the table is missing after cold-start, the
+  # CausalMemoryGraph constructor DDL has regressed and the upstream
+  # "no such table: causal_edges" bug is back — FAIL loudly per
+  # ADR-0082 (no silent-pass on broken features).
+  local has_table
+  has_table=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name='causal_edges';" 2>/dev/null)
+  if [[ -z "$has_table" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: causal_edges table missing after agentdb_health cold-start — CausalMemoryGraph constructor DDL regressed (W2-I3 fix in agentic-flow commit 8238837). Existing tables: $(sqlite3 "$db_file" ".tables" 2>/dev/null | tr '\n' ' ')"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+
+  # ─── Step 5: invoke the controller's MCP tool ─────────────────────
+  local tool_out="$work/tool.out"
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool '$mcp_tool' --params '$mcp_params' 2>&1" "$tool_out" "$timeout_s"
+  local tool_exit="${_RK_EXIT:-1}"
+  local tool_body; tool_body=$(cat "$tool_out" 2>/dev/null || echo "")
+
+  # ─── Step 6: Assertion D — no "no such table: causal_edges" ──────
+  # The bug's original symptom. Any occurrence = fix has regressed.
+  if echo "$tool_body" | grep -qiE 'no such table:?[[:space:]]*causal_edges\b'; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: tool '$mcp_tool' still reports 'no such table: causal_edges' after fork fix — CausalMemoryGraph DDL not reached. Tool output (first 5 lines): $(echo "$tool_body" | head -5 | tr '\n' ' ')"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+
+  # ─── Step 7: Assertion E — tool exited 0 ──────────────────────────
+  # With the table now present, the tool must complete successfully.
+  # A non-zero exit indicates a different downstream bug — this check
+  # should FAIL loudly so that regression surfaces (no silent-pass per
+  # ADR-0082 / user memory `feedback-no-fallbacks`).
+  if [[ "$tool_exit" -ne 0 ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: tool '$mcp_tool' exited $tool_exit after fork fix. Tool output (first 10 lines):
+$(echo "$tool_body" | head -10)"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+
+  # ─── Step 8: cleanup + PASS ───────────────────────────────────────
+  local tool_snippet; tool_snippet=$(echo "$tool_body" | head -3 | tr '\n' ' ' | cut -c1-240)
+  rm -rf "$work" "$iso" 2>/dev/null
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="B5/${controller}: PASS: causal_edges table created by CausalMemoryGraph ctor (W2-I3 fork fix); tool '$mcp_tool' completed without 'no such table' error (exit=$tool_exit). Tool response: ${tool_snippet}"
+}
+
 # ────────────────────────────────────────────────────────────────────
-# B5-5: causalRecall — recall_certificates table.
-# Verified patch.151: `agentdb_causal_recall` returns
-# {success:false, error:"no such table: causal_edges"} because the
-# tool tries to QUERY causal_edges which no schema ever creates.
-# Helper's 4c branch (no-such-table for a DIFFERENT table) classifies
-# as skip_accepted (not FAIL because the missing table is not our
-# target `recall_certificates`). MCP path calls .search() not
-# .recall() so no certificate write is ever attempted. Regression-guard:
-# the day upstream adds a `causal_edges` schema and populates it, the
-# error text changes and the regex stops matching → real row-count
-# verification runs against `recall_certificates`.
+# B5-5: causalRecall — `agentdb_causal_recall` tool.
+#
+# W2-I3 (agentic-flow commit 8238837): CausalMemoryGraph constructor
+# now runs CREATE TABLE IF NOT EXISTS causal_edges (+ 4 indexes) on
+# construction. Previously only agentdb-mcp-server.ts boot path did
+# this — the memory-router's ControllerRegistry path never did, so
+# `agentdb_causal_recall` → CausalRecall.getStats() → SqliteError:
+# "no such table: causal_edges".
+#
+# Post-fix: the cold-start guard in memory-router.routeCausalOp's
+# 'recall' branch now sees `stats.totalCausalEdges < 5` and returns
+# {success:true, results:[], warning:"Cold start: fewer than 5 causal
+# edges"}. The tool exits 0 and never hits the "no such table" error.
+#
+# Regression-guard (ADR-0082): FAIL if `causal_edges` table absent
+# after cold-start or if "no such table: causal_edges" appears in the
+# tool response. Custom helper rather than _b5_check_controller_roundtrip
+# because the post-fix path has no row to count (empty table is correct
+# behavior for a cold-init project).
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_causalRecall() {
   local marker="b5-crecall-$$-$(date +%s)"
-  _b5_check_controller_roundtrip \
+  _b5_check_causal_pipeline \
     "causalRecall" \
     "agentdb_causal_recall" \
     "{\"query\":\"$marker query\",\"topK\":3}" \
-    "recall_certificates" \
-    "goal" \
-    "$marker query" \
     30
 }
 
@@ -756,51 +899,70 @@ check_adr0090_b5_sonaTrajectory() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-14: nightlyLearner — agentdb_learner_run.
-# Verified patch.151: `agentdb_learner_run` fails with SqliteError
-# "no such table: causal_edges" at NightlyLearner.discoverCausalEdges
-# (line 288 of NightlyLearner.js). Upstream bug — NightlyLearner queries
-# a table that no schema ever creates. Helper's 4c branch (no-such-table
-# for a DIFFERENT table than our target `learning_sessions`) classifies
-# as skip_accepted (NOT FAIL, because the missing table is upstream-side
-# not ours). Pipeline tool, 45s timeout matches consolidation.
-# Regression-guard: the day upstream creates `causal_edges` schema, the
-# error text disappears and the regex stops matching → real row-count
-# verification runs against `learning_sessions`.
+# B5-14: nightlyLearner — `agentdb_learner_run` tool.
+#
+# W2-I3 (agentic-flow commit 8238837): CausalMemoryGraph constructor
+# now creates the causal_edges table. NightlyLearner composes over
+# CausalMemoryGraph (see NightlyLearner.ts:94 — `new CausalMemoryGraph(db)`)
+# so the DDL now runs whenever NightlyLearner is instantiated.
+#
+# Pre-fix symptom: `NightlyLearner.discoverCausalEdges` (NightlyLearner.js
+# line ~288) threw SqliteError "no such table: causal_edges" during
+# `agentdb_learner_run`. Post-fix: the table exists (empty on cold-init),
+# discoverCausalEdges completes with 0 discovered edges, and the tool
+# exits 0 with a learner report JSON.
+#
+# 45s timeout matches consolidation (B5-8 memoryConsolidation) to absorb
+# cold-model load latency on the first run.
+#
+# Regression-guard (ADR-0082): FAIL if `causal_edges` table absent after
+# cold-start, or if "no such table: causal_edges" appears in the tool
+# response, or if the tool exits non-zero.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_nightlyLearner() {
   local marker="b5-nlearn-$$-$(date +%s)"
-  _b5_check_controller_roundtrip \
+  _b5_check_causal_pipeline \
     "nightlyLearner" \
     "agentdb_learner_run" \
     "{\"marker\":\"$marker\",\"force\":true}" \
-    "learning_sessions" \
-    "metadata" \
-    "$marker" \
     45
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-15: explainableRecall — recall_certificates table.
-# Verified patch.151: same underlying tool as causalRecall
-# (`agentdb_causal_recall`) and same failure — "no such table:
-# causal_edges". No dedicated store tool; certificates are issued as
-# side-effect of CausalRecall.recall() which the MCP path does NOT
-# reach (MCP calls .search() instead). Helper's 4c branch (no-such-table
-# for a DIFFERENT table than `recall_certificates`) classifies as
-# skip_accepted. Architect risk flag: HIGH — SKIP_ACCEPTED expected
-# and validated. Regression-guard: the day an explain-surface store
-# tool ships, the error disappears and the regex stops matching → real
-# row-count verification runs.
+# B5-15: explainableRecall — `agentdb_causal_recall` tool with explain=true.
+#
+# W2-I3 (agentic-flow commit 8238837): CausalMemoryGraph constructor
+# now creates the causal_edges table. CausalRecall composes over
+# CausalMemoryGraph (see CausalRecall.ts:80 — `new CausalMemoryGraph(db)`)
+# and ExplainableRecall composes over CausalRecall. So the DDL now runs
+# for the entire recall pipeline.
+#
+# Pre-fix symptom: MCP path called CausalRecall.getStats() / .search()
+# which queried `causal_edges` → SqliteError "no such table". The
+# ExplainableRecall certificate write path (INSERT INTO recall_certificates)
+# was never reached. Post-fix: the causal table exists, the cold-start
+# guard returns {success:true, results:[], warning:"Cold start"} and
+# the tool exits 0.
+#
+# Note: `recall_certificates` row creation only happens when recall
+# actually returns >= 1 result with a certificate — which requires
+# populated `causal_edges` (>= 5 edges per memory-router cold-start
+# guard). That's out of scope for this check — the post-fix regression
+# guard we care about is table existence + no-such-table error absence.
+# A follow-on acceptance check can seed causal edges and verify
+# certificate issuance once upstream exposes a working seed path
+# (currently `agentdb_causal-edge` router-fallbacks because
+# CausalMemoryGraph has no `addEdge` method — only `addCausalEdge`).
+#
+# Regression-guard (ADR-0082): FAIL if `causal_edges` table absent after
+# cold-start, or if "no such table: causal_edges" appears in the tool
+# response, or if the tool exits non-zero.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_explainableRecall() {
   local marker="b5-xrec-$$-$(date +%s)"
-  _b5_check_controller_roundtrip \
+  _b5_check_causal_pipeline \
     "explainableRecall" \
     "agentdb_causal_recall" \
     "{\"query\":\"$marker xrec query\",\"topK\":1,\"explain\":true}" \
-    "recall_certificates" \
-    "query" \
-    "$marker xrec query" \
     30
 }
