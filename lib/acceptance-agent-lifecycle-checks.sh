@@ -113,9 +113,9 @@ check_adr0094_p2_agent_lifecycle() {
   local agent_name="adr0094-lc-$$"
   local diag=""
 
-  # Step 1: spawn
+  # Step 1: spawn (schema requires agentType, optional agentId)
   _agent_invoke_tool "agent_spawn" \
-    "{\"type\":\"coder\",\"name\":\"$agent_name\"}" \
+    "{\"agentType\":\"coder\",\"agentId\":\"$agent_name\"}" \
     "spawned|created|agent|id" "P2/lifecycle:spawn" 30 "$iso" "rw"
   if [[ "$_CHECK_PASSED" == "false" ]]; then
     diag="spawn failed: $_CHECK_OUTPUT"
@@ -173,7 +173,7 @@ check_adr0094_p2_agent_spawn() {
     _CHECK_PASSED="false"; _CHECK_OUTPUT="P2/spawn: failed to create iso dir"; return
   fi
   _agent_invoke_tool "agent_spawn" \
-    "{\"type\":\"coder\",\"name\":\"adr0094-test-agent\"}" \
+    "{\"agentType\":\"coder\",\"agentId\":\"adr0094-test-agent\"}" \
     "spawned|created|agent|id" "P2/spawn" 30 "$iso" "rw"
   rm -rf "$iso" 2>/dev/null
 }
@@ -188,14 +188,49 @@ check_adr0094_p2_agent_list() {
   rm -rf "$iso" 2>/dev/null
 }
 
+# ──────────────────────────────────────────────────────────────────
+# Helper: spawn an agent in $iso with explicit agentId, return via
+# echo. Uses correct MCP schema: agent_spawn requires `agentType`
+# (NOT `type`), and accepts `agentId` (NOT `name`) for custom ID.
+# Returns the agentId on stdout if spawn succeeded, empty otherwise.
+# Sets _SPAWN_OUT for diag purposes.
+# ──────────────────────────────────────────────────────────────────
+_agent_spawn_fixed_id() {
+  local iso="$1"
+  local agent_id="$2"
+  local cli; cli=$(_cli_cmd)
+  local params
+  params=$(printf '{"agentType":"coder","agentId":"%s"}' "$agent_id")
+  local cmd_str="cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agent_spawn --params '$params' 2>&1"
+  _run_and_kill "$cmd_str" "" 30
+  _SPAWN_OUT="$_RK_OUT"
+  # Success signal: output mentions the agent_id or "spawned"/"success"
+  if echo "$_RK_OUT" | grep -qiE "spawned|success|$agent_id"; then
+    echo "$agent_id"
+  fi
+}
+
 check_adr0094_p2_agent_status() {
   local iso; iso=$(_e2e_isolate "p2-status")
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_PASSED="false"; _CHECK_OUTPUT="P2/status: failed to create iso dir"; return
   fi
+  local agent_id="adr0094-status-$$"
+  local spawned; spawned=$(_agent_spawn_fixed_id "$iso" "$agent_id")
+  if [[ -z "$spawned" ]]; then
+    # If MCP tool/subsystem unavailable, propagate SKIP_ACCEPTED
+    if echo "$_SPAWN_OUT" | grep -qiE 'unknown tool|tool.+not registered|no such tool|not available|not initialized|not wired'; then
+      _CHECK_PASSED="skip_accepted"
+      _CHECK_OUTPUT="P2/status: SKIP_ACCEPTED: prereq agent_spawn unavailable — $(echo "$_SPAWN_OUT" | head -2 | tr '\n' ' ')"
+      rm -rf "$iso" 2>/dev/null; return
+    fi
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P2/status: prereq agent_spawn failed: $(echo "$_SPAWN_OUT" | head -3 | tr '\n' ' ')"
+    rm -rf "$iso" 2>/dev/null; return
+  fi
   _agent_invoke_tool "agent_status" \
-    "{\"agentId\":\"adr0094-test-agent\"}" \
-    "status|state|healthy|active" "P2/status" 30 "$iso" "ro"
+    "{\"agentId\":\"$agent_id\"}" \
+    "status|state|healthy|active|idle|busy" "P2/status" 30 "$iso" "ro"
   rm -rf "$iso" 2>/dev/null
 }
 
@@ -204,8 +239,20 @@ check_adr0094_p2_agent_health() {
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_PASSED="false"; _CHECK_OUTPUT="P2/health: failed to create iso dir"; return
   fi
-  _agent_invoke_tool "agent_health" "" \
-    "health|ok|status" "P2/health" 30 "$iso" "ro"
+  # Spawn first so agent_health has a populated agent to report on
+  local agent_id="adr0094-health-$$"
+  local spawned; spawned=$(_agent_spawn_fixed_id "$iso" "$agent_id")
+  if [[ -z "$spawned" ]]; then
+    if echo "$_SPAWN_OUT" | grep -qiE 'unknown tool|tool.+not registered|no such tool|not available|not initialized|not wired'; then
+      _CHECK_PASSED="skip_accepted"
+      _CHECK_OUTPUT="P2/health: SKIP_ACCEPTED: prereq agent_spawn unavailable — $(echo "$_SPAWN_OUT" | head -2 | tr '\n' ' ')"
+      rm -rf "$iso" 2>/dev/null; return
+    fi
+    # Fall through and still try agent_health — it may report empty set
+  fi
+  _agent_invoke_tool "agent_health" \
+    "{\"agentId\":\"$agent_id\"}" \
+    "health|healthy|degraded|unhealthy|uptime|status" "P2/health" 30 "$iso" "ro"
   rm -rf "$iso" 2>/dev/null
 }
 
@@ -214,11 +261,20 @@ check_adr0094_p2_agent_terminate() {
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_PASSED="false"; _CHECK_OUTPUT="P2/terminate: failed to create iso dir"; return
   fi
-  # Spawn first so there is something to terminate
-  local cli; cli=$(_cli_cmd)
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agent_spawn --params '{\"type\":\"coder\",\"name\":\"adr0094-term-agent\"}' 2>&1" "" 30
+  local agent_id="adr0094-term-$$"
+  local spawned; spawned=$(_agent_spawn_fixed_id "$iso" "$agent_id")
+  if [[ -z "$spawned" ]]; then
+    if echo "$_SPAWN_OUT" | grep -qiE 'unknown tool|tool.+not registered|no such tool|not available|not initialized|not wired'; then
+      _CHECK_PASSED="skip_accepted"
+      _CHECK_OUTPUT="P2/terminate: SKIP_ACCEPTED: prereq agent_spawn unavailable — $(echo "$_SPAWN_OUT" | head -2 | tr '\n' ' ')"
+      rm -rf "$iso" 2>/dev/null; return
+    fi
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P2/terminate: prereq agent_spawn failed: $(echo "$_SPAWN_OUT" | head -3 | tr '\n' ' ')"
+    rm -rf "$iso" 2>/dev/null; return
+  fi
   _agent_invoke_tool "agent_terminate" \
-    "{\"agentId\":\"adr0094-term-agent\"}" \
+    "{\"agentId\":\"$agent_id\"}" \
     "terminated|success|removed" "P2/terminate" 30 "$iso" "rw"
   rm -rf "$iso" 2>/dev/null
 }
@@ -228,11 +284,20 @@ check_adr0094_p2_agent_update() {
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_PASSED="false"; _CHECK_OUTPUT="P2/update: failed to create iso dir"; return
   fi
-  # Spawn first so there is something to update
-  local cli; cli=$(_cli_cmd)
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agent_spawn --params '{\"type\":\"coder\",\"name\":\"adr0094-upd-agent\"}' 2>&1" "" 30
+  local agent_id="adr0094-upd-$$"
+  local spawned; spawned=$(_agent_spawn_fixed_id "$iso" "$agent_id")
+  if [[ -z "$spawned" ]]; then
+    if echo "$_SPAWN_OUT" | grep -qiE 'unknown tool|tool.+not registered|no such tool|not available|not initialized|not wired'; then
+      _CHECK_PASSED="skip_accepted"
+      _CHECK_OUTPUT="P2/update: SKIP_ACCEPTED: prereq agent_spawn unavailable — $(echo "$_SPAWN_OUT" | head -2 | tr '\n' ' ')"
+      rm -rf "$iso" 2>/dev/null; return
+    fi
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P2/update: prereq agent_spawn failed: $(echo "$_SPAWN_OUT" | head -3 | tr '\n' ' ')"
+    rm -rf "$iso" 2>/dev/null; return
+  fi
   _agent_invoke_tool "agent_update" \
-    "{\"agentId\":\"adr0094-upd-agent\",\"config\":{\"maxRetries\":5}}" \
+    "{\"agentId\":\"$agent_id\",\"config\":{\"maxRetries\":5}}" \
     "updated|success" "P2/update" 30 "$iso" "rw"
   rm -rf "$iso" 2>/dev/null
 }
