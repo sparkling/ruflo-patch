@@ -167,10 +167,15 @@ check_adr0094_p3_daa_performance_metrics() {
 # ════════════════════════════════════════════════════════════════════
 # Check 7: daa_workflow_create — create a DAA workflow
 # ════════════════════════════════════════════════════════════════════
+#
+# Note: daa_workflow_create requires BOTH `id` and `name` (per schema in
+# forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts line 220).
+# Passing only `name` stores the workflow under key `undefined`, which
+# collides with every other parallel check and is not reproducible.
 check_adr0094_p3_daa_workflow_create() {
   _daa_invoke_tool \
     "daa_workflow_create" \
-    '{"name":"daa-wf","steps":["step1"]}' \
+    '{"id":"daa-wf-create-check","name":"daa-wf","steps":["step1"]}' \
     'created|workflow' \
     "daa_workflow_create" \
     15
@@ -179,11 +184,59 @@ check_adr0094_p3_daa_workflow_create() {
 # ════════════════════════════════════════════════════════════════════
 # Check 8: daa_workflow_execute — execute a DAA workflow
 # ════════════════════════════════════════════════════════════════════
+#
+# Self-contained: create then execute in the same check, because all
+# P3 checks run in parallel via `run_check_bg` and cannot assume the
+# create check finished first. Also, sharing workflow ids across
+# parallel checks is flaky (the DAA store is JSON file-based).
+#
+# Pre-W2-I8 root cause: handler returned `{success:false, error:'Workflow not found'}`
+# when given a missing workflowId, and the `not found` substring matched
+# the skip_accepted regex in _daa_invoke_tool, causing false skip_accepted
+# even though the tool is registered and in the build/manifest.
 check_adr0094_p3_daa_workflow_execute() {
-  _daa_invoke_tool \
-    "daa_workflow_execute" \
-    '{"name":"daa-wf"}' \
-    'executed|running|success' \
-    "daa_workflow_execute" \
-    15
+  local wf_id="daa-wf-exec-check-$$"
+  local cli; cli=$(_cli_cmd)
+  local work; work=$(mktemp /tmp/daa-wf-exec-XXXXX)
+
+  # Step 1: create the workflow with a deterministic id
+  local create_cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool daa_workflow_create --params '{\"id\":\"$wf_id\",\"name\":\"daa-wf-exec\",\"steps\":[\"s1\"]}'"
+  _run_and_kill_ro "$create_cmd" "$work" 15
+  local create_body; create_body=$(cat "$work" 2>/dev/null || echo "")
+  create_body=$(echo "$create_body" | grep -v '^__RUFLO_DONE__:')
+
+  # If the create step itself reports the tool missing, skip_accepted
+  if echo "$create_body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P3/daa_workflow_execute: prerequisite tool 'daa_workflow_create' not in build — $(echo "$create_body" | head -3 | tr '\n' ' ')"
+    rm -f "$work" 2>/dev/null
+    return
+  fi
+
+  # Step 2: execute the workflow we just created, matching on workflowId
+  local exec_cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool daa_workflow_execute --params '{\"workflowId\":\"$wf_id\"}'"
+  _run_and_kill_ro "$exec_cmd" "$work" 15
+  local exec_body; exec_body=$(cat "$work" 2>/dev/null || echo "")
+  exec_body=$(echo "$exec_body" | grep -v '^__RUFLO_DONE__:')
+  rm -f "$work" 2>/dev/null
+
+  # Classify execute output
+  if echo "$exec_body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P3/daa_workflow_execute: MCP tool 'daa_workflow_execute' not in build — $(echo "$exec_body" | head -3 | tr '\n' ' ')"
+    return
+  fi
+
+  # PASS: handler returns status:'running' and workflowId matching our id
+  if echo "$exec_body" | grep -qiE 'running|executed' && echo "$exec_body" | grep -qF "$wf_id"; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="P3/daa_workflow_execute: tool executed workflow '$wf_id' to status running"
+    return
+  fi
+
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="P3/daa_workflow_execute: unexpected output. Create output (first 5 lines):
+$(echo "$create_body" | head -5)
+Execute output (first 10 lines):
+$(echo "$exec_body" | head -10)"
 }
