@@ -129,11 +129,49 @@ check_adr0094_p4_terminal_history() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: terminal_close — close a terminal session
 # ════════════════════════════════════════════════════════════════════
+#
+# Handler requires a valid `sessionId` (returned by terminal_create as a
+# generated `term-<ts>-<rand>` id, not the caller-supplied name). The
+# check therefore creates a fresh session first, extracts its id, then
+# closes it. Passing a bogus id returns `{success:false,error:'Session
+# not found'}` which (correctly) trips the tool-not-found skip_accepted
+# regex — hiding the real bug behind a false skip.
 check_adr0094_p4_terminal_close() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  local cli; cli=$(_cli_cmd)
+  local work_create; work_create=$(mktemp /tmp/terminal-close-create-XXXXX)
+
+  # Step 1: create a fresh session and capture its id.
+  local create_cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool terminal_create --params '{\"name\":\"adr0094-close\"}'"
+  _run_and_kill_ro "$create_cmd" "$work_create" 15
+  local create_body; create_body=$(cat "$work_create" 2>/dev/null || echo "")
+  create_body=$(echo "$create_body" | grep -v '^__RUFLO_DONE__:')
+  rm -f "$work_create" 2>/dev/null
+
+  # Tool-not-found on create → skip_accepted (upstream regression).
+  if echo "$create_body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P4/terminal_close: prereq tool 'terminal_create' not in build — $(echo "$create_body" | head -3 | tr '\n' ' ')"
+    return
+  fi
+
+  # Extract sessionId from create output (shape: "sessionId":"term-<ts>-<rand>").
+  local session_id
+  session_id=$(echo "$create_body" | grep -oE '"sessionId"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"sessionId"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
+
+  if [[ -z "$session_id" ]]; then
+    _CHECK_OUTPUT="P4/terminal_close: could not extract sessionId from terminal_create output. Body (first 10 lines):
+$(echo "$create_body" | head -10)"
+    return
+  fi
+
+  # Step 2: close that session.
   _terminal_invoke_tool \
     "terminal_close" \
-    '{"terminalId":"adr0094-term"}' \
-    'closed|success|removed' \
+    "{\"sessionId\":\"$session_id\"}" \
+    'closed|success|closedAt' \
     "terminal_close" \
     15
 }
