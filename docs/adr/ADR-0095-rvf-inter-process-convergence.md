@@ -11,6 +11,7 @@
 - **2026-04-17 (authored)** — Proposed "read-meta-under-lock + merge + write" protocol.
 - **2026-04-17 (amended, same day)** — Sprint-1 investigator (`f4dd1ec`) established that the proposed protocol is already implemented at lines 1298–1382 and does not close the observed inter-process data-loss bug. Real root cause is a **3-layer backend flip race**: (1) silent catch in `tryNativeInit` (line 635) masks native-init races so 5 of 6 concurrent writers silently fall back to pure-TS (ADR-0082 violation); (2) native writers target the `.meta` sidecar while pure-TS writers target the main `.rvf` path — disjoint write targets mean the peer-merge never sees peer writes; (3) shared `.rvf.tmp` path at line 1450 causes cross-process `rename()` ENOENT collisions and transient SFVR-corruption reads. Amended §Decision replaces the merge-protocol proposal with a three-item program: fail-loud on native init once SFVR bytes exist, per-writer unique tmp paths, and dedupe RvfBackend construction per process. See §Investigation Findings (appended below) for the dispositive trace.
 - **2026-04-18 (amended, Sprint-1.2 Pass-2)** — Pass-2 investigator (`ef5d357`) validated items (a)+(b)+(c) landed in `@sparkleideas/cli@3.5.58-patch.137` (fork `9c5809324`), confirmed in-process N=6 now PASSES, but subprocess N=6 still fails with `entryCount=1/6`. Root cause of the residual loss is **H7**: the native `RvfDatabase` holds an exclusive OS-level lock on the SFVR file during `open`/`create`. At N=6 only one writer acquires the native lock; the other 5 fail LOUDLY (item a working as designed) with `RVF error 0x0300: LockHeld` or `0x0303: FsyncFailed` inside `initialize()` — **before** any `store()` call, so the merge protocol is never reached. Item (c)'s factory cache does NOT fire on the CLI hot path because `cli/memory-router.ts:435-443`'s private `createStorage` bypasses `@sparkleideas/memory/storage-factory`. Amendment appends items **d1** (serialize `tryNativeInit` through the advisory lock) and **d2** (route the CLI's private `createStorage` through the shared factory). Items (a)/(b)/(c) stand unchanged.
+- **2026-04-18 (amended, Sprint-1.3 Pass-3)** — Pass-3 investigator (`b16efcc`) validated items (a)+(b)+(c)+(d1)+(d2) landed in `@sparkleideas/cli@3.5.58-patch.139` (fork `3fe71b9c7`). 40-trial matrix now shows 23/40 PASS (up from 0/3 at Pass-2 baseline) — substantial progress, but 17/40 FAIL survive as two distinct residual modes. Error-unwrap instrumentation on `storage-factory.ts` dispositively identifies **H8** (17/17 cold-start failures are `ENOENT` on `.swarm/memory.rvf.lock` because `acquireLock` at `rvf-backend.ts:882` does `writeFile(…, {flag:'wx'})` without first `mkdir(dirname(lockPath),{recursive:true})`) and **H14** (rare silent mixed-backend loss at `entryCount=3..5/6`: `tryNativeInit`'s "pure-TS-owned-file" branch at `rvf-backend.ts:753-764` silently accepts zero-byte files and already-clobbered `RVF\0` files as legitimate pure-TS targets, then pure-TS writes land on `.rvf` while native writes land on `.meta` — disjoint-target merge sees only one population). Amendment appends items **d3** (acquireLock mkdirs dirname before wx-open) and **d4** (tighten tryNativeInit invariant so only genuine `RVF\0` qualifies as pure-TS-owned; short reads and unknown magic throw). Secondary fix bundled with d3/d4: `storage-factory.ts:154` rewrap preserves `err.cause` so the opaque `[StorageFactory] Failed to create storage backend` message stops masking the real ENOENT. Items (a)/(b)/(c)/(d1)/(d2) stand unchanged.
 
 ## Context
 
@@ -185,16 +186,121 @@ async function createStorage(config: { databasePath: string; dimensions?: number
 
 **Why this closes the residual bug**: item (c) already shipped a module-scope `Map<resolvedPath, RvfBackend>` in `storage-factory.ts:34`, but the CLI hot path never consumed it — so the 2×-init pattern the investigator found at commit `f4dd1ec` is still present at `ef5d357`. d2 makes call site 1 go through the factory; combined with path normalization, call site 2's registry-init finds the cached instance and skips its own `tryNativeInit`. Each process now performs exactly one native-init attempt per resolved path, which shrinks the d1 lock-queue depth from 2N to N and eliminates intra-process `LockHeld` collisions. d2 is independently valuable (halves native-init count even without d1) and strictly amplifies d1's effectiveness.
 
-### Why these five items, together
+#### d3. `acquireLock` mkdirs `dirname(lockPath)` before the wx-open
 
-Items (a)+(b)+(c)+(d1)+(d2) form a closed set targeting five distinct failure layers:
+**Target**: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:872-912` — specifically BEFORE the `writeFile(this.lockPath, …, {flag:'wx'})` at line 882. `acquireLock()` is the first filesystem syscall of `initialize()`; the `wx` flag opens with `O_CREAT | O_EXCL` and returns `ENOENT` (not `EEXIST`) when the lockfile's **parent directory** (`.swarm/`) does not exist. The catch at line 885 only retries on `EEXIST`; ENOENT rethrows fatal. Pass-3 error-unwrap confirmed this is the mechanism behind all 17/17 cold-start failures. No existing code path in `initialize` / `acquireLock` / `reapStaleTmpFiles` / `tryNativeInit` mkdirs the parent before this first write. `appendToWal` does mkdir-before-acquire (lines 1150-1151), but it runs only after `store()`, which runs only after `initialize()` succeeds — by then the cold-start ENOENT has already thrown.
+
+**Current code** (quoted for the implementer):
+
+```ts
+// line 872
+private async acquireLock(): Promise<void> {
+  if (!this.lockPath) return; // :memory: mode
+  const { writeFile: wf, readFile: rf, unlink: ul } = await import('node:fs/promises');
+  const maxWaitMs = 5000; // total budget for lock acquisition
+  // ...
+  while (Date.now() - startTime < maxWaitMs) {
+    try {
+      await wf(this.lockPath, JSON.stringify({ pid: process.pid, ts: Date.now() }), { flag: 'wx' }); // line 882
+      return; // Lock acquired
+    } catch (e: any) {
+      if (e.code !== 'EEXIST') throw e;   // line 885 — rethrows ENOENT fatal
+      // ...
+```
+
+**Expected behavior** after amendment: one-line idempotent `mkdir(dirname(lockPath), {recursive:true})` before the retry loop begins, with a swallowed catch (the mkdir can only fail for reasons that the subsequent `wx`-open would also surface, and `{recursive:true}` already swallows `EEXIST` internally):
+
+```ts
+private async acquireLock(): Promise<void> {
+  if (!this.lockPath) return; // :memory: mode
+  const { writeFile: wf, readFile: rf, unlink: ul, mkdir: mk } = await import('node:fs/promises');
+  // ADR-0095 d3: ensure parent dir exists before the wx-open. Cold-start race
+  // where N writers hit initialize() before `.swarm/` has been mkdired by any
+  // prior process. `{recursive:true}` is racy-safe — concurrent mkdirs either
+  // succeed or silently no-op on EEXIST, handled inside Node's fs layer.
+  const lockDir = dirname(this.lockPath);
+  try { await mk(lockDir, { recursive: true }); } catch {}
+  const maxWaitMs = 5000;
+  // ... rest unchanged
+```
+
+**Why this closes the bug**: `{recursive:true}` mkdir is idempotent and concurrent-safe on POSIX/APFS; whichever writer wins the mkdir race, every peer's next `wx` `writeFile` either succeeds (first lockfile creator) or `EEXIST`s into the existing retry-after-stale-check loop. The ENOENT failure path is removed entirely. Closes H8 / 17/17 cold-start ENOENT failures.
+
+#### d4. Tighten `tryNativeInit` invariant: only genuine `RVF\0` qualifies as pure-TS-owned
+
+**Target**: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:753-764` — the "Cold start: no file yet, or file without SFVR magic (pure-TS-owned)" fallback. Item (a)'s "once SFVR, always native-or-refuse" invariant is enforced only when `bytesRead === 4 && peek === 'SFVR'`. Pass-3 per-writer byte-level peek traces show two other states silently fall through to pure-TS and clobber a peer's native-init:
+
+1. **Valid `RVF\0` content** (`bytesRead === 4 && peek === 'RVF\0'`) — legitimate pure-TS file. **Safe.**
+2. **Zero-byte file** (`fileExists && bytesRead < 4`) — mid-write transient between `creat()` and SFVR header emit by a peer's `RvfDatabase.create`. Pure-TS writes `RVF\0` on top, corrupting the peer's native init. **Unsafe.**
+3. **Previously-SFVR file now holding `RVF\0`** (`bytesRead === 4 && peek !== 'RVF\0' && peek !== 'SFVR'`, OR `RVF\0` when a prior peer race already clobbered it) — a prior race corrupted SFVR with a pure-TS write; this writer then propagates the corruption. **Unsafe.**
+
+States (2) and (3) silently exit via the current pure-TS fallback — `mergePeerStateBeforePersist` then reads EITHER `.meta` (native) OR `.rvf` (pure-TS) but never both, because the two populations wrote to disjoint targets. Observed in Pass-3 trials with `entryCount=3..5/6` where all N subprocs exit 0 but half the entries are invisible to any single read path.
+
+**Expected behavior** after amendment: classify the file's exact state under the advisory lock (which item d1 already guarantees is held here) and throw on the non-RVF\0-non-SFVR states rather than silently falling back:
+
+```ts
+// ADR-0095 d4: empty files / partial-SFVR writes / unknown magic are a
+// peer's mid-write race — pure-TS fallback would corrupt native state.
+// Only genuine RVF\0 content qualifies as "pure-TS owns this".
+if (fileExists(this.config.databasePath)) {
+  if (!hasNativeMagic) {
+    const fd = openSync(this.config.databasePath, 'r');
+    let magicBytes = Buffer.alloc(4);
+    let br = 0;
+    try { br = readSync(fd, magicBytes, 0, 4, 0); } finally { closeSync(fd); }
+    if (br < 4) {
+      throw new Error(
+        `[RvfBackend] ${this.config.databasePath} exists but has only ${br} bytes ` +
+        `(peer's native init mid-write). Refusing pure-TS fallback to avoid ` +
+        `clobbering SFVR file. Advisory lock should have serialized — ` +
+        `this indicates a lock-ordering bug.`,
+      );
+    }
+    const peek = String.fromCharCode(magicBytes[0], magicBytes[1], magicBytes[2], magicBytes[3]);
+    const expectedPureTS = String.fromCharCode(0x52, 0x56, 0x46, 0x00); // 'RVF\0'
+    if (peek !== expectedPureTS) {
+      throw new Error(
+        `[RvfBackend] ${this.config.databasePath} has unknown magic ${JSON.stringify(peek)} ` +
+        `(not RVF\\0, not SFVR). Refusing to overwrite — likely foreign/corrupt file.`,
+      );
+    }
+    // Genuine pure-TS RVF\0 — fall through to return false.
+  }
+  return false;
+}
+```
+
+**Bundled secondary fix (same commit) — preserve `err.cause` in the StorageFactory rewrap**: `forks/ruflo/v3/@claude-flow/memory/src/storage-factory.ts:154` currently serializes `primaryError.message` only and discards `.code`, `.stack`, `.cause`. The visible message is the generic `[StorageFactory] Failed to create storage backend … Verify the database path is writable and dependencies are installed.` — which is literally false when the failure is ENOENT on the `.swarm/` parent dir (path IS writable; dir just didn't exist). Pass-3 H9 confirmed this rewrap meaningfully impeded debugging. Expected change: attach `primaryError` as `cause` on the new `Error` (and include the `code` in the top-line message so users never need to inspect `err.cause` to know what broke):
+
+```ts
+  } catch (primaryError: unknown) {
+    const msg = primaryError instanceof Error ? primaryError.message : String(primaryError);
+    const code = (primaryError as any)?.code;
+    const wrapped = new Error(
+      `[StorageFactory] Failed to create storage backend.\n` +
+      `  Path: ${rvfPath}\n` +
+      `  Dimensions: ${dimensions}\n` +
+      `  Cause${code ? ` (${code})` : ''}: ${msg}\n…`,
+    );
+    (wrapped as any).cause = primaryError;
+    throw wrapped;
+  }
+```
+
+**Why this closes the bug**: with d3 ensuring the parent dir exists and d1 serializing init through the advisory lock, a peer should never be mid-native-write at peek time. Under d1's invariant, every state observed by `tryNativeInit` under the lock is a completed state — so `bytesRead < 4` or an unknown-magic peek is evidence of either a prior uncaught race (genuine bug surface) or a foreign/corrupted file (refuse-to-touch is the correct semantic per ADR-0082). Closes H14 / silent mixed-backend loss. The `err.cause` preservation closes H9's partial-confirmation by making the real root cause visible to callers without re-instrumenting the backend.
+
+### Why these seven items, together
+
+Items (a)+(b)+(c)+(d1)+(d2)+(d3)+(d4) form a closed set targeting seven distinct failure layers:
 - (a) prevents silent identity flip on transient native-init error (ADR-0082 compliance).
 - (b) eliminates the shared-tmp-path rename race (file-system-level, orthogonal to backend choice).
 - (c) provides in-process backend-instance dedup (module-scope `Map` in the factory).
 - (d1) serializes inter-process native-init through the advisory lock, closing H7's exclusive-OS-lock race.
 - (d2) wires the CLI's private `createStorage` into (c)'s cache, halving native-init invocations per process.
+- (d3) mkdirs the lockfile's parent before the wx-open, closing H8's cold-start ENOENT (17/17 failures at Pass-3 baseline).
+- (d4) tightens the `tryNativeInit` pure-TS-owned branch to accept only genuine `RVF\0` content, closing H14's silent mixed-backend loss where zero-byte and previously-clobbered files were being silently overwritten.
 
-Removing any one item leaves a non-deterministic leak path visible in `scripts/diag-rvf-interproc-race.mjs`. Specifically: without d1, N=6 shows `LockHeld`/`FsyncFailed` cascades (Pass-2 trials t1-t3); without d2, the 2×-init amplifies d1's lock-queue depth and can trip the 5s acquire budget at higher N.
+Removing any one item leaves a non-deterministic leak path visible in `scripts/diag-rvf-interproc-race.mjs`. Specifically: without d1, N=6 shows `LockHeld`/`FsyncFailed` cascades (Pass-2 trials t1-t3); without d2, the 2×-init amplifies d1's lock-queue depth and can trip the 5s acquire budget at higher N; without d3, cold-start trials ENOENT on `.swarm/memory.rvf.lock` with zero writers able to acquire (Pass-3 matrix 17/40 FAIL); without d4, ~3/40 trials silently end with `entryCount<N` because pure-TS writers clobber SFVR state or write to a disjoint target undetected.
 
 ## Alternatives
 
@@ -261,6 +367,9 @@ This ADR is Implemented when:
 11. **Integration test greens (new — Pass-2).** `tests/unit/adr0086-rvf-integration.test.mjs` Group 6 (subprocess N=6 test) passes. Currently red at HEAD.
 12. **Stability bar on `t3-2-concurrent` (new — Pass-2).** Once Group 6 greens, the existing 3×/day × 3-day stability rule (AC #2) applies specifically to `t3-2-concurrent` before BUG-0008 can transition to `closed`.
 13. **Factory cache fires for both call sites (new — Pass-2).** Two guards: (a) grep assertion — `memory-router.ts` contains no `new memMod.RvfBackend` after d2 (only `storage-factory.createStorage` wiring); (b) runtime probe — with d1+d2 landed, `diag-rvf-persist-trace.mjs 6 1` shows exactly ONE `tryNativeInit-entry` per PID (not two as observed pre-d2).
+14. **No `ENOENT` in subprocess stderr at cold start (new — Pass-3).** At N=2, N=4, N=6, N=8 starting from a fresh directory with no prior `cli init` and no pre-existing `.swarm/`, zero subprocesses emit `ENOENT` (any path) to stderr during `initialize()`. Invocation: `rm -rf .swarm && node scripts/diag-rvf-interproc-race.mjs <N> 10 --trace | grep -c 'ENOENT'` returns 0 for each N. Verifies d3 landed on the cold-start `.swarm/memory.rvf.lock` ENOENT path; regression-guards against any future code path reintroducing a filesystem syscall before a mkdir.
+15. **No silent loss — `entryCount===N` AND zero subproc failures on every trial (new — Pass-3).** Across 40 trials per N (matrix N=2/4/6/8), every trial records BOTH `entryCount===N` in the final `.meta` AND `subproc-failures===0` in the trial summary. Zero trials may have `entryCount<N` paired with zero subproc failures (the silent-mixed-backend signature). Closes H14. Implemented as an assertion in `scripts/diag-rvf-interproc-race.mjs`'s trial-accumulator: if any trial shows `entryCount<N && subprocFailures===0`, exit non-zero with a dedicated `SILENT_LOSS` signal.
+16. **Error cause preserved through StorageFactory rewrap (new — Pass-3).** Any `[StorageFactory] Failed to create storage backend` thrown by `storage-factory.ts:155` carries `err.cause` set to the underlying primary error, and the top-line message includes the cause's `code` when present. Verifiable two ways: (a) unit test — force-failure with a stubbed `RvfBackend.initialize` that throws `{code:'ENOENT'}` and assert the outer error's `.cause.code === 'ENOENT'`; (b) runtime probe — `diag-rvf-persist-trace.mjs` with d3 reverted shows `factory-createStorage-catch` traces where the outer wrapped error's message contains the literal string `ENOENT` (not just the generic "verify the database path is writable" text). Closes H9.
 
 ## Risks
 
@@ -270,6 +379,8 @@ This ADR is Implemented when:
 - **Cross-ADR coupling (ADR-0082, ADR-0086, ADR-0088, ADR-0090, ADR-0092).** The amendment makes `tryNativeInit` a new ADR-0082 regression surface (silent-fallback elimination); ADR-0086 Layer-1-storage invariant gains an "SFVR owner" constraint; ADR-0088's "no daemon" guideline is re-affirmed (option D rejected); ADR-0090's advisory-lock choice is re-affirmed (option C rejected); ADR-0092's native/pure-TS coexistence model is tightened from "either backend is fine per call" to "once SFVR, always native-or-refuse." Cross-link notes must be added to each referenced ADR after this amendment ships.
 - **d1 cold-start wall-clock grows linearly with N concurrent writers.** Serializing `tryNativeInit` through the advisory lock means only one process runs `reapStaleTmpFiles` → `tryNativeInit` → `loadFromDisk` at a time. Expected hold-time per process is ~10-50ms (native `open` + small meta-read); at N=8 the tail-writer therefore waits ~80-400ms before its own init begins. The existing 5s `acquireLock()` budget absorbs this comfortably up to roughly N=50 serial writers, but the wall-clock penalty is real and user-visible on cold start. **Mitigation**: measure cold-start penalty at N=8 during AC #9 validation and assert `< 5s` total per subprocess. If the budget is exceeded, design review is required — candidates include shortening `loadFromDisk` under lock (move disk IO outside the lock after the native-open phase completes) or introducing a shared-lock/exclusive-lock two-phase acquire. Do NOT raise the 5s budget without re-evaluating stale-holder semantics.
 - **Factory cache is per-process; d1 is what closes the inter-process race.** Item (c)'s module-scope `Map<resolvedPath, RvfBackend>` in `storage-factory.ts` lives in each process's own heap — it provides **zero** inter-process coordination. d2 activates this cache on the CLI hot path (reducing 2×-init → 1×-init per process), but the N-process race is closed by d1's advisory-lock serialization, not by any cache. Architects reviewing future ADRs must not conflate "backend-instance dedup" (c/d2, in-process) with "backend-init serialization" (d1, inter-process) — they address orthogonal failure modes. Documented explicitly to prevent future regressions where the cache is assumed to cover inter-process scenarios.
+- **d3 adds an extra mkdir syscall per cold-start `acquireLock`.** `mkdir(dirname(lockPath), {recursive:true})` silently succeeds (no-ops internally) when the directory already exists — this is the correct behavior, but it adds one extra filesystem syscall per lock acquire. Measured cost: <1ms on APFS (cache-warm) and ~1-3ms on first-ever invocation (cache-cold directory). This is well under the d1 risk bullet's 10-50ms budget and several orders of magnitude under the 5s `acquireLock` wall-clock budget. Acceptable. Mitigation not required; if future profiling ever surfaces this as a hot-path cost, the mkdir can be gated behind a "has-run-once-in-this-process" flag — but the current price is too small to justify the complexity.
+- **d4's stricter invariant converts silent losses into loud cold-start retries.** The pre-d4 behavior accepted zero-byte and unknown-magic states as "pure-TS owns this" and silently fell through; now those states throw. For the primary happy path (d1 serializes init, so no peer is ever mid-write at peek time), this throw never fires — d4 is a defense-in-depth invariant. For the edge case where d1 somehow fails to fully serialize (lock stolen by a stale-PID detection that mis-fires, for example), d4's throw surfaces the bug as a noisy `cli memory store` exit=1 rather than a silent `entryCount<N`. The net is **fewer silent corruptions at the cost of more loud cold-start retries** (the CLI caller should retry the full `cli memory store` on such a throw; acceptance-check harnesses already tolerate this via their subprocess-failure counting). **Mitigation**: d3 + d4 land together in the same commit — d3 prevents the vast majority of zero-byte files d4 rejects, so the practical throw rate is negligible. If d4 throws are observed above 1% of trials at N=8 in AC #15 validation, re-open the lock-ordering question before adopting d4 in production.
 
 ## References
 
