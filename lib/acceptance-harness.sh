@@ -357,7 +357,17 @@ _with_iso_cleanup() {
   local check_id="$1" body_fn="$2"
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
 
-  local iso; iso=$(_e2e_isolate "$check_id")
+  # Prefer _e2e_isolate when E2E_DIR is live (Phase 3/4 checks that need
+  # the seeded init state). Fall back to plain mktemp when E2E_DIR has
+  # been torn down (ADR-0096 catalog checks run post-E2E-cleanup) —
+  # they don't need E2E lineage, just a scratch sandbox.
+  local iso=""
+  if [[ -n "${E2E_DIR:-}" && -d "${E2E_DIR:-}" ]] && declare -F _e2e_isolate >/dev/null; then
+    iso=$(_e2e_isolate "$check_id")
+  fi
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    iso=$(mktemp -d "/tmp/iso-${check_id}-XXXXX" 2>/dev/null || true)
+  fi
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_OUTPUT="${check_id}: failed to create isolated dir"
     return
