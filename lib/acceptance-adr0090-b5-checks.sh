@@ -1150,33 +1150,167 @@ $(echo "$probe_body" | head -10)"
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-11: semanticRouter — READ-ONLY LOOKUP TOOL BY DESIGN.
-# Verified patch.151: `agentdb_semantic_route` returns
-# {route:"default", confidence:0} — no SQL write ever attempted.
-# Helper's 4h read-only branch (route:default + confidence:0)
-# classifies as skip_accepted. Architect risk flag: HIGH — SKIP_ACCEPTED
-# expected and validated. Regression-guard: the day semanticRouter
-# grows a persistent route log, the response shape changes (non-default
-# route or non-zero confidence) and the regex stops matching → real
-# row-count verification runs.
+# B5-11: semanticRouter — NO PERSISTENCE SURFACE (RVF OR SQLITE).
+#
+# W5-A1 (2026-04-17): rewritten to probe RVF directly. Task premise was
+# that the controller writes to RVF fallback instead of SQLite — the
+# empirical and source-level truth is that it writes to neither.
+#
+# Controller source (@sparkleideas/agentdb 3.0.0-alpha.x,
+# packages/agentdb/dist/src/services/SemanticRouter.js): a single
+# in-memory `routes: Map<string, RouteConfig>` field. Zero
+# `CREATE TABLE`, zero `INSERT`, zero RVF `namespace` / `store` / DB
+# handle usage. `addRoute()` does `this.routes.set(name, ...)` and
+# optionally delegates to `@sparkleideas/ruvector-router` (also a
+# pure-compute matcher, no persistence). `route()` queries the Map or
+# the native router — read-only path.
+#
+# MCP surface (`cli mcp exec --tool agentdb_semantic_route`, handler
+# at v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts:533-555) calls
+# `ctrl.route(input)` and returns the result. No `addRoute` MCP tool
+# exists, so from a CLI user's perspective there is no way to populate
+# the Map between process starts. Cold-init always responds
+# `{route: "default", confidence: 0}`.
+#
+# Direct empirical confirmation (patch.189 in /tmp/ruflo-w5a1-probe):
+#   1. After cold `init --full`, `.swarm/memory.rvf` is 162 bytes (the
+#      RVF header only: `SFVR` magic + zeroed entry count).
+#   2. `cli mcp exec --tool agentdb_semantic_route --params
+#       '{"input":"JWT authentication with refresh token rotation"}'`
+#       returns exactly `{"route":"default","confidence":0}`.
+#   3. `cli memory list --namespace routes` / `semantic_routes` /
+#       `semantic-router` all report "No entries found".
+#   4. `.swarm/memory.rvf` is still 162 bytes (entry count still zero)
+#      after the probe — zero RVF writes happened.
+#
+# Classification: skip_accepted. The controller is registered + enabled
+# in controller-registry.ts L1084 (agentdb !== null gate) and L1337
+# (constructor path), but exposes no MCP write surface and persists no
+# state on its own. This is an upstream agentdb API limitation that a
+# fork change cannot fix without inventing a new MCP tool (out of scope
+# for B5).
+#
+# Regression-guard (ADR-0082 "trade-off needs a real check"): if
+# upstream grows an `addRoute`-backed MCP tool OR the controller starts
+# pushing routes to RVF, this check will flip naturally:
+#   * `agentdb_semantic_route` returns a non-default route OR non-zero
+#     confidence → pass_regex matches → PASS branch.
+#   * An RVF namespace (routes / semantic_routes / semantic-router)
+#     gains ≥1 entry OR the .rvf entry count climbs above baseline →
+#     PASS branch even if the probe still returns default (persistence
+#     landed but the lookup path is not wired yet).
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_semanticRouter() {
-  # W2-I6: seed 6 distinct-topic memory entries (auth, db, api) then
-  # probe semantic_route. pass_regex: a non-default route (route is not
-  # "default") OR confidence > 0. trivial_regex: {route:"default",
-  # confidence:0} — the router found no signal even after embedding-
-  # backed seeding (expected in current build because the MCP surface
-  # for addRoute doesn't exist). No sqlite_table — semanticRouter has
-  # no persistence by design; pass_regex match alone = PASS.
-  _b5_seeded_probe \
-    "semanticRouter" \
-    "_b5_seed_semantic_router" \
-    "agentdb_semantic_route" \
-    "{\"input\":\"JWT authentication with refresh token rotation\"}" \
-    '"confidence"[[:space:]]*:[[:space:]]*(0\.[1-9]|[1-9])' \
-    '"route"[[:space:]]*:[[:space:]]*"default"|"confidence"[[:space:]]*:[[:space:]]*0\b' \
-    "" \
-    30
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+
+  if [[ -z "${E2E_DIR:-}" || ! -d "$E2E_DIR" ]]; then
+    _CHECK_OUTPUT="B5/semanticRouter: E2E_DIR not set or missing"
+    return
+  fi
+
+  local iso; iso=$(_e2e_isolate "b5-seed-semanticRouter")
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    _CHECK_OUTPUT="B5/semanticRouter: failed to create isolated project dir"
+    return
+  fi
+
+  local cli; cli=$(_cli_cmd)
+  local work; work=$(mktemp -d "/tmp/b5-seed-semanticRouter-work-XXXXX")
+  local rvf_file="$iso/.swarm/memory.rvf"
+
+  # 1. Cold-start health hydrates the ControllerRegistry so semanticRouter
+  #    is constructed + initialize()'d before we probe.
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+
+  # 2. Baseline RVF entry count. The file byte layout is
+  #    `SFVR` (4 bytes magic) + `01 05 00 00` (version) + 8-byte LE count.
+  #    Using `od` avoids depending on `xxd`.
+  local baseline_count=0
+  if [[ -f "$rvf_file" ]]; then
+    baseline_count=$(od -An -t u4 -j 8 -N 4 "$rvf_file" 2>/dev/null | tr -d ' \n')
+    baseline_count=${baseline_count:-0}
+  fi
+
+  # 3. Seed via the ONLY available write-ish MCP tool for this controller
+  #    — `agentdb_semantic_route` itself. If upstream ever makes route()
+  #    auto-persist observed inputs (it does not today), this will write.
+  local probe_out="$work/probe.out"
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_semantic_route --params '{\"input\":\"JWT authentication with refresh token rotation\"}' 2>&1" "$probe_out" 30
+  local probe_exit="${_RK_EXIT:-1}"
+  local probe_body; probe_body=$(cat "$probe_out" 2>/dev/null || echo "")
+
+  # 4. Post-probe RVF entry count + namespace scan. Two independent
+  #    signals: raw entry count delta, and CLI namespace listing. If
+  #    either indicates persistence, we escalate to PASS.
+  local after_count=0
+  if [[ -f "$rvf_file" ]]; then
+    after_count=$(od -An -t u4 -j 8 -N 4 "$rvf_file" 2>/dev/null | tr -d ' \n')
+    after_count=${after_count:-0}
+  fi
+  local delta=$((after_count - baseline_count))
+  [[ "$delta" -lt 0 ]] && delta=0
+
+  local ns_hits=0
+  local ns
+  for ns in routes semantic_routes semantic-router semanticRouter; do
+    local ns_out="$work/ns-${ns}.out"
+    _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace '$ns' 2>&1" "$ns_out" 15
+    # Count hits: any line containing a key-ish pattern `key:` / `- key`
+    # that isn't the "No entries found" warning or a header.
+    if [[ -f "$ns_out" ]] \
+       && ! grep -qE "No entries found" "$ns_out" 2>/dev/null \
+       && grep -qE "^[[:space:]]*(-|key:|[a-zA-Z0-9_-]+[[:space:]]*:)" "$ns_out" 2>/dev/null; then
+      ns_hits=$((ns_hits + 1))
+    fi
+  done
+
+  # 5. Classification.
+  # ── 5a. PROBE returned a non-default route OR non-zero confidence:
+  #        controller is actually routing (upstream grew persistence or
+  #        the lookup path was wired to a seeded source). PASS.
+  #
+  #        Non-default route detection: BSD grep -E has no negative
+  #        lookahead, so we extract the route value and compare. A
+  #        grep-based inversion (grep the route line, then grep -v
+  #        "default") avoids the unsupported `(?!...)` syntax.
+  local probe_snippet; probe_snippet=$(echo "$probe_body" | head -5 | tr '\n' ' ' | cut -c1-220)
+  local route_val
+  route_val=$(echo "$probe_body" | grep -oE '"route"[[:space:]]*:[[:space:]]*"[^"]*"' | head -1 | sed -E 's/.*"route"[[:space:]]*:[[:space:]]*"([^"]*)".*/\1/')
+  if echo "$probe_body" | grep -qE '"confidence"[[:space:]]*:[[:space:]]*(0\.[1-9]|[1-9])' \
+     || { [[ -n "$route_val" ]] && [[ "$route_val" != "default" ]]; }; then
+    rm -rf "$work" "$iso" 2>/dev/null
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="B5/semanticRouter: PASS: semantic_route returned non-default route or non-zero confidence (probe exit=$probe_exit). Probe: ${probe_snippet}"
+    return
+  fi
+
+  # ── 5b. RVF grew OR a route-ish namespace now has entries: persistence
+  #        landed even though the read path still returns default. PASS
+  #        with diagnostic so we can inspect the new shape.
+  if [[ "$delta" -ge 1 || "$ns_hits" -ge 1 ]]; then
+    rm -rf "$work" "$iso" 2>/dev/null
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="B5/semanticRouter: PASS: RVF entry count grew by $delta (baseline=$baseline_count → after=$after_count); route-namespace hits=$ns_hits. Probe: ${probe_snippet}"
+    return
+  fi
+
+  # ── 5c. Classic trivial shape (route:default + confidence:0) AND no
+  #        RVF growth AND no namespace entries: architecturally proven
+  #        no-op. skip_accepted per ADR-0090 Tier A2 bucket discipline.
+  if echo "$probe_body" | grep -qE '"route"[[:space:]]*:[[:space:]]*"default"' \
+     && echo "$probe_body" | grep -qE '"confidence"[[:space:]]*:[[:space:]]*0\b'; then
+    rm -rf "$work" "$iso" 2>/dev/null
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/semanticRouter: SKIP_ACCEPTED: probe returned {route:default,confidence:0}; RVF delta=0 (baseline=$baseline_count, after=$after_count); no route-namespace entries. Controller is in-memory-only by upstream design (agentdb SemanticRouter has no persistence surface; MCP exposes no addRoute). Probe: ${probe_snippet}"
+    return
+  fi
+
+  # ── 5d. Any other shape — fail loudly (ADR-0082 no silent-pass).
+  rm -rf "$iso" 2>/dev/null
+  _CHECK_OUTPUT="B5/semanticRouter: FAIL: unrecognized response shape. Probe exit=$probe_exit. Probe body (first 10 lines):
+$(echo "$probe_body" | head -10)
+RVF delta=$delta (baseline=$baseline_count → after=$after_count), ns_hits=$ns_hits"
+  rm -rf "$work" 2>/dev/null
 }
 
 # ────────────────────────────────────────────────────────────────────
