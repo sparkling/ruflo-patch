@@ -57,7 +57,10 @@ _session_invoke_tool() {
 
   # ─── Three-way bucket ────────────────────────────────────────────
   # 1. Tool not found / not registered -> skip_accepted
-  if echo "$body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  #    NOTE: pattern must NOT match JSON payloads like `"error": "Session not found"`
+  #    (that is a handler-level domain response, not a tool-registration problem).
+  #    Anchor to tool-level phrasing only.
+  if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .+ is not available'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3-sess/${label}: MCP tool '$tool' not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     return
@@ -95,7 +98,7 @@ check_adr0094_p3_session_lifecycle() {
   # Step 1: save
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool session_save --params '{\"name\":\"$session_name\"}'" "$work" 15
   local body; body=$(cat "$work" 2>/dev/null || echo ""); body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
-  if echo "$body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .+ is not available'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3-sess/lifecycle: session_save not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     rm -f "$work" 2>/dev/null; return
@@ -148,23 +151,63 @@ check_adr0094_p3_session_lifecycle() {
 }
 
 # ════════════════════════════════════════════════════════════════════
+# Seeding helper: save a one-off session and return its name via stdout.
+# Each individual check seeds its own uniquely-named session so parallel
+# runs don't collide, and so info/restore/delete exercise the real happy
+# path rather than the "Session not found" branch.
+#
+# Usage:  local name; name=$(_session_seed "info") || return
+# ════════════════════════════════════════════════════════════════════
+_session_seed() {
+  local tag="$1"
+  local cli; cli=$(_cli_cmd)
+  local name="adr0094-seed-${tag}-$$-${RANDOM}"
+  local work; work=$(mktemp /tmp/session-seed-${tag}-XXXXX)
+  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool session_save --params '{\"name\":\"$name\"}'" "$work" 15
+  local body; body=$(cat "$work" 2>/dev/null || echo ""); body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
+  rm -f "$work" 2>/dev/null
+  # Tool-registration-level skip surfaces up so the dependent check can mark skip_accepted.
+  if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .+ is not available'; then
+    echo "__SKIP_TOOL_MISSING__"
+    return 0
+  fi
+  # Seeding must actually produce a savedAt/sessionId-shaped response.
+  if ! echo "$body" | grep -qiE 'savedAt|sessionId'; then
+    echo "__SEED_FAILED__:$(echo "$body" | head -3 | tr '\n' ' ')"
+    return 0
+  fi
+  echo "$name"
+}
+
+# ════════════════════════════════════════════════════════════════════
 # Individual tool checks
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0094_p3_session_save() {
   _session_invoke_tool \
     "session_save" \
-    '{"name":"adr0094-test-session"}' \
-    'saved|success|session' \
+    '{"name":"adr0094-test-session-save-'"$$"'"}' \
+    'savedAt|sessionId' \
     "session_save" \
     15
 }
 
 check_adr0094_p3_session_restore() {
+  local name; name=$(_session_seed "restore")
+  if [[ "$name" == "__SKIP_TOOL_MISSING__" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P3-sess/session_restore: session_save tool not in build (prereq)"
+    return
+  fi
+  if [[ "$name" == __SEED_FAILED__* ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P3-sess/session_restore: seed via session_save failed — ${name#__SEED_FAILED__:}"
+    return
+  fi
   _session_invoke_tool \
     "session_restore" \
-    '{"name":"adr0094-test-session"}' \
-    'restored|loaded|session' \
+    '{"name":"'"$name"'"}' \
+    '"restored":\s*true|restoredAt' \
     "session_restore" \
     15
 }
@@ -179,19 +222,41 @@ check_adr0094_p3_session_list() {
 }
 
 check_adr0094_p3_session_delete() {
+  local name; name=$(_session_seed "delete")
+  if [[ "$name" == "__SKIP_TOOL_MISSING__" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P3-sess/session_delete: session_save tool not in build (prereq)"
+    return
+  fi
+  if [[ "$name" == __SEED_FAILED__* ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P3-sess/session_delete: seed via session_save failed — ${name#__SEED_FAILED__:}"
+    return
+  fi
   _session_invoke_tool \
     "session_delete" \
-    '{"name":"adr0094-test-session"}' \
-    'deleted|removed|success' \
+    '{"name":"'"$name"'"}' \
+    '"deleted":\s*true|deletedAt' \
     "session_delete" \
     15
 }
 
 check_adr0094_p3_session_info() {
+  local name; name=$(_session_seed "info")
+  if [[ "$name" == "__SKIP_TOOL_MISSING__" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P3-sess/session_info: session_save tool not in build (prereq)"
+    return
+  fi
+  if [[ "$name" == __SEED_FAILED__* ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P3-sess/session_info: seed via session_save failed — ${name#__SEED_FAILED__:}"
+    return
+  fi
   _session_invoke_tool \
     "session_info" \
-    '{"name":"adr0094-test-session"}' \
-    'info|session|metadata|created' \
+    '{"name":"'"$name"'"}' \
+    'savedAt|fileSize|hasData' \
     "session_info" \
     15
 }
