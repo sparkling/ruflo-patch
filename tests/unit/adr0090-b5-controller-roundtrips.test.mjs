@@ -71,10 +71,10 @@ const CHECKS = [
   { controller: 'hierarchicalMemory',  fn: 'check_adr0090_b5_hierarchicalMemory',  tool: 'agentdb_hierarchical_store', table: 'hierarchical_memory', markerCol: 'content' },
   { controller: 'memoryConsolidation', fn: 'check_adr0090_b5_memoryConsolidation', tool: 'agentdb_consolidate',        table: 'consolidation_log',   markerCol: 'timestamp' },
   { controller: 'attentionService',    fn: 'check_adr0090_b5_attentionService',    tool: 'agentdb_attention_metrics',  table: 'attention_metrics',   markerCol: 'sample' },
-  { controller: 'gnnService',          fn: 'check_adr0090_b5_gnnService',          tool: 'agentdb_neural_patterns',    table: 'gnn_embeddings',      markerCol: 'pattern' },
+  { controller: 'gnnService',          fn: 'check_adr0090_b5_gnnService',          tool: 'agentdb_neural_patterns',    table: null,                  markerCol: 'pattern', inMemoryOnly: true },
   { controller: 'semanticRouter',      fn: 'check_adr0090_b5_semanticRouter',      tool: 'agentdb_semantic_route',     table: 'semantic_routes',     markerCol: 'input' },
   { controller: 'graphAdapter',        fn: 'check_adr0090_b5_graphAdapter',        tool: 'agentdb_causal-edge',        table: 'exp_edges',           markerCol: 'label' },
-  { controller: 'sonaTrajectory',      fn: 'check_adr0090_b5_sonaTrajectory',      tool: 'agentdb_pattern_store',      table: 'sona_trajectories',   markerCol: 'pattern' },
+  { controller: 'sonaTrajectory',      fn: 'check_adr0090_b5_sonaTrajectory',      tool: 'agentdb_sona_trajectory_store', table: null,                 markerCol: 'pattern', inMemoryOnly: true },
   { controller: 'nightlyLearner',      fn: 'check_adr0090_b5_nightlyLearner',      tool: 'agentdb_learner_run',        table: 'learning_sessions',   markerCol: 'metadata' },
   { controller: 'explainableRecall',   fn: 'check_adr0090_b5_explainableRecall',   tool: 'agentdb_causal_recall',      table: 'recall_certificates', markerCol: 'query' },
 ];
@@ -292,6 +292,12 @@ describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => 
 
   it('each wrapper delegates to the shared helper (no copy-paste)', () => {
     for (const c of CHECKS) {
+      // In-memory controllers use dedicated state-diff check functions
+      // rather than the SQL-focused shared helper (ADR-0094 line 58:
+      // "runtime API checks for pure-compute controllers, and state-diff
+      // checks for in-memory services"). Skip the thin-wrapper assertion
+      // for these — their bodies are necessarily longer.
+      if (c.inMemoryOnly) continue;
       const re = new RegExp(`${c.fn}\\(\\)\\s*\\{([\\s\\S]*?)\\n\\}`, 'm');
       const m = source.match(re);
       assert.ok(m, `${c.fn} body must be parseable`);
@@ -387,6 +393,11 @@ describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => 
 
   it('every wrapper invokes the helper with its canonical table name', () => {
     for (const c of CHECKS) {
+      // In-memory controllers (sonaTrajectory post-W2-I5) do NOT use
+      // the SQL-focused shared helper — they have dedicated state-diff
+      // check functions instead. Skip the canonical-table assertion
+      // for these; the inMemoryOnly flag marks them.
+      if (c.inMemoryOnly) continue;
       const re = new RegExp(`${c.fn}\\(\\)\\s*\\{([\\s\\S]*?)\\n\\}`, 'm');
       const m = source.match(re);
       const body = m ? m[1] : '';
@@ -583,11 +594,16 @@ describe('ADR-0090 B5 three-way bucket — "NOT NULL constraint" → skip_accept
   });
 });
 
-describe('ADR-0090 B5 three-way bucket — "Tool not found" → skip_accepted', () => {
-  it('maps dispatcher-level "Tool not found" to skip_accepted', () => {
-    // Live probe: agentdb_neural_patterns returns "Tool not found:"
-    // from the CLI dispatcher (distinct from "unknown tool" which
-    // comes from the MCP handler layer). Same skip bucket.
+describe('ADR-0090 B5-10 gnnService — W2-I4 registration semantics', () => {
+  // BEFORE W2-I4: helper's 4e branch classified "Tool not found" as
+  // skip_accepted because `agentdb_neural_patterns` was never registered.
+  // AFTER W2-I4: the tool IS registered AND has a bespoke verifier that
+  // asserts a positive telemetry shape (controller:"gnnService" + engine +
+  // count). The "Tool not found" case remains skip_accepted (handles
+  // pre-W2-I4 rollback) — regression guarding is done by the positive
+  // shape assertions in the C-branch, not by inverting skip semantics.
+
+  it('SKIP_ACCEPTEDs when agentdb_neural_patterns is unregistered (rollback/pre-W2-I4)', () => {
     const fx = setupTest('gnn-tool-not-found');
     try {
       const scenarios = {
@@ -604,9 +620,75 @@ describe('ADR-0090 B5 three-way bucket — "Tool not found" → skip_accepted', 
         scenariosByTool: scenarios,
       });
       assert.equal(passed, 'skip_accepted',
-        `tool-not-found must skip_accepted, got ${passed}\noutput: ${output}`);
-      assert.match(output, /not found|SKIP_ACCEPTED/i,
-        `output must name the missing-tool reason, got: ${output}`);
+        `tool-not-found must skip_accepted (pre-W2-I4 rollback compat), got ${passed}\noutput: ${output}`);
+      assert.match(output, /SKIP_ACCEPTED.*not in build|tool not found/i,
+        `output must name the tool-absent reason, got: ${output}`);
+    } finally {
+      teardown(fx.tempDir);
+    }
+  });
+
+  it('PASSes when the tool returns success:true + controller:gnnService + engine + count', () => {
+    const fx = setupTest('gnn-pass-shape');
+    try {
+      const scenarios = {
+        agentdb_health: { exit: 0, stdoutBody: 'OK', createEmptyDb: true },
+        agentdb_neural_patterns: {
+          exit: 0,
+          stdoutBody: JSON.stringify({
+            success: true,
+            controller: 'gnnService',
+            engine: 'js',
+            initialized: true,
+            stats: { engineType: 'js', initialized: true, config: {} },
+            patterns: [],
+            count: 0,
+            marker: 'b5-gnn-test',
+            type: 'gnn',
+          }),
+        },
+      };
+      const { passed, output } = runCheck({
+        tempDir: fx.tempDir,
+        isoPath: fx.isoPath,
+        fnName: 'check_adr0090_b5_gnnService',
+        scenariosByTool: scenarios,
+      });
+      assert.equal(passed, 'true',
+        `success shape must PASS, got ${passed}\noutput: ${output}`);
+      assert.match(output, /PASS:.*controller:gnnService.*engine:js.*count:0/,
+        `output must quote the response fields, got: ${output}`);
+    } finally {
+      teardown(fx.tempDir);
+    }
+  });
+
+  it('SKIP_ACCEPTEDs when GNNService controller is not wired', () => {
+    // Tool is registered but agentdb.getController('gnnService')
+    // returned null in this build — legitimate skip (same semantics as
+    // helper's 4b branch).
+    const fx = setupTest('gnn-controller-unwired');
+    try {
+      const scenarios = {
+        agentdb_health: { exit: 0, stdoutBody: 'OK', createEmptyDb: true },
+        agentdb_neural_patterns: {
+          exit: 0,
+          stdoutBody: JSON.stringify({
+            success: false,
+            error: 'GNNService controller not available',
+          }),
+        },
+      };
+      const { passed, output } = runCheck({
+        tempDir: fx.tempDir,
+        isoPath: fx.isoPath,
+        fnName: 'check_adr0090_b5_gnnService',
+        scenariosByTool: scenarios,
+      });
+      assert.equal(passed, 'skip_accepted',
+        `controller-not-wired must skip_accepted, got ${passed}\noutput: ${output}`);
+      assert.match(output, /SKIP_ACCEPTED.*not wired/i,
+        `output must name the not-wired reason, got: ${output}`);
     } finally {
       teardown(fx.tempDir);
     }
