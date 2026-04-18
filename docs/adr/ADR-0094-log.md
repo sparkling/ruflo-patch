@@ -6,6 +6,40 @@
 
 ---
 
+## 2026-04-18 — W4-A3 p7-cli-doctor: fork fix for false "npm not found" under parallel load
+
+**Problem**: `p7-cli-doctor` flaked in 2/8 full acceptance runs on 2026-04-18 (`accept-2026-04-18T183529Z` and `accept-2026-04-18T185852Z`). Failure message: `P7/cli_doctor: exited 1 (expected 0)` with output containing `✗ npm Version: npm not found`. The pre-fix `checkNpmVersion` in `v3/@claude-flow/cli/src/commands/doctor.ts` used a blanket `catch` that mapped every `runCommand('npm --version')` rejection — including the 5s `execAsync` timeout that fires under the parallel acceptance harness (~8 concurrent CLI subprocesses each spawning `npm`) — to `{ status: 'fail', message: 'npm not found' }`. That was an ADR-0082 false-assertion: the acceptance harness had literally just used npm seconds earlier to install `@sparkleideas/cli`, so npm was clearly on PATH. The false `'fail'` status flipped the doctor process exit to 1, breaking the `_p7_cli_check` contract.
+
+**Fork fix** (`v3/@claude-flow/cli/src/commands/doctor.ts#checkNpmVersion`): discriminator on error shape.
+
+| Error shape | New classification | Rationale |
+|---|---|---|
+| `err.code === 'ENOENT'` | `fail` — "npm not found" | Real product error: spawn reports ENOENT when binary is missing. Must still flip exit to 1. |
+| `err.killed` or `err.signal` (execAsync timeout) | `warn` — "npm --version timed out (likely system under load)" | Transient, not a product defect. Don't assert something false. |
+| Any other error | `warn` — "npm --version failed: <code>" | Defensive: never silently pass, but never falsely "not found". |
+
+This preserves ADR-0082 loud-failure (ENOENT still fails, and any transient failure still surfaces as `warn` which is visible to the user) while refusing to lie about npm being missing when it isn't.
+
+**New acceptance check**: `check_adr0094_p7_cli_doctor_npm_no_false_fail` (wired as `p7-cli-doctor-npm` in Phase 7). Spawns 4 concurrent `cli doctor` subprocesses in the same `E2E_DIR` and asserts none of them emits `✗ npm Version: npm not found`. Complements the existing `p7-cli-doctor` which only runs a single invocation.
+
+**New unit tests** (`tests/unit/w4-a3-doctor-npm-check.test.mjs`): 8 tests, 2 suites. Locks the discriminator table + the doctor-exit-on-fail contract at the unit tier so any future regression that merges the branches again will fail tests before it can ship.
+
+**Validation**:
+- `npm run test:unit` → 3015/3015 pass, 0 fail (3049 tests, 34 skipped). W4-A3 suites all green.
+- Fork build clean (`npm run build` via ruflo-patch pipeline, 38 packages built, 0 failed).
+- New bash check parses and runs under `scripts/run-check.sh` harness.
+- Not publishing or running full acceptance per task scope ("no push, no publish").
+
+**Classification**: product bug (conflation of failure modes in doctor.ts catch branch) — not an envelope issue. The acceptance check didn't need widening; the check correctly reported that doctor exited 1, which was itself correct given doctor's contract (exit 1 iff any sub-check is `fail`). The bug was in doctor mislabelling a transient timeout as a permanent product failure.
+
+**Files**:
+- Fork: `/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts` (W4-A3 discriminator)
+- Check: `/Users/henrik/source/ruflo-patch/lib/acceptance-cli-commands-checks.sh` (new `check_adr0094_p7_cli_doctor_npm_no_false_fail`)
+- Wiring: `/Users/henrik/source/ruflo-patch/scripts/test-acceptance.sh` (p7-cli-doctor-npm run_check_bg + collect_parallel spec)
+- Unit: `/Users/henrik/source/ruflo-patch/tests/unit/w4-a3-doctor-npm-check.test.mjs`
+
+---
+
 ## 2026-04-17 — A9 P4 github tools: removed incorrect GITHUB_TOKEN skip gate
 
 **Problem**: The 5 `p4-gh-*` checks in `lib/acceptance-github-integration-checks.sh` were gated on `[[ -z "$GITHUB_TOKEN" ]] && skip_accepted`, causing all 5 to turn green permanently in local cascades where `GITHUB_TOKEN` is unset. Reviewing `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts` revealed the gate is based on a false premise: **none of the 5 handlers read `GITHUB_TOKEN`** — they are all local-only stubs that persist to `.claude-flow/github/store.json` and never make an API call. The skip gate was therefore an ADR-0082 silent-pass: green for a reason unrelated to what the tool actually does.

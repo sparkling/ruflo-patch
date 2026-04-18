@@ -985,6 +985,7 @@ run_check_bg "p7-cli-session"    "CLI session --help (P7)"           check_adr00
 run_check_bg "p7-cli-hooks"      "CLI hooks --help (P7)"             check_adr0094_p7_cli_hooks_help         "adr0094-p7"
 run_check_bg "p7-cli-mcp"        "CLI mcp status (P7)"               check_adr0094_p7_cli_mcp_status         "adr0094-p7"
 run_check_bg "p7-cli-system"     "CLI system info (P7)"              check_adr0094_p7_cli_system_info        "adr0094-p7"
+run_check_bg "p7-cli-doctor-npm" "W4-A3: doctor npm no-false-fail"   check_adr0094_p7_cli_doctor_npm_no_false_fail "adr0094-p7"
 
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
@@ -1538,6 +1539,7 @@ collect_parallel "all" \
   "p7-cli-swarm|CLI swarm --help (P7)" "p7-cli-memory|CLI memory --help (P7)" \
   "p7-cli-session|CLI session --help (P7)" "p7-cli-hooks|CLI hooks --help (P7)" \
   "p7-cli-mcp|CLI mcp status (P7)" "p7-cli-system|CLI system info (P7)" \
+  "p7-cli-doctor-npm|W4-A3: doctor npm no-false-fail" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

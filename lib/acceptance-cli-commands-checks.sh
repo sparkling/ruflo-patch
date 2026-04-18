@@ -181,3 +181,88 @@ check_adr0094_p7_cli_system_info() {
     "cli_status" \
     15
 }
+
+# ════════════════════════════════════════════════════════════════════
+# Check 11 (W4-A3): doctor never reports "npm not found" when npm IS on PATH
+#
+# Regression target: under parallel acceptance load (~8 concurrent CLI
+# subprocesses), doctor.ts#checkNpmVersion's 5s execAsync timeout on
+# `npm --version` fired in ~20% of runs. The old catch-all branch
+# returned { status: 'fail', message: 'npm not found' }, flipping the
+# process exit to 1 and surfacing as `p7-cli-doctor: exited 1`. This
+# was a false product assertion — npm was clearly installed (the test
+# harness itself had just used npm to install @sparkleideas/cli).
+#
+# W4-A3 fork fix: doctor.ts discriminates ENOENT (real "not found",
+# reported as fail) from killed/signal (timeout, reported as warn) and
+# any other catch (reported as warn). This check pins the invariant:
+# if `npm --version` works in the shell, doctor must never claim
+# "npm not found". It does NOT require doctor to pass overall (other
+# warns are fine).
+#
+# Note: unlike check_adr0094_p7_cli_doctor which runs one parallel
+# invocation of doctor, this check introduces real contention — it
+# spawns 4 concurrent `cli doctor` subprocesses in the background and
+# asserts that none of them emits "✗ npm Version: npm not found".
+# ════════════════════════════════════════════════════════════════════
+check_adr0094_p7_cli_doctor_npm_no_false_fail() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Pre-flight: verify npm is actually on PATH. If not, the invariant
+  # the check guards doesn't apply — report skip_accepted.
+  if ! command -v npm >/dev/null 2>&1; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="W4-A3: npm not on PATH in harness — invariant not applicable"
+    return
+  fi
+
+  local cli; cli=$(_cli_cmd)
+  local tmpdir; tmpdir=$(mktemp -d /tmp/w4-a3-doctor-XXXXX)
+
+  # Launch 4 concurrent doctor invocations (mirrors the parallel
+  # acceptance pattern that originally tripped the flake).
+  local pids=()
+  local outs=()
+  for i in 1 2 3 4; do
+    local out="$tmpdir/doctor-$i.out"
+    outs+=("$out")
+    ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$cli" doctor > "$out" 2>&1 ) &
+    pids+=($!)
+  done
+
+  # Wait with a generous ceiling (4x single-run time is a safe upper bound).
+  local deadline=$(( $(date +%s) + 60 ))
+  for pid in "${pids[@]}"; do
+    while kill -0 "$pid" 2>/dev/null && [[ "$(date +%s)" -lt "$deadline" ]]; do
+      sleep 0.2
+    done
+    # Kill any stragglers — we don't fail on slow, only on false-fail content.
+    if kill -0 "$pid" 2>/dev/null; then
+      kill "$pid" 2>/dev/null || true
+    fi
+    wait "$pid" 2>/dev/null || true
+  done
+
+  # Scan every subprocess's output for the regression signature.
+  local bad_runs=0
+  local bad_first=""
+  for out in "${outs[@]}"; do
+    if [[ -f "$out" ]] && grep -qE '^[✗x][[:space:]]+npm Version:[[:space:]]+npm not found' "$out"; then
+      bad_runs=$((bad_runs + 1))
+      if [[ -z "$bad_first" ]]; then
+        bad_first=$(grep -E '^[✗x][[:space:]]+npm Version' "$out" | head -1)
+      fi
+    fi
+  done
+
+  rm -rf "$tmpdir" 2>/dev/null
+
+  if [[ "$bad_runs" -gt 0 ]]; then
+    _CHECK_OUTPUT="W4-A3: doctor falsely reported 'npm not found' in ${bad_runs}/4 concurrent runs even though npm is on PATH. First offender: ${bad_first}"
+    return
+  fi
+
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="W4-A3: 4 concurrent doctor runs, none asserted 'npm not found' (pre-fix reliably flaked ~20%)"
+}
