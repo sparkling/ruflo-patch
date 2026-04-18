@@ -365,9 +365,10 @@ _check_adr0096_fingerprint_determinism_body() {
     _CHECK_OUTPUT="ADR-0096/fingerprint: INSTABILITY: run1=$fp1 != run2=$fp2"
     return
   fi
-  # Length sanity — sha1 hex is 40 chars.
-  if [[ "${#fp1}" -ne 40 ]]; then
-    _CHECK_OUTPUT="ADR-0096/fingerprint: unexpected fp length ${#fp1} (expected 40 sha1 hex chars): $fp1"
+  # Length sanity — sha256 truncated to 12 hex chars (ADR-0096 §Fingerprints,
+  # bumped from sha1-40 by commit 132c3f8 to match impl-plan spec).
+  if [[ "${#fp1}" -ne 12 ]]; then
+    _CHECK_OUTPUT="ADR-0096/fingerprint: unexpected fp length ${#fp1} (expected 12 sha256-truncated hex chars): $fp1"
     return
   fi
   _CHECK_PASSED="true"
