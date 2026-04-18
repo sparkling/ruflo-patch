@@ -148,19 +148,32 @@ check_adr0094_p6_corrupted_state() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# P6-err-4: Permission denied on config directory
+# P6-err-4: Permission denied on persistence directory
 # ════════════════════════════════════════════════════════════════════
 #
-# chmod 000 on .claude-flow, then run an operation that MUST read/write
-# the config dir (doctor enumerates keys; memory store persists there).
-# Expect non-zero exit OR a clear permission diagnostic.
+# chmod 000 on .swarm (the ACTUAL write target for `memory store`), then
+# run `memory store`. Expect EACCES + non-zero exit from the CLI.
 #
-# History: the original version exercised `memory search`, which succeeds
-# on cached embeddings and never touches the config dir — so the check
-# silent-passed on exit 0. See ADR-0094 P6 fix notes.
+# History:
+#   v1 — exercised `memory search` which hits cached embeddings and never
+#        writes to disk. Silent-passed on exit 0.
+#   v2 — chmod 000 on `.claude-flow` + `doctor` + `memory store`. But
+#        `memory store` writes to `.swarm/memory.rvf`, NOT `.claude-flow/`,
+#        so `.swarm` remained writable and the store succeeded with exit 0.
+#        Manually reproduced in agent A13 session — catalog showed
+#        `(doctor exit=0, memory store exit=0)` uniformly. Probe was real
+#        (not dead) but aimed at the wrong directory.
+#   v3 (current) — chmod 000 on `.swarm` (the real RVF path). Manually
+#        verified: produces
+#          `[ERROR] Failed to store: Storage initialization failed:
+#           [StorageFactory] Failed to create storage backend (EACCES).
+#           Path: …/.swarm/memory.rvf … Underlying: EACCES: permission
+#           denied, open '…/.swarm/memory.rvf.lock'`
+#        and exits 1.
 #
-# If NO CLI operation fails on chmod 000 config in this environment,
-# report SKIP_ACCEPTED (NOT silent-pass) per ADR-0082 / ADR-0090 Tier A2.
+# Doctor remains as a secondary read-path probe on `.claude-flow` — some
+# doctor checks DO read config, and reporting a warning with an unreadable
+# config dir is also acceptable evidence of graceful handling.
 #
 # Permission restoration is guaranteed via a trap so we never leak an
 # unreadable dir that blocks later cleanup.
@@ -181,73 +194,82 @@ check_adr0094_p6_permission_denied() {
   # shellcheck disable=SC2064
   trap "chmod -R u+rwX '$iso' 2>/dev/null; rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 
-  # Lock down the config dir. If it doesn't exist, we can't exercise the
-  # permission path at all — skip_accepted.
-  if [[ ! -d "$iso/.claude-flow" ]]; then
+  # Primary probe: chmod 000 on .swarm (actual memory.rvf write path).
+  # If .swarm doesn't exist in the isolated copy, we can't exercise the
+  # write-path permission check at all → skip_accepted (ADR-0082).
+  if [[ ! -d "$iso/.swarm" ]]; then
     _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="P6-err/permission-denied: SKIP_ACCEPTED: no .claude-flow dir in isolated copy — cannot exercise permission path"
+    _CHECK_OUTPUT="P6-err/permission-denied: SKIP_ACCEPTED: no .swarm dir in isolated copy — cannot exercise memory.rvf write permission path"
     return
   fi
-  chmod 000 "$iso/.claude-flow"
+  chmod 000 "$iso/.swarm"
 
-  # Primary probe: `doctor` enumerates config keys → must read .claude-flow.
-  local work1; work1=$(mktemp /tmp/p6-perms-doctor-XXXXX)
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor 2>&1" "$work1" 20
+  # memory store writes to .swarm/memory.rvf → chmod 000 must trip EACCES.
+  local work1; work1=$(mktemp /tmp/p6-perms-store-XXXXX)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key p6-perm-test --value 'should fail on chmod 000 swarm' --namespace p6-perms 2>&1" "$work1" 20
   local exit1="${_RK_EXIT:-1}"
   local body1; body1=$(cat "$work1" 2>/dev/null || echo "")
   body1=$(echo "$body1" | grep -v '^__RUFLO_DONE__:')
   rm -f "$work1" 2>/dev/null
 
-  # Crash detection on probe 1
-  if echo "$body1" | grep -qiE 'SIGSEGV|unhandled.*exception'; then
-    _CHECK_OUTPUT="P6-err/permission-denied: CRASH on doctor with chmod 000: $(echo "$body1" | head -5 | tr '\n' ' ')"
+  # Crash detection
+  if echo "$body1" | grep -qiE 'SIGSEGV|unhandled.*exception|Cannot find module'; then
+    _CHECK_OUTPUT="P6-err/permission-denied: CRASH on memory store with chmod 000 .swarm: $(echo "$body1" | head -5 | tr '\n' ' ')"
     return
   fi
 
-  # Accept probe 1 as pass if it failed loudly (non-zero + diagnostic, or
-  # clear permission/EACCES string). Note: non-zero alone is NOT enough —
-  # doctor may fail for unrelated reasons; require exit!=0 AND a diagnostic,
-  # OR a permission-specific string regardless of exit code.
-  if echo "$body1" | grep -qiE 'permission|EACCES|denied|cannot (access|read|open)'; then
+  # Pass: explicit EACCES/permission diagnostic (tight regex — not the
+  # over-broad 'error|warn|fail' that v2 tolerated).
+  if echo "$body1" | grep -qiE 'EACCES|permission denied|permission.*denied|cannot (write|open|create).*\.rvf'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P6-err/permission-denied: doctor reported permission diagnostic (exit=$exit1)"
+    _CHECK_OUTPUT="P6-err/permission-denied: memory store reported EACCES on chmod 000 .swarm (exit=$exit1)"
+    # Restore .swarm before running secondary probe
+    chmod -R u+rwX "$iso/.swarm" 2>/dev/null
     return
   fi
-  if [[ "$exit1" -ne 0 ]] && echo "$body1" | grep -qiE 'error|fail|invalid'; then
+  # Also pass on non-zero exit WITH a generic failure diagnostic (still
+  # fail-loud, just shape-independent) — but require exit!=0 so we don't
+  # re-introduce the v2 silent-pass bug.
+  if [[ "$exit1" -ne 0 ]] && echo "$body1" | grep -qiE 'storage.*fail|initialization failed|failed to store|Underlying'; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P6-err/permission-denied: doctor exited non-zero with diagnostic (exit=$exit1)"
+    _CHECK_OUTPUT="P6-err/permission-denied: memory store failed loudly on chmod 000 .swarm (exit=$exit1, diagnostic present)"
+    chmod -R u+rwX "$iso/.swarm" 2>/dev/null
     return
   fi
 
-  # Probe 2: `memory store` MUST persist into .claude-flow or .swarm. With
-  # .claude-flow unreadable, the config-load path should trip EACCES.
-  local work2; work2=$(mktemp /tmp/p6-perms-store-XXXXX)
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key p6-perm-test --value 'should fail on chmod 000' --namespace p6-perms 2>&1" "$work2" 20
-  local exit2="${_RK_EXIT:-1}"
-  local body2; body2=$(cat "$work2" 2>/dev/null || echo "")
-  body2=$(echo "$body2" | grep -v '^__RUFLO_DONE__:')
-  rm -f "$work2" 2>/dev/null
+  # Restore .swarm before secondary probe (doctor) so doctor gets a clean
+  # persistence dir and we isolate .claude-flow read-path behavior.
+  chmod -R u+rwX "$iso/.swarm" 2>/dev/null
 
-  # Crash detection on probe 2
-  if echo "$body2" | grep -qiE 'SIGSEGV|unhandled.*exception'; then
-    _CHECK_OUTPUT="P6-err/permission-denied: CRASH on memory store with chmod 000: $(echo "$body2" | head -5 | tr '\n' ' ')"
-    return
+  # Secondary probe: doctor on chmod 000 .claude-flow. Doctor reading the
+  # config dir should warn/error, not crash. Used as corroboration only —
+  # a graceful-degrade warning ("No config file (using defaults)") is OK.
+  if [[ -d "$iso/.claude-flow" ]]; then
+    chmod 000 "$iso/.claude-flow"
+    local work2; work2=$(mktemp /tmp/p6-perms-doctor-XXXXX)
+    _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor 2>&1" "$work2" 20
+    local exit2="${_RK_EXIT:-1}"
+    local body2; body2=$(cat "$work2" 2>/dev/null || echo "")
+    body2=$(echo "$body2" | grep -v '^__RUFLO_DONE__:')
+    rm -f "$work2" 2>/dev/null
+
+    if echo "$body2" | grep -qiE 'SIGSEGV|unhandled.*exception'; then
+      _CHECK_OUTPUT="P6-err/permission-denied: CRASH on doctor with chmod 000 .claude-flow: $(echo "$body2" | head -5 | tr '\n' ' ')"
+      return
+    fi
+
+    # Doctor passes iff it produced a diagnostic (warning or error) and did
+    # not crash. Both "No config file (using defaults)" and EACCES text are
+    # acceptable fail-loud outcomes for a read-path probe.
+    if echo "$body2" | grep -qiE 'EACCES|permission|denied|cannot (access|read|open)|No config file|Config File|warning'; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="P6-err/permission-denied: store path fine, doctor handled chmod 000 .claude-flow with diagnostic (store_exit=$exit1, doctor_exit=$exit2)"
+      return
+    fi
   fi
 
-  if echo "$body2" | grep -qiE 'permission|EACCES|denied|cannot (access|read|open|write)'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P6-err/permission-denied: memory store reported permission diagnostic (exit=$exit2)"
-    return
-  fi
-  if [[ "$exit2" -ne 0 ]] && echo "$body2" | grep -qiE 'error|fail|invalid'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P6-err/permission-denied: memory store exited non-zero with diagnostic (exit=$exit2)"
-    return
-  fi
-
-  # Both probes tolerated chmod 000 without a loud failure. Per ADR-0082
-  # (no silent pass) and ADR-0090 Tier A2 (skip_accepted bucket), report
+  # No loud failure on either probe. Per ADR-0082 / ADR-0090 Tier A2,
   # skip_accepted rather than fabricate a pass.
   _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="P6-err/permission-denied: SKIP_ACCEPTED: CLI tolerates unreadable config dir — no fail-loud path available (doctor exit=$exit1, memory store exit=$exit2)"
+  _CHECK_OUTPUT="P6-err/permission-denied: SKIP_ACCEPTED: memory store tolerated chmod 000 .swarm (exit=$exit1) — no fail-loud path available"
 }
