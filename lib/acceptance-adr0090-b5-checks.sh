@@ -519,36 +519,223 @@ check_adr0090_b5_reasoningBank() {
     30
 }
 
+# ════════════════════════════════════════════════════════════════════
+# Shared helper: _b5_probe_causal_edge_persistence (W5-A2)
+# ════════════════════════════════════════════════════════════════════
+#
+# Charter (W5-A2): the prior check skipped on seeing
+# `controller:"router-fallback"` in the response. That shape is the
+# EXPECTED terminal state for the current build — it means the edge
+# landed in RVF via memory-router fallback (ADR-0086: RVF is primary).
+# Skipping on the expected state is an ADR-0082 anti-pattern — the
+# check had zero regression power: if the fallback broke and silently
+# dropped the write, the skip branch still fired.
+#
+# Empirical probe (W5-A2, 2026-04-17, patch.151+):
+#   Tool: agentdb_causal-edge
+#   Required params: sourceId, targetId, relation (validated at
+#                    input-validation.ts; non-empty strings).
+#   Optional: weight, uplift, confidence.
+#   Dispatch: memory-router.routeCausalOp type:'edge'.
+#     - First branch checks `causalGraph.addEdge()` — but
+#       CausalMemoryGraph exposes `addCausalEdge` (never `addEdge`),
+#       so this branch is bypassed.
+#     - Falls through to namespace='causal-edges', key=`${src}→${tgt}`
+#       (U+2192 arrow), value=JSON of the edge. Lands in RVF.
+#   Response: {success:true, controller:"router-fallback"}.
+#   SQLite side: `causal_edges` table is NOT created by cold-start
+#   health — the W2-I3 constructor DDL in CausalMemoryGraph.ts:167-191
+#   does not fire through the registry hydration path used by MCP tools.
+#   RVF side: `memory list --namespace causal-edges --format json`
+#   returns the edge; retrieval round-trips the full payload
+#   (sourceId, targetId, relation, weight).
+#
+# Accepted terminal states (ADR-0086 rule: both RVF and SQLite are
+# valid; RVF is primary but SQLite may catch up one day):
+#   (A) RVF: edge is retrievable via `memory list --namespace
+#       causal-edges --format json` and the JSON contains the marker
+#       from the seed params.  → PASS (current reality)
+#   (B) SQLite: `causal_edges` table exists and has a row where
+#       `mechanism` or `metadata` contains the marker.  → PASS (the
+#       day upstream wires addEdge() or the constructor DDL actually
+#       fires).
+#
+# FAIL conditions (regression guards per ADR-0082 no-silent-pass):
+#   - Tool returned success=true but neither RVF nor SQLite shows
+#     the edge. This catches the class of bug where the fallback
+#     silently drops the write — exactly the class W1/A14 missed.
+#   - Tool returned non-success exit code (edge rejected).
+#
+# SKIP_ACCEPTED conditions (narrow, per ADR-0090 Tier A2):
+#   - Tool is missing from the build (pre-patch).
+#   - Input validation rejects the call with a 100%-specific error
+#     shape we match on.
+#
+# Positional args (all required, timeout optional):
+#   $1 controller       — Log-prefix name (e.g. "causalGraph" or
+#                         "graphAdapter"). Same MCP tool dispatches
+#                         both per the router; distinct caller keys
+#                         prevent cross-check contamination.
+#   $2 source_id        — Unique per-run sourceId (inject the marker).
+#   $3 target_id        — Unique per-run targetId (inject the marker).
+#   $4 marker           — Substring the caller expects to appear in
+#                         the persisted payload (usually = source_id
+#                         or a shared salt). Used for both the RVF
+#                         grep and the SQLite LIKE predicate.
+#   $5 timeout_s        — Optional, default 30.
+#
+# Contract (shared with other B5 helpers):
+#   - _CHECK_PASSED  ∈ {"true", "false", "skip_accepted"}
+#   - _CHECK_OUTPUT  — diagnostic tagged "B5/<controller>:"
+_b5_probe_causal_edge_persistence() {
+  local controller="$1"
+  local source_id="$2"
+  local target_id="$3"
+  local marker="$4"
+  local timeout_s="${5:-30}"
+
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  if [[ -z "$controller" || -z "$source_id" || -z "$target_id" || -z "$marker" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: _b5_probe_causal_edge_persistence missing args (controller=$controller src=$source_id tgt=$target_id marker=$marker)"
+    return
+  fi
+
+  if [[ -z "${E2E_DIR:-}" || ! -d "$E2E_DIR" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: E2E_DIR not set or missing (caller must set it)"
+    return
+  fi
+
+  local iso; iso=$(_e2e_isolate "b5-${controller}")
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: failed to create isolated project dir"
+    return
+  fi
+
+  local cli; cli=$(_cli_cmd)
+  local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
+  local db_file="$iso/.swarm/memory.db"
+
+  # ─── Step 1: cold-start init (hydrate registry, create .swarm dir) ──
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+
+  # ─── Step 2: invoke agentdb_causal-edge with validated params ───────
+  local edge_params="{\"sourceId\":\"$source_id\",\"targetId\":\"$target_id\",\"relation\":\"causes\",\"weight\":0.8,\"uplift\":0.7,\"confidence\":0.9}"
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_causal-edge' --params '$edge_params' 2>&1" "$work/edge.out" "$timeout_s"
+  local edge_body; edge_body=$(cat "$work/edge.out" 2>/dev/null || echo "")
+
+  # ─── Step 3: narrow skip branches (ADR-0090 Tier A2) ────────────────
+  # 3a. Tool missing from build.
+  if echo "$edge_body" | grep -qiE 'unknown tool|tool.+not registered|method .* not found|no such tool|invalid tool|tool not found'; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: MCP tool 'agentdb_causal-edge' not in build — $(echo "$edge_body" | head -3 | tr '\n' ' ')"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+  # 3b. Input validation rejected (e.g. missing required field on an
+  #     older build that changed the contract).
+  if echo "$edge_body" | grep -qiE '"error"[[:space:]]*:[[:space:]]*"[^"]*(required|non-empty string)'; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: input-validation contract changed (params rejected) — $(echo "$edge_body" | head -3 | tr '\n' ' ')"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+
+  # ─── Step 4: tool MUST report success=true ──────────────────────────
+  # success=false + passing acceptance would be silent-pass (ADR-0082).
+  if ! echo "$edge_body" | grep -qE '"success"[[:space:]]*:[[:space:]]*true'; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: agentdb_causal-edge did not return success=true. Body: $(echo "$edge_body" | head -5 | tr '\n' ' ')"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+
+  # ─── Step 5a: probe SQLite causal_edges (terminal state B) ──────────
+  # ADR-0086 allows both RVF and SQLite as valid terminals. SQLite is
+  # the "future" path when upstream wires addEdge() on
+  # CausalMemoryGraph. Probe first (cheaper than RVF list) — if it has
+  # rows matching our marker, that's a pass.
+  local sqlite_hit="false"
+  local sqlite_hint=""
+  if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$db_file" ]]; then
+    local has_table
+    has_table=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name='causal_edges';" 2>/dev/null)
+    if [[ -n "$has_table" ]]; then
+      local row_match
+      row_match=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM causal_edges WHERE mechanism LIKE '%$marker%' OR metadata LIKE '%$marker%';" 2>/dev/null)
+      row_match=$(echo "$row_match" | tr -dc '0-9'); row_match="${row_match:-0}"
+      if [[ "$row_match" -ge 1 ]]; then
+        sqlite_hit="true"
+        sqlite_hint="SQLite causal_edges matched=$row_match"
+      fi
+    fi
+  fi
+
+  # ─── Step 5b: probe RVF causal-edges namespace (terminal state A) ───
+  # The current build's real write path. memory list --format json
+  # emits a JSON array of entries; we grep for our marker across the
+  # full output (keys, values, and metadata are all serialized).
+  local rvf_list_out="$work/rvf-list.out"
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace causal-edges --format json --limit 50 2>&1" "$rvf_list_out" 20
+  local rvf_body; rvf_body=$(cat "$rvf_list_out" 2>/dev/null || echo "")
+  local rvf_hit="false"
+  local rvf_hint=""
+  if echo "$rvf_body" | grep -qF "$marker"; then
+    rvf_hit="true"
+    # Count matching entries (loose count — each entry object starts with `"key":`).
+    local rvf_count
+    rvf_count=$(echo "$rvf_body" | grep -cF "$marker")
+    rvf_count="${rvf_count:-0}"
+    rvf_hint="RVF causal-edges namespace contains marker (grep=$rvf_count lines)"
+  fi
+
+  # ─── Step 6: decide outcome ─────────────────────────────────────────
+  # PASS if either terminal state confirmed. FAIL if neither — the tool
+  # reported success but persistence is invisible (ADR-0082 silent-pass).
+  if [[ "$sqlite_hit" == "true" || "$rvf_hit" == "true" ]]; then
+    local hints=""
+    [[ "$sqlite_hit" == "true" ]] && hints="${hints}${sqlite_hint}; "
+    [[ "$rvf_hit"    == "true" ]] && hints="${hints}${rvf_hint}; "
+    local edge_snippet; edge_snippet=$(echo "$edge_body" | head -5 | tr '\n' ' ' | cut -c1-200)
+    rm -rf "$work" "$iso" 2>/dev/null
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="B5/${controller}: PASS: agentdb_causal-edge persisted (${hints%; }). Tool: $edge_snippet"
+    return
+  fi
+
+  # Neither RVF nor SQLite shows the edge → silent-pass regression.
+  local edge_snippet; edge_snippet=$(echo "$edge_body" | head -5 | tr '\n' ' ' | cut -c1-200)
+  local rvf_snippet; rvf_snippet=$(echo "$rvf_body" | head -3 | tr '\n' ' ' | cut -c1-200)
+  local db_tables
+  db_tables=$(sqlite3 "$db_file" ".tables" 2>/dev/null | tr '\n' ' ' | cut -c1-160)
+  _CHECK_OUTPUT="B5/${controller}: FAIL: agentdb_causal-edge success=true but edge not visible in either terminal state (ADR-0082 silent-pass). Tool: $edge_snippet | RVF list: $rvf_snippet | DB tables: $db_tables"
+  rm -rf "$work" "$iso" 2>/dev/null
+}
+
 # ────────────────────────────────────────────────────────────────────
-# B5-4: causalGraph — no dedicated persistence path via MCP.
-# Verified patch.151: `agentdb_causal-edge` returns
-# {success:true, controller:"router-fallback"} — the payload lands
-# in RVF (via memory-router fallback), not SQLite. Helper's 4f
-# router-fallback branch classifies as skip_accepted. Architectural
-# intent per ADR-0086 (RVF is primary). No `causal_edges` / `exp_edges`
-# table is created anywhere by the fork source; regression-guard:
-# the day upstream grows a dedicated graph-store tool that creates
-# and inserts into a SQLite table, the response shape changes and
-# the regex stops matching → real row-count verification runs.
+# B5-4: causalGraph — probe REAL persistence (RVF or SQLite).
+#
+# W5-A2 rewrite: previously skipped on `controller:"router-fallback"`
+# in the response — that's the EXPECTED shape for the current build
+# and skipping on it had zero regression power (silent-pass per
+# ADR-0082). The real terminal state is either:
+#   (A) RVF namespace `causal-edges` populated (current reality per
+#       ADR-0086 "RVF is primary"), OR
+#   (B) SQLite `causal_edges` table has a matching row (future state
+#       when upstream wires CausalMemoryGraph.addEdge).
+# Accept both. FAIL if neither — that means the tool lied about
+# persistence. Coordinated with W5-A1 on graphAdapter (shares the
+# helper, distinct marker keys).
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_causalGraph() {
-  # W2-I6: seed-then-probe. Current build's agentdb_causal-edge takes the
-  # router-fallback path (CausalMemoryGraph lacks `addEdge`; the MCP
-  # dispatcher can't find a matching method, so memory-router falls
-  # through to generic memory). A pass_regex hit here means a fork
-  # fix (I3 / W2-I3) has wired the controller directly: the response
-  # carries `controller:"causalGraph"` (not router-fallback) and at
-  # least one row lands in causal_edges. Trivial_regex captures the
-  # current router-fallback shape. Narrowest-possible regex per
-  # ADR-0090 Tier A2.
-  _b5_seeded_probe \
+  local marker="b5-cgraph-$$-$(date +%s)"
+  local source_id="w5a2-cgraph-src-$marker"
+  local target_id="w5a2-cgraph-tgt-$marker"
+  _b5_probe_causal_edge_persistence \
     "causalGraph" \
-    "_b5_seed_causal_graph" \
-    "agentdb_causal_query" \
-    "{\"cause\":\"b5-cgraph-src\",\"k\":5}" \
-    '"(controller|engine|results)"[[:space:]]*:[[:space:]]*("causalGraph"|"native"|"js"|\[[^]]*\{)' \
-    '"controller"[[:space:]]*:[[:space:]]*"router-fallback"|"results"[[:space:]]*:[[:space:]]*\[\s*\]|no such table:?[[:space:]]*causal_edges' \
-    "" \
+    "$source_id" \
+    "$target_id" \
+    "$marker" \
     30
 }
 
