@@ -234,10 +234,15 @@ check_adr0094_p4_wasm_agent_list() {
   local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
   if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_list"; then return; fi
   local id="$_CHECK_BOOTSTRAPPED_ID"
+  # MCP tool responses wrap the real payload in an outer envelope whose
+  # `text` field is a JSON-escaped string: the inner `"id": "wasm-agent-..."`
+  # appears as `\"id\": \"wasm-agent-...\"`. Match the id with an optional
+  # preceding backslash on each quote so both shapes are accepted — the id
+  # itself (22 chars of [a-z0-9-]) is unique enough on its own.
   _wasm_invoke_tool \
     "wasm_agent_list" \
     '{}' \
-    "\"$id\"" \
+    "\\\\?\"${id}\\\\?\"" \
     "wasm_agent_list" \
     15
   _wasm_cleanup_agent "$id"
@@ -361,10 +366,14 @@ check_adr0094_p4_wasm_agent_files() {
   local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
   if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_files"; then return; fi
   local id="$_CHECK_BOOTSTRAPPED_ID"
+  # MCP outer envelope escapes the inner payload — match with optional
+  # leading backslash on each quote so `\"tools\":[...]` and `"tools":[...]`
+  # both count. Any one of tools/fileCount/turnCount keys proves the tool
+  # actually returned a shaped response (not a rehydration failure).
   _wasm_invoke_agent_op \
     "wasm_agent_files" \
     "{\"agentId\":\"$id\"}" \
-    '"tools":[[:space:]]*\[|"fileCount":|"turnCount":' \
+    '\\?"tools\\?":[[:space:]]*\[|\\?"fileCount\\?":|\\?"turnCount\\?":' \
     "wasm_agent_files" \
     20
   _wasm_cleanup_agent "$id"
@@ -377,10 +386,13 @@ check_adr0094_p4_wasm_agent_terminate() {
   if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_terminate"; then return; fi
   local id="$_CHECK_BOOTSTRAPPED_ID"
 
+  # The outer envelope has `"success":true` unescaped, but the real success
+  # signal is inside the JSON-escaped `text` payload (`\"success\":true`).
+  # Allow both shapes with an optional leading backslash on each quote.
   _wasm_invoke_tool \
     "wasm_agent_terminate" \
     "{\"agentId\":\"$id\"}" \
-    '"success":[[:space:]]*true' \
+    '\\?"success\\?":[[:space:]]*true' \
     "wasm_agent_terminate" \
     15
   if [[ "$_CHECK_PASSED" != "true" ]]; then
