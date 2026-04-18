@@ -11,6 +11,21 @@
 #   wasm_agent_files, wasm_gallery_list, wasm_gallery_search,
 #   wasm_gallery_create
 #
+# W2-I1 (2026-04): agents now persist to
+# `<projectRoot>/.claude-flow/wasm-agents/store.json` across CLI
+# invocations. The per-agent ops (prompt/tool/export/files/terminate)
+# exercise the REAL create-then-op lifecycle:
+#   1. `wasm_agent_create` with ephemeral instructions, capture id.
+#   2. Invoke the op under test with that id — real behavior required.
+#   3. Best-effort terminate the agent so the store doesn't grow.
+#
+# Because checks run in parallel (run_check_bg), each check owns its
+# own agent id — there is no shared cross-check state. This also makes
+# each check runnable in isolation.
+#
+# "WASM agent not found" is NO LONGER an accepted PASS signal — it
+# means persistence is broken.
+#
 # Requires: acceptance-harness.sh + acceptance-checks.sh sourced first
 #           (_run_and_kill_ro, _cli_cmd available)
 # Caller MUST set: E2E_DIR, TEMP_DIR, REGISTRY, PKG
@@ -28,6 +43,8 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+#       _CHECK_BODY    (raw tool output, sentinel stripped — for callers
+#                       that need to parse the response)
 _wasm_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -37,6 +54,7 @@ _wasm_invoke_tool() {
 
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
+  _CHECK_BODY=""
 
   if [[ -z "$tool" || -z "$expected_pattern" || -z "$label" ]]; then
     _CHECK_OUTPUT="P4/${label}: helper called with missing args (tool=$tool pattern=$expected_pattern label=$label)"
@@ -57,6 +75,7 @@ _wasm_invoke_tool() {
   _run_and_kill_ro "$cmd" "$work" "$timeout"
   local body; body=$(cat "$work" 2>/dev/null || echo "")
   body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
+  _CHECK_BODY="$body"
 
   rm -f "$work" 2>/dev/null
 
@@ -82,51 +101,112 @@ $(echo "$body" | head -10)"
 }
 
 # ════════════════════════════════════════════════════════════════════
-# LIFECYCLE CHECKS: create -> list -> prompt -> terminate -> list
+# W2-I1 helper: create an agent + capture its id (per-check, no shared state)
+# ════════════════════════════════════════════════════════════════════
+#
+# Each per-agent op check calls this to get a fresh id. The agent is
+# persisted to `.claude-flow/wasm-agents/store.json` by the CLI, so the
+# subsequent op-under-test runs in a separate process and still finds it.
+#
+# On success: echoes the id on stdout, returns 0.
+# On failure: echoes nothing, returns 1.
+_wasm_bootstrap_agent() {
+  local cli; cli=$(_cli_cmd)
+  local work; work=$(mktemp /tmp/wasm-bootstrap-XXXXX)
+  local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool wasm_agent_create --params '{\"instructions\":\"W2-I1 acceptance probe.\"}'"
+  _run_and_kill_ro "$cmd" "$work" 20
+  local body; body=$(cat "$work" 2>/dev/null || echo "")
+  body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
+  rm -f "$work" 2>/dev/null
+  local id; id=$(echo "$body" | sed -nE 's/.*"id"[[:space:]]*:[[:space:]]*"(wasm-agent-[A-Za-z0-9_-]+)".*/\1/p' | head -1)
+  if [[ -z "$id" ]]; then
+    return 1
+  fi
+  echo "$id"
+  return 0
+}
+
+# Best-effort terminate — silent, used for per-check cleanup. Never fails
+# a check; the authoritative termination test is check_adr0094_p4_wasm_agent_terminate.
+_wasm_cleanup_agent() {
+  local id="$1"
+  [[ -z "$id" ]] && return 0
+  local cli; cli=$(_cli_cmd)
+  local work; work=$(mktemp /tmp/wasm-cleanup-XXXXX)
+  local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool wasm_agent_terminate --params '{\"agentId\":\"$id\"}'"
+  _run_and_kill_ro "$cmd" "$work" 10
+  rm -f "$work" 2>/dev/null
+  return 0
+}
+
+# ════════════════════════════════════════════════════════════════════
+# LIFECYCLE CHECKS
 # ════════════════════════════════════════════════════════════════════
 
-# Check 1: wasm_agent_create — create a WASM agent
+# Check 1: wasm_agent_create — create a WASM agent AND verify the
+# persisted store.json has an entry for it.
 check_adr0094_p4_wasm_agent_create() {
   _wasm_invoke_tool \
     "wasm_agent_create" \
-    '{"name":"accept-test-agent","type":"coder"}' \
-    'created|agent|id|success' \
+    '{"instructions":"W2-I1 create-verify probe."}' \
+    'wasm-agent-|"success":[[:space:]]*true' \
     "wasm_agent_create" \
     20
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    return
+  fi
+
+  # Parse id and verify persistence write-through.
+  local id; id=$(echo "$_CHECK_BODY" | sed -nE 's/.*"id"[[:space:]]*:[[:space:]]*"(wasm-agent-[A-Za-z0-9_-]+)".*/\1/p' | head -1)
+  if [[ -z "$id" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_create: create succeeded but could not parse id from response. Body (first 10 lines):
+$(echo "$_CHECK_BODY" | head -10)"
+    return
+  fi
+  local store="$E2E_DIR/.claude-flow/wasm-agents/store.json"
+  if [[ ! -f "$store" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_create: create returned id '$id' but store.json not created at $store"
+    _wasm_cleanup_agent "$id"
+    return
+  fi
+  if ! grep -q "\"$id\"" "$store" 2>/dev/null; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_create: create returned id '$id' but store.json does not contain it. Store contents (first 20 lines):
+$(head -20 "$store")"
+    _wasm_cleanup_agent "$id"
+    return
+  fi
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="P4/wasm_agent_create: created agent '$id' and verified persisted to $store"
+  _wasm_cleanup_agent "$id"
 }
 
-# Check 2: wasm_agent_list — list should show the created agent
+# Check 2: wasm_agent_list — bootstrap an agent, then list must include it.
 check_adr0094_p4_wasm_agent_list() {
+  local id; id=$(_wasm_bootstrap_agent)
+  if [[ -z "$id" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_list: could not bootstrap a wasm agent (create failed)"
+    return
+  fi
   _wasm_invoke_tool \
     "wasm_agent_list" \
     '{}' \
-    'agents|list|\[\]|accept-test|id' \
+    "\"$id\"" \
     "wasm_agent_list" \
     15
+  _wasm_cleanup_agent "$id"
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Per-agent operation checks (prompt/tool/export/files)
+# Per-agent op checks (prompt / tool / export / files)
 # ════════════════════════════════════════════════════════════════════
 #
-# Each `mcp exec` invocation is a separate CLI process, so the in-memory
-# `agents` Map from a prior `wasm_agent_create` is gone by the time the
-# operation tool runs. The meaningful thing to verify at the MCP layer
-# is therefore: "does the handler correctly reach the underlying
-# agent-wasm.ts function and surface its error?". The inner function
-# throws `WASM agent not found: <id>` when the id is absent — that
-# error shape is the positive PASS signal for these 4 tools (it proves
-# param decoding + loadAgentWasm() + correct function dispatch all
-# work). If the agent *happens* to exist, a real success pattern match
-# is also accepted.
-#
-# Note on schema: these 4 handlers take `agentId` (NOT `name`). Older
-# versions of this file used `{"name":...}` which caused `agentId` to
-# be undefined and produced a genuinely informative error, but the
-# assertion patterns above didn't match it.
+# Each check bootstraps its own agent, invokes the op, cleans up.
+# "WASM agent not found" => FAIL (persistence broken).
 
-# Shared helper: invoke an agent-scoped tool and accept either a real
-# success match OR "WASM agent not found: <id>" as PASS.
 _wasm_invoke_agent_op() {
   local tool="$1"
   local params="$2"
@@ -147,25 +227,21 @@ _wasm_invoke_agent_op() {
   rm -f "$work" 2>/dev/null
 
   # 1. Tool not registered at all -> skip_accepted
-  #    (Narrow patterns: only match MCP-layer "unknown tool" messages,
-  #    NOT handler-layer "WASM agent not found".)
   if echo "$body" | grep -qiE 'unknown tool|tool.+not registered|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P4/${label}: MCP tool '$tool' not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     return
   fi
 
-  # 2. Handler-reached success signal: "WASM agent not found: <id>"
-  #    proves the tool is registered, params decoded, loadAgentWasm()
-  #    returned the module, and the correct function was dispatched.
+  # 2. "WASM agent not found" -> FAIL (W2-I1 persistence is broken)
   if echo "$body" | grep -qiE 'WASM agent not found'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P4/${label}: tool '$tool' handler wired correctly (reached agent-wasm.ts and surfaced expected 'agent not found' error)"
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/${label}: tool '$tool' reported 'WASM agent not found' — W2-I1 persistence regression. Body:
+$(echo "$body" | head -10)"
     return
   fi
 
-  # 3. Real success pattern match (unlikely across process boundary,
-  #    but keep it as a future-proof positive case)
+  # 3. Real success pattern match
   if echo "$body" | grep -qiE "$success_pattern"; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="P4/${label}: tool '$tool' returned expected pattern ($success_pattern)"
@@ -174,58 +250,112 @@ _wasm_invoke_agent_op() {
 
   # 4. Everything else -> FAIL with diagnostic
   _CHECK_PASSED="false"
-  _CHECK_OUTPUT="P4/${label}: tool '$tool' output did not match wiring signal or success pattern /$success_pattern/i. Output (first 10 lines):
+  _CHECK_OUTPUT="P4/${label}: tool '$tool' output did not match success pattern /$success_pattern/i. Body (first 10 lines):
 $(echo "$body" | head -10)"
 }
 
-# Check 3: wasm_agent_prompt — send a prompt to an agent
+# Check 3: wasm_agent_prompt — real agent exists, prompt either returns
+# a response or a provider-layer error (no model key in test env is
+# acceptable), but NOT "WASM agent not found".
 check_adr0094_p4_wasm_agent_prompt() {
+  local id; id=$(_wasm_bootstrap_agent)
+  if [[ -z "$id" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_prompt: could not bootstrap wasm agent (create failed)"
+    return
+  fi
   _wasm_invoke_agent_op \
     "wasm_agent_prompt" \
-    '{"agentId":"wasm-agent-probe","input":"hello"}' \
-    'response|result|output|hello' \
+    "{\"agentId\":\"$id\",\"input\":\"hello\"}" \
+    'response|result|output|hello|provider|model|turn|no model|ANTHROPIC|OPENAI|api key' \
     "wasm_agent_prompt" \
-    20
+    25
+  _wasm_cleanup_agent "$id"
 }
 
-# Check 4: wasm_agent_tool — invoke a tool on an agent
+# Check 4: wasm_agent_tool — list_files on a fresh agent returns a
+# successful result (empty output array is fine; success:true required).
 check_adr0094_p4_wasm_agent_tool() {
+  local id; id=$(_wasm_bootstrap_agent)
+  if [[ -z "$id" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_tool: could not bootstrap wasm agent (create failed)"
+    return
+  fi
   _wasm_invoke_agent_op \
     "wasm_agent_tool" \
-    '{"agentId":"wasm-agent-probe","toolName":"list_files","toolInput":{}}' \
-    'tool|result|status|output|files' \
+    "{\"agentId\":\"$id\",\"toolName\":\"list_files\",\"toolInput\":{}}" \
+    '"success":[[:space:]]*true|output|files|\[\]' \
     "wasm_agent_tool" \
-    15
+    20
+  _wasm_cleanup_agent "$id"
 }
 
-# Check 5: wasm_agent_export — export agent state
+# Check 5: wasm_agent_export — export returns a state JSON containing
+# agentState / tools / todos keys (structure, not content).
 check_adr0094_p4_wasm_agent_export() {
+  local id; id=$(_wasm_bootstrap_agent)
+  if [[ -z "$id" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_export: could not bootstrap wasm agent (create failed)"
+    return
+  fi
   _wasm_invoke_agent_op \
     "wasm_agent_export" \
-    '{"agentId":"wasm-agent-probe"}' \
-    'export|data|state|agent' \
+    "{\"agentId\":\"$id\"}" \
+    'agentState|tools|todos|info|"id":' \
     "wasm_agent_export" \
-    15
+    20
+  _wasm_cleanup_agent "$id"
 }
 
-# Check 6: wasm_agent_files — list agent files/tools
+# Check 6: wasm_agent_files — returns a tools array and counts.
 check_adr0094_p4_wasm_agent_files() {
+  local id; id=$(_wasm_bootstrap_agent)
+  if [[ -z "$id" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_files: could not bootstrap wasm agent (create failed)"
+    return
+  fi
   _wasm_invoke_agent_op \
     "wasm_agent_files" \
-    '{"agentId":"wasm-agent-probe"}' \
-    'files|tools|\[\]|agent|list|fileCount' \
+    "{\"agentId\":\"$id\"}" \
+    '"tools":[[:space:]]*\[|"fileCount":|"turnCount":' \
     "wasm_agent_files" \
-    15
+    20
+  _wasm_cleanup_agent "$id"
 }
 
-# Check 7: wasm_agent_terminate — terminate the test agent
+# Check 7: wasm_agent_terminate — create, terminate, verify the
+# persisted record is GONE from store.json.
 check_adr0094_p4_wasm_agent_terminate() {
+  local id; id=$(_wasm_bootstrap_agent)
+  if [[ -z "$id" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_terminate: could not bootstrap wasm agent (create failed)"
+    return
+  fi
+
   _wasm_invoke_tool \
     "wasm_agent_terminate" \
-    '{"name":"accept-test-agent"}' \
-    'terminated|success|removed|stopped' \
+    "{\"agentId\":\"$id\"}" \
+    '"success":[[:space:]]*true' \
     "wasm_agent_terminate" \
     15
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    return
+  fi
+
+  # Verify persistence delete-through.
+  local store="$E2E_DIR/.claude-flow/wasm-agents/store.json"
+  if [[ -f "$store" ]] && grep -q "\"$id\"" "$store" 2>/dev/null; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P4/wasm_agent_terminate: terminate reported success but id '$id' still in store.json. Contents (first 20 lines):
+$(head -20 "$store")"
+    return
+  fi
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="P4/wasm_agent_terminate: terminated '$id' and verified removed from store.json"
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -237,7 +367,7 @@ check_adr0094_p4_wasm_gallery_list() {
   _wasm_invoke_tool \
     "wasm_gallery_list" \
     '{}' \
-    'gallery|list|items|\[\]|agents' \
+    'gallery|list|items|\[\]|agents|templates|count' \
     "wasm_gallery_list" \
     15
 }
@@ -247,17 +377,23 @@ check_adr0094_p4_wasm_gallery_search() {
   _wasm_invoke_tool \
     "wasm_gallery_search" \
     '{"query":"coder"}' \
-    'results|gallery|search|\[\]|items' \
+    'results|gallery|search|\[\]|items|count' \
     "wasm_gallery_search" \
     15
 }
 
-# Check 10: wasm_gallery_create — create a gallery entry
+# Check 10: wasm_gallery_create — create an agent from a gallery template.
+# Schema: takes `template` (string), returns an agent info object.
 check_adr0094_p4_wasm_gallery_create() {
   _wasm_invoke_tool \
     "wasm_gallery_create" \
-    '{"name":"accept-test-template","description":"acceptance test template"}' \
-    'created|gallery|success|template' \
+    '{"template":"coder"}' \
+    'wasm-agent-|"success":[[:space:]]*true|template' \
     "wasm_gallery_create" \
-    15
+    20
+  # Best-effort cleanup if the create succeeded and we can extract the id.
+  if [[ "$_CHECK_PASSED" == "true" ]]; then
+    local id; id=$(echo "$_CHECK_BODY" | sed -nE 's/.*"id"[[:space:]]*:[[:space:]]*"(wasm-agent-[A-Za-z0-9_-]+)".*/\1/p' | head -1)
+    _wasm_cleanup_agent "$id"
+  fi
 }
