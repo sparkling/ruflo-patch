@@ -120,25 +120,84 @@ check_adr0094_p7_agents_store() {
   _CHECK_OUTPUT="P7/agents_store: lazy-created via \`agent spawn\` (${sz:-0}B, ${validate_out#OK:})"
 }
 
-# Check 2: .swarm/agents.json — vestigial artifact, confirmed unused by product
-# `.swarm/agents.json` is not produced by `init --full`, nor by `swarm init`, nor
-# by `agent spawn` — the current product stores agents in two places: (a) per-agent
-# records in `.claude-flow/agents/store.json` (covered by check 1), and (b) swarm
-# state in `.swarm/memory.db` (SQLite) / `.swarm/memory.rvf` (RVF). Probed against
-# `@sparkleideas/cli@latest` by A12 with both `swarm init --topology hierarchical`
-# and `agent spawn` (2026-04-18) — neither creates this file.
-# Kept as skip_accepted with a stable fingerprint so ADR-0096 skip-rot can surface
-# if the product ever starts emitting it again (in which case we upgrade to strict).
+# Check 2: .swarm/agents.json — vestigial artifact, runtime-verified unreachable
+# `.swarm/agents.json` is not produced by any CLI operation. Fork source audit
+# (W2-I7, 2026-04-18) confirmed that no writer in `@claude-flow/cli/src` writes this
+# path. The three plausible producers all write elsewhere:
+#   - `agent spawn`         → `.claude-flow/agents/store.json`       (check 1)
+#   - `swarm init`          → `.swarm/state.json` + `.swarm/swarm-state.json` (check 3)
+#   - `hive-mind spawn`     → `.claude-flow/agents.json`             (different dir!)
+#   - `swarm-hooks.sh`      → `.claude-flow/swarm/agents.json`       (different dir!)
+#
+# W2-I7 upgrade: rather than trust the source audit in perpetuity, we now actively
+# probe all three producers in an isolated dir and assert none emits the file. If
+# any future CLI revision starts writing `.swarm/agents.json`, this check trips
+# loudly instead of silently staying skip_accepted.
 check_adr0094_p7_swarm_agents() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local target="${E2E_DIR}/.swarm/agents.json"
   if [[ -f "$target" ]]; then
-    # File re-emerged — upgrade to strict validation.
+    # File re-emerged in the main e2e dir — upgrade to strict validation.
     _p7_validate_json_file ".swarm/agents.json" "" "swarm_agents"
     return
   fi
+  # Active producer probe: run all three plausible CLI writers in isolation and
+  # assert none of them creates `.swarm/agents.json`. Upgrades the skip from
+  # "comment says it's vestigial" to "runtime-verified unreachable".
+  if ! declare -F _e2e_isolate >/dev/null; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_agents: _e2e_isolate helper not available (harness not sourced)"
+    return
+  fi
+  local iso; iso=$(_e2e_isolate "p7-fo-swarm-ag")
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    _CHECK_OUTPUT="P7/swarm_agents: failed to create isolated dir"; return
+  fi
+  # shellcheck disable=SC2064
+  trap "chmod -R u+rwX '$iso' 2>/dev/null; rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
+  rm -f "$iso/.swarm/agents.json" 2>/dev/null || true
+  local cli; cli=$(_cli_cmd)
+  local iso_target="$iso/.swarm/agents.json"
+  local probe_log="$iso/.p7-fo-swarm-ag.log"
+  # Producer 1: `swarm init` (writes .swarm/state.json + .swarm/swarm-state.json).
+  (cd "$iso" && NPM_CONFIG_REGISTRY="${REGISTRY:-}" timeout 25 $cli swarm init \
+     --topology hierarchical --max-agents 4 >>"$probe_log" 2>&1) || true
+  if [[ -f "$iso_target" ]]; then
+    # Regression: `swarm init` started emitting this file — upgrade to strict.
+    _CHECK_OUTPUT="P7/swarm_agents: REGRESSION — \`swarm init\` now writes .swarm/agents.json (expected vestigial)"
+    return
+  fi
+  # Producer 2: `agent spawn` (writes .claude-flow/agents/store.json).
+  (cd "$iso" && NPM_CONFIG_REGISTRY="${REGISTRY:-}" timeout 25 $cli agent spawn \
+     --type coder --name p7-fo-swarm-ag-probe >>"$probe_log" 2>&1) || true
+  if [[ -f "$iso_target" ]]; then
+    _CHECK_OUTPUT="P7/swarm_agents: REGRESSION — \`agent spawn\` now writes .swarm/agents.json"
+    return
+  fi
+  # Producer 3: `hive-mind init && hive-mind spawn` (writes .claude-flow/agents.json).
+  (cd "$iso" && NPM_CONFIG_REGISTRY="${REGISTRY:-}" timeout 25 $cli hive-mind init \
+     >>"$probe_log" 2>&1) || true
+  (cd "$iso" && NPM_CONFIG_REGISTRY="${REGISTRY:-}" timeout 25 $cli hive-mind spawn \
+     --count 1 --role worker >>"$probe_log" 2>&1) || true
+  if [[ -f "$iso_target" ]]; then
+    _CHECK_OUTPUT="P7/swarm_agents: REGRESSION — \`hive-mind spawn\` now writes .swarm/agents.json"
+    return
+  fi
+  # All three producers ran without emitting .swarm/agents.json — file genuinely
+  # unreachable from any CLI path. Preserve the sibling artifacts they *did*
+  # create so we can prove the probes actually executed (ADR-0082 anti-silent-skip).
+  local evidence=""
+  [[ -f "$iso/.swarm/state.json" ]] && evidence="${evidence}state.json "
+  [[ -f "$iso/.claude-flow/agents/store.json" ]] && evidence="${evidence}agents/store.json "
+  [[ -f "$iso/.claude-flow/agents.json" ]] && evidence="${evidence}.claude-flow/agents.json "
+  if [[ -z "$evidence" ]]; then
+    # Probes didn't produce ANY of the expected sibling files — means the probes
+    # failed silently (CLI couldn't run). Fail loudly per ADR-0082.
+    _CHECK_OUTPUT="P7/swarm_agents: probe failure — none of swarm init/agent spawn/hive-mind spawn produced their expected sibling artifacts; cannot prove .swarm/agents.json is unreachable. Log: $(tail -5 "$probe_log" 2>/dev/null | tr '\n' ' ')"
+    return
+  fi
   _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_agents: \`.swarm/agents.json\` is a vestigial artifact (agents live in \`.claude-flow/agents/store.json\` — check 1; swarm state lives in \`.swarm/memory.db\` + \`.swarm/memory.rvf\`). Upgraded to strict if the file ever appears."
+  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_agents: 3 producer probes (swarm init, agent spawn, hive-mind spawn) ran successfully — each created its real target (${evidence% }) but none wrote .swarm/agents.json. File is vestigial and runtime-verified unreachable."
 }
 
 # Check 3: .swarm/state.json — trigger lazy creation via `swarm init`
@@ -305,40 +364,91 @@ check_adr0094_p7_config_json() {
   _p7_validate_json_file ".claude-flow/config.json" "" "config_json"
 }
 
-# Check 8: .claude/settings.json — strict on hooks+permissions, skip_accepted on mcpServers
-# Probed against `@sparkleideas/cli@latest` (2026-04-18, A12): `init --full` writes
-# `.claude/settings.json` with `permissions` (hook handlers, tool allowlists) and a
-# `hooks` key, but never `mcpServers`. MCP servers are registered out-of-band by the
-# Claude Code CLI via `claude mcp add …` (writes to `~/.claude.json` user config, or
-# adds an `mcpServers` key to this file on demand) — no sibling `.mcp.json` is produced
-# by ruflo/cli `init --full`.
+# Check 8: .claude/settings.json + .mcp.json — strict on all three contracts
+# Fork source audit (W2-I7, 2026-04-18) confirmed that `init --full` writes mcpServers
+# to a sibling `.mcp.json` file (executor.ts:798 `writeMCPConfig` → `.mcp.json`,
+# mcp-generator.ts:89 `{ mcpServers }`), NOT to `.claude/settings.json`. Further,
+# `claude mcp add -s project` also writes to `.mcp.json` (confirmed 2026-04-18 with
+# claude v2.1.114 by running in a scratch dir). The `-s local`/`-s user` scopes write
+# to `~/.claude.json` — also never to `.claude/settings.json`.
 #
-# We STRICTLY enforce `permissions` (parse + presence) and `hooks` (presence) — they
-# are the init-time contract. `mcpServers` remains skip_accepted because it is a
-# user-driven addition not part of the init template. If `claude mcp add` has run
-# and populated the key, we upgrade to strict pass with the addendum.
+# The prior A12 ledger upgrade-path ("if claude mcp add has run and populated the key,
+# upgrade to strict pass") targeted a path that no CLI writer actually uses, so it
+# could never fire — violating ADR-0090 Tier A1 (every accepted trade-off needs a
+# check that fails if its promise stops working).
+#
+# W2-I7 fix: replace the unreachable upgrade-path with real validation of `.mcp.json`
+# (which `init --full` *does* produce). All three contracts are now strictly asserted:
+#   1. `.claude/settings.json` parses + has `permissions` + `hooks`
+#   2. `.mcp.json` parses + has `mcpServers` (object, non-empty)
+#   3. `.mcp.json#mcpServers.claude-flow` present (init's canonical server entry)
 check_adr0094_p7_settings_json() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
-  # Strict: `permissions` AND `hooks` must both be present and JSON must parse.
+  # Contract 1: `.claude/settings.json` — permissions + hooks strict.
   _p7_validate_json_file ".claude/settings.json" "permissions,hooks" "settings_json"
   if [[ "$_CHECK_PASSED" != "true" ]]; then
     return
   fi
-  local target="${E2E_DIR}/.claude/settings.json"
-  local has_mcp; has_mcp=$(node -e '
-    const fs = require("fs");
-    try {
-      const j = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
-      console.log("mcpServers" in j && j.mcpServers != null ? "YES" : "NO");
-    } catch { console.log("NO"); }
-  ' "$target" 2>&1)
-  if [[ "$has_mcp" == "YES" ]]; then
-    _CHECK_OUTPUT="${_CHECK_OUTPUT} + mcpServers present (user-added via \`claude mcp add\`)"
+  local settings_summary="$_CHECK_OUTPUT"
+  # Contract 2+3: `.mcp.json` — mcpServers present, claude-flow entry wired.
+  local mcp_target="${E2E_DIR}/.mcp.json"
+  if [[ ! -f "$mcp_target" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P7/settings_json: .claude/settings.json valid but .mcp.json missing — init did not emit MCP server config"
     return
   fi
-  # permissions + hooks OK (strict pass), mcpServers genuinely absent: downgrade
-  # so the user-driven-addition gap stays visible without silent-passing
-  # (ADR-0082 / ADR-0090 Tier A2).
-  _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/settings_json: \`.claude/settings.json\` valid JSON with \`permissions\` + \`hooks\` keys present; \`mcpServers\` is user-driven (added via \`claude mcp add\`, not by \`init --full\`)"
+  local mcp_size; mcp_size=$(wc -c < "$mcp_target" 2>/dev/null | tr -d ' ')
+  mcp_size=${mcp_size:-0}
+  if (( mcp_size == 0 )); then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json exists but is empty (0 bytes)"
+    return
+  fi
+  local mcp_out
+  mcp_out=$(node -e '
+    const fs = require("fs");
+    let j;
+    try { j = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
+    catch (e) { console.log("ERR_PARSE:" + e.message); process.exit(1); }
+    if (!("mcpServers" in j) || typeof j.mcpServers !== "object" || j.mcpServers === null) {
+      console.log("ERR_MISSING:mcpServers");
+      process.exit(1);
+    }
+    const keys = Object.keys(j.mcpServers);
+    if (keys.length === 0) { console.log("ERR_EMPTY:mcpServers"); process.exit(1); }
+    if (!("claude-flow" in j.mcpServers)) {
+      console.log("ERR_NO_CLAUDE_FLOW:" + keys.join(","));
+      process.exit(1);
+    }
+    console.log("OK:" + keys.join(","));
+  ' "$mcp_target" 2>&1)
+  if echo "$mcp_out" | grep -q '^ERR_PARSE:'; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json invalid JSON: $(echo "$mcp_out" | sed -nE 's/^ERR_PARSE:(.*)/\1/p' | head -1)"
+    return
+  fi
+  if echo "$mcp_out" | grep -q '^ERR_MISSING:'; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json lacks \`mcpServers\` key (init contract violated)"
+    return
+  fi
+  if echo "$mcp_out" | grep -q '^ERR_EMPTY:'; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json has \`mcpServers\` but it is empty {} (init should wire at least claude-flow)"
+    return
+  fi
+  if echo "$mcp_out" | grep -q '^ERR_NO_CLAUDE_FLOW:'; then
+    _CHECK_PASSED="false"
+    local servers; servers=$(echo "$mcp_out" | sed -nE 's/^ERR_NO_CLAUDE_FLOW:(.*)/\1/p' | head -1)
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json#mcpServers missing \`claude-flow\` entry (got: ${servers})"
+    return
+  fi
+  if ! echo "$mcp_out" | grep -q '^OK:'; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json validator unexpected output: $(echo "$mcp_out" | head -3 | tr '\n' ' ')"
+    return
+  fi
+  local mcp_servers; mcp_servers=$(echo "$mcp_out" | sed -nE 's/^OK:(.*)/\1/p' | head -1)
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="${settings_summary}; .mcp.json (${mcp_size}B) mcpServers: [${mcp_servers}]"
 }
