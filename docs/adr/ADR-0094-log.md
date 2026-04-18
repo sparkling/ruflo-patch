@@ -6,6 +6,25 @@
 
 ---
 
+## 2026-04-17 — Sprint 1.4 check-regex-fixer (4 widens + 1 real-bug ledger)
+
+Fourth-sprint pass on the ADR-0094 failure stragglers from `accept-2026-04-18T003445Z`. ADR-0082-compliant: widen only when the tool **is** working and just uses different keywords; ledger real bugs as `skip_accepted` with a narrow marker regex; never widen a genuine error shape to green.
+
+| Check | Decision | Before regex | After regex / action |
+|---|---|---|---|
+| `p1-ai-stats` | widen | `scans\|stats\|total` | `detectionCount\|detectionTime\|learnedPatterns\|mitigation\|scans\|stats\|total` — body is the legitimate `{detectionCount, avgDetectionTimeMs, learnedPatterns, mitigationStrategies, avgMitigationEffectiveness}` stat shape; match on emitted JSON keys. |
+| `p3-co-consensus` | widen | `consensus\|result\|vote` | `algorithm\|quorum\|proposals\|operational\|raft\|consensus\|result\|vote` — body is a Raft-consensus summary (`{algorithm, quorum, proposals, status:"operational", ...}`). |
+| `p3-co-node` | real-bug flagged | `node\|status\|id` | regex widened to `node\|nodes\|ready\|online\|healthy\|status\|id`, and on failure we narrow-match `"success":false,"error":"Unknown action"` and downgrade to `skip_accepted` with `SKIP_ACCEPTED: ... REAL BUG flagged for follow-up (wf-tools-fix / fork coordination handler wiring)`. Any other failure shape stays a hard FAIL (ADR-0082). Fork bug: `coordination_node({action:"status"})` returns `Unknown action` instead of a node body — open follow-up for wf-tools-fix agent / fork coordination handler. |
+| `p6-hk-pre-cmd` | widen | `pre-command\|allowed\|success` | `riskLevel\|risks\|recommendations\|safeAlternatives\|shouldProceed\|pre-command\|allowed\|success` — body is the legitimate risk-analysis response; `shouldProceed` is the structural equivalent of `allowed`. |
+| `p6-mr-stats` | widen | `stats\|routes\|models\|count` | `totalDecisions\|modelDistribution\|avgComplexity\|avgLatency\|available\|stats\|routes\|models\|count` — body is the legitimate router-stats shape. |
+| `sec-health-comp` | no change | — | PASSED in `accept-2026-04-18T003445Z` (`health.controllers=41 names[]=41 controllers_tool=41`). Earlier-run hiccup did not reproduce; not a regex problem. |
+
+**Validation**: `npm run test:unit` → 3012/3012 pass, 0 fail. Fast runner per-check probes against live e2e project: p1-ai-stats/p3-co-consensus/p6-hk-pre-cmd/p6-mr-stats all PASS; p3-co-node reaches the narrow SKIP_ACCEPTED branch as designed.
+
+**Files touched (ruflo-patch)**: `lib/acceptance-aidefence-checks.sh`, `lib/acceptance-coordination-checks.sh`, `lib/acceptance-hooks-lifecycle-checks.sh`, `lib/acceptance-model-routing-checks.sh`. No fork changes. No `scripts/*.mjs` changes.
+
+---
+
 ## 2026-04-17 — t3-2 post-mortem (forked to ADR-0095)
 
 The remediation swarm's `fix-t3-2-rvf-concurrent` agent claimed 10/10 simulation trials PASS. The full cascade still showed `t3-2-concurrent` failing with `entryCount=1` (5/6 writers lost). Two separate wrong-scope fixes in the same failure class:

@@ -71,12 +71,19 @@ check_adr0094_p1_aidefence_learn() {
 
 # ════════════════════════════════════════════════════════════════════
 # Check 6: aidefence_stats — get statistics
+#
+# Regex widened 2026-04-17 (ADR-0094 Sprint 1.4): the canonical body is
+#   { detectionCount, avgDetectionTimeMs, learnedPatterns,
+#     mitigationStrategies, avgMitigationEffectiveness }
+# — all numeric stat counters. None of the original `scans|stats|total`
+# keywords appear; the shape is legitimate so we match on the stable
+# JSON keys actually emitted.
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p1_aidefence_stats() {
   _mcp_invoke_tool \
     "aidefence_stats" \
     '{}' \
-    'scans|stats|total' \
+    'detectionCount|detectionTime|learnedPatterns|mitigation|scans|stats|total' \
     "P1/aidefence_stats" \
     15 --ro
 }

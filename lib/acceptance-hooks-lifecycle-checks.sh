@@ -54,11 +54,18 @@ check_adr0094_p6_hooks_post_edit() {
     15 --ro
 }
 
+# Regex widened 2026-04-17 (ADR-0094 Sprint 1.4): the canonical body is
+#   { command, riskLevel, risks[], recommendations[], safeAlternatives[],
+#     shouldProceed }
+# — a legitimate risk-analysis response. None of the original
+# `pre-command|allowed|success` keywords appear; we match the stable
+# risk-assessment fields actually emitted. `shouldProceed` is the
+# structural equivalent of `allowed`.
 check_adr0094_p6_hooks_pre_command() {
   _mcp_invoke_tool \
     "hooks_pre-command" \
     '{"command":"test"}' \
-    'pre-command|allowed|success' \
+    'riskLevel|risks|recommendations|safeAlternatives|shouldProceed|pre-command|allowed|success' \
     "P6-hooks/pre-command" \
     15 --ro
 }

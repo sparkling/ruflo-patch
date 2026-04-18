@@ -31,11 +31,18 @@ check_adr0094_p6_model_outcome() {
     15 --ro
 }
 
+# Regex widened 2026-04-17 (ADR-0094 Sprint 1.4): the canonical body is
+#   { available, totalDecisions, modelDistribution:{haiku,sonnet,opus,inherit},
+#     avgComplexity, avgLatency, ... }
+# — a legitimate router-stats shape. The original `stats|routes|models|count`
+# words don't appear verbatim; match on the stable stat fields actually
+# emitted (Decisions, Distribution, Complexity) plus the prior words for
+# future-compat.
 check_adr0094_p6_model_stats() {
   _mcp_invoke_tool \
     "hooks_model-stats" \
     '{}' \
-    'stats|routes|models|count' \
+    'totalDecisions|modelDistribution|avgComplexity|avgLatency|available|stats|routes|models|count' \
     "P6-model/model-stats" \
     15 --ro
 }
