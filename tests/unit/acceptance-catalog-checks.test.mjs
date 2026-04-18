@@ -254,7 +254,10 @@ const arg = process.argv.slice(2);
 function fp(t) {
   const out = String(t.output ?? '');
   const first = out.split('\\n').find(l => l.trim().length > 0) || '';
-  return createHash('sha1').update(String(t.id) + '\\u0001' + first + '\\u0001' + String(t.fork_file ?? '')).digest('hex');
+  // ADR-0096 §Fingerprints: sha256 truncated to 12 (commit 132c3f8). Prior
+  // was sha1 full hex; the prod fingerprint() now does normalizeForFingerprint
+  // + sha256.slice(0,12). This stub mirrors prod output shape for the check.
+  return createHash('sha256').update(String(t.id) + '\\u0001' + first + '\\u0001' + String(t.fork_file ?? '')).digest('hex').slice(0, 12);
 }
 function ingest() {
   mkdirSync(RESULTS, { recursive: true });
@@ -416,7 +419,7 @@ describe('ADR-0096 catalog checks — runtime (happy paths)', () => {
       label: 'fp-happy',
     });
     assert.equal(r.passed, 'true', `expected true; got ${r.passed}\n${r.output}`);
-    assert.match(r.output, /deterministic: [0-9a-f]{40}/);
+    assert.match(r.output, /deterministic: [0-9a-f]{12}/);
   });
 
   it('check_adr0096_skip_reverify_dry_run enumerates skips with bucket:', () => {
