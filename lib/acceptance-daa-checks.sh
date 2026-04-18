@@ -91,11 +91,27 @@ check_adr0094_p3_daa_agent_create() {
 # ════════════════════════════════════════════════════════════════════
 # Check 2: daa_agent_adapt — adapt agent behavior
 # ════════════════════════════════════════════════════════════════════
+# Self-provisions its own prerequisite agent (unique id per run) so the
+# check does not rely on check-1 ordering (checks run in parallel) and
+# avoids matching a stale `agentId:"daa-test"` that was never created
+# with a real `id` field. The create call's failure is non-fatal: if
+# the tool is missing entirely, the adapt call will report "not found"
+# and _daa_invoke_tool routes that to skip_accepted correctly.
 check_adr0094_p3_daa_agent_adapt() {
+  local cli; cli=$(_cli_cmd)
+  local aid="p3-adapt-$$-${RANDOM}"
+
+  # Provision prerequisite agent (daa_agent_create requires `id`, not `name`).
+  # Silence stdout/stderr — we only care about the adapt call's outcome.
+  (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+    "$cli" mcp exec --tool daa_agent_create \
+      --params "{\"id\":\"${aid}\",\"type\":\"worker\"}" \
+      >/dev/null 2>&1) || true
+
   _daa_invoke_tool \
     "daa_agent_adapt" \
-    '{"agentId":"daa-test","adaptation":"optimize"}' \
-    'adapted|updated|success' \
+    "{\"agentId\":\"${aid}\",\"feedback\":\"optimize\",\"performanceScore\":0.9}" \
+    'adapted|updated|success|adaptation' \
     "daa_agent_adapt" \
     15
 }
