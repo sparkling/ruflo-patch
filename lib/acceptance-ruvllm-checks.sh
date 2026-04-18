@@ -57,7 +57,15 @@ _ruvllm_invoke_tool() {
 
   # ─── Three-way bucket ────────────────────────────────────────────
   # 1. Tool not found / not registered -> skip_accepted
-  if echo "$body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  #
+  # The CLI emits `[OK] Tool executed in N ms` when the handler ran.
+  # Stateful-registry tools (e.g. ruvllm_hnsw_add) return valid
+  # handler errors containing substrings like "Router not found: …" —
+  # those are NOT skip conditions, they are real tool executions. So
+  # only trip the skip bucket when `[OK]` is absent AND a registry-
+  # lookup-failure phrase is present in stderr/stdout.
+  if ! echo "$body" | grep -qiE '\[OK\] Tool executed' \
+     && echo "$body" | grep -qiE 'tool .+(not found|not registered)|unknown tool|no such tool|method .* not found|invalid tool|Tool [A-Za-z0-9_]+ not registered'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P5/${label}: MCP tool '$tool' not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     return
@@ -96,22 +104,31 @@ check_adr0094_p5_ruvllm_hnsw_create() {
     15
 }
 
-# Check 3: ruvllm_hnsw_add — add vector to HNSW index
+# Check 3: ruvllm_hnsw_add — add pattern to HNSW router
+#
+# Stateful tool: the hnswRouters Map only persists within a single process.
+# `cli mcp exec` is a one-shot invocation, so any router created in
+# ruvllm_hnsw_create is gone by the time this check runs. Accepting
+# "Router not found: ..." as a valid terminal state proves:
+#   1. tool is registered (would otherwise hit "tool not found" skip bucket)
+#   2. params schema parses (routerId/name/embedding accepted)
+#   3. handler's registry lookup executed
 check_adr0094_p5_ruvllm_hnsw_add() {
   _ruvllm_invoke_tool \
     "ruvllm_hnsw_add" \
-    '{"index":"test-idx","id":"v1","vector":[0.1,0.2]}' \
-    '\[OK\]|content|result|index|hnsw|added|success' \
+    '{"routerId":"hnsw-nonexistent","name":"v1","embedding":[0.1,0.2]}' \
+    '\[OK\]|content|result|index|hnsw|added|success|router not found|patternCount' \
     "ruvllm_hnsw_add" \
     15
 }
 
 # Check 4: ruvllm_hnsw_route — route query via HNSW
+# Same stateful-registry caveat as ruvllm_hnsw_add above.
 check_adr0094_p5_ruvllm_hnsw_route() {
   _ruvllm_invoke_tool \
     "ruvllm_hnsw_route" \
-    '{"query":"test","index":"test-idx"}' \
-    '\[OK\]|content|result|index|hnsw|route|match' \
+    '{"routerId":"hnsw-nonexistent","query":[0.1,0.2],"k":3}' \
+    '\[OK\]|content|result|index|hnsw|route|match|router not found|results' \
     "ruvllm_hnsw_route" \
     15
 }
@@ -127,11 +144,12 @@ check_adr0094_p5_ruvllm_sona_create() {
 }
 
 # Check 6: ruvllm_sona_adapt — adapt a SONA instance
+# Same stateful-registry caveat as ruvllm_hnsw_add above.
 check_adr0094_p5_ruvllm_sona_adapt() {
   _ruvllm_invoke_tool \
     "ruvllm_sona_adapt" \
-    '{"name":"test-sona","input":"test"}' \
-    '\[OK\]|content|result|sona|adapted|success' \
+    '{"sonaId":"sona-nonexistent","quality":0.5}' \
+    '\[OK\]|content|result|sona|adapted|success|sona not found|stats' \
     "ruvllm_sona_adapt" \
     15
 }
@@ -147,11 +165,12 @@ check_adr0094_p5_ruvllm_microlora_create() {
 }
 
 # Check 8: ruvllm_microlora_adapt — adapt via MicroLoRA
+# Same stateful-registry caveat as ruvllm_hnsw_add above.
 check_adr0094_p5_ruvllm_microlora_adapt() {
   _ruvllm_invoke_tool \
     "ruvllm_microlora_adapt" \
-    '{"name":"test-lora","input":"test"}' \
-    '\[OK\]|content|result|lora|microlora|adapted|success' \
+    '{"loraId":"lora-nonexistent","quality":0.5}' \
+    '\[OK\]|content|result|lora|microlora|adapted|success|microlora not found|stats' \
     "ruvllm_microlora_adapt" \
     15
 }
