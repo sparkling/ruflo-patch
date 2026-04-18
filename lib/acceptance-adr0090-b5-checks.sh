@@ -26,14 +26,54 @@
 #                       `agentdb.getController(...)` returns undefined
 #                       in the current build).
 #
-# Verifier consensus (read 2026-04-16): live probing across all 15
-# controllers in the published 3.5.58-patch.114 build shows the agentdb
-# package ships with `getController` undefined for every controller, so
-# the entire matrix currently takes the skip_accepted branch. The check
-# still encodes the shape of a real round-trip so that the day the
-# published build starts wiring controllers, the checks flip to pass
-# automatically — and the day a controller stops persisting what it
-# claims to persist, they flip to fail.
+# Verifier consensus (read 2026-04-17, agent A14 fix-all pass):
+# live probing against the published 3.5.58-patch.151 build shows the
+# agentdb `getController` map is now partially populated — 5 of 15
+# controllers pass the full round-trip (reflexion, skillLibrary,
+# reasoningBank, learningSystem, hierarchicalMemory) and 10 remain
+# skip_accepted for architecturally-correct reasons (no SQL surface,
+# router-fallback to RVF, read-only lookup tool, tool not found in
+# build, or cold-start empty-candidate short-circuit). History of
+# the matrix: patch.114 = 0 pass / 15 skip; patch.118 = 2 pass / 13 skip;
+# patch.124 = 4 pass / 11 skip; patch.151 = 5 pass / 10 skip. Each
+# check's docblock records the precise skip rationale so any shift
+# (new store tool ships, controller starts persisting) flips the
+# relevant check to PASS (or FAIL if persistence is pretend-real).
+#
+# Classification of the 10 skip_accepted controllers in patch.151:
+#   1. attentionService    — architecturally read-only metrics tool;
+#                            no CREATE TABLE / INSERT in AttentionService.
+#   2. causalGraph         — `agentdb_causal-edge` router-fallbacks;
+#                            no dedicated SQLite path (RVF-primary per
+#                            ADR-0086). graphAdapter shares this shape.
+#   3. causalRecall        — MCP path calls .search() not .recall();
+#                            queries `causal_edges` table which is
+#                            never created upstream.
+#   4. explainableRecall   — same underlying tool as causalRecall
+#                            (agentdb_causal_recall); same missing
+#                            table. Certificates are a side-effect of
+#                            recall() which the MCP path doesn't reach.
+#   5. gnnService          — no MCP store tool exists for gnn; closest
+#                            surface `agentdb_neural_patterns` is
+#                            "Tool not found".
+#   6. graphAdapter        — router-fallback like causalGraph; writes
+#                            to RVF per ADR-0086, no SQLite table.
+#   7. memoryConsolidation — cold-start hierarchical_memory is empty
+#                            → getConsolidationCandidates()=[] → all
+#                            4 counters 0 → no INSERT (correct per
+#                            MemoryConsolidation.consolidate() design).
+#   8. nightlyLearner      — fails with "no such table: causal_edges"
+#                            (SqliteError) — upstream bug in
+#                            NightlyLearner.discoverCausalEdges; no
+#                            schema ever creates causal_edges.
+#   9. semanticRouter      — read-only lookup tool returns
+#                            {route:default, confidence:0} with no
+#                            SQL write. No persistence by design.
+#  10. sonaTrajectory      — no dedicated store tool; `agentdb_pattern_store`
+#                            dispatches to reasoningBank (response
+#                            reports `controller: reasoningBank`).
+#                            Pattern lands in `reasoning_patterns`,
+#                            not `sona_trajectories`.
 #
 # Regression-guard rule (ADR-0090 acceptance-criteria style):
 #   - A skip_accepted branch MUST be keyed to the narrowest error regex
@@ -474,14 +514,16 @@ check_adr0090_b5_reasoningBank() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-4: causalGraph — no persistence path via MCP in current build.
-# Verifier (causalGraph.md) confirmed: `agentdb_causal-edge` returns
-# {success:true, controller:"router-fallback"} but writes nothing
-# retrievable. No `causal_edges` / `exp_edges` table exists anywhere
-# in the fork. The `controller not available` branch handles the
-# path via `agentdb_causal_query` which reports that cleanly. Marker
-# column `relation` is what the tool's INSERT would target IF the
-# controller were wired — when it's not, the query returns no rows.
+# B5-4: causalGraph — no dedicated persistence path via MCP.
+# Verified patch.151: `agentdb_causal-edge` returns
+# {success:true, controller:"router-fallback"} — the payload lands
+# in RVF (via memory-router fallback), not SQLite. Helper's 4f
+# router-fallback branch classifies as skip_accepted. Architectural
+# intent per ADR-0086 (RVF is primary). No `causal_edges` / `exp_edges`
+# table is created anywhere by the fork source; regression-guard:
+# the day upstream grows a dedicated graph-store tool that creates
+# and inserts into a SQLite table, the response shape changes and
+# the regex stops matching → real row-count verification runs.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_causalGraph() {
   local marker="b5-cgraph-$$-$(date +%s)"
@@ -496,10 +538,17 @@ check_adr0090_b5_causalGraph() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-5: causalRecall — recall_certificates table. Verifier
-# (causalRecall.md) found MCP path calls .search() not .recall() so no
-# write is ever attempted via MCP. Controller's `CausalRecall not
-# available` or cold-start warning triggers skip_accepted.
+# B5-5: causalRecall — recall_certificates table.
+# Verified patch.151: `agentdb_causal_recall` returns
+# {success:false, error:"no such table: causal_edges"} because the
+# tool tries to QUERY causal_edges which no schema ever creates.
+# Helper's 4c branch (no-such-table for a DIFFERENT table) classifies
+# as skip_accepted (not FAIL because the missing table is not our
+# target `recall_certificates`). MCP path calls .search() not
+# .recall() so no certificate write is ever attempted. Regression-guard:
+# the day upstream adds a `causal_edges` schema and populates it, the
+# error text changes and the regex stops matching → real row-count
+# verification runs against `recall_certificates`.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_causalRecall() {
   local marker="b5-crecall-$$-$(date +%s)"
@@ -554,16 +603,17 @@ check_adr0090_b5_hierarchicalMemory() {
 # B5-8: memoryConsolidation — consolidation_log table via
 # agentdb_consolidate.
 #
-# Architectural note: `MemoryConsolidation.consolidate()` short-circuits
-# when `getConsolidationCandidates()` returns [] (hierarchical_memory
-# empty → candidates=[] → no INSERT). Triage
-# (/tmp/fixall-memoryConsolidation.md) confirmed this is correct
-# behavior ("log only when real consolidation work happened") — the
-# shared helper's 4i branch recognizes that empty-candidate shape and
-# classifies as skip_accepted. Wrapper stays thin per
-# ADR-0090 Tier B5 invariant (≤12 non-comment lines, delegates to
-# shared helper, must pass the canonical table name). 45s timeout
-# matches B3's consolidate for cold-model load tolerance.
+# Verified patch.151: cold-init'd project returns all 4 counters = 0
+# ({episodicProcessed:0, semanticCreated:0, memoriesForgotten:0,
+# clustersFormed:0}) because hierarchical_memory is empty →
+# getConsolidationCandidates() returns [] → no INSERT. Helper's 4i
+# branch (all-counters-zero) classifies as skip_accepted. This is
+# correct per MemoryConsolidation.consolidate() design — "log only
+# when real consolidation work happened". 45s timeout matches B3's
+# consolidate for cold-model load tolerance. Regression-guard: if any
+# counter becomes non-zero, the regex stops matching → real row-count
+# verification runs against `consolidation_log` — the check PASSes
+# (row present) or FAILs (counters lie, no INSERT).
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_memoryConsolidation() {
   local marker="b5-mcon-$$-$(date +%s)"
@@ -578,14 +628,18 @@ check_adr0090_b5_memoryConsolidation() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-9: attentionService — NO SQLITE PERSISTENCE. Verifier
-# (attentionService.md) confirmed: 0 matches for INSERT/CREATE TABLE
-# in AttentionService.js; no attention_* table anywhere. The tool
-# `agentdb_attention_metrics` returns "AttentionMetrics not active" —
-# the skip_accepted branch handles this, AND the "table absent after
-# apparent success" fail-branch protects us if a future build creates
-# a table without persistence.
-# Architect risk flag: HIGH — SKIP_ACCEPTED expected.
+# B5-9: attentionService — NO SQLITE PERSISTENCE BY DESIGN.
+# Verified patch.151: `agentdb_attention_metrics` returns
+# {success:true, metrics:{}, notice:"No attention operations performed."}
+# which trips helper's 4h read-only/telemetry-only branch. 0 matches
+# for INSERT/CREATE TABLE in AttentionService.js (grep verified); no
+# `attention_*` table anywhere in the fork. The tool is architecturally
+# read-only — metrics populate only after `attention_compute` or
+# `attention_benchmark` runtime calls, not from a persistence path.
+# Architect risk flag: HIGH — SKIP_ACCEPTED expected and validated.
+# Regression-guard: the day a store tool with SQL side-effect ships,
+# the notice string disappears and the regex stops matching → helper
+# falls through to real row-count verification.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_attentionService() {
   local marker="b5-attn-$$-$(date +%s)"
@@ -600,16 +654,17 @@ check_adr0090_b5_attentionService() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-10: gnnService — NO MCP STORE TOOL, NO SQLITE. Verifier
-# (gnnLearning.md) confirmed fork name is `gnnService` not
-# `gnnLearning`; 0 matches for gnn_store in mcp tools; no SQL surface
-# in plugins/ruvector-upstream/src/bridges/gnn.ts. Round-trip is
-# meaningless — we invoke `agentdb_neural_patterns` which is the
-# closest surface; the "not active"/"no such tool" branch handles the
-# skip. Kept for completeness and to flip the day gnnService grows a
-# store tool.
-# Architect risk flag: HIGH — SKIP_ACCEPTED expected.
-# Alias: B5 spec calls this `gnnLearning`; fork calls it `gnnService`.
+# B5-10: gnnService — NO MCP STORE TOOL IN BUILD.
+# Verified patch.151: `agentdb_neural_patterns` returns
+# "[ERROR] Tool not found: agentdb_neural_patterns" — no gnn-specific
+# store surface exists. 0 matches for `agentdb_gnn_*` in agentdb-tools.js
+# (grep verified). Helper's 4e branch (tool-not-found) classifies as
+# skip_accepted. Fork name is `gnnService` (the B5 spec alias
+# `gnnLearning` is historical). Architect risk flag: HIGH —
+# SKIP_ACCEPTED expected and validated. Regression-guard: the day a
+# gnn store tool appears, the "Tool not found" error disappears and
+# the regex stops matching → helper either PASSes (if the tool writes
+# to SQLite) or FAILs (if it silent-fallbacks in memory).
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_gnnService() {
   local marker="b5-gnn-$$-$(date +%s)"
@@ -624,9 +679,15 @@ check_adr0090_b5_gnnService() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-11: semanticRouter — no persistent state. Live probe:
-# "SemanticRouter not available. Use hooks route instead." Skip branch.
-# Architect risk flag: HIGH — SKIP_ACCEPTED expected.
+# B5-11: semanticRouter — READ-ONLY LOOKUP TOOL BY DESIGN.
+# Verified patch.151: `agentdb_semantic_route` returns
+# {route:"default", confidence:0} — no SQL write ever attempted.
+# Helper's 4h read-only branch (route:default + confidence:0)
+# classifies as skip_accepted. Architect risk flag: HIGH — SKIP_ACCEPTED
+# expected and validated. Regression-guard: the day semanticRouter
+# grows a persistent route log, the response shape changes (non-default
+# route or non-zero confidence) and the regex stops matching → real
+# row-count verification runs.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_semanticRouter() {
   local marker="b5-sroute-$$-$(date +%s)"
@@ -641,15 +702,18 @@ check_adr0090_b5_semanticRouter() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-12: graphAdapter — no MCP store tool; writes via RVF not SQLite.
-# Verifier (graphAdapter.md) confirmed: no graph-store tools in CLI
-# surface. Indirect memory_store writes land in RVF, consistent with
-# ADR-0086 "RVF is primary; SQLite is fallback". The MCP tool we route
-# to (`agentdb_memory_store_patterns` → memory_store fallback) is
-# technically a store, but graphAdapter does not claim a SQLite table.
-# The helper's skip_accepted branches will handle "not available" /
-# "unknown tool" for any graph-specific tool that appears.
-# Architect risk flag: HIGH — SKIP_ACCEPTED expected.
+# B5-12: graphAdapter — RVF-PRIMARY, NO DEDICATED SQLITE PATH.
+# Verified patch.151: `agentdb_causal-edge` returns
+# {success:true, controller:"router-fallback"} (same dispatch as
+# causalGraph). Helper's 4f router-fallback branch classifies as
+# skip_accepted. Architecturally intentional per ADR-0086 (RVF is
+# primary; SQLite is fallback). Memory note
+# `project-deprecated-controllers.md` explicitly says graphAdapter
+# must be KEPT (not deprecated). Architect risk flag: HIGH —
+# SKIP_ACCEPTED expected and validated. Regression-guard: the day a
+# dedicated graph-store tool appears, the response shape changes
+# (controller != router-fallback) and the regex stops matching →
+# real row-count verification runs.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_graphAdapter() {
   local marker="b5-gadapt-$$-$(date +%s)"
@@ -664,12 +728,20 @@ check_adr0090_b5_graphAdapter() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-13: sonaTrajectory — disabled-by-default + no dedicated store tool.
-# Architect blocker note: isControllerEnabled returns false by default
-# and no MCP write surface exists. B5 spec alias: `sonaService`. The
-# "not available" skip branch handles this.
-# Architect risk flag: HIGH — SKIP_ACCEPTED expected (disabled-by-default
-# + no tool).
+# B5-13: sonaTrajectory — NO DEDICATED STORE TOOL; DISPATCHES TO
+# REASONINGBANK.
+# Verified patch.151: `agentdb_pattern_store` with type=sona-trajectory
+# returns {success:true, controller:"reasoningBank"} — the pattern
+# lands in `reasoning_patterns` (reasoningBank's table), NOT
+# `sona_trajectories` (the B5 target). Helper's 4g wrong-controller
+# branch classifies as skip_accepted. `isControllerEnabled` returns
+# false by default and no `agentdb_sona_*` tool exists. B5 spec alias:
+# `sonaService`. Architect risk flag: HIGH — SKIP_ACCEPTED expected
+# and validated. Regression-guard: the day a dedicated
+# `agentdb_sona_trajectory_*` store tool ships, its response reports
+# `controller:"sonaTrajectory"` (or similar) and the regex stops
+# matching → real row-count verification runs against
+# `sona_trajectories`.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_sonaTrajectory() {
   local marker="b5-sona-$$-$(date +%s)"
@@ -684,9 +756,17 @@ check_adr0090_b5_sonaTrajectory() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-14: nightlyLearner — agentdb_learner_run. Live probe:
-# "NightlyLearner controller not available" — skip branch. Pipeline
-# tool, 45s timeout matches consolidation.
+# B5-14: nightlyLearner — agentdb_learner_run.
+# Verified patch.151: `agentdb_learner_run` fails with SqliteError
+# "no such table: causal_edges" at NightlyLearner.discoverCausalEdges
+# (line 288 of NightlyLearner.js). Upstream bug — NightlyLearner queries
+# a table that no schema ever creates. Helper's 4c branch (no-such-table
+# for a DIFFERENT table than our target `learning_sessions`) classifies
+# as skip_accepted (NOT FAIL, because the missing table is upstream-side
+# not ours). Pipeline tool, 45s timeout matches consolidation.
+# Regression-guard: the day upstream creates `causal_edges` schema, the
+# error text disappears and the regex stops matching → real row-count
+# verification runs against `learning_sessions`.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_nightlyLearner() {
   local marker="b5-nlearn-$$-$(date +%s)"
@@ -701,13 +781,17 @@ check_adr0090_b5_nightlyLearner() {
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-15: explainableRecall — recall_certificates table. Verifier
-# (causalRecall.md) noted: no dedicated store tool; certificates are
-# issued as side-effect of CausalRecall.recall() which the MCP path
-# does NOT reach. Architect risk flag: HIGH — possibly read-only tool.
-# We route to `agentdb_causal_recall` which is the closest available
-# tool; skip_accepted via "not available" or the "no such table"
-# error we observed on live CLI.
+# B5-15: explainableRecall — recall_certificates table.
+# Verified patch.151: same underlying tool as causalRecall
+# (`agentdb_causal_recall`) and same failure — "no such table:
+# causal_edges". No dedicated store tool; certificates are issued as
+# side-effect of CausalRecall.recall() which the MCP path does NOT
+# reach (MCP calls .search() instead). Helper's 4c branch (no-such-table
+# for a DIFFERENT table than `recall_certificates`) classifies as
+# skip_accepted. Architect risk flag: HIGH — SKIP_ACCEPTED expected
+# and validated. Regression-guard: the day an explain-surface store
+# tool ships, the error disappears and the regex stops matching → real
+# row-count verification runs.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_explainableRecall() {
   local marker="b5-xrec-$$-$(date +%s)"
