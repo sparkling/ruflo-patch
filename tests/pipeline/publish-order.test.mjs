@@ -40,6 +40,8 @@ const KNOWN_DEPS = {
   '@sparkleideas/ruvector-tiny-dancer': [],
   '@sparkleideas/ruvector-attention-wasm': [],
   '@sparkleideas/ruvector-attention-unified-wasm': [],
+  '@sparkleideas/ruvector-rvagent-wasm': [],
+  '@sparkleideas/ruvector-ruvllm-wasm': [],
   '@sparkleideas/agentdb': [],
   '@sparkleideas/agentic-flow': [],
   '@sparkleideas/ruv-swarm': [],
@@ -180,18 +182,18 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (19+5+7+22+2)', () => {
+    it('all expected packages are present across all levels (21+5+7+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3: L1=19 (6 original + 11 ruvector + 2 attention-wasm), L2=5, L3=7, L4=22, L5=2
-      assert.equal(LEVELS[0].length, 19, 'Level 1 should have 19 packages (ADR-0071 + F3 attention WASM)');
+      // ADR-0014 + ADR-0071 + F3 + W3: L1=21 (6 original + 11 ruvector + 2 attention-wasm + 2 W3 wasm: rvagent+ruvllm), L2=5, L3=7, L4=22, L5=2
+      assert.equal(LEVELS[0].length, 21, 'Level 1 should have 21 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm WASM)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
       assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
       assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        55,
-        `Expected 55 packages total, got ${allPackages.length}`
+        57,
+        `Expected 57 packages total, got ${allPackages.length}`
       );
     });
 

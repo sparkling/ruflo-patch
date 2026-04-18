@@ -19,6 +19,8 @@
         "@sparkleideas/ruvector-tiny-dancer",
         "@sparkleideas/ruvector-attention-wasm",
         "@sparkleideas/ruvector-attention-unified-wasm",
+        "@sparkleideas/ruvector-rvagent-wasm",
+        "@sparkleideas/ruvector-ruvllm-wasm",
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
         "@sparkleideas/ruv-swarm",
