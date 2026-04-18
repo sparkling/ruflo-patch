@@ -220,17 +220,30 @@ check_health_composite_count() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  # ADR-0082 rework: the MCP `agentdb_health` and `agentdb_controllers` tools
-  # return DIFFERENT JSON shapes, so counting raw `"name"` substrings is wrong:
+  # W2-I9 rework: the previous two-call implementation had a race. The check
+  # issued `agentdb_health` AND `agentdb_controllers` back-to-back, then
+  # compared counts across the two snapshots. Under parallel load (10+
+  # concurrent `cli mcp exec` calls in the same group running against the
+  # same $TEMP_DIR), any one call can exceed the default `_run_and_kill_ro`
+  # 8s budget — the child is killed, `_RK_OUT` is empty, and the numeric
+  # grep falls through to 0 via `${var:-0}`. That produces the
+  # "health=0 < controllers=41" failure observed in W2-I9 run 1 even though
+  # the registry is intact (run 2 of the same harness reported 47/47).
   #
-  #   agentdb_health      -> { "controllers": <N>, "controllerNames": ["a","b",...] }
-  #   agentdb_controllers -> { "controllers": [ { "name": "a", ... }, ... ] }
+  # The `agentdb_health` tool already returns a self-consistent snapshot:
   #
-  # The pre-fix check grep-counted `"name"` in both outputs, so health always
-  # returned 0 (the field is `controllerNames`, not per-entry `name` objects)
-  # while controllers returned 41, producing a spurious "health=0 < controllers=41"
-  # failure even though both tools report the same registry content.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
+  #   {
+  #     "available": true,
+  #     "controllers": <N>,
+  #     "controllerNames": ["a", "b", ...],
+  #     "source": "registry"
+  #   }
+  #
+  # A single call lets us cross-check the numeric `controllers` field against
+  # `controllerNames.length` from the SAME response — no cross-snapshot race.
+  # We also extend the timeout to 30s (matching adr0086-checks) because cold
+  # `agentdb_health` has been measured at ~3s and can be slower under load.
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health" "" 30
   local health_out="$_RK_OUT"
 
   if [[ -z "$health_out" ]]; then
@@ -238,41 +251,35 @@ check_health_composite_count() {
     return
   fi
 
-  # Parse the numeric `"controllers": <N>` field from agentdb_health.
+  # Require an explicit `"available": true` — any other state (false, missing)
+  # means the registry didn't initialize in this mcp-exec process.
+  if ! echo "$health_out" | grep -qE '"available"[[:space:]]*:[[:space:]]*true'; then
+    local avail_raw
+    avail_raw=$(echo "$health_out" | grep -oE '"available"[[:space:]]*:[[:space:]]*(true|false|null)' | head -1)
+    _CHECK_OUTPUT="Health composite: agentdb_health not available (${avail_raw:-missing field})"
+    return
+  fi
+
+  # Parse the numeric `"controllers": <N>` field from the same snapshot.
   local health_count
   health_count=$(echo "$health_out" | grep -oE '"controllers"[[:space:]]*:[[:space:]]*[0-9]+' | head -1 | grep -oE '[0-9]+$')
   health_count=${health_count:-0}
 
-  # Cross-check by counting entries in the controllerNames array.
+  # Count entries in `controllerNames` array from the same snapshot.
   local name_list_count
   name_list_count=$(echo "$health_out" | sed -n '/"controllerNames"[[:space:]]*:[[:space:]]*\[/,/\]/p' | grep -cE '^[[:space:]]*"[^"]+",?[[:space:]]*$')
   name_list_count=${name_list_count:-0}
 
-  # Count per-entry `"name"` objects in agentdb_controllers output.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
-  local ctrl_out="$_RK_OUT"
-  local ctrl_count
-  ctrl_count=$(echo "$ctrl_out" | grep -c '"name"')
-  ctrl_count=${ctrl_count:-0}
-
-  # Primary assertion: health numeric field agrees with agentdb_controllers count
-  # (same registry, same data) AND we have a real controller count.
-  if [[ "$health_count" -ge "$ctrl_count" && "$ctrl_count" -ge 10 ]]; then
+  # Primary invariant: the numeric count equals the names[] length AND we have
+  # a real registry (>= 10 controllers). Both values come from one MCP
+  # response, so no cross-call drift is possible.
+  if [[ "$health_count" -eq "$name_list_count" && "$health_count" -ge 10 ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Health composite: agentdb_health.controllers=$health_count (names[]=$name_list_count), agentdb_controllers=$ctrl_count"
-  elif [[ "$ctrl_count" -lt 10 ]]; then
-    # Cold mcp-exec path doesn't bootstrap the registry — accept skip if module ships.
-    if [[ "$ctrl_count" -eq 0 ]]; then
-      if [[ -f "$TEMP_DIR/node_modules/@sparkleideas/memory/dist/controller-registry.js" ]] || \
-         [[ -f "$TEMP_DIR/node_modules/@sparkleideas/memory/controller-registry.js" ]]; then
-        _CHECK_PASSED="skip_accepted"
-        _CHECK_OUTPUT="Health composite: controllers=0 in mcp-exec context (registry ships but not initialized in one-shot process)"
-        return
-      fi
-    fi
-    _CHECK_OUTPUT="Health composite: too few controllers ($ctrl_count, expected >= 10)"
+    _CHECK_OUTPUT="Health composite: agentdb_health.controllers=$health_count (names[]=$name_list_count, self-consistent)"
+  elif [[ "$health_count" -ne "$name_list_count" ]]; then
+    _CHECK_OUTPUT="Health composite: internal inconsistency — controllers=$health_count != names[]=$name_list_count"
   else
-    _CHECK_OUTPUT="Health composite: health=$health_count < controllers=$ctrl_count (unexpected)"
+    _CHECK_OUTPUT="Health composite: too few controllers ($health_count, expected >= 10)"
   fi
 }
 
