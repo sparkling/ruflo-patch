@@ -58,67 +58,158 @@ _p7_validate_json_file() {
   fi
 }
 
-# Check 1: .claude-flow/agents/store.json
-# If the file exists, validate JSON. If it never appears after standard `init --full`
-# (agents store is created lazily on first `agent spawn`), mark skip_accepted.
-# Three-way bucket (ADR-0090 Tier A2): pass / fail / skip_accepted.
+# Check 1: .claude-flow/agents/store.json — trigger lazy creation via `agent spawn`
+# The store file is created lazily on first `agent spawn`, not by `init --full`.
+# Rather than silent-skipping (which hides regressions where lazy creation breaks),
+# we isolate a copy of E2E_DIR, run `agent spawn`, and assert the file now exists
+# with valid JSON + expected shape. This tests the actual promise: "after spawning
+# an agent, the agents store is durable on disk" (Agent A12, ADR-0094 fix-all).
 check_adr0094_p7_agents_store() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   local target="${E2E_DIR}/.claude-flow/agents/store.json"
+  # Happy path: file already present from a prior run — validate shape and return.
   if [[ -f "$target" ]]; then
-    _p7_validate_json_file ".claude-flow/agents/store.json" "" "agents_store"
+    _p7_validate_json_file ".claude-flow/agents/store.json" "agents" "agents_store"
     return
   fi
-  _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/agents_store: \`.claude-flow/agents/store.json\` not produced by current \`init --full\` template (created lazily on first agent spawn)"
-}
-
-# Check 2: .swarm/agents.json
-# If the file exists, validate JSON. Standard `init --full` creates only
-# .swarm/memory.db (SQLite); agents.json is not emitted.
-check_adr0094_p7_swarm_agents() {
-  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
-  local target="${E2E_DIR}/.swarm/agents.json"
-  if [[ -f "$target" ]]; then
-    _p7_validate_json_file ".swarm/agents.json" "" "swarm_agents"
-    return
-  fi
-  _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_agents: \`.swarm/agents.json\` not produced by current \`init --full\` template (swarm state persisted via .swarm/memory.db SQLite)"
-}
-
-# Check 3: .swarm/state.json — must have "topology" or "agents" key
-# If the file exists, validate JSON and required keys. Standard `init --full` does
-# not emit .swarm/state.json (swarm state lives in .swarm/memory.db until a swarm
-# is explicitly initialized).
-check_adr0094_p7_swarm_state() {
-  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
-  local target="${E2E_DIR}/.swarm/state.json"
-  if [[ ! -f "$target" ]]; then
+  # Trigger path: isolate, spawn an agent, assert the file now exists.
+  if ! declare -F _e2e_isolate >/dev/null; then
     _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_state: \`.swarm/state.json\` not produced by current \`init --full\` template (swarm state lives in .swarm/memory.db until \`swarm init\` runs)"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P7/agents_store: _e2e_isolate helper not available (harness not sourced)"
     return
   fi
+  local iso; iso=$(_e2e_isolate "p7-fo-agents")
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    _CHECK_OUTPUT="P7/agents_store: failed to create isolated dir"; return
+  fi
+  # Trap-based cleanup regardless of exit path.
+  # shellcheck disable=SC2064
+  trap "chmod -R u+rwX '$iso' 2>/dev/null; rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
+  rm -f "$iso/.claude-flow/agents/store.json" 2>/dev/null || true
+  local cli; cli=$(_cli_cmd)
+  # Direct `timeout` invocation (avoids the _run_and_kill $? capture footgun —
+  # see memory "_run_and_kill exit code is unreliable"). 25s ceiling accommodates
+  # cold npx resolution on the fallback path.
+  local spawn_out spawn_rc
+  spawn_out=$(cd "$iso" && NPM_CONFIG_REGISTRY="${REGISTRY:-}" timeout 25 $cli agent spawn --type coder --name p7-fo-agents-probe 2>&1)
+  spawn_rc=$?
+  local iso_target="$iso/.claude-flow/agents/store.json"
+  if [[ ! -f "$iso_target" ]]; then
+    _CHECK_OUTPUT="P7/agents_store: \`agent spawn\` did not create .claude-flow/agents/store.json (rc=$spawn_rc): $(echo "$spawn_out" | tail -3 | tr '\n' ' ')"
+    return
+  fi
+  # Validate the file shape — agents key must be present (object with spawned agent).
   local validate_out
   validate_out=$(node -e '
     const fs = require("fs");
     let j;
     try { j = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
     catch (e) { console.log("ERR_PARSE:" + e.message); process.exit(1); }
-    const found = ["topology","agents"].filter(k => k in j);
-    if (!found.length) { console.log("ERR_MISSING:topology,agents"); process.exit(1); }
-    console.log("OK:" + found.join(","));
-  ' "$target" 2>&1)
+    if (!("agents" in j) || j.agents == null) { console.log("ERR_MISSING:agents"); process.exit(1); }
+    const count = Object.keys(j.agents || {}).length;
+    console.log("OK:agents=" + count);
+  ' "$iso_target" 2>&1)
   if echo "$validate_out" | grep -q '^ERR_PARSE:'; then
-    _CHECK_OUTPUT="P7/swarm_state: invalid JSON: $(echo "$validate_out" | sed -nE 's/^ERR_PARSE:(.*)/\1/p' | head -1)"; return
+    _CHECK_OUTPUT="P7/agents_store: invalid JSON after spawn: $(echo "$validate_out" | sed -nE 's/^ERR_PARSE:(.*)/\1/p' | head -1)"; return
   fi
   if echo "$validate_out" | grep -q '^ERR_MISSING:'; then
-    _CHECK_OUTPUT="P7/swarm_state: .swarm/state.json lacks both 'topology' and 'agents' keys"; return
+    _CHECK_OUTPUT="P7/agents_store: store.json created but lacks \`agents\` key: $validate_out"; return
   fi
-  local found; found=$(echo "$validate_out" | sed -nE 's/^OK:(.*)/\1/p' | head -1)
-  local sz; sz=$(wc -c < "$target" 2>/dev/null | tr -d ' ')
+  local sz; sz=$(wc -c < "$iso_target" 2>/dev/null | tr -d ' ')
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="P7/swarm_state: .swarm/state.json (${sz:-0}B), valid JSON, has: ${found}"
+  _CHECK_OUTPUT="P7/agents_store: lazy-created via \`agent spawn\` (${sz:-0}B, ${validate_out#OK:})"
+}
+
+# Check 2: .swarm/agents.json — vestigial artifact, confirmed unused by product
+# `.swarm/agents.json` is not produced by `init --full`, nor by `swarm init`, nor
+# by `agent spawn` — the current product stores agents in two places: (a) per-agent
+# records in `.claude-flow/agents/store.json` (covered by check 1), and (b) swarm
+# state in `.swarm/memory.db` (SQLite) / `.swarm/memory.rvf` (RVF). Probed against
+# `@sparkleideas/cli@latest` by A12 with both `swarm init --topology hierarchical`
+# and `agent spawn` (2026-04-18) — neither creates this file.
+# Kept as skip_accepted with a stable fingerprint so ADR-0096 skip-rot can surface
+# if the product ever starts emitting it again (in which case we upgrade to strict).
+check_adr0094_p7_swarm_agents() {
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  local target="${E2E_DIR}/.swarm/agents.json"
+  if [[ -f "$target" ]]; then
+    # File re-emerged — upgrade to strict validation.
+    _p7_validate_json_file ".swarm/agents.json" "" "swarm_agents"
+    return
+  fi
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_agents: \`.swarm/agents.json\` is a vestigial artifact (agents live in \`.claude-flow/agents/store.json\` — check 1; swarm state lives in \`.swarm/memory.db\` + \`.swarm/memory.rvf\`). Upgraded to strict if the file ever appears."
+}
+
+# Check 3: .swarm/state.json — trigger lazy creation via `swarm init`
+# State file is lazy-created on first `swarm init`, not by `init --full`. We isolate
+# a copy, run `swarm init --topology hierarchical`, and assert the file exists with
+# the required `topology` key (or `agents`). This validates the real promise: "after
+# initializing a swarm, its state is durable on disk" (A12, ADR-0094 fix-all).
+check_adr0094_p7_swarm_state() {
+  _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  local target="${E2E_DIR}/.swarm/state.json"
+  # Local validator — reused on both happy path and post-trigger path.
+  local _p7_swst_validate
+  _p7_swst_validate() {
+    local f="$1"
+    node -e '
+      const fs = require("fs");
+      let j;
+      try { j = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); }
+      catch (e) { console.log("ERR_PARSE:" + e.message); process.exit(1); }
+      const found = ["topology","agents"].filter(k => k in j);
+      if (!found.length) { console.log("ERR_MISSING:topology,agents"); process.exit(1); }
+      console.log("OK:" + found.join(","));
+    ' "$f" 2>&1
+  }
+  # Happy path.
+  if [[ -f "$target" ]]; then
+    local vo; vo=$(_p7_swst_validate "$target")
+    if echo "$vo" | grep -q '^ERR_PARSE:'; then
+      _CHECK_OUTPUT="P7/swarm_state: invalid JSON: $(echo "$vo" | sed -nE 's/^ERR_PARSE:(.*)/\1/p' | head -1)"; return
+    fi
+    if echo "$vo" | grep -q '^ERR_MISSING:'; then
+      _CHECK_OUTPUT="P7/swarm_state: .swarm/state.json lacks both 'topology' and 'agents' keys"; return
+    fi
+    local found; found=$(echo "$vo" | sed -nE 's/^OK:(.*)/\1/p' | head -1)
+    local sz; sz=$(wc -c < "$target" 2>/dev/null | tr -d ' ')
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="P7/swarm_state: .swarm/state.json (${sz:-0}B), valid JSON, has: ${found}"
+    return
+  fi
+  # Trigger path.
+  if ! declare -F _e2e_isolate >/dev/null; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_state: _e2e_isolate helper not available (harness not sourced)"
+    return
+  fi
+  local iso; iso=$(_e2e_isolate "p7-fo-swarm-st")
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    _CHECK_OUTPUT="P7/swarm_state: failed to create isolated dir"; return
+  fi
+  # shellcheck disable=SC2064
+  trap "chmod -R u+rwX '$iso' 2>/dev/null; rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
+  rm -f "$iso/.swarm/state.json" 2>/dev/null || true
+  local cli; cli=$(_cli_cmd)
+  local init_out init_rc
+  init_out=$(cd "$iso" && NPM_CONFIG_REGISTRY="${REGISTRY:-}" timeout 25 $cli swarm init --topology hierarchical --max-agents 4 2>&1)
+  init_rc=$?
+  local iso_target="$iso/.swarm/state.json"
+  if [[ ! -f "$iso_target" ]]; then
+    _CHECK_OUTPUT="P7/swarm_state: \`swarm init\` did not create .swarm/state.json (rc=$init_rc): $(echo "$init_out" | tail -3 | tr '\n' ' ')"; return
+  fi
+  local vo; vo=$(_p7_swst_validate "$iso_target")
+  if echo "$vo" | grep -q '^ERR_PARSE:'; then
+    _CHECK_OUTPUT="P7/swarm_state: invalid JSON after swarm init: $(echo "$vo" | sed -nE 's/^ERR_PARSE:(.*)/\1/p' | head -1)"; return
+  fi
+  if echo "$vo" | grep -q '^ERR_MISSING:'; then
+    _CHECK_OUTPUT="P7/swarm_state: state.json created by swarm init but lacks topology/agents: $vo"; return
+  fi
+  local found; found=$(echo "$vo" | sed -nE 's/^OK:(.*)/\1/p' | head -1)
+  local sz; sz=$(wc -c < "$iso_target" 2>/dev/null | tr -d ' ')
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="P7/swarm_state: lazy-created via \`swarm init\` (${sz:-0}B, has: ${found})"
 }
 
 # Check 4: .claude/helpers/statusline.cjs — valid JS syntax
@@ -140,18 +231,50 @@ check_adr0094_p7_statusline_cjs() {
   _CHECK_OUTPUT="P7/statusline_cjs: statusline.cjs (${sz}B), valid JS syntax"
 }
 
-# Check 5: .claude-flow/neural/ directory exists
-# Standard `init --full` does not create .claude-flow/neural/ (neural state is
-# written lazily the first time `neural train`/`neural status` runs).
+# Check 5: .claude-flow/neural/ directory — behavior-over-artifact
+# Probed against `@sparkleideas/cli@latest` (2026-04-18): neither `neural train
+# --iterations 1` nor `neural status` creates `.claude-flow/neural/`. Neural
+# adapter state is persisted in the AgentDB SQLite/RVF store (.swarm/memory.db,
+# .swarm/memory.rvf) — the directory is vestigial.
+#
+# Per ADR-0082 ("test behavior, not artifact shape"), we assert the real promise:
+# `neural train` completes successfully and reports pattern metrics. The directory
+# check is retained as a passthrough — if upstream ever starts emitting it again,
+# strict validation kicks in.
 check_adr0094_p7_neural_dir() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+  # Happy path: directory present (upstream may re-emit it) — prefer artifact.
   if [[ -d "${E2E_DIR}/.claude-flow/neural" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="P7/neural_dir: .claude-flow/neural/ exists"
     return
   fi
-  _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/neural_dir: \`.claude-flow/neural/\` not produced by current \`init --full\` template (created lazily on first neural command)"
+  # Behavior path: run `neural train` in isolation and assert it completes.
+  if ! declare -F _e2e_isolate >/dev/null; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P7/neural_dir: _e2e_isolate helper not available (harness not sourced)"
+    return
+  fi
+  local iso; iso=$(_e2e_isolate "p7-fo-neural")
+  if [[ -z "$iso" || ! -d "$iso" ]]; then
+    _CHECK_OUTPUT="P7/neural_dir: failed to create isolated dir"; return
+  fi
+  # shellcheck disable=SC2064
+  trap "chmod -R u+rwX '$iso' 2>/dev/null; rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
+  local cli; cli=$(_cli_cmd)
+  local train_out train_rc
+  train_out=$(cd "$iso" && NPM_CONFIG_REGISTRY="${REGISTRY:-}" timeout 30 $cli neural train --iterations 1 2>&1)
+  train_rc=$?
+  # Strict behavior assertion: training must report completion + metrics.
+  # Matches the "Training complete: N epochs" + "Patterns Recorded" output shape.
+  if echo "$train_out" | grep -qE 'Training complete|Patterns Recorded' \
+     && echo "$train_out" | grep -qi 'epochs\|patterns'; then
+    _CHECK_PASSED="true"
+    local epochs; epochs=$(echo "$train_out" | grep -oE '[0-9]+ epochs' | head -1)
+    _CHECK_OUTPUT="P7/neural_dir: \`neural train\` completed (${epochs:-metrics emitted}); dir is vestigial (neural state lives in AgentDB)"
+    return
+  fi
+  _CHECK_OUTPUT="P7/neural_dir: \`neural train\` did not complete (rc=$train_rc): $(echo "$train_out" | tail -5 | tr '\n' ' ')"
 }
 
 # Check 6: .claude-flow/hooks/ directory (or hooks key in config.json)
@@ -182,23 +305,25 @@ check_adr0094_p7_config_json() {
   _p7_validate_json_file ".claude-flow/config.json" "" "config_json"
 }
 
-# Check 8: .claude/settings.json — must exist, parse as JSON, and contain
-# `permissions`. The `mcpServers` key is not emitted by current `init --full`
-# (MCP server config lives in the sibling `.mcp.json` file), so that sub-assertion
-# is skip_accepted. The `permissions` assertion is strict — JSON parse failures
-# and a missing `permissions` key still FAIL.
+# Check 8: .claude/settings.json — strict on hooks+permissions, skip_accepted on mcpServers
+# Probed against `@sparkleideas/cli@latest` (2026-04-18, A12): `init --full` writes
+# `.claude/settings.json` with `permissions` (hook handlers, tool allowlists) and a
+# `hooks` key, but never `mcpServers`. MCP servers are registered out-of-band by the
+# Claude Code CLI via `claude mcp add …` (writes to `~/.claude.json` user config, or
+# adds an `mcpServers` key to this file on demand) — no sibling `.mcp.json` is produced
+# by ruflo/cli `init --full`.
+#
+# We STRICTLY enforce `permissions` (parse + presence) and `hooks` (presence) — they
+# are the init-time contract. `mcpServers` remains skip_accepted because it is a
+# user-driven addition not part of the init template. If `claude mcp add` has run
+# and populated the key, we upgrade to strict pass with the addendum.
 check_adr0094_p7_settings_json() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
-  # Strict validation of file existence + JSON parse + required `permissions`.
-  # Any failure here (missing file, bad JSON, missing `permissions`) is a real
-  # FAIL — never downgraded to skip_accepted.
-  _p7_validate_json_file ".claude/settings.json" "permissions" "settings_json"
+  # Strict: `permissions` AND `hooks` must both be present and JSON must parse.
+  _p7_validate_json_file ".claude/settings.json" "permissions,hooks" "settings_json"
   if [[ "$_CHECK_PASSED" != "true" ]]; then
     return
   fi
-  # `permissions` is present and JSON is valid. Now inspect whether `mcpServers`
-  # is also present — it is not emitted by the current `init --full` template
-  # (MCP server config lives in the sibling `.mcp.json` file).
   local target="${E2E_DIR}/.claude/settings.json"
   local has_mcp; has_mcp=$(node -e '
     const fs = require("fs");
@@ -208,12 +333,12 @@ check_adr0094_p7_settings_json() {
     } catch { console.log("NO"); }
   ' "$target" 2>&1)
   if [[ "$has_mcp" == "YES" ]]; then
-    _CHECK_OUTPUT="${_CHECK_OUTPUT} + mcpServers present"
+    _CHECK_OUTPUT="${_CHECK_OUTPUT} + mcpServers present (user-added via \`claude mcp add\`)"
     return
   fi
-  # permissions OK (strict pass), mcpServers genuinely absent: downgrade the
-  # overall result to skip_accepted so the mcpServers gap is visible without
-  # silent-passing (ADR-0082 / ADR-0090 Tier A2).
+  # permissions + hooks OK (strict pass), mcpServers genuinely absent: downgrade
+  # so the user-driven-addition gap stays visible without silent-passing
+  # (ADR-0082 / ADR-0090 Tier A2).
   _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/settings_json: \`.claude/settings.json\` valid JSON with \`permissions\` key present; \`mcpServers\` key not produced by current \`init --full\` template (MCP server config lives in sibling .mcp.json)"
+  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/settings_json: \`.claude/settings.json\` valid JSON with \`permissions\` + \`hooks\` keys present; \`mcpServers\` is user-driven (added via \`claude mcp add\`, not by \`init --full\`)"
 }
