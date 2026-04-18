@@ -793,3 +793,56 @@ if (fileExists(this.config.databasePath)) {
   - Silent mixed-backend loss: same command. Look for trials with `entryCount=3..5` and grep those writer traces for `tryNativeInit-return-false {"reason":"pure-TS-owned-file"}`. Expect the peek-result trace on that writer to show `bytesRead<4` or `peekStr: "RVF\u0000"`.
 - **Runtime**: ~6-10s per trial at N=6. 20 trials ≈ 2-3 minutes wall.
 - **Log samples**: `/tmp/pass3-probe-n6-15v3.log` (15 trials including t9's silent 3/6 loss), `/tmp/pass3-probe-n6-20v2.log` (20 trials including t6's 4/6 loss). Extracted t10 mixed-backend detail at `/tmp/t10-trace.log`.
+
+## Investigation Findings (2026-04-18, Pass 4 — H15 read-side)
+
+After Pass-3 (d3+d4, fork `e6901f397`, `@sparkleideas/cli@3.5.58-patch.141`) write-side probe hit 40/40 at N=2/4/6/8. Full acceptance cascade still shows 3 related failures: `t3-2-concurrent` (flaky 1-pass-2-fail across 3 runs), `e2e-semantic`, `e2e-0083-roundtrip`. Three parallel investigators (A code / B empirical / C disk) characterized the residual bug class.
+
+### Summary of findings
+
+**Code (A)**: No read-path bug in source. `list()`/`query()` read `this.entries`; `store()` writes `this.entries`; `loadFromDisk` populates from `.meta` when native active. All the same Map. `persistToDiskInner` writes `entryCount` + entries in a single synchronous block so header/body can't diverge in source. **One code-level risk**: `loadFromDisk` at lines 1443-1495 silently `break`s on body parse fail — header=N, body=M<N would surface as "M/N visible".
+
+**Empirical (B)**: Cannot reproduce "1/6" at N=6 on patch.141+. Every read primitive returns N/N deterministically at N≤8. Surfaced 3 adjacent issues:
+- `memory list` unbounded amplification — appends ~24 KB to `.rvf` per invocation (access-audit / HNSW state write-back)
+- `mcp exec --tool memory_list` unscoped (`params:{}`) returns `{entries:[], total:6}` — payload empty, total correct. Scoped works.
+- Write-side loss reproduces above N=8 under CPU contention: 7/8 (with concurrent work), 11/12, 18/20. d1-d4 closed N≤8; higher-N still has an open race.
+
+**Disk (C)**: `.meta` is always consistent (60+ trials, zero lies). Native `.rvf` has an **unlocked multi-writer race** — `RvfDatabase.ingestBatch` with no exclusive lock produces `InvalidChecksum` corruption ~5-10% of trials. Read path trusts the broken native file rather than falling back to the valid `.meta` sidecar. C never reproduced "1/6" either — outcomes were "all N/N" or "loud fail".
+
+### Hypotheses ruled on
+
+| Hypothesis | Verdict | Evidence |
+|---|---|---|
+| H15-code-1 (loadFromDisk skips .meta) | RULED OUT | Source reads `.meta` when native active |
+| H15-code-2 (list via native) | RULED OUT | `query()` reads `this.entries` only |
+| H15-code-3 (separator mismatch) | RULED OUT | Same `\0` separator on write + read |
+| H15-code-4 (list is different method) | RULED OUT | Same `routeMemoryOp({type:'list'})` path |
+| H15-code-5 (early-return on nativeDb.entryCount) | RULED OUT | Not present in source |
+| H15-code-6 (header lies) | RULED OUT by code, CONFIRMED by disk | Header+body co-derived; but partial-body-parse could produce it |
+| H15-native-race | **CONFIRMED** | Native `ingestBatch` corrupts `.rvf` ~5-10% of trials |
+| H15-fallback-missing | **CONFIRMED** | Read path doesn't try `.meta` when native fails |
+| H15-process-exit | **CONFIRMED** | `shutdownRouter` registered only on `beforeExit`; `process.exit()` skips it → lock leak |
+| H15-list-amplification | **CONFIRMED** | List appends to `.rvf` monotonically |
+| H15-mcp-unscoped | **CONFIRMED** | `mcp exec --tool memory_list --params '{}'` empty payload |
+| H15-scaling-write | **CONFIRMED** | N≥8 CPU-contended + N=12/20 lose entries |
+
+### Proposed items (for a later Pass-4 amendment, not this investigation)
+
+- **d5** — Read-path `.meta` fallback. When native `RvfDatabase.open` / read throws or returns `InvalidChecksum`, fall back to the pure-TS `.meta` sidecar rather than failing both layers. Honors ADR-0082 (don't silent-swallow) but adds a loud fallback path instead of loud total failure.
+- **d6** — Process-exit shutdown. Register `process.on('exit', syncShutdown)` in addition to `beforeExit`, or ensure every CLI command path reaches `beforeExit` (no `process.exit()` shortcuts when storage is initialized). Needs a sync `close()` in `@ruvector/rvf-node` or a two-phase scheme.
+- **d7** — Upstream: `@ruvector/rvf-node` needs an exclusive lock on `RvfDatabase.ingestBatch` to prevent the `InvalidChecksum` race. This is upstream-scope (not ruflo).
+- **d8** — `memory list` write amplification: audit whether access-logging should write HNSW state every read. If accidental, stop. If intentional, cap at bounded history.
+- **d9** — `mcp exec --tool memory_list` unscoped path: trace why `total` is correct but `entries[]` empty. Likely a serialization/pagination bug in the MCP tool handler.
+- **d10** — Write-side scaling above N=8: separate investigation. Current probes only exercise N=2/4/6/8 via 40-trial harness.
+
+### Probes / artifacts delivered
+
+- `scripts/diag-rvf-read-matrix.mjs` (new) — parametrized CLI experiment runner. Takes `--N`, `--exp 1..6`. Emits structured JSON.
+- `/tmp/s1.4b-results.md` + `/tmp/s1.4b-e{1..6}v3.json` — B's tabulated empirical findings.
+- `/tmp/r{1,2,3}-*.bin` + `/tmp/race*.sh` — C's disk snapshots and repro scripts.
+
+### Status
+
+- **Write convergence at N=2..8**: SOLVED by d1-d4 (confirmed 40/40 × multiple runs).
+- **Read-side**: MULTIPLE distinct bugs (d5-d10 above), none reproduce as "1/6" on current builds — the original T3-2 "1/6" observation is suspected to be either a transient pre-patch state or a check-code artifact (B had a similar parser issue in E5).
+- **Next**: user choice between continuing with d5-d10 fork work vs closing S1 at "write-side solved" and moving to S3.
