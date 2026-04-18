@@ -267,8 +267,13 @@ _ruvllm_microlora_lifecycle_body() {
   E2E_DIR="$iso"
 
   # ─── Step 1: microlora_create ───────────────────────────────────
+  # inputDim must be 768 — the underlying ruvllm WASM MicroLoraWasm.adapt()
+  # enforces a 768-dim input vector (matches the project's canonical
+  # all-mpnet-base-v2 embedding size, ref memory/reference-embedding-model.md).
+  # Smaller dims pass create() but then fail adapt() with
+  # "Input size mismatch: expected 768, got N". Observed W4-A2 (2026-04-17).
   _mcp_invoke_tool "ruvllm_microlora_create" \
-    '{"inputDim":8,"outputDim":4,"rank":2}' \
+    '{"inputDim":768,"outputDim":768,"rank":2}' \
     '"loraId"|"success"\s*:\s*true|lora|microlora' \
     "P5/microlora/create" 15 --rw
   if [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
