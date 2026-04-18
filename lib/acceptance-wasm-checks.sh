@@ -118,8 +118,11 @@ $(echo "$body" | head -10)"
 # persisted to `.claude-flow/wasm-agents/store.json` by the CLI, so the
 # subsequent op-under-test runs in a separate process and still finds it.
 #
-# On success: echoes the id on stdout, returns 0.
-# On failure: echoes nothing, returns 1.
+# Returns a single tagged stdout line (parallel-safe — no shared state):
+#   OK:<agent-id>              — agent created successfully
+#   SKIP:<diag>                — WASM binary missing from npm package
+#   FAIL:<diag>                — other bootstrap failure (unexpected)
+# Callers use: `result=$(_wasm_bootstrap_agent); _wasm_apply_bootstrap_result "$result" "$label"`.
 _wasm_bootstrap_agent() {
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp /tmp/wasm-bootstrap-XXXXX)
@@ -129,31 +132,44 @@ _wasm_bootstrap_agent() {
   body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
   rm -f "$work" 2>/dev/null
   local id; id=$(echo "$body" | sed -nE 's/.*"id"[[:space:]]*:[[:space:]]*"(wasm-agent-[A-Za-z0-9_-]+)".*/\1/p' | head -1)
-  if [[ -z "$id" ]]; then
-    # Detect legitimate WASM-binary-missing so callers can skip_accepted
-    # rather than fail (the @sparkleideas/ruvector-rvagent-wasm package
-    # ships without rvagent_wasm_bg.wasm — W3 bundling follow-up).
-    if echo "$body" | grep -qiE "Cannot find module '@sparkleideas/ruvector-rvagent-wasm|rvagent_wasm_bg\.wasm"; then
-      _WASM_BOOTSTRAP_SKIP="1"
-      _WASM_BOOTSTRAP_DIAG="$(echo "$body" | head -3 | tr '\n' ' ')"
-    fi
-    return 1
+  if [[ -n "$id" ]]; then
+    echo "OK:$id"
+    return 0
   fi
-  _WASM_BOOTSTRAP_SKIP=""
-  echo "$id"
-  return 0
+  local one_line; one_line=$(echo "$body" | head -3 | tr '\n' ' ' | tr -s ' ')
+  if echo "$body" | grep -qiE "Cannot find module '@sparkleideas/ruvector-rvagent-wasm|rvagent_wasm_bg\.wasm"; then
+    echo "SKIP:$one_line"
+  else
+    echo "FAIL:$one_line"
+  fi
+  return 1
 }
 
-# Propagate bootstrap skip_accepted to callers when WASM binary missing.
+# Parse bootstrap result + set _CHECK_PASSED/_CHECK_OUTPUT appropriately.
+# On OK: returns 0 with _CHECK_BOOTSTRAPPED_ID set.
+# On SKIP/FAIL: returns 1; _CHECK_PASSED + _CHECK_OUTPUT set.
+_wasm_apply_bootstrap_result() {
+  local result="$1" label="$2"
+  _CHECK_BOOTSTRAPPED_ID=""
+  case "$result" in
+    OK:*)
+      _CHECK_BOOTSTRAPPED_ID="${result#OK:}"
+      return 0 ;;
+    SKIP:*)
+      _CHECK_PASSED="skip_accepted"
+      _CHECK_OUTPUT="SKIP_ACCEPTED: P4/${label}: cannot bootstrap — @sparkleideas/ruvector-rvagent-wasm binary missing (W3 bundling follow-up). Diag: ${result#SKIP:}"
+      return 1 ;;
+    *)
+      _CHECK_PASSED="false"
+      _CHECK_OUTPUT="P4/${label}: could not bootstrap wasm agent (create failed). Diag: ${result#FAIL:}"
+      return 1 ;;
+  esac
+}
+
+# Legacy compat stub — new callers use _wasm_apply_bootstrap_result.
 _wasm_handle_bootstrap_failure() {
-  local label="$1"
-  if [[ "${_WASM_BOOTSTRAP_SKIP:-}" == "1" ]]; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="SKIP_ACCEPTED: P4/${label}: cannot bootstrap — @sparkleideas/ruvector-rvagent-wasm binary missing (W3 bundling follow-up). Bootstrap diag: ${_WASM_BOOTSTRAP_DIAG}"
-  else
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="P4/${label}: could not bootstrap wasm agent (create failed)"
-  fi
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT="P4/${1:-unknown}: could not bootstrap wasm agent (create failed)"
 }
 
 # Best-effort terminate — silent, used for per-check cleanup. Never fails
@@ -215,11 +231,9 @@ $(head -20 "$store")"
 
 # Check 2: wasm_agent_list — bootstrap an agent, then list must include it.
 check_adr0094_p4_wasm_agent_list() {
-  local id; id=$(_wasm_bootstrap_agent)
-  if [[ -z "$id" ]]; then
-    _wasm_handle_bootstrap_failure "wasm_agent_list"
-    return
-  fi
+  local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
+  if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_list"; then return; fi
+  local id="$_CHECK_BOOTSTRAPPED_ID"
   _wasm_invoke_tool \
     "wasm_agent_list" \
     '{}' \
@@ -300,11 +314,9 @@ $(echo "$body" | head -10)"
 # a response or a provider-layer error (no model key in test env is
 # acceptable), but NOT "WASM agent not found".
 check_adr0094_p4_wasm_agent_prompt() {
-  local id; id=$(_wasm_bootstrap_agent)
-  if [[ -z "$id" ]]; then
-    _wasm_handle_bootstrap_failure "wasm_agent_prompt"
-    return
-  fi
+  local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
+  if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_prompt"; then return; fi
+  local id="$_CHECK_BOOTSTRAPPED_ID"
   _wasm_invoke_agent_op \
     "wasm_agent_prompt" \
     "{\"agentId\":\"$id\",\"input\":\"hello\"}" \
@@ -317,11 +329,9 @@ check_adr0094_p4_wasm_agent_prompt() {
 # Check 4: wasm_agent_tool — list_files on a fresh agent returns a
 # successful result (empty output array is fine; success:true required).
 check_adr0094_p4_wasm_agent_tool() {
-  local id; id=$(_wasm_bootstrap_agent)
-  if [[ -z "$id" ]]; then
-    _wasm_handle_bootstrap_failure "wasm_agent_tool"
-    return
-  fi
+  local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
+  if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_tool"; then return; fi
+  local id="$_CHECK_BOOTSTRAPPED_ID"
   _wasm_invoke_agent_op \
     "wasm_agent_tool" \
     "{\"agentId\":\"$id\",\"toolName\":\"list_files\",\"toolInput\":{}}" \
@@ -334,11 +344,9 @@ check_adr0094_p4_wasm_agent_tool() {
 # Check 5: wasm_agent_export — export returns a state JSON containing
 # agentState / tools / todos keys (structure, not content).
 check_adr0094_p4_wasm_agent_export() {
-  local id; id=$(_wasm_bootstrap_agent)
-  if [[ -z "$id" ]]; then
-    _wasm_handle_bootstrap_failure "wasm_agent_export"
-    return
-  fi
+  local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
+  if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_export"; then return; fi
+  local id="$_CHECK_BOOTSTRAPPED_ID"
   _wasm_invoke_agent_op \
     "wasm_agent_export" \
     "{\"agentId\":\"$id\"}" \
@@ -350,11 +358,9 @@ check_adr0094_p4_wasm_agent_export() {
 
 # Check 6: wasm_agent_files — returns a tools array and counts.
 check_adr0094_p4_wasm_agent_files() {
-  local id; id=$(_wasm_bootstrap_agent)
-  if [[ -z "$id" ]]; then
-    _wasm_handle_bootstrap_failure "wasm_agent_files"
-    return
-  fi
+  local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
+  if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_files"; then return; fi
+  local id="$_CHECK_BOOTSTRAPPED_ID"
   _wasm_invoke_agent_op \
     "wasm_agent_files" \
     "{\"agentId\":\"$id\"}" \
@@ -367,11 +373,9 @@ check_adr0094_p4_wasm_agent_files() {
 # Check 7: wasm_agent_terminate — create, terminate, verify the
 # persisted record is GONE from store.json.
 check_adr0094_p4_wasm_agent_terminate() {
-  local id; id=$(_wasm_bootstrap_agent)
-  if [[ -z "$id" ]]; then
-    _wasm_handle_bootstrap_failure "wasm_agent_terminate"
-    return
-  fi
+  local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
+  if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_terminate"; then return; fi
+  local id="$_CHECK_BOOTSTRAPPED_ID"
 
   _wasm_invoke_tool \
     "wasm_agent_terminate" \
