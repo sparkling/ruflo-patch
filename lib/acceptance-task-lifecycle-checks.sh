@@ -63,6 +63,44 @@ $(echo "$body" | head -10)"
 }
 
 # ════════════════════════════════════════════════════════════════════
+# _task_create_and_capture: create a task, echo the generated taskId.
+# Returns 0 on success with taskId on stdout. Returns 1 and sets
+# _CHECK_OUTPUT / _CHECK_PASSED (skip_accepted or fail) otherwise.
+# Args: $1=label (used in diagnostic output)
+# ════════════════════════════════════════════════════════════════════
+_task_create_and_capture() {
+  local label="$1"
+  local cli; cli=$(_cli_cmd)
+  local work; work=$(mktemp /tmp/task-mk-XXXXX)
+  local params='{"type":"test","description":"adr0094 '"$label"' probe"}'
+  local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool task_create --params '$params'"
+
+  _run_and_kill "$cmd" "$work" 15
+  local body; body=$(cat "$work" 2>/dev/null || echo "")
+  body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
+  rm -f "$work" 2>/dev/null
+
+  # Tool-not-found -> propagate skip_accepted
+  if echo "$body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: P3-task/${label}: task_create not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
+    return 1
+  fi
+
+  # Extract generated taskId (format: task-<digits>-<hex>)
+  local tid
+  tid=$(echo "$body" | grep -oE 'task-[0-9]+-[a-z0-9]+' | head -1)
+  if [[ -z "$tid" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="P3-task/${label}: task_create did not return a taskId. Output: $(echo "$body" | head -10)"
+    return 1
+  fi
+
+  echo "$tid"
+  return 0
+}
+
+# ════════════════════════════════════════════════════════════════════
 # Lifecycle: create->assign->update->list->status->summary->complete->cancel
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p3_task_lifecycle() {
@@ -71,7 +109,6 @@ check_adr0094_p3_task_lifecycle() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp /tmp/task-lifecycle-XXXXX)
-  local tn="adr0094-lifecycle-$$"  # task name
   local _lc_body=""
 
   # _lc_exec: run tool, capture body, match pattern. Returns 1 on failure.
@@ -89,9 +126,9 @@ check_adr0094_p3_task_lifecycle() {
   }
 
   # Step 1: create (also probe for tool-not-found -> skip_accepted)
-  # Success patterns widened to include MCP JSON-wrapper shapes: content|\[OK\]|result
-  # (do NOT widen error-match sets; we only widen success-match sets)
-  _lc_exec 1 task_create "{\"name\":\"$tn\",\"description\":\"lifecycle test\"}" rw 'created|task|id|content|\[OK\]|result'
+  # task_create schema requires {type, description} — NOT {name}.
+  # task_create generates taskId; we must capture it from the output.
+  _lc_exec 1 task_create '{"type":"feature","description":"adr0094 lifecycle probe"}' rw 'created|task|id|content|\[OK\]|result'
   if [[ $? -ne 0 ]]; then
     if echo "$_lc_body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
       _CHECK_PASSED="skip_accepted"
@@ -100,17 +137,31 @@ check_adr0094_p3_task_lifecycle() {
     rm -f "$work" 2>/dev/null; return
   fi
 
-  _lc_exec 2 task_assign  "{\"taskId\":\"$tn\",\"agentId\":\"test-agent\"}" rw 'assigned|success|content|\[OK\]|result'            || { rm -f "$work"; return; }
-  _lc_exec 3 task_update  "{\"taskId\":\"$tn\",\"status\":\"in_progress\"}" rw 'updated|success|content|\[OK\]|result'             || { rm -f "$work"; return; }
-  _lc_exec 4 task_list    ""                                                ro 'tasks|list|\[\]|content|\[OK\]|result'              || { rm -f "$work"; return; }
-  _lc_exec 5 task_status  "{\"taskId\":\"$tn\"}"                            ro 'status|state|task|content|\[OK\]|result'            || { rm -f "$work"; return; }
-  _lc_exec 6 task_summary ""                                                ro 'summary|total|completed|pending|content|\[OK\]|result' || { rm -f "$work"; return; }
-  _lc_exec 7 task_complete "{\"taskId\":\"$tn\"}"                           rw 'completed|done|success|content|\[OK\]|result'       || { rm -f "$work"; return; }
+  # Extract the generated taskId from create output
+  local tn
+  tn=$(echo "$_lc_body" | grep -oE 'task-[0-9]+-[a-z0-9]+' | head -1)
+  if [[ -z "$tn" ]]; then
+    _CHECK_OUTPUT="P3-task/lifecycle: step 1 (task_create) did not return a taskId. Output: $(echo "$_lc_body" | head -10)"
+    rm -f "$work" 2>/dev/null; return
+  fi
+
+  # task_assign schema uses agentIds (array), not agentId
+  _lc_exec 2 task_assign  "{\"taskId\":\"$tn\",\"agentIds\":[\"test-agent\"]}"        rw 'assigned|success|content|\[OK\]|result'            || { rm -f "$work"; return; }
+  _lc_exec 3 task_update  "{\"taskId\":\"$tn\",\"status\":\"in_progress\"}"           rw 'updated|success|content|\[OK\]|result'             || { rm -f "$work"; return; }
+  _lc_exec 4 task_list    ""                                                          ro 'tasks|list|\[\]|content|\[OK\]|result'              || { rm -f "$work"; return; }
+  _lc_exec 5 task_status  "{\"taskId\":\"$tn\"}"                                      ro 'status|state|task|content|\[OK\]|result'            || { rm -f "$work"; return; }
+  _lc_exec 6 task_summary ""                                                          ro 'summary|total|completed|pending|content|\[OK\]|result' || { rm -f "$work"; return; }
+  _lc_exec 7 task_complete "{\"taskId\":\"$tn\"}"                                     rw 'completed|done|success|content|\[OK\]|result'       || { rm -f "$work"; return; }
 
   # Step 8: cancel needs a fresh task (first one is completed)
-  local ct="adr0094-cancel-$$"
-  _lc_exec 8a task_create "{\"name\":\"$ct\",\"description\":\"cancel test\"}" rw 'created|task|id|content|\[OK\]|result'           || { rm -f "$work"; return; }
-  _lc_exec 8  task_cancel "{\"taskId\":\"$ct\"}"                               rw 'cancelled|canceled|success|content|\[OK\]|result' || { rm -f "$work"; return; }
+  _lc_exec 8a task_create '{"type":"feature","description":"adr0094 cancel probe"}' rw 'created|task|id|content|\[OK\]|result' || { rm -f "$work"; return; }
+  local ct
+  ct=$(echo "$_lc_body" | grep -oE 'task-[0-9]+-[a-z0-9]+' | head -1)
+  if [[ -z "$ct" ]]; then
+    _CHECK_OUTPUT="P3-task/lifecycle: step 8a (task_create) did not return a taskId. Output: $(echo "$_lc_body" | head -10)"
+    rm -f "$work" 2>/dev/null; return
+  fi
+  _lc_exec 8  task_cancel "{\"taskId\":\"$ct\"}"                                     rw 'cancelled|canceled|success|content|\[OK\]|result' || { rm -f "$work"; return; }
 
   rm -f "$work" 2>/dev/null
   _CHECK_PASSED="true"
@@ -120,45 +171,59 @@ check_adr0094_p3_task_lifecycle() {
 # ═══════ Individual tool checks ═══════════════════════════════════
 
 check_adr0094_p3_task_create() {
+  # task_create schema requires {type, description} — NOT {name}
   _task_invoke_tool \
     "task_create" \
-    '{"name":"adr0094-test-task","description":"test"}' \
+    '{"type":"test","description":"adr0094 test task"}' \
     'created|task|id|content|\[OK\]|result' \
     "task_create" \
     15
 }
 
 check_adr0094_p3_task_assign() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local tid; tid=$(_task_create_and_capture "task_assign") || return
+  # task_assign schema uses agentIds (array), not agentId
   _task_invoke_tool \
     "task_assign" \
-    '{"taskId":"adr0094-test-task","agentId":"test-agent"}' \
+    "{\"taskId\":\"$tid\",\"agentIds\":[\"test-agent\"]}" \
     'assigned|success|content|\[OK\]|result' \
     "task_assign" \
     15
 }
 
 check_adr0094_p3_task_update() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local tid; tid=$(_task_create_and_capture "task_update") || return
   _task_invoke_tool \
     "task_update" \
-    '{"taskId":"adr0094-test-task","status":"in_progress"}' \
+    "{\"taskId\":\"$tid\",\"status\":\"in_progress\"}" \
     'updated|success|content|\[OK\]|result' \
     "task_update" \
     15
 }
 
 check_adr0094_p3_task_cancel() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local tid; tid=$(_task_create_and_capture "task_cancel") || return
   _task_invoke_tool \
     "task_cancel" \
-    '{"taskId":"adr0094-test-task"}' \
+    "{\"taskId\":\"$tid\"}" \
     'cancelled|canceled|success|content|\[OK\]|result' \
     "task_cancel" \
     15
 }
 
 check_adr0094_p3_task_complete() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local tid; tid=$(_task_create_and_capture "task_complete") || return
   _task_invoke_tool \
     "task_complete" \
-    '{"taskId":"adr0094-test-task"}' \
+    "{\"taskId\":\"$tid\"}" \
     'completed|done|success|content|\[OK\]|result' \
     "task_complete" \
     15
@@ -174,9 +239,12 @@ check_adr0094_p3_task_list() {
 }
 
 check_adr0094_p3_task_status() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local tid; tid=$(_task_create_and_capture "task_status") || return
   _task_invoke_tool \
     "task_status" \
-    '{"taskId":"adr0094-test-task"}' \
+    "{\"taskId\":\"$tid\"}" \
     'status|state|task|content|\[OK\]|result' \
     "task_status" \
     15
