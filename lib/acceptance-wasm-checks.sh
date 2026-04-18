@@ -131,7 +131,7 @@ _wasm_bootstrap_agent() {
   local body; body=$(cat "$work" 2>/dev/null || echo "")
   body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
   rm -f "$work" 2>/dev/null
-  local id; id=$(echo "$body" | sed -nE 's/\\"id\\":[[:space:]]*\\"(wasm-agent-[A-Za-z0-9_-]+)\\"/\1/p; s/.*"id"[[:space:]]*:[[:space:]]*"(wasm-agent-[A-Za-z0-9_-]+)".*/\1/p' | head -1)
+  local id; id=$(echo "$body" | grep -oE 'wasm-agent-[A-Za-z0-9_-]+' | head -1)
   if [[ -n "$id" ]]; then
     echo "OK:$id"
     return 0
@@ -203,7 +203,7 @@ check_adr0094_p4_wasm_agent_create() {
   fi
 
   # Parse id and verify persistence write-through.
-  local id; id=$(echo "$_CHECK_BODY" | sed -nE 's/\\"id\\":[[:space:]]*\\"(wasm-agent-[A-Za-z0-9_-]+)\\"/\1/p; s/.*"id"[[:space:]]*:[[:space:]]*"(wasm-agent-[A-Za-z0-9_-]+)".*/\1/p' | head -1)
+  local id; id=$(echo "$_CHECK_BODY" | grep -oE 'wasm-agent-[A-Za-z0-9_-]+' | head -1)
   if [[ -z "$id" ]]; then
     _CHECK_PASSED="false"
     _CHECK_OUTPUT="P4/wasm_agent_create: create succeeded but could not parse id from response. Body (first 10 lines):
@@ -434,7 +434,7 @@ check_adr0094_p4_wasm_gallery_create() {
     20
   # Best-effort cleanup if the create succeeded and we can extract the id.
   if [[ "$_CHECK_PASSED" == "true" ]]; then
-    local id; id=$(echo "$_CHECK_BODY" | sed -nE 's/\\"id\\":[[:space:]]*\\"(wasm-agent-[A-Za-z0-9_-]+)\\"/\1/p; s/.*"id"[[:space:]]*:[[:space:]]*"(wasm-agent-[A-Za-z0-9_-]+)".*/\1/p' | head -1)
+    local id; id=$(echo "$_CHECK_BODY" | grep -oE 'wasm-agent-[A-Za-z0-9_-]+' | head -1)
     _wasm_cleanup_agent "$id"
   fi
 }
