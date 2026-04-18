@@ -6,6 +6,34 @@
 
 ---
 
+## 2026-04-17 — A9 P4 github tools: removed incorrect GITHUB_TOKEN skip gate
+
+**Problem**: The 5 `p4-gh-*` checks in `lib/acceptance-github-integration-checks.sh` were gated on `[[ -z "$GITHUB_TOKEN" ]] && skip_accepted`, causing all 5 to turn green permanently in local cascades where `GITHUB_TOKEN` is unset. Reviewing `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts` revealed the gate is based on a false premise: **none of the 5 handlers read `GITHUB_TOKEN`** — they are all local-only stubs that persist to `.claude-flow/github/store.json` and never make an API call. The skip gate was therefore an ADR-0082 silent-pass: green for a reason unrelated to what the tool actually does.
+
+**Fix**: Removed the `GITHUB_TOKEN` guard entirely. All 5 checks now invoke the tool unconditionally and bind to narrow response markers:
+
+| Tool | Test shape | PASS pattern |
+|---|---|---|
+| `github_issue_track` | default action = "list" — real handler | `"issues"\|"total"\|"open"` |
+| `github_pr_manage` | default action = "list" — real handler | `"pullRequests"\|"total"\|"open"` |
+| `github_metrics` | documented stub — `{success:false, _stub:true, ...}` | `"_stub":\s*true\|local-only stubs\|"localData"` |
+| `github_repo_analyze` | real local persistence + `_stub:true` marker | `"_stub":\s*true\|local-only stubs\|"storedRepos"\|"lastAnalyzed"` |
+| `github_workflow` | documented stub — `{success:false, _stub:true, ...}` | `"_stub":\s*true\|local-only stubs\|"requestedAction"` |
+
+**Loud-failure contract**: The `_stub:true` marker is load-bearing. If the fork ever upgrades any of the three stub tools to real GitHub API calls, that regex will stop matching the new shape and the check will FAIL — forcing a re-evaluation of what the acceptance contract should be. This is the ADR-0082 rule: skips only for genuinely unavailable surface, never for a convenient env-var gap.
+
+**Auth-error branch removed**: The prior `unauthorized|401|403|bad credentials` skip branch is gone. These tools never produce those shapes; leaving the branch invited future masking of real errors.
+
+**Validation**:
+- `npm run test:unit` → 3011/3011 pass, 0 fail (3043 tests, 32 skipped).
+- Fast runner per-check against live e2e project `/tmp/ruflo-e2e-JUWMz`: all 5 PASS in 290-310ms each.
+
+**Files touched**: `lib/acceptance-github-integration-checks.sh` (rewritten; removed GITHUB_TOKEN gate + 401/403 auth branch; narrowed PASS regexes to field-name/marker shapes).
+
+**No fork changes.** The github stub behavior is upstream-documented and intentional; not a bug.
+
+---
+
 ## 2026-04-17 — Sprint 1.4 check-regex-fixer (4 widens + 1 real-bug ledger)
 
 Fourth-sprint pass on the ADR-0094 failure stragglers from `accept-2026-04-18T003445Z`. ADR-0082-compliant: widen only when the tool **is** working and just uses different keywords; ledger real bugs as `skip_accepted` with a narrow marker regex; never widen a genuine error shape to green.
