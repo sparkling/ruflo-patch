@@ -30,7 +30,7 @@ import { mkdtempSync, readFileSync, writeFileSync, existsSync, rmSync, copyFileS
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-const CLI_VERSION = process.env.CLI_VERSION || '3.5.58-patch.137';
+const CLI_VERSION = process.env.CLI_VERSION || '3.5.58-patch.139';
 const REGISTRY = process.env.VERDACCIO_URL || 'http://localhost:4873';
 
 function parseArgs(argv) {
@@ -98,10 +98,80 @@ _s12_trace('module-loaded');
     'async tryNativeInit() {\n        _s12_trace("tryNativeInit-entry", { dbPath: this.config.databasePath });',
   );
 
+  // PASS-3: Instrument the three return-false branches inside tryNativeInit so
+  // we know WHY writer 6 fell to pure-TS. Patterns we inject on:
+  //   (a) module-resolution catch's `return false`
+  //   (b) pure-TS-owned-file `return false`
+  //   (c) create ENOENT `return false`
+  // In the compiled JS the shape is:  if (code === 'MODULE_NOT_FOUND' ...) { ... return false; }
+  patched = patched.replace(
+    /if \(code === 'MODULE_NOT_FOUND' \|\| code === 'ERR_MODULE_NOT_FOUND'\) \{[\s\S]*?return false;\s*\}/,
+    (m) => m.replace(
+      /return false;/,
+      `_s12_trace("tryNativeInit-return-false", { reason: "MODULE_NOT_FOUND", code });
+                return false;`,
+    ),
+  );
+  // Pure-TS-owned fallback (SFVR not detected, file exists, return false before create)
+  patched = patched.replace(
+    /if \(this\.config\.verbose\) \{\s*console\.log\(\s*`\[RvfBackend\] Main path \$\{this\.config\.databasePath\} exists without SFVR[\s\S]*?\);\s*\}\s*return false;/,
+    (m) => m.replace(/return false;/, `_s12_trace("tryNativeInit-return-false", { reason: "pure-TS-owned-file" });
+            return false;`),
+  );
+  // create ENOENT cold-start fallback
+  patched = patched.replace(
+    /if \(code === 'ENOENT'\) \{[\s\S]*?return false;\s*\}/,
+    (m) => m.replace(/return false;/, `_s12_trace("tryNativeInit-return-false", { reason: "create-ENOENT", code });
+                return false;`),
+  );
+  // Also: instrument the module-import itself with full error detail (fallback-path
+  // probe for writer 6's symptom)
+  patched = patched.replace(
+    /rvf = await import\('@ruvector\/rvf-node'\);/,
+    `rvf = await import('@ruvector/rvf-node');
+            _s12_trace("native-import-ok", { hasDefault: !!(rvf && rvf.default) });`,
+  );
+  patched = patched.replace(
+    /} catch \(err\) \{\s*\/\/ Benign: module not installed/,
+    `} catch (err) {
+            try {
+              _s12_trace("native-import-error", {
+                code: err && err.code,
+                causeCode: err && err.cause && err.cause.code,
+                name: err && err.name,
+                message: String(err && err.message || err).slice(0, 300),
+              });
+            } catch {}
+            // Benign: module not installed`,
+  );
+
   // Instrument SFVR peek result
   patched = patched.replace(
     /if \(hasNativeMagic\) \{/,
     'if (hasNativeMagic) { _s12_trace("tryNativeInit-sfvr-detected", { dbPath: this.config.databasePath });',
+  );
+
+  // PASS-3: after the openSync + readSync peek, log the actual bytes read so we
+  // can confirm the empty/partial-file hypothesis for writers that go pure-TS.
+  // Compiled JS shape:
+  //   if (bytesRead === 4) {
+  //     const peek = String.fromCharCode(...);
+  //     if (peek === NATIVE_MAGIC) hasNativeMagic = true;
+  //   }
+  // Add trace BEFORE the inner if so bytesRead/peek/hasNativeMagic are visible.
+  patched = patched.replace(
+    /if \(bytesRead === 4\) \{\s*const peek = String\.fromCharCode/,
+    `try {
+                        _s12_trace("tryNativeInit-peek-result", {
+                          dbPath: this.config.databasePath,
+                          bytesRead,
+                          byte0: head[0], byte1: head[1], byte2: head[2], byte3: head[3],
+                          peekStr: bytesRead >= 4 ? String.fromCharCode(head[0],head[1],head[2],head[3]) : '(short)',
+                          fileSize: (function(){ try { return require('node:fs').statSync(this.config.databasePath).size; } catch { return -1; } }).call(this),
+                        });
+                      } catch {}
+                      if (bytesRead === 4) {
+                        const peek = String.fromCharCode`,
   );
 
   // Instrument RvfDatabase.open call
@@ -162,8 +232,176 @@ _s12_trace('module-loaded');
     'async appendToWal(entry) { _s12_trace("appendToWal-entry", { id: entry.id });',
   );
 
+  // ──────────────────────────────────────────────────────────────────────
+  // PASS-3 additions — unwrap the error path, capture Pass-2's masked cause
+  // ──────────────────────────────────────────────────────────────────────
+
+  // Instrument initialize entry with dbPath + walPath + lockPath + parent-dir-exists flag.
+  // The question H8 asks is: does the parent dir exist when acquireLock() is first called?
+  patched = patched.replace(
+    /async initialize\(\) \{[\s\S]*?if \(this\.initialized\) return;/,
+    (m) => m + `
+    try {
+      const _nodeFs = require('node:fs');
+      const _nodePath = require('node:path');
+      const _parent = this.config.databasePath === ':memory:' ? '' : _nodePath.dirname(this.config.databasePath);
+      _s12_trace("initialize-enter", {
+        dbPath: this.config.databasePath,
+        walPath: this.walPath,
+        lockPath: this.lockPath,
+        parentDir: _parent,
+        parentExists: _parent ? _nodeFs.existsSync(_parent) : null,
+        dbExists: this.config.databasePath === ':memory:' ? false : _nodeFs.existsSync(this.config.databasePath),
+      });
+    } catch (__e) { _s12_trace("initialize-trace-error", { msg: String(__e && __e.message || __e) }); }`,
+  );
+
+  // Instrument acquireLock catch path: capture err.code + lockPath context.
+  // Current code at the catch:
+  //   } catch (e) {
+  //     if (e.code !== 'EEXIST') throw e;
+  // We want to emit a trace line before both branches (EEXIST retry + fatal throw).
+  patched = patched.replace(
+    /} catch \(e\) \{\s*if \(e\.code !== 'EEXIST'\) throw e;/,
+    `} catch (e) {
+        try {
+          const _nodeFs2 = require('node:fs');
+          const _nodePath2 = require('node:path');
+          const _parent2 = _nodePath2.dirname(this.lockPath);
+          _s12_trace("acquireLock-wx-error", {
+            code: e && e.code,
+            errno: e && e.errno,
+            syscall: e && e.syscall,
+            lockPath: this.lockPath,
+            parentDir: _parent2,
+            parentExists: _parent2 ? _nodeFs2.existsSync(_parent2) : null,
+            msg: String(e && e.message || e).slice(0, 200),
+            fatal: e && e.code !== 'EEXIST',
+          });
+        } catch {}
+        if (e.code !== 'EEXIST') throw e;`,
+  );
+
+  // Also instrument the acquireLock 5s-budget-exhaustion throw.
+  patched = patched.replace(
+    /throw new Error\(\s*`Failed to acquire advisory lock after/,
+    `_s12_trace("acquireLock-budget-exhausted", { attempts: attempt, elapsed: Date.now() - startTime });
+      throw new Error(\`Failed to acquire advisory lock after`,
+  );
+
+  // Instrument reapStaleTmpFiles entry
+  patched = patched.replace(
+    /async reapStaleTmpFiles\(\) \{/,
+    `async reapStaleTmpFiles() {
+        try {
+          const _nodeFs3 = require('node:fs');
+          const _nodePath3 = require('node:path');
+          const _parent3 = this.config.databasePath === ':memory:' ? '' : _nodePath3.dirname(this.config.databasePath);
+          _s12_trace("reapStaleTmpFiles-enter", {
+            dbPath: this.config.databasePath,
+            parentDir: _parent3,
+            parentExists: _parent3 ? _nodeFs3.existsSync(_parent3) : null,
+          });
+        } catch {}`,
+  );
+
+  // Instrument the atomic rename in persistToDiskInner — for the N6t6 silent-loss case.
+  // Pattern in current source:  await rename(tmpPath, target);
+  patched = patched.replace(
+    /await rename\(tmpPath, target\);/,
+    `_s12_trace("persistToDisk-rename", { tmpPath, target, entriesSize: this.entries.size });
+      await rename(tmpPath, target);`,
+  );
+
+  // PASS-3: also instrument the SILENT CATCH inside mergePeerStateBeforePersist.
+  // This catches BOTH readFile-ENOENT AND JSON.parse failures. If the N6t6
+  // silent-loss case is caused by a transient .meta read/parse failure, this
+  // will fire and we'll see it in the trace.
+  // Pattern:   } catch {\n        // Read error — fall back
+  patched = patched.replace(
+    /} catch \{\s*\/\/ Read error — fall back/,
+    `} catch (__mergeErr) {
+        try {
+          _s12_trace("mergePeer-silent-catch", {
+            code: __mergeErr && __mergeErr.code,
+            name: __mergeErr && __mergeErr.name,
+            message: String(__mergeErr && __mergeErr.message || __mergeErr).slice(0, 300),
+          });
+        } catch {}
+        // Read error — fall back`,
+  );
+
+  // PASS-3: also log the outcome of the merge — how many entries we merged in.
+  // Instrument right before the outer "if (this.walPath && existsSync(this.walPath))"
+  // which is at the END of mergePeerStateBeforePersist.
+  // Simpler: instrument AFTER the outer catch closes.
+  patched = patched.replace(
+    /if \(this\.walPath && existsSync\(this\.walPath\)\) \{\s*await this\.replayWal\(\);/,
+    `_s12_trace("mergePeer-pre-wal-replay", { entriesAfterMetaMerge: this.entries.size, walExists: !!(this.walPath && existsSync(this.walPath)) });
+    if (this.walPath && existsSync(this.walPath)) {
+      await this.replayWal();`,
+  );
+
   writeFileSync(rvfPath, patched, 'utf-8');
   log(`instrumented ${rvfPath} (${patched.length - original.length} bytes added)`);
+}
+
+/**
+ * PASS-3: also instrument storage-factory.js to unwrap the error cause that
+ * gets lost when [StorageFactory] re-wraps the RvfBackend init failure.
+ * The catch at around line 151 captures primaryError but the emitted message
+ * only uses `.message` — err.stack + err.code are dropped. We insert a trace
+ * line that emits the full chain BEFORE the rethrow, so the underlying
+ * error's code and stack reach the logs.
+ */
+function instrumentStorageFactory(memoryDistPath) {
+  const factoryPath = join(memoryDistPath, 'dist', 'storage-factory.js');
+  if (!existsSync(factoryPath)) {
+    log(`storage-factory.js not found at ${factoryPath} — skipping`);
+    return;
+  }
+  const original = readFileSync(factoryPath, 'utf-8');
+  // Use same _s12_trace helper — patch prepends a self-contained header so the
+  // factory module can emit traces even if rvf-backend hasn't loaded yet.
+  const header = `
+// [S1.2-TRACE] INSTRUMENTED BY diag-rvf-persist-trace.mjs (storage-factory)
+const _S12_factory_pid = process.pid;
+function _s12_factory_trace(tag, data) {
+  try {
+    const d = data ? ' ' + JSON.stringify(data) : '';
+    process.stderr.write('[S1.2-TRACE pid=' + _S12_factory_pid + ' factory-' + tag + d + ']\\n');
+  } catch {}
+}
+`;
+  let patched = original.replace(/^(import |"use strict";)/m, (m) => header + '\n' + m);
+  if (patched === original) patched = header + '\n' + original;
+
+  // Instrument the catch block. In the compiled JS the shape is roughly:
+  //   catch (primaryError) {
+  //     const msg = primaryError instanceof Error ? primaryError.message : String(primaryError);
+  //     throw new Error(`[StorageFactory] ...`);
+  //   }
+  // We insert a trace line that preserves primaryError.code + .stack BEFORE the rethrow.
+  patched = patched.replace(
+    /catch \(primaryError\) \{[\s\S]*?const msg = /,
+    (m) => `catch (primaryError) {
+    try {
+      _s12_factory_trace("createStorage-catch", {
+        code: primaryError && primaryError.code,
+        errno: primaryError && primaryError.errno,
+        syscall: primaryError && primaryError.syscall,
+        name: primaryError && primaryError.name,
+        message: String(primaryError && primaryError.message || primaryError).slice(0, 400),
+        causeCode: primaryError && primaryError.cause && primaryError.cause.code,
+        causeMsg: primaryError && primaryError.cause && String(primaryError.cause.message || '').slice(0, 200),
+        stack: String(primaryError && primaryError.stack || '').split('\\n').slice(0, 6).join(' || '),
+      });
+    } catch {}
+    const msg = `,
+  );
+
+  writeFileSync(factoryPath, patched, 'utf-8');
+  log(`instrumented ${factoryPath} (${patched.length - original.length} bytes added)`);
 }
 
 async function setupHarness() {
@@ -188,6 +426,7 @@ async function setupHarness() {
     return null;
   }
   instrumentRvfBackend(memoryDist);
+  instrumentStorageFactory(memoryDist);
 
   return dir;
 }
@@ -242,13 +481,17 @@ function emitTraceLines(trialLabel, N, results) {
       `[diag-persist-trace] trial=${trialLabel} N=${N} writer=${i + 1} pid=${r.pid} exit=${r.code} ` +
       `traceLines=${traceLines.length}\n`,
     );
-    // Emit first 8 trace lines for this writer
-    for (const l of traceLines.slice(0, 8)) {
+    // Emit ALL trace lines for this writer so acquireLock-wx-error + factory-createStorage-catch land
+    for (const l of traceLines) {
       process.stderr.write(`  ${l}\n`);
     }
     if (r.code !== 0) {
-      const errLine = (r.stderr || '').split('\n').find(l => l.includes('ERROR')) || '';
-      process.stderr.write(`  STDERR-ERROR: ${errLine.slice(0, 200)}\n`);
+      // Emit all ERROR-tagged lines (not just first). Include full length for
+      // the [StorageFactory] message so the unwrap is visible.
+      const errLines = (r.stderr || '').split('\n').filter(l => /ERROR|Failed|error/i.test(l));
+      for (const l of errLines.slice(0, 8)) {
+        process.stderr.write(`  STDERR: ${l.slice(0, 600)}\n`);
+      }
     }
   }
 }
