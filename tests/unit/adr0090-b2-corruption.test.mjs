@@ -314,35 +314,55 @@ describe('ADR-0090 Tier B2: loadFromDisk does NOT throw on valid recovery paths'
     const d = freshDir('wal-recover');
     try {
       const p = join(d, 'db.rvf');
-      // Seed WITHOUT shutdown — leaves entries in WAL. Use a high
-      // walCompactionThreshold so stores don't auto-compact.
-      const backend = new RvfBackend({
-        databasePath: p, dimensions: 4, autoPersistInterval: 0,
-        walCompactionThreshold: 100000,
-      });
-      await backend.initialize();
-      for (let i = 0; i < 3; i++) {
-        const e = new Float32Array(4); e[i] = 1;
-        await backend.store({
-          id: 'e' + i, key: 'k' + i, namespace: 'ns', content: 'v' + i,
-          type: 'semantic', tags: [], metadata: {}, accessLevel: 'private',
-          ownerId: 'o', createdAt: Date.now(), updatedAt: Date.now(),
-          accessCount: 0, lastAccessedAt: Date.now(), version: 1, references: [],
-          embedding: e,
-        });
-      }
-      // No shutdown — WAL has the entries, main may or may not be written.
-      // Corrupt the main file (if any) — WAL is the recovery source.
-      if (existsSync(p)) {
-        const buf = readFileSync(p);
-        for (let i = 0; i < 4; i++) buf[i] = 0;
-        writeFileSync(p, buf);
-      }
+
+      // ADR-0090 Tier B2 (ruflo-patch): this test exercises the
+      // "loadFromDisk sees a corrupt main file BUT replayWal recovers
+      // >= 1 entries, so initialize() must NOT throw" invariant.
+      //
+      // Original setup tried to populate the WAL by calling
+      // `backend.store()` without a shutdown. That doesn't work under
+      // the current RvfBackend: ADR-0090 Tier A4/B7 made `store()`
+      // ALWAYS call `compactWal()` after `appendToWal()` (regardless of
+      // `walCompactionThreshold`) to close the concurrent-writer data
+      // loss window. Consequently, after every `store()`, the WAL is
+      // unlinked — there is nothing left in it when the test's fresh
+      // backend opens. The "recovery from WAL" scenario was effectively
+      // unreachable from user-facing APIs.
+      //
+      // Manual seed reproduces the real-world crash path: a process
+      // called `appendToWal()` (succeeds — writes {4-byte LE length,
+      // JSON entry body} to `.wal`) then died before `compactWal()`
+      // could rename the temp file and unlink the WAL. On next open,
+      // the backend must replay that WAL entry. The format we hand-
+      // roll here matches `appendToWal` in rvf-backend.ts — a single
+      // length prefix followed by a JSON-serialized MemoryEntry.
+      writeFileSync(p, Buffer.concat([
+        Buffer.from([0, 0, 0, 0]), // zeroed magic — simulates mid-write / bit-rot corruption
+        Buffer.alloc(20, 1),        // padding so file is > 8 bytes (takes the "bad magic" branch, not "shorter than header")
+      ]));
+      const walEntry = {
+        id: 'wal-entry-1', key: 'wal-key-1', namespace: 'ns',
+        content: 'recovered-from-wal', type: 'semantic', tags: [],
+        metadata: {}, accessLevel: 'private', ownerId: 'o',
+        createdAt: Date.now(), updatedAt: Date.now(),
+        accessCount: 0, lastAccessedAt: Date.now(), version: 1,
+        references: [], embedding: [1, 0, 0, 0],
+      };
+      const walJson = Buffer.from(JSON.stringify(walEntry), 'utf-8');
+      const walLen = Buffer.alloc(4);
+      walLen.writeUInt32LE(walJson.length, 0);
+      writeFileSync(p + '.wal', Buffer.concat([walLen, walJson]));
+
+      // No `.meta` — forces the pure-TS loader onto the main path,
+      // where it sees the zeroed magic and raises `loadFailed` BEFORE
+      // falling through to `replayWal()` (which provides the recovery).
       if (existsSync(p + '.meta')) rmSync(p + '.meta');
 
-      // A fresh backend must recover from WAL without throwing.
-      // (The count should be >= 1 — exact count depends on whether
-      // the WAL was compacted during store.)
+      // Fresh backend: loadFromDisk flags the main file as corrupt
+      // (bad magic bytes), replayWal ingests the hand-rolled entry,
+      // and the final ADR-0090 guard sees entries.size >= 1 and
+      // short-circuits the throw — exactly the invariant this test
+      // asserts.
       const reader = new RvfBackend({
         databasePath: p, dimensions: 4, autoPersistInterval: 0,
       });
