@@ -56,8 +56,11 @@ _daa_invoke_tool() {
   rm -f "$work" 2>/dev/null
 
   # ─── Three-way bucket ────────────────────────────────────────────
-  # 1. Tool not found / not registered -> skip_accepted
-  if echo "$body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # 1. Tool not found / not registered -> skip_accepted (ADR-0096: narrow
+  # to tool-registry phrasing only; bare "not found" matches domain errors
+  # like "Agent not found" or "Workflow not found" — those are real handler
+  # responses and must FAIL, not skip. See ADR-0096 skip-rot 2026-04-19.)
+  if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3/${label}: MCP tool '$tool' not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     return
@@ -205,8 +208,8 @@ check_adr0094_p3_daa_workflow_execute() {
   local create_body; create_body=$(cat "$work" 2>/dev/null || echo "")
   create_body=$(echo "$create_body" | grep -v '^__RUFLO_DONE__:')
 
-  # If the create step itself reports the tool missing, skip_accepted
-  if echo "$create_body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # If the create step itself reports the tool missing, skip_accepted (narrow pattern)
+  if echo "$create_body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3/daa_workflow_execute: prerequisite tool 'daa_workflow_create' not in build — $(echo "$create_body" | head -3 | tr '\n' ' ')"
     rm -f "$work" 2>/dev/null
@@ -220,8 +223,8 @@ check_adr0094_p3_daa_workflow_execute() {
   exec_body=$(echo "$exec_body" | grep -v '^__RUFLO_DONE__:')
   rm -f "$work" 2>/dev/null
 
-  # Classify execute output
-  if echo "$exec_body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # Classify execute output (narrow pattern — bare "not found" matches domain errors)
+  if echo "$exec_body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3/daa_workflow_execute: MCP tool 'daa_workflow_execute' not in build — $(echo "$exec_body" | head -3 | tr '\n' ' ')"
     return

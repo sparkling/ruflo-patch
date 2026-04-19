@@ -42,8 +42,11 @@ _task_invoke_tool() {
   rm -f "$work" 2>/dev/null
 
   # ─── Three-way bucket ────────────────────────────────────────────
-  # 1. Tool not found / not registered -> skip_accepted
-  if echo "$body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # 1. Tool not found / not registered -> skip_accepted (ADR-0096: narrow
+  # to tool-registry phrasing only; bare "not found" matches domain errors
+  # like "Task not found" and produces false skip_accepted, see ADR-0096
+  # skip-rot analysis 2026-04-19).
+  if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3-task/${label}: MCP tool '$tool' not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     return
@@ -80,8 +83,8 @@ _task_create_and_capture() {
   body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
   rm -f "$work" 2>/dev/null
 
-  # Tool-not-found -> propagate skip_accepted
-  if echo "$body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # Tool-not-found -> propagate skip_accepted (ADR-0096: narrow pattern)
+  if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3-task/${label}: task_create not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     return 1
@@ -130,7 +133,7 @@ check_adr0094_p3_task_lifecycle() {
   # task_create generates taskId; we must capture it from the output.
   _lc_exec 1 task_create '{"type":"feature","description":"adr0094 lifecycle probe"}' rw 'created|task|id|content|\[OK\]|result'
   if [[ $? -ne 0 ]]; then
-    if echo "$_lc_body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+    if echo "$_lc_body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
       _CHECK_PASSED="skip_accepted"
       _CHECK_OUTPUT="SKIP_ACCEPTED: P3-task/lifecycle: task_create not in build — $(echo "$_lc_body" | head -3 | tr '\n' ' ')"
     fi
