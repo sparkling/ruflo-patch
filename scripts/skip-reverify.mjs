@@ -51,7 +51,12 @@ import { fileURLToPath } from 'node:url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname  = dirname(__filename);
 const REPO_ROOT  = resolve(__dirname, '..');
-const RESULTS    = resolve(REPO_ROOT, 'test-results');
+// RUFLO_CATALOG_RESULTS_DIR lets acceptance tests + ADR-0087 out-of-scope
+// probes point at a sandbox catalog instead of the repo's canonical one.
+// Parallel to catalog-rebuild.mjs:95 which supports the same override.
+const RESULTS    = process.env.RUFLO_CATALOG_RESULTS_DIR
+  ? resolve(process.env.RUFLO_CATALOG_RESULTS_DIR)
+  : resolve(REPO_ROOT, 'test-results');
 const CATALOG_DB = resolve(RESULTS, 'catalog.db');
 const CATALOG_JSONL = resolve(RESULTS, 'catalog.jsonl');
 const MCP_MANIFEST = resolve(REPO_ROOT, 'config/mcp-surface-manifest.json');
@@ -132,6 +137,31 @@ export function classifySkip(excerpt) {
  *
  * Returned rows: { run_id, check_id, output_excerpt }.
  */
+/**
+ * Read all rows in `skip_streaks` with `streak_days > 30`.
+ * Returns `[{check_id, streak_days, first_skip_ts, last_skip_ts}]`.
+ * Empty if catalog.db is absent or the table is missing.
+ */
+export function loadRottedStreaks() {
+  if (!existsSync(CATALOG_DB)) return [];
+  const sql =
+    "SELECT check_id || '|' || streak_days || '|' || COALESCE(first_skip_ts,'') || '|' || COALESCE(last_skip_ts,'') " +
+    "FROM skip_streaks WHERE streak_days > 30 ORDER BY streak_days DESC, check_id ASC;";
+  const res = spawnSync('/usr/bin/sqlite3', [CATALOG_DB, sql], {
+    encoding: 'utf-8',
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  // Missing table is a soft-fail — older catalogs may not have skip_streaks.
+  if (res.status !== 0) return [];
+  return res.stdout
+    .split('\n')
+    .filter(l => l.length > 0)
+    .map(l => {
+      const [check_id, streak_days, first_skip_ts, last_skip_ts] = l.split('|');
+      return { check_id, streak_days: Number(streak_days), first_skip_ts, last_skip_ts };
+    });
+}
+
 export function loadCurrentSkips() {
   if (existsSync(CATALOG_DB)) {
     const sql =
@@ -520,6 +550,20 @@ export function run(argv) {
     console.log(`\n# FLIPS — these skips are stale, prereq arrived:`);
     for (const f of flips) {
       console.log(`SKIP_ROT: ${f.check_id} bucket:${f.bucket} — ${f.detail}`);
+    }
+  }
+
+  // ADR-0096 §Skip hygiene: streak_days > 30 also emits SKIP_ROT independent
+  // of whether the prereq-probe flipped. A skip that has been accepted for
+  // more than 30 days is rotten regardless of current reachability — it has
+  // paid no verification attention in a full cycle and is due a real re-look.
+  const rotted = loadRottedStreaks();
+  if (rotted.length > 0) {
+    console.log(`\n# ROTTED — skips whose streak_days > 30:`);
+    for (const r of rotted) {
+      console.log(
+        `SKIP_ROT: ${r.check_id} streak_days=${r.streak_days} — streak exceeded 30-day threshold; re-probe via skip-reverify.mjs`,
+      );
     }
   }
 
