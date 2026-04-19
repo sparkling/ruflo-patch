@@ -65,6 +65,13 @@ source "$PROJECT_DIR/lib/acceptance-checks.sh"
 for f in "$PROJECT_DIR"/lib/acceptance-*-checks.sh; do
   [[ -f "$f" ]] && source "$f"
 done
+# Additional non-"-checks" libs (ADR-0094 phase files use -invariants/-concurrency/-idempotency suffixes)
+for f in \
+  "$PROJECT_DIR/lib/acceptance-phase8-invariants.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase9-concurrency.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase10-idempotency.sh"; do
+  [[ -f "$f" ]] && source "$f"
+done
 
 pass_count=0 fail_count=0 skip_count=0 total_count=0
 results_json="[]"
@@ -185,6 +192,23 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0090-b5"* || "$_FAST_RUN_GROUPS" == "b5" || "$
   _fast_run "b5-explainableRecall"   check_adr0090_b5_explainableRecall
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"p8"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase8-invariants.sh" ]]; then
+    echo "── Phase 8: Cross-Tool Invariants (ADR-0094) ──"
+    _fast_run "p8-inv1-memory"     check_adr0094_p8_inv1_memory_roundtrip
+    _fast_run "p8-inv2-session"    check_adr0094_p8_inv2_session_roundtrip
+    _fast_run "p8-inv3-agent"      check_adr0094_p8_inv3_agent_roundtrip
+    _fast_run "p8-inv4-claims"     check_adr0094_p8_inv4_claims_roundtrip
+    _fast_run "p8-inv5-workflow"   check_adr0094_p8_inv5_workflow_roundtrip
+    _fast_run "p8-inv6-config"     check_adr0094_p8_inv6_config_roundtrip
+    _fast_run "p8-inv7-task"       check_adr0094_p8_inv7_task_lifecycle
+    _fast_run "p8-inv8-sess-mem"   check_adr0094_p8_inv8_session_memory_roundtrip
+    _fast_run "p8-inv9-neural"     check_adr0094_p8_inv9_neural_delta
+    _fast_run "p8-inv10-autopilot" check_adr0094_p8_inv10_autopilot_shape
+    _fast_run "p8-inv11-delta"     check_adr0094_p8_inv11_delta_sentinel
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"e2e-storage"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   echo "── E2E Storage Pipeline ──"
   _fast_run "store-rvf"       check_e2e_store_creates_rvf
@@ -206,7 +230,7 @@ if [[ "$_FAST_RUN_GROUPS" == *"p5"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
 
     echo "── Phase 5: Init-Generated Config (fresh init, no stamping) ──"
     echo "  [fast] Creating fresh project at $_P5_DIR (~60s)..."
-    (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force --with-embeddings --embedding-model all-mpnet-base-v2 2>/dev/null) || true
+    (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force --with-embeddings --embedding-model "Xenova/all-mpnet-base-v2" 2>/dev/null) || true
 
     echo "  ── config.json checks ──"
     _fast_run "p5-cfg-valid"      check_p5_config_valid_json

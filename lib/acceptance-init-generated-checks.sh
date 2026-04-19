@@ -378,25 +378,24 @@ check_p5_compat_config_set() {
   local out
   # Set a value (flag syntax: --key / --value)
   out=$(cd "$P5_DIR" && timeout 10 "$CLI_BIN" config set --key test.p5key --value "p5-roundtrip" 2>&1) || true
-  # Verify set succeeded (output confirms the key=value)
-  if echo "$out" | grep -qi "p5-roundtrip\|set.*test.p5key\|success"; then
-    # Also verify the config file was written
-    local cfg="$P5_DIR/.claude-flow/config.json"
-    if [[ -f "$cfg" ]]; then
-      local val
-      val=$(node -e "const c=JSON.parse(require('fs').readFileSync('$cfg','utf-8')); console.log(c.test?.p5key)" 2>/dev/null)
-      if [[ "$val" == "p5-roundtrip" ]]; then
-        _CHECK_PASSED="true"
-        _CHECK_OUTPUT="P5: config set round-trip works (file verified)"
-      else
-        _CHECK_PASSED="true"
-        _CHECK_OUTPUT="P5: config set confirmed (CLI output matched)"
-      fi
-    else
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="P5: config set confirmed (CLI output matched)"
-    fi
+  # ADR-0082: CLI output alone does not prove the round-trip — require file-level
+  # evidence. Silent-pass fallbacks on file-missing or value-mismatch are
+  # exactly what this check is meant to catch.
+  if ! echo "$out" | grep -qi "p5-roundtrip\|set.*test.p5key\|success"; then
+    _CHECK_OUTPUT="P5: config set CLI failed — output: ${out:0:120}"
+    return
+  fi
+  local cfg="$P5_DIR/.claude-flow/config.json"
+  if [[ ! -f "$cfg" ]]; then
+    _CHECK_OUTPUT="P5: CLI reported set-success but $cfg does not exist"
+    return
+  fi
+  local val
+  val=$(node -e "const c=JSON.parse(require('fs').readFileSync('$cfg','utf-8')); console.log(c.test?.p5key)" 2>/dev/null)
+  if [[ "$val" == "p5-roundtrip" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="P5: config set round-trip works (file verified: test.p5key=$val)"
   else
-    _CHECK_OUTPUT="P5: config set failed — output: ${out:0:120}"
+    _CHECK_OUTPUT="P5: CLI reported success but file value mismatch (expected 'p5-roundtrip', got '${val:-<missing>}')"
   fi
 }

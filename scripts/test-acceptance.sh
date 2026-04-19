@@ -413,6 +413,10 @@ adr0088_lib="${PROJECT_DIR}/lib/acceptance-adr0088-checks.sh"
 adr0089_lib="${PROJECT_DIR}/lib/acceptance-adr0089-checks.sh"
 [[ -f "$adr0089_lib" ]] && source "$adr0089_lib"
 
+# ADR-0094 Phase 8: Cross-tool invariants (store→search, claim→board, etc.)
+phase8_lib="${PROJECT_DIR}/lib/acceptance-phase8-invariants.sh"
+[[ -f "$phase8_lib" ]] && source "$phase8_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -987,6 +991,23 @@ run_check_bg "p7-cli-mcp"        "CLI mcp status (P7)"               check_adr00
 run_check_bg "p7-cli-system"     "CLI system info (P7)"              check_adr0094_p7_cli_system_info        "adr0094-p7"
 run_check_bg "p7-cli-doctor-npm" "W4-A3: doctor npm no-false-fail"   check_adr0094_p7_cli_doctor_npm_no_false_fail "adr0094-p7"
 
+# ADR-0094 Phase 8: Cross-tool invariants (11 checks, ≤20s wall-clock).
+# Each uses _with_iso_cleanup for per-check isolation — no shared-state
+# contention with other phases. Requires E2E_DIR initialized.
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase8_lib" ]]; then
+  run_check_bg "p8-inv1-memory"      "INV-1 memory store→search (P8)"       check_adr0094_p8_inv1_memory_roundtrip       "adr0094-p8"
+  run_check_bg "p8-inv2-session"     "INV-2 session save→list (P8)"         check_adr0094_p8_inv2_session_roundtrip      "adr0094-p8"
+  run_check_bg "p8-inv3-agent"       "INV-3 agent spawn→list→terminate (P8)" check_adr0094_p8_inv3_agent_roundtrip        "adr0094-p8"
+  run_check_bg "p8-inv4-claims"      "INV-4 claim→board→release (P8)"       check_adr0094_p8_inv4_claims_roundtrip       "adr0094-p8"
+  run_check_bg "p8-inv5-workflow"    "INV-5 workflow create→list→delete (P8)" check_adr0094_p8_inv5_workflow_roundtrip     "adr0094-p8"
+  run_check_bg "p8-inv6-config"      "INV-6 config set→get (P8)"            check_adr0094_p8_inv6_config_roundtrip       "adr0094-p8"
+  run_check_bg "p8-inv7-task"        "INV-7 task create→list→complete (P8)" check_adr0094_p8_inv7_task_lifecycle         "adr0094-p8"
+  run_check_bg "p8-inv8-sess-mem"    "INV-8 session save/restore preserves memory (P8)" check_adr0094_p8_inv8_session_memory_roundtrip "adr0094-p8"
+  run_check_bg "p8-inv9-neural"      "INV-9 neural_patterns(store) raises patterns.total (P8)" check_adr0094_p8_inv9_neural_delta           "adr0094-p8"
+  run_check_bg "p8-inv10-autopilot"  "INV-10 autopilot enable→status→predict (P8)" check_adr0094_p8_inv10_autopilot_shape       "adr0094-p8"
+  run_check_bg "p8-inv11-delta"      "INV-11 delta-sentinel meta-probe (P8)" check_adr0094_p8_inv11_delta_sentinel        "adr0094-p8"
+fi
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1216,6 +1237,23 @@ fi
 # ════════════════════════════════════════════════════════════════════
 
 # Build e2e spec list
+_p8_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase8_lib" ]]; then
+  _p8_specs=(
+    "p8-inv1-memory|INV-1 memory store→search (P8)"
+    "p8-inv2-session|INV-2 session save→list (P8)"
+    "p8-inv3-agent|INV-3 agent spawn→list→terminate (P8)"
+    "p8-inv4-claims|INV-4 claim→board→release (P8)"
+    "p8-inv5-workflow|INV-5 workflow create→list→delete (P8)"
+    "p8-inv6-config|INV-6 config set→get (P8)"
+    "p8-inv7-task|INV-7 task create→list→complete (P8)"
+    "p8-inv8-sess-mem|INV-8 session save/restore preserves memory (P8)"
+    "p8-inv9-neural|INV-9 neural_patterns(store) raises patterns.total (P8)"
+    "p8-inv10-autopilot|INV-10 autopilot enable→status→predict (P8)"
+    "p8-inv11-delta|INV-11 delta-sentinel meta-probe (P8)"
+  )
+fi
+
 _e2e_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   _e2e_specs=(
@@ -1540,6 +1578,7 @@ collect_parallel "all" \
   "p7-cli-session|CLI session --help (P7)" "p7-cli-hooks|CLI hooks --help (P7)" \
   "p7-cli-mcp|CLI mcp status (P7)" "p7-cli-system|CLI system info (P7)" \
   "p7-cli-doctor-npm|W4-A3: doctor npm no-false-fail" \
+  "${_p8_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
