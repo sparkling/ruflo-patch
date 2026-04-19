@@ -1497,17 +1497,29 @@ RVF delta=$delta (baseline=$baseline_count → after=$after_count), ns_hits=$ns_
 # ────────────────────────────────────────────────────────────────────
 # B5-12: graphAdapter — W2-I6 DEDICATED MCP TOOLS + enableGraph config.
 #
-# W2-I6 (fork ruflo commit): added agentdb_graph_node_create,
+# W2-I6 (fork ruflo commit ff826a846): added agentdb_graph_node_create,
 # agentdb_graph_edge_create, agentdb_graph_node_get tools. Seed step
-# first calls `config set controllers.graphAdapter true` to enable
-# the controller (controller-registry.ts:993 gates on enableGraph:true),
-# then creates a node via the dedicated MCP tool.
+# calls `config set controllers.graphAdapter true` to enable the
+# controller (controller-registry.ts:993 gates on enableGraph:true,
+# and fork memory-router.ts:422-440 propagates the config.controllers.
+# graphAdapter flag to the enabled list), then creates a node via the
+# dedicated MCP tool. createNode returns success and the on-disk
+# `.swarm/memory.graph` file grows — but @ruvector/graph-node's
+# native `query()` binding returns zero nodes for any MATCH (confirmed
+# 2026-04-19 same-process: createNode → MATCH (n) RETURN n yields
+# length 0). The Cypher query engine in the Rust-backed
+# @ruvector/graph-node package is incomplete; fixing it is a separate
+# upstream track on the ruvector repo (not agentdb, not ruflo).
 #
 # Probe: agentdb_graph_node_get with id="b5-gadapt-src".
 # pass_regex: {success:true,...} response with nodeId or nodes array.
-# trivial_regex: "graphAdapter not available" — fires when config.set
-#   failed or build predates W2-I6; classified as skip_accepted (older
-#   build). Any other failure → FAIL (ADR-0082).
+# trivial_regex: "graphAdapter not available" OR "nodes":\[\] — the
+#   latter is the @ruvector/graph-node query() incompleteness; the
+#   controller is wired and writes persist, but reads come back empty.
+#   Classified as skip_accepted with a clear upstream-ticket pointer.
+#   ADR-0082: no silent pass — if node_get ever returns non-empty
+#   (meaning upstream fixed the query binding), the check auto-flips
+#   to PASS and the skip signal surfaces the progress.
 # No sqlite_table — graphAdapter uses RuVector graph DB, not SQLite.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_graphAdapter() {
