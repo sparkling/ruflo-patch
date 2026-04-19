@@ -101,11 +101,28 @@ check_adr0094_p3_daa_agent_create() {
 # the tool is missing entirely, the adapt call will report "not found"
 # and _daa_invoke_tool routes that to skip_accepted correctly.
 check_adr0094_p3_daa_agent_adapt() {
+  # Isolated E2E dir — daa_agent_create and _daa_invoke_tool both write
+  # to .claude-flow/daa/store.json in the shared $E2E_DIR. Under the
+  # mega-parallel acceptance wave (~100 concurrent subprocesses), the
+  # create→adapt store round-trip races with other daa writers and the
+  # adapt call can observe "Agent not found" even after a successful
+  # create. Previously masked by a broad "not found" skip gate; after
+  # ADR-0096 narrowed that gate (commit 5ad8af7), the race became
+  # visible as a real failure. Isolation gives this check a private
+  # DAA store so the sequence is race-free.
+  _with_iso_cleanup "p3-da-adapt" _check_adr0094_p3_daa_agent_adapt_body
+}
+
+_check_adr0094_p3_daa_agent_adapt_body() {
+  local iso="$1"
+  local _saved="${E2E_DIR:-}"
+  E2E_DIR="$iso"
+
   local cli; cli=$(_cli_cmd)
   local aid="p3-adapt-$$-${RANDOM}"
 
-  # Provision prerequisite agent (daa_agent_create requires `id`, not `name`).
-  # Silence stdout/stderr — we only care about the adapt call's outcome.
+  # Provision prerequisite agent; tolerate create failure so the adapt
+  # call drives the assertion even when the tool is missing entirely.
   (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
     "$cli" mcp exec --tool daa_agent_create \
       --params "{\"id\":\"${aid}\",\"type\":\"worker\"}" \
@@ -117,6 +134,8 @@ check_adr0094_p3_daa_agent_adapt() {
     'adapted|updated|success|adaptation' \
     "daa_agent_adapt" \
     15
+
+  E2E_DIR="$_saved"
 }
 
 # ════════════════════════════════════════════════════════════════════
