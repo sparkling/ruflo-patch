@@ -1006,6 +1006,7 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase8_lib" ]]; then
   run_check_bg "p8-inv9-neural"      "INV-9 neural_patterns(store) raises patterns.total (P8)" check_adr0094_p8_inv9_neural_delta           "adr0094-p8"
   run_check_bg "p8-inv10-autopilot"  "INV-10 autopilot enable→status→predict (P8)" check_adr0094_p8_inv10_autopilot_shape       "adr0094-p8"
   run_check_bg "p8-inv11-delta"      "INV-11 delta-sentinel meta-probe (P8)" check_adr0094_p8_inv11_delta_sentinel        "adr0094-p8"
+  run_check_bg "p8-inv12-mem-full"  "INV-12 memory full round-trip (P8)"    check_adr0094_p8_inv12_memory_full_roundtrip "adr0094-p8"
 fi
 
 # ════════════════════════════════════════════════════════════════════
@@ -1251,6 +1252,7 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase8_lib" ]]; then
     "p8-inv9-neural|INV-9 neural_patterns(store) raises patterns.total (P8)"
     "p8-inv10-autopilot|INV-10 autopilot enable→status→predict (P8)"
     "p8-inv11-delta|INV-11 delta-sentinel meta-probe (P8)"
+    "p8-inv12-mem-full|INV-12 memory full round-trip (P8)"
   )
 fi
 

@@ -5,7 +5,7 @@
 # post-assert → delta**. Uses canonical `_mcp_invoke_tool` / `_expect_mcp_body`
 # from acceptance-harness.sh — no per-domain drift (ADR-0097).
 #
-# Phase 8 invariants (11 total):
+# Phase 8 invariants (12 total):
 #   INV-1   memory_store → memory_search round-trip
 #   INV-2   session_save → session_list (appears)
 #   INV-3   agent_spawn → agent_list (appears) → agent_terminate (gone)
@@ -19,6 +19,10 @@
 #   INV-11  Delta-sentinel: repeat every mutate twice; second pre-snapshot
 #           must differ from first (proves the tool CAUSED the change,
 #           not just that post-state exists)
+#   INV-12  Session round-trip preserves memory across processes (full Debt-15):
+#           memory_store → session_save(includeMemory:true) →
+#           memory_delete → memory_retrieve(must fail) →
+#           session_restore → memory_retrieve(must return value)
 #
 # Requires: acceptance-harness.sh + acceptance-checks.sh + acceptance-e2e-checks.sh
 # Caller MUST set: E2E_DIR, TEMP_DIR, REGISTRY, PKG
@@ -802,3 +806,118 @@ _inv11_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p8_inv11_delta_sentinel() { _with_iso_cleanup "p8-inv11" _inv11_body; }
+
+# ════════════════════════════════════════════════════════════════════
+# INV-12: Session round-trip preserves memory across processes (full Debt-15)
+#
+# memory_store K=V (namespace inv12)
+# → session_save S includeMemory:true → response.stats.memoryEntries >= 1
+# → memory_delete K → memory_retrieve K must return nothing
+# → session_restore S
+# → memory_retrieve K == V (proves restore wrote back to primary memory backend)
+#
+# Each _mcp_invoke_tool call is a fresh $(_cli_cmd) process (see
+# acceptance-harness.sh lines 255-268), so mutate+observe is already
+# inter-process. This INV proves the full Debt-15 memory round-trip that
+# INV-8 was originally designed for — relies on the companion fork fix to
+# session-tools.ts `loadRelatedStores` to plumb memory via routeMemoryOp.
+# ════════════════════════════════════════════════════════════════════
+_inv12_body() {
+  local iso="$1"
+  local _saved="${E2E_DIR:-}"
+  E2E_DIR="$iso"
+
+  local key="inv12-$$-$(date +%s)"
+  local val="inv12-sentinel-$(openssl rand -hex 4 2>/dev/null || echo $$)"
+  local sess="inv12-sess-$$-$(date +%s)"
+
+  # Step 1: Store a value in the inv12 namespace.
+  _mcp_invoke_tool "memory_store" \
+    "{\"key\":\"$key\",\"value\":\"$val\",\"namespace\":\"inv12\"}" \
+    'stored|success|key|true' \
+    "INV-12/store" 30 --rw
+  if [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
+    _CHECK_OUTPUT="SKIP_ACCEPTED: INV-12: memory_store not in build"
+    E2E_DIR="$_saved"; return
+  fi
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    _CHECK_OUTPUT="INV-12 FAIL: memory_store — $_CHECK_OUTPUT"
+    _CHECK_PASSED="false"; E2E_DIR="$_saved"; return
+  fi
+
+  # Step 2: session_save with includeMemory:true — require stats.memoryEntries >= 1.
+  _mcp_invoke_tool "session_save" \
+    "{\"name\":\"$sess\",\"includeMemory\":true}" \
+    'sessionId|savedAt|stats|path' "INV-12/save" 15 --rw
+  if [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
+    _CHECK_OUTPUT="SKIP_ACCEPTED: INV-12: session_save not in build"
+    E2E_DIR="$_saved"; return
+  fi
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    _CHECK_OUTPUT="INV-12 FAIL: session_save — $_CHECK_OUTPUT"
+    _CHECK_PASSED="false"; E2E_DIR="$_saved"; return
+  fi
+  local mem_count
+  mem_count=$(echo "$_MCP_BODY" | node -e '
+    let d=""; process.stdin.on("data",c=>d+=c).on("end",()=>{
+      try { const j = JSON.parse(d); if (typeof j?.stats?.memoryEntries === "number") process.stdout.write(String(j.stats.memoryEntries)); }
+      catch {}
+    });
+  ' 2>/dev/null || true)
+  mem_count="${mem_count:-0}"
+  if (( mem_count < 1 )); then
+    _CHECK_OUTPUT="INV-12 FAIL: session_save stats.memoryEntries=$mem_count — session_save did not capture memory — product fix to loadRelatedStores may not be deployed yet. Body: $(echo "${_MCP_BODY:-}" | head -5 | tr '\n' ' ')"
+    _CHECK_PASSED="false"; E2E_DIR="$_saved"; return
+  fi
+
+  # Step 3: Delete the key so memory is gone from the primary backend.
+  _mcp_invoke_tool "memory_delete" \
+    "{\"key\":\"$key\",\"namespace\":\"inv12\"}" \
+    'deleted|removed|success|true' "INV-12/delete" 15 --rw
+  if [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
+    _CHECK_OUTPUT="SKIP_ACCEPTED: INV-12: memory_delete not in build"
+    E2E_DIR="$_saved"; return
+  fi
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    _CHECK_OUTPUT="INV-12 FAIL: memory_delete — $_CHECK_OUTPUT"
+    _CHECK_PASSED="false"; E2E_DIR="$_saved"; return
+  fi
+
+  # Step 4: Retrieve must fail (key is gone — delete was not a no-op).
+  _mcp_invoke_tool "memory_retrieve" \
+    "{\"key\":\"$key\",\"namespace\":\"inv12\"}" \
+    'not.found|null|error|missing|undefined' "INV-12/retrieve-post-delete" 15 --ro
+  # We expect this to FAIL the pattern match (value should NOT be returned).
+  # If _CHECK_PASSED=="true" and body contains the value, delete was a no-op.
+  if [[ "$_CHECK_PASSED" == "true" ]] && echo "$_MCP_BODY" | grep -qF "$val"; then
+    _CHECK_OUTPUT="INV-12 FAIL: memory_retrieve still returned value after memory_delete — delete was a no-op. Body: $(echo "${_MCP_BODY:-}" | head -5 | tr '\n' ' ')"
+    _CHECK_PASSED="false"; E2E_DIR="$_saved"; return
+  fi
+  # Either exit!=0 (key not found), or the body has no trace of $val — both are OK.
+
+  # Step 5: Restore the session.
+  _mcp_invoke_tool "session_restore" "{\"name\":\"$sess\"}" \
+    'restored|loaded|session|success|sessionId' "INV-12/restore" 15 --rw
+  if [[ "$_CHECK_PASSED" == "skip_accepted" ]]; then
+    _CHECK_OUTPUT="SKIP_ACCEPTED: INV-12: session_restore not in build"
+    E2E_DIR="$_saved"; return
+  fi
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    _CHECK_OUTPUT="INV-12 FAIL: session_restore — $_CHECK_OUTPUT"
+    _CHECK_PASSED="false"; E2E_DIR="$_saved"; return
+  fi
+
+  # Step 6: Retrieve must return the original value (restore wrote back to RVF).
+  _mcp_invoke_tool "memory_retrieve" \
+    "{\"key\":\"$key\",\"namespace\":\"inv12\"}" \
+    "$val" "INV-12/retrieve-post-restore" 15 --ro
+  if [[ "$_CHECK_PASSED" != "true" ]]; then
+    _CHECK_OUTPUT="INV-12 FAIL: memory_retrieve did not return value after session_restore — restore did not bring memory back. Body: $(echo "${_MCP_BODY:-}" | head -5 | tr '\n' ' ')"
+    _CHECK_PASSED="false"; E2E_DIR="$_saved"; return
+  fi
+
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="INV-12 OK: full Debt-15 memory round-trip ($key=$val; stats.memoryEntries=$mem_count)"
+  E2E_DIR="$_saved"
+}
+check_adr0094_p8_inv12_memory_full_roundtrip() { _with_iso_cleanup "p8-inv12" _inv12_body; }

@@ -6,6 +6,35 @@
 
 ---
 
+## 2026-04-19 (second pass) — Phase 8 INV-12 added (memory round-trip restored) + loadRelatedStores fork fix + ADR-0087 addendum deferral reversed
+
+Follow-up to the morning's Phase 8 remediation entry below. Three things landed:
+
+**1. Fork fix: `session_save(includeMemory:true)` now sees RVF memory**
+
+`forks/ruflo` commit `52539ff2c` on `main` makes `loadRelatedStores` (in `v3/@claude-flow/cli/src/mcp-tools/session-tools.ts`) async and routes the memory snapshot through `routeMemoryOp({type:'list'})` — the same path that `session_restore` already uses on the re-populate side. Previously `loadRelatedStores` read `.claude-flow/memory/store.json` directly; `memory_store` writes to RVF (primary per ADR-0086); the two never met, so `session_save` could not capture memory stored via `memory_store`. The earlier entry's `INV-8 redesigned onto tasks` decision was correct as a workaround — this commit unblocks the real memory round-trip.
+
+Tasks and agents branches of `loadRelatedStores` are unchanged (they are not RVF-backed).
+
+**2. INV-12 added: full Debt-15 memory round-trip**
+
+New invariant in `lib/acceptance-phase8-invariants.sh`:
+`memory_store K=V → session_save(includeMemory:true) → stats.memoryEntries >= 1 → memory_delete K → memory_retrieve(must fail) → session_restore → memory_retrieve == V`.
+
+This is the original Debt-15 shape the first INV-8 was aiming at. Task-based INV-8 stays (broader session-capture guard — tasks cover the same Debt-15 pattern via a different backend). Total invariants: **12** (was 11). Wired into `scripts/test-acceptance.sh` + `scripts/test-acceptance-fast.sh` (p8 group).
+
+**3. ADR-0087 addendum deferral REVERSED — Phase 8 is already inter-process**
+
+The earlier entry (below) deferred inter-process probing to Phase 8.1, claiming all 10 INVs run mutate+observe "within a single MCP session." That claim was wrong. `lib/acceptance-harness.sh:255-263` shows every `_mcp_invoke_tool` spawns a fresh `$cli mcp exec` subprocess. Every step in every INV is already in a separate process — there is no shared in-memory state between `memory_store` and `memory_search` (or any other pair). Phase 8 satisfies the ADR-0087 addendum as designed; no Phase 8.1 needed. The catalog entry and any dashboard text referring to "Phase 8.1 inter-process probes" can be retired.
+
+**Verification**:
+- `bash scripts/test-acceptance-fast.sh p8` → **12/12 pass, 0 fail, 0 skip_accepted** (2026-04-19, post-fork-fix, wall-clock ~26s)
+- `npm run test:unit` inside pipeline cascade → 3092 tests, 3057 pass, 0 fail, 35 skip
+
+**Cross-links**: ADR-0086 (RVF primary backend — root cause of the `memory_store ↔ session_save` mismatch); ADR-0082 (no silent fallbacks — INV-12 shape); this log's earlier 2026-04-19 entry (superseded on the Phase 8.1 deferral point).
+
+---
+
 ## 2026-04-19 — Phase 8 remediation pass: 10 invariant bugs + 1 unit-test gap fixed; INV-8 redesigned onto tasks; inter-process probing deferred to Phase 8.1
 
 6-agent validation swarm audited `lib/acceptance-phase8-invariants.sh` (commit `898e412`, INV-1..INV-11) and identified 10 concrete bugs + one unit-test gap + one architectural gap. All concrete bugs are fixed. Fast runner: **11/11 pass** (`bash scripts/test-acceptance-fast.sh p8`, ~22s wall-clock).

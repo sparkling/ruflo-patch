@@ -206,6 +206,7 @@ if [[ "$_FAST_RUN_GROUPS" == *"p8"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
     _fast_run "p8-inv9-neural"     check_adr0094_p8_inv9_neural_delta
     _fast_run "p8-inv10-autopilot" check_adr0094_p8_inv10_autopilot_shape
     _fast_run "p8-inv11-delta"     check_adr0094_p8_inv11_delta_sentinel
+    _fast_run "p8-inv12-mem-full"  check_adr0094_p8_inv12_memory_full_roundtrip
   fi
 fi
 
