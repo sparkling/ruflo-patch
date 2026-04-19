@@ -27,11 +27,14 @@ check_adr0059_daemon_ipc_socket_exists() {
   else
     _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon status" "" 5
     if echo "$_RK_OUT" | grep -qi "running"; then
+      # Daemon running but socket missing — this is a genuine anomaly.
       _CHECK_PASSED="false"
-      _CHECK_OUTPUT="SKIP: daemon running but socket not found"
+      _CHECK_OUTPUT="FAIL: daemon reports running but socket not found at $socket_path"
     else
-      _CHECK_PASSED="false"
-      _CHECK_OUTPUT="SKIP: daemon socket not found"
+      # Daemon not started — expected default per ADR-0088 (daemon is opt-in for
+      # timer scheduler only; IPC hot-path retired). Counts toward invocation, not verification.
+      _CHECK_PASSED="skip_accepted"
+      _CHECK_OUTPUT="SKIP_ACCEPTED: daemon not running (ADR-0088 retired IPC hot path; socket is opt-in)"
     fi
   fi
 }
@@ -58,11 +61,13 @@ check_adr0059_daemon_ipc_probe() {
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Node connected to daemon socket"
   elif echo "$result" | grep -q "NO_SOCKET"; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: daemon socket not found"
+    # No socket = daemon not started. Expected default per ADR-0088.
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: daemon socket absent (ADR-0088 retired IPC hot path; socket is opt-in)"
   else
+    # Socket exists but connection failed (timeout / error). Real failure.
     _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: daemon socket not found (probe: $result)"
+    _CHECK_OUTPUT="FAIL: daemon socket connection failed (probe: $result)"
   fi
 }
 
@@ -75,8 +80,9 @@ check_adr0059_daemon_ipc_store() {
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
   if [[ ! -e "$socket_path" ]]; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: daemon socket not found"
+    # Daemon is opt-in per ADR-0088 (IPC hot path retired; daemon scoped to timer scheduler only).
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: daemon socket absent (ADR-0088 retired IPC hot path; socket is opt-in)"
     return
   fi
 
@@ -112,8 +118,9 @@ check_adr0059_daemon_ipc_search() {
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
   if [[ ! -e "$socket_path" ]]; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: daemon socket not found"
+    # Daemon is opt-in per ADR-0088 (IPC hot path retired; daemon scoped to timer scheduler only).
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: daemon socket absent (ADR-0088 retired IPC hot path; socket is opt-in)"
     return
   fi
 
@@ -163,8 +170,9 @@ check_adr0059_daemon_ipc_count() {
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
 
   if [[ ! -e "$socket_path" ]]; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: daemon socket not found"
+    # Daemon is opt-in per ADR-0088 (IPC hot path retired; daemon scoped to timer scheduler only).
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: daemon socket absent (ADR-0088 retired IPC hot path; socket is opt-in)"
     return
   fi
 

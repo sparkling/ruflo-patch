@@ -25,10 +25,13 @@ check_attention_compute() {
     return
   fi
 
-  # Tool may not be registered (upstream build truncation)
+  # Tool may not be registered — upstream build truncation of agentdb-tools.js
+  # means the tool is genuinely absent from the export array. Per ADR-0082
+  # three-way bucket: tool-not-found → skip_accepted (counts toward invocation,
+  # not verification). This is the canonical handling in _mcp_invoke_tool.
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: tool not found in published package"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: tool not found in published package (upstream build truncation)"
     return
   fi
 
@@ -74,10 +77,13 @@ check_attention_benchmark() {
     return
   fi
 
-  # Tool may not be registered (upstream build truncation)
+  # Tool may not be registered — upstream build truncation of agentdb-tools.js
+  # means the tool is genuinely absent from the export array. Per ADR-0082
+  # three-way bucket: tool-not-found → skip_accepted (counts toward invocation,
+  # not verification). This is the canonical handling in _mcp_invoke_tool.
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: tool not found in published package"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: tool not found in published package (upstream build truncation)"
     return
   fi
 
@@ -122,10 +128,13 @@ check_attention_configure() {
     return
   fi
 
-  # Tool may not be registered (upstream build truncation)
+  # Tool may not be registered — upstream build truncation of agentdb-tools.js
+  # means the tool is genuinely absent from the export array. Per ADR-0082
+  # three-way bucket: tool-not-found → skip_accepted (counts toward invocation,
+  # not verification). This is the canonical handling in _mcp_invoke_tool.
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: tool not found in published package"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: tool not found in published package (upstream build truncation)"
     return
   fi
 
@@ -161,10 +170,13 @@ check_attention_metrics() {
     return
   fi
 
-  # Tool may not be registered (upstream build truncation)
+  # Tool may not be registered — upstream build truncation of agentdb-tools.js
+  # means the tool is genuinely absent from the export array. Per ADR-0082
+  # three-way bucket: tool-not-found → skip_accepted (counts toward invocation,
+  # not verification). This is the canonical handling in _mcp_invoke_tool.
   if echo "$out" | grep -qi 'Tool not found\|not found'; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="SKIP: tool not found in published package"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: tool not found in published package (upstream build truncation)"
     return
   fi
 
