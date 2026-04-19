@@ -984,4 +984,65 @@ describe('INV-6 follow-up — config_import rejects legacy+scope / legacy+scopes
     assert.ok(beforeBytes.equals(afterBytes),
       'legacy import-refusal must NOT write anything to disk (byte-exact comparison)');
   });
+
+  it('ITEM-1 #5: config_import scope=default on legacy WITH values key in payload refuses loudly', async () => {
+    // Reviewer nit: payload carrying a top-level `values` key on legacy gets
+    // Object.assign'd into the nested tree, injecting a junk top-level
+    // "values" entry that persists through the bare-tree save. Refuse loudly
+    // for the same reason as the scopes case.
+    writeInitShape(cwd);
+    const beforeBytes = readFileSync(cfgPath(cwd));
+    handle = await loadHandlersUnderCwd(cwd);
+    const importHandler = getHandler(handle.mod, 'config_import');
+
+    const result = await importHandler({
+      config: { values: { foo: 'bar' } },
+    });
+    assert.equal(result.success, false,
+      'legacy default-scope import with a "values" top-level key must fail loudly — would corrupt the nested tree');
+    assert.equal(result.shape, 'legacy');
+    assert.ok(
+      typeof result.error === 'string' && /values/i.test(result.error),
+      `error message must mention values; got: ${JSON.stringify(result)}`,
+    );
+
+    const afterBytes = readFileSync(cfgPath(cwd));
+    assert.ok(beforeBytes.equals(afterBytes),
+      'legacy import-refusal (values key) must NOT write anything to disk');
+  });
+
+  it('ITEM-1 #6: config_import scope=default on legacy WITH EMPTY scopes:{} is a no-op pass', async () => {
+    // Reviewer nit: empty scopes:{} carries no actual MCP-shape data, so it
+    // must be allowed as a no-op default-scope import. The gate fires only
+    // when the scopes/values object has keys.
+    writeInitShape(cwd);
+    handle = await loadHandlersUnderCwd(cwd);
+    const importHandler = getHandler(handle.mod, 'config_import');
+
+    const result = await importHandler({
+      config: { foo: 'bar', scopes: {} },
+    });
+    assert.equal(result.success, true,
+      `empty scopes:{} on legacy must be accepted as a no-op, not rejected; got: ${JSON.stringify(result)}`);
+    // Verify the real import key landed
+    const persisted = JSON.parse(readFileSync(cfgPath(cwd), 'utf8'));
+    assert.equal(persisted.foo, 'bar',
+      'legacy import with empty scopes:{} must still merge the non-scopes payload keys');
+  });
+
+  it('ITEM-1 #7: config_import scope=default on legacy WITH EMPTY values:{} is a no-op pass', async () => {
+    // Same reasoning as #6 but for the values key.
+    writeInitShape(cwd);
+    handle = await loadHandlersUnderCwd(cwd);
+    const importHandler = getHandler(handle.mod, 'config_import');
+
+    const result = await importHandler({
+      config: { baz: 'qux', values: {} },
+    });
+    assert.equal(result.success, true,
+      `empty values:{} on legacy must be accepted as a no-op, not rejected; got: ${JSON.stringify(result)}`);
+    const persisted = JSON.parse(readFileSync(cfgPath(cwd), 'utf8'));
+    assert.equal(persisted.baz, 'qux',
+      'legacy import with empty values:{} must still merge the non-values payload keys');
+  });
 });
