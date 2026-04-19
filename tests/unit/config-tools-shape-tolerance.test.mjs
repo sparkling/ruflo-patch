@@ -853,6 +853,75 @@ describe('INV-6 follow-up static guards — BUG-A + BUG-B source pins', () => {
 });
 
 // ============================================================================
+// 8b. BUG-C runtime tests — resolveValue literal-dotted-key shadow precedence
+//     These exercise the RUNTIME behaviour of resolveValue (via config_get) so
+//     that a future refactor inverting the hasOwnProperty / getNestedValue order
+//     in config-tools.ts will cause tests to FAIL rather than pass silently.
+// ============================================================================
+
+describe('BUG-C runtime — resolveValue literal-dotted-key shadow precedence', () => {
+  let cwd;
+  let handle;
+
+  beforeEach(() => { cwd = makeIsoCwd('bugc'); });
+  afterEach(() => {
+    try { handle?.restore(); } catch {}
+    try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+  });
+
+  it('BUG-C Test A: literal dotted key wins over matching nested subtree', async () => {
+    // Write an MCP-shape store that has BOTH:
+    //   store.values["a.b"] = "literal-val"   (literal dotted key)
+    //   store.values.a.b   = "nested-val"     (genuine nested subtree)
+    // resolveValue must return "literal-val" (hasOwnProperty wins).
+    writeFileSync(
+      cfgPath(cwd),
+      JSON.stringify({
+        values: {
+          'a.b': 'literal-val',
+          a: { b: 'nested-val' },
+        },
+        scopes: {},
+        version: '3.0.0',
+        updatedAt: new Date().toISOString(),
+      }, null, 2),
+      'utf-8',
+    );
+    handle = await loadHandlersUnderCwd(cwd);
+    const getHandler_ = getHandler(handle.mod, 'config_get');
+
+    const result = await getHandler_({ key: 'a.b' });
+    assert.equal(result.value, 'literal-val',
+      'resolveValue must return the literal dotted key when both literal and nested forms exist (shadow precedence)');
+    assert.equal(result.exists, true);
+  });
+
+  it('BUG-C Test B: nested-only path resolves when no literal dotted key exists', async () => {
+    // Write an MCP-shape store with ONLY the nested subtree — no literal "a.b" key.
+    // resolveValue must fall through to getNestedValue and return "nested-only".
+    writeFileSync(
+      cfgPath(cwd),
+      JSON.stringify({
+        values: {
+          a: { b: 'nested-only' },
+        },
+        scopes: {},
+        version: '3.0.0',
+        updatedAt: new Date().toISOString(),
+      }, null, 2),
+      'utf-8',
+    );
+    handle = await loadHandlersUnderCwd(cwd);
+    const getHandler_ = getHandler(handle.mod, 'config_get');
+
+    const result = await getHandler_({ key: 'a.b' });
+    assert.equal(result.value, 'nested-only',
+      'resolveValue must fall back to getNestedValue when no literal dotted key exists');
+    assert.equal(result.exists, true);
+  });
+});
+
+// ============================================================================
 // 9. INV-6 follow-up — config_import legacy-shape rejection (BUG-A mirror)
 //   Researcher plan: docs/plans/adr0094-hive-20260417/phase8-followups-plan.md
 //   ITEM 1: config_import had the exact same class of bug as config_set BUG-A
