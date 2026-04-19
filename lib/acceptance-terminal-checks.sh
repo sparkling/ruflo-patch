@@ -58,8 +58,11 @@ _terminal_invoke_tool() {
   rm -f "$work" 2>/dev/null
 
   # ─── Three-way bucket ────────────────────────────────────────────
-  # 1. Tool not found / not registered -> skip_accepted
-  if echo "$body" | grep -qiE 'tool.+not found|not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # 1. Tool not found / not registered -> skip_accepted. ADR-0096 narrow:
+  # bare "not found" matches domain errors like "Session not found" from
+  # terminal_close — those are real handler responses (the session id
+  # we passed doesn't exist) and must FAIL, not skip.
+  if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P4/${label}: MCP tool '$tool' not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
     return
