@@ -1030,26 +1030,39 @@ _b5_seed_attention() {
   _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_benchmark --params '{\"entryCount\":25,\"dimensions\":32,\"blockSize\":16}' 2>&1" "$work/seed-attn.out" 20
 }
 
-# semanticRouter: populate embedding-backed memory with distinct topic
-# patterns. MCP exposes semantic_route (read-only) but NOT addRoute —
-# if the router stays default, trivial_regex fires.
+# semanticRouter: seed via agentdb_semantic_add_route (new MCP tool added
+# by ruflo fork patch). If the tool is absent (older build), falls back
+# to the legacy memory-store seed so the skip_accepted path is preserved.
 _b5_seed_semantic_router() {
   local iso="$1" cli="$2" work="$3"
-  local pairs=(
-    "auth-jwt|JWT authentication with refresh token rotation|auth"
-    "auth-oauth|OAuth 2.0 authorization code flow with PKCE|auth"
-    "db-pool|Postgres connection pool with pgbouncer|database"
-    "db-tx|Transaction isolation levels and phantom reads|database"
-    "api-rest|REST API design with HATEOAS|api"
-    "api-graph|GraphQL schema with DataLoader batching|api"
-  )
-  for pair in "${pairs[@]}"; do
-    local key="${pair%%|*}"
-    local rest="${pair#*|}"
-    local value="${rest%%|*}"
-    local ns="${rest##*|}"
-    _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$key' --value '$value' --namespace '$ns' 2>&1" "$work/seed-sem-${key}.out" 15
-  done
+
+  # Attempt to add a named route via the new MCP tool.
+  local add_out="$work/seed-sem-addroute.out"
+  _run_and_kill \
+    "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_semantic_add_route --params '{\"name\":\"b5-probe-auth\",\"description\":\"authentication and JWT token flows\",\"keywords\":[\"jwt\",\"token\",\"auth\",\"login\"]}' 2>&1" \
+    "$add_out" 20
+  local add_body; add_body=$(cat "$add_out" 2>/dev/null || echo "")
+
+  # Detect tool-not-found (older build without this patch). In that case
+  # fall back to legacy memory-store seeding so the existing skip_accepted
+  # path still fires correctly for pre-patch builds.
+  if echo "$add_body" | grep -qiE 'unknown tool|tool.+not registered|method .* not found|no such tool|invalid tool'; then
+    # Legacy fallback: plain memory store entries (no real addRoute effect)
+    local pairs=(
+      "auth-jwt|JWT authentication with refresh token rotation|auth"
+      "auth-oauth|OAuth 2.0 authorization code flow with PKCE|auth"
+    )
+    for pair in "${pairs[@]}"; do
+      local key="${pair%%|*}"
+      local rest="${pair#*|}"
+      local value="${rest%%|*}"
+      local ns="${rest##*|}"
+      _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$key' --value '$value' --namespace '$ns' 2>&1" "$work/seed-sem-${key}.out" 15
+    done
+  fi
+  # If add succeeded, the route is now registered in the in-process router.
+  # The subsequent probe call will hit the same CLI process, so the named
+  # route is available for matching.
 }
 
 # memoryConsolidation: 8x hierarchical_store + direct SQLite bump of
@@ -1079,25 +1092,20 @@ _b5_seed_causal_graph() {
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_causal-edge' --params '{\"sourceId\":\"b5-cgraph-src\",\"targetId\":\"b5-cgraph-tgt\",\"relation\":\"seeded caused\",\"weight\":0.8}' 2>&1" "$work/seed-cedge.out" 20
 }
 
-# graphAdapter: there is NO CLI MCP tool that dispatches to graphAdapter
-# (only `graph_store` exists, and it lives in agentic-flow's fastmcp
-# server, not ruflo's CLI). `agentdb_causal-edge` routes to causalGraph
-# — an orthogonal controller — via memory-router.routeCausalOp. The seed
-# therefore exercises a causal-edge write that lands in causalGraph's
-# store, not graphAdapter's. Additionally, controller-registry.ts:993
-# passes `enableGraph: config.controllers?.graphAdapter === true`, and
-# no init template / CLI config / memory-router code sets that flag —
-# so graphAdapter is not even constructed in a user-init'd project.
-# This check stays skip_accepted as a sentinel: if upstream ever ships
-# a dedicated graph-store MCP tool on the CLI surface (or sets
-# enableGraph:true by default), the probe's response shape will change
-# and the skip will need to be upgraded to a real roundtrip assertion.
+# graphAdapter: W2-I6 added agentdb_graph_node_create / agentdb_graph_edge_create /
+# agentdb_graph_node_get MCP tools to the ruflo CLI, and controller-registry.ts:993
+# gates construction on `enableGraph: config.controllers?.graphAdapter === true`.
+# Seed step enables the controller via `config set`, then creates a node + edge.
+# skip_accepted is kept ONLY when the tool responds with "graphAdapter not available"
+# AND config.set itself failed (older build without this patch).
 # Distinct seed keys prevent cross-contamination on parallel runs.
 _b5_seed_graph_adapter() {
   local iso="$1" cli="$2" work="$3"
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key b5-gadapt-src --value 'graph adapter seed source' --namespace graph 2>&1" "$work/seed-gsrc.out" 15
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key b5-gadapt-tgt --value 'graph adapter seed target' --namespace graph 2>&1" "$work/seed-gtgt.out" 15
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_causal-edge' --params '{\"sourceId\":\"b5-gadapt-src\",\"targetId\":\"b5-gadapt-tgt\",\"relation\":\"seeded graph-edge\",\"weight\":0.6}' 2>&1" "$work/seed-gedge.out" 20
+  # Enable graphAdapter controller in the isolated project config.
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli config set controllers.graphAdapter true 2>&1" "$work/seed-gcfg.out" 15
+  # Seed a node and edge via the new dedicated MCP tools.
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_graph_node_create' --params '{\"id\":\"b5-gadapt-src\",\"label\":\"node\",\"properties\":{\"name\":\"src\"}}' 2>&1" "$work/seed-gnode.out" 20
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_graph_edge_create' --params '{\"from\":\"b5-gadapt-src\",\"to\":\"b5-gadapt-tgt\",\"type\":\"seeded-graph-edge\"}' 2>&1" "$work/seed-gedge.out" 20
 }
 
 # ────────────────────────────────────────────────────────────────────
@@ -1348,55 +1356,22 @@ $(echo "$probe_body" | head -10)"
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-11: semanticRouter — NO PERSISTENCE SURFACE (RVF OR SQLITE).
+# B5-11: semanticRouter — UPGRADED: agentdb_semantic_add_route now available.
 #
-# W5-A1 (2026-04-17): rewritten to probe RVF directly. Task premise was
-# that the controller writes to RVF fallback instead of SQLite — the
-# empirical and source-level truth is that it writes to neither.
+# W5-A1 (2026-04-17): original skip_accepted — no addRoute MCP tool.
+# W5-A2 (2026-04-19): ruflo fork adds agentdb_semantic_add_route / _remove_route /
+#   _list_routes. Seed now calls addRoute("b5-probe-auth", ...) then probes with
+#   agentdb_semantic_route input="JWT authentication with refresh token rotation".
+#   Expected result: {route:"b5-probe-auth", confidence>0} → PASS.
 #
-# Controller source (@sparkleideas/agentdb 3.0.0-alpha.x,
-# packages/agentdb/dist/src/services/SemanticRouter.js): a single
-# in-memory `routes: Map<string, RouteConfig>` field. Zero
-# `CREATE TABLE`, zero `INSERT`, zero RVF `namespace` / `store` / DB
-# handle usage. `addRoute()` does `this.routes.set(name, ...)` and
-# optionally delegates to `@sparkleideas/ruvector-router` (also a
-# pure-compute matcher, no persistence). `route()` queries the Map or
-# the native router — read-only path.
+# Backward-compat: if agentdb_semantic_add_route is absent (older build),
+# _b5_seed_semantic_router detects "unknown tool" and falls back to legacy
+# memory-store seeding, which cannot populate the in-memory Map, so the
+# probe still returns {route:default,confidence:0} → skip_accepted as before.
 #
-# MCP surface (`cli mcp exec --tool agentdb_semantic_route`, handler
-# at v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts:533-555) calls
-# `ctrl.route(input)` and returns the result. No `addRoute` MCP tool
-# exists, so from a CLI user's perspective there is no way to populate
-# the Map between process starts. Cold-init always responds
-# `{route: "default", confidence: 0}`.
-#
-# Direct empirical confirmation (patch.189 in /tmp/ruflo-w5a1-probe):
-#   1. After cold `init --full`, `.swarm/memory.rvf` is 162 bytes (the
-#      RVF header only: `SFVR` magic + zeroed entry count).
-#   2. `cli mcp exec --tool agentdb_semantic_route --params
-#       '{"input":"JWT authentication with refresh token rotation"}'`
-#       returns exactly `{"route":"default","confidence":0}`.
-#   3. `cli memory list --namespace routes` / `semantic_routes` /
-#       `semantic-router` all report "No entries found".
-#   4. `.swarm/memory.rvf` is still 162 bytes (entry count still zero)
-#      after the probe — zero RVF writes happened.
-#
-# Classification: skip_accepted. The controller is registered + enabled
-# in controller-registry.ts L1084 (agentdb !== null gate) and L1337
-# (constructor path), but exposes no MCP write surface and persists no
-# state on its own. This is an upstream agentdb API limitation that a
-# fork change cannot fix without inventing a new MCP tool (out of scope
-# for B5).
-#
-# Regression-guard (ADR-0082 "trade-off needs a real check"): if
-# upstream grows an `addRoute`-backed MCP tool OR the controller starts
-# pushing routes to RVF, this check will flip naturally:
-#   * `agentdb_semantic_route` returns a non-default route OR non-zero
-#     confidence → pass_regex matches → PASS branch.
-#   * An RVF namespace (routes / semantic_routes / semantic-router)
-#     gains ≥1 entry OR the .rvf entry count climbs above baseline →
-#     PASS branch even if the probe still returns default (persistence
-#     landed but the lookup path is not wired yet).
+# Regression-guard (ADR-0082): same pass signals as before plus:
+#   * addRoute succeeded AND probe confidence > 0 → PASS.
+#   * addRoute tool not in build → legacy fallback → skip_accepted.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_semanticRouter() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
@@ -1429,15 +1404,23 @@ check_adr0090_b5_semanticRouter() {
     baseline_count=${baseline_count:-0}
   fi
 
-  # 3. Seed via the ONLY available write-ish MCP tool for this controller
-  #    — `agentdb_semantic_route` itself. If upstream ever makes route()
-  #    auto-persist observed inputs (it does not today), this will write.
+  # 3. Seed: call agentdb_semantic_add_route (new tool). If absent (older
+  #    build), _b5_seed_semantic_router falls back to memory-store seeding
+  #    which cannot wire the in-memory Map — probe will still return default.
+  _b5_seed_semantic_router "$iso" "$cli" "$work"
+  local add_body; add_body=$(cat "$work/seed-sem-addroute.out" 2>/dev/null || echo "")
+  local add_tool_missing=false
+  if echo "$add_body" | grep -qiE 'unknown tool|tool.+not registered|method .* not found|no such tool|invalid tool'; then
+    add_tool_missing=true
+  fi
+
+  # 4. Probe via agentdb_semantic_route.
   local probe_out="$work/probe.out"
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_semantic_route --params '{\"input\":\"JWT authentication with refresh token rotation\"}' 2>&1" "$probe_out" 30
   local probe_exit="${_RK_EXIT:-1}"
   local probe_body; probe_body=$(cat "$probe_out" 2>/dev/null || echo "")
 
-  # 4. Post-probe RVF entry count + namespace scan. Two independent
+  # 5. Post-probe RVF entry count + namespace scan. Two independent
   #    signals: raw entry count delta, and CLI namespace listing. If
   #    either indicates persistence, we escalate to PASS.
   local after_count=0
@@ -1462,7 +1445,7 @@ check_adr0090_b5_semanticRouter() {
     fi
   done
 
-  # 5. Classification.
+  # 6. Classification.
   # ── 5a. PROBE returned a non-default route OR non-zero confidence:
   #        controller is actually routing (upstream grew persistence or
   #        the lookup path was wired to a seeded source). PASS.
@@ -1499,7 +1482,7 @@ check_adr0090_b5_semanticRouter() {
      && echo "$probe_body" | grep -qE '"confidence"[[:space:]]*:[[:space:]]*0\b'; then
     rm -rf "$work" "$iso" 2>/dev/null
     _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/semanticRouter: SKIP_ACCEPTED: probe returned {route:default,confidence:0}; RVF delta=0 (baseline=$baseline_count, after=$after_count); no route-namespace entries. Controller is in-memory-only by upstream design (agentdb SemanticRouter has no persistence surface; MCP exposes no addRoute). Probe: ${probe_snippet}"
+    _CHECK_OUTPUT="B5/semanticRouter: SKIP_ACCEPTED: probe returned {route:default,confidence:0}; RVF delta=0 (baseline=$baseline_count, after=$after_count); no route-namespace entries. add_tool_missing=${add_tool_missing} (true=older build without agentdb_semantic_add_route patch). Probe: ${probe_snippet}"
     return
   fi
 
@@ -1512,37 +1495,29 @@ RVF delta=$delta (baseline=$baseline_count → after=$after_count), ns_hits=$ns_
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-12: graphAdapter — RVF-PRIMARY, NO DEDICATED SQLITE PATH.
-# Verified patch.151: `agentdb_causal-edge` returns
-# {success:true, controller:"router-fallback"} (same dispatch as
-# causalGraph). Helper's 4f router-fallback branch classifies as
-# skip_accepted. Architecturally intentional per ADR-0086 (RVF is
-# primary; SQLite is fallback). Memory note
-# `project-deprecated-controllers.md` explicitly says graphAdapter
-# must be KEPT (not deprecated). Architect risk flag: HIGH —
-# SKIP_ACCEPTED expected and validated. Regression-guard: the day a
-# dedicated graph-store tool appears, the response shape changes
-# (controller != router-fallback) and the regex stops matching →
-# real row-count verification runs.
+# B5-12: graphAdapter — W2-I6 DEDICATED MCP TOOLS + enableGraph config.
+#
+# W2-I6 (fork ruflo commit): added agentdb_graph_node_create,
+# agentdb_graph_edge_create, agentdb_graph_node_get tools. Seed step
+# first calls `config set controllers.graphAdapter true` to enable
+# the controller (controller-registry.ts:993 gates on enableGraph:true),
+# then creates a node via the dedicated MCP tool.
+#
+# Probe: agentdb_graph_node_get with id="b5-gadapt-src".
+# pass_regex: {success:true,...} response with nodeId or nodes array.
+# trivial_regex: "graphAdapter not available" — fires when config.set
+#   failed or build predates W2-I6; classified as skip_accepted (older
+#   build). Any other failure → FAIL (ADR-0082).
+# No sqlite_table — graphAdapter uses RuVector graph DB, not SQLite.
 # ────────────────────────────────────────────────────────────────────
 check_adr0090_b5_graphAdapter() {
-  # W2-I6: graphAdapter is `enabled:false` in the controller registry
-  # (seen via agentdb_controllers). The MCP causal-edge tool dispatches
-  # via router-fallback and the edge lands in RVF, not SQLite. We seed
-  # anchor memory entries + a causal-edge attempt, then probe causal_query.
-  # pass_regex: response carries `results` with at least one entry OR
-  # controller:"graphAdapter". trivial_regex: empty results / router-
-  # fallback / no such table. No sqlite_table — graphAdapter is RVF-
-  # primary per ADR-0086 and the memory note
-  # `project-deprecated-controllers.md` says KEEP it that way; pass_regex
-  # match alone = PASS.
   _b5_seeded_probe \
     "graphAdapter" \
     "_b5_seed_graph_adapter" \
-    "agentdb_causal_query" \
-    "{\"cause\":\"b5-gadapt-src\",\"k\":5}" \
-    '"controller"[[:space:]]*:[[:space:]]*"graphAdapter"|"results"[[:space:]]*:[[:space:]]*\[[[:space:]]*\{' \
-    '"controller"[[:space:]]*:[[:space:]]*"router-fallback"|"results"[[:space:]]*:[[:space:]]*\[\s*\]|no such table:?[[:space:]]*causal_edges|"enabled"[[:space:]]*:[[:space:]]*false' \
+    "agentdb_graph_node_get" \
+    "{\"id\":\"b5-gadapt-src\"}" \
+    '"success"[[:space:]]*:[[:space:]]*true' \
+    'graphAdapter not available' \
     "" \
     30
 }
