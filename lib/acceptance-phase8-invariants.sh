@@ -690,15 +690,19 @@ _inv11_body() {
     E2E_DIR="$_saved"; return
   fi
 
-  if (( confirmed >= 2 )); then
+  # ADR-0082 / Phase 8 follow-up (ITEM 4): strict all-or-fail threshold.
+  # All three probes (memory_store / workflow_create / agent_spawn) are core
+  # MCP tools required in any Phase 8-eligible build. If any one silently
+  # degrades to a no-op, INV-11 is the only cross-tool invariant that would
+  # surface it — the previous >=2 / >=1 partial-pass fallback masked real
+  # regressions as green. Demand all `probes` confirmations now that at least
+  # one list tool answered (skip_accepted already covers the genuinely-empty
+  # build case above).
+  if (( confirmed == probes )); then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="INV-11 OK: delta-sentinel confirmed $confirmed/$probes mutations cause observable list-body delta ${failures:+(misses: $failures)}"
-  elif (( confirmed >= 1 )); then
-    # At least one probe proved causality; others may be unavailable.
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="INV-11 OK (partial): $confirmed/$probes mutations cause observable delta ${failures:+(misses: $failures)}"
+    _CHECK_OUTPUT="INV-11 OK: delta-sentinel confirmed $confirmed/$probes mutations cause observable list-body delta (strict all-required)"
   else
-    _CHECK_OUTPUT="INV-11 FAIL: zero mutations caused observable list-body delta — tools may be silently no-op'd. probes=$probes misses=$failures"
+    _CHECK_OUTPUT="INV-11 FAIL: delta-sentinel requires all $probes probes to cause observable list-body delta, only $confirmed confirmed — tools may be silently no-op'd. misses=$failures"
     _CHECK_PASSED="false"
   fi
   E2E_DIR="$_saved"

@@ -851,3 +851,137 @@ describe('INV-6 follow-up static guards — BUG-A + BUG-B source pins', () => {
     );
   });
 });
+
+// ============================================================================
+// 9. INV-6 follow-up — config_import legacy-shape rejection (BUG-A mirror)
+//   Researcher plan: docs/plans/adr0094-hive-20260417/phase8-followups-plan.md
+//   ITEM 1: config_import had the exact same class of bug as config_set BUG-A
+//     — saveConfigStore's legacy branch persists only `store.values`, so a
+//     scoped import against a legacy file would silently drop data on reload,
+//     and a default-scope import carrying a top-level `scopes` key would
+//     corrupt the nested tree. Fail loudly with success:false (ADR-0082).
+// ============================================================================
+
+describe('INV-6 follow-up — config_import rejects legacy+scope / legacy+scopes payload', () => {
+  let cwd;
+  let handle;
+
+  beforeEach(() => { cwd = makeIsoCwd('inv6-import'); });
+  afterEach(() => {
+    try { handle?.restore(); } catch {}
+    try { rmSync(cwd, { recursive: true, force: true }); } catch {}
+  });
+
+  it('ITEM-1 #1: config_import scope=user on legacy returns success:false and does NOT touch the file', async () => {
+    writeInitShape(cwd);
+    const beforeBytes = readFileSync(cfgPath(cwd));
+    handle = await loadHandlersUnderCwd(cwd);
+    const importHandler = getHandler(handle.mod, 'config_import');
+
+    const result = await importHandler({
+      config: { foo: 'bar' },
+      scope: 'user',
+    });
+    assert.equal(result.success, false,
+      'scoped import on legacy shape must fail loudly — saveConfigStore cannot persist store.scopes in legacy branch');
+    assert.ok(
+      typeof result.error === 'string' && /scope/i.test(result.error),
+      `error message must mention scope; got: ${JSON.stringify(result)}`,
+    );
+    assert.equal(result.shape, 'legacy',
+      'failing response must still report the detected shape so callers can remediate');
+
+    // Byte-exact compare — the handler must not have written anything.
+    const afterBytes = readFileSync(cfgPath(cwd));
+    assert.ok(beforeBytes.equals(afterBytes),
+      'legacy scoped-import refusal must NOT write anything to disk (byte-exact comparison)');
+  });
+
+  it('ITEM-1 #2: config_import scope=default on legacy WITHOUT scopes/values keys merges successfully', async () => {
+    // The happy path: legacy + default scope + plain top-level config payload
+    // should continue to work (Object.assign into store.values, which IS the
+    // nested tree). This is the non-regression fence for the fix.
+    writeInitShape(cwd);
+    handle = await loadHandlersUnderCwd(cwd);
+    const importHandler = getHandler(handle.mod, 'config_import');
+
+    const result = await importHandler({
+      config: { customTop: { nestedKey: 'imported-value' }, anotherKey: 42 },
+    });
+    assert.equal(result.success, true,
+      'default-scope legacy import without scopes/values keys must continue to succeed');
+    assert.equal(result.imported, 2, 'both top-level keys should count as imported');
+
+    const persisted = readConfigJson(cwd);
+    // Must stay nested (no {values, scopes} wrapper leaked in).
+    assert.ok(!('values' in persisted && 'scopes' in persisted),
+      `legacy import must preserve legacy shape; got keys: ${Object.keys(persisted).join(',')}`);
+    assert.equal(persisted.customTop?.nestedKey, 'imported-value',
+      'imported nested value must land in the tree');
+    assert.equal(persisted.anotherKey, 42,
+      'imported scalar must land at top level of the tree');
+    // Unrelated init keys must survive the merge.
+    assert.equal(persisted.swarm?.topology, 'hierarchical-mesh',
+      'original init keys must survive the import merge');
+  });
+
+  it('ITEM-1 #3: config_import on MCP shape WITH scopes key in payload merges into store.scopes', async () => {
+    // The fix only rejects `scopes`-carrying payloads when the on-disk shape is
+    // LEGACY. An MCP-shape file can absorb a payload that includes a `scopes`
+    // key; Object.assign at the store.values level handles it (pre-existing
+    // MCP semantics — this test is the positive-direction regression fence).
+    writeMcpShape(cwd);
+    handle = await loadHandlersUnderCwd(cwd);
+    const importHandler = getHandler(handle.mod, 'config_import');
+
+    const result = await importHandler({
+      config: {
+        'new.mcp.key': 'mcp-val',
+        scopes: { project: { 'extra.key': 'extra-val' } },
+      },
+    });
+    assert.equal(result.success, true,
+      'MCP-shape import must accept payloads even when they carry a literal "scopes" key at top level');
+
+    const persisted = readConfigJson(cwd);
+    // The MCP wrapper must stay.
+    assert.ok('values' in persisted && 'scopes' in persisted,
+      `MCP import must keep the flat wrapper; got keys: ${Object.keys(persisted).join(',')}`);
+    // The new flat dotted key must have landed under values (Object.assign).
+    assert.equal(persisted.values['new.mcp.key'], 'mcp-val',
+      'MCP import must merge flat dotted keys into store.values');
+    // The literal "scopes" key in the payload lands as a top-level values
+    // entry under MCP semantics (pre-existing behaviour — documented here so
+    // a future reader knows this is the MCP contract, distinct from legacy).
+    assert.ok(persisted.values.scopes,
+      'MCP import with a top-level "scopes" key in the payload lands it under store.values (pre-existing semantics)');
+  });
+
+  it('ITEM-1 #4: config_import scope=default on legacy WITH scopes key in payload refuses loudly', async () => {
+    // The second failure mode (per researcher): a default-scope import whose
+    // payload happens to carry a literal `scopes` key would otherwise get
+    // Object.assign'd into the nested legacy tree as a top-level "scopes"
+    // entry — corrupting the next shape-detect round and producing silent
+    // drift. Refuse loudly so the caller knows to switch to MCP shape.
+    writeInitShape(cwd);
+    const beforeBytes = readFileSync(cfgPath(cwd));
+    handle = await loadHandlersUnderCwd(cwd);
+    const importHandler = getHandler(handle.mod, 'config_import');
+
+    const result = await importHandler({
+      config: { scopes: { user: { foo: 'bar' } } },
+    });
+    assert.equal(result.success, false,
+      'legacy default-scope import with a "scopes" top-level key must fail loudly — would corrupt the nested tree');
+    assert.equal(result.shape, 'legacy');
+    assert.ok(
+      typeof result.error === 'string' && /scope/i.test(result.error),
+      `error message must mention scope; got: ${JSON.stringify(result)}`,
+    );
+
+    // Byte-exact: file unchanged.
+    const afterBytes = readFileSync(cfgPath(cwd));
+    assert.ok(beforeBytes.equals(afterBytes),
+      'legacy import-refusal must NOT write anything to disk (byte-exact comparison)');
+  });
+});

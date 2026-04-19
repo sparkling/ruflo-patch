@@ -65,3 +65,9 @@ test-results/
 # when only specific test-results/ artefacts are tracked:
 test-results/catalog.db
 test-results/catalog.db-*
+
+# RVF :memory: literal filename (safety net — fork rvf-backend.ts has
+# :memory: guards at every file-writing site, but a direct call bypassing
+# the backend wrapper could leave this artifact; see phase8-followups-plan.md
+# ITEM 2).
+:memory:
