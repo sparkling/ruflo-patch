@@ -463,7 +463,12 @@ export function run(argv) {
     }
     for (const b of BUCKETS) {
       const inBucket = filtered.filter(x => x.bucket === b);
-      if (inBucket.length === 0) continue;
+      // When --bucket <b> is explicitly requested, always print the header
+      // for that bucket — even if empty — so the caller gets a clear
+      // "bucket X has 0 entries" signal instead of silence. Without the
+      // explicit-request branch, empty buckets are skipped to keep the
+      // default dry-run output readable.
+      if (inBucket.length === 0 && args.bucket !== b) continue;
       console.log(`\n## ${b} (${inBucket.length})`);
       for (const row of inBucket) {
         console.log(`  ${row.check_id}  reason_hash:${row.reasonHash}`);
