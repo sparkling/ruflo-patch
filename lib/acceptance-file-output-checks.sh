@@ -196,8 +196,16 @@ check_adr0094_p7_swarm_agents() {
     _CHECK_OUTPUT="P7/swarm_agents: probe failure — none of swarm init/agent spawn/hive-mind spawn produced their expected sibling artifacts; cannot prove .swarm/agents.json is unreachable. Log: $(tail -5 "$probe_log" 2>/dev/null | tr '\n' ' ')"
     return
   fi
-  _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="SKIP_ACCEPTED: P7/swarm_agents: 3 producer probes (swarm init, agent spawn, hive-mind spawn) ran successfully — each created its real target (${evidence% }) but none wrote .swarm/agents.json. File is vestigial and runtime-verified unreachable."
+  # Negative-assertion PASS (ADR-0082 three-way bucket):
+  # - Prereq exercised: 3 CLI producers ran and created their own targets
+  #   (evidence above proves the probes actually executed, not silent-failed)
+  # - Assertion proved: `.swarm/agents.json` was NOT written by any of them
+  # This is the promised behavior — file is vestigial and stays unreachable.
+  # Upgrade from skip_accepted to true: the check invoked real code, verified
+  # the claim, and produced independent evidence. Keeping it as skip would
+  # double-count the file against ADR-0094's verified_coverage floor.
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="P7/swarm_agents: 3 producer probes (swarm init, agent spawn, hive-mind spawn) ran successfully — each created its real target (${evidence% }) but none wrote .swarm/agents.json. File is vestigial and runtime-verified unreachable."
 }
 
 # Check 3: .swarm/state.json — trigger lazy creation via `swarm init`

@@ -1079,9 +1079,20 @@ _b5_seed_causal_graph() {
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_causal-edge' --params '{\"sourceId\":\"b5-cgraph-src\",\"targetId\":\"b5-cgraph-tgt\",\"relation\":\"seeded caused\",\"weight\":0.8}' 2>&1" "$work/seed-cedge.out" 20
 }
 
-# graphAdapter: same MCP tool as causalGraph; graphAdapter is
-# enabled:false so this always router-fallbacks. Distinct seed keys
-# prevent cross-contamination on parallel runs.
+# graphAdapter: there is NO CLI MCP tool that dispatches to graphAdapter
+# (only `graph_store` exists, and it lives in agentic-flow's fastmcp
+# server, not ruflo's CLI). `agentdb_causal-edge` routes to causalGraph
+# — an orthogonal controller — via memory-router.routeCausalOp. The seed
+# therefore exercises a causal-edge write that lands in causalGraph's
+# store, not graphAdapter's. Additionally, controller-registry.ts:993
+# passes `enableGraph: config.controllers?.graphAdapter === true`, and
+# no init template / CLI config / memory-router code sets that flag —
+# so graphAdapter is not even constructed in a user-init'd project.
+# This check stays skip_accepted as a sentinel: if upstream ever ships
+# a dedicated graph-store MCP tool on the CLI surface (or sets
+# enableGraph:true by default), the probe's response shape will change
+# and the skip will need to be upgraded to a real roundtrip assertion.
+# Distinct seed keys prevent cross-contamination on parallel runs.
 _b5_seed_graph_adapter() {
   local iso="$1" cli="$2" work="$3"
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key b5-gadapt-src --value 'graph adapter seed source' --namespace graph 2>&1" "$work/seed-gsrc.out" 15
