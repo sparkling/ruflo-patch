@@ -1102,7 +1102,7 @@ _b5_seed_causal_graph() {
 _b5_seed_graph_adapter() {
   local iso="$1" cli="$2" work="$3"
   # Enable graphAdapter controller in the isolated project config.
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli config set controllers.graphAdapter true 2>&1" "$work/seed-gcfg.out" 15
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli config set --key controllers.graphAdapter --value true 2>&1" "$work/seed-gcfg.out" 15
   # Seed a node and edge via the new dedicated MCP tools.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_graph_node_create' --params '{\"id\":\"b5-gadapt-src\",\"label\":\"node\",\"properties\":{\"name\":\"src\"}}' 2>&1" "$work/seed-gnode.out" 20
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_graph_edge_create' --params '{\"from\":\"b5-gadapt-src\",\"to\":\"b5-gadapt-tgt\",\"type\":\"seeded-graph-edge\"}' 2>&1" "$work/seed-gedge.out" 20
