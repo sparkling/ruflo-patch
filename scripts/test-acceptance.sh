@@ -468,6 +468,22 @@ phase8_lib="${PROJECT_DIR}/lib/acceptance-phase8-invariants.sh"
 phase9_lib="${PROJECT_DIR}/lib/acceptance-phase9-concurrency.sh"
 [[ -f "$phase9_lib" ]] && source "$phase9_lib"
 
+# ADR-0094 Phase 10: Idempotency (memory/session/config/init, 4 checks, ≤10s)
+phase10_lib="${PROJECT_DIR}/lib/acceptance-phase10-idempotency.sh"
+[[ -f "$phase10_lib" ]] && source "$phase10_lib"
+
+# ADR-0094 Phase 11: Input fuzzing (8 classes × 2 reps, sampled)
+phase11_lib="${PROJECT_DIR}/lib/acceptance-phase11-fuzzing.sh"
+[[ -f "$phase11_lib" ]] && source "$phase11_lib"
+
+# ADR-0094 Phase 12: Error message quality (8 classes × 2 reps)
+phase12_lib="${PROJECT_DIR}/lib/acceptance-phase12-error-quality.sh"
+[[ -f "$phase12_lib" ]] && source "$phase12_lib"
+
+# ADR-0094 Phase 13: Migration backstop (vN fixture → vN+1 read, 6 checks)
+phase13_lib="${PROJECT_DIR}/lib/acceptance-phase13-migration.sh"
+[[ -f "$phase13_lib" ]] && source "$phase13_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1069,6 +1085,80 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase9_lib" ]]; then
   run_check_bg "p9-workflow-one" "P9 workflow exactly-one-created (4 racers)" check_adr0094_p9_workflow_concurrent_start "adr0094-p9"
 fi
 
+# ADR-0094 Phase 10: Idempotency (4 checks, ≤10s wall-clock).
+# Each uses _with_iso_cleanup. f(x); f(x) ≡ f(x) — no dup rows, no drift,
+# no silent overwrite on re-init.
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase10_lib" ]]; then
+  run_check_bg "p10-mem-same-key"      "P10 memory_store same key idempotent"  check_adr0094_p10_memory_store_same_key    "adr0094-p10"
+  run_check_bg "p10-sess-same-name"    "P10 session_save same name idempotent" check_adr0094_p10_session_save_same_name   "adr0094-p10"
+  run_check_bg "p10-cfg-same-key"      "P10 config_set same key idempotent"    check_adr0094_p10_config_set_same_key      "adr0094-p10"
+  run_check_bg "p10-init-reinvoke"     "P10 init --full reinvoke idempotent"   check_adr0094_p10_init_full_reinvoke       "adr0094-p10"
+fi
+
+# ADR-0094 Phase 11: Input fuzzing (16 checks = 8 classes × 2 reps, ≤30s wall-clock).
+# Each uses _with_iso_cleanup for per-check isolation. Verifies malformed inputs
+# produce a loud rejection (ADR-0082) — not error-message quality (that is P12).
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase11_lib" ]]; then
+  run_check_bg "p11-fuzz-memory-type"      "P11 memory_store type-mismatch"       check_adr0094_p11_fuzz_memory_type_mismatch    "adr0094-p11"
+  run_check_bg "p11-fuzz-memory-bdy"       "P11 memory_store boundary"            check_adr0094_p11_fuzz_memory_boundary         "adr0094-p11"
+  run_check_bg "p11-fuzz-session-type"     "P11 session_save type-mismatch"       check_adr0094_p11_fuzz_session_type_mismatch   "adr0094-p11"
+  run_check_bg "p11-fuzz-session-bdy"      "P11 session_save boundary"            check_adr0094_p11_fuzz_session_boundary        "adr0094-p11"
+  run_check_bg "p11-fuzz-agent-type"       "P11 agent_spawn type-mismatch"        check_adr0094_p11_fuzz_agent_type_mismatch     "adr0094-p11"
+  run_check_bg "p11-fuzz-agent-bdy"        "P11 agent_spawn boundary"             check_adr0094_p11_fuzz_agent_boundary          "adr0094-p11"
+  run_check_bg "p11-fuzz-claims-type"      "P11 claims_claim type-mismatch"       check_adr0094_p11_fuzz_claims_type_mismatch    "adr0094-p11"
+  run_check_bg "p11-fuzz-claims-bdy"       "P11 claims_claim boundary(10KB)"      check_adr0094_p11_fuzz_claims_boundary         "adr0094-p11"
+  run_check_bg "p11-fuzz-workflow-type"    "P11 workflow_create type-mismatch"    check_adr0094_p11_fuzz_workflow_type_mismatch  "adr0094-p11"
+  run_check_bg "p11-fuzz-workflow-bdy"     "P11 workflow_create boundary"         check_adr0094_p11_fuzz_workflow_boundary       "adr0094-p11"
+  run_check_bg "p11-fuzz-config-type"      "P11 config_set type-mismatch"         check_adr0094_p11_fuzz_config_type_mismatch    "adr0094-p11"
+  run_check_bg "p11-fuzz-config-bdy"       "P11 config_set boundary"              check_adr0094_p11_fuzz_config_boundary         "adr0094-p11"
+  run_check_bg "p11-fuzz-neural-type"      "P11 neural_train type-mismatch"       check_adr0094_p11_fuzz_neural_type_mismatch    "adr0094-p11"
+  run_check_bg "p11-fuzz-neural-bdy"       "P11 neural_train boundary"            check_adr0094_p11_fuzz_neural_boundary         "adr0094-p11"
+  run_check_bg "p11-fuzz-autopilot-type"   "P11 autopilot_enable type-mismatch"   check_adr0094_p11_fuzz_autopilot_type_mismatch "adr0094-p11"
+  run_check_bg "p11-fuzz-autopilot-bdy"    "P11 autopilot_enable boundary"        check_adr0094_p11_fuzz_autopilot_boundary      "adr0094-p11"
+fi
+
+# ADR-0094 Phase 12: Error message quality (16 checks = 8 classes × 2 reps).
+# Each uses _with_iso_cleanup for per-check isolation. Stricter than P11:
+# errors must name the offending field AND carry a structural hint word.
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase12_lib" ]]; then
+  run_check_bg "p12-qual-memory-missing"    "P12 memory_store missing field"        check_adr0094_p12_quality_memory_missing       "adr0094-p12"
+  run_check_bg "p12-qual-memory-wtype"      "P12 memory_store wrong type"           check_adr0094_p12_quality_memory_wrong_type    "adr0094-p12"
+  run_check_bg "p12-qual-session-missing"   "P12 session_save missing field"        check_adr0094_p12_quality_session_missing      "adr0094-p12"
+  run_check_bg "p12-qual-session-wtype"     "P12 session_save wrong type"           check_adr0094_p12_quality_session_wrong_type   "adr0094-p12"
+  run_check_bg "p12-qual-agent-missing"     "P12 agent_spawn missing field"         check_adr0094_p12_quality_agent_missing        "adr0094-p12"
+  run_check_bg "p12-qual-agent-wtype"       "P12 agent_spawn wrong type"            check_adr0094_p12_quality_agent_wrong_type     "adr0094-p12"
+  run_check_bg "p12-qual-claims-missing"    "P12 claims_claim missing field"        check_adr0094_p12_quality_claims_missing       "adr0094-p12"
+  run_check_bg "p12-qual-claims-wtype"      "P12 claims_claim wrong type"           check_adr0094_p12_quality_claims_wrong_type    "adr0094-p12"
+  run_check_bg "p12-qual-workflow-missing"  "P12 workflow_create missing field"     check_adr0094_p12_quality_workflow_missing     "adr0094-p12"
+  run_check_bg "p12-qual-workflow-wtype"    "P12 workflow_create wrong type"        check_adr0094_p12_quality_workflow_wrong_type  "adr0094-p12"
+  run_check_bg "p12-qual-config-missing"    "P12 config_set missing field"          check_adr0094_p12_quality_config_missing       "adr0094-p12"
+  run_check_bg "p12-qual-config-wtype"      "P12 config_set wrong type"             check_adr0094_p12_quality_config_wrong_type    "adr0094-p12"
+  run_check_bg "p12-qual-neural-missing"    "P12 neural_train missing field"        check_adr0094_p12_quality_neural_missing       "adr0094-p12"
+  run_check_bg "p12-qual-neural-wtype"      "P12 neural_train wrong type"           check_adr0094_p12_quality_neural_wrong_type    "adr0094-p12"
+  run_check_bg "p12-qual-autopilot-missing" "P12 autopilot_enable missing field"    check_adr0094_p12_quality_autopilot_missing    "adr0094-p12"
+  run_check_bg "p12-qual-autopilot-wtype"   "P12 autopilot_enable wrong type"       check_adr0094_p12_quality_autopilot_wrong_type "adr0094-p12"
+fi
+
+# ADR-0094 Phase 13: Migration backstop (6 checks — vN fixture → vN+1 read).
+# Each uses _with_iso_cleanup + loads a hand-crafted text fixture from
+# tests/fixtures/adr0094-phase13/ and asserts the current reader neither
+# panics on schema drift nor silently resets. First-pass scope: forward-
+# compat + backward-compat on JSON surfaces only (no RVF/SQLite fixtures).
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase13_lib" ]]; then
+  run_check_bg "p13-mig-cfg-v1-read"     "P13 migration v1-config read"                   check_adr0094_p13_migration_config_v1_read                   "adr0094-p13"
+  run_check_bg "p13-mig-cfg-v1-tele"     "P13 migration v1-config telemetry"              check_adr0094_p13_migration_config_v1_telemetry              "adr0094-p13"
+  run_check_bg "p13-mig-store-v1-list"   "P13 migration v1-store session_list"            check_adr0094_p13_migration_store_v1_session_list            "adr0094-p13"
+  run_check_bg "p13-mig-fwd-unknown"     "P13 migration forward-compat unknown key"       check_adr0094_p13_migration_forward_compat_unknown_key       "adr0094-p13"
+  run_check_bg "p13-mig-bwd-missing"     "P13 migration backward-compat missing optional" check_adr0094_p13_migration_backward_compat_missing_optional "adr0094-p13"
+  run_check_bg "p13-mig-no-panic"        "P13 migration no schema panic (4 fixtures)"     check_adr0094_p13_migration_no_schema_panic                  "adr0094-p13"
+  # Phase 13.1 — real RVF binary fixtures seeded via scripts/seed-phase13-1-fixtures.sh
+  run_check_bg "p13-rvf-retrieve"        "P13.1 migration v1-rvf retrieve"                check_adr0094_p13_migration_rvf_v1_retrieve                  "adr0094-p13"
+  run_check_bg "p13-rvf-search"          "P13.1 migration v1-rvf search"                  check_adr0094_p13_migration_rvf_v1_search                    "adr0094-p13"
+  # Phase 13.2 — real AgentDB SQLite fixture seeded via scripts/seed-phase13-2-fixtures.sh
+  run_check_bg "p13-agentdb-skill"       "P13.2 migration v1-agentdb skill_search"         check_adr0094_p13_migration_agentdb_v1_skill_search          "adr0094-p13"
+  run_check_bg "p13-agentdb-reflexion"   "P13.2 migration v1-agentdb reflexion_retrieve"   check_adr0094_p13_migration_agentdb_v1_reflexion_retrieve    "adr0094-p13"
+fi
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1323,6 +1413,76 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase9_lib" ]]; then
     "p9-claims-winner|P9 claims exactly-one-winner (6 racers)"
     "p9-session-noint|P9 session no interleave (2 writers)"
     "p9-workflow-one|P9 workflow exactly-one-created (4 racers)"
+  )
+fi
+
+_p10_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase10_lib" ]]; then
+  _p10_specs=(
+    "p10-mem-same-key|P10 memory_store same key idempotent"
+    "p10-sess-same-name|P10 session_save same name idempotent"
+    "p10-cfg-same-key|P10 config_set same key idempotent"
+    "p10-init-reinvoke|P10 init --full reinvoke idempotent"
+  )
+fi
+
+_p11_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase11_lib" ]]; then
+  _p11_specs=(
+    "p11-fuzz-memory-type|P11 memory_store type-mismatch"
+    "p11-fuzz-memory-bdy|P11 memory_store boundary"
+    "p11-fuzz-session-type|P11 session_save type-mismatch"
+    "p11-fuzz-session-bdy|P11 session_save boundary"
+    "p11-fuzz-agent-type|P11 agent_spawn type-mismatch"
+    "p11-fuzz-agent-bdy|P11 agent_spawn boundary"
+    "p11-fuzz-claims-type|P11 claims_claim type-mismatch"
+    "p11-fuzz-claims-bdy|P11 claims_claim boundary(10KB)"
+    "p11-fuzz-workflow-type|P11 workflow_create type-mismatch"
+    "p11-fuzz-workflow-bdy|P11 workflow_create boundary"
+    "p11-fuzz-config-type|P11 config_set type-mismatch"
+    "p11-fuzz-config-bdy|P11 config_set boundary"
+    "p11-fuzz-neural-type|P11 neural_train type-mismatch"
+    "p11-fuzz-neural-bdy|P11 neural_train boundary"
+    "p11-fuzz-autopilot-type|P11 autopilot_enable type-mismatch"
+    "p11-fuzz-autopilot-bdy|P11 autopilot_enable boundary"
+  )
+fi
+
+_p12_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase12_lib" ]]; then
+  _p12_specs=(
+    "p12-qual-memory-missing|P12 memory_store missing field"
+    "p12-qual-memory-wtype|P12 memory_store wrong type"
+    "p12-qual-session-missing|P12 session_save missing field"
+    "p12-qual-session-wtype|P12 session_save wrong type"
+    "p12-qual-agent-missing|P12 agent_spawn missing field"
+    "p12-qual-agent-wtype|P12 agent_spawn wrong type"
+    "p12-qual-claims-missing|P12 claims_claim missing field"
+    "p12-qual-claims-wtype|P12 claims_claim wrong type"
+    "p12-qual-workflow-missing|P12 workflow_create missing field"
+    "p12-qual-workflow-wtype|P12 workflow_create wrong type"
+    "p12-qual-config-missing|P12 config_set missing field"
+    "p12-qual-config-wtype|P12 config_set wrong type"
+    "p12-qual-neural-missing|P12 neural_train missing field"
+    "p12-qual-neural-wtype|P12 neural_train wrong type"
+    "p12-qual-autopilot-missing|P12 autopilot_enable missing field"
+    "p12-qual-autopilot-wtype|P12 autopilot_enable wrong type"
+  )
+fi
+
+_p13_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase13_lib" ]]; then
+  _p13_specs=(
+    "p13-mig-cfg-v1-read|P13 migration v1-config read"
+    "p13-mig-cfg-v1-tele|P13 migration v1-config telemetry"
+    "p13-mig-store-v1-list|P13 migration v1-store session_list"
+    "p13-mig-fwd-unknown|P13 migration forward-compat unknown key"
+    "p13-mig-bwd-missing|P13 migration backward-compat missing optional"
+    "p13-mig-no-panic|P13 migration no schema panic (4 fixtures)"
+    "p13-rvf-retrieve|P13.1 migration v1-rvf retrieve"
+    "p13-rvf-search|P13.1 migration v1-rvf search"
+    "p13-agentdb-skill|P13.2 migration v1-agentdb skill_search"
+    "p13-agentdb-reflexion|P13.2 migration v1-agentdb reflexion_retrieve"
   )
 fi
 
@@ -1652,6 +1812,10 @@ collect_parallel "all" \
   "p7-cli-doctor-npm|W4-A3: doctor npm no-false-fail" \
   "${_p8_specs[@]}" \
   "${_p9_specs[@]}" \
+  "${_p10_specs[@]}" \
+  "${_p11_specs[@]}" \
+  "${_p12_specs[@]}" \
+  "${_p13_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

@@ -270,6 +270,16 @@ if [[ "$_FAST_RUN_GROUPS" == *"p9"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"p10"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase10-idempotency.sh" ]]; then
+    echo "── Phase 10: Idempotency (ADR-0094) ──"
+    _fast_run "p10-mem-same-key"   check_adr0094_p10_memory_store_same_key
+    _fast_run "p10-sess-same-name" check_adr0094_p10_session_save_same_name
+    _fast_run "p10-cfg-same-key"   check_adr0094_p10_config_set_same_key
+    _fast_run "p10-init-reinvoke"  check_adr0094_p10_init_full_reinvoke
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"e2e-storage"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   echo "── E2E Storage Pipeline ──"
   _fast_run "store-rvf"       check_e2e_store_creates_rvf
