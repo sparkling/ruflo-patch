@@ -6,6 +6,60 @@
 
 ---
 
+## 2026-04-20 — ADR-0094 → Implemented; ADR-0095 → Implemented; ADR-0088 amendment landed
+
+Closing-state audit for the 100% Acceptance Coverage program.
+
+**Verification (three consecutive full-acceptance runs):**
+
+| Date (UTC) | run_id | total | pass | fail | skip | wall |
+|---|---|---|---|---|---|---|
+| 2026-04-19 10:45 | accept-2026-04-19T104431Z | 472 | 472 | 0 | 0 | 116s |
+| 2026-04-19 12:46 | accept-2026-04-19T124437Z | 472 | 472 | 0 | 0 | 142s |
+| 2026-04-20 10:43 | (post ADR-0088 rebuild)    | 472 | 472 | 0 | 0 | 119s |
+
+Acceptance Criteria (from ADR-0094 §Acceptance criteria) — all satisfied:
+- `fail_count == 0` ✓
+- `invoked_coverage == 100%` ✓
+- `verified_coverage >= 80%` ✓ (100% — zero skip_accepted remaining)
+- `skip_streak_days_max < 30` ✓ (no stale skips; all former skips promoted to PASS or had checks retargeted)
+- `wall_clock_seconds < 300` ✓ (longest observed 142s, comfortably under)
+- preflight drift-detection passes ✓
+- referenced follow-up ADRs `Implemented` or `Archived` ✓:
+  - ADR-0095 → Implemented today (see below)
+  - ADR-0096 (catalog + skip hygiene) → Implemented (catalog.db populated, skip-reverify operational)
+  - ADR-0097 (check-code quality) → active but not a gate
+  - ADR-0087 addendum (out-of-scope probes) → resolved 2026-04-19 — harness `_mcp_invoke_tool` spawns a fresh `$cli mcp exec` per call, so every Phase-8 step is already inter-process
+
+**ADR-0095 closure (BUG-0008 discharged):**
+
+Sprint 1–1.5 shipped a+b+c+d1+d2+d3+d4+d5+d6+d8+d10+d11 (12 items). The residual Mode-A silent loss observed 2026-04-19 under the mega-parallel acceptance wave (entryCount=5/6) was closed by d11 — explicit `fsync` on the tmp file before `rename` in `rvf-backend.ts persistToDiskInner`. Root cause: `writeFile`+`rename` under APFS concurrent I/O left data blocks in the VFS page cache past the atomic directory-entry update, letting peer readers observe a stale `.meta`. `fsync` collapses that window. t3-2-concurrent has now passed in 3/3 consecutive full-acceptance runs. BUG-0008 closed in coverage-ledger.
+
+**ADR-0088 amendment (unrelated but closing today):**
+
+`claudeCliAvailable()` capability gate removed — init now wires daemon-start unconditionally; the `|| true` trailer on the hook command is the honest runtime capability gate. Paired acceptance check `check_adr0088_conditional_init_no_claude` inverted to assert "no claude → daemon-start STILL wired" (Amendment 2026-04-20). Unit test `adr0088-init-conditional-wiring.test.mjs` rewritten to assert the helper/guard/import are GONE (11/11 pass). Acceptance harness now explicitly starts the daemon (via `cli daemon start --quiet`) and installs a pre-start orphan reaper + EXIT/INT/TERM/HUP teardown trap; this closes the previous `socket-exists` / `ipc-probe` `skip_accepted` entries (fast runner 78/78 pass, was 76/78).
+
+**Fork commits landing today's closure:**
+- ruflo `d1789de36` — remove `claudeCliAvailable()` capability gate
+- ruflo (earlier) `571388979` — d11 fsync-before-rename (closed BUG-0008)
+- (ongoing) assorted agentdb / ruvector commits from 2026-04-19 closing the b5-* checks
+
+**Patch-repo commits:**
+- `6f3d49e` — daemon start+teardown in harnesses
+- `0932bb0` — ADR-0088 amendment text
+- `934b595` — paired checks + unit test rewrite for amendment
+
+**What this closes for the program:** ADR-0094 transitions from *In Implementation* → *Implemented* today. ADR-0095 transitions from *Accepted* → *Implemented*. The coverage program's "continuous catalog + skip hygiene" side of the work (ADR-0096) continues indefinitely — new MCP tools and new surface areas will keep creating new coverage rows forever. But the *program* of reaching 100% on the current surface is complete.
+
+**What comes next (not in this ADR):**
+- Fork commits need `git push sparkling` to be visible cross-machine
+- Any new Phase 11–17 backlog items are orthogonal; unlocked by the 300s budget headroom each full run leaves
+- The existing `skip_streak_days > 30 → SKIP_ROT` gate stays armed as the continuous regression check
+
+Cross-links: ADR-0082 (no silent fallbacks — foundation), ADR-0086 (RVF primary backend — the persistence medium), ADR-0087 addendum (out-of-scope probes — resolved by harness subprocess model), ADR-0088 (daemon scope — amended today), ADR-0090 (coverage audit baseline), ADR-0095 (RVF inter-process convergence — Implemented today), ADR-0096 (coverage catalog), BUG-0008 (coverage-ledger — closed).
+
+---
+
 ## 2026-04-19 (second pass) — Phase 8 INV-12 added (memory round-trip restored) + loadRelatedStores fork fix + ADR-0087 addendum deferral reversed
 
 Follow-up to the morning's Phase 8 remediation entry below. Three things landed:

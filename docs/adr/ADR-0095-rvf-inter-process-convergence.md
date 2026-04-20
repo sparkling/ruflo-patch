@@ -1,7 +1,7 @@
 # ADR-0095: RVF Inter-Process Write Convergence
 
-- **Status**: Accepted — Amended 2026-04-18
-- **Date**: 2026-04-17 (authored), 2026-04-17 (amended after Sprint-1 investigation), 2026-04-18 (amended after Sprint-1.2 Pass-2 investigation — items d1+d2 appended)
+- **Status**: **Implemented** (2026-04-20) — all of items a+b+c+d1+d2+d3+d4+d5+d6+d8+d10+d11 landed; t3-2-concurrent passes deterministically in full acceptance across three consecutive runs (2026-04-19 10:45Z, 2026-04-19 12:46Z, 2026-04-20 10:43Z). BUG-0008 closed.
+- **Date**: 2026-04-17 (authored), 2026-04-17 (amended after Sprint-1 investigation), 2026-04-18 (amended after Sprint-1.2 Pass-2 investigation — items d1+d2 appended), **2026-04-20 (Implemented — d11 fsync-before-rename closed the mega-parallel silent-loss tail)**
 - **Scope**: `v3/@claude-flow/memory/src/rvf-backend.ts` — `tryNativeInit` (line 605), `persistToDiskInner` (line 1384 — specifically the shared-tmp-path at line 1450), backend construction call sites (MemoryManager + controller registry). `mergePeerStateBeforePersist` is explicitly **out of scope** for this ADR — the shipped implementation (lines 1298–1382) already does what the original §Decision proposed.
 - **Forked from**: ADR-0094 Open Item #1
 - **Related**: ADR-0086 (Storage Layer), ADR-0090 B7 (in-process multi-writer fix), ADR-0092 (native/pure-TS coexistence), ADR-0082 (no silent fallbacks), ADR-0088 (no daemon in CLI hot path), BUG-0008 (ledger)

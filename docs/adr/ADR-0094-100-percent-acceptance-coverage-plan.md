@@ -1,7 +1,7 @@
 # ADR-0094: 100% Acceptance Test Coverage Plan
 
-- **Status**: In Implementation — Phases 1–7 wired; remediation pass 1 complete (2026-04-17). **Cannot advance to `Implemented`** until ADR-0095 closes BUG-0008 (t3-2 inter-process convergence).
-- **Date**: 2026-04-17
+- **Status**: **Implemented** (2026-04-20). All §Acceptance criteria met: full acceptance 472/472 pass, 0 fail, 0 skip_accepted; fast runner 78/78 pass; unit cascade 3059/3092 pass, 0 fail; wall-clock < 300s. ADR-0095's BUG-0008 (t3-2 inter-process convergence) closed by fork commit `571388979` (d11 fsync-before-rename) confirmed across three consecutive full-acceptance runs 2026-04-19 / 2026-04-20. See `ADR-0094-log.md` 2026-04-20 entry for the closure audit.
+- **Date**: 2026-04-17 (authored), **2026-04-20 (Implemented)**
 - **Scope**: `ruflo-patch/lib/acceptance-*.sh`, `scripts/test-acceptance.sh`, `tests/unit/`, `config/mcp-surface-manifest.json`
 - **Role**: **Decision snapshot**, not a living tracker. Volatile state extracted to:
   - Implementation Log → `docs/adr/ADR-0094-log.md`
