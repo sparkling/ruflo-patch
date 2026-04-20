@@ -484,6 +484,14 @@ phase12_lib="${PROJECT_DIR}/lib/acceptance-phase12-error-quality.sh"
 phase13_lib="${PROJECT_DIR}/lib/acceptance-phase13-migration.sh"
 [[ -f "$phase13_lib" ]] && source "$phase13_lib"
 
+# ADR-0094 Phase 14: Performance SLO per tool class (8 checks, budget-bound wall-clock)
+phase14_lib="${PROJECT_DIR}/lib/acceptance-phase14-slo.sh"
+[[ -f "$phase14_lib" ]] && source "$phase14_lib"
+
+# ADR-0094 Phase 15: Flakiness characterization (6 checks, serial-repetition determinism)
+phase15_lib="${PROJECT_DIR}/lib/acceptance-phase15-flakiness.sh"
+[[ -f "$phase15_lib" ]] && source "$phase15_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1159,6 +1167,36 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase13_lib" ]]; then
   run_check_bg "p13-agentdb-reflexion"   "P13.2 migration v1-agentdb reflexion_retrieve"   check_adr0094_p13_migration_agentdb_v1_reflexion_retrieve    "adr0094-p13"
 fi
 
+# ADR-0094 Phase 14: Performance SLO per tool class. Each check runs one MCP
+# tool invocation and asserts elapsed wall-clock ≤ per-class budget. FAIL on
+# SLO-exceeded, FAIL on tool error (non-skip), FAIL on empty body (ADR-0082
+# silent-pass canary), SKIP_ACCEPTED on tool-not-found, PASS otherwise.
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase14_lib" ]]; then
+  run_check_bg "p14-slo-memory-store"    "P14 memory_store SLO (10s)"            check_adr0094_p14_slo_memory_store      "adr0094-p14"
+  run_check_bg "p14-slo-session-save"    "P14 session_save SLO (10s)"            check_adr0094_p14_slo_session_save      "adr0094-p14"
+  run_check_bg "p14-slo-agent-list"      "P14 agent_list SLO (15s)"              check_adr0094_p14_slo_agent_list        "adr0094-p14"
+  run_check_bg "p14-slo-claims-board"    "P14 claims_board SLO (10s)"            check_adr0094_p14_slo_claims_board      "adr0094-p14"
+  run_check_bg "p14-slo-workflow-list"   "P14 workflow_list SLO (10s)"           check_adr0094_p14_slo_workflow_list     "adr0094-p14"
+  run_check_bg "p14-slo-config-get"      "P14 config_get SLO (10s)"              check_adr0094_p14_slo_config_get        "adr0094-p14"
+  run_check_bg "p14-slo-neural-status"   "P14 neural_status SLO (15s)"           check_adr0094_p14_slo_neural_status     "adr0094-p14"
+  run_check_bg "p14-slo-autopilot-stat"  "P14 autopilot_status SLO (10s)"        check_adr0094_p14_slo_autopilot_status  "adr0094-p14"
+fi
+
+# ADR-0094 Phase 15: Flakiness characterization. Each check invokes one MCP
+# tool three times serially with identical input and asserts all three
+# responses map to the same coarse shape class. FAIL on divergence (truly
+# flaky), FAIL on all-empty (ADR-0082 canary), FAIL on all-error,
+# SKIP_ACCEPTED on tool-not-found, PASS on deterministic success OR
+# deterministic failure.
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
+  run_check_bg "p15-flaky-memory-search"   "P15 memory_search determinism (3x)"   check_adr0094_p15_flaky_memory_search   "adr0094-p15"
+  run_check_bg "p15-flaky-agent-list"      "P15 agent_list determinism (3x)"      check_adr0094_p15_flaky_agent_list      "adr0094-p15"
+  run_check_bg "p15-flaky-config-get"      "P15 config_get determinism (3x)"      check_adr0094_p15_flaky_config_get      "adr0094-p15"
+  run_check_bg "p15-flaky-claims-board"    "P15 claims_board determinism (3x)"    check_adr0094_p15_flaky_claims_board    "adr0094-p15"
+  run_check_bg "p15-flaky-workflow-list"   "P15 workflow_list determinism (3x)"   check_adr0094_p15_flaky_workflow_list   "adr0094-p15"
+  run_check_bg "p15-flaky-session-list"    "P15 session_list determinism (3x)"    check_adr0094_p15_flaky_session_list    "adr0094-p15"
+fi
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1483,6 +1521,32 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase13_lib" ]]; then
     "p13-rvf-search|P13.1 migration v1-rvf search"
     "p13-agentdb-skill|P13.2 migration v1-agentdb skill_search"
     "p13-agentdb-reflexion|P13.2 migration v1-agentdb reflexion_retrieve"
+  )
+fi
+
+_p14_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase14_lib" ]]; then
+  _p14_specs=(
+    "p14-slo-memory-store|P14 memory_store SLO (10s)"
+    "p14-slo-session-save|P14 session_save SLO (10s)"
+    "p14-slo-agent-list|P14 agent_list SLO (15s)"
+    "p14-slo-claims-board|P14 claims_board SLO (10s)"
+    "p14-slo-workflow-list|P14 workflow_list SLO (10s)"
+    "p14-slo-config-get|P14 config_get SLO (10s)"
+    "p14-slo-neural-status|P14 neural_status SLO (15s)"
+    "p14-slo-autopilot-stat|P14 autopilot_status SLO (10s)"
+  )
+fi
+
+_p15_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
+  _p15_specs=(
+    "p15-flaky-memory-search|P15 memory_search determinism (3x)"
+    "p15-flaky-agent-list|P15 agent_list determinism (3x)"
+    "p15-flaky-config-get|P15 config_get determinism (3x)"
+    "p15-flaky-claims-board|P15 claims_board determinism (3x)"
+    "p15-flaky-workflow-list|P15 workflow_list determinism (3x)"
+    "p15-flaky-session-list|P15 session_list determinism (3x)"
   )
 fi
 
@@ -1816,6 +1880,8 @@ collect_parallel "all" \
   "${_p11_specs[@]}" \
   "${_p12_specs[@]}" \
   "${_p13_specs[@]}" \
+  "${_p14_specs[@]}" \
+  "${_p15_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
