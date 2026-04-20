@@ -132,12 +132,15 @@ check_adr0088_status_output() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0088-3: init without claude on PATH → no daemon-start SessionStart
+# ADR-0088-3: init without claude on PATH → daemon-start IS STILL wired
 #
-# ADR-0088 §Decision item 8: capability-gated wiring. Without `claude`
-# on PATH, `init --full` must NOT append the daemon-start hook. We run
-# init inside an isolated sandbox with PATH stripped of claude-style
-# binaries and parse .claude/settings.json.
+# ADR-0088 Amendment 2026-04-20: the original capability gate was removed.
+# Init now wires the daemon-start SessionStart hook unconditionally — the
+# command's `|| true` trailer is the honest runtime capability gate.
+# Rationale: the init-time `which claude` probe result rots — users
+# installing Claude Code after init would silently miss the wiring.
+# We re-run init in a sandbox with a stripped PATH (no claude) and assert
+# the daemon-start hook IS present.
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0088_conditional_init_no_claude() {
@@ -205,10 +208,6 @@ check_adr0088_conditional_init_no_claude() {
 
   rm -rf "$iso" 2>/dev/null
 
-  if [[ "$check_out" == HAS_DAEMON_START:* ]]; then
-    _CHECK_OUTPUT="ADR-0088-3: daemon-start wired despite no claude on PATH — ${check_out#HAS_DAEMON_START:}"
-    return
-  fi
   if [[ "$check_out" == NO_SESSIONSTART ]]; then
     _CHECK_OUTPUT="ADR-0088-3: settings.json has no SessionStart section — init is broken, not just this ADR"
     return
@@ -217,9 +216,21 @@ check_adr0088_conditional_init_no_claude() {
     _CHECK_OUTPUT="ADR-0088-3: settings.json parse failed: ${check_out#NODE_ERROR:}"
     return
   fi
+  if [[ "$check_out" == NO_DAEMON_START:* ]]; then
+    # Amendment 2026-04-20: this is now a FAIL. Pre-amendment this was the
+    # pass condition, but after removing the capability gate the daemon-start
+    # hook must be wired unconditionally.
+    _CHECK_OUTPUT="ADR-0088-3: daemon-start NOT wired despite amendment mandating unconditional wiring — ${check_out#NO_DAEMON_START:}"
+    return
+  fi
 
-  _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0088-3: init without claude on PATH does NOT wire daemon-start (${check_out})"
+  if [[ "$check_out" == HAS_DAEMON_START:* ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0088-3: init without claude on PATH still wires daemon-start (Amendment 2026-04-20) — ${check_out#HAS_DAEMON_START:}"
+    return
+  fi
+
+  _CHECK_OUTPUT="ADR-0088-3: unexpected settings.json shape: ${check_out}"
 }
 
 # ════════════════════════════════════════════════════════════════════

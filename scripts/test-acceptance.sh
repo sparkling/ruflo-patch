@@ -815,8 +815,8 @@ fi
 if [[ -f "$adr0088_lib" ]]; then
   run_check_bg "adr0088-no-ipc"      "No DaemonIPCClient (ADR-0088)"            check_adr0088_no_ipc_client             "adr0088"
   run_check_bg "adr0088-status"      "daemon status AI Mode (ADR-0088)"         check_adr0088_status_output             "adr0088"
-  run_check_bg "adr0088-init-no"     "Init no-claude no daemon (ADR-0088)"      check_adr0088_conditional_init_no_claude "adr0088"
-  run_check_bg "adr0088-init-yes"    "Init with-claude wires daemon (ADR-0088)" check_adr0088_conditional_init_with_claude "adr0088"
+  run_check_bg "adr0088-init-no"     "Init no-claude STILL wires daemon (ADR-0088 A2026-04-20)" check_adr0088_conditional_init_no_claude "adr0088"
+  run_check_bg "adr0088-init-yes"    "Init with-claude wires daemon (ADR-0088)"               check_adr0088_conditional_init_with_claude "adr0088"
   run_check_bg "adr0088-daemon-ok"   "Daemon still works local (ADR-0088)"      check_adr0088_daemon_still_works        "adr0088"
 fi
 
@@ -1500,7 +1500,7 @@ collect_parallel "all" \
   "adr0086-debt15|Debt 15 SQLite neural path (ADR-0086)" \
   "adr0088-no-ipc|No DaemonIPCClient (ADR-0088)" \
   "adr0088-status|daemon status AI Mode (ADR-0088)" \
-  "adr0088-init-no|Init no-claude no daemon (ADR-0088)" \
+  "adr0088-init-no|Init no-claude STILL wires daemon (ADR-0088 A2026-04-20)" \
   "adr0088-init-yes|Init with-claude wires daemon (ADR-0088)" \
   "adr0088-daemon-ok|Daemon still works local (ADR-0088)" \
   "adr0089-shipped|Intercept pool shipped (ADR-0089)" \
