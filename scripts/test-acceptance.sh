@@ -299,6 +299,53 @@ cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
 rm -rf "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
 log "  e2e snapshot: $(du -sh "$E2E_DIR" 2>/dev/null | cut -f1) (taken before non-e2e wave)"
 
+# ────────────────────────────────────────────────────────────────────
+# Daemon lifecycle: start the background worker daemon that the
+# SessionStart hook would normally start (but bash acceptance never
+# fires SessionStart). Lets `socket-exists` / `ipc-probe` checks run
+# against a live socket instead of skip_accepted.
+#
+# Layer 1 (shutdown): cleanup() at line ~113 already kills the
+# daemon via PID file on any exit path — EXIT / INT / TERM.
+# Layer 2 (pre-start reap): kill any stale PID from a prior run that
+# used the same E2E_DIR (shouldn't happen with mktemp -d, but safe
+# if the harness is re-entered with REUSE_E2E=1 etc.).
+# ────────────────────────────────────────────────────────────────────
+_reap_stale_daemon() {
+  local _d="$1"
+  local _pid_file="${_d}/.claude-flow/daemon.pid"
+  [[ ! -f "$_pid_file" ]] && return
+  local _stale_pid
+  _stale_pid=$(cat "$_pid_file" 2>/dev/null) || return
+  if [[ -n "$_stale_pid" ]] && kill -0 "$_stale_pid" 2>/dev/null; then
+    # PID-recycle protection: only kill if args match 'cli ... daemon'
+    if ps -p "$_stale_pid" -o args= 2>/dev/null | grep -q 'cli.*daemon'; then
+      log "  reaping stale daemon PID $_stale_pid in $_d"
+      kill -TERM "$_stale_pid" 2>/dev/null || true
+      sleep 0.5
+      kill -0 "$_stale_pid" 2>/dev/null && kill -KILL "$_stale_pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$_pid_file" "${_d}/.claude-flow/daemon.sock" 2>/dev/null || true
+}
+
+_start_harness_daemon() {
+  local _d="$1"
+  _reap_stale_daemon "$_d"
+  # Fire in background — daemon start --foreground blocks; --quiet suppresses banner.
+  (cd "$_d" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" daemon start --quiet >/dev/null 2>&1) &
+  # Wait up to 5s for the socket to appear. If it never does, checks will
+  # skip_accepted — harmless; doesn't block the harness.
+  local _deadline=$(( $(date +%s) + 5 ))
+  while [[ $(date +%s) -lt $_deadline ]]; do
+    [[ -S "${_d}/.claude-flow/daemon.sock" ]] && break
+    sleep 0.1
+  done
+}
+
+_start_harness_daemon "$E2E_DIR"
+log "  daemon started for E2E_DIR (socket: $([[ -S "$E2E_DIR/.claude-flow/daemon.sock" ]] && echo live || echo absent))"
+
 # ════════════════════════════════════════════════════════════════════
 # Source shared check library BEFORE e2e subshell (needs _run_and_kill)
 # ════════════════════════════════════════════════════════════════════

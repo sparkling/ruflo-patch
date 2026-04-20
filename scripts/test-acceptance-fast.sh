@@ -57,6 +57,56 @@ if [[ -z "$E2E_DIR" ]]; then
 fi
 
 echo "[fast] harness=$ACCEPT_TEMP  e2e=$E2E_DIR"
+
+# ── Daemon lifecycle (Layers 1+2 per ADR-0088 amendment 2026-04-20) ──
+# Layer 2 first — reap any stale PID from a prior fast run against the
+# same E2E_DIR (fast runner reuses dirs when it finds a valid harness).
+_fast_reap_stale_daemon() {
+  local _pid_file="$E2E_DIR/.claude-flow/daemon.pid"
+  [[ ! -f "$_pid_file" ]] && return
+  local _pid; _pid=$(cat "$_pid_file" 2>/dev/null) || return
+  if [[ -n "$_pid" ]] && kill -0 "$_pid" 2>/dev/null; then
+    if ps -p "$_pid" -o args= 2>/dev/null | grep -q 'cli.*daemon'; then
+      echo "[fast] reaping stale daemon PID $_pid"
+      kill -TERM "$_pid" 2>/dev/null || true
+      sleep 0.5
+      kill -0 "$_pid" 2>/dev/null && kill -KILL "$_pid" 2>/dev/null || true
+    fi
+  fi
+  rm -f "$_pid_file" "$E2E_DIR/.claude-flow/daemon.sock" 2>/dev/null || true
+}
+_fast_reap_stale_daemon
+
+# Start daemon in background; cleanup trap below guarantees shutdown.
+(cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" daemon start --quiet >/dev/null 2>&1) &
+_FAST_DAEMON_BG_PID=$!
+# Wait up to 5s for socket.
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  [[ -S "$E2E_DIR/.claude-flow/daemon.sock" ]] && break
+  sleep 0.5
+done
+echo "[fast] daemon: $([[ -S "$E2E_DIR/.claude-flow/daemon.sock" ]] && echo live || echo absent)"
+
+# Layer 1: teardown on any exit path (EXIT/INT/TERM/HUP).
+_fast_teardown_daemon() {
+  # Prefer graceful stop (5s timeout).
+  (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+    timeout 5 "$CLI_BIN" daemon stop --quiet >/dev/null 2>&1) || true
+  local _pid_file="$E2E_DIR/.claude-flow/daemon.pid"
+  if [[ -f "$_pid_file" ]]; then
+    local _pid; _pid=$(cat "$_pid_file" 2>/dev/null) || _pid=""
+    if [[ -n "$_pid" ]] && kill -0 "$_pid" 2>/dev/null; then
+      kill -TERM "$_pid" 2>/dev/null || true
+      sleep 0.5
+      kill -0 "$_pid" 2>/dev/null && kill -KILL "$_pid" 2>/dev/null || true
+    fi
+    rm -f "$_pid_file" 2>/dev/null || true
+  fi
+  rm -f "$E2E_DIR/.claude-flow/daemon.sock" 2>/dev/null || true
+}
+trap _fast_teardown_daemon EXIT
+trap '_fast_teardown_daemon; exit 143' INT TERM HUP
+
 echo ""
 
 # ── Source ALL libraries ────────────────────────────────────────────
