@@ -1,11 +1,33 @@
 # ADR-0088: Daemon Scope Alignment — Scheduler Only, Never Hot Path
 
-- **Status**: Implemented (2026-04-15)
+- **Status**: Implemented (2026-04-15) — **Amended 2026-04-20** (capability gate removed, see §Amendment 2026-04-20)
 - **Date**: 2026-04-15
 - **Implementation commits**:
-  - fork: `c3ad3ebc9` (daemon scope alignment), `f182ab90d` (comment fix)
+  - fork: `c3ad3ebc9` (daemon scope alignment), `f182ab90d` (comment fix), **PENDING (2026-04-20)** (capability gate removal)
   - patch: `62d4f22` (ADR + tests + acceptance), `1c790d4` (stale Phase 4 check removal), `99a6418` (status → Implemented), `3ecc509` (flake root-cause fixes), `6e0379a` + `bbf78f8` (bash arithmetic bugs uncovered while debugging)
 - **Scope**: Fork (`@claude-flow/cli`), Patch repo (`ruflo-patch` acceptance tests)
+- **Related**: upstream ADR-014, ADR-019, ADR-020, ADR-050; our ADR-0082, ADR-0086
+
+## Amendment 2026-04-20 — Capability gate removed
+
+The original decision (§Decision item 8) made the SessionStart `daemon start` hook **conditional** on `which claude` succeeding at init time. Observation that forced the amendment:
+
+- **The probe runs at init time, not at hook-invocation time.** Users who install Claude Code *after* `cli init --full` never get the daemon wired, even when it would now work. Re-running init is required to re-probe — an invisible trap.
+- **The hook is already fail-safe.** The wired command is `npx @claude-flow/cli@latest daemon start --quiet 2>/dev/null || true` — it silently no-ops when the daemon cannot start (claude absent, already running, socket collision). Always wiring it is strictly cheaper than probing + remembering the result.
+- **Two workers are always useful.** `consolidate` and `preload` (explicitly listed in §Preserve) run regardless of whether `claude` is on PATH. A degraded-mode daemon still delivers their value; it is not "worse than not starting."
+- **Test harness reality.** The bash acceptance runner never fires `SessionStart`, so the capability gate's observable side effect is purely "does settings.json contain a daemon-start hook entry" — the probe controls a *string in a JSON file*, not actual daemon behavior.
+
+Changes landing in fork commit (pending):
+
+- Delete `claudeCliAvailable()` helper from `v3/@claude-flow/cli/src/init/settings-generator.ts` (~24 lines including docblock)
+- Delete unused `import { execSync } from 'node:child_process'`
+- Remove the `if (claudeCliAvailable()) { ... }` gate around the daemon-start hook push; push unconditionally
+- Update §Decision item 8 below: "wire unconditionally; the `|| true` trailer is the honest capability gate at runtime"
+
+Acceptance check `check_adr0088_conditional_init` (originally asserted "no claude → no daemon-start entry") is **retired** — its premise no longer holds. `check_adr0088_conditional_init_with_claude` (positive case) becomes the unconditional check: **init always wires the daemon-start hook**. Paired unit test `adr0088-init-conditional-wiring.test.mjs` is updated to assert unconditional wiring.
+
+Preserves the rest of ADR-0088: daemon is still scheduler-only, still not in hot path, still not a memory/MCP RPC server. Only the init-time capability gate is reverted.
+
 - **Related**: upstream ADR-014, ADR-019, ADR-020, ADR-050; our ADR-0082, ADR-0086
 
 ## Context
