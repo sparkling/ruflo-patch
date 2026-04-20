@@ -102,7 +102,7 @@ One race-safety check per mutation-capable surface family. Minimum set:
 3. Session save/restore — 2 processes save+restore same session name; assert no interleaved corruption.
 4. Workflow create/execute — 4 processes start same workflow; assert one-started + queued.
 
-New check file: `lib/acceptance-phase9-concurrency.sh`. Budget: ≤30s.
+New check file: `lib/acceptance-phase9-concurrency.sh`. Budget: ≤30s. **Implemented 2026-04-20** (commit `16c4b22`; 4 checks land with paired unit test `tests/unit/adr0094-p9-concurrency.test.mjs`, 13/13 pass). See ADR-0094-log.md eighth-pass entry for design notes.
 
 ### Phase 10 — Idempotency
 
