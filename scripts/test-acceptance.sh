@@ -464,6 +464,10 @@ adr0089_lib="${PROJECT_DIR}/lib/acceptance-adr0089-checks.sh"
 phase8_lib="${PROJECT_DIR}/lib/acceptance-phase8-invariants.sh"
 [[ -f "$phase8_lib" ]] && source "$phase8_lib"
 
+# ADR-0094 Phase 9: Concurrency matrix (claims/session/workflow races; RVF delegated to t3-2)
+phase9_lib="${PROJECT_DIR}/lib/acceptance-phase9-concurrency.sh"
+[[ -f "$phase9_lib" ]] && source "$phase9_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1056,6 +1060,15 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase8_lib" ]]; then
   run_check_bg "p8-inv12-mem-full"  "INV-12 memory full round-trip (P8)"    check_adr0094_p8_inv12_memory_full_roundtrip "adr0094-p8"
 fi
 
+# ADR-0094 Phase 9: Concurrency matrix (4 checks, ≤30s wall-clock).
+# Each uses _with_iso_cleanup. RVF row is delegated to t3-2 (ADR-0095).
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase9_lib" ]]; then
+  run_check_bg "p9-rvf-delegated" "P9 RVF concurrency delegated to t3-2" check_adr0094_p9_rvf_concurrent_writes_delegated "adr0094-p9"
+  run_check_bg "p9-claims-winner" "P9 claims exactly-one-winner (6 racers)" check_adr0094_p9_claims_single_winner "adr0094-p9"
+  run_check_bg "p9-session-noint" "P9 session no interleave (2 writers)" check_adr0094_p9_session_no_interleave "adr0094-p9"
+  run_check_bg "p9-workflow-one" "P9 workflow exactly-one-created (4 racers)" check_adr0094_p9_workflow_concurrent_start "adr0094-p9"
+fi
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1300,6 +1313,16 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase8_lib" ]]; then
     "p8-inv10-autopilot|INV-10 autopilot enable→status→predict (P8)"
     "p8-inv11-delta|INV-11 delta-sentinel meta-probe (P8)"
     "p8-inv12-mem-full|INV-12 memory full round-trip (P8)"
+  )
+fi
+
+_p9_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase9_lib" ]]; then
+  _p9_specs=(
+    "p9-rvf-delegated|P9 RVF concurrency delegated to t3-2"
+    "p9-claims-winner|P9 claims exactly-one-winner (6 racers)"
+    "p9-session-noint|P9 session no interleave (2 writers)"
+    "p9-workflow-one|P9 workflow exactly-one-created (4 racers)"
   )
 fi
 
@@ -1628,6 +1651,7 @@ collect_parallel "all" \
   "p7-cli-mcp|CLI mcp status (P7)" "p7-cli-system|CLI system info (P7)" \
   "p7-cli-doctor-npm|W4-A3: doctor npm no-false-fail" \
   "${_p8_specs[@]}" \
+  "${_p9_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

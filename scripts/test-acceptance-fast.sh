@@ -260,6 +260,16 @@ if [[ "$_FAST_RUN_GROUPS" == *"p8"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"p9"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase9-concurrency.sh" ]]; then
+    echo "── Phase 9: Concurrency Matrix (ADR-0094) ──"
+    _fast_run "p9-rvf-delegated" check_adr0094_p9_rvf_concurrent_writes_delegated
+    _fast_run "p9-claims-winner" check_adr0094_p9_claims_single_winner
+    _fast_run "p9-session-noint" check_adr0094_p9_session_no_interleave
+    _fast_run "p9-workflow-one"  check_adr0094_p9_workflow_concurrent_start
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"e2e-storage"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   echo "── E2E Storage Pipeline ──"
   _fast_run "store-rvf"       check_e2e_store_creates_rvf

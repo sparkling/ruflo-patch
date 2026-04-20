@@ -6,6 +6,273 @@
 
 ---
 
+## 2026-04-20 (eighth pass) — Phase 9 concurrency matrix landed
+
+Phase 9 (Concurrency matrix) closes the ADR-0094 §Phases 8–10 mid-block. The parent ADR cites BUG-0007-class dup-creation races as the motivating failure mode — a code path that passes sequentially but creates two rows under parallel invocation is exactly what an invariant-only suite (Phase 8) cannot catch. Four new checks land in `lib/acceptance-phase9-concurrency.sh`, wired into both the full cascade and the fast runner, with a paired unit test at `tests/unit/adr0094-p9-concurrency.test.mjs`.
+
+**Phase 9 matrix (4 rows):**
+
+| id                  | scenario                                   | min parallelism | expected winners                     | skip_accepted trigger                     |
+|---------------------|--------------------------------------------|----------------:|--------------------------------------|-------------------------------------------|
+| `p9-rvf-delegated`  | RVF multi-writer race                      |  — (delegated)  | coverage lives in t3-2 (ADR-0095)    | always (pointer check, not a run)         |
+| `p9-claims-winner`  | 6 parallel `claims_claim` on same task_id  |              6  | exactly 1 winner, 5 losers           | CLI missing `claims_claim` on this build  |
+| `p9-session-noint`  | 2 parallel `session_save`+`session_restore`|              2  | last-writer-wins, no interleave      | CLI missing `session_save` on this build  |
+| `p9-workflow-one`   | 4 parallel `workflow_create` on same name  |              4  | exactly 1 created, 3 duplicate-errs  | CLI missing `workflow_create` on this build |
+
+Unit test covers wiring contracts (function names exported, 4-way structure matches harness expectation, skip_accepted bucket threaded for the RVF row) — paired Node `node:test` suite, ~12 cases, mirrors the shape used by the Phase 11 / 12 / 13 unit suites.
+
+**Design decisions:**
+- **RVF delegated to t3-2 (ADR-0095), not duplicated.** The concurrent-writes regression on RVF already has production-grade coverage via `check_t3_2_concurrent_writes` (which detects real `.rvf.lock` contention and inspects the RVF header — the exact anti-pattern fix the CLAUDE.md `[2026-04]` entry captured). Shipping a second RVF race check here would either duplicate that assertion (confusing on failure) or drift into a weaker variant (the original ADR-0090 Tier A4 failure mode). A pointer check that always returns `skip_accepted` is the honest encoding: Phase 9 acknowledges the coverage exists and directs readers to it.
+- **Exactly-one-winner is the correct assertion for claims + workflow.** "Some winners" masks dup-creation races — the exact BUG-0007-class pattern the parent ADR cites. A weaker `n >= 1` check would pass even if all 6 claim racers succeeded (the race condition), because ≥1 of them did win. The sharpness of `== 1` is what makes Phase 9 catch what Phase 8 cannot.
+- **Session uses last-writer-wins, not exactly-one-winner.** Two concurrent `session_save` calls with the same session name *should* both succeed individually — that is deliberate upstream semantics (session save is not a claim). What Phase 9 catches on the session row is **interleaved corruption**: the stored body either fails to parse (JSON or binary frame truncated mid-write) or contains a byte-wise mash of both distinct inputs (e.g. header from writer A, body from writer B). Fail-loud on corruption, pass-quiet on either-wins.
+- **4–6 racers, not more.** The race surfaces at N=2+ if present; 6 is the ceiling chosen to stay inside the ≤30s wall-clock budget while giving enough contention to make a flaky race deterministic. Higher N is overkill and inflates the suite runtime for no detection gain.
+
+**What Phase 9 does NOT cover:**
+- More than 8 racers — as noted above, overkill; the race surfaces at N=2+ if it exists.
+- Cross-process RVF concurrent writes beyond the t3-2 coverage — if a future regression shows up that t3-2 doesn't catch, we fix t3-2 (ADR-0095 amendment), not duplicate it here.
+- Session concurrent-**restore** — Phase 9 covers save+restore-round-trip interleave only. A pure read-read race would need its own scenario; deferred to a future pass if it becomes observable.
+- Workflow mid-execute races (e.g. two concurrent `workflow_execute` on the same running workflow) — that surface belongs to Phase 14 (performance/execution invariants), not Phase 9 (creation races).
+
+**Files:**
+- `lib/acceptance-phase9-concurrency.sh` (new, owned by parallel agent) — 4 `check_adr0094_p9_*` functions.
+- `tests/unit/adr0094-p9-concurrency.test.mjs` (new, owned by parallel agent) — wiring contract unit suite.
+- `scripts/test-acceptance.sh` — new `phase9_lib` sourcing, new `run_check_bg` block (4 checks in group `adr0094-p9`), new `_p9_specs` array, added to `collect_parallel "all"`.
+- `scripts/test-acceptance-fast.sh` — new `*"p9"*` group block (the `phase9-concurrency.sh` line in the library-sourcing fan-out already existed from a prior scaffolding pass).
+
+**Next up in backlog:** Phase 10 (idempotency — same input twice → same output, no extra rows, no error). Still pending per ADR §Phases 8–10. Phase 14 (performance SLO per tool class) remains the next-after-10 backlog item from the prior seventh-pass entry.
+
+**Cross-links:** ADR-0095 (RVF inter-process concurrency — where the delegated row points); ADR-0082 (no silent fallbacks — `skip_accepted` is NOT pass, it is a distinct bucket); ADR-0090 Tier A2 (three-bucket harness model — pass / fail / skip_accepted); BUG-0007 (dedup pattern — the exact race family the claims + workflow rows exist to catch).
+
+---
+
+## 2026-04-20 (seventh pass) — Phase 13.2 AgentDB SQLite fixture migration landed
+
+The sixth-pass scope cut (earlier today) pulled `.swarm/*.db*` out of the 13.1 RVF fixture because the captured SQLite was empty-schema — the seed only exercised memory KV (RVF) and never touched AgentDB's reasoning layer. Phase 13.2 closes that gap by seeding `.swarm/memory.db` with real rows via AgentDB MCP tool invocations, committing it as a distinct fixture (`tests/fixtures/adr0094-phase13-2/v1-agentdb/`), and landing two acceptance checks that prove the current build can round-trip those rows.
+
+**Row counts captured (cli 3.5.58-patch.216, WAL-checkpointed before copy):**
+
+| Table                | Rows | Notes                                                        |
+|----------------------|-----:|--------------------------------------------------------------|
+| `skills`             | 1    | `name='p13-2-skill'`, desc=`phase 13.2 migration sentinel skill` |
+| `episodes`           | 1    | seeded via `agentdb_reflexion_store` (reflexion/reward path) |
+| `reasoning_patterns` | 0    | not exercised this pass (see "does NOT cover" below)         |
+| `causal_edges`       | 0    | not exercised this pass                                      |
+| `learning_sessions`  | 0    | not exercised this pass                                      |
+
+Skills + episodes are sufficient proof that the SQLite file is read-by-the-current-build, which is the entire regression Phase 13.2 exists to catch. `memory.db` captured post-`PRAGMA wal_checkpoint(TRUNCATE)` is a single-file artifact — no `-shm` / `-wal` siblings ship.
+
+**New check rows in the P13 matrix (total goes 8 → 10):**
+
+| #  | id                                         | fixture      | tool                         | expected token                                        |
+|----|--------------------------------------------|--------------|------------------------------|-------------------------------------------------------|
+| 9  | `migration_agentdb_v1_skill_search`        | `v1-agentdb` | `agentdb_skill_search`       | `p13-2-skill\|p13-2 migration sentinel`               |
+| 10 | `migration_agentdb_v1_reflexion_retrieve`  | `v1-agentdb` | `agentdb_reflexion_retrieve` | `migration-survived\|p13-2 reflexion sentinel`        |
+
+Both checks reuse `_p13_load_fixture` (13.1's implementer already added the 3rd-arg `fixtures_root` override) and pass `_p13_2_fixtures_dir` as that root — no parallel loader.
+
+**Design decisions:**
+- **Real-row verification, not schema-shape only.** The seeder asserts `skills` has ≥ 1 row and the `p13-2-skill` marker is present via `sqlite3` AFTER a WAL checkpoint. An un-verified fixture (sixth-pass lesson: empty-schema file that "looks captured") is worse than none — fail-loud if the seed didn't persist.
+- **Separate fixture root** (`tests/fixtures/adr0094-phase13-2/` vs `phase13-1/`). RVF (13.1) and SQLite (13.2) have independent regeneration lifecycles — a future RVF format change shouldn't force an AgentDB re-seed, and vice versa. Same precedent the sixth-pass entry set when it proposed the 13.2 split.
+- **WAL checkpoint before capture.** SQLite's WAL mode leaves dirty pages in `memory.db-wal` until checkpointed. Without `PRAGMA wal_checkpoint(TRUNCATE)` the committed `memory.db` would be missing whatever rows the seed wrote during its session. Explicit checkpoint means the captured `.db` file is self-contained and the two journal siblings can be safely stripped.
+- **Reflexion persists to `episodes`, not `skills`.** Verified via row-count probe post-seed; `agentdb_reflexion_store` calls `storeEpisode()` on ReflexionMemory (see `agentdb-tools.js:843`). Retrieve takes `task` (not `query`); store requires `{session_id, task, reward, success}` (not `content`). Tool-name brief was correct, param shapes needed adjustment — documented in the seed script.
+
+**Files:**
+- `scripts/seed-phase13-2-fixtures.sh` (new, ~250 lines) — one-shot seed, outside acceptance cascade, idempotent.
+- `tests/fixtures/adr0094-phase13-2/v1-agentdb/` (new) — `.swarm/memory.db` (225 280 B) + `.seed-manifest.json` with row counts.
+- `lib/acceptance-phase13-migration.sh` — 2 new `check_adr0094_p13_migration_agentdb_*` functions + `_p13_2_fixtures_dir` helper; header matrix extended to 10 rows.
+- `scripts/test-acceptance.sh` — 2 new `run_check_bg` in group `adr0094-p13` + 2 new `_p13_specs` entries.
+- `tests/unit/adr0094-p13-2-agentdb-migration.test.mjs` (new) — 12/12 cases pass (mirror of 13.1 unit suite).
+
+**What Phase 13.2 does NOT cover:**
+- Downgrade testing (vN+1 fixture → vN read) — forward-compat only, matching 13 / 13.1 scope.
+- Multi-version fixture sets — only `v1-agentdb/` lands this pass; a `v2-agentdb/` waits until the AgentDB SQLite schema legitimately breaks.
+- `reasoning_patterns` / `causal_edges` / `learning_sessions` tables — no acceptance tool invocation seeds these in the current build. If a future schema change touches those tables, a follow-up 13.2.x pass adds the seed+check matrix.
+
+**Next up in backlog:** Phase 14 (performance SLO per tool class).
+
+**Cross-links:** ADR-0082 (fixture-read fail-loud — no silent empty-schema fixtures); ADR-0086 (RVF primary, AgentDB is the orthogonal reasoning layer Phase 13.2 covers); this log's sixth-pass entry below — direct parent / scope handoff; `scripts/seed-phase13-2-fixtures.sh` — the regeneration path.
+
+---
+
+## 2026-04-20 (sixth pass) — Phase 13.1 fixture scope cut: drop SQLite shadow (AgentDB sidecar is empty-schema; coverage belongs to Phase 13.2)
+
+Post-landing audit of the fifth-pass fixture (earlier today) surfaced that `.swarm/memory.db` captured by the seed is AgentDB's reasoning/learning SQLite (tables `episodes`, `skills`, `reasoning_patterns`, `causal_edges`, `learning_sessions`, …), written by `ControllerRegistry.initControllerRegistry()` via `ensureRouter()` during `cli init`. All data tables had **0 rows** — the seed only exercised RVF via `memory_store`/`memory_retrieve`, so AgentDB was created-but-never-written. Shipping a 225 KB empty-schema SQLite added zero migration coverage and ~225 KB of git churn.
+
+**This is NOT an ADR-0086 regression.** Memory KV stayed on RVF (confirmed by code path `memory-router.js:430` / `createStorage`). AgentDB is a separate subsystem for reasoning/learning — SQLite-backed by design, orthogonal to memory_store semantics.
+
+**Changes in this pass:**
+- `scripts/seed-phase13-1-fixtures.sh` — `.swarm/*.db*` (and `memory.db-shm` / `memory.db-wal`) now explicitly stripped during copy, with a comment block explaining the scope decision.
+- `tests/fixtures/adr0094-phase13-1/v1-rvf/.swarm/` — removed `memory.db`, `memory.db-shm`, `memory.db-wal` (the current build had no pending WAL entries so the shm/wal files were already 0 B; they are transient-only).
+- `.seed-manifest.json` — `memory.db` entry removed; `memory.rvf` + `memory.rvf.meta` checksums unchanged (verified via `shasum -a 256` post-cleanup).
+- Unit test `tests/unit/adr0094-p13-1-rvf-migration.test.mjs` — still 12/12 pass.
+
+**Deferred to Phase 13.2 (new backlog item):**
+AgentDB migration coverage requires a seed that *exercises* the reasoning layer — `agentdb_reflexion_store`, `agentdb_skill_create`, `agentdb_episode_record` or similar — so `memory.db` ships with real rows. Checks would target `agentdb_reflexion_retrieve` / `agentdb_skill_search` and assert the stored rows round-trip under the current build. Different surface, different seed script, distinct fixture (`tests/fixtures/adr0094-phase13-2/v1-agentdb/`).
+
+**Cross-links:** ADR-0086 (RVF primary — unchanged by this pass); this log's fifth-pass entry below (corrected by scope cut, not reverted); Phase 13.2 — new open backlog item.
+
+---
+
+## 2026-04-20 (fifth pass) — Phase 13.1 RVF binary fixture migration landed
+
+Phase 13 (earlier today) deferred RVF/SQLite binary fixtures because they need a live CLI round-trip to generate. Phase 13.1 closes that deferral by seeding real RVF fixtures from a one-shot `scripts/seed-phase13-1-fixtures.sh` run against the installed `@sparkleideas/cli@latest` (Verdaccio). The fixtures are committed as frozen artifacts; the seed script stays available for refreshes but is NOT wired into the acceptance cascade.
+
+**What was captured** (`tests/fixtures/adr0094-phase13-1/v1-rvf/`):
+
+| File | Size | Purpose |
+|---|---|---|
+| `.swarm/memory.rvf` | 3655 B | RVF primary store — contains sentinel entry (key=`p13rvf-sentinel`, value=`migration-works-v1`) |
+| `.swarm/memory.rvf.meta` | 16673 B | RVF metadata sidecar (HNSW index state, entry offsets) |
+| `.swarm/memory.rvf.ingestlock` | 0 B | Empty lock file — shipped as-is to mirror real on-disk shape |
+| `.swarm/memory.db` | 225280 B | Auto-created SQLite shadow file — SQLite catalog *not* populated in this CLI build, so no SQLite-specific checks land this pass (RVF-only) |
+| `.seed-manifest.json` | 860 B | CLI version + checksums at seed time |
+
+**Frozen check additions (2 new rows in the P13 matrix):**
+
+| # | id | fixture | tool | expected token |
+|---|---|---|---|---|
+| 7 | `migration_rvf_v1_retrieve` | `v1-rvf` | `memory_retrieve` | `migration-works-v1` |
+| 8 | `migration_rvf_v1_search` | `v1-rvf` | `memory_search` | `p13rvf-sentinel\|migration-works-v1` |
+
+**Design decisions:**
+- RVF fixtures are live-seeded (not hand-crafted) — the script verifies the round-trip before committing (write then retrieve; fail-loud if retrieval doesn't return the stored value). An un-verified fixture is worse than none.
+- Checks added to the EXISTING `lib/acceptance-phase13-migration.sh` + `adr0094-p13` group — no test-runner churn for a phase sub-point.
+- `.seed-manifest.json` commits the CLI version + checksums at seed time — if a fixture ever silently changes, git diff on the manifest is the regression signal.
+
+**Files:**
+- `scripts/seed-phase13-1-fixtures.sh` (new) — one-shot seed, idempotent, outside acceptance cascade
+- `tests/fixtures/adr0094-phase13-1/v1-rvf/` (new) — `.swarm/memory.rvf` + sidecars + `.seed-manifest.json`
+- `lib/acceptance-phase13-migration.sh` — 2 new `check_adr0094_p13_migration_rvf_*` functions + extended loader
+- `scripts/test-acceptance.sh` — 2 new `run_check_bg` + 2 `_p13_specs` entries
+- `tests/unit/adr0094-p13-1-rvf-migration.test.mjs` (new) — paired unit tests
+
+**What Phase 13.1 does NOT cover:**
+- SQLite catalog fixtures — pending if/when the current build re-enables SQLite (auto-created `memory.db` in this pass has empty schema).
+- Downgrade testing (vN+1 fixture → vN read).
+- Multi-version fixture sets (only one v1 seed captured this pass; a v2 seed waits until schema legitimately breaks).
+
+**Next up in backlog:** Phase 14 (performance SLO per tool class).
+
+**Cross-links:** ADR-0082 (fixture-read fail-loud); ADR-0086 (RVF primary — the format this phase exists to guard); Phase 13 entry earlier today — direct parent; `scripts/seed-phase13-1-fixtures.sh` — the seed script is the regeneration path.
+
+---
+
+## 2026-04-20 (fourth pass) — Phase 13 migration backstop landed (forward+backward compat on hand-crafted fixtures)
+
+Phase 13 of the P2 backlog; ADR §Phases 11–17 frames it as "vN fixture → vN+1 read". For this first pass we do NOT have real vN snapshots, so it's forward+backward compat on hand-crafted text fixtures — RVF binary / SQLite fixtures are deferred to a Phase 13.1 pass that needs a pinned CLI build to produce authentic on-disk formats.
+
+**Frozen check matrix (6 rows):**
+
+| # | id | fixture | tool | expected |
+|---|---|---|---|---|
+| 1 | `migration_config_v1_read` | `v1-config` | `config_get` | `memory.backend=rvf` |
+| 2 | `migration_config_v1_telemetry` | `v1-config` | `config_get` | `telemetry.enabled=false` |
+| 3 | `migration_store_v1_session_list` | `v1-store` | `session_list` | `p13-fixture-session` |
+| 4 | `migration_forward_compat_unknown_key` | `v1-forward-compat` | `config_get` | `rvf` (+`unknownFutureKey` tolerated) |
+| 5 | `migration_backward_compat_missing_optional` | `v1-backward-compat` | `config_get` | `rvf` (optional telemetry absent) |
+| 6 | `migration_no_schema_panic` | all 4 cycled | `config_get` | no `unsupported\|incompatible\|upgrade.*required\|schema.*mismatch` |
+
+**Design decisions:**
+- Hand-crafted JSON fixtures only — text surfaces in-scope, RVF / SQLite deferred because generating those needs a live published CLI round-trip. Scope cut is intentional and noted in the fixture README (`tests/fixtures/adr0094-phase13/README.md`).
+- Two helpers: `_p13_load_fixture` copies the snapshot into an isolated `E2E_DIR`; `_p13_expect_readable` layers the schema-panic negation on top of an expected-token match — same helper-reuse precedent as P11/P12.
+- Fixture versioning is directory-named (`v1-config` now, `v2-config` in future). When schema legitimately breaks, bump the directory and keep the old one as a historical regression — additive, never overwrite.
+- Panic lexicon (`unsupported|incompatible|upgrade.*required|schema.*mismatch`) is the one-way signal that migration has stopped being silent — any match is FAIL regardless of exit code (ADR-0082 defense-in-depth).
+
+**Files:**
+- `tests/fixtures/adr0094-phase13/` (new) — 4 fixture folders (`v1-config/`, `v1-store/`, `v1-forward-compat/`, `v1-backward-compat/`) + `README.md`; session id in `v1-store` is `p13-fixture-session`
+- `lib/acceptance-phase13-migration.sh` (new, 320 lines) — 6 `check_adr0094_p13_migration_*` + 2 helpers (`_p13_load_fixture`, `_p13_expect_readable`)
+- `scripts/test-acceptance.sh` — sources lib, 6 `run_check_bg` in group `adr0094-p13`, `_p13_specs[]` wired into main `collect_parallel` wave
+- `tests/unit/adr0094-p13-migration.test.mjs` (new) — paired London-School unit tests
+
+**What Phase 13 does NOT cover (deferred to 13.1):**
+- RVF binary fixtures — need published-CLI round-trip for authentic format.
+- SQLite catalog.db fixtures — same story.
+- True cross-version testing — current pass is self-consistent on one codebase.
+- Downgrade path (vN+1 fixture → vN read) — forward-compat only.
+
+**Next up in backlog:** Phase 14 (performance SLO per tool class).
+
+**Cross-links:** ADR-0082 (schema-panic = loud failure, not silent fallback); ADR-0086 (RVF primary — hence RVF fixtures are the P13.1 priority); previous Phase 11/12 log entries from earlier today — direct precedent for matrix/helper structure.
+
+---
+
+## 2026-04-20 (third pass) — Phase 12 error message quality landed (8 classes × 2 reps, 16 checks)
+
+Phase 12 is the natural follow-on to Phase 11 (landed earlier today): P11 verifies "something rejected"; P12 verifies "the rejection names the problem". Silent success is still FAIL (ADR-0082 defense-in-depth kept as a canary), and the new P12-specific FAIL shape is "fires but doesn't name the field / doesn't carry a shape hint".
+
+**Frozen matrix for this pass:**
+
+| # | class | tool | rep A (missing) | expected token | rep B (wrong type) | expected token |
+|---|---|---|---|---|---|---|
+| 1 | memory    | `memory_store`    | `{}`                      | `key`                              | `{"key":"k","value":42}`       | `value`                                |
+| 2 | session   | `session_save`    | `{}`                      | `name`                             | `{"name":42}`                  | `name|string`                          |
+| 3 | agent     | `agent_spawn`     | `{}`                      | `type`                             | `{"type":42}`                  | `type|string`                          |
+| 4 | claims    | `claims_claim`    | `{}`                      | `task`                             | `{"task":[1,2]}`               | `task|string`                          |
+| 5 | workflow  | `workflow_create` | `{"name":"w"}`            | `steps`                            | `{"name":"w","steps":"x"}`     | `steps|array`                          |
+| 6 | config    | `config_set`      | `{"key":"k"}`             | `value`                            | `{"key":42,"value":"v"}`       | `key|string`                           |
+| 7 | neural    | `neural_train`    | `{}`                      | `patternType|pattern_type|model`   | `{"patternType":42}`           | `patternType|pattern_type|string|type` |
+| 8 | autopilot | `autopilot_enable`| `{}`                      | `mode`                             | `{"mode":42}`                  | `mode|string`                          |
+
+**Design decisions:**
+- Shared `_p12_expect_named_error <label> <token_regex>` helper — same helper-reuse precedent as P11 (ADR-0097), no 16-way copy-paste.
+- PASS = rejection-signal AND names-field AND has-structural-hint; the hint must be one of `required|must|invalid|expected|missing|type|string|array|number|schema|validation`.
+- New P12-specific FAIL classes: "fires but doesn't name field", "names field but lacks shape hint". Each emits a distinct `_CHECK_OUTPUT` diagnostic so catalog fingerprints disambiguate.
+- Tokens chosen per-tool to avoid ambiguity — e.g. neural accepts `patternType|pattern_type|model` to survive snake_case / synonym drift across upstream revisions.
+
+**Files:**
+- `lib/acceptance-phase12-error-quality.sh` (new) — 16 checks + `_p12_expect_named_error` helper
+- `scripts/test-acceptance.sh` — sources lib, 16 `run_check_bg` in group `adr0094-p12`, `_p12_specs[]` wired into main `collect_parallel` wave
+- `tests/unit/adr0094-p12-error-quality.test.mjs` (new) — paired London-School unit tests covering 6 scenario buckets per check (silent-success, rejection-without-field, rejection-without-hint, skip_accepted, neutral-body, full-PASS)
+
+**What Phase 12 does NOT cover:**
+- Error *recoverability* (does the error tell me how to fix it) — out of scope for the 100% coverage program.
+- Localization — English-only tokens.
+- Concurrency / migration / perf — Phases 9, 13, 14.
+
+**Next up in backlog:** Phase 13 (migration — vN fixture → vN+1 read).
+
+**Cross-links:** ADR-0082 (silent-success canary kept for defense-in-depth); ADR-0097 (canonical `_mcp_invoke_tool` / `_expect_mcp_body` — reused); previous Phase 11 log entry from earlier today — direct precedent for matrix/helper structure.
+
+---
+
+## 2026-04-20 (second pass) — Phase 11 input fuzzing landed (8 classes × 2 reps, 16 checks)
+
+First P2 backlog phase to land after ADR-0094 went Implemented earlier today. Phase 11 (per ADR §Phases 11–17) is **sampled** input fuzzing — not all 213 tools, and deliberately *not* error-message quality (that is Phase 12). Its job is to catch the ADR-0082 silent-pass shape: malformed input → `{"success":true}` with no side effect.
+
+**Tool class matrix (frozen for this pass):**
+
+| # | class | tool | rep_a (type-mismatch) | rep_b (boundary) |
+|---|---|---|---|---|
+| 1 | memory | `memory_store` | `{"key":123,"value":["not","string"]}` | `{"key":"","value":""}` |
+| 2 | session | `session_save` | `{"name":42}` | `{"name":"../../../etc/passwd"}` |
+| 3 | agent | `agent_spawn` | `{"type":["coder"]}` | `{"type":""}` |
+| 4 | claims | `claims_claim` | `{"task":null}` | `{"task":"<10KB-A>"}` |
+| 5 | workflow | `workflow_create` | `{"name":true,"steps":"not-array"}` | `{"name":"","steps":[]}` |
+| 6 | config | `config_set` | `{"key":{},"value":123}` | `{"key":"","value":""}` |
+| 7 | neural | `neural_train` | `{"patternType":42}` | `{"patternType":"","trainingData":""}` |
+| 8 | autopilot | `autopilot_enable` | `{"mode":["array"]}` | `{"mode":""}` |
+
+**Design decisions:**
+- One shared `_p11_expect_fuzz_rejection` verdict helper — 16 checks compose it once each, no 16-way copy-paste (Phase 8 learning per ADR-0097).
+- PASS is disjunctive: `_MCP_EXIT != 0` OR body contains `success:false` OR body carries an error-shape diagnostic (`error|invalid|required|must|missing|malformed|unexpected|cannot`). Empty/neutral bodies are also FAIL — bare silence masks bugs.
+- SKIP_ACCEPTED only inherits `_mcp_invoke_tool`'s own "tool not found" verdict. No other skip reasons — prevents Phase 7-style skip drift.
+
+**Files:**
+- `lib/acceptance-phase11-fuzzing.sh` (new, 332 lines) — 16 `check_adr0094_p11_fuzz_*` + helper, `--ro` mode, 20s timeout each
+- `scripts/test-acceptance.sh` — sources `$phase11_lib`, 16 `run_check_bg` calls in group `adr0094-p11`, `_p11_specs[]` appended to the main collect_parallel wave
+- `tests/unit/adr0094-p11-fuzzing.test.mjs` (new) — London-School paired unit tests, 25/25 pass (~3.4s), drives 6 representative checks × 4 buckets (exit_nonzero / error_body / silent_success / tool_not_found) via bash shim; no Verdaccio required
+
+**What Phase 11 does NOT cover (deferred):**
+- Error-message *quality* (does the error NAME the problem) — Phase 12.
+- Fuzz breadth beyond 8 classes — deliberate sampling; full matrix belongs in a property-based Phase 17.
+- Concurrent fuzz — each check runs in its own iso-dir; race-safety is Phase 9.
+
+**Next up in backlog:** Phase 12 (error message quality).
+
+**Cross-links:** ADR-0082 (no silent fallbacks — the PASS condition's spine); ADR-0097 (canonical `_mcp_invoke_tool` / `_expect_mcp_body` — reused); this log's 2026-04-19 (second pass) Phase 8 INV-12 entry (helper-reuse + ADR-0087 out-of-scope-probe precedent — subprocess-per-call still holds).
+
+---
+
 ## 2026-04-20 — ADR-0094 → Implemented; ADR-0095 → Implemented; ADR-0088 amendment landed
 
 Closing-state audit for the 100% Acceptance Coverage program.
