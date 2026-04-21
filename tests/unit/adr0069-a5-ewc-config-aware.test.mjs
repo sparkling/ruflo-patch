@@ -64,12 +64,12 @@ describe('ADR-0069 A5 (post-A4): intelligence-tools.ts', () => {
     assert.equal(localDef, null, 'no local redefinition of the hoisted helper');
   });
 
-  it('uses readEwcLambdaFromConfig(1000) at the ewcLambda feature site', () => {
+  it('uses readEwcLambdaFromConfig(2000) at the ewcLambda feature site (ADR-0069 A5 spec fallback)', () => {
     const src = readFileSync(INTEL_TOOLS_PATH, 'utf-8');
     assert.match(
       src,
-      /ewcLambda\s*:\s*readEwcLambdaFromConfig\(\s*1000\s*\)/,
-      'intelligence-tools stats feature block must call readEwcLambdaFromConfig(1000)'
+      /ewcLambda\s*:\s*readEwcLambdaFromConfig\(\s*2000\s*\)/,
+      'intelligence-tools stats feature block must call readEwcLambdaFromConfig(2000) per ADR-0069 A5 table (fallback 1000→2000 closure)'
     );
   });
 
@@ -107,20 +107,21 @@ describe('ADR-0069 A5 (post-A4): SonaLearningBackend.ts', () => {
     assert.equal(localDef, null, 'no local redefinition of the hoisted helper');
   });
 
-  it('uses readEwcLambdaFromConfig(1000) in the ewcLambda nullish chain', () => {
+  it('uses readEwcLambdaFromConfig(2000) in the ewcLambda nullish chain (ADR-0069 A5 spec fallback)', () => {
     const src = readFileSync(SONA_BACKEND_PATH, 'utf-8');
     assert.match(
       src,
-      /config\.ewcLambda\s*\?\?\s*readEwcLambdaFromConfig\(\s*1000\s*\)/,
-      'SonaLearningBackend must use config.ewcLambda ?? readEwcLambdaFromConfig(1000)'
+      /config\.ewcLambda\s*\?\?\s*readEwcLambdaFromConfig\(\s*2000\s*\)/,
+      'SonaLearningBackend must use config.ewcLambda ?? readEwcLambdaFromConfig(2000) per ADR-0069 A5 table (fallback 1000→2000 closure)'
     );
   });
 
-  it('has no bare `?? 2000` fallback for ewcLambda any more', () => {
+  it('has no bare `?? 2000` fallback for ewcLambda (must go through helper)', () => {
     const src = readFileSync(SONA_BACKEND_PATH, 'utf-8');
+    // After A5 closure, fallback is inside readEwcLambdaFromConfig(2000), not bare `?? 2000`
     assert.ok(
       !/config\.ewcLambda\s*\?\?\s*2000\b/.test(src),
-      'legacy bare numeric fallback must be gone'
+      'legacy bare numeric fallback `?? 2000` must be gone (must go through readEwcLambdaFromConfig)'
     );
   });
 });

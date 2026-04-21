@@ -1,6 +1,6 @@
 # ADR-0069: Future Vision -- AgentDBService Consolidation, RVF Storage Unification, Full AttentionService
 
-- **Status**: F1 Complete, F2 Extracted to ADR-0073 (Implemented), F3 Mostly Complete with known gap — ONNXEmbeddingService + registerEnhancedBoosterTools still not wired as of 2026-04-21 audit (tracked as explicit remaining work below)
+- **Status**: F1 Implemented, F2 Extracted to ADR-0073 (Implemented), F3 Implemented — all 2026-04-21 audit gaps closed and shipped in @sparkleideas/agentic-flow@2.0.2-alpha-patch.348 / @sparkleideas/cli@3.5.58-patch.230. Four ADR-0069 F3/Bug3 acceptance checks (`adr0069-f3-booster`, `adr0069-f3-onnx`, `adr0069-f3-onnx-rt`, `adr0069-bug3-persist`) are green against the published tarball. A5 EWC-lambda fallback closed (1000→2000 per Appendix A5 table). See "Closure evidence 2026-04-21 PM (v2)" below.
 - **Date**: 2026-04-05
 - **Implemented**: 2026-04-06 (F1 — 10 controllers delegated to AgentDB.getController(), 2 kept direct, ~30 lines removed)
 - **Implemented**: 2026-04-05 (bypass inventory remediation — 12 sites across both forks)
@@ -698,6 +698,16 @@ A 15-agent swarm landed the three remaining items and the memory-persistence bug
 - **BM25 hash-fallback search** (enables the ADR-0082 loud-fail checks the ADR-0069 work exposed) landed in `forks/ruflo/v3/@claude-flow/memory/src/bm25.ts` (new) + `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts` (search branch). Unit test `tests/unit/hash-fallback-bm25.test.mjs` (14/14 green).
 
 Also landed the same day: residual A1 (3 WAL sites), A6 (4 port sites), A8 (1 missed LR site); A5 open (agent stopped on a misread system reminder — needs a small re-dispatch). F1 AC #3 reconciliation below.
+
+### Closure evidence 2026-04-21 PM (v2)
+
+The two audit gaps that had slipped past the first-pass 2026-04-21 swarm (the published tarball at `@sparkleideas/agentic-flow@2.0.2-alpha-patch.346` still shipped with the fixes absent because the test harness at `/tmp/ruflo-fast-*` was stale at `.336`) plus the ONNX runtime-import A3 gap and the residual A5 EWC-lambda fallback were closed in this pass:
+
+- **ONNX runtime import (F3 §3 A3)**: `forks/agentic-flow/packages/agentdb-onnx/src/services/ONNXEmbeddingService.ts:18` was importing `'../../../agentdb/src/config/embedding-config'` without the `.js` suffix; ESM resolution failed at runtime even though the tier-wiring source audit said "ONNX tier wired". Added `.js` suffix; `check_adr0069_f3_onnx_import_resolvable` now PASSes (`dynamic import() succeeds and exposes ONNXEmbeddingService constructor`).
+- **A5 EWC-lambda fallback**: Appendix A5 table (line 488) specifies the fallback is `1000→2000`. Both sites (`intelligence-tools.ts:318`, `SonaLearningBackend.ts:120`) were still at `readEwcLambdaFromConfig(1000)`. Updated to `readEwcLambdaFromConfig(2000)` to match ADR spec. Unit test `tests/unit/adr0069-a5-ewc-config-aware.test.mjs` updated from asserting `1000` to asserting `2000` (12/12 green). Shipped tarball verified at `@sparkleideas/agentic-flow@2.0.2-alpha-patch.348` and `@sparkleideas/agentdb@<patch>-patch.348` — both dist files contain `readEwcLambdaFromConfig(2000)`.
+- **Published tarball parity**: Rebuilt twice (once per fix-wave) with `.tsbuildinfo` cleared to avoid incremental-rebuild skips of `intelligence-tools.js`. Final published versions: `@sparkleideas/agentic-flow@2.0.2-alpha-patch.348`, `@sparkleideas/cli@3.5.58-patch.230`. All 4 ADR-0069 F3/Bug3 acceptance checks (`check_adr0069_f3_booster_tools_registered`, `check_adr0069_f3_onnx_tier_active`, `check_adr0069_f3_onnx_import_resolvable`, `check_adr0069_bug3_store_persist_outside_init`) PASS against the fresh harness installing the `.348` tarball.
+
+**Lesson captured**: when the patch-pipeline publishes incrementally and `.tsbuildinfo` is live, a source edit to a file that's already compiled can be skipped by tsc. Clear `.tsbuildinfo` (both in fork and `/tmp/ruflo-build`) before re-running `publish:verdaccio` when the fix target is a late-edited file in the middle of the build tree.
 
 ### F1 AC #3 reconciliation
 
