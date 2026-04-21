@@ -3,13 +3,18 @@
 //
 // ADR-0086: "Real .rvf file. Store, search, persist, reopen."
 //
-// Loads the PUBLISHED `@sparkleideas/memory` package from a temp acceptance
-// dir (Verdaccio-installed copy under /tmp/ruflo-accept-*), instantiates a
-// real RvfBackend, performs real I/O against real binary files, and verifies
-// the format on disk.
+// Loads the PUBLISHED `@sparkleideas/memory` package, instantiates a real
+// RvfBackend, performs real I/O against real binary files, and verifies the
+// format on disk.
 //
-// If no installed copy is available, every test skips with a clear reason —
-// it does not silently fall back to source-text inspection.
+// Resolution order for the package:
+//   1. Any existing `/tmp/ruflo-accept-*/node_modules/@sparkleideas/memory`
+//      (fast path — populated by `npm run test:acceptance`).
+//   2. On-demand install into `/tmp/ruflo-unit-rvf-install/` from the local
+//      Verdaccio registry at http://localhost:4873 (cached across runs).
+//
+// If Verdaccio is unreachable or the install fails, every test skips with a
+// clear reason — it does not silently fall back to source-text inspection.
 //
 // Test groups:
 //   1. Constructor and initialization
@@ -33,6 +38,7 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
+import { execSync } from 'node:child_process';
 
 // ============================================================================
 // Locate a published @sparkleideas/memory copy
@@ -55,8 +61,17 @@ const SEARCH_ROOTS = [
   tmpdir(),
 ];
 
-function findInstalledPackage() {
-  const candidates = [];
+// Per-ADR-0094 eleventh-pass-correction (A9 install-risk research): probe
+// existing npx caches BEFORE paying the ~15s / 398MB cost of a fresh
+// on-demand Verdaccio install. Both paths below commonly carry a valid
+// @sparkleideas/memory copy after any prior acceptance run or `npx` call,
+// and both are stable filesystem locations that npx owns.
+const NPX_CACHE_ROOTS = [
+  '/tmp/ruflo-accept-npxcache/_npx',
+  join(process.env.HOME ?? '', '.npm/_npx'),
+];
+
+function _collectFromAcceptanceRoots(candidates) {
   const seenRoots = new Set();
   for (const root of SEARCH_ROOTS) {
     if (seenRoots.has(root)) continue;
@@ -88,23 +103,115 @@ function findInstalledPackage() {
       }
     }
   }
+}
+
+function _collectFromNpxCaches(candidates) {
+  // npx stores each package under a content-hash dir (e.g.
+  // `c1e25e42fe45c385`) whose name we cannot hardcode — it rotates across
+  // npm-version upgrades. Enumerate the hash dirs and check each for the
+  // @sparkleideas/memory payload.
+  for (const root of NPX_CACHE_ROOTS) {
+    if (!root) continue;
+    let hashDirs;
+    try {
+      hashDirs = readdirSync(root);
+    } catch {
+      continue;
+    }
+    for (const hash of hashDirs) {
+      const candidate = join(
+        root,
+        hash,
+        'node_modules',
+        '@sparkleideas',
+        'memory',
+        'dist',
+        'rvf-backend.js',
+      );
+      if (existsSync(candidate)) {
+        try {
+          const mtime = statSync(candidate).mtimeMs;
+          candidates.push({ path: candidate, mtime });
+        } catch {
+          // skip unreadable
+        }
+      }
+    }
+  }
+}
+
+function findInstalledPackage() {
+  const candidates = [];
+  _collectFromAcceptanceRoots(candidates);
+  _collectFromNpxCaches(candidates);
   if (candidates.length === 0) return null;
   candidates.sort((a, b) => b.mtime - a.mtime);
   return candidates[0].path;
 }
 
+const VERDACCIO_URL = 'http://localhost:4873';
+const UNIT_INSTALL_DIR = '/tmp/ruflo-unit-rvf-install';
+const UNIT_INSTALL_PATH = join(
+  UNIT_INSTALL_DIR,
+  'node_modules',
+  '@sparkleideas',
+  'memory',
+  'dist',
+  'rvf-backend.js',
+);
+
+function installFromVerdaccio() {
+  // Idempotent fast path: reuse a previous on-demand install if present.
+  if (existsSync(UNIT_INSTALL_PATH)) {
+    return { path: UNIT_INSTALL_PATH, error: null };
+  }
+  // Loud skip when Verdaccio is not reachable — preserves ADR-0082.
+  try {
+    execSync(`curl -sf --max-time 3 ${VERDACCIO_URL}/-/ping`, {
+      stdio: 'ignore',
+    });
+  } catch (err) {
+    return {
+      path: null,
+      error: `Verdaccio unreachable at ${VERDACCIO_URL}`,
+    };
+  }
+  try {
+    execSync(
+      `npm install --prefix ${UNIT_INSTALL_DIR} --registry=${VERDACCIO_URL} --no-save @sparkleideas/memory@latest`,
+      { stdio: 'ignore', timeout: 120000 },
+    );
+  } catch (err) {
+    return {
+      path: null,
+      error: `On-demand install of @sparkleideas/memory from ${VERDACCIO_URL} failed: ${err?.message ?? String(err)}`,
+    };
+  }
+  if (!existsSync(UNIT_INSTALL_PATH)) {
+    return {
+      path: null,
+      error: `On-demand install completed but ${UNIT_INSTALL_PATH} is missing`,
+    };
+  }
+  return { path: UNIT_INSTALL_PATH, error: null };
+}
+
 try {
   packagePath = findInstalledPackage();
+  if (!packagePath) {
+    const { path: installedPath, error: installError } = installFromVerdaccio();
+    if (installedPath) {
+      packagePath = installedPath;
+    } else {
+      loadError = installError;
+    }
+  }
   if (packagePath) {
     const mod = await import(packagePath);
     RvfBackend = mod.RvfBackend ?? null;
     if (!RvfBackend) {
       loadError = `RvfBackend export missing from ${packagePath}`;
     }
-  } else {
-    loadError =
-      'No @sparkleideas/memory install found under /tmp/ruflo-accept-* ' +
-      '(run `npm run test:acceptance` first to populate one)';
   }
 } catch (err) {
   loadError = `Failed to import RvfBackend: ${err?.message ?? String(err)}`;
@@ -561,7 +668,7 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
     if (dir) tryRm(dir);
   });
 
-  it('store without shutdown leaves a .wal file on disk', { skip }, async () => {
+  it('store without shutdown leaves entry durable on disk', { skip }, async () => {
     const backend = new RvfBackend({
       databasePath: dbPath,
       dimensions: 3,
@@ -577,8 +684,17 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
         namespace: 'crash-ns',
       }),
     );
-    // SIMULATE CRASH: do NOT call shutdown(). The WAL must still be on disk.
-    assert.ok(existsSync(dbPath + '.wal'), 'WAL file must exist after store()');
+    // SIMULATE CRASH: do NOT call shutdown(). Per ADR-0090 Tier B7 the WAL
+    // is compacted into .meta on every store (see published rvf-backend.js
+    // `if (this.walPath) { await this.compactWal(); }` branch), so the WAL
+    // sidecar itself is not a required artifact — but some durable on-disk
+    // state MUST exist, otherwise a crash-recover would find nothing.
+    const durable =
+      existsSync(dbPath + '.wal') ||
+      existsSync(dbPath + '.meta') ||
+      existsSync(dbPath);
+    assert.ok(durable,
+      `after store(), expected .wal or .meta or main file to exist at ${dbPath}`);
 
     // Drop reference so Node may GC the timer (autoPersistInterval=0 already
     // disables the timer, so this is purely defensive).
@@ -773,7 +889,7 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
     if (dir) tryRm(dir);
   });
 
-  it('after store(), a .wal file exists alongside the database', { skip }, async () => {
+  it('after store(), durable state exists and lock is released', { skip }, async () => {
     const backend = new RvfBackend({
       databasePath: dbPath,
       dimensions: 3,
@@ -784,11 +900,20 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
     await backend.store(
       makeEntry({ id: 'f1', key: 'fk1', content: 'format-test', namespace: 'fmt' }),
     );
-    // WAL must be present until shutdown compacts it.
-    assert.ok(existsSync(dbPath + '.wal'), '.wal sidecar must exist after store()');
+    // Per ADR-0090 Tier B7 the WAL is compacted into .meta on every store.
+    // Accept either layout: WAL sidecar (pre-B7) OR compacted .meta/main
+    // (post-B7). What matters for the file-format contract is that some
+    // durable artifact exists after store() completes.
+    const durable =
+      existsSync(dbPath + '.wal') ||
+      existsSync(dbPath + '.meta') ||
+      existsSync(dbPath);
+    assert.ok(durable,
+      `after store(), expected .wal or .meta or main file to exist at ${dbPath}`);
     // Lock file is acquired/released within store(), so it must be gone now.
+    // Account for both common lock-file layouts the RVF backend may use.
     assert.ok(
-      !existsSync(dbPath + '.lock'),
+      !existsSync(dbPath + '.lock') && !existsSync(dbPath + '.rvf.lock'),
       '.lock must be released after store completes',
     );
     await backend.shutdown();

@@ -13,7 +13,6 @@ Bugs discovered through the ADR-0094 acceptance coverage program. Append-only. E
 - `fix_strategy` — one sentence describing what the fix does.
 - `fix_commit` — fork commit SHA (omit if not yet fixed).
 - `verified_date` — ISO date when a full cascade ran green on this check (omit if not yet).
-- `fingerprint` — SHA1(`check_id` + first-error-line + `fork_file`). Used for regression detection.
 - `upstream_filed` — GitHub issue URL, or explicit reason `fork_only: <why>`.
 - `related_adr` — ADR IDs that should be cross-linked.
 - `owner` — agent / author responsible for close-out (may be `unassigned`).
@@ -32,8 +31,10 @@ discovered → triaged → in-fix → fix-committed → verified-green → close
 
 **Close-out policy**:
 - `closed`: check is green for ≥3 consecutive cascade runs across ≥3 days.
-- `regressed`: previously-green check flips red AND fingerprint matches. Reopens the ledger entry; appends a new `regression_event` with date + cascade ID.
+- `regressed`: previously-green check flips red on its `check_id` and a human judges the root cause matches. Reopens the ledger entry; appends a new `regression_event` with date + cascade ID. Automated fingerprint-based matching lives in `test-results/catalog.db` (see `scripts/catalog-rebuild.mjs`) — the ledger is human-readable prose, not a machine index.
 - `deferred`: known-broken but accepted; MUST have `accepted_until` date or explicit ADR cross-reference. Auto-converts to `in-fix` when date passes.
+
+**Regression detection**: `test-results/catalog.db` owns failure fingerprints, computed automatically by `scripts/catalog-rebuild.mjs` per ADR-0096. To check whether a current failure matches a historical bug, query `catalog.db` by `(check_id, fingerprint)` and cross-reference to this ledger via `check_id` + `fix_commit`. Do NOT embed fingerprints in the ledger — it's prose, not a join table.
 
 ---
 
@@ -55,7 +56,6 @@ root_cause: |
 fix_strategy: Replace 6 inline require() calls with 4 top-level ESM imports (fs, path, os, crypto).
 fix_commit: 196100171
 verified_date: 2026-04-17
-fingerprint: e8a4...pending  # to be computed by catalog-rebuild.mjs
 upstream_filed: fork_only: ESM/CJS packaging artifact of our "type": "module" repackaging; upstream ships CJS where this works.
 related_adr: [ADR-0094, ADR-0084]
 owner: fix-autopilot-require (agent)
@@ -79,7 +79,6 @@ root_cause: |
 fix_strategy: Added applyDefaults() in loadConfig() that merges on-disk config with safe defaults (hyperbolic.enabled=false, neural.enabled=true, cacheSize=256, curvature=-1).
 fix_commit: 196100171
 verified_date: 2026-04-17
-fingerprint: pending
 upstream_filed: TBD (affects upstream HEAD — file candidate issue after test stabilization)
 related_adr: [ADR-0094]
 owner: fix-embeddings-search (agent)
@@ -105,7 +104,6 @@ root_cause: |
 fix_strategy: Use ergonomic cr.search({ query, k }) API + demote CausalRecall errors to metadata (causalContext.error) rather than re-throwing. Causal enrichment failure is not fatal per ADR-0082.
 fix_commit: 196100171
 verified_date: 2026-04-17
-fingerprint: pending
 upstream_filed: TBD (upstream bug)
 related_adr: [ADR-0094, ADR-0082]
 owner: fix-ctrl-routing (agent)
@@ -129,7 +127,6 @@ root_cause: |
 fix_strategy: Added resolveSessionHandle() that accepts {sessionId} OR {name}, fails loudly on neither. Mirrors session_restore's existing either-key behavior.
 fix_commit: 196100171
 verified_date: 2026-04-17
-fingerprint: pending
 upstream_filed: TBD (upstream bug)
 related_adr: [ADR-0094]
 owner: fix-session-delete (agent)
@@ -154,7 +151,6 @@ root_cause: |
 fix_strategy: Added NATIVE_MAGIC = 'SFVR' constant + peek-and-skip path in loadFromDisk that falls back to .meta sidecar when the main file is native-owned.
 fix_commit: 196100171
 verified_date: 2026-04-17
-fingerprint: pending
 upstream_filed: TBD (upstream bug; ADR-0092 is the architecture context)
 related_adr: [ADR-0094, ADR-0092, ADR-0086]
 owner: fix-rvf-magic (agent)
@@ -177,7 +173,6 @@ root_cause: |
 fix_strategy: Rewired handler to call LearningSystem.recordExperience; pre-create parent learning_sessions row to satisfy FK constraint. Fail loudly if LearningSystem absent (no silent in-memory fallback).
 fix_commit: 2f3a832d6
 verified_date: 2026-04-17
-fingerprint: pending
 upstream_filed: TBD
 related_adr: [ADR-0094, ADR-0082, ADR-0090]
 owner: fix-controller-sqlite (agent)
@@ -201,14 +196,13 @@ root_cause: |
 fix_strategy: For entries already in this.entries (alreadyLoaded=true — written by our own store() this session), update metadata dictionary only; skip HNSW + native index writes. Newly-seen peer entries still fall through to full ingest path.
 fix_commit: 2f3a832d6
 verified_date: 2026-04-17
-fingerprint: pending
 upstream_filed: TBD
 related_adr: [ADR-0094, ADR-0082, ADR-0090]
 owner: fix-controller-sqlite (agent)
 depth_class: lifecycle
 ```
 
-## BUG-0008 — RVF single-writer durability on process.exit(0) — INCOMPLETE
+## BUG-0008 — RVF single-writer durability on process.exit(0) — CLOSED
 
 ```yaml
 id: BUG-0008
@@ -216,25 +210,33 @@ title: Concurrent CLI writers lose 5/6 entries because process.exit(0) skips com
 discovered: 2026-04-17
 check_id: t3-2-concurrent
 fork_file: v3/@claude-flow/memory/src/rvf-backend.ts
-state: regressed  # partial fix landed but check still fails
+state: closed
 root_cause: |
   CLI's setTimeout(process.exit(0), 500).unref() does NOT fire beforeExit, so
   memory-router._ensureExitHook → shutdownRouter → compactWal chain is skipped in most
   of 6 concurrent writers. Typically one lucky writer's beforeExit fires in time,
   compacts with only its own in-memory state, writes .meta.entryCount=1, and unlinks
-  the WAL. Other 5 writers' entries live in WAL but .meta stays at 1.
+  the WAL. Other 5 writers' entries live in WAL but .meta stays at 1. Further
+  investigation (ADR-0095 Sprint-1/Pass-2/Pass-3) revealed the primary loss mode was
+  a 3-layer backend flip race (silent tryNativeInit fallback + disjoint .meta/.rvf
+  write targets + shared .rvf.tmp rename collisions), with a residual APFS
+  visibility window on rename closing only after fsync-before-rename (d11).
 fix_strategy: |
-  Partial: call compactWal() after every store() (commit 196100171). Still fails because
-  mergePeerStateBeforePersist only reads WAL, which first writer unlinks; subsequent
-  writers see empty WAL and write their in-memory snapshot over .meta.
-
-  Proper fix: under the lock, re-read .meta (not just WAL), merge on-disk state via
-  seenIds-gated set-if-absent, THEN write. Scope > 1 phase; forked to ADR-0095.
-fix_commit: 196100171 (partial)
-verified_date: null  # still failing
-fingerprint: pending
-upstream_filed: TBD
+  Full ADR-0095 program: (a/b/c) fail-loud native init + per-writer unique tmp path +
+  RvfBackend dedupe; (d1/d2) serialize tryNativeInit under advisory lock + route CLI
+  through shared factory; (d3) acquireLock mkdirs parent; (d4) strict RVF\0 invariant
+  for pure-TS ownership; (d5/d6/d8/d10) .meta sidecar fallback + exit shutdown hook +
+  write-amp reduction + LockHeld retry; (d11) fsync tmp before rename to close APFS
+  visibility window. Net: entryCount===N and zero subproc failures across 40 trials
+  per N∈{2,4,6,8} in the diag probe, plus green t3-2-concurrent in full cascade.
+fix_commit: 571388979  # d11 fsync-before-rename; preceded by 196100171, 9c5809324, 3fe71b9c7, e6901f397
+verified_date: 2026-04-20
+verification_runs:
+  - 2026-04-19T10:45Z
+  - 2026-04-19T12:46Z
+  - 2026-04-20T10:43Z
+upstream_filed: fork_only: RVF concurrent-write semantics are fork-specific; upstream does not ship RVF backend yet.
 related_adr: [ADR-0094, ADR-0095, ADR-0090, ADR-0082, ADR-0092]
-owner: TBD (pending ADR-0095 design)
+owner: fix-t3-2-rvf-concurrent (agent, ADR-0095)
 depth_class: lifecycle
 ```

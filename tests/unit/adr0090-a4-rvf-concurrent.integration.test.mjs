@@ -26,39 +26,48 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// ----------------------------------------------------------------------------
-// Resolve the RvfBackend class. Try the installed package first (preferred),
-// then fall back to the built fork source that ruflo-patch builds from. If
-// neither works, integration tests skip — the unit test file still guards
-// the check's spec.
-// ----------------------------------------------------------------------------
-const FORK_MEMORY_DIST =
-  '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/rvf-backend.js';
+// Shared resolver — per ADR-0094 eleventh-pass-correction, the per-file
+// copy-paste resolvers were consolidated into `tests/helpers/load-rvf.mjs`.
+// The shared resolver probes the same cache-first chain A1 uses (acceptance
+// installs → npx caches → unit-install → fork dist → @claude-flow/memory
+// package → on-demand Verdaccio install), so this suite no longer skips
+// when the integration-test prereq is available via ANY of those paths.
+import { loadRvfBackend } from '../helpers/load-rvf.mjs';
 
-async function loadRvfBackend() {
-  try {
-    const mem = await import('@claude-flow/memory');
-    if (mem && mem.RvfBackend) return { RvfBackend: mem.RvfBackend, source: 'package' };
-  } catch { /* fall through */ }
-  try {
-    if (existsSync(FORK_MEMORY_DIST)) {
-      const mem = await import(FORK_MEMORY_DIST);
-      if (mem && mem.RvfBackend) return { RvfBackend: mem.RvfBackend, source: 'fork-dist' };
-    }
-  } catch { /* fall through */ }
-  return null;
-}
+// Writer subprocess import — mirror the shared resolver's same cache-first
+// order so subprocesses find the same RvfBackend as the parent test.
+// Kept inline (not in the helper) because writer bodies must be
+// serializable via `spawn(node, '-e', body)` without helper imports.
+const FORK_MEMORY_DIST = process.env.HOME
+  ? join(process.env.HOME, 'source/forks/ruflo/v3/@claude-flow/memory/dist/rvf-backend.js')
+  : '/does-not-exist';
+const UNIT_INSTALL_PATH =
+  '/tmp/ruflo-unit-rvf-install/node_modules/@sparkleideas/memory/dist/rvf-backend.js';
 
-function buildWriterImportLine() {
-  // Writer subprocess import — prefer package, fall back to fork dist.
+function buildWriterImportLine(resolvedPath) {
+  // If the parent resolved a specific file path, pin the writer to the
+  // same path — guarantees subprocess parity. Fall back to the same
+  // package-first chain for environments where resolvedPath is null
+  // (should not happen post-helper, defense in depth).
+  if (resolvedPath && resolvedPath !== '@claude-flow/memory') {
+    return [
+      `const m = await import(${JSON.stringify(resolvedPath)});`,
+      'const RvfBackend = m.RvfBackend;',
+    ].join('\n');
+  }
   return [
     'let RvfBackend;',
     'try {',
     '  const m = await import("@claude-flow/memory");',
     '  RvfBackend = m.RvfBackend;',
     '} catch {',
-    `  const m = await import(${JSON.stringify(FORK_MEMORY_DIST)});`,
-    '  RvfBackend = m.RvfBackend;',
+    `  try {`,
+    `    const m = await import(${JSON.stringify(UNIT_INSTALL_PATH)});`,
+    `    RvfBackend = m.RvfBackend;`,
+    `  } catch {`,
+    `    const m = await import(${JSON.stringify(FORK_MEMORY_DIST)});`,
+    `    RvfBackend = m.RvfBackend;`,
+    `  }`,
     '}',
   ].join('\n');
 }
@@ -68,9 +77,9 @@ function buildWriterImportLine() {
 // entry with a known key, and exits. Concurrent invocations of this script
 // race on the `.rvf.lock` file.
 // ----------------------------------------------------------------------------
-function buildWriterScript(rvfPath, key, value) {
+function buildWriterScript(rvfPath, key, value, resolvedPath) {
   return [
-    buildWriterImportLine(),
+    buildWriterImportLine(resolvedPath),
     'const backend = new RvfBackend({',
     `  databasePath: ${JSON.stringify(rvfPath)},`,
     '  dimensions: 4,',
@@ -130,7 +139,14 @@ function parseRvfHeader(rvfPath) {
   const raw = readFileSync(rvfPath);
   if (raw.length < 8) throw new Error('file-too-small');
   const magic = String.fromCharCode(raw[0], raw[1], raw[2], raw[3]);
-  if (magic !== 'RVF\0') throw new Error('bad-magic:' + JSON.stringify(magic));
+  // Per ADR-0092 (native + pureTS coexistence), the .rvf main file carries
+  // ONE of two magic signatures depending on which backend wrote it:
+  //   - 'RVF\0' — pureTS writer (pure JS RvfBackend persistToDisk)
+  //   - 'SFVR' — native writer (Rust/WASM SFVR persistence layer)
+  // Both encode the same JSON header layout at offset 8. Accept either.
+  if (magic !== 'RVF\0' && magic !== 'SFVR') {
+    throw new Error('bad-magic:' + JSON.stringify(magic));
+  }
   const headerLen = raw.readUInt32LE(4);
   if (8 + headerLen > raw.length) throw new Error('truncated-header');
   const header = JSON.parse(raw.subarray(8, 8 + headerLen).toString('utf-8'));
@@ -177,8 +193,8 @@ describe('ADR-0090 A4 integration: real RvfBackend concurrent writers', () => {
   // ---------------------------------------------------------------------------
   it('N=4 concurrent writers: lock invariants hold, at least 1 entry persists, no dangling lock', async (t) => {
     const loaded = await loadRvfBackend();
-    if (!loaded) {
-      t.skip('RvfBackend not importable (tried @claude-flow/memory and fork dist)');
+    if (!loaded.RvfBackend) {
+      t.skip(`RvfBackend not importable via shared helper: ${loaded.error ?? 'unknown'}`);
       return;
     }
 
@@ -196,7 +212,7 @@ describe('ADR-0090 A4 integration: real RvfBackend concurrent writers', () => {
         const key = `it-writer-${i}`;
         const value = `integration write ${i}`;
         const scriptPath = join(workDir, `writer-${i}.mjs`);
-        writeFileSync(scriptPath, buildWriterScript(rvfPath, key, value), 'utf-8');
+        writeFileSync(scriptPath, buildWriterScript(rvfPath, key, value, loaded.path), 'utf-8');
         scriptPaths.push(scriptPath);
       }
 
@@ -221,21 +237,36 @@ describe('ADR-0090 A4 integration: real RvfBackend concurrent writers', () => {
           .join('\n')}`,
       );
 
-      // Invariant 2: .rvf exists and has a parseable header — IF at least
-      // one writer completed. A crashed writer may have left a half-renamed
-      // .tmp file, but the final `.rvf` should exist as long as any writer
-      // finished its rename.
+      // Invariant 2: .rvf exists — IF at least one writer completed. A
+      // crashed writer may have left a half-renamed .tmp file, but the
+      // final `.rvf` should exist as long as any writer finished its rename.
       assert.ok(existsSync(rvfPath), `.rvf file must exist at ${rvfPath} (okCount=${okCount})`);
-      const header = parseRvfHeader(rvfPath);
-      assert.ok(
-        typeof header.entryCount === 'number',
-        `header must have numeric entryCount, got: ${JSON.stringify(header)}`,
-      );
 
-      // Invariant 3: at least one entry landed.
+      // Re-open the backend and count recoverable entries. This is the
+      // backend-agnostic source of truth — works for both pureTS (.rvf
+      // "RVF\0") and native (.rvf "SFVR") on-disk formats per ADR-0092.
+      // The header-parse path below is an additional diagnostic but is not
+      // load-bearing for the invariants.
+      const { RvfBackend } = loaded;
+      const verifier = new RvfBackend({
+        databasePath: rvfPath,
+        dimensions: 4,
+        autoPersistInterval: 0,
+      });
+      await verifier.initialize();
+      let foundKeys = 0;
+      for (let i = 1; i <= N; i++) {
+        const entry = await verifier.get(`it-writer-${i}`);
+        if (entry) foundKeys++;
+      }
+      await verifier.shutdown();
+
+      // Invariant 3: at least one entry landed. Uses the backend's own
+      // recovery path rather than raw-parsing the on-disk header, so this
+      // invariant survives ADR-0092's dual-magic coexistence.
       assert.ok(
-        header.entryCount >= 1,
-        `entryCount (${header.entryCount}) must be >= 1 — lock acquisition broken if 0`,
+        foundKeys >= 1,
+        `foundKeys (${foundKeys}) must be >= 1 — lock acquisition broken if 0`,
       );
 
       // Invariant 4: .rvf.lock cleaned up. If releaseLock() regresses, this
@@ -250,28 +281,26 @@ describe('ADR-0090 A4 integration: real RvfBackend concurrent writers', () => {
         );
       }
 
-      // Observation: log actual entries persisted for diagnostics. This is
-      // NOT an assertion — it documents the multi-writer data-loss window
-      // described in the comment block above.
-      const { RvfBackend } = loaded;
-      const verifier = new RvfBackend({
-        databasePath: rvfPath,
-        dimensions: 4,
-        autoPersistInterval: 0,
-      });
-      await verifier.initialize();
-      let foundKeys = 0;
-      for (let i = 1; i <= N; i++) {
-        const entry = await verifier.get(`it-writer-${i}`);
-        if (entry) foundKeys++;
+      // Diagnostic-only (not a gate): if the file uses the pureTS layout,
+      // cross-check entryCount against foundKeys. Native-format files
+      // encode the header differently; when parseRvfHeader throws on a
+      // truncated-header from SFVR, we log "native" and skip the
+      // cross-check — the invariant is already covered by foundKeys.
+      let headerEntryCount = 'n/a-native-format';
+      try {
+        const header = parseRvfHeader(rvfPath);
+        if (typeof header.entryCount === 'number') {
+          headerEntryCount = header.entryCount;
+        }
+      } catch (err) {
+        headerEntryCount = `n/a (${err?.message ?? String(err)})`;
       }
-      await verifier.shutdown();
       const dataLoss = N - foundKeys;
       const crashedWriters = N - okCount;
       // eslint-disable-next-line no-console
       console.log(
         `[ADR-0090 A4] integration race: okCount=${okCount}/${N} ` +
-        `foundKeys=${foundKeys}/${N} entryCount=${header.entryCount} ` +
+        `foundKeys=${foundKeys}/${N} headerEntryCount=${headerEntryCount} ` +
         `crashed=${crashedWriters} data-loss=${dataLoss}`,
       );
     } finally {
@@ -281,8 +310,8 @@ describe('ADR-0090 A4 integration: real RvfBackend concurrent writers', () => {
 
   it('dangling .rvf.lock is detected (cleanup regression simulation)', async (t) => {
     const loaded = await loadRvfBackend();
-    if (!loaded) {
-      t.skip('RvfBackend not importable (tried @claude-flow/memory and fork dist)');
+    if (!loaded.RvfBackend) {
+      t.skip(`RvfBackend not importable via shared helper: ${loaded.error ?? 'unknown'}`);
       return;
     }
 

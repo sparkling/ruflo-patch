@@ -545,22 +545,6 @@ describe('ADR-0090 B5 happy path — reachable PASS when controller actually wri
   });
 });
 
-describe('ADR-0090 B5 three-way bucket — router-fallback → skip_accepted (legacy helper)', () => {
-  // Pre-W2 the shared `_b5_check_controller_roundtrip` helper skip_accepted
-  // on `{controller:"router-fallback"}` because SQL row-count was meaningless
-  // when the store hit RVF instead of SQLite. W2-I6 migrated causalGraph to
-  // `_b5_seeded_probe` which has stricter classification (probed state-diff
-  // drives the verdict). This test is intentionally skipped because:
-  //   1. causalGraph is migrated (c.migrated='seeded-probe' in CHECKS matrix)
-  //   2. Its new paired assertions live in W2-I6 commit 8eceb0c
-  //   3. The router-fallback skip semantic is still guaranteed by the
-  //      acceptance-adr0090-b5-checks.sh source itself (see check body's
-  //      `trivial_regex` branch with `router-fallback|RVF|ADR-0086` alt.)
-  // Re-enabling this test requires the seeded-probe helper to mirror the
-  // legacy skip taxonomy, which is a deliberate W3 item not yet scoped.
-  it.skip('router-fallback skip semantic (covered by acceptance check body + W2-I6 paired test)', () => {});
-});
-
 describe('ADR-0090 B5 three-way bucket — "NOT NULL constraint" → skip_accepted', () => {
   it('maps SQLite NOT NULL constraint failures to skip_accepted (controller SQL bug)', () => {
     // Live probe: agentdb_pattern_store returns
@@ -793,21 +777,6 @@ describe('ADR-0090 B5 three-way bucket — target-table missing after success �
       teardown(fx.tempDir);
     }
   });
-});
-
-describe('ADR-0090 B5 three-way bucket — "no such table: <other>" → skip_accepted (legacy helper)', () => {
-  // Pre-W2 the shared helper classified 'no such table: <other>' as
-  // skip_accepted (other-controller wiring gap). W2-I3 migrated
-  // explainableRecall to `_b5_check_causal_pipeline` which VERIFIES that
-  // causal_edges specifically DOES exist post-agentdb_health (the DDL
-  // regression-guard for agentic-flow commit 8238837). Under that helper,
-  // "no such table: causal_edges" is now a FAIL signal by design — the
-  // stub is lying about the DDL having landed. The legacy semantic
-  // "different-table-missing → skip" is moot because the pipeline helper
-  // only checks the one table it cares about.
-  // Coverage for the replacement classification: W2-I3 commit 70c9901's
-  // own paired test + the pipeline helper's source (5 explicit branches).
-  it.skip('other-table skip semantic (superseded by _b5_check_causal_pipeline DDL guard, W2-I3)', () => {});
 });
 
 describe('ADR-0090 B5 three-way bucket — sqlite3 binary missing → skip_accepted', () => {
