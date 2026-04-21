@@ -1175,20 +1175,14 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase13_lib" ]]; then
   run_check_bg "p13-agentdb-reflexion"   "P13.2 migration v1-agentdb reflexion_retrieve"   check_adr0094_p13_migration_agentdb_v1_reflexion_retrieve    "adr0094-p13"
 fi
 
-# ADR-0094 Phase 14: Performance SLO per tool class. Each check runs one MCP
-# tool invocation and asserts elapsed wall-clock ≤ per-class budget. FAIL on
-# SLO-exceeded, FAIL on tool error (non-skip), FAIL on empty body (ADR-0082
-# silent-pass canary), SKIP_ACCEPTED on tool-not-found, PASS otherwise.
-if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase14_lib" ]]; then
-  run_check_bg "p14-slo-memory-store"    "P14 memory_store SLO (10s)"            check_adr0094_p14_slo_memory_store      "adr0094-p14"
-  run_check_bg "p14-slo-session-save"    "P14 session_save SLO (10s)"            check_adr0094_p14_slo_session_save      "adr0094-p14"
-  run_check_bg "p14-slo-agent-list"      "P14 agent_list SLO (15s)"              check_adr0094_p14_slo_agent_list        "adr0094-p14"
-  run_check_bg "p14-slo-claims-board"    "P14 claims_board SLO (10s)"            check_adr0094_p14_slo_claims_board      "adr0094-p14"
-  run_check_bg "p14-slo-workflow-list"   "P14 workflow_list SLO (10s)"           check_adr0094_p14_slo_workflow_list     "adr0094-p14"
-  run_check_bg "p14-slo-config-get"      "P14 config_get SLO (10s)"              check_adr0094_p14_slo_config_get        "adr0094-p14"
-  run_check_bg "p14-slo-neural-status"   "P14 neural_status SLO (15s)"           check_adr0094_p14_slo_neural_status     "adr0094-p14"
-  run_check_bg "p14-slo-autopilot-stat"  "P14 autopilot_status SLO (10s)"        check_adr0094_p14_slo_autopilot_status  "adr0094-p14"
-fi
+# ADR-0094 Phase 14 SLO probes intentionally NOT spawned in this parallel wave.
+# Running 8 latency probes alongside ~570 other run_check_bg spawns produces
+# 30x measurement skew (memory_store 4.5s cold baseline → 28s observed under
+# self-contention; workflow_list 0.33s → 11s). SLO budgets are correct — only
+# the scheduling was wrong. Phase 14 now runs sequentially AFTER the parallel
+# wave joins, just before Phase 4's sequential daemon block, so each probe
+# measures single-process latency against the hot E2E_DIR. See diagnosis in
+# tmp/phase-fixes/p14-diagnosis.md and ADR-0094 Phase 14 log.
 
 # ADR-0094 Phase 15: Flakiness characterization. Each check invokes one MCP
 # tool three times serially with identical input and asserts all three
@@ -1575,19 +1569,10 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase13_lib" ]]; then
   )
 fi
 
-_p14_specs=()
-if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase14_lib" ]]; then
-  _p14_specs=(
-    "p14-slo-memory-store|P14 memory_store SLO (10s)"
-    "p14-slo-session-save|P14 session_save SLO (10s)"
-    "p14-slo-agent-list|P14 agent_list SLO (15s)"
-    "p14-slo-claims-board|P14 claims_board SLO (10s)"
-    "p14-slo-workflow-list|P14 workflow_list SLO (10s)"
-    "p14-slo-config-get|P14 config_get SLO (10s)"
-    "p14-slo-neural-status|P14 neural_status SLO (15s)"
-    "p14-slo-autopilot-stat|P14 autopilot_status SLO (10s)"
-  )
-fi
+# _p14_specs intentionally omitted — Phase 14 SLO probes run sequentially
+# after the parallel wave joins (see comment at the run_check_bg skip block
+# above). Keeping them out of collect_parallel "all" avoids harness
+# self-contention skewing latency measurements.
 
 _p15_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
@@ -1966,7 +1951,6 @@ collect_parallel "all" \
   "${_p11_specs[@]}" \
   "${_p12_specs[@]}" \
   "${_p13_specs[@]}" \
-  "${_p14_specs[@]}" \
   "${_p15_specs[@]}" \
   "${_p16_specs[@]}" \
   "${_p17_specs[@]}" \
@@ -1987,6 +1971,31 @@ fi
 log "  e2e context: ${_E2E_CTRL_COUNT} controllers listed in health"
 
 _record_phase "all-checks" "$(_elapsed_ms "$_g" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0094 Phase 14: SLO probes — sequential, AFTER the parallel wave joins
+# ════════════════════════════════════════════════════════════════════
+# Diagnosis /tmp/phase-fixes/p14-diagnosis.md confirmed that spawning these
+# 8 latency probes in the same `collect_parallel "all"` wave as ~570 other
+# run_check_bg checks caused 30x measurement skew (memory_store 4.5s cold
+# baseline → 28s observed; workflow_list 0.33s → 11s). The SLO budgets are
+# correct — only the scheduling was wrong. Running them here, sequentially,
+# after all other background jobs have joined, lets each probe see
+# single-process latency against the still-hot E2E_DIR. Total added
+# wall-clock < 30s serialized (8 probes × ~1-4s warm).
+if [[ -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" && -f "$phase14_lib" ]]; then
+  _p14_start=$(_ns)
+  log "── ADR-0094 Phase 14: SLO probes (sequential, post-parallel) ──"
+  run_check "p14-slo-memory-store"   "P14 memory_store SLO (10s)"      check_adr0094_p14_slo_memory_store      "adr0094-p14"
+  run_check "p14-slo-session-save"   "P14 session_save SLO (10s)"      check_adr0094_p14_slo_session_save      "adr0094-p14"
+  run_check "p14-slo-agent-list"     "P14 agent_list SLO (15s)"        check_adr0094_p14_slo_agent_list        "adr0094-p14"
+  run_check "p14-slo-claims-board"   "P14 claims_board SLO (10s)"      check_adr0094_p14_slo_claims_board      "adr0094-p14"
+  run_check "p14-slo-workflow-list"  "P14 workflow_list SLO (10s)"     check_adr0094_p14_slo_workflow_list     "adr0094-p14"
+  run_check "p14-slo-config-get"     "P14 config_get SLO (10s)"        check_adr0094_p14_slo_config_get        "adr0094-p14"
+  run_check "p14-slo-neural-status"  "P14 neural_status SLO (15s)"     check_adr0094_p14_slo_neural_status     "adr0094-p14"
+  run_check "p14-slo-autopilot-stat" "P14 autopilot_status SLO (10s)"  check_adr0094_p14_slo_autopilot_status  "adr0094-p14"
+  _record_phase "phase14-slo" "$(_elapsed_ms "$_p14_start" "$(_ns)")"
+fi
 
 # ════════════════════════════════════════════════════════════════════
 # Phase 4: Daemon IPC — sequential with shared daemon lifecycle
