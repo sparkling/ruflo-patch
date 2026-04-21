@@ -73,8 +73,11 @@ NPM_CONFIG_REGISTRY="$REGISTRY" npm install \
   >"$TMP/install.log" 2>&1 \
   || { tail -40 "$TMP/install.log" >&2; die "npm install failed"; }
 
-CLI="$TMP/node_modules/.bin/cli"
-[[ -x "$CLI" ]] || die "CLI binary not resolved at $CLI"
+CLI=""
+for _c in ruflo claude-flow cli; do
+  if [[ -x "$TMP/node_modules/.bin/$_c" ]]; then CLI="$TMP/node_modules/.bin/$_c"; break; fi
+done
+[[ -n "$CLI" ]] || die "CLI binary not resolved at $TMP/node_modules/.bin/{ruflo,claude-flow,cli}"
 
 CLI_VERSION="$(node -p "require('$TMP/node_modules/${PKG}/package.json').version" 2>/dev/null || echo unknown)"
 log "cli version: $CLI_VERSION"

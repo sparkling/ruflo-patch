@@ -20,7 +20,9 @@ _FAST_RUN_GROUPS="$_FAST_GROUPS"
 # ── Find or create harness ──────────────────────────────────────────
 ACCEPT_TEMP=""
 for d in /tmp/ruflo-accept-* /tmp/ruflo-fast-*; do
-  [[ -x "$d/node_modules/.bin/cli" ]] && { ACCEPT_TEMP="$d"; break; }
+  for _c in ruflo claude-flow cli; do
+    [[ -x "$d/node_modules/.bin/$_c" ]] && { ACCEPT_TEMP="$d"; break 2; }
+  done
 done
 
 if [[ -z "$ACCEPT_TEMP" ]]; then
@@ -34,10 +36,13 @@ fi
 
 TEMP_DIR="$ACCEPT_TEMP"
 PKG="@sparkleideas/cli"
-CLI_BIN="${ACCEPT_TEMP}/node_modules/.bin/cli"
+CLI_BIN=""
+for _c in ruflo claude-flow cli; do
+  if [[ -x "${ACCEPT_TEMP}/node_modules/.bin/$_c" ]]; then CLI_BIN="${ACCEPT_TEMP}/node_modules/.bin/$_c"; break; fi
+done
 
-if [[ ! -x "$CLI_BIN" ]]; then
-  echo "[fast] FATAL: CLI not found at $CLI_BIN"; exit 1
+if [[ -z "$CLI_BIN" ]]; then
+  echo "[fast] FATAL: CLI not found at ${ACCEPT_TEMP}/node_modules/.bin/{ruflo,claude-flow,cli}"; exit 1
 fi
 
 # ── Find or create E2E project ──────────────────────────────────────

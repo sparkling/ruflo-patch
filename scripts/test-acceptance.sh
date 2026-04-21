@@ -225,9 +225,18 @@ fi
 
 # Phase: Initialize project (harness — init --full + memory init)
 _p=$(_ns)
-CLI_BIN="${ACCEPT_TEMP}/node_modules/.bin/cli"
-if [[ ! -x "$CLI_BIN" ]]; then
-  log_error "CLI binary not found at ${CLI_BIN} — harness abort"; exit 1
+# ADR-0006 follow-up 2026-04-21: bin entries are ruflo/ruflo-mcp +
+# claude-flow/claude-flow-mcp (bare `cli` removed). Search preference
+# order; first match wins. Fail loud if none present (ADR-0082).
+CLI_BIN=""
+for _bin_candidate in ruflo claude-flow cli; do
+  if [[ -x "${ACCEPT_TEMP}/node_modules/.bin/${_bin_candidate}" ]]; then
+    CLI_BIN="${ACCEPT_TEMP}/node_modules/.bin/${_bin_candidate}"
+    break
+  fi
+done
+if [[ -z "$CLI_BIN" ]]; then
+  log_error "CLI binary not found at ${ACCEPT_TEMP}/node_modules/.bin/{ruflo,claude-flow,cli} — harness abort"; exit 1
 fi
 
 # ── ADR-0068: Unified embedding config (explicit, never rely on defaults) ──

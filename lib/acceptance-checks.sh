@@ -21,12 +21,17 @@
 # all transitive deps (~30s, includes better-sqlite3 cc1 compile).
 # In acceptance context (real npm, no pre-install), fall back to npx.
 _cli_cmd() {
-  local local_bin="${TEMP_DIR}/node_modules/.bin/cli"
-  if [[ -x "$local_bin" ]]; then
-    echo "$local_bin"
-  else
-    echo "npx --yes $PKG"
-  fi
+  # ADR-0006 follow-up 2026-04-21: bin entries are ruflo/claude-flow
+  # (bare `cli` removed). Prefer ruflo, fall through to claude-flow, then
+  # the legacy `cli` alias during transition, then npx for non-init dirs.
+  local cand
+  for cand in ruflo claude-flow cli; do
+    if [[ -x "${TEMP_DIR}/node_modules/.bin/${cand}" ]]; then
+      echo "${TEMP_DIR}/node_modules/.bin/${cand}"
+      return
+    fi
+  done
+  echo "npx --yes $PKG"
 }
 
 _booster_cmd() {
