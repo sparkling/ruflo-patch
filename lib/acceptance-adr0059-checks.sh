@@ -45,12 +45,33 @@ check_adr0059_memory_store_retrieve() {
   # Use list to verify — more reliable than retrieve across CLI versions.
   # ADR-0082: require EXACT key match; the previous "entries|total|1" fallback
   # silently passed on any output containing "1" and masked real regressions.
-  _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-rt --limit 10" "" 60
-  if echo "$_RK_OUT" | grep -q "$test_key"; then
+  #
+  # BUG-ADR0059-STORE-LIST-RACE (2026-04-21): the store path takes the RVF
+  # lock, persists, and releases on process.exit. A back-to-back list
+  # invocation can race the lock release — list opens before the store's
+  # fsync has propagated to a fresh reader. Retry with exponential backoff
+  # (0ms / 250ms / 500ms / 1000ms / 2000ms, ~4s total budget) so the check
+  # tolerates the flush-visibility window without weakening the "key must
+  # appear" invariant.
+  local list_attempt=0
+  local list_delays=(0 250 500 1000 2000)
+  local list_found="false"
+  while (( list_attempt < ${#list_delays[@]} )); do
+    if (( list_delays[list_attempt] > 0 )); then
+      sleep "0.$(printf '%03d' "${list_delays[list_attempt]}")"
+    fi
+    _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-rt --limit 10" "" 60
+    if echo "$_RK_OUT" | grep -q "$test_key"; then
+      list_found="true"
+      break
+    fi
+    list_attempt=$((list_attempt + 1))
+  done
+  if [[ "$list_found" == "true" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Store→list round-trip: key '$test_key' found in namespace"
+    _CHECK_OUTPUT="Store→list round-trip: key '$test_key' found in namespace (attempt $((list_attempt + 1))/${#list_delays[@]})"
   else
-    _CHECK_OUTPUT="Stored key '$test_key' not found in list (ADR-0082 loud-fail): ${_RK_OUT:0:200}"
+    _CHECK_OUTPUT="Stored key '$test_key' not found in list after ${#list_delays[@]} attempts with backoff (ADR-0082 loud-fail): ${_RK_OUT:0:200}"
   fi
 }
 
