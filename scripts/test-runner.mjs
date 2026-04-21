@@ -15,7 +15,9 @@ import { resolve, join, basename } from 'node:path';
 // 20% keeps the ratio stable while still catching mass-skip regressions.
 const MAX_SKIPS_FLOOR = 8;
 const MAX_SKIPS_ENV = process.env.SKIP_THRESHOLD ? parseInt(process.env.SKIP_THRESHOLD, 10) : null;
-const TIMEOUT_MS = parseInt(process.env.TEST_TIMEOUT || '60000', 10);
+// Default to 5 min; suite grew past 60s as ADR-0094 coverage + ADR-0069
+// closure added ~100 paired unit tests. Override via TEST_TIMEOUT env var.
+const TIMEOUT_MS = parseInt(process.env.TEST_TIMEOUT || '300000', 10);
 const saveResults = process.argv.includes('--save-results') ||
   process.env.SAVE_TEST_RESULTS === '1';
 
