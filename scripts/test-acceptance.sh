@@ -2237,6 +2237,53 @@ log "  $(printf '%-22s %6dms (%3ds)' 'TOTAL' "$ACCEPT_TOTAL_MS" "$(( ACCEPT_END_
 log "════════════════════════════════════════════"
 log "Results: ${results_dir}/acceptance-results.json"
 
+# ADR-0094 close-criterion tracker: append this run to the streak log and
+# print current status. Mechanical only — does NOT affect cascade exit code.
+# Uses node built-ins only. Idempotent per runId (re-run safe).
+STREAK_FILE="${PROJECT_DIR}/test-results/cascade-streak.jsonl"
+STREAK_RUN_ID="$(basename "${results_dir}")"
+if [[ -x "$(command -v node)" ]] && [[ -f "${results_dir}/acceptance-results.json" ]]; then
+  node -e '
+    const fs = require("fs");
+    const path = require("path");
+    const [resultsPath, streakFile, runId] = process.argv.slice(1);
+    const r = JSON.parse(fs.readFileSync(resultsPath, "utf8"));
+    const s = r.summary || {};
+    const pass = Number(s.passed ?? 0);
+    const fail = Number(s.failed ?? 0);
+    const skipAccepted = Number(s.skip_accepted ?? 0);
+    const iso = r.timestamp || new Date().toISOString();
+    const date = iso.slice(0, 10);
+    const entry = {
+      date,
+      iso,
+      runId,
+      pass,
+      fail,
+      skip_accepted: skipAccepted,
+      verified_coverage: null,
+      invoked_coverage: null,
+      green: fail === 0 && pass > 0,
+    };
+    // Idempotent append: skip if runId already logged.
+    let existing = "";
+    try { existing = fs.readFileSync(streakFile, "utf8"); } catch (_) {}
+    if (existing.split("\n").some(l => l.includes(`"runId":"${runId}"`))) {
+      return;
+    }
+    fs.mkdirSync(path.dirname(streakFile), { recursive: true });
+    fs.appendFileSync(streakFile, JSON.stringify(entry) + "\n");
+  ' "${results_dir}/acceptance-results.json" "$STREAK_FILE" "$STREAK_RUN_ID" \
+    2>/dev/null || log "[ADR-0094] streak append skipped (node error)"
+  if [[ -f "${PROJECT_DIR}/scripts/adr0094-streak-check.mjs" ]]; then
+    log ""
+    # Pipe through log so the streak block lands in the cascade transcript.
+    node "${PROJECT_DIR}/scripts/adr0094-streak-check.mjs" 2>&1 | while IFS= read -r streak_line; do
+      log "$streak_line"
+    done || true
+  fi
+fi
+
 # ADR-0072: Baseline regression guard
 BASELINE_COUNT=155
 if [[ "$pass_count" -lt "$BASELINE_COUNT" ]]; then
