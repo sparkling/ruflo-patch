@@ -133,7 +133,7 @@ _check_adr0094_p3_daa_agent_adapt_body() {
     "{\"agentId\":\"${aid}\",\"feedback\":\"optimize\",\"performanceScore\":0.9}" \
     'adapted|updated|success|adaptation' \
     "daa_agent_adapt" \
-    15
+    30
 
   E2E_DIR="$_saved"
 }

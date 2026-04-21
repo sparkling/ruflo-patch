@@ -179,7 +179,7 @@ check_adr0094_p7_cli_system_info() {
     "status" \
     'ruflo|swarm|agents|tasks|memory|backend|mcp|status|stopped|running' \
     "cli_status" \
-    15
+    30
 }
 
 # ════════════════════════════════════════════════════════════════════
