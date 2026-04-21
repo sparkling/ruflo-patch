@@ -1192,14 +1192,9 @@ fi
 # flaky), FAIL on all-empty (ADR-0082 canary), FAIL on all-error,
 # SKIP_ACCEPTED on tool-not-found, PASS on deterministic success OR
 # deterministic failure.
-if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
-  run_check_bg "p15-flaky-memory-search"   "P15 memory_search determinism (3x)"   check_adr0094_p15_flaky_memory_search   "adr0094-p15"
-  run_check_bg "p15-flaky-agent-list"      "P15 agent_list determinism (3x)"      check_adr0094_p15_flaky_agent_list      "adr0094-p15"
-  run_check_bg "p15-flaky-config-get"      "P15 config_get determinism (3x)"      check_adr0094_p15_flaky_config_get      "adr0094-p15"
-  run_check_bg "p15-flaky-claims-board"    "P15 claims_board determinism (3x)"    check_adr0094_p15_flaky_claims_board    "adr0094-p15"
-  run_check_bg "p15-flaky-workflow-list"   "P15 workflow_list determinism (3x)"   check_adr0094_p15_flaky_workflow_list   "adr0094-p15"
-  run_check_bg "p15-flaky-session-list"    "P15 session_list determinism (3x)"    check_adr0094_p15_flaky_session_list    "adr0094-p15"
-fi
+# Phase 15 moved out of the parallel wave — see the sequential block below
+# next to Phase 14. Same rationale: determinism checks under 500+ way
+# concurrent fan-out measure harness contention, not tool flakiness.
 
 # ADR-0094 Phase 16: PII detection inverse. 7 inverse checks assert the
 # aidefence PII detector does NOT false-positive on benign inputs (plain
@@ -1575,17 +1570,9 @@ fi
 # above). Keeping them out of collect_parallel "all" avoids harness
 # self-contention skewing latency measurements.
 
+# _p15_specs intentionally omitted — Phase 15 runs sequentially after the
+# parallel wave joins (same rationale as Phase 14).
 _p15_specs=()
-if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
-  _p15_specs=(
-    "p15-flaky-memory-search|P15 memory_search determinism (3x)"
-    "p15-flaky-agent-list|P15 agent_list determinism (3x)"
-    "p15-flaky-config-get|P15 config_get determinism (3x)"
-    "p15-flaky-claims-board|P15 claims_board determinism (3x)"
-    "p15-flaky-workflow-list|P15 workflow_list determinism (3x)"
-    "p15-flaky-session-list|P15 session_list determinism (3x)"
-  )
-fi
 
 _p16_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase16_lib" ]]; then
@@ -1996,6 +1983,31 @@ if [[ -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" && -f "$phase14_l
   run_check "p14-slo-neural-status"  "P14 neural_status SLO (15s)"     check_adr0094_p14_slo_neural_status     "adr0094-p14"
   run_check "p14-slo-autopilot-stat" "P14 autopilot_status SLO (10s)"  check_adr0094_p14_slo_autopilot_status  "adr0094-p14"
   _record_phase "phase14-slo" "$(_elapsed_ms "$_p14_start" "$(_ns)")"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0094 Phase 15: Flakiness characterization (sequential, post-parallel)
+# ════════════════════════════════════════════════════════════════════
+# P15 fires the same tool 3x serially with identical input and asserts all
+# three responses classify to the same shape class. Running it under the
+# 500+-way parallel wave measured harness contention, not tool determinism —
+# same failure mode documented in /tmp/phase-fixes/p14-diagnosis.md. A fresh
+# CLI subprocess under wave pressure can exceed the 20s per-call budget on
+# the FIRST call (module cold-start + ONNX embedding load) and be SIGKILLed
+# to exit_error, while calls 2+3 land after siblings drain and come back
+# clean → "exit_error, success, success" flake signature (2026-04-21 runs
+# 15:59, 16:25). Moving the phase out of the wave removes the contention
+# and lets the classifier measure what it was designed to measure.
+if [[ -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
+  _p15_start=$(_ns)
+  log "── ADR-0094 Phase 15: Flakiness characterization (sequential, post-parallel) ──"
+  run_check "p15-flaky-memory-search"  "P15 memory_search determinism (3x)"  check_adr0094_p15_flaky_memory_search  "adr0094-p15"
+  run_check "p15-flaky-agent-list"     "P15 agent_list determinism (3x)"     check_adr0094_p15_flaky_agent_list     "adr0094-p15"
+  run_check "p15-flaky-config-get"     "P15 config_get determinism (3x)"     check_adr0094_p15_flaky_config_get     "adr0094-p15"
+  run_check "p15-flaky-claims-board"   "P15 claims_board determinism (3x)"   check_adr0094_p15_flaky_claims_board   "adr0094-p15"
+  run_check "p15-flaky-workflow-list"  "P15 workflow_list determinism (3x)"  check_adr0094_p15_flaky_workflow_list  "adr0094-p15"
+  run_check "p15-flaky-session-list"   "P15 session_list determinism (3x)"   check_adr0094_p15_flaky_session_list   "adr0094-p15"
+  _record_phase "phase15-flakiness" "$(_elapsed_ms "$_p15_start" "$(_ns)")"
 fi
 
 # ════════════════════════════════════════════════════════════════════
