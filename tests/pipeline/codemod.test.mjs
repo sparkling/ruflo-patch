@@ -72,9 +72,12 @@ describe('codemod: package.json transform', () => {
     assert.ok(result.optionalDependencies['@sparkleideas/ruflo'], 'optional dep renamed');
     assert.ok(!result.optionalDependencies['ruflo'], 'old optional dep removed');
 
-    // bin
-    assert.ok(result.bin['@sparkleideas/claude-flow'], 'bin key renamed');
-    assert.ok(!result.bin['claude-flow'], 'old bin key removed');
+    // bin — ADR-0006 follow-up 2026-04-21: bin keys are POSIX executable
+    // names, NOT package names. npm rejects `/` in them, so
+    // `@sparkleideas/claude-flow` would be an invalid bin entry. Keys
+    // stay literal; regression-guarded by codemod-bin-preservation.test.mjs.
+    assert.ok(result.bin['claude-flow'], 'bin key preserved literally');
+    assert.ok(!result.bin['@sparkleideas/claude-flow'], 'bin key must not be scoped');
 
     // exports
     assert.ok(result.exports['@sparkleideas/memory'], 'exports key renamed');
