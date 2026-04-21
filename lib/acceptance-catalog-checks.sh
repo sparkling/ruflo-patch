@@ -231,7 +231,7 @@ _check_adr0096_catalog_populated_body() {
   fi
 }
 
-check_adr0096_catalog_populated() {
+check_adr0096_catalog_populated() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "adr0096-populated" _check_adr0096_catalog_populated_body
 }
 
@@ -306,7 +306,7 @@ MD
   _CHECK_OUTPUT="ADR-0096/verify: --verify exited $rc: $(tail -5 "$log" | tr '\n' ' ')"
 }
 
-check_adr0096_catalog_verify() {
+check_adr0096_catalog_verify() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "adr0096-verify" _check_adr0096_catalog_verify_body
 }
 
@@ -375,7 +375,7 @@ _check_adr0096_fingerprint_determinism_body() {
   _CHECK_OUTPUT="ADR-0096/fingerprint: deterministic: $fp1 (2 runs, identical)"
 }
 
-check_adr0096_fingerprint_determinism() {
+check_adr0096_fingerprint_determinism() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "adr0096-fingerprint" _check_adr0096_fingerprint_determinism_body
 }
 
@@ -454,7 +454,7 @@ _check_adr0096_skip_streak_tracking_body() {
   esac
 }
 
-check_adr0096_skip_streak_tracking() {
+check_adr0096_skip_streak_tracking() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "adr0096-skip-streak" _check_adr0096_skip_streak_tracking_body
 }
 
@@ -522,7 +522,7 @@ _check_adr0096_jsonl_sqlite_reconcile_body() {
   _CHECK_OUTPUT="ADR-0096/reconcile: identical row counts: export=$exported_rows == jsonl=$jsonl_rows"
 }
 
-check_adr0096_jsonl_sqlite_reconcile() {
+check_adr0096_jsonl_sqlite_reconcile() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "adr0096-reconcile" _check_adr0096_jsonl_sqlite_reconcile_body
 }
 
@@ -611,7 +611,7 @@ _check_adr0096_skip_reverify_dry_run_body() {
   _CHECK_OUTPUT="ADR-0096/dry-run: $total_skips skip(s) enumerated across $bucket_sections bucket(s), 0 unknown"
 }
 
-check_adr0096_skip_reverify_dry_run() {
+check_adr0096_skip_reverify_dry_run() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "adr0096-dry-run" _check_adr0096_skip_reverify_dry_run_body
 }
 
@@ -700,6 +700,6 @@ _check_adr0096_skip_rot_gate_body() {
   _CHECK_OUTPUT="ADR-0096/skip-rot: no SKIP_ROT marker in output (exit=$rc); first 5 lines: $(head -5 "$log" | tr '\n' ' ')"
 }
 
-check_adr0096_skip_rot_gate() {
+check_adr0096_skip_rot_gate() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "adr0096-skip-rot" _check_adr0096_skip_rot_gate_body
 }

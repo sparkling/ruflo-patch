@@ -470,7 +470,7 @@ $(echo "$store_body" | head -10)"
 # because agentdb.getController('reflexion') is undefined in the current
 # build — the helper's skip_accepted branch handles this.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_reflexion() {
+check_adr0090_b5_reflexion() { # adr0097-l2-delegator: flag set inside _b5_check_controller_roundtrip
   local marker="b5-reflexion-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "reflexion" \
@@ -488,7 +488,7 @@ check_adr0090_b5_reflexion() {
 # controller not available" because agentdb.getController('skills') is
 # undefined in this build → skip_accepted branch.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_skillLibrary() {
+check_adr0090_b5_skillLibrary() { # adr0097-l2-delegator: flag set inside _b5_check_controller_roundtrip
   local marker="b5-skill-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "skillLibrary" \
@@ -507,7 +507,7 @@ check_adr0090_b5_skillLibrary() {
 # an unknown type (undefined)" — the 4d SQL-binding skip_accepted branch
 # covers this in the current build.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_reasoningBank() {
+check_adr0090_b5_reasoningBank() { # adr0097-l2-delegator: flag set inside _b5_check_controller_roundtrip
   local marker="b5-rbank-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "reasoningBank" \
@@ -727,7 +727,7 @@ _b5_probe_causal_edge_persistence() {
 # persistence. Coordinated with W5-A1 on graphAdapter (shares the
 # helper, distinct marker keys).
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_causalGraph() {
+check_adr0090_b5_causalGraph() { # adr0097-l2-delegator: flag set inside _b5_probe_causal_edge_persistence
   local marker="b5-cgraph-$$-$(date +%s)"
   local source_id="w5a2-cgraph-src-$marker"
   local target_id="w5a2-cgraph-tgt-$marker"
@@ -1129,7 +1129,7 @@ _b5_seed_graph_adapter() {
 # because the post-fix path has no row to count (empty table is correct
 # behavior for a cold-init project).
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_causalRecall() {
+check_adr0090_b5_causalRecall() { # adr0097-l2-delegator: flag set inside _b5_check_causal_pipeline
   local marker="b5-crecall-$$-$(date +%s)"
   _b5_check_causal_pipeline \
     "causalRecall" \
@@ -1144,7 +1144,7 @@ check_adr0090_b5_causalRecall() {
 # controller not available" because learningSystem composes over
 # reflexion in this build. skip_accepted branch.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_learningSystem() {
+check_adr0090_b5_learningSystem() { # adr0097-l2-delegator: flag set inside _b5_check_controller_roundtrip
   local marker="b5-learn-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "learningSystem" \
@@ -1163,7 +1163,7 @@ check_adr0090_b5_learningSystem() {
 # is undefined (import mismatch — upstream ships it under
 # @sparkleideas/agentdb only). skip_accepted branch.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_hierarchicalMemory() {
+check_adr0090_b5_hierarchicalMemory() { # adr0097-l2-delegator: flag set inside _b5_check_controller_roundtrip
   local marker="b5-hmem-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "hierarchicalMemory" \
@@ -1191,7 +1191,7 @@ check_adr0090_b5_hierarchicalMemory() {
 # verification runs against `consolidation_log` — the check PASSes
 # (row present) or FAILs (counters lie, no INSERT).
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_memoryConsolidation() {
+check_adr0090_b5_memoryConsolidation() { # adr0097-l2-delegator: flag set inside _b5_seeded_probe
   # W2-I6: seed 8 episodic entries + bump importance/access_count to
   # meet the default filter (importance >= 0.6 AND access_count >= 3
   # per MemoryConsolidation.ts L113-114), then probe consolidate.
@@ -1225,7 +1225,7 @@ check_adr0090_b5_memoryConsolidation() {
 # the notice string disappears and the regex stops matching → helper
 # falls through to real row-count verification.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_attentionService() {
+check_adr0090_b5_attentionService() { # adr0097-l2-delegator: flag set inside _b5_seeded_probe
   # W2-I6: attention is ephemeral-per-process by design (AttentionService
   # has 0 CREATE TABLE / INSERT statements in the source — verifier
   # confirmed). "Seed" = "run a benchmark whose response IS the non-
@@ -1522,7 +1522,7 @@ RVF delta=$delta (baseline=$baseline_count → after=$after_count), ns_hits=$ns_
 #   to PASS and the skip signal surfaces the progress.
 # No sqlite_table — graphAdapter uses RuVector graph DB, not SQLite.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_graphAdapter() {
+check_adr0090_b5_graphAdapter() { # adr0097-l2-delegator: flag set inside _b5_seeded_probe
   _b5_seeded_probe \
     "graphAdapter" \
     "_b5_seed_graph_adapter" \
@@ -1719,7 +1719,7 @@ $(echo "$record_body" | head -20)"
 # cold-start, or if "no such table: causal_edges" appears in the tool
 # response, or if the tool exits non-zero.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_nightlyLearner() {
+check_adr0090_b5_nightlyLearner() { # adr0097-l2-delegator: flag set inside _b5_check_causal_pipeline
   local marker="b5-nlearn-$$-$(date +%s)"
   _b5_check_causal_pipeline \
     "nightlyLearner" \
@@ -1758,7 +1758,7 @@ check_adr0090_b5_nightlyLearner() {
 # cold-start, or if "no such table: causal_edges" appears in the tool
 # response, or if the tool exits non-zero.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_explainableRecall() {
+check_adr0090_b5_explainableRecall() { # adr0097-l2-delegator: flag set inside _b5_check_causal_pipeline
   local marker="b5-xrec-$$-$(date +%s)"
   _b5_check_causal_pipeline \
     "explainableRecall" \

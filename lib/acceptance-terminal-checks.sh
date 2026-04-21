@@ -24,6 +24,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P4-terminal/<label>-prefixed diagnostics (ADR-0094 Phase 4) and uses ADR-0096 narrow tool-registry skip regex — wider canonical regex would falsely mark real "Terminal not found" handler errors as skip_accepted.
 _terminal_invoke_tool() {
   local tool="$1"
   local params="$2"

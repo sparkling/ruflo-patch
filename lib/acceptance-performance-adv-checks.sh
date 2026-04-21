@@ -22,6 +22,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P3-perf-adv/<label>-prefixed diagnostics (ADR-0094 Phase 3); canonical _mcp_invoke_tool has no phase-prefix convention and would lose forensic trace in grouped-parallel acceptance runs.
 _perf_adv_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -80,6 +81,7 @@ $(echo "$body" | head -10)"
 # Check 1: performance_benchmark — run performance benchmark
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_performance_benchmark() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _perf_adv_invoke_tool
   _perf_adv_invoke_tool \
     "performance_benchmark" \
     '{}' \
@@ -92,6 +94,7 @@ check_adr0094_p5_performance_benchmark() {
 # Check 2: performance_bottleneck — detect bottlenecks
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_performance_bottleneck() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _perf_adv_invoke_tool
   _perf_adv_invoke_tool \
     "performance_bottleneck" \
     '{}' \
@@ -104,6 +107,7 @@ check_adr0094_p5_performance_bottleneck() {
 # Check 3: performance_profile — profile system resources
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_performance_profile() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _perf_adv_invoke_tool
   _perf_adv_invoke_tool \
     "performance_profile" \
     '{}' \
@@ -116,6 +120,7 @@ check_adr0094_p5_performance_profile() {
 # Check 4: performance_optimize — suggest optimizations
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_performance_optimize() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _perf_adv_invoke_tool
   _perf_adv_invoke_tool \
     "performance_optimize" \
     '{}' \
@@ -128,6 +133,7 @@ check_adr0094_p5_performance_optimize() {
 # Check 5: performance_metrics — query performance metrics
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_performance_metrics() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _perf_adv_invoke_tool
   _perf_adv_invoke_tool \
     "performance_metrics" \
     '{}' \
@@ -140,6 +146,7 @@ check_adr0094_p5_performance_metrics() {
 # Check 6: performance_report — generate performance report
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_performance_report() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _perf_adv_invoke_tool
   _perf_adv_invoke_tool \
     "performance_report" \
     '{}' \

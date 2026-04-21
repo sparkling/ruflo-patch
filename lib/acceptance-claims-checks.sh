@@ -83,7 +83,7 @@ _claims_lifecycle_body() {
   E2E_DIR="$_saved_e2e"
 }
 
-check_adr0094_p1_claims_lifecycle() {
+check_adr0094_p1_claims_lifecycle() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   _with_iso_cleanup "claims-lifecycle" _claims_lifecycle_body
 }
 
@@ -91,73 +91,73 @@ check_adr0094_p1_claims_lifecycle() {
 # Individual tool checks (read-only shape verification)
 # ════════════════════════════════════════════════════════════════════
 
-check_adr0094_p1_claims_claim() {
+check_adr0094_p1_claims_claim() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_claim" \
     '{"taskId":"adr0094-test","agentId":"test-agent"}' \
     'claim|success|true|assigned|acquired' \
     "P1/claims_claim" 15 --ro
 }
 
-check_adr0094_p1_claims_status() {
+check_adr0094_p1_claims_status() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_status" \
     '{"taskId":"adr0094-test"}' \
     'status|claim|unclaimed|claimed|not found|taskId' \
     "P1/claims_status" 15 --ro
 }
 
-check_adr0094_p1_claims_list() {
+check_adr0094_p1_claims_list() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_list" '{}' \
     'claims|list|\[\]|tasks|"taskId"' \
     "P1/claims_list" 15 --ro
 }
 
-check_adr0094_p1_claims_board() {
+check_adr0094_p1_claims_board() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_board" '{}' \
     'board|claims|agents|tasks|\[\]|\{\}' \
     "P1/claims_board" 15 --ro
 }
 
-check_adr0094_p1_claims_load() {
+check_adr0094_p1_claims_load() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_load" '{}' \
     'load|count|agents|capacity|0|utilization' \
     "P1/claims_load" 15 --ro
 }
 
-check_adr0094_p1_claims_handoff() {
+check_adr0094_p1_claims_handoff() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_handoff" \
     '{"taskId":"adr0094-test","fromAgent":"test-agent","toAgent":"agent-2"}' \
     'handoff|success|true|pending|transfer|error' \
     "P1/claims_handoff" 15 --ro
 }
 
-check_adr0094_p1_claims_accept_handoff() {
+check_adr0094_p1_claims_accept_handoff() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_accept-handoff" \
     '{"taskId":"adr0094-test","agentId":"agent-2"}' \
     'accept|handoff|success|true|error|no.*pending' \
     "P1/claims_accept-handoff" 15 --ro
 }
 
-check_adr0094_p1_claims_steal() {
+check_adr0094_p1_claims_steal() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_steal" \
     '{"taskId":"adr0094-test","agentId":"agent-3"}' \
     'steal|success|true|stole|error|not.*stealable' \
     "P1/claims_steal" 15 --ro
 }
 
-check_adr0094_p1_claims_mark_stealable() {
+check_adr0094_p1_claims_mark_stealable() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_mark-stealable" \
     '{"taskId":"adr0094-test"}' \
     'stealable|marked|success|true|error' \
     "P1/claims_mark-stealable" 15 --ro
 }
 
-check_adr0094_p1_claims_rebalance() {
+check_adr0094_p1_claims_rebalance() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_rebalance" '{}' \
     'rebalance|success|true|balanced|moved|0|no.*change' \
     "P1/claims_rebalance" 15 --ro
 }
 
-check_adr0094_p1_claims_release() {
+check_adr0094_p1_claims_release() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool "claims_release" \
     '{"taskId":"adr0094-test"}' \
     'release|success|true|freed|removed|error|not.*found' \

@@ -22,6 +22,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P2/<label>-prefixed diagnostics and uses ADR-0082 narrow tool-registry skip phrasing distinct from _mcp_invoke_tool's envelope unwrap path (ADR-0094 Phase 2).
 _autopilot_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -158,7 +159,7 @@ check_adr0094_p2_autopilot_lifecycle() {
 # ════════════════════════════════════════════════════════════════════
 
 # Check 1: autopilot_enable
-check_adr0094_p2_autopilot_enable() {
+check_adr0094_p2_autopilot_enable() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_enable" \
     '{}' \
@@ -168,7 +169,7 @@ check_adr0094_p2_autopilot_enable() {
 }
 
 # Check 2: autopilot_disable
-check_adr0094_p2_autopilot_disable() {
+check_adr0094_p2_autopilot_disable() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_disable" \
     '{}' \
@@ -178,7 +179,7 @@ check_adr0094_p2_autopilot_disable() {
 }
 
 # Check 3: autopilot_status
-check_adr0094_p2_autopilot_status() {
+check_adr0094_p2_autopilot_status() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_status" \
     '{}' \
@@ -188,7 +189,7 @@ check_adr0094_p2_autopilot_status() {
 }
 
 # Check 4: autopilot_config
-check_adr0094_p2_autopilot_config() {
+check_adr0094_p2_autopilot_config() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_config" \
     '{}' \
@@ -198,7 +199,7 @@ check_adr0094_p2_autopilot_config() {
 }
 
 # Check 5: autopilot_predict
-check_adr0094_p2_autopilot_predict() {
+check_adr0094_p2_autopilot_predict() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_predict" \
     '{"context":"writing tests"}' \
@@ -208,7 +209,7 @@ check_adr0094_p2_autopilot_predict() {
 }
 
 # Check 6: autopilot_history
-check_adr0094_p2_autopilot_history() {
+check_adr0094_p2_autopilot_history() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_history" \
     '{}' \
@@ -218,7 +219,7 @@ check_adr0094_p2_autopilot_history() {
 }
 
 # Check 7: autopilot_learn
-check_adr0094_p2_autopilot_learn() {
+check_adr0094_p2_autopilot_learn() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_learn" \
     '{"input":"test pattern","outcome":"success"}' \
@@ -228,7 +229,7 @@ check_adr0094_p2_autopilot_learn() {
 }
 
 # Check 8: autopilot_log
-check_adr0094_p2_autopilot_log() {
+check_adr0094_p2_autopilot_log() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_log" \
     '{"message":"test log entry"}' \
@@ -238,7 +239,7 @@ check_adr0094_p2_autopilot_log() {
 }
 
 # Check 9: autopilot_reset
-check_adr0094_p2_autopilot_reset() {
+check_adr0094_p2_autopilot_reset() { # adr0097-l2-delegator: flag set inside _autopilot_invoke_tool
   _autopilot_invoke_tool \
     "autopilot_reset" \
     '{}' \

@@ -88,13 +88,16 @@ check_t3_1_bulk_corpus_ranking() {
   echo "$cook_out" | grep -qi 'cooking-' && cook_hits=$((cook_hits + 1))
   echo "$cook_out" | grep -qi 'pasta\|pizza\|risotto\|tagliatelle' && cook_hits=$((cook_hits + 1))
 
+  # ADR-0082: T3-1 explicitly tests "bulk corpus search ranking" — the
+  # whole point is that searching for a topic returns that topic's entries.
+  # The previous "entries listable" degrade-to-pass hid exactly the ranking
+  # regression this check exists to detect. Bulk persistence is covered by
+  # the earlier `found < 4` loud-fail; this branch asserts the ranking half.
   if [[ $cook_hits -ge 1 ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="T3-1: bulk corpus persisted (${found}/6 sentinels) + search returned topic match"
   else
-    # Hash fallback can miss semantic matches — degrade to "entries listable"
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T3-1: ${found}/6 bulk entries persisted (hash-fallback — semantic match unavailable)"
+    _CHECK_OUTPUT="T3-1: bulk-corpus search FAILED — query 'Italian pasta recipes' returned no cooking-cluster hits (persisted=${found}/6, hash-fallback or semantic ranking regressed, ADR-0082 loud-fail): ${cook_out:0:200}"
   fi
   rm -rf "$iso" 2>/dev/null
 }

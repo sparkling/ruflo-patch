@@ -144,7 +144,7 @@ check_memory_lifecycle() {
 
   # Retrieve
   local retrieve_out
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key test-pattern --namespace test-ns" "" 60
   retrieve_out="$_RK_OUT"
   if echo "$retrieve_out" | grep -q 'JWT auth'; then
     _CHECK_PASSED="true"

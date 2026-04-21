@@ -62,6 +62,8 @@ check_adr0059_unified_search_dedup() {
   _CHECK_PASSED="false"
   local cli; cli=$(_cli_cmd)
   local iso; iso=$(_e2e_isolate "0059-dedup")
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 
   # Store an entry via CLI
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'dedup-test-key' --value 'authentication middleware pattern' --namespace 'dedup-test'" "" 60

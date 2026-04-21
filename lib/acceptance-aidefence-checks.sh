@@ -12,7 +12,7 @@
 # ════════════════════════════════════════════════════════════════════
 # Check 1: aidefence_scan — scan input for threats
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p1_aidefence_scan() {
+check_adr0094_p1_aidefence_scan() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "aidefence_scan" \
     '{"input":"hello world"}' \
@@ -24,7 +24,7 @@ check_adr0094_p1_aidefence_scan() {
 # ════════════════════════════════════════════════════════════════════
 # Check 2: aidefence_analyze — deep analysis
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p1_aidefence_analyze() {
+check_adr0094_p1_aidefence_analyze() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "aidefence_analyze" \
     '{"input":"normal text for analysis"}' \
@@ -36,7 +36,7 @@ check_adr0094_p1_aidefence_analyze() {
 # ════════════════════════════════════════════════════════════════════
 # Check 3: aidefence_has_pii — PII detection
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p1_aidefence_has_pii() {
+check_adr0094_p1_aidefence_has_pii() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "aidefence_has_pii" \
     '{"input":"Contact john@example.com or call 555-1234"}' \
@@ -48,7 +48,7 @@ check_adr0094_p1_aidefence_has_pii() {
 # ════════════════════════════════════════════════════════════════════
 # Check 4: aidefence_is_safe — safety check
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p1_aidefence_is_safe() {
+check_adr0094_p1_aidefence_is_safe() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "aidefence_is_safe" \
     '{"input":"hello world"}' \
@@ -60,7 +60,7 @@ check_adr0094_p1_aidefence_is_safe() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: aidefence_learn — learn from input
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p1_aidefence_learn() {
+check_adr0094_p1_aidefence_learn() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "aidefence_learn" \
     '{"input":"safe pattern","label":"benign"}' \
@@ -79,7 +79,7 @@ check_adr0094_p1_aidefence_learn() {
 # keywords appear; the shape is legitimate so we match on the stable
 # JSON keys actually emitted.
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p1_aidefence_stats() {
+check_adr0094_p1_aidefence_stats() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "aidefence_stats" \
     '{}' \

@@ -187,6 +187,7 @@ _p10_memory_store_same_key_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p10_memory_store_same_key() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p10-mem-same-key" _p10_memory_store_same_key_body
 }
 
@@ -249,6 +250,7 @@ _p10_session_save_same_name_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p10_session_save_same_name() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p10-sess-same-name" _p10_session_save_same_name_body
 }
 
@@ -316,6 +318,7 @@ _p10_config_set_same_key_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p10_config_set_same_key() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p10-cfg-same-key" _p10_config_set_same_key_body
 }
 
@@ -427,5 +430,6 @@ _p10_init_full_reinvoke_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p10_init_full_reinvoke() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p10-init-reinvoke" _p10_init_full_reinvoke_body
 }

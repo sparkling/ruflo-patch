@@ -201,6 +201,7 @@ _p15_flaky_memory_search_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p15_flaky_memory_search() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p15-flaky-memory-search" _p15_flaky_memory_search_body
 }
 
@@ -213,6 +214,7 @@ _p15_flaky_agent_list_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p15_flaky_agent_list() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p15-flaky-agent-list" _p15_flaky_agent_list_body
 }
 
@@ -226,6 +228,7 @@ _p15_flaky_config_get_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p15_flaky_config_get() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p15-flaky-config-get" _p15_flaky_config_get_body
 }
 
@@ -238,6 +241,7 @@ _p15_flaky_claims_board_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p15_flaky_claims_board() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p15-flaky-claims-board" _p15_flaky_claims_board_body
 }
 
@@ -250,6 +254,7 @@ _p15_flaky_workflow_list_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p15_flaky_workflow_list() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p15-flaky-workflow-list" _p15_flaky_workflow_list_body
 }
 
@@ -262,5 +267,6 @@ _p15_flaky_session_list_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p15_flaky_session_list() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p15-flaky-session-list" _p15_flaky_session_list_body
 }

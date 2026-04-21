@@ -67,6 +67,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P4-transfer/<label>-prefixed diagnostics (ADR-0094 Phase 4) and adds "IPFS gateway offline" / "store unreachable" network-reachability skip buckets absent from the canonical _mcp_invoke_tool.
 _transfer_invoke_tool() {
   local tool="$1"
   local params="$2"

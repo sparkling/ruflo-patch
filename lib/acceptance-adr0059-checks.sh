@@ -42,16 +42,15 @@ check_adr0059_memory_store_retrieve() {
     _CHECK_OUTPUT="memory store failed (may need longer timeout): $_RK_OUT"; return
   fi
 
-  # Use list to verify — more reliable than retrieve across CLI versions
+  # Use list to verify — more reliable than retrieve across CLI versions.
+  # ADR-0082: require EXACT key match; the previous "entries|total|1" fallback
+  # silently passed on any output containing "1" and masked real regressions.
   _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-rt --limit 10" "" 60
   if echo "$_RK_OUT" | grep -q "$test_key"; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Store→list round-trip: key found in namespace"
-  elif echo "$_RK_OUT" | grep -qi 'entries\|total\|1'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Store→list: entries exist in namespace (key format may differ)"
+    _CHECK_OUTPUT="Store→list round-trip: key '$test_key' found in namespace"
   else
-    _CHECK_OUTPUT="Stored key not found in list: $_RK_OUT"
+    _CHECK_OUTPUT="Stored key '$test_key' not found in list (ADR-0082 loud-fail): ${_RK_OUT:0:200}"
   fi
 }
 
@@ -84,16 +83,18 @@ check_adr0059_memory_search() {
     rm -rf "$iso" 2>/dev/null; return
   fi
 
-  # Now semantic search — may fail on hash-fallback due to poor similarity
+  # Semantic search MUST return the stored key — this is the contract the
+  # check exists to verify. ADR-0082: the previous "list-verified as success"
+  # fallback silently passed when hash-fallback embeddings couldn't capture
+  # authentication↔JWT similarity, which is exactly the regression this check
+  # is supposed to catch. A real MiniLM embedder is the product requirement;
+  # hash-fallback in a shipped build is a bug, not an acceptable degraded mode.
   _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'authentication JWT tokens' --namespace adr0059-s --limit 5" "" 60
   if echo "$_RK_OUT" | grep -q 'jwt-auth'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Search returned stored key 'jwt-auth' (semantic match)"
   else
-    # List found it but search didn't — hash-fallback embeddings don't capture
-    # authentication↔JWT similarity well. Accept list-verified as success.
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="List verified jwt-auth persistence (semantic search unavailable on hash-fallback)"
+    _CHECK_OUTPUT="Semantic search FAILED to return 'jwt-auth' for query 'authentication JWT tokens' — hash-fallback embedder active or semantic ranking regressed (ADR-0082 loud-fail): ${_RK_OUT:0:200}"
   fi
   rm -rf "$iso" 2>/dev/null
 }
@@ -430,12 +431,40 @@ check_adr0059_hook_full_lifecycle() {
 check_adr0059_no_id_collisions() {
   _CHECK_PASSED="false"
   local ranked="$E2E_DIR/.claude-flow/data/ranked-context.json"
-  [[ -f "$ranked" ]] || { _CHECK_PASSED="true"; _CHECK_OUTPUT="No ranked-context.json (fresh project)"; return; }
+  local h="$E2E_DIR/.claude/helpers"
+
+  # ADR-0082: the previous "No ranked-context.json (fresh project)" branch was
+  # a silent pass — the check never asserted anything when the file was
+  # absent. Seed ranked-context.json as an explicit precondition by driving
+  # intelligence.cjs through consolidate+init (the normal production path
+  # that creates the file). If intelligence.cjs is genuinely absent from the
+  # build, that is a broken install, not a "fresh project" excuse.
+  if [[ ! -f "$ranked" ]]; then
+    if [[ ! -f "$h/intelligence.cjs" ]]; then
+      _CHECK_OUTPUT="intelligence.cjs missing from build — cannot seed ranked-context.json (ADR-0082 loud-fail): $h/intelligence.cjs"
+      return
+    fi
+
+    # Drive intelligence.cjs through the normal consolidate→init path to
+    # create ranked-context.json with real entries.
+    _adr0059_node "
+      const i = require('$h/intelligence.cjs');
+      for (let j = 0; j < 5; j++) i.recordEdit('/tmp/adr0059-collision-hot-' + j + '.ts');
+      i.recordEdit('/tmp/adr0059-collision-cold.ts');
+      i.consolidate();
+      i.init();
+    " >/dev/null 2>&1 || true
+
+    if [[ ! -f "$ranked" ]]; then
+      _CHECK_OUTPUT="Seeding failed — intelligence.cjs consolidate+init did not create $ranked (ADR-0082 loud-fail)"
+      return
+    fi
+  fi
 
   local out
   out=$(node -e "
     const r=JSON.parse(require('fs').readFileSync('$ranked','utf-8'));
-    const ids=r.entries.map(e=>e.id);
+    const ids=(r.entries||[]).map(e=>e.id);
     console.log(JSON.stringify({total:ids.length,unique:new Set(ids).size}));
   " 2>&1) || true
 
@@ -443,7 +472,9 @@ check_adr0059_no_id_collisions() {
     local total unique
     total=$(echo "$out" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).total))" 2>/dev/null) || total=0
     unique=$(echo "$out" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).unique))" 2>/dev/null) || unique=0
-    if [[ "$total" == "$unique" ]]; then
+    if [[ "$total" -eq 0 ]]; then
+      _CHECK_OUTPUT="ranked-context.json has zero entries after seeding — consolidate produced no entries (ADR-0082 loud-fail)"
+    elif [[ "$total" == "$unique" ]]; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="No collisions: $total entries, all unique"
     else

@@ -127,6 +127,8 @@ check_adr0090_b2_rvf_truncated() {
     _CHECK_OUTPUT="B2-trunc: failed to create isolated project dir"
     return
   fi
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d /tmp/b2-trunc-work-XXXXX)
 
@@ -180,6 +182,8 @@ check_adr0090_b2_rvf_bad_magic() {
     _CHECK_OUTPUT="B2-magic: failed to create isolated project dir"
     return
   fi
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d /tmp/b2-magic-work-XXXXX)
 
@@ -234,6 +238,8 @@ check_adr0090_b2_rvf_partial_wal() {
     _CHECK_OUTPUT="B2-wal: failed to create isolated project dir"
     return
   fi
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d /tmp/b2-wal-work-XXXXX)
 

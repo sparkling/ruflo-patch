@@ -131,6 +131,7 @@ _p12_memory_missing_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_memory_missing() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-memory-missing" _p12_memory_missing_body
 }
 
@@ -143,6 +144,7 @@ _p12_memory_wrong_type_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_memory_wrong_type() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-memory-wtype" _p12_memory_wrong_type_body
 }
 
@@ -158,6 +160,7 @@ _p12_session_missing_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_session_missing() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-session-missing" _p12_session_missing_body
 }
 
@@ -170,6 +173,7 @@ _p12_session_wrong_type_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_session_wrong_type() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-session-wtype" _p12_session_wrong_type_body
 }
 
@@ -185,6 +189,7 @@ _p12_agent_missing_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_agent_missing() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-agent-missing" _p12_agent_missing_body
 }
 
@@ -197,6 +202,7 @@ _p12_agent_wrong_type_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_agent_wrong_type() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-agent-wtype" _p12_agent_wrong_type_body
 }
 
@@ -214,6 +220,7 @@ _p12_claims_missing_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_claims_missing() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-claims-missing" _p12_claims_missing_body
 }
 
@@ -229,6 +236,7 @@ _p12_claims_wrong_type_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_claims_wrong_type() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-claims-wtype" _p12_claims_wrong_type_body
 }
 
@@ -245,6 +253,7 @@ _p12_workflow_missing_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_workflow_missing() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-workflow-missing" _p12_workflow_missing_body
 }
 
@@ -257,6 +266,7 @@ _p12_workflow_wrong_type_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_workflow_wrong_type() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-workflow-wtype" _p12_workflow_wrong_type_body
 }
 
@@ -273,6 +283,7 @@ _p12_config_missing_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_config_missing() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-config-missing" _p12_config_missing_body
 }
 
@@ -285,6 +296,7 @@ _p12_config_wrong_type_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_config_wrong_type() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-config-wtype" _p12_config_wrong_type_body
 }
 
@@ -303,6 +315,7 @@ _p12_neural_missing_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_neural_missing() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-neural-missing" _p12_neural_missing_body
 }
 
@@ -315,6 +328,7 @@ _p12_neural_wrong_type_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p12_quality_neural_wrong_type() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p12-qual-neural-wtype" _p12_neural_wrong_type_body
 }
 

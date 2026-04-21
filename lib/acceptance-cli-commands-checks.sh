@@ -67,7 +67,7 @@ $(echo "$body" | head -10)"
 # ════════════════════════════════════════════════════════════════════
 # Check 1: --version
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_version() {
+check_adr0094_p7_cli_version() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "--version" \
     '[0-9]+\.[0-9]+\.[0-9]+' \
@@ -78,7 +78,7 @@ check_adr0094_p7_cli_version() {
 # ════════════════════════════════════════════════════════════════════
 # Check 2: doctor
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_doctor() {
+check_adr0094_p7_cli_doctor() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "doctor" \
     'diagnostic|check|pass|fail|ok|warn|doctor|health' \
@@ -89,7 +89,7 @@ check_adr0094_p7_cli_doctor() {
 # ════════════════════════════════════════════════════════════════════
 # Check 3: init --help
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_init_help() {
+check_adr0094_p7_cli_init_help() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "init --help" \
     'usage|options|init|initialize|project' \
@@ -100,7 +100,7 @@ check_adr0094_p7_cli_init_help() {
 # ════════════════════════════════════════════════════════════════════
 # Check 4: agent --help
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_agent_help() {
+check_adr0094_p7_cli_agent_help() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "agent --help" \
     'usage|options|agent|spawn|list|status' \
@@ -111,7 +111,7 @@ check_adr0094_p7_cli_agent_help() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: swarm --help
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_swarm_help() {
+check_adr0094_p7_cli_swarm_help() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "swarm --help" \
     'usage|options|swarm|init|topology' \
@@ -122,7 +122,7 @@ check_adr0094_p7_cli_swarm_help() {
 # ════════════════════════════════════════════════════════════════════
 # Check 6: memory --help
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_memory_help() {
+check_adr0094_p7_cli_memory_help() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "memory --help" \
     'usage|options|memory|store|search|list' \
@@ -133,7 +133,7 @@ check_adr0094_p7_cli_memory_help() {
 # ════════════════════════════════════════════════════════════════════
 # Check 7: session --help
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_session_help() {
+check_adr0094_p7_cli_session_help() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "session --help" \
     'usage|options|session|save|restore|list' \
@@ -144,7 +144,7 @@ check_adr0094_p7_cli_session_help() {
 # ════════════════════════════════════════════════════════════════════
 # Check 8: hooks --help
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_hooks_help() {
+check_adr0094_p7_cli_hooks_help() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "hooks --help" \
     'usage|options|hooks|pre-task|post-task|worker' \
@@ -155,7 +155,7 @@ check_adr0094_p7_cli_hooks_help() {
 # ════════════════════════════════════════════════════════════════════
 # Check 9: mcp status
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_mcp_status() {
+check_adr0094_p7_cli_mcp_status() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "mcp status" \
     'mcp|status|tools|server|running|connected|transport' \
@@ -174,7 +174,7 @@ check_adr0094_p7_cli_mcp_status() {
 # (run_check_bg "p7-cli-system" → check_adr0094_p7_cli_system_info)
 # stays intact; the check now exercises `status` instead.
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p7_cli_system_info() {
+check_adr0094_p7_cli_system_info() { # adr0097-l2-delegator: flag set inside _p7_cli_check
   _p7_cli_check \
     "status" \
     'ruflo|swarm|agents|tasks|memory|backend|mcp|status|stopped|running' \

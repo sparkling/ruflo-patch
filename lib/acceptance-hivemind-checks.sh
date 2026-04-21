@@ -26,6 +26,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P3-hivemind/<label>-prefixed diagnostics (ADR-0094 Phase 3) so grouped-parallel output distinguishes hive-mind consensus failures from other Phase 3 (task/daa) failures.
 _hivemind_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -81,7 +82,7 @@ $(echo "$body" | head -10)"
 }
 
 # ── Check 1: hive-mind_init — Initialize hive with raft topology ──
-check_adr0094_p3_hivemind_init() {
+check_adr0094_p3_hivemind_init() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_init" \
     '{"topology":"raft"}' \
@@ -91,7 +92,7 @@ check_adr0094_p3_hivemind_init() {
 }
 
 # ── Check 2: hive-mind_join — Join an agent to the hive ───────────
-check_adr0094_p3_hivemind_join() {
+check_adr0094_p3_hivemind_join() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_join" \
     '{"agentId":"test-agent"}' \
@@ -101,7 +102,7 @@ check_adr0094_p3_hivemind_join() {
 }
 
 # ── Check 3: hive-mind_leave — Remove agent from hive ─────────────
-check_adr0094_p3_hivemind_leave() {
+check_adr0094_p3_hivemind_leave() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_leave" \
     '{"agentId":"test-agent"}' \
@@ -111,7 +112,7 @@ check_adr0094_p3_hivemind_leave() {
 }
 
 # ── Check 4: hive-mind_status — Query hive status ─────────────────
-check_adr0094_p3_hivemind_status() {
+check_adr0094_p3_hivemind_status() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_status" \
     '{}' \
@@ -121,7 +122,7 @@ check_adr0094_p3_hivemind_status() {
 }
 
 # ── Check 5: hive-mind_spawn — Spawn agent inside hive ────────────
-check_adr0094_p3_hivemind_spawn() {
+check_adr0094_p3_hivemind_spawn() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_spawn" \
     '{"type":"worker"}' \
@@ -131,7 +132,7 @@ check_adr0094_p3_hivemind_spawn() {
 }
 
 # ── Check 6: hive-mind_broadcast — Broadcast message to hive ──────
-check_adr0094_p3_hivemind_broadcast() {
+check_adr0094_p3_hivemind_broadcast() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_broadcast" \
     '{"message":"adr0094-test-ping"}' \
@@ -141,7 +142,7 @@ check_adr0094_p3_hivemind_broadcast() {
 }
 
 # ── Check 7: hive-mind_consensus — Propose consensus vote ─────────
-check_adr0094_p3_hivemind_consensus() {
+check_adr0094_p3_hivemind_consensus() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_consensus" \
     '{"proposal":"test-vote","value":"yes"}' \
@@ -151,7 +152,7 @@ check_adr0094_p3_hivemind_consensus() {
 }
 
 # ── Check 8: hive-mind_memory — Shared memory get ─────────────────
-check_adr0094_p3_hivemind_memory() {
+check_adr0094_p3_hivemind_memory() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_memory" \
     '{"action":"get","key":"test"}' \
@@ -161,7 +162,7 @@ check_adr0094_p3_hivemind_memory() {
 }
 
 # ── Check 9: hive-mind_shutdown — Shut down the hive ──────────────
-check_adr0094_p3_hivemind_shutdown() {
+check_adr0094_p3_hivemind_shutdown() { # adr0097-l2-delegator: flag set inside _hivemind_invoke_tool
   _hivemind_invoke_tool \
     "hive-mind_shutdown" \
     '{}' \

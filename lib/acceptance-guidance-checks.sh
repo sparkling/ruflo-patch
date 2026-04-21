@@ -25,6 +25,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P2-guidance/<label>-prefixed diagnostics (ADR-0094 Phase 2) so grouped-parallel output distinguishes guidance-tool failures from other Phase 2 (autopilot) failures.
 _guidance_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -82,7 +83,7 @@ $(echo "$body" | head -10)"
 # ════════════════════════════════════════════════════════════════════
 # Check 1: guidance_capabilities — list available capabilities
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p2_guidance_capabilities() {
+check_adr0094_p2_guidance_capabilities() { # adr0097-l2-delegator: flag set inside _guidance_invoke_tool
   _guidance_invoke_tool \
     "guidance_capabilities" \
     '{}' \
@@ -94,7 +95,7 @@ check_adr0094_p2_guidance_capabilities() {
 # ════════════════════════════════════════════════════════════════════
 # Check 2: guidance_discover — discover features by query
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p2_guidance_discover() {
+check_adr0094_p2_guidance_discover() { # adr0097-l2-delegator: flag set inside _guidance_invoke_tool
   _guidance_invoke_tool \
     "guidance_discover" \
     '{"query":"memory"}' \
@@ -106,7 +107,7 @@ check_adr0094_p2_guidance_discover() {
 # ════════════════════════════════════════════════════════════════════
 # Check 3: guidance_recommend — get recommendations for a task
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p2_guidance_recommend() {
+check_adr0094_p2_guidance_recommend() { # adr0097-l2-delegator: flag set inside _guidance_invoke_tool
   _guidance_invoke_tool \
     "guidance_recommend" \
     '{"task":"write tests","context":"acceptance"}' \
@@ -118,7 +119,7 @@ check_adr0094_p2_guidance_recommend() {
 # ════════════════════════════════════════════════════════════════════
 # Check 4: guidance_workflow — get workflow guidance for a goal
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p2_guidance_workflow() {
+check_adr0094_p2_guidance_workflow() { # adr0097-l2-delegator: flag set inside _guidance_invoke_tool
   _guidance_invoke_tool \
     "guidance_workflow" \
     '{"goal":"implement feature"}' \
@@ -130,7 +131,7 @@ check_adr0094_p2_guidance_workflow() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: guidance_quickref — quick reference / help
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p2_guidance_quickref() {
+check_adr0094_p2_guidance_quickref() { # adr0097-l2-delegator: flag set inside _guidance_invoke_tool
   _guidance_invoke_tool \
     "guidance_quickref" \
     '{}' \

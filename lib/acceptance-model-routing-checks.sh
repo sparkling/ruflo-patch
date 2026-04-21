@@ -13,7 +13,7 @@
 # Individual model routing tool checks
 # ════════════════════════════════════════════════════════════════════
 
-check_adr0094_p6_model_route() {
+check_adr0094_p6_model_route() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_model-route" \
     '{"task":"write unit test","complexity":0.5}' \
@@ -22,7 +22,7 @@ check_adr0094_p6_model_route() {
     15 --ro
 }
 
-check_adr0094_p6_model_outcome() {
+check_adr0094_p6_model_outcome() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_model-outcome" \
     '{"taskId":"test","model":"haiku","success":true}' \
@@ -38,7 +38,7 @@ check_adr0094_p6_model_outcome() {
 # words don't appear verbatim; match on the stable stat fields actually
 # emitted (Decisions, Distribution, Complexity) plus the prior words for
 # future-compat.
-check_adr0094_p6_model_stats() {
+check_adr0094_p6_model_stats() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_model-stats" \
     '{}' \

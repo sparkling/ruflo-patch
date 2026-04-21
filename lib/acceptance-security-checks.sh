@@ -16,7 +16,7 @@ check_security_controllers() {
   _CHECK_OUTPUT=""
 
   # Use agentdb_controllers (registry entries only) — NOT agentdb_health
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -68,7 +68,7 @@ check_rate_limit_status() {
   _CHECK_OUTPUT=""
 
   # Use dedicated agentdb_rate_limit_status — NOT agentdb_health
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_rate_limit_status" "" 30
   local rl_out="$_RK_OUT"
 
   if [[ -z "$rl_out" ]]; then
@@ -288,7 +288,7 @@ check_circuit_breaker_status() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_circuit_status"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_circuit_status" "" 30
   local cb_out="$_RK_OUT"
 
   if [[ -z "$cb_out" ]]; then
@@ -325,7 +325,7 @@ check_resource_tracker() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_resource_usage"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_resource_usage" "" 30
   local ru_out="$_RK_OUT"
 
   if [[ -z "$ru_out" ]]; then
@@ -364,7 +364,7 @@ check_controller_composition() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -422,7 +422,7 @@ check_quantize_status() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_quantize_status is not in the
   # published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_quantize_status"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_quantize_status" "" 30
   local qs_out="$_RK_OUT"
 
   if [[ -z "$qs_out" ]]; then
@@ -477,7 +477,7 @@ check_health_report() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_health_report is not in the
   # published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health_report"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health_report" "" 30
   local hr_out="$_RK_OUT"
 
   if [[ -z "$hr_out" ]]; then
@@ -529,7 +529,7 @@ check_wiring_remediation() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -643,7 +643,7 @@ check_query_stats() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_query_stats is not in the
   # published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_query_stats"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_query_stats" "" 30
   local qs_out="$_RK_OUT"
 
   if [[ -z "$qs_out" ]]; then
@@ -693,7 +693,7 @@ check_metadata_filter_controllers() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then
@@ -727,13 +727,13 @@ check_embedding_generate() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_embed is not in the published
   # export array. Try agentdb_embed first, then fall back to embeddings_generate.
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_embed --params '{\"text\":\"acceptance test embedding\"}'"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_embed --params '{\"text\":\"acceptance test embedding\"}'" "" 30
   local embed_out="$_RK_OUT"
 
   # Tool may not be registered (upstream build truncation)
   if echo "$embed_out" | grep -qi 'Tool not found\|not found'; then
     # Fallback: use embeddings_generate (always available in embeddings-tools.ts)
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool embeddings_generate --params '{\"text\":\"acceptance test embedding\"}'"
+    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool embeddings_generate --params '{\"text\":\"acceptance test embedding\"}'" "" 30
     embed_out="$_RK_OUT"
 
     if [[ -z "$embed_out" ]]; then
@@ -881,7 +881,7 @@ check_embedding_controller_registered() {
   #
   # Under parallel acceptance load, CLI cold-start exceeds 8s (observed: 21s),
   # so bump to 30s to capture the Result: block before the harness kills us.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30 "" 30
   local ctrl_out="$_RK_OUT"
 
   if [[ -z "$ctrl_out" ]]; then

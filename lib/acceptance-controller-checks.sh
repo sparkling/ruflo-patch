@@ -14,7 +14,7 @@ check_controller_health() {
   _CHECK_OUTPUT=""
 
   # Try MCP exec for agentdb_health
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health" "" 30
 
   if [[ $_RK_EXIT -eq 0 ]] && echo "$_RK_OUT" | grep -qi 'controller\|health\|available'; then
     # Note: `grep -c` always prints a count (even "0") AND exits 1 when zero
@@ -110,14 +110,14 @@ check_reflexion_lifecycle() {
   # Upstream renamed tool: agentdb_reflexion_store -> agentdb_reflexion-store (hyphenated)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_reflexion-store \
-    --params '{\"session_id\":\"accept-session\",\"task\":\"write acceptance tests\",\"reward\":0.85,\"success\":true}'"
+    --params '{\"session_id\":\"accept-session\",\"task\":\"write acceptance tests\",\"reward\":0.85,\"success\":true}'" "" 30
   local store_out="$_RK_OUT"
 
   if echo "$store_out" | grep -qi 'success\|stored\|true'; then
     # Retrieve reflexion via MCP (hyphenated tool name)
     _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
       --tool agentdb_reflexion-retrieve \
-      --params '{\"task\":\"write acceptance tests\",\"k\":5}'"
+      --params '{\"task\":\"write acceptance tests\",\"k\":5}'" "" 30
 
     if echo "$_RK_OUT" | grep -qi 'success\|results\|acceptance'; then
       _CHECK_PASSED="true"
@@ -143,13 +143,13 @@ check_causal_graph() {
   # Upstream renamed tools: agentdb_causal_query -> agentdb_causal_query (hyphenated)
   _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_causal_query \
-    --params '{\"cause\":\"refactor tests\"}'"
+    --params '{\"cause\":\"refactor tests\"}'" "" 30
   local query_out="$_RK_OUT"
 
   # Add a causal edge (hyphenated tool name)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_causal_edge \
-    --params '{\"cause\":\"refactor\",\"effect\":\"fewer bugs\",\"uplift\":0.7}'"
+    --params '{\"cause\":\"refactor\",\"effect\":\"fewer bugs\",\"uplift\":0.7}'" "" 30
   local edge_out="$_RK_OUT"
 
   if echo "$query_out" | grep -qi 'cold.start\|fewer than 5\|results.*\[\]\|success'; then
@@ -175,19 +175,19 @@ check_cow_branching() {
 
   # Store baseline entry (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
-    --key branch-base --value 'baseline data' --namespace branch-accept"
+    --key branch-base --value 'baseline data' --namespace branch-accept" "" 60
 
   # Create branch via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_branch \
-    --params '{\"action\":\"create\",\"branch_name\":\"accept-experiment\"}'"
+    --params '{\"action\":\"create\",\"branch_name\":\"accept-experiment\"}'" "" 30
   local create_out="$_RK_OUT"
 
   if echo "$create_out" | grep -qi 'success\|branchId\|created\|true'; then
     # Try branch status
     _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
       --tool agentdb_branch \
-      --params '{\"action\":\"status\",\"branch_id\":\"branch:accept-experiment\"}'"
+      --params '{\"action\":\"status\",\"branch_id\":\"branch:accept-experiment\"}'" "" 30
 
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="COW branching: branch creation works"
@@ -206,18 +206,18 @@ check_batch_operations() {
 
   # Store entries (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
-    --key batch-accept-1 --value 'batch entry 1' --namespace batch-accept"
+    --key batch-accept-1 --value 'batch entry 1' --namespace batch-accept" "" 60
 
   # Run stats via MCP
   _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_batch-optimize \
-    --params '{\"action\":\"stats\"}'"
+    --params '{\"action\":\"stats\"}'" "" 30
   local stats_out="$_RK_OUT"
 
   # Run optimize via MCP
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
     --tool agentdb_batch-optimize \
-    --params '{\"action\":\"optimize\"}'"
+    --params '{\"action\":\"optimize\"}'" "" 30
   local opt_out="$_RK_OUT"
 
   if echo "$stats_out" | grep -qi 'success\|stats\|total' || \
@@ -240,19 +240,19 @@ check_context_synthesis() {
   # Store entries for context (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key synth-accept-1 --value 'JWT authentication with refresh token rotation' \
-    --namespace synth-accept"
+    --namespace synth-accept" "" 60
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key synth-accept-2 --value 'OAuth2 bearer token validation with PKCE' \
-    --namespace synth-accept"
+    --namespace synth-accept" "" 60
 
   # Search with synthesize flag
   _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
-    --query 'authentication best practices' --namespace synth-accept --synthesize"
+    --query 'authentication best practices' --namespace synth-accept --synthesize" "" 60
   local synth_out="$_RK_OUT"
 
   # Search without synthesize (control)
   _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
-    --query 'authentication best practices' --namespace synth-accept"
+    --query 'authentication best practices' --namespace synth-accept" "" 60
   local plain_out="$_RK_OUT"
 
   if echo "$synth_out" | grep -qi 'synth-accept\|JWT\|OAuth\|authentication\|success'; then
@@ -286,7 +286,7 @@ check_self_learning_health() {
   _CHECK_OUTPUT=""
 
   # agentdb_health includes A6 + B4 + composite children (controller-registry.ts)
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health" "" 30
   local health_out="$_RK_OUT"
 
   if [[ -z "$health_out" ]]; then
@@ -352,14 +352,14 @@ check_self_learning_search() {
   # Store entries for A6 to index (harness already ran memory init)
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key sl-accept-1 --value 'JWT authentication with refresh token rotation' \
-    --namespace sl-accept"
+    --namespace sl-accept" "" 60
   _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store \
     --key sl-accept-2 --value 'OAuth2 bearer token validation with PKCE' \
-    --namespace sl-accept"
+    --namespace sl-accept" "" 60
 
   # Search — A6 transparently replaces vectorBackend if active
   _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search \
-    --query 'authentication tokens' --namespace sl-accept"
+    --query 'authentication tokens' --namespace sl-accept" "" 60
   local search_out="$_RK_OUT"
 
   if echo "$search_out" | grep -qi 'sl-accept\|JWT\|OAuth\|authentication'; then

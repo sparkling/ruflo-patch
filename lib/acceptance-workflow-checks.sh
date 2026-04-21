@@ -170,6 +170,7 @@ _workflow_lifecycle_body() {
 }
 
 check_adr0094_p2_workflow_lifecycle() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _workflow_lifecycle_body
   _with_iso_cleanup "wf-lifecycle" _workflow_lifecycle_body
 }
 
@@ -244,6 +245,7 @@ _workflow_pause_body() {
 }
 
 check_adr0094_p2_workflow_pause() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _workflow_pause_body
   _with_iso_cleanup "wf-pause" _workflow_pause_body
 }
 
@@ -305,6 +307,7 @@ _workflow_resume_body() {
 }
 
 check_adr0094_p2_workflow_resume() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _workflow_resume_body
   _with_iso_cleanup "wf-resume" _workflow_resume_body
 }
 

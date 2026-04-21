@@ -207,6 +207,7 @@ _p9_claims_single_winner_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p9_claims_single_winner() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p9-claims" _p9_claims_single_winner_body
 }
 
@@ -325,6 +326,7 @@ _p9_session_no_interleave_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p9_session_no_interleave() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p9-session" _p9_session_no_interleave_body
 }
 
@@ -409,5 +411,6 @@ _p9_workflow_concurrent_start_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p9_workflow_concurrent_start() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p9-workflow" _p9_workflow_concurrent_start_body
 }

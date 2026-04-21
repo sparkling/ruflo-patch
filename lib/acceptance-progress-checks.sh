@@ -22,6 +22,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P3-progress/<label>-prefixed diagnostics (ADR-0094 Phase 3); canonical _mcp_invoke_tool has no phase-prefix convention and would lose forensic trace in grouped-parallel acceptance runs.
 _progress_invoke_tool() {
   local tool="$1"
   local params="$2"

@@ -183,6 +183,7 @@ _p16_nopii_plain_prose_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_nopii_plain_prose() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-nopii-plain-prose" _p16_nopii_plain_prose_body
 }
 
@@ -196,6 +197,7 @@ _p16_nopii_code_snippet_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_nopii_code_snippet() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-nopii-code-snippet" _p16_nopii_code_snippet_body
 }
 
@@ -209,6 +211,7 @@ _p16_nopii_version_string_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_nopii_version_string() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-nopii-version-string" _p16_nopii_version_string_body
 }
 
@@ -222,6 +225,7 @@ _p16_nopii_uuid_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_nopii_uuid() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-nopii-uuid" _p16_nopii_uuid_body
 }
 
@@ -235,6 +239,7 @@ _p16_nopii_url_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_nopii_url() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-nopii-url" _p16_nopii_url_body
 }
 
@@ -249,6 +254,7 @@ _p16_nopii_markdown_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_nopii_markdown() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-nopii-markdown" _p16_nopii_markdown_body
 }
 
@@ -262,6 +268,7 @@ _p16_nopii_scan_clean_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_nopii_scan_clean() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-nopii-scan-clean" _p16_nopii_scan_clean_body
 }
 
@@ -279,5 +286,6 @@ _p16_guard_detects_email_body() {
   E2E_DIR="$_saved"
 }
 check_adr0094_p16_guard_detects_email() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
   _with_iso_cleanup "p16-guard-detects-email" _p16_guard_detects_email_body
 }

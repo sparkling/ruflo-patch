@@ -48,6 +48,7 @@ _browser_playwright_available() {
 # ════════════════════════════════════════════════════════════════════
 # Helper: _browser_invoke_tool(tool, params, pattern, label, timeout)
 # ════════════════════════════════════════════════════════════════════
+# adr0097-l5-intentional: adds a "Playwright binary not installed" skip bucket (via _BROWSER_PW_AVAILABLE / _BROWSER_PW_DIAG) and a runtime "browser launch failed" skip — browser-specific preconditions that _mcp_invoke_tool has no knowledge of (ADR-0094 Phase 4).
 _browser_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -117,7 +118,7 @@ $(echo "$body" | head -10)"
 # ════════════════════════════════════════════════════════════════════
 # Check 1: browser_session-list
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_browser_session() {
+check_adr0094_p4_browser_session() { # adr0097-l2-delegator: flag set inside _browser_invoke_tool
   _browser_invoke_tool \
     "browser_session-list" \
     '{}' \
@@ -129,7 +130,7 @@ check_adr0094_p4_browser_session() {
 # ════════════════════════════════════════════════════════════════════
 # Check 2: browser_eval — eval "1+1" returns "2"
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_browser_eval() {
+check_adr0094_p4_browser_eval() { # adr0097-l2-delegator: flag set inside _browser_invoke_tool
   _browser_invoke_tool \
     "browser_eval" \
     '{"expression":"1+1"}' \
@@ -281,7 +282,7 @@ check_adr0094_p4_browser_interaction() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: browser_snapshot — DOM shape
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_browser_snapshot() {
+check_adr0094_p4_browser_snapshot() { # adr0097-l2-delegator: flag set inside _browser_invoke_tool
   _browser_invoke_tool \
     "browser_snapshot" \
     '{}' \

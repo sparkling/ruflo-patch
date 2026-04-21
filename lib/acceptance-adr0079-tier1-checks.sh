@@ -33,19 +33,16 @@ check_t1_1_semantic_ranking() {
   # Step 2: Search for cooking-related content
   _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian food recipes for dinner' --namespace '$ns'" "" 60
 
+  # ADR-0082: semantic ranking is the entire subject of this check — T1-1
+  # literally says "semantic search ranking". The previous "entries stored
+  # and listable" fallback silently passed when hash-fallback embeddings
+  # failed to link Italian↔cooking, masking exactly the regression this
+  # check is meant to catch. A real MiniLM embedder is the product contract.
   if echo "$_RK_OUT" | grep -qi 'cooking\|pasta'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="T1-1: search returned cooking-related entries (semantic match)"
   else
-    # Hash-fallback embeddings may not capture cooking↔Italian semantic link.
-    # Verify entries exist via list (proves store+persistence works).
-    _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace '$ns'" "" 60
-    if echo "$_RK_OUT" | grep -qi 'cooking-pasta'; then
-      _CHECK_PASSED="true"
-      _CHECK_OUTPUT="T1-1: entries stored and listable (hash-fallback — semantic match unavailable)"
-    else
-      _CHECK_OUTPUT="T1-1: FAILED — cooking/pasta not in search or list: ${_RK_OUT:0:200}"
-    fi
+    _CHECK_OUTPUT="T1-1: semantic search FAILED to return cooking/pasta for query 'Italian food recipes for dinner' — hash-fallback embedder or semantic ranking regressed (ADR-0082 loud-fail): ${_RK_OUT:0:200}"
   fi
   rm -rf "$iso" 2>/dev/null
 }

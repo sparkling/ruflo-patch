@@ -48,6 +48,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P4-github/<label>-prefixed diagnostics (ADR-0094 Phase 4); ADR-0096 narrow tool-registry skip regex avoids false skip_accepted on genuine GitHub API 404s ("repository not found").
 _github_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -107,7 +108,7 @@ $(echo "$body" | head -10)"
 # ════════════════════════════════════════════════════════════════════
 # Default action is "list"; handler returns {success:true, issues:[...], total, open}.
 # Pattern binds to the structural field names — if the shape changes, fail loudly.
-check_adr0094_p4_github_issue_track() {
+check_adr0094_p4_github_issue_track() { # adr0097-l2-delegator: flag set inside _github_invoke_tool
   _github_invoke_tool \
     "github_issue_track" \
     '{}' \
@@ -120,7 +121,7 @@ check_adr0094_p4_github_issue_track() {
 # Check 2: github_pr_manage — list PRs (real local-store handler)
 # ════════════════════════════════════════════════════════════════════
 # Default action is "list"; handler returns {success:true, pullRequests:[...], total, open}.
-check_adr0094_p4_github_pr_manage() {
+check_adr0094_p4_github_pr_manage() { # adr0097-l2-delegator: flag set inside _github_invoke_tool
   _github_invoke_tool \
     "github_pr_manage" \
     '{}' \
@@ -136,7 +137,7 @@ check_adr0094_p4_github_pr_manage() {
 #                  localData:{storedRepos, localIssueCount, localPrCount, ...}}.
 # The _stub marker is load-bearing: when the fork implements real API calls,
 # this regex will stop matching and the check will FAIL — forcing a rewrite.
-check_adr0094_p4_github_metrics() {
+check_adr0094_p4_github_metrics() { # adr0097-l2-delegator: flag set inside _github_invoke_tool
   _github_invoke_tool \
     "github_metrics" \
     '{}' \
@@ -150,7 +151,7 @@ check_adr0094_p4_github_metrics() {
 # ════════════════════════════════════════════════════════════════════
 # Handler persists the repo entry (storedRepos grows) AND returns
 # {success:false, _stub:true, message:"...", localData:{repository, branch, lastAnalyzed, storedRepos}}.
-check_adr0094_p4_github_repo_analyze() {
+check_adr0094_p4_github_repo_analyze() { # adr0097-l2-delegator: flag set inside _github_invoke_tool
   _github_invoke_tool \
     "github_repo_analyze" \
     '{}' \
@@ -164,7 +165,7 @@ check_adr0094_p4_github_repo_analyze() {
 # ════════════════════════════════════════════════════════════════════
 # Handler returns {success:false, _stub:true, message:"...workflow operations require actual GitHub API access...",
 #                  localData:{requestedAction, workflowId, ref}}.
-check_adr0094_p4_github_workflow() {
+check_adr0094_p4_github_workflow() { # adr0097-l2-delegator: flag set inside _github_invoke_tool
   _github_invoke_tool \
     "github_workflow" \
     '{}' \

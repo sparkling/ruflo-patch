@@ -171,6 +171,7 @@ _ruvllm_hnsw_lifecycle_body() {
 }
 
 check_adr0094_p5_ruvllm_hnsw_create() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _ruvllm_hnsw_lifecycle_body
   _with_iso_cleanup "p5-ruvllm-hnsw-create" _ruvllm_hnsw_lifecycle_body
 }
 
@@ -179,10 +180,12 @@ check_adr0094_p5_ruvllm_hnsw_create() {
 # name, not by dependency). This is the same pattern workflow-checks uses
 # for the lifecycle-style probes.
 check_adr0094_p5_ruvllm_hnsw_add() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _ruvllm_hnsw_lifecycle_body
   _with_iso_cleanup "p5-ruvllm-hnsw-add" _ruvllm_hnsw_lifecycle_body
 }
 
 check_adr0094_p5_ruvllm_hnsw_route() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _ruvllm_hnsw_lifecycle_body
   _with_iso_cleanup "p5-ruvllm-hnsw-route" _ruvllm_hnsw_lifecycle_body
 }
 
@@ -250,10 +253,12 @@ _ruvllm_sona_lifecycle_body() {
 }
 
 check_adr0094_p5_ruvllm_sona_create() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _ruvllm_sona_lifecycle_body
   _with_iso_cleanup "p5-ruvllm-sona-create" _ruvllm_sona_lifecycle_body
 }
 
 check_adr0094_p5_ruvllm_sona_adapt() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _ruvllm_sona_lifecycle_body
   _with_iso_cleanup "p5-ruvllm-sona-adapt" _ruvllm_sona_lifecycle_body
 }
 
@@ -320,10 +325,12 @@ _ruvllm_microlora_lifecycle_body() {
 }
 
 check_adr0094_p5_ruvllm_microlora_create() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _ruvllm_microlora_lifecycle_body
   _with_iso_cleanup "p5-ruvllm-microlora-create" _ruvllm_microlora_lifecycle_body
 }
 
 check_adr0094_p5_ruvllm_microlora_adapt() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / _ruvllm_microlora_lifecycle_body
   _with_iso_cleanup "p5-ruvllm-microlora-adapt" _ruvllm_microlora_lifecycle_body
 }
 

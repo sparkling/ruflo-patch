@@ -17,7 +17,7 @@ check_attention_compute() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_attention_compute is not in
   # the published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_compute --params '{\"query\":\"authentication patterns\",\"limit\":5}'"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_compute --params '{\"query\":\"authentication patterns\",\"limit\":5}'" "" 30
   local out="$_RK_OUT"
 
   if [[ -z "$out" ]]; then
@@ -69,7 +69,7 @@ check_attention_benchmark() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_attention_benchmark is not in
   # the published export array. Try the tool; accept "Tool not found" as a known state.
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_benchmark --params '{\"entryCount\":50}'"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_benchmark --params '{\"entryCount\":50}'" "" 30
   local out="$_RK_OUT"
 
   if [[ -z "$out" ]]; then
@@ -120,7 +120,7 @@ check_attention_configure() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_attention_configure may not
   # be in the published export array. Try and handle gracefully.
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_configure"
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_configure" "" 30
   local out="$_RK_OUT"
 
   if [[ -z "$out" ]]; then
@@ -162,7 +162,7 @@ check_attention_metrics() {
 
   # Upstream build truncated agentdb-tools.js — agentdb_attention_metrics may not
   # be in the published export array. Try and handle gracefully.
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_metrics"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_attention_metrics" "" 30
   local out="$_RK_OUT"
 
   if [[ -z "$out" ]]; then
@@ -199,7 +199,7 @@ check_attention_controllers_wired() {
   _CHECK_OUTPUT=""
 
   # Verify A1-A3 appear in the controller registry
-  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers"
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
   local out="$_RK_OUT"
 
   if [[ -z "$out" ]]; then

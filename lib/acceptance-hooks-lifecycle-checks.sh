@@ -18,7 +18,7 @@
 # Individual hook tool checks
 # ════════════════════════════════════════════════════════════════════
 
-check_adr0094_p6_hooks_pre_task() {
+check_adr0094_p6_hooks_pre_task() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_pre-task" \
     '{"description":"test task"}' \
@@ -27,7 +27,7 @@ check_adr0094_p6_hooks_pre_task() {
     15 --ro
 }
 
-check_adr0094_p6_hooks_post_task() {
+check_adr0094_p6_hooks_post_task() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_post-task" \
     '{"taskId":"test-1","success":true}' \
@@ -36,7 +36,7 @@ check_adr0094_p6_hooks_post_task() {
     15 --ro
 }
 
-check_adr0094_p6_hooks_pre_edit() {
+check_adr0094_p6_hooks_pre_edit() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_pre-edit" \
     '{"file":"test.js","description":"edit"}' \
@@ -45,7 +45,7 @@ check_adr0094_p6_hooks_pre_edit() {
     15 --ro
 }
 
-check_adr0094_p6_hooks_post_edit() {
+check_adr0094_p6_hooks_post_edit() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_post-edit" \
     '{"file":"test.js","success":true}' \
@@ -61,7 +61,7 @@ check_adr0094_p6_hooks_post_edit() {
 # `pre-command|allowed|success` keywords appear; we match the stable
 # risk-assessment fields actually emitted. `shouldProceed` is the
 # structural equivalent of `allowed`.
-check_adr0094_p6_hooks_pre_command() {
+check_adr0094_p6_hooks_pre_command() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_pre-command" \
     '{"command":"test"}' \
@@ -70,7 +70,7 @@ check_adr0094_p6_hooks_pre_command() {
     15 --ro
 }
 
-check_adr0094_p6_hooks_post_command() {
+check_adr0094_p6_hooks_post_command() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_post-command" \
     '{"command":"test","exitCode":0}' \
@@ -79,7 +79,7 @@ check_adr0094_p6_hooks_post_command() {
     15 --ro
 }
 
-check_adr0094_p6_hooks_session_start() {
+check_adr0094_p6_hooks_session_start() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_session-start" \
     '{}' \
@@ -88,7 +88,7 @@ check_adr0094_p6_hooks_session_start() {
     15 --ro
 }
 
-check_adr0094_p6_hooks_session_end() {
+check_adr0094_p6_hooks_session_end() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "hooks_session-end" \
     '{}' \

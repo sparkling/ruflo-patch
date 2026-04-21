@@ -22,6 +22,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: ADR-0096 narrow tool-registry skip regex distinguishes "tool not found in registry" from domain errors like "Agent not found" / "Workflow not found" — wider canonical regex would falsely mark real DAA handler failures as skip_accepted (ADR-0094 Phase 3).
 _daa_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -82,7 +83,7 @@ $(echo "$body" | head -10)"
 # ════════════════════════════════════════════════════════════════════
 # Check 1: daa_agent_create — create a dynamic adaptive agent
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_daa_agent_create() {
+check_adr0094_p3_daa_agent_create() { # adr0097-l2-delegator: flag set inside _daa_invoke_tool
   _daa_invoke_tool \
     "daa_agent_create" \
     '{"name":"daa-test","type":"worker"}' \
@@ -100,7 +101,7 @@ check_adr0094_p3_daa_agent_create() {
 # with a real `id` field. The create call's failure is non-fatal: if
 # the tool is missing entirely, the adapt call will report "not found"
 # and _daa_invoke_tool routes that to skip_accepted correctly.
-check_adr0094_p3_daa_agent_adapt() {
+check_adr0094_p3_daa_agent_adapt() { # adr0097-l2-delegator: flag set inside body via _with_iso_cleanup
   # Isolated E2E dir — daa_agent_create and _daa_invoke_tool both write
   # to .claude-flow/daa/store.json in the shared $E2E_DIR. Under the
   # mega-parallel acceptance wave (~100 concurrent subprocesses), the
@@ -141,7 +142,7 @@ _check_adr0094_p3_daa_agent_adapt_body() {
 # ════════════════════════════════════════════════════════════════════
 # Check 3: daa_cognitive_pattern — store a cognitive pattern
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_daa_cognitive_pattern() {
+check_adr0094_p3_daa_cognitive_pattern() { # adr0097-l2-delegator: flag set inside _daa_invoke_tool
   _daa_invoke_tool \
     "daa_cognitive_pattern" \
     '{"pattern":"test-pattern","context":"acceptance"}' \
@@ -153,7 +154,7 @@ check_adr0094_p3_daa_cognitive_pattern() {
 # ════════════════════════════════════════════════════════════════════
 # Check 4: daa_knowledge_share — share knowledge between agents
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_daa_knowledge_share() {
+check_adr0094_p3_daa_knowledge_share() { # adr0097-l2-delegator: flag set inside _daa_invoke_tool
   _daa_invoke_tool \
     "daa_knowledge_share" \
     '{"from":"daa-test","knowledge":"test data"}' \
@@ -165,7 +166,7 @@ check_adr0094_p3_daa_knowledge_share() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: daa_learning_status — query learning status
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_daa_learning_status() {
+check_adr0094_p3_daa_learning_status() { # adr0097-l2-delegator: flag set inside _daa_invoke_tool
   _daa_invoke_tool \
     "daa_learning_status" \
     '{}' \
@@ -177,7 +178,7 @@ check_adr0094_p3_daa_learning_status() {
 # ════════════════════════════════════════════════════════════════════
 # Check 6: daa_performance_metrics — query DAA performance
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_daa_performance_metrics() {
+check_adr0094_p3_daa_performance_metrics() { # adr0097-l2-delegator: flag set inside _daa_invoke_tool
   _daa_invoke_tool \
     "daa_performance_metrics" \
     '{}' \
@@ -194,7 +195,7 @@ check_adr0094_p3_daa_performance_metrics() {
 # forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts line 220).
 # Passing only `name` stores the workflow under key `undefined`, which
 # collides with every other parallel check and is not reproducible.
-check_adr0094_p3_daa_workflow_create() {
+check_adr0094_p3_daa_workflow_create() { # adr0097-l2-delegator: flag set inside _daa_invoke_tool
   _daa_invoke_tool \
     "daa_workflow_create" \
     '{"id":"daa-wf-create-check","name":"daa-wf","steps":["step1"]}' \

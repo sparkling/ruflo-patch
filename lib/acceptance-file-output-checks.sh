@@ -368,7 +368,7 @@ check_adr0094_p7_hooks_dir() {
 }
 
 # Check 7: .claude-flow/config.json
-check_adr0094_p7_config_json() {
+check_adr0094_p7_config_json() { # adr0097-l2-delegator: flag set inside _p7_validate_json_file
   _p7_validate_json_file ".claude-flow/config.json" "" "config_json"
 }
 

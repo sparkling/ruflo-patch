@@ -22,6 +22,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P4/<label>-prefixed diagnostics for embeddings checks (ADR-0094 Phase 4); canonical _mcp_invoke_tool has no phase-prefix convention and would lose forensic trace in grouped-parallel acceptance runs.
 _embeddings_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -79,7 +80,7 @@ $(echo "$body" | head -10)"
 # ════════════════════════════════════════════════════════════════════
 # Check 1: embeddings_init — initialize the embedding model
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_embeddings_init() {
+check_adr0094_p4_embeddings_init() { # adr0097-l2-delegator: flag set inside _embeddings_invoke_tool
   _embeddings_invoke_tool \
     "embeddings_init" \
     '{}' \
@@ -91,7 +92,7 @@ check_adr0094_p4_embeddings_init() {
 # ════════════════════════════════════════════════════════════════════
 # Check 2: embeddings_generate — generate an embedding vector
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_embeddings_generate() {
+check_adr0094_p4_embeddings_generate() { # adr0097-l2-delegator: flag set inside _embeddings_invoke_tool
   _embeddings_invoke_tool \
     "embeddings_generate" \
     '{"text":"hello world"}' \
@@ -103,7 +104,7 @@ check_adr0094_p4_embeddings_generate() {
 # ════════════════════════════════════════════════════════════════════
 # Check 3: embeddings_compare — compare two texts by similarity
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_embeddings_compare() {
+check_adr0094_p4_embeddings_compare() { # adr0097-l2-delegator: flag set inside _embeddings_invoke_tool
   _embeddings_invoke_tool \
     "embeddings_compare" \
     '{"text1":"hello","text2":"world"}' \
@@ -115,7 +116,7 @@ check_adr0094_p4_embeddings_compare() {
 # ════════════════════════════════════════════════════════════════════
 # Check 4: embeddings_search — search for similar embeddings
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_embeddings_search() {
+check_adr0094_p4_embeddings_search() { # adr0097-l2-delegator: flag set inside _embeddings_invoke_tool
   _embeddings_invoke_tool \
     "embeddings_search" \
     '{"query":"hello","limit":5}' \
@@ -127,7 +128,7 @@ check_adr0094_p4_embeddings_search() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: embeddings_hyperbolic — hyperbolic embedding
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_embeddings_hyperbolic() {
+check_adr0094_p4_embeddings_hyperbolic() { # adr0097-l2-delegator: flag set inside _embeddings_invoke_tool
   _embeddings_invoke_tool \
     "embeddings_hyperbolic" \
     '{"text":"hello"}' \
@@ -139,7 +140,7 @@ check_adr0094_p4_embeddings_hyperbolic() {
 # ════════════════════════════════════════════════════════════════════
 # Check 6: embeddings_neural — neural embedding
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_embeddings_neural() {
+check_adr0094_p4_embeddings_neural() { # adr0097-l2-delegator: flag set inside _embeddings_invoke_tool
   _embeddings_invoke_tool \
     "embeddings_neural" \
     '{"text":"hello"}' \
@@ -151,7 +152,7 @@ check_adr0094_p4_embeddings_neural() {
 # ════════════════════════════════════════════════════════════════════
 # Check 7: embeddings_status — query embedding model status
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p4_embeddings_status() {
+check_adr0094_p4_embeddings_status() { # adr0097-l2-delegator: flag set inside _embeddings_invoke_tool
   _embeddings_invoke_tool \
     "embeddings_status" \
     '{}' \

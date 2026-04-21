@@ -45,6 +45,7 @@
 #       _CHECK_OUTPUT  (diagnostic string)
 #       _CHECK_BODY    (raw tool output, sentinel stripped — for callers
 #                       that need to parse the response)
+# adr0097-l5-intentional: exposes _CHECK_BODY for callers that parse the tool response (canonical _mcp_invoke_tool only sets _MCP_BODY via _expect_mcp_body internals), adds a W3 "wasm binary missing from published package" skip bucket, and emits P4-wasm/<label>-prefixed diagnostics (ADR-0094 Phase 4).
 _wasm_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -319,6 +320,7 @@ $(echo "$body" | head -10)"
 # a response or a provider-layer error (no model key in test env is
 # acceptable), but NOT "WASM agent not found".
 check_adr0094_p4_wasm_agent_prompt() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _wasm_apply_bootstrap_result / _wasm_invoke_agent_op
   local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
   if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_prompt"; then return; fi
   local id="$_CHECK_BOOTSTRAPPED_ID"
@@ -334,6 +336,7 @@ check_adr0094_p4_wasm_agent_prompt() {
 # Check 4: wasm_agent_tool — list_files on a fresh agent returns a
 # successful result (empty output array is fine; success:true required).
 check_adr0094_p4_wasm_agent_tool() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _wasm_apply_bootstrap_result / _wasm_invoke_agent_op
   local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
   if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_tool"; then return; fi
   local id="$_CHECK_BOOTSTRAPPED_ID"
@@ -349,6 +352,7 @@ check_adr0094_p4_wasm_agent_tool() {
 # Check 5: wasm_agent_export — export returns a state JSON containing
 # agentState / tools / todos keys (structure, not content).
 check_adr0094_p4_wasm_agent_export() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _wasm_apply_bootstrap_result / _wasm_invoke_agent_op
   local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
   if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_export"; then return; fi
   local id="$_CHECK_BOOTSTRAPPED_ID"
@@ -363,6 +367,7 @@ check_adr0094_p4_wasm_agent_export() {
 
 # Check 6: wasm_agent_files — returns a tools array and counts.
 check_adr0094_p4_wasm_agent_files() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _wasm_apply_bootstrap_result / _wasm_invoke_agent_op
   local _bs_result; _bs_result=$(_wasm_bootstrap_agent)
   if ! _wasm_apply_bootstrap_result "$_bs_result" "wasm_agent_files"; then return; fi
   local id="$_CHECK_BOOTSTRAPPED_ID"

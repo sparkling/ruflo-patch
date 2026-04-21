@@ -28,6 +28,7 @@
 # Contract:
 #   Sets _CHECK_PASSED ("true"/"false"/"skip_accepted") and _CHECK_OUTPUT.
 #   Does NOT clean up iso_dir (caller's responsibility).
+# adr0097-l5-intentional: takes iso_dir + rw as extra positional args and adds an "agent subsystem not available" skip bucket — signature cannot compose through canonical _mcp_invoke_tool (ADR-0094 Phase 2).
 _agent_invoke_tool() {
   local tool="$1"
   local params="$2"

@@ -19,7 +19,7 @@
 # `consensus|result|vote` don't appear; match the stable algorithm /
 # quorum / proposals fields instead.
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_coordination_consensus() {
+check_adr0094_p3_coordination_consensus() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "coordination_consensus" \
     '{"proposal":"test"}' \
@@ -31,7 +31,7 @@ check_adr0094_p3_coordination_consensus() {
 # ════════════════════════════════════════════════════════════════════
 # Check 2: coordination_load_balance — distribute load across agents
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_coordination_load_balance() {
+check_adr0094_p3_coordination_load_balance() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "coordination_load_balance" \
     '{}' \
@@ -79,7 +79,7 @@ check_adr0094_p3_coordination_node() {
 # ════════════════════════════════════════════════════════════════════
 # Check 4: coordination_orchestrate — orchestrate a task
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_coordination_orchestrate() {
+check_adr0094_p3_coordination_orchestrate() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "coordination_orchestrate" \
     '{"task":"test orchestration"}' \
@@ -91,7 +91,7 @@ check_adr0094_p3_coordination_orchestrate() {
 # ════════════════════════════════════════════════════════════════════
 # Check 5: coordination_sync — synchronize state
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_coordination_sync() {
+check_adr0094_p3_coordination_sync() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "coordination_sync" \
     '{}' \
@@ -103,7 +103,7 @@ check_adr0094_p3_coordination_sync() {
 # ════════════════════════════════════════════════════════════════════
 # Check 6: coordination_topology — query topology
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_coordination_topology() {
+check_adr0094_p3_coordination_topology() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "coordination_topology" \
     '{}' \
@@ -115,7 +115,7 @@ check_adr0094_p3_coordination_topology() {
 # ════════════════════════════════════════════════════════════════════
 # Check 7: coordination_metrics — query coordination metrics
 # ════════════════════════════════════════════════════════════════════
-check_adr0094_p3_coordination_metrics() {
+check_adr0094_p3_coordination_metrics() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
   _mcp_invoke_tool \
     "coordination_metrics" \
     '{}' \

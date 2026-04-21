@@ -305,7 +305,7 @@ $(echo "$dispatch_body" | head -10)"
 #
 # We validate the top-level fields + one structure key to keep the
 # contract tight without becoming brittle to future additions.
-check_adr0090_b3_map() {
+check_adr0090_b3_map() { # adr0097-l2-delegator: flag set inside _b3_check_worker_output_json
   _b3_check_worker_output_json \
     "map" \
     ".claude-flow/metrics/codebase-map.json" \
@@ -319,7 +319,7 @@ check_adr0090_b3_map() {
 #
 # Required fields (worker-daemon.ts:runAuditWorkerLocal, lines 977-1001):
 #   timestamp, mode, checks, riskLevel, recommendations
-check_adr0090_b3_audit() {
+check_adr0090_b3_audit() { # adr0097-l2-delegator: flag set inside _b3_check_worker_output_json
   _b3_check_worker_output_json \
     "audit" \
     ".claude-flow/metrics/security-audit.json" \
@@ -333,7 +333,7 @@ check_adr0090_b3_audit() {
 #
 # Required fields (worker-daemon.ts:runOptimizeWorkerLocal, 1006-1029):
 #   timestamp, mode, memoryUsage, uptime, optimizations
-check_adr0090_b3_optimize() {
+check_adr0090_b3_optimize() { # adr0097-l2-delegator: flag set inside _b3_check_worker_output_json
   _b3_check_worker_output_json \
     "optimize" \
     ".claude-flow/metrics/performance.json" \
@@ -352,7 +352,7 @@ check_adr0090_b3_optimize() {
 # (routeLearningOp / routeEmbeddingOp). It's also the slowest locally
 # (~250ms). The 45s timeout is deliberately longer than the others to
 # survive a cold embedding-model load on first invocation.
-check_adr0090_b3_consolidate() {
+check_adr0090_b3_consolidate() { # adr0097-l2-delegator: flag set inside _b3_check_worker_output_json
   _b3_check_worker_output_json \
     "consolidate" \
     ".claude-flow/metrics/consolidation.json" \
@@ -366,7 +366,7 @@ check_adr0090_b3_consolidate() {
 #
 # Required fields (worker-daemon.ts:runTestGapsWorkerLocal, 1083-1103):
 #   timestamp, mode, hasTestDir, estimatedCoverage, gaps
-check_adr0090_b3_testgaps() {
+check_adr0090_b3_testgaps() { # adr0097-l2-delegator: flag set inside _b3_check_worker_output_json
   _b3_check_worker_output_json \
     "testgaps" \
     ".claude-flow/metrics/test-gaps.json" \
@@ -395,7 +395,7 @@ check_adr0090_b3_testgaps() {
 # the cheapest worker (no model load, no router call) that also
 # triggers a saveState. If the daemon ever stops writing daemon-state
 # on trigger, we'll see it here loudly.
-check_adr0090_b6a_daemon_state() {
+check_adr0090_b6a_daemon_state() { # adr0097-l2-delegator: flag set inside _b3_check_worker_output_json
   _b3_check_worker_output_json \
     "map" \
     ".claude-flow/daemon-state.json" \

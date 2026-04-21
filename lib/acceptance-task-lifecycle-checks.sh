@@ -9,6 +9,7 @@
 # ════════════════════════════════════════════════════════════════════
 # Shared helper: _task_invoke_tool ($1=tool $2=params $3=pattern $4=label $5=timeout)
 # Sets: _CHECK_PASSED, _CHECK_OUTPUT
+# adr0097-l5-intentional: emits P3-task/<label>-prefixed diagnostics (ADR-0094 Phase 3) and uses ADR-0096 narrow tool-registry skip regex — wider canonical regex would falsely mark real "Task not found" handler errors as skip_accepted.
 _task_invoke_tool() {
   local tool="$1"
   local params="$2"

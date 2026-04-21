@@ -22,6 +22,7 @@
 #
 # Sets: _CHECK_PASSED ("true" / "false" / "skip_accepted")
 #       _CHECK_OUTPUT  (diagnostic string)
+# adr0097-l5-intentional: emits P3-neural/<label>-prefixed diagnostics (ADR-0094 Phase 3); canonical _mcp_invoke_tool has no phase-prefix convention and would lose forensic trace in grouped-parallel acceptance runs.
 _neural_invoke_tool() {
   local tool="$1"
   local params="$2"
@@ -80,6 +81,7 @@ $(echo "$body" | head -10)"
 # Check 1: neural_train — start a training job
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_neural_train() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _neural_invoke_tool
   _neural_invoke_tool \
     "neural_train" \
     '{"data":"test"}' \
@@ -92,6 +94,7 @@ check_adr0094_p5_neural_train() {
 # Check 2: neural_optimize — optimize neural model
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_neural_optimize() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _neural_invoke_tool
   _neural_invoke_tool \
     "neural_optimize" \
     '{}' \
@@ -104,6 +107,7 @@ check_adr0094_p5_neural_optimize() {
 # Check 3: neural_compress — compress neural model
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_neural_compress() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _neural_invoke_tool
   _neural_invoke_tool \
     "neural_compress" \
     '{}' \
@@ -116,6 +120,7 @@ check_adr0094_p5_neural_compress() {
 # Check 4: neural_predict — run prediction
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_neural_predict() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _neural_invoke_tool
   _neural_invoke_tool \
     "neural_predict" \
     '{"input":"test data"}' \
@@ -128,6 +133,7 @@ check_adr0094_p5_neural_predict() {
 # Check 5: neural_patterns — list learned patterns
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_neural_patterns() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _neural_invoke_tool
   _neural_invoke_tool \
     "neural_patterns" \
     '{}' \
@@ -140,6 +146,7 @@ check_adr0094_p5_neural_patterns() {
 # Check 6: neural_status — query neural subsystem status
 # ════════════════════════════════════════════════════════════════════
 check_adr0094_p5_neural_status() {
+  # adr0097-l2-delegator: _CHECK_PASSED= is set inside _neural_invoke_tool
   _neural_invoke_tool \
     "neural_status" \
     '{}' \

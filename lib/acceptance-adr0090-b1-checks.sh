@@ -62,6 +62,8 @@ check_adr0090_b1_dimension_mismatch_fatal() {
     _CHECK_OUTPUT="B1: failed to create isolated project dir"
     return
   fi
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d /tmp/b1-work-XXXXX)
@@ -185,6 +187,8 @@ $(echo "$search_out" | head -10)"
   # with "dimension mismatch", our test is reporting a false positive.
   # Same direct-invocation pattern as Step 3.
   local clean_iso; clean_iso=$(_e2e_isolate "b1-clean")
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' '$clean_iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
   local clean_out_file="$work/clean.out"
   local clean_exit=0
   ( cd "$clean_iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 45 $cli memory search --query 'clean-probe' > "$clean_out_file" 2>&1 ) || clean_exit=$?
