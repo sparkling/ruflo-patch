@@ -1,6 +1,6 @@
 # ADR-0082: Test Integrity — No Fallbacks, Fail Loudly
 
-- **Status**: Implemented pending cascade green (2026-04-21 PM) — all 5 known silent-pass checks flipped to loud-fail (`check_adr0059_memory_search`, `check_adr0059_memory_store_retrieve`, `check_t1_1_semantic_ranking`, `check_t3_1`, `check_adr0059_no_id_collisions`); BM25 hash-fallback product fix shipped in `forks/ruflo/v3/@claude-flow/memory/src/bm25.ts` to unblock the loud-fail semantic-ranking checks. Final promotion awaits a full-cascade run verifying the loud-fail checks pass with BM25 active. See §Status Update 2026-04-21 (to be appended).
+- **Status**: **Implemented** (2026-04-22) — full-cascade acceptance green against `@sparkleideas/cli@3.5.58-patch.231` and `@sparkleideas/agentic-flow@2.0.2-alpha-patch.348`: **559/560 pass, 0 fail, 1 skip_accepted**. All 5 known silent-pass checks verified loud-fail + green in the cascade (`check_adr0059_memory_search`, `check_adr0059_memory_store_retrieve`, `check_t1_1_semantic_ranking`, `check_t3_1`, `check_adr0059_no_id_collisions`). BM25 hash-fallback product fix (`forks/ruflo/v3/@claude-flow/memory/src/bm25.ts`) active in shipped tarball. Residual harness race in `check_adr0059_memory_store_retrieve` (shared-E2E_DIR lock contention at parallelism ~570) fixed by switching to the sibling `_e2e_isolate` pattern; first full-cascade run exposed it (1 intermittent fail), second run validated the fix. See §Status Update 2026-04-22 below.
 - **Date**: 2026-04-12
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 4-agent audit of 150+ acceptance checks
@@ -252,3 +252,25 @@ All three items from "Remaining work" landed in the 15-agent closure swarm the s
 ### Final promotion gate
 
 Status moves from "Implemented pending cascade green" → "Implemented" once a full-cascade run executes with hash-fallback (the default fresh-init state) and the 5 checks above pass via the BM25 ranking path. The BM25 logic is unit-verified today; the production integration point is exercised by the next `npm run test:acceptance` against a fresh publish.
+
+## Status Update 2026-04-22
+
+**New status**: **Implemented**.
+
+### Promotion evidence
+
+Two full-cascade runs against `@sparkleideas/cli@3.5.58-patch.231` / `@sparkleideas/agentic-flow@2.0.2-alpha-patch.348`, today, with all 5 named silent-pass checks loud-fail-configured and green:
+
+- Run 1 (2026-04-21T23:12:15Z → 23:13:42Z): **558/560 pass, 1 fail, 1 skip_accepted**. The single fail was a harness-level race in `check_adr0059_memory_store_retrieve` (shared `E2E_DIR` RVF lock contention at ~570 parallel checks — concurrent writes from sibling e2e-0059-* checks raced the roundtrip's list read). The 5 loud-fail inventory checks themselves (`check_adr0059_memory_search`, `check_t1_1_semantic_ranking`, `check_t3_1`, `check_adr0059_no_id_collisions`, and the roundtrip's ADR-0082 contract — "stored key must appear in list, no silent zero-row pass") were all green via the BM25 path.
+- Run 2 (2026-04-21T23:23:21Z), after switching `check_adr0059_memory_store_retrieve` to the `_e2e_isolate` pattern its siblings already use: **559/560 pass, 0 fail, 1 skip_accepted**.
+
+### Residual silent-pass harness race — closed
+
+`check_adr0059_memory_store_retrieve` stayed on shared `E2E_DIR` while its siblings (`mem-search`, `persist`, `feedback`, `collide`) all isolated via `_e2e_isolate`. Under full-cascade parallelism the RVF lock contention between the roundtrip's store/list and concurrent writes from sibling e2e-0059-* checks caused the list to see a stale snapshot across all 5 backoff attempts. Switched to `_e2e_isolate "0059-rt"` to match siblings; lib/acceptance-adr0059-checks.sh:33-94.
+
+This is the last known silent-pass adjacent defect: the check was correctly loud-failing the race, not masking it — the fix is isolation, not assertion weakening (consistent with the "no squelch" rule).
+
+### Full-cascade artifacts
+
+- `test-results/accept-2026-04-21T231047Z/acceptance-results.json` (run 1)
+- `test-results/accept-2026-04-21T232055Z/acceptance-results.json` (run 2, promotion)

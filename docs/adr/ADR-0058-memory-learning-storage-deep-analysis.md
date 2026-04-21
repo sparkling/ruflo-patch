@@ -271,7 +271,7 @@ Reordered based on architecture understanding: fix the drain first, then the cac
 
 | Successor ADR | What it absorbed from ADR-0058 |
 |---------------|-------------------------------|
-| **ADR-0059** (RVF Native Storage Backend) | Explicitly cites ADR-0058 as "root cause investigation". Implements the P0 "fix the drain" recommendation. See ADR-0059 line 353 and v11-archive lines 345, 360, 748, 752. |
+| **ADR-0059** (RVF Native Storage Backend) | Explicitly cites ADR-0058 as "root cause investigation". Implements the P0 "fix the drain" recommendation. See ADR-0059 line 353. (The former v11-archive companion was deleted on 2026-04-22 after v10/v11 shipped as Implemented.) |
 | **ADR-0083** (Phase 5 Single Data Flow) | Takes ADR-0058's P0 bridge bug diagnosis as starting point ("First identified as 'P0 bridge bug'" at line 25) and delivers the single-data-flow design. |
 | **ADR-0086** (RVF Primary, SQLite Fallback) | Resolves the "two independent stacks" problem from ADR-0058 by making RVF the canonical storage and relegating SQLite to fallback-only. |
 | **ADR-0094** (Acceptance Coverage) | Closed 2026-04-21 with 3 green full cascades; validates that the drain/unification work grounded in ADR-0058's diagnosis now holds end-to-end. |

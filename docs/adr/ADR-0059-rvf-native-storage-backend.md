@@ -359,8 +359,9 @@ Portable `_timeout`, `sed -i` fix, `config.yaml` acceptance, causal tool names, 
 <details>
 <summary>Version History (archived — 11 iterations during 2026-04-03/04 session)</summary>
 
-See `ADR-0059-rvf-native-storage-backend.v11-archive.md` for the full deliberation
-trail across 11 versions and 8 expert hives. Key decision points:
+The v11 archive document (`ADR-0059-rvf-native-storage-backend.v11-archive.md`) was
+deleted on 2026-04-22 once v10/v11 landed as Implemented — the deliberation trail it
+captured is no longer load-bearing. Key decision points preserved below:
 
 - v1-v4: Initial design, upstream code audit, agentic-flow deep search
 - v5-v6: RvfBackend vs fix AgentDBBackend — both options documented fairly

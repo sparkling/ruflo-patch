@@ -36,10 +36,22 @@ check_adr0059_memory_store_retrieve() {
   local test_key="adr0059-rt-$(date +%s)"
   local test_value="roundtrip-test-value"
 
+  # ADR-0059 siblings (mem-search, persist, feedback, collide) all use
+  # _e2e_isolate to avoid RVF-lock contention against the shared E2E_DIR,
+  # but this check used shared E2E_DIR. Under full-cascade parallel load
+  # (~570 concurrent checks) the store path's fsync races with concurrent
+  # list reads and writes from other e2e-0059-* siblings — observed
+  # intermittently in the 2026-04-21 full-cascade run (558/560 pass, 1
+  # fail: "Stored key not found in list after 5 attempts"). Matching the
+  # sibling isolation pattern eliminates the race at its source rather
+  # than extending the backoff budget further.
+  local iso; iso=$(_e2e_isolate "0059-rt")
+
   # 15s timeout: ControllerRegistry init (44 controllers) can take 8-12s on first call
-  _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$test_key' --value '$test_value' --namespace adr0059-rt" "" 60
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$test_key' --value '$test_value' --namespace adr0059-rt" "" 60
   if ! echo "$_RK_OUT" | grep -qi 'stored\|success'; then
-    _CHECK_OUTPUT="memory store failed (may need longer timeout): $_RK_OUT"; return
+    _CHECK_OUTPUT="memory store failed (may need longer timeout): $_RK_OUT"
+    rm -rf "$iso" 2>/dev/null; return
   fi
 
   # Use list to verify — more reliable than retrieve across CLI versions.
@@ -60,7 +72,7 @@ check_adr0059_memory_store_retrieve() {
     if (( list_delays[list_attempt] > 0 )); then
       sleep "0.$(printf '%03d' "${list_delays[list_attempt]}")"
     fi
-    _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-rt --limit 10" "" 60
+    _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace adr0059-rt --limit 10" "" 60
     if echo "$_RK_OUT" | grep -q "$test_key"; then
       list_found="true"
       break
@@ -73,6 +85,7 @@ check_adr0059_memory_store_retrieve() {
   else
     _CHECK_OUTPUT="Stored key '$test_key' not found in list after ${#list_delays[@]} attempts with backoff (ADR-0082 loud-fail): ${_RK_OUT:0:200}"
   fi
+  rm -rf "$iso" 2>/dev/null
 }
 
 check_adr0059_memory_search() {
