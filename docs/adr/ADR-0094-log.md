@@ -6,6 +6,65 @@
 
 ---
 
+## 2026-04-21 — Phase 17 implemented (validator property fuzzing) — ADR-0094 backlog CLOSED
+
+Shipped `lib/acceptance-phase17-validator-fuzzing.sh` with 15 checks. Phase 17 is the meta-test layer for ADR-0094: it fuzzes the bash shell VALIDATORS that phases 11, 12, 15, and 16 rely on to decide PASS/FAIL/SKIP_ACCEPTED. Each check seeds `_MCP_BODY` / `_MCP_EXIT` / `_CHECK_PASSED` directly (no CLI, no real MCP) and asserts the validator's post-state matches an expected verdict — so a silent regression in any validator (branch deleted, regex relaxed, skip-guard removed) produces a loud FAIL at the check-code layer rather than letting an entire phase go green while checking nothing.
+
+**Validators under test and matrix:**
+
+| # | validator | branch exercised | expected verdict |
+|---|---|---|---|
+| 1 | `_p11_expect_fuzz_rejection` | non-zero exit (branch a) | PASS |
+| 2 | `_p11_expect_fuzz_rejection` | `"success":false` (branch b) | PASS |
+| 3 | `_p11_expect_fuzz_rejection` | error-shape word (branch c) | PASS |
+| 4 | `_p11_expect_fuzz_rejection` | silent success (ADR-0082 canary) | FAIL |
+| 5 | `_p11_expect_fuzz_rejection` | empty/neutral body | FAIL |
+| 6 | `_p11_expect_fuzz_rejection` | `skip_accepted` preserved | skip_accepted |
+| 7 | `_p11_expect_fuzz_rejection` | ambiguity (`success:true`+error) | PASS (documents branch ordering) |
+| 8 | `_p12_expect_named_error` | reject + token + hint canonical | PASS |
+| 9 | `_p12_expect_named_error` | rejected but token unnamed | FAIL |
+| 10 | `_p12_expect_named_error` | token named but no structural hint | FAIL |
+| 11 | `_p12_expect_named_error` | `skip_accepted` preserved | skip_accepted |
+| 12 | `_p15_classify` | all four shape classes (exit_error/empty/failure/success) | stdout string match |
+| 13 | `_p15_expect_deterministic` | flaky, all-empty, all-error, 3×success | FAIL/FAIL/FAIL/PASS |
+| 14 | `_p16_assert_no_pii` | ambiguous body (both `hasPII:true` AND `hasPII:false`) + canonical clean | FAIL/PASS |
+| 15 | `_p16_assert_has_pii` | regressed detector + canonical PII; asserts `GUARD REGRESSION` diagnostic string | FAIL (with diag) / PASS |
+
+**ADR-0082 silent-pass axes covered** (eight distinct traps — every validator must be exercised across its full canonical PASS / specific FAIL / skip-propagation / silent-pass axes):
+
+- T1 skip-guard preserve (6, 11): overwriting `skip_accepted` to pass/fail based on body shape silently voids the "tool not in build" bucket.
+- T2 silent-success (4): `{"success":true}` with no diagnostic masks malformed-input acceptance — the canonical ADR-0082 failure shape.
+- T3 neutral body (5): empty/whitespace body with no rejection and no success marker. Matches the "too-broad else-FAIL" trap that Phase 11 line 100–101 exists to prevent.
+- T4 branch ordering (7): when body carries both `"success":true` AND an error-shape word, error wins at line 85 before the silent-success canary at line 92. Contract is documented and enforceable — reordering flips this check.
+- T5 P12 token-without-hint (10): body where only rejection signal is the word `"error"` (in reject regex, NOT in hint regex). Isolates the no-hint FAIL branch cleanly. Widening the hint regex to include "rejected" flips this.
+- T6 P15 flaky detection (13): three different shape classes MUST produce FAIL — the Phase 15 headline defect.
+- T7 P16 ambiguous body (14): belt-and-braces double-match (phase16 lines 92–97) — body containing BOTH `"hasPII":true` AND `"hasPII":false` must force-FAIL even after harness regex already set `_CHECK_PASSED=true`.
+- T8 P16 guard regression + diagnostic (15): regressed detector (hasPII:false on obvious PII) must produce FAIL with the specific string "GUARD REGRESSION" in `_CHECK_OUTPUT`. Phase 17 asserts both the verdict AND the diagnostic so a refactor that drops the custom message in favor of the default harness reject text is caught.
+
+**Implementation decisions (diverged from default matrix):**
+
+- Architect's design doc at `/tmp/phase17-matrix.md` (arrived after ~3 min poll) added a fifteenth check covering `_p15_expect_deterministic` (rows 13a-d). I adopted the full 15-check matrix over the 14-check default; the extra row closes the `_p15_expect_deterministic` coverage gap that the 14-check default left implicit.
+- Architect's matrix row #16 (P12 silent-success canary) was flagged as optional; omitted to keep the row count at 15 and stay under the 400 LOC cap. T2 is covered by row #4's P11 analog.
+- Filename: `acceptance-phase17-validator-fuzzing.sh` (matches p11's `-fuzzing` suffix for consistency with sibling phases), not the architect's proposed `-validator-fuzz.sh`.
+- Bash subtlety — the original design declared `_CHECK_PASSED` as `local` inside each check function; this blocked the outer harness from seeing the final verdict. Fixed by locally declaring only `_MCP_BODY`/`_MCP_EXIT` (scratch input state) while keeping `_CHECK_PASSED`/`_CHECK_OUTPUT` at function scope (so the validator's write and the outer harness read agree). `observed="$_CHECK_PASSED"` captures the validator's verdict before `_p17_assert_verdict` rewrites `_CHECK_PASSED` with the Phase 17 outcome.
+- Stubbing `_mcp_invoke_tool` for P16 checks (14, 15): `_p17_stub_mcp` redefines the function in-shell using `printf %q` around the body (survives eval with quotes/backslashes); `_p17_unstub_mcp` restores the original via `declare -f` capture + eval. No real CLI, no real MCP, no Verdaccio.
+
+**Paired unit test**: `tests/unit/adr0094-p17-validator-fuzzing.test.mjs` (written by the tester agent in the same pass). Sources the four phase libs + the Phase 17 lib in a bash subprocess and asserts each of the 15 check functions leaves `_CHECK_PASSED=true`.
+
+**Wiring sites** (4 in `scripts/test-acceptance.sh`, 2 in `scripts/test-acceptance-fast.sh`):
+
+- Source block (after phase16): new `phase17_lib` var and `source` line.
+- Parallel dispatch block (after the p16 `run_check_bg` group): 15 × `run_check_bg` lines, gated on `settings.json` AND `$phase17_lib` for consistency with the rest of the acceptance cascade — Phase 17 doesn't technically need `E2E_DIR` state but the gate preserves "if acceptance is off, all phases are off".
+- `_p17_specs` array: 15 specs mirroring the parallel dispatch block.
+- `collect_parallel` argv: `"${_p17_specs[@]}"` appended after `"${_p16_specs[@]}"`, before `"${_e2e_specs[@]}"`.
+- Fast runner: p17 added to the source list (line 128 area) and a new `p17` group block (after p16) — 15 × `_fast_run` lines.
+
+**Smoke test** (before committing): 15/15 Phase 17 checks pass when sourced against the four sibling phase libs; syntax-check clean on both harness scripts.
+
+**Phases remaining**: none — ADR-0094 backlog is CLOSED. All seven P2 backlog phases (11 input fuzzing, 12 error quality, 13 migration, 14 SLO, 15 flakiness, 16 PII inverse, 17 validator fuzzing) have landed. The ADR's "Phases 11–17 (backlog — P2)" section no longer contains an open item. Next-step work on ADR-0094 shifts from landing new phases to maintaining coverage as new tools ship — captured by the catalog-rebuild drift detection already wired into preflight per ADR-0096.
+
+---
+
 ## 2026-04-21 — Phase 16 implemented (PII detection inverse)
 
 Shipped `lib/acceptance-phase16-pii-inverse.sh` with 8 checks: 7 inverse

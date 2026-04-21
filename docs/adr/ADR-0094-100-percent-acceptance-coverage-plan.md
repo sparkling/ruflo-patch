@@ -123,7 +123,7 @@ Listed in `docs/adr/ADR-0094-log.md` under §Backlog. Scheduled as capacity allo
 - Phase 14 — Performance SLO per tool class.
 - Phase 15 — Flakiness characterization (load-sensitive vs. deterministic). ✅ Shipped 2026-04-21 (6 checks, `lib/acceptance-phase15-flakiness.sh`).
 - Phase 16 — PII detection inverse (non-PII does not false-positive). ✅ Shipped 2026-04-21 (8 checks, `lib/acceptance-phase16-pii-inverse.sh`).
-- Phase 17 — Check-code property tests (fuzz the validators).
+- Phase 17 — Check-code property tests (fuzz the validators). ✅ Shipped 2026-04-21 (15 checks, `lib/acceptance-phase17-validator-fuzzing.sh`). ADR-0094 backlog closed.
 
 ## Acceptance criteria
 

@@ -496,6 +496,10 @@ phase15_lib="${PROJECT_DIR}/lib/acceptance-phase15-flakiness.sh"
 phase16_lib="${PROJECT_DIR}/lib/acceptance-phase16-pii-inverse.sh"
 [[ -f "$phase16_lib" ]] && source "$phase16_lib"
 
+# ADR-0094 Phase 17: Validator property fuzzing (15 checks, no CLI/MCP)
+phase17_lib="${PROJECT_DIR}/lib/acceptance-phase17-validator-fuzzing.sh"
+[[ -f "$phase17_lib" ]] && source "$phase17_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1218,6 +1222,32 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase16_lib" ]]; then
   run_check_bg "p16-guard-detects-email"  "P16 guard: email IS PII"        check_adr0094_p16_guard_detects_email  "adr0094-p16"
 fi
 
+# ADR-0094 Phase 17: Validator property fuzzing. Meta-tests the bash
+# validators the earlier phases rely on (`_p11_expect_fuzz_rejection`,
+# `_p12_expect_named_error`, `_p15_classify`, `_p15_expect_deterministic`,
+# `_p16_assert_*`). Each check seeds _MCP_BODY/_MCP_EXIT/_CHECK_PASSED
+# directly (no CLI, no MCP) and asserts the validator's post-state matches
+# expectations. Covers 8 ADR-0082 silent-pass trap axes across 15 checks.
+# Gate on settings.json for consistency — Phase 17 doesn't need init'd
+# project state, but if acceptance is disabled Phase 17 shouldn't run.
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase17_lib" ]]; then
+  run_check_bg "p17-p11-nonzero-exit"      "P17 p11 nonzero-exit → PASS"            check_adr0094_p17_p11_nonzero_exit_passes        "adr0094-p17"
+  run_check_bg "p17-p11-success-false"     "P17 p11 success:false → PASS"           check_adr0094_p17_p11_success_false_passes       "adr0094-p17"
+  run_check_bg "p17-p11-error-word"        "P17 p11 error-word → PASS"              check_adr0094_p17_p11_error_word_passes          "adr0094-p17"
+  run_check_bg "p17-p11-silent-success"    "P17 p11 silent-success → FAIL"          check_adr0094_p17_p11_silent_success_fails       "adr0094-p17"
+  run_check_bg "p17-p11-empty-body"        "P17 p11 empty-body → FAIL"              check_adr0094_p17_p11_empty_body_fails           "adr0094-p17"
+  run_check_bg "p17-p11-skip-propagates"   "P17 p11 skip_accepted preserved"        check_adr0094_p17_p11_skip_propagates            "adr0094-p17"
+  run_check_bg "p17-p11-ambig-error-wins"  "P17 p11 ambiguity: error wins"          check_adr0094_p17_p11_ambiguity_error_wins       "adr0094-p17"
+  run_check_bg "p17-p12-named-with-hint"   "P17 p12 named+hint → PASS"              check_adr0094_p17_p12_named_with_hint_passes     "adr0094-p17"
+  run_check_bg "p17-p12-no-token"          "P17 p12 rejected, field unnamed → FAIL" check_adr0094_p17_p12_rejected_without_token_fails "adr0094-p17"
+  run_check_bg "p17-p12-no-hint"           "P17 p12 named, no hint → FAIL"          check_adr0094_p17_p12_named_but_no_hint_fails    "adr0094-p17"
+  run_check_bg "p17-p12-skip-propagates"   "P17 p12 skip_accepted preserved"        check_adr0094_p17_p12_skip_propagates            "adr0094-p17"
+  run_check_bg "p17-p15-classify-shapes"   "P17 p15 classifier (4 shapes)"          check_adr0094_p17_p15_classify_four_shapes       "adr0094-p17"
+  run_check_bg "p17-p15-flaky-detected"    "P17 p15 flaky/canaries"                 check_adr0094_p17_p15_flaky_detected             "adr0094-p17"
+  run_check_bg "p17-p16-ambig-body"        "P17 p16 ambiguous body force-FAIL"      check_adr0094_p17_p16_no_pii_ambiguous_body_fails "adr0094-p17"
+  run_check_bg "p17-p16-guard-regress"     "P17 p16 guard regression FAIL + diag"   check_adr0094_p17_p16_guard_regression_fails     "adr0094-p17"
+fi
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1585,6 +1615,27 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase16_lib" ]]; then
   )
 fi
 
+_p17_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase17_lib" ]]; then
+  _p17_specs=(
+    "p17-p11-nonzero-exit|P17 p11 nonzero-exit → PASS"
+    "p17-p11-success-false|P17 p11 success:false → PASS"
+    "p17-p11-error-word|P17 p11 error-word → PASS"
+    "p17-p11-silent-success|P17 p11 silent-success → FAIL"
+    "p17-p11-empty-body|P17 p11 empty-body → FAIL"
+    "p17-p11-skip-propagates|P17 p11 skip_accepted preserved"
+    "p17-p11-ambig-error-wins|P17 p11 ambiguity: error wins"
+    "p17-p12-named-with-hint|P17 p12 named+hint → PASS"
+    "p17-p12-no-token|P17 p12 rejected, field unnamed → FAIL"
+    "p17-p12-no-hint|P17 p12 named, no hint → FAIL"
+    "p17-p12-skip-propagates|P17 p12 skip_accepted preserved"
+    "p17-p15-classify-shapes|P17 p15 classifier (4 shapes)"
+    "p17-p15-flaky-detected|P17 p15 flaky/canaries"
+    "p17-p16-ambig-body|P17 p16 ambiguous body force-FAIL"
+    "p17-p16-guard-regress|P17 p16 guard regression FAIL + diag"
+  )
+fi
+
 _e2e_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   _e2e_specs=(
@@ -1918,6 +1969,7 @@ collect_parallel "all" \
   "${_p14_specs[@]}" \
   "${_p15_specs[@]}" \
   "${_p16_specs[@]}" \
+  "${_p17_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

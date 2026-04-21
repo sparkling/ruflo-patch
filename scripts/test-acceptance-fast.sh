@@ -125,7 +125,8 @@ for f in \
   "$PROJECT_DIR/lib/acceptance-phase13-migration.sh" \
   "$PROJECT_DIR/lib/acceptance-phase14-slo.sh" \
   "$PROJECT_DIR/lib/acceptance-phase15-flakiness.sh" \
-  "$PROJECT_DIR/lib/acceptance-phase16-pii-inverse.sh"; do
+  "$PROJECT_DIR/lib/acceptance-phase16-pii-inverse.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase17-validator-fuzzing.sh"; do
   [[ -f "$f" ]] && source "$f"
 done
 
@@ -313,6 +314,27 @@ if [[ "$_FAST_RUN_GROUPS" == *"p16"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
     _fast_run "p16-markdown"        check_adr0094_p16_nopii_markdown
     _fast_run "p16-scan-clean"      check_adr0094_p16_nopii_scan_clean
     _fast_run "p16-guard-email"     check_adr0094_p16_guard_detects_email
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"p17"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase17-validator-fuzzing.sh" ]]; then
+    echo "── Phase 17: Validator property fuzzing (ADR-0094) ──"
+    _fast_run "p17-p11-nonzero-exit"    check_adr0094_p17_p11_nonzero_exit_passes
+    _fast_run "p17-p11-success-false"   check_adr0094_p17_p11_success_false_passes
+    _fast_run "p17-p11-error-word"      check_adr0094_p17_p11_error_word_passes
+    _fast_run "p17-p11-silent-success"  check_adr0094_p17_p11_silent_success_fails
+    _fast_run "p17-p11-empty-body"      check_adr0094_p17_p11_empty_body_fails
+    _fast_run "p17-p11-skip-propagate"  check_adr0094_p17_p11_skip_propagates
+    _fast_run "p17-p11-ambig-err-wins"  check_adr0094_p17_p11_ambiguity_error_wins
+    _fast_run "p17-p12-named-with-hint" check_adr0094_p17_p12_named_with_hint_passes
+    _fast_run "p17-p12-no-token"        check_adr0094_p17_p12_rejected_without_token_fails
+    _fast_run "p17-p12-no-hint"         check_adr0094_p17_p12_named_but_no_hint_fails
+    _fast_run "p17-p12-skip-propagate"  check_adr0094_p17_p12_skip_propagates
+    _fast_run "p17-p15-classify"        check_adr0094_p17_p15_classify_four_shapes
+    _fast_run "p17-p15-flaky"           check_adr0094_p17_p15_flaky_detected
+    _fast_run "p17-p16-ambig-body"      check_adr0094_p17_p16_no_pii_ambiguous_body_fails
+    _fast_run "p17-p16-guard-regress"   check_adr0094_p17_p16_guard_regression_fails
   fi
 fi
 
