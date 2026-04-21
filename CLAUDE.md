@@ -26,7 +26,6 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 - Never continuously check status after spawning a swarm — wait for results
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
-- ALWAYS commit often — after every meaningful change (new patch, new ADR, config update, test fix). Do not accumulate uncommitted work across multiple tasks
 
 ## File Organization
 
@@ -38,40 +37,10 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 - Use `/scripts` for utility scripts
 - Use `/examples` for example code
 
-## Adversarial Prompting Workflow (ADR-0087)
-
-Before implementing any non-trivial feature or architectural change:
-
-1. Describe the proposed approach to the AI
-2. Ask it to find the **3 best reasons the architecture is wrong**
-3. Ask what a **senior engineer would say 3 years from now**
-4. Only after this adversarial pass, proceed with implementation
-
-Use AI to be **less wrong**, not to go faster.
-
-When running parallel sessions, frame them as **thinking types** (implementation, adversarial review, test generation, documentation, simplification) — not arbitrary task splits. The `route` hook emits `[ADR-0087] Parallel sessions:` advisories automatically for architectural prompts.
-
-The `route` hook also emits `[ADR-0087] AI-first review:` advisories listing review focus areas (conventions, edge-cases, architecture, security, test-coverage, compatibility) tailored to the type of change. AI performs first-pass review before any human sees the code.
-
-## What We Tried and Won't Try Again
-
-- [2026-03] SPARC-style upstream rewrite — 44-49 week scope covers 15-20%; fork-patch ships immediately (ADR-0055)
-- [2026-04] SQLite-first storage — RVF is primary; SQLite is fallback only (ADR-0086)
-- [2026-04] Silent fallback paths in tests — masks real failures; tests must fail loudly (ADR-0082)
-- [2026-04] Sidecar JSON files — eliminated in favor of single storage abstraction (ADR-0085)
-- [2026-04] Subtracted parallel sessions per trigger — refactors need docs (stale risk), phased work needs simplification (cruft accumulates); all triggers get all 5 sessions (ADR-0087)
-- [2026-04] Daemon in CLI hot path — ADR-0059 Phase 4's "single writer via IPC" contradicted upstream ADR-050 ("daemon adds process mgmt + health check + IPC complexity; file-based is simpler, more reliable"). `DaemonIPCClient` shipped with zero callers for months. Daemon now scoped to cross-platform timer scheduler only (ADR-0088).
-- [2026-04] `npx @sparkleideas/cli@latest` in parallel acceptance checks — serializes 50+ concurrent checks behind npm's 23GB cache lock. Always use `$(_cli_cmd)` which resolves the installed symlink at `$TEMP_DIR/node_modules/.bin/cli`. 36x difference observed (277-317s → 7.7s in adr0080-store-init flake).
-- [2026-04] `var=$(grep -c 'pat' file || echo 0)` bash anti-pattern — `grep -c` already prints "0" on zero matches AND exits 1, so `|| echo 0` appends a second "0" producing "0\n0" which trips bash arithmetic. Always use `var=$(grep -c 'pat' 2>/dev/null); var=${var:-0}`.
-- [2026-04] Deleting upstream-maintained files to satisfy the 500-line rule — upstream merge tax (17-file migration, permanent conflict risk) exceeds aesthetic gain. Intercept pattern achieves runtime unity without source deletion (ADR-0089). `controller-registry.ts` stays at 2063 LOC; `agentdb-service.ts` stays at 1831 LOC; both wrap controller instantiations through `getOrCreate()` pool.
-- [2026-04] Facade regression guards for "accepted trade-offs" — ADR-0086 Debt 15's original guard checked that agentdb's SQLite file *exists* after `agentdb_health`, but agentdb auto-creates the file with empty schema at cold start, so the check always passed regardless of whether any controller ever wrote anything. ADR-0090 Tier A1 upgraded it to a real cross-restart row-count round-trip via the `sqlite3` CLI binary against the actual `episodes` table. Rule: every "accepted trade-off" needs a regression check that fails if the trade-off's promised behavior stops working — NOT just a check that the surface artifact exists.
-- [2026-04] Silent-pass on SKIP inside the test harness itself — `check_adr0073_native_runtime` set `_CHECK_PASSED="true"` when the native import failed with "SKIP:", so a broken native runtime was reported green. Harness now has three buckets (`pass` / `fail` / `skip_accepted`) and ADR-0082's no-silent-pass rule is enforceable at the runner level. Rule: if you find yourself writing `PASS` on any SKIP branch in an acceptance check, you are building the anti-pattern ADR-0082 exists to prevent — reach for a distinct `SKIP_ACCEPTED` bucket instead (ADR-0090 Tier A2).
-- [2026-04] Scanning stderr for wrong-backend error strings — `check_t3_2_concurrent_writes` scanned for `SQLITE_BUSY` / `database is locked` to verify concurrent-write safety, but RVF (the primary CRUD backend) uses a PID-based `.rvf.lock` file and never emits SQLite error shapes. Check passed green while the real RVF concurrent path had a live multi-writer race (`initialize()`/`compactWal`/`persistToDiskInner` — observed 1-3 of 4 entries surviving at N=4 writers). ADR-0090 Tier A4 replaced it with real `.rvf.lock` contention detection + RVF header inspection. Rule: when you write an acceptance check, identify the primary code path *first* and test that specifically — not a plausible-looking error string from a different backend.
-
 ## Project Architecture
 
 - Follow Domain-Driven Design with bounded contexts
-- Keep files under 500 lines
+- Keep files under 500 lines (exceptions: upstream-maintained files — see memory `project-adr0094-living-tracker` / ADR-0089)
 - Use typed interfaces for all public APIs
 - Prefer TDD London School (mock-first) for new code
 - Use event sourcing for state changes
@@ -81,7 +50,7 @@ The `route` hook also emits `[ADR-0087] AI-first review:` advisories listing rev
 
 - **Topology**: hierarchical-mesh
 - **Max Agents**: 15
-- **Memory**: hybrid
+- **Memory**: hybrid (RVF primary; SQLite fallback only — see memory `project-rvf-primary`)
 - **HNSW**: Enabled
 - **Neural**: Enabled
 
@@ -89,7 +58,7 @@ The `route` hook also emits `[ADR-0087] AI-first review:` advisories listing rev
 
 ### Cascading Pipeline (ADR-0038)
 
-Each script includes all previous steps — running a later step runs everything before it:
+Each npm script includes all previous steps — running a later step runs everything before it:
 
 | # | `npm run` script | Includes | What it does |
 |---|------------------|----------|--------------|
@@ -101,7 +70,7 @@ Each script includes all previous steps — running a later step runs everything
 | 6 | `codemod` | 1-5 | Scope rename (`@claude-flow/*` → `@sparkleideas/*`) |
 | 7 | `build` | 1-6 | TypeScript compile + WASM (parallel) |
 | 8 | `publish:verdaccio` | 1-7 | Publish to Verdaccio + promote @latest |
-| 9 | `test:acceptance` | 1-8 | Acceptance checks against real init'd project |
+| 9 | `test:acceptance` | 1-8 | Acceptance checks against a real init'd project |
 | 10 | `finalize` | — | Save state, push forks, write timing (standalone) |
 | 11 | `deploy` | 1-10 | Full pipeline end-to-end |
 
@@ -128,49 +97,40 @@ npm run publish:fork      # Detect merged PRs, version bump, build, publish
 
 | Level | Location | Style | Runner |
 |-------|----------|-------|--------|
-| **Unit** | `tests/unit/*.test.mjs` | London School TDD — `mockFn()`/`mockCtor()`, mocked deps, no I/O | `npm run test:unit` |
+| **Unit** | `tests/unit/*.test.mjs` | London School TDD — mocked deps, no I/O | `npm run test:unit` |
 | **Integration** | `tests/unit/*.test.mjs` | Real I/O — file persistence, subprocess exec, pipeline exercises | `npm run test:unit` |
 | **Acceptance** | `lib/acceptance-*.sh` wired into `scripts/test-acceptance.sh` | Bash checks against real `init --full` project with published packages | `npm run test:acceptance` |
 
-#### Writing tests: ALL THREE levels in the same pass
+**Writing tests: ALL THREE levels in the same pass.** Never treat acceptance tests as optional or "later" work — the framework exists, use it.
 
-1. **Unit**: mock the function under test, verify wiring contracts (constructor args, fallback chains, return types)
-2. **Integration**: exercise real components with real I/O (file reads/writes, subprocess calls, data round-trips)
-3. **Acceptance**: add bash check functions in `lib/acceptance-{feature}-checks.sh`, source it in `test-acceptance.sh`, wire into the appropriate group with `run_check_bg` + `collect_parallel`
+**Running tests: ALL THREE levels every time.** When asked to run/test/verify:
 
-Never treat acceptance tests as optional or "later" work. The framework exists — use it.
+```bash
+npm run test:unit                                           # Level 1+2
+curl -sf http://localhost:4873/-/ping && npm run test:acceptance   # Level 3 if Verdaccio up
+```
 
-#### Fast acceptance runner (iterating on specific checks)
+NEVER run only `test:unit` and call it done. If Verdaccio is down, say so explicitly — do not silently skip acceptance.
+
+### Fast acceptance runner (iterating on specific checks)
 
 For debugging or iterating on acceptance check code without rebuilding packages:
 
 ```bash
-# Run Phase 3+4 checks only (~90s, reuses existing temp dirs)
-bash scripts/test-acceptance-fast.sh p3,p4
-
-# Run all ADR-0059 checks (Phase 1-4, 18 checks)
-bash scripts/test-acceptance-fast.sh all
-
-# Run specific groups
-bash scripts/test-acceptance-fast.sh p3        # Phase 3 only
-bash scripts/test-acceptance-fast.sh adr0059   # Phase 1+2 only
+bash scripts/test-acceptance-fast.sh check_<function_name>     # single check
+bash scripts/test-acceptance-fast.sh p3,p4                     # phase groups
+bash scripts/test-acceptance-fast.sh all                       # all ADR-0059 checks
 ```
 
-Requires Verdaccio running and packages published (from a prior `npm run test:acceptance`). Reuses existing `/tmp/ruflo-accept-*` and `/tmp/ruflo-e2e-*` dirs. Runs checks sequentially (no subshell — reliable variable propagation).
+Requires Verdaccio running and packages already published. Reuses existing `/tmp/ruflo-accept-*` and `/tmp/ruflo-e2e-*` dirs. Sequential (no subshell) — reliable variable propagation.
 
-#### Running tests: ALL THREE levels every time
+### Feature Workflow
 
-When asked to run/test/verify, ALWAYS run all available levels:
-
-```bash
-# Level 1+2: Unit + Integration (always available)
-npm run test:unit
-
-# Level 3: Acceptance (requires Verdaccio — check first, run if up)
-curl -sf http://localhost:4873/-/ping && npm run test:acceptance
-```
-
-**NEVER run only `test:unit` and call it done.** If Verdaccio is down, say so explicitly — do not silently skip acceptance. If packages need building first, say that too.
+1. Create or update tests first (all three levels)
+2. Implement the change
+3. Run `npm run test:unit` (and `test:acceptance` if the change type requires it)
+4. Run `npm run build` if you touched fork source
+5. Commit
 
 ## Security Rules
 
@@ -178,231 +138,87 @@ curl -sf http://localhost:4873/-/ping && npm run test:acceptance
 - NEVER commit .env files or any file containing secrets
 - Always validate user input at system boundaries
 - Always sanitize file paths to prevent directory traversal
-- Run `npx @sparkleideas/cli@latest security scan` after security-related changes
+- Run `ruflo security scan` after security-related changes
 
-## Concurrency: 1 MESSAGE = ALL RELATED OPERATIONS
+## Concurrency
 
-- All operations MUST be concurrent/parallel in a single message
-- Use Claude Code's Task tool for spawning agents, not just MCP
-- ALWAYS batch ALL todos in ONE TodoWrite call (5-10+ minimum)
-- ALWAYS spawn ALL agents in ONE message with full instructions via Task tool
-- ALWAYS batch ALL file reads/writes/edits in ONE message
-- ALWAYS batch ALL Bash commands in ONE message
+- Batch ALL independent operations into a single message
+- Spawn ALL agents in ONE message using the Agent tool with `run_in_background: true`
+- Batch ALL independent file reads/writes/edits in ONE message
+- Batch ALL independent Bash commands in ONE message
 
-## Swarm Orchestration
+## Task Complexity
 
-- MUST initialize the swarm using CLI tools when starting complex tasks
-- MUST spawn concurrent agents using Claude Code's Task tool
-- Never use CLI tools alone for execution — Task tool agents do the actual work
-- MUST call CLI tools AND Task tool in ONE message for complex work
+- Single file edit or fix: work directly, no agents needed
+- 3+ files, new feature, or cross-module refactoring: spawn agents
+- When in doubt, start direct — escalate to agents if scope grows
 
-### 3-Tier Model Routing (ADR-026)
+## Agent Orchestration
 
-| Tier | Handler | Latency | Cost | Use Cases |
-|------|---------|---------|------|-----------|
-| **1** | Agent Booster (WASM) | <1ms | $0 | Simple transforms (var→const, add types) — Skip LLM |
-| **2** | Haiku | ~500ms | $0.0002 | Simple tasks, low complexity (<30%) |
-| **3** | Sonnet/Opus | 2-5s | $0.003-0.015 | Complex reasoning, architecture, security (>30%) |
+- Use the Agent tool to spawn subagents for multi-file or cross-module tasks
+- ALWAYS set `run_in_background: true` when spawning agents
+- Put ALL agent spawns in a single message for parallel execution
+- After spawning agents, STOP and wait for results — do not poll or check status
+- Use CLI tools (via Bash) for coordination: swarm init, memory, hooks
+- NEVER use CLI tools as a substitute for Agent tool subagents
 
-- Always check for `[AGENT_BOOSTER_AVAILABLE]` or `[TASK_MODEL_RECOMMENDATION]` before spawning agents
-- Use Edit tool directly when `[AGENT_BOOSTER_AVAILABLE]`
+## MCP Tools (Deferred)
 
-## Swarm Configuration & Anti-Drift
+This project has a `claude-flow` MCP server with 200+ tools for memory,
+swarms, agents, hooks, and coordination. Tools are deferred — you MUST call
+ToolSearch to load a tool's schema before calling it.
 
-- ALWAYS use hierarchical topology for coding swarms
-- Keep maxAgents at 6-8 for tight coordination
-- Use specialized strategy for clear role boundaries
-- Use `raft` consensus for hive-mind (leader maintains authoritative state)
-- Run frequent checkpoints via `post-task` hooks
-- Keep shared memory namespace for all agents
+Quick discovery:
+- `ToolSearch("claude-flow memory")` — store, search, retrieve patterns
+- `ToolSearch("claude-flow agent")` — spawn, list, manage agents
+- `ToolSearch("claude-flow swarm")` — multi-agent coordination
+- `ToolSearch("claude-flow hooks")` — lifecycle hooks and learning
 
-```bash
-npx @sparkleideas/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized
-```
+Do NOT call `mcp__claude-flow__agentdb_session-start` or
+`mcp__claude-flow__agentdb_session-end` — hooks manage session lifecycle
+automatically.
 
-## Swarm Execution Rules
+## Hook Signals
 
-- ALWAYS use `run_in_background: true` for all agent Task calls
-- ALWAYS put ALL agent Task calls in ONE message for parallel execution
-- After spawning, STOP — do NOT add more tool calls or check status
-- Never poll TaskOutput or check swarm status — trust agents to return
-- When agent results arrive, review ALL results before proceeding
+Hooks inject signals into the conversation at three points:
 
-## Swarm Protocols & Routing
+- **Before task**: `[INTELLIGENCE] Relevant patterns...` — incorporate when relevant
+- **During task**: `[INFO] Routing task...` — consider the recommended agent type
+- **After task**: hooks store outcomes automatically; do not call session-start/end
 
-### Auto-Start Swarm Protocol
+If `[INFO] Router not available` appears, proceed normally without routing.
 
-When the user requests a complex task, spawn agents in background and WAIT:
+## When to Use What
 
-```javascript
-// STEP 1: Initialize swarm coordination
-Bash("npx @sparkleideas/cli@latest swarm init --topology hierarchical --max-agents 8 --strategy specialized")
-
-// STEP 2: Spawn ALL agents IN BACKGROUND in a SINGLE message
-Task({prompt: "Research requirements...", subagent_type: "researcher", run_in_background: true})
-Task({prompt: "Design architecture...", subagent_type: "system-architect", run_in_background: true})
-Task({prompt: "Implement solution...", subagent_type: "coder", run_in_background: true})
-Task({prompt: "Write tests...", subagent_type: "tester", run_in_background: true})
-Task({prompt: "Review code quality...", subagent_type: "reviewer", run_in_background: true})
-```
-
-### Agent Routing
-
-| Code | Task | Agents |
-|------|------|--------|
-| 1 | Bug Fix | coordinator, researcher, coder, tester |
-| 3 | Feature | coordinator, architect, coder, tester, reviewer |
-| 5 | Refactor | coordinator, architect, coder, reviewer |
-| 7 | Performance | coordinator, perf-engineer, coder |
-| 9 | Security | coordinator, security-architect, auditor |
-
-### Task Complexity Detection
-
-- AUTO-INVOKE SWARM when task involves: 3+ files, new features, cross-module refactoring, API changes, security, or performance work
-- SKIP SWARM for: single file edits, simple bug fixes (1-2 lines), documentation updates, configuration changes
-
-## Hooks System (27 Hooks + 12 Workers)
-
-### Essential Hooks
-
-| Hook | Description |
-|------|-------------|
-| `pre-task` / `post-task` | Task lifecycle with learning |
-| `pre-edit` / `post-edit` | File editing with neural training |
-| `session-start` / `session-end` | Session state persistence |
-| `route` | Route task to optimal agent |
-| `intelligence` | RuVector intelligence system |
-| `worker` | Background worker management |
-
-### 12 Background Workers
-
-| Worker | Priority | Description |
-|--------|----------|-------------|
-| `optimize` | high | Performance optimization |
-| `audit` | critical | Security analysis |
-| `testgaps` | normal | Test coverage analysis |
-| `map` | normal | Codebase mapping |
-| `deepdive` | normal | Deep code analysis |
-| `document` | normal | Auto-documentation |
-
-```bash
-npx @sparkleideas/cli@latest hooks pre-task --description "[task]"
-npx @sparkleideas/cli@latest hooks post-task --task-id "[id]" --success true
-npx @sparkleideas/cli@latest hooks worker dispatch --trigger audit
-```
-
-## Auto-Learning Protocol
-
-### Before Starting Any Task
-```bash
-npx @sparkleideas/cli@latest memory search --query "[task keywords]" --namespace patterns
-npx @sparkleideas/cli@latest hooks route --task "[task description]"
-```
-
-### After Completing Any Task Successfully
-```bash
-npx @sparkleideas/cli@latest memory store --namespace patterns --key "[pattern-name]" --value "[what worked]"
-npx @sparkleideas/cli@latest hooks post-task --task-id "[id]" --success true --store-results true
-```
-
-- ALWAYS check memory before starting new features, debugging, or refactoring
-- ALWAYS store patterns in memory after solving bugs, completing features, or finding optimizations
-
-## Intelligence System (RuVector)
-
-- **SONA**: Self-Optimizing Neural Architecture (<0.05ms adaptation)
-- **HNSW**: 150x-12,500x faster pattern search
-- **EWC++**: Elastic Weight Consolidation (prevents forgetting)
-- **Flash Attention**: 2.49x-7.47x speedup
-
-The 4-step intelligence pipeline:
-1. **RETRIEVE** - Fetch relevant patterns via HNSW
-2. **JUDGE** - Evaluate with verdicts (success/failure)
-3. **DISTILL** - Extract key learnings via LoRA
-4. **CONSOLIDATE** - Prevent catastrophic forgetting via EWC++
-
-## V3 CLI Commands
-
-### Core Commands
-
-| Command | Subcommands | Description |
-|---------|-------------|-------------|
-| `init` | 4 | Project initialization |
-| `agent` | 8 | Agent lifecycle management |
-| `swarm` | 6 | Multi-agent swarm coordination |
-| `memory` | 11 | AgentDB memory with HNSW search |
-| `task` | 6 | Task creation and lifecycle |
-| `session` | 7 | Session state management |
-| `hooks` | 17 | Self-learning hooks + 12 workers |
-| `hive-mind` | 6 | Byzantine fault-tolerant consensus |
-
-### Quick CLI Examples
-
-```bash
-npx @sparkleideas/cli@latest init --wizard
-npx @sparkleideas/cli@latest agent spawn -t coder --name my-coder
-npx @sparkleideas/cli@latest swarm init --v3-mode
-npx @sparkleideas/cli@latest memory search --query "authentication patterns"
-npx @sparkleideas/cli@latest doctor --fix
-```
-
-## Available Agents (60+ Types)
-
-### Core Development
-`coder`, `reviewer`, `tester`, `planner`, `researcher`
-
-### Specialized
-`security-architect`, `security-auditor`, `memory-specialist`, `performance-engineer`
-
-### Swarm Coordination
-`hierarchical-coordinator`, `mesh-coordinator`, `adaptive-coordinator`
-
-### GitHub & Repository
-`pr-manager`, `code-review-swarm`, `issue-tracker`, `release-manager`
-
-### SPARC Methodology
-`sparc-coord`, `sparc-coder`, `specification`, `pseudocode`, `architecture`
-
-## Memory Commands Reference
-
-```bash
-# Store (REQUIRED: --key, --value; OPTIONAL: --namespace, --ttl, --tags)
-npx @sparkleideas/cli@latest memory store --key "pattern-auth" --value "JWT with refresh" --namespace patterns
-
-# Search (REQUIRED: --query; OPTIONAL: --namespace, --limit, --threshold)
-npx @sparkleideas/cli@latest memory search --query "authentication patterns"
-
-# List (OPTIONAL: --namespace, --limit)
-npx @sparkleideas/cli@latest memory list --namespace patterns --limit 10
-
-# Retrieve (REQUIRED: --key; OPTIONAL: --namespace)
-npx @sparkleideas/cli@latest memory retrieve --key "pattern-auth" --namespace patterns
-```
-
-## Environment Variables
-
-```bash
-CLAUDE_FLOW_CONFIG=./claude-flow.config.json
-CLAUDE_FLOW_LOG_LEVEL=info
-ANTHROPIC_API_KEY=sk-ant-...
-CLAUDE_FLOW_MEMORY_BACKEND=hybrid
-CLAUDE_FLOW_MEMORY_PATH=./data/memory
-```
+| Need | Use |
+|------|-----|
+| Spawn a subagent for parallel work | Agent tool (built-in, `run_in_background: true`) |
+| Search or store memory | `mcp__claude-flow__memory_*` (load via ToolSearch first) |
+| Initialize a swarm | `ruflo swarm init` via Bash |
+| Run CLI diagnostics | `ruflo doctor --fix` via Bash |
+| Invoke a registered skill | Skill tool with the skill name (e.g., `/commit`) |
 
 ## Quick Setup
 
 ```bash
 claude mcp add claude-flow -- npx -y @sparkleideas/cli@latest
-npx @sparkleideas/cli@latest daemon start
-npx @sparkleideas/cli@latest doctor --fix
+ruflo daemon start
+ruflo doctor --fix
 ```
 
-## Claude Code vs CLI Tools
+## Memory — where project lessons live
 
-- Claude Code's Task tool handles ALL execution: agents, file ops, code generation, git
-- CLI tools handle coordination via Bash: swarm init, memory, hooks, routing
-- NEVER use CLI tools as a substitute for Task tool agents
+Cross-session lessons (anti-patterns, preferences, project history) live in
+`~/.claude/projects/-Users-henrik-source-ruflo-patch/memory/`, indexed by
+`MEMORY.md` (auto-loaded every session). Check memory before starting work on
+an unfamiliar area. Especially load-bearing entries:
 
+- `project-rvf-primary` — RVF is primary storage; never add SQLite-first paths
+- `feedback-no-fallbacks` — tests must fail loudly; no silent fallback branches
+- `feedback-all-test-levels` — unit + integration + acceptance in every pass
+- `reference-cli-cmd-helper` — parallel acceptance checks MUST use `$(_cli_cmd)`, never `npx @latest` (36× slower)
+- `reference-fork-workflow` — build branches, remotes, push targets per fork
+- `feedback-no-adversarial-review` — skip ADR-0087 planning critique unless requested
 
 ## Support
 
