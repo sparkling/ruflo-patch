@@ -1,6 +1,6 @@
 # ADR-0094: 100% Acceptance Test Coverage Plan
 
-- **Status**: **Implemented** (2026-04-20). All §Acceptance criteria met: full acceptance 472/472 pass, 0 fail, 0 skip_accepted; fast runner 78/78 pass; unit cascade 3059/3092 pass, 0 fail. ADR-0095's BUG-0008 (t3-2 inter-process convergence) closed by fork commit `571388979` (d11 fsync-before-rename) confirmed across three consecutive full-acceptance runs 2026-04-19 / 2026-04-20. See `ADR-0094-log.md` 2026-04-20 entry for the closure audit.
+- **Status**: **Implemented** (2026-04-20); **P2 backlog closed 2026-04-21** (phases 11–17 all shipped). All §Acceptance criteria met: full acceptance 472/472 pass, 0 fail, 0 skip_accepted; fast runner 78/78 pass; unit cascade 3059/3092 pass, 0 fail. ADR-0095's BUG-0008 (t3-2 inter-process convergence) closed by fork commit `571388979` (d11 fsync-before-rename) confirmed across three consecutive full-acceptance runs 2026-04-19 / 2026-04-20. See `ADR-0094-log.md` 2026-04-20 entry for the closure audit and 2026-04-21 entries for the P2 backlog closures.
 - **Date**: 2026-04-17 (authored), **2026-04-20 (Implemented)**
 - **Scope**: `ruflo-patch/lib/acceptance-*.sh`, `scripts/test-acceptance.sh`, `tests/unit/`, `config/mcp-surface-manifest.json`
 - **Role**: **Decision snapshot**, not a living tracker. Volatile state extracted to:
@@ -117,10 +117,10 @@ New check file: `lib/acceptance-phase10-idempotency.sh`. Budget: ≤10s.
 
 Listed in `docs/adr/ADR-0094-log.md` under §Backlog. Scheduled as capacity allows:
 
-- Phase 11 — Input fuzzing (sampled, 8 tool classes × 2 reps; not all 213).
-- Phase 12 — Error message quality (not "errors fire" but "errors name the problem").
-- Phase 13 — Migration (vN fixture → vN+1 read).
-- Phase 14 — Performance SLO per tool class.
+- Phase 11 — Input fuzzing (sampled, 8 tool classes × 2 reps; not all 213). ✅ Shipped 2026-04-20 (16 checks, `lib/acceptance-phase11-fuzzing.sh`).
+- Phase 12 — Error message quality (not "errors fire" but "errors name the problem"). ✅ Shipped 2026-04-20 (16 checks, `lib/acceptance-phase12-error-quality.sh`).
+- Phase 13 — Migration (vN fixture → vN+1 read). ✅ Shipped 2026-04-20 (10 checks, `lib/acceptance-phase13-migration.sh`; split into 13.1 RVF + 13.2 AgentDB).
+- Phase 14 — Performance SLO per tool class. ✅ Shipped 2026-04-20 (8 checks, `lib/acceptance-phase14-slo.sh`).
 - Phase 15 — Flakiness characterization (load-sensitive vs. deterministic). ✅ Shipped 2026-04-21 (6 checks, `lib/acceptance-phase15-flakiness.sh`).
 - Phase 16 — PII detection inverse (non-PII does not false-positive). ✅ Shipped 2026-04-21 (8 checks, `lib/acceptance-phase16-pii-inverse.sh`).
 - Phase 17 — Check-code property tests (fuzz the validators). ✅ Shipped 2026-04-21 (15 checks, `lib/acceptance-phase17-validator-fuzzing.sh`). ADR-0094 backlog closed.
