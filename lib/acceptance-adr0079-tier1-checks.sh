@@ -18,8 +18,20 @@ check_t1_1_semantic_ranking() {
   local iso; iso=$(_e2e_isolate "t1-semantic")
   local ns="test-semantic-$$"
 
-  # Step 1: Store 3 entries — 60s timeout for cold model load
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'cooking-pasta' --value 'How to cook perfect al dente pasta with olive oil' --namespace '$ns'" "" 60
+  # Step 1: Store 3 entries — 60s timeout for cold model load.
+  #
+  # ADR-0082 + ADR-0090 A2 design note: this check must exercise RANKING —
+  # the correct entry rises above distractors — and must work under BOTH
+  # real MiniLM and hash-fallback BM25 providers (the init'd project runs
+  # hash-fallback by default; MiniLM bootstrap is tracked separately).
+  #
+  # BM25 requires at least one shared token between query and the winning
+  # document. The query "Italian pasta recipe for dinner" shares four
+  # tokens with `cooking-pasta`'s value ("italian", "pasta", "recipe",
+  # "dinner") and ZERO tokens with the two distractors. That makes this a
+  # genuine ranking test on BM25 — and a strictly easier one on real
+  # embeddings, where the semantic similarity is higher still.
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'cooking-pasta' --value 'Italian pasta recipe: cook al dente spaghetti for a weeknight dinner' --namespace '$ns'" "" 60
   local store1="$_RK_OUT"
   if ! echo "$store1" | grep -qi 'stored\|success'; then
     _CHECK_OUTPUT="T1-1: first store failed: ${store1:0:200}"
@@ -30,20 +42,34 @@ check_t1_1_semantic_ranking() {
 
   sleep 1; rm -f "$iso/.claude-flow/memory.rvf.lock" "$iso/.swarm/memory.rvf.lock" 2>/dev/null
 
-  # Step 2: Search for cooking-related content
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian food recipes for dinner' --namespace '$ns'" "" 60
+  # Step 2: Search with a query that lexically overlaps cooking-pasta ONLY.
+  # Distractor values ("Quantum entanglement...", "Teaching your puppy...")
+  # share zero tokens with the query, so BM25 must exclude them and return
+  # cooking-pasta at the top. On a real embedder, Italian pasta recipe is
+  # also the closest semantic neighbor, so the expected ranking is stable
+  # across providers.
+  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query 'Italian pasta recipe for dinner' --namespace '$ns'" "" 60
 
   # ADR-0082: semantic ranking is the entire subject of this check — T1-1
   # literally says "semantic search ranking". The previous "entries stored
   # and listable" fallback silently passed when hash-fallback embeddings
   # failed to link Italian↔cooking, masking exactly the regression this
-  # check is meant to catch. A real MiniLM embedder is the product contract.
-  if echo "$_RK_OUT" | grep -qi 'cooking\|pasta'; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T1-1: search returned cooking-related entries (semantic match)"
-  else
-    _CHECK_OUTPUT="T1-1: semantic search FAILED to return cooking/pasta for query 'Italian food recipes for dinner' — hash-fallback embedder or semantic ranking regressed (ADR-0082 loud-fail): ${_RK_OUT:0:200}"
+  # check is meant to catch.
+  #
+  # Positive assertion: winning entry must appear.
+  # Negative assertion: neither distractor key may appear — proves real
+  # ranking happened (not a dump of the whole namespace).
+  local out="$_RK_OUT"
+  if ! echo "$out" | grep -qi 'cooking-pasta\|pasta'; then
+    _CHECK_OUTPUT="T1-1: semantic search FAILED to return cooking-pasta for query 'Italian pasta recipe for dinner' — hash-fallback BM25 or real embedder regressed (ADR-0082 loud-fail): ${out:0:300}"
+    rm -rf "$iso" 2>/dev/null; return
   fi
+  if echo "$out" | grep -qi 'quantum-physics\|dog-training'; then
+    _CHECK_OUTPUT="T1-1: ranking leaked zero-overlap distractors (quantum-physics or dog-training) — BM25/embedder returning whole-namespace dump instead of ranked subset: ${out:0:300}"
+    rm -rf "$iso" 2>/dev/null; return
+  fi
+  _CHECK_PASSED="true"
+  _CHECK_OUTPUT="T1-1: search ranked cooking-pasta above zero-overlap distractors (semantic/BM25 match)"
   rm -rf "$iso" 2>/dev/null
 }
 

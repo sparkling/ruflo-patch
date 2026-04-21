@@ -199,6 +199,34 @@ describe('bm25Rank — ranks keys by lexical overlap on hash-fallback', async ()
     }
   });
 
+  it('T1-1 corpus: ranks cooking-pasta top and excludes zero-overlap distractors', (t) => {
+    // Paired with lib/acceptance-adr0079-tier1-checks.sh:check_t1_1_semantic_ranking.
+    // This test encodes the acceptance corpus and query verbatim so a regression
+    // in either (stored value text, query text, BM25 tokenizer) fails at the
+    // unit layer instead of burning 47s of acceptance time.
+    if (!loaded) { t.skip('SKIP_ACCEPTED: bm25.js unavailable'); return; }
+    const { bm25Rank } = loaded.mod;
+
+    const corpus = [
+      makeEntry('cooking-pasta',   'Italian pasta recipe: cook al dente spaghetti for a weeknight dinner'),
+      makeEntry('quantum-physics', 'Quantum entanglement and superposition experiments'),
+      makeEntry('dog-training',    'Teaching your puppy to sit using positive reinforcement'),
+    ];
+
+    const ranked = bm25Rank('Italian pasta recipe for dinner', corpus, { limit: 10 });
+
+    assert.ok(ranked.length >= 1,
+      'T1-1 corpus: must return cooking-pasta, not empty — this is the exact failure mode of the original acceptance check');
+    assert.equal(ranked[0].entry.key, 'cooking-pasta',
+      `T1-1 corpus: cooking-pasta must rank first, got ${ranked.map(r => r.entry.key).join(', ')}`);
+    for (const r of ranked) {
+      assert.notEqual(r.entry.key, 'quantum-physics',
+        'T1-1 corpus: quantum-physics shares zero tokens with query, must be excluded');
+      assert.notEqual(r.entry.key, 'dog-training',
+        'T1-1 corpus: dog-training shares zero tokens with query, must be excluded');
+    }
+  });
+
   it('respects limit parameter (top-N by score)', (t) => {
     if (!loaded) { t.skip('SKIP_ACCEPTED: bm25.js unavailable'); return; }
     const { bm25Rank } = loaded.mod;

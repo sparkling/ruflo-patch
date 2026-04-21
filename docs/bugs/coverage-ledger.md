@@ -887,3 +887,74 @@ related_adr: [ADR-0097]
 owner: tester-agent
 depth_class: lifecycle
 ```
+
+## BUG-ADR0059-NO-COLLISIONS-SILENT-PASS — check_adr0059_no_id_collisions lost assertion on fresh project — FIX-COMMITTED
+
+```yaml
+id: BUG-ADR0059-NO-COLLISIONS-SILENT-PASS
+title: check_adr0059_no_id_collisions silently passed on fresh project (ADR-0082 violation)
+discovered: 2026-04-21
+check_id: e2e-0059-no-collisions
+fork_file: lib/acceptance-adr0059-checks.sh
+paired_test_file: tests/unit/acceptance-adr0059-no-collisions.test.mjs
+state: fix-committed
+root_cause: >
+  The old branch "No ranked-context.json (fresh project)" returned PASS with
+  no assertion whenever ranked-context.json was absent — the ADR-0082
+  silent-pass shape. Today's cascade flipped it to loud-fail, revealing that
+  the initial fix's seed path (intelligence.cjs recordEdit + consolidate +
+  init) did not actually populate the store. consolidate reads from an RVF
+  file, and a freshly init'd project has an RVF with header-only body
+  (162 bytes, zero entries), so readStoreFromRvf returns null and consolidate
+  short-circuits with "No store to consolidate". init therefore had no
+  ranked entries to write, so ranked-context.json was never produced and the
+  check failed with "Seeding failed". Driving the seed via `$cli memory
+  store` instead does NOT help because of BUG-ADR0059-RVF-FORMAT-MISMATCH.
+fix_strategy: >
+  Write a minimal pure-TS RVF\0 file directly into an isolated copy of the
+  project before driving consolidate + init. This bypasses the
+  CLI-write-path format bug and exercises the ID-collision invariant the
+  check actually cares about — intelligence.cjs never emits duplicate IDs
+  during consolidate+init.
+upstream_filed: fork_only: ruflo-patch test-harness fix; product bug surfaced separately.
+related_adr: [ADR-0059, ADR-0082, ADR-0086, ADR-0094]
+owner: coder-agent
+depth_class: happy
+```
+
+## BUG-ADR0059-RVF-FORMAT-MISMATCH — intelligence.cjs cannot read the RVF files written by `$cli memory store`
+
+```yaml
+id: BUG-ADR0059-RVF-FORMAT-MISMATCH
+title: intelligence.cjs readStoreFromRvf rejects the native SFVR format written by @ruvector/rvf-node
+discovered: 2026-04-21
+check_id: e2e-0059-intel-graph, e2e-0059-retrieval, e2e-0059-no-collisions
+fork_file: v3/@claude-flow/cli/.claude/helpers/intelligence.cjs
+state: discovered
+root_cause: >
+  Two RVF storage formats coexist in the build. (1) The native SFVR format
+  written by the @ruvector/rvf-node backend (magic 'SFVR', NATIVE_MAGIC in
+  rvf-backend.js) is what a freshly init'd project actually produces. (2) A
+  pure-TS fallback format (magic 'RVF\0'). intelligence.cjs readStoreFromRvf
+  only accepts 'RVF\0' (line 50: `if (magic !== 'RVF\0') return null`). Every
+  CLI-driven write produces an SFVR file that intelligence.cjs silently
+  rejects, so consolidate/init always report empty even when the CLI has
+  persisted dozens of entries. This is exactly what was masking
+  check_adr0059_intel_graph and check_adr0059_retrieval as silent passes
+  today ("Intelligence graph empty (expected: intelligence.cjs reads SQLite,
+  CLI writes RVF — debt 17)"). The debt-17 comment is stale — ADR-0086
+  switched the reader from SQLite to RVF — but the format mismatch is still
+  live.
+fix_strategy: >
+  Teach intelligence.cjs readStoreFromRvf to also accept the native SFVR
+  magic and route it through the @ruvector/rvf-node reader, or detect SFVR
+  and shell out to `cli memory export --format rvf0` for on-the-fly
+  conversion. Either way, the three intelligence-graph-family acceptance
+  checks (intel-graph, retrieval, insight) should be flipped from their
+  "empty expected" silent-pass shape to a real assertion once the reader
+  understands both formats.
+upstream_filed: fork_only: our fork's intelligence.cjs; not in upstream ruvnet/* yet.
+related_adr: [ADR-0059, ADR-0082, ADR-0086, ADR-0094]
+owner: unassigned
+depth_class: happy
+```

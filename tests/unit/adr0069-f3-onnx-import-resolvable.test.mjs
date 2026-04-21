@@ -141,6 +141,34 @@ describe('ADR-0069 F3 §3 (A3): ONNX relative import is resolvable', () => {
     );
   });
 
+  // Regression guard for 2026-04-21 acceptance failure:
+  //   `check_adr0069_f3_onnx_tier_active` compared the first file-wide
+  //   occurrence of 'ONNXEmbeddingService' (JSDoc inside
+  //   upgradeEmbeddingService() — line ~392) against the first file-wide
+  //   occurrence of 'EnhancedEmbeddingService' (a comment in init() —
+  //   line ~232), producing a false "chain ORDER wrong" failure. Both
+  //   this test and the acceptance check must scope the order comparison
+  //   to the upgrade function body. This assertion pins the bad pattern:
+  //   if someone regresses either check back to a global first-match
+  //   comparison, this test demonstrates why it is wrong.
+  it('file-wide first-occurrence order is NOT a valid tier-order signal (acceptance regression 2026-04-21)', () => {
+    const js = readFileSync(FORK_DIST, 'utf8');
+    const firstOnnx = js.indexOf('ONNXEmbeddingService');
+    const firstEnhanced = js.indexOf('EnhancedEmbeddingService');
+    assert.ok(firstOnnx >= 0 && firstEnhanced >= 0, 'both names should be present in compiled dist');
+    // Today in the real compiled dist, Enhanced appears first globally
+    // because init() has an "EnhancedEmbeddingService" comment before
+    // upgradeEmbeddingService()'s JSDoc. This is harmless; the assertion
+    // documents it so a reviewer does not silently reintroduce a global
+    // first-occurrence compare as the order signal. If this equality
+    // ever flips, either the source changed or tsc emit order changed —
+    // revisit both scoped checks and update the doc.
+    assert.ok(
+      firstEnhanced < firstOnnx,
+      `global-first-occurrence of EnhancedEmbeddingService (${firstEnhanced}) should come BEFORE ONNXEmbeddingService (${firstOnnx}) in the compiled dist — this is the exact layout that breaks naive file-wide order checks. If it flips, a rewrite of init() or the JSDoc happened; re-audit the scoped order guards in this test and in lib/acceptance-adr0069-f3-checks.sh::check_adr0069_f3_onnx_tier_active.`,
+    );
+  });
+
   it('compiled dist still logs loudly on tier failure (ADR-0082)', () => {
     // The upgrade chain's ONNX catch block must NOT swallow silently.
     // We check that within ~200 chars after the ONNX import literal there is

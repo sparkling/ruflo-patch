@@ -430,50 +430,107 @@ check_adr0059_hook_full_lifecycle() {
 
 check_adr0059_no_id_collisions() {
   _CHECK_PASSED="false"
-  local ranked="$E2E_DIR/.claude-flow/data/ranked-context.json"
   local h="$E2E_DIR/.claude/helpers"
 
   # ADR-0082: the previous "No ranked-context.json (fresh project)" branch was
   # a silent pass — the check never asserted anything when the file was
-  # absent. Seed ranked-context.json as an explicit precondition by driving
-  # intelligence.cjs through consolidate+init (the normal production path
-  # that creates the file). If intelligence.cjs is genuinely absent from the
-  # build, that is a broken install, not a "fresh project" excuse.
-  if [[ ! -f "$ranked" ]]; then
-    if [[ ! -f "$h/intelligence.cjs" ]]; then
-      _CHECK_OUTPUT="intelligence.cjs missing from build — cannot seed ranked-context.json (ADR-0082 loud-fail): $h/intelligence.cjs"
-      return
-    fi
-
-    # Drive intelligence.cjs through the normal consolidate→init path to
-    # create ranked-context.json with real entries.
-    _adr0059_node "
-      const i = require('$h/intelligence.cjs');
-      for (let j = 0; j < 5; j++) i.recordEdit('/tmp/adr0059-collision-hot-' + j + '.ts');
-      i.recordEdit('/tmp/adr0059-collision-cold.ts');
-      i.consolidate();
-      i.init();
-    " >/dev/null 2>&1 || true
-
-    if [[ ! -f "$ranked" ]]; then
-      _CHECK_OUTPUT="Seeding failed — intelligence.cjs consolidate+init did not create $ranked (ADR-0082 loud-fail)"
-      return
-    fi
+  # absent. Populate the store as an explicit precondition.
+  #
+  # Seeding path note (BUG-ADR0059-RVF-FORMAT-MISMATCH):
+  #   `$cli memory store` writes the native SFVR format (via @ruvector/rvf-node);
+  #   intelligence.cjs's readStoreFromRvf only accepts the pure-TS `RVF\0`
+  #   magic. So driving the seed via the CLI produces an RVF file intelligence.cjs
+  #   treats as empty, and `consolidate()` short-circuits with
+  #   "No store to consolidate" — which is why today's cascade flipped this
+  #   check from the old silent pass to a loud fail once ADR-0082 forced a
+  #   real assertion.
+  #
+  # This check's purpose is to assert intelligence.cjs's consolidate+init
+  # pipeline does not emit ID collisions when processing entries — not to
+  # exercise the CLI→intelligence write path. So we write a minimal `RVF\0`
+  # file directly in an isolated project copy, bypassing the format bug and
+  # exercising the consolidate→init path with real, deterministic data.
+  # The format mismatch itself is tracked as a separate coverage-ledger bug.
+  if [[ ! -f "$h/intelligence.cjs" ]]; then
+    _CHECK_OUTPUT="intelligence.cjs missing from build — cannot exercise collision path (ADR-0082 loud-fail): $h/intelligence.cjs"
+    return
   fi
 
+  # Isolate to avoid racing other parallel intelligence.cjs checks
+  # (intel-graph, retrieval, insight, feedback) on the shared
+  # $E2E_DIR/.claude-flow/data/ranked-context.json file.
+  local iso; iso=$(_e2e_isolate "0059-collide")
+  local ranked="$iso/.claude-flow/data/ranked-context.json"
+
   local out
-  out=$(node -e "
-    const r=JSON.parse(require('fs').readFileSync('$ranked','utf-8'));
-    const ids=(r.entries||[]).map(e=>e.id);
-    console.log(JSON.stringify({total:ids.length,unique:new Set(ids).size}));
-  " 2>&1) || true
+  out=$((cd "$iso" && node -e "
+    const fs = require('fs');
+    const path = require('path');
+
+    // Ensure .claude-flow exists (isolate strips the RVF)
+    fs.mkdirSync(path.join(process.cwd(), '.claude-flow'), { recursive: true });
+
+    // Build a minimal pure-TS RVF with known-unique IDs.
+    // Format: 4B magic 'RVF\\0' + 4B LE header len + JSON header +
+    //         [4B LE entry len + JSON entry]*
+    const N = 7;
+    const entries = [];
+    for (let i = 0; i < N; i++) {
+      entries.push({
+        id: 'adr0059-collision-seed-' + i,
+        key: 'seed-' + i,
+        content: 'collision-seed-entry-' + i,
+        namespace: 'adr0059-collision',
+        type: 'semantic',
+        metadata: {},
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        accessCount: 0,
+      });
+    }
+    const header = Buffer.from(JSON.stringify({ version: 1, created: Date.now() }), 'utf-8');
+    const parts = [];
+    parts.push(Buffer.from([0x52, 0x56, 0x46, 0x00])); // 'RVF\\0'
+    const hlen = Buffer.alloc(4); hlen.writeUInt32LE(header.length, 0);
+    parts.push(hlen, header);
+    for (const e of entries) {
+      const j = Buffer.from(JSON.stringify(e), 'utf-8');
+      const elen = Buffer.alloc(4); elen.writeUInt32LE(j.length, 0);
+      parts.push(elen, j);
+    }
+    fs.writeFileSync(path.join(process.cwd(), '.claude-flow', 'memory.rvf'), Buffer.concat(parts));
+
+    // Drive consolidate+init: record 5 edits on one hot file (triggers the
+    // frequent-edit insight path, which also exercises ID minting in
+    // consolidate), then consolidate and build the ranked index.
+    const intel = require('$h/intelligence.cjs');
+    for (let j = 0; j < 5; j++) intel.recordEdit('/tmp/adr0059-collision-hot.ts');
+    intel.recordEdit('/tmp/adr0059-collision-cold.ts');
+    const c = intel.consolidate();
+    const r = intel.init();
+    const rp = path.join(process.cwd(), '.claude-flow', 'data', 'ranked-context.json');
+    if (!fs.existsSync(rp)) {
+      console.log('NO_RANKED ' + JSON.stringify({ consolidate: c, init: r }));
+      process.exit(0);
+    }
+    const ranked = JSON.parse(fs.readFileSync(rp, 'utf-8'));
+    const ids = (ranked.entries || []).map(e => e.id);
+    console.log(JSON.stringify({ total: ids.length, unique: new Set(ids).size }));
+  ") 2>&1) || true
+
+  rm -rf "$iso"
+
+  if echo "$out" | grep -q '^NO_RANKED'; then
+    _CHECK_OUTPUT="Seeding path ran but ranked-context.json was not produced (ADR-0082 loud-fail): $(echo "$out" | head -3)"
+    return
+  fi
 
   if echo "$out" | grep -q '"total"'; then
     local total unique
-    total=$(echo "$out" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).total))" 2>/dev/null) || total=0
-    unique=$(echo "$out" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d).unique))" 2>/dev/null) || unique=0
+    total=$(echo "$out" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d.toString().trim().split(/\n/).pop()).total))" 2>/dev/null) || total=0
+    unique=$(echo "$out" | node -e "process.stdin.on('data',d=>console.log(JSON.parse(d.toString().trim().split(/\n/).pop()).unique))" 2>/dev/null) || unique=0
     if [[ "$total" -eq 0 ]]; then
-      _CHECK_OUTPUT="ranked-context.json has zero entries after seeding — consolidate produced no entries (ADR-0082 loud-fail)"
+      _CHECK_OUTPUT="ranked-context.json has zero entries after seeding — RVF\\0 seed did not survive consolidate (ADR-0082 loud-fail)"
     elif [[ "$total" == "$unique" ]]; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="No collisions: $total entries, all unique"
@@ -481,6 +538,6 @@ check_adr0059_no_id_collisions() {
       _CHECK_OUTPUT="ID collisions: $total entries, $unique unique"
     fi
   else
-    _CHECK_OUTPUT="Check failed: $out"
+    _CHECK_OUTPUT="Check failed: $(echo "$out" | head -5)"
   fi
 }

@@ -3,9 +3,15 @@
  *
  * Asserts the fork-source package.json at
  *   forks/ruflo/v3/@claude-flow/cli/package.json
- * exposes `ruflo`, `ruflo-mcp`, `claude-flow`, `claude-flow-mcp` and does NOT
- * expose the bare `cli` bin entry (removed — it collided with other packages
- * on shared dev machines).
+ * exposes `ruflo`, `ruflo-mcp`, `cli`, `claude-flow`, `claude-flow-mcp`.
+ *
+ * The `cli` alias was re-added on 2026-04-21 (reversing the earlier removal)
+ * because `npx @sparkleideas/cli@latest ...` derives the executable name from
+ * the unscoped package name (`cli`) and fails with "could not determine
+ * executable to run" when that bin entry is missing. The rebrand goal was to
+ * make the CLI *easier* to invoke, so forcing users onto the clunky
+ * `npx -p @sparkleideas/cli@latest ruflo ...` form was the wrong trade.
+ * `ruflo` stays the primary; `cli` is an npx-bootstrap alias only.
  *
  * This test reads the pre-codemod fork source. The codemod bin-preservation
  * contract is covered separately in `codemod-bin-preservation.test.mjs`
@@ -44,8 +50,12 @@ describe('ADR-0006 follow-up: CLI bin map — ruflo rebrand', () => {
     assert.equal(pkg.bin['claude-flow-mcp'], './bin/mcp-server.js');
   });
 
-  it('does NOT expose the bare `cli` entry (removed — collision risk)', () => {
-    assert.ok(!('cli' in pkg.bin), 'bare `cli` bin entry must be absent');
+  it('exposes `cli` as a backwards-compat alias for npx auto-invocation', () => {
+    // npx derives the bin to run from the unscoped package name
+    // (`@sparkleideas/cli` → `cli`). Without this entry, `npx @sparkleideas/cli@latest`
+    // fails with "could not determine executable to run". Re-added 2026-04-21
+    // after the original removal broke the primary npx UX path.
+    assert.equal(pkg.bin.cli, './bin/cli.js');
   });
 
   it('name stays @claude-flow/cli in fork source (codemod rewrites at publish)', () => {

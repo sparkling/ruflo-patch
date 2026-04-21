@@ -443,22 +443,58 @@ check_adr0069_f3_onnx_tier_active() {
     return
   fi
 
-  # Source-order check: ONNX must appear before Enhanced in the compiled dist
+  # Source-order check: ONNX must appear before Enhanced INSIDE
+  # upgradeEmbeddingService(). A global first-occurrence grep is wrong
+  # — EnhancedEmbeddingService is also named in init()'s JSDoc / comment
+  # (line ~232 in today's dist) which precedes the ONNX JSDoc inside
+  # upgradeEmbeddingService (line ~392). That is harmless: tier ordering
+  # is a property of the upgrade chain, not of incidental string mentions
+  # elsewhere in the file. Scope the comparison to the function body,
+  # matching the unit test at tests/unit/adr0069-f3-onnx-import-resolvable.test.mjs.
+  local fn_start_line
+  fn_start_line=$(grep -nE 'async upgradeEmbeddingService\(|upgradeEmbeddingService\(\)[[:space:]]*\{' "$svc_js" 2>/dev/null | head -1 | cut -d: -f1)
+  fn_start_line=${fn_start_line:-0}
+  if [[ "$fn_start_line" -lt 1 ]]; then
+    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
+    _CHECK_OUTPUT="ADR-0069 F3 §3: upgradeEmbeddingService function declaration not found in $svc_js — upgrade chain missing ($inspect_src)"
+    return
+  fi
+
+  # Extract a window starting at the function declaration (tail -n +N
+  # keeps numbering against the original file). Search only within the
+  # window for the relative-import literals — the actual runtime order.
   local onnx_line enhanced_line
-  onnx_line=$(grep -n 'ONNXEmbeddingService' "$svc_js" 2>/dev/null | head -1 | cut -d: -f1); onnx_line=${onnx_line:-0}
-  enhanced_line=$(grep -n 'EnhancedEmbeddingService' "$svc_js" 2>/dev/null | head -1 | cut -d: -f1); enhanced_line=${enhanced_line:-0}
+  onnx_line=$(tail -n +"$fn_start_line" "$svc_js" 2>/dev/null \
+    | grep -nE "'\.\./\.\./\.\./packages/agentdb-onnx/src/services/ONNXEmbeddingService\.js'" \
+    | head -1 | cut -d: -f1)
+  onnx_line=${onnx_line:-0}
+  enhanced_line=$(tail -n +"$fn_start_line" "$svc_js" 2>/dev/null \
+    | grep -nE "'\.\./\.\./\.\./packages/agentdb/src/controllers/EnhancedEmbeddingService\.js'" \
+    | head -1 | cut -d: -f1)
+  enhanced_line=${enhanced_line:-0}
+
+  if [[ "$onnx_line" -lt 1 ]]; then
+    [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
+    _CHECK_OUTPUT="ADR-0069 F3 §3: ONNX relative-import literal missing inside upgradeEmbeddingService() in $svc_js — tier-1 import stripped ($inspect_src)"
+    return
+  fi
 
   if [[ "$enhanced_line" -lt 1 ]]; then
     [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: agentdb-service.js missing EnhancedEmbeddingService reference — fallback chain broken ($inspect_src)"
+    _CHECK_OUTPUT="ADR-0069 F3 §3: Enhanced relative-import literal missing inside upgradeEmbeddingService() in $svc_js — fallback chain broken ($inspect_src)"
     return
   fi
 
   if [[ "$onnx_line" -ge "$enhanced_line" ]]; then
     [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
-    _CHECK_OUTPUT="ADR-0069 F3 §3: chain ORDER wrong — ONNX appears at line $onnx_line, Enhanced at line $enhanced_line (ONNX must come first). $inspect_src"
+    _CHECK_OUTPUT="ADR-0069 F3 §3: chain ORDER wrong inside upgradeEmbeddingService() — ONNX import at fn+${onnx_line}, Enhanced import at fn+${enhanced_line} (ONNX must come first). $inspect_src"
     return
   fi
+
+  # Convert window-relative offsets to absolute file line numbers for the
+  # success message, for easier diagnostics when the check is green.
+  local onnx_abs=$((fn_start_line + onnx_line - 1))
+  local enhanced_abs=$((fn_start_line + enhanced_line - 1))
 
   # ADR-0082: verify the shipped dist still logs loudly on ONNX failure
   # (catch block should mention 'ONNX' together with a console call).
@@ -471,7 +507,7 @@ check_adr0069_f3_onnx_tier_active() {
   [[ -n "$tmp_dir" ]] && rm -rf "$tmp_dir"
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0069 F3 §3: ONNX tier wired — $onnx_pkg@$onnx_version resolvable; agentdb-service.js references ONNXEmbeddingService ($onnx_count occurrences), ONNX@line-$onnx_line precedes Enhanced@line-$enhanced_line ($inspect_src)"
+  _CHECK_OUTPUT="ADR-0069 F3 §3: ONNX tier wired — $onnx_pkg@$onnx_version resolvable; agentdb-service.js references ONNXEmbeddingService ($onnx_count occurrences); inside upgradeEmbeddingService() (fn-start line $fn_start_line): ONNX import@line-$onnx_abs precedes Enhanced import@line-$enhanced_abs ($inspect_src)"
 }
 
 # ════════════════════════════════════════════════════════════════════

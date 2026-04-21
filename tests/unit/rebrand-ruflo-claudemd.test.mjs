@@ -70,4 +70,63 @@ describe('ADR-0006 follow-up: CLAUDE.md template — ruflo rebrand', () => {
   it('keeps the canonical RuFlo V3 header', () => {
     assert.match(content, /Claude Code Configuration - RuFlo V3/);
   });
+
+  // ADR-0079 scope + T2-6 structure guards (paired with
+  // lib/acceptance-structure-checks.sh:check_scope and
+  // lib/acceptance-adr0079-tier2-checks.sh:check_t2_6_claudemd_structure).
+  //
+  // The rebrand replaced every `npx @sparkleideas/cli@latest <cmd>` body
+  // invocation with bare `ruflo <cmd>`. The only surviving @sparkleideas
+  // reference in the emitted CLAUDE.md is the post-codemod bootstrap line
+  // inside `setupAndBoundary()`, so every template MUST include that
+  // section — otherwise the acceptance Scope check regresses to 0 hits.
+  it('every template wires setupAndBoundary into TEMPLATE_SECTIONS', () => {
+    if (source === 'built+codemod dist') {
+      // dist JS has the entries inline; accept either bare or arrow-wrapped form
+      const templates = ['minimal', 'standard', 'full', 'security', 'performance', 'solo'];
+      for (const t of templates) {
+        const re = new RegExp(`${t}:\\s*\\[[^\\]]*setupAndBoundary`, 's');
+        assert.match(content, re, `template '${t}' must include setupAndBoundary`);
+      }
+    } else {
+      // TS source: assert each template literal key contains setupAndBoundary before its closing ']'
+      const templates = ['minimal', 'standard', 'full', 'security', 'performance', 'solo'];
+      for (const t of templates) {
+        const re = new RegExp(`${t}:\\s*\\[[^\\]]*setupAndBoundary`, 's');
+        assert.match(content, re, `template '${t}' must include setupAndBoundary`);
+      }
+    }
+  });
+
+  // Paired with check_scope in lib/acceptance-structure-checks.sh:35-63
+  it('full-template output contains >=1 @sparkleideas reference (check_scope invariant)', async () => {
+    if (source !== 'built+codemod dist') return;
+    const mod = await import(BUILT_JS);
+    const out = mod.generateClaudeMd({ runtime: { claudeMdTemplate: 'full' } }, 'full');
+    const hits = (out.match(/@sparkleideas/g) ?? []).length;
+    assert.ok(hits >= 1, `full template must emit >=1 @sparkleideas ref (codemod proof); got ${hits}`);
+  });
+
+  // Paired with check_t2_6_claudemd_structure in lib/acceptance-adr0079-tier2-checks.sh
+  it('full-template output satisfies T2-6 structural asserts', async () => {
+    if (source !== 'built+codemod dist') return;
+    const mod = await import(BUILT_JS);
+    const out = mod.generateClaudeMd({ runtime: { claudeMdTemplate: 'full' } }, 'full');
+    assert.match(out, /## Behavioral Rules/, 'missing Behavioral Rules');
+    assert.match(out, /## File Organization/, 'missing File Organization');
+    assert.match(out, /## Build( & Test)?/, 'missing Build section');
+    assert.match(out, /@sparkleideas/, 'missing @sparkleideas scope marker');
+    assert.ok(!/Task tool/.test(out), 'should NOT contain "Task tool" (should be Agent tool)');
+  });
+
+  // Every non-security-focused template should also satisfy scope invariant
+  it('every template emits >=1 @sparkleideas reference', async () => {
+    if (source !== 'built+codemod dist') return;
+    const mod = await import(BUILT_JS);
+    for (const tmpl of ['minimal', 'standard', 'full', 'security', 'performance', 'solo']) {
+      const out = mod.generateClaudeMd({ runtime: { claudeMdTemplate: tmpl } }, tmpl);
+      const hits = (out.match(/@sparkleideas/g) ?? []).length;
+      assert.ok(hits >= 1, `template '${tmpl}' must emit >=1 @sparkleideas ref; got ${hits}`);
+    }
+  });
 });
