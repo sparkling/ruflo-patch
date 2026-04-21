@@ -209,7 +209,10 @@ describe('ADR-0076 memory-router: _initFailed circuit breaker', () => {
   it('_doInit() flips _initFailed = true on storage failure', () => {
     const fnStart = routerSrc.indexOf('async function _doInit');
     assert.ok(fnStart > -1, '_doInit not found');
-    const fnBody = routerSrc.slice(fnStart, fnStart + 2000);
+    // Slice window expanded from 2000 → 4000 after ADR-0069 Bug #3 added the
+    // path-resolver preamble + comments. The catch block with _initFailed
+    // trip now sits further down in the function body.
+    const fnBody = routerSrc.slice(fnStart, fnStart + 4000);
     assert.ok(
       /_initFailed\s*=\s*true/.test(fnBody),
       '_doInit must set _initFailed = true on storage failure',
