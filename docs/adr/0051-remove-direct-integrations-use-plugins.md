@@ -2,7 +2,7 @@
 
 ## Status
 
-Deferred — upstream code is unchanged by our patches (8 lines delta); restructuring 44K lines of upstream code is not justified. Architecture analysis preserved as reference for future upstream contribution.
+Superseded by ADR-0089 (controller-intercept pattern) + ADR-0086 (L1 storage abstraction) — 2026-04-21. See Status Update 2026-04-21 below. Original architecture analysis preserved as reference for future upstream contribution.
 
 ## Date
 
@@ -478,3 +478,10 @@ Then:
 - **ADR-0049**: Fail-loud mode — exposed dual-path issues
 - **ADR-0050**: Live validation defects — coupling bugs this ADR prevents
 - **Deliberation record**: `docs/adr/0051-queen-ruling.md` — full hive-mind debate with 5 position papers, verdicts on Q1-Q5, and dissent record
+
+## Status Update 2026-04-21
+
+- **Old status**: Deferred (restructuring 44K LOC of upstream not justified for 8-line patch delta).
+- **New status**: Superseded by ADR-0089 + ADR-0086.
+- **What changed**: ADR-0089's controller-intercept pattern delivers the mechanism-vs-policy separation this ADR demanded — runtime unity via `getOrCreate()` pooling — without moving or deleting any upstream source. ADR-0086's L1 storage abstraction gives the `IMemoryBackend`-style mechanism interface for storage. ADR-0080 consolidated storage backends as a mechanism-level fix, not an extraction. ADR-0094's 100% acceptance coverage now polices the boundary at the behavior layer, which was the underlying goal of the 9-rung ladder.
+- **Rationale**: The 9-rung ~44K-LOC extraction is now strictly dominated by intercept. Intercept achieves the same architectural outcome (plugin-like boundaries, swappable policies, lean core surface) while preserving upstream mergeability — exactly the "upstream merge tax exceeds aesthetic gain" lesson codified in CLAUDE.md after `controller-registry.ts` (2063 LOC) and `agentdb-service.ts` (1831 LOC) were left in place. The plugin-extraction path remains valid only as an upstream contribution, not as a fork action.

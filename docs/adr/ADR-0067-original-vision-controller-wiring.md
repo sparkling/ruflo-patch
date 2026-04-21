@@ -1,6 +1,6 @@
 # ADR-0067: The Original Vision -- How Controller Wiring Was Supposed to Work
 
-**Status**: Analysis (informational)
+**Status**: Closed (informational, kept for history) — 2026-04-21
 **Date**: 2026-04-05
 **Context**: Synthesized from upstream code evidence to guide future refactoring
 **Architecture**: [Controller Wiring Vision](../architecture/controller-wiring-vision.md)
@@ -155,3 +155,13 @@ The gap is not in the design — it's in the wiring. Three specific changes comp
 2. **Registry delegates, never duplicates**: Every `AgentDBControllerName` case in `createController()` calls `this.agentdb.getController()`. The registry passes config (including singletons) through `AgentDBConfig` at construction time, not after.
 
 3. **Config flows through one path**: `memory-bridge.ts` reads config files → constructs `RuntimeConfig` → passes dimension/model/HNSW params to both `ControllerRegistry.initialize()` AND `new AgentDB({ dimension, embeddingModel, ... })`. Both layers resolve the same values because they receive them from the same source.
+
+## Status Update 2026-04-21
+
+- Old: Analysis (informational). New: Closed (informational, kept for history).
+- This ADR was explicit scoped as synthesis, not a work item — the three "correct solutions" (Parts A/B/C in §5) were absorbed by later ADRs that actually shipped code.
+- Part B ("registry delegates to AgentDB") and the Layer 2 vision were superseded by **ADR-0089** (controller intercept pattern permanent — 49 `getOrCreate` sites in `forks/ruflo/v3/@claude-flow/memory/src/controller-registry.ts`, 16 in `forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts`). Behavioural unity is achieved without source deletion.
+- Part C (single config path) landed via `cc38e17 feat: ADR-0066 P0 — wire getEmbeddingConfig() across all embedding consumers` in `forks/agentic-flow`.
+- Part A (singleton injection into `AgentDB.initialize()`) was progressively completed across ADR-0090 B5 waves (fork commits `8238837`, `7a977f1`, `b14a664`, `b340e90`, `d7f613a`, `794ad50`) that added missing constructor DDL/singleton wiring for CausalMemoryGraph, ReflexionMemory, SkillLibrary, ExplainableRecall, NightlyLearner, and sonaTrajectory.
+- Rationale: ADR-0067 remains useful as the authoritative narrative for *why* the wiring looked the way it did in 2026-04. Keep as a historical reference. No further implementation tracked here — follow ADR-0089 and ADR-0093 for live work.
+- Remaining work: none scoped to this ADR. Any residual lazy-AgentDB refactor (§10 item 1) would be a new ADR, not a resumption of this one.

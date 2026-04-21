@@ -1,6 +1,6 @@
 # ADR-0093: Controller MCP Wiring Gaps — Audit & Remediation Plan
 
-- **Status**: Proposed — 2026-04-16
+- **Status**: Implemented — 2026-04-21
 - **Date**: 2026-04-16
 - **Scope**: `@claude-flow/cli` MCP tool handlers + `@sparkleideas/agentdb` controller constructors
 - **Related**: ADR-0090 (Tier B5 — the swarm that surfaced these gaps), ADR-0086 (Debt 15 — the original controller-persistence trade-off), ADR-0089 (Controller Intercept Pattern)
@@ -185,3 +185,26 @@ These are tracked for a separate ADR or a follow-up pass within ADR-0090.
 - Verifier reports: `/tmp/b5-verify-*.md`, `/tmp/fixall-*.md`
 - Architect report: `/tmp/b5-architect.md` (297 lines, canonical per-controller matrix)
 - Registry forensics: `/tmp/fixall-registry-forensics.md` (method-name drift root cause)
+
+## Status Update 2026-04-21
+
+- Old: Proposed — 2026-04-16. New: Implemented — 2026-04-21.
+- Tier 1 fork patches all landed in `forks/agentic-flow`:
+  - #1 causalGraph — `8238837 fix: ADR-0090 B5 (W2-I3) — CausalMemoryGraph constructor CREATEs causal_edges table`.
+  - #2 learningSystem — addressed by composed routing; `check_adr0090_b5_learningSystem` wired at `lib/acceptance-adr0090-b5-checks.sh:1147` via `agentdb_experience_record` → `learning_experiences` table.
+  - #3 memoryConsolidation — check-side priming landed; `check_adr0090_b5_memoryConsolidation` at `:1194` seeds `hierarchical_memory` then asserts `consolidation_log` row growth.
+  - #4 nightlyLearner — `d7f613a fix(agentdb): auto-create causal_experiments + causal_observations in NightlyLearner constructor (W2-I3 follow-up #2)`.
+  - #5 explainableRecall — `b340e90 fix(agentdb): auto-create recall_certificates table in ExplainableRecall`.
+  - Companion constructor-DDL fixes for ReflexionMemory (`7a977f1`), SkillLibrary (`b14a664`), sonaTrajectory registration (`794ad50`).
+- Tier 2 items 6-11 remain SKIP_ACCEPTED by design; regression regexes live in `lib/acceptance-adr0090-b5-checks.sh` (1768 LOC) and auto-flip to FAIL if upstream ever adds a write surface (per the original Tier 2 spec).
+- Acceptance criterion #4 ("ADR-0090 Tier A1 Debt 15 check remains PASS") verified via ADR-0094 full-cascade closure on 2026-04-21 (see `docs/adr/ADR-0094-log.md` closure audit); B5 scorecard target of ≥9 PASS / ≤6 SKIP / 0 FAIL satisfied.
+- Rationale: every Tier 1 item has both a fork-source code pointer (commit SHA) and a wired acceptance check with a table-backed round-trip assertion. Moves from Proposed to Implemented.
+- Remaining work: the 4 silent-pass violations logged in `/tmp/fixall-silent-pass-audit.md` (agentdb_feedback, hooks_intelligence_pattern-store, acceptance-adr0079-tier3 consolidation regex, agentdb_causal-edge split-brain) were explicitly out of scope for this ADR and remain follow-ups — track in a separate ADR or a focused pass under ADR-0094 follow-ons.
+
+### Follow-up 2026-04-21 — NightlyLearner causal_experiments schema migration (advisory A1)
+
+- **Surfaced by**: `docs/reviews/adr0069-swarm-review-2026-04-21.md` advisory A1. The ADR-0069 swarm updated the Tier 1 #4 fix (commit `d7f613a`) by replacing the OLD column list (`ts`, `intervention_id`, `control_outcome`, `treatment_outcome`, `uplift`, `sample_size`, `metadata`) — which had been lifted verbatim from `agentdb-mcp-server.ts:147-175` — with the canonical column list from `frontier-schema.sql:52-78` (`name`, `hypothesis`, `treatment_id`, `treatment_type`, `control_id`, `start_time`, `end_time`, `sample_size`, `treatment_mean`, `control_mean`, `uplift`, `p_value`, `confidence_interval_{low,high}`, `status`, `confidence`, `metadata`). Problem: the wrapper was still `CREATE TABLE IF NOT EXISTS`, so installations that first booted against the `d7f613a` OLD-schema DDL silently kept the old columns; subsequent INSERTs from `CausalMemoryGraph.createExperiment` and UPDATEs from `CausalMemoryGraph.calculateUplift` would then fail at runtime with "table causal_experiments has no column named <x>". This follow-up was out of ADR-0069's scope.
+- **Fix**: `packages/agentdb/src/controllers/NightlyLearner.ts` constructor now runs `PRAGMA table_info(causal_experiments)`, detects the OLD column set (`intervention_id|control_outcome|treatment_outcome`) and missing NEW columns (`name|treatment_id|...|confidence_interval_high`), and `DROP`s both `causal_observations` (child, FK-dependent) then `causal_experiments` (parent) before the canonical `CREATE TABLE IF NOT EXISTS` recreate. Approach (a) — version-stamped destructive recreate — chosen because `causal_experiments`/`causal_observations` hold ephemeral A/B-test telemetry; no user-authored content to preserve, so ADR-0086's content-preservation rule does not apply. Migration failure re-throws (ADR-0082 loud-fail), not silently falls through.
+- **Test**: `tests/unit/adr-0093-nightly-learner-migration.test.mjs` — 13/13 pass. Group 1 source invariants (cites ADR-0093 + A1, PRAGMA introspection, OLD-col detection set, child-first DROP order, canonical NEW column list, ADR-0082 re-throw). Group 2 behavioral round-trip via `sqlite3` CLI: seeds OLD schema, runs detector + DROP + CREATE orchestration, asserts (i) NEW columns present, (ii) OLD columns gone, (iii) `createExperiment`-style INSERT succeeds, (iv) `calculateUplift`-style UPDATE on all 6 result columns succeeds. Group 3 schema parity against `frontier-schema.sql` for both `createExperiment` INSERT target columns and `calculateUplift` UPDATE target columns.
+- **Build**: only pre-existing cross-fork `@types/node`/module-resolution errors; zero new errors in `NightlyLearner.ts` (grep `NightlyLearner.ts` on the build log = 0 matches).
+- **Files**: fork source — `/Users/henrik/source/forks/agentic-flow/packages/agentdb/src/controllers/NightlyLearner.ts` lines 94-206 (migration + canonical DDL). Test — `/Users/henrik/source/ruflo-patch/tests/unit/adr-0093-nightly-learner-migration.test.mjs`. Not committed; fork branch `main`.

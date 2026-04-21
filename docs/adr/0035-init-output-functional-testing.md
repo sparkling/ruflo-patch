@@ -2,7 +2,7 @@
 
 ## Status
 
-Proposed
+Superseded by ADR-0070
 
 ## Date
 
@@ -577,3 +577,12 @@ npm run test:all               # Full suite (existing + new)
 - ADR-0023: Google Testing Framework -- influenced test isolation and fixture reuse patterns
 - ADR-0027: Fork Migration -- established patch naming convention (SG-xxx, HK-xxx, CF-xxx, MM-xxx)
 - T04-T08: Existing init acceptance tests -- current baseline this ADR extends
+
+## Status Update 2026-04-21
+
+- **Old status**: Proposed (2026-03-15)
+- **New status**: Superseded by ADR-0070
+- **Evidence**: `docs/adr/ADR-0070-init-generated-config-acceptance.md` status line reads "Implemented (fully wired 2026-04-06)". The init-generated-output validation goal is met via `lib/acceptance-init-generated-checks.sh` (401 LOC, Phase 5 group in `scripts/test-acceptance.sh`) and paired unit test `tests/unit/adr0070-init-generated.test.mjs`. `lib/acceptance-init-checks.sh` (229 LOC) covers additional surface. None of the `S-xx / H-xx / R-xx / X-xx` test IDs from this ADR's matrix ever landed under those names — grep for `S-01|S-02|H-01|R-SG007|X-01` across `tests/` and `lib/` returns zero hits.
+- **Rationale**: ADR-0070 re-framed the problem (value assertions via `node -e` JSON parsing of init-generated config instead of a 61-test SPARC matrix across 3 modes) and shipped. The SPARC-style fixture/numbering scheme here is not going to be built; the goal is discharged.
+- **Remaining work**: None for this ADR. ADR-0094's 100% coverage program (closed 2026-04-21) absorbed any residual init-output gaps.
+

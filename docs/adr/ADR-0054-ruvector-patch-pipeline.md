@@ -1,6 +1,6 @@
 # ADR-0054: RuVector Patch Pipeline
 
-**Status**: Proposed
+**Status**: Implemented (2026-04-21)
 **Date**: 2026-03-22
 **Deciders**: System Architecture
 **Methodology**: SPARC + MADR
@@ -320,3 +320,49 @@ Add to the existing `neural status` command output:
 - **ADR-0038**: Cascading pipeline — established the deploy pipeline
 - **ADR-0052**: Config-driven embedding framework — fixed embedding defaults across all packages
 - **GitHub issues**: #55 (RV-001), #56 (RV-002), #57 (RV-003) in `sparkling/ruflo-patch`
+
+---
+
+## Status Update 2026-04-21
+
+- **Old**: Proposed (2026-03-22)
+- **New**: Implemented (2026-04-21)
+
+### Evidence
+
+The original scope (publish only the CLI package `ruvector` with RV-001/002/003 fixes) has been both met and substantially exceeded. The pipeline now publishes the full `@ruvector/*` native package family under `@sparkleideas/ruvector-*`:
+
+**Fork registration:**
+- `lib/fork-paths.sh:81` — `[ruvector]=RUVECTOR` in the `FORK_PREFIX` map; `FORK_DIR_RUVECTOR` resolved alongside the other three forks.
+- `lib/fork-paths.sh:5` — `FORK_NAMES=("ruflo" "agentic-flow" "ruv-FANN" "ruvector")`.
+
+**Source copy:**
+- `scripts/copy-source.sh:87,113-121` — ruvector staging directory created, rsync filters parallel to the other three forks, status-file sync gate includes `ruvector`.
+
+**Scope rename / codemod:**
+- `scripts/codemod.mjs:29-53` — `RUVECTOR_PREFIX_FROM='@ruvector/'` → `RUVECTOR_PREFIX_TO='@sparkleideas/ruvector-'`, plus explicit bare-package rewrite map covering `ruvector`, `ruvector-core-{darwin,linux,win32}-*`, `ruvector-attention-wasm`, `ruvector-attention-unified-wasm`.
+- `scripts/codemod.mjs:174-212` — two-pass rewrite (`@ruvector/*` → scoped replacement, then bare-name rewrites).
+- `tests/unit/ruvector-scope-rename.test.mjs` — unit tests for the rename rules.
+
+**Versioning:**
+- `scripts/fork-version.mjs:38` — `'ruvector'` in `FORK_NAMES` so the bump script emits `-patch.N` for ruvector alongside the others.
+
+**Publish:**
+- `config/publish-levels.json:8-22,52` — 16 packages (`@sparkleideas/ruvector`, `-core`, `-attention`, `-gnn`, `-graph-node`, `-graph-transformer`, `-router`, `-ruvllm`, `-rvf`, `-rvf-node`, `-sona`, `-tiny-dancer`, `-attention-wasm`, `-attention-unified-wasm`, `-rvagent-wasm`, `-ruvllm-wasm`, plus `-upstream` meta-pack) all at Level 1.
+- `scripts/publish.mjs:46,164-165` — `@sparkleideas/ruvector-upstream` in publish list; prefers non-private packages under `npm/packages/ruvector/`.
+
+**Acceptance coverage:**
+- `lib/acceptance-adr0069-f3-checks.sh:14,42` — F3-1 verifies `@sparkleideas/ruvector-attention-wasm` is published and resolvable; F3-2 verifies `-attention-unified-wasm`.
+- `lib/acceptance-adr0071-checks.sh:10` — ADR-0071-1 asserts zero residual `@ruvector/` imports in the published `dist/`.
+- `lib/acceptance-adr0079-tier1-checks.sh:307` — T1-8 asserts zero stale `@claude-flow/` or `@ruvector/` refs in published packages.
+
+**Downstream wiring:**
+- `config/package-map.json` lists the ruvector family; `@sparkleideas/agentic-flow` consumes the patched `@sparkleideas/ruvector-rvf-node` (see ADR-0073 §266-268).
+
+### Rationale
+
+The pipeline shape shifted since the 2026-03-22 proposal. The original plan scoped ruvector to a single JS CLI package patched for three defects; since then, ADR-0073 (RVF storage upgrade) required us to rebuild the native `@ruvector/rvf-node` from fork source, which in turn required publishing the full native-and-WASM family so internal deps resolve to `@sparkleideas/` rather than mixing scopes at runtime. By 2026-04-21 (three green full cascades today — ADR-0094 closure day) all 16+ ruvector-family packages publish cleanly, the codemod handles both bare-name and scoped-prefix rewrites, and acceptance checks guard both publish-completeness (F3-1/F3-2) and rewrite-completeness (ADR-0071-1, T1-8).
+
+### Remaining work
+
+None for the pipeline mechanism itself. The three original CLI-level defects (RV-001/002/003) are *inside* the patched sources the pipeline now ships, so if any survive, that is a fork-patch issue, not a pipeline issue. The GitHub issues #55/#56/#57 in `sparkling/ruflo-patch` can be closed as covered by the broader ruvector-family publish once their individual fixes have a verifying acceptance check (tracked outside this ADR).

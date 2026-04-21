@@ -1,8 +1,8 @@
 # ADR-0058: Memory, Learning & Storage — Deep Analysis
 
-- **Status**: Active (living document)
+- **Status**: Superseded by ADR-0059, ADR-0083, ADR-0086, ADR-0094
 - **Date**: 2026-04-04
-- **Updated**: 2026-04-04 (v3 — session audit complete, all fixes catalogued in ADR-0059)
+- **Updated**: 2026-04-21 (status flipped from "Active (living document)" — substance absorbed, see Status Update 2026-04-21)
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: SPARC + multi-agent swarm analysis (4 hives, 30+ agents)
 
@@ -264,3 +264,27 @@ Reordered based on architecture understanding: fix the drain first, then the cac
 - **upstream:ADR-057 (RVF)**: once merged, SQLite→RVF migration. Does not change the 3-layer architecture. JSON cache still drains into RVF instead of SQLite.
 - **upstream:ADR-050 evolution (daemon IPC)**: replaces JSON files with socket calls to the running daemon. Eliminates file I/O but keeps the same write-ahead pattern. Requires daemon to be running.
 - **ADR-0049 (fail-loud)**: orthogonal to storage architecture. Surfaces bugs in controllers regardless of which backend stores the data.
+
+## Status Update 2026-04-21
+
+**Superseded.** This ADR was labelled "Active (living document)" but has not been edited since its v3 writeup on 2026-04-04. Its substance has been absorbed by later ADRs that now drive decisions:
+
+| Successor ADR | What it absorbed from ADR-0058 |
+|---------------|-------------------------------|
+| **ADR-0059** (RVF Native Storage Backend) | Explicitly cites ADR-0058 as "root cause investigation". Implements the P0 "fix the drain" recommendation. See ADR-0059 line 353 and v11-archive lines 345, 360, 748, 752. |
+| **ADR-0083** (Phase 5 Single Data Flow) | Takes ADR-0058's P0 bridge bug diagnosis as starting point ("First identified as 'P0 bridge bug'" at line 25) and delivers the single-data-flow design. |
+| **ADR-0086** (RVF Primary, SQLite Fallback) | Resolves the "two independent stacks" problem from ADR-0058 by making RVF the canonical storage and relegating SQLite to fallback-only. |
+| **ADR-0094** (Acceptance Coverage) | Closed 2026-04-21 with 3 green full cascades; validates that the drain/unification work grounded in ADR-0058's diagnosis now holds end-to-end. |
+
+**Evidence of absorption, not ongoing maintenance:**
+- Last content edit: 2026-04-04 (17 days stale at closure of ADR-0094).
+- The 8-persistence-mechanism inventory (Line 93) predates RVF-primary (ADR-0086) and the controller intercept pattern (ADR-0089); reading it today is historically useful but no longer descriptive.
+- The "Priority Fixes Remaining" table (Line 223) is outdated: P0 drain fix shipped via ADR-0059, ID collision and bootstrap scoping landed in upstream PRs (#1518/#1519), ADR-0049 fail-loud work is tracked under ADR-0082/0090.
+- No inbound edits from ADR-0080 (store init), ADR-0085 (eliminate sidecar JSON), ADR-0086, ADR-0089, ADR-0090, or ADR-0094 — all of which should have back-referenced here if this were truly living.
+
+**Items needing attention before archival:**
+1. Readers should consult ADR-0086 for current storage truth (RVF primary) rather than the "Three, Not Eight" table here.
+2. ADR-0049 fail-loud status is now tracked under the ADR-0082 no-silent-pass rule and ADR-0090's three-bucket harness, not this ADR.
+3. The "8 persistence mechanisms" list is obsolete — sidecar JSON files were eliminated per ADR-0085.
+
+Keep this document for its historical diagnostic value (the P0 drain bug was correctly identified here first), but do not treat it as authoritative current architecture.

@@ -1,6 +1,6 @@
 # ADR-0089: Controller Intercept Pattern as Permanent Layer 2 Design
 
-- **Status**: Proposed
+- **Status**: Implemented — 2026-04-21
 - **Date**: 2026-04-15
 - **Scope**: Patch repo (ADR) + acceptance tests. No code changes.
 - **Supersedes (partial)**: ADR-0075 Layer 2 ideal; ADR-0076 Phase 4 acceptance criteria #1-#3
@@ -307,3 +307,17 @@ trade-offs.
   pool behavioral test that this ADR references
 - 5-agent ADR-0088 validation session (2026-04-15) — where the 75% Layer 4
   score was surfaced and the intercept trade-off was examined
+
+## Status Update 2026-04-21
+
+- Old: Proposed. New: Implemented.
+- Code evidence:
+  - `forks/ruflo/v3/@claude-flow/memory/src/controller-intercept.ts` (61 LOC, module-level `getOrCreate` pool, Map outside any function body).
+  - `forks/ruflo/v3/@claude-flow/memory/src/controller-registry.ts` — 49 `getOrCreate` call sites (grep count against 2093-LOC file; confirms decision §2 criterion #1 goes through the pool).
+  - `forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts` — 16 `getOrCreate` call sites (1831 LOC; wraps every controller constructor per decision §2 criterion #1).
+  - `forks/agentic-flow/agentic-flow/src/services/controller-bridge.ts` (194 LOC) exists per "Related" references.
+- Regression guards required by the decision (§"Required regression test") all landed:
+  - Unit: `tests/unit/adr0089-intercept-enforcement.test.mjs` (187 LOC — source-grep enforcement of every `new *Controller(` inside a `getOrCreate(` wrapper).
+  - Acceptance: `lib/acceptance-adr0089-checks.sh` (4 checks: `check_adr0089_intercept_shipped`, `check_adr0089_agentdb_service_wraps` [>=6 wraps], `check_adr0089_controller_registry_wraps` [>=40 wraps], `check_adr0089_pool_live` [2x `agentdb_health` fingerprint stability]) — all 4 wired into `scripts/test-acceptance.sh:860-864` and the aggregator at `:1812-1815`.
+- Rationale: intercept ships, regression guards ship and enforce, full acceptance cascade closed green on 2026-04-21 under ADR-0094. Moves from Proposed to Implemented.
+- Remaining work: none — revisit triggers in §"Revisit trigger" remain open contingencies (quarterly upstream AgentDBService check, upstream constructor refactor detection via regression test, production cache-divergence signal). No proactive work scoped here.

@@ -1,9 +1,9 @@
 # ADR-0092: RVF native + pure-TS backend coexistence on a shared dbPath
 
-- **Status**: Proposed — 2026-04-16
+- **Status**: Superseded by ADR-0095 (2026-04-21)
 - **Date**: 2026-04-16
 - **Scope**: `@claude-flow/memory` `RvfBackend` and the native `@ruvector/rvf-node` binding
-- **Related**: ADR-0086 (Layer 1 Storage), ADR-0090 (Acceptance audit — discovered during Tier B1 work), the B7 multi-writer convergence fix (fork commits `03ecec5e0` and `de7ba4876`)
+- **Related**: ADR-0086 (Layer 1 Storage), ADR-0090 (Acceptance audit — discovered during Tier B1 work), the B7 multi-writer convergence fix (fork commits `03ecec5e0` and `de7ba4876`), ADR-0095 (RVF inter-process convergence — supersedes this ADR), BUG-0005 (closed 2026-04-21), BUG-0008 (ADR-0095 ledger, closed)
 
 ## Context
 
@@ -193,3 +193,42 @@ sessions is adequate.
 - Ad-hoc ruflo-patch diagnostic session (2026-04-15/16, not committed)
   — 4/4 → 1/4 convergence regression with dimensions:3, 4 writers on
   shared `dbPath` under the fresh `.112` install
+
+---
+
+## Status Update 2026-04-21
+
+- **Old**: Proposed — 2026-04-16
+- **New**: Superseded by ADR-0095 (2026-04-21)
+
+### Evidence
+
+The three acceptance criteria from this ADR's §"Acceptance criteria for this ADR" section are all satisfied, and every concern raised here has been absorbed into ADR-0095 + BUG-0005:
+
+**1. Deterministic reproducer exists.**
+- `scripts/diag-rvf-interproc-race.mjs` — the cross-process matrix that reproduces (and now regression-guards) the native + pure-TS data-loss case this ADR introduced. Wired into `lib/acceptance-adr0079-tier3-checks.sh:183-184` ("native `SFVR` binary and pure-TS metadata … sidecarred to `.rvf.meta`. Prefer the [sidecar] …") and exercised in the full cascade.
+- `tests/unit/diag-rvf-interproc-race.test.mjs` — unit-level coverage of the diagnostic.
+- `scripts/diag-rvf-read-matrix.mjs`, `scripts/diag-rvf-persist-trace.mjs` — adjacent traces that catch the same format-coexistence failure modes at different granularities.
+
+**2. Decision recorded.**
+The three options in §Decision were resolved as follows:
+- **Option A (diagnostic + acceptance)**: landed — see the diag scripts above plus the ADR-0094 Phase 15 flakiness sweep (`scripts/run-phase15-full-cascade.sh`).
+- **Option B (unify `metadataPath`)**: landed in spirit — the final architecture is *native-aware* rather than uniform. `get metadataPath()` still returns `.meta` when the main path holds `SFVR` bytes and returns `dbPath` otherwise, but the pure-TS reader is now `NATIVE_MAGIC`-aware (`forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:59` — `const NATIVE_MAGIC = 'SFVR'`). Both sides see a coherent merge. This avoids the audit of external consumers that Option B warned about and the migration path for mixed existing state.
+- **Option C (loud-fail on coexistence)**: landed in the narrow form this ADR deemed "too aggressive" — ADR-0095 Pass 3 item d4 enforces the "once SFVR, always native-or-refuse" invariant *only* when the main path already holds SFVR bytes, throwing loudly on zero-byte / partial-SFVR / unknown-magic states. Fresh repos with no SFVR history still take the pure-TS path cleanly, so users who have the native binding installed but aren't running concurrent processes against the same dbPath are unaffected (this ADR's stated objection to blanket Option C).
+
+**3. Fork patch + coverage shipped.**
+- `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:59,114,174,829,872-890,939,975,1003,1008,1014-1063,1089,1656,1682,1714,1749,1769-1801,1918,1965,2024,2121` — `NATIVE_MAGIC` constant, peek-and-skip loader, native-aware `metadataPath`, "once SFVR, always native-or-refuse" branch, fail-loud on unknown magic, and the disjoint-tmp-path fix.
+- BUG-0005 (`docs/bugs/coverage-ledger.md:152-178`) — closed 2026-04-21. Fix commit `196100171`. Three green cascade runs today: 2026-04-21T09:58Z, 16:31Z, 17:00Z. Check IDs `t3-2-concurrent` and `adr0080-store-init` both pass.
+- BUG-0008 (ADR-0095 ledger) — closed; t3-2-concurrent deterministic across three consecutive full cascades (2026-04-19 10:45Z, 12:46Z, 2026-04-20 10:43Z, plus today's three).
+- ADR-0094-log.md:198,217,219,229,231 — records "1 real ADR-0092 bug uncovered and fixed" via the `parseRvfHeader` dual-magic coexistence hardening; test suite went to 3260 pass / 0 fail / 0 skipped after the fix.
+- ADR-0095 §Related explicitly lists "ADR-0092 (native/pure-TS coexistence)" as the prior-art context and absorbs the coexistence semantics as an enforced invariant rather than a documented limitation.
+
+### Rationale
+
+ADR-0092 documented a real defect but deferred on disposition. The remediation ended up being a stricter and narrower variant of what this ADR considered: native-aware pure-TS (Option B's spirit, preserving `.meta` semantics on both sides) combined with targeted loud-fail on ambiguous coexistence states (Option C restricted to post-SFVR file histories). That combination is the shipping architecture as of 2026-04-20 and is tracked under ADR-0095 + BUG-0005 + BUG-0008, all of which have verifying acceptance coverage and three green cascades today.
+
+Keeping ADR-0092 as "Proposed" would misrepresent the state of the codebase, and re-statusing it as "Implemented" would obscure the fact that a successor ADR owns the invariant. Superseded is the accurate disposition.
+
+### Remaining work
+
+None specific to ADR-0092. Forward-looking work (further hardening of the cross-process convergence protocol, any new coexistence edges) is tracked under ADR-0095's Open Items.

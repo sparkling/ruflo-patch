@@ -110,3 +110,17 @@ Use `@sparkleideas` as the npm scope for all rebuilt packages. The scope mirrors
 - [ ] `npm view @sparkleideas/cli` resolves after first publish
 - [ ] `ruflo` package.json lists `@sparkleideas/*` dependencies, not `@claude-flow/*`
 - [ ] No `@ruvector/*` packages are renamed or republished
+
+## Follow-up 2026-04-21: CLI bin rebrand to `ruflo`
+
+**Rationale.** After install, users had to type `npx @sparkleideas/cli@latest ...` (or `claude-flow ...` via the backwards-compat alias) for every invocation. The short global-install name `ruflo` matches the repo/brand and drops a verbose 30-character prefix from the CLI surface.
+
+**What changed.** In `forks/ruflo/v3/@claude-flow/cli/package.json` the `bin` map now exposes `ruflo` → `./bin/cli.js`, `ruflo-mcp` → `./bin/mcp-server.js`, and keeps `claude-flow` + `claude-flow-mcp` as backwards-compat aliases. The bare `"cli"` entry was removed — it collided with other globally-installed packages. The CLAUDE.md generator (`src/init/claudemd-generator.ts`) now emits `ruflo <cmd>` throughout the body; the one-time bootstrap `claude mcp add claude-flow -- npx -y @claude-flow/cli@latest` stays so first-run install still works without prior global install. MCP server identifier `claude-flow` and tool prefix `mcp__claude-flow__*` are unchanged — they are different identifiers and rebranding them would break tool lookup.
+
+**Tests.** Two paired unit tests: `tests/unit/rebrand-ruflo-bin.test.mjs` (bin map contract — 7 assertions) and `tests/unit/rebrand-ruflo-claudemd.test.mjs` (template output against post-codemod dist — 7 assertions, with explicit fallback to pre-codemod source when `/tmp/ruflo-build` is absent).
+
+**Backwards compatibility.** `claude-flow` and `claude-flow-mcp` bin entries are retained. Existing scripts that call the old names still work.
+
+**Codemod gap fixed in-session (2026-04-21).** The original `scripts/codemod.mjs` `renameObjectKeys` passed every `bin` key through `applyNameMapping`. For unscoped names in `UNSCOPED_MAP` (notably `ruflo` and `claude-flow`), bin keys got rewritten to `@sparkleideas/ruflo` / `@sparkleideas/claude-flow` — invalid bin names (npm rejects `/` in executables). Post-codemod the published `bin` map ended up as `{"ruflo-mcp", "claude-flow-mcp", "@sparkleideas/ruflo", "@sparkleideas/claude-flow"}`, meaning `npm i -g @sparkleideas/cli` silently landed nothing usable. **Fix**: `KEY_RENAME_FIELDS` in `scripts/codemod.mjs` reduced from `['bin', 'exports']` → `['exports']`. Bin keys now pass through verbatim. `exports` keys are subpath specifiers (".", "./bm25") that don't intersect `UNSCOPED_MAP`, so leaving that pathway intact is a safe no-op. Regression-guarded by `tests/unit/codemod-bin-preservation.test.mjs` (4 tests: literal `ruflo`, literal `claude-flow`, mixed 4-key rebrand map, and exports-subpath preservation) — all green. `tests/unit/ruvector-scope-rename.test.mjs` (24 tests) still green, confirming the exports + dep-keys + source-rewrite pathways are unaffected.
+
+**Impact.** Before this fix, the `ruflo` rebrand would not actually land on any published package — the codemod bug predates the rebrand and affected the `claude-flow` bin too (so the prior backwards-compat alias was also broken on the published `@sparkleideas/cli`). This was a latent publish-time correctness bug uncovered while adding `ruflo`. Fix is isolated (1 line change + 1 new test) and rolls forward — no version bump required beyond the existing `-patch.N` cadence.

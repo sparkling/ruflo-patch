@@ -1,6 +1,6 @@
 # ADR-0079: Acceptance Test Completeness
 
-- **Status**: Proposed
+- **Status**: Implemented (2026-04-21)
 - **Date**: 2026-04-11
 - **Deciders**: Henrik Pettersen
 - **Methodology**: Hive deliberation (Queen + 8 experts + Devil's Advocate)
@@ -405,3 +405,12 @@ version pin consistency check across 41 packages.
 | Learning loop verified | No | Yes |
 | Packages with zero coverage | 25+ | <10 |
 | Confidence from green suite | ~65% | ~85% |
+
+## Status Update 2026-04-21
+
+- **Old status**: Proposed (2026-04-11)
+- **New status**: Implemented
+- **Evidence**: All 25 tests shipped. Tier 1: `lib/acceptance-adr0079-tier1-checks.sh` (390 LOC, 9 check functions covering T1-1..T1-9) plus `tests/unit/controller-init-smoke-adr0079.test.mjs` (76 LOC, T1-10). Tier 2: `lib/acceptance-adr0079-tier2-checks.sh` (146 LOC, T2-1..T2-8). Tier 3: `lib/acceptance-adr0079-tier3-checks.sh` (574 LOC, T3-1..T3-7). All three libs sourced by `scripts/test-acceptance.sh`. `docs/adr/ADR-0094-log.md` 2026-04-21 closure entry confirms full-cascade acceptance run 556 pass / 0 fail / 1 skip_accepted across 3 consecutive runs.
+- **Rationale**: The hive-identified gaps (semantic ranking, learning feedback, SQLite round-trip, MCP stdio, codemod completeness, pin consistency, controller init smoke, WASM attention, embedding dim, RVF concurrent safety, ESM import, bulk corpus) are all now behavioral checks in the acceptance suite, not structural greps.
+- **Remaining work**: None. T3-2 (concurrent writes) evolved to RVF .rvf.lock contention per ADR-0090 Tier A4 and is the gold-standard behavioral check; 3/3 green under mega-parallel waves per 2026-04-21 log.
+

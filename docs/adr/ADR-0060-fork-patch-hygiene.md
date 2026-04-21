@@ -87,3 +87,27 @@ If the git history shows `fix X` followed by `revert fix X`, both commits are no
 
 - **ADR-0059**: RVF Native Storage Backend — triggered this audit
 - **ADR-0052**: Embedding Dimension Standardization — source of several fix-on-fix patterns
+
+## Status Update 2026-04-21
+
+**Still active.** This is a standing hygiene policy, not a point-in-time decision, and its five rules remain enforceable against current practice. Evidence that the policy is still driving behaviour as of ADR-0094 closure today:
+
+| Rule | Current-evidence citation |
+|------|---------------------------|
+| Rule 1 (check upstream before patching) | ADR-0061 line 649 cites ADR-0060 as the governing pipeline rule for fork changes. |
+| Rule 2 (no fix-on-fix) | Re-affirmed by the "Deleting upstream-maintained files to satisfy the 500-line rule" entry in CLAUDE.md (2026-04): intercept pattern (ADR-0089) replaced fork-level rewrites rather than layering more patches. |
+| Rule 3 (use upstream when possible) | Active constraint behind keeping `controller-registry.ts` at 2063 LOC and `agentdb-service.ts` at 1831 LOC on upstream (ADR-0089). |
+| Rule 4 (minimize contamination) | ADR-0066 line 126 cites ADR-0060 specifically flagging controller-registry.ts as the highest merge-conflict risk — guidance still respected in ADR-0089's intercept design. |
+| Rule 5 (revert-pairs = delete both) | Still the rule the `publish:fork` pipeline and `npm run sync` workflow follow when grooming fork branches. |
+
+**Why Active (not Superseded):**
+- No later ADR replaces these five rules; they are referenced as live policy by ADR-0059 line 525 ("always check upstream before patching"), ADR-0061 line 649, and ADR-0066 line 126.
+- The 2026-04 CLAUDE.md lesson "Deleting upstream-maintained files to satisfy the 500-line rule" is a direct application of Rule 3 / Rule 4 to a new case — evidence the rules extrapolate correctly.
+- ADR-0094's closure today required the forks to stay buildable and rebased; that was achievable only because ADR-0060's rules kept divergence bounded.
+
+**Items needing attention:**
+1. The "Actions Taken" table (Line 73) is historical (all "Done" for the 2026-04-04 audit) and should not be edited further; new audits should append a new dated section rather than reopen rows.
+2. The "Stale Patches" table (Line 37) is now out of date on specifics — `controller-registry.ts` and `agentdb-service.ts` are now governed by the ADR-0089 intercept pattern rather than "highest merge-conflict risk, revert". Consider a follow-up Status Update if another fork audit runs.
+3. Rule numbers are referenced implicitly elsewhere; any future rule additions should extend (Rule 6+) rather than renumber.
+
+Keep this ADR Active and continue citing it for fork-change decisions.

@@ -1,6 +1,6 @@
 # ADR-0096: Coverage Catalog + Skip Hygiene
 
-- **Status**: Proposed — 2026-04-17
+- **Status**: Implemented — 2026-04-21
 - **Date**: 2026-04-17
 - **Scope**: `scripts/catalog-rebuild.mjs`, `scripts/skip-reverify.mjs`, `test-results/catalog.db`, `test-results/CATALOG.md`, acceptance JSON ingestion pipeline
 - **Forked from**: ADR-0094 §D rows 4, 10 (hive synthesis)
@@ -84,3 +84,12 @@ Three-layer SQLite model (above). SQLite is already a project dep (`better-sqlit
 - ADR-0094 Open Item — Skip hygiene (synthesis row 10)
 - ADR-0086 (raw-JSON-is-canonical model)
 - ADR-0082 (no silent fallbacks — applies to retry ban and skip rot)
+
+## Status Update 2026-04-21
+
+- **Old status**: Proposed (2026-04-17)
+- **New status**: Implemented
+- **Evidence**: `scripts/catalog-rebuild.mjs` (42.7 KB, +x, 2026-04-17) and `scripts/skip-reverify.mjs` (23.3 KB, 2026-04-19) both present. `test-results/catalog.db` (SQLite) populated with run history; 170+ `accept-<ts>` raw JSON artifacts under `test-results/` form the Layer-1 canonical truth. `docs/adr/ADR-0094-log.md:703` records: "ADR-0096 (catalog + skip hygiene) → Implemented (catalog.db populated, skip-reverify operational)". ADR-0094 parent acceptance criteria §700 satisfied: `skip_streak_days_max < 30`, preflight drift-detection passes. Three-layer raw/index/view model shipped; `CATALOG.md` is gitignored derived artifact (rebuildable) per design.
+- **Rationale**: All five acceptance criteria (1: `--from-raw` rebuild, 2: `--show` dashboard, 3: `skip-reverify` probe, 4: `--verify` drift check, 5: ADR-0094 numbers sourced from catalog) are wired. The program is self-perpetuating — as ADR-0094-log §725 notes, "the coverage program's continuous catalog + skip hygiene side of the work (ADR-0096) continues indefinitely" as new MCP tools arrive, but the infrastructure itself is complete.
+- **Remaining work**: None structural. Ongoing operation: weekly cron for `skip-reverify.mjs` is currently manual-invocation; if unattended cadence is wanted later, wire a scheduled trigger. Not a gap against this ADR's acceptance criteria.
+
