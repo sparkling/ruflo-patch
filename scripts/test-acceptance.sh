@@ -492,6 +492,10 @@ phase14_lib="${PROJECT_DIR}/lib/acceptance-phase14-slo.sh"
 phase15_lib="${PROJECT_DIR}/lib/acceptance-phase15-flakiness.sh"
 [[ -f "$phase15_lib" ]] && source "$phase15_lib"
 
+# ADR-0094 Phase 16: PII detection inverse (7 inverse + 1 positive guard)
+phase16_lib="${PROJECT_DIR}/lib/acceptance-phase16-pii-inverse.sh"
+[[ -f "$phase16_lib" ]] && source "$phase16_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1197,6 +1201,23 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
   run_check_bg "p15-flaky-session-list"    "P15 session_list determinism (3x)"    check_adr0094_p15_flaky_session_list    "adr0094-p15"
 fi
 
+# ADR-0094 Phase 16: PII detection inverse. 7 inverse checks assert the
+# aidefence PII detector does NOT false-positive on benign inputs (plain
+# prose, code, versions, UUIDs, URLs, markdown, scan-clean). Check 8 is a
+# POSITIVE control — an obvious email input MUST produce "hasPII":true —
+# which catches a detector regressed to a stub-returning-false (ADR-0082
+# silent-pass trap; without the guard every inverse check passes trivially).
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase16_lib" ]]; then
+  run_check_bg "p16-nopii-plain-prose"    "P16 plain-prose no-PII"         check_adr0094_p16_nopii_plain_prose    "adr0094-p16"
+  run_check_bg "p16-nopii-code-snippet"   "P16 code-snippet no-PII"        check_adr0094_p16_nopii_code_snippet   "adr0094-p16"
+  run_check_bg "p16-nopii-version-string" "P16 version-string no-PII"      check_adr0094_p16_nopii_version_string "adr0094-p16"
+  run_check_bg "p16-nopii-uuid"           "P16 uuid no-PII"                check_adr0094_p16_nopii_uuid           "adr0094-p16"
+  run_check_bg "p16-nopii-url"            "P16 url no-PII"                 check_adr0094_p16_nopii_url            "adr0094-p16"
+  run_check_bg "p16-nopii-markdown"       "P16 markdown no-PII"            check_adr0094_p16_nopii_markdown       "adr0094-p16"
+  run_check_bg "p16-nopii-scan-clean"     "P16 scan benign clean"          check_adr0094_p16_nopii_scan_clean     "adr0094-p16"
+  run_check_bg "p16-guard-detects-email"  "P16 guard: email IS PII"        check_adr0094_p16_guard_detects_email  "adr0094-p16"
+fi
+
 # ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
@@ -1550,6 +1571,20 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_lib" ]]; then
   )
 fi
 
+_p16_specs=()
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase16_lib" ]]; then
+  _p16_specs=(
+    "p16-nopii-plain-prose|P16 plain-prose no-PII"
+    "p16-nopii-code-snippet|P16 code-snippet no-PII"
+    "p16-nopii-version-string|P16 version-string no-PII"
+    "p16-nopii-uuid|P16 uuid no-PII"
+    "p16-nopii-url|P16 url no-PII"
+    "p16-nopii-markdown|P16 markdown no-PII"
+    "p16-nopii-scan-clean|P16 scan benign clean"
+    "p16-guard-detects-email|P16 guard: email IS PII"
+  )
+fi
+
 _e2e_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   _e2e_specs=(
@@ -1882,6 +1917,7 @@ collect_parallel "all" \
   "${_p13_specs[@]}" \
   "${_p14_specs[@]}" \
   "${_p15_specs[@]}" \
+  "${_p16_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)

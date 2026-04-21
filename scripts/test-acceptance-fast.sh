@@ -119,7 +119,13 @@ done
 for f in \
   "$PROJECT_DIR/lib/acceptance-phase8-invariants.sh" \
   "$PROJECT_DIR/lib/acceptance-phase9-concurrency.sh" \
-  "$PROJECT_DIR/lib/acceptance-phase10-idempotency.sh"; do
+  "$PROJECT_DIR/lib/acceptance-phase10-idempotency.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase11-fuzzing.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase12-error-quality.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase13-migration.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase14-slo.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase15-flakiness.sh" \
+  "$PROJECT_DIR/lib/acceptance-phase16-pii-inverse.sh"; do
   [[ -f "$f" ]] && source "$f"
 done
 
@@ -267,6 +273,46 @@ if [[ "$_FAST_RUN_GROUPS" == *"p9"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
     _fast_run "p9-claims-winner" check_adr0094_p9_claims_single_winner
     _fast_run "p9-session-noint" check_adr0094_p9_session_no_interleave
     _fast_run "p9-workflow-one"  check_adr0094_p9_workflow_concurrent_start
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"p14"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase14-slo.sh" ]]; then
+    echo "── Phase 14: Performance SLO per tool class (ADR-0094) ──"
+    _fast_run "p14-slo-memory-store"   check_adr0094_p14_slo_memory_store
+    _fast_run "p14-slo-session-save"   check_adr0094_p14_slo_session_save
+    _fast_run "p14-slo-agent-list"     check_adr0094_p14_slo_agent_list
+    _fast_run "p14-slo-claims-board"   check_adr0094_p14_slo_claims_board
+    _fast_run "p14-slo-workflow-list"  check_adr0094_p14_slo_workflow_list
+    _fast_run "p14-slo-config-get"     check_adr0094_p14_slo_config_get
+    _fast_run "p14-slo-neural-status"  check_adr0094_p14_slo_neural_status
+    _fast_run "p14-slo-autopilot-stat" check_adr0094_p14_slo_autopilot_status
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"p15"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase15-flakiness.sh" ]]; then
+    echo "── Phase 15: Flakiness characterization (ADR-0094) ──"
+    _fast_run "p15-flaky-memory-search"  check_adr0094_p15_flaky_memory_search
+    _fast_run "p15-flaky-agent-list"     check_adr0094_p15_flaky_agent_list
+    _fast_run "p15-flaky-config-get"     check_adr0094_p15_flaky_config_get
+    _fast_run "p15-flaky-claims-board"   check_adr0094_p15_flaky_claims_board
+    _fast_run "p15-flaky-workflow-list"  check_adr0094_p15_flaky_workflow_list
+    _fast_run "p15-flaky-session-list"   check_adr0094_p15_flaky_session_list
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"p16"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase16-pii-inverse.sh" ]]; then
+    echo "── Phase 16: PII detection inverse (ADR-0094) ──"
+    _fast_run "p16-plain-prose"     check_adr0094_p16_nopii_plain_prose
+    _fast_run "p16-code-snippet"    check_adr0094_p16_nopii_code_snippet
+    _fast_run "p16-version-string"  check_adr0094_p16_nopii_version_string
+    _fast_run "p16-uuid"            check_adr0094_p16_nopii_uuid
+    _fast_run "p16-url"             check_adr0094_p16_nopii_url
+    _fast_run "p16-markdown"        check_adr0094_p16_nopii_markdown
+    _fast_run "p16-scan-clean"      check_adr0094_p16_nopii_scan_clean
+    _fast_run "p16-guard-email"     check_adr0094_p16_guard_detects_email
   fi
 fi
 

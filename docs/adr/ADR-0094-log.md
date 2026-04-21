@@ -6,6 +6,52 @@
 
 ---
 
+## 2026-04-21 — Phase 16 implemented (PII detection inverse)
+
+Shipped `lib/acceptance-phase16-pii-inverse.sh` with 8 checks: 7 inverse
+assertions that the aidefence PII detector does NOT false-positive on
+benign inputs (plain prose, code snippet, version string, UUID, URL,
+markdown, and a full `aidefence_scan` call against benign prose), plus
+1 POSITIVE control (`check_adr0094_p16_guard_detects_email`) that
+asserts an obvious email input produces `"hasPII":true`.
+
+**Verdict buckets**:
+- PASS — inverse check body matches `"hasPII":false` AND does NOT also contain `"hasPII":true`; for `scan_clean`, both `"piiFound":false` AND `"safe":true` must match; for the guard, body matches `"hasPII":true`.
+- FAIL — false-positive (inverse check body carries `"hasPII":true` — detector is over-eager on benign input).
+- FAIL — guard regression (the `guard_detects_email` check body carries `"hasPII":false` — detector has regressed to a stub, and every inverse verdict above it is unreliable until the guard is restored).
+- FAIL — missing field (body lacks the expected JSON key; upstream response shape changed and this phase needs reassessment).
+- SKIP_ACCEPTED — `_mcp_invoke_tool` reports tool-not-found (handled by the shared harness; not reimplemented per-check).
+
+**ADR-0082 silent-pass trap addressed**: without the positive guard, a
+detector that regressed to "always return false" would cause every
+inverse check in this phase to pass trivially — creating the exact
+silent-pass pattern ADR-0082 exists to prevent. The guard is the
+bracket on the other side of the Phase-1 positive check
+(`check_adr0094_p1_aidefence_has_pii`) — together they pin the
+detector's contract from both directions.
+
+**Belt-and-braces** on the inverse checks: after the primary `"hasPII":false`
+regex matches, the check ALSO explicitly greps `_MCP_BODY` for
+`"hasPII":true` and force-FAILs if both tokens are present — guards
+against a body that somehow carries both (debug echo of the input
+alongside the verdict) masking a real false-positive.
+
+**Upstream response shape** (verified live against 3.5.58-patch.136):
+- `aidefence_has_pii` → `{ "hasPII": true|false }` (exact casing)
+- `aidefence_scan`    → `{ "safe": bool, "piiFound": bool, "threats": [...], "detectionTimeMs": number, "mitigations": [...] }`
+
+Paired unit test: `tests/unit/adr0094-p16-pii-inverse.test.mjs`.
+Wiring: 4-site edit to `scripts/test-acceptance.sh` (source,
+run_check_bg, _p16_specs, collect_parallel) mirroring Phase 15's
+layout; added p15 + p16 fast-runner groups to `scripts/test-acceptance-fast.sh`
+(Phase 15 had no fast-runner group before this pass — fixed in-flight).
+
+**Phases remaining for ADR-0094 backlog**: 17 (check-code property
+tests — fuzz the validators themselves). Phase 16 close brings the
+backlog to a single outstanding phase.
+
+---
+
 ## 2026-04-21 — Phase 15 implemented (flakiness characterization)
 
 Shipped `lib/acceptance-phase15-flakiness.sh` with 6 checks, each of which invokes one read-only MCP tool three times serially with identical input, classifies each response into one of `{success, failure, empty, exit_error}`, and asserts the three classes are identical.
