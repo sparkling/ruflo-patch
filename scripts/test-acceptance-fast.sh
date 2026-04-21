@@ -291,6 +291,27 @@ if [[ "$_FAST_RUN_GROUPS" == *"p14"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"p12"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-phase12-error-quality.sh" ]]; then
+    echo "── Phase 12: Error message quality (ADR-0094) ──"
+    _fast_run "p12-qual-memory-missing"    check_adr0094_p12_quality_memory_missing
+    _fast_run "p12-qual-memory-wtype"      check_adr0094_p12_quality_memory_wrong_type
+    _fast_run "p12-qual-session-missing"   check_adr0094_p12_quality_session_missing
+    _fast_run "p12-qual-session-wtype"     check_adr0094_p12_quality_session_wrong_type
+    _fast_run "p12-qual-agent-missing"     check_adr0094_p12_quality_agent_missing
+    _fast_run "p12-qual-agent-wtype"       check_adr0094_p12_quality_agent_wrong_type
+    _fast_run "p12-qual-claims-missing"    check_adr0094_p12_quality_claims_missing
+    _fast_run "p12-qual-claims-wtype"      check_adr0094_p12_quality_claims_wrong_type
+    _fast_run "p12-qual-workflow-missing"  check_adr0094_p12_quality_workflow_missing
+    _fast_run "p12-qual-workflow-wtype"    check_adr0094_p12_quality_workflow_wrong_type
+    _fast_run "p12-qual-config-missing"    check_adr0094_p12_quality_config_missing
+    _fast_run "p12-qual-config-wtype"      check_adr0094_p12_quality_config_wrong_type
+    _fast_run "p12-qual-neural-missing"    check_adr0094_p12_quality_neural_missing
+    _fast_run "p12-qual-neural-wtype"      check_adr0094_p12_quality_neural_wrong_type
+    # autopilot_enable rows dropped: tool has no required fields (matrix 16→14).
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"p15"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-phase15-flakiness.sh" ]]; then
     echo "── Phase 15: Flakiness characterization (ADR-0094) ──"

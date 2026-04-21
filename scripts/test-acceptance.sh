@@ -1133,9 +1133,11 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase11_lib" ]]; then
   run_check_bg "p11-fuzz-autopilot-bdy"    "P11 autopilot_enable boundary"        check_adr0094_p11_fuzz_autopilot_boundary      "adr0094-p11"
 fi
 
-# ADR-0094 Phase 12: Error message quality (16 checks = 8 classes × 2 reps).
+# ADR-0094 Phase 12: Error message quality (14 checks = 7 classes × 2 reps).
 # Each uses _with_iso_cleanup for per-check isolation. Stricter than P11:
 # errors must name the offending field AND carry a structural hint word.
+# autopilot_enable was the 8th class but has no required fields — its
+# missing/wrong-type probes are inapplicable and were dropped (matrix 16→14).
 if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase12_lib" ]]; then
   run_check_bg "p12-qual-memory-missing"    "P12 memory_store missing field"        check_adr0094_p12_quality_memory_missing       "adr0094-p12"
   run_check_bg "p12-qual-memory-wtype"      "P12 memory_store wrong type"           check_adr0094_p12_quality_memory_wrong_type    "adr0094-p12"
@@ -1151,8 +1153,8 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase12_lib" ]]; then
   run_check_bg "p12-qual-config-wtype"      "P12 config_set wrong type"             check_adr0094_p12_quality_config_wrong_type    "adr0094-p12"
   run_check_bg "p12-qual-neural-missing"    "P12 neural_train missing field"        check_adr0094_p12_quality_neural_missing       "adr0094-p12"
   run_check_bg "p12-qual-neural-wtype"      "P12 neural_train wrong type"           check_adr0094_p12_quality_neural_wrong_type    "adr0094-p12"
-  run_check_bg "p12-qual-autopilot-missing" "P12 autopilot_enable missing field"    check_adr0094_p12_quality_autopilot_missing    "adr0094-p12"
-  run_check_bg "p12-qual-autopilot-wtype"   "P12 autopilot_enable wrong type"       check_adr0094_p12_quality_autopilot_wrong_type "adr0094-p12"
+  # autopilot_enable rows dropped: tool has no required fields, missing/wtype
+  # probes are inapplicable. Matrix: 8 classes × 2 = 16 → 7 classes × 2 = 14.
 fi
 
 # ADR-0094 Phase 13: Migration backstop (6 checks — vN fixture → vN+1 read).
@@ -1548,8 +1550,7 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase12_lib" ]]; then
     "p12-qual-config-wtype|P12 config_set wrong type"
     "p12-qual-neural-missing|P12 neural_train missing field"
     "p12-qual-neural-wtype|P12 neural_train wrong type"
-    "p12-qual-autopilot-missing|P12 autopilot_enable missing field"
-    "p12-qual-autopilot-wtype|P12 autopilot_enable wrong type"
+    # autopilot rows dropped — see run_check_bg block above for rationale.
   )
 fi
 
