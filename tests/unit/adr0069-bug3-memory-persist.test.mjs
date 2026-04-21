@@ -163,22 +163,34 @@ describe('ADR-0069 Bug #3: memory store persists across CLI invocations outside 
       'mkdir must be recursive (the whole ~/.claude-flow/data/ chain may be missing)');
   });
 
-  it('(source) mkdir failure sets _initFailed and re-throws — no in-memory fallback', () => {
+  it('(source) mkdir failure propagates to the single ADR-0086 circuit-breaker catch', () => {
+    // Post-consolidation (2026-04-21): mkdirSync is inside the outer
+    // createStorage try block so its failure propagates to the ONE
+    // _initFailed = true trip path required by adr0086-behavioral.test.mjs
+    // ("exactly 3 _initFailed assignments: decl + trip + reset").
     const src = readFileSync(ROUTER_SRC, 'utf8');
     const doInitMatch = src.match(
       /async function _doInit\([^)]*\)[^{]*\{([\s\S]*?)\n\}\n/,
     );
     const body = doInitMatch[1];
-    // Find the mkdir try block
-    const mkdirBlock = body.match(
-      /try\s*\{\s*fs\.mkdirSync[\s\S]*?\}\s*catch[\s\S]*?\}/,
+
+    // mkdirSync is still called in _doInit (precondition for per-user path)
+    assert.match(body, /fs\.mkdirSync\s*\(/,
+      'mkdirSync must still be wired before createStorage');
+
+    // It is NOT wrapped in its own try/catch (no duplicate _initFailed assignment)
+    const hasOwnCatch = body.match(
+      /try\s*\{\s*fs\.mkdirSync[\s\S]*?\}\s*catch[\s\S]*?_initFailed\s*=\s*true/,
     );
-    assert.ok(mkdirBlock, 'mkdir must be wrapped in try/catch to surface errors');
-    const block = mkdirBlock[0];
-    assert.match(block, /_initFailed\s*=\s*true/,
-      'mkdir failure must set _initFailed (prevents retry storm)');
-    assert.match(block, /throw\s+new\s+Error/,
-      'mkdir failure must re-throw — never silently fall back (ADR-0082)');
+    assert.equal(hasOwnCatch, null,
+      'mkdirSync must NOT have its own _initFailed-setting catch — outer ' +
+      'createStorage catch handles all init failures');
+
+    // The outer catch still trips + re-throws (single path for all init failures)
+    assert.match(body, /_initFailed\s*=\s*true/,
+      'outer init catch must trip _initFailed');
+    assert.match(body, /throw\s+new\s+Error\s*\(\s*['"]Storage initialization failed/,
+      'outer init catch must re-throw — never silently fall back (ADR-0082)');
   });
 
   it('(functional) outside project context → ~/.claude-flow/data/memory.rvf', () => {
