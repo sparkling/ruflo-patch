@@ -22,7 +22,7 @@
 #   security   — sec-controllers, sec-ratelimit, sec-breaker, sec-resource,
 #                sec-composition, sec-wiring, sec-quantize, sec-health-rpt
 #   attention  — (ADR-0082: deferred — attention tools absent from published package)
-#   adr0069-f3 — (ADR-0082: deferred — attention tools absent from published package)
+#   adr0069-f3 — adr0069-f3-booster (WASM attention checks deferred per ADR-0082)
 #   adr0071    — adr0071-no-ruvector, adr0071-node-binary
 #   e2e        — e2e-memory-store, e2e-hooks-route, e2e-causal-edge,
 #                e2e-reflexion-store, e2e-batch-optimize
@@ -408,6 +408,14 @@ adr0069_lib="${PROJECT_DIR}/lib/acceptance-adr0069-checks.sh"
 adr0069_init_lib="${PROJECT_DIR}/lib/acceptance-adr0069-init-checks.sh"
 [[ -f "$adr0069_init_lib" ]] && source "$adr0069_init_lib"
 
+# ADR-0069 F3: Enhanced Booster tool wiring (F1 §2 follow-up)
+adr0069_f3_lib="${PROJECT_DIR}/lib/acceptance-adr0069-f3-checks.sh"
+[[ -f "$adr0069_f3_lib" ]] && source "$adr0069_f3_lib"
+
+# ADR-0069 Bug #3: memory store persistence outside init context
+adr0069_bug3_lib="${PROJECT_DIR}/lib/acceptance-adr0069-bug3-checks.sh"
+[[ -f "$adr0069_bug3_lib" ]] && source "$adr0069_bug3_lib"
+
 # ADR-0059 Phase 3: Unified MCP search
 adr0059_p3_lib="${PROJECT_DIR}/lib/acceptance-adr0059-phase3-checks.sh"
 [[ -f "$adr0059_p3_lib" ]] && source "$adr0059_p3_lib"
@@ -697,6 +705,9 @@ run_check_bg "adr0069-init-port"  "Init has ports keys (ADR-0069)"         check
 run_check_bg "adr0069-init-rl"    "Init has rateLimiter (ADR-0069)"        check_init_has_ratelimiter_keys           "adr0069"
 run_check_bg "adr0069-init-work"  "Init has workers keys (ADR-0069)"       check_init_has_workers_keys              "adr0069"
 
+# ADR-0069 Bug #3: store/retrieve persists across invocations outside init
+run_check_bg "adr0069-bug3-persist" "Memory persist outside init (ADR-0069 Bug #3)" check_adr0069_bug3_store_persist_outside_init "adr0069"
+
 # security & reliability (ADR-0040/0041/0042/0043/0045)
 run_check_bg "sec-composition"  "Controller composition"           check_controller_composition   "security"
 run_check_bg "sec-rl-consumed"  "Rate limit token consumed"        check_rate_limit_consumed       "security"
@@ -733,6 +744,14 @@ run_check_bg "init-config-vals"  "Config values"              check_init_config_
 # run_check_bg "f3-unified-bin"   "Attention unified WASM binary (F3)"    check_attention_unified_wasm_has_binary "adr0069-f3"
 # run_check_bg "f3-wasm-load"     "Attention WASM loadable (F3)"          check_attention_wasm_loadable           "adr0069-f3"
 # run_check_bg "f3-mech-count"    "Attention mechanisms >= 18 (F3)"       check_attention_mechanisms_count        "adr0069-f3"
+
+# ADR-0069 F1 §2 follow-up: Enhanced Agent Booster MCP tools wired into stdio-full
+run_check_bg "adr0069-f3-booster" "Enhanced Booster tools wired (ADR-0069 F3 §2)" check_adr0069_f3_booster_tools_registered "adr0069-f3"
+
+# ADR-0069 F1 §3 / F3 §3 follow-up: ONNX tier wired in upgradeEmbeddingService fallback chain
+run_check_bg "adr0069-f3-onnx"    "ONNX tier wired (ADR-0069 F3 §3)"               check_adr0069_f3_onnx_tier_active        "adr0069-f3"
+# ADR-0069 swarm review 2026-04-21 advisory A3: ONNX relative import must resolve at runtime inside tarball
+run_check_bg "adr0069-f3-onnx-rt" "ONNX import resolvable (ADR-0069 F3 §3 A3)"     check_adr0069_f3_onnx_import_resolvable  "adr0069-f3"
 
 # ADR-0071/0072: scope cleanup + native binary bundling
 run_check_bg "adr0071-no-ruvector"  "No @ruvector/ import refs (ADR-0071)"  check_adr0071_no_ruvector_refs     "adr0071"
@@ -1712,6 +1731,9 @@ collect_parallel "all" \
   "adr0069-init-port|Init has ports keys (ADR-0069)" \
   "adr0069-init-rl|Init has rateLimiter (ADR-0069)" \
   "adr0069-init-work|Init has workers keys (ADR-0069)" \
+  "adr0069-f3-booster|Enhanced Booster tools wired (ADR-0069 F3 §2)" \
+  "adr0069-f3-onnx|ONNX tier wired (ADR-0069 F3 §3)" \
+  "adr0069-bug3-persist|Memory persist outside init (ADR-0069 Bug #3)" \
   "sec-composition|Controller composition" \
   "sec-rl-consumed|Rate limit token consumed" "sec-health-comp|Health composite count" \
   "sec-quantize|Quantize status (B9)" "sec-health-rpt|Health report (B3)" \

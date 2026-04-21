@@ -1,0 +1,24 @@
+{
+  "adr": "ADR-0094 Phase 13.2",
+  "fixture": "v1-agentdb",
+  "cliPackage": "@sparkleideas/cli",
+  "cliVersion": "3.5.58-patch.216",
+  "registry": "http://localhost:4873",
+  "seededAt": "2026-04-20T22:43:45Z",
+  "seed": {
+    "skillName": "p13-2-skill",
+    "skillDescription": "phase 13.2 migration sentinel skill",
+    "reflexionSessionId": "p13-2-session",
+    "reflexionTask": "p13-2 reflexion sentinel: migration-survived"
+  },
+  "rowCounts": {
+    "skills": 1,
+    "episodes": 1,
+    "reasoning_patterns": 0,
+    "causal_edges": 0,
+    "learning_sessions": 0
+  },
+  "files": [
+    {"path": ".swarm/memory.db", "sha256": "a45f709997c1399621d952e44ca97ba64dbad2e87723f8f1683ec725b7adb945", "bytes": 225280}
+  ]
+}

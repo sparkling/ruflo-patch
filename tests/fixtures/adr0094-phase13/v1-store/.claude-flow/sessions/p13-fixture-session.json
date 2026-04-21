@@ -1,0 +1,14 @@
+{
+  "sessionId": "p13-fixture-session",
+  "name": "p13",
+  "description": "ADR-0094 Phase 13 hand-crafted v1 session fixture",
+  "savedAt": "2026-04-18T00:00:00.000Z",
+  "stats": {
+    "memoryEntries": 0,
+    "tasks": 0,
+    "agents": 0,
+    "workflows": 0,
+    "totalSize": 0
+  },
+  "data": {}
+}

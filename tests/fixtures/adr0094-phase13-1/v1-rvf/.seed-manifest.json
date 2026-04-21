@@ -1,0 +1,17 @@
+{
+  "adr": "ADR-0094 Phase 13.1",
+  "fixture": "v1-rvf",
+  "cliPackage": "@sparkleideas/cli",
+  "cliVersion": "3.5.58-patch.216",
+  "registry": "http://localhost:4873",
+  "seededAt": "2026-04-20T22:43:11Z",
+  "seed": {
+    "key": "p13rvf-sentinel",
+    "value": "migration-works-v1",
+    "namespace": "p13rvf"
+  },
+  "files": [
+    {"path": ".swarm/memory.rvf", "sha256": "dd79f0afa007a36bbebb9349ad2ffd6b33ead95a7601411d727eeb84f87929cf", "bytes": 3655},
+    {"path": ".swarm/memory.rvf.meta", "sha256": "8a7651b5bf1121571e43d684d4d09b8e1a1de6f173b4b74d68dd5ec10f5c18c7", "bytes": 16673}
+  ]
+}

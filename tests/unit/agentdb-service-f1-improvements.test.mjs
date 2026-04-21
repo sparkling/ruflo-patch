@@ -124,13 +124,26 @@ describe('F1 improvement: Embedder propagation', () => {
 });
 
 // ============================================================================
-// Group 2: ONNX fallback chain — ONNX > Enhanced > basic
+// Group 2: Fallback-chain shape tests — ONNX → Enhanced → Basic.
+// ----------------------------------------------------------------------------
+// Status (2026-04-21, ADR-0069 F3 §3 closure):
+//
+// These tests exercise a local `createEmbedderChain()` helper that mirrors
+// the SHAPE of upgradeEmbeddingService() in the fork. They intentionally do
+// not import the TypeScript source (the test harness runs plain .mjs without
+// a TS loader). Instead, Group 2b below performs a source-level reality pin
+// to verify the fork actually implements this shape: ONNX is attempted first,
+// Enhanced is attempted on ONNX failure, Basic survives as last-resort.
+//
+// If you change the chain order in the fork, update BOTH Group 2 (intent)
+// and Group 2b (reality pin).
 // ============================================================================
 
-describe('F1 improvement: ONNX fallback chain', () => {
+describe('F1: ONNX > Enhanced > basic fallback chain (shape)', () => {
 
   function createEmbedderChain({ onnxFactory, enhancedFactory, basicFactory }) {
-    // Mirrors the 3-tier fallback: ONNX → Enhanced → basic
+    // Mirrors the shipped 3-tier fallback: ONNX → Enhanced → basic.
+    // Group 2b below pins the fork source to confirm this shape is implemented.
     const result = { embedder: null, tier: null, errors: [] };
 
     // Tier 1: try ONNX
@@ -236,6 +249,182 @@ describe('F1 improvement: ONNX fallback chain', () => {
     assert.strictEqual(result.embedder, onnxEmb,
       'ONNX must be selected over Enhanced when both are available');
     assert.equal(result.tier, 'onnx');
+  });
+});
+
+// ============================================================================
+// Group 2b: Reality pin — verify the fork source actually implements the
+// ONNX → Enhanced → Basic chain shape that Group 2 describes. Source-level
+// inspection is used because the fork is TypeScript and importing it from a
+// node --test .mjs harness would require a TS loader we don't run here.
+// (ADR-0069 F3 §3 closure — 2026-04-21)
+// ============================================================================
+
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
+
+const __thisDir = dirname(fileURLToPath(import.meta.url));
+const AGENTDB_SERVICE_TS = resolve(
+  __thisDir,
+  '../../../forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts'
+);
+
+// Slice out the body of upgradeEmbeddingService so we can assert order of
+// tiers without false positives from unrelated references elsewhere in the
+// file (controllers also mention EnhancedEmbeddingService in passing).
+function extractUpgradeFnBody(src) {
+  const start = src.search(/private\s+async\s+upgradeEmbeddingService\s*\(/);
+  if (start < 0) return null;
+  // Find the opening brace after the signature
+  const braceIdx = src.indexOf('{', start);
+  if (braceIdx < 0) return null;
+  // Walk balanced braces to find the end of the function body
+  let depth = 0;
+  for (let i = braceIdx; i < src.length; i++) {
+    const c = src[i];
+    if (c === '{') depth++;
+    else if (c === '}') {
+      depth--;
+      if (depth === 0) return src.slice(braceIdx, i + 1);
+    }
+  }
+  return null;
+}
+
+describe('F1 reality: upgradeEmbeddingService shipped shape (ONNX -> Enhanced -> Basic)', () => {
+
+  it('fork source file exists and is readable', () => {
+    assert.ok(
+      existsSync(AGENTDB_SERVICE_TS),
+      `expected fork source at ${AGENTDB_SERVICE_TS} — adjust path if the fork layout changed`
+    );
+  });
+
+  it('defines a private upgradeEmbeddingService() method', () => {
+    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
+    assert.match(
+      src,
+      /private\s+async\s+upgradeEmbeddingService\s*\(/,
+      'upgradeEmbeddingService must be a private async method in the fork'
+    );
+  });
+
+  it('imports ONNXEmbeddingService as tier 1', () => {
+    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
+    const body = extractUpgradeFnBody(src);
+    assert.ok(body, 'could not extract upgradeEmbeddingService function body');
+    assert.match(
+      body,
+      /ONNXEmbeddingService/,
+      'upgradeEmbeddingService must reference ONNXEmbeddingService (tier 1)'
+    );
+    assert.match(
+      body,
+      /packages\/agentdb-onnx\/src\/services\/ONNXEmbeddingService/,
+      'upgradeEmbeddingService must dynamic-import ONNXEmbeddingService from the local agentdb-onnx package'
+    );
+  });
+
+  it('still references EnhancedEmbeddingService as tier 2', () => {
+    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
+    const body = extractUpgradeFnBody(src);
+    assert.ok(body);
+    assert.match(
+      body,
+      /EnhancedEmbeddingService/,
+      'upgradeEmbeddingService must reference EnhancedEmbeddingService (tier 2)'
+    );
+  });
+
+  it('ONNX tier appears before Enhanced tier in source order (chain ordering)', () => {
+    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
+    const body = extractUpgradeFnBody(src);
+    assert.ok(body);
+    const onnxIdx = body.indexOf('ONNXEmbeddingService');
+    const enhancedIdx = body.indexOf('EnhancedEmbeddingService');
+    assert.ok(onnxIdx >= 0, 'ONNXEmbeddingService must appear in the function body');
+    assert.ok(enhancedIdx >= 0, 'EnhancedEmbeddingService must appear in the function body');
+    assert.ok(
+      onnxIdx < enhancedIdx,
+      `ONNX tier must appear before Enhanced tier in source (found ONNX@${onnxIdx}, Enhanced@${enhancedIdx})`
+    );
+  });
+
+  it('loudly logs tier failures (ADR-0082: no silent fallback)', () => {
+    const src = readFileSync(AGENTDB_SERVICE_TS, 'utf8');
+    const body = extractUpgradeFnBody(src);
+    assert.ok(body);
+    // Extract each catch block with balanced-brace walking (nested braces
+    // such as template literals and object expressions are common inside).
+    const catches = [];
+    let i = 0;
+    while (i < body.length) {
+      const catchMatch = body.slice(i).match(/catch\s*\([^)]*\)\s*\{/);
+      if (!catchMatch) break;
+      const startRel = catchMatch.index;
+      const openBrace = i + startRel + catchMatch[0].length - 1;
+      let depth = 1;
+      let j = openBrace + 1;
+      for (; j < body.length && depth > 0; j++) {
+        if (body[j] === '{') depth++;
+        else if (body[j] === '}') depth--;
+      }
+      catches.push(body.slice(i + startRel, j));
+      i = j;
+    }
+    assert.ok(
+      catches.length >= 2,
+      `expected at least 2 try/catch blocks (ONNX + Enhanced tiers), found ${catches.length}`
+    );
+    for (const c of catches) {
+      assert.match(
+        c,
+        /console\.(warn|error|log)/,
+        `every tier-failure catch block must log loudly (ADR-0082), but found:\n${c.slice(0, 400)}`
+      );
+    }
+  });
+});
+
+// ============================================================================
+// Group 2c: ONNX wiring smoke test — verify the ONNX package ships the
+// expected export surface that upgradeEmbeddingService imports. This prevents
+// a silent regression where the import path in the fork diverges from the
+// actual package contents (the pattern upstream is especially prone to).
+// ============================================================================
+
+describe('F1: ONNX package export surface', () => {
+
+  const ONNX_SRC = resolve(
+    __thisDir,
+    '../../../forks/agentic-flow/packages/agentdb-onnx/src/services/ONNXEmbeddingService.ts'
+  );
+
+  it('agentdb-onnx package source file exists at the imported path', () => {
+    assert.ok(
+      existsSync(ONNX_SRC),
+      `agentdb-onnx service must exist at ${ONNX_SRC} — update fork import path if layout changed`
+    );
+  });
+
+  it('exports a class named ONNXEmbeddingService', () => {
+    const src = readFileSync(ONNX_SRC, 'utf8');
+    assert.match(
+      src,
+      /export\s+class\s+ONNXEmbeddingService\b/,
+      'agentdb-onnx must export class ONNXEmbeddingService'
+    );
+  });
+
+  it('class exposes async initialize(), embed(), embedBatch()', () => {
+    const src = readFileSync(ONNX_SRC, 'utf8');
+    assert.match(src, /async\s+initialize\s*\(/,
+      'ONNXEmbeddingService must expose async initialize()');
+    assert.match(src, /async\s+embed\s*\(/,
+      'ONNXEmbeddingService must expose async embed()');
+    assert.match(src, /async\s+embedBatch\s*\(/,
+      'ONNXEmbeddingService must expose async embedBatch()');
   });
 });
 

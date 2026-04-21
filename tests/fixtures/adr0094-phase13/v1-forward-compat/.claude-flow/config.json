@@ -1,0 +1,6 @@
+{
+  "schema": 1,
+  "memory": { "backend": "rvf" },
+  "telemetry": { "enabled": false },
+  "unknownFutureKey": { "x": 42 }
+}

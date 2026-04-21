@@ -95,7 +95,13 @@ function applyNameMapping(name) {
 // -- Phase 1: package.json transform ------------------------------------------
 
 const DEP_FIELDS = ['dependencies', 'peerDependencies', 'optionalDependencies', 'peerDependenciesMeta'];
-const KEY_RENAME_FIELDS = ['bin', 'exports'];
+// NOTE: `bin` is intentionally excluded. Bin keys are POSIX executable names
+// (e.g., "ruflo", "claude-flow") — npm rejects `/` in them, so the UNSCOPED_MAP
+// rewrite (`ruflo` → `@sparkleideas/ruflo`) produces an invalid bin entry.
+// `exports` keys are subpath specifiers (".", "./services/*"), not package
+// names, and do not intersect UNSCOPED_MAP; mapping them is a no-op, but we
+// keep the pathway for future-proofing conditional exports that might match.
+const KEY_RENAME_FIELDS = ['exports'];
 
 /**
  * Transform a package.json object in place.
