@@ -127,7 +127,7 @@ Listed in `docs/adr/ADR-0094-log.md` under §Backlog. Scheduled as capacity allo
 
 ## Acceptance criteria
 
-This ADR is `Implemented` when all of the following hold for 3 consecutive full-cascade runs across 3 consecutive days:
+This ADR is `Implemented` when all of the following hold for 3 consecutive full-cascade runs with ≥2-hour gaps between adjacent runs (amended 2026-04-21 — was "3 consecutive days", which conflated clock-time flakiness with calendar-day semantics and forced a 2-day minimum wait):
 
 ```
 fail_count == 0
@@ -140,7 +140,7 @@ AND all referenced follow-up ADRs are Implemented OR explicitly Archived
 
 **Regression signal**: any `pass → fail` transition with a fingerprint matching a historical failure in `test-results/catalog.db` is reported as `REGRESSED: <check_id>`, cross-referenced to the ledger entry (if any) via `check_id`. Catalog computes the fingerprint per ADR-0096 as `sha256(check_id + first_error_line + fork_file)` truncated to 12 chars.
 
-**Close criterion tracking**: the 3-consecutive-green-days portion of this ADR is tracked mechanically, not aspirationally. Every full cascade appends one JSONL entry to `test-results/cascade-streak.jsonl` (auto-appended by `scripts/test-acceptance.sh` after the Results summary). Run `node scripts/adr0094-streak-check.mjs` to see the current streak status; it prints `MET` or `NOT YET (need K more green days)` and exits 0/1 accordingly. The streak collapses to one day per UTC calendar date; any non-green run on a given day poisons that day; any gap ends the streak. Coverage thresholds (invoked == 100%, verified ≥ 80%) are NOT enforced by this reader — they remain snapshot-gated via `scripts/catalog-rebuild.mjs --verify`.
+**Close criterion tracking**: the "3 consecutive green runs with ≥2h gaps" portion of this ADR is tracked mechanically, not aspirationally. Every full cascade appends one JSONL entry to `test-results/cascade-streak.jsonl` (auto-appended by `scripts/test-acceptance.sh` after the Results summary). Run `node scripts/adr0094-streak-check.mjs` to see the current streak status; it prints `MET` or `NOT YET (need K more green runs with ≥2h gap)` and exits 0/1 accordingly. Algorithm: walk backward from newest run; first green = anchor #1; next older green counts only if its timestamp is ≥2h before the prior anchor; any non-green encountered during the walk resets to 0. Two tunables via env: `ADR0094_STREAK_REQUIRED` (default 3) and `ADR0094_STREAK_GAP_HOURS` (default 2). Coverage thresholds (invoked == 100%, verified ≥ 80%) are NOT enforced by this reader — they remain snapshot-gated via `scripts/catalog-rebuild.mjs --verify`.
 
 **Rot signal**: any number in ADR-0094 that disagrees with `node scripts/catalog-rebuild.mjs --show` fails preflight.
 

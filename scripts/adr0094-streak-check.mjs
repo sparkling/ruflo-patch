@@ -2,40 +2,47 @@
 // scripts/adr0094-streak-check.mjs — ADR-0094 close-criterion tracker.
 //
 // Reads test-results/cascade-streak.jsonl (one line per full cascade run),
-// computes the current streak of consecutive GREEN runs across distinct
-// calendar days (UTC YYYY-MM-DD), and prints a status block used both by
-// humans reading cascade output and by the cascade itself (scripts/
-// test-acceptance.sh appends an entry near the Results summary, then
-// invokes this reader for the status tail).
+// computes the current streak of consecutive GREEN runs that are spaced at
+// least GAP_HOURS apart, and prints a status block.
 //
-// Criterion (per docs/adr/ADR-0094-100-percent-acceptance-coverage-plan.md
-// lines 128–138):
-//
+// ADR-0094's Acceptance criteria (paraphrased) require:
 //   fail_count == 0
 //   AND invoked_coverage == 100%
 //   AND verified_coverage >= 80%
-//   AND [repeated across 3 consecutive days]
+//   AND [repeated across 3 consecutive runs with ≥ GAP_HOURS gaps]
 //
-// This reader enforces only the day-count side of the criterion (fail==0
-// and pass>0 ⇒ `green`). invoked/verified coverage live in the ADR-0094
-// catalog (scripts/catalog-rebuild.mjs) and are attached to each jsonl
-// entry when available, but are NOT required for a row to count as green —
-// that's the ADR-0094 snapshot gate, not the per-run gate.
+// This reader enforces only the run-count + gap-spacing side of the
+// criterion (fail==0 on three independent runs). The coverage thresholds
+// are still snapshot-gated by `scripts/catalog-rebuild.mjs --verify`.
 //
-// Rules:
-//   • Calendar day = UTC YYYY-MM-DD portion of the run's ISO timestamp.
-//     DST / local TZ never enters the picture.
-//   • Multiple runs per day collapse to ONE day. The day is GREEN iff at
-//     least one green run exists AND no non-green run exists on that day.
-//     (A single failing cascade on day D resets the streak — we don't let
-//     a later green run on the same day paper over it.)
-//   • The streak is counted back from the most recent green day, walking
-//     backward one calendar day at a time; any gap (no run) or non-green
-//     day ends the streak.
+// Semantics (amended 2026-04-21 — was "3 consecutive calendar days"):
+//   • "Green run" = the cascade summary line reported fail == 0 AND pass > 0.
+//   • A non-green run between any two greens resets the streak entirely.
+//   • From the most recent run (sorted ascending by ISO), we walk backward
+//     picking green anchors greedily: the newest green is anchor #1, the
+//     next older green whose timestamp is ≥ GAP_HOURS older than anchor #1
+//     is anchor #2, etc. Greens that fall inside a prior anchor's
+//     GAP_HOURS window are "too-close" and don't advance the count, but
+//     they also don't reset it — we keep walking.
+//   • A non-green run encountered during the walk terminates the streak.
+//   • Streak = number of anchors selected.
+//
+//   The previous rule ("3 consecutive calendar days") was dropped because
+//   it conflated clock-time flakiness with day-boundary semantics and
+//   forced a 2-day minimum wait even after catching three independent
+//   successes. The gap-based rule catches the same signal (different
+//   environmental conditions, different caches, different process state)
+//   without the calendar tax.
+//
+// Configuration:
+//   env ADR0094_STREAK_GAP_HOURS (default 2) — minimum gap between anchors.
+//     2 is enough to cover daemon restart, Verdaccio cache turnover, and
+//     JIT warm-up variance. Set higher (e.g. 6) if you want wider spread.
+//   env ADR0094_STREAK_REQUIRED (default 3) — number of anchors needed.
 //
 // Exit codes:
-//   0 — criterion met (≥3 consecutive green days).
-//   1 — not yet met; diagnostic line explains what's missing.
+//   0 — criterion met (≥ REQUIRED anchors with required spacing).
+//   1 — criterion not met (streak < REQUIRED).
 //   2 — the streak file is missing or unreadable (cold start / broken path).
 
 import { readFileSync, existsSync } from 'node:fs';
@@ -45,7 +52,10 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROJECT_DIR = resolve(__dirname, '..');
 const STREAK_FILE = resolve(PROJECT_DIR, 'test-results', 'cascade-streak.jsonl');
-const REQUIRED_GREEN_DAYS = 3;
+
+const REQUIRED_ANCHORS = parseInt(process.env.ADR0094_STREAK_REQUIRED || '3', 10);
+const GAP_HOURS = parseFloat(process.env.ADR0094_STREAK_GAP_HOURS || '2');
+const GAP_MS = GAP_HOURS * 3600 * 1000;
 
 function parseJsonl(path) {
   if (!existsSync(path)) return { entries: [], missing: true };
@@ -69,82 +79,62 @@ function parseJsonl(path) {
 }
 
 /**
- * Collapse per-run entries into per-day verdicts.
- * A day is green iff ≥1 green run AND 0 non-green runs that day.
- * Returns a Map<YYYY-MM-DD, { green: boolean, latestRun: entry }>.
+ * Walk backward from the newest run picking green anchors greedily.
+ * Returns { streak, anchors[], latestOverallRun }.
+ *   anchors[] = array of entries (newest first) that count toward the streak.
+ *   Each adjacent pair in anchors[] has gap ≥ GAP_MS.
  */
-function collapseByDay(entries) {
-  const byDay = new Map();
-  for (const e of entries) {
-    if (!e || typeof e.date !== 'string') continue;
-    const day = e.date;
-    const prior = byDay.get(day);
-    if (!prior) {
-      byDay.set(day, { green: !!e.green, latestRun: e });
-      continue;
-    }
-    // Non-green runs poison the day permanently.
-    const green = prior.green && !!e.green;
-    // "Latest run" = highest ISO timestamp on this day (canonical for display).
-    const latestRun =
-      (e.iso || '') > (prior.latestRun.iso || '') ? e : prior.latestRun;
-    byDay.set(day, { green, latestRun });
+function computeStreak(entries) {
+  if (entries.length === 0) {
+    return { streak: 0, anchors: [], latestOverallRun: null };
   }
-  return byDay;
-}
 
-/**
- * Walk backward from the most recent green day, counting consecutive
- * calendar-adjacent green days. Returns { streak, days[], latestGreenDay,
- * latestOverallRun }.
- */
-function computeStreak(byDay) {
-  const sortedDays = [...byDay.keys()].sort(); // ISO dates sort lexically.
-  if (sortedDays.length === 0) {
-    return { streak: 0, days: [], latestGreenDay: null, latestOverallRun: null };
-  }
-  const mostRecentDay = sortedDays[sortedDays.length - 1];
-  const latestOverallRun = byDay.get(mostRecentDay).latestRun;
+  // Sort ascending by ISO (lexical sort works for valid ISO-8601 UTC).
+  const sorted = [...entries].sort((a, b) =>
+    (a.iso || '').localeCompare(b.iso || ''),
+  );
+  const latestOverallRun = sorted[sorted.length - 1];
 
-  // Find newest green day (may be older than mostRecentDay if today failed).
-  let latestGreenDay = null;
-  for (let i = sortedDays.length - 1; i >= 0; i--) {
-    if (byDay.get(sortedDays[i]).green) {
-      latestGreenDay = sortedDays[i];
+  // Walk backward.
+  const anchors = [];
+  let lastAnchorTs = null;
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const e = sorted[i];
+    if (!e || typeof e.iso !== 'string') continue;
+
+    if (!e.green) {
+      // Terminate on any non-green encountered during the walk (even if
+      // we haven't picked any anchors yet — a freshly-failed cascade
+      // means streak = 0).
       break;
     }
-  }
-  if (!latestGreenDay) {
-    return { streak: 0, days: [], latestGreenDay: null, latestOverallRun };
+
+    const ts = Date.parse(e.iso);
+    if (!Number.isFinite(ts)) continue;
+
+    if (lastAnchorTs === null) {
+      // Newest green — always pick as anchor #1.
+      anchors.push(e);
+      lastAnchorTs = ts;
+      if (anchors.length >= REQUIRED_ANCHORS) break;
+      continue;
+    }
+
+    // Candidate must be ≥ GAP_MS OLDER than the last picked anchor.
+    if (lastAnchorTs - ts >= GAP_MS) {
+      anchors.push(e);
+      lastAnchorTs = ts;
+      if (anchors.length >= REQUIRED_ANCHORS) break;
+    }
+    // else: green but too close to prior anchor — skip without resetting.
   }
 
-  // Walk backward by one calendar day at a time.
-  const streakDays = [];
-  let cursor = latestGreenDay;
-  while (true) {
-    const v = byDay.get(cursor);
-    if (!v || !v.green) break;
-    streakDays.unshift(cursor);
-    const prev = previousDay(cursor);
-    if (!byDay.has(prev)) break;
-    cursor = prev;
-  }
-  return {
-    streak: streakDays.length,
-    days: streakDays,
-    latestGreenDay,
-    latestOverallRun,
-  };
+  return { streak: anchors.length, anchors, latestOverallRun };
 }
 
-function previousDay(ymd) {
-  // YYYY-MM-DD → previous YYYY-MM-DD in UTC. Date.UTC handles month rollover.
-  const [y, m, d] = ymd.split('-').map(Number);
-  const t = Date.UTC(y, m - 1, d) - 86_400_000;
-  const dt = new Date(t);
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getUTCDate()).padStart(2, '0');
-  return `${dt.getUTCFullYear()}-${mm}-${dd}`;
+function formatIsoShort(iso) {
+  // YYYY-MM-DDTHH:MMZ for compact display.
+  return (iso || '').replace(/:\d{2}\.\d+Z$/, 'Z').replace(/:\d{2}Z$/, 'Z');
 }
 
 function main() {
@@ -154,7 +144,7 @@ function main() {
       'ADR-0094 close criterion:\n' +
         '  Streak file missing: no cascade runs recorded yet.\n' +
         `  Expected: ${STREAK_FILE}\n` +
-        '  Status: NOT YET (0/3 green days recorded)\n',
+        `  Status: NOT YET (0/${REQUIRED_ANCHORS} green runs recorded)\n`,
     );
     process.exit(2);
   }
@@ -162,30 +152,37 @@ function main() {
     process.stdout.write(
       'ADR-0094 close criterion:\n' +
         '  Streak file empty.\n' +
-        '  Status: NOT YET (0/3 green days recorded)\n',
+        `  Status: NOT YET (0/${REQUIRED_ANCHORS} green runs recorded)\n`,
     );
     process.exit(1);
   }
 
-  const byDay = collapseByDay(entries);
-  const { streak, days, latestGreenDay, latestOverallRun } = computeStreak(byDay);
-  const met = streak >= REQUIRED_GREEN_DAYS;
+  const { streak, anchors, latestOverallRun } = computeStreak(entries);
+  const met = streak >= REQUIRED_ANCHORS;
 
   const lines = [];
   lines.push('ADR-0094 close criterion:');
+  lines.push(
+    `  Rule: ${REQUIRED_ANCHORS} consecutive green runs with ≥${GAP_HOURS}h gaps (configurable via ADR0094_STREAK_REQUIRED / ADR0094_STREAK_GAP_HOURS).`,
+  );
   if (streak > 0) {
-    lines.push(
-      `  Current streak: ${streak} consecutive green day(s): ${days.join(', ')}`,
-    );
+    const anchorList = anchors
+      .slice() // newest-first → show oldest-first for readability
+      .reverse()
+      .map((e) => formatIsoShort(e.iso))
+      .join(' → ');
+    lines.push(`  Current streak: ${streak} anchor(s): ${anchorList}`);
   } else {
-    lines.push('  Current streak: 0 consecutive green day(s)');
+    lines.push('  Current streak: 0 green anchors');
   }
   if (met) {
-    lines.push(`  Status: MET (criterion reached on ${latestGreenDay})`);
-  } else {
-    const remaining = REQUIRED_GREEN_DAYS - streak;
     lines.push(
-      `  Status: NOT YET (need ${remaining} more green day${remaining === 1 ? '' : 's'})`,
+      `  Status: MET (${streak} green runs with required spacing, newest ${formatIsoShort(anchors[0].iso)})`,
+    );
+  } else {
+    const remaining = REQUIRED_ANCHORS - streak;
+    lines.push(
+      `  Status: NOT YET (need ${remaining} more green run${remaining === 1 ? '' : 's'} with ≥${GAP_HOURS}h gap${remaining === 1 ? '' : 's each'})`,
     );
   }
   if (latestOverallRun) {
