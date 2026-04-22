@@ -104,7 +104,11 @@ check_adr0068_hnsw_config() {
   fi
 
   local actual_m actual_efc actual_efs actual_dim actual_model
-  actual_m=$(python3 -c "import json; print(json.load(open('$emb_file'))['hnsw']['m'])" 2>/dev/null)
+  # ADR-0065 canonical casing is uppercase "M" (see config-template.ts and
+  # executor.ts — both emit "M"). Unit tests in adr0080-maxelements.test.mjs
+  # enforce uppercase: lowercase "m" is explicitly rejected. Accept both for
+  # defensive reading, but expect uppercase.
+  actual_m=$(python3 -c "import json; h=json.load(open('$emb_file'))['hnsw']; print(h.get('M', h.get('m')))" 2>/dev/null)
   actual_efc=$(python3 -c "import json; print(json.load(open('$emb_file'))['hnsw']['efConstruction'])" 2>/dev/null)
   actual_efs=$(python3 -c "import json; print(json.load(open('$emb_file'))['hnsw']['efSearch'])" 2>/dev/null)
   actual_dim=$(python3 -c "import json; print(json.load(open('$emb_file'))['dimension'])" 2>/dev/null)

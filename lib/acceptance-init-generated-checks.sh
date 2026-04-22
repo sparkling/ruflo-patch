@@ -14,10 +14,17 @@ _p5_cfg() {
   node -e "const c=JSON.parse(require('fs').readFileSync('$P5_DIR/.claude-flow/config.json','utf-8')); console.log($1)" 2>/dev/null
 }
 
-# Helper: read a JSON path from the embeddings section of config.json
-# (init puts embeddings under config.json, not a separate embeddings.json)
+# Helper: read a JSON path from the dedicated embeddings.json file.
+# ADR-0070 / ADR-0080: executor.ts writes .claude-flow/embeddings.json as the
+# source of truth for embeddings config. config.json has a mirror under
+# memory.embeddings (for source-inspection tests), but the canonical file is
+# embeddings.json — that's where fields like hnsw.maxElements live.
+# The JS variable name is kept as `c` for historical compatibility with how
+# callers write expressions (e.g. `c.embeddings?.hnsw?.M`). The `embeddings`
+# wrapper normalises both real-world shapes: this file is flat at top-level,
+# but callers think in terms of `c.embeddings.*`.
 _p5_emb() {
-  node -e "const c=JSON.parse(require('fs').readFileSync('$P5_DIR/.claude-flow/config.json','utf-8')); console.log($1)" 2>/dev/null
+  node -e "const e=JSON.parse(require('fs').readFileSync('$P5_DIR/.claude-flow/embeddings.json','utf-8')); const c={embeddings:e}; console.log($1)" 2>/dev/null
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -144,30 +151,38 @@ check_p5_config_maxcpu() {
 }
 
 # ══════════════════════════════════════════════════════════════════════════════
-# Group 2: embeddings values (inside config.json under "embeddings" key)
-# init puts embeddings config in config.json, not a separate embeddings.json.
+# Group 2: embeddings values (in .claude-flow/embeddings.json)
+# ADR-0070 / ADR-0080: executor.ts writes .claude-flow/embeddings.json as the
+# source of truth for embeddings config. config.json has a mirror under
+# memory.embeddings (used by source-inspection tests), but these runtime
+# checks read the canonical embeddings.json file.
 # ══════════════════════════════════════════════════════════════════════════════
 
 check_p5_embeddings_valid_json() {
   _CHECK_PASSED="false"
-  local cfg="$P5_DIR/.claude-flow/config.json"
-  if [[ ! -f "$cfg" ]]; then
-    _CHECK_OUTPUT="P5: config.json not found (embeddings check)"
+  local emb="$P5_DIR/.claude-flow/embeddings.json"
+  if [[ ! -f "$emb" ]]; then
+    _CHECK_OUTPUT="P5: embeddings.json not found (init --with-embeddings failed?)"
     return
   fi
-  local val; val=$(node -e "const c=JSON.parse(require('fs').readFileSync('$cfg','utf-8')); console.log(typeof c.embeddings)" 2>/dev/null)
+  # Verify valid JSON AND that the canonical top-level fields exist (model,
+  # dimension, hnsw). The fork's executor.ts writes all three.
+  local val; val=$(node -e "
+    const e=JSON.parse(require('fs').readFileSync('$emb','utf-8'));
+    console.log(typeof e === 'object' && typeof e.hnsw === 'object' && typeof e.model === 'string' ? 'object' : typeof e);
+  " 2>/dev/null)
   if [[ "$val" == "object" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="P5: config.json has embeddings section"
+    _CHECK_OUTPUT="P5: embeddings.json is valid JSON with model/hnsw keys"
   else
-    _CHECK_OUTPUT="P5: config.json missing embeddings section (got: ${val:-nothing})"
+    _CHECK_OUTPUT="P5: embeddings.json missing expected structure (got: ${val:-nothing})"
   fi
 }
 
 check_p5_embeddings_model() {
   _CHECK_PASSED="false"
-  local cfg="$P5_DIR/.claude-flow/config.json"
-  [[ ! -f "$cfg" ]] && { _CHECK_OUTPUT="P5: config.json not found"; return; }
+  local emb="$P5_DIR/.claude-flow/embeddings.json"
+  [[ ! -f "$emb" ]] && { _CHECK_OUTPUT="P5: embeddings.json not found"; return; }
   local val; val=$(_p5_emb "c.embeddings?.model")
   if [[ "$val" == *mpnet* ]]; then
     _CHECK_PASSED="true"
@@ -179,8 +194,8 @@ check_p5_embeddings_model() {
 
 check_p5_embeddings_dimension() {
   _CHECK_PASSED="false"
-  local cfg="$P5_DIR/.claude-flow/config.json"
-  [[ ! -f "$cfg" ]] && { _CHECK_OUTPUT="P5: config.json not found"; return; }
+  local emb="$P5_DIR/.claude-flow/embeddings.json"
+  [[ ! -f "$emb" ]] && { _CHECK_OUTPUT="P5: embeddings.json not found"; return; }
   local val; val=$(_p5_emb "c.embeddings?.dimension")
   if [[ "$val" == "768" ]]; then
     _CHECK_PASSED="true"
@@ -192,8 +207,10 @@ check_p5_embeddings_dimension() {
 
 check_p5_embeddings_hnsw_m() {
   _CHECK_PASSED="false"
-  local cfg="$P5_DIR/.claude-flow/config.json"
-  [[ ! -f "$cfg" ]] && { _CHECK_OUTPUT="P5: config.json not found"; return; }
+  local emb="$P5_DIR/.claude-flow/embeddings.json"
+  [[ ! -f "$emb" ]] && { _CHECK_OUTPUT="P5: embeddings.json not found"; return; }
+  # ADR-0065 canonical casing is uppercase `M`. Unit tests reject lowercase.
+  # Accept both here for defensive reading.
   local val; val=$(_p5_emb "c.embeddings?.hnsw?.M ?? c.embeddings?.hnsw?.m")
   if [[ "$val" == "23" ]]; then
     _CHECK_PASSED="true"
@@ -205,8 +222,8 @@ check_p5_embeddings_hnsw_m() {
 
 check_p5_embeddings_hnsw_efc() {
   _CHECK_PASSED="false"
-  local cfg="$P5_DIR/.claude-flow/config.json"
-  [[ ! -f "$cfg" ]] && { _CHECK_OUTPUT="P5: config.json not found"; return; }
+  local emb="$P5_DIR/.claude-flow/embeddings.json"
+  [[ ! -f "$emb" ]] && { _CHECK_OUTPUT="P5: embeddings.json not found"; return; }
   local val; val=$(_p5_emb "c.embeddings?.hnsw?.efConstruction")
   if [[ "$val" == "100" ]]; then
     _CHECK_PASSED="true"
@@ -218,8 +235,8 @@ check_p5_embeddings_hnsw_efc() {
 
 check_p5_embeddings_hnsw_efs() {
   _CHECK_PASSED="false"
-  local cfg="$P5_DIR/.claude-flow/config.json"
-  [[ ! -f "$cfg" ]] && { _CHECK_OUTPUT="P5: config.json not found"; return; }
+  local emb="$P5_DIR/.claude-flow/embeddings.json"
+  [[ ! -f "$emb" ]] && { _CHECK_OUTPUT="P5: embeddings.json not found"; return; }
   local val; val=$(_p5_emb "c.embeddings?.hnsw?.efSearch")
   if [[ "$val" == "50" ]]; then
     _CHECK_PASSED="true"
@@ -231,8 +248,8 @@ check_p5_embeddings_hnsw_efs() {
 
 check_p5_embeddings_maxel() {
   _CHECK_PASSED="false"
-  local cfg="$P5_DIR/.claude-flow/config.json"
-  [[ ! -f "$cfg" ]] && { _CHECK_OUTPUT="P5: config.json not found"; return; }
+  local emb="$P5_DIR/.claude-flow/embeddings.json"
+  [[ ! -f "$emb" ]] && { _CHECK_OUTPUT="P5: embeddings.json not found"; return; }
   local val; val=$(_p5_emb "c.embeddings?.hnsw?.maxElements")
   if [[ "$val" == "100000" ]]; then
     _CHECK_PASSED="true"
