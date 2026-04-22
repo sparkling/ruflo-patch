@@ -517,6 +517,10 @@ phase16_lib="${PROJECT_DIR}/lib/acceptance-phase16-pii-inverse.sh"
 phase17_lib="${PROJECT_DIR}/lib/acceptance-phase17-validator-fuzzing.sh"
 [[ -f "$phase17_lib" ]] && source "$phase17_lib"
 
+# ADR-0098: Swarm-init sprawl (generator + dedupe)
+adr0098_lib="${PROJECT_DIR}/lib/acceptance-adr0098-checks.sh"
+[[ -f "$adr0098_lib" ]] && source "$adr0098_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1268,6 +1272,17 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase17_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0098: Swarm-init sprawl fix — generator sanitization + handler dedupe.
+# Gated on settings.json like phase 17. Uses its own isolated e2e dirs
+# (via _e2e_isolate) so it doesn't interfere with shared E2E_DIR state.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0098_lib" ]]; then
+  run_check_bg "adr0098-a-no-reflex"   "ADR-0098-A generator has no reflex-init strings"   check_adr0098_a_generator_no_reflex_swarm  "adr0098"
+  run_check_bg "adr0098-b-dedupe"      "ADR-0098-B same-config inits collapse to 1 record" check_adr0098_b_swarm_init_dedupe          "adr0098"
+  run_check_bg "adr0098-c-new-flag"    "ADR-0098-C --new flag bypasses dedupe"             check_adr0098_c_swarm_init_new_flag        "adr0098"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
 # so they block until background memory init + seed completes (~15-30s)
@@ -1637,6 +1652,15 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase17_lib" ]]; then
   )
 fi
 
+_adr0098_specs=()
+if [[ -f "$adr0098_lib" ]]; then
+  _adr0098_specs=(
+    "adr0098-a-no-reflex|ADR-0098-A generator has no reflex-init strings"
+    "adr0098-b-dedupe|ADR-0098-B same-config inits collapse to 1 record"
+    "adr0098-c-new-flag|ADR-0098-C --new flag bypasses dedupe"
+  )
+fi
+
 _e2e_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   _e2e_specs=(
@@ -1973,6 +1997,7 @@ collect_parallel "all" \
   "${_p15_specs[@]}" \
   "${_p16_specs[@]}" \
   "${_p17_specs[@]}" \
+  "${_adr0098_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
