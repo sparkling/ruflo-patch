@@ -1,178 +1,221 @@
 {
-    "version": "3.0.0",
-    "swarm": {
-        "topology": "hierarchical-mesh",
-        "maxAgents": 15,
-        "autoScale": { "enabled": true },
-        "coordinationStrategy": "consensus"
+  "version": "3.0.0",
+  "swarm": {
+    "topology": "hierarchical-mesh",
+    "maxAgents": 15,
+    "autoScale": {
+      "enabled": true
     },
-    "memory": {
-        "backend": "hybrid",
-        "type": "hybrid",
-        "maxElements": 100000,
-        "swarmDir": ".swarm",
-        "migrationBatchSize": 500,
-        "similarityThreshold": 0.7,
-        "dedupThreshold": 0.95,
-        "embeddingCacheSize": 1000,
-        "cleanupIntervalMs": 60000,
-        "storage": {
-            "maxEntries": 1000000
-        },
-        "sqlite": {
-            "cacheSize": -64000,
-            "busyTimeoutMs": 5000,
-            "journalMode": "WAL",
-            "synchronous": "NORMAL"
-        },
-        "learningBridge": {
-            "enabled": true,
-            "sonaMode": "research",
-            "confidenceDecayRate": 0.0008,
-            "accessBoostAmount": 0.05,
-            "consolidationThreshold": 6
-        },
-        "memoryGraph": {
-            "enabled": true,
-            "pageRankDamping": 0.82,
-            "maxNodes": 10000,
-            "similarityThreshold": 0.25
-        }
+    "coordinationStrategy": "consensus"
+  },
+  "memory": {
+    "backend": "hybrid",
+    "type": "hybrid",
+    "maxElements": 100000,
+    "swarmDir": ".swarm",
+    "similarityThreshold": 0.7,
+    "dedupThreshold": 0.95,
+    "embeddingCacheSize": 1000,
+    "cleanupIntervalMs": 60000,
+    "migrationBatchSize": 500,
+    "sqlite": {
+      "cacheSize": -64000,
+      "busyTimeoutMs": 5000,
+      "journalMode": "WAL",
+      "synchronous": "NORMAL"
     },
-    "neural": {
-        "enabled": true,
-        "modelPath": ".claude-flow/neural",
-        "ewcLambda": 2000,
-        "defaultLearningRate": 0.001,
-        "qualityThreshold": 0.5,
-        "learningRates": {
-            "qLearning": 0.1,
-            "sarsa": 0.1,
-            "moe": 0.01,
-            "sona": 0.001,
-            "lora": 0.001
-        }
+    "storage": {
+      "maxEntries": 1000000
     },
-    "hooks": {
-        "enabled": true,
-        "autoExecute": true
+    "learningBridge": {
+      "enabled": true,
+      "sonaMode": "research",
+      "confidenceDecayRate": 0.0008,
+      "accessBoostAmount": 0.05,
+      "consolidationThreshold": 6
     },
-    "mcp": {
-        "autoStart": true,
-        "transport": { "port": 3000 }
+    "memoryGraph": {
+      "enabled": true,
+      "pageRankDamping": 0.82,
+      "maxNodes": 10000,
+      "similarityThreshold": 0.25
+    }
+  },
+  "neural": {
+    "enabled": true,
+    "modelPath": ".claude-flow/neural",
+    "ewcLambda": 2000,
+    "defaultLearningRate": 0.001,
+    "qualityThreshold": 0.5,
+    "learningRates": {
+      "qLearning": 0.1,
+      "sarsa": 0.1,
+      "moe": 0.01,
+      "sona": 0.001,
+      "lora": 0.001
+    }
+  },
+  "mcp": {
+    "autoStart": true,
+    "transport": {
+      "port": 3000
+    }
+  },
+  "ports": {
+    "mcp": 3000,
+    "mcpWebSocket": 3001,
+    "quic": 4433,
+    "federation": 8443,
+    "health": 8080
+  },
+  "hooks": {
+    "enabled": true,
+    "autoExecute": true
+  },
+  "controllers": {
+    "enabled": {
+      "reasoningBank": true,
+      "causalRecall": true,
+      "nightlyLearner": true,
+      "queryOptimizer": false,
+      "auditLogger": false,
+      "batchOperations": false,
+      "attentionService": true,
+      "hierarchicalMemory": false,
+      "memoryConsolidation": false,
+      "hybridSearch": false,
+      "agentMemoryScope": true,
+      "federatedSession": false
     },
-    "controllers": {
-        "enabled": {
-            "reasoningBank": true,
-            "causalRecall": true,
-            "nightlyLearner": true,
-            "queryOptimizer": false,
-            "auditLogger": false,
-            "batchOperations": false,
-            "attentionService": true,
-            "hierarchicalMemory": false,
-            "memoryConsolidation": false,
-            "hybridSearch": false,
-            "agentMemoryScope": true,
-            "federatedSession": false
-        },
-        "nightlyLearner": {
-            "schedule": "0 3 * * *",
-            "maxPatternsPerRun": 500,
-            "rewardThreshold": 0.3,
-            "useEwcConsolidation": true,
-            "ewcLambda": 0.5
-        },
-        "causalRecall": {
-            "maxDepth": 5,
-            "minEdgeWeight": 0.1,
-            "temporalDecay": true,
-            "decayHalfLifeMs": 86400000
-        },
-        "queryOptimizer": {
-            "planCache": true,
-            "maxCachedPlans": 256,
-            "autoIndexHints": true,
-            "vectorCostWeight": 0.6
-        },
-        "selfLearningRvfBackend": {
-            "learningRate": 0.01,
-            "feedbackWindowSize": 100,
-            "autoRerank": true,
-            "minFeedbackCount": 10
-        },
-        "mutationGuard": {
-            "walEnabled": true,
-            "maxMutationsPerTx": 1000,
-            "schemaValidation": true,
-            "allowedNamespaces": []
-        },
-        "attentionService": {
-            "numHeads": 8,
-            "useFlash": true,
-            "useMoE": false,
-            "useHyperbolic": false
-        },
-        "multiHeadAttention": {
-            "numHeads": 8,
-            "topK": 10
-        },
-        "selfAttention": {
-            "topK": 10
-        },
-        "rateLimiter": {
-            "maxRequests": 100
-        },
-        "circuitBreaker": {
-            "failureThreshold": 5,
-            "resetTimeoutMs": 60000
-        },
-        "tieredCache": {
-            "maxSize": 10000,
-            "ttl": 300000
-        },
-        "quantizedVectorStore": {
-            "type": "scalar-8bit"
-        },
-        "solverBandit": {
-            "costWeight": 0.3,
-            "costDecay": 0.05,
-            "explorationBonus": 0.1
-        }
+    "nightlyLearner": {
+      "schedule": "0 3 * * *",
+      "maxPatternsPerRun": 500,
+      "rewardThreshold": 0.3,
+      "useEwcConsolidation": true,
+      "ewcLambda": 0.5
     },
-    "ports": {
-        "mcp": 3000,
-        "mcpWebSocket": 3001,
-        "quic": 4433,
-        "federation": 8443,
-        "health": 8080
+    "causalRecall": {
+      "maxDepth": 5,
+      "minEdgeWeight": 0.1,
+      "temporalDecay": true,
+      "decayHalfLifeMs": 86400000
+    },
+    "queryOptimizer": {
+      "planCache": true,
+      "maxCachedPlans": 256,
+      "autoIndexHints": true,
+      "vectorCostWeight": 0.6
+    },
+    "selfLearningRvfBackend": {
+      "learningRate": 0.01,
+      "feedbackWindowSize": 100,
+      "autoRerank": true,
+      "minFeedbackCount": 10
+    },
+    "mutationGuard": {
+      "walEnabled": true,
+      "maxMutationsPerTx": 1000,
+      "schemaValidation": true,
+      "allowedNamespaces": []
+    },
+    "attentionService": {
+      "numHeads": 8,
+      "useFlash": true,
+      "useMoE": false,
+      "useHyperbolic": false
+    },
+    "multiHeadAttention": {
+      "numHeads": 8,
+      "topK": 10
+    },
+    "selfAttention": {
+      "topK": 10
     },
     "rateLimiter": {
-        "default": { "maxRequests": 100, "windowMs": 60000 },
-        "auth": { "maxRequests": 10, "windowMs": 60000 },
-        "tools": { "maxRequests": 10, "windowMs": 60000 },
-        "memory": { "maxRequests": 100, "windowMs": 60000 },
-        "files": { "maxRequests": 50, "windowMs": 60000 }
+      "maxRequests": 100
     },
-    "workers": {
-        "triggers": {
-            "optimize": { "timeoutMs": 300000, "priority": "high" },
-            "audit": { "timeoutMs": 180000, "priority": "critical" },
-            "testgaps": { "timeoutMs": 120000, "priority": "normal" },
-            "map": { "timeoutMs": 300000, "priority": "normal" },
-            "deepdive": { "timeoutMs": 300000, "priority": "normal" },
-            "document": { "timeoutMs": 240000, "priority": "normal" },
-            "learning": { "timeoutMs": 90000, "priority": "normal" },
-            "security": { "timeoutMs": 120000, "priority": "normal" }
-        }
+    "circuitBreaker": {
+      "failureThreshold": 5,
+      "resetTimeoutMs": 60000
     },
-    "daemon": {
-        "maxConcurrent": 2,
-        "workerTimeoutMs": 300000,
-        "headless": false,
-        "resourceThresholds": {
-            "maxCpuLoad": 28,
-            "minFreeMemoryPercent": 5
-        }
+    "tieredCache": {
+      "maxSize": 10000,
+      "ttl": 300000
+    },
+    "quantizedVectorStore": {
+      "type": "scalar-8bit"
+    },
+    "solverBandit": {
+      "costWeight": 0.3,
+      "costDecay": 0.05,
+      "explorationBonus": 0.1
     }
+  },
+  "rateLimiter": {
+    "default": {
+      "maxRequests": 100,
+      "windowMs": 60000
+    },
+    "auth": {
+      "maxRequests": 10,
+      "windowMs": 60000
+    },
+    "tools": {
+      "maxRequests": 10,
+      "windowMs": 60000
+    },
+    "memory": {
+      "maxRequests": 100,
+      "windowMs": 60000
+    },
+    "files": {
+      "maxRequests": 50,
+      "windowMs": 60000
+    }
+  },
+  "workers": {
+    "triggers": {
+      "optimize": {
+        "timeoutMs": 300000,
+        "priority": "high"
+      },
+      "audit": {
+        "timeoutMs": 180000,
+        "priority": "critical"
+      },
+      "testgaps": {
+        "timeoutMs": 120000,
+        "priority": "normal"
+      },
+      "map": {
+        "timeoutMs": 300000,
+        "priority": "normal"
+      },
+      "deepdive": {
+        "timeoutMs": 300000,
+        "priority": "normal"
+      },
+      "document": {
+        "timeoutMs": 240000,
+        "priority": "normal"
+      },
+      "learning": {
+        "timeoutMs": 90000,
+        "priority": "normal"
+      },
+      "security": {
+        "timeoutMs": 120000,
+        "priority": "normal"
+      }
+    }
+  },
+  "daemon": {
+    "maxConcurrent": 2,
+    "workerTimeoutMs": 300000,
+    "headless": false,
+    "resourceThresholds": {
+      "maxCpuLoad": 28,
+      "minFreeMemoryPercent": 5
+    }
+  }
 }

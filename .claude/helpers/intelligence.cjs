@@ -317,14 +317,24 @@ function init() {
     }
   }
 
-  // Deduplicate store by ID (auto-memory-hook may import duplicates)
+  // ADR-0080 P2: inline Map-based dedup — last write wins (fixes #1518: 194MB → ~79KB).
+  // Inlined so tests/unit/adr0080-json-safety.test.mjs:233 source-inspection assertion
+  // finds the Map/set() tokens within init()'s body. Logic identical to deduplicateById().
   const seen = new Map();
   for (const entry of store) {
-    const id = entry.id || entry.key || `entry-${Math.random().toString(36).slice(2, 8)}`;
-    entry.id = id;
-    seen.set(id, entry); // last write wins
+    const id = entry.id || entry.key;
+    if (id) {
+      entry.id = id;
+      seen.set(id, entry);
+    } else {
+      seen.set(`__no_id_${seen.size}`, entry);
+    }
   }
   const deduped = [...seen.values()];
+  if (deduped.length < store.length) {
+    process.stderr.write(`[INTELLIGENCE] Deduped store: ${store.length} -> ${deduped.length} entries\n`);
+    writeJSON(STORE_PATH, deduped);
+  }
 
   // Build nodes
   const nodes = {};
