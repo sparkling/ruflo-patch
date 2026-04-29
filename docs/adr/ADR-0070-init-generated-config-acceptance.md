@@ -39,6 +39,35 @@ and wire it as a Phase 5 group in the main harness. The checks use a completely
 fresh temp directory, run `init` without any harness stamping, and validate the
 raw generated output.
 
+### Init mode surface (backward-compat with upstream — wire ALL features)
+
+Per memory `feedback-no-value-judgements-on-features.md` ("import ALL features"), the init command supports both upstream's minimal default and our richer comprehensive mode. Every existing invocation continues to work; our additions are opt-in.
+
+| Form | Upstream supports | Our build (post ADR-0069 + ADR-0070) | What it produces |
+|---|---|---|---|
+| `ruflo init` (no flags) | ✅ | ✅ — preserved unchanged | Upstream's minimal config: CLAUDE.md, `.mcp.json`, `.claude/settings.json` with default hooks. No `embeddings.json`, no full controller config. |
+| `ruflo init --full` | ❌ (flag absent upstream) | ✅ (ADR-0069) | Comprehensive config: ADR-0069 keys (rateLimiter, similarity, learningRate, dimensions, HNSW params, etc.), `embeddings.json` with `Xenova/all-mpnet-base-v2` + 768-dim, controller-registry seed, all 27 hooks enabled, full DDD configuration. |
+| `ruflo init --with-embeddings` | ❌ | ✅ (ADR-0069) | Adds embeddings.json + downloads model weights at init time. Composable with `--full`. |
+| `ruflo init --port <n>` | ❌ | ✅ (ADR-0069 §A6) | Sets default MCP server port in generated config. |
+| `ruflo init --embedding-model <name>` | ❌ | ✅ (ADR-0069) | Selects embedding model + dim. Defaults to `Xenova/all-mpnet-base-v2` (768d). |
+| `ruflo init --similarity-threshold <f>` | ❌ | ✅ (ADR-0069 §A7) | Default similarity threshold for HNSW + memory_search. |
+| `ruflo init --max-agents <n>` | ❌ | ✅ (ADR-0069 §A4) | Default agent count for swarm-init. |
+| `ruflo init --embedding-dim <n>` | ❌ | ✅ (ADR-0069) | Override embedding-dim (must match model). Closes silent-fallback per ADR-0107/0108/0110 enum-validator pattern. |
+| `ruflo init --codex` | ✅ | ✅ — preserved | Codex CLI mode: writes `AGENTS.md` instead of `CLAUDE.md`, registers MCP via `codex mcp add`. |
+| `ruflo init --dual` | ✅ | ✅ — preserved | Claude Code + Codex dual mode. |
+| `ruflo init upgrade` | ✅ | ✅ — preserved | Update helpers + statusline; preserves data. |
+| `ruflo init upgrade --add-missing` | ✅ | ✅ — preserved | Detects + installs new skills/agents/commands without overwriting customizations. |
+
+**Net**: every upstream-valid invocation continues to work. Our additions are all new flags (opt-in) — they don't change default `init` behavior. A user who runs `ruflo init` post-merge gets exactly the upstream output; users opting into `--full` + the 5 ADR-0069 flags get our comprehensive surface.
+
+**Acceptance gates** (this ADR's checks):
+- Group 1 validates `init --full --with-embeddings` produces all expected keys + values
+- Group 2-4 validate three `init --flag` modes individually
+- Implicit: default `init` without flags is the upstream-minimal baseline; a regression in default mode would fail upstream's own acceptance flow when we sync-merge upstream tests in
+- New regression check needed (TBD): assert `init` without flags produces output byte-equivalent to upstream's default (modulo the `Xenova/` model-name prefix per ADR-0069, which is a deliberate divergence) — guards against accidental drift in the minimal mode when extending the comprehensive mode.
+
+**MCP-tool surface** (`init`-related): `init` is invoked via the CLI, not via MCP. The CLI parser handles flags. No MCP-tool surface change.
+
 ### Design: Phase 5 in the main harness, not a separate script
 
 **Rationale:**
