@@ -144,6 +144,36 @@ BG_PIDS=()
 
 run_check_bg() {
   local id="$1" name="$2" fn="$3" group="$4"
+  if [[ "${RUFLO_SERIAL:-0}" == "1" ]]; then
+    # Serial diagnosis mode: run inline, log start so a watchdog can identify
+    # the currently-running check from log tail. No backgrounding.
+    log "  RUN   ${id}: ${name}"
+    (
+      set +u
+      _CHECK_PASSED="false"; _CHECK_OUTPUT=""
+      local c_start c_end c_ms=0
+      c_start=$(_ns)
+      "$fn" || true
+      c_end=$(_ns)
+      c_ms=$(_elapsed_ms "$c_start" "$c_end")
+      local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")
+      echo "${_CHECK_PASSED:-false}|${c_ms:-0}|${escaped}" > "${PARALLEL_DIR}/${id}"
+    )
+    return 0
+  fi
+  # Throttle: cap concurrent backgrounded checks at RUFLO_MAX_PARALLEL (if set).
+  # Polls every 50ms until a slot frees, then proceeds.
+  if [[ "${RUFLO_MAX_PARALLEL:-0}" =~ ^[0-9]+$ ]] && (( ${RUFLO_MAX_PARALLEL:-0} > 0 )); then
+    while (( ${#BG_PIDS[@]} >= RUFLO_MAX_PARALLEL )); do
+      local _alive=() _p
+      for _p in "${BG_PIDS[@]}"; do
+        kill -0 "$_p" 2>/dev/null && _alive+=("$_p")
+      done
+      BG_PIDS=("${_alive[@]}")
+      (( ${#BG_PIDS[@]} >= RUFLO_MAX_PARALLEL )) && sleep 0.05
+    done
+    log "  RUN   ${id}: ${name}"
+  fi
   (
     set +u  # disable strict unset — check functions may leave vars unset in helper chains
     _CHECK_PASSED="false"; _CHECK_OUTPUT=""
@@ -160,7 +190,12 @@ run_check_bg() {
 
 collect_parallel() {
   local group="$1"; shift
-  wait "${BG_PIDS[@]}"
+  # Guard against empty BG_PIDS (e.g. RUFLO_SERIAL=1 ran everything inline);
+  # bare `wait` would block on the script's other backgrounded helpers
+  # (global timeout watcher, etc.) and deadlock.
+  if (( ${#BG_PIDS[@]} > 0 )); then
+    wait "${BG_PIDS[@]}"
+  fi
   BG_PIDS=()
   for spec in "$@"; do
     local id="${spec%%|*}" name="${spec#*|}"

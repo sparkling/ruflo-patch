@@ -102,10 +102,11 @@ fi
 # ── Source acceptance harness framework ────────────────────────────
 source "${PROJECT_DIR}/lib/acceptance-harness.sh"
 
-# ── Global timeout: 600s ────────────────────────────────────────────
+# ── Global timeout: 600s (override via RUFLO_GLOBAL_TIMEOUT_S) ──────
 # Close fd 9 (flock) so orphaned timeout process cannot hold the pipeline lock
 # Close ALL inherited fds so timeout sleep doesn't hold pipes open
-( exec 9>&- 1>/dev/null 2>/dev/null; sleep 600; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
+: "${RUFLO_GLOBAL_TIMEOUT_S:=600}"
+( exec 9>&- 1>/dev/null 2>/dev/null; sleep "${RUFLO_GLOBAL_TIMEOUT_S}"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
 # ── Cleanup ─────────────────────────────────────────────────────────
@@ -520,6 +521,10 @@ phase17_lib="${PROJECT_DIR}/lib/acceptance-phase17-validator-fuzzing.sh"
 # ADR-0098: Swarm-init sprawl (generator + dedupe)
 adr0098_lib="${PROJECT_DIR}/lib/acceptance-adr0098-checks.sh"
 [[ -f "$adr0098_lib" ]] && source "$adr0098_lib"
+
+# ADR-0104: Hive-mind Queen orchestration (parser, prompt, MCP path, locking)
+adr0104_lib="${PROJECT_DIR}/lib/acceptance-adr0104-checks.sh"
+[[ -f "$adr0104_lib" ]] && source "$adr0104_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -1025,16 +1030,11 @@ run_check_bg "p4-gh-pr"          "GitHub PR manage (P4)"             check_adr00
 run_check_bg "p4-gh-metrics"     "GitHub metrics (P4)"               check_adr0094_p4_github_metrics         "adr0094-p4"
 run_check_bg "p4-gh-repo"        "GitHub repo analyze (P4)"          check_adr0094_p4_github_repo_analyze    "adr0094-p4"
 run_check_bg "p4-gh-workflow"    "GitHub workflow (P4)"              check_adr0094_p4_github_workflow        "adr0094-p4"
-run_check_bg "p4-wa-create"      "WASM agent create (P4)"            check_adr0094_p4_wasm_agent_create      "adr0094-p4"
-run_check_bg "p4-wa-list"        "WASM agent list (P4)"              check_adr0094_p4_wasm_agent_list        "adr0094-p4"
-run_check_bg "p4-wa-prompt"      "WASM agent prompt (P4)"            check_adr0094_p4_wasm_agent_prompt      "adr0094-p4"
-run_check_bg "p4-wa-tool"        "WASM agent tool (P4)"              check_adr0094_p4_wasm_agent_tool        "adr0094-p4"
-run_check_bg "p4-wa-export"      "WASM agent export (P4)"            check_adr0094_p4_wasm_agent_export      "adr0094-p4"
-run_check_bg "p4-wa-files"       "WASM agent files (P4)"             check_adr0094_p4_wasm_agent_files       "adr0094-p4"
-run_check_bg "p4-wa-terminate"   "WASM agent terminate (P4)"         check_adr0094_p4_wasm_agent_terminate   "adr0094-p4"
-run_check_bg "p4-wa-gal-list"    "WASM gallery list (P4)"            check_adr0094_p4_wasm_gallery_list      "adr0094-p4"
-run_check_bg "p4-wa-gal-search"  "WASM gallery search (P4)"          check_adr0094_p4_wasm_gallery_search    "adr0094-p4"
-run_check_bg "p4-wa-gal-create"  "WASM gallery create (P4)"          check_adr0094_p4_wasm_gallery_create    "adr0094-p4"
+# P4 WASM agent checks moved out of the parallel wave. Each call loads
+# @ruvector/rvagent-wasm; running ~570 parallel checks alongside 10 simultaneous
+# WASM module loads trashes the host (multi-GB RSS spike, OOM-kills siblings).
+# Opt-in via RUFLO_RUVECTOR_TESTS=1; runs sequentially in the post-join phase.
+# See "ADR-0104b: ruvector-heavy test isolation" block below.
 
 # ADR-0094 Phase 5: ML & Advanced
 run_check_bg "p5-ne-train"       "Neural train (P5)"                 check_adr0094_p5_neural_train           "adr0094-p5"
@@ -1043,16 +1043,11 @@ run_check_bg "p5-ne-compress"    "Neural compress (P5)"              check_adr00
 run_check_bg "p5-ne-predict"     "Neural predict (P5)"               check_adr0094_p5_neural_predict         "adr0094-p5"
 run_check_bg "p5-ne-patterns"    "Neural patterns (P5)"              check_adr0094_p5_neural_patterns        "adr0094-p5"
 run_check_bg "p5-ne-status"      "Neural status (P5)"                check_adr0094_p5_neural_status          "adr0094-p5"
-run_check_bg "p5-rv-status"      "RuVLLM status (P5)"                check_adr0094_p5_ruvllm_status          "adr0094-p5"
-run_check_bg "p5-rv-hnsw-create" "RuVLLM HNSW create (P5)"           check_adr0094_p5_ruvllm_hnsw_create     "adr0094-p5"
-run_check_bg "p5-rv-hnsw-add"    "RuVLLM HNSW add (P5)"              check_adr0094_p5_ruvllm_hnsw_add        "adr0094-p5"
-run_check_bg "p5-rv-hnsw-route"  "RuVLLM HNSW route (P5)"            check_adr0094_p5_ruvllm_hnsw_route      "adr0094-p5"
-run_check_bg "p5-rv-sona-create" "RuVLLM SONA create (P5)"           check_adr0094_p5_ruvllm_sona_create     "adr0094-p5"
-run_check_bg "p5-rv-sona-adapt"  "RuVLLM SONA adapt (P5)"            check_adr0094_p5_ruvllm_sona_adapt      "adr0094-p5"
-run_check_bg "p5-rv-lora-create" "RuVLLM MicroLoRA create (P5)"      check_adr0094_p5_ruvllm_microlora_create "adr0094-p5"
-run_check_bg "p5-rv-lora-adapt"  "RuVLLM MicroLoRA adapt (P5)"       check_adr0094_p5_ruvllm_microlora_adapt "adr0094-p5"
-run_check_bg "p5-rv-gen-config"  "RuVLLM generate config (P5)"       check_adr0094_p5_ruvllm_generate_config "adr0094-p5"
-run_check_bg "p5-rv-chat-fmt"    "RuVLLM chat format (P5)"           check_adr0094_p5_ruvllm_chat_format     "adr0094-p5"
+# P5 RuVLLM checks moved out of the parallel wave. Each call dynamically
+# imports @ruvector/ruvllm-wasm; 10 of those concurrent with the rest of the
+# parallel wave overwhelms the host (each WASM init is hundreds of MB RSS).
+# Opt-in via RUFLO_RUVECTOR_TESTS=1; runs sequentially in the post-join phase.
+# See "ADR-0104b: ruvector-heavy test isolation" block below.
 run_check_bg "p5-pf-benchmark"   "Performance benchmark (P5)"        check_adr0094_p5_performance_benchmark  "adr0094-p5"
 run_check_bg "p5-pf-bottleneck"  "Performance bottleneck (P5)"       check_adr0094_p5_performance_bottleneck "adr0094-p5"
 run_check_bg "p5-pf-profile"     "Performance profile (P5)"          check_adr0094_p5_performance_profile    "adr0094-p5"
@@ -1280,6 +1275,23 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0098_lib" ]]; then
   run_check_bg "adr0098-a-no-reflex"   "ADR-0098-A generator has no reflex-init strings"   check_adr0098_a_generator_no_reflex_swarm  "adr0098"
   run_check_bg "adr0098-b-dedupe"      "ADR-0098-B same-config inits collapse to 1 record" check_adr0098_b_swarm_init_dedupe          "adr0098"
   run_check_bg "adr0098-c-new-flag"    "ADR-0098-C --new flag bypasses dedupe"             check_adr0098_c_swarm_init_new_flag        "adr0098"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0104: Hive-mind Queen orchestration — 10 scenarios per ADR-0104 §7.
+# Same gating + isolation pattern as ADR-0098.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0104_lib" ]]; then
+  run_check_bg "adr0104-mcp-path"        "ADR-0104-§4a .mcp.json direct-path detection"     check_adr0104_mcp_direct_path           "adr0104"
+  run_check_bg "adr0104-obj-required"    "ADR-0104-§2 --claude requires objective"          check_adr0104_objective_required        "adr0104"
+  run_check_bg "adr0104-obj-via-flag"    "ADR-0104-§2 -o objective preserved in prompt"     check_adr0104_objective_via_flag        "adr0104"
+  run_check_bg "adr0104-noninter-global" "ADR-0104-§1 --non-interactive global flag"        check_adr0104_non_interactive_global    "adr0104"
+  run_check_bg "adr0104-no-1422"         "ADR-0104-§6 prompt has no #1422 block"            check_adr0104_prompt_no_1422_block      "adr0104"
+  run_check_bg "adr0104-v3-contract"     "ADR-0104-§6 prompt has v3 worker contract"        check_adr0104_prompt_v3_contract        "adr0104"
+  run_check_bg "adr0104-meta-preserved"  "ADR-0104-§6 prompt parameterization preserved"    check_adr0104_prompt_metadata_preserved "adr0104"
+  run_check_bg "adr0104-honest-wording"  "ADR-0104-§3 honest 'Registered slot(s)' wording"  check_adr0104_honest_spawn_wording      "adr0104"
+  run_check_bg "adr0104-mem-distinct"    "ADR-0104-§5 distinct-key concurrency safe"        check_adr0104_memory_distinct_keys      "adr0104"
+  run_check_bg "adr0104-mem-same-key"    "ADR-0104-§5 same-key concurrency safe"            check_adr0104_memory_same_key           "adr0104"
 fi
 
 # ════════════════════════════════════════════════════════════════════
@@ -1661,6 +1673,22 @@ if [[ -f "$adr0098_lib" ]]; then
   )
 fi
 
+_adr0104_specs=()
+if [[ -f "$adr0104_lib" ]]; then
+  _adr0104_specs=(
+    "adr0104-mcp-path|ADR-0104-§4a .mcp.json direct-path detection"
+    "adr0104-obj-required|ADR-0104-§2 --claude requires objective"
+    "adr0104-obj-via-flag|ADR-0104-§2 -o objective preserved in prompt"
+    "adr0104-noninter-global|ADR-0104-§1 --non-interactive global flag"
+    "adr0104-no-1422|ADR-0104-§6 prompt has no #1422 block"
+    "adr0104-v3-contract|ADR-0104-§6 prompt has v3 worker contract"
+    "adr0104-meta-preserved|ADR-0104-§6 prompt parameterization preserved"
+    "adr0104-honest-wording|ADR-0104-§3 honest 'Registered slot(s)' wording"
+    "adr0104-mem-distinct|ADR-0104-§5 distinct-key concurrency safe"
+    "adr0104-mem-same-key|ADR-0104-§5 same-key concurrency safe"
+  )
+fi
+
 _e2e_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   _e2e_specs=(
@@ -1949,20 +1977,9 @@ collect_parallel "all" \
   "p4-gh-issue|GitHub issue track (P4)" "p4-gh-pr|GitHub PR manage (P4)" \
   "p4-gh-metrics|GitHub metrics (P4)" "p4-gh-repo|GitHub repo analyze (P4)" \
   "p4-gh-workflow|GitHub workflow (P4)" \
-  "p4-wa-create|WASM agent create (P4)" "p4-wa-list|WASM agent list (P4)" \
-  "p4-wa-prompt|WASM agent prompt (P4)" "p4-wa-tool|WASM agent tool (P4)" \
-  "p4-wa-export|WASM agent export (P4)" "p4-wa-files|WASM agent files (P4)" \
-  "p4-wa-terminate|WASM agent terminate (P4)" \
-  "p4-wa-gal-list|WASM gallery list (P4)" "p4-wa-gal-search|WASM gallery search (P4)" \
-  "p4-wa-gal-create|WASM gallery create (P4)" \
   "p5-ne-train|Neural train (P5)" "p5-ne-optimize|Neural optimize (P5)" \
   "p5-ne-compress|Neural compress (P5)" "p5-ne-predict|Neural predict (P5)" \
   "p5-ne-patterns|Neural patterns (P5)" "p5-ne-status|Neural status (P5)" \
-  "p5-rv-status|RuVLLM status (P5)" "p5-rv-hnsw-create|RuVLLM HNSW create (P5)" \
-  "p5-rv-hnsw-add|RuVLLM HNSW add (P5)" "p5-rv-hnsw-route|RuVLLM HNSW route (P5)" \
-  "p5-rv-sona-create|RuVLLM SONA create (P5)" "p5-rv-sona-adapt|RuVLLM SONA adapt (P5)" \
-  "p5-rv-lora-create|RuVLLM MicroLoRA create (P5)" "p5-rv-lora-adapt|RuVLLM MicroLoRA adapt (P5)" \
-  "p5-rv-gen-config|RuVLLM generate config (P5)" "p5-rv-chat-fmt|RuVLLM chat format (P5)" \
   "p5-pf-benchmark|Performance benchmark (P5)" "p5-pf-bottleneck|Performance bottleneck (P5)" \
   "p5-pf-profile|Performance profile (P5)" "p5-pf-optimize|Performance optimize (P5)" \
   "p5-pf-metrics|Performance metrics (P5)" "p5-pf-report|Performance report (P5)" \
@@ -1998,6 +2015,7 @@ collect_parallel "all" \
   "${_p16_specs[@]}" \
   "${_p17_specs[@]}" \
   "${_adr0098_specs[@]}" \
+  "${_adr0104_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
@@ -2064,6 +2082,57 @@ if [[ -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_l
   run_check "p15-flaky-workflow-list"  "P15 workflow_list determinism (3x)"  check_adr0094_p15_flaky_workflow_list  "adr0094-p15"
   run_check "p15-flaky-session-list"   "P15 session_list determinism (3x)"   check_adr0094_p15_flaky_session_list   "adr0094-p15"
   _record_phase "phase15-flakiness" "$(_elapsed_ms "$_p15_start" "$(_ns)")"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0104b: ruvector-heavy test isolation — opt-in, sequential, post-parallel
+# ════════════════════════════════════════════════════════════════════
+# Each P4-WASM and P5-RuVLLM check spawns a fresh CLI process that dynamically
+# imports a ruvector WASM module:
+#   - P4 wasm-agent-* checks  → @ruvector/rvagent-wasm
+#   - P5 ruvllm-* checks      → @ruvector/ruvllm-wasm
+# A single load is cheap; 20 of them concurrent with ~570 other parallel checks
+# saturates RSS and OOM-kills siblings. Symptom: the host "trashes" — multi-GB
+# spike, daemon dies, neighboring checks fail with "Memory exhausted" or the
+# CLI gets SIGKILLed mid-call.
+#
+# These checks are now opt-in. Default acceptance runs SKIP them entirely;
+# explicit `RUFLO_RUVECTOR_TESTS=1` opts in. They run sequentially here, after
+# the parallel wave joins, so each WASM load has the host to itself.
+#
+# CI / npm scripts:
+#   npm run test:acceptance              → skips ruvector tests (default)
+#   npm run test:acceptance:ruvector     → runs the full set
+#   RUFLO_RUVECTOR_TESTS=1 bash scripts/test-acceptance.sh → manual opt-in
+if [[ "${RUFLO_RUVECTOR_TESTS:-0}" == "1" \
+      && -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" ]]; then
+  _rv_start=$(_ns)
+  log "── ADR-0104b: ruvector-heavy checks (sequential, opt-in via RUFLO_RUVECTOR_TESTS=1) ──"
+  # P4 WASM agent (ruvector/rvagent-wasm)
+  run_check "p4-wa-create"      "WASM agent create (P4)"        check_adr0094_p4_wasm_agent_create      "adr0094-p4"
+  run_check "p4-wa-list"        "WASM agent list (P4)"          check_adr0094_p4_wasm_agent_list        "adr0094-p4"
+  run_check "p4-wa-prompt"      "WASM agent prompt (P4)"        check_adr0094_p4_wasm_agent_prompt      "adr0094-p4"
+  run_check "p4-wa-tool"        "WASM agent tool (P4)"          check_adr0094_p4_wasm_agent_tool        "adr0094-p4"
+  run_check "p4-wa-export"      "WASM agent export (P4)"        check_adr0094_p4_wasm_agent_export      "adr0094-p4"
+  run_check "p4-wa-files"       "WASM agent files (P4)"         check_adr0094_p4_wasm_agent_files       "adr0094-p4"
+  run_check "p4-wa-terminate"   "WASM agent terminate (P4)"     check_adr0094_p4_wasm_agent_terminate   "adr0094-p4"
+  run_check "p4-wa-gal-list"    "WASM gallery list (P4)"        check_adr0094_p4_wasm_gallery_list      "adr0094-p4"
+  run_check "p4-wa-gal-search"  "WASM gallery search (P4)"      check_adr0094_p4_wasm_gallery_search    "adr0094-p4"
+  run_check "p4-wa-gal-create"  "WASM gallery create (P4)"      check_adr0094_p4_wasm_gallery_create    "adr0094-p4"
+  # P5 RuVLLM (ruvector/ruvllm-wasm)
+  run_check "p5-rv-status"      "RuVLLM status (P5)"            check_adr0094_p5_ruvllm_status          "adr0094-p5"
+  run_check "p5-rv-hnsw-create" "RuVLLM HNSW create (P5)"       check_adr0094_p5_ruvllm_hnsw_create     "adr0094-p5"
+  run_check "p5-rv-hnsw-add"    "RuVLLM HNSW add (P5)"          check_adr0094_p5_ruvllm_hnsw_add        "adr0094-p5"
+  run_check "p5-rv-hnsw-route"  "RuVLLM HNSW route (P5)"        check_adr0094_p5_ruvllm_hnsw_route      "adr0094-p5"
+  run_check "p5-rv-sona-create" "RuVLLM SONA create (P5)"       check_adr0094_p5_ruvllm_sona_create     "adr0094-p5"
+  run_check "p5-rv-sona-adapt"  "RuVLLM SONA adapt (P5)"        check_adr0094_p5_ruvllm_sona_adapt      "adr0094-p5"
+  run_check "p5-rv-lora-create" "RuVLLM MicroLoRA create (P5)"  check_adr0094_p5_ruvllm_microlora_create "adr0094-p5"
+  run_check "p5-rv-lora-adapt"  "RuVLLM MicroLoRA adapt (P5)"   check_adr0094_p5_ruvllm_microlora_adapt "adr0094-p5"
+  run_check "p5-rv-gen-config"  "RuVLLM generate config (P5)"   check_adr0094_p5_ruvllm_generate_config "adr0094-p5"
+  run_check "p5-rv-chat-fmt"    "RuVLLM chat format (P5)"       check_adr0094_p5_ruvllm_chat_format     "adr0094-p5"
+  _record_phase "ruvector-heavy" "$(_elapsed_ms "$_rv_start" "$(_ns)")"
+elif [[ -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" ]]; then
+  log "── ruvector-heavy checks SKIPPED (set RUFLO_RUVECTOR_TESTS=1 to enable; 20 P4-WASM + P5-RuVLLM checks) ──"
 fi
 
 # ════════════════════════════════════════════════════════════════════

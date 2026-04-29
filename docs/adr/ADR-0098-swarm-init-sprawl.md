@@ -1,6 +1,6 @@
 # ADR-0098: Swarm-Init Sprawl — Generator Instructions + CLI Dedupe
 
-- **Status**: Implemented 2026-04-22 — code applied to fork (not yet built/published). Ship bundle: instruction fix (§1) + Option 2-safe handler dedupe (§2 revised: config-fingerprint + file lock + atomic write + TTL + force/reason + reused flag, NO reference-counting — see §"Adversarial Review Outcome") + acceptance checks (§3) + local cleanup (§4). Pending: `npm run build` in fork, commit+push to `sparkling/main`, upstream issue filed, ADR-0097 Tier Y paired unit test for bash acceptance checks.
+- **Status**: Implemented 2026-04-22 — shipped as `@sparkleideas/cli@3.5.58-patch.234` (verified in published tarball). Fork `32c13d322` on `sparkling/main`; ruflo-patch companions `76153ef` + `c78c91d`. Pending: upstream issue filed against `ruvnet/claude-flow`, ADR-0097 Tier Y paired unit test for bash acceptance checks, fixture-leak cleanup (see §"Scope-unit clarification" 2026-04-23).
 - **Date**: 2026-04-22
 - **Scope**: fork `forks/ruflo/v3/@claude-flow/cli/src/init/claudemd-generator.ts`, fork `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts` (MCP `swarm_init` handler, L83–132), fork `forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts` (CLI wrappers at L202 and L431), acceptance harness addition, local `.swarm/swarm-state.json` cleanup in ruflo-patch repo
 - **Related**: ADR-0082 (no silent fallbacks — `swarm init` silently appending is the same anti-pattern for state), ADR-0094 (acceptance coverage — new check belongs in Phase 9+), ADR-0097 (check-code quality — any new check follows the paired-unit-test rule)
@@ -235,3 +235,35 @@ Key captured objections:
 3. **"The real fix is upstream, not a fork patch."** Adopted: file upstream issue, keep fork patch as ship vehicle. No block on our ship.
 
 Note on hive-vs-swarm: the hive-mind system correctly reuses a single persistent hive across sessions (this debate added workers to the existing `hive-1776255332181`, didn't create a new one). The swarm system, which this ADR addresses, lacks that reuse semantics — that's the asymmetry the fix eliminates.
+
+## Scope-unit clarification (2026-04-23 AM) — **SUPERSEDED by ADR-0100 (2026-04-23 PM)**
+
+> **The conclusion in this section was WRONG.** It defended CWD-scoping as correct. Further user evidence (2026-04-23 PM) showed `.swarm/` sprawling into subdirectories *within a single project* (`src/hm/semantic-modelling/.swarm/` alongside `src/hm/semantic-modelling/generated/.swarm/`), reproducing on unpatched upstream `ruvnet/claude-flow`. Root cause: Claude Code's documented CWD drift (see 10+ upstream issues cited in ADR-0100), not a ruflo-specific bug. The correct unit is **project root resolved by walk-up**, not CWD. This section is preserved verbatim below as a record of reasoning we later rejected — do not act on it. See **ADR-0100** for the superseding decision.
+>
+> ---
+>
+> Original (superseded) text follows:
+
+User observation: `.swarm/` folders appear in multiple locations across the project tree. Audit of `/Users/henrik/source/ruflo-patch`:
+
+| Path | Status | Cause |
+|---|---|---|
+| `.swarm/` (project root) | **Expected** | Main project CWD — primary swarm state |
+| `.claude/worktrees/graceful-dazzling-turtle/.swarm/` | **Expected** | ADR-0087 adversarial worktree — separate CWD, separate state by design |
+| `tests/fixtures/adr0094-phase13-1/v1-rvf/.swarm/` | **Stray (leak)** | Fixture constructed by running CLI from nested CWD; `.swarm/` committed into fixture |
+| `tests/fixtures/adr0094-phase13-2/v1-agentdb/.swarm/` | **Stray (leak)** | Same |
+
+**Is one-`.swarm`-per-project-root the desired behaviour? No.** The handler's unit of collapse is CWD (`process.env.CLAUDE_FLOW_CWD || process.cwd()` — `mcp-tools/types.ts:28`), not git-repo-root. Two valid reasons for this:
+
+1. **Worktrees must be isolated** — `.claude/worktrees/*/` are independent working copies with their own state lifecycle. A single top-root `.swarm/` would cross-contaminate parallel worktree debates.
+2. **Tests must be isolated** — each fixture runs the CLI against a synthetic project root; collapsing to top-root would pollute production state with test runs.
+
+CWD-scoped is correct. The ADR-0098 config-fingerprint dedupe applies **within** a CWD, not across CWDs. That was the implicit assumption but was never stated.
+
+### Follow-up actions (not blocking — low priority housekeeping)
+
+1. **Clean the 2 fixture leaks** — `rm -rf tests/fixtures/adr0094-phase13-{1,2}/*/.swarm/` and add `tests/fixtures/**/.swarm/` to `.gitignore` so fixture construction doesn't leak state into committed test paths.
+2. **Audit fixture-construction scripts** — whatever test path creates `adr0094-phase13-*` fixtures should `trap rm -rf .swarm EXIT` or run the CLI with a throwaway `CLAUDE_FLOW_CWD=/tmp/...`.
+3. **Document the CWD-scope rule** in the generated CLAUDE.md — one line: `.swarm/ is per-CWD state, not per-repo. Worktrees and test fixtures legitimately get their own.`
+
+Not adding new acceptance checks for this — the fixture leaks are a hygiene issue caught by visual inspection, not a recurring behavior the MCP handler is responsible for.

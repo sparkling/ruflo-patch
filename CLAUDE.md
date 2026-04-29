@@ -77,9 +77,10 @@ Each npm script includes all previous steps — running a later step runs everyt
 Other scripts:
 
 ```bash
-npm run validate          # Environment smoke test
-npm run sync              # Fetch upstream, merge on branch, test, create PR
-npm run publish:fork      # Detect merged PRs, version bump, build, publish
+npm run validate                  # Environment smoke test
+npm run sync                      # Fetch upstream, merge on branch, test, create PR
+npm run publish:fork              # Detect merged PRs, version bump, build, publish
+npm run test:acceptance:ruvector  # Acceptance + ruvector-heavy WASM tests (opt-in, sequential)
 ```
 
 ### Required Tests Per Change Type
@@ -100,6 +101,7 @@ npm run publish:fork      # Detect merged PRs, version bump, build, publish
 | **Unit** | `tests/unit/*.test.mjs` | London School TDD — mocked deps, no I/O | `npm run test:unit` |
 | **Integration** | `tests/unit/*.test.mjs` | Real I/O — file persistence, subprocess exec, pipeline exercises | `npm run test:unit` |
 | **Acceptance** | `lib/acceptance-*.sh` wired into `scripts/test-acceptance.sh` | Bash checks against real `init --full` project with published packages | `npm run test:acceptance` |
+| **Acceptance (ruvector-heavy)** | P4 WASM agent + P5 RuVLLM checks (20 total) — load `@ruvector/{ruvllm,rvagent}-wasm` | Sequential, post-parallel, opt-in. Trashed the host when run in the parallel wave. | `npm run test:acceptance:ruvector` |
 
 **Writing tests: ALL THREE levels in the same pass.** Never treat acceptance tests as optional or "later" work — the framework exists, use it.
 
@@ -109,6 +111,8 @@ npm run publish:fork      # Detect merged PRs, version bump, build, publish
 npm run test:unit                                           # Level 1+2
 curl -sf http://localhost:4873/-/ping && npm run test:acceptance   # Level 3 if Verdaccio up
 ```
+
+The ruvector-heavy tier (P4 WASM + P5 RuVLLM) is excluded from `test:acceptance` by default — multiple concurrent WASM module loads OOM the host. Run `npm run test:acceptance:ruvector` (or `RUFLO_RUVECTOR_TESTS=1 bash scripts/test-acceptance.sh ...`) when you specifically need to exercise that surface. They run sequentially after the parallel wave joins.
 
 NEVER run only `test:unit` and call it done. If Verdaccio is down, say so explicitly — do not silently skip acceptance.
 

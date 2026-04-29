@@ -131,6 +131,14 @@ _p13_load_fixture() {
     echo "p13_load_fixture: fixture '$fixture_name' has neither .claude-flow nor .swarm" >&2
     return 7
   fi
+
+  # Plant `.ruflo-project` marker so findProjectRoot() stops at the iso and
+  # reads the fixture's config.json. Without this, the walk continues up to
+  # the parent E2E_DIR (which has CLAUDE.md + .claude/) and the CLI reads
+  # E2E_DIR's config — defeating the fixture overlay. (V1-config fixtures
+  # store `memory.backend=rvf`; without the marker, config_get returns
+  # E2E_DIR's `hybrid` default and the migration assertion fails silently.)
+  : > "${target_dir}/.ruflo-project"
   return 0
 }
 

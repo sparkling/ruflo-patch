@@ -235,6 +235,23 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0085"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   _fast_run "adr0085-router-reg" check_router_has_init_controller_registry
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0104"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0104-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0104-checks.sh"
+    echo "── ADR-0104 (Hive-Mind Queen Orchestration) ──"
+    _fast_run "adr0104-mcp-path"        check_adr0104_mcp_direct_path
+    _fast_run "adr0104-obj-required"    check_adr0104_objective_required
+    _fast_run "adr0104-obj-via-flag"    check_adr0104_objective_via_flag
+    _fast_run "adr0104-noninter-global" check_adr0104_non_interactive_global
+    _fast_run "adr0104-no-1422"         check_adr0104_prompt_no_1422_block
+    _fast_run "adr0104-v3-contract"     check_adr0104_prompt_v3_contract
+    _fast_run "adr0104-meta-preserved"  check_adr0104_prompt_metadata_preserved
+    _fast_run "adr0104-honest-wording"  check_adr0104_honest_spawn_wording
+    _fast_run "adr0104-mem-distinct"    check_adr0104_memory_distinct_keys
+    _fast_run "adr0104-mem-same-key"    check_adr0104_memory_same_key
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0090-b5"* || "$_FAST_RUN_GROUPS" == "b5" || "$_FAST_RUN_GROUPS" == "all" ]]; then
   echo "── ADR-0090 B5 (15-controller SQLite round-trip) ──"
   _fast_run "b5-reflexion"           check_adr0090_b5_reflexion

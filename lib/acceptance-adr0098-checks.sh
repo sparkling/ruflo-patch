@@ -89,8 +89,23 @@ check_adr0098_a_generator_no_reflex_swarm() {
 check_adr0098_b_swarm_init_dedupe() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
+
+  # Use a truly fresh dir (NOT `_e2e_isolate`) for the same reason as
+  # check_adr0098_c_swarm_init_new_flag: iso under E2E_DIR causes
+  # findProjectRoot() to walk up to E2E_DIR's CLAUDE.md/.claude markers,
+  # so `swarm init` writes to E2E_DIR/.swarm/, while we read iso/.swarm/.
+  # Across the suite's lifetime E2E_DIR's state accumulates and the iso
+  # snapshot diverges from the real writes (observed 6 records in iso when
+  # only 1 was expected — historical pollution leaking through).
   local cli; cli=$(_cli_cmd)
-  local iso; iso=$(_e2e_isolate "adr0098-b")
+  if [[ -z "$cli" ]]; then
+    _CHECK_OUTPUT="ADR-0098-B: _cli_cmd returned empty"
+    return
+  fi
+  local iso; iso=$(mktemp -d /tmp/ruflo-adr0098b-XXXXX)
+  if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules" ]]; then
+    ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
+  fi
 
   # First init
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli init --full --quiet" "" 120
@@ -133,8 +148,24 @@ check_adr0098_b_swarm_init_dedupe() {
 check_adr0098_c_swarm_init_new_flag() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
+
+  # Use a truly fresh dir (NOT `_e2e_isolate`) — the iso helper places iso
+  # under E2E_DIR, and findProjectRoot() walks up from iso to E2E_DIR (which
+  # has CLAUDE.md + .claude/ markers from the harness init), making `swarm
+  # init` write to E2E_DIR/.swarm/ instead of iso/.swarm/. The state-file
+  # read here samples iso, which keeps showing whatever was snapshot-copied,
+  # so the per-run record count diverges from the real writes (observed:
+  # 0,2,3,4,5 across 5 sequential runs — accumulating in E2E_DIR while iso
+  # snapshots lag). Mirrors check_adr0098_a_generator_no_reflex_swarm.
   local cli; cli=$(_cli_cmd)
-  local iso; iso=$(_e2e_isolate "adr0098-c")
+  if [[ -z "$cli" ]]; then
+    _CHECK_OUTPUT="ADR-0098-C: _cli_cmd returned empty"
+    return
+  fi
+  local iso; iso=$(mktemp -d /tmp/ruflo-adr0098c-XXXXX)
+  if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules" ]]; then
+    ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
+  fi
 
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli init --full --quiet" "" 120
 

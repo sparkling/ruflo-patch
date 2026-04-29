@@ -71,3 +71,6 @@ test-results/catalog.db-*
 # the backend wrapper could leave this artifact; see phase8-followups-plan.md
 # ITEM 2).
 :memory:
+
+# Scheduled tasks runtime lock
+.claude/scheduled_tasks.lock
