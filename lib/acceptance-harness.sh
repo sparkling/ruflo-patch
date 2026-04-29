@@ -11,6 +11,29 @@
 #     _record_phase, and the result-tracking variables.
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Default parallelism cap
+# ══════════════════════════════════════════════════════════════════════════════
+# scripts/test-acceptance.sh fans ~150 checks into a single mega-parallel wave
+# (ADR-0059). Each check sub-shell spawns daemon + CLI + assertion children
+# (~3-4 procs/check), so unbounded fan-out crushes the runqueue on developer
+# laptops (load → 106, free RAM → 39MB on 18-core M5 Max with raw fan-out).
+# Default to half-the-cores; existing run_check_bg throttle (line ~166)
+# enforces it. Override with RUFLO_MAX_PARALLEL=N (0 disables the cap).
+if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
+  if command -v sysctl >/dev/null 2>&1 && _ncpu=$(sysctl -n hw.ncpu 2>/dev/null) && [[ "$_ncpu" =~ ^[0-9]+$ ]]; then
+    :
+  elif [[ -r /proc/cpuinfo ]]; then
+    _ncpu=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 8)
+  else
+    _ncpu=8
+  fi
+  RUFLO_MAX_PARALLEL=$(( _ncpu / 2 ))
+  (( RUFLO_MAX_PARALLEL < 4 )) && RUFLO_MAX_PARALLEL=4
+  unset _ncpu
+  export RUFLO_MAX_PARALLEL
+fi
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Result tracking
 # ══════════════════════════════════════════════════════════════════════════════
 pass_count=0
