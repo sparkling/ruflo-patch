@@ -63,7 +63,21 @@
     "wal-expert-1776182806368-hvnj",
     "wal-expert-1776182806368-ssbb",
     "wal-expert-1776182806368-frrs",
-    "wal-expert-1776182806368-xys3"
+    "wal-expert-1776182806368-xys3",
+    "hive-worker-1776880745070-cbgj",
+    "hive-worker-1776880783848-8hqs",
+    "hive-worker-1776880783848-n6n7",
+    "hive-worker-1776880783848-fp7h",
+    "hive-worker-1776880783848-6ht0",
+    "hive-worker-1776880783848-w3g0",
+    "hive-worker-1776880783848-brqt",
+    "hive-worker-1776880783848-n8zz",
+    "perf-queen-1776893124304-theq",
+    "devils-advocate-1776893124883-0oqu",
+    "review-queen-1776894762149-ub8b",
+    "review-devil-1776894763298-smiw",
+    "adr0100-queen-1776935364429-ve91",
+    "adr0100-devil-1776935365155-3xqh"
   ],
   "consensus": {
     "pending": [
@@ -335,13 +349,53 @@
         "tryNativeInit returning false is intentional - do not fix"
       ],
       "memory_budget": "Never exceeds 6GB of 36GB - RAM unconstrained"
+    },
+    "adr-0099/topic": {
+      "adr": "ADR-0099",
+      "subject": "Performance testing program for ruflo-patch",
+      "scope": "Published @sparkleideas/* packages + pipeline",
+      "existing": "tests/benchmarks/flash-attention-benchmark.mjs only (ADR-0069 F3)",
+      "questions": [
+        "WHAT to test",
+        "HOW to test",
+        "HOW to measure",
+        "HOW to report"
+      ]
+    },
+    "adr-0099/synthesis-notes": {
+      "queen_proposal_words": 1150,
+      "devil_objections_count": 24,
+      "critical_objections": [
+        "YAGNI no incidents",
+        "N=1 machine",
+        "_cli_cmd mandatory",
+        "pipeline placement in acceptance",
+        "fixed threshold flake-vs-miss",
+        "thermal throttling",
+        "ADR-0094 coupling = ship blocker",
+        "missing init --full + npm install",
+        "budget vs gate conflation"
+      ],
+      "scope_cuts": [
+        "1M HNSW → 10k cap",
+        "6 components → 3",
+        "mean reporting → p50 primary"
+      ],
+      "decision": "BUDGET semantics not GATE; out-of-band from cascade; N=1 K-of-N consecutive-run robustness; absolute wallclock primary; carve-out from ADR-0094"
+    },
+    "adr-0099/second-order-review": {
+      "target_adr": "ADR-0099 Performance Testing Program — Budgets, Not Gates",
+      "path": "docs/adr/ADR-0099-performance-testing-program.md",
+      "first_order_hive": "hive-1776893121206-lsu07u",
+      "review_style": "ADR-0087 3-flaw / 3-year hindsight",
+      "mandate": "devil finds 3 most-likely-to-regret flaws; queen judges each disposition"
     }
   },
-  "createdAt": "2026-04-15T12:15:32.181Z",
-  "updatedAt": "2026-04-15T12:15:32.181Z",
+  "createdAt": "2026-04-23T09:09:21.015Z",
+  "updatedAt": "2026-04-23T09:09:25.156Z",
   "queen": {
-    "agentId": "ux-daemon-queen",
-    "electedAt": "2026-04-15T12:15:32.181Z",
+    "agentId": "adr0100-review-queen",
+    "electedAt": "2026-04-23T09:09:21.015Z",
     "term": 1
   }
 }

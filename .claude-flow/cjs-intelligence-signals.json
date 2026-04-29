@@ -1,705 +1,705 @@
 {
-  "timestamp": "2026-04-15T12:21:07.153Z",
+  "timestamp": "2026-04-26T13:13:04.575Z",
   "taskOutcomes": [
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:58:36.997Z"
+      "timestamp": "2026-04-21T11:20:48.341Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:58:37.136Z"
+      "timestamp": "2026-04-21T11:21:08.032Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:59:02.384Z"
+      "timestamp": "2026-04-21T11:24:25.295Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:59:12.906Z"
+      "timestamp": "2026-04-21T12:41:27.278Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:59:19.903Z"
+      "timestamp": "2026-04-21T16:00:07.039Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:59:20.630Z"
+      "timestamp": "2026-04-21T16:05:34.692Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:59:56.039Z"
+      "timestamp": "2026-04-21T16:19:38.683Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T00:59:56.230Z"
+      "timestamp": "2026-04-21T16:23:17.337Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:00:01.431Z"
+      "timestamp": "2026-04-21T16:26:43.256Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:00:13.346Z"
+      "timestamp": "2026-04-21T16:32:13.649Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:01:08.221Z"
+      "timestamp": "2026-04-21T16:36:02.207Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:01:31.981Z"
+      "timestamp": "2026-04-21T17:01:51.867Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:01:45.844Z"
+      "timestamp": "2026-04-21T17:06:19.894Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:02:08.352Z"
+      "timestamp": "2026-04-21T17:43:09.382Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:09:41.674Z"
+      "timestamp": "2026-04-21T17:47:59.151Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:10:00.811Z"
+      "timestamp": "2026-04-21T18:14:31.996Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:10:44.943Z"
+      "timestamp": "2026-04-21T18:31:16.955Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:11:02.269Z"
+      "timestamp": "2026-04-21T18:48:57.878Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:11:53.307Z"
+      "timestamp": "2026-04-21T18:49:19.671Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:12:38.625Z"
+      "timestamp": "2026-04-21T18:50:41.098Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:15:22.752Z"
+      "timestamp": "2026-04-21T18:50:41.551Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:16:34.219Z"
+      "timestamp": "2026-04-21T18:50:45.882Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:25:53.407Z"
+      "timestamp": "2026-04-21T18:51:27.359Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:29:51.222Z"
+      "timestamp": "2026-04-21T18:54:51.396Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T01:34:56.376Z"
+      "timestamp": "2026-04-21T19:04:24.107Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T02:08:53.449Z"
+      "timestamp": "2026-04-21T19:04:30.072Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:43:45.242Z"
+      "timestamp": "2026-04-21T19:07:26.000Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:44:37.199Z"
+      "timestamp": "2026-04-21T19:08:15.621Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:45:31.268Z"
+      "timestamp": "2026-04-21T19:12:06.235Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:45:47.824Z"
+      "timestamp": "2026-04-21T19:14:00.111Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:46:06.879Z"
+      "timestamp": "2026-04-21T19:14:08.149Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:46:34.362Z"
+      "timestamp": "2026-04-21T19:15:17.998Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:48:44.875Z"
+      "timestamp": "2026-04-21T19:16:22.684Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:52:06.583Z"
+      "timestamp": "2026-04-21T19:16:24.887Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:54:03.010Z"
+      "timestamp": "2026-04-21T19:18:10.421Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:54:38.844Z"
+      "timestamp": "2026-04-21T19:19:55.656Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T12:55:33.813Z"
+      "timestamp": "2026-04-21T19:20:26.914Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T13:07:58.188Z"
+      "timestamp": "2026-04-21T19:20:30.669Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T15:41:32.487Z"
+      "timestamp": "2026-04-21T19:20:54.064Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T16:10:07.059Z"
+      "timestamp": "2026-04-21T19:21:34.139Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T16:10:48.528Z"
+      "timestamp": "2026-04-21T19:21:45.872Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T16:12:12.675Z"
+      "timestamp": "2026-04-21T19:23:19.232Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T16:12:40.630Z"
+      "timestamp": "2026-04-21T19:24:54.729Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T16:13:15.551Z"
+      "timestamp": "2026-04-21T19:25:24.164Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T16:14:49.625Z"
+      "timestamp": "2026-04-21T19:32:03.211Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:08:35.387Z"
+      "timestamp": "2026-04-21T19:49:50.312Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:14:09.505Z"
+      "timestamp": "2026-04-21T19:52:59.631Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:21:14.019Z"
+      "timestamp": "2026-04-21T19:53:24.579Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:22:10.290Z"
+      "timestamp": "2026-04-21T19:55:29.188Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:22:57.221Z"
+      "timestamp": "2026-04-21T19:57:22.248Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:26:26.466Z"
+      "timestamp": "2026-04-21T20:13:00.695Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:33:17.494Z"
+      "timestamp": "2026-04-21T20:46:16.682Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:35:17.668Z"
+      "timestamp": "2026-04-21T21:00:08.677Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:37:06.412Z"
+      "timestamp": "2026-04-21T21:04:47.705Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:39:54.336Z"
+      "timestamp": "2026-04-21T21:10:47.510Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:44:52.794Z"
+      "timestamp": "2026-04-21T21:13:34.251Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T17:46:30.220Z"
+      "timestamp": "2026-04-21T21:14:01.643Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:27:38.605Z"
+      "timestamp": "2026-04-21T21:14:12.197Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:28:40.860Z"
+      "timestamp": "2026-04-21T21:17:24.176Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:28:50.344Z"
+      "timestamp": "2026-04-21T21:17:44.223Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:29:08.679Z"
+      "timestamp": "2026-04-21T21:47:36.739Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:29:45.348Z"
+      "timestamp": "2026-04-21T21:52:50.007Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:29:53.186Z"
+      "timestamp": "2026-04-21T21:58:59.973Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:29:58.091Z"
+      "timestamp": "2026-04-21T22:48:31.005Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:30:04.017Z"
+      "timestamp": "2026-04-21T23:21:39.509Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:30:10.085Z"
+      "timestamp": "2026-04-22T19:41:04.343Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:30:21.836Z"
+      "timestamp": "2026-04-22T19:41:21.236Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:31:28.577Z"
+      "timestamp": "2026-04-22T20:13:46.113Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:31:44.329Z"
+      "timestamp": "2026-04-22T20:14:06.620Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:33:27.135Z"
+      "timestamp": "2026-04-22T20:29:43.000Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T20:58:03.900Z"
+      "timestamp": "2026-04-22T20:30:00.589Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T21:22:45.518Z"
+      "timestamp": "2026-04-22T21:26:21.368Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T22:14:28.193Z"
+      "timestamp": "2026-04-22T21:27:10.410Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T22:14:51.258Z"
+      "timestamp": "2026-04-22T21:53:39.055Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T22:16:37.876Z"
+      "timestamp": "2026-04-22T21:53:57.290Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T22:17:27.176Z"
+      "timestamp": "2026-04-23T09:10:17.074Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T22:18:20.530Z"
+      "timestamp": "2026-04-23T09:10:33.881Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T22:19:54.733Z"
+      "timestamp": "2026-04-23T13:07:01.837Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T22:24:31.022Z"
+      "timestamp": "2026-04-23T13:07:10.855Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T23:29:26.679Z"
+      "timestamp": "2026-04-23T13:07:24.706Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T23:51:40.363Z"
+      "timestamp": "2026-04-26T11:51:44.781Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-14T23:59:27.495Z"
+      "timestamp": "2026-04-26T11:51:54.317Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T01:07:29.055Z"
+      "timestamp": "2026-04-26T11:52:02.701Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T01:17:18.565Z"
+      "timestamp": "2026-04-26T11:52:10.405Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T01:40:04.767Z"
+      "timestamp": "2026-04-26T11:52:19.508Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:14:25.967Z"
+      "timestamp": "2026-04-26T11:52:31.428Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:16:37.595Z"
+      "timestamp": "2026-04-26T11:52:43.551Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:17:04.032Z"
+      "timestamp": "2026-04-26T11:52:52.402Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:17:13.127Z"
+      "timestamp": "2026-04-26T11:53:02.210Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:17:52.468Z"
+      "timestamp": "2026-04-26T11:53:12.600Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:18:32.687Z"
+      "timestamp": "2026-04-26T12:00:33.659Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:20:25.679Z"
+      "timestamp": "2026-04-26T12:00:50.363Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:20:36.776Z"
+      "timestamp": "2026-04-26T13:09:27.403Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:22:05.715Z"
+      "timestamp": "2026-04-26T13:09:41.124Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T11:26:50.306Z"
+      "timestamp": "2026-04-26T13:09:53.449Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T12:17:29.702Z"
+      "timestamp": "2026-04-26T13:10:06.501Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T12:17:39.364Z"
+      "timestamp": "2026-04-26T13:10:27.914Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T12:18:21.925Z"
+      "timestamp": "2026-04-26T13:10:35.692Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T12:18:33.773Z"
+      "timestamp": "2026-04-26T13:10:51.494Z"
     },
     {
       "task": "hook",
       "success": true,
       "model": "unknown",
       "duration": 0,
-      "timestamp": "2026-04-15T12:21:07.153Z"
+      "timestamp": "2026-04-26T13:13:04.576Z"
     }
   ],
   "routingDecisions": []

@@ -1,5 +1,5 @@
 # RuFlo V3 - Complete Capabilities Reference
-> Generated: 2026-03-15T13:50:28.134Z
+> Generated: 2026-04-21T23:27:55.397Z
 > Full documentation: https://github.com/ruvnet/claude-flow
 
 ## 📋 Table of Contents
@@ -337,8 +337,8 @@ npx @sparkleideas/cli@latest hive-mind consensus --propose "task"
 |---------|---------|---------|
 | agentic-flow | 3.0.0-alpha.1 | Core coordination + ReasoningBank + Router |
 | agentdb | 3.0.0-alpha.10 | Vector database + 8 controllers |
-| @ruvector/attention | 0.1.3 | Flash attention |
-| @ruvector/sona | 0.1.5 | Neural learning |
+| @sparkleideas/ruvector-attention | 0.1.3 | Flash attention |
+| @sparkleideas/ruvector-sona | 0.1.5 | Neural learning |
 
 ### Optional Integrations
 | Package | Command |
@@ -349,8 +349,8 @@ npx @sparkleideas/cli@latest hive-mind consensus --propose "task"
 
 ### MCP Server Setup
 ```bash
-# Add Claude Flow MCP
-claude mcp add claude-flow -- npx -y @sparkleideas/cli@latest
+# Add Ruflo MCP
+claude mcp add ruflo -- npx -y ruflo@latest
 
 # Optional servers
 claude mcp add ruv-swarm -- npx -y ruv-swarm mcp start
@@ -364,24 +364,24 @@ claude mcp add flow-nexus -- npx -y flow-nexus@latest mcp start
 ### Essential Commands
 ```bash
 # Setup
-npx @sparkleideas/cli@latest init --wizard
-npx @sparkleideas/cli@latest daemon start
-npx @sparkleideas/cli@latest doctor --fix
+npx ruflo@latest init --wizard
+npx ruflo@latest daemon start
+npx ruflo@latest doctor --fix
 
 # Swarm
-npx @sparkleideas/cli@latest swarm init --topology hierarchical-mesh --max-agents 8
-npx @sparkleideas/cli@latest swarm status
+npx ruflo@latest swarm init --topology hierarchical --max-agents 8
+npx ruflo@latest swarm status
 
 # Agents
-npx @sparkleideas/cli@latest agent spawn -t coder
-npx @sparkleideas/cli@latest agent list
+npx ruflo@latest agent spawn -t coder
+npx ruflo@latest agent list
 
 # Memory
-npx @sparkleideas/cli@latest memory search --query "patterns"
+npx ruflo@latest memory search --query "patterns"
 
 # Hooks
-npx @sparkleideas/cli@latest hooks pre-task --description "task"
-npx @sparkleideas/cli@latest hooks worker dispatch --trigger optimize
+npx ruflo@latest hooks pre-task --description "task"
+npx ruflo@latest hooks worker dispatch --trigger optimize
 ```
 
 ### File Structure

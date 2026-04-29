@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" pre-bash'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" pre-bash'",
             "timeout": 5000
           }
         ]
@@ -16,7 +16,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" pre-edit'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" pre-edit'",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" pre-task'",
             "timeout": 5000
           }
         ]
@@ -28,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" post-edit'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-edit'",
             "timeout": 10000
           }
         ]
@@ -38,7 +48,17 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" post-bash'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-command'",
+            "timeout": 5000
+          }
+        ]
+      },
+      {
+        "matcher": "Task",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-task'",
             "timeout": 5000
           }
         ]
@@ -49,8 +69,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" route'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" route'",
             "timeout": 10000
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" user-prompt'",
+            "timeout": 5000
           }
         ]
       }
@@ -60,13 +85,24 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-restore'",
-            "timeout": 15000
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-restore'",
+            "timeout": 5000
           },
           {
             "type": "command",
             "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/auto-memory-hook.mjs\" import'",
             "timeout": 8000
+          },
+          {
+            "type": "command",
+            "command": "bash \"$(git rev-parse --show-toplevel)\"/.claude/scripts/check-patches.sh --global",
+            "timeout": 30000
+          },
+          {
+            "type": "command",
+            "command": "npx @sparkleideas/cli@latest daemon start --quiet 2>/dev/null || true",
+            "timeout": 5000,
+            "continueOnError": true
           }
         ]
       }
@@ -76,8 +112,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-end'",
-            "timeout": 10000
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-end'",
+            "timeout": 5000
           }
         ]
       }
@@ -99,11 +135,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" compact-manual'"
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" compact-manual'"
           },
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-end'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-end'",
             "timeout": 5000
           }
         ]
@@ -113,11 +149,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" compact-auto'"
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" compact-auto'"
           },
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" session-end'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-end'",
             "timeout": 6000
           }
         ]
@@ -128,7 +164,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" status'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" status'",
             "timeout": 3000
           }
         ]
@@ -139,7 +175,18 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" post-task'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" teammate-idle'",
+            "timeout": 5000
+          }
+        ]
+      }
+    ],
+    "PostToolUseFailure": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-tool-failure'",
             "timeout": 5000
           }
         ]
@@ -150,7 +197,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.cjs\" notify'",
+            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" notify'",
             "timeout": 3000
           }
         ]
@@ -163,9 +210,9 @@
   },
   "permissions": {
     "allow": [
-      "Bash(npx @claude-flow*)",
-      "Bash(npx claude-flow*)",
-      "Bash(node .claude/*)",
+      "Bash(npx @sparkleideas/cli:*)",
+      "Bash(npx claude-flow:*)",
+      "Bash(node \"$(git rev-parse --show-toplevel)\"/.claude/*)",
       "mcp__claude-flow__:*"
     ],
     "deny": [
@@ -180,7 +227,16 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
     "CLAUDE_FLOW_V3_ENABLED": "true",
-    "CLAUDE_FLOW_HOOKS_ENABLED": "true"
+    "CLAUDE_FLOW_HOOKS_ENABLED": "true",
+    "GUIDANCE_EVENT_WIRING_ENABLED": "true",
+    "GUIDANCE_PRE_EDIT_HOOK": "true",
+    "GUIDANCE_POST_COMMAND_SENTINEL": "true",
+    "GUIDANCE_TEAMMATE_IDLE_HOOK": "true",
+    "GUIDANCE_POST_TOOL_FAILURE": "true",
+    "GUIDANCE_SESSION_SENTINEL": "true",
+    "GUIDANCE_AUTO_MEMORY": "true",
+    "GUIDANCE_LEARNING_BRIDGE": "true",
+    "GUIDANCE_STATUS_LINE": "true"
   },
   "claudeFlow": {
     "version": "3.0.0",
@@ -191,7 +247,7 @@
       "shell": "zsh"
     },
     "modelPreferences": {
-      "default": "claude-opus-4-6",
+      "default": "claude-opus-4-7",
       "routing": "claude-haiku-4-5-20251001"
     },
     "agentTeams": {
@@ -220,23 +276,43 @@
     },
     "swarm": {
       "topology": "hierarchical-mesh",
-      "maxAgents": 15
+      "maxAgents": 15,
+      "autoScale": true,
+      "coordinationStrategy": "adaptive"
     },
     "memory": {
       "backend": "hybrid",
+      "cacheSize": 256,
       "enableHNSW": true,
+      "agentdb": {
+        "learningThreshold": 0.6,
+        "vectorBackend": "auto",
+        "tickInterval": 15000
+      },
       "learningBridge": {
-        "enabled": true
+        "enabled": true,
+        "sonaMode": "balanced",
+        "confidenceDecayRate": 0.0008,
+        "accessBoostAmount": 0.05
       },
       "memoryGraph": {
-        "enabled": true
+        "enabled": true,
+        "pageRankDamping": 0.85,
+        "maxNodes": 10000,
+        "similarityThreshold": 0.7
       },
       "agentScopes": {
-        "enabled": true
+        "enabled": true,
+        "defaultScope": "project"
       }
     },
     "neural": {
-      "enabled": true
+      "enabled": true,
+      "modelPath": ".claude-flow/neural"
+    },
+    "hooks": {
+      "enabled": true,
+      "autoExecute": true
     },
     "daemon": {
       "autoStart": false,

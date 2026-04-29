@@ -11,7 +11,7 @@
  *   node auto-memory-hook.mjs status   # Show bridge status
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -121,7 +121,9 @@ class JsonFileBackend {
 
   _persist() {
     try {
-      writeFileSync(this.filePath, JSON.stringify([...this.entries.values()], null, 2), 'utf-8');
+      const tmp = this.filePath + '.tmp';
+      writeFileSync(tmp, JSON.stringify([...this.entries.values()], null, 2), 'utf-8');
+      renameSync(tmp, this.filePath);
     } catch { /* best effort */ }
   }
 }
@@ -152,15 +154,18 @@ async function loadMemoryPackage() {
     return await import('@sparkleideas/memory');
   } catch { /* fall through */ }
 
-  // Strategy 4: Walk up from PROJECT_ROOT looking for @sparkleideas/memory in any node_modules
+  // Strategy 4: Walk up from PROJECT_ROOT looking for memory package in any node_modules
+  // ADR-0074 Phase 1a: check @sparkleideas/memory (published scope) AND @sparkleideas/memory (dev scope)
   let searchDir = PROJECT_ROOT;
   const { parse } = await import('path');
   while (searchDir !== parse(searchDir).root) {
-    const candidate = join(searchDir, 'node_modules', '@sparkleideas', 'memory', 'dist', 'index.js');
-    if (existsSync(candidate)) {
-      try {
-        return await import(`file://${candidate}`);
-      } catch { /* fall through */ }
+    for (const pkg of ['@sparkleideas/memory', '@sparkleideas/memory']) {
+      const candidate = join(searchDir, 'node_modules', ...pkg.split('/'), 'dist', 'index.js');
+      if (existsSync(candidate)) {
+        try {
+          return await import(`file://${candidate}`);
+        } catch { /* fall through */ }
+      }
     }
     searchDir = dirname(searchDir);
   }
@@ -317,64 +322,8 @@ async function doImport() {
   await backend.shutdown();
 }
 
-async function doSync() {
-  log('Syncing insights to auto memory files...');
-
-  const memPkg = await loadMemoryPackage();
-  if (!memPkg || !memPkg.AutoMemoryBridge) {
-    dim('Memory package not available — skipping sync');
-    return;
-  }
-
-  const config = readConfig();
-  const { backend } = createBackend(config, memPkg);
-  await backend.initialize();
-
-  const entryCount = await backend.count();
-  if (entryCount === 0) {
-    dim('No entries to sync');
-    await backend.shutdown();
-    return;
-  }
-
-  const bridgeConfig = {
-    workingDir: PROJECT_ROOT,
-    syncMode: config.syncMode || 'on-session-end',
-  };
-
-  if (config.learningBridge.enabled && memPkg.LearningBridge) {
-    bridgeConfig.learning = {
-      sonaMode: config.learningBridge.sonaMode,
-      confidenceDecayRate: config.learningBridge.confidenceDecayRate,
-      consolidationThreshold: config.learningBridge.consolidationThreshold,
-    };
-  }
-
-  if (config.memoryGraph.enabled && memPkg.MemoryGraph) {
-    bridgeConfig.graph = {
-      pageRankDamping: config.memoryGraph.pageRankDamping,
-      maxNodes: config.memoryGraph.maxNodes,
-    };
-  }
-
-  const bridge = new memPkg.AutoMemoryBridge(backend, bridgeConfig);
-
-  try {
-    const syncResult = await bridge.syncToAutoMemory();
-    success(`Synced ${syncResult.synced} entries to auto memory`);
-    dim(`├─ Categories updated: ${syncResult.categories?.join(', ') || 'none'}`);
-    dim(`└─ Backend entries: ${entryCount}`);
-
-    // Curate MEMORY.md index with graph-aware ordering
-    await bridge.curateIndex();
-    success('Curated MEMORY.md index');
-  } catch (err) {
-    dim(`Sync failed (non-critical): ${err.message}`);
-  }
-
-  if (bridge.destroy) bridge.destroy();
-  await backend.shutdown();
-}
+// ADR-0083: doSync() removed — router centralizes JSON sidecar writes,
+// eliminating the need for a separate CJS→RVF drain path.
 
 async function doStatus() {
   const memPkg = await loadMemoryPackage();
@@ -409,10 +358,9 @@ process.on('unhandledRejection', () => {});
 try {
   switch (command) {
     case 'import': await doImport(); break;
-    case 'sync': await doSync(); break;
     case 'status': await doStatus(); break;
     default:
-      console.log('Usage: auto-memory-hook.mjs <import|sync|status>');
+      console.log('Usage: auto-memory-hook.mjs <import|status>');
       break;
   }
 } catch (err) {
