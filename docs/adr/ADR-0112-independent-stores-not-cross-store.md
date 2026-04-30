@@ -21,6 +21,14 @@ This framing **was wrong**. There is no dual-store coordination contract. The 8-
 
 The two stores are **two independent stores serving different feature surfaces**. The "cross-store" framing is a misnomer. This ADR codifies the correct framing so future audits, test design, and silent-fallthrough work don't drift back into expecting coordination that was explicitly declined in 2026-04-13.
 
+## Glossary
+
+- **Feature surface**: a coherent set of MCP tools, hooks, or runtime paths that share a single persistence target. Examples: structural memory (RVF, accessed via `mcp__ruflo__memory_*` tools); Reflexion neural-controller (AgentDB SQLite, accessed via `mcp__ruflo__agentdb_reflexion_*` tools). One feature surface = one persistence target.
+- **Store** (in this ADR): a durable on-disk persistence target, owned and accessed by a single feature surface. Currently two: `.swarm/memory.rvf` (RVF) and `.swarm/memory.db` (AgentDB SQLite). Distinct from in-memory caches that mirror the store.
+- **Partition**: the property that each store is accessed by one and only one feature surface; no MCP tool reads or writes both. Verified by tests in W1.8 item #26.
+- **Per-store fail-loud contract**: each store independently satisfies ADR-0082 (no silent fallbacks) for both read and write paths at the method level (not just init time). See §Required follow-up work.
+- **Cross-store coordination**: the ABSENCE of any contract requiring writes to one store imply writes to the other. ADR-0086 §Debt 15 + this ADR explicitly reject cross-store coordination.
+
 ## The two stores
 
 | File | Store | Owner | Purpose | Schema shape | Native? |
@@ -258,7 +266,15 @@ Implement `scripts/lint-fail-loud.mjs` with rules SF1–SF7 (slice 7 design):
 - Partition-holds tests (item #26) pass
 - AgentDB MCP read-tool round-trip tests (item #27) pass
 
-When this gate passes, **ADR-0112 closes** (`Accepted (work pending) → Implemented`).
+**Performance regression gate**: the Phase 2 fail-loud guards add an `if (!this.<backend>) throw` check at the top of every public method. The `requireAgentDB(method)` helper + real `healthCheck()` SQL probe could in worst-case add latency to every `store/get/query` call. Phase 6 also asserts:
+
+- **No >10% regression** on `t3-1-bulk-corpus` (current baseline ~16s for 1000 inserts)
+- **No >10% regression** on `e2e-search-semantic-quality` (current baseline ~5s for store + search)
+- **No >10% regression** on `adr0090-b3-*` worker-metric round-trip tests (latency-sensitive surface)
+
+If any of these regresses past 10%, Phase 6 fails and the regression must be diagnosed before ADR-0112 closes. Likely causes if regressed: real `healthCheck()` adds SQL round-trip on every method call (mitigation: cache the healthcheck result with a 1s TTL); `requireAgentDB` is hot-path (mitigation: inline the check, avoid function-call overhead); reordered write path adds an extra await (mitigation: ensure the AgentDB write was synchronous before).
+
+When all gates pass (test count + lint + unit + partition + read-roundtrip + perf), **ADR-0112 closes** (`Accepted (work pending) → Implemented`).
 
 ### Sequencing
 
@@ -267,6 +283,18 @@ When this gate passes, **ADR-0112 closes** (`Accepted (work pending) → Impleme
 - **Phase 4 after Phase 2 baseline** — lint can run once core silent-fallthroughs are removed; bootstrap annotation pass uses Phase 2's findings
 - **Phase 5 throughout** — ADR amendments land as their corresponding code changes commit (not all at once)
 - **Phase 6 last** — single verification run after all items closed
+
+### Rollback procedure
+
+Phase 2 changes core persistence paths in `agentdb-backend.ts`, `rvf-backend.ts`, `controller-registry.ts`, `memory-router.ts`, and MCP handlers. If post-Phase 2 acceptance regresses unexpectedly (perf regression, deadlock, init-time hang, broader failure than the targeted 9 tests), the revert procedure is **per-track**, not whole-program:
+
+- **Per-track tags**: each Phase 2 track lands as its own commit (or commit cluster) with a `pre-w1.8-<track>` tag on the working branch (`merge/upstream-2026-04-29` in `forks/ruflo`). Tracks: `rvf`, `agentdb-backend`, `controller-registry`, `memory-router`, `mcp-handlers`. Total 5 tags.
+- **Per-track revert**: `git revert <track-commit-range>` reverts that track only. Other tracks' changes preserved. Useful when a single track regresses but others are fine.
+- **Smoke gate after each track lands**: `npm run test:acceptance` against the post-track state. If smoke regresses by more than the expected 0-3 failures (the 9 we expect to flip green minus any broken, plus any genuinely new), halt and revert that track before merging the next.
+- **Whole-Phase-2 revert path**: if multiple tracks combine to regress (e.g., interaction effect), revert all 5 tracks via `git reset --hard pre-w1.8-baseline` on the working branch. This is the nuclear option; coordinate with whoever's holding the working branch checkout.
+- **Phase 1 quick wins are NOT in the per-track scope** — they're single-site fixes with minimal blast radius. If they regress, single-commit revert suffices.
+- **Phase 3 tests can stay green during a revert** — they're new test files, independent of Phase 2 source changes (some tests will go from green to red without the fix; that's expected and acceptable for a revert).
+- **Phase 4 lint annotations DO need coordination on revert** — if Phase 2 reverts, Phase 4's bootstrap annotation pass that marked sites as "now fail-loud, no annotation needed" becomes stale; would need a Phase 4 follow-up annotation pass.
 
 ### Implementation notes (orthogonal)
 
