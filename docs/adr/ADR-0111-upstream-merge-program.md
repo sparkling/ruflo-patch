@@ -1,6 +1,6 @@
 # ADR-0111: Upstream merge program (post-2026-04-29 swarm investigation)
 
-- **Status**: Investigating — merge plan proposed, no execution begun
+- **Status**: Executing — W1 (pre-flight) complete 2026-04-29; W2/W3 pending user gate
 - **Date**: 2026-04-29
 - **Scope**: All 4 forks (`ruflo`, `agentic-flow`, `ruv-FANN`, `ruvector`)
 - **Method**: 15-agent parallel research swarm — each agent owned a slice
@@ -282,7 +282,7 @@ Plugin support is itself a 3-layer system; we have 2 of 3. Mapping for clarity s
 
 These are general merge-hygiene items that surfaced during the swarm investigation; they sit alongside §Action items for the merge above:
 
-1. **Re-audit `911bd4e94` RaBitQ-bridge alignment** against our equivalent integration (we don't have RaBitQ yet, but when the rabitq-wasm publishes land per §Cross-fork merge order step 1, the alignment fix becomes relevant).
+1. **Re-audit `911bd4e94` RaBitQ-bridge alignment** against our equivalent integration (we don't have RaBitQ yet on fork main, but it lands automatically with step 2's upstream sync — no special branch merge required per R15 reframe). The bridge alignment audit happens during ruflo group F when `911bd4e94` is composed onto our `memory-bridge.ts` patches.
 2. **Document each substantive deletion's "upstream-equivalent fix scope"** in ADR-0084 (Dead Code Cleanup) and ADR-0086 (RVF-first) — make the orphan-tracking explicit so future merges don't miss this class of risk.
 3. **Add a build-time check**: list-deleted-files-also-modified-upstream as a diagnostic in `scripts/sync-upstream` (or wherever the merge prep lives) so the orphan-list surfaces every merge cycle.
 
@@ -495,7 +495,7 @@ We forked ~6 weeks ago from the same upstream codebase. Since then we built a co
 
 | Severity | File | Hunks | Resolution shape | Time |
 |---|---|---|---|---|
-| Critical | `hive-mind-tools.ts` `hive-mind_memory` set/delete | 2 | Take upstream body (validation + AgentDB sidecar + real consensus), wrap in `withHiveStoreLock(async () => { ... })`. **HNSW vector cleanup goes INSIDE the lock**. Move silent `bridge.bridgeStoreEntry` outside the lock and make catch loud. | 30-45 min |
+| Critical | `hive-mind-tools.ts` `hive-mind_memory` set/delete | 2 | Take upstream body (AgentDB sidecar from `04d6a9a0a` + real consensus from `6992d5f67`), wrap in `withHiveStoreLock(async () => { ... })`. Move silent `bridge.bridgeStoreEntry` outside the lock; replace `catch { /* AgentDB not available */ }` with **loud** `catch (err) { console.error('[hive-mind_memory] AgentDB sidecar failed:', err); }` per `feedback-no-fallbacks.md`. **NOTE — corrected 2026-04-29 post-W2/W3**: the earlier "validation + AgentDB sidecar + real consensus" tri-fold conflated three letters. Validation arrives in letter D (`dc2abef2a` introduces `validate-input.ts`, `a101c2a08` calls it from this handler — that's a separate hand-merge with its own 60-85 min budget). Sidecar + consensus arrive in letter E. Also corrected: "HNSW vector cleanup goes INSIDE the lock" does NOT apply here — that cleanup is in `memory-tools.ts memory_delete` (letter D), not `hive-mind-tools.ts hive-mind_memory delete`. | 30-45 min for the sidecar-into-lock + loud-catch composition |
 | High | `commands/hive-mind.ts` line-157 spawn prompt | 1 | `0590bf29c` rebranded `mcp__claude-flow__*` → `mcp__ruflo__*` in same prompt block. Take rebranded text as base, layer our Task-tool restoration + WORKER COORDINATION CONTRACT on top. Verify all `mcp__ruflo__*` references. | 10-15 min |
 | Medium | `parser.ts` globalOptions table | 1 | `01070ede8` (Tier A blockers) restructured the same `globalOptions` block. Keep our `non-interactive` entry inside upstream's restructured array; preserve upstream's `lazyCommandNames` registry + `sawFirstPositional`. | 5-10 min |
 | Trivial | `hive-mind-tools.ts` import block | 1 | Merged import block keeping upstream's new validation imports + our expanded `node:fs` imports. | 3 min |
@@ -514,7 +514,7 @@ Required publishes before ruflo can build:
 
 - `@sparkleideas/ruvector-graph-node` (+ 5 platform binaries: darwin-arm64, darwin-x64, linux-x64-gnu, linux-arm64-gnu, win32-x64-msvc) — needed by `7eb505d22` (ADR-086/087)
 - `@sparkleideas/ruvector-ruvllm` (+ 5 platform binaries) — needed by `7eb505d22` and `bf23566f0`
-- `@sparkleideas/ruvector-rabitq-wasm` — needed by `ca4d1f0a4`/`911bd4e94` (RaBitQ). **Sequencing dependency**: not in our ruvector fork's `main` yet (upstream has it on `feat/wasm-packages-rabitq-acorn`, commit `ce1afecb`). Merge that ruvector branch into `forks/ruvector/main` first, then publish `@sparkleideas/ruvector-rabitq-wasm` from our pipeline, then the RaBitQ commits in ruflo land. Per `feedback-no-value-judgements-on-features.md` — wire all features; this is a build-order constraint, not a value judgement to skip.
+- `@sparkleideas/ruvector-rabitq-wasm` — needed by `ca4d1f0a4`/`911bd4e94` (RaBitQ). **No special sequencing**: RaBitQ landed on upstream main via PR #370 (2026-04-23, foundation crate `ruvector-rabitq`) + PR #394 (2026-04-26, squash-merge of `ce1afecb` adding `crates/ruvector-rabitq-wasm` + `npm/packages/rabitq-wasm/` + ADR-161). Comes along on the normal step-2 ruvector upstream sync; pipeline runs `crates/ruvector-rabitq-wasm/build.sh` (wasm-pack on demand for web/nodejs/bundler targets); codemod renames; publish under `@sparkleideas/ruvector-rabitq-wasm`. Earlier draft framed this as requiring an upstream-WIP-branch merge — corrected per R15 reframe.
 
 Acceptance gate: `npm run test:acceptance:ruvector` passes against a fresh init'd project. Specifically verify `GraphDatabase.open()` storage hydration (sparkling commit `d8ba8b03`) and `MATCH (n) RETURN n` no-label branch (sparkling commit `5bc11872`) survive merge with upstream. Embedding pipeline still 768-dim (`reference-embedding-model.md`).
 
@@ -563,8 +563,8 @@ F. PERF-03 + native backends (ADR-086/087)
    7eb505d22  native ruvllm + graph-node intelligence backends [requires ruvector publishes]
    bf23566f0  saveCheckpoint JS-fallback guard
    01c764f6f  microlora 768-dim padding
-   ca4d1f0a4  RaBitQ 1-bit quantized search [SEQUENCING: blocked on rabitq-wasm publish from ruvector fork; lands once @sparkleideas/ruvector-rabitq-wasm@latest is verified — wire-all per feedback-no-value-judgements-on-features.md, not skip]
-   911bd4e94  browser fixes + RaBitQ bridge alignment [SEQUENCING: same as ca4d1f0a4]
+   ca4d1f0a4  RaBitQ 1-bit quantized search [resolves at npm install once step 2's ruvector sync publishes @sparkleideas/ruvector-rabitq-wasm; ruflo runtime is dynamic-import + try/catch with graceful BM25/HNSW fallback — soft at runtime, hard only at install time per R15 reframe]
+   911bd4e94  browser fixes + RaBitQ bridge alignment [same resolution path as ca4d1f0a4]
 
 G. Plugins & marketplace
    81418649c  19 Claude Code native plugins [HUGE: 130 files, README→stub, marketplace.json rewrite]
@@ -588,13 +588,20 @@ H. Misc small fixes (low-risk, last)
    8824fe3c4  Tier A+B 13-issue cluster
 
 I. Fork-side hand-conflicts (rebase guidance — these are OUR commits, not upstream; they must survive the rebase intact)
-   0cd9c4a39  13-axis init port, collides with upstream's 19-plugin marketplace + yaml→md → resolve by keeping our axis-specific bits, accepting upstream's marketplace + yaml→md scaffolding alongside
+   0cd9c4a39  13-axis init port — **NO ACTUAL CONFLICT (corrected 2026-04-29 post-W3)**. Paths are fully disjoint: our commit touches 6 TypeScript files in `v3/@claude-flow/cli/src/{commands,init}/`; upstream's `81418649c` 19-plugin marketplace touches 130 files in `plugins/`/`.claude-plugin/`/`.github/`/`docs/`. The earlier "yaml→md collision" framing conflated SG-008 `config.yaml`→`config.json` (runtime config, our concern) with upstream's `_config.yml` (Jekyll docs storefront, unrelated). Three-way merge composes cleanly in any order. ~5 min verification.
    5b7cefaea  memory-bridge controller wiring → memory-bridge.ts is upstream-deleted-by-us per ADR-0086; resolve `deleted-by-us/modified-by-them` as keep-our-deletion; controller wiring already migrated to memory-router.ts
-   f46a104b0  controller-registry P2-B/C + P5-C → preserve fork divergence; reconcile any naming collisions with upstream's parallel controller naming
+   f46a104b0  controller-registry P2-B/C + P5-C — **CORRECTED 2026-04-29 post-W3**: `controller-registry.ts` is NOT fork-only. Originated upstream as `bfef01821` (ADR-053). Zero textual overlap expected: our edits at lines 65/161/519/633 (CLIControllerName union, INIT_LEVELS Level 1, isControllerEnabled core-intelligence default-on group, factory `case 'solverBandit'`); upstream's window touches at line ~747 (ReasoningBank embedder param via `bff8a34af`) + minor ESM `import('node:path')` (`5a5bfa6a6`). Recipe: preserve fork's solverBandit registration + attestationLog wiring + 3 bridge wrappers; let 3-way merge layer upstream's ReasoningBank embedder param + ESM fix on top. ~8 min. Per ADR-0107/0108/0109 (W5 reconciliation), wiring upstream's `TopologyManager`/`QueenCoordinator`/`ConsensusEngine` into the registry is W5 work, not part of this merge.
    a3b3d7797  worker-daemon `maxCpuLoad: 28.0` → adopt upstream's `100ffeaa3` proportional formula `Math.max(cpuCount * 0.8, 2.0)`; on a 16-core M5 Max this yields 12.8, not 28; document as a fork-config override IF intentional, otherwise drop our 28.0 override
    6 RVF backend commits in ADR-0090 → collide with upstream `8824fe3c4` persistQueue; compose (queue inside our lock); see §Pattern 1 row 10
-   ADR-0085 deletion conflicts (~16 commits) → resolve all `deleted-by-us/modified-by-them` as keep-our-deletion; the upstream changes are in files our ADR-0085/0086 already eliminated
-   2 squash-pre-merge pairs → squash before rebase: (de14ffe4d + 9f44022ed SG-004 add+supersede) and (2c311d36e + 67f143f8e DM-001 384d→768d direction reversal)
+   ADR-0085 deletion conflicts (~15 commits across 4 deleted files) → **REVISED 2026-04-30 post-orphan-audit**: mechanical merge resolution is `git rm` (all `deleted-by-us/modified-by-them` cases). Per-commit semantic verdicts from the W4-prep orphan-deletion audit (see §Implementation Log entry):
+       - **2 pre-resolved by W1.5 + W1.6**: `911bd4e94` (`bridgeGetAllEmbeddings` → `routerGetAllEmbeddings`); `8824fe3c4` (`vectorBackend: 'auto'` → `'ruvector'`, stricter)
+       - **8 absorbed**: `ca4d1f0a4` (RVF atomic store + BM25 fallback in router); `0752e5963` (`Xenova/all-mpnet-base-v2` default at router:449); `bff8a34af` (namespace `'all'` default at memory-tools:289 + dual-method dispatch); `5a5bfa6a6` (dual-method dispatch at router:1426-1444 + static `import * as path from 'node:path'`); `c07ff8f48` (RVF atomic delete + HNSW); `e0d4703eb` (ruvector ONNX fallback in EmbeddingPipeline); `6992d5f67` (RVF surgical HNSW remove)
+       - **4 n/a (bug class structurally absent)**: `39c3ffe96` (null-embedder race fails-loud at construction); `04d6a9a0a` (TypeScript-only patch); `75fe9f564` (sql.js path deleted with memory-initializer); `5151aa9b2` hybrid-backend.test.ts portion (hybrid-backend abstraction gone)
+       - **1 port-required (W1.7)**: `e50df6722` `safeJsonParse` for prototype-pollution defense at `agentdb-backend.ts:955-963`. Upstream applied this to `sqljs-backend.ts` (deleted on our fork) but the same vulnerability class exists in our AgentDB SQLite path
+       - **1 open question (deferred)**: `656d404b2` LocalReasoningBank registry-fallback semantics — whether `agentdb.getController('reasoningBank')` ever returns null on a working AgentDB construction. Investigation in flight; verdict will close as either absorbed (Hypothesis A: AgentDB always wires correctly post-W1.5/W1.6 fail-loud) or port-required (Hypothesis B: legitimate null state requires `LocalReasoningBank` fallback)
+       
+       **Earlier "all 9 → keep-our-deletion" framing was directionally correct but elided the per-commit semantic question** ("did our deletion + replacement absorb the upstream fix, or did we lose it?"). The audit found 1 real port-required item that the blanket policy would have missed. Future merge waves should run the same audit shape rather than defaulting to the blanket policy.
+   2 squash-pre-merge pairs → **DROPPED 2026-04-30** per memory `feedback-no-history-squash.md` (R16 closed). Both pairs (`de14ffe4d`+`9f44022ed` SG-004, `2c311d36e`+`67f143f8e` DM-001) stay as-is in history. W4 rebase replays both commits per pair; minor noise accepted. No force-push to `sparkling/main`.
 ```
 
 Acceptance gate: `npm run test:unit && npm run test:acceptance` (full cascade); `lib/acceptance-adr0104-checks.sh` end-to-end (every section has explicit assertions; failures surface in <1 minute); manual smoke for live hive after merge.
@@ -660,9 +667,9 @@ For future ADR-0106 cross-hive evolution: `6db89867` (`ruvector-delta-consensus`
 | R12 | 26 → 171 ruvector crates: publish-scope explosion | Decide before merging: keep current 26-crate set vs whitelist new crates vs mirror all 171. Decision: mirror all 171 per `feedback-no-value-judgements-on-features.md`. Affects `-patch.N` pinning surface area |
 | R13 | 5 bare `process.cwd()` sites in `memory-router.ts` (lines 204, 209, 273, 312, 316) replicate the cwd-churn bug class upstream's `bff8a34af`/`5c5ede94b` patched | Pre-flight item (§Decision plan step 1); replace with `findProjectRoot()` before merge starts. Acceptance check: `memory store` from `CWD=/` writes to same `.rvf` as inside init'd project |
 | R14 | Orphaned-deletion hazard (16 of 125 deleted files have upstream activity in window) — `git merge` keeps our deletion; upstream fixes silently disappear | §Deleted-file orphans audit completed; 12 of 16 are aligned (yaml→md direction); 4 substantive memory files audited per R13. Add `scripts/sync-upstream` build-time check that lists `deleted-by-us` files where upstream modified the file in the merge window (§Cross-cutting orphan-handling action items #3) |
-| R15 | RaBitQ commits `ca4d1f0a4` / `911bd4e94` blocked on `@sparkleideas/ruvector-rabitq-wasm` publish from upstream branch `feat/wasm-packages-rabitq-acorn` (commit `ce1afecb`) | Step 1 of merge order (ruvector first) merges that branch into ruvector-fork main, publishes the package; only then do `ca4d1f0a4` / `911bd4e94` land in ruflo group F. Hard sequencing dependency, not an optional gate |
-| R16 | 2 squash-pre-merge pairs are pre-existing fork-history nonsense that creates needless conflict noise on rebase: (`de14ffe4d` + `9f44022ed` SG-004 add+supersede) and (`2c311d36e` + `67f143f8e` DM-001 384d→768d direction reversal) | `git rebase -i` to squash each pair on `forks/ruflo` `main` BEFORE the upstream merge starts; document in §Cross-fork merge order group I |
-| R17 | Our `a3b3d7797` `maxCpuLoad: 28.0` collides with upstream `100ffeaa3` proportional formula `Math.max(cpuCount * 0.8, 2.0)` (yields 12.8 on M5 Max 16-core) | Adopt upstream's formula; document fork-config override only if intentional and load-tested. Acceptance check that the merged config produces a ceiling within `[8, 32]` for typical core counts |
+| R15 | ~~RaBitQ commits `ca4d1f0a4` / `911bd4e94` blocked on `@sparkleideas/ruvector-rabitq-wasm` publish from upstream branch `feat/wasm-packages-rabitq-acorn` (commit `ce1afecb`)~~ — **REFRAMED 2026-04-29 post-W1**: RaBitQ is **already in upstream main** (PR #370 merged the foundation crate `ruvector-rabitq` 2026-04-23; PR #394 squash-merged `ce1afecb` adding `crates/ruvector-rabitq-wasm` + `npm/packages/rabitq-wasm/` + ADR-161 to `origin/main` 2026-04-26). It's not "an upstream WIP feature branch we have to pre-empt" — it's a feature that landed in upstream main and rides the normal sync in §Decision plan step 2 (ruvector merge). Additionally, ruflo's runtime imports are all dynamic `await import()` inside try/catch with graceful BM25/HNSW fallback; the only hard requirement is `npm install` resolving `@sparkleideas/ruvector-rabitq-wasm`, which is satisfied as soon as we sync upstream + build + codemod + publish. **No special handling required.** | Standard step 2 (ruvector full upstream sync): rabitq comes along; pipeline runs `crates/ruvector-rabitq-wasm/build.sh` (wasm-pack on demand); codemod renames; publish `@sparkleideas/ruvector-rabitq-wasm@0.1.0-patch.N`. ruflo group F's `ca4d1f0a4` + `911bd4e94` then resolve cleanly at `npm install`. Optional Path B: also pull the 5 extra commits on `feat/wasm-packages-rabitq-acorn` (5 ahead, 15 behind upstream main, **0 conflicts vs origin/main** per agent-3 dry-merge — earlier W1 preflight reported 1016 conflicts because it ran the dry-merge against our 200+-commit-stale fork main, not against upstream main). |
+| R16 | ~~2 squash-pre-merge pairs are pre-existing fork-history nonsense that creates needless conflict noise on rebase~~ — **CLOSED 2026-04-30 per memory `feedback-no-history-squash.md`**: do not squash. Squashing rewrites history and risks data loss; clean fork history is not a project goal. Carefully merge instead. Both pairs (`de14ffe4d`+`9f44022ed` SG-004, `2c311d36e`+`67f143f8e` DM-001) stay in history as-is. Any rebase noise during W4 from replaying the pairs is acceptable. | None — keep both pairs in history; let W4 rebase replay both commits per pair. No force-push to `sparkling/main`. |
+| R17 | ~~Our `a3b3d7797` `maxCpuLoad: 28.0` collides with upstream `100ffeaa3` proportional formula~~ — **CORRECTED 2026-04-29 post-W3**: `worker-daemon.ts` already merged the upstream formula correctly on `merge/upstream-2026-04-29` (lines 159-160 `Math.max(cpuCount * 0.8, 2.0)`, 16-core M5 Max yields 12.8 — cgroup-aware). The surviving `28.0` is in **`v3/@claude-flow/cli/src/init/config-template.ts:256`** (init template). Resolution: drop the `maxCpuLoad: 28` literal from `config-template.ts:256` and the `maxCpuLoad` key from the init template's `daemon.resourceThresholds` block. Result: init no longer writes a Hetzner-tuned override into every fresh `.claude-flow/config.json`; runtime uses upstream's smart formula. The other 9 patches in `a3b3d7797` (HW-001..004, DM-001/003/004/006, WM-108) are NOT upstream-redundant and survive unchanged. Verdict on `28.0`: accidental Hetzner-32-thread sympathetic value (no load-test commit; contradicts our own `72e7305eb` portability policy). | Drop the literal in `config-template.ts:256`; add inline comment that 32+ thread servers can override via `daemon.resourceThresholds.maxCpuLoad` in user `.claude-flow/config.json` (priority chain at `worker-daemon.ts:177`). ~5 min. |
 | R18 | `5b7cefaea` (memory-bridge controller wiring) + `f46a104b0` (controller-registry P2-B/C + P5-C) hand-conflict during rebase | §Cross-fork merge order group I documents the resolution per commit. `rerere` will speed up the second pass if any retry is needed |
 
 ## Decision: recommended merge plan
@@ -677,6 +684,7 @@ Execute as a **single coordinated wave** across the 4 forks, gated at each phase
    - Ensure plugin-sandbox namespace gate codemod rule exists.
    - **Revert 3 CI/CD probe leftover commits** (`31363d5bc`, `4e253bcd7`, `f72bd028d`) on `forks/ruflo` `main` — they each append a `// pipeline-test-<ts>` / `// cicd-test-<ts>` / `// cicd-final-<ts>` comment to `v3/@claude-flow/shared/src/index.ts:196-198`. Useless post-merge; create needless 3-way conflict noise on every future merge cycle.
    - Replace 5 bare `process.cwd()` sites in `v3/@claude-flow/cli/src/memory/memory-router.ts` (lines 204, 209, 273, 312, 316) with `findProjectRoot()` (already exported from `cli/src/mcp-tools/types.ts:50`; renamed from `getProjectCwd` on 2026-04-23 per ADR-0100) — closes the same bug class upstream's `bff8a34af`/`5c5ede94b` fixed elsewhere.
+   - **Enable rerere on each fork's working branch BEFORE letter-group merges start** (added 2026-04-29 post-W2 letter-E recipe): `git config rerere.enabled true && git config rerere.autoUpdate true`. Letter E's hive-mind cluster (`8c4cecfb1`/`0590bf29c`/`04d6a9a0a`/`6992d5f67` all touch `hive-mind-tools.ts` and `commands/hive-mind.ts`) requires `--strategy=ort --strategy-option=patience` with rerere; cherry-pick is forbidden per §Conflict zones to avoid re-entering the same conflict 4 times.
 2. **Merge ruvector** — full source merge (no feature skips per `feedback-no-value-judgements-on-features.md`). Mechanical handling only: ~510 NAPI bot-regenerated artifacts rebase as empty diffs after `cargo build` regenerates them locally; ~16 self-superseded commits resolve as `keep-deletion` (our ADR-0085/0086 already deleted what they patched); 3 CI/CD probe leftover commits revert pre-merge per §Pre-flight. All 171 crates publish as `@sparkleideas/*` (codemod handles renames). `cargo build` clean; publish `@sparkleideas/ruvector-*` (+ platform binaries for graph-node and ruvllm) to local Verdaccio.
 3. **Acceptance gate**: `npm run test:acceptance:ruvector` against fresh init'd project. Verify P4-WASM + P5-RuVLLM. Embedding pipeline 768-dim. Format compatibility.
 4. **Merge ruflo** in order A → B → C → D → E → F → G → H per the lettered groups above. Group I is the fork-side rebase-conflict guide that applies *during* group A-H execution, not as a separate step. Use `--strategy=ort --strategy-option=patience` + `rerere enabled`. Hand-resolve the 5 conflict-zone hunks (§Conflict zones).
@@ -798,7 +806,7 @@ Per-worker tasks:
 | `preflight-ruflo` | Replace 5 bare `process.cwd()` sites in `memory-router.ts` with `findProjectRoot()`; revert 3 CI/CD probe commits (`31363d5bc`, `4e253bcd7`, `f72bd028d`); move `.claude/helpers/statusline.cjs` into fork source per R9 | `preflight/ruflo/{cwd-sites, probe-revert, statusline}` |
 | `preflight-ruvector` | Bump `rust-toolchain.toml` to `stable` ≥1.92; update codemod regex tests for new `@ruvector/{ruvllm, graph-node, rabitq-wasm}` imports; verify `feat/wasm-packages-rabitq-acorn` is mergeable | `preflight/ruvector/{rust-bump, codemod-regex, rabitq-branch}` |
 | `preflight-agentic-flow` | Bump `engines.node` to `>=20`; verify `-patch.N` baseline syncs with new ruvector; bookkeeping-only sanity check | `preflight/agentic-flow/{engine-bump, baseline-sync}` |
-| `preflight-ruv-FANN` | Bump `engines.node` to `>=20`; bookkeeping sanity check; squash 2 fork-side pre-merge pairs (`de14ffe4d`+`9f44022ed`, `2c311d36e`+`67f143f8e`) on `forks/ruflo` `main` *before* W4 starts (R16) | `preflight/ruv-FANN/{engine-bump, squash-pairs}` |
+| `preflight-ruv-FANN` | Bump `engines.node` to `>=20`; bookkeeping sanity check. ~~Squash 2 fork-side pre-merge pairs~~ — squash dropped 2026-04-30 (R16 closed per memory `feedback-no-history-squash.md`). | `preflight/ruv-FANN/{engine-bump}` |
 
 **Wave gate**: all 4 workers report `done` to `preflight/<fork>/status` before W4 begins. Queen aggregates via consensus check (`hive-mind_consensus({strategy: 'quorum', preset: 'unanimous'})`).
 
@@ -1007,4 +1015,121 @@ Following the swarm investigation, a 4-agent validation swarm was run to verify 
 
 **Verified correct (no change required)**: all 21 cited ruflo SHAs exist and match descriptions; all 5 new upstream ADRs (085-088, 092) exist; all 15 ruvector breaking-change SHAs exist; 510 NAPI bot churn count exact; sparkling commits `d8ba8b03`+`5bc11872` confirmed; RaBitQ branch + `ce1afecb` confirmed; RVF format stability verified (`unknown_segment_preservation.rs`, no layout rewrites); `6db89867` + `6990be76` ready-made primitives confirmed; lock primitives (`withHiveStoreLock`/`withSwarmStoreLock`/`withClaimsLock`) verified; `topology-manager.ts` 656 LOC verified; `queen-coordinator.ts` 2030 LOC verified; conflict-zone files exist; ADR-0098 ship verified (commit `32c13d322`); `7eb505d22` `graph-backend.ts` signatures verified.
 
-The ADR remains **`Status: Investigating`**. Execution is a separate decision.
+### 2026-04-29 — Wave 1 (pre-flight) executed
+
+4 parallel agents per §Multi-agent execution plan W1. All 4 working branches `merge/upstream-2026-04-29` created off each fork's `main` and pushed to `sparkling/<fork>`.
+
+| Agent | Fork | HEAD | Status |
+|---|---|---|---|
+| `preflight-ruflo` | `forks/ruflo` | `b53f48b249` | ✅ |
+| `preflight-ruvector` | `forks/ruvector` | `0af8ed57a6` | ✅ |
+| `preflight-agentic-flow` | `forks/agentic-flow` | `503c8d9cdd` | ✅ |
+| `preflight-ruv-FANN` | `forks/ruv-FANN` | `828579a52b` | ✅ |
+
+**Pre-flight items completed:**
+
+- **R13 cwd-churn cleanup** — 5 bare `process.cwd()` sites in `v3/@claude-flow/cli/src/memory/memory-router.ts:{204,209,273,312,316}` replaced with `findProjectRoot()`. Import added: `import { findProjectRoot } from '../mcp-tools/types.js';`. Closes the same bug class upstream's `bff8a34af`/`5c5ede94b` patched elsewhere.
+- **CI/CD probe revert** — 3 leftover comment lines (`// pipeline-test-1773520675`, `// cicd-test-1773520822`, `// cicd-final-1773522020`) removed from `v3/@claude-flow/shared/src/index.ts`. Cleaner than 3 revert commits.
+- **R9 statusline** — investigation showed disposition is **identical-no-action**: the actual source template at `v3/@claude-flow/cli/src/init/statusline-generator.ts` (`generateStatuslineScript()`, 839 LOC) wired into the regenerator at `v3/@claude-flow/cli/src/init/helpers-generator.ts:1363` already contains all our customizations (`'Opus 4.6 (1M context)'` at template lines 182/198, `.swarm` paths at 208/302/464/480 per ADR-0069 A4). When upstream `a0ef36cbb` regenerates, it regenerates from this template, preserving our customizations. The two `.claude/helpers/statusline.cjs` overlay copies are stale runtime artifacts at different snapshots, not source-of-truth. **R9 risk assessment in this ADR was overcautious.**
+- **Rust toolchain** — `forks/ruvector` got new `rust-toolchain.toml` pinned to `stable` and `Cargo.toml` `rust-version` bumped `1.77` → `1.92`. Edition stayed at `2021` (the `2024` migration is W4 work touching upstream-source files; not pre-flight). Local rustc 1.95 verified well above the floor.
+- **engines.node ≥20** — `forks/agentic-flow` updated 16 package.json files; `forks/ruv-FANN` updated 3. Both top-level package.json files bumped (already-present, value bumped). `ruv-FANN` install passes (933 packages, 4s, no engine warnings); `agentic-flow` install was already broken pre-bump (pipeline state references unpublished `agentdb@3.0.0-alpha.10-patch.348`) — pre-existing, not caused by the bump.
+- **Codemod regex tests** — `tests/pipeline/codemod.test.mjs` got 2 new test cases covering `@ruvector/{ruvllm, graph-node, rabitq-wasm}` → `@sparkleideas/ruvector-*` rename for static `import` + `require` (incl. subpath) plus `package.json` deps with caret/tilde/exact/prerelease/peerDeps ranges. Existing prefix rule at `scripts/codemod.mjs:30-31, 219` already handles all 3 packages — tests just lock in the contract. **Uncommitted in `ruflo-patch` working tree**, awaiting user review.
+
+**New findings (decisions surfaced for W2/W3 gate):**
+
+1. ~~**R15 amplified — rabitq branch dry-merge has 1016 conflicts.**~~ **REFRAMED 2026-04-29 post-investigation** (4-agent rabitq investigation swarm): the 1016-conflict count was a real number but a **stale-base artifact**, not a rabitq-specific signal. The W1 preflight-ruvector agent ran `git merge --no-commit feat/wasm-packages-rabitq-acorn` from the W1 working branch off our **fork main** (HEAD `8225c53cb`, last upstream sync 2026-04-06 `a5ede10a` — 200+ commits behind upstream main HEAD `20aca12a`, 1438 files of accumulated divergence). Independent verification: agent-3 ran the same dry-merge against `origin/main` and got **0 conflicts** (the branch is 5 ahead, 15 behind upstream main; sym-diff 28 files). Investigation also revealed: (a) RaBitQ is **already in upstream main** via PR #370 (2026-04-23, foundation crate) + PR #394 (2026-04-26, `ce1afecb` squash-merge adds `crates/ruvector-rabitq-wasm` + `npm/packages/rabitq-wasm/` + ADR-161); (b) `@ruvector/rabitq-wasm@0.1.0` is **already published on public npm**; (c) ruflo's consumer is dynamic-import + try/catch + graceful BM25/HNSW fallback — `npm install` is the only hard gate, runtime is soft. **Net**: R15 collapses; rabitq rides the normal step-2 ruvector upstream sync. See R15 reframe in §Risk register and the rabitq-specific note in §Cross-fork merge order step 1.
+
+2. **R16 squash-pair Pair B re-evaluation.** `2c311d36e` + `67f143f8e` (DM-001 384d→768d direction reversal) are adjacent (1 unrelated intervening merge), but post-pair churn on the 5 affected files is heavy: `controller-registry.ts`=62 commits, `memory-bridge.ts`=58, `memory-initializer.ts`=46, `embeddings-tools.ts`=9, `neural.ts`=5. Squashing changes the diff vs. parent of 4 fork-only files, forcing rebase replay across ≈60 follow-up commits per file. **Squashing Pair B may *increase* total rebase work rather than decrease it.** The merged-final state (768-dim) is preserved either way. Recommend: **skip Pair B squash**; W4 rebase will resolve the dimension transition mechanically when those follow-up commits replay.
+
+3. **R16 Pair A safe to squash.** `de14ffe4d` + `9f44022ed` (SG-004 add+supersede) — 9 unrelated merge intermediaries between them, **0 inter and 0 post-pair commits touch the same files**. Mechanical squash, low risk. Awaiting force-push gate (sparkling/main rewrite) — no execution.
+
+4. **forks/ruflo `cli` package tsc broken pre-W1.** 479 `Cannot find name 'process'` errors plus missing `@types/node`/`semver`/`agentdb`/setTimeout DOM-lib issues in `cli/src/transfer/`, `cli/src/update/`, etc. Zero new errors from W1 edits. Pre-existing fork state, not blocking pre-flight. Will need addressing for W4 acceptance gates (`npm run build` is required after letter group F per §Test-coverage gates).
+
+**Pending user gates before W2/W3:**
+
+- ✅ ~~R15 strategy decision~~ — **resolved**: rabitq is already in upstream main; no special branch handling. Standard step-2 ruvector sync ships it. Optional Path B: pull Branch 1's 5 extra refinement commits beyond what PR #394 squash-merged — 0 conflicts vs upstream main; deferrable.
+- ✅ ~~R16 Pair A squash force-push~~ — **closed 2026-04-30**: dropped per memory `feedback-no-history-squash.md`. Both pairs stay in history.
+- ✅ ~~R16 Pair B squash decision~~ — **closed 2026-04-30**: same as Pair A — dropped.
+- ✋ Fix forks/ruflo `cli` tsc state OR explicitly accept it as a known-broken state for W4 (with a documented unblocker before letter group F's build gate).
+- ✋ Codemod regex test commit on `ruflo-patch` (uncommitted in working tree).
+
+### 2026-04-29 — Post-W1: 4-agent rabitq investigation swarm
+
+Triggered by user pushback on the W1 preflight-ruvector "1016 conflicts" finding for `feat/wasm-packages-rabitq-acorn` and the implied need to merge an upstream WIP branch. 4 read-only agents covered: (1) upstream ruvector ADRs + docs, (2) RaBitQ code surface in `origin/main`, (3) per-branch dossier across the 6 rabitq-related upstream branches, (4) commit timeline + ruflo consumer-side analysis.
+
+**Findings, condensed:**
+
+- **RaBitQ landed in upstream main 2026-04-23 → 2026-04-26.** PR #370 (`2c028aee`) brought the foundation `crates/ruvector-rabitq` (3717 LOC, 40 tests, mature). Subsequent commits on origin/main added Hadamard rotation, AVX2/AVX-512 dispatch, persistence, SoA storage, kernel trait. PR #394 squash-merged `ce1afecb` adding `crates/ruvector-rabitq-wasm` (188 LOC wasm-bindgen wrapper) + `npm/packages/rabitq-wasm/` (package skeleton — `.gitignore` deliberately excludes `.wasm/.js/.d.ts`, built via `wasm-pack` per `build.sh`).
+- **`@ruvector/rabitq-wasm@0.1.0` is already published on public npm.** Verified via `npm view`. ADRs 154/161 are still `Proposed` (not Accepted), CHANGELOG has zero rabitq entries — research-tier ship-but-unannounced posture, not stable API.
+- **Per-branch dossier.** 6 rabitq-related upstream branches: `feat/wasm-packages-rabitq-acorn` (Branch 1: 5 ahead, 15 behind, **0 conflicts vs origin/main**, strict superset of all others, defines the npm package); `feature/diskann-rabitq-{backend,persistence}` (Branches 2+3: separate diskann-quantizer surface, Branch 3 ⊃ Branch 2, 0 conflicts each); `feature/rabitq-wasm` (Branch 4: superseded by Branch 1); `research/nightly/2026-04-23-rabitq` (Branch 5: already merged via PR #370); `research/rabitq-integration` (Branch 6: pure docs, 0 conflicts).
+- **The W1 preflight-ruvector "1016 conflicts" was real but stale-base.** It measured `merge --no-commit feat/wasm-packages-rabitq-acorn` from W1 working branch off **fork main** (`8225c53cb`, ~200+ commits behind upstream main `20aca12a`, 1438-file accumulated divergence). Agent-3's independent dry-merge against `origin/main` showed **0 conflicts**. Both numbers are correct; they measure different operations.
+- **ruflo consumer side.** `ca4d1f0a4` adds `v3/@claude-flow/cli/src/memory/rabitq-index.ts` (296 LOC), 3 new MCP tools (`embeddings_rabitq_{build,search,status}`), and declares `"@ruvector/rabitq-wasm": "^0.1.0"` in `v3/@claude-flow/cli/package.json` regular `dependencies`. **All 3 production import sites use dynamic `await import()` inside try/catch** with explicit `RaBitQ unavailable, fall through` fallback. `911bd4e94` adds bridge alignment fix. Net: hard at `npm install`, soft at runtime. The "hard sequencing dependency" framing in pre-investigation R15 was overstated.
+
+**Plan deltas applied (this revision):**
+- R15 reframed in §Risk register — collapses to "no special handling".
+- §Cross-fork merge order step 1 rabitq bullet rewritten — no more "merge feat/wasm-packages-rabitq-acorn into fork main first".
+- §Cross-fork merge order step 2 group F annotations on `ca4d1f0a4` / `911bd4e94` updated — soft-runtime + hard-install-time framing.
+- §Cross-cutting orphan-handling action item #1 (`911bd4e94` re-audit) re-anchored to ruflo group F.
+
+**Plan unchanged:**
+- §Cross-fork merge order step ordering (ruvector → ruflo → bookkeeping) still correct; rabitq just doesn't require a special branch merge inside step 2.
+- §Conflict zones unchanged; rabitq is not in the 5-hunk hot zone.
+- W2 + W3 design unchanged (per §Multi-agent execution plan).
+
+**Optional Path B still open**: pull Branch 1's 5 extra commits (post-PR-#394 refinements) into the fork during step-2 ruvector sync. 0 conflicts vs origin/main. Worth a 5-minute check on what those 5 commits actually contain before deciding; deferrable until step-2 execution.
+
+### 2026-04-29 — Wave 2 + Wave 3 (recipe staging) executed
+
+14 read-only investigation agents (8 W2 letter-group + 6 W3 fork-side conflict) per §Multi-agent execution plan. Diff-inspection methodology (no actual merges; classify conflict shape from sym-diff overlap). All recipes produced for the W4 coordinator.
+
+**Total estimated W4 hand-merge time: ~762–841 min (~13–14h)**
+
+| Slice | Commits | Minutes | Status |
+|---|---:|---:|---|
+| W2 A — Test infra | 2 | 10 | 1 clean, 1 single-file structural |
+| W2 B — ESM/CJS hardening | 2 | 20 | parser.ts: keep BOTH `--non-interactive` AND upstream `lazyCommandNames` |
+| W2 C — Daemon/session P0 | 5 | 110 | 2 superseded-skip; 1 partial re-port; 2 selective hunks |
+| W2 D — Validation/honest metrics | 10 | 105–150 | 5 empty-after-rebase; a101c2a08 critical 60-85 min |
+| W2 E — Hive-mind cluster | 6 | 55–80 | 4 hunks (not 5 — see §Conflict zones correction); rerere required |
+| W2 F — PERF-03 + native backends | 7 | 195 | 3 commits modify deleted memory-bridge → re-anchor to memory-router |
+| W2 G — Plugins & marketplace | 10 | 136 | 81418649c no overlap with 0cd9c4a39; f3cc99d8b namespace gate codemod |
+| W2 H — Misc small fixes | 7 | 48 | 5 pre-resolved; 1 mild blocker on 8824fe3c4 |
+| W3 0cd9c4a39 | 1 | 5 | Disjoint paths — no actual conflict |
+| W3 5b7cefaea | 1 | 25 | 9 collisions all keep-our-deletion |
+| W3 f46a104b0 | 1 | 8 | Zero textual overlap |
+| W3 a3b3d7797 | 1 | 5 | Reduces to dropping `config-template.ts:256` literal |
+| W3 RVF cluster | 6 | 25 | Only 1 of 6 conflicts; queue-inside-lock |
+| W3 ADR-0085 dels | 15 | 15–20 | 18 mechanical `git rm`; bff8a34af pre-resolved by W1 |
+
+**Headline corrections applied to plan (this revision):**
+
+1. **§Conflict zones row 1** — split tri-fold "validation + AgentDB sidecar + real consensus" by letter (validation in D via `dc2abef2a` + `a101c2a08`; sidecar + consensus in E). Removed "HNSW vector cleanup INSIDE the lock" — that cleanup is in `memory-tools.ts memory_delete` (letter D), not `hive-mind-tools.ts hive-mind_memory delete`. Reduces "5 hunks" to 4.
+2. **§Cross-fork merge order Group I row 1** — paths between `0cd9c4a39` and `81418649c` are fully disjoint; the "yaml→md collision" framing conflated SG-008 `config.yaml`→`config.json` (runtime) with upstream's `_config.yml` (Jekyll docs). No actual conflict.
+3. **§Cross-fork merge order Group I row 3** — `controller-registry.ts` is NOT fork-only; originated upstream as `bfef01821` (ADR-053). Zero textual overlap between our P2-B/C edits and upstream's window changes.
+4. **R17** — `worker-daemon.ts` already merged correctly on working branch. Surviving `28.0` is in `config-template.ts:256` (init template), not `worker-daemon.ts`. Resolution = drop the literal from config-template, ~5 min.
+5. **§Pre-flight** — added `git config rerere.enabled true && git config rerere.autoUpdate true` as a required pre-W4 step.
+
+**New blockers for W4:**
+
+- **`memory-router.ts` may need pre-merge extension** before letter F can land. 4 W2 commits (`ca4d1f0a4`, `911bd4e94`, `04d6a9a0a` partial, `8824fe3c4` partial) modify the deleted `memory-bridge.ts` and require re-anchoring to `memory-router.ts`. New router exports likely needed: `routerGetAllEmbeddings()` (replaces `bridgeGetAllEmbeddings`), raw-embedding return shape on store, post-store HNSW callback hook.
+- **Codemod registration** — must add `'@claude-flow/'` → `'@sparkleideas/'` literal to ruflo-patch codemod sweep before W2 letter G's `f3cc99d8b` plugin sandbox lands; otherwise the namespace gate at `plugin-loader.ts:~432` silently downgrades every `@sparkleideas/*` plugin from `official`/`verified` to `unverified`.
+- **Acceptance test gap** — no existing acceptance test covers plugin trust-level routing; needs adding for `f3cc99d8b` (publish a fixture plugin with `name: '@sparkleideas/test-plugin'` + `trustLevel: 'official'`, verify it loads with full context).
+- **`8824fe3c4` mild blocker** — patches `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (deleted on our fork). Investigate whether the hunk targets a creation that lands earlier in the merge wave; otherwise drop the hunk and file upstream issue.
+- **Sequencing on letter F** — `7eb505d22` + `ca4d1f0a4` + `911bd4e94` block on step-2 ruvector publishes of `@sparkleideas/ruvector-{ruvllm, graph-node, rabitq-wasm}`.
+
+**Donate-back candidates surfaced:**
+- `9fc61ea1c` — upstream's local helper covers 1 tool with stale-cwd-cached-at-module-load risk; our ADR-0100 `findProjectRoot()` covers 15 tools without caching. File issue post-merge.
+- `f3cc99d8b` — parametrize `'@claude-flow/'` namespace literal as `OFFICIAL_NAMESPACE_PREFIX` constant. File issue post-merge.
+
+**Already-applied / superseded commits (W4 will produce empty/no-op diffs)**:
+- W2 D: 5 commits (`43edb691a`, `0752e5963`, `1409db9bc`, `d3da4b676`, `a2e2def04`) — empty-after-rebase
+- W2 H: 5 commits (`5fdd8e19e`, `dc7957cf4`, `8e51bd54d`, `b1b615aae` already in W1 base; `a0ef36cbb` R9 disposition)
+- W2 C: 2 commits (`5c9ede94b` superseded by ADR-0100, `100ffeaa3` superseded by `a3b3d7797`)
+- Net: ~12 of 67 letter commits collapse to no-ops at rebase time.
+
+**Hypothesis verdict update**: ADR §Hypothesis predicted 25-40% upstream-redundancy on fix-commits; W2 D measured 50% in that letter — within band on the high side. Across all 67 letter-group commits the empty-after-rebase rate is ~18% (12/67) — lower than the per-letter-D rate but consistent with the "5/10 commits redundant in honest-metrics letter" pattern.
+
+**Plan unchanged:**
+- §Cross-fork merge order step ordering (ruvector → ruflo → bookkeeping) still correct.
+- W2 + W3 design verified (14 agents produced complete coverage).
+- W4 sequential merge pattern unchanged: rerere + ort+patience strategy on the working branch.
