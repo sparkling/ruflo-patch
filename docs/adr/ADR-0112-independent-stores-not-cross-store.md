@@ -191,6 +191,7 @@ ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
   - **Writes**: `cli memory store` does NOT touch `.swarm/memory.db`; `agentdb_*_store` does NOT touch `.swarm/memory.rvf`
   - **Reads**: `cli memory search` / `memory list` does NOT query `.swarm/memory.db`; `agentdb_*_query` / `agentdb_*_recall` does NOT query `.swarm/memory.rvf`
   - Locks in this ADR's mandate so accidental cross-reads or cross-writes are caught immediately
+- ✅ **AgentDB MCP read-tool round-trip tests** (W1.8 item #27): store via `agentdb_*_store` → read via `agentdb_*_recall` / `_search` / `_query` / `_predict` → assert returned data matches stored. Existing b5-* tests bypass read tools by SELECTing sqlite3 directly; if a read MCP tool silently bypasses AgentDB, no current test catches it.
 - ✅ ADR-0086 §Debt 15 cross-references ADR-0112 (terminology anchor)
 - ✅ Code comments / commit messages preserve the design history (W1.8 item #20)
 
