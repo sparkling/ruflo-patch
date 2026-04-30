@@ -118,13 +118,17 @@ describe('Phase 4: controller-registry.ts uses getOrCreate', () => {
     const factoryStart = src.indexOf('createController(name');
     assert.ok(factoryStart > 0, 'createController must exist');
     const factoryBody = src.slice(factoryStart);
-    // Find reasoningBank case within the factory
+    // ADR-0112 Phase 2 widened window: strict-mode guards added in the
+    // controller-registry track pushed getOrCreate ~600 chars past
+    // `case 'reasoningBank':`. Use a 2000-char window — large enough
+    // to cover sibling case fall-throughs (skills/reflexion/causalGraph
+    // etc.) plus the strict-mode discrimination + the getOrCreate call.
     const agentdbBlock = factoryBody.indexOf("case 'reasoningBank':");
     assert.ok(agentdbBlock > 0, 'reasoningBank case must exist in factory');
-    const blockBody = factoryBody.slice(agentdbBlock, agentdbBlock + 400);
+    const blockBody = factoryBody.slice(agentdbBlock, agentdbBlock + 2000);
     assert.ok(
       blockBody.includes('getOrCreate'),
-      'AgentDB-delegated controllers must use getOrCreate',
+      'AgentDB-delegated controllers must use getOrCreate (within 2000-char window of case label)',
     );
   });
 });
