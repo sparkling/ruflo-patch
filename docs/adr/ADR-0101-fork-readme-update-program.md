@@ -78,7 +78,7 @@ Output: a per-fork "prelude brief" the drafting step consumes.
 
 1. Discovery agents produce per-fork briefs (this ADR's first deliverable).
 2. User confirms prelude template + per-fork special-handling decisions.
-3. Drafting happens **on the fork's build branch** (NOT upstream `main`) per memory `feedback-fork-commits`.
+3. Drafting happens **on the fork's `main`** (the only branch — fork work is trunk-based per memory `feedback-trunk-only-fork-development`).
 4. Push to `sparkling` remote (NOT `origin` which is read-only ruvnet) per memory `reference-fork-workflow`.
 5. Verify rendered output on the fork's GitHub UI (not just diff inspection).
 

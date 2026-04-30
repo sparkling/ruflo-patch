@@ -1,6 +1,6 @@
 # ADR-0111: Upstream merge program (post-2026-04-29 swarm investigation)
 
-- **Status**: Executing — W1 (pre-flight) + W1.5/W1.6/W1.7 (RVF-primary fail-loud + safeJsonParse port) complete; W2/W3 (recipe staging) complete; W4 + W5 pending. **Closure depends on ADR-0103**: W5 promotes ADR-0105/0106/0107/0109 from `Investigating` → `Accepted with Option X`; the orphan-class wire-up implementation those promoted ADRs mandate is ADR-0103's program (post-W5). ADR-0111 cannot move to `Implemented` while ADR-0103 holds accepted-but-undelivered mandates ADR-0111 placed there. See §Closure dependency on ADR-0103.
+- **Status**: Executing — W1 (pre-flight) + W1.5/W1.6/W1.7 (RVF-primary fail-loud + safeJsonParse port) complete; W2/W3 (recipe staging) complete; **trunk pivot 2026-04-30** (W4 will execute on `main` per `feedback-trunk-only-fork-development`; merge branches FF'd to `main` and deleted); W4 + W5 pending. **Closure depends on ADR-0103**: W5 promotes ADR-0105/0106/0107/0109 from `Investigating` → `Accepted with Option X`; the orphan-class wire-up implementation those promoted ADRs mandate is ADR-0103's program (post-W5). ADR-0111 cannot move to `Implemented` while ADR-0103 holds accepted-but-undelivered mandates ADR-0111 placed there. See §Closure dependency on ADR-0103.
 - **Date**: 2026-04-29
 - **Scope**: All 4 forks (`ruflo`, `agentic-flow`, `ruv-FANN`, `ruvector`)
 - **Method**: 15-agent parallel research swarm — each agent owned a slice
@@ -742,9 +742,20 @@ Strategies the merge plan needs but earlier drafts didn't document.
 
 ### Branch strategy
 
-- **Working branch per fork**: `merge/upstream-2026-04-29` cut from `forks/<fork>/main` for each of `forks/{ruflo, agentic-flow, ruv-FANN, ruvector}`. All A-H + I rebase work happens on the working branch; `main` stays untouched until acceptance gates pass.
-- **PR-style review**: each fork's working branch opens a PR against `forks/<fork>/main` (sparkling remote). PRs land in `ruvector → ruflo → agentic-flow → ruv-FANN` order, mirroring §Cross-fork merge order. Squash-merge to keep `main` clean; the working-branch tip is preserved as the merge-commit ancestor for forensics.
-- **One branch, not many**: do not split per-letter-group (A-only branch, B-only branch, etc.) — the dependencies between groups make per-group branches more conflict-prone than helpful.
+**REVISED 2026-04-30 — trunk-based on forks per memory `feedback-trunk-only-fork-development`.** The working-branch model below was abandoned; W4 executes directly on `main`. See Implementation Log entry "2026-04-30 — Trunk pivot: W4 strategy revised" for the rationale.
+
+- **Trunk-based per fork**: all W4 letter-group merges land directly on `forks/<fork>/main`. No long-running working branches. Rationale: the publish pipeline (`scripts/ruflo-publish.sh`, `scripts/deploy-finalize.sh`, `config/upstream-branches.json`) is hardcoded to `main` — `git push origin main`, `check_merged_prs` against `main`, etc. — so off-trunk work orphans version bumps and breaks Verdaccio sync.
+- **Discipline replaces branch isolation**: instead of "abort and revert the working branch on acceptance fail", the discipline is "halt before next letter group on any regression; fix forward or `git revert <letter-group-range>` cleanly". Each letter-group commit cluster is independently revertable.
+- **Pre-letter-group tags on `main`**: `git tag pre-merge-<fork>-step4-<letter>` BEFORE each letter group lands. If the group regresses, `git reset --hard <tag>` restores `main` to pre-group state (low-risk because the tag is a moments-old ancestor, no published artifacts depend on the rolled-forward state until publish step runs).
+- **No PR layer for forks**: per `feedback-fork-commits` and `feedback-trunk-only-fork-development`, fork commits go directly on `main` of the fork, pushed to `sparkling`. PR-style review is for `ruflo-patch` (this repo), NOT for forks.
+
+#### Superseded — original (working-branch) plan
+
+The earlier draft below is preserved as historical context; it was the plan in flight from W1 (2026-04-29) through Implementation Log entry "2026-04-30 — Trunk pivot". W1, W1.5, W1.6, W1.7, W2, W3 prep work *was* executed on `merge/upstream-2026-04-29` per this plan. The branch was FF-merged to `main` and deleted on 2026-04-30 as part of the pivot.
+
+- ~~**Working branch per fork**: `merge/upstream-2026-04-29` cut from `forks/<fork>/main` for each of `forks/{ruflo, agentic-flow, ruv-FANN, ruvector}`. All A-H + I rebase work happens on the working branch; `main` stays untouched until acceptance gates pass.~~
+- ~~**PR-style review**: each fork's working branch opens a PR against `forks/<fork>/main` (sparkling remote). PRs land in `ruvector → ruflo → agentic-flow → ruv-FANN` order, mirroring §Cross-fork merge order. Squash-merge to keep `main` clean; the working-branch tip is preserved as the merge-commit ancestor for forensics.~~
+- ~~**One branch, not many**: do not split per-letter-group (A-only branch, B-only branch, etc.) — the dependencies between groups make per-group branches more conflict-prone than helpful.~~
 
 ### Test-coverage gates per phase
 
@@ -1219,3 +1230,40 @@ Going through the open-question list before kicking off W4. All 10 items closed;
 - ~~**Donate-back filings sequencing** (#13)~~ — **closed 2026-04-30**: we don't donate back. See memory `feedback-no-upstream-donate-backs.md`. Fork improvements stay fork-only; ADR-0111 closure does NOT depend on upstream PR/issue filings.
 
 **The plan is now ready for W4 execution.** All blockers identified during W2/W3 + orphan audit are either resolved or explicitly deferred to W4 letter execution time.
+
+### 2026-04-30 — Trunk pivot: W4 strategy revised
+
+The working-branch model in §Operations §Branch strategy was abandoned today. W4 will execute directly on `main` per memory `feedback-trunk-only-fork-development`.
+
+**What triggered the pivot**: investigating why fork working trees stay perpetually dirty after `npm run test:acceptance`, we traced the cause to a structural mismatch — the publish pipeline (`scripts/ruflo-publish.sh`, `scripts/deploy-finalize.sh`, `config/upstream-branches.json`) is hardcoded to `main`. Off-trunk work:
+
+- `bump_fork_versions` commits on the wrong branch
+- `push_fork_version_bumps` does `git push origin main` (no-op when on a feature branch; also targets `origin` = ruvnet read-only — should be `sparkling`)
+- `check_merged_prs` only watches `main`
+- HEAD-vs-Verdaccio drift accumulates indefinitely (e.g., `forks/agentic-flow` had HEAD at `-patch.361` while Verdaccio served `-patch.384` — 23 npm-script-path runs that never reached fork history)
+
+**Action taken**:
+1. Committed dirty `package.json` bumps on the merge branches as `chore(publish): version bumps from ruflo-patch pipeline` (catches HEAD up with Verdaccio).
+2. FF-merged `merge/upstream-2026-04-29` → `main` on all 4 forks.
+3. Deleted the merge branches.
+4. Updated §Operations §Branch strategy (above) with REVISED block + struck-through original.
+5. Added `feedback-trunk-only-fork-development` memory entry.
+6. Updated `reference-pipeline-publish-paths.md` memory with the trunk-based context.
+7. Updated ADR-0101 §4.3 and ADR-0112 §Rollback procedure to remove working-branch references.
+
+**Post-pivot fork state (2026-04-30 ~19:30 BST)**:
+
+| Fork | main HEAD | What's on main now |
+|---|---|---|
+| ruflo | `6d46dc450` | W1 + W1.5/6/7 + ADR-0112 Phase 1/2/4 + HNSW efSearch upper chain |
+| agentic-flow | `19cf161` | W1 prep + chore bump |
+| ruv-FANN | `452e1ab` | W1 prep + chore bump |
+| ruvector | `ca15fe6a` | W1 prep + chore bump |
+
+**Implications for W4 going forward**:
+- W4 letter groups merge directly into `main` of the relevant fork. Tag `pre-merge-<fork>-step4-<letter>` before each group for revert.
+- W4 acceptance gate failures revert via `git reset --hard <pre-letter-tag>` on `main`. No "abort the branch" option exists.
+- After full W4 succeeds, run `bash scripts/ruflo-publish.sh` from `main` to record the version bumps + tags + push to `sparkling`. This is the natural cleanup mechanism the pipeline expects.
+- Discipline replaces branch isolation: halt-before-next-letter-on-regression; fix-forward or revert cleanly per letter group.
+
+**No work lost**. The 12 commits that were on `merge/upstream-2026-04-29` (W1 + W1.5/6/7 + ADR-0112 phases + HNSW efSearch) are now on `forks/ruflo` `main` via fast-forward — git history is identical, just the branch label changed.
