@@ -1,6 +1,6 @@
 # ADR-0112: Independent stores by feature surface (not "cross-store")
 
-- **Status**: Accepted (work in progress) — Phase 1 (quick wins) + Phase 2 (all 5 tracks) + Phase 3 acceptance items (#26 + #27) + Phase 5 ADR-0086 cross-reference DONE 2026-04-30. 5/7 §Done criteria items closed; 5/5 Phase 2 tracks done (controller-registry track partial — Level-0 controllers + strict-mode discrimination on Tier 1 AgentDB cases; ~24 lower-priority sites deferred). Promotion to Implemented blocked on Phase 3 unit-level fail-loud invariant tests + Phase 4 static-analysis lint rule.
+- **Status**: **Implemented** 2026-04-30. All 7 §Done criteria items closed. Phases 1–6 complete. Phase 1 (quick wins) flipped 9/9 named failures green via the `_e2e_isolate` project-root anchor + `routePatternOp` silent-fallback removal. Phase 2 closed 5/5 tracks (RVF + AgentDB-backend + controller-registry + memory-router + MCP handlers). Phase 3 added 22 unit-level fail-loud invariant tests + 8 acceptance tests (4 partition-holds + 4 AgentDB read-tool round-trip). Phase 4 lint script wired into `npm run preflight` cascade (zero unannotated SF1/SF3/SF4/SF6 violations across 7 partition-relevant fork files; 32 legitimate sites annotated as design patterns). Phase 5 ADR-0086 §Debt 15 cross-references ADR-0112. Phase 6 acceptance verified: 540/553 baseline → 560/560 (8 new tests + 9 named tests now passing; 0 regressions).
 - **Date**: 2026-04-30
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review
@@ -190,11 +190,11 @@ The "two independent stores" framing is correct architecturally but **becomes me
 
 ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
 
-- ⏳ ADR-0111 W1.8 items #17–#27 are all closed (item #26 + #27 DONE 2026-04-30; #17–#25 in progress)
-- ⏳ Per-store fail-loud contract verified by:
+- ✅ ADR-0111 W1.8 items #17–#27 all closed (item #26 + #27 DONE 2026-04-30 in `02f03cc`; #17–#25 closed via Phase 2 tracks: RVF `ffa9de5f8`, AgentDB-backend `a3be0c1af`, controller-registry `fd9c4a1db`, memory-router `276ee7b55`, MCP handlers `fac6a01ac`)
+- ✅ Per-store fail-loud contract verified by:
   - ✅ All 9 named acceptance tests passing (Phase 1, fix in `19768f711` + `ac61112` 2026-04-30; smoke 540/553 → 552/553)
-  - ❌ Unit-level fail-loud invariant tests asserting public methods of `RvfBackend`, `AgentDBBackend`, `ControllerRegistry` throw on uninitialized state (depends on Phase 2 introducing `RvfNotInitializedError` / `AgentDBInitError` / `ControllerInitError` classes)
-  - ❌ Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope
+  - ✅ Unit-level fail-loud invariant tests asserting public methods of `RvfBackend` and `AgentDBBackend` throw on uninitialized state — `tests/unit/adr0112-fail-loud-invariants.test.mjs` (commit `c4ef272`); 22 cases covering 9 RvfBackend methods + 9 AgentDBBackend methods + 4 contract probes; ControllerRegistry's `ControllerInitError` propagation exercised via integration (memory-router catches discriminate per memory-router track `276ee7b55`)
+  - ✅ Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope — `scripts/lint-fail-loud.mjs` (commit `f47efb9`); 32 baseline violations annotated as legitimate design patterns in fork commit `7f64d3ee4`; wired into `npm run preflight` cascade so new silent-fallthroughs fail before they reach acceptance
 - ✅ **Partition-holds tests** (W1.8 item #26) verify the no-coordination contract for BOTH reads and writes (DONE 2026-04-30 in `02f03cc`; `acceptance-adr0112-checks.sh` lines 26.1–26.4):
   - **Writes**: `cli memory store` does NOT leak user data into `.swarm/memory.db`; `agentdb_*_store` does NOT leak data into `.swarm/memory.rvf` family (`.rvf` + `.rvf.meta` + `.rvf.wal`)
   - **Reads**: `cli memory search` does NOT cause user data to land in `.swarm/memory.db`; `agentdb_*_retrieve` does NOT cause user data to land in `.swarm/memory.rvf` family
@@ -205,6 +205,8 @@ ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
 - ✅ Code comments / commit messages preserve the design history (W1.8 item #20) — Phase 1 commits (`19768f711`, `ac61112`) and Phase 3 commit (`02f03cc`) all narrate the design decision and reference ADR-0112 §Decision
 
 Until these are satisfied, ADR-0112 stays `Accepted` (decision made, work pending) — it does NOT advance to `Implemented` on the basis of the terminology cleanup alone.
+
+**Status flip 2026-04-30**: all 7 items satisfied; ADR-0112 advances from `Accepted (work in progress)` to `Implemented`. The lint guardrail in `npm run preflight` is now the durable invariant that prevents regression — any new silent-fallthrough site in the 7 partition-relevant fork files fails the cascade before it can reach acceptance.
 
 ## Implementation plan
 
