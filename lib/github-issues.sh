@@ -21,7 +21,7 @@ create_sync_pr() {
   # Push the branch
   local _pr_push_start _pr_push_end
   _pr_push_start=$(date +%s%N 2>/dev/null || echo 0)
-  git -C "${dir}" push origin "${branch}" --quiet 2>/dev/null || {
+  git -C "${dir}" push sparkling "${branch}" --quiet 2>/dev/null || {
     log_error "Failed to push branch ${branch} for ${name}"
     return 1
   }

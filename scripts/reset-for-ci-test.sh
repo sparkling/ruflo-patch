@@ -143,8 +143,10 @@ for i in "${!FORK_NAMES[@]}"; do
     continue
   }
 
-  # Force push to origin to sync the GitHub fork
-  git -C "${_fork_dir}" push origin main --force --quiet 2>/dev/null || {
+  # Force push to sparkling to sync the GitHub fork
+  # (origin = ruvnet upstream, read-only; sparkling = our writable fork per
+  # memory reference-fork-workflow)
+  git -C "${_fork_dir}" push sparkling main --force --quiet 2>/dev/null || {
     log_error "Failed to force push ${_fork_name}"
     continue
   }
@@ -153,7 +155,7 @@ for i in "${!FORK_NAMES[@]}"; do
   _stale_tags=$(git -C "${_fork_dir}" tag -l 'v*-patch.*' 2>/dev/null | wc -l)
   if [[ $_stale_tags -gt 0 ]]; then
     git -C "${_fork_dir}" tag -l 'v*-patch.*' | xargs git -C "${_fork_dir}" tag -d 2>/dev/null || true
-    git -C "${_fork_dir}" push origin --delete $(git -C "${_fork_dir}" ls-remote --tags origin | grep 'patch\.' | awk '{print $2}' | sed 's|refs/tags/||') 2>/dev/null || true
+    git -C "${_fork_dir}" push sparkling --delete $(git -C "${_fork_dir}" ls-remote --tags sparkling | grep 'patch\.' | awk '{print $2}' | sed 's|refs/tags/||') 2>/dev/null || true
     log "  ${_fork_name}: cleaned ${_stale_tags} stale tags"
   fi
 
