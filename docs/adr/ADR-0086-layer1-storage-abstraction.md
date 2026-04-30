@@ -537,6 +537,16 @@ uses `pipeline.getProvider()` for threshold selection.
     controller round-trip: store via `agentdb_reflexion_store`, query `episodes` via
     `sqlite3` CLI, kill CLI and re-query to prove cross-restart persistence. See
     ADR-0090 Tier A1 for rationale and test coverage.
+    **2026-04-30 update (ADR-0112 anchor)**: ADR-0112 codifies the correct framing
+    for this trade-off: the two backends are **two independent stores serving different
+    feature surfaces**, not a "dual-backend" that needs coordination. There is no
+    cross-store invariant; each MCP tool writes to exactly one store determined by
+    its feature domain. ADR-0112 §Decision REAFFIRMS this Debt 15 trade-off and
+    adds the per-store fail-loud + no-coordination contract enforced by partition-
+    holds tests (`acceptance-adr0112-checks.sh` items #26.1-26.4) and AgentDB
+    read-tool round-trip tests (items #27.1-27.4). When in doubt about whether
+    a future change "couples" the two backends, consult ADR-0112 — explicit
+    coupling proposals MUST reverse both this Debt 15 entry AND ADR-0112.
 16. **~~Monorepo fallback paths in published dist~~** — **FIXED**. All
     `.catch(() => import('../../../memory/src/...'))` fallbacks removed from
     memory-router.ts. These were monorepo dev-time shortcuts that resolved inside

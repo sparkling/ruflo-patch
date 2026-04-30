@@ -638,6 +638,16 @@ run_check_bg "adr0090-b5-sonaTrajectory"      "B5 sonaTrajectory roundtrip"     
 run_check_bg "adr0090-b5-nightlyLearner"      "B5 nightlyLearner roundtrip"      check_adr0090_b5_nightlyLearner      "controller"
 run_check_bg "adr0090-b5-explainableRecall"   "B5 explainableRecall roundtrip"   check_adr0090_b5_explainableRecall   "controller"
 
+# ADR-0112: Two-store partition + AgentDB read-tool round-trip (items #26 + #27)
+run_check_bg "adr0112-26-1-mem-store-rvf-only"        "0112 memory_store stays in RVF (#26.1)"          check_adr0112_partition_memory_store_to_rvf_only           "storage"
+run_check_bg "adr0112-26-2-agentdb-store-db-only"     "0112 agentdb_store stays in SQLite (#26.2)"      check_adr0112_partition_agentdb_store_to_db_only           "storage"
+run_check_bg "adr0112-26-3-mem-search-no-db"          "0112 memory_search avoids SQLite (#26.3)"        check_adr0112_partition_memory_search_does_not_query_db    "storage"
+run_check_bg "adr0112-26-4-agentdb-retrieve-no-rvf"   "0112 agentdb_retrieve avoids RVF (#26.4)"        check_adr0112_partition_agentdb_retrieve_does_not_query_rvf "storage"
+run_check_bg "adr0112-27-1-rt-reflexion"              "0112 reflexion store/retrieve round-trip (#27)"  check_adr0112_roundtrip_reflexion                          "controller"
+run_check_bg "adr0112-27-2-rt-pattern"                "0112 pattern store/search round-trip (#27)"      check_adr0112_roundtrip_pattern                            "controller"
+run_check_bg "adr0112-27-3-rt-skill"                  "0112 skill create/search round-trip (#27)"       check_adr0112_roundtrip_skill                              "controller"
+run_check_bg "adr0112-27-4-rt-hierarchical"           "0112 hierarchical store/recall round-trip (#27)" check_adr0112_roundtrip_hierarchical                       "controller"
+
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
 run_check_bg "ctrl-routing"     "Learned routing"        check_hooks_route         "controller"
@@ -1914,6 +1924,14 @@ collect_parallel "all" \
   "adr0090-b5-sonaTrajectory|B5 sonaTrajectory roundtrip" \
   "adr0090-b5-nightlyLearner|B5 nightlyLearner roundtrip" \
   "adr0090-b5-explainableRecall|B5 explainableRecall roundtrip" \
+  "adr0112-26-1-mem-store-rvf-only|0112 memory_store stays in RVF (#26.1)" \
+  "adr0112-26-2-agentdb-store-db-only|0112 agentdb_store stays in SQLite (#26.2)" \
+  "adr0112-26-3-mem-search-no-db|0112 memory_search avoids SQLite (#26.3)" \
+  "adr0112-26-4-agentdb-retrieve-no-rvf|0112 agentdb_retrieve avoids RVF (#26.4)" \
+  "adr0112-27-1-rt-reflexion|0112 reflexion store/retrieve round-trip (#27)" \
+  "adr0112-27-2-rt-pattern|0112 pattern store/search round-trip (#27)" \
+  "adr0112-27-3-rt-skill|0112 skill create/search round-trip (#27)" \
+  "adr0112-27-4-rt-hierarchical|0112 hierarchical store/recall round-trip (#27)" \
   "p1-ai-scan|AI Defence scan (P1)" "p1-ai-analyze|AI Defence analyze (P1)" \
   "p1-ai-pii|AI Defence has_pii (P1)" "p1-ai-safe|AI Defence is_safe (P1)" \
   "p1-ai-learn|AI Defence learn (P1)" "p1-ai-stats|AI Defence stats (P1)" \

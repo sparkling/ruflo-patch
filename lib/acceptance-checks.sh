@@ -218,6 +218,7 @@ source "${_CHECKS_DIR}/acceptance-adr0090-b1-checks.sh"
 source "${_CHECKS_DIR}/acceptance-adr0090-b2-checks.sh"
 source "${_CHECKS_DIR}/acceptance-adr0090-b3-checks.sh"
 source "${_CHECKS_DIR}/acceptance-adr0090-b5-checks.sh"
+source "${_CHECKS_DIR}/acceptance-adr0112-checks.sh"
 
 # ADR-0094: 100% acceptance coverage (Phase 1-7)
 source "${_CHECKS_DIR}/acceptance-aidefence-checks.sh"
