@@ -90,7 +90,7 @@ push_fork_version_bumps() {
     local name
     name=$(basename "$dir")
     (
-      git -C "${dir}" push origin main --quiet 2>/dev/null || {
+      git -C "${dir}" push sparkling main --quiet 2>/dev/null || {
         echo "WARNING: Failed to push version bump for ${name}" >&2
       }
     ) &
