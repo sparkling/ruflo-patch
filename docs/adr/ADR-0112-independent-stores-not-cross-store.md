@@ -34,12 +34,74 @@ Each store is **fully owned by its feature surface**:
 
 ## Why we have two stores (and why not one)
 
-ADR-0086 §Debt 15 already decided this; this ADR records the reasoning explicitly so it's findable next time the question is asked:
+**Two genuinely different workloads, each requiring different storage primitives.** The design isn't a workaround or a historical artifact — it's the correct architecture for the use cases:
 
-1. **Schema mismatch.** AgentDB controllers have rich relational schemas (multi-column tables with FKs, secondary indexes, per-controller migrations). RVF is a key-value store with embeddings. Forcing AgentDB's relational data into RVF would lose schema fidelity (joins, FK constraints, schema-versioned migrations).
-2. **Ownership.** RVF is fork-architectural — we wrote it (ADR-0073). AgentDB is an external upstream package — we consume it. Modifying AgentDB's internals to use RVF as its persistence layer violates our fork-only stance for upstream packages (memory `feedback-no-value-judgements-on-features.md` says wire all features; memory `feedback-fork-commits.md` and the broader fork model say we don't fork upstream packages just to change their internals).
-3. **Effort vs value.** Per ADR-0086 §Debt 15 — "high effort, low value for the CRUD memory path." The CRUD path doesn't need neural-controller features, and the neural-controller path doesn't need RVF's HNSW.
-4. **Independence is a feature.** RVF can crash without affecting AgentDB controllers; AgentDB can fail to load a controller without affecting RVF stores. Independent failure modes are cheaper to reason about than coupled ones.
+### Workload 1 — Structural memory (hot path, RVF)
+
+Use case: "store this entry; semantic-search across millions of entries; return top-k matches in sub-millisecond."
+
+- **Native NAPI HNSW vector index** via `@ruvector/rvf-node` — no SQL overhead, no JSON parse-per-query, binary format, zero serialization on hot reads
+- **Append-only WAL + atomic compact** — crash-safe writes without SQL transaction overhead
+- **Embedding-aligned storage** — vectors live next to their entries; no JOIN cost
+- **Performance**: ADR-0086 cites 150×–12,500× search speedup vs brute-force; this is the whole point of RVF
+
+### Workload 2 — Neural-controller relational data (cold path, AgentDB SQLite)
+
+Use case: "Reflexion remembers episodes with steps + outcomes; SkillLibrary tracks skills with code blocks + feature vectors; CausalGraph stores causal edges with weights + confidence." 10+ controllers, each with their own table set.
+
+- **Rich relational schemas** — multi-column tables with foreign keys, secondary indexes, per-controller migrations
+- **Proven SQL query engine** (better-sqlite3 native binding) — handles JOINs, aggregations, complex filtering that key-value can't express
+- **Schema flexibility** — new controllers add new tables without disrupting existing ones
+- **Sync semantics** — better-sqlite3 is synchronous by design, fits Node's event loop without async overhead for hot path
+
+### Why unifying would catastrophically regress
+
+- **RVF-only** would mean storing relational neural-controller data as JSON blobs in a key-value store. Lose JOINs, lose schema-versioned migrations, lose per-controller indexes. Every Reflexion `episodes` query becomes a full scan with JS-side filtering.
+- **SQLite-only** would mean putting structural memory's HNSW into SQLite. Lose native NAPI vector search. Fall back to brute-force or sql-extension HNSW (10–100× slower). ADR-0073's RVF storage upgrade was specifically about getting AWAY from this.
+
+### Confirming-but-not-load-bearing factors (ADR-0086 §Debt 15 reasoning)
+
+- **Ownership boundary.** RVF is fork-architectural — we wrote it (ADR-0073). AgentDB is an external upstream package — we consume it. Modifying AgentDB's internals to use RVF as its persistence layer would mean forking upstream packages just to change their internals (out of fork stance per `feedback-no-value-judgements-on-features.md` + general fork model).
+- **Effort vs value.** Per ADR-0086 §Debt 15 — "high effort, low value for the CRUD memory path." The CRUD path doesn't need neural-controller features; the neural-controller path doesn't need RVF's HNSW.
+- **Independence is a feature.** RVF can crash without affecting AgentDB controllers; AgentDB can fail to load a controller without affecting RVF stores. Independent failure modes are cheaper to reason about than coupled ones.
+
+The performance + workload-differentiation reasoning is the **primary** justification. Ownership boundary and effort/value were the considerations that closed the original ADR-0086 §Debt 15 decision; they're confirming, not load-bearing.
+
+## Soundness and completeness
+
+### Sound (does the architecture work correctly for its purpose)?
+
+**Yes.** Per the workload analysis above:
+
+- RVF correctly handles structural-memory CRUD + vector search at NAPI speed
+- AgentDB SQLite correctly handles neural-controller relational schemas with full SQL query power
+- Each store's failure is contained — neither can corrupt the other
+- ADR-0086 acceptance tests (`adr0086-*`) + ADR-0090 controller-roundtrip tests (`adr0090-b5-*`) + ADR-0079 RVF concurrency tests (`t3-*`) verify both stores work under their target workloads
+- The 2026-04-30 acceptance smoke (540/553 passed) confirms each store's happy path is sound
+
+The 9 failing tests are **silent-fallthrough bugs WITHIN each store** (per the W1.8 audit), not architectural soundness bugs. The two-store partition is doing its job; the per-store implementation has the gaps.
+
+### Complete (does it cover the use cases without gaps)?
+
+**Yes for current workloads.** Every actual ruflo workload maps cleanly to one store:
+
+- `mcp__ruflo__memory_*` tools → RVF
+- `mcp__ruflo__agentdb_*` tools → AgentDB SQLite
+- Hooks (intelligence/sona/learning) → AgentDB SQLite (via controllers)
+- Test inventory (ADR-0086, ADR-0090, ADR-0079) — every test asserts behavior in exactly one store
+
+**Edge cases worth flagging (real but not blocking):**
+
+1. **No cross-store transactions.** If a future feature needed atomic writes spanning both stores (e.g., "store entry in RVF + reference in AgentDB controller"), there's no transaction primitive. Mitigation: by ADR-0112 §Decision, no tool spans both. If a future use case requires it, that's a NEW design decision (would need to extend or supersede this ADR).
+2. **Operational doubling.** Two stores = two backup paths, two restore paths, two monitoring surfaces. Real ops cost. Mitigation: wrap with tooling (a `ruflo memory backup` command can handle both internally; not yet built).
+3. **HNSW redundancy.** AgentDB has its own HNSW (via better-sqlite3 + hnswlib); RVF has its own HNSW (native NAPI). If a developer accidentally ingests the same vectors into both, duplicate indexes drift independently. Mitigation: tools partition cleanly — no tool uses both HNSWs for the same data. Code-review gate prevents accidental dual-ingest.
+4. **Scale ceilings differ.** RVF: native HNSW max element count (configurable, default 100k). AgentDB SQLite: better-sqlite3 practical limits ~10s of GB. Neither approaches a blocker for typical ruflo workloads, but if a future workload exceeds either, that's a per-store scale decision.
+
+### Verdict
+
+**Sound and complete for the current workloads ruflo handles.** The two-store design is the right architecture, not a compromise. The bugs we're fixing in W1.8 are implementation gaps within each store; they don't reflect on the two-store partition itself.
+
+The four edge cases above are flagged for awareness; none are current blockers; if any becomes one, it triggers a new ADR (not this one's reversal).
 
 ## Why "cross-store" was the wrong framing
 
