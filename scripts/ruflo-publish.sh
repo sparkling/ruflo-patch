@@ -113,12 +113,17 @@ check_merged_prs() {
       fi
     fi
 
-    # Always fast-forward local main to origin/main
+    # Try fast-forwarding local main to origin/main, but DO NOT reset
+    # destructively if FF fails. A failing FF means local is ahead of
+    # origin (= ruvnet, read-only) — that's our normal state when we
+    # have unpublished fork commits ahead of upstream. A `reset --hard
+    # origin/main` here would silently nuke our work; the bug bit us
+    # 2026-04-30 wiping 12 trunk-pivot commits across 4 forks.
     local _ff_start; _ff_start=$(_ns)
     git -C "${dir}" checkout main --quiet 2>/dev/null || true
-    git -C "${dir}" merge --ff-only origin/main --quiet 2>/dev/null || {
-      git -C "${dir}" reset --hard origin/main --quiet 2>/dev/null || true
-    }
+    if ! git -C "${dir}" merge --ff-only origin/main --quiet 2>/dev/null; then
+      log "  ${name}: local main not FF of origin/main (likely ahead — local commits unpublished). Continuing without reset."
+    fi
     local _ff_ms; _ff_ms=$(_elapsed_ms "$_ff_start" "$(_ns)")
     log "  fast-forward ${name}: ${_ff_ms}ms"
     add_cmd_timing "merge-detect" "git ff-merge ${name}" "$_ff_ms"
