@@ -220,7 +220,7 @@ The reverse — places where **upstream did the architectural thing and we haven
 | **`hive-mind_consensus` real strategy tallying** | `6992d5f67` ships ~430 LOC of real BFT/Raft/Quorum JSON-tally with term-collision + Byzantine-voter detection inside the MCP handler | ADR-0106 now Option A (full wire-up of `ConsensusEngine` + raft/gossip/byzantine via daemon-resident pattern). Upstream's `6992d5f67` JSON-tally improvements **layer on top** of `ConsensusEngine` (additional correctness wins regardless of dispatch backend), not substitute for the real protocols |
 | **`graph-backend.ts` for ADR-087** | `7eb505d22` — `recordSwarmTeam(agentIds, topology)` + `getNeighbors(nodeId, hops)` runtime primitives | ADR-0105/0107/0109's natural primitive. **Consume rather than greenfield equivalents** |
 | **`bff8a34af` `--dangerously-skip-permissions` strict semantics** | Strict `=== true` check (was `!== false`) — closes ADR-0104 Q4 (permission propagation in `-p` mode) | Q4 was open; adopt and close |
-| **`getProjectCwd` for `guidance_discover`** | `9fc61ea1c` — 3-strategy walk-up, but only **one tool** | We have ADR-0100 for **15 tools** — broader. Donate-back candidate. (Note: our equivalent helper was renamed `getProjectCwd` → `findProjectRoot` on 2026-04-23; if upstream merges our donation we'd want symbol-name alignment) |
+| **`getProjectCwd` for `guidance_discover`** | `9fc61ea1c` — 3-strategy walk-up, but only **one tool** | We have ADR-0100 for **15 tools** — broader; our equivalent helper was renamed `getProjectCwd` → `findProjectRoot` on 2026-04-23. **Fork-only architectural decision** — we don't donate back to upstream (per memory `feedback-no-upstream-donate-backs.md`). |
 
 #### Pattern 3 — Genuinely different architectural choices (not "incremental vs eliminate" — two different axioms)
 
@@ -389,7 +389,7 @@ A 15-agent parallel swarm audited every one of our 342 ahead-of-upstream commits
 
 4. **The orphaned-deletion hazard is the real merge risk** (per §Deleted-file orphans), not redundancy. Upstream's `bff8a34af` SQLite-path P0 + `5c5ede94b` cwd handling fix files we deleted; we need to audit whether the same bug class re-emerges in our `memory-router.ts` (already addressed in pre-flight: replace 5 bare `process.cwd()` sites with `findProjectRoot()`).
 
-5. **Donate-back candidates** (broader/cleaner than upstream): ADR-0100 (15 MCP handlers vs upstream's 1 tool), ADR-0107/0108/0110 enum-validators following ADR-092's domain-specific-validators-per-shape pattern.
+5. **Fork-only architectural-divergence inventory** (broader/cleaner than upstream's equivalents — we don't donate back per memory `feedback-no-upstream-donate-backs.md`): ADR-0100 (15 MCP handlers vs upstream's 1 tool); ADR-0107/0108/0110 enum-validators extending ADR-092's domain-specific-validators-per-shape pattern.
 
 ### Categorization of the 342 ahead-of-upstream commits
 
@@ -448,7 +448,7 @@ Fork-side product fixes surfaced by ruflo-patch's acceptance harness (the harnes
 #### F. CLI & Init template (~15 commits, ~4%)
 
 - **ADR-0070** init template (3): new `config-template.ts` (166 LOC); JSON not YAML config; deep-clone options; permissionRequest hook.
-- **ADR-0100** project-root walk-up (1): `findProjectRoot()` with 4 sentinel layers across 15 MCP handlers. **Broader than upstream's `9fc61ea1c`** (one tool only) — donate-back candidate.
+- **ADR-0100** project-root walk-up (1): `findProjectRoot()` with 4 sentinel layers across 15 MCP handlers. **Broader than upstream's `9fc61ea1c`** (one tool only) — fork-only divergence (we don't donate back).
 - **CF-006** config.json migration (4): `init.ts`/`status.ts`/`start.ts` migrated from `config.yaml` to `config.json`; `start all` subcommand.
 - **CF-003/004** doctor + config (2): `checkMemoryBackend` diagnostic; `--install` auto-rebuild; `config get/export` reads `config.json` with defaults merge.
 - Pipeline/branding (5): `ruflo` bin alias; CLAUDE.md anti-drift swarm config + hook lifecycle + task complexity gate; init brand-aware "Next steps" output.
@@ -599,7 +599,7 @@ G. Plugins & marketplace
    23090ddbe  transfer_plugin-search null guard
    0ced9bf85  plugin creator template fix
    2287d8b61  guidance MCP tools (5 new — discovery)
-   9fc61ea1c  getProjectCwd for guidance_discover [donate-back candidate; ADR-0100 covers 15 tools more broadly — do not regress]
+   9fc61ea1c  getProjectCwd for guidance_discover [our ADR-0100 covers 15 tools more broadly; on merge, REJECT upstream's local helper introduction since we have a stronger central one — do not regress to single-tool helper. Fork-only architectural divergence; we don't donate back per memory `feedback-no-upstream-donate-backs.md`.]
    4609a4917  agent/skill YAML frontmatter standardization
 
 H. Misc small fixes (low-risk, last)
@@ -987,7 +987,7 @@ Compression factor ~2.3× — bounded by W4's serialized working-branch writes. 
 Genuinely out-of-scope items — sequencing or topical separation, NOT value judgements (per memory `feedback-no-value-judgements-on-features.md`):
 
 - **Federated cross-hive consensus end-to-end implementation** — separate ADR if/when that scenario ships. The primitives (`swarm/src/consensus/{raft,byzantine,gossip}`, `ruvector-delta-consensus`, `rvf-federation`) are wired per ADR-0106 Option A; the federation *application* (signed identity across machines, cross-hive state replication, multi-Queen leader election) is the separate work. The protocols ship; using them across machines is what's separate.
-- **Upstream-contributing our enum validators back to `ruvnet/ruflo`** — separate workflow once fork stabilizes. Not a wiring decision; a contribution-direction decision.
+- ~~Upstream-contributing our enum validators back to `ruvnet/ruflo`~~ — **dropped 2026-04-30**: we don't donate back to upstream per memory `feedback-no-upstream-donate-backs.md`. Fork improvements (enum validators, ADR-0100 broader project-root resolution, etc.) stay fork-only.
 - **ADR-0101 fork-README delta program** — separate ADR. Documentation reconciliation runs on its own track.
 - **19-plugin marketplace fork-side identity decision** — separate decision. Three options laid out in §"Plugin support: 3-layer state" (use upstream marketplace / publish parallel `sparkling/ruflo-marketplace` / codemod at consumption time). Recommendation: B. Out of scope here because that's a publication-pipeline decision, not a wiring one.
 
@@ -1155,12 +1155,12 @@ Triggered by user pushback on the W1 preflight-ruvector "1016 conflicts" finding
 - **`memory-router.ts` may need pre-merge extension** before letter F can land. 4 W2 commits (`ca4d1f0a4`, `911bd4e94`, `04d6a9a0a` partial, `8824fe3c4` partial) modify the deleted `memory-bridge.ts` and require re-anchoring to `memory-router.ts`. New router exports likely needed: `routerGetAllEmbeddings()` (replaces `bridgeGetAllEmbeddings`), raw-embedding return shape on store, post-store HNSW callback hook.
 - ~~**Codemod registration**~~ — **closed 2026-04-30**: existing global `SCOPED_RE = /@claude-flow\//g` text-replace at `scripts/codemod.mjs:178` already auto-rewrites the namespace literal in `plugin-loader.ts:~432` to `@sparkleideas/`. Verified via inspection — the codemod is not AST-aware, applies to literals in code as well as imports/deps. No new sweep entry needed. Test coverage locked in via `62a357e` (`tests/pipeline/codemod.test.mjs`: `transforms @claude-flow/ literal in non-import contexts (namespace gate, comments, template literals)`). The W2 letter G recipe's "register the namespace literal in ruflo-patch codemod sweep" item was over-cautious — strike from the recipe.
 - **Acceptance test gap** — no existing acceptance test covers plugin trust-level routing; needs adding for `f3cc99d8b` (publish a fixture plugin with `name: '@sparkleideas/test-plugin'` + `trustLevel: 'official'`, verify it loads with full context).
-- **`8824fe3c4` mild blocker** — patches `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (deleted on our fork). Investigate whether the hunk targets a creation that lands earlier in the merge wave; otherwise drop the hunk and file upstream issue.
+- **`8824fe3c4` mild blocker** — patches `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (deleted on our fork). Investigate whether the hunk targets a creation that lands earlier in the merge wave; otherwise drop the hunk.
 - **Sequencing on letter F** — `7eb505d22` + `ca4d1f0a4` + `911bd4e94` block on step-2 ruvector publishes of `@sparkleideas/ruvector-{ruvllm, graph-node, rabitq-wasm}`.
 
-**Donate-back candidates surfaced:**
-- `9fc61ea1c` — upstream's local helper covers 1 tool with stale-cwd-cached-at-module-load risk; our ADR-0100 `findProjectRoot()` covers 15 tools without caching. File issue post-merge.
-- `f3cc99d8b` — parametrize `'@claude-flow/'` namespace literal as `OFFICIAL_NAMESPACE_PREFIX` constant. File issue post-merge.
+**Fork-only architectural divergences** (places where our solution is broader/cleaner than upstream's equivalent — **we don't donate back** per memory `feedback-no-upstream-donate-backs.md`):
+- `9fc61ea1c` — upstream's local helper covers 1 tool with stale-cwd-cached-at-module-load risk; our ADR-0100 `findProjectRoot()` covers 15 tools without caching. On merge: REJECT upstream's local helper hunk; preserve our broader implementation.
+- `f3cc99d8b` — upstream uses literal `'@claude-flow/'`; if we wanted to refactor to `OFFICIAL_NAMESPACE_PREFIX` constant we'd do it fork-only. Today's codemod auto-rewrites the literal to `'@sparkleideas/'`, which is the operational fix; the constant-extraction would only be cosmetic.
 
 **Already-applied / superseded commits (W4 will produce empty/no-op diffs)**:
 - W2 D: 5 commits (`43edb691a`, `0752e5963`, `1409db9bc`, `d3da4b676`, `a2e2def04`) — empty-after-rebase
@@ -1216,6 +1216,6 @@ Going through the open-question list before kicking off W4. All 10 items closed;
 - **smoke-test letter F's build** — `npm run test:acceptance` from `ruflo-patch/` to validate the orchestrator path before W4 starts. Recommended pre-step-2 to catch any orchestrator-side issues in isolation rather than mid-13-14h-merge-wave.
 - **W5 sequencing** (#11) — TopologyManager/QueenCoordinator/ConsensusEngine wire-up; per ADR is W5 work post-W4-acceptance, not pre-W4. Open per the original list.
 - **ADR-085/092 doc adoption stance** (#12) — open per the original list.
-- **Donate-back filings sequencing** (#13) — open per the original list.
+- ~~**Donate-back filings sequencing** (#13)~~ — **closed 2026-04-30**: we don't donate back. See memory `feedback-no-upstream-donate-backs.md`. Fork improvements stay fork-only; ADR-0111 closure does NOT depend on upstream PR/issue filings.
 
 **The plan is now ready for W4 execution.** All blockers identified during W2/W3 + orphan audit are either resolved or explicitly deferred to W4 letter execution time.
