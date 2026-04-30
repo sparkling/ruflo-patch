@@ -181,6 +181,77 @@ describe('codemod: ruvector scopes', () => {
     // bare 'ruvector' in require IS renamed (it's in UNSCOPED_MAP)
     assert.ok(result.includes("require('@sparkleideas/ruvector')"), 'bare ruvector in require transformed');
   });
+
+  // ADR-0111 W1 pre-flight: lock in prefix-rule coverage for the 3 new
+  // @ruvector/* packages introduced by the upstream merge program.
+  it('transforms ADR-0111 new ruvector packages (ruvllm, graph-node, rabitq-wasm)', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "import { generate } from '@ruvector/ruvllm';",
+      "import { GraphNode } from '@ruvector/graph-node';",
+      "import { quantize } from '@ruvector/rabitq-wasm';",
+      "const llm = require('@ruvector/ruvllm');",
+      "const gn = require('@ruvector/graph-node/sub');",
+      "const rab = require('@ruvector/rabitq-wasm');",
+    ].join('\n');
+    writeFileSync(join(tmp, 'adr0111.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'adr0111.js'), 'utf8');
+    // Static imports
+    assert.ok(result.includes("from '@sparkleideas/ruvector-ruvllm'"),
+      '@ruvector/ruvllm → @sparkleideas/ruvector-ruvllm');
+    assert.ok(result.includes("from '@sparkleideas/ruvector-graph-node'"),
+      '@ruvector/graph-node → @sparkleideas/ruvector-graph-node');
+    assert.ok(result.includes("from '@sparkleideas/ruvector-rabitq-wasm'"),
+      '@ruvector/rabitq-wasm → @sparkleideas/ruvector-rabitq-wasm');
+    // require() forms (incl. subpath)
+    assert.ok(result.includes("require('@sparkleideas/ruvector-ruvllm')"),
+      'require @ruvector/ruvllm transformed');
+    assert.ok(result.includes("require('@sparkleideas/ruvector-graph-node/sub')"),
+      'require @ruvector/graph-node subpath transformed');
+    assert.ok(result.includes("require('@sparkleideas/ruvector-rabitq-wasm')"),
+      'require @ruvector/rabitq-wasm transformed');
+    // Original scope must be gone
+    assert.ok(!result.includes('@ruvector/'),
+      'all @ruvector/* references rewritten');
+  });
+
+  it('transforms ADR-0111 new ruvector packages in package.json deps', async () => {
+    tmp = makeTmpDir();
+    const pkg = {
+      name: '@claude-flow/example',
+      version: '1.0.0',
+      dependencies: {
+        '@ruvector/ruvllm': '^0.5.0',
+        '@ruvector/graph-node': '~0.2.1',
+        '@ruvector/rabitq-wasm': '0.1.0-beta.3',
+      },
+      peerDependencies: {
+        '@ruvector/ruvllm': '>=0.5.0',
+      },
+    };
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+    // Keys renamed, version ranges preserved (ADR-0027)
+    assert.equal(result.dependencies['@sparkleideas/ruvector-ruvllm'], '^0.5.0',
+      'ruvllm dep key renamed, range preserved');
+    assert.equal(result.dependencies['@sparkleideas/ruvector-graph-node'], '~0.2.1',
+      'graph-node dep key renamed, range preserved');
+    assert.equal(result.dependencies['@sparkleideas/ruvector-rabitq-wasm'], '0.1.0-beta.3',
+      'rabitq-wasm dep key renamed, prerelease range preserved');
+    assert.equal(result.peerDependencies['@sparkleideas/ruvector-ruvllm'], '>=0.5.0',
+      'ruvllm peerDep renamed');
+    // Old keys removed
+    assert.ok(!result.dependencies['@ruvector/ruvllm']);
+    assert.ok(!result.dependencies['@ruvector/graph-node']);
+    assert.ok(!result.dependencies['@ruvector/rabitq-wasm']);
+    assert.ok(!result.peerDependencies['@ruvector/ruvllm']);
+  });
 });
 
 describe('codemod: idempotency', () => {
