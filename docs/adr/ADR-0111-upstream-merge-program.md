@@ -1076,7 +1076,7 @@ Triggered by user pushback on the W1 preflight-ruvector "1016 conflicts" finding
 - §Conflict zones unchanged; rabitq is not in the 5-hunk hot zone.
 - W2 + W3 design unchanged (per §Multi-agent execution plan).
 
-**Optional Path B still open**: pull Branch 1's 5 extra commits (post-PR-#394 refinements) into the fork during step-2 ruvector sync. 0 conflicts vs origin/main. Worth a 5-minute check on what those 5 commits actually contain before deciding; deferrable until step-2 execution.
+**~~Optional Path B still open~~ — Path B closed 2026-04-30: SKIP** (Path A only). Inspection agent verified the 5 "ahead" commits (`81801bfd`, `0b476767`, `47f73061`, `ff09f655`, `6d634c0e`) are **pre-squash history collapsed into `ce1afecb`** on origin/main. Branch tip is timestamped 5h47m before the squash; merge-base equals branch parent; every key file (`acorn-wasm/src/lib.rs`, `rabitq-wasm/src/lib.rs`, `acorn/src/index.rs`, `package.scoped.json`) is byte-identical between branch tip and main. The earlier framing "post-publish refinements worth pulling" was wrong — they're pre-publish work, not post-. The branch is just stale because nobody updated it after the squash. Pulling adds duplicate history + Cargo.toml `members = [...]` line-ordering conflicts but zero functional change. **W4 step-2 ruvector merge: just sync `origin/main`; ignore the branch entirely.** Codemod note: the PR introduced `@ruvector/acorn-wasm` as a sibling alongside `@ruvector/rabitq-wasm` — our generic `@ruvector\/` regex covers it transitively (no explicit test required, optional 5-line fixture-list extension to `tests/pipeline/codemod.test.mjs` for parity with the `rabitq-wasm` test).
 
 ### 2026-04-29 — Wave 2 + Wave 3 (recipe staging) executed
 
