@@ -60,6 +60,30 @@ worth attention so the actual merge can be executed without re-research.
 | ADR-088 | LongMemEval benchmark for AgentDB | **adopt all 4 modes** (raw / hybrid / full / baseline). Raw runs in default acceptance harness (HNSW-only, no external dependency). Hybrid + full use Haiku reranking via Anthropic API — wired but **gated on user-supplied `ANTHROPIC_API_KEY` env var** (the gate is the user choosing to provide a key for that benchmark mode, not us hiding capability). Default acceptance does NOT require the API key (raw mode is the gate-free path). Per memory `feedback-no-api-keys.md`: ruflo orchestration itself never requires API keys; LongMemEval hybrid/full are *external benchmarks* that compare AgentDB against Anthropic-API-backed alternatives — supplying a key is an opt-in user action, not a ruflo runtime cost. | high |
 | ADR-092 | MCP tool input validation bugfixes (domain-specific validators per shape) | **must adopt** | high |
 
+### Adoption stance (added 2026-04-30 per #12 closure)
+
+**A — Policy: separate-paths, cross-reference, no copying.**
+
+Upstream ADRs land in `forks/ruflo/v3/docs/adr/` via the W4 merge (3-digit numbering: `ADR-085`, `ADR-092`, etc.). Our ADRs live in `ruflo-patch/docs/adr/` (4-digit numbering: `ADR-0085`, `ADR-0092`, etc.). The numbering schemes are disjoint by design — there is no collision, no renumbering decision required, no centralization needed. The "85" suffix in upstream's ADR-085 ("issue #1425 remediation") and our ADR-0085 ("memory-bridge.ts deletion") is purely coincidental; the topics are fully disjoint.
+
+Per-ADR adoption verdict in the table above is our explicit acceptance. We do NOT copy upstream ADRs into `ruflo-patch/docs/adr/`, do NOT renumber, do NOT supersede with our own. We cross-reference by upstream ID (e.g., "per ADR-092 pattern", "per ADR-085 §item 5"). The merge brings the implementation code; the ADR docs ride along in the fork as authoritative for the upstream surface.
+
+When our own ADR builds on an upstream pattern (e.g., our ADR-0107/0108/0110 extend ADR-092's domain-specific-validators-per-shape pattern), we cite the upstream ADR explicitly in the dependency chain.
+
+**B — Upstream WIP feature branches: don't pre-empt.**
+
+Same rule as the rabitq Path B closure (R15 reframe). Upstream ADRs that exist only on feature branches (not yet merged into upstream `main`) are NOT adopted by our merge wave. They land when upstream merges them.
+
+Currently identified: **ADR-091 (`loop-monitor-native-integration`)** lives only on `origin/feat/adr-091-loop-monitor-integration` (not in `origin/main`). Not in this merge wave. Will be picked up in a future merge wave once upstream merges to main. Same posture as rabitq's `feat/wasm-packages-rabitq-acorn` (closed under R15) — we don't pre-empt upstream's review/sequencing decisions on their own WIP.
+
+**C — Upstream→fork ADR dependency chains.**
+
+The merge introduces an explicit chain: upstream's **ADR-085** §item 5 ("Expand input validation to all command handlers") is the foundation; upstream's **ADR-092** ("domain-specific validators per shape") formalizes the pattern; **our ADR-0107/0108/0110** EXTEND the pattern with `validateQueenType` / `validateWorkerType` / `validateStorageProvider` enum validators. This chain is captured in §Decision plan step 7. Future cross-fork ADRs that build on upstream patterns should cite the upstream chain explicitly so the inheritance is traceable when either side evolves.
+
+**D — Lifecycle gap acknowledgment (out of scope for this ADR but worth flagging).**
+
+Upstream's ADR evolution (additions, supersessions, status changes) is tracked **episodically** per merge wave — each wave runs an audit like this §New upstream ADRs table. There is no continuous-tracking mechanism. This works for our episodic merge tempo but means cross-references can drift between waves: if upstream's ADR-085 gets a successor (e.g., ADR-093 amending it), our cross-references stay pinned to ADR-085 until the next merge wave's audit. Out of scope for ADR-0111 to solve; flagging for awareness. Future merge programs should include "audit upstream's ADRs for evolution since last wave" as an explicit step (already implicit in the ADR-0111 W2 design).
+
 ## Cross-cutting findings
 
 1. **Orphaned-subsystem pattern persists upstream.** Full TypeScript classes in `v3/@claude-flow/swarm/` (`TopologyManager`, `ConsensusEngine`, `QueenCoordinator`) with tests, never imported from `cli/src/`. The V2→V3 migration in `HIVE-MIND-MIGRATION.md` (`Queen.ts → Missing → ❌ Needs implementation`) remains incomplete. ADR-0105/0107/0109 recommendations still apply.
