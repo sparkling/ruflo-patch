@@ -1,6 +1,6 @@
 # ADR-0112: Independent stores by feature surface (not "cross-store")
 
-- **Status**: Accepted
+- **Status**: Accepted (work pending) — terminology + reaffirmation done; per-store fail-loud mandate (§Required follow-up work) blocks promotion to Implemented until ADR-0111 W1.8 items #17–#25 close
 - **Date**: 2026-04-30
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review
@@ -84,11 +84,48 @@ ADR-0086 §Debt 15 is **REAFFIRMED** (not reversed). The dual-backend trade-off 
 - No code changes from this ADR alone. It's terminology + reaffirmation.
 - No new test infrastructure. Existing acceptance tests already target a single store each (`adr0090-b5-*` → `.swarm/memory.db`; `t3-2-concurrent` → `.swarm/memory.rvf`); they were never coordinated checks.
 
+## Required follow-up work
+
+The "two independent stores" framing is correct architecturally but **becomes meaningful only when each store has its own fail-loud contract**. ADR-0082 establishes the no-silent-fallbacks policy in the abstract; ADR-0090 added acceptance tests that detect silent-fallback violations; ADR-0111 W1.8 collected the fix work. This ADR MANDATES that the fix work happens — the per-store framing is incoherent without it.
+
+### Mandate (binding on ADR-0111 W1.8 program)
+
+1. **Each store MUST satisfy ADR-0082's no-silent-fallback contract independently.**
+   - RVF write path: no silent in-memory degradation; persistence failures propagate as fatal errors.
+   - AgentDB SQLite write path: no silent in-memory degradation; controller construction failures propagate as fatal errors; controller `.store()` calls that don't reach disk MUST throw, not return success.
+   - Both contracts apply at the method level, not just at init time (W1.5/W1.6 closed init-time; W1.8 closes method-time).
+
+2. **The 9 failing acceptance tests MUST flip green** (or convert to honest hard-fail with a tracked port-required action — not skip_accepted) as part of W1.8 execution:
+   - `t3-2-concurrent` (RVF store)
+   - `adr0090-b5-reflexion`, `-skillLibrary`, `-reasoningBank`, `-causalRecall`, `-learningSystem`, `-hierarchicalMemory`, `-nightlyLearner`, `-explainableRecall` (AgentDB SQLite store)
+   - Failure of any of these in post-W1.8 acceptance is a release blocker, not a soak window.
+
+3. **New silent-fallthrough sites in either store MUST be caught proactively, not reactively.** ADR-0111 W1.8 item #22 (static-analysis enforcement) + #24 (unit-level fail-loud invariant tests) implement the proactive detection. Acceptance tests catch the symptom; lint + unit tests catch the cause at write time. Both are required.
+
+4. **No new "best-effort" / "graceful degradation" / "in-memory fallback" code paths** in either store's persistence path. Per memory `feedback-no-fallbacks.md` + `feedback-best-effort-must-rethrow-fatals.md`. Existing such paths must be removed (audit slices 1–8 of W1.8 enumerate them).
+
+5. **No coordination contract.** A write succeeding in one store does NOT imply or require a write in the other. Tests asserting "both stores must contain X after operation Y" are wrong by construction — Y targets exactly one store.
+
+### Done criteria for ADR-0112
+
+ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
+
+- ✅ ADR-0111 W1.8 items #17–#25 are all closed
+- ✅ Per-store fail-loud contract verified by:
+  - All 9 named acceptance tests passing
+  - Unit-level fail-loud invariant tests asserting public methods of `RvfBackend`, `AgentDBBackend`, `ControllerRegistry` throw on uninitialized state
+  - Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope
+- ✅ ADR-0086 §Debt 15 cross-references ADR-0112 (terminology anchor)
+- ✅ Code comments / commit messages preserve the design history (W1.8 item #20)
+
+Until these are satisfied, ADR-0112 stays `Accepted` (decision made, work pending) — it does NOT advance to `Implemented` on the basis of the terminology cleanup alone.
+
 ## Implementation notes
 
-- ADR-0111's W1.8 problem list (#17–#25) targets per-store silent-fallthrough cleanup. No item assumes cross-store coordination; this ADR confirms that's correct.
-- ADR-0090 acceptance tests already partition by store. No test-harness changes required.
+- ADR-0111's W1.8 problem list (#17–#25) is the canonical work tracker for the mandate above. No item assumes cross-store coordination; this ADR confirms that's correct AND requires the per-store cleanup happens.
+- ADR-0090 acceptance tests already partition by store. No test-harness changes required for the partition; new tests added per W1.8 item #24 should also partition by store.
 - Future ADR amendments referencing storage architecture should cite ADR-0112 alongside ADR-0086 §Debt 15 to anchor the framing.
+- Any future architectural decision that proposes coupling RVF and AgentDB SQLite (e.g., synchronous mirror writes, cross-store transactions) MUST explicitly reverse this ADR and ADR-0086 §Debt 15 — not silently introduce coupling.
 
 ## Cross-references
 
