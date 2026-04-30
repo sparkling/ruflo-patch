@@ -152,10 +152,20 @@ The "two independent stores" framing is correct architecturally but **becomes me
 
 ### Mandate (binding on ADR-0111 W1.8 program)
 
-1. **Each store MUST satisfy ADR-0082's no-silent-fallback contract independently.**
-   - RVF write path: no silent in-memory degradation; persistence failures propagate as fatal errors.
-   - AgentDB SQLite write path: no silent in-memory degradation; controller construction failures propagate as fatal errors; controller `.store()` calls that don't reach disk MUST throw, not return success.
-   - Both contracts apply at the method level, not just at init time (W1.5/W1.6 closed init-time; W1.8 closes method-time).
+1. **Each store MUST satisfy ADR-0082's no-silent-fallback contract independently — for BOTH read and write paths.**
+   
+   **Write path** (store / update / delete / persist):
+   - RVF: no silent in-memory degradation; persistence failures propagate as fatal errors. The write MUST reach disk before success is returned.
+   - AgentDB SQLite: no silent in-memory degradation; controller construction failures propagate as fatal errors; controller `.store()` calls that don't reach disk MUST throw, not return success.
+   
+   **Read path** (get / query / search / count / list):
+   - Cache hits returning OK only when the cache is authoritative (e.g., write-through cache that's guaranteed-coherent with the store). 
+   - Cache misses MUST consult the underlying store — not silently return `null` / empty / stale.
+   - A read that returns "no results" when the data IS in the store but the query path silently bypassed it is the same antipattern as a write that reports success without writing.
+   - Conditional `if (this.<backend>)` bypass on reads is forbidden — same rule as writes.
+   - `count()` / `listNamespaces()` / `getStats()` etc. MUST reflect store state, not in-memory cache that may diverge from the store.
+   
+   **Both contracts apply at the method level**, not just at init time (W1.5/W1.6 closed init-time; W1.8 closes method-time, both read and write).
 
 2. **The 9 failing acceptance tests MUST flip green** (or convert to honest hard-fail with a tracked port-required action — not skip_accepted) as part of W1.8 execution:
    - `t3-2-concurrent` (RVF store)
@@ -177,10 +187,10 @@ ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
   - All 9 named acceptance tests passing
   - Unit-level fail-loud invariant tests asserting public methods of `RvfBackend`, `AgentDBBackend`, `ControllerRegistry` throw on uninitialized state
   - Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope
-- ✅ **Partition-holds tests** (W1.8 item #26) verify the no-coordination contract:
-  - `cli memory store` does NOT touch `.swarm/memory.db`
-  - `agentdb_*_store` does NOT touch `.swarm/memory.rvf`
-  - Locks in this ADR's mandate so accidental cross-writes are caught immediately
+- ✅ **Partition-holds tests** (W1.8 item #26) verify the no-coordination contract for BOTH reads and writes:
+  - **Writes**: `cli memory store` does NOT touch `.swarm/memory.db`; `agentdb_*_store` does NOT touch `.swarm/memory.rvf`
+  - **Reads**: `cli memory search` / `memory list` does NOT query `.swarm/memory.db`; `agentdb_*_query` / `agentdb_*_recall` does NOT query `.swarm/memory.rvf`
+  - Locks in this ADR's mandate so accidental cross-reads or cross-writes are caught immediately
 - ✅ ADR-0086 §Debt 15 cross-references ADR-0112 (terminology anchor)
 - ✅ Code comments / commit messages preserve the design history (W1.8 item #20)
 
