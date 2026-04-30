@@ -15,6 +15,13 @@ _e2e_isolate() {
   local iso_dir="$E2E_DIR/.iso-${check_id}-$$"
   if [[ -d "$iso_dir" ]]; then rm -rf "$iso_dir"; fi
   mkdir -p "$iso_dir"
+  # ADR-0112 Phase 1: anchor findProjectRoot() walk-up to iso_dir so commands
+  # invoked under the iso don't drift up to E2E_DIR (or further) and persist
+  # against the wrong project root. Without this marker, tests that rely on
+  # the iso being its own project (e.g. t3-2-concurrent) silently write to
+  # E2E_DIR/.swarm/memory.rvf instead of $iso/.swarm/memory.rvf and the
+  # check sees "no .rvf file written by any of N concurrent stores".
+  : > "$iso_dir/.ruflo-project"
   # Copy config + node_modules (symlink node_modules to save space)
   cp -r "$E2E_DIR/.claude-flow" "$iso_dir/.claude-flow" 2>/dev/null || true
   cp -r "$E2E_DIR/.swarm" "$iso_dir/.swarm" 2>/dev/null || true
