@@ -1,6 +1,6 @@
 # ADR-0111: Upstream merge program (post-2026-04-29 swarm investigation)
 
-- **Status**: Executing — W1 (pre-flight) complete 2026-04-29; W2/W3 pending user gate
+- **Status**: Executing — W1 (pre-flight) + W1.5/W1.6/W1.7 (RVF-primary fail-loud + safeJsonParse port) complete; W2/W3 (recipe staging) complete; W4 + W5 pending. **Closure depends on ADR-0103**: W5 promotes ADR-0105/0106/0107/0109 from `Investigating` → `Accepted with Option X`; the orphan-class wire-up implementation those promoted ADRs mandate is ADR-0103's program (post-W5). ADR-0111 cannot move to `Implemented` while ADR-0103 holds accepted-but-undelivered mandates ADR-0111 placed there. See §Closure dependency on ADR-0103.
 - **Date**: 2026-04-29
 - **Scope**: All 4 forks (`ruflo`, `agentic-flow`, `ruv-FANN`, `ruvector`)
 - **Method**: 15-agent parallel research swarm — each agent owned a slice
@@ -690,13 +690,27 @@ Execute as a **single coordinated wave** across the 4 forks, gated at each phase
 4. **Merge ruflo** in order A → B → C → D → E → F → G → H per the lettered groups above. Group I is the fork-side rebase-conflict guide that applies *during* group A-H execution, not as a separate step. Use `--strategy=ort --strategy-option=patience` + `rerere enabled`. Hand-resolve the 5 conflict-zone hunks (§Conflict zones).
 5. **Acceptance gate**: `npm run test:unit && npm run test:acceptance`; `lib/acceptance-adr0104-checks.sh` end-to-end; live smoke `npx ruflo hive-mind spawn "..."`.
 6. **Merge agentic-flow + ruv-FANN** as bookkeeping (republish at new `-patch.N`); `npm run test:unit` per fork.
-7. **Reconcile our ADRs**:
-   - ADR-0103: update with cross-cutting findings + recommendation that ADR-0105/0107/0109 consume `graph-backend.ts` (ADR-087) instead of greenfielding equivalents.
+7. **Reconcile our ADRs** (**doc reconciliation + small validators only — heavy wire-up is ADR-0103's program; see §Closure dependency below**):
+   - ADR-0103: update with cross-cutting findings + recommendation that ADR-0105/0107/0109 consume `graph-backend.ts` (ADR-087) instead of greenfielding equivalents. **Promote ADR-0103 from `Investigating` → `Accepted` so its implementation phase is unblocked.**
    - ADR-0104 Q4: closed by `e50df6722` HIGH-02 — adopt and mark resolved.
-   - ADR-0106: now Option A (full wire-up of `ConsensusEngine` + raft/gossip/byzantine into `hive-mind_consensus` MCP handler via daemon-resident pattern, per memory `feedback-no-value-judgements-on-features.md`). Upstream's `6992d5f67` JSON-tally improvements layer on top. Add CLI flag exposure (`strategy`/`term`/`quorumPreset`/`timeoutMs`) so all protocol parameters are user-addressable. Trust-model framing stays as documented context — does NOT gate wiring.
-   - ADR-0107/0108/0110: extend `validate-input.ts` with `validateQueenType` / `validateWorkerType` / `validateStorageProvider` enum validators per ADR-092's domain-specific-validators-per-shape pattern.
-   - ADR-0109: silently no-op PBFT in `byzantine.ts` confirmed; trust-model framing unchanged.
+   - ADR-0106: **promote `Investigating` → `Accepted with Option A`** (full wire-up of `ConsensusEngine` + raft/gossip/byzantine into `hive-mind_consensus` MCP handler via daemon-resident pattern, per memory `feedback-no-value-judgements-on-features.md`). Upstream's `6992d5f67` JSON-tally improvements layer on top. Add CLI flag exposure (`strategy`/`term`/`quorumPreset`/`timeoutMs`) so all protocol parameters are user-addressable. Trust-model framing stays as documented context — does NOT gate wiring. **Implementation is ADR-0103 program work, not W5.**
+   - ADR-0107/0108/0110: **promote `Investigating` → `Accepted`**. Extend `validate-input.ts` with `validateQueenType` / `validateWorkerType` / `validateStorageProvider` enum validators per ADR-092's domain-specific-validators-per-shape pattern. The validators are small + tied to W4 letter D's `validate-input.ts` foundation; in-scope for W5. The heavier wire-up (e.g., ADR-0107 QueenCoordinator daemon-resident advisor) is ADR-0103 program work.
+   - ADR-0105: **promote `Investigating` → `Accepted with Option C`** (wire BOTH `TopologyManager` + `graph-backend.ts`). Implementation is ADR-0103 program work.
+   - ADR-0109: **promote `Investigating` → `Accepted`**. Silently no-op PBFT in `byzantine.ts` confirmed; trust-model framing unchanged. The actual wiring of `byzantine.ts` is bundled with ADR-0106's ConsensusEngine wire-up under ADR-0103.
    - ADR-0110: amend with "storage-factory.ts is fork-only; upstream's `database-provider.ts` exhibits a different unreachable-branch pattern; README 'SQLite WAL' claim already deleted upstream at `70a54a7c5`".
+
+### Closure dependency on ADR-0103
+
+ADR-0111's lifecycle is **coupled** to ADR-0103: W5 step 7 promotes ADRs 0105/0106/0107/0109 from `Investigating` → `Accepted with Option X`, which triggers ADR-0103's implementation phase (orphan-class wire-up: ~50-80 LOC glue for TopologyManager, ~150-200 LOC for QueenCoordinator daemon-resident advisor + new `mcp__ruflo__queen_*` MCP tool surface, ~200 LOC for ConsensusEngine + raft/gossip/byzantine dispatch). Until that implementation lands, ADR-0111 leaves ADR-0103 holding mandates that are accepted-but-not-delivered.
+
+**ADR-0111 status progression:**
+- `Investigating` → `Executing` (W1 complete; in flight now)
+- `Executing` → **`Awaiting ADR-0103 closure`** (W4 + W5 acceptance gates pass; ADR-0111 program work is done; ADR-0103 implementation phase begins)
+- `Awaiting ADR-0103 closure` → `Implemented` (ADR-0103's orphan-class wire-up program completes; the ADRs ADR-0111 promoted to `Accepted` are now actually wired through and exercised by acceptance tests)
+
+ADR-0103 has its own implementation waves (likely 3 verticals: TopologyManager / QueenCoordinator / ConsensusEngine). Each closes the corresponding ADR-0105/0106/0107/0109 from `Accepted` to `Implemented`. When all four are `Implemented`, ADR-0103 closes, and ADR-0111 closes via the dependency.
+
+This explicitly avoids the failure mode where ADR-0111 declares itself "Implemented" while having shipped only ADR doc updates without the wire-up code.
 
 ## Operations
 
@@ -880,18 +894,21 @@ Roles:
 
 If any acceptance watcher reports `fail`, the coordinator halts and surfaces the failure to the user via the live `claude` session output.
 
-### Wave 5 — ADR reconciliation (8-agent mesh)
+### Wave 5 — ADR reconciliation (8-agent mesh) — **doc + small validators only**
 
-Runs after W4 acceptance gates pass.
+Runs after W4 acceptance gates pass. **Scope: doc reconciliation + the small `validate-input.ts` enum-validator extensions for ADR-0107/0108/0110**. The heavier orphan-class wire-up (TopologyManager / QueenCoordinator / ConsensusEngine) is **out of W5 scope** — it is ADR-0103's program, which begins after W5 promotes the orphan-related ADRs (0105/0106/0107/0109) to `Accepted`. See §Closure dependency on ADR-0103 in §Decision plan step 7.
 
 Spawn:
 
 ```bash
-ruflo hive-mind spawn "Reconcile our ADRs per ADR-0111 §Decision plan step 7. \
+ruflo hive-mind spawn "Reconcile our ADRs per ADR-0111 §Decision plan step 7 — \
+  doc + small validators only; ADR-0103 owns wire-up implementation. \
   8 workers, one per affected ADR. Each worker reads the ADR's current state, \
   reads the §Updates required entries in ADR-0111 for its ADR, applies the \
-  edits, runs the relevant lib/acceptance-adrXXXX-checks.sh, commits to the \
-  working branch. Output diff to mcp__ruflo__hive-mind_memory adrs/<adr>/diff." \
+  edits (incl. flipping Investigating → Accepted with explicit option choice), \
+  runs the relevant lib/acceptance-adrXXXX-checks.sh, commits to the \
+  working branch. Output diff to mcp__ruflo__hive-mind_memory adrs/<adr>/diff. \
+  Do NOT implement the orphan-class wire-up — that is ADR-0103's program work." \
   --worker-types adr-0103,adr-0104,adr-0105,adr-0106,adr-0107,adr-0108,adr-0109,adr-0110 \
   --topology mesh
 ```
