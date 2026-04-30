@@ -662,7 +662,7 @@ For future ADR-0106 cross-hive evolution: `6db89867` (`ruvector-delta-consensus`
 | R7 | ADR-088 hybrid/full benchmark unexpectedly invokes Anthropic API in a CI run that lacks `ANTHROPIC_API_KEY` | All 4 LongMemEval modes wired (per `feedback-no-value-judgements-on-features.md`); default acceptance runs raw mode only (gate-free, HNSW-only). Hybrid/full check for `ANTHROPIC_API_KEY` env var; if absent, exit 0 with `[INFO] Skipped: hybrid mode requires ANTHROPIC_API_KEY (this is a benchmark mode, not a ruflo runtime requirement)`. The gate is user-controlled (set the env var to run), not ruflo-controlled (the modes are wired and shipped). |
 | R8 | Codemod misses new `@ruvector/{ruvllm, graph-node, rabitq-wasm}` imports | Codemod scout confirmed prefix mapping handles all; add unit test in `tests/pipeline/codemod.test.mjs` for the literal strings |
 | R9 | Statusline regenerator (`a0ef36cbb`) overwrites our `.claude/helpers/statusline.cjs` patch | Move statusline patch into fork source per `feedback-patches-in-fork.md` *before* pulling this commit |
-| R10 | Plugin sandbox namespace gate (`@claude-flow/` literal) breaks "official" trust under our scope rename | Codemod must rewrite to `@sparkleideas/`; add acceptance test for trust level |
+| R10 | Plugin sandbox namespace gate (`@claude-flow/` literal) breaks "official" trust under our scope rename | **Codemod-rewrite portion: closed 2026-04-30** — existing global `SCOPED_RE = /@claude-flow\//g` text-replace rule at `scripts/codemod.mjs:178` already auto-rewrites the literal to `@sparkleideas/` (verified via inspection 2026-04-30; not AST-aware, applies to literals in code as well as imports). Test coverage locked in via `62a357e` (`tests/pipeline/codemod.test.mjs`: `transforms @claude-flow/ literal in non-import contexts`). **Acceptance-test portion: deferred to W4 letter G execution** per W2 letter G recipe — when `f3cc99d8b` merges, the executor adds the fixture plugin (`name: '@sparkleideas/test-plugin'`, `trustLevel: 'official'`) + capability-access assertion to `lib/acceptance-*.sh`. Pre-W4 work cannot test against absent code. |
 | R11 | 384d MiniLM fallback embedder (`e0d4703eb`) conflicts with our 768-dim mpnet decision | Drop the 384d wiring on merge OR make embedding-dim configurable end-to-end. Upstream's `01c764f6f` 768-pad confirms 768 is canonical for SONA/MicroLoRA |
 | R12 | 26 → 171 ruvector crates: publish-scope explosion | Decide before merging: keep current 26-crate set vs whitelist new crates vs mirror all 171. Decision: mirror all 171 per `feedback-no-value-judgements-on-features.md`. Affects `-patch.N` pinning surface area |
 | R13 | 5 bare `process.cwd()` sites in `memory-router.ts` (lines 204, 209, 273, 312, 316) replicate the cwd-churn bug class upstream's `bff8a34af`/`5c5ede94b` patched | Pre-flight item (§Decision plan step 1); replace with `findProjectRoot()` before merge starts. Acceptance check: `memory store` from `CWD=/` writes to same `.rvf` as inside init'd project |
@@ -1033,7 +1033,7 @@ Following the swarm investigation, a 4-agent validation swarm was run to verify 
 - **R9 statusline** — investigation showed disposition is **identical-no-action**: the actual source template at `v3/@claude-flow/cli/src/init/statusline-generator.ts` (`generateStatuslineScript()`, 839 LOC) wired into the regenerator at `v3/@claude-flow/cli/src/init/helpers-generator.ts:1363` already contains all our customizations (`'Opus 4.6 (1M context)'` at template lines 182/198, `.swarm` paths at 208/302/464/480 per ADR-0069 A4). When upstream `a0ef36cbb` regenerates, it regenerates from this template, preserving our customizations. The two `.claude/helpers/statusline.cjs` overlay copies are stale runtime artifacts at different snapshots, not source-of-truth. **R9 risk assessment in this ADR was overcautious.**
 - **Rust toolchain** — `forks/ruvector` got new `rust-toolchain.toml` pinned to `stable` and `Cargo.toml` `rust-version` bumped `1.77` → `1.92`. Edition stayed at `2021` (the `2024` migration is W4 work touching upstream-source files; not pre-flight). Local rustc 1.95 verified well above the floor.
 - **engines.node ≥20** — `forks/agentic-flow` updated 16 package.json files; `forks/ruv-FANN` updated 3. Both top-level package.json files bumped (already-present, value bumped). `ruv-FANN` install passes (933 packages, 4s, no engine warnings); `agentic-flow` install was already broken pre-bump (pipeline state references unpublished `agentdb@3.0.0-alpha.10-patch.348`) — pre-existing, not caused by the bump.
-- **Codemod regex tests** — `tests/pipeline/codemod.test.mjs` got 2 new test cases covering `@ruvector/{ruvllm, graph-node, rabitq-wasm}` → `@sparkleideas/ruvector-*` rename for static `import` + `require` (incl. subpath) plus `package.json` deps with caret/tilde/exact/prerelease/peerDeps ranges. Existing prefix rule at `scripts/codemod.mjs:30-31, 219` already handles all 3 packages — tests just lock in the contract. **Uncommitted in `ruflo-patch` working tree**, awaiting user review.
+- **Codemod regex tests** — `tests/pipeline/codemod.test.mjs` got 2 new test cases covering `@ruvector/{ruvllm, graph-node, rabitq-wasm}` → `@sparkleideas/ruvector-*` rename for static `import` + `require` (incl. subpath) plus `package.json` deps with caret/tilde/exact/prerelease/peerDeps ranges. Existing prefix rule at `scripts/codemod.mjs:30-31, 219` already handles all 3 packages — tests just lock in the contract. **Committed `03b77a6` 2026-04-30**; extended for `@ruvector/acorn-wasm` parity in `e716236` 2026-04-30 after Path B inspection confirmed `acorn-wasm` is the sibling-package that lands alongside `rabitq-wasm` via PR #394.
 
 **New findings (decisions surfaced for W2/W3 gate):**
 
@@ -1043,14 +1043,14 @@ Following the swarm investigation, a 4-agent validation swarm was run to verify 
 
 3. **R16 Pair A safe to squash.** `de14ffe4d` + `9f44022ed` (SG-004 add+supersede) — 9 unrelated merge intermediaries between them, **0 inter and 0 post-pair commits touch the same files**. Mechanical squash, low risk. Awaiting force-push gate (sparkling/main rewrite) — no execution.
 
-4. **forks/ruflo `cli` package tsc broken pre-W1.** 479 `Cannot find name 'process'` errors plus missing `@types/node`/`semver`/`agentdb`/setTimeout DOM-lib issues in `cli/src/transfer/`, `cli/src/update/`, etc. Zero new errors from W1 edits. Pre-existing fork state, not blocking pre-flight. Will need addressing for W4 acceptance gates (`npm run build` is required after letter group F per §Test-coverage gates).
+4. **forks/ruflo `cli` package tsc "broken" pre-W1 — non-issue (corrected 2026-04-30).** The W1 agent ran `cd v3/@claude-flow/cli && npm run build` directly in the fork, which has no `node_modules` (workspace deps never installed there — the pipeline installs in `/tmp/ruflo-build`, not in the fork). 479 errors all environmental: missing `@types/node` (declared in workspace-root devDeps but not hoisted), unresolved `agentdb@-patch.348` (only via Verdaccio), unlinked workspace siblings. **W4's actual build gate runs via `npm run build` from `ruflo-patch/`** (orchestrator path: `copy-source → /tmp/ruflo-build → codemod → per-package npm install → tsc + wasm`). The fork-local tsc state is **irrelevant** to W4. The earlier "Will need addressing for W4 acceptance gates" framing was misleading — drop. Smoke-test path for pre-W4: `npm run test:acceptance` from `/Users/henrik/source/ruflo-patch`.
 
 **Pending user gates before W2/W3:**
 
 - ✅ ~~R15 strategy decision~~ — **resolved**: rabitq is already in upstream main; no special branch handling. Standard step-2 ruvector sync ships it. Optional Path B: pull Branch 1's 5 extra refinement commits beyond what PR #394 squash-merged — 0 conflicts vs upstream main; deferrable.
 - ✅ ~~R16 Pair A squash force-push~~ — **closed 2026-04-30**: dropped per memory `feedback-no-history-squash.md`. Both pairs stay in history.
 - ✅ ~~R16 Pair B squash decision~~ — **closed 2026-04-30**: same as Pair A — dropped.
-- ✋ Fix forks/ruflo `cli` tsc state OR explicitly accept it as a known-broken state for W4 (with a documented unblocker before letter group F's build gate).
+- ✅ ~~Fix forks/ruflo `cli` tsc state~~ — **closed 2026-04-30 as non-issue**: the W1 agent ran `cd v3/@claude-flow/cli && npm run build` directly in the fork, which has no `node_modules` (workspace deps never installed there). 479 errors all environmental: missing `@types/node` (declared in workspace-root devDeps but not hoisted), unresolved `agentdb@-patch.348` (only available via Verdaccio), unlinked workspace siblings. **W4's actual build gate runs via `npm run build` from `ruflo-patch/`**, which uses the orchestrator path: `copy-source → /tmp/ruflo-build → codemod → per-package npm install → tsc + wasm`. The fork-local tsc state is irrelevant to W4. To smoke-test letter F's build before W4 starts: run `npm run test:acceptance` from `/Users/henrik/source/ruflo-patch` (the orchestrator path, not the fork-local one).
 - ✋ Codemod regex test commit on `ruflo-patch` (uncommitted in working tree).
 
 ### 2026-04-29 — Post-W1: 4-agent rabitq investigation swarm
@@ -1093,7 +1093,7 @@ Triggered by user pushback on the W1 preflight-ruvector "1016 conflicts" finding
 | W2 E — Hive-mind cluster | 6 | 55–80 | 4 hunks (not 5 — see §Conflict zones correction); rerere required |
 | W2 F — PERF-03 + native backends | 7 | 195 | 3 commits modify deleted memory-bridge → re-anchor to memory-router |
 | W2 G — Plugins & marketplace | 10 | 136 | 81418649c no overlap with 0cd9c4a39; f3cc99d8b namespace gate codemod |
-| W2 H — Misc small fixes | 7 | 48 | 5 pre-resolved; 1 mild blocker on 8824fe3c4 |
+| W2 H — Misc small fixes | 7 | — | 5 pre-resolved; **`8824fe3c4` "mild blocker" resolved 2026-04-30** by orphan-deletion audit dossier #4 — `memory-bridge.ts` collision is one of 9 deleted-by-us cases; semantic content (top-level `vectorBackend: 'auto'` + controllers-block flag) **pre-resolved by W1.5** (`'ruvector'` value + delegated-to-AgentDB shape makes the flag redundant under Model 1) |
 | W3 0cd9c4a39 | 1 | 5 | Disjoint paths — no actual conflict |
 | W3 5b7cefaea | 1 | 25 | 9 collisions all keep-our-deletion |
 | W3 f46a104b0 | 1 | 8 | Zero textual overlap |
@@ -1112,7 +1112,7 @@ Triggered by user pushback on the W1 preflight-ruvector "1016 conflicts" finding
 **New blockers for W4:**
 
 - **`memory-router.ts` may need pre-merge extension** before letter F can land. 4 W2 commits (`ca4d1f0a4`, `911bd4e94`, `04d6a9a0a` partial, `8824fe3c4` partial) modify the deleted `memory-bridge.ts` and require re-anchoring to `memory-router.ts`. New router exports likely needed: `routerGetAllEmbeddings()` (replaces `bridgeGetAllEmbeddings`), raw-embedding return shape on store, post-store HNSW callback hook.
-- **Codemod registration** — must add `'@claude-flow/'` → `'@sparkleideas/'` literal to ruflo-patch codemod sweep before W2 letter G's `f3cc99d8b` plugin sandbox lands; otherwise the namespace gate at `plugin-loader.ts:~432` silently downgrades every `@sparkleideas/*` plugin from `official`/`verified` to `unverified`.
+- ~~**Codemod registration**~~ — **closed 2026-04-30**: existing global `SCOPED_RE = /@claude-flow\//g` text-replace at `scripts/codemod.mjs:178` already auto-rewrites the namespace literal in `plugin-loader.ts:~432` to `@sparkleideas/`. Verified via inspection — the codemod is not AST-aware, applies to literals in code as well as imports/deps. No new sweep entry needed. Test coverage locked in via `62a357e` (`tests/pipeline/codemod.test.mjs`: `transforms @claude-flow/ literal in non-import contexts (namespace gate, comments, template literals)`). The W2 letter G recipe's "register the namespace literal in ruflo-patch codemod sweep" item was over-cautious — strike from the recipe.
 - **Acceptance test gap** — no existing acceptance test covers plugin trust-level routing; needs adding for `f3cc99d8b` (publish a fixture plugin with `name: '@sparkleideas/test-plugin'` + `trustLevel: 'official'`, verify it loads with full context).
 - **`8824fe3c4` mild blocker** — patches `v3/@claude-flow/cli/src/memory/memory-bridge.ts` (deleted on our fork). Investigate whether the hunk targets a creation that lands earlier in the merge wave; otherwise drop the hunk and file upstream issue.
 - **Sequencing on letter F** — `7eb505d22` + `ca4d1f0a4` + `911bd4e94` block on step-2 ruvector publishes of `@sparkleideas/ruvector-{ruvllm, graph-node, rabitq-wasm}`.
@@ -1133,3 +1133,48 @@ Triggered by user pushback on the W1 preflight-ruvector "1016 conflicts" finding
 - §Cross-fork merge order step ordering (ruvector → ruflo → bookkeeping) still correct.
 - W2 + W3 design verified (14 agents produced complete coverage).
 - W4 sequential merge pattern unchanged: rerere + ort+patience strategy on the working branch.
+
+### 2026-04-30 — Pre-W4 open-question closure consolidated
+
+Going through the open-question list before kicking off W4. All 10 items closed; verdicts recorded in their canonical sections of this ADR. Summary for the audit trail:
+
+| # | Topic | Verdict | Where it landed |
+|---|---|---|---|
+| 1 | R16 Pair A squash (`de14ffe4d`+`9f44022ed`) | **DROP** | R16 row + §Group I row 5 + §Cross-fork merge order Group I + new memory `feedback-no-history-squash.md` |
+| 2 | R16 Pair B squash (`2c311d36e`+`67f143f8e`) | **DROP** | Same as #1 — both pairs dropped (squashing risks data loss; clean history not a project goal) |
+| 3 | forks/ruflo `cli` tsc "broken" pre-W1 | **NON-ISSUE** | W1 Implementation Log entry corrected — fork-local tsc state is irrelevant to W4 (orchestrator builds via `/tmp/ruflo-build`, not the fork) |
+| 4 | Codemod regex test commit | **COMMITTED** (`03b77a6` + extended `e716236` for acorn-wasm parity) | W1 entry updated to remove "uncommitted, awaiting review" |
+| 5 | memory-router pre-extension (W1.5 + W1.6) | **LANDED** | W1.5 commit `4c1c66a6e` + W1.6 commit `03df8643b` on `forks/ruflo` `merge/upstream-2026-04-29` (pushed to sparkling). Plus W1.7 commit `14eac18f3` (orphan-audit safeJsonParse port). |
+| 6 | Codemod sweep update for `f3cc99d8b` namespace gate | **ALREADY-HANDLED** (existing `SCOPED_RE` regex) | R10 row updated; W2/W3 entry "Codemod registration" struck; test added in `62a357e` |
+| 7 | Plugin trust-level acceptance test | **DEFERRED to letter G execution** | R10 row's "add acceptance test" → deferred per W2 letter G recipe (cannot test against absent `f3cc99d8b` code pre-W4) |
+| 8 | `8824fe3c4` missing-file hunk "mild blocker" | **PRE-RESOLVED** by W1.5 (orphan audit dossier #4) | W2/W3 entry summary updated; orphan audit verdict in §Group I |
+| 9 | Path B 5-extra rabitq commits | **SKIP** (pre-squash history collapsed into `ce1afecb`) | R15 row §Optional Path B section + §rabitq investigation entry |
+| 10 | parser.ts lazy-command restoration intent | **NO RESTORATION NEEDED** (add-add merge) | W2/W3 entry summary updated — `fe18fddb7` did NOT remove the four constructs (verified: 0 lines removed, merge-base had 0 occurrences); upstream's `01070ede8` adds them post-our-merge-base |
+
+**Pre-W4 work outputs (commits on this repo `main`):**
+- `03b77a6` — codemod ruvector test
+- `62a357e` — codemod literal-in-code test (locks in `f3cc99d8b` namespace-gate auto-rewrite contract)
+- `b0788fb` — ADR-0111 W1/W1.5/W1.6/W2/W3 + R15/R16/R17 corrections + orphan audit
+- `b26d53d` — ADR-0111 LocalReasoningBank close
+- `7115ecb` — ADR-0111 Path B close
+- `e716236` — codemod acorn-wasm parity + adr0076-phase4-wiring test heuristic hardened
+- `c1d6540` — ADR-0111 W2 letter B parser.ts framing correction
+
+**Pre-W4 work outputs (commits on `forks/ruflo` `merge/upstream-2026-04-29`):**
+- `b53f48b249` — W1 pre-flight (5 cwd sites, 3 probe reverts, R9 statusline disposition)
+- `4c1c66a6e` — W1.5 RVF-primary fail-loud + memory-router letter F prep
+- `03df8643b` — W1.6 fail-loud propagation through memory-router catches
+- `14eac18f3` — W1.7 safeJsonParse port (orphan audit item #15)
+
+**Pre-W4 work outputs on other forks:**
+- `0af8ed57a6` (`forks/ruvector merge/upstream-2026-04-29`) — rust-toolchain.toml + Cargo.toml rust-version 1.92
+- `503c8d9cd` (`forks/agentic-flow merge/upstream-2026-04-29`) — engines.node ≥20 (16 files)
+- `828579a52b` (`forks/ruv-FANN merge/upstream-2026-04-29`) — engines.node ≥20 (3 files)
+
+**Outstanding pre-W4 items** (not on the original 10-question list, but worth tracking):
+- **smoke-test letter F's build** — `npm run test:acceptance` from `ruflo-patch/` to validate the orchestrator path before W4 starts. Recommended pre-step-2 to catch any orchestrator-side issues in isolation rather than mid-13-14h-merge-wave.
+- **W5 sequencing** (#11) — TopologyManager/QueenCoordinator/ConsensusEngine wire-up; per ADR is W5 work post-W4-acceptance, not pre-W4. Open per the original list.
+- **ADR-085/092 doc adoption stance** (#12) — open per the original list.
+- **Donate-back filings sequencing** (#13) — open per the original list.
+
+**The plan is now ready for W4 execution.** All blockers identified during W2/W3 + orphan audit are either resolved or explicitly deferred to W4 letter execution time.
