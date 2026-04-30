@@ -172,11 +172,15 @@ The "two independent stores" framing is correct architecturally but **becomes me
 
 ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
 
-- ✅ ADR-0111 W1.8 items #17–#25 are all closed
+- ✅ ADR-0111 W1.8 items #17–#26 are all closed
 - ✅ Per-store fail-loud contract verified by:
   - All 9 named acceptance tests passing
   - Unit-level fail-loud invariant tests asserting public methods of `RvfBackend`, `AgentDBBackend`, `ControllerRegistry` throw on uninitialized state
   - Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope
+- ✅ **Partition-holds tests** (W1.8 item #26) verify the no-coordination contract:
+  - `cli memory store` does NOT touch `.swarm/memory.db`
+  - `agentdb_*_store` does NOT touch `.swarm/memory.rvf`
+  - Locks in this ADR's mandate so accidental cross-writes are caught immediately
 - ✅ ADR-0086 §Debt 15 cross-references ADR-0112 (terminology anchor)
 - ✅ Code comments / commit messages preserve the design history (W1.8 item #20)
 
