@@ -1,6 +1,6 @@
 # ADR-0112: Independent stores by feature surface (not "cross-store")
 
-- **Status**: Accepted (work in progress) — Phase 1 (quick wins) + Phase 3 acceptance items (#26 + #27) + Phase 5 ADR-0086 cross-reference DONE 2026-04-30. 5/7 §Done criteria items closed. Promotion to Implemented blocked on Phase 2 (per-store fail-loud cleanup, 5 tracks) + Phase 3 unit-level fail-loud invariant tests + Phase 4 static-analysis lint rule.
+- **Status**: Accepted (work in progress) — Phase 1 (quick wins) + Phase 2 (MCP handler track + memory-router track) + Phase 3 acceptance items (#26 + #27) + Phase 5 ADR-0086 cross-reference DONE 2026-04-30. 5/7 §Done criteria items closed; 2/5 Phase 2 tracks done. Promotion to Implemented blocked on Phase 2 RVF + AgentDB-backend + controller-registry tracks (3 of 5) + Phase 3 unit-level fail-loud invariant tests + Phase 4 static-analysis lint rule.
 - **Date**: 2026-04-30
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review

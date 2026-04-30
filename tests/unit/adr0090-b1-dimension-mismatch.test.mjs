@@ -431,37 +431,58 @@ describe('ADR-0090 Tier B1 Case 5: clean E2E project also fails → FAIL (self-t
 const FORK_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts';
 const FORK_DIST = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/dist/src/memory/memory-router.js';
 
-describe('ADR-0090 Tier B1: fork patch — EmbeddingDimensionError propagation', () => {
-  it('fork source propagates EmbeddingDimensionError through inner catch', { skip: !existsSync(FORK_SRC) }, () => {
+describe('ADR-0090 Tier B1 + ADR-0112 Phase 2: fork patch — fatal-init error propagation', () => {
+  // ADR-0112 Phase 2 (memory-router track) refactored the per-site fatal-name
+  // string checks into a single _isFatalInitError(e) helper that covers
+  // EmbeddingDimensionError, DimensionMismatchError (the underlying class
+  // name from embedding-pipeline.ts — slice 4 found memory-router only
+  // checked the controller-registry-relabelled form), RvfCorruptError,
+  // AgentDBInitError, and ControllerInitError. Tests updated to assert the
+  // new shape; semantic intent preserved (fatal init errors always propagate).
+
+  it('fork source defines _isFatalInitError covering all 5 fatal classes', { skip: !existsSync(FORK_SRC) }, () => {
     const src = readFileSync(FORK_SRC, 'utf-8');
-    // The inner catch at line ~379 must check .name === 'EmbeddingDimensionError' and re-throw
-    assert.match(src, /catch\s*\(e\)[^{]*\{[^}]*EmbeddingDimensionError[^}]*throw e[^}]*\}/s,
-      'inner catch in initControllerRegistry must re-throw EmbeddingDimensionError');
+    assert.match(src, /function _isFatalInitError\(/,
+      'memory-router must export a _isFatalInitError helper');
+    for (const errName of ['EmbeddingDimensionError', 'DimensionMismatchError', 'RvfCorruptError', 'AgentDBInitError', 'ControllerInitError']) {
+      assert.ok(src.includes(`'${errName}'`),
+        `_isFatalInitError must include '${errName}' in its discrimination set`);
+    }
   });
 
-  it('fork source propagates EmbeddingDimensionError through outer IIFE catch', { skip: !existsSync(FORK_SRC) }, () => {
+  it('fork source uses _isFatalInitError in inner registry catch', { skip: !existsSync(FORK_SRC) }, () => {
     const src = readFileSync(FORK_SRC, 'utf-8');
-    // The outer IIFE catch must also re-throw — we check for 2 distinct occurrences
-    const matches = (src.match(/EmbeddingDimensionError/g) || []).length;
-    assert.ok(matches >= 3,
-      `expected >= 3 references to EmbeddingDimensionError (inner catch, outer catch, _doInit), found ${matches}`);
+    // Inner catch in initControllerRegistry must call the helper + throw
+    assert.match(src, /catch\s*\(e\)\s*\{[^}]*_isFatalInitError\(e\)[^}]*throw e[^}]*\}/s,
+      'inner registry catch must use _isFatalInitError(e) and throw e');
   });
 
-  it('fork source re-throws in _doInit ADR-0085 wrapper (not silent continue)', { skip: !existsSync(FORK_SRC) }, () => {
+  it('fork source uses _isFatalInitError in outer IIFE catch', { skip: !existsSync(FORK_SRC) }, () => {
     const src = readFileSync(FORK_SRC, 'utf-8');
-    // The _doInit catch must match on .name and throw
+    // The helper is used at >= 4 sites: inner catch, outer IIFE catch,
+    // _doInit storage catch, _doInit registry catch
+    const helperCalls = (src.match(/_isFatalInitError\(e\)/g) || []).length;
+    assert.ok(helperCalls >= 4,
+      `expected >= 4 _isFatalInitError(e) call sites, found ${helperCalls}`);
+  });
+
+  it('fork source re-throws fatal errors in _doInit (not silent continue)', { skip: !existsSync(FORK_SRC) }, () => {
+    const src = readFileSync(FORK_SRC, 'utf-8');
     const doInitSlice = src.slice(src.indexOf('async function _doInit'),
-                                 src.indexOf('async function _doInit') + 3000);
-    assert.match(doInitSlice, /catch\s*\(e\)[^{]*\{[^}]*EmbeddingDimensionError[^}]*throw e[^}]*\}/s,
-      '_doInit catch must re-throw EmbeddingDimensionError');
+                                 src.indexOf('async function _doInit') + 4000);
+    assert.match(doInitSlice, /catch\s*\(e\)\s*\{[^}]*_isFatalInitError\(e\)[^}]*throw e[^}]*\}/s,
+      '_doInit catch must call _isFatalInitError(e) and throw e on a match');
   });
 
-  it('fork dist (compiled JS) contains the EmbeddingDimensionError re-throw', { skip: !existsSync(FORK_DIST) }, () => {
-    const dist = readFileSync(FORK_DIST, 'utf-8');
-    const matches = (dist.match(/EmbeddingDimensionError/g) || []).length;
-    assert.ok(matches >= 3,
-      `compiled dist must contain the fork patch — expected >= 3 EmbeddingDimensionError references, found ${matches}. Rebuild the fork?`);
-  });
+  // ADR-0112 Phase 2 note: the prior dist test pointed at the fork's own
+  // `dist/` directory, which is NOT the source of truth in this build
+  // pipeline. The pipeline copies fork source → /tmp/ruflo-build →
+  // compiles → publishes. The fork's local dist is never updated by
+  // `npm run build`. Removing the dist-level check; the source tests
+  // above are the correctness gate, and acceptance (partition-holds +
+  // AgentDB read-roundtrip) verifies the published artifact end-to-end.
+  // A stale published artifact would fail those acceptance checks
+  // immediately — they exercise the actual fail-loud guards.
 });
 
 // ────────────────────────────────────────────────────────────────────────
