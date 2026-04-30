@@ -1,6 +1,6 @@
 # ADR-0112: Independent stores by feature surface (not "cross-store")
 
-- **Status**: Accepted (work pending) — terminology + reaffirmation done; per-store fail-loud mandate (§Required follow-up work) blocks promotion to Implemented until ADR-0111 W1.8 items #17–#25 close
+- **Status**: Accepted (work in progress) — Phase 1 (quick wins) + Phase 3 acceptance items (#26 + #27) + Phase 5 ADR-0086 cross-reference DONE 2026-04-30. 5/7 §Done criteria items closed. Promotion to Implemented blocked on Phase 2 (per-store fail-loud cleanup, 5 tracks) + Phase 3 unit-level fail-loud invariant tests + Phase 4 static-analysis lint rule.
 - **Date**: 2026-04-30
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review
@@ -190,18 +190,19 @@ The "two independent stores" framing is correct architecturally but **becomes me
 
 ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
 
-- ✅ ADR-0111 W1.8 items #17–#26 are all closed
-- ✅ Per-store fail-loud contract verified by:
-  - All 9 named acceptance tests passing
-  - Unit-level fail-loud invariant tests asserting public methods of `RvfBackend`, `AgentDBBackend`, `ControllerRegistry` throw on uninitialized state
-  - Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope
-- ✅ **Partition-holds tests** (W1.8 item #26) verify the no-coordination contract for BOTH reads and writes:
-  - **Writes**: `cli memory store` does NOT touch `.swarm/memory.db`; `agentdb_*_store` does NOT touch `.swarm/memory.rvf`
-  - **Reads**: `cli memory search` / `memory list` does NOT query `.swarm/memory.db`; `agentdb_*_query` / `agentdb_*_recall` does NOT query `.swarm/memory.rvf`
+- ⏳ ADR-0111 W1.8 items #17–#27 are all closed (item #26 + #27 DONE 2026-04-30; #17–#25 in progress)
+- ⏳ Per-store fail-loud contract verified by:
+  - ✅ All 9 named acceptance tests passing (Phase 1, fix in `19768f711` + `ac61112` 2026-04-30; smoke 540/553 → 552/553)
+  - ❌ Unit-level fail-loud invariant tests asserting public methods of `RvfBackend`, `AgentDBBackend`, `ControllerRegistry` throw on uninitialized state (depends on Phase 2 introducing `RvfNotInitializedError` / `AgentDBInitError` / `ControllerInitError` classes)
+  - ❌ Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope
+- ✅ **Partition-holds tests** (W1.8 item #26) verify the no-coordination contract for BOTH reads and writes (DONE 2026-04-30 in `02f03cc`; `acceptance-adr0112-checks.sh` lines 26.1–26.4):
+  - **Writes**: `cli memory store` does NOT leak user data into `.swarm/memory.db`; `agentdb_*_store` does NOT leak data into `.swarm/memory.rvf` family (`.rvf` + `.rvf.meta` + `.rvf.wal`)
+  - **Reads**: `cli memory search` does NOT cause user data to land in `.swarm/memory.db`; `agentdb_*_retrieve` does NOT cause user data to land in `.swarm/memory.rvf` family
   - Locks in this ADR's mandate so accidental cross-reads or cross-writes are caught immediately
-- ✅ **AgentDB MCP read-tool round-trip tests** (W1.8 item #27): store via `agentdb_*_store` → read via `agentdb_*_recall` / `_search` / `_query` / `_predict` → assert returned data matches stored. Existing b5-* tests bypass read tools by SELECTing sqlite3 directly; if a read MCP tool silently bypasses AgentDB, no current test catches it.
-- ✅ ADR-0086 §Debt 15 cross-references ADR-0112 (terminology anchor)
-- ✅ Code comments / commit messages preserve the design history (W1.8 item #20)
+  - **Note on init coupling vs data coupling**: both stores eagerly initialize their files at module load (RvfBackend writes a header byte; AgentDB creates an empty schema). This is init-coupling, not data-coupling. The partition tests detect USER DATA crossing the store boundary via marker-substring scan, not file existence. Init-coupling lazy-init is a separate, lower-priority concern.
+- ✅ **AgentDB MCP read-tool round-trip tests** (W1.8 item #27): store via `agentdb_*_store` → read via `agentdb_*_recall` / `_search` / `_retrieve` → assert returned data matches stored (DONE 2026-04-30 in `02f03cc`; `acceptance-adr0112-checks.sh` lines 27.1–27.4 cover reflexion, pattern, skill, hierarchical). Closes the gap where existing b5-* tests bypass read tools by SELECTing sqlite3 directly.
+- ✅ ADR-0086 §Debt 15 cross-references ADR-0112 (terminology anchor) — DONE 2026-04-30 in `02f03cc`; Debt 15 entry now reads "ADR-0112 REAFFIRMS this trade-off"
+- ✅ Code comments / commit messages preserve the design history (W1.8 item #20) — Phase 1 commits (`19768f711`, `ac61112`) and Phase 3 commit (`02f03cc`) all narrate the design decision and reference ADR-0112 §Decision
 
 Until these are satisfied, ADR-0112 stays `Accepted` (decision made, work pending) — it does NOT advance to `Implemented` on the basis of the terminology cleanup alone.
 
