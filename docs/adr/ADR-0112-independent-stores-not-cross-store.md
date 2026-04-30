@@ -197,10 +197,80 @@ ADR-0112 closes (moves from `Accepted` to `Implemented`) when:
 
 Until these are satisfied, ADR-0112 stays `Accepted` (decision made, work pending) — it does NOT advance to `Implemented` on the basis of the terminology cleanup alone.
 
-## Implementation notes
+## Implementation plan
 
-- ADR-0111's W1.8 problem list (#17–#25) is the canonical work tracker for the mandate above. No item assumes cross-store coordination; this ADR confirms that's correct AND requires the per-store cleanup happens.
-- ADR-0090 acceptance tests already partition by store. No test-harness changes required for the partition; new tests added per W1.8 item #24 should also partition by store.
+The 27-item ADR-0111 W1.8 problem list (items #17–#27) is the canonical work tracker. This plan organizes those items into 6 phases by dependency. Phases run in sequence with parallelism within phases where items are independent.
+
+### Phase 1 — Quick wins (target: smoke 540/553 → ≥549/553)
+
+Two single-site fixes likely close 2 of 9 failures cheaply, plus an investigation for the other 7. Sub-tasks within item #17.
+
+1. **`_e2e_isolate` project-root anchor** (`lib/acceptance-e2e-checks.sh`): one-line `touch "$iso_dir/.ruflo-project"` to anchor `findProjectRoot()` inside iso. Likely flips `t3-2-concurrent` green per slice 2's analysis.
+2. **`routePatternOp` line 1419 silent-fallback** (`memory-router.ts`): remove the silent fallback writing to wrong table when reasoningBank lacks a method. Likely flips `adr0090-b5-reasoningBank` green per slice 6.
+3. **Investigation for the other 7 b5 tests**: per slice 6, masking lives inside the `agentdb` package itself — controllers' `.store()` resolves successfully but writes to in-memory only when controller construction is partially broken. Need to verify whether the actual fix is (a) `controller-registry.ts:1521` `?? null` strict-mode throw, (b) AgentDB package version-mismatch, or (c) something else.
+
+### Phase 2 — Per-store fail-loud cleanup (the audit findings)
+
+Independent tracks; can run in parallel. Each track is a sub-set of item #17.
+
+- **RVF track** (slices 2, 8): add `RvfNotInitializedError` class + 9 init guards on public methods; fix 4 silent-fallthrough sites (`compactWal()` line 1800 `persisting`-guard, `persistToDiskInner()` line 2178 same, `autoPersistInterval` line 297 catch (discriminate per `feedback-best-effort-must-rethrow-fatals`), `mergePeerStateBeforePersist` lines 2161-2164 catch).
+- **AgentDB-backend track** (slice 1): add `requireAgentDB(method)` private helper; apply to 9 public methods (read + write); remove 6 dead `if (!this.agentdb)` branches + 6 `if (this.agentdb)` conditionals; re-throw in 5 private DB methods; reorder write paths (DB-first, cache-on-success); real `healthCheck()` via `SELECT 1` probe. **Item #25** (available-flag dead-branch cleanup) is a sub-task here.
+- **Controller-registry track** (slice 3): scrub remaining 27 silent-fallback sites with W1.5's `ControllerInitError` pattern; **special-case 3 Level-0 mandatory controllers** (`resourceTracker`, `rateLimiter`, `telemetryManager`) to throw unconditionally on missing-symbol; replace 7 `?? null` at lines 1521-1531 with strict-mode throw; decide stub fate (`createTieredMemoryStub`, `createConsolidationStub`).
+- **Memory-router track** (slice 4): add `DimensionMismatchError` to discrimination at lines 526, 562, 669, 698, 717; add `RvfCorruptError` to 526, 562, 717 (parity with 698); surface unnamed schema-mismatch errors with original `cause`; discriminate `ControllerInitError` at op-layer.
+- **MCP handler track** (slice 5): fix 4 silent-fallthrough sites (`agentdb_semantic_add_route` / `_remove_route`, `hooks_intelligence_pattern-store`, `memory_store` scope/graph enrichment); add response verification fields per the `agentdb_sona_trajectory_store` count-after pattern to all 8 b5 handlers.
+
+### Phase 3 — Test surface
+
+Per slice 8's recommendation: write tests FIRST (they fail against current code → prove bugs exist), THEN apply Phase 2 fixes, THEN tests pass. In practice: Phase 3 starts in parallel with Phase 2 — for each Phase 2 item, write the test first, watch it fail, apply fix, watch it pass.
+
+- **Item #24** — unit-level fail-loud invariant tests for AgentDBBackend (~25 cases parameterised over public methods)
+- Same shape for RvfBackend (depends on Phase 2's `RvfNotInitializedError` class)
+- Same shape for ControllerRegistry (`ControllerInitError` propagation)
+- New file `cli/__tests__/memory-router.test.ts` for `AgentDBInitError` re-throw paths
+- Codemod test for error-class-name preservation through scope rename
+- **Item #26** — partition-holds acceptance tests (4 cases: 2 write + 2 read; verify operations don't touch the wrong store)
+- **Item #27** — AgentDB MCP read-tool round-trip tests (store via `agentdb_*_store`, read via `agentdb_*_recall` / `_search` / `_query` / `_predict`, assert match — closes the gap where existing b5 tests bypass read tools by SELECTing sqlite3 directly)
+
+### Phase 4 — Static-analysis enforcement (item #22)
+
+Implement `scripts/lint-fail-loud.mjs` with rules SF1–SF7 (slice 7 design):
+1. Implement scanner (~250 LOC) + tests (~100 LOC)
+2. Bootstrap pass: ~150–200 hits project-wide
+3. Triage: ~70% legitimate (annotate with `// silent-fallthrough-OK: <reason>`), ~20% real fixes (already covered by Phase 2), ~10% ambiguous
+4. Wire into `npm run preflight` cascade
+5. Once green, lint becomes permanent guardrail — new silent-fallthroughs require explicit annotation
+
+### Phase 5 — ADR amendments (depends on Phase 2/3 outcomes)
+
+- **Item #18** — ADR-0086 amendment: W1.8 method-level invariant in §Accepted Trade-offs / §Architectural Direction
+- **Item #23** — ADR-0082 amendment: codify detection mechanism (lint rule + unit invariants + audit cadence)
+- **Item #21** — ADR-0090 amendment (conditional): if Phase 3 reveals test-inventory gaps
+- ADR-0086 §Debt 15 cross-reference to ADR-0112 (terminology anchor per ADR-0112 §Done criteria)
+- **Item #20** — design-history preservation in W1.8 commits + code comments (ongoing, not a gate)
+
+### Phase 6 — Verification gate (item #19)
+
+- Re-run `npm run test:acceptance` from `ruflo-patch/`
+- **Required**: 540/553 → ≥549/553 (the 9 currently-failing tests pass; net gain by integration of items #26 and #27 may be higher)
+- No new regressions
+- Lint reports zero unannotated SF1/SF3/SF4/SF6 in scope
+- Unit tests all green
+- Partition-holds tests (item #26) pass
+- AgentDB MCP read-tool round-trip tests (item #27) pass
+
+When this gate passes, **ADR-0112 closes** (`Accepted (work pending) → Implemented`).
+
+### Sequencing
+
+- **Phase 1 first** — quick wins flip 2-3 of 9 failures and validate the larger fix shape works
+- **Phases 2 + 3 in parallel** — TDD-first per Phase 3's recommendation; Phase 2's per-store tracks are independent
+- **Phase 4 after Phase 2 baseline** — lint can run once core silent-fallthroughs are removed; bootstrap annotation pass uses Phase 2's findings
+- **Phase 5 throughout** — ADR amendments land as their corresponding code changes commit (not all at once)
+- **Phase 6 last** — single verification run after all items closed
+
+### Implementation notes (orthogonal)
+
+- ADR-0090 acceptance tests already partition by store. No test-harness changes required for the partition; new tests added per items #26 and #27 should also partition by store.
 - Future ADR amendments referencing storage architecture should cite ADR-0112 alongside ADR-0086 §Debt 15 to anchor the framing.
 - Any future architectural decision that proposes coupling RVF and AgentDB SQLite (e.g., synchronous mirror writes, cross-store transactions) MUST explicitly reverse this ADR and ADR-0086 §Debt 15 — not silently introduce coupling.
 
