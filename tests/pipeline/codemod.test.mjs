@@ -214,15 +214,17 @@ describe('codemod: ruvector scopes', () => {
 
   // ADR-0111 W1 pre-flight: lock in prefix-rule coverage for the 3 new
   // @ruvector/* packages introduced by the upstream merge program.
-  it('transforms ADR-0111 new ruvector packages (ruvllm, graph-node, rabitq-wasm)', async () => {
+  it('transforms ADR-0111 new ruvector packages (ruvllm, graph-node, rabitq-wasm, acorn-wasm)', async () => {
     tmp = makeTmpDir();
     const source = [
       "import { generate } from '@ruvector/ruvllm';",
       "import { GraphNode } from '@ruvector/graph-node';",
       "import { quantize } from '@ruvector/rabitq-wasm';",
+      "import { acornFilter } from '@ruvector/acorn-wasm';",
       "const llm = require('@ruvector/ruvllm');",
       "const gn = require('@ruvector/graph-node/sub');",
       "const rab = require('@ruvector/rabitq-wasm');",
+      "const acn = require('@ruvector/acorn-wasm');",
     ].join('\n');
     writeFileSync(join(tmp, 'adr0111.js'), source);
 
@@ -236,6 +238,8 @@ describe('codemod: ruvector scopes', () => {
       '@ruvector/graph-node → @sparkleideas/ruvector-graph-node');
     assert.ok(result.includes("from '@sparkleideas/ruvector-rabitq-wasm'"),
       '@ruvector/rabitq-wasm → @sparkleideas/ruvector-rabitq-wasm');
+    assert.ok(result.includes("from '@sparkleideas/ruvector-acorn-wasm'"),
+      '@ruvector/acorn-wasm → @sparkleideas/ruvector-acorn-wasm');
     // require() forms (incl. subpath)
     assert.ok(result.includes("require('@sparkleideas/ruvector-ruvllm')"),
       'require @ruvector/ruvllm transformed');
@@ -243,6 +247,8 @@ describe('codemod: ruvector scopes', () => {
       'require @ruvector/graph-node subpath transformed');
     assert.ok(result.includes("require('@sparkleideas/ruvector-rabitq-wasm')"),
       'require @ruvector/rabitq-wasm transformed');
+    assert.ok(result.includes("require('@sparkleideas/ruvector-acorn-wasm')"),
+      'require @ruvector/acorn-wasm transformed');
     // Original scope must be gone
     assert.ok(!result.includes('@ruvector/'),
       'all @ruvector/* references rewritten');
@@ -257,6 +263,7 @@ describe('codemod: ruvector scopes', () => {
         '@ruvector/ruvllm': '^0.5.0',
         '@ruvector/graph-node': '~0.2.1',
         '@ruvector/rabitq-wasm': '0.1.0-beta.3',
+        '@ruvector/acorn-wasm': '^0.1.0',
       },
       peerDependencies: {
         '@ruvector/ruvllm': '>=0.5.0',
@@ -274,12 +281,15 @@ describe('codemod: ruvector scopes', () => {
       'graph-node dep key renamed, range preserved');
     assert.equal(result.dependencies['@sparkleideas/ruvector-rabitq-wasm'], '0.1.0-beta.3',
       'rabitq-wasm dep key renamed, prerelease range preserved');
+    assert.equal(result.dependencies['@sparkleideas/ruvector-acorn-wasm'], '^0.1.0',
+      'acorn-wasm dep key renamed, range preserved');
     assert.equal(result.peerDependencies['@sparkleideas/ruvector-ruvllm'], '>=0.5.0',
       'ruvllm peerDep renamed');
     // Old keys removed
     assert.ok(!result.dependencies['@ruvector/ruvllm']);
     assert.ok(!result.dependencies['@ruvector/graph-node']);
     assert.ok(!result.dependencies['@ruvector/rabitq-wasm']);
+    assert.ok(!result.dependencies['@ruvector/acorn-wasm']);
     assert.ok(!result.peerDependencies['@ruvector/ruvllm']);
   });
 });

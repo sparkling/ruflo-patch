@@ -71,14 +71,43 @@ describe('Phase 4: controller-registry.ts uses getOrCreate', () => {
   it('uses getOrCreate in createController factory', () => {
     if (!existsSync(file)) return;
     const src = readFileSync(file, 'utf-8');
-    const fnStart = src.indexOf('createController(name');
-    assert.ok(fnStart > 0, 'createController must exist');
-    const fnBody = src.slice(fnStart, fnStart + 10000);
-    // Count getOrCreate usages in the factory
+    // Search for the factory definition specifically (`private async createController(name`)
+    // — NOT just `createController(name` which also matches call sites like
+    // `await this.createController(name)` earlier in the file. Brittle prior
+    // heuristic was: indexOf('createController(name') + fixed 10000-char window.
+    // After W1.5 grew the file with doc-comments and error-labeling code, the
+    // factory body slipped past the 10000-char window from the early call site.
+    const fnStart = src.indexOf('private async createController(name');
+    assert.ok(fnStart > 0, 'createController factory must exist');
+    // Bracket-count to the matching close brace of the method body.
+    const bodyStart = src.indexOf('{', fnStart);
+    assert.ok(bodyStart > 0, 'createController body open brace must exist');
+    let depth = 0;
+    let i = bodyStart;
+    let inString = false;
+    let quoteChar = null;
+    let inLineComment = false;
+    let inBlockComment = false;
+    while (i < src.length) {
+      const c = src[i];
+      const next = src[i + 1];
+      if (inLineComment) { if (c === '\n') inLineComment = false; }
+      else if (inBlockComment) { if (c === '*' && next === '/') { inBlockComment = false; i++; } }
+      else if (inString) {
+        if (c === '\\') { i += 2; continue; }
+        if (c === quoteChar) inString = false;
+      } else if (c === '/' && next === '/') { inLineComment = true; i++; }
+      else if (c === '/' && next === '*') { inBlockComment = true; i++; }
+      else if (c === '"' || c === "'" || c === '`') { inString = true; quoteChar = c; }
+      else if (c === '{') depth++;
+      else if (c === '}') { depth--; if (depth === 0) break; }
+      i++;
+    }
+    const fnBody = src.slice(bodyStart, i + 1);
     const matches = fnBody.match(/getOrCreate\(/g);
     assert.ok(
       matches && matches.length >= 10,
-      `createController must use getOrCreate at least 10 times (found ${matches?.length ?? 0})`,
+      `createController must use getOrCreate at least 10 times (found ${matches?.length ?? 0}; body length ${fnBody.length} chars)`,
     );
   });
 
