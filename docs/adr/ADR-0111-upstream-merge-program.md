@@ -1087,7 +1087,7 @@ Triggered by user pushback on the W1 preflight-ruvector "1016 conflicts" finding
 | Slice | Commits | Minutes | Status |
 |---|---:|---:|---|
 | W2 A — Test infra | 2 | 10 | 1 clean, 1 single-file structural |
-| W2 B — ESM/CJS hardening | 2 | 20 | parser.ts: keep BOTH `--non-interactive` AND upstream `lazyCommandNames` |
+| W2 B — ESM/CJS hardening | 2 | — | parser.ts: standard 3-way add-add merge (upstream `01070ede8` adds lazyCommandNames machinery; our `fe18fddb7` adds `--non-interactive` hoist; both purely additive since 2026-03-16 merge-base — verified 2026-04-30, ADR-0104 did NOT remove anything despite W2 letter B agent's incorrect "over-eager removal" framing) |
 | W2 C — Daemon/session P0 | 5 | 110 | 2 superseded-skip; 1 partial re-port; 2 selective hunks |
 | W2 D — Validation/honest metrics | 10 | 105–150 | 5 empty-after-rebase; a101c2a08 critical 60-85 min |
 | W2 E — Hive-mind cluster | 6 | 55–80 | 4 hunks (not 5 — see §Conflict zones correction); rerere required |
