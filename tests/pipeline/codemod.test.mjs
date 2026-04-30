@@ -118,6 +118,36 @@ describe('codemod: source file transform', () => {
     assert.ok(result.includes("require('@sparkleideas/agentic-flow')"), 'require agentic-flow transformed');
     assert.ok(result.includes("require('@sparkleideas/ruv-swarm')"), 'require ruv-swarm transformed');
   });
+
+  // ADR-0111 W2 letter G — locks in the contract that the global SCOPED_RE
+  // text-replace transforms `@claude-flow/` literals in non-import contexts.
+  // Critical for upstream's f3cc99d8b plugin sandbox namespace gate at
+  // `plugin-loader.ts: !plugin.name.startsWith('@claude-flow/')` — the
+  // codemod must auto-rewrite this literal so plugins published from our
+  // distribution (scoped `@sparkleideas/*`) pass the official trust check.
+  it('transforms @claude-flow/ literal in non-import contexts (namespace gate, comments, template literals)', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "// Plugins must be prefixed with @claude-flow/ to be official",
+      "if (!plugin.name.startsWith('@claude-flow/')) {",
+      "  trustLevel = 'unverified';",
+      "}",
+      "const officialNamespace = '@claude-flow/';",
+      "const fullName = `${'@claude-flow/'}${pkgName}`;",
+      "const namespaceCheck = name.includes('@claude-flow/utils');",
+    ].join('\n');
+    writeFileSync(join(tmp, 'plugin-loader.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'plugin-loader.js'), 'utf8');
+    assert.ok(result.includes("startsWith('@sparkleideas/')"), 'startsWith literal transformed (f3cc99d8b namespace gate)');
+    assert.ok(result.includes("officialNamespace = '@sparkleideas/'"), 'standalone string literal transformed');
+    assert.ok(result.includes("'@sparkleideas/'}${pkgName}"), 'template literal placeholder transformed');
+    assert.ok(result.includes("includes('@sparkleideas/utils')"), 'includes-with-suffix literal transformed');
+    assert.ok(result.includes("@sparkleideas/ to be official"), 'comment also transformed (acceptable noise)');
+    assert.ok(!result.includes('@claude-flow/'), 'no @claude-flow/ literals remain anywhere');
+  });
 });
 
 describe('codemod: ordering — scoped before unscoped', () => {
