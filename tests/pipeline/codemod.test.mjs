@@ -592,3 +592,134 @@ describe('codemod: unscoped dynamic import() — the agentdb bug', () => {
     assert.equal(result, source, 'non-import agentdb references must not change');
   });
 });
+
+// ADR-0113 Fix 2: codemod processes .md files and rewrites mcp__claude-flow__*
+// tool prefixes. These tests lock in the contract that markdown plugin docs
+// (`forks/ruflo/plugins/**/*.md`, `forks/ruflo/.claude-plugin/**/*.md`) get
+// the same scope rewrites .ts/.json files do, plus the MCP-tool prefix gate.
+describe('codemod: ADR-0113 — markdown extension and MCP tool prefix', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('rewrites @claude-flow/cli@latest install commands in .md files', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "## Install",
+      "",
+      "```",
+      "npx -y @claude-flow/cli@latest swarm init",
+      "```",
+      "",
+      "Run `npx -y @claude-flow/cli@latest doctor` to diagnose issues.",
+    ].join('\n');
+    writeFileSync(join(tmp, 'README.md'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'README.md'), 'utf8');
+    assert.ok(result.includes('npx -y @sparkleideas/cli@latest swarm init'),
+      'code-fence install command rewritten');
+    assert.ok(result.includes('npx -y @sparkleideas/cli@latest doctor'),
+      'inline install command rewritten');
+    assert.ok(!result.includes('@claude-flow/cli@latest'),
+      'no @claude-flow/cli@latest references remain in .md');
+  });
+
+  it('rewrites mcp__claude-flow__* tool prefix to mcp__ruflo__*', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "Use `mcp__claude-flow__memory_store` to persist patterns.",
+      "Tools: mcp__claude-flow__swarm_init, mcp__claude-flow__agent_spawn",
+      "Some helpers like mcp__claude-flow__hooks_route_v2 also exist.",
+    ].join('\n');
+    writeFileSync(join(tmp, 'tools.md'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'tools.md'), 'utf8');
+    assert.ok(result.includes('mcp__ruflo__memory_store'), 'memory_store rewritten');
+    assert.ok(result.includes('mcp__ruflo__swarm_init'), 'swarm_init rewritten');
+    assert.ok(result.includes('mcp__ruflo__agent_spawn'), 'agent_spawn rewritten');
+    assert.ok(result.includes('mcp__ruflo__hooks_route_v2'),
+      'mixed alphanumeric+underscore suffix rewritten');
+    assert.ok(!result.includes('mcp__claude-flow__'),
+      'no mcp__claude-flow__ references remain');
+  });
+
+  it('does NOT rewrite [claude-flow-mcp] log tags (negative case)', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "Logs look like: `[claude-flow-mcp] tool called`",
+      "Process name `claude-flow-mcp-server` stays untouched.",
+      "Compare with old name `claude-flow-mcp-wrapper`.",
+    ].join('\n');
+    writeFileSync(join(tmp, 'logs.md'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'logs.md'), 'utf8');
+    assert.ok(result.includes('[claude-flow-mcp]'),
+      '[claude-flow-mcp] log tag survives');
+    assert.ok(result.includes('claude-flow-mcp-server'),
+      'claude-flow-mcp-server hostname survives');
+    assert.ok(result.includes('claude-flow-mcp-wrapper'),
+      'claude-flow-mcp-wrapper survives');
+    assert.equal(result, source, 'log-tag-only file unchanged');
+  });
+
+  it('does NOT touch .md files inside node_modules/ (negative case)', async () => {
+    tmp = makeTmpDir();
+    const nmDir = join(tmp, 'node_modules', 'some-pkg');
+    mkdirSync(nmDir, { recursive: true });
+    const nmFile = join(nmDir, 'README.md');
+    const original = "Run `npx -y @claude-flow/cli@latest swarm` to start.\n";
+    writeFileSync(nmFile, original);
+
+    // Sibling file outside node_modules/ verifies codemod still runs
+    writeFileSync(join(tmp, 'app.md'),
+      "Run `npx -y @claude-flow/cli@latest swarm` to start.\n");
+
+    await transform(tmp);
+
+    assert.equal(readFileSync(nmFile, 'utf8'), original,
+      'node_modules/**/*.md must not be transformed');
+    const appResult = readFileSync(join(tmp, 'app.md'), 'utf8');
+    assert.ok(appResult.includes('@sparkleideas/cli@latest'),
+      'sibling .md outside node_modules was transformed');
+  });
+
+  it('rewrites code-fence content identically to prose', async () => {
+    tmp = makeTmpDir();
+    const source = [
+      "Prose: install with `npx -y @claude-flow/cli@latest init` first.",
+      "",
+      "```bash",
+      "npx -y @claude-flow/cli@latest init",
+      "```",
+      "",
+      "Prose tool: `mcp__claude-flow__memory_store`.",
+      "",
+      "```",
+      "mcp__claude-flow__memory_store",
+      "```",
+    ].join('\n');
+    writeFileSync(join(tmp, 'mixed.md'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'mixed.md'), 'utf8');
+    // Both prose and fenced occurrences are rewritten
+    const proseInstall = (result.match(/Prose: install with `npx -y @sparkleideas\/cli@latest init`/g) || []).length;
+    const fenceInstall = (result.match(/```bash\nnpx -y @sparkleideas\/cli@latest init\n```/g) || []).length;
+    assert.equal(proseInstall, 1, 'prose install command rewritten');
+    assert.equal(fenceInstall, 1, 'fenced install command rewritten');
+    const proseMcp = (result.match(/Prose tool: `mcp__ruflo__memory_store`/g) || []).length;
+    const fenceMcp = (result.match(/```\nmcp__ruflo__memory_store\n```/g) || []).length;
+    assert.equal(proseMcp, 1, 'prose MCP tool rewritten');
+    assert.equal(fenceMcp, 1, 'fenced MCP tool rewritten');
+    assert.ok(!result.includes('@claude-flow/cli@latest'),
+      'no @claude-flow/cli@latest remains in either prose or fences');
+    assert.ok(!result.includes('mcp__claude-flow__'),
+      'no mcp__claude-flow__ remains in either prose or fences');
+  });
+});

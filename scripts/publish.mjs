@@ -67,6 +67,9 @@ const FALLBACK_LEVELS = [
     '@sparkleideas/plugin-prime-radiant',
     '@sparkleideas/plugin-quantum-optimizer',
     '@sparkleideas/plugin-test-intelligence',
+    // ADR-0113 Fix 5: federation + iot plugin pipeline wiring.
+    '@sparkleideas/plugin-agent-federation',
+    '@sparkleideas/plugin-iot-cognitum',
     '@sparkleideas/teammate-plugin',
   ],
   [

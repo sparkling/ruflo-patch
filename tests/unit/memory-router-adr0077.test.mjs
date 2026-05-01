@@ -970,22 +970,32 @@ describe('ADR-0077 Phase 5: wiring — memory-router internal structure', () => 
     );
   });
 
-  it('memory-tools.ts imports migration-legacy separately', () => {
+  it('memory-tools.ts no longer imports migration-legacy (ADR-0113 follow-up)', () => {
+    // Fork commit 00e91bcb9 ("Remove legacy JSON-store migration path
+    // (Option B per ADR-0113 follow-up)") removed the migration-legacy
+    // import path. The replacement contract is: memory-tools.ts uses
+    // memory-router exclusively. This test inverts the original ADR-0078
+    // contract (import EXISTS) to assert the post-removal state.
     const file = `${MCP_TOOLS_SRC}/memory-tools.ts`;
     if (!existsSync(file)) return;
     const src = readFileSync(file, 'utf-8');
 
     assert.ok(
-      src.includes("from '../memory/migration-legacy.js'"),
-      'memory-tools.ts must import from migration-legacy.js',
+      !src.includes("from '../memory/migration-legacy.js'"),
+      'memory-tools.ts must NOT import migration-legacy.js (removed by fork 00e91bcb9 per ADR-0113 follow-up)',
     );
     assert.ok(
-      src.includes('migrateLegacyStore'),
-      'memory-tools.ts must import migrateLegacyStore',
+      !src.includes('migrateLegacyStore'),
+      'memory-tools.ts must NOT reference migrateLegacyStore (removed)',
     );
     assert.ok(
-      src.includes('hasLegacyStore'),
-      'memory-tools.ts must import hasLegacyStore',
+      !src.includes('hasLegacyStore'),
+      'memory-tools.ts must NOT reference hasLegacyStore (removed)',
+    );
+    // Positive replacement contract: memory-router is the canonical entry
+    assert.ok(
+      src.includes("from '../memory/memory-router.js'"),
+      'memory-tools.ts must import from memory-router.js (replacement of migration-legacy)',
     );
   });
 });

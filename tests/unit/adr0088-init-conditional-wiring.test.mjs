@@ -59,9 +59,14 @@ describe('ADR-0088 Amendment 2026-04-20: SessionStart wiring is unconditional', 
       'daemon start command must remain in the SessionStart block');
   });
 
-  it('daemon start uses npx @claude-flow/cli (codemod-renamed at build)', () => {
-    assert.ok(source.includes('@claude-flow/cli@latest daemon start'),
-      'must match existing npx pattern in the file');
+  it('daemon start uses npx @sparkleideas/cli (ADR-0113 Fix 6.1)', () => {
+    // ADR-0113 Fix 6.1 baked the @sparkleideas/cli@latest rebrand directly
+    // into fork source rather than relying on codemod to rewrite at build
+    // time. Test expects the post-rebrand state in fork source.
+    assert.ok(source.includes('@sparkleideas/cli@latest daemon start'),
+      'must match @sparkleideas/cli@latest daemon-start pattern (ADR-0113 Fix 6.1)');
+    assert.ok(!source.includes('@claude-flow/cli@latest daemon start'),
+      'pre-ADR-0113 @claude-flow/cli@latest pattern must be gone from fork source');
   });
 
   it('daemon start hook has || true trailer (runtime capability gate)', () => {

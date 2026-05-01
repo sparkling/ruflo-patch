@@ -21,6 +21,7 @@
         "@sparkleideas/ruvector-attention-unified-wasm",
         "@sparkleideas/ruvector-rvagent-wasm",
         "@sparkleideas/ruvector-ruvllm-wasm",
+        "@sparkleideas/ruvector-learning-wasm",
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
         "@sparkleideas/ruv-swarm",
@@ -77,6 +78,8 @@
         "@sparkleideas/plugin-prime-radiant",
         "@sparkleideas/plugin-quantum-optimizer",
         "@sparkleideas/plugin-test-intelligence",
+        "@sparkleideas/plugin-agent-federation",
+        "@sparkleideas/plugin-iot-cognitum",
         "@sparkleideas/teammate-plugin"
       ]
     },

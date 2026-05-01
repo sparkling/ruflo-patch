@@ -42,6 +42,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/ruvector-attention-unified-wasm': [],
   '@sparkleideas/ruvector-rvagent-wasm': [],
   '@sparkleideas/ruvector-ruvllm-wasm': [],
+  '@sparkleideas/ruvector-learning-wasm': [],
   '@sparkleideas/agentdb': [],
   '@sparkleideas/agentic-flow': [],
   '@sparkleideas/ruv-swarm': [],
@@ -98,6 +99,10 @@ const KNOWN_DEPS = {
   '@sparkleideas/plugin-prime-radiant': ['@sparkleideas/plugins'],
   '@sparkleideas/plugin-quantum-optimizer': ['@sparkleideas/plugins'],
   '@sparkleideas/plugin-test-intelligence': ['@sparkleideas/plugins'],
+  // ADR-0113 Fix 5: federation + iot pipeline wiring.
+  // Both have empty internal-deps (only devDeps + external SDK deps).
+  '@sparkleideas/plugin-agent-federation': [],
+  '@sparkleideas/plugin-iot-cognitum': [],
   '@sparkleideas/teammate-plugin': [],
 };
 
@@ -182,18 +187,19 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (21+5+7+22+2)', () => {
+    it('all expected packages are present across all levels (22+5+7+24+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3 + W3: L1=21 (6 original + 11 ruvector + 2 attention-wasm + 2 W3 wasm: rvagent+ruvllm), L2=5, L3=7, L4=22, L5=2
-      assert.equal(LEVELS[0].length, 21, 'Level 1 should have 21 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm WASM)');
+      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5: L1=22, L2=5, L3=7,
+      // L4=24 (22 base + 2 ADR-0113 federation/iot plugins), L5=2
+      assert.equal(LEVELS[0].length, 22, 'Level 1 should have 22 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm/learning WASM)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
       assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
-      assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages');
+      assert.equal(LEVELS[3].length, 24, 'Level 4 should have 24 packages (22 base + ADR-0113 federation + iot)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        57,
-        `Expected 57 packages total, got ${allPackages.length}`
+        60,
+        `Expected 60 packages total (ADR-0113 Fix 5: 58 base + federation + iot), got ${allPackages.length}`
       );
     });
 

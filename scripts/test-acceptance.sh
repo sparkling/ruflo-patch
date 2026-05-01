@@ -189,6 +189,7 @@ ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=${REGISTRY}" > .npmrc \
   && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins @sparkleideas/memory \
+     @sparkleideas/plugin-agent-federation @sparkleideas/plugin-iot-cognitum \
      --registry "$REGISTRY" --no-audit --no-fund --prefer-offline 2>&1) || {
   log_error "Failed to install packages from ${REGISTRY}"; exit 1
 }
@@ -647,6 +648,14 @@ run_check_bg "adr0112-27-1-rt-reflexion"              "0112 reflexion store/retr
 run_check_bg "adr0112-27-2-rt-pattern"                "0112 pattern store/search round-trip (#27)"      check_adr0112_roundtrip_pattern                            "controller"
 run_check_bg "adr0112-27-3-rt-skill"                  "0112 skill create/search round-trip (#27)"       check_adr0112_roundtrip_skill                              "controller"
 run_check_bg "adr0112-27-4-rt-hierarchical"           "0112 hierarchical store/recall round-trip (#27)" check_adr0112_roundtrip_hierarchical                       "controller"
+
+# ADR-0113: Plugin pipeline + executor rebrand + Opus 4.7 default
+run_check_bg "adr0113-fed-resolves"     "0113 plugin-agent-federation resolves on Verdaccio (Fix 5)"   check_adr0113_federation_resolves            "packages"
+run_check_bg "adr0113-iot-resolves"     "0113 plugin-iot-cognitum resolves on Verdaccio (Fix 5)"       check_adr0113_iot_resolves                   "packages"
+run_check_bg "adr0113-fed-bin"          "0113 ruflo-federation bin executes (Fix 5)"                   check_adr0113_ruflo_federation_bin           "packages"
+run_check_bg "adr0113-iot-bin"          "0113 cognitum-iot bin executes (Fix 5)"                       check_adr0113_cognitum_iot_bin               "packages"
+run_check_bg "adr0113-cli-rebrand"      "0113 executor uses @sparkleideas/cli@latest (Fix 6.1)"        check_adr0113_executor_uses_sparkleideas_cli "structure"
+run_check_bg "adr0113-no-opus46"        "0113 no 'Opus 4.6' strings in CLI dist (Fix 6.3)"             check_adr0113_no_opus_46_strings             "structure"
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
@@ -1932,6 +1941,12 @@ collect_parallel "all" \
   "adr0112-27-2-rt-pattern|0112 pattern store/search round-trip (#27)" \
   "adr0112-27-3-rt-skill|0112 skill create/search round-trip (#27)" \
   "adr0112-27-4-rt-hierarchical|0112 hierarchical store/recall round-trip (#27)" \
+  "adr0113-fed-resolves|0113 plugin-agent-federation resolves on Verdaccio (Fix 5)" \
+  "adr0113-iot-resolves|0113 plugin-iot-cognitum resolves on Verdaccio (Fix 5)" \
+  "adr0113-fed-bin|0113 ruflo-federation bin executes (Fix 5)" \
+  "adr0113-iot-bin|0113 cognitum-iot bin executes (Fix 5)" \
+  "adr0113-cli-rebrand|0113 executor uses @sparkleideas/cli@latest (Fix 6.1)" \
+  "adr0113-no-opus46|0113 no 'Opus 4.6' strings in CLI dist (Fix 6.3)" \
   "p1-ai-scan|AI Defence scan (P1)" "p1-ai-analyze|AI Defence analyze (P1)" \
   "p1-ai-pii|AI Defence has_pii (P1)" "p1-ai-safe|AI Defence is_safe (P1)" \
   "p1-ai-learn|AI Defence learn (P1)" "p1-ai-stats|AI Defence stats (P1)" \

@@ -57,6 +57,11 @@ const UNSCOPED_MAP = {
 
 const ALLOWED_EXTENSIONS = new Set([
   '.js', '.ts', '.mjs', '.cjs', '.json', '.d.ts', '.d.mts',
+  // ADR-0113 Fix 2: process .md so plugin install instructions and
+  // marketplace docs in `forks/ruflo/plugins/**/*.md` and
+  // `forks/ruflo/.claude-plugin/**/*.md` get @claude-flow/ → @sparkleideas/
+  // and mcp__claude-flow__* → mcp__ruflo__* rewrites.
+  '.md',
 ]);
 
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
@@ -177,6 +182,14 @@ function renameObjectKeys(obj) {
 // Only match @claude-flow/ that is NOT already part of @sparkleideas/
 const SCOPED_RE = /@claude-flow\//g;
 
+// ADR-0113 Fix 2: MCP tool prefix rewrite. Plugin docs reference
+// `mcp__claude-flow__*` tool names, but our MCP server registers as
+// `name: 'ruflo'` so Claude Code namespaces tools as `mcp__ruflo__*`.
+// The pattern's flanking `__` separators ensure we don't false-hit on log
+// tags like `[claude-flow-mcp]` (no `mcp__` prefix) or scoped names like
+// `@claude-flow/cli` (no trailing `__`).
+const MCP_PREFIX_RE = /mcp__claude-flow__([a-zA-Z0-9_]+)/g;
+
 // Step 1b: RuVector scoped replacement -- @ruvector/ -> @sparkleideas/ruvector-
 // Transforms @ruvector/core -> @sparkleideas/ruvector-core, etc.
 const RUVECTOR_SCOPED_RE = /@ruvector\//g;
@@ -224,6 +237,9 @@ function transformSource(content) {
     if (!mapped) return match;
     return prefix + mapped + suffix;
   });
+
+  // Pass 4 (ADR-0113 Fix 2): MCP tool prefix (mcp__claude-flow__* -> mcp__ruflo__*)
+  result = result.replace(MCP_PREFIX_RE, 'mcp__ruflo__$1');
 
   return result;
 }

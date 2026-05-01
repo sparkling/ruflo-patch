@@ -15,9 +15,13 @@ import { resolve, join, basename } from 'node:path';
 // 20% keeps the ratio stable while still catching mass-skip regressions.
 const MAX_SKIPS_FLOOR = 8;
 const MAX_SKIPS_ENV = process.env.SKIP_THRESHOLD ? parseInt(process.env.SKIP_THRESHOLD, 10) : null;
-// Default to 5 min; suite grew past 60s as ADR-0094 coverage + ADR-0069
-// closure added ~100 paired unit tests. Override via TEST_TIMEOUT env var.
-const TIMEOUT_MS = parseInt(process.env.TEST_TIMEOUT || '300000', 10);
+// Default to 20 min; suite grew past 5 min as ADR-0094 P9-P17 + ADR-0086
+// RVF integration + ADR-0095 subprocess N=6 added integration-style probes
+// that do real `npm install` + CLI subprocess fan-out (32s for the slowest
+// file alone). Override via TEST_TIMEOUT env var. Fast iteration on a
+// single file should pass `node --test tests/unit/<file>.test.mjs`
+// directly (bypasses this runner) — the 20 min budget is for full-suite.
+const TIMEOUT_MS = parseInt(process.env.TEST_TIMEOUT || '1200000', 10);
 const saveResults = process.argv.includes('--save-results') ||
   process.env.SAVE_TEST_RESULTS === '1';
 
@@ -80,9 +84,11 @@ function runTests(args) {
 }
 
 const t0 = Date.now();
-// Default to 4 concurrent test suites (server has 32 vCPUs)
+// Default to ~80% of available cores (M5 Max has 14, server has 32 vCPUs).
+// Bumped 8 → 12 to amortize integration-style probes (ADR-0086 RVF, ADR-0095
+// subprocess N=6, ADR-0094 P2/P3/P6/P7 CLI shim runs).
 import { availableParallelism } from 'node:os';
-const defaultConcurrency = Math.min(availableParallelism(), 8);
+const defaultConcurrency = Math.min(availableParallelism(), 12);
 const concurrency = parseInt(process.env.TEST_CONCURRENCY || String(defaultConcurrency), 10);
 const args = ['--test', ...allFiles];
 if (concurrency > 0) {

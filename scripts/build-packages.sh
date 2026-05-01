@@ -161,10 +161,14 @@ run_build() {
   local -a all_groups
 
   # Known v3/@claude-flow/ packages (used to filter out cross-repo and plugin packages)
+  # ADR-0113 Fix 5: federation + iot plugins live under v3/@claude-flow/plugin-*
+  # (not v3/plugins/ like other plugins — upstream merge layout). Add them
+  # here so build groups pick them up via JSON filter at level 4.
   local -A _v3_packages=([shared]=1 [memory]=1 [embeddings]=1 [codex]=1 [aidefence]=1
     [neural]=1 [hooks]=1 [browser]=1 [plugins]=1 [providers]=1 [claims]=1
     [guidance]=1 [mcp]=1 [integration]=1 [deployment]=1 [swarm]=1
-    [security]=1 [performance]=1 [testing]=1 [cli]=1)
+    [security]=1 [performance]=1 [testing]=1 [cli]=1
+    [plugin-agent-federation]=1 [plugin-iot-cognitum]=1)
 
   # Try to read from publish-levels.json; fall back to hardcoded if unavailable
   local _build_groups_ok=false
@@ -176,7 +180,9 @@ run_build() {
     const v3set = new Set(['shared','memory','embeddings','codex','aidefence',
       'neural','hooks','browser','plugins','providers','claims',
       'guidance','mcp','integration','deployment','swarm',
-      'security','performance','testing','cli']);
+      'security','performance','testing','cli',
+      // ADR-0113 Fix 5: federation + iot plugins live under v3/@claude-flow/
+      'plugin-agent-federation','plugin-iot-cognitum']);
     for (let i = 1; i < data.levels.length; i++) {
       const pkgs = data.levels[i].packages
         .map(p => p.replace('@sparkleideas/', ''))
