@@ -15,13 +15,17 @@ import { resolve, join, basename } from 'node:path';
 // 20% keeps the ratio stable while still catching mass-skip regressions.
 const MAX_SKIPS_FLOOR = 8;
 const MAX_SKIPS_ENV = process.env.SKIP_THRESHOLD ? parseInt(process.env.SKIP_THRESHOLD, 10) : null;
-// Default to 20 min; suite grew past 5 min as ADR-0094 P9-P17 + ADR-0086
+// Default to 30 min; suite grew past 5 min as ADR-0094 P9-P17 + ADR-0086
 // RVF integration + ADR-0095 subprocess N=6 added integration-style probes
-// that do real `npm install` + CLI subprocess fan-out (32s for the slowest
-// file alone). Override via TEST_TIMEOUT env var. Fast iteration on a
-// single file should pass `node --test tests/unit/<file>.test.mjs`
-// directly (bypasses this runner) — the 20 min budget is for full-suite.
-const TIMEOUT_MS = parseInt(process.env.TEST_TIMEOUT || '1200000', 10);
+// that do real `npm install` + CLI subprocess fan-out. The 22-30s npm
+// install in adr0086-rvf-integration.test.mjs holds the npm cache lock,
+// causing cache contention with the ~12 parallel test files (default
+// concurrency). With SKIP_T3_2_BOOTSTRAP=1 to skip the slow npm-install
+// path, the suite finishes in ~65s; without, it runs ~25-30 min as
+// parallel tests serialize on cache. Override via TEST_TIMEOUT env var.
+// Fast iteration on a single file should pass `node --test tests/unit/<file>.test.mjs`
+// directly (bypasses this runner).
+const TIMEOUT_MS = parseInt(process.env.TEST_TIMEOUT || '1800000', 10);
 const saveResults = process.argv.includes('--save-results') ||
   process.env.SAVE_TEST_RESULTS === '1';
 
