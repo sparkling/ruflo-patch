@@ -88,5 +88,66 @@ copy_binary \
   "$RUVECTOR_DIR/examples/ruvLLM" \
   "$RUVECTOR_DIR/npm/packages/ruvllm"
 
+# ADR-0095 amendment (2026-05-01): rvf-node added to the bundle list.
+# Without this entry, the `.node` binary in `npm/packages/rvf-node/` was
+# only updated when the developer manually ran `napi build` + committed
+# the result. Any change to `crates/rvf/rvf-runtime/src/locking.rs` (or
+# any other rvf-runtime/rvf-node Rust source) silently shipped the
+# previous binary because the cascade had no way to refresh it. The
+# rebuild-when-stale logic below walks `.rs` files newer than the existing
+# binary and triggers `napi build --release` if needed; a fresh build
+# emits to `crates/rvf/rvf-node/index.${TRIPLE}.node`, which the existing
+# `copy_binary` then copies to the publishable location.
+maybe_rebuild_rvf_node() {
+  local crate_dir="$RUVECTOR_DIR/crates/rvf/rvf-node"
+  local binary="$crate_dir/index.${TRIPLE}.node"
+  local needs_rebuild=0
+
+  if [[ ! -f "$binary" ]]; then
+    needs_rebuild=1
+  else
+    # Any Rust source newer than the binary triggers a rebuild. -newer
+    # checks mtime; under git checkouts this is reliable because git sets
+    # mtime on changed files.
+    while IFS= read -r src; do
+      if [[ "$src" -nt "$binary" ]]; then
+        needs_rebuild=1
+        break
+      fi
+    done < <(find "$RUVECTOR_DIR/crates/rvf" -name '*.rs' -type f 2>/dev/null)
+  fi
+
+  if [[ "$needs_rebuild" -eq 0 ]]; then
+    return 0
+  fi
+
+  if ! command -v napi >/dev/null 2>&1 || ! command -v cargo >/dev/null 2>&1; then
+    echo "  WARN: rvf-node Rust source is newer than ${binary##*/} but napi/cargo not found — shipping stale binary"
+    return 0
+  fi
+
+  echo "  rebuild rvf-node: Rust source newer than ${binary##*/}"
+  ( cd "$crate_dir" && napi build --platform --release --cargo-cwd . >/dev/null 2>&1 )
+}
+
+maybe_rebuild_rvf_node
+
+# Map crates/rvf/rvf-node/index.<triple>.node → npm/packages/rvf-node/rvf-node.<triple>.node
+copy_rvf_node_binary() {
+  local src="$RUVECTOR_DIR/crates/rvf/rvf-node/index.${TRIPLE}.node"
+  local dest_dir="$RUVECTOR_DIR/npm/packages/rvf-node"
+  local dest="$dest_dir/rvf-node.${TRIPLE}.node"
+  if [[ ! -f "$src" ]]; then
+    echo "  skip: no rvf-node binary at crates/rvf/rvf-node/index.${TRIPLE}.node"
+    skipped=$((skipped + 1))
+    return
+  fi
+  mkdir -p "$dest_dir"
+  cp -v "$src" "$dest"
+  copied=$((copied + 1))
+}
+
+copy_rvf_node_binary
+
 echo ""
 echo "=== bundle-native-binaries === done: ${copied} copied, ${skipped} skipped"

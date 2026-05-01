@@ -13,6 +13,8 @@
 - **2026-04-18 (amended, Sprint-1.2 Pass-2)** — Pass-2 investigator (`ef5d357`) validated items (a)+(b)+(c) landed in `@sparkleideas/cli@3.5.58-patch.137` (fork `9c5809324`), confirmed in-process N=6 now PASSES, but subprocess N=6 still fails with `entryCount=1/6`. Root cause of the residual loss is **H7**: the native `RvfDatabase` holds an exclusive OS-level lock on the SFVR file during `open`/`create`. At N=6 only one writer acquires the native lock; the other 5 fail LOUDLY (item a working as designed) with `RVF error 0x0300: LockHeld` or `0x0303: FsyncFailed` inside `initialize()` — **before** any `store()` call, so the merge protocol is never reached. Item (c)'s factory cache does NOT fire on the CLI hot path because `cli/memory-router.ts:435-443`'s private `createStorage` bypasses `@sparkleideas/memory/storage-factory`. Amendment appends items **d1** (serialize `tryNativeInit` through the advisory lock) and **d2** (route the CLI's private `createStorage` through the shared factory). Items (a)/(b)/(c) stand unchanged.
 - **2026-04-18 (amended, Sprint-1.3 Pass-3)** — Pass-3 investigator (`b16efcc`) validated items (a)+(b)+(c)+(d1)+(d2) landed in `@sparkleideas/cli@3.5.58-patch.139` (fork `3fe71b9c7`). 40-trial matrix now shows 23/40 PASS (up from 0/3 at Pass-2 baseline) — substantial progress, but 17/40 FAIL survive as two distinct residual modes. Error-unwrap instrumentation on `storage-factory.ts` dispositively identifies **H8** (17/17 cold-start failures are `ENOENT` on `.swarm/memory.rvf.lock` because `acquireLock` at `rvf-backend.ts:882` does `writeFile(…, {flag:'wx'})` without first `mkdir(dirname(lockPath),{recursive:true})`) and **H14** (rare silent mixed-backend loss at `entryCount=3..5/6`: `tryNativeInit`'s "pure-TS-owned-file" branch at `rvf-backend.ts:753-764` silently accepts zero-byte files and already-clobbered `RVF\0` files as legitimate pure-TS targets, then pure-TS writes land on `.rvf` while native writes land on `.meta` — disjoint-target merge sees only one population). Amendment appends items **d3** (acquireLock mkdirs dirname before wx-open) and **d4** (tighten tryNativeInit invariant so only genuine `RVF\0` qualifies as pure-TS-owned; short reads and unknown magic throw). Secondary fix bundled with d3/d4: `storage-factory.ts:154` rewrap preserves `err.cause` so the opaque `[StorageFactory] Failed to create storage backend` message stops masking the real ENOENT. Items (a)/(b)/(c)/(d1)/(d2) stand unchanged.
 
+- **2026-05-01 (amended, Swarm-2 final fix — d12+d13+d14)** — Despite the 2026-04-20 "Implemented" status, latent contention reappeared after the 2026-04-29 upstream-merge cycle: cli@patch.282 baseline produced **0/40** on `scripts/diag-rvf-interproc-race.mjs --trials 40` (covering N=2,4,6,8 × 10). Two independent 10-agent swarms (one per round) and two cycles of fix-and-verify converged on the actual root cause: **the native `RvfStore::create` path opens `path` with `OpenOptions::create_new(true)` BEFORE acquiring `WriterLock::acquire(path)`** (`forks/ruvector/crates/rvf/rvf-runtime/src/store.rs:83-90`). Two cold-start peers race the bare-file create unsynchronised; the loser gets EEXIST mapped to `FsyncFailed (0x0303)` and dies fatally at attempts=1 (the JS-side retry budget only handles `LockHeld 0x0300`). Empirically confirmed by instrumented `RVF_DIAG=1` capture of failed trial t4 at N=4 showing writer-3 stderr `RVF error 0x0303: FsyncFailed` at `attempts=1, elapsed=0ms` while writer-1 wrote `.meta` cleanly — exactly the asymmetry that produced "fast 1.5s failures" vs "slow 3.5s passes" and "N=8 perfect / N≤6 leaks" pattern. Items: **d12** (replace native `WriterLock` O_CREAT|O_EXCL PID-file design with kernel `flock(LOCK_EX)` on a never-unlinked sibling + process-local refcount map; `forks/ruvector/crates/rvf/rvf-runtime/src/locking.rs` rewritten); **d13** (JS `.jslock` made re-entrant via `_lockHeldDepth` counter so `store()` holds the lock across in-mem mutate + WAL append + WAL compact in one atomic critical section); **d14** (native `RvfStore::create` reordered to take flock BEFORE `OpenOptions::create_new`; if file exists post-flock, return `LockHeld` so JS dispatcher in `tryNativeInit` retries as `RvfDatabase.open()` which goes through the same flock queue). Result: cli@patch.302 produces **40/40 PASS** on the diag matrix at all N=2,4,6,8 with no silent loss. Items (a)/(b)/(c)/(d1)/(d2)/(d3)/(d4)/(d5)/(d6)/(d8)/(d10)/(d11) stand unchanged. Status returns to **Implemented** (2026-05-01).
+
 ## Context
 
 The 15-agent remediation swarm's `fix-t3-2-rvf-concurrent` agent made RVF concurrent writes pass an in-process simulation (10/10 trials) by calling `compactWal()` after every `store()`. The real CLI test (`t3-2-concurrent`, 6 parallel `cli memory store` subprocesses) still fails: final `.rvf.meta` has `entryCount=1` (5 entries lost) despite all 6 CLIs exiting 0.
@@ -846,3 +848,123 @@ After Pass-3 (d3+d4, fork `e6901f397`, `@sparkleideas/cli@3.5.58-patch.141`) wri
 - **Write convergence at N=2..8**: SOLVED by d1-d4 (confirmed 40/40 × multiple runs).
 - **Read-side**: MULTIPLE distinct bugs (d5-d10 above), none reproduce as "1/6" on current builds — the original T3-2 "1/6" observation is suspected to be either a transient pre-patch state or a check-code artifact (B had a similar parser issue in E5).
 - **Next**: user choice between continuing with d5-d10 fork work vs closing S1 at "write-side solved" and moving to S3.
+
+---
+
+## Swarm-2 amendment (2026-05-01) — items d12, d13, d14 — final fix detail
+
+### Recurrence
+
+After the 2026-04-29 upstream-merge program (ADR-0111) the contention reappeared: cli@patch.282 against `diag-rvf-interproc-race.mjs --trials 40` (N=2,4,6,8 × 10) produced **0/40 PASS**. Initial inspection blamed the JS-side `.lock` path collision with the native FLVR-format binary lock; renaming the JS lock to `.jslock` (memory-router.ts:707 + rvf-backend.ts) and tightening the JS lock's PID-stale handling moved diag to **36/40 (90%)** but left a residual silent-loss tail.
+
+The asymmetric pattern was the diagnostic signal:
+
+| N | Pass | Loss shape |
+|---|------|------------|
+| 2 | 9/10 | observed=1, subproc-fail=0 |
+| 4 | 9/10 | observed=3, subproc-fail=0..1 |
+| 6 | 8/10 | observed=1..5, subproc-fail=0..1 |
+| 8 | **10/10** | — |
+
+In every conventional storage race, *more contention = more loss*. The inverted asymmetry (low-N leaks, high-N perfect) indicated something **timing-sensitive that a fully-saturated kernel queue masks**.
+
+### Two 10-agent swarms
+
+**Swarm 1 (2026-05-01 morning)** correctly identified the architectural root: replace the native `WriterLock` (O_CREAT|O_EXCL with PID-stale-detection) with kernel `flock(LOCK_EX)`. The fix was load-bearing: 0/40 → 36/40. But it didn't explain the residual 10%, and the `feedback-data-loss-zero-tolerance.md` rule made 90% non-shippable.
+
+**Swarm 2 (2026-05-01 afternoon)** queried the residual. 4 of 10 experts (Rust, Init-race, Theory/TLA+, Pattern) independently converged on the same finding:
+
+> `RvfStore::create` at `forks/ruvector/crates/rvf/rvf-runtime/src/store.rs:83-90` does `OpenOptions::create_new(true).open(path)` BEFORE `WriterLock::acquire(path)`. Two cold-start peers race the bare-file `O_EXCL` create; the loser gets EEXIST mapped to `FsyncFailed (0x0303)` (misleading error code) and is treated as fatal by JS `tryNativeInit` at attempts=1. The 5s LockHeld retry budget never fires because the error is the wrong shape.
+
+Devil's-advocate countered with "ship at 90%, the asymmetry is a microscope artifact" — rejected on `feedback-data-loss-zero-tolerance.md` grounds: 10% silent loss in a memory store is a contract violation, not noise.
+
+Empirical confirmation (vs trace-only) was the load-bearing step that distinguished swarm 2 from a previous swarm-2-style deferred-corrupt fix that happened to make things WORSE (33/40). Per `feedback-no-fallbacks.md`, the team instrumented before iterating: `RVF_DIAG=1` env var added log lines at every state-mutation site in `rvf-backend.ts`, and the diag harness was modified to preserve trial dirs + dump per-writer stdout/stderr on failure (so failed trials could be post-mortem'd offline).
+
+The first `RVF_DIAG=1` failure capture (trial t4 at N=4) produced:
+
+```
+writer-1: pid 59116 — initialize.start → tryNativeInit hasNative=true → store probe-t4-1 → persistToDiskInner.renamed → exit 0
+writer-3: pid 59118 — initialize.start → initialize.reapDone → [ERROR] Failed to store: RVF error 0x0303: FsyncFailed at attempts=1, elapsed=0ms
+```
+
+The 0ms elapsed at attempts=1 is dispositive. The native call returned EEXIST-mapped-to-FsyncFailed before any retry budget could fire. This is exactly the shape the four experts predicted but had not yet been reproduced under instrumentation.
+
+### d12 — flock-based WriterLock
+
+**File**: `forks/ruvector/crates/rvf/rvf-runtime/src/locking.rs` (rewritten).
+
+The original `WriterLock` used:
+- `O_CREAT|O_EXCL` to atomically create a sibling `.lock` file with PID + hostname + timestamp + UUID
+- Userspace stale-detection: `kill(pid, 0)` + 30s age threshold to break dead-holder locks
+- Drop impl removes the lock file on natural Rust drop
+
+Failure modes the design carried:
+1. **Non-blocking** — caller had to retry from userspace, with a 5s budget that was empirically too short under N≥6 contention because each holder kept the lock for its entire RvfStore lifetime (= entire CLI process lifetime).
+2. **N-API process.exit(0) skips Drop** — when the JS `process.exit(0)` short-circuits V8 GC, the Rust struct is never dropped, so the lock file leaks to disk with a now-dead PID. The next contender's stale-detection works most of the time but has races.
+3. **PID reuse** — between OS PID-recycle and the next contender's `kill(pid, 0)` check, dead-holder detection can mis-fire.
+
+Replacement design uses `flock(LOCK_EX)` on a never-unlinked `.lock` sibling:
+- **Blocking** — kernel queues writers FIFO; no userspace retry budget needed
+- **Auto-release on process death** — kernel reaps fd state when process exits, including `process.exit(0)`. The flock is dropped with the fd; no leak possible
+- **Same-inode flock queue** — because the lock file is never unlinked, all peers `open` the same inode and join the same kernel queue
+- **Process-local refcount** — `Mutex<HashMap<PathBuf, usize>>` short-circuits same-process repeat acquisitions (BSD flock is per-fd; without the refcount, one process taking the same flock twice via different fds would deadlock against itself)
+
+The same pattern was already used by `IngestLockGuard` in `rvf-node/src/lib.rs:45-114` (the `.ingestlock` flock around `RvfStore::ingest_batch`); d12 extends it to cover `RvfStore::create`/`open`/`derive`.
+
+Public API of `WriterLock` is preserved: `acquire`, `release`, `Drop`, `is_valid`, and `lock_path_for` all keep their signatures so `store.rs` does not need changes for the API itself (only the call-site reorder in d14).
+
+### d13 — JS `.jslock` re-entrant via `_lockHeldDepth`
+
+**File**: `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts` — field declaration ~line 105, `acquireLock`/`releaseLock` ~line 1498/1620, `store()` ~line 410-475.
+
+Pre-d13 `store()` released the JS lock 3 times: once after the in-memory mutation + native ingest, then `appendToWal` took it on its own, then `compactWal` took it on its own. Peer writers could interleave at either release point.
+
+d13 makes `acquireLock`/`releaseLock` re-entrant via a `_lockHeldDepth` counter. Same-process repeat acquisitions bump the counter and return without taking a new physical lock; only the outermost release physically unlinks the `.jslock` file. `store()` now acquires once, holds across the WHOLE in-mem-mutate + native-ingest + WAL-append + WAL-compact + WAL-unlink sequence, and releases once.
+
+**Caveat (out-of-scope for d13)**: the depth counter is unsafe under JS async semantics for SAME-process `Promise.all` over `store()` (Task1 holds depth=1 across an await; Task2 sees depth=1 and bumps to 2 thinking it owns the lock — both tasks then race in-mem state). The diag is multi-process so this doesn't fire there, but in-process callers with `Promise.all` over a single backend instance would corrupt. The correct primitive is a Promise-chained mutex with a caller token; tracked separately, not gating this ADR.
+
+### d14 — flock-before-create in `RvfStore::create`
+
+**File**: `forks/ruvector/crates/rvf/rvf-runtime/src/store.rs:78-100`.
+
+```rust
+pub fn create(path: &Path, options: RvfOptions) -> Result<Self, RvfError> {
+    if options.dimension == 0 {
+        return Err(err(ErrorCode::InvalidManifest));
+    }
+
+    // Take flock FIRST; cold-start peers serialize at the kernel queue.
+    let writer_lock = WriterLock::acquire(path).map_err(|_| err(ErrorCode::LockHeld))?;
+
+    // Now under the flock: if the file appeared, a peer raced and won.
+    // Return LockHeld (transient) so the JS-side dispatcher retries as open().
+    if path.exists() {
+        drop(writer_lock);
+        return Err(err(ErrorCode::LockHeld));
+    }
+
+    let file = OpenOptions::new()
+        .read(true).write(true).create_new(true)
+        .open(path)
+        .map_err(|_| err(ErrorCode::FsyncFailed))?;
+    // ... rest of create unchanged ...
+}
+```
+
+JS-side companion change at `rvf-backend.ts:1296-1312`: when `RvfDatabase.create` returns `LockHeld` AND the file now exists on disk, switch to `RvfDatabase.open` (which goes through the same flock queue). This replaces the previous behavior where create-race losers crashed at `attempts=1`.
+
+The combination of d12 + d14 makes the create-vs-open decision atomic under the kernel flock — exactly the linearizability obligation the TLA+ expert flagged: `(native_rvf_content = ⊥) ∨ (P.nativeFallbackMode = false)` is now lock-invariant.
+
+### Validation
+
+- **Cascade**: `bash scripts/ruflo-publish.sh` published `cli@3.5.58-patch.302` + `ruvector-rvf-node@0.1.9-patch.5+`. t3-2 acceptance check passes 4.97s.
+- **Diag matrix**: `CLI_VERSION=3.5.58-patch.302 node scripts/diag-rvf-interproc-race.mjs --trials 40` → **40/40 PASS, wallclock 372s** (N=2: 10/10, N=4: 10/10, N=6: 10/10, N=8: 10/10).
+
+The 40/40 result satisfies `feedback-data-loss-zero-tolerance.md` for the diag layer (which is more thorough than the t3-2 acceptance check). Status returns to **Implemented**.
+
+### Process notes
+
+- The first 24h of the swarm-2 cycle confirmed two anti-patterns from `feedback-no-fallbacks.md` and the new `feedback-data-loss-zero-tolerance.md`:
+  1. "Experts converged on a fix" is not the same as "fix is empirically validated". Swarm-2's first converged hypothesis (set `nativeFallbackMode=true` in deferred-corrupt branches) was internally consistent but EMPIRICALLY made things WORSE (33/40 vs 36/40 baseline). It was reverted within minutes of the diag result.
+  2. "Ship at 90%" was floated by devil's advocate and explicitly rejected on data-integrity grounds. The same argument was tempting after the swarm-1 fix; resisting it surfaced the actual create-vs-flock race that swarm-2 closed.
+- `RVF_DIAG=1` instrumentation + diag-harness preservation of failed trials is now load-bearing infra. Future contention regressions should reach for it FIRST before spawning more agents.

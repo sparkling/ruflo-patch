@@ -331,10 +331,55 @@ async function runTrial(harnessDir, N, trialLabel, traceEnabled) {
   log(`trial=${trialLabel} N=${N} entryCount=${meta.entryCount} failures=${failures.length} elapsed=${elapsedMs}ms ${passed ? 'PASS' : 'FAIL'}`);
   if (!passed && failures.length > 0) {
     for (const f of failures.slice(0, 2)) {
-      log(`  subproc failure: code=${f.code} stderr=${f.stderr.slice(0, 200).replace(/\n/g, ' ')}`);
+      log(`  subproc failure: code=${f.code} stderr=${f.stderr.slice(0, 600).replace(/\n/g, ' | ')}`);
     }
   }
-  // Cleanup trial dir — but only after we've captured metadata
+  // ADR-0095 amendment (2026-05-01, instrumentation): on FAIL, preserve
+  // the trial dir AND dump per-writer stdout/stderr + on-disk state to a
+  // sibling `.diag/` dir so post-mortem can find the actual failure mode.
+  // Pass-trials still cleaned up (we don't want disk to fill).
+  if (!passed && process.env.RVF_DIAG_PRESERVE !== '0') {
+    try {
+      const diagDir = trialDir + '.diag';
+      const fs = await import('node:fs');
+      fs.mkdirSync(diagDir, { recursive: true });
+      // Dump per-writer outputs.
+      for (let i = 0; i < results.length; i++) {
+        fs.writeFileSync(`${diagDir}/writer-${i+1}.stdout`, results[i].stdout || '', 'utf-8');
+        fs.writeFileSync(`${diagDir}/writer-${i+1}.stderr`, results[i].stderr || '', 'utf-8');
+        fs.writeFileSync(`${diagDir}/writer-${i+1}.exit`, String(results[i].code ?? '?'), 'utf-8');
+      }
+      // Dump on-disk state from likely .swarm/.claude-flow paths.
+      for (const dir of ['.swarm', '.claude-flow']) {
+        const fullDir = `${trialDir}/${dir}`;
+        if (fs.existsSync(fullDir)) {
+          const entries = fs.readdirSync(fullDir);
+          fs.writeFileSync(`${diagDir}/${dir}.listing`,
+            entries.map(e => {
+              try {
+                const p = `${fullDir}/${e}`;
+                const stat = fs.statSync(p);
+                return `${e}\t${stat.size}\t${stat.mtime.toISOString()}`;
+              } catch { return `${e}\t?`; }
+            }).join('\n'), 'utf-8');
+          // Also copy the .meta + .rvf + .wal + lock files for hex-dump analysis.
+          for (const fname of entries) {
+            if (fname.startsWith('memory.rvf')) {
+              try {
+                fs.copyFileSync(`${fullDir}/${fname}`, `${diagDir}/${dir}_${fname}`);
+              } catch {}
+            }
+          }
+        }
+      }
+      log(`  preserved-on-fail: ${diagDir}`);
+      // KEEP the trial dir too so it can be re-inspected.
+      return { N, trial: trialLabel, passed, entryCount: meta.entryCount, failures: failures.length, elapsedMs, trace, diagDir, trialDir };
+    } catch (err) {
+      log(`  preservation failed: ${err.message}`);
+    }
+  }
+  // Cleanup trial dir — but only on PASS, after we've captured metadata
   try { rmSync(trialDir, { recursive: true, force: true }); } catch {}
   return { N, trial: trialLabel, passed, entryCount: meta.entryCount, failures: failures.length, elapsedMs, trace };
 }

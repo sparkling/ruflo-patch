@@ -26,7 +26,16 @@ const execFileAsync = promisify(execFileCb);
 const __filename = fileURLToPath(import.meta.url);
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.tsc-toolchain']);
-const SCOPES = ['@sparkleideas/', '@claude-flow/'];
+// ADR-0095 amendment (2026-05-01): @ruvector/* added so the cascade picks
+// up forks/ruvector/{crates,npm/packages}/<pkg>/package.json. Without this,
+// findPackages walked past `@ruvector/rvf-node` and the cascade silently
+// no-op'd `npm publish` for the renamed `@sparkleideas/ruvector-rvf-node`
+// because the version wasn't bumped. The codemod step renames the scope at
+// build time (see scripts/codemod.mjs RUVECTOR_PREFIX_FROM/TO); fork-
+// version is the bookkeeping side that needs to know about the same
+// mapping — `toNpmName` below adds the @ruvector → @sparkleideas/ruvector-
+// translation.
+const SCOPES = ['@sparkleideas/', '@claude-flow/', '@ruvector/'];
 
 // Unscoped packages that are published as @sparkleideas/* (via codemod rename).
 // These need -patch.N versions too.
@@ -110,11 +119,16 @@ function walk(dir, results) {
 /**
  * Get the published npm name for a fork package.
  * Unscoped names and @claude-flow/* both map to @sparkleideas/*.
+ * @ruvector/* maps to @sparkleideas/ruvector-* (mirrors codemod.mjs
+ * RUVECTOR_PREFIX_FROM/TO at line ~30).
  */
 function toNpmName(forkName) {
   if (forkName.startsWith('@sparkleideas/')) return forkName;
   if (forkName.startsWith('@claude-flow/')) {
     return '@sparkleideas/' + forkName.replace('@claude-flow/', '');
+  }
+  if (forkName.startsWith('@ruvector/')) {
+    return '@sparkleideas/ruvector-' + forkName.replace('@ruvector/', '');
   }
   if (UNSCOPED_PUBLISHABLE.has(forkName)) {
     return '@sparkleideas/' + forkName;

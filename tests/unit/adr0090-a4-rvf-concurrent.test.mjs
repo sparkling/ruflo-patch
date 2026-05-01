@@ -235,7 +235,12 @@ describe('ADR-0090 A4: tier3 check file is present and exports the new function'
     assert.ok(src.length > 0, 'could not extract check function body');
     assert.doesNotMatch(src, /SQLITE_BUSY/i, 'must not scan for SQLITE_BUSY');
     assert.doesNotMatch(src, /database is locked/i, 'must not scan for "database is locked"');
-    assert.match(src, /\.rvf\.lock/, 'must reference .rvf.lock');
+    // ADR-0095 amendment (2026-05-01): .rvf.lock no longer asserted as
+    // "must be absent" (the flock-based WriterLock keeps the file by
+    // design). The check still references the path in a comment block
+    // explaining why the assertion was removed, which is fine — this
+    // structural assertion just confirms the path is at least mentioned.
+    assert.match(src, /\.rvf\.lock/, 'must reference .rvf.lock (in comment or code)');
     assert.match(src, /entryCount/, 'must parse RVF header entryCount');
   });
 
@@ -258,7 +263,7 @@ describe('ADR-0090 A4: tier3 check file is present and exports the new function'
 // ============================================================================
 
 describe('ADR-0090 A4 Case 1: all N entries in .rvf, no dangling lock -> PASS', () => {
-  it('check passes when header entryCount=N and namespace list returns all N keys and no .rvf.lock', () => {
+  it('check passes when header entryCount=N and namespace list returns all N keys', () => {
     const ctx = setupIso('case1');
     try {
       const N = 6;
@@ -284,8 +289,13 @@ describe('ADR-0090 A4 Case 1: all N entries in .rvf, no dangling lock -> PASS', 
         });
       }
       buildRvfFile(ctx.stagedRvfPath, { entryCount: N, entries });
-      // No staged lock file -> no .rvf.lock after writers complete.
-      // Namespace list returns all N keys.
+      // ADR-0095 amendment (2026-05-01): the rvf-runtime WriterLock now
+      // uses flock(LOCK_EX) on a never-unlinked sibling .lock file —
+      // the file IS the inode holding the kernel queue, so persisting
+      // it across processes is the correct behavior. The check no
+      // longer asserts ".rvf.lock absent" (see lib/acceptance-adr0079-
+      // tier3-checks.sh comment block on `dangling_lock`). This test
+      // therefore just verifies the data-persisted invariant.
       writeFileSync(
         ctx.listOutputFile,
         [1, 2, 3, 4, 5, 6].map((i) => `rvf-concurrent-${i} rvf lock contention probe ${i}`).join('\n'),
@@ -295,7 +305,6 @@ describe('ADR-0090 A4 Case 1: all N entries in .rvf, no dangling lock -> PASS', 
       const { passed, output, raw } = runCheck(ctx);
       assert.equal(passed, true, `expected PASS, got FAIL: ${output}\nraw:\n${raw}`);
       assert.match(output, /6\/6 RVF concurrent writers persisted/);
-      assert.match(output, /no dangling \.rvf\.lock/);
     } finally {
       teardown(ctx.iso);
     }
@@ -355,8 +364,8 @@ describe('ADR-0090 A4 Case 2: .rvf missing some entries -> FAIL', () => {
 // Case 3: dangling .rvf.lock -> FAIL (cleanup regression)
 // ============================================================================
 
-describe('ADR-0090 A4 Case 3: dangling .rvf.lock after writes -> FAIL', () => {
-  it('check fails when .rvf.lock remains after all writers finished', () => {
+describe('ADR-0090 A4 Case 3: dangling .rvf.lock after writes (post-flock no-op)', () => {
+  it('check tolerates .rvf.lock present (flock design persists it intentionally)', () => {
     const ctx = setupIso('case3');
     try {
       const N = 6;
@@ -382,8 +391,12 @@ describe('ADR-0090 A4 Case 3: dangling .rvf.lock after writes -> FAIL', () => {
       }
       buildRvfFile(ctx.stagedRvfPath, { entryCount: N, entries });
 
-      // Stage a dangling .rvf.lock — the stub CLI will copy it alongside
-      // the .rvf on every store call, simulating releaseLock() regression.
+      // Stage a `.rvf.lock` file. ADR-0095 amendment (2026-05-01): with
+      // the rvf-runtime flock-based WriterLock the file is intentionally
+      // kept around — it's the inode holding the kernel flock queue.
+      // The check used to fail on its presence; under the new design
+      // the check ignores it. This test asserts the new (more
+      // permissive) behavior.
       writeFileSync(
         ctx.stagedLockPath,
         JSON.stringify({ pid: 99999, ts: Date.now() }),
@@ -397,8 +410,8 @@ describe('ADR-0090 A4 Case 3: dangling .rvf.lock after writes -> FAIL', () => {
       );
 
       const { passed, output, raw } = runCheck(ctx);
-      assert.equal(passed, false, `expected FAIL, got PASS: ${output}\nraw:\n${raw}`);
-      assert.match(output, /dangling \.rvf\.lock|releaseLock regression/);
+      assert.equal(passed, true, `expected PASS (flock design ignores .rvf.lock presence): ${output}\nraw:\n${raw}`);
+      assert.match(output, /6\/6 RVF concurrent writers persisted/);
     } finally {
       teardown(ctx.iso);
     }

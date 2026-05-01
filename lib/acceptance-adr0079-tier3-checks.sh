@@ -203,16 +203,21 @@ check_t3_2_rvf_concurrent_writes() {
     return
   fi
 
-  # Check dangling .rvf.lock — must be cleaned up after every writer exits.
-  # A dangling lock means either a writer crashed (bad) or releaseLock()
-  # regressed (worse — silent data-loss risk). The lock file lives next
-  # to the main `.rvf`, not the `.meta` sidecar, so strip a trailing
-  # `.meta` before computing the lock path.
+  # ADR-0095 amendment (2026-05-01): the rvf-runtime WriterLock now uses
+  # `flock(LOCK_EX)` on a never-unlinked sibling `.lock` file. Persisting
+  # the file across processes is REQUIRED — concurrent peers must open
+  # the same inode to join the same kernel flock queue. Unlinking it on
+  # exit would defeat cross-process exclusion. Lock release is signaled
+  # by closing the fd (kernel reaps the flock state); the file stays.
+  # Asserting "no dangling .rvf.lock" therefore contradicts the new
+  # design and is suppressed below — the meaningful "release works"
+  # check is implicit in `ns_hits == N` (every peer's flock acquired
+  # successfully). The variable is kept so the failure-message branches
+  # below stay structurally compatible with the prior contract.
   local main_rvf_path="${rvf_path%.meta}"
   local dangling_lock="no"
-  if [[ -f "${main_rvf_path}.lock" ]]; then
-    dangling_lock="yes"
-  fi
+  void_main_rvf_path() { :; }
+  void_main_rvf_path "$main_rvf_path"
 
   # Parse RVF header to read entryCount. The format is:
   #   magic (4) + headerLen u32le (4) + JSON header of that length
@@ -258,12 +263,13 @@ check_t3_2_rvf_concurrent_writes() {
   # Acceptance criteria (fail-loud per ADR-0082):
   #  - All N writers' entries must be persisted (ns_hits == N)
   #  - RVF header entryCount must be >= N (cross-check — no partial writes)
-  #  - No dangling .rvf.lock after completion
-  if [[ "$ns_hits" -eq "$N" && "$entry_count" -ge "$N" && "$dangling_lock" == "no" ]]; then
+  #  ADR-0095 amendment: the third historical criterion ("no dangling
+  #  .rvf.lock after completion") is removed — the new flock-based
+  #  WriterLock keeps the file across process exit by design. See
+  #  comment on `dangling_lock` above.
+  if [[ "$ns_hits" -eq "$N" && "$entry_count" -ge "$N" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T3-2: ${N}/${N} RVF concurrent writers persisted (header entryCount=${entry_count}, no dangling .rvf.lock, cli_ok=${cli_ok})"
-  elif [[ "$dangling_lock" == "yes" ]]; then
-    _CHECK_OUTPUT="T3-2: dangling .rvf.lock after ${N} concurrent writers completed (ns_hits=${ns_hits}, entryCount=${entry_count}, cli_err=${cli_err}) — releaseLock regression"
+    _CHECK_OUTPUT="T3-2: ${N}/${N} RVF concurrent writers persisted (header entryCount=${entry_count}, cli_ok=${cli_ok})"
   elif [[ "$ns_hits" -eq 0 ]]; then
     _CHECK_OUTPUT="T3-2: zero entries persisted after ${N} concurrent stores (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — lock acquisition broken"
   else

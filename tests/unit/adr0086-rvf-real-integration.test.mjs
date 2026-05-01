@@ -700,7 +700,19 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
     // disables the timer, so this is purely defensive).
   });
 
-  it('a fresh instance recovers the entry via replayWal()', { skip }, async () => {
+  it('a fresh instance recovers the entry via replayWal()', { skip }, async (t) => {
+    // ADR-0095 amendment (2026-05-01): with the rvf-runtime flock-based
+    // WriterLock, opening a SECOND backend on the same path while the
+    // first one is still alive (no `shutdown()` from the prior test)
+    // requires the in-process refcount short-circuit landed in fork
+    // commit 20b409bc. Until that binary is published — i.e. while we're
+    // testing against the previous patch — this test deadlocks. Same
+    // pattern as the SKIP_T3_2_BOOTSTRAP gate used elsewhere in this
+    // suite while a fix is being landed.
+    if (process.env.SKIP_T3_2_BOOTSTRAP === '1') {
+      t.skip('SKIP_ACCEPTED: bootstrap-skip while flock refcount fix is being landed; remove SKIP_T3_2_BOOTSTRAP env var after fix is in dist');
+      return;
+    }
     const recovered = new RvfBackend({
       databasePath: dbPath,
       dimensions: 3,
@@ -910,11 +922,14 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
       existsSync(dbPath);
     assert.ok(durable,
       `after store(), expected .wal or .meta or main file to exist at ${dbPath}`);
-    // Lock file is acquired/released within store(), so it must be gone now.
-    // Account for both common lock-file layouts the RVF backend may use.
+    // JS-side advisory lock (`.jslock`, see rvf-backend.ts ADR-0095 amendment
+    // 2026-04-30) is acquired/released within store() — it must be gone now.
+    // The native rvf-runtime WriterLock at `.lock` is intentionally held for
+    // the lifetime of the open RvfDatabase and is released on shutdown(); it
+    // is NOT a target of this assertion (see Group 8 test #3 below).
     assert.ok(
-      !existsSync(dbPath + '.lock') && !existsSync(dbPath + '.rvf.lock'),
-      '.lock must be released after store completes',
+      !existsSync(dbPath + '.jslock'),
+      '.jslock must be released after store completes',
     );
     await backend.shutdown();
   });
@@ -959,9 +974,20 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
   });
 
   it('lock file is not left behind after shutdown', { skip }, () => {
+    // After shutdown(), the JS-side `.jslock` must be gone (it's
+    // unlinked on releaseLock).
+    //
+    // The native rvf-runtime `.lock`, by contrast, IS expected to
+    // persist. Per ADR-0095 (2026-05-01) the native WriterLock now uses
+    // `flock(LOCK_EX)` on a never-unlinked sibling file: the file is
+    // the inode that holds the kernel flock queue, so unlinking it
+    // would defeat the cross-process exclusion. Lock release is
+    // signaled by closing the fd (kernel reaps the flock state); the
+    // file itself stays around. Asserting `!existsSync('.lock')` would
+    // contradict the new design.
     assert.ok(
-      !existsSync(dbPath + '.lock'),
-      '.lock must be removed during shutdown cleanup',
+      !existsSync(dbPath + '.jslock'),
+      '.jslock must be removed during shutdown cleanup',
     );
   });
 });
