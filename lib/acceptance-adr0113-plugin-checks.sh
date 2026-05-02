@@ -395,6 +395,54 @@ check_adr0113_proxy_bin_selfid_ruflo_mcp() {
   _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
 }
 
+# ════════════════════════════════════════════════════════════════════
+# ADR-0115 — Hive-mind unbundled from swarm-sprawl prohibition
+# ════════════════════════════════════════════════════════════════════
+#
+# Per ADR-0115, the post-init CLAUDE.md must NOT bundle hive-mind_spawn
+# into the same "DO NOT call ... reflexively" prohibition that targets
+# swarm_init. Hive-mind is the council-protocol primitive; bundling it
+# with anti-sprawl trains Claude to avoid hive use even when the user
+# explicitly requests a council.
+#
+# Acceptance: grep init-generated CLAUDE.md (in TEMP_DIR) for the
+# specific bundled-prohibition string. Expect 0 matches.
+check_adr0115_claudemd_hive_unbundled() {
+  local start_ns end_ns
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+
+  local claudemd="${TEMP_DIR}/CLAUDE.md"
+  if [[ ! -f "$claudemd" ]]; then
+    _CHECK_OUTPUT="CLAUDE.md missing at $claudemd"
+    end_ns=$(_ns)
+    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Pattern from pre-ADR-0115 prohibition. If this matches, the fix
+  # didn't ship.
+  local bundled
+  bundled=$(grep -c 'DO NOT call.*hive-mind_spawn.*reflexively' "$claudemd" 2>/dev/null || true)
+  bundled=${bundled:-0}
+
+  # Sanity: the new positive guidance must be present.
+  local positive
+  positive=$(grep -c "Use \`hive-mind_spawn\`.*when convening\|Use \`hive-mind_spawn\` (or " "$claudemd" 2>/dev/null || true)
+  positive=${positive:-0}
+
+  if [[ "$bundled" == "0" && "$positive" -gt "0" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="hive-mind_spawn unbundled (0 prohibition matches; ${positive} positive-guidance match)"
+  elif [[ "$bundled" != "0" ]]; then
+    _CHECK_OUTPUT="STALE: CLAUDE.md still bundles hive-mind_spawn into swarm-sprawl prohibition (${bundled}x). ADR-0115 R1 not applied."
+  else
+    _CHECK_OUTPUT="NEUTRAL: prohibition gone (${bundled}) but positive guidance also missing (${positive}). Pre-A0115 generator?"
+  fi
+  end_ns=$(_ns)
+  _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+}
+
 # Network-gated check (RUFLO_MARKETPLACE_NETWORK_TESTS=1) — clones
 # git@github.com:sparkling/ruflo.git, asserts manifest content, verifies
 # `git ls-remote sparkling main` SHA matches local fork HEAD.

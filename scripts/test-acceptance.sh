@@ -660,6 +660,7 @@ run_check_bg "adr0113-mp-owner"         "0113 marketplace.json owner.name = spar
 run_check_bg "adr0113-mp-remote"        "0113 sparkling/ruflo main = local (Fix 4 — gated)"            check_adr0113_marketplace_remote_sparkling   "structure"
 run_check_bg "adr0113-w4g-sandbox"      "0113 plugin sandbox capability deny (Fix 1, W4G)"             check_adr0113_w4g_plugin_sandbox_capability_deny "packages"
 run_check_bg "adr0113-bin-selfid"       "0113 ruflo-mcp bin emits [ruflo-mcp] log tag (Fix 6.5)"       check_adr0113_proxy_bin_selfid_ruflo_mcp     "structure"
+run_check_bg "adr0115-hive-unbundled"   "0115 hive-mind_spawn NOT bundled into swarm-sprawl prohibition (R1)"  check_adr0115_claudemd_hive_unbundled        "structure"
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
@@ -1955,6 +1956,7 @@ collect_parallel "all" \
   "adr0113-mp-remote|0113 sparkling/ruflo main = local (Fix 4 — gated)" \
   "adr0113-w4g-sandbox|0113 plugin sandbox capability deny (Fix 1, W4G)" \
   "adr0113-bin-selfid|0113 ruflo-mcp bin emits [ruflo-mcp] log tag (Fix 6.5)" \
+  "adr0115-hive-unbundled|0115 hive-mind_spawn NOT bundled into swarm-sprawl prohibition (R1)" \
   "p1-ai-scan|AI Defence scan (P1)" "p1-ai-analyze|AI Defence analyze (P1)" \
   "p1-ai-pii|AI Defence has_pii (P1)" "p1-ai-safe|AI Defence is_safe (P1)" \
   "p1-ai-learn|AI Defence learn (P1)" "p1-ai-stats|AI Defence stats (P1)" \
