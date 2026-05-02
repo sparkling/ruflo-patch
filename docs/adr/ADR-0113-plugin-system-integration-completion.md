@@ -312,13 +312,13 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
   - (b) Synthetic-fixture sub-suite drops `@claude-flow/synthetic-new-package-from-test` into a temp tree, runs the discover+coverage check via child node, asserts exit 1 with GAP: report; inverse clean-fixture asserts exit 0. ✓
   - (c) `npm run discover-packages` (new npm alias) → `node scripts/preflight.mjs --discover-dry-run` lists discovered packages with in-LEVELS / MISSING / WONT_PUBLISH / not-in-fork sections. ✓
   - Bonus: deleted drifted `FALLBACK_LEVELS` from `scripts/publish.mjs` (subsumes step 25); `config/publish-levels.json` is now the single canonical source, fail-loud on read/schema error per `feedback-no-fallbacks`.
-- [~] **Fix 4** (Phase C committed locally 2026-05-02; pending push to public `sparkling/ruflo`): `marketplace.json` `owner.name` rewritten from `"ruvnet"` to `"sparkling"`; codemod-rewritten content staged on fork `main` (commit `b24e46829`). Acceptance signals:
+- [x] **Fix 4** (landed 2026-05-02 Phase C; pushed to public `sparkling/ruflo`): `marketplace.json` `owner.name` rewritten from `"ruvnet"` to `"sparkling"`; codemod-rewritten content on fork `main` (commit `b24e46829`) pushed to `git@github.com:sparkling/ruflo.git`. `git ls-remote sparkling main` returns `b24e46829a53332965bcd5df0ee28f1ff5cfe761` (= local main). Acceptance signals:
   - (a) `tests/pipeline/marketplace-manifest.test.mjs` (NEW, 7 tests) asserts `owner.name === "sparkling"`, `name === "ruflo"`, scoped paths `./plugins/<name>` intact, manifest contains zero `@claude-flow/`; plus 3 contract tests scanning `forks/ruflo/{plugins,.claude-plugin}/**/*.md` for residual `@claude-flow/` or `mcp__claude-flow__` refs. ✓
   - (b) `check_adr0113_marketplace_owner_sparkling` (NEW, every-run) greps fork manifest via `node`-driven JSON parse. ✓
   - (c) `check_adr0113_marketplace_remote_sparkling` (NEW, gated by `RUFLO_MARKETPLACE_NETWORK_TESTS=1`) does `git ls-remote sparkling main` and asserts SHA matches local fork HEAD on `main`. Default behavior: SKIP (since CI doesn't have SSH credentials for the public sparkling org). Pre-push, this check correctly reports `local b24e46829 ≠ sparkling fe6b9211`; post-push it must flip to PASS. ✓ (verified standalone)
   - (d) README updated with `/plugin marketplace add sparkling/ruflo` install path; prerequisite "ruflo init first" note per §Status note. ✓
   - Codemod regex hardened: `mcp__claude-flow__([a-zA-Z0-9_]+|\*)` now also matches the literal-asterisk glob form ("`mcp__claude-flow__*`") used in plugin docs (Phase C surfaced one such occurrence the original regex missed).
-  - **Push status:** PENDING explicit user confirmation per Phase C step 35.
+  - **Push status:** PUSHED 2026-05-02 to `git@github.com:sparkling/ruflo.git` after explicit user confirmation. Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`): PASS, `sparkling/ruflo main = local main = b24e4682`.
 - [ ] **Fix 5**: federation + iot plugins reach Verdaccio with `-patch.N` pin. Acceptance: (a) `npm view @sparkleideas/plugin-agent-federation@latest version --registry=http://localhost:4873` returns a version; same for `plugin-iot-cognitum`; (b) `check_adr0113_ruflo_federation_bin` does both `command -v ruflo-federation` AND `ruflo-federation --version` (via direct `timeout`, not `_run_and_kill`); same pattern for `check_adr0113_cognitum_iot_bin`; (c) ADR-078/079 mirrored into `ruflo-patch/docs/adr/`.
 - [ ] **Fix 6.1** (revised target): `executor.ts` + `claudemd-generator.ts` `@claude-flow/cli@latest` → `@sparkleideas/cli@latest` (12 sites). Acceptance: `grep -rn "@claude-flow/cli@latest" forks/ruflo/v3/@claude-flow/cli/src/` returns 0 matches; `grep -rn "@sparkleideas/cli@latest" <same>` returns 12. Plus acceptance check `check_adr0113_executor_uses_sparkleideas_cli`.
 - [x] ~~**Fix 6.2**~~: ALREADY LANDED in `cf6595a2c` (verified 2026-05-01). Strike from active checklist.
@@ -680,6 +680,19 @@ order per §Status note.
 - `npm run test:acceptance`: TBD (running at time of this
   documentation pass — appended below on completion).
 
-**PUSH STATUS:** Per Phase C step 35, push to public
-`git@github.com:sparkling/ruflo.git` `main` requires explicit user
-confirmation. NOT executed at this time.
+**PUSH STATUS:** PUSHED 2026-05-02 with user confirmation. Steps 36-37
+verified:
+- `git -C forks/ruflo push sparkling main` →
+  `fe6b92111..b24e46829  main -> main`.
+- `git ls-remote sparkling main` returns
+  `b24e46829a53332965bcd5df0ee28f1ff5cfe761` (= local main).
+- Network-gated acceptance check
+  `check_adr0113_marketplace_remote_sparkling` with
+  `RUFLO_MARKETPLACE_NETWORK_TESTS=1`: PASS,
+  `sparkling/ruflo main = local main = b24e4682`.
+
+The `sparkling/ruflo` repo on github.com now serves as the marketplace
+source. End-to-end install path from a fresh init'd project:
+`/plugin marketplace add sparkling/ruflo` → resolves to
+`https://github.com/sparkling/ruflo.git` HEAD on `main` →
+codemod-applied plugin content + `owner.name: "sparkling"` manifest.
