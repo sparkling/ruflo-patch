@@ -307,7 +307,11 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
 
 - [ ] **Fix 1**: `f3cc99d8b` cherry-picked onto `forks/ruflo` `main`. Acceptance: (a) `find forks/ruflo -name plugin-sandbox.ts` returns ≥1 match; (b) `grep -c "PluginPermissions" forks/ruflo/v3/@claude-flow/shared/src/plugin-interface.ts` ≥ 1; (c) new check `check_adr0113_w4g_plugin_sandbox_capability_deny` in `lib/acceptance-adr0113-plugin-checks.sh` runs a fixture plugin (`tests/fixtures/plugin-escape-attempt/`) attempting `require('child_process').exec`, `process.exit(1)`, and prototype-chain escape; ALL must fail with `PermissionDenied` BEFORE `initialize()` runs. (d) Trust-routing assertion: fixture with `name: '@sparkleideas/test-plugin'` resolves `trustLevel: 'official'`; `community/foo` does not.
 - [ ] **Fix 2**: `.md` in `scripts/codemod.mjs:58` `ALLOWED_EXTENSIONS`; `mcp__claude-flow__[a-zA-Z0-9_]` → `mcp__ruflo__$1` rewrite (broader than initial `[a-z]` per Code Analyzer). Acceptance: 5 cases in `tests/pipeline/codemod.test.mjs`: (1) `npx -y @claude-flow/cli@latest swarm` → `npx -y @sparkleideas/cli@latest swarm`; (2) `mcp__claude-flow__memory_store` → `mcp__ruflo__memory_store`; (3) **negative**: `[claude-flow-mcp]` log tag survives unchanged; (4) **negative**: `node_modules/**/*.md` not touched; (5) code-fence content rewrites identical to prose. Plus acceptance: `grep -r "@claude-flow/" /tmp/ruflo-build/plugins/**/*.md | wc -l` == 0.
-- [ ] **Fix 3**: pipeline allowlists auto-derived from `FORK_DIRS[@]`. Acceptance: (a) new `tests/pipeline/preflight-package-coverage.test.mjs` walks fork tree (with `private:true` skip + `node_modules`/`__tests__`/`scratch` exclusions + depth cap 5) and asserts discovered set ⊆ `scripts/publish.mjs:25-74` `LEVELS.flat()` AND ⊆ `KNOWN_DEPS` keys AND ⊆ `UNSCOPED_MAP`; (b) drop a synthetic plugin into a fixture fork tree, assert preflight EXITS NON-ZERO; (c) `npm run preflight -- --discover-dry-run` lists discovered packages.
+- [x] **Fix 3** (landed 2026-05-02 Phase B): pipeline allowlists auto-derived from `FORK_DIRS[@]`. Acceptance signals:
+  - (a) `tests/pipeline/preflight-package-coverage.test.mjs` walks fork tree (private:true skip + path-fragment exclusions + depth cap 5) and asserts discovered set ⊆ `scripts/publish.mjs` LEVELS ∪ WONT_PUBLISH ∪ WONT_PUBLISH_PATTERNS. ✓
+  - (b) Synthetic-fixture sub-suite drops `@claude-flow/synthetic-new-package-from-test` into a temp tree, runs the discover+coverage check via child node, asserts exit 1 with GAP: report; inverse clean-fixture asserts exit 0. ✓
+  - (c) `npm run discover-packages` (new npm alias) → `node scripts/preflight.mjs --discover-dry-run` lists discovered packages with in-LEVELS / MISSING / WONT_PUBLISH / not-in-fork sections. ✓
+  - Bonus: deleted drifted `FALLBACK_LEVELS` from `scripts/publish.mjs` (subsumes step 25); `config/publish-levels.json` is now the single canonical source, fail-loud on read/schema error per `feedback-no-fallbacks`.
 - [ ] **Fix 4**: depends on Fix 2 and Fix 3. `marketplace.json` `owner.name` rewritten from `"ruvnet"` to `"sparkling"`; codemod-rewritten content pushed to existing public `sparkling/ruflo` fork. Acceptance: (a) `tests/pipeline/marketplace-manifest.test.mjs` asserts `owner.name === "sparkling"`, `name === "ruflo"`, scoped paths intact post-codemod; (b) cheap acceptance check `check_adr0113_marketplace_owner_sparkling` greps `forks/ruflo/.claude-plugin/marketplace.json` (every run); (c) network-gated check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`) clones `git@github.com:sparkling/ruflo.git` + asserts manifest content + verifies `git ls-remote sparkling main` SHA matches; (d) README updated with `/plugin marketplace add sparkling/ruflo` install path.
 - [ ] **Fix 5**: federation + iot plugins reach Verdaccio with `-patch.N` pin. Acceptance: (a) `npm view @sparkleideas/plugin-agent-federation@latest version --registry=http://localhost:4873` returns a version; same for `plugin-iot-cognitum`; (b) `check_adr0113_ruflo_federation_bin` does both `command -v ruflo-federation` AND `ruflo-federation --version` (via direct `timeout`, not `_run_and_kill`); same pattern for `check_adr0113_cognitum_iot_bin`; (c) ADR-078/079 mirrored into `ruflo-patch/docs/adr/`.
 - [ ] **Fix 6.1** (revised target): `executor.ts` + `claudemd-generator.ts` `@claude-flow/cli@latest` → `@sparkleideas/cli@latest` (12 sites). Acceptance: `grep -rn "@claude-flow/cli@latest" forks/ruflo/v3/@claude-flow/cli/src/` returns 0 matches; `grep -rn "@sparkleideas/cli@latest" <same>` returns 12. Plus acceptance check `check_adr0113_executor_uses_sparkleideas_cli`.
@@ -510,3 +514,90 @@ node --test --test-name-pattern="6 RvfBackend instances on same path" → PASS 1
 node --test --test-name-pattern="Group 5"                             → PASS 30ms (both)
 node --test --test-name-pattern="creates a tmp dir under"             → PASS 24.8s
 ```
+
+### 2026-05-02 — Phase B landed (Fix 3)
+
+Phase B executed per §Implementation order, with one combined step
+adjustment. Touch summary:
+
+**B1 — Preflight discovery walker (`scripts/preflight-discover.mjs`).**
+NEW module exposes `discover()`, `uniqueMappedNames()`,
+`expectedPublishedSet()`, `isWontPublish()`, `mapName()`. Walks every
+fork in `config/upstream-branches.json` (depth cap 5), filters by
+SKIP_PATH_FRAGMENTS (`/node_modules/`, `/__tests__/`,
+`/test/fixtures/`, `/scratch/`, `/.git/`, `/dist/`, `/v2/examples/`),
+then to in-scope names — `@claude-flow/*`, `@ruvector/*`, or in
+`UNSCOPED_MAP` keys. Maps each to its post-codemod `@sparkleideas/*`
+name and reports.
+
+`UNSCOPED_MAP` is now exported from `scripts/codemod.mjs` (was a
+private const) — single source of truth for non-scoped name mappings.
+
+**B2 — `WONT_PUBLISH` + `WONT_PUBLISH_PATTERNS`.** The Phase B initial
+dry-run surfaced 103 packages discovered-but-not-in-LEVELS. Inventory:
+- 1 v2 legacy: `@claude-flow/migration` (v2/src/migration; v3 cli has
+  built-in migration helpers)
+- 1 standalone bin: `ruflo` (forks/ruflo/ruflo/; distribution uses
+  `@sparkleideas/cli` per Fix 6.1 revised target)
+- 1 wasm-pack-broken: `cuda-wasm` (existing comment in
+  `publish-order.test.mjs:85` says removed by prior decision)
+- ~100 ruvector experimental — covered by 3 patterns:
+  - NAPI platform binaries (`*-darwin-*` etc.) → upstream-published, not in our pipeline
+  - Experimental wasm-pack outputs (`-edge`, `-delta-behavior`, `-exotic-wasm`, etc.)
+  - ruvector tooling/CLIs/servers not in LEVELS
+  Pattern-based skip lets new platform binaries auto-resolve; new packages
+  that DON'T match a pattern fail-loud (forces decision).
+
+**B3 — `--discover-dry-run` flag wired into `scripts/preflight.mjs`.**
+Calls back into `preflight-discover.mjs` for the walk + classification,
+prints structured report (in-LEVELS / DISCOVERED-but-MISSING /
+in-LEVELS-but-not-DISCOVERED / WONT_PUBLISH), exits 1 on any
+unaccounted gap. New npm alias: `npm run discover-packages`.
+
+**B4 — `tests/pipeline/preflight-package-coverage.test.mjs` (NEW).**
+8 tests across 2 describe blocks:
+- 6 contract tests (discovers ≥ 60; every-discovered-in-LEVELS-or-WONT_PUBLISH;
+  every-LEVELS-discoverable; UNSCOPED_MAP completeness;
+  publish-levels.json loadable; WONT_PUBLISH_PATTERNS not dead).
+- 2 synthetic-fixture fail-loud tests: drop a `@claude-flow/synthetic-...`
+  package into a fixture tree, run the discover+coverage check via
+  child node, assert exit 1 with "GAP:" report. Inverse: clean fixture
+  exits 0.
+
+**B5 — Step 25 reconciliation: deleted `FALLBACK_LEVELS` from
+`scripts/publish.mjs`.** The dry-run revealed that
+`config/publish-levels.json` (canonical, loaded at runtime) had 22
+Level 1 entries while the in-source FALLBACK_LEVELS had only 5 — silent
+drift. Per `feedback-no-fallbacks`, replaced the silent fallback with
+a `throw` on JSON read failure. `loadLevelsFromJson() || FALLBACK_LEVELS`
+became `LEVELS = loadLevels()` where `loadLevels()` throws on read or
+schema failure with a message pointing at ADR-0113 §step 25.
+
+**B6 — Step 24 (flip allowlists to derive from walk): reframed.**
+- `UNSCOPED_MAP` cannot be "derived from the walked set" — the walker
+  uses it as input for the in-scope filter.
+- `KNOWN_DEPS` values come from per-package.json `dependencies` —
+  full programmatic derivation requires reading every fork
+  package.json at test time. Disproportionate complexity for the
+  rarity of `dependencies`-shape changes upstream.
+- Pragmatic contract instead: coverage test catches LEVELS-side
+  drift (test `every discovered package is in LEVELS or WONT_PUBLISH`);
+  existing publish-order.test.mjs catches LEVELS↔KNOWN_DEPS desync
+  (tests `every package in KNOWN_DEPS exists in LEVELS` + reverse).
+  This already locks the contract auto-derivation was supposed to
+  give.
+
+**B7 — Test gates:**
+- `npm run test:pipeline`: 147/147 pass (8 new tests added).
+- `npm run test:unit`: 3706/3706 pass; 0 skipped; 69.8s wall clock.
+- Acceptance not run: Phase B is pipeline-script-only, no fork
+  changes, no user-facing behavior change. Per CLAUDE.md test pyramid
+  table for "Codemod / pipeline script": preflight + pipeline + unit
+  is sufficient.
+
+**Outstanding sub-step:** §Implementation plan step 26 calls for
+`config/publish-levels.json` "make one canonical, the other a
+generated artifact, OR delete the JSON if confirmed decorative."
+Outcome: kept JSON as canonical, deleted the in-source duplicate.
+The JSON is NOT a generated artifact (it's hand-edited when adding
+new packages) — that part of the audit's framing was wrong.

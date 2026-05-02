@@ -19,86 +19,39 @@ import { parseArgs } from 'node:util';
 const execFile = promisify(execFileCb);
 
 // ── Topological levels (ADR-0014, B3: read from publish-levels.json) ──
+//
+// ADR-0113 Phase B (Fix 3 step 25): config/publish-levels.json is the
+// canonical source of truth. The hardcoded FALLBACK_LEVELS that lived
+// here previously was deleted because it drifted out of sync (Phase B
+// dry-run discovered Level 1 had 22 entries in JSON but 5 in the
+// fallback — silent fallback would have published a wrong subset on
+// any JSON read failure). Per `feedback-no-fallbacks`, fail loud.
 
-// Hardcoded fallback in case publish-levels.json is unreadable
-const FALLBACK_LEVELS = [
-  [
-    '@sparkleideas/agentdb',
-    '@sparkleideas/agentic-flow',
-    '@sparkleideas/ruv-swarm',
-    '@sparkleideas/agent-booster',
-    '@sparkleideas/agentdb-onnx',
-  ],
-  [
-    '@sparkleideas/shared',
-    '@sparkleideas/memory',
-    '@sparkleideas/embeddings',
-    '@sparkleideas/codex',
-    '@sparkleideas/aidefence',
-  ],
-  [
-    '@sparkleideas/neural',
-    '@sparkleideas/hooks',
-    '@sparkleideas/browser',
-    '@sparkleideas/plugins',
-    '@sparkleideas/providers',
-    '@sparkleideas/claims',
-    '@sparkleideas/ruvector-upstream',
-  ],
-  [
-    '@sparkleideas/guidance',
-    '@sparkleideas/mcp',
-    '@sparkleideas/integration',
-    '@sparkleideas/deployment',
-    '@sparkleideas/swarm',
-    '@sparkleideas/security',
-    '@sparkleideas/performance',
-    '@sparkleideas/testing',
-    '@sparkleideas/plugin-gastown-bridge',
-    '@sparkleideas/plugin-agentic-qe',
-    '@sparkleideas/plugin-code-intelligence',
-    '@sparkleideas/plugin-cognitive-kernel',
-    '@sparkleideas/plugin-financial-risk',
-    '@sparkleideas/plugin-healthcare-clinical',
-    '@sparkleideas/plugin-hyperbolic-reasoning',
-    '@sparkleideas/plugin-legal-contracts',
-    '@sparkleideas/plugin-neural-coordination',
-    '@sparkleideas/plugin-perf-optimizer',
-    '@sparkleideas/plugin-prime-radiant',
-    '@sparkleideas/plugin-quantum-optimizer',
-    '@sparkleideas/plugin-test-intelligence',
-    // ADR-0113 Fix 5: federation + iot plugin pipeline wiring.
-    '@sparkleideas/plugin-agent-federation',
-    '@sparkleideas/plugin-iot-cognitum',
-    '@sparkleideas/teammate-plugin',
-  ],
-  [
-    '@sparkleideas/cli',
-    '@sparkleideas/claude-flow',
-  ],
-];
-
-function loadLevelsFromJson() {
+function loadLevels() {
   const levelsFile = resolve(
     import.meta.url.startsWith('file://')
       ? new URL('.', import.meta.url).pathname
       : '.',
     '..', 'config', 'publish-levels.json'
   );
+  let data;
   try {
-    const data = JSON.parse(readFileSync(levelsFile, 'utf-8'));
-    if (!data.levels || !Array.isArray(data.levels) || data.levels.length === 0) {
-      throw new Error('publish-levels.json has no valid levels array');
-    }
-    return data.levels.map(l => l.packages);
+    data = JSON.parse(readFileSync(levelsFile, 'utf-8'));
   } catch (err) {
-    console.warn(`Warning: could not load publish-levels.json: ${err.message}`);
-    console.warn('Falling back to hardcoded LEVELS');
-    return null;
+    throw new Error(
+      `FATAL: cannot read config/publish-levels.json — ${err.message}\n` +
+      `       (this is the canonical publish-order source per ADR-0113 Phase B step 25)`,
+    );
   }
+  if (!data.levels || !Array.isArray(data.levels) || data.levels.length === 0) {
+    throw new Error(
+      'FATAL: config/publish-levels.json has no valid `levels` array',
+    );
+  }
+  return data.levels.map((l) => l.packages);
 }
 
-export const LEVELS = loadLevelsFromJson() || FALLBACK_LEVELS;
+export const LEVELS = loadLevels();
 
 // Rate limit between levels: 0 for local Verdaccio, 2000 for real npm
 // Local publishes don't need rate limiting — saves ~10s across 5 levels

@@ -14,6 +14,82 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 const checkOnly = process.argv.includes('--check');
 
+// ADR-0113 Fix 3 (Phase B): when invoked with --discover-dry-run, hand
+// off to preflight-discover.mjs which walks FORK_DIRS[] and reports
+// discovered packages vs. publish.mjs LEVELS coverage. Exits this
+// script — does not run the rest of preflight.
+if (process.argv.includes('--discover-dry-run')) {
+  const mod = await import(resolve(__dirname, 'preflight-discover.mjs'));
+  const { discover, uniqueMappedNames, WONT_PUBLISH, WONT_PUBLISH_PATTERNS, isWontPublish } = mod;
+  const { discovered, skipped } = discover();
+  const unique = uniqueMappedNames(discovered);
+  const { LEVELS } = await import(resolve(__dirname, 'publish.mjs'));
+  const levelsSet = new Set(LEVELS.flat());
+
+  const inLevels = [];
+  const missingFromLevels = [];
+  const wontPublishHits = [];
+  for (const name of [...unique].sort()) {
+    if (levelsSet.has(name)) {
+      inLevels.push(name);
+    } else if (isWontPublish(name)) {
+      wontPublishHits.push(name);
+    } else {
+      missingFromLevels.push(name);
+    }
+  }
+  const inLevelsButNotDiscovered = [...levelsSet]
+    .filter((n) => !unique.has(n))
+    .sort();
+
+  console.log('═══ ADR-0113 Phase B — preflight package discovery ═══');
+  console.log(`Forks scanned: ${[...new Set(discovered.map((d) => d.fork))].sort().join(', ')}`);
+  console.log(`Discovered: ${unique.size} unique mapped names from ${discovered.length} package.json files`);
+  console.log(`Skipped: ${skipped.length} (private/out-of-scope/unparseable)`);
+  console.log('');
+
+  console.log(`── Discovered & in LEVELS (${inLevels.length}) ──`);
+  for (const n of inLevels) console.log(`  ✓ ${n}`);
+  console.log('');
+
+  if (missingFromLevels.length > 0) {
+    console.log(`── DISCOVERED but MISSING from LEVELS (${missingFromLevels.length}) ──`);
+    console.log('   ↑ Real gaps. Add to scripts/publish.mjs LEVELS, or to');
+    console.log('     WONT_PUBLISH in scripts/preflight-discover.mjs.');
+    for (const n of missingFromLevels) {
+      const sources = discovered
+        .filter((d) => d.mappedName === n)
+        .map((d) => `${d.fork}:${d.path}`);
+      console.log(`  ✗ ${n}`);
+      for (const s of sources) console.log(`      ${s}`);
+    }
+    console.log('');
+  }
+
+  if (inLevelsButNotDiscovered.length > 0) {
+    console.log(`── In LEVELS but NOT DISCOVERED (${inLevelsButNotDiscovered.length}) ──`);
+    for (const n of inLevelsButNotDiscovered) {
+      console.log(`  ⚠ ${n}`);
+    }
+    console.log('');
+  }
+
+  if (wontPublishHits.length > 0) {
+    console.log(`── WONT_PUBLISH (${wontPublishHits.length}) — discovered but intentionally skipped ──`);
+    for (const name of wontPublishHits) console.log(`  • ${name}`);
+    console.log('   (rules in scripts/preflight-discover.mjs WONT_PUBLISH + WONT_PUBLISH_PATTERNS)');
+    console.log('');
+  }
+
+  if (missingFromLevels.length > 0) {
+    console.error(
+      `FAIL: ${missingFromLevels.length} discovered package(s) missing from LEVELS.`,
+    );
+    process.exit(1);
+  }
+  process.exit(0);
+}
+
 const TIMEOUT_MS = 10_000;
 const timer = setTimeout(() => {
   console.error('[TIMEOUT] preflight.mjs exceeded 10s — aborting');

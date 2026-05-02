@@ -30,8 +30,12 @@ const SCOPED_PREFIX_TO = '@sparkleideas/';
 const RUVECTOR_PREFIX_FROM = '@ruvector/';
 const RUVECTOR_PREFIX_TO = '@sparkleideas/ruvector-';
 
-/** Unscoped exact-name mappings (used in package.json name/dep key transforms). */
-const UNSCOPED_MAP = {
+/** Unscoped exact-name mappings (used in package.json name/dep key transforms).
+ *
+ * Exported for ADR-0113 Fix 3 (preflight-discover.mjs) so the auto-discovery
+ * walker can use the same single source of truth for "is this name in scope?".
+ */
+export const UNSCOPED_MAP = {
   'claude-flow': '@sparkleideas/claude-flow',
   'ruflo': '@sparkleideas/ruflo',
   'agentdb': '@sparkleideas/agentdb',
