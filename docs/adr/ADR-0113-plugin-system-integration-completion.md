@@ -330,7 +330,11 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
 - [x] ~~**Fix 6.2**~~: ALREADY LANDED in `cf6595a2c` (verified 2026-05-01). Strike from active checklist.
 - [ ] **Fix 6.3**: `hooks.ts:4137` `'Opus 4.6 (1M context)'` → `'Opus 4.7 (1M context)'`. Acceptance: `grep -c "Opus 4.6" forks/ruflo/v3/@claude-flow/cli/src/hooks.ts` == 0; `check_adr0113_no_opus_46_strings` greps `node_modules/@sparkleideas/**/dist/**` from init'd project.
 - [ ] **Fix 6.4**: Plugin READMEs `ruflo-browser/README.md:21`, `ruflo-loop-workers/README.md:14` updated. Acceptance: `grep -E '/(browser|memory)\b' forks/ruflo/plugins/ruflo-browser/README.md` returns 0 matches; `grep -E '/ruflo-(browser|memory)\b' <same>` returns ≥1.
-- [ ] **Fix 6.5**: Top-level `package.json` `name: "ruflo"`. Bin self-id labels rewritten. Acceptance: (a) `jq -r .name package.json` == `"ruflo"`; (b) `grep -c "claude-flow-mcp" forks/ruflo/cli.js forks/ruflo/mcp-server.js` == 0; (c) `check_adr0113_proxy_bin_selfid_ruflo_mcp` runs the published `ruflo-mcp` bin in subprocess, captures stderr, asserts log tag is `[ruflo-mcp]`.
+- [~/x] **Fix 6.5** (Phase D++ landed locally 2026-05-02; pending push):
+  - (a) **NOT applied with rationale.** Renaming fork top-level `package.json` `name: "claude-flow"` → `"ruflo"` collides with patch repo's `@sparkleideas/ruflo` (codemod's `UNSCOPED_MAP['ruflo']` already maps to that). The two-package hierarchy is intentional: patch repo's `@sparkleideas/ruflo` is the user-facing wrapper; fork's `@sparkleideas/claude-flow` (after codemod) is the inner proxy. Audit Finding 12(a) — "cosmetic but confusing" — does not justify the structural collision. Documented as out-of-scope.
+  - (b) ✓ `grep -c "claude-flow-mcp"` in `v3/@claude-flow/cli/bin/cli.js`, `bin/mcp-server.js`, `src/mcp-server.ts` → 0 (was 1 + 7 + 14). Rebranded log tags `[claude-flow-mcp]` → `[ruflo-mcp]` (20 substitutions); pid/log file paths `claude-flow-mcp.{pid,log}` → `ruflo-mcp.{pid,log}` (2 substitutions). Fork commit `64491a274`.
+  - (c) ✓ `check_adr0113_proxy_bin_selfid_ruflo_mcp` (NEW): spawns published `ruflo-mcp` bin from harness `node_modules/.bin/`, pipes empty stdin to trigger startup logs, captures stderr (stdout is the MCP protocol stream), asserts `[ruflo-mcp]` ≥ 1 occurrence and `[claude-flow-mcp]` == 0. Uses direct `_timeout 5s` per `feedback-run-and-kill-exit-code`.
+  - **Push status:** PENDING explicit user confirmation per Phase D step 47.
 
 ## Revision history
 

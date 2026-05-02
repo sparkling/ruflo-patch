@@ -342,6 +342,59 @@ check_adr0113_w4g_plugin_sandbox_capability_deny() {
   _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
 }
 
+# ════════════════════════════════════════════════════════════════════
+# Fix 6.5 — Bin self-id log tag rebrand ([claude-flow-mcp] → [ruflo-mcp])
+# ════════════════════════════════════════════════════════════════════
+#
+# Audit Finding 12(b)+(c). Spawn the published `ruflo-mcp` bin from
+# the harness's installed @sparkleideas/cli, send a no-op MCP request
+# on stdin, capture stderr, assert the log tag is `[ruflo-mcp]` and
+# `[claude-flow-mcp]` is fully absent.
+#
+# Why grep stderr (not stdout): mcp-server.js writes log lines to
+# stderr deliberately so they don't corrupt the MCP protocol stream
+# on stdout (per the bin's own comment).
+#
+# Uses direct `_timeout` per feedback-run-and-kill-exit-code.
+check_adr0113_proxy_bin_selfid_ruflo_mcp() {
+  local start_ns end_ns
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+
+  local bin="${TEMP_DIR}/node_modules/.bin/ruflo-mcp"
+  if [[ ! -x "$bin" ]]; then
+    _CHECK_OUTPUT="ruflo-mcp bin missing at $bin"
+    end_ns=$(_ns)
+    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Pipe a quick stdin+EOF to trigger the "Starting in stdio mode" log
+  # line, then `stdin closed, shutting down...` — both must use the new
+  # tag. Capture stderr; stdout is the MCP protocol stream we ignore.
+  local stderr_log
+  stderr_log=$(echo '' | _timeout 5s "$bin" 2>&1 >/dev/null) || true
+
+  local has_old has_new
+  has_old=$(printf '%s\n' "$stderr_log" | grep -c '\[claude-flow-mcp\]' || true)
+  has_old=${has_old:-0}
+  has_new=$(printf '%s\n' "$stderr_log" | grep -c '\[ruflo-mcp\]' || true)
+  has_new=${has_new:-0}
+
+  if [[ "$has_old" == "0" && "$has_new" -gt "0" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="[ruflo-mcp] log tag emitted ${has_new}x; zero [claude-flow-mcp]"
+  elif [[ "$has_old" -gt "0" ]]; then
+    _CHECK_OUTPUT="STALE: bin still emits [claude-flow-mcp] (${has_old}x). Fix 6.5 not applied to dist?"
+  else
+    # Truncate captured stderr for CSV-friendliness.
+    local short="${stderr_log:0:200}"
+    _CHECK_OUTPUT="bin emitted neither tag — stderr capture: ${short}"
+  fi
+  end_ns=$(_ns)
+  _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+}
+
 # Network-gated check (RUFLO_MARKETPLACE_NETWORK_TESTS=1) — clones
 # git@github.com:sparkling/ruflo.git, asserts manifest content, verifies
 # `git ls-remote sparkling main` SHA matches local fork HEAD.
