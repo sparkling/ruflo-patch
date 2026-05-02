@@ -1,6 +1,6 @@
 # ADR-0113: Plugin system integration completion (post-ADR-0111 W4)
 
-- **Status**: Implemented (2026-05-02). All 6 fixes landed; Phase A (Fix 6 + 2 + 5) on 2026-05-01, Phase B (Fix 3) + Phase C (Fix 4) + Phase D (Fix 1) on 2026-05-02. Forks/ruflo `main` at `6c325ba6f` pushed to public `sparkling/ruflo`. Fix 6.5 (cosmetic top-level `package.json` `name: "ruflo"` + bin self-id labels) deferred — strict cosmetic per audit Finding 12.
+- **Status**: Implemented (2026-05-02). All 6 fixes landed including Fix 6.5; Phase A (Fix 6 + 2 + 5) on 2026-05-01, Phase B (Fix 3) + Phase C (Fix 4) + Phase D (Fix 1) + Phase D++ (Fix 6.5) on 2026-05-02. Forks/ruflo `main` at `64491a274` pushed to public `sparkling/ruflo`. Fix 6.5(a) — top-level `package.json` rename — explicitly NOT applied due to a structural collision with patch repo's `@sparkleideas/ruflo` (documented in §Done).
 - **Date**: 2026-05-01
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 14-agent specialized audit swarm (`swarm-1777663583250-1fqsl3`, hierarchical-mesh, read-only) following the public marketplace pitch that surfaced the question "is the plugin system actually integrated?"
@@ -330,11 +330,11 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
 - [x] ~~**Fix 6.2**~~: ALREADY LANDED in `cf6595a2c` (verified 2026-05-01). Strike from active checklist.
 - [ ] **Fix 6.3**: `hooks.ts:4137` `'Opus 4.6 (1M context)'` → `'Opus 4.7 (1M context)'`. Acceptance: `grep -c "Opus 4.6" forks/ruflo/v3/@claude-flow/cli/src/hooks.ts` == 0; `check_adr0113_no_opus_46_strings` greps `node_modules/@sparkleideas/**/dist/**` from init'd project.
 - [ ] **Fix 6.4**: Plugin READMEs `ruflo-browser/README.md:21`, `ruflo-loop-workers/README.md:14` updated. Acceptance: `grep -E '/(browser|memory)\b' forks/ruflo/plugins/ruflo-browser/README.md` returns 0 matches; `grep -E '/ruflo-(browser|memory)\b' <same>` returns ≥1.
-- [~/x] **Fix 6.5** (Phase D++ landed locally 2026-05-02; pending push):
-  - (a) **NOT applied with rationale.** Renaming fork top-level `package.json` `name: "claude-flow"` → `"ruflo"` collides with patch repo's `@sparkleideas/ruflo` (codemod's `UNSCOPED_MAP['ruflo']` already maps to that). The two-package hierarchy is intentional: patch repo's `@sparkleideas/ruflo` is the user-facing wrapper; fork's `@sparkleideas/claude-flow` (after codemod) is the inner proxy. Audit Finding 12(a) — "cosmetic but confusing" — does not justify the structural collision. Documented as out-of-scope.
-  - (b) ✓ `grep -c "claude-flow-mcp"` in `v3/@claude-flow/cli/bin/cli.js`, `bin/mcp-server.js`, `src/mcp-server.ts` → 0 (was 1 + 7 + 14). Rebranded log tags `[claude-flow-mcp]` → `[ruflo-mcp]` (20 substitutions); pid/log file paths `claude-flow-mcp.{pid,log}` → `ruflo-mcp.{pid,log}` (2 substitutions). Fork commit `64491a274`.
-  - (c) ✓ `check_adr0113_proxy_bin_selfid_ruflo_mcp` (NEW): spawns published `ruflo-mcp` bin from harness `node_modules/.bin/`, pipes empty stdin to trigger startup logs, captures stderr (stdout is the MCP protocol stream), asserts `[ruflo-mcp]` ≥ 1 occurrence and `[claude-flow-mcp]` == 0. Uses direct `_timeout 5s` per `feedback-run-and-kill-exit-code`.
-  - **Push status:** PENDING explicit user confirmation per Phase D step 47.
+- [x] **Fix 6.5** (landed 2026-05-02 Phase D++; pushed to public `sparkling/ruflo`): fork commit `64491a274` pushed; `git ls-remote sparkling main` returns `64491a274d2bceaf259f4e5cf80ec4b90b3e8d77` (= local main). Acceptance signals:
+  - (a) **NOT applied with rationale.** Renaming fork top-level `package.json` `name: "claude-flow"` → `"ruflo"` collides with patch repo's `@sparkleideas/ruflo` (codemod's `UNSCOPED_MAP['ruflo']` already maps to that). The two-package hierarchy is intentional: patch repo's `@sparkleideas/ruflo` is the user-facing wrapper; fork's `@sparkleideas/claude-flow` (after codemod) is the inner proxy. Audit Finding 12(a) — "cosmetic but confusing" — does not justify the structural collision.
+  - (b) ✓ `grep -c "claude-flow-mcp"` in `v3/@claude-flow/cli/bin/cli.js`, `bin/mcp-server.js`, `src/mcp-server.ts` → 0 (was 1 + 7 + 14). Rebranded log tags `[claude-flow-mcp]` → `[ruflo-mcp]` (20 substitutions); pid/log file paths `claude-flow-mcp.{pid,log}` → `ruflo-mcp.{pid,log}` (2 substitutions).
+  - (c) ✓ `check_adr0113_proxy_bin_selfid_ruflo_mcp` (NEW): spawns published `ruflo-mcp` bin from harness `node_modules/.bin/`, pipes empty stdin to trigger startup logs, captures stderr (stdout is the MCP protocol stream), asserts `[ruflo-mcp]` ≥ 1 occurrence and `[claude-flow-mcp]` == 0. Uses direct `_timeout 5s` per `feedback-run-and-kill-exit-code`. Result: PASS 286ms.
+  - Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`) `check_adr0113_marketplace_remote_sparkling`: PASS, `sparkling/ruflo main = local main = 64491a27`.
 
 ## Revision history
 
@@ -812,3 +812,53 @@ then `/plugin install <community-plugin>@ruflo` gets the trust-routing
 demotion + capability gating documented in §Consequences (defense-in-
 depth for trusted-but-buggy code; NOT a security boundary against
 malicious code per Node `vm` limitations).
+
+### 2026-05-02 — Phase D++ landed (Fix 6.5) — pushed
+
+User asked to close out Fix 6.5 after Phase D's main commit landed.
+Touch summary:
+
+**E1 — Fork log-tag rebrand (forks/ruflo `64491a274`).** 22
+substitutions across 3 files in `v3/@claude-flow/cli/`:
+- `bin/cli.js` (1 site, line 38) — `[claude-flow-mcp]` → `[ruflo-mcp]`
+- `bin/mcp-server.js` (7 sites) — same
+- `src/mcp-server.ts` (12 sites + 2 file paths) — `[claude-flow-mcp]` →
+  `[ruflo-mcp]` AND `claude-flow-mcp.{pid,log}` → `ruflo-mcp.{pid,log}`
+  in `pidFile`/`logFile` defaults
+
+Audit Finding 12 had three sub-targets:
+- (a) Top-level `package.json` `name: "claude-flow"` → `"ruflo"` —
+  EXPLICITLY NOT APPLIED. UNSCOPED_MAP['ruflo'] already maps to
+  '@sparkleideas/ruflo', which is patch repo's user-facing wrapper.
+  Renaming fork's top-level would collide; the two-package hierarchy
+  is intentional. Documented in §Done Fix 6.5(a).
+- (b) `grep -c "claude-flow-mcp"` == 0 in the 3 v3 files. ✓
+- (c) Acceptance check verifying published bin emits new tag. ✓
+
+**E2 — Acceptance check (Fix 6.5(c)).**
+`check_adr0113_proxy_bin_selfid_ruflo_mcp` (NEW). Spawns published
+`ruflo-mcp` bin from harness `node_modules/.bin/`, pipes empty stdin
+to trigger startup logs, captures stderr (stdout is the MCP protocol
+stream — not user-visible logs), asserts `[ruflo-mcp]` ≥ 1 occurrence
+and `[claude-flow-mcp]` == 0. Uses direct `_timeout 5s` per
+`feedback-run-and-kill-exit-code`. Wired into `run_check_bg` +
+`collect_parallel`.
+
+**E3 — Test gates:**
+- `npm run test:unit`: 3706/3706 pass; 0 skipped; 68.6s.
+- `npm run test:acceptance`: 570/571 pass / 0 fail / 1 skip_accepted
+  (= +1 from Phase D's 569, exactly the new `adr0113-bin-selfid` check
+  at PASS 286ms).
+
+**PUSH STATUS:** PUSHED 2026-05-02 with user confirmation:
+- `git -C forks/ruflo push sparkling main` →
+  `6c325ba6f..64491a274  main -> main`.
+- `git ls-remote sparkling main` returns
+  `64491a274d2bceaf259f4e5cf80ec4b90b3e8d77` (= local main).
+- Network-gated acceptance check: PASS,
+  `sparkling/ruflo main = local main = 64491a27`.
+
+**ADR-0113 closes here.** All 6 fixes landed (1, 2, 3, 4, 5, 6) +
+Fix 6.5 (cosmetic bin self-id) closed; only Fix 6.5(a) — the
+package.json top-level rename — deliberately deferred with
+documented structural rationale.
