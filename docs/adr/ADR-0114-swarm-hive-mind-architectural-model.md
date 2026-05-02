@@ -1,6 +1,6 @@
 # ADR-0114: Swarm vs Hive-Mind — v3 architectural model
 
-- **Status**: Proposed (2026-05-02). Investigation; no code changes yet. Frames the model that ADR-0103/0104/0105/0106/0107/0108/0109 should consolidate around. Marketplace gap surfaced by user follow-up to ADR-0113.
+- **Status**: Proposed (2026-05-02). Investigation; no code changes yet. Frames the model that ADR-0103/0104/0105/0106/0107/0108/0109 should consolidate around. Marketplace gap surfaced by user follow-up to ADR-0113. **Post-empirical-validation 2026-05-02**: substrate+preset model extended to 3 layers (Lens 10) — Layer 1 substrate (CLI, ships, works), Layer 2 protocol (council methodology, NOT shipped, project-specific), Layer 3 execution (Agent tool with personas). Most cross-ADR implementation work (0105/0106/0107/0109) is Layer 1 cleanup; doesn't deliver the hive's USERGUIDE promise. Layer 2 work would be a separate ADR.
 - **Date**: 2026-05-02
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 4-agent parallel research swarm covering ADRs (`v3/implementation/adrs/`), code (`v3/@claude-flow/cli/src/commands/{swarm,hive-mind}.ts`, `mcp-tools/`), plugins (`forks/ruflo/.claude-plugin/marketplace.json`, `plugins/ruflo-swarm/`), and user-facing docs (`docs/USERGUIDE.md`). User-corrected with the v3-canonical mental model after agents reported pre-v3 framing.
@@ -181,6 +181,83 @@ This refutes any framing of hive-mind as "specialized coordination for research-
 - Collective Memory uses **its own SQLite WAL store** with 8 typed buckets (§212, §1639–1641, §2381)
 - General Memory uses **AgentDB / HNSW / ReasoningBank** (§222–230)
 - These appear to be **parallel stores**, not layered. The doc never reconciles them. There's a `hive-mind memory` subcommand (§1650) separate from the top-level `memory` command (§2137 has 12 memory subcommands; §2145 has 6 hive-mind subcommands including its own `memory`).
+
+### Lens 10 — The 3-layer hive architecture (post-empirical-validation 2026-05-02)
+
+User pushback after the adversarial review: "I am still skeptical that we need this massive revision of the hive feature - it's a core part of ruflo, and I refuse to believe that the hive does not work for the millions of installs of ruflo."
+
+Empirical validation in `/tmp/hive-validation-*` test projects + cross-reference with `~/source/hm/semantic-modelling/docs/ontology/odr/council/session-*.md` (374 council session transcripts) revealed that the substrate+preset model from earlier lenses is **incomplete**. The user-visible "hive" is a 3-layer composition, only Layer 1 of which the ruflo CLI delivers:
+
+#### Layer 1 — Substrate (ruflo CLI provides)
+
+The CLI generates session metadata: hive ID, topology, consensus algorithm, queen ID, worker registry. Concretely:
+
+```
+$ npx @sparkleideas/cli@3.5.58-patch.320 hive-mind init -t mesh -c raft
+$ npx @sparkleideas/cli@3.5.58-patch.320 hive-mind spawn -n 3 -t coder
+$ npx @sparkleideas/cli@3.5.58-patch.320 hive-mind status
+```
+
+State persists to `.claude-flow/hive-mind/state.json` + `.claude-flow/agents.json`. Empirically tested in fresh-init projects: works correctly. Topology field persists; worker types persist; queen records persist.
+
+**This is what "millions of installs" use successfully.** The substrate layer is solid.
+
+#### Layer 2 — Protocol (NOT shipped by ruflo; project-specific)
+
+The conversational protocol that turns raw substrate into council-quality output. Looking at the semantic-modelling project's 374 sessions, the protocol includes:
+
+- Named experts with consistent perspectives (e.g. ONT-0021 standing panel: Allemang, Hendler, Kendall, Cagle, Gandon, Baker, Davis, Guizzardi, Guarino — each with documented methodology)
+- Per-question voting with rationale (READY / CONDITIONAL / REJECT / NEEDS-REWORK)
+- Devil's Advocate role (ONT-0021 mandates one)
+- Byzantine tally arithmetic (e.g. 4 READY / 3 CONDITIONAL / 1 REJECT)
+- Verbatim quotes attributed to named experts
+- Queen synthesis with named conditions (not "approved" — "NEEDS-REWORK with 3 conditions: ...")
+- Decision table (Concern / Kind / Resolution / Affected §)
+- Council transcript at canonical location (`docs/ontology/odr/council/session-NNN-*.md`)
+
+**Empirical finding: ruflo's `hive-mind-advanced` skill (712 lines, ships in `@sparkleideas/cli/.claude/skills/hive-mind-advanced/SKILL.md`) does NOT contain this protocol.** It contains CLI documentation: configuration examples, queen-type tables, memory benchmarks, integration patterns. The skill teaches Claude "how to run the CLI", not "how to produce council output".
+
+The 11 slash commands in `@sparkleideas/cli/.claude/commands/hive-mind/` total 147 lines across 11 files. `hive-mind-spawn.md` is 20 lines describing the `--queen-type` flag. None of them encode the protocol.
+
+So **the protocol layer must be supplied by each project**. The semantic-modelling project supplies their own (ONT-0021 + Council Transcript Storage rule + named panel). Most ruflo users don't supply one — they get the substrate but not the protocol, and use hive-mind for simpler patterns (parallel research dispatch).
+
+#### Layer 3 — Execution (Claude orchestrating; Agent tool, not `--claude`)
+
+From the semantic-modelling project's session log Session 397 line 10820, the actual execution mechanism:
+
+> "Ruflo orchestration per memory rule (`feedback_swarm_source_of_truth.md`) — swarm init via `npx @sparkleideas/cli@latest swarm init`; hive-mind tools loaded via ToolSearch; Agent tool with `run_in_background: true`; all spawns in one message; no status polling after spawn; six notifications awaited silently then synthesised."
+
+The actual hive runs via:
+- `ruflo swarm init` (or `hive-mind init`) — Layer 1 metadata
+- Each panellist spawned via Claude Code's built-in `Agent` tool with persona-bearing prompt
+- Persona mapping (Session 397 example): Martin Fowler → `system-architect`, John Ousterhout → `analyst`, Eric Evans → `ddd-domain-expert`, Rich Hickey → `researcher`, Kent Beck → `tdd-london-swarm`, Barbara Liskov → `architecture`
+- Main thread synthesises six independent verdicts into council transcript
+
+The `hive-mind spawn --claude` flag (which shells out via `child_process.spawn('claude', ...)`) is one execution path, but **the proven-in-production path is `Agent` tool with `run_in_background: true`**, NOT the `--claude` subprocess pattern.
+
+#### Why this matters
+
+1. **The "millions of installs" claim is true at Layer 1**: substrate works. Most users use hive-mind for parallel work delegation, simple consensus polls, or as a session-tracking primitive. They don't run real council sessions.
+2. **The user pushback was right** about the hive not being broken — but it's incomplete. The hive's *substrate* isn't broken. The *protocol* isn't shipped — and the protocol is what makes the hive produce ONT-0021-quality output.
+3. **The init delivery gap I documented in Lens 8** (no `/hive-mind-*` slash commands, no `hive-mind-advanced` skill installed) is sharper than I claimed: even if init DID install the skill, the skill is just CLI documentation. It wouldn't give users the protocol layer.
+4. **Most ADR-0105/0106/0107/0109 implementation work is Layer 1 cleanup** (consolidating CLI implementations, wiring class-form alongside inline). It doesn't touch Layer 2 or Layer 3. So even after that work lands, users still won't get council-quality hive output without supplying their own protocol.
+
+#### What "fixing" the hive would actually mean
+
+If the goal is to deliver the hive's *promise* (USERGUIDE: "Queen-led collective intelligence with consensus"), the work is in Layer 2:
+
+- Ship a council protocol skill — an ONT-0021-equivalent — that teaches Claude how to play named experts, do per-question voting, structure adversarial review, write council transcripts.
+- Make the `/hive-mind-spawn` slash command embed the protocol in its prompt.
+- Make `hive-mind spawn --claude` shell out with a Queen prompt that follows the protocol.
+
+That's a content/template change, not a code change. The implementation work in ADR-0105/0106/0107/0109 doesn't move this needle.
+
+#### Reframe of "What this resolves"
+
+Question 8 in §"What this resolves" (USERGUIDE-vs-CLAUDE.md gating contradiction) gets a sharper answer:
+- **CLAUDE.md says don't use hive-mind reflexively** — correct at Layer 1, because using the substrate without the protocol just produces parallel work delegation, not council quality
+- **USERGUIDE pitches hive-mind as high-level entry** — overclaims because the protocol that would deliver "collective intelligence with consensus" isn't shipped
+- The "gating contradiction" is actually a **delivery gap**: USERGUIDE describes what the hive could be with Layer 2; CLAUDE.md describes what it actually is without Layer 2.
 
 ### Lens 9 — Init-generated CLAUDE.md vs USERGUIDE (the gating contradiction)
 
@@ -414,10 +491,19 @@ This ADR is a documentation artifact — no code changes. The "implementation" i
 - [ ] **U1**: README.md "Plugin marketplace" subsection clarifies that hive-mind is a swarm preset (not a separate plugin) — currently the README implies they're independent, which contradicts this ADR's model.
 - [ ] **U2**: ADR-004 (upstream `v3/implementation/adrs/ADR-004-PLUGIN-ARCHITECTURE.md`) annotated as superseded-by-0114 in our patch repo's tracking — either via an ADR-0114-supersedes note in ADR-0113 §Implementation Log, OR by explicit mention here when we cite ADR-004.
 - [ ] **U3**: Reconcile init-shipped surfaces. The fresh-init'd project receives BOTH (a) `.claude/commands/hive-mind/*` + `.claude/skills/hive-mind-advanced/SKILL.md` (hive-mind first-class) AND (b) `CLAUDE.md` saying "DO NOT call hive-mind reflexively". Resolution lives in ADR-0098 (anti-sprawl decision), not here. ADR-0114 just documents the gap and points at ADR-0098 as the canonical gate. Action: ADR-0098 §Status note adds a one-line acknowledgment that USERGUIDE/SKILL describes the capability surface (full feature set), CLAUDE.md describes the runtime gate (when to actually use it), and these are intentionally separate concerns. No code change to claudemd-generator.ts needed.
+- [ ] **U4** (post-Lens-10 empirical): Init delivery gap — `executor.ts:826-893` `SKILLS_MAP`+`COMMANDS_MAP` missing `hiveMind` category. Source files exist in published `@sparkleideas/cli/.claude/{skills,commands}/hive-mind*/`; init code never copies them. Fix: add `hiveMind` entries to the two maps. Empirical evidence: `npx @sparkleideas/cli@latest init --full --force` on a fresh `mktemp -d` dir produces 33 skills (none named `hive-mind-advanced`) and 10 commands (no `hive-mind-*`). Single small fix in `forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts`.
+- [ ] **U5** (post-Lens-10 protocol gap): The shipped `hive-mind-advanced` skill (712 lines) is CLI documentation, not a council protocol. To deliver USERGUIDE's "queen-led collective intelligence with consensus" promise, the skill content needs to teach Claude the conversational protocol — named experts, per-question voting, byzantine tally, adversarial structure, decision tables. This is content/template work, not code. Could spawn a new ADR (ADR-0115?: "Hive-mind Layer 2 protocol skill"). Out of scope for ADR-0114, but referenced from §Done so it's not lost.
 
 ## Revision history
 
 - **2026-05-02 (initial draft)** — proposed by 4-agent research swarm + user-corrected mental model. Written immediately after ADR-0113 closed (Phase D++ pushed to public sparkling/ruflo). The ADR exists to give ADR-0103–0109 a shared model so they can stop disagreeing about what swarm and hive-mind are.
+- **2026-05-02 (3-layer architecture revision)** — user requested empirical validation of hive feature on a fresh-init project + cross-reference with `~/source/hm/semantic-modelling/docs/ontology/odr/council/session-*.md` (374 council transcripts) and the project's `docs/ontology/session-log.md` (11,528 lines). Findings:
+  - Added **Lens 10**: the user-visible "hive" is a 3-layer composition. Layer 1 (substrate, CLI metadata) ships and works. Layer 2 (council protocol — named experts, voting, byzantine tally, decision tables, adversarial structure) is NOT shipped by ruflo; semantic-modelling supplies their own (ONT-0021). Layer 3 (Claude orchestrating Agent tool spawns per protocol) is the proven-in-production execution path — NOT `hive-mind spawn --claude`.
+  - Empirical: `hive-mind-advanced` skill (712 lines in `@sparkleideas/cli/.claude/skills/`) is CLI documentation, not a council protocol. 11 slash commands total 147 lines across 11 files; `hive-mind-spawn.md` is a 20-line CLI flag reference. None encode the conversational protocol.
+  - Empirical: published `init --full` doesn't install `/hive-mind-*` slash commands or the `hive-mind-advanced` skill anyway (Lens 9), but even if it did, the content is CLI docs not protocol.
+  - Reframed "What this resolves" Q8: the USERGUIDE-vs-CLAUDE.md "contradiction" is actually a **delivery gap**. USERGUIDE describes the hive's promise (with Layer 2); CLAUDE.md describes its substrate-only reality. Neither is wrong.
+  - Implication: ADR-0105/0106/0107/0109 implementation work is Layer 1 cleanup. It doesn't deliver the hive's *promise*. To do that requires shipping a Layer 2 protocol skill — content/template work, not code work. Out of scope for ADR-0114; could spawn a new ADR.
+
 - **2026-05-02 (adversarial pushback revision)** — user pushed back on the original draft's framing of parallel implementations as "technical debt requiring consolidation." The hive feature works for the millions-of-installs production use; absence of complaint is empirical evidence that doc-described behavior matches user-visible behavior, even if not via the structural routes the ADRs preferred. Updates applied:
   - §"What this resolves" #4 reframed: parallel-silo code is **intentional specialization** (in-process inline + distributed-grade real classes), not debt. Per `feedback-no-value-judgements-on-features` "default to WIRE", policy is to KEEP both, not replace.
   - New §Adversarial review section (above §Consequences) distinguishes REAL fixes (doc inconsistencies, gating contradiction, V2-parity regression) from ASPIRATIONAL cleanup (parallel implementations, "real classes" wire-up). Most of ADR-0105/0106/0107/0109's implementation work is aspirational cleanup, not bug fixes.
