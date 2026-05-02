@@ -59,8 +59,21 @@ describe('ADR-0006 follow-up: CLAUDE.md template — ruflo rebrand', () => {
     assert.match(content, /claude mcp add claude-flow -- npx -y @(claude-flow|sparkleideas)\/cli@latest/);
   });
 
-  it('preserves `mcp__claude-flow__` tool prefixes (MCP server identifier NOT rebranded)', () => {
-    assert.match(content, /mcp__claude-flow__/);
+  // ADR-0113 Fix 2 (Phase A) intentionally rebranded the MCP tool prefix:
+  // server registers as `name: 'ruflo'` so Claude Code namespaces tools as
+  // `mcp__ruflo__*`. The original test asserted the OLD prefix survived;
+  // updated 2026-05-02 (Phase D) to assert the NEW prefix is in post-codemod
+  // dist and the OLD prefix is fully gone.
+  it('rewrites MCP tool prefixes to `mcp__ruflo__` (post-ADR-0113 Fix 2)', () => {
+    if (source === 'built+codemod dist') {
+      assert.match(content, /mcp__ruflo__/, 'post-codemod dist must use mcp__ruflo__ prefix');
+      assert.ok(!/mcp__claude-flow__/.test(content),
+        'post-codemod dist must not contain mcp__claude-flow__ (rebranded by codemod Pass 4)');
+    } else {
+      // Pre-codemod fork TS still has mcp__claude-flow__ — that's
+      // intentional, codemod handles it at build time.
+      assert.match(content, /mcp__(claude-flow|ruflo)__/);
+    }
   });
 
   it('preserves `ToolSearch("claude-flow ...")` MCP discovery examples', () => {

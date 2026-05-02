@@ -269,6 +269,79 @@ check_adr0113_marketplace_owner_sparkling() {
   _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
 }
 
+# ════════════════════════════════════════════════════════════════════
+# Fix 1 — Plugin sandbox capability deny (W4G deferred acceptance)
+# ════════════════════════════════════════════════════════════════════
+#
+# Locks the contract that the published @sparkleideas/shared dist
+# exposes a SandboxedPluginRunner whose vm-sandbox blocks every escape
+# the upstream CRIT-02 commit f3cc99d8b documented, AND whose
+# createRestrictedContext() denies undeclared service access.
+#
+# Drives the fixture at tests/fixtures/plugin-escape-attempt/index.mjs.
+# Fixture's exit code is the assertion: 0 = all blocks held; 1 = at
+# least one escape leaked.
+#
+# Per ADR-0113 §Done Fix 1 (c) and feedback-run-and-kill-exit-code:
+# uses direct `_timeout` invocation, NOT `_run_and_kill`.
+check_adr0113_w4g_plugin_sandbox_capability_deny() {
+  local start_ns end_ns
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+
+  # Locate the fixture (in patch repo, not the harness's TEMP_DIR).
+  local fixture="${PROJECT_DIR:-.}/tests/fixtures/plugin-escape-attempt/index.mjs"
+  if [[ ! -f "$fixture" ]]; then
+    _CHECK_OUTPUT="fixture not found at $fixture"
+    end_ns=$(_ns)
+    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Pre-flight: @sparkleideas/shared must be installed in the harness.
+  local shared_dir="${TEMP_DIR}/node_modules/@sparkleideas/shared"
+  if [[ ! -d "$shared_dir" ]]; then
+    _CHECK_OUTPUT="@sparkleideas/shared not in harness node_modules — install missing"
+    end_ns=$(_ns)
+    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Pre-flight 2: published dist must contain SandboxedPluginRunner.
+  if ! grep -rln "SandboxedPluginRunner" "${shared_dir}/dist" >/dev/null 2>&1; then
+    _CHECK_OUTPUT="SandboxedPluginRunner missing from @sparkleideas/shared dist (Fix 1 not built)"
+    end_ns=$(_ns)
+    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  # Copy fixture into TEMP_DIR so node's module resolution finds
+  # @sparkleideas/shared via the harness's local node_modules. Running
+  # the fixture in-place (in patch repo) would resolve from there, where
+  # @sparkleideas/shared is not installed.
+  #
+  # Use direct `_timeout` (NOT `_run_and_kill`) per
+  # feedback-run-and-kill-exit-code.
+  local fixture_dest="${TEMP_DIR}/adr0113-fix1-fixture.mjs"
+  cp "$fixture" "$fixture_dest"
+
+  local fixture_log
+  fixture_log=$(cd "$TEMP_DIR" && _timeout 30s node "$fixture_dest" 2>&1) || true
+  local fixture_exit=$?
+  rm -f "$fixture_dest"
+
+  if [[ $fixture_exit -eq 0 ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="all sandbox escapes blocked + capability gates enforced (fixture exit 0)"
+  else
+    # Truncate log to first 200 chars so it's CSV-friendly.
+    local short="${fixture_log:0:200}"
+    _CHECK_OUTPUT="fixture exit ${fixture_exit}: ${short}"
+  fi
+  end_ns=$(_ns)
+  _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+}
+
 # Network-gated check (RUFLO_MARKETPLACE_NETWORK_TESTS=1) — clones
 # git@github.com:sparkling/ruflo.git, asserts manifest content, verifies
 # `git ls-remote sparkling main` SHA matches local fork HEAD.

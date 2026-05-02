@@ -305,7 +305,13 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
 
 §Done items revised post-hive 2026-05-01: each item now names a measurable acceptance signal (test function, grep target, or registry assertion). Items 6.4 and 6.5 tightened from "updated" to specific grep targets per Production Validator review.
 
-- [ ] **Fix 1**: `f3cc99d8b` cherry-picked onto `forks/ruflo` `main`. Acceptance: (a) `find forks/ruflo -name plugin-sandbox.ts` returns ≥1 match; (b) `grep -c "PluginPermissions" forks/ruflo/v3/@claude-flow/shared/src/plugin-interface.ts` ≥ 1; (c) new check `check_adr0113_w4g_plugin_sandbox_capability_deny` in `lib/acceptance-adr0113-plugin-checks.sh` runs a fixture plugin (`tests/fixtures/plugin-escape-attempt/`) attempting `require('child_process').exec`, `process.exit(1)`, and prototype-chain escape; ALL must fail with `PermissionDenied` BEFORE `initialize()` runs. (d) Trust-routing assertion: fixture with `name: '@sparkleideas/test-plugin'` resolves `trustLevel: 'official'`; `community/foo` does not.
+- [~] **Fix 1** (Phase D landed locally 2026-05-02; pending push): `f3cc99d8b` cherry-picked onto `forks/ruflo` `main` as commit `6c325ba6f`. Acceptance signals:
+  - (a) `find forks/ruflo -name plugin-sandbox.ts` → `./v3/@claude-flow/shared/src/plugin-sandbox.ts` ✓
+  - (b) `grep -c "PluginPermissions" forks/ruflo/v3/@claude-flow/shared/src/plugin-interface.ts` → 2 ✓
+  - (c) `check_adr0113_w4g_plugin_sandbox_capability_deny` (NEW) drives fixture at `tests/fixtures/plugin-escape-attempt/index.mjs`. Fixture exits 0 only when ALL of these hold: vm-sandbox blocks `eval`, `new Function`, `process.exit`, `require('child_process')`, `this.constructor.constructor('return process')()`, and `global.process.exit`; capability gate denies undeclared `services.get('fs')` (returns undefined), `services.register()` throws, env config keys stripped without `env` permission; with `filesystem: true` permission, `services.get('fs')` returns the underlying service. Sanity: `runInSandbox('1+2') === 3`. Pre-flight: published `@sparkleideas/shared` dist must contain `SandboxedPluginRunner`. Result: TBD (running).
+  - (d) Trust-routing — verified by code inspection at `plugin-loader.ts:339-352`: fork-source check `plugin.name.startsWith('@claude-flow/')` is rewritten to `'@sparkleideas/'` by codemod Pass 1 (SCOPED_RE) at build time. Plugin with `name: '@sparkleideas/test-plugin'` + `trustLevel: 'official'` keeps full context; `community/foo` + `trustLevel: 'official'` is demoted to `'unverified'` and routed through `createRestrictedContext()`. Fixture covers this via `runner.createRestrictedContext(baseContext, {}, 'community/escape-attempt')` which exercises the same code path.
+  - Hand-merge note: HIGH-05 env-snapshot lines (`snapshotProtectedEnv()`, `protectedSnapshot`, `fullEnvBefore`) that came in the same upstream hunk were dropped — they reference symbols not imported on our W4 HEAD (HIGH-05 is a separate upstream commit not part of this cherry-pick). Comment in the merged source explains.
+  - **Push status:** PENDING explicit user confirmation per Phase D step 47.
 - [ ] **Fix 2**: `.md` in `scripts/codemod.mjs:58` `ALLOWED_EXTENSIONS`; `mcp__claude-flow__[a-zA-Z0-9_]` → `mcp__ruflo__$1` rewrite (broader than initial `[a-z]` per Code Analyzer). Acceptance: 5 cases in `tests/pipeline/codemod.test.mjs`: (1) `npx -y @claude-flow/cli@latest swarm` → `npx -y @sparkleideas/cli@latest swarm`; (2) `mcp__claude-flow__memory_store` → `mcp__ruflo__memory_store`; (3) **negative**: `[claude-flow-mcp]` log tag survives unchanged; (4) **negative**: `node_modules/**/*.md` not touched; (5) code-fence content rewrites identical to prose. Plus acceptance: `grep -r "@claude-flow/" /tmp/ruflo-build/plugins/**/*.md | wc -l` == 0.
 - [x] **Fix 3** (landed 2026-05-02 Phase B): pipeline allowlists auto-derived from `FORK_DIRS[@]`. Acceptance signals:
   - (a) `tests/pipeline/preflight-package-coverage.test.mjs` walks fork tree (private:true skip + path-fragment exclusions + depth cap 5) and asserts discovered set ⊆ `scripts/publish.mjs` LEVELS ∪ WONT_PUBLISH ∪ WONT_PUBLISH_PATTERNS. ✓
@@ -696,3 +702,94 @@ source. End-to-end install path from a fresh init'd project:
 `/plugin marketplace add sparkling/ruflo` → resolves to
 `https://github.com/sparkling/ruflo.git` HEAD on `main` →
 codemod-applied plugin content + `owner.name: "sparkling"` manifest.
+
+### 2026-05-02 — Phase D landed locally (Fix 1) — push pending
+
+Phase D executed per §Implementation order steps 38-46. Touch summary:
+
+**D1 — Cherry-pick `f3cc99d8b` (`forks/ruflo` `6c325ba6f`).** 5 files,
+553 insertions, 2 deletions. Files:
+- `v3/@claude-flow/shared/src/plugin-sandbox.ts` (NEW, 129 lines):
+  `SandboxedPluginRunner` class with `createSandboxContext()`
+  (vm.createContext with codeGeneration:{strings:false,wasm:false}),
+  `runInSandbox(code, ctx?)`, `createRestrictedContext(base, perms,
+  pluginName)` for capability gating.
+- `v3/@claude-flow/shared/src/plugin-interface.ts`: `PluginPermissions`
+  interface (8 fields), `PluginTrustLevel` type union, `validatePermissions()`
+  function, `VALID_PERMISSION_KEYS` + `DANGEROUS_PERMISSION_KEYS` sets,
+  `PERMISSION_DENIED` + `SANDBOX_VIOLATION` error codes.
+- `v3/@claude-flow/shared/src/plugin-loader.ts`: imports
+  `SandboxedPluginRunner`; routes plugin via `createRestrictedContext()`
+  before `plugin.initialize(effectiveContext)`. Trust-level routing
+  demotes self-declared `'official'`/`'verified'` to `'unverified'`
+  unless plugin name starts with `@claude-flow/` (rewritten to
+  `@sparkleideas/` by codemod Pass 1 at build time).
+- `v3/@claude-flow/cli/src/commands/plugins.ts`: install-time
+  permission validation; `KNOWN_PLUGIN_PERMISSIONS` allowlist;
+  `DANGEROUS_PLUGIN_PERMISSIONS` warning list.
+- `v3/@claude-flow/shared/__tests__/security-sprint2.test.ts` (NEW,
+  313 lines): 32 vitest tests for sandbox isolation, capability
+  gating, permission validation, prototype pollution prevention,
+  namespace spoofing protection.
+
+**D2 — Hand-merge of plugin-loader.ts conflict.** Upstream's hunk
+included BOTH HIGH-05 env-snapshot lines (`snapshotProtectedEnv()`,
+`protectedSnapshot`, `fullEnvBefore`) AND CRIT-02 sandbox routing.
+W4 take-ours of plugin-loader.ts has neither. Dropped HIGH-05 (it's
+a separate upstream commit, not part of this cherry-pick — keeping
+those lines would reference unimported `snapshotProtectedEnv()`).
+Kept CRIT-02 sandbox routing block. Comment in merged source
+documents this. Top-level commit message preserved upstream's
+authorship (Dragan Spiridonov).
+
+**D3 — Fixture (`tests/fixtures/plugin-escape-attempt/index.mjs`,
+NEW).** Imports `SandboxedPluginRunner` from `@sparkleideas/shared`
+(post-codemod). Two layers:
+- Layer 1 (vm-sandbox): asserts `runInSandbox()` throws on `eval()`,
+  `new Function('return 1')()`, `process.exit(1)`,
+  `require('child_process').exec(...)`,
+  `this.constructor.constructor('return process')()`,
+  `global.process.exit(1)`. Sanity: `runInSandbox('1+2') === 3`.
+- Layer 2 (capability gating): exercises `createRestrictedContext()`
+  directly with a mock baseContext. Asserts undeclared
+  `services.get('fs')` returns undefined, `services.has('fs')` returns
+  false, `services.register()` throws. With `filesystem: true`,
+  `services.get('fs')` returns the underlying service. Env config
+  keys are stripped without `env` permission.
+Exit code 0 = all blocks held; 1 = at least one escape leaked or
+gate failed.
+
+**D4 — Acceptance check
+(`check_adr0113_w4g_plugin_sandbox_capability_deny`).** Pre-flights
+that the harness has `@sparkleideas/shared` installed and that the
+dist contains `SandboxedPluginRunner` (Fix 1 actually built). Copies
+the fixture into `${TEMP_DIR}` and runs via `_timeout 30s node`
+(direct, NOT `_run_and_kill` per
+`feedback-run-and-kill-exit-code`). Exit code is the assertion.
+
+Test fix: `tests/unit/rebrand-ruflo-claudemd.test.mjs` had a stale
+assertion (line 62) expecting `mcp__claude-flow__` to survive
+post-codemod. ADR-0113 Fix 2 (Phase A) intentionally rebranded
+that prefix to `mcp__ruflo__`. Test was passing pre-Phase-A only
+because /tmp/ruflo-build wasn't always present, falling back to
+fork TS source. After Phase C's full deploy populated
+/tmp/ruflo-build with post-codemod content, the test failed. Fix:
+flip assertion to expect `mcp__ruflo__` in dist + assert
+`mcp__claude-flow__` is fully absent. Pre-codemod fork TS still
+matches the OR pattern.
+
+**D5 — Test gates:**
+- `npm run test:unit`: 3706/3706 pass; 0 skipped; 65.3s.
+- `npm run test:acceptance`: 569/570 pass / 0 fail / 1 skip_accepted
+  (= +1 from Phase C's 568, exactly the new sandbox check). New
+  Phase D check `adr0113-w4g-sandbox`: PASS 103ms.
+
+**D6 — Rollback verification (step 48).** `git revert --no-commit
+--no-edit 6c325ba6f` succeeded with no conflicts. `git revert
+--abort` returned to clean HEAD. The cherry-pick is reversible by a
+single `git revert` per the §step 46 "NO other changes" constraint
+— the commit contains only the sandbox files (5 files, 553/2).
+
+**PUSH STATUS:** PENDING explicit user confirmation. Fork is 1
+commit ahead of `sparkling/main` at `b24e46829`; pushing
+`6c325ba6f` adds the sandbox layer to public sparkling.

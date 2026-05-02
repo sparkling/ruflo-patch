@@ -1,0 +1,6 @@
+{
+  "name": "plugin-escape-attempt-fixture",
+  "private": true,
+  "type": "module",
+  "description": "ADR-0113 Phase D Fix 1 — sandbox escape fixture for the W4G acceptance check"
+}
