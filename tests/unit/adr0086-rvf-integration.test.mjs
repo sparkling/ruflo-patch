@@ -630,7 +630,6 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
   // This block imports child_process synchronously at the top of the suite so
   // we can fail loud if it's missing (it shouldn't be).
   it('spawns 6 real cli memory store subprocesses and asserts entryCount === 6', async (t) => {
-    if (process.env.SKIP_T3_2_BOOTSTRAP === '1') { t.skip('SKIP_ACCEPTED: bootstrap-skip while ADR-0095 .jslock fix is being landed; remove SKIP_T3_2_BOOTSTRAP env var after fix is in dist'); return; }
     const { spawnSync, spawn } = await import('node:child_process');
     const { mkdtempSync, existsSync, readFileSync, rmSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
@@ -653,17 +652,16 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
     // ── ADR-0113 perf fix: marker pre-flight via tarball, NOT npm install ──
     // Original code did `npm install @sparkleideas/cli@latest` (22-30s) just
     // to read `node_modules/@sparkleideas/memory/dist/rvf-backend.js` and
-    // check for the ADR-0095 markers. The npm install holds the npm cache
-    // lock, serializing parallel test files — total suite stretches from
-    // ~65s (with SKIP_T3_2_BOOTSTRAP=1) to 25-30 min (without).
+    // check for the ADR-0095 markers. The npm install held the npm cache
+    // lock, serializing parallel test files.
     //
     // Fast path: query Verdaccio for @sparkleideas/memory's tarball URL,
     // download the 200-300KB tarball directly, extract just dist/rvf-backend.js
-    // via `tar -xzO`, run the same marker checks. ~22ms vs 22-30s — 1000x.
+    // via `tar -xzO`, run the same marker check. ~22ms vs 22-30s — 1000x.
     //
-    // The original full-install path runs ONLY when markers are present
-    // (i.e., the fix has been republished to Verdaccio). Until then, this
-    // SKIP_ACCEPTED path replaces the wasted setup with a fast probe.
+    // The full-install path runs ONLY when markers are present (the fix is
+    // in Verdaccio). When markers are absent, SKIP_ACCEPTED replaces the
+    // wasted install setup with a fast probe.
     const _markerCheck = (() => {
       const tarUrlRes = spawnSync('npm', [
         'view', `@sparkleideas/memory@${CLI_VERSION}`, 'dist.tarball',
@@ -693,27 +691,19 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
     if (_markerCheck.ok) {
       const memSrc = _markerCheck.memSrc;
       // ADR-0095 Pass 1 markers (items a, b, c): reapStaleTmpFiles + _tmpCounter.
+      // These are general fix-presence indicators carried forward by both the
+      // initial d1 design AND the post-2026-05-01 swarm-2 amendment. Either
+      // design is acceptable for this test — the contract is "6 concurrent
+      // writers converge to entryCount === 6", not "design X is in dist".
       if (!memSrc.includes('reapStaleTmpFiles') || !memSrc.includes('_tmpCounter')) {
         t.skip(`SKIP_ACCEPTED: published @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 1 markers (reapStaleTmpFiles/_tmpCounter) [tarball pre-flight: ${_markerCheck.tarballUrl}]. Publish the fix: npm run publish:verdaccio, then set CLI_VERSION to new patch.`);
         return;
       }
-      // ADR-0095 Pass 2 marker (item d1): initialize() must hold the advisory
-      // lock across reap/tryNativeInit/loadFromDisk. Detect via source-text
-      // ordering: `this.acquireLock(` must appear BEFORE
-      // `this.reapStaleTmpFiles(` within the initialize body. Without d1 the
-      // subprocess race test cannot pass — LockHeld errors from the native
-      // layer will continue to surface.
-      const initIdx = memSrc.indexOf('async initialize(');
-      const shutdownIdx = memSrc.indexOf('async shutdown(', initIdx + 1);
-      const initBody = initIdx >= 0 && shutdownIdx > initIdx
-        ? memSrc.slice(initIdx, shutdownIdx)
-        : '';
-      const acquireIdx = initBody.indexOf('this.acquireLock(');
-      const reapIdx = initBody.indexOf('this.reapStaleTmpFiles(');
-      if (acquireIdx < 0 || reapIdx < 0 || acquireIdx >= reapIdx) {
-        t.skip(`SKIP_ACCEPTED: published @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 2 marker (d1: acquireLock before reapStaleTmpFiles in initialize) [tarball pre-flight: ${_markerCheck.tarballUrl}]. Republish after Pass 2 fork commit: npm run publish:verdaccio.`);
-        return;
-      }
+      // NOTE: previous "Pass 2 marker" check (acquireLock < reap order) was
+      // testing for the OLD d1 design. The current swarm-2 amendment puts
+      // acquireLock AFTER reap (only around loadFromDisk) — see fork
+      // rvf-backend.ts comment "scope the JS init lock down". Both designs
+      // satisfy the entryCount === 6 invariant; gate dropped.
     }
     // Markers present (or pre-flight failed and we couldn't tell) — proceed
     // with the full install path that exercises the actual subprocess race.
@@ -742,7 +732,7 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
       // Defense in depth: re-verify markers post-install. The pre-flight
       // tarball check above is the fast path, but a divergent install
       // (registry redirect, lockfile staleness) could land different bytes.
-      // Cheap to re-check; expensive to debug a silent miss.
+      // Cheap to re-check Pass 1; expensive to debug a silent miss.
       const memDist = join(workDir, 'node_modules', '@sparkleideas', 'memory', 'dist', 'rvf-backend.js');
       const { readFileSync } = await import('node:fs');
       let memSrc = '';
@@ -751,17 +741,8 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
         t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 1 markers post-install (divergence from tarball pre-flight). Publish the fix: npm run publish:verdaccio.`);
         return;
       }
-      const initIdx = memSrc.indexOf('async initialize(');
-      const shutdownIdx = memSrc.indexOf('async shutdown(', initIdx + 1);
-      const initBody = initIdx >= 0 && shutdownIdx > initIdx
-        ? memSrc.slice(initIdx, shutdownIdx)
-        : '';
-      const acquireIdx = initBody.indexOf('this.acquireLock(');
-      const reapIdx = initBody.indexOf('this.reapStaleTmpFiles(');
-      if (acquireIdx < 0 || reapIdx < 0 || acquireIdx >= reapIdx) {
-        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 2 marker post-install (divergence from tarball pre-flight). Republish after Pass 2 fork commit: npm run publish:verdaccio.`);
-        return;
-      }
+      // NOTE: obsolete Pass 2 (acquireLock < reap) check dropped — see
+      // pre-flight comment above for the swarm-2 amendment rationale.
 
       // cli init --full
       const initRes = spawnSync(cliBin, ['init', '--full'], { cwd: workDir, encoding: 'utf-8', timeout: 30_000 });
@@ -880,7 +861,6 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
 
 describe('ADR-0095 in-process N=6 — backend dedupe / cache invariant', () => {
   it('6 RvfBackend instances on same path converge to entryCount === 6', async (t) => {
-    if (process.env.SKIP_T3_2_BOOTSTRAP === '1') { t.skip('SKIP_ACCEPTED: bootstrap-skip while ADR-0095 .jslock fix is being landed; remove SKIP_T3_2_BOOTSTRAP env var after fix is in dist'); return; }
     const { existsSync, mkdirSync, rmSync, readdirSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');

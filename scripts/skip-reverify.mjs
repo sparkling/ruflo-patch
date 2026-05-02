@@ -386,8 +386,19 @@ export function createSidecar({ registry = 'http://localhost:4873' } = {}) {
   const dir = mkdtempSync(resolve(tmpdir(), `skip-reverify-${process.pid}-`));
   const binDir = resolve(dir, 'node_modules/.bin');
   const t0 = Date.now();
+  // Dedicated per-call npm cache: avoids npm cache lock contention with
+  // parallel test files (adr0086-rvf-real-integration.test.mjs +
+  // adr0086-rvf-load-invariant.test.mjs both also do `npm install`).
+  // Without this, the shared ~/.npm cache serializes installs and pushes
+  // wall-clock past the 30s spawnSync timeout. Persistent across runs so
+  // tarballs are reused (cold ≈ 27s, warm ≈ 19s — both under budget).
+  // --prefer-offline: hit the cache before re-fetching tarballs.
+  // --no-package-lock: skip lockfile write (we never read it back).
+  const npmCache = resolve(tmpdir(), 'ruflo-skip-reverify-npm-cache');
   const res = spawnSync('npm', [
     'i', '--no-save', '--no-audit', '--no-fund', '--silent',
+    '--prefer-offline', '--no-package-lock',
+    '--cache', npmCache,
     '--prefix', dir,
     '--registry', registry,
     '@sparkleideas/cli@latest',

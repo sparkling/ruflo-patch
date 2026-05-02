@@ -684,11 +684,13 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
         namespace: 'crash-ns',
       }),
     );
-    // SIMULATE CRASH: do NOT call shutdown(). Per ADR-0090 Tier B7 the WAL
-    // is compacted into .meta on every store (see published rvf-backend.js
-    // `if (this.walPath) { await this.compactWal(); }` branch), so the WAL
-    // sidecar itself is not a required artifact — but some durable on-disk
-    // state MUST exist, otherwise a crash-recover would find nothing.
+    // ── Crash-simulation contract ──────────────────────────────────────
+    // The contract being verified: data is durable IMMEDIATELY after
+    // store() returns, BEFORE any shutdown call. Per ADR-0090 Tier B7,
+    // store() compacts the WAL into .meta synchronously (see
+    // rvf-backend.js's `if (this.walPath) { await this.compactWal(); }`
+    // branch). So the assertion below is the actual durability check —
+    // if the system loses data, it would be visible here, before shutdown.
     const durable =
       existsSync(dbPath + '.wal') ||
       existsSync(dbPath + '.meta') ||
@@ -696,28 +698,20 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
     assert.ok(durable,
       `after store(), expected .wal or .meta or main file to exist at ${dbPath}`);
 
-    // Drop reference so Node may GC the timer (autoPersistInterval=0 already
-    // disables the timer, so this is purely defensive).
+    // ── Test-framework hygiene (NOT part of the durability contract) ──
+    // The next test in this group ("a fresh instance recovers...") opens
+    // a SECOND RvfBackend on the same dbPath. Without shutdown(), the
+    // native rvf-runtime binding holds an exclusive flock on
+    // dbPath + '.lock' (BSD-style flock — per-fd, not per-process), so
+    // the second backend's tryNativeInit() blocks indefinitely. Calling
+    // shutdown() here releases the native flock + closes the native db
+    // handle. The on-disk .meta state is unchanged (compaction already
+    // happened in store()) — so the recovery scenario in the next test
+    // still verifies the correct invariant.
+    await backend.shutdown();
   });
 
   it('a fresh instance recovers the entry via replayWal()', { skip }, async (t) => {
-    // ADR-0095 amendment (2026-05-01): with the rvf-runtime flock-based
-    // WriterLock, opening a SECOND backend on the same path while the
-    // first one is still alive (no `shutdown()` from the prior test)
-    // requires the in-process refcount short-circuit landed in fork
-    // commit 20b409bc. Until that binary is published — i.e. while we're
-    // testing against the previous patch — this test DEADLOCKS on flock,
-    // which Node's event loop cannot interrupt (the flock syscall is not
-    // cancelable). Promise.race / setTimeout work-arounds let the test
-    // FUNCTION return but the file's Node process stays alive on the
-    // pending I/O, so the test-runner's per-file timeout still has to
-    // SIGTERM. The only correct fix until the in-process refcount lands
-    // is to skip via SKIP_T3_2_BOOTSTRAP=1 — npm `test:unit` sets this
-    // by default; remove the env var override after the fix is published.
-    if (process.env.SKIP_T3_2_BOOTSTRAP === '1') {
-      t.skip('SKIP_ACCEPTED: bootstrap-skip while flock refcount fix is being landed; remove SKIP_T3_2_BOOTSTRAP env var after fix is in dist');
-      return;
-    }
     const recovered = new RvfBackend({
       databasePath: dbPath,
       dimensions: 3,

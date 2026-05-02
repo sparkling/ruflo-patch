@@ -5,7 +5,7 @@
   "scripts": {
     "preflight": "node scripts/preflight.mjs && node scripts/lint-acceptance-checks.mjs > /dev/null && node scripts/lint-fail-loud.mjs",
     "test:pipeline": "npm run preflight && node scripts/test-runner.mjs tests/pipeline",
-    "test:unit": "npm run test:pipeline && SKIP_T3_2_BOOTSTRAP=1 node scripts/test-runner.mjs tests/unit",
+    "test:unit": "npm run test:pipeline && node scripts/test-runner.mjs tests/unit",
     "fork-version": "npm run test:unit && bash scripts/run-fork-version.sh",
     "copy-source": "npm run fork-version && bash scripts/copy-source.sh",
     "codemod": "npm run copy-source && node scripts/codemod.mjs /tmp/ruflo-build",
