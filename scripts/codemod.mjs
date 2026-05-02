@@ -192,7 +192,13 @@ const SCOPED_RE = /@claude-flow\//g;
 // The pattern's flanking `__` separators ensure we don't false-hit on log
 // tags like `[claude-flow-mcp]` (no `mcp__` prefix) or scoped names like
 // `@claude-flow/cli` (no trailing `__`).
-const MCP_PREFIX_RE = /mcp__claude-flow__([a-zA-Z0-9_]+)/g;
+//
+// Phase C addendum: also match the literal-asterisk glob form
+// `mcp__claude-flow__*` used in plugin docs ("valid `mcp__claude-flow__*`
+// identifiers"). The capture group is `[a-zA-Z0-9_]+|\*` so both tool-
+// name suffixes (e.g. `memory_store`) and the documentation glob get
+// rewritten.
+const MCP_PREFIX_RE = /mcp__claude-flow__([a-zA-Z0-9_]+|\*)/g;
 
 // Step 1b: RuVector scoped replacement -- @ruvector/ -> @sparkleideas/ruvector-
 // Transforms @ruvector/core -> @sparkleideas/ruvector-core, etc.
@@ -223,12 +229,18 @@ const UNSCOPED_IMPORT_RE = new RegExp(
 /**
  * Apply scope renaming to source file content.
  *
- * Three passes:
+ * Four passes:
  *  1. @claude-flow/* -> @sparkleideas/* (all occurrences)
  *  2. @ruvector/* -> @sparkleideas/ruvector-* (all occurrences)
  *  3. Bare unscoped names in import/require/from contexts only
+ *  4. mcp__claude-flow__* -> mcp__ruflo__* (ADR-0113 Fix 2)
+ *
+ * Exported for ADR-0113 Phase C (Fix 4) — applying codemod directly
+ * to fork .md files (under forks/ruflo/plugins/ and
+ * forks/ruflo/.claude-plugin/) without rerunning the full pipeline
+ * copy-source step.
  */
-function transformSource(content) {
+export function transformSource(content) {
   // Pass 1: scoped prefix (@claude-flow/ -> @sparkleideas/)
   let result = content.replace(SCOPED_RE, SCOPED_PREFIX_TO);
 

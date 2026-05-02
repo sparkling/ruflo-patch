@@ -55,6 +55,34 @@ npx @sparkleideas/ruflo mcp start                     # start MCP server
 npx @sparkleideas/ruflo doctor                        # diagnose issues
 ```
 
+### Plugin marketplace
+
+After `init`, the upstream plugin ecosystem (16+ plugins covering swarms,
+SPARC, security audit, RAG memory, neural training, etc.) is available
+through Claude Code's marketplace. Add the sparkling marketplace and
+install whichever plugins you want:
+
+```bash
+# Bootstrap workspace first (creates configs, hooks, daemon state).
+npx @sparkleideas/ruflo init
+
+# Add the marketplace (in Claude Code).
+/plugin marketplace add sparkling/ruflo
+
+# Install plugins.
+/plugin install ruflo-core@ruflo
+/plugin install ruflo-swarm@ruflo
+```
+
+**Order matters:** `ruflo init` first, then `/plugin marketplace add`. The
+init step bootstraps workspace config, embeddings, MCP entries, and
+daemon hooks; plugins extend that workspace with agents/skills/commands.
+Plugins do NOT replace `init`.
+
+The marketplace is served from [github.com/sparkling/ruflo](https://github.com/sparkling/ruflo)
+(our fork's `main`), with all plugin install instructions rewritten to
+point at `@sparkleideas/cli@latest` and `mcp__ruflo__*` tool prefixes.
+
 ---
 
 ## What You Get

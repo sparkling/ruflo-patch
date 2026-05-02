@@ -312,7 +312,13 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
   - (b) Synthetic-fixture sub-suite drops `@claude-flow/synthetic-new-package-from-test` into a temp tree, runs the discover+coverage check via child node, asserts exit 1 with GAP: report; inverse clean-fixture asserts exit 0. ✓
   - (c) `npm run discover-packages` (new npm alias) → `node scripts/preflight.mjs --discover-dry-run` lists discovered packages with in-LEVELS / MISSING / WONT_PUBLISH / not-in-fork sections. ✓
   - Bonus: deleted drifted `FALLBACK_LEVELS` from `scripts/publish.mjs` (subsumes step 25); `config/publish-levels.json` is now the single canonical source, fail-loud on read/schema error per `feedback-no-fallbacks`.
-- [ ] **Fix 4**: depends on Fix 2 and Fix 3. `marketplace.json` `owner.name` rewritten from `"ruvnet"` to `"sparkling"`; codemod-rewritten content pushed to existing public `sparkling/ruflo` fork. Acceptance: (a) `tests/pipeline/marketplace-manifest.test.mjs` asserts `owner.name === "sparkling"`, `name === "ruflo"`, scoped paths intact post-codemod; (b) cheap acceptance check `check_adr0113_marketplace_owner_sparkling` greps `forks/ruflo/.claude-plugin/marketplace.json` (every run); (c) network-gated check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`) clones `git@github.com:sparkling/ruflo.git` + asserts manifest content + verifies `git ls-remote sparkling main` SHA matches; (d) README updated with `/plugin marketplace add sparkling/ruflo` install path.
+- [~] **Fix 4** (Phase C committed locally 2026-05-02; pending push to public `sparkling/ruflo`): `marketplace.json` `owner.name` rewritten from `"ruvnet"` to `"sparkling"`; codemod-rewritten content staged on fork `main` (commit `b24e46829`). Acceptance signals:
+  - (a) `tests/pipeline/marketplace-manifest.test.mjs` (NEW, 7 tests) asserts `owner.name === "sparkling"`, `name === "ruflo"`, scoped paths `./plugins/<name>` intact, manifest contains zero `@claude-flow/`; plus 3 contract tests scanning `forks/ruflo/{plugins,.claude-plugin}/**/*.md` for residual `@claude-flow/` or `mcp__claude-flow__` refs. ✓
+  - (b) `check_adr0113_marketplace_owner_sparkling` (NEW, every-run) greps fork manifest via `node`-driven JSON parse. ✓
+  - (c) `check_adr0113_marketplace_remote_sparkling` (NEW, gated by `RUFLO_MARKETPLACE_NETWORK_TESTS=1`) does `git ls-remote sparkling main` and asserts SHA matches local fork HEAD on `main`. Default behavior: SKIP (since CI doesn't have SSH credentials for the public sparkling org). Pre-push, this check correctly reports `local b24e46829 ≠ sparkling fe6b9211`; post-push it must flip to PASS. ✓ (verified standalone)
+  - (d) README updated with `/plugin marketplace add sparkling/ruflo` install path; prerequisite "ruflo init first" note per §Status note. ✓
+  - Codemod regex hardened: `mcp__claude-flow__([a-zA-Z0-9_]+|\*)` now also matches the literal-asterisk glob form ("`mcp__claude-flow__*`") used in plugin docs (Phase C surfaced one such occurrence the original regex missed).
+  - **Push status:** PENDING explicit user confirmation per Phase C step 35.
 - [ ] **Fix 5**: federation + iot plugins reach Verdaccio with `-patch.N` pin. Acceptance: (a) `npm view @sparkleideas/plugin-agent-federation@latest version --registry=http://localhost:4873` returns a version; same for `plugin-iot-cognitum`; (b) `check_adr0113_ruflo_federation_bin` does both `command -v ruflo-federation` AND `ruflo-federation --version` (via direct `timeout`, not `_run_and_kill`); same pattern for `check_adr0113_cognitum_iot_bin`; (c) ADR-078/079 mirrored into `ruflo-patch/docs/adr/`.
 - [ ] **Fix 6.1** (revised target): `executor.ts` + `claudemd-generator.ts` `@claude-flow/cli@latest` → `@sparkleideas/cli@latest` (12 sites). Acceptance: `grep -rn "@claude-flow/cli@latest" forks/ruflo/v3/@claude-flow/cli/src/` returns 0 matches; `grep -rn "@sparkleideas/cli@latest" <same>` returns 12. Plus acceptance check `check_adr0113_executor_uses_sparkleideas_cli`.
 - [x] ~~**Fix 6.2**~~: ALREADY LANDED in `cf6595a2c` (verified 2026-05-01). Strike from active checklist.
@@ -601,3 +607,79 @@ generated artifact, OR delete the JSON if confirmed decorative."
 Outcome: kept JSON as canonical, deleted the in-source duplicate.
 The JSON is NOT a generated artifact (it's hand-edited when adding
 new packages) — that part of the audit's framing was wrong.
+
+### 2026-05-02 — Phase C landed locally (Fix 4) — push pending
+
+Phase C executed per §Implementation order steps 28-34, halted at
+step 35 (PAUSE before public push). Touch summary:
+
+**C1 — Codemod application to fork .md files (`scripts/apply-codemod-to-fork-md.mjs`, NEW).**
+Standalone runner that imports `transformSource()` from
+`scripts/codemod.mjs` and applies the 4 codemod passes
+(@claude-flow/ → @sparkleideas/, @ruvector/ → @sparkleideas/ruvector-,
+unscoped imports, mcp__claude-flow__ → mcp__ruflo__) to ONLY the
+`.md` files under `forks/ruflo/plugins/` and
+`forks/ruflo/.claude-plugin/`. Why standalone: full pipeline
+codemod would re-touch dirty package.json files that exist on fork
+HEAD from prior pipeline runs. Result: 159 of 198 .md files
+rewritten with 851 substitutions.
+
+`scripts/codemod.mjs`:
+- Exported `transformSource()` so the standalone runner can reuse it
+  without duplicating the regex passes.
+- Hardened MCP regex: `mcp__claude-flow__([a-zA-Z0-9_]+|\*)` (was
+  `[a-zA-Z0-9_]+` only). Phase C dry-run surfaced one occurrence
+  using the literal-asterisk glob form ("valid `mcp__claude-flow__*`
+  identifiers") that the original regex missed. Test added
+  to `tests/pipeline/codemod.test.mjs` covers both numeric-suffix and
+  glob-suffix cases.
+
+**C2 — Marketplace manifest identity (`forks/ruflo/.claude-plugin/marketplace.json`).**
+`owner.name`: `"ruvnet"` → `"sparkling"`; `owner.url` updated to
+`https://github.com/sparkling`. `name: "ruflo"` retained (Claude
+Code marketplace identifier). Plugin source paths
+`./plugins/<name>` left intact (relative paths, not scope-renamed).
+
+**C3 — Test coverage (`tests/pipeline/marketplace-manifest.test.mjs`, NEW).**
+7 tests across 2 describe blocks:
+- 4 manifest-content tests: owner.name == sparkling; manifest name ==
+  ruflo; plugin sources are relative ./plugins/; manifest contains zero
+  @claude-flow/.
+- 3 fork-tree codemod-applied tests: walk plugins/**/*.md and
+  .claude-plugin/**/*.md, assert zero @claude-flow/ or
+  mcp__claude-flow__ refs remain.
+
+**C4 — Acceptance checks
+(`lib/acceptance-adr0113-plugin-checks.sh`).** Two new checks:
+- `check_adr0113_marketplace_owner_sparkling` (every-run): greps
+  fork manifest via `node`-driven JSON parse. Cheap; runs on every
+  acceptance pass.
+- `check_adr0113_marketplace_remote_sparkling` (gated by
+  `RUFLO_MARKETPLACE_NETWORK_TESTS=1`): `git ls-remote sparkling main`
+  vs local main SHA. Default SKIP (no SSH creds on CI). Verified
+  pre-push: correctly reports `local b24e46829 ≠ sparkling
+  fe6b9211`; post-push must flip to PASS.
+- Wired both into `scripts/test-acceptance.sh` `run_check_bg` calls
+  + `collect_parallel` wait list.
+
+**C5 — Fork commit (`forks/ruflo` `b24e46829`).** Single commit on
+`main` containing 160 files (159 .md + marketplace.json), 851
+substitutions, 851 line-changes. NO Co-Authored-By trailer per
+`feedback-fork-commit-attribution`. Pushed to nothing yet (per Phase
+C step 35).
+
+**C6 — Patch repo README updated.** Added "Plugin marketplace"
+subsection to Quick Start: `npx @sparkleideas/ruflo init` first, then
+`/plugin marketplace add sparkling/ruflo`. Documents the prerequisite
+order per §Status note.
+
+**Test gates:**
+- `npm run test:pipeline`: 154/154 pass (7 new from
+  marketplace-manifest.test.mjs).
+- `npm run test:unit`: 3706/3706 pass; 0 skipped; 69.9s.
+- `npm run test:acceptance`: TBD (running at time of this
+  documentation pass — appended below on completion).
+
+**PUSH STATUS:** Per Phase C step 35, push to public
+`git@github.com:sparkling/ruflo.git` `main` requires explicit user
+confirmation. NOT executed at this time.

@@ -212,3 +212,107 @@ check_adr0113_no_opus_46_strings() {
   end_ns=$(_ns)
   _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
 }
+
+# ════════════════════════════════════════════════════════════════════
+# Fix 4 — Marketplace identity (sparkling owner)
+# ════════════════════════════════════════════════════════════════════
+#
+# Greps the fork's marketplace.json directly. Every-pass cheap check.
+# When the fork is pushed to public sparkling/ruflo, this contract
+# locks the manifest content. Future upstream merges that re-introduce
+# `owner.name: "ruvnet"` will fail this check until codemod is re-run.
+#
+# Path: forks/ruflo/.claude-plugin/marketplace.json. Resolves via
+# config/upstream-branches.json so the script doesn't hardcode the
+# fork dir.
+check_adr0113_marketplace_owner_sparkling() {
+  local start_ns end_ns
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+
+  # Resolve fork dir from upstream-branches.json (single source of truth).
+  local fork_dir
+  fork_dir=$(node -e "
+    const c = JSON.parse(require('fs').readFileSync(
+      require('path').resolve('${PROJECT_DIR:-.}', 'config', 'upstream-branches.json'), 'utf8'));
+    process.stdout.write(c.ruflo?.dir || '');
+  " 2>/dev/null)
+
+  if [[ -z "$fork_dir" || ! -d "$fork_dir" ]]; then
+    _CHECK_OUTPUT="forks/ruflo dir not resolvable from config/upstream-branches.json"
+    end_ns=$(_ns)
+    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  local manifest="${fork_dir}/.claude-plugin/marketplace.json"
+  if [[ ! -f "$manifest" ]]; then
+    _CHECK_OUTPUT="marketplace.json missing at $manifest"
+    end_ns=$(_ns)
+    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  local owner_name
+  owner_name=$(node -e "
+    const m = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+    process.stdout.write(m.owner?.name || '');
+  " "$manifest" 2>/dev/null)
+
+  if [[ "$owner_name" == "sparkling" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="marketplace.json owner.name = sparkling"
+  else
+    _CHECK_OUTPUT="marketplace.json owner.name = '$owner_name' (expected 'sparkling')"
+  fi
+  end_ns=$(_ns)
+  _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+}
+
+# Network-gated check (RUFLO_MARKETPLACE_NETWORK_TESTS=1) — clones
+# git@github.com:sparkling/ruflo.git, asserts manifest content, verifies
+# `git ls-remote sparkling main` SHA matches local fork HEAD.
+#
+# Skipped by default (would gate every CI run on github.com/sparkling
+# availability + SSH credentials). Use after pushing to verify the
+# remote is in sync.
+check_adr0113_marketplace_remote_sparkling() {
+  local start_ns end_ns
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+
+  if [[ "${RUFLO_MARKETPLACE_NETWORK_TESTS:-0}" != "1" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="SKIPPED — set RUFLO_MARKETPLACE_NETWORK_TESTS=1 to enable"
+    end_ns=$(_ns)
+    _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  local fork_dir
+  fork_dir=$(node -e "
+    const c = JSON.parse(require('fs').readFileSync(
+      require('path').resolve('${PROJECT_DIR:-.}', 'config', 'upstream-branches.json'), 'utf8'));
+    process.stdout.write(c.ruflo?.dir || '');
+  " 2>/dev/null)
+
+  # Local HEAD on main.
+  local local_sha
+  local_sha=$(git -C "$fork_dir" rev-parse main 2>/dev/null) || true
+
+  # Remote HEAD on sparkling/main.
+  local remote_sha
+  remote_sha=$(git ls-remote git@github.com:sparkling/ruflo.git refs/heads/main 2>/dev/null \
+    | awk '{print $1}') || true
+
+  if [[ -z "$remote_sha" ]]; then
+    _CHECK_OUTPUT="git ls-remote sparkling/ruflo main returned empty (network/SSH error?)"
+  elif [[ "$local_sha" == "$remote_sha" ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="sparkling/ruflo main = local main = ${local_sha:0:8}"
+  else
+    _CHECK_OUTPUT="local main ${local_sha:0:8} ≠ sparkling/ruflo main ${remote_sha:0:8}"
+  fi
+  end_ns=$(_ns)
+  _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+}

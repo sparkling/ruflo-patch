@@ -631,6 +631,8 @@ describe('codemod: ADR-0113 — markdown extension and MCP tool prefix', () => {
       "Use `mcp__claude-flow__memory_store` to persist patterns.",
       "Tools: mcp__claude-flow__swarm_init, mcp__claude-flow__agent_spawn",
       "Some helpers like mcp__claude-flow__hooks_route_v2 also exist.",
+      // Phase C addendum: glob-style references in plugin docs.
+      "All tools must use the `mcp__claude-flow__*` prefix.",
     ].join('\n');
     writeFileSync(join(tmp, 'tools.md'), source);
 
@@ -642,6 +644,8 @@ describe('codemod: ADR-0113 — markdown extension and MCP tool prefix', () => {
     assert.ok(result.includes('mcp__ruflo__agent_spawn'), 'agent_spawn rewritten');
     assert.ok(result.includes('mcp__ruflo__hooks_route_v2'),
       'mixed alphanumeric+underscore suffix rewritten');
+    assert.ok(result.includes('mcp__ruflo__*'),
+      'glob-style mcp__claude-flow__* rewritten (Phase C — plugin doc form)');
     assert.ok(!result.includes('mcp__claude-flow__'),
       'no mcp__claude-flow__ references remain');
   });
