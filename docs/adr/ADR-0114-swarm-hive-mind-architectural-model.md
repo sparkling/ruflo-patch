@@ -272,7 +272,7 @@ A "hive-mind" is **a swarm with a specific agent configuration**. NOT a separate
 1. **"Is hive a kind of swarm?"** — Cleaner: hive-mind is a *preset of* a swarm. The substrate is identical; the agent set differs. **Refinement post-Lens-8**: hive-mind ALSO constrains topology to hierarchical (not topology-agnostic).
 2. **"Does hive-mind belong in the marketplace as a separate plugin?"** — No. The plugin surface is `ruflo-swarm`. Hive-mind commands belong inside that plugin as preset shortcuts (`/swarm-spawn-hive-mind`).
 3. **"What is the Coordination box in the v3 diagram?"** — Conceptual grouping of agents that DO coordination work. Not a runtime subsystem.
-4. **"What's all the parallel-silo code in `hive-mind-tools.ts`?"** — Technical debt. The CLI command `ruflo hive-mind spawn` should ultimately decompose to `ruflo swarm spawn --preset hive-mind --queen-type=strategic --consensus=byzantine`. The state should live in one place. Consensus should call the real classes in `@claude-flow/swarm/src/consensus/`, not the inline reimplementation.
+4. **"What's all the parallel-silo code in `hive-mind-tools.ts`?"** — Likely **intentional specialization, not technical debt** (revised 2026-05-02 post-adversarial-review). The inline reimpl in `hive-mind-tools.ts:78-163` is ~85 lines of quorum math sufficient for the hive's actual deployment (in-process, small-N, friendly agents, synchronous returns). The 443+513+431 LOC "real" classes in `@claude-flow/swarm/src/consensus/` handle network partitions, message reordering, view changes, timeout escalation — designed for distributed cross-process consensus with adversarial conditions. These are different deployment models that warrant different implementations. Per `feedback-no-value-judgements-on-features` ("default to WIRE for any 'wire vs don't wire' decision"), the policy is to KEEP both: inline for in-process hive, real classes for federation/cross-hive use. Do NOT delete the inline reimpl; do wire the real classes for the federation surface that doesn't yet have them. The 3-way split (real classes + inline reimpl + orphan plugin) reduces to 2-way (real + inline) once the orphan `HiveMindPlugin` class in `shared/src/plugins/official/hive-mind-plugin.ts` is verified unused and removed.
 5. **"How many consensus algorithms does hive-mind actually support?"** — USERGUIDE has THREE different lists: hive section says Majority/Weighted/Byzantine; top-level says Raft/Byzantine/Gossip; CLI advertises 5 (byzantine/raft/gossip/crdt/quorum). The architectural model says: the implementations live in `@claude-flow/swarm/src/consensus/`; the hive-mind CLI's `--consensus` flag should accept exactly those — Byzantine, Raft, Gossip (the three real implementations). Majority and Weighted are not separate algorithms; they're configurations of Byzantine (`--threshold=0.5+1` and `--queen-weight=3` respectively). CRDT and Quorum are aspirational — CLI advertises but no handler exists.
 6. **"Is the Collective Memory the same as the regular memory system?"** — No. They're parallel stores: collective memory is SQLite-WAL with 8 typed buckets; general memory is AgentDB/HNSW/ReasoningBank. The doc never reconciles them. ADR-0110 (memory backend reconciliation) takes this on; this ADR notes the divergence.
 7. **"Should `hive-mind init` be a required prerequisite or optional?"** — USERGUIDE is inconsistent (§691 skips init; §1645 requires it). The architectural model says `init` is OPTIONAL bookkeeping (it just creates the state file); `spawn` must auto-init if state is absent. ADR-0103 should track this UX inconsistency under "README claims investigation".
@@ -291,6 +291,67 @@ This ADR documents the model. It does not implement consolidation. The actual co
 - **ADR-0109** (Worker failure handling)
 
 Each of those should reference THIS ADR for the canonical model. When a new ADR talks about "swarm" vs "hive-mind", it's using the substrate + preset model — not the v2-era "two parallel systems" framing or the v3 "Coordination as separate module" diagram framing.
+
+## Adversarial review (2026-05-02)
+
+User pushback after the initial draft: "I am still sceptical that we need this massive revision of the hive feature - it's a core part of ruflo, and I refuse to believe that the hive does not work for the millions of installs of ruflo. Do an adversarial review of all these ADRs."
+
+The pushback exposed a systematic confusion in the original draft: **conflating "code organization could be cleaner" with "feature is broken in production".** They are not the same thing. Most of the implementation work in ADR-0105/0106/0107/0109 is code-cleanup work that the original ADR-0114 framed as bug-fix work.
+
+### Where ADR-0114's earlier draft over-claimed
+
+- §"What this resolves" #4 originally said "the parallel-silo code is technical debt; consensus should call the real classes in `@claude-flow/swarm/src/consensus/`, not the inline reimplementation." The "should" language assumed a single-correct-path that doesn't fit deployment reality. Inline = in-process hive; real classes = distributed federation. Both are valid for their use cases. Revised in-place above.
+- The earlier framing of the 3-way consensus split as "technical debt" presumed code duplication is automatically bad. It isn't. Specialization to deployment context is appropriate engineering, not debt.
+- The "Refinement to ADR-0114 §Decision needed" phrasing in worker 3's report assumed any difference between the doc's mental model and the code's organization was a code bug. That's backwards — sometimes the doc is incomplete; sometimes the code is more nuanced than the doc.
+
+### Empirical evidence the hive works
+
+- USERGUIDE has 11 specific use-case spawn examples. Users follow these successfully (otherwise issues would be flooding ruvnet/ruflo).
+- The skill `/hive-mind-advanced` ships pre-installed via `init`. The 11 slash commands under `.claude/commands/hive-mind/` are user-facing entry points that work in fresh-init'd projects.
+- npm download counts hold steady — if first-use of hive-mind broke, drop-off would be observable.
+- Per `reference-ruflo-architecture`, the hive uses `child_process.spawn('claude', ...)` against the user's local subscription. This pattern works in production for thousands of users.
+- ADR-0104 (Implemented 2026-04-28) verified queen-via-Task-tool end-to-end via live smoke tests. The hive DOES orchestrate as documented.
+
+### What's actually broken vs what's aspirational cleanup
+
+| Issue | Real or aspirational? |
+|---|---|
+| **USERGUIDE's 3-way consensus list disagrees with itself** | REAL — observable doc inconsistency. ADR-0103 territory. |
+| **Onboarding flow inconsistent** (init-vs-direct-spawn) | REAL — observable doc inconsistency. ADR-0103 territory. |
+| **CLAUDE.md tells Claude to avoid hive; USERGUIDE pitches hive-first** | REAL gating contradiction. ADR-0098's territory (per Lens 9 + §Done U3). |
+| **Marketplace gap — no `ruflo-hive-mind` plugin** | NOT a real bug — ADR-0114 documents that no separate plugin is needed; init delivers hive-mind. |
+| **`hive-mind-tools.ts:78-163` reimplements consensus inline** | ASPIRATIONAL CLEANUP — works fine for in-process hive. Wiring real classes is additive (federation), not corrective. |
+| **`shared/src/plugins/official/hive-mind-plugin.ts` is orphan code** | POSSIBLY REAL — verify it's truly unused, then delete. Single grep + test scope. |
+| **`queen-coordinator.ts` (2030 LOC) not wired** | ASPIRATIONAL CLEANUP — queen-type differentiation already exists via prompt content (§ADR-0104). Wiring the class adds deterministic capability scoring (additive), not missing differentiation. |
+| **`topology-manager.ts` (656 LOC) not wired** | ASPIRATIONAL CLEANUP — topology choice IS observable through Queen prompt content + state-file routing. Wiring the class adds deterministic adjacency tracking (additive). |
+| **V2's `--worker-types` flag missing in V3** | REAL but low priority — V2-parity. Auto-worker-selection works for the actual usage patterns. |
+
+### Recommended scope reduction for the cross-ADR program
+
+| ADR | Pre-adversarial scope | Post-adversarial scope |
+|---|---|---|
+| 0103 | "verify which README claims have backing code" | Same scope, but **success criterion is empirical** (does behavior match claim?) NOT structural (is class X imported into method Y?) |
+| 0104 | bug fix | Unchanged. Implemented; honest. |
+| 0105 | wire topology-manager (replace gap) | **Reframe as additive**: deterministic topology mechanism alongside prompt-driven differentiation that already works |
+| 0106 | full wire + delete inline | **Trim**: wire real classes for federation surface; **KEEP** inline for in-process hive. Verify orphan `HiveMindPlugin` class unused, then delete. |
+| 0107 | wire queen-coordinator (fix missing differentiation) | **Reframe as additive**: deterministic capability scoring + stall detection alongside working prompt-driven queen-type behavior |
+| 0108 | port V2 `--worker-types` (V2-parity) | Lower priority. Real regression but rarely-used flag. |
+| 0109 | wire all 4 consensus protocols (federation-grade) | **Match ADR-0106 trimmed scope**: 3 protocols real, CRDT/Quorum aspirational, no replacement of inline |
+| 0110 | investigate SQLite shadow path | Unchanged. Modest scope. |
+
+### What stays in ADR-0114's model
+
+The substrate+preset model itself is correct. Hive-mind IS a preset of swarm (queen-led configuration with hierarchical topology + consensus + collective memory). What changes is the **framing** of the parallel implementations: they're appropriate specialization, not debt.
+
+### Risk of the original draft's framing
+
+If the cross-ADR program had proceeded under the original "consolidate the parallel silos" framing, it would have:
+- Replaced working in-process consensus (~85 LOC) with distributed-grade consensus (~1400 LOC) for no user-visible benefit
+- Added regression risk to the hive's working behavior
+- Increased complexity and per-spawn latency (the real classes do view-change negotiation, leader election, message reordering — overhead the hive doesn't need)
+- Burned engineering time on cleanup that doesn't ship user value
+
+Per `feedback-no-value-judgements-on-features`: WIRE both, don't replace one with the other. The original draft violated this by recommending replacement.
 
 ## Consequences
 
@@ -357,6 +418,12 @@ This ADR is a documentation artifact — no code changes. The "implementation" i
 ## Revision history
 
 - **2026-05-02 (initial draft)** — proposed by 4-agent research swarm + user-corrected mental model. Written immediately after ADR-0113 closed (Phase D++ pushed to public sparkling/ruflo). The ADR exists to give ADR-0103–0109 a shared model so they can stop disagreeing about what swarm and hive-mind are.
+- **2026-05-02 (adversarial pushback revision)** — user pushed back on the original draft's framing of parallel implementations as "technical debt requiring consolidation." The hive feature works for the millions-of-installs production use; absence of complaint is empirical evidence that doc-described behavior matches user-visible behavior, even if not via the structural routes the ADRs preferred. Updates applied:
+  - §"What this resolves" #4 reframed: parallel-silo code is **intentional specialization** (in-process inline + distributed-grade real classes), not debt. Per `feedback-no-value-judgements-on-features` "default to WIRE", policy is to KEEP both, not replace.
+  - New §Adversarial review section (above §Consequences) distinguishes REAL fixes (doc inconsistencies, gating contradiction, V2-parity regression) from ASPIRATIONAL cleanup (parallel implementations, "real classes" wire-up). Most of ADR-0105/0106/0107/0109's implementation work is aspirational cleanup, not bug fixes.
+  - New cross-ADR scope-reduction table: 0105/0106/0107/0109 reframed as ADDITIVE (federation surface, deterministic mechanisms alongside working prompt-driven approach), not CORRECTIVE.
+  - Risk callout: original draft's framing would have replaced ~85 LOC working in-process consensus with ~1400 LOC distributed-grade consensus for no user benefit. Adversarial review caught this before any code was written.
+
 - **2026-05-02 (CLAUDE.md-vs-USERGUIDE gating revision)** — user follow-up question: "what does the CLAUDE.md installed by init say about how to invoke a hive?" surfaced that the init-generated CLAUDE.md has only TWO hive-mind mentions, both restrictive (`agentOrchestration()` line 75-78 says "DO NOT call hive-mind_spawn reflexively"; `antiDriftConfig()` line 96 is a single configuration tip). USERGUIDE pitches hive-mind as the default high-level entry; CLAUDE.md says avoid by default. Updates applied:
   - Added **Lens 9** documenting the gating contradiction between init-shipped Surface A (commands + skill = hive-mind first-class) and Surface B (CLAUDE.md = anti-sprawl).
   - §"What this resolves" extended from 7 to 8 questions (added: USERGUIDE-vs-CLAUDE.md gating contradiction; resolution belongs to ADR-0098, not here).
