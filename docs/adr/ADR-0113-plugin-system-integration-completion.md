@@ -1,6 +1,6 @@
 # ADR-0113: Plugin system integration completion (post-ADR-0111 W4)
 
-- **Status**: Proposed (2026-05-01)
+- **Status**: Implemented (2026-05-02). All 6 fixes landed; Phase A (Fix 6 + 2 + 5) on 2026-05-01, Phase B (Fix 3) + Phase C (Fix 4) + Phase D (Fix 1) on 2026-05-02. Forks/ruflo `main` at `6c325ba6f` pushed to public `sparkling/ruflo`. Fix 6.5 (cosmetic top-level `package.json` `name: "ruflo"` + bin self-id labels) deferred — strict cosmetic per audit Finding 12.
 - **Date**: 2026-05-01
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 14-agent specialized audit swarm (`swarm-1777663583250-1fqsl3`, hierarchical-mesh, read-only) following the public marketplace pitch that surfaced the question "is the plugin system actually integrated?"
@@ -305,13 +305,13 @@ Concrete step-by-step execution mapped to the four phases. Each step lists the t
 
 §Done items revised post-hive 2026-05-01: each item now names a measurable acceptance signal (test function, grep target, or registry assertion). Items 6.4 and 6.5 tightened from "updated" to specific grep targets per Production Validator review.
 
-- [~] **Fix 1** (Phase D landed locally 2026-05-02; pending push): `f3cc99d8b` cherry-picked onto `forks/ruflo` `main` as commit `6c325ba6f`. Acceptance signals:
+- [x] **Fix 1** (landed 2026-05-02 Phase D; pushed to public `sparkling/ruflo`): `f3cc99d8b` cherry-picked onto `forks/ruflo` `main` as commit `6c325ba6f`, pushed to `git@github.com:sparkling/ruflo.git`. `git ls-remote sparkling main` returns `6c325ba6f1219aa09a1aa48c65ffc853e049ed0e` (= local main). Acceptance signals:
   - (a) `find forks/ruflo -name plugin-sandbox.ts` → `./v3/@claude-flow/shared/src/plugin-sandbox.ts` ✓
   - (b) `grep -c "PluginPermissions" forks/ruflo/v3/@claude-flow/shared/src/plugin-interface.ts` → 2 ✓
   - (c) `check_adr0113_w4g_plugin_sandbox_capability_deny` (NEW) drives fixture at `tests/fixtures/plugin-escape-attempt/index.mjs`. Fixture exits 0 only when ALL of these hold: vm-sandbox blocks `eval`, `new Function`, `process.exit`, `require('child_process')`, `this.constructor.constructor('return process')()`, and `global.process.exit`; capability gate denies undeclared `services.get('fs')` (returns undefined), `services.register()` throws, env config keys stripped without `env` permission; with `filesystem: true` permission, `services.get('fs')` returns the underlying service. Sanity: `runInSandbox('1+2') === 3`. Pre-flight: published `@sparkleideas/shared` dist must contain `SandboxedPluginRunner`. Result: TBD (running).
   - (d) Trust-routing — verified by code inspection at `plugin-loader.ts:339-352`: fork-source check `plugin.name.startsWith('@claude-flow/')` is rewritten to `'@sparkleideas/'` by codemod Pass 1 (SCOPED_RE) at build time. Plugin with `name: '@sparkleideas/test-plugin'` + `trustLevel: 'official'` keeps full context; `community/foo` + `trustLevel: 'official'` is demoted to `'unverified'` and routed through `createRestrictedContext()`. Fixture covers this via `runner.createRestrictedContext(baseContext, {}, 'community/escape-attempt')` which exercises the same code path.
   - Hand-merge note: HIGH-05 env-snapshot lines (`snapshotProtectedEnv()`, `protectedSnapshot`, `fullEnvBefore`) that came in the same upstream hunk were dropped — they reference symbols not imported on our W4 HEAD (HIGH-05 is a separate upstream commit not part of this cherry-pick). Comment in the merged source explains.
-  - **Push status:** PENDING explicit user confirmation per Phase D step 47.
+  - **Push status:** PUSHED 2026-05-02 to `git@github.com:sparkling/ruflo.git` after explicit user confirmation. Post-push network check (`RUFLO_MARKETPLACE_NETWORK_TESTS=1`): PASS, `sparkling/ruflo main = local main = 6c325ba6`.
 - [ ] **Fix 2**: `.md` in `scripts/codemod.mjs:58` `ALLOWED_EXTENSIONS`; `mcp__claude-flow__[a-zA-Z0-9_]` → `mcp__ruflo__$1` rewrite (broader than initial `[a-z]` per Code Analyzer). Acceptance: 5 cases in `tests/pipeline/codemod.test.mjs`: (1) `npx -y @claude-flow/cli@latest swarm` → `npx -y @sparkleideas/cli@latest swarm`; (2) `mcp__claude-flow__memory_store` → `mcp__ruflo__memory_store`; (3) **negative**: `[claude-flow-mcp]` log tag survives unchanged; (4) **negative**: `node_modules/**/*.md` not touched; (5) code-fence content rewrites identical to prose. Plus acceptance: `grep -r "@claude-flow/" /tmp/ruflo-build/plugins/**/*.md | wc -l` == 0.
 - [x] **Fix 3** (landed 2026-05-02 Phase B): pipeline allowlists auto-derived from `FORK_DIRS[@]`. Acceptance signals:
   - (a) `tests/pipeline/preflight-package-coverage.test.mjs` walks fork tree (private:true skip + path-fragment exclusions + depth cap 5) and asserts discovered set ⊆ `scripts/publish.mjs` LEVELS ∪ WONT_PUBLISH ∪ WONT_PUBLISH_PATTERNS. ✓
@@ -790,6 +790,21 @@ matches the OR pattern.
 single `git revert` per the §step 46 "NO other changes" constraint
 — the commit contains only the sandbox files (5 files, 553/2).
 
-**PUSH STATUS:** PENDING explicit user confirmation. Fork is 1
-commit ahead of `sparkling/main` at `b24e46829`; pushing
-`6c325ba6f` adds the sandbox layer to public sparkling.
+**PUSH STATUS:** PUSHED 2026-05-02 with user confirmation. Step 47
+verified:
+- `git -C forks/ruflo push sparkling main` →
+  `b24e46829..6c325ba6f  main -> main`.
+- `git ls-remote sparkling main` returns
+  `6c325ba6f1219aa09a1aa48c65ffc853e049ed0e` (= local main).
+- Network-gated acceptance check
+  `check_adr0113_marketplace_remote_sparkling` with
+  `RUFLO_MARKETPLACE_NETWORK_TESTS=1`: PASS,
+  `sparkling/ruflo main = local main = 6c325ba6`.
+
+The plugin sandbox + capability gating now lives on the public
+`sparkling/ruflo` fork. Distribution is coherent: a user installing
+`@sparkleideas/cli`, then `/plugin marketplace add sparkling/ruflo`,
+then `/plugin install <community-plugin>@ruflo` gets the trust-routing
+demotion + capability gating documented in §Consequences (defense-in-
+depth for trusted-but-buggy code; NOT a security boundary against
+malicious code per Node `vm` limitations).
