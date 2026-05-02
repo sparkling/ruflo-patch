@@ -527,6 +527,10 @@ adr0098_lib="${PROJECT_DIR}/lib/acceptance-adr0098-checks.sh"
 adr0104_lib="${PROJECT_DIR}/lib/acceptance-adr0104-checks.sh"
 [[ -f "$adr0104_lib" ]] && source "$adr0104_lib"
 
+# ADR-0125: Hive-mind Queen-type runtime differentiation (Strategic/Tactical/Adaptive)
+adr0125_lib="${PROJECT_DIR}/lib/acceptance-adr0125-queen-types.sh"
+[[ -f "$adr0125_lib" ]] && source "$adr0125_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1319,6 +1323,20 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0104_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0125: Hive-mind Queen-type runtime differentiation (T7).
+# Per-type prompt sentinels + pairwise distinctness + section parity +
+# fork-root README copy correction (Phase 5 / H4 — see ADR-0118 triage).
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0125_lib" ]]; then
+  run_check_bg "adr0125-strategic"      "ADR-0125 strategic queen sentinel ('written plan')"            check_adr0125_strategic_sentinel        "adr0125"
+  run_check_bg "adr0125-tactical"       "ADR-0125 tactical queen sentinel ('spawned workers within')"   check_adr0125_tactical_sentinel         "adr0125"
+  run_check_bg "adr0125-adaptive"       "ADR-0125 adaptive queen sentinel ('named your chosen mode')"   check_adr0125_adaptive_sentinel         "adr0125"
+  run_check_bg "adr0125-pairwise"       "ADR-0125 three queen-type prompts pairwise-distinct"           check_adr0125_pairwise_distinct         "adr0125"
+  run_check_bg "adr0125-section-parity" "ADR-0125 each variant carries both required section headings"  check_adr0125_section_parity            "adr0125"
+  run_check_bg "adr0125-readme-copy"    "ADR-0125 fork-root README carries corrected prose-shaped copy" check_adr0125_readme_copy_correction    "adr0125"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
 # so they block until background memory init + seed completes (~15-30s)
@@ -1713,6 +1731,18 @@ if [[ -f "$adr0104_lib" ]]; then
   )
 fi
 
+_adr0125_specs=()
+if [[ -f "$adr0125_lib" ]]; then
+  _adr0125_specs=(
+    "adr0125-strategic|ADR-0125 strategic queen sentinel ('written plan')"
+    "adr0125-tactical|ADR-0125 tactical queen sentinel ('spawned workers within')"
+    "adr0125-adaptive|ADR-0125 adaptive queen sentinel ('named your chosen mode')"
+    "adr0125-pairwise|ADR-0125 three queen-type prompts pairwise-distinct"
+    "adr0125-section-parity|ADR-0125 each variant carries both required section headings"
+    "adr0125-readme-copy|ADR-0125 fork-root README carries corrected prose-shaped copy"
+  )
+fi
+
 _e2e_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   _e2e_specs=(
@@ -2059,6 +2089,7 @@ collect_parallel "all" \
   "${_p17_specs[@]}" \
   "${_adr0098_specs[@]}" \
   "${_adr0104_specs[@]}" \
+  "${_adr0125_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
