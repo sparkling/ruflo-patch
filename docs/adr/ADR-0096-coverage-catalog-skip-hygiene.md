@@ -93,3 +93,37 @@ Three-layer SQLite model (above). SQLite is already a project dep (`better-sqlit
 - **Rationale**: All five acceptance criteria (1: `--from-raw` rebuild, 2: `--show` dashboard, 3: `skip-reverify` probe, 4: `--verify` drift check, 5: ADR-0094 numbers sourced from catalog) are wired. The program is self-perpetuating — as ADR-0094-log §725 notes, "the coverage program's continuous catalog + skip hygiene side of the work (ADR-0096) continues indefinitely" as new MCP tools arrive, but the infrastructure itself is complete.
 - **Remaining work**: None structural. Ongoing operation: weekly cron for `skip-reverify.mjs` is currently manual-invocation; if unattended cadence is wanted later, wire a scheduled trigger. Not a gap against this ADR's acceptance criteria.
 
+## Status Update 2026-05-02 — createSidecar npm install perf (ADR-0113 unskip program)
+
+Context: `tests/unit/skip-reverify.test.mjs:319` ("creates a tmp dir under
+`/tmp/skip-reverify-<pid>-*` and cleanup() removes it") was failing under
+npm-cache-lock contention with parallel `tests/unit/adr0086-rvf-*.test.mjs`
+files that also do `npm install`. Cold install of `@sparkleideas/cli@latest`
+in `createSidecar()` took 31s in isolation — over the 30s `spawnSync`
+timeout — so the test failed as `sidecar install failed after 33170ms
+(status=1, signal=null)` and skipped via the existing infra-skip path.
+
+Fix in `scripts/skip-reverify.mjs:createSidecar()` (commit `3f74b37`):
+- `--prefer-offline` — hit npm cache before re-fetching tarballs.
+- `--no-package-lock` — skip lockfile write (we never read it back).
+- `--cache /tmp/ruflo-skip-reverify-npm-cache` — dedicated per-call npm
+  cache that doesn't lock-contend with parallel test files.
+
+Cold install: 27s. Warm install: 19s. Both well under the 30s budget.
+
+Quality trade-off considered for `--prefer-offline`: it could mask a
+registry republish (e.g., `@sparkleideas/cli` republished with a
+breaking change between test runs would not be picked up immediately).
+The latest-version-resolution contract is already covered separately
+by acceptance smoke checks (`check_latest_resolves`,
+`check_no_broken_versions` in `lib/acceptance-smoke-checks.sh` +
+`scripts/test-acceptance.sh:554`) which use `npm view @sparkleideas/cli@latest
+version --registry=...` directly against Verdaccio without any cache
+shortcut, so the freshness contract is locked in elsewhere. Within this
+test's contract ("verify createSidecar's cleanup trap"), version
+freshness is irrelevant.
+
+The `--sidecar-install` production flag also benefits — same flags speed
+up the production probe without weakening any contract that ADR-0096's
+own acceptance criteria 1-5 enforce.
+

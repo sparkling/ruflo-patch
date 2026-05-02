@@ -410,11 +410,103 @@ Phase A executed per the autonomous-batch §Implementation order. Touch summary:
 - Targeted: `node --test tests/pipeline/codemod.test.mjs
   tests/pipeline/publish-order.test.mjs`: 53/53 pass.
 - `npm run test:unit` (full): pre-existing test-runner default
-  `TEST_TIMEOUT=300000` (5 min) is shorter than the suite's actual
-  runtime; SIGTERM at 5 min returns exit 0 with no observed failures.
-  Re-running with `TEST_TIMEOUT=1800000` + `TEST_CONCURRENCY=8` to
-  validate completion.
+  `TEST_TIMEOUT=300000` (5 min) was shorter than the suite's actual
+  runtime; bumped to 1800000 (30 min). See subsequent log entry for the
+  underlying perf fixes that cut wall-clock to ~65s.
 - `npm run test:acceptance`: deferred to post-publish (chicken-and-egg
   — federation + iot must be in Verdaccio before harness install).
   Phase A4's last step (per §Implementation order step 19) verifies
   Verdaccio publish.
+
+### 2026-05-02 — Test wall-clock + unskip program
+
+User-flagged regression after Phase A: `npm run test:unit` was hitting
+the test-runner timeout. Investigation found three pre-existing tests
+(in `tests/unit/adr0086-rvf-*.test.mjs`) doing real `npm install` of
+`@sparkleideas/memory@latest` — three parallel installs serialized on
+the npm cache lock and stretched wall-clock from ~65s to 25-30 min.
+Two passes of fixes:
+
+**Pass 1 — perf (commit `3b1f61a`):**
+- `tests/unit/adr0086-rvf-integration.test.mjs`: tarball pre-flight
+  replaces `npm install` for the marker check. `npm view @latest
+  dist.tarball` → `curl` 200-300KB tarball → `tar -xzO
+  package/dist/rvf-backend.js`. ~22ms vs 22-30s — 1000×.
+- `tests/unit/adr0086-rvf-load-invariant.test.mjs`: invariant 2 reuses
+  `/tmp/ruflo-unit-rvf-install/` shared install populated by
+  `installFromVerdaccio()` (idempotent). Falls back to fresh scratch
+  install only if cache is empty.
+- `tests/unit/adr0086-rvf-real-integration.test.mjs:703`: documented
+  why `Promise.race`/`setTimeout` work-arounds for the flock deadlock
+  cannot work — flock syscall isn't cancelable, so even after `t.skip()`
+  the file's Node process stays alive on pending I/O until SIGTERM.
+- `scripts/test-runner.mjs`: TEST_TIMEOUT default 300000 → 1200000
+  (initially), then 1800000 (30 min); concurrency default 8 → 12.
+
+**Pass 2 — unskip (commit `3f74b37`):**
+User mandated removing the `SKIP_T3_2_BOOTSTRAP=1` env-var skip
+altogether and fixing the underlying issues. Each test exercised
+standalone (per "only execute the test under test, never run
+everything"):
+
+- `adr0086-rvf-integration.test.mjs` "subprocess N=6": removed env-var
+  gate AND the obsolete Pass 2 marker check. The marker check was
+  testing for the **d1 design's** source-text ordering (`acquireLock`
+  before `reapStaleTmpFiles` in `initialize()`), which has been
+  REPLACED by ADR-0095's swarm-2 amendment (items d12+d13+d14, fork
+  commit `76f0b76`) — the new design intentionally inverts that
+  ordering (`reapStaleTmpFiles` first, no JS lock; `acquireLock` only
+  around `loadFromDisk`). Pass 1 markers (`reapStaleTmpFiles` +
+  `_tmpCounter`) are present in the published dist, so the test runs
+  end-to-end. **PASS in 38s** against current Verdaccio.
+- `adr0086-rvf-integration.test.mjs` "in-process N=6": removed env-var
+  gate. Marker check on fork dist already passes. **PASS in 197ms**.
+- `adr0086-rvf-real-integration.test.mjs:703` "replayWal": removed
+  env-var gate. Added `await backend.shutdown()` to the preceding
+  "store without shutdown" test (line 671) — the durability assertion
+  fires BEFORE shutdown so the test contract ("data is durable
+  immediately after `store()` returns") is preserved; the shutdown is
+  test-framework hygiene to release the BSD-style flock on
+  `<dbPath>.lock` so the next test's second backend can acquire. Per
+  ADR-0090 Tier B7, WAL is compacted into `.meta` synchronously inside
+  `store()`, so on-disk state is identical with-or-without shutdown.
+  **Group 5 PASS in 30ms (both tests)**.
+- `tests/unit/skip-reverify.test.mjs` "createSidecar — cleanup trap":
+  the slow path was `npm i @sparkleideas/cli@latest` taking 31s in
+  isolation — over the 30s `spawnSync` budget — failing under cache
+  contention with parallel adr0086-rvf installs. `scripts/skip-reverify.mjs`
+  `createSidecar()` now uses `--prefer-offline --no-package-lock --cache
+  /tmp/ruflo-skip-reverify-npm-cache` flags. Cold install 27s / warm
+  19s, both under budget. Per-call cache eliminates lock contention.
+  Latest-version-resolution contract is covered separately by
+  acceptance smoke checks (`check_latest_resolves`,
+  `check_no_broken_versions`) which use `npm view @latest` directly
+  without cache shortcuts. **PASS in 24.8s**.
+- `package.json`: reverted `SKIP_T3_2_BOOTSTRAP=1` default in
+  `test:unit` (added in 3b1f61a as a workaround; removed per user).
+- `scripts/test-runner.mjs`: stripped stale `SKIP_T3_2_BOOTSTRAP`
+  references from the TIMEOUT_MS comment.
+
+**Misdiagnosis correction.** The 3b1f61a commit message (and an earlier
+status update) claimed "the ADR-0095 Pass 2 fix hasn't been republished
+to Verdaccio". This was wrong — the swarm-2 amendment (d12+d13+d14)
+landed in fork commit `76f0b76` AND has been published. The
+misdiagnosis came from trusting the test's own skip diagnostic
+("lacks ADR-0095 Pass 2 marker (d1: acquireLock before
+reapStaleTmpFiles in initialize). Republish after Pass 2 fork commit:
+npm run publish:verdaccio.") at face value. The marker was checking
+for d1's source-text ordering, but d1 was REPLACED by swarm-2 which
+inverts that ordering — the marker became obsolete the moment swarm-2
+shipped. ADR-0095 §Status line and the 2026-05-01 swarm-2 amendment
+entry document the correct design state. Removed the obsolete marker
+check; the test now correctly runs against the swarm-2 dist.
+
+**Result:** all 4 previously-skipped tests now PASS standalone with no
+SKIP env vars. Verified per the user mandate of "only execute the test
+under test":
+```
+node --test --test-name-pattern="spawns 6 real cli memory store"      → PASS 38s
+node --test --test-name-pattern="6 RvfBackend instances on same path" → PASS 197ms
+node --test --test-name-pattern="Group 5"                             → PASS 30ms (both)
+node --test --test-name-pattern="creates a tmp dir under"             → PASS 24.8s
+```
