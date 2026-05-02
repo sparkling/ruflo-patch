@@ -649,6 +649,75 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
     // dir inside a fresh sandbox for the write test itself — we cannot let
     // previous trial state leak into the invariant check.
     const CLI_VERSION = process.env.CLI_VERSION || 'latest';
+
+    // ── ADR-0113 perf fix: marker pre-flight via tarball, NOT npm install ──
+    // Original code did `npm install @sparkleideas/cli@latest` (22-30s) just
+    // to read `node_modules/@sparkleideas/memory/dist/rvf-backend.js` and
+    // check for the ADR-0095 markers. The npm install holds the npm cache
+    // lock, serializing parallel test files — total suite stretches from
+    // ~65s (with SKIP_T3_2_BOOTSTRAP=1) to 25-30 min (without).
+    //
+    // Fast path: query Verdaccio for @sparkleideas/memory's tarball URL,
+    // download the 200-300KB tarball directly, extract just dist/rvf-backend.js
+    // via `tar -xzO`, run the same marker checks. ~22ms vs 22-30s — 1000x.
+    //
+    // The original full-install path runs ONLY when markers are present
+    // (i.e., the fix has been republished to Verdaccio). Until then, this
+    // SKIP_ACCEPTED path replaces the wasted setup with a fast probe.
+    const _markerCheck = (() => {
+      const tarUrlRes = spawnSync('npm', [
+        'view', `@sparkleideas/memory@${CLI_VERSION}`, 'dist.tarball',
+        `--registry=${REGISTRY}`,
+      ], { encoding: 'utf-8', timeout: 5_000 });
+      const tarballUrl = (tarUrlRes.stdout || '').trim();
+      if (tarUrlRes.status !== 0 || !tarballUrl) {
+        return { ok: false, reason: 'preflight: npm view did not return tarball URL — fall through to full install' };
+      }
+      const probeDir = mkdtempSync(join(tmpdir(), 'adr0095-preflight-'));
+      try {
+        const tarPath = join(probeDir, 'memory.tgz');
+        const dl = spawnSync('curl', ['-sf', '--max-time', '10', '-o', tarPath, tarballUrl]);
+        if (dl.status !== 0) {
+          return { ok: false, reason: `preflight: curl ${tarballUrl} failed (status=${dl.status}) — fall through to full install` };
+        }
+        const ext = spawnSync('tar', ['-xzOf', tarPath, 'package/dist/rvf-backend.js'], { encoding: 'utf-8', timeout: 5_000 });
+        if (ext.status !== 0 || !ext.stdout) {
+          return { ok: false, reason: 'preflight: tar extraction of package/dist/rvf-backend.js failed — fall through to full install' };
+        }
+        return { ok: true, memSrc: ext.stdout, tarballUrl };
+      } finally {
+        rmSync(probeDir, { recursive: true, force: true });
+      }
+    })();
+
+    if (_markerCheck.ok) {
+      const memSrc = _markerCheck.memSrc;
+      // ADR-0095 Pass 1 markers (items a, b, c): reapStaleTmpFiles + _tmpCounter.
+      if (!memSrc.includes('reapStaleTmpFiles') || !memSrc.includes('_tmpCounter')) {
+        t.skip(`SKIP_ACCEPTED: published @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 1 markers (reapStaleTmpFiles/_tmpCounter) [tarball pre-flight: ${_markerCheck.tarballUrl}]. Publish the fix: npm run publish:verdaccio, then set CLI_VERSION to new patch.`);
+        return;
+      }
+      // ADR-0095 Pass 2 marker (item d1): initialize() must hold the advisory
+      // lock across reap/tryNativeInit/loadFromDisk. Detect via source-text
+      // ordering: `this.acquireLock(` must appear BEFORE
+      // `this.reapStaleTmpFiles(` within the initialize body. Without d1 the
+      // subprocess race test cannot pass — LockHeld errors from the native
+      // layer will continue to surface.
+      const initIdx = memSrc.indexOf('async initialize(');
+      const shutdownIdx = memSrc.indexOf('async shutdown(', initIdx + 1);
+      const initBody = initIdx >= 0 && shutdownIdx > initIdx
+        ? memSrc.slice(initIdx, shutdownIdx)
+        : '';
+      const acquireIdx = initBody.indexOf('this.acquireLock(');
+      const reapIdx = initBody.indexOf('this.reapStaleTmpFiles(');
+      if (acquireIdx < 0 || reapIdx < 0 || acquireIdx >= reapIdx) {
+        t.skip(`SKIP_ACCEPTED: published @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 2 marker (d1: acquireLock before reapStaleTmpFiles in initialize) [tarball pre-flight: ${_markerCheck.tarballUrl}]. Republish after Pass 2 fork commit: npm run publish:verdaccio.`);
+        return;
+      }
+    }
+    // Markers present (or pre-flight failed and we couldn't tell) — proceed
+    // with the full install path that exercises the actual subprocess race.
+
     let workDir;
     try {
       workDir = mkdtempSync(join(tmpdir(), 'adr0095-sub-'));
@@ -670,27 +739,18 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
         t.skip(`SKIP_ACCEPTED: CLI binary missing at ${cliBin} (infra, not product)`);
         return;
       }
-      // Fix-marker gate (ADR-0082): if the installed @sparkleideas/memory
-      // lacks the ADR-0095 fork fix symbols, the test cannot validate the
-      // fix — skip_accepted with instruction to publish first, rather than
-      // red-and-block-cascade. When the new patch lands, marker is present
-      // and the test runs + asserts.
+      // Defense in depth: re-verify markers post-install. The pre-flight
+      // tarball check above is the fast path, but a divergent install
+      // (registry redirect, lockfile staleness) could land different bytes.
+      // Cheap to re-check; expensive to debug a silent miss.
       const memDist = join(workDir, 'node_modules', '@sparkleideas', 'memory', 'dist', 'rvf-backend.js');
       const { readFileSync } = await import('node:fs');
       let memSrc = '';
       try { memSrc = readFileSync(memDist, 'utf8'); } catch {}
-      // ADR-0095 Pass 1 markers (items a, b, c): reapStaleTmpFiles + _tmpCounter.
       if (!memSrc.includes('reapStaleTmpFiles') || !memSrc.includes('_tmpCounter')) {
-        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 1 markers (reapStaleTmpFiles/_tmpCounter). Publish the fix: npm run publish:verdaccio, then set CLI_VERSION to new patch.`);
+        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 1 markers post-install (divergence from tarball pre-flight). Publish the fix: npm run publish:verdaccio.`);
         return;
       }
-      // ADR-0095 Pass 2 marker (item d1): initialize() must hold the advisory
-      // lock across reap/tryNativeInit/loadFromDisk. We detect this by looking
-      // for `await this.acquireLock()` followed (within the initialize body)
-      // by `await this.reapStaleTmpFiles(`. Build output preserves this order
-      // even after minification of comments because we rely on source text, not
-      // AST position. Without d1 the subprocess race test cannot pass — LockHeld
-      // errors from the native layer will continue to surface.
       const initIdx = memSrc.indexOf('async initialize(');
       const shutdownIdx = memSrc.indexOf('async shutdown(', initIdx + 1);
       const initBody = initIdx >= 0 && shutdownIdx > initIdx
@@ -699,7 +759,7 @@ describe('ADR-0095 subprocess N=6 — FAILS until fix lands, see commit 2d12bb1'
       const acquireIdx = initBody.indexOf('this.acquireLock(');
       const reapIdx = initBody.indexOf('this.reapStaleTmpFiles(');
       if (acquireIdx < 0 || reapIdx < 0 || acquireIdx >= reapIdx) {
-        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 2 marker (d1: acquireLock before reapStaleTmpFiles in initialize). Republish after Pass 2 fork commit: npm run publish:verdaccio.`);
+        t.skip(`SKIP_ACCEPTED: installed @sparkleideas/memory@${CLI_VERSION} lacks ADR-0095 Pass 2 marker post-install (divergence from tarball pre-flight). Republish after Pass 2 fork commit: npm run publish:verdaccio.`);
         return;
       }
 

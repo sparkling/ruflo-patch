@@ -706,9 +706,14 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
     // first one is still alive (no `shutdown()` from the prior test)
     // requires the in-process refcount short-circuit landed in fork
     // commit 20b409bc. Until that binary is published — i.e. while we're
-    // testing against the previous patch — this test deadlocks. Same
-    // pattern as the SKIP_T3_2_BOOTSTRAP gate used elsewhere in this
-    // suite while a fix is being landed.
+    // testing against the previous patch — this test DEADLOCKS on flock,
+    // which Node's event loop cannot interrupt (the flock syscall is not
+    // cancelable). Promise.race / setTimeout work-arounds let the test
+    // FUNCTION return but the file's Node process stays alive on the
+    // pending I/O, so the test-runner's per-file timeout still has to
+    // SIGTERM. The only correct fix until the in-process refcount lands
+    // is to skip via SKIP_T3_2_BOOTSTRAP=1 — npm `test:unit` sets this
+    // by default; remove the env var override after the fix is published.
     if (process.env.SKIP_T3_2_BOOTSTRAP === '1') {
       t.skip('SKIP_ACCEPTED: bootstrap-skip while flock refcount fix is being landed; remove SKIP_T3_2_BOOTSTRAP env var after fix is in dist');
       return;
