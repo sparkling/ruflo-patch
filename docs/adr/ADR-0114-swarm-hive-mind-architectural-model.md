@@ -202,24 +202,96 @@ State persists to `.claude-flow/hive-mind/state.json` + `.claude-flow/agents.jso
 
 **This is what "millions of installs" use successfully.** The substrate layer is solid.
 
-#### Layer 2 — Protocol (NOT shipped by ruflo; project-specific)
+#### Layer 2 — Protocol (used to work out of box; broke in late-April regression)
 
-The conversational protocol that turns raw substrate into council-quality output. Looking at the semantic-modelling project's 374 sessions, the protocol includes:
+**REVISION 2026-05-02 post-timeline-investigation: my earlier framing of Layer 2 as "project-accumulated cultural corpus" was WRONG. Git history shows the hive worked out of box for 6+ weeks before any of the memory rules existed.**
 
-- Named experts with consistent perspectives (e.g. ONT-0021 standing panel: Allemang, Hendler, Kendall, Cagle, Gandon, Baker, Davis, Guizzardi, Guarino — each with documented methodology)
-- Per-question voting with rationale (READY / CONDITIONAL / REJECT / NEEDS-REWORK)
-- Devil's Advocate role (ONT-0021 mandates one)
-- Byzantine tally arithmetic (e.g. 4 READY / 3 CONDITIONAL / 1 REJECT)
-- Verbatim quotes attributed to named experts
-- Queen synthesis with named conditions (not "approved" — "NEEDS-REWORK with 3 conditions: ...")
-- Decision table (Concern / Kind / Resolution / Affected §)
-- Council transcript at canonical location (`docs/ontology/odr/council/session-NNN-*.md`)
+Timeline:
 
-**Empirical finding: ruflo's `hive-mind-advanced` skill (712 lines, ships in `@sparkleideas/cli/.claude/skills/hive-mind-advanced/SKILL.md`) does NOT contain this protocol.** It contains CLI documentation: configuration examples, queen-type tables, memory benchmarks, integration patterns. The skill teaches Claude "how to run the CLI", not "how to produce council output".
+| Date | Event |
+|---|---|
+| 2026-03-11 | ONT-0021 methodology ODR added; first council sessions (S22-28) |
+| 2026-03-12 | Session 39 — explicit "Expert Hive Council" — produced rich iterative output |
+| 2026-03 → mid-2026-04 | 250+ council sessions running successfully on ONT-0021 + CLAUDE.md alone |
+| **2026-04-23** | First memory rule added: `feedback_swarm_source_of_truth.md` |
+| 2026-04-24 | `feedback_wait_for_hive.md`, `feedback_swarm_vs_hive_distinction.md` |
+| 2026-04-25 | `feedback_council_adjacent_storage.md` |
+| **2026-04-26** | `feedback_hive_queen_must_wait_for_all_panellists.md` — the "Queen MUST wait for ALL panellists" rule. The rule's own body cites "Incident 1 (2026-04-26 ADR-0195 hive v1)" + "Incident 2 (2026-04-26 ADR-0195 hive re-run v3)" — two regression incidents in one day. |
+| 2026-04-27 | `feedback_hive_pushback_on_frame.md`, `feedback_hive_swarm_use_npx_cli.md` |
 
-The 11 slash commands in `@sparkleideas/cli/.claude/commands/hive-mind/` total 147 lines across 11 files. `hive-mind-spawn.md` is 20 lines describing the `--queen-type` flag. None of them encode the protocol.
+**The 7 memory rules I previously cited as "the protocol corpus" are REGRESSION REMEDIATIONS for behaviors that broke in a ruflo update around 23-27 April 2026.** They're scar tissue, not original design. The hive used to work with just:
 
-So **the protocol layer must be supplied by each project**. The semantic-modelling project supplies their own (ONT-0021 + Council Transcript Storage rule + named panel). Most ruflo users don't supply one — they get the substrate but not the protocol, and use hive-mind for simpler patterns (parallel research dispatch).
+- ONT-0021 methodology ODR (standing panel + session protocol — explicit "Experts must discuss with each other" mandate at line 62)
+- CLAUDE.md anchoring (write council transcript / read session log / convene hive when council requested)
+- Claude reading ONT-0021 and applying the protocol
+
+That was sufficient for 6+ weeks of working sessions. No "Queen MUST wait for all panellists" was needed because the Queen used to wait correctly. No "swarm vs hive distinction" was needed because the CLI behaved consistently. No "use npx CLI" was needed because nothing was substituting incorrect primitives. These rules were added BECAUSE behaviors regressed — the user had to write them to recover working behavior.
+
+**This pinpoints the actual problem: there is a regression in ruflo's hive-mind plugin behavior somewhere between mid-April and late-April 2026.** Probably tied to a CLI update (per user's recollection: "the hive discussions broke after an update to the ruflo plugin").
+
+#### What the protocol actually IS (corrected)
+
+Layer 2 is shippable as:
+
+**A. The methodology ODR.** ONT-0021 (or any equivalent) — standing panel of named experts + session protocol mandating inter-expert discussion + Devil's Advocate + per-expert verbatim positions + dissent records (with withdrawals) + Queen synthesis with named conditions. The ONT-0021 ODR is ~200 lines.
+
+**B. CLAUDE.md anchoring.** "Write council transcript to <location> if council convened" + "Read last 30 lines of session log only" + "Convene hive when user uses words 'council/Queen/hive'". Three or four bullet rules.
+
+**C. Working CLI runtime.** This is what BROKE. The CLI must spawn workers in a way that lets Claude orchestrate the iterative discussion: hive-mind init creates state; hive-mind spawn registers workers; **the Queen prompt (when launched via `--claude`) must embed the protocol** so the spawned Claude session follows it.
+
+The user's pushback finding ("when I say 'create a hive of the council' I get this discussion with no further prompting in hm; in our tests it doesn't happen") happens because:
+1. hm has Layer 2A (ONT-0021) loaded → Claude reads it on every session and applies the protocol
+2. The fresh ruflo test project has NO Layer 2A → Claude has no protocol to apply
+3. Even if hm DID lose ONT-0021 today, the regression window's memory rules (Layer 2B') would still partially recover the protocol via explicit gating
+
+**Empirical finding: ruflo's `hive-mind-advanced` skill (712 lines in `@sparkleideas/cli/.claude/skills/`) is NOT an ONT-0021-equivalent.** It's CLI documentation — configuration examples, queen-type tables, memory benchmarks, integration patterns. The skill teaches Claude "how to run the CLI", not "how to produce council output". So even if init delivered the skill (which it doesn't, per Lens 9), the protocol still wouldn't ship.
+
+The 11 slash commands in `@sparkleideas/cli/.claude/commands/hive-mind/` total 147 lines across 11 files. `hive-mind-spawn.md` is 20 lines describing the `--queen-type` flag. None encode the protocol either.
+
+**The user's empirical experience confirms the regression hypothesis precisely.** Pre-regression, the hive worked off ONT-0021 alone. Post-regression, even ONT-0021 isn't enough — the user had to add 7 memory rules to recover working behavior. So the protocol layer ISN'T project-accumulated; it's a methodology ODR PLUS a working runtime, and the runtime regressed.
+
+For the semantic-modelling project's 374 sessions, the protocol is composed of three reinforcing layers:
+
+**A. The methodology ODR (`ONT-0021-expert-hive-review-methodology.md`):**
+- Standing panel of 9 named experts (Allemang, Hendler, Kendall, Cagle, Gandon, Baker, Davis, Guizzardi, Guarino) — each with documented methodology
+- Extended panel (Knublauch, Ranganathan, Evans, Vernon, Dehghani) for domain-specific sessions
+- §Session Protocol explicit rules (ONT-0021 line 59-63):
+  - "Always use named experts from the standing panel — never generic role titles"
+  - "Each expert must state rationale from their published methodology"
+  - "Always include a Devil's Advocate"
+  - **"Experts must discuss with each other — share contested points so they can agree, disagree, or withdraw prior dissent"** (line 62 — this is the rule that produces iterative back-and-forth, not parallel one-shots)
+  - "Synthesis report must include: per-expert positions, vote tallies, dissent records (with withdrawals), recommended approach, rationale citing publications, agreed amendments"
+
+**B. Project-level memory rules** in `~/.claude/projects/-Users-henrik-source-hm-semantic-modelling/memory/` — 7+ feedback rules that operationalize the protocol:
+
+| Memory rule | What it enforces |
+|---|---|
+| `feedback_swarm_vs_hive_distinction.md` | "User says 'hive'/'council'/'Queen' → use `ruflo hive-mind init`; never silently substitute swarm for hive" |
+| `feedback_hive_queen_must_wait_for_all_panellists.md` | "Queen MUST NOT spawn until every panellist has reported. No placeholders. Hard block." — prevents premature synthesis; ensures iterative discussion |
+| `feedback_hive_swarm_use_npx_cli.md` | Use the published CLI |
+| `feedback_swarm_source_of_truth.md` | Orchestration (`run_in_background:true`, all spawns in one message, no polling) |
+| `feedback_council_adjacent_storage.md` | Transcript storage location convention |
+| `feedback_wait_for_hive.md` | Wait for hive — never jump the gun |
+| `feedback_hive_pushback_on_frame.md` | Pushback semantics when panellists challenge the framing |
+
+**C. The project's CLAUDE.md** anchors the workflow with rules like "Write council transcript to `docs/ontology/odr/council/` if council convened" and "Read last 30 lines of session log only" — the operational glue tying memory + ODR together.
+
+**Empirical finding: ruflo's `hive-mind-advanced` skill (712 lines in `@sparkleideas/cli/.claude/skills/`) does NOT contain any of A/B/C above.** It contains CLI documentation — configuration examples, queen-type tables, memory benchmarks, integration patterns. The skill teaches Claude "how to run the CLI", not "how to produce council output".
+
+The 11 slash commands in `@sparkleideas/cli/.claude/commands/hive-mind/` total 147 lines across 11 files. `hive-mind-spawn.md` is 20 lines describing the `--queen-type` flag. None encode the protocol.
+
+**The protocol is fundamentally project-level cultural accumulation, not a CLI feature.** It can't be shipped as a single skill — it's a methodology ODR + standing panel + 7+ memory rules + CLAUDE.md conventions, all interacting. Each project must invent its own.
+
+The semantic-modelling project produces ONT-0021-quality output because:
+1. CLAUDE.md anchors the workflow (write council transcript / read session log)
+2. Memory has 7+ enforcement rules (Queen must wait, hive vs swarm distinction, pushback semantics)
+3. ONT-0021 ODR documents the methodology + mandates inter-expert discussion
+4. Standing panel exists as 9 named personas with published methodology
+5. Claude reads all of this when invoked, applies the protocol consistently across sessions
+
+Most ruflo users have NONE of A/B/C in their projects — so when they invoke `hive-mind spawn --claude -o "..."`, the spawned Queen has no protocol to follow. They get parallel research delegation, not council output.
+
+**The user's pushback experience confirms this gap precisely**: "When I said 'create a hive of the council' I got this discussion with no further prompting. When we try to run a hive in our tests, this does not happen." Exactly — because hm has the protocol corpus loaded; ruflo's empty test project doesn't. The CLI metadata works equally in both; the protocol delivery differs entirely.
 
 #### Layer 3 — Execution (Claude orchestrating; Agent tool, not `--claude`)
 
@@ -492,11 +564,21 @@ This ADR is a documentation artifact — no code changes. The "implementation" i
 - [ ] **U2**: ADR-004 (upstream `v3/implementation/adrs/ADR-004-PLUGIN-ARCHITECTURE.md`) annotated as superseded-by-0114 in our patch repo's tracking — either via an ADR-0114-supersedes note in ADR-0113 §Implementation Log, OR by explicit mention here when we cite ADR-004.
 - [ ] **U3**: Reconcile init-shipped surfaces. The fresh-init'd project receives BOTH (a) `.claude/commands/hive-mind/*` + `.claude/skills/hive-mind-advanced/SKILL.md` (hive-mind first-class) AND (b) `CLAUDE.md` saying "DO NOT call hive-mind reflexively". Resolution lives in ADR-0098 (anti-sprawl decision), not here. ADR-0114 just documents the gap and points at ADR-0098 as the canonical gate. Action: ADR-0098 §Status note adds a one-line acknowledgment that USERGUIDE/SKILL describes the capability surface (full feature set), CLAUDE.md describes the runtime gate (when to actually use it), and these are intentionally separate concerns. No code change to claudemd-generator.ts needed.
 - [ ] **U4** (post-Lens-10 empirical): Init delivery gap — `executor.ts:826-893` `SKILLS_MAP`+`COMMANDS_MAP` missing `hiveMind` category. Source files exist in published `@sparkleideas/cli/.claude/{skills,commands}/hive-mind*/`; init code never copies them. Fix: add `hiveMind` entries to the two maps. Empirical evidence: `npx @sparkleideas/cli@latest init --full --force` on a fresh `mktemp -d` dir produces 33 skills (none named `hive-mind-advanced`) and 10 commands (no `hive-mind-*`). Single small fix in `forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts`.
-- [ ] **U5** (post-Lens-10 protocol gap): The shipped `hive-mind-advanced` skill (712 lines) is CLI documentation, not a council protocol. To deliver USERGUIDE's "queen-led collective intelligence with consensus" promise, the skill content needs to teach Claude the conversational protocol — named experts, per-question voting, byzantine tally, adversarial structure, decision tables. This is content/template work, not code. Could spawn a new ADR (ADR-0115?: "Hive-mind Layer 2 protocol skill"). Out of scope for ADR-0114, but referenced from §Done so it's not lost.
+- [ ] **U5 (revised post-timeline-investigation)**: investigate the late-April 2026 ruflo hive regression. Git history of `~/source/hm/semantic-modelling/` shows the hive worked out of box from 2026-03-11 (Session 22+) through mid-April 2026 with only ONT-0021 methodology ODR + CLAUDE.md anchoring (NO memory rules required). The 7 memory rules I cited in earlier drafts as "the protocol corpus" were REGRESSION REMEDIATIONS added 23-27 April 2026 (`feedback_hive_queen_must_wait_for_all_panellists.md` body cites "Incident 1 (2026-04-26 ADR-0195 hive v1)" + "Incident 2 (2026-04-26 ADR-0195 hive re-run v3)" — two regression incidents in one day). Per user's recollection: "the hive discussions broke after an update to the ruflo plugin." Action: bisect `forks/ruflo/` commits between approximately 2026-04-15 and 2026-04-27 against working-hive vs broken-hive behavior. Likely candidates: changes to `hive-mind-tools.ts`, `commands/hive-mind.ts`, `init/executor.ts`, or the Queen prompt embedded in `hive-mind spawn --claude` shell-out. Could spawn ADR-0115 ("Restore pre-late-April hive-mind iterative-discussion behavior") once the regression commit is identified. **The earlier framing of Layer 2 as "project-accumulated cultural corpus" was wrong; corrected in the revised Lens 10 above.**
 
 ## Revision history
 
 - **2026-05-02 (initial draft)** — proposed by 4-agent research swarm + user-corrected mental model. Written immediately after ADR-0113 closed (Phase D++ pushed to public sparkling/ruflo). The ADR exists to give ADR-0103–0109 a shared model so they can stop disagreeing about what swarm and hive-mind are.
+- **2026-05-02 (timeline-investigation revision)** — user pushback on the "project-accumulated protocol corpus" framing: "some, if not most, of the memory rules in HM, was added after the hive discussions broke after an update to the ruflo plugin. Check the dates of the memory files with the earliest successful hive session." Investigation confirmed the user's recollection:
+  - Earliest successful hive session: 2026-03-11 (Session 22-28, in commit `eccc013f`); ONT-0021 methodology ODR added same day
+  - 6+ weeks of working hive sessions on ONT-0021 + CLAUDE.md ALONE (no memory rules needed)
+  - First memory rule added: 2026-04-23 (`feedback_swarm_source_of_truth.md`)
+  - "Queen MUST wait for ALL panellists" rule added: 2026-04-26 — body cites two regression incidents on that exact date
+  - Conclusion: the 7 memory rules I had cited in earlier drafts are REGRESSION REMEDIATIONS, not original design
+  - Lens 10's "Layer 2 = project-accumulated cultural corpus" framing was WRONG. Corrected: Layer 2 is shippable as ONT-0021-equivalent ODR + CLAUDE.md anchoring + working CLI runtime; the runtime regressed in late-April 2026
+  - §Done U5 reframed: investigate the regression commit window (~2026-04-15 to 2026-04-27 in `forks/ruflo/`); not "ship a protocol starter pack"
+  - This is the third revision of Lens 10 in one day — earlier "3-layer model" stays but Layer 2's nature is corrected from "must be project-accumulated" to "was project-shipped, then broke"
+
 - **2026-05-02 (3-layer architecture revision)** — user requested empirical validation of hive feature on a fresh-init project + cross-reference with `~/source/hm/semantic-modelling/docs/ontology/odr/council/session-*.md` (374 council transcripts) and the project's `docs/ontology/session-log.md` (11,528 lines). Findings:
   - Added **Lens 10**: the user-visible "hive" is a 3-layer composition. Layer 1 (substrate, CLI metadata) ships and works. Layer 2 (council protocol — named experts, voting, byzantine tally, decision tables, adversarial structure) is NOT shipped by ruflo; semantic-modelling supplies their own (ONT-0021). Layer 3 (Claude orchestrating Agent tool spawns per protocol) is the proven-in-production execution path — NOT `hive-mind spawn --claude`.
   - Empirical: `hive-mind-advanced` skill (712 lines in `@sparkleideas/cli/.claude/skills/`) is CLI documentation, not a council protocol. 11 slash commands total 147 lines across 11 files; `hive-mind-spawn.md` is a 20-line CLI flag reference. None encode the conversational protocol.
