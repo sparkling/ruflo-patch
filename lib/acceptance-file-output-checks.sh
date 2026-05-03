@@ -389,7 +389,9 @@ check_adr0094_p7_config_json() { # adr0097-l2-delegator: flag set inside _p7_val
 # (which `init --full` *does* produce). All three contracts are now strictly asserted:
 #   1. `.claude/settings.json` parses + has `permissions` + `hooks`
 #   2. `.mcp.json` parses + has `mcpServers` (object, non-empty)
-#   3. `.mcp.json#mcpServers.claude-flow` present (init's canonical server entry)
+#   3. `.mcp.json#mcpServers.ruflo` present (init's canonical server entry per
+#      ADR-0117 R1 — `ruflo` replaces the legacy `claude-flow` key as the
+#      service-method registration; see `forks/ruflo/v3/@claude-flow/cli/src/init/mcp-generator.ts:95`)
 check_adr0094_p7_settings_json() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   # Contract 1: `.claude/settings.json` — permissions + hooks strict.
@@ -398,7 +400,7 @@ check_adr0094_p7_settings_json() {
     return
   fi
   local settings_summary="$_CHECK_OUTPUT"
-  # Contract 2+3: `.mcp.json` — mcpServers present, claude-flow entry wired.
+  # Contract 2+3: `.mcp.json` — mcpServers present, ruflo entry wired (ADR-0117 R1).
   local mcp_target="${E2E_DIR}/.mcp.json"
   if [[ ! -f "$mcp_target" ]]; then
     _CHECK_PASSED="false"
@@ -424,8 +426,8 @@ check_adr0094_p7_settings_json() {
     }
     const keys = Object.keys(j.mcpServers);
     if (keys.length === 0) { console.log("ERR_EMPTY:mcpServers"); process.exit(1); }
-    if (!("claude-flow" in j.mcpServers)) {
-      console.log("ERR_NO_CLAUDE_FLOW:" + keys.join(","));
+    if (!("ruflo" in j.mcpServers)) {
+      console.log("ERR_NO_RUFLO:" + keys.join(","));
       process.exit(1);
     }
     console.log("OK:" + keys.join(","));
@@ -442,13 +444,13 @@ check_adr0094_p7_settings_json() {
   fi
   if echo "$mcp_out" | grep -q '^ERR_EMPTY:'; then
     _CHECK_PASSED="false"
-    _CHECK_OUTPUT="P7/settings_json: .mcp.json has \`mcpServers\` but it is empty {} (init should wire at least claude-flow)"
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json has \`mcpServers\` but it is empty {} (init should wire at least ruflo)"
     return
   fi
-  if echo "$mcp_out" | grep -q '^ERR_NO_CLAUDE_FLOW:'; then
+  if echo "$mcp_out" | grep -q '^ERR_NO_RUFLO:'; then
     _CHECK_PASSED="false"
-    local servers; servers=$(echo "$mcp_out" | sed -nE 's/^ERR_NO_CLAUDE_FLOW:(.*)/\1/p' | head -1)
-    _CHECK_OUTPUT="P7/settings_json: .mcp.json#mcpServers missing \`claude-flow\` entry (got: ${servers})"
+    local servers; servers=$(echo "$mcp_out" | sed -nE 's/^ERR_NO_RUFLO:(.*)/\1/p' | head -1)
+    _CHECK_OUTPUT="P7/settings_json: .mcp.json#mcpServers missing \`ruflo\` entry (got: ${servers})"
     return
   fi
   if ! echo "$mcp_out" | grep -q '^OK:'; then
