@@ -54,104 +54,107 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 - **HNSW**: Enabled
 - **Neural**: Enabled
 
-## Build & Test
+## Build & Test — TWO COMMANDS, NOTHING ELSE
 
-### Canonical entrypoint — `npm run release`
+> **READ THIS FIRST. EVERY TIME.** Before reaching for any "fast iteration"
+> shortcut, scroll back here. The user has watched this rule get broken in
+> session after session. There are exactly two commands. Pick one. Run it.
+> Don't propose alternatives.
 
-The single canonical publish path is `npm run release` (or `make release`),
-which proxies `bash scripts/ruflo-publish.sh`. The script handles the full
-flow under a flock:
+### The only two commands
 
-  detect merged PRs → bump versions → commit + push fork bumps →
-  copy-source → codemod → build → publish-verdaccio → acceptance
+| What you want | The command. The ONLY command. |
+|---------------|--------------------------------|
+| Run tests without publishing | `npm run test:unit` |
+| Test + publish + acceptance + commit fork bumps | `npm run release` |
 
-The same script is what `ruflo.service` (systemd) invokes for background
-production publishes — there is **no longer a separate "npm path" vs
-"systemd path"**. Both go through `ruflo-publish.sh`.
+Decision tree:
 
-`publish:verdaccio` and `deploy` were REMOVED as npm targets — they
-let callers bypass the cascade's invariants. Use `release` instead.
-
-### Cascading Pipeline (ADR-0038)
-
-The 22 task-specific npm scripts still exist for direct invocation during
-development and debugging. Each later script includes all previous steps:
-
-| # | `npm run` script | Includes | What it does |
-|---|------------------|----------|--------------|
-| 1 | `preflight` | — | Static analysis, lint checks |
-| 2 | `test:pipeline` | 1 | Pipeline infra tests (6 files, mocked) |
-| 3 | `test:unit` | 1-2 | Product unit + integration tests (20 files) |
-| 4 | `fork-version` | 1-3 | Bump `-patch.N` versions |
-| 5 | `copy-source` | 1-4 | Copy fork source to `/tmp/ruflo-build` |
-| 6 | `codemod` | 1-5 | Scope rename (`@claude-flow/*` → `@sparkleideas/*`) |
-| 7 | `build` | 1-6 | TypeScript compile + WASM (parallel) |
-| 8 | `test:acceptance` | release + bash | Runs `release` first, then acceptance harness |
-| 9 | `finalize` | — | Save state, push forks, write timing (standalone) |
-| 10 | `release` | — | **Canonical** — `bash scripts/ruflo-publish.sh` (full publish + acceptance under flock) |
-
-Other scripts:
-
-```bash
-npm run release                   # Canonical full publish + acceptance (proxies ruflo-publish.sh)
-make release ARGS=--force         # Same, via Makefile proxy
-npm run validate                  # Environment smoke test
-npm run sync                      # Fetch upstream, merge on branch, test, create PR
-npm run test:acceptance:ruvector  # Acceptance + ruvector-heavy WASM tests (opt-in, sequential)
+```
+User says: test / deploy / verify / ship / publish / run the tests / check it works
+  │
+  ├── Just unit + integration, no publish needed?
+  │     → npm run test:unit
+  │
+  └── Anything else (verify a fix, full check, deploy, acceptance)
+        → npm run release      (add `-- --force` if no merged PRs detected and you want to republish)
 ```
 
-### Required Tests Per Change Type
+That's it. Stop.
 
-| Change | Required Tests | Command |
-|--------|---------------|---------|
-| Patch fix / helper code | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run release` |
-| Codemod / pipeline script | preflight + pipeline + unit | `npm run test:unit` |
-| Test script changes only | preflight + pipeline + unit | `npm run test:unit` |
-| Acceptance / publish changes | preflight + pipeline + unit + acceptance | `npm run release` |
-| Pre-publish verification | full cascade | `npm run release` |
-| Deploy to Verdaccio (full) | all | `npm run release` |
+### FORBIDDEN — DO NOT RUN THESE FOR TEST/DEPLOY
 
-### Test Pyramid (MANDATORY — all levels for every change)
+These targets and scripts EXIST in the repo. Running them for the test/deploy
+workflow is wrong every time. Treat them as poison.
 
-| Level | Location | Style | Runner |
-|-------|----------|-------|--------|
-| **Unit** | `tests/unit/*.test.mjs` | London School TDD — mocked deps, no I/O | `npm run test:unit` |
-| **Integration** | `tests/unit/*.test.mjs` | Real I/O — file persistence, subprocess exec, pipeline exercises | `npm run test:unit` |
-| **Acceptance** | `lib/acceptance-*.sh` wired into `scripts/test-acceptance.sh` | Bash checks against real `init --full` project with published packages | `npm run test:acceptance` |
-| **Acceptance (ruvector-heavy)** | P4 WASM agent + P5 RuVLLM checks (20 total) — load `@ruvector/{ruvllm,rvagent}-wasm` | Sequential, post-parallel, opt-in. Trashed the host when run in the parallel wave. | `npm run test:acceptance:ruvector` |
+- ❌ `npm run build` / `npm run build:tsc` / `npm run build:wasm` — release cascades through build
+- ❌ `npm run test:acceptance` — cascades through release; just call release
+- ❌ `npm run preflight` / `npm run test:pipeline` — covered by test:unit
+- ❌ `npm run copy-source` / `npm run codemod` / `npm run fork-version` / `npm run finalize` — piecemeal cascade pieces
+- ❌ `npm run publish:verdaccio` — REMOVED, doesn't exist
+- ❌ `npm run deploy` — REMOVED, doesn't exist
+- ❌ `bash scripts/copy-source.sh` / `build-packages.sh` / `publish-verdaccio.sh` / `run-fork-version.sh` — direct script calls
+- ❌ `node scripts/codemod.mjs` — direct invocation
+- ❌ `npx tsc` inside any fork package
+- ❌ `napi build` outside the cascade
+- ❌ `sed -i` on installed `dist/` files in `/tmp/ruflo-*/`
+- ❌ Hand-editing `package.json` `version` to "force" a bump
+- ❌ Direct `npm publish` to bypass `safeNextVersion`
 
-**Writing tests: ALL THREE levels in the same pass.** Never treat acceptance tests as optional or "later" work — the framework exists, use it.
+If `npm run release` doesn't do what you need, **fix the script** — never run
+a workaround by hand. Script chain: `scripts/ruflo-publish.sh` →
+`scripts/fork-version.mjs` → `scripts/copy-source.sh` → `scripts/codemod.mjs`
+→ build → publish → acceptance.
 
-**Running tests: ALL THREE levels every time.** When asked to run/test/verify:
+### Two narrow exceptions (NOT general escape hatches)
 
-```bash
-npm run test:unit                                  # Level 1+2 only (no publish, no acceptance)
-curl -sf http://localhost:4873/-/ping && npm run release   # Level 3 — full cascade (publish + acceptance)
+| Command | When and ONLY when |
+|---------|---------------------|
+| `npm run test:acceptance:ruvector` | User EXPLICITLY asks for the ruvector-heavy tier (P4 WASM + P5 RuVLLM, 20 checks). OOMs the host in the parallel wave; sequential, post-parallel, opt-in. |
+| `bash scripts/test-acceptance-fast.sh <check>` | Debugging the bash check code itself. Requires Verdaccio up + packages already published from a prior `release`. Doesn't rebuild source. |
+
+Neither is a substitute for `release` when verifying a fork-source patch.
+
+### Pre-flight before `npm run release`
+
+1. Fork changes committed on `main` with descriptive message — `git -C forks/<name> commit ...` (no Co-Authored-By trailer per memory `feedback-fork-commit-attribution.md`). If you skip this, release bundles your changes into "chore: bump versions" and you lose the message.
+2. Verdaccio up — `curl -sf http://localhost:4873/-/ping`
+3. Then: `npm run release` — and don't touch anything until it finishes.
+
+### Why this rule
+
+Every workaround desyncs something. `npm run build` skips fork-version commits. `bash scripts/test-acceptance-fast.sh` runs against stale published packages. Hand-edited `dist/` gets clobbered on next install. `npm run test:acceptance` cascades through release anyway, so calling it directly just creates confusion when it fails. `release` is the only path that:
+
+- Holds the flock (no overlapping pipeline runs)
+- Bumps fork versions, commits to `main`, tags, pushes to `sparkling`
+- Copies source → /tmp/ruflo-build → codemod → build → publish under invariant ordering
+- Updates `state.last-build-state` atomically
+- Runs preflight + unit + acceptance gates
+
+### Cascade reference (don't run directly — read-only)
+
+For understanding what release does internally. **You don't run any of these.**
+
 ```
-
-The ruvector-heavy tier (P4 WASM + P5 RuVLLM) is excluded from `test:acceptance` by default — multiple concurrent WASM module loads OOM the host. Run `npm run test:acceptance:ruvector` (or `RUFLO_RUVECTOR_TESTS=1 bash scripts/test-acceptance.sh ...`) when you specifically need to exercise that surface. They run sequentially after the parallel wave joins.
-
-NEVER run only `test:unit` and call it done. If Verdaccio is down, say so explicitly — do not silently skip acceptance.
-
-### Fast acceptance runner (iterating on specific checks)
-
-For debugging or iterating on acceptance check code without rebuilding packages:
-
-```bash
-bash scripts/test-acceptance-fast.sh check_<function_name>     # single check
-bash scripts/test-acceptance-fast.sh p3,p4                     # phase groups
-bash scripts/test-acceptance-fast.sh all                       # all ADR-0059 checks
+release
+  └── ruflo-publish.sh
+       ├── detect merged PRs
+       ├── fork-version.mjs (bump)
+       ├── git commit + tag + push to sparkling
+       ├── copy-source.sh
+       ├── codemod.mjs
+       ├── build (tsc + wasm parallel)
+       ├── publish-verdaccio.sh
+       └── test-acceptance.sh
 ```
-
-Requires Verdaccio running and packages already published. Reuses existing `/tmp/ruflo-accept-*` and `/tmp/ruflo-e2e-*` dirs. Sequential (no subshell) — reliable variable propagation.
 
 ### Feature Workflow
 
 1. Create or update tests first (all three levels)
-2. Implement the change
-3. Run `npm run test:unit` (and `npm run release` if the change type requires acceptance)
-4. Run `npm run build` if you touched fork source and want a quick rebuild without publishing
-5. Commit
+2. Implement the change — if fork source, commit to fork main with descriptive message before step 4
+3. Run `npm run test:unit` for fast feedback
+4. Run `npm run release` for full verification (build + publish + acceptance). NEVER run `npm run build` separately — it's forbidden. See "Build & Test — TWO COMMANDS, NOTHING ELSE" above.
+5. Commit ruflo-patch changes
 
 ## Security Rules
 

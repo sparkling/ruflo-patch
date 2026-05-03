@@ -727,3 +727,242 @@ describe('codemod: ADR-0113 — markdown extension and MCP tool prefix', () => {
       'no mcp__claude-flow__ remains in either prose or fences');
   });
 });
+
+// ADR-0117 Pass 5: rewrite the unscoped `claude-flow@alpha` package
+// reference in marketplace surfaces (.claude-plugin/** and plugins/**) so
+// upstream-merge regressions don't reintroduce the broken public-npm
+// invocation. Source code and docs/adr/** prose are explicitly out of scope.
+describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('rewrites claude-flow@alpha in .claude-plugin/plugin.json args', async () => {
+    tmp = makeTmpDir();
+    const cpDir = join(tmp, '.claude-plugin');
+    mkdirSync(cpDir, { recursive: true });
+    const pluginJson = {
+      name: 'fork-marketplace',
+      mcpServers: {
+        ruflo: {
+          command: 'npx',
+          args: ['claude-flow@alpha', 'mcp', 'start'],
+        },
+      },
+    };
+    writeFileSync(join(cpDir, 'plugin.json'), JSON.stringify(pluginJson, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+    assert.ok(result.includes('"@sparkleideas/cli@latest"'),
+      'args[0] rewritten to @sparkleideas/cli@latest');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'no claude-flow@alpha remains');
+  });
+
+  it('rewrites claude-flow@alpha in .claude-plugin/hooks/hooks.json shellouts', async () => {
+    tmp = makeTmpDir();
+    const hooksDir = join(tmp, '.claude-plugin', 'hooks');
+    mkdirSync(hooksDir, { recursive: true });
+    const hooks = {
+      hooks: {
+        PreToolUse: [
+          { matcher: 'Bash', hooks: [{ type: 'command', command: 'cat | npx claude-flow@alpha hooks pre-bash' }] },
+        ],
+        Stop: [
+          { hooks: [{ type: 'command', command: 'npx claude-flow@alpha hooks session-end' }] },
+        ],
+      },
+    };
+    writeFileSync(join(hooksDir, 'hooks.json'), JSON.stringify(hooks, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(hooksDir, 'hooks.json'), 'utf8');
+    const matches = (result.match(/@sparkleideas\/cli@latest/g) || []).length;
+    assert.equal(matches, 2, 'both shellouts rewritten');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'no claude-flow@alpha remains');
+  });
+
+  it('rewrites claude-flow@alpha in plugins/<plugin>/SKILL.md', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, 'plugins', 'ruflo-foo', 'skills', 'bar');
+    mkdirSync(skillDir, { recursive: true });
+    const source = [
+      'Use this skill via:',
+      '',
+      '```bash',
+      'npx claude-flow@alpha mcp start',
+      '```',
+    ].join('\n');
+    writeFileSync(join(skillDir, 'SKILL.md'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    assert.ok(result.includes('npx @sparkleideas/cli@latest mcp start'),
+      'SKILL.md command rewritten');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'no claude-flow@alpha remains');
+  });
+
+  it('does NOT rewrite claude-flow@alpha in docs/adr/** prose (negative case)', async () => {
+    tmp = makeTmpDir();
+    const adrDir = join(tmp, 'docs', 'adr');
+    mkdirSync(adrDir, { recursive: true });
+    const original = [
+      '# ADR-0117',
+      '',
+      'The legacy invocation `claude-flow@alpha` is documented here for posterity.',
+      'Pass 5 rewrites this string in `.claude-plugin/**` and `plugins/**` only.',
+    ].join('\n');
+    writeFileSync(join(adrDir, 'ADR-0117-test.md'), original);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(adrDir, 'ADR-0117-test.md'), 'utf8');
+    assert.ok(result.includes('claude-flow@alpha'),
+      'docs/adr/** must keep claude-flow@alpha references for historical accuracy');
+  });
+
+  it('does NOT rewrite claude-flow@alpha in source code outside scope (negative case)', async () => {
+    tmp = makeTmpDir();
+    const srcDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src');
+    mkdirSync(srcDir, { recursive: true });
+    const source = [
+      '// Wrapper that historically required claude-flow@alpha',
+      "const PKG = 'claude-flow@alpha';",
+      'export { PKG };',
+    ].join('\n');
+    writeFileSync(join(srcDir, 'wrapper.ts'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(srcDir, 'wrapper.ts'), 'utf8');
+    assert.ok(result.includes('claude-flow@alpha'),
+      'source code outside .claude-plugin/** and plugins/** must keep claude-flow@alpha');
+  });
+
+  it('rewrites claude-flow@alpha in v3/@claude-flow/cli/.claude/skills/<skill>/SKILL.md (init-bundled)', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, 'v3', '@claude-flow', 'cli', '.claude', 'skills', 'sparc-methodology');
+    mkdirSync(skillDir, { recursive: true });
+    const original = [
+      '# SPARC Methodology',
+      '',
+      'Run with: `npx claude-flow@alpha sparc run dev "task"`',
+      'Hook: `npx claude-flow@alpha hooks pre-task --description "..."`',
+    ].join('\n');
+    writeFileSync(join(skillDir, 'SKILL.md'), original);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/cli@latest'),
+      'Pass 5 should rewrite to @sparkleideas/cli@latest in init-bundled skills');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'no claude-flow@alpha should remain in init-bundled skill files');
+  });
+
+  it('rewrites claude-flow@alpha in v3/@claude-flow/cli/.claude/agents/<agent>.md (init-bundled)', async () => {
+    tmp = makeTmpDir();
+    const agentDir = join(tmp, 'v3', '@claude-flow', 'cli', '.claude', 'agents');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(
+      join(agentDir, 'researcher.md'),
+      '---\nname: researcher\n---\nUse `npx claude-flow@alpha memory search ...`\n',
+    );
+
+    await transform(tmp);
+
+    const result = readFileSync(join(agentDir, 'researcher.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/cli@latest'),
+      'Pass 5 should rewrite agent templates');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'no claude-flow@alpha in init-bundled agent file');
+  });
+
+  it('rewrites claude-flow@alpha in v3/@claude-flow/cli/.claude/commands/<cmd>.md (init-bundled)', async () => {
+    tmp = makeTmpDir();
+    const cmdDir = join(tmp, 'v3', '@claude-flow', 'cli', '.claude', 'commands');
+    mkdirSync(cmdDir, { recursive: true });
+    writeFileSync(
+      join(cmdDir, 'status.md'),
+      '---\nname: status\n---\nRun: `npx claude-flow@alpha status`\n',
+    );
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cmdDir, 'status.md'), 'utf8');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'init-bundled commands should be rewritten');
+  });
+
+  it('does NOT rewrite claude-flow@alpha in v3/@claude-flow/cli/.claude/helpers/<file> (out of scope)', async () => {
+    // Pass 5 only covers agents/, commands/, skills/ — not helpers/, settings.json, etc.
+    tmp = makeTmpDir();
+    const helperDir = join(tmp, 'v3', '@claude-flow', 'cli', '.claude', 'helpers');
+    mkdirSync(helperDir, { recursive: true });
+    writeFileSync(
+      join(helperDir, 'README.md'),
+      'Hooks reference claude-flow@alpha for migration notes.\n',
+    );
+
+    await transform(tmp);
+
+    const result = readFileSync(join(helperDir, 'README.md'), 'utf8');
+    assert.ok(result.includes('claude-flow@alpha'),
+      '.claude/helpers/ is not a templated tree shipped to user; out of Pass 5 scope');
+  });
+
+  it('does NOT rewrite claude-flow@alpha in v3/.../src/.claude/<anything> (only the cli .claude/ tree)', async () => {
+    // Make sure the path filter is anchored — other packages’ .claude trees
+    // (e.g. v3/@claude-flow/memory/.claude/) shouldn't get rewritten.
+    tmp = makeTmpDir();
+    const memDir = join(tmp, 'v3', '@claude-flow', 'memory', '.claude', 'skills', 'foo');
+    mkdirSync(memDir, { recursive: true });
+    writeFileSync(join(memDir, 'SKILL.md'), 'Run npx claude-flow@alpha test.\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(memDir, 'SKILL.md'), 'utf8');
+    assert.ok(result.includes('claude-flow@alpha'),
+      'only v3/@claude-flow/cli/.claude/{agents,commands,skills}/ is in scope');
+  });
+
+  it('does NOT rewrite claude-flow@alpha in root package.json (negative — wrong scope)', async () => {
+    tmp = makeTmpDir();
+    const pkg = {
+      name: '@claude-flow/cli',
+      // Some package.jsons reference @alpha tags as keywords or descriptions.
+      description: 'Successor of claude-flow@alpha',
+    };
+    writeFileSync(join(tmp, 'package.json'), JSON.stringify(pkg, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'package.json'), 'utf8');
+    assert.ok(result.includes('claude-flow@alpha'),
+      'root package.json (no .claude-plugin/ or plugins/ ancestor) must not be rewritten');
+  });
+
+  it('is byte-stable on consecutive runs (Pass 5 idempotency)', async () => {
+    tmp = makeTmpDir();
+    const cpDir = join(tmp, '.claude-plugin');
+    mkdirSync(cpDir, { recursive: true });
+    const original = JSON.stringify({
+      mcpServers: { ruflo: { command: 'npx', args: ['claude-flow@alpha', 'mcp', 'start'] } },
+    }, null, 2) + '\n';
+    writeFileSync(join(cpDir, 'plugin.json'), original);
+
+    await transform(tmp);
+    const after1 = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+    await transform(tmp);
+    const after2 = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+
+    assert.equal(after1, after2, 'consecutive runs produce identical output');
+    assert.ok(!after1.includes('claude-flow@alpha'),
+      'first run already replaced claude-flow@alpha');
+  });
+});

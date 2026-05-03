@@ -17,7 +17,7 @@
  */
 
 import { readdir, readFile, writeFile, stat, unlink } from 'node:fs/promises';
-import { join, extname, basename } from 'node:path';
+import { join, extname, basename, relative } from 'node:path';
 import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 
@@ -226,6 +226,48 @@ const UNSCOPED_IMPORT_RE = new RegExp(
   'g'
 );
 
+// Pass 5 (ADR-0117): rewrite the unscoped `claude-flow@alpha` package
+// reference to the fork's `@sparkleideas/cli@latest`. Path-scoped to
+// shipped/init-bundled trees so we don't false-hit upstream source
+// comments or docs/adr/** prose.
+//
+// Scope (post-2026-05-03 expansion to close init-shipped templates gap):
+//   - .claude-plugin/**        — marketplace plugin manifests + hooks
+//   - plugins/**               — marketplace plugins (commands/agents/skills)
+//   - v3/@claude-flow/cli/.claude/{agents,commands,skills}/**
+//                              — init-bundled templates copied verbatim into
+//                                user's .claude/ on `init --full`. Any
+//                                claude-flow@alpha here ships to the user
+//                                pointing at upstream npm, bypassing fork.
+//
+// Applied separately from transformSource because path scoping requires
+// the file's relative path.
+const CLAUDE_FLOW_ALPHA_RE = /claude-flow@alpha/g;
+const PASS5_REPLACEMENT = '@sparkleideas/cli@latest';
+
+const PASS5_INIT_BUNDLED_PREFIX = 'v3/@claude-flow/cli/.claude/';
+const PASS5_INIT_BUNDLED_SUBDIRS = ['agents/', 'commands/', 'skills/'];
+
+/**
+ * Returns true if the file is in the Pass-5 scope: under .claude-plugin/**,
+ * plugins/**, or v3/@claude-flow/cli/.claude/{agents,commands,skills}/**
+ * relative to tempDir, with .json or .md extension.
+ *
+ * Exported for tests.
+ */
+export function isPlugin5Scope(filePath, tempDir) {
+  const rel = relative(tempDir, filePath).replace(/\\/g, '/');
+  if (rel.startsWith('..') || rel === '') return false;
+  const ext = effectiveExt(basename(filePath));
+  if (ext !== '.json' && ext !== '.md') return false;
+  if (rel.startsWith('.claude-plugin/') || rel.startsWith('plugins/')) return true;
+  if (rel.startsWith(PASS5_INIT_BUNDLED_PREFIX)) {
+    const sub = rel.slice(PASS5_INIT_BUNDLED_PREFIX.length);
+    return PASS5_INIT_BUNDLED_SUBDIRS.some((d) => sub.startsWith(d));
+  }
+  return false;
+}
+
 /**
  * Apply scope renaming to source file content.
  *
@@ -234,6 +276,9 @@ const UNSCOPED_IMPORT_RE = new RegExp(
  *  2. @ruvector/* -> @sparkleideas/ruvector-* (all occurrences)
  *  3. Bare unscoped names in import/require/from contexts only
  *  4. mcp__claude-flow__* -> mcp__ruflo__* (ADR-0113 Fix 2)
+ *
+ * Pass 5 (claude-flow@alpha rewrite) is path-scoped and lives outside
+ * transformSource — applied in processOneFile when isPlugin5Scope matches.
  *
  * Exported for ADR-0113 Phase C (Fix 4) — applying codemod directly
  * to fork .md files (under forks/ruflo/plugins/ and
@@ -260,6 +305,11 @@ export function transformSource(content) {
   return result;
 }
 
+/** Apply Pass 5 only — assumes the caller has already scope-checked. */
+export function applyPass5(content) {
+  return content.replace(CLAUDE_FLOW_ALPHA_RE, PASS5_REPLACEMENT);
+}
+
 // -- File walker --------------------------------------------------------------
 
 /** Recursively walk `dir`, yielding absolute file paths that pass the filter. */
@@ -284,7 +334,7 @@ function sha256(data) {
 }
 
 /** Process a single file. Returns { scanned, transformed, packageJson, deleted }. */
-async function processOneFile(filePath, fileCache) {
+async function processOneFile(filePath, fileCache, tempDir) {
   const name = basename(filePath);
   const result = { scanned: 0, transformed: 0, packageJson: 0, deleted: null };
 
@@ -341,7 +391,11 @@ async function processOneFile(filePath, fileCache) {
       }
     }
 
-    const transformed = transformSource(content);
+    let transformed = transformSource(content);
+    // Pass 5 (ADR-0117): scope-limited claude-flow@alpha rewrite
+    if (tempDir && isPlugin5Scope(filePath, tempDir)) {
+      transformed = applyPass5(transformed);
+    }
     if (transformed !== content) {
       await writeFile(filePath, transformed, 'utf8');
       result.transformed = 1;
@@ -439,7 +493,7 @@ export async function transform(tempDir) {
   // Process files in parallel batches
   for (let i = 0; i < allFiles.length; i += BATCH_SIZE) {
     const batch = allFiles.slice(i, i + BATCH_SIZE);
-    const results = await Promise.all(batch.map(f => processOneFile(f, fileCache)));
+    const results = await Promise.all(batch.map(f => processOneFile(f, fileCache, tempDir)));
     for (const r of results) {
       stats.filesScanned += r.scanned;
       stats.filesTransformed += r.transformed;
