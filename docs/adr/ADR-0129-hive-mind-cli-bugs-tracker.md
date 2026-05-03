@@ -1,6 +1,6 @@
 # ADR-0129: Hive-mind CLI bugs surfaced during ADR-0116/0117 testing
 
-- **Status**: **Living tracker** — last triaged 2026-05-03: 1/4 closed (B3); B1, B2, B4 still open (B4 has workaround via `--worker-types`)
+- **Status**: **All 4 bugs closed (2026-05-03)** — B1/B2/B4 fixed in fork commit c277b2d81; B3 fixed earlier in 4fcd79605. Living tracker remains open for new CLI bugs.
 - **Date**: 2026-05-02
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0116 (marketplace plugin packaging — testing surfaced these bugs), ADR-0117 (MCP server registration)
@@ -131,13 +131,19 @@ In subsequent `status` output, all 3 workers display Type `researche...` (trunca
 - `-t` flag is declared as `string` (single value) rather than `string[]` (array via repeated flags) or with a `coerce` that splits on commas
 - The spawn handler then passes the same string to all `n` workers
 
-**Decision needed**: pick one input contract:
-- **Option A**: repeated flag — `-t researcher -t coder -t tester` (most CLI-conventional; works with most parsers natively)
-- **Option B**: comma-split — `-t researcher,coder,tester` (matches the user's intuition seen in this bug; one extra `coerce` step)
-- **Option C**: support both
-- **Option D**: introduce `--types <list>` as separate flag
+**Decision (2026-05-03)**: **Option A — auto-comma-split** (`-t researcher,coder,tester` splits on commas, validates each member against `WORKER_TYPES`, routes through the existing `--worker-types` array path with round-robin distribution; mutex with `--worker-types` fires loudly per `feedback-no-fallbacks.md`).
 
-ADR-0116 doesn't pin this; the spawn command's frontmatter just says `-t` exists. Pick A or B and document.
+Rationale:
+- Aligns with the existing `--worker-types` behavior (Option D, shipped in commit 8d423a346) — same downstream array path, same validation, same round-robin contract. Two CLI surfaces, one runtime path.
+- Matches user intent (the bug surfaced precisely because users typed comma-separated lists naturally).
+- Prevents silent enum-validation fail at the MCP boundary (pre-fix, the comma-string was forwarded as a single literal `"researcher,coder,tester"` and rejected as an unknown type).
+
+Rejected alternatives:
+- **Option B (repeated flag, `-t researcher -t coder`)**: would require new CLI parser support for repeated short flags and breaks muscle memory for users who already type comma-lists.
+- **Option C (support both)**: redundant — Option A subsumes the comma-list intent; repeated flags can be revisited later if requested.
+- **Option D (introduce `--types <list>`)**: already shipped as `--worker-types` in 8d423a346 (ADR-0108 T13). Option A makes `-t` consistent with it rather than carving a separate dialect.
+
+ADR-0116 doesn't pin the input contract; the spawn command's frontmatter just says `-t` exists. Spawn `--help` documents both `-t` and `--worker-types` post-fix.
 
 **Files to inspect**:
 - `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts` — `spawn` subcommand builder
@@ -159,10 +165,10 @@ ADR-0116 doesn't pin this; the spawn command's frontmatter just says `-t` exists
 
 | Bug | Title | Status | Owner | Commit | Notes |
 |---|---|---|---|---|---|
-| B1 | `memory store` is a no-op | open | — | — | last reviewed 2026-05-03; `commands/hive-mind.ts:1957` still reads action only from `--action` flag (default `list`), positional `store` dropped |
-| B2 | `shutdown` undefined/No fields | open | — | — | last reviewed 2026-05-03; CLI reads `agentsTerminated`/`stateSaved`/`shutdownTime` but MCP tool returns `workersTerminated`/`shutdownAt`/`graceful` (`hive-mind-tools.ts:2731-2739` vs `hive-mind.ts:2030-2046`) |
+| B1 | `memory store` is a no-op | complete | Henrik | c277b2d81 | memory store action + positional dispatch added (per fix commit) |
+| B2 | `shutdown` undefined/No fields | complete | Henrik | c277b2d81 | shutdown field names aligned (MCP -> CLI) |
 | B3 | `--help` falls through to parent | complete | Henrik | 4fcd79605 | affects all 11 subcommands; fixed by `showCommandHelp(commandPath: string \| string[])` drill-loop in `index.ts:402-428` |
-| B4 | `spawn -t a,b,c` not split | partial | Henrik | 8d423a346 | last reviewed 2026-05-03; `--worker-types` (Option D) added with comma-split + round-robin (ADR-0108 T13). Original `-t a,b,c` syntax still misbehaves at `hive-mind.ts:1263` + `hive-mind-tools.ts:1351` (scalar replicated as literal); partial fix via separate flag — original input-contract decision still pending |
+| B4 | `spawn -t a,b,c` not split | complete | Henrik | c277b2d81 | -t a,b,c auto-comma-splits (Option A); mutex with --worker-types |
 
 Status values: `open` | `in-progress` | `complete` | `wontfix`. When a bug closes, fill `Owner`/`Commit`, set `complete`, and confirm the corresponding acceptance check is wired into `scripts/test-acceptance.sh`.
 

@@ -579,6 +579,10 @@ adr0131_lib="${PROJECT_DIR}/lib/acceptance-adr0131-worker-failure.sh"
 adr0117_lib="${PROJECT_DIR}/lib/acceptance-adr0117-marketplace-mcp.sh"
 [[ -f "$adr0117_lib" ]] && source "$adr0117_lib"
 
+# ADR-0129: Hive-mind CLI bug closeout (B1 memory store, B2 shutdown fields, B4 -t comma-split)
+adr0129_lib="${PROJECT_DIR}/lib/acceptance-adr0129-checks.sh"
+[[ -f "$adr0129_lib" ]] && source "$adr0129_lib"
+
 # ADR-0116: ruflo-hive-mind marketplace plugin (16 ACs + USERGUIDE anchor pre-check)
 adr0116_lib="${PROJECT_DIR}/lib/acceptance-adr0116-checks.sh"
 [[ -f "$adr0116_lib" ]] && source "$adr0116_lib"
@@ -724,6 +728,11 @@ run_check_bg "adr0117-umbrella-clean"   "0117 umbrella plugin.json has zero mcpS
 run_check_bg "adr0117-no-cf-alpha"      "0117 zero claude-flow@alpha refs in marketplace surface (AC#3)"            check_adr0117_no_claude_flow_alpha              "structure"
 run_check_bg "adr0117-tool-resolve"     "0117 mcp__ruflo__ skill refs resolve via tools/list (AC#4)"                check_adr0117_mcp_tool_resolution               "structure"
 run_check_bg "adr0117-codemod-stable"   "0117 codemod doesn't reintroduce mcpServers; Pass 5 still rewrites (AC#5)" check_adr0117_codemod_doesnt_readd_mcpservers   "structure"
+
+# ADR-0129: Hive-mind CLI bug closeout (B1 memory store, B2 shutdown, B4 -t comma-split)
+run_check_bg "adr0129-b1-mem-store"     "0129 B1 hive-mind memory store key value persists (positional)"           check_adr0129_b1_memory_store                   "structure"
+run_check_bg "adr0129-b2-shutdown"      "0129 B2 hive-mind shutdown renders fields without 'undefined'"             check_adr0129_b2_shutdown_fields                "structure"
+run_check_bg "adr0129-b4-comma-split"   "0129 B4 hive-mind spawn -t a,b auto-splits to 2 distinct worker types"     check_adr0129_b4_comma_split                    "structure"
 
 # ADR-0116: ruflo-hive-mind marketplace plugin (USERGUIDE pre-check + 15 ACs;
 # AC #13 (E2E install) intentionally manual — see acceptance-adr0116-checks.sh footer).
@@ -2386,6 +2395,9 @@ collect_parallel "all" \
   "adr0117-no-cf-alpha|0117 zero claude-flow@alpha refs in marketplace surface (AC#3)" \
   "adr0117-tool-resolve|0117 mcp__ruflo__ skill refs resolve via tools/list (AC#4)" \
   "adr0117-codemod-stable|0117 codemod doesn't reintroduce mcpServers; Pass 5 still rewrites (AC#5)" \
+  "adr0129-b1-mem-store|0129 B1 hive-mind memory store key value persists (positional)" \
+  "adr0129-b2-shutdown|0129 B2 hive-mind shutdown renders fields without 'undefined'" \
+  "adr0129-b4-comma-split|0129 B4 hive-mind spawn -t a,b auto-splits to 2 distinct worker types" \
   "adr0116-anchors|0116 USERGUIDE anchors resolve (pre-check)" \
   "adr0116-mp-entry|0116 marketplace.json lists ruflo-hive-mind (AC#1)" \
   "adr0116-plugin-json|0116 plugin.json valid + no forbidden fields (AC#2)" \
