@@ -1,6 +1,6 @@
 # ADR-0099: Performance Testing Program — Budgets, Not Gates
 
-- **Status**: Proposed 2026-04-22 — hive-designed (queen + devil's advocate), not yet implemented.
+- **Status**: Proposed 2026-04-22 — hive-designed (queen + devil's advocate); still pending. Last reviewed 2026-05-03: no `npm run test:perf` script, no `tests/benchmarks/wallclock/` directory, no `docs/reports/perf/` baselines/anchors/HISTORY.md, `flash-attention-benchmark.mjs` unchanged (no `--promote`/`--calibrate` flags); ADR-0100 §4 Scenario F explicitly references this ADR as "perf program not yet shipped"; no successor; no regression reports forcing prioritization.
 - **Date**: 2026-04-22
 - **Scope**: New `npm run test:perf` suite, out-of-band from the cascading pipeline (ADR-0038); new `tests/benchmarks/wallclock/*.mjs` + port of existing `tests/benchmarks/flash-attention-benchmark.mjs`; new `docs/reports/perf/` artifact area (gitignored runs, committed anchor baselines); paired unit tests per ADR-0097. NO change to `test:acceptance`.
 - **Related**: ADR-0038 (cascading pipeline), ADR-0069 F3 (existing Flash Attention perf claim), ADR-0081 (M5 Max hardware baseline), ADR-0090 (acceptance throughput concerns), ADR-0094 (acceptance coverage — **explicitly not extended** here), ADR-0097 (paired check-code tests).
