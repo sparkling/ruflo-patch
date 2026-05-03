@@ -285,6 +285,12 @@ main() {
     return 0
   fi
 
+  # ADR-0133: Detect ruvector Rust source changes and rebuild napi .node binaries
+  # before bump-versions, so the rebuilt binaries land on fork main and ship
+  # via the normal copy-source path. Without this, .rs changes can publish but
+  # the .node files stay stale (real regression observed 2026-05-03).
+  run_phase "napi-rebuild" bash "${SCRIPT_DIR}/napi-rebuild.sh" "${PREV_RUVECTOR_HEAD:-}"
+
   # Bump versions in forks
   run_phase "bump-versions" bump_fork_versions
 
