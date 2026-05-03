@@ -64,15 +64,15 @@ T13 added 2026-05-02 — carry-forward from ADR-0108 (Accepted but unwired): `--
 | T2 | ADR-0120 | open | — | — | — |
 | T3 | ADR-0121 | open | — | — | — |
 | T4 | ADR-0122 | complete | Henrik (orchestrator merge after agent stall) | fork ca9e29e2c + ruflo-patch 74f29e7 | pending next materialise |
-| T5 | ADR-0123 | open | — | — | — |
+| T5 | ADR-0123 | complete | Henrik | fork 8d423a346 + ruflo-patch b61811f | pending next materialise |
 | T6 | ADR-0124 | open | — | — | — |
 | T7 | ADR-0125 | complete | Henrik | fork 0748ed9e9 (README) + 9db6978d5 (runtime, absorbed) + ruflo-patch 6de0736 | pending next materialise |
-| T8 | ADR-0126 | open | — | — | — |
+| T8 | ADR-0126 | complete | Henrik | fork 8d423a346 + ruflo-patch b61811f | pending next materialise |
 | T9 | ADR-0127 | partial (Phase 1 stub) | Henrik | fork b45e8e471 + ruflo-patch 8e5795e (HealthReport.partitionDetected interface stub only; T9 runtime in Wave 3) | pending |
 | T10 | ADR-0128 | complete | Henrik | fork 9db6978d5 + ruflo-patch d03a361 + 74f29e7 (re-wiring) | pending next materialise |
 | T11 | ADR-0130 | open | — | — | — |
 | T12 | ADR-0131 | open | — | — | — |
-| T13 | ADR-0108 | open | — | — | — |
+| T13 | ADR-0108 | complete | Henrik | fork 8d423a346 + ruflo-patch b61811f | pending next materialise |
 
 Status values: `open` | `in-progress` | `escalated-to-adr` | `complete`. When a task lands, fill in `Owner`/`Commit`, set status `complete`, and confirm the ADR-0116 plugin README annotation was removed by the next materialise run.
 
