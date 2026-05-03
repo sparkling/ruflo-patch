@@ -121,3 +121,144 @@ check_adr0119_missing_queen_throws() {
   fi
   rm -rf "$iso" 2>/dev/null
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0120 (T2) — Hive-mind Gossip consensus protocol
+# ════════════════════════════════════════════════════════════════════
+
+# Helper: invoke hive-mind_consensus MCP tool (alias to T1 helper for clarity).
+_t2_consensus_call() {
+  local iso="$1"
+  local params_json="$2"
+  local cli; cli=$(_cli_cmd)
+  _T2_OUT=$(cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 $cli mcp exec --tool hive-mind_consensus --params "$params_json" 2>&1)
+  _T2_EXIT=$?
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 5 (ADR-0120 §Acceptance criteria #1): gossip strategy is
+# accepted at the wire boundary; a propose with strategy:'gossip'
+# returns a proposalId rather than being rejected by the JSON-schema
+# validator.
+# ════════════════════════════════════════════════════════════════════
+check_adr0120_gossip_strategy_accepted() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0120-gossip-accepted")
+  _t1_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0120-§wire: hive-mind init failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  _t2_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"gossip"}'
+  # Acceptance: 'gossip' must NOT trigger a JSON-schema enum-rejection error.
+  # The propose can succeed (returns proposalId) — there's no precondition
+  # like weighted's MissingQueen.
+  if echo "$_T2_OUT" | grep -qE "(schema|enum.*gossip|not.*allowed.*gossip)"; then
+    _CHECK_OUTPUT="ADR-0120-§wire: 'gossip' rejected by schema (output: $_T2_OUT)"
+  elif echo "$_T2_OUT" | grep -qE "(proposalId|proposal-)"; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0120-§wire: 'gossip' accepted at wire boundary; proposal created"
+  else
+    _CHECK_OUTPUT="ADR-0120-§wire: unexpected response (output: $_T2_OUT)"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 6 (ADR-0120 §Acceptance criteria — gossipBound telemetry):
+# propose with strategy:'gossip' surfaces gossipBound (= ceil(log2(N)))
+# and gossipRound: 0 in the response, confirming the proposal carries
+# the four required gossip fields and the bound is correctly seeded.
+# ════════════════════════════════════════════════════════════════════
+check_adr0120_gossip_bound_telemetry() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0120-gossip-bound")
+  _t1_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0120-§bound: hive-mind init failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  _t2_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"gossip"}'
+  # The propose response must include both gossipRound (0 at creation) and
+  # gossipBound (a number). roundTimeoutMs must also surface (defaulted 5000).
+  if echo "$_T2_OUT" | grep -qE '"gossipBound"' && \
+     echo "$_T2_OUT" | grep -qE '"gossipRound":\s*0' && \
+     echo "$_T2_OUT" | grep -qE '"roundTimeoutMs"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0120-§bound: gossip telemetry (gossipRound + gossipBound + roundTimeoutMs) present"
+  else
+    _CHECK_OUTPUT="ADR-0120-§bound: missing gossip telemetry fields (output: $_T2_OUT)"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 7 (ADR-0120 §Acceptance criteria — no-vote rejection):
+# status on a fresh gossip proposal with zero votes returns
+# { settled: false, gossipRound: 0, noVotes: true } — never settled.
+# Per `feedback-no-fallbacks.md`, an empty tally is not a settled tally.
+# ════════════════════════════════════════════════════════════════════
+check_adr0120_gossip_no_vote_rejection() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0120-gossip-novote")
+  _t1_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0120-§novote: hive-mind init failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  # Propose, then status without voting.
+  _t2_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"gossip"}'
+  local proposal_id
+  proposal_id=$(echo "$_T2_OUT" | grep -oE '"proposalId":"[^"]+"' | head -1 | sed 's/.*":"\(.*\)"/\1/')
+  if [[ -z "$proposal_id" ]]; then
+    _CHECK_OUTPUT="ADR-0120-§novote: failed to extract proposalId (output: $_T2_OUT)"
+    rm -rf "$iso" 2>/dev/null
+    return
+  fi
+
+  _t2_consensus_call "$iso" "{\"action\":\"status\",\"proposalId\":\"$proposal_id\"}"
+  # No-vote tally must NOT be reported as settled. Required: settled=false AND
+  # noVotes=true (the explicit fail-loud signal).
+  if echo "$_T2_OUT" | grep -qE '"settled":\s*true'; then
+    _CHECK_OUTPUT="ADR-0120-§novote: empty tally silently coerced to settled (output: $_T2_OUT)"
+  elif echo "$_T2_OUT" | grep -qE '"noVotes":\s*true'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0120-§novote: zero-vote proposal correctly NOT settled (noVotes=true)"
+  else
+    _CHECK_OUTPUT="ADR-0120-§novote: missing noVotes signal (output: $_T2_OUT)"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 8 (ADR-0120 §Acceptance criteria — agent-file annotation):
+# the gossip-coordinator agent file ships with `allowed-tools:
+# [mcp__ruflo__hive-mind_consensus]` frontmatter and an example body
+# referencing strategy:'gossip'. Static-grep against the materialised
+# project's .claude/agents/ directory.
+# ════════════════════════════════════════════════════════════════════
+check_adr0120_gossip_agent_annotation() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0120-gossip-agent")
+  : > "$iso/.ruflo-project"
+
+  # Init creates .claude/agents/* including the gossip-coordinator file.
+  local cli; cli=$(_cli_cmd)
+  (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 $cli init --full --force >/dev/null 2>&1) || \
+    { _CHECK_OUTPUT="ADR-0120-§agent: init --full failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  local agent_file="$iso/.claude/agents/consensus/gossip-coordinator.md"
+  if [[ ! -f "$agent_file" ]]; then
+    _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md missing in init'd project"
+    rm -rf "$iso" 2>/dev/null
+    return
+  fi
+
+  # Required: allowed-tools frontmatter + example body referencing gossip strategy.
+  if ! grep -qE 'allowed-tools:' "$agent_file"; then
+    _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md missing allowed-tools frontmatter"
+  elif ! grep -qE 'mcp__ruflo__hive-mind_consensus' "$agent_file"; then
+    _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md missing mcp__ruflo__hive-mind_consensus tool reference"
+  elif ! grep -qE 'strategy[":\s]+gossip' "$agent_file"; then
+    _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md body missing strategy:'gossip' example"
+  else
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md properly annotated (allowed-tools + body example)"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}

@@ -1372,6 +1372,17 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0119_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0120: Hive-mind Gossip consensus protocol (T2).
+# Wire-boundary, telemetry, no-vote rejection, agent-file annotation.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0119_lib" ]]; then
+  run_check_bg "adr0120-gossip-accepted"     "ADR-0120 gossip strategy accepted at MCP wire"             check_adr0120_gossip_strategy_accepted     "adr0120"
+  run_check_bg "adr0120-gossip-telemetry"    "ADR-0120 propose returns gossipRound + bound + timeout"    check_adr0120_gossip_bound_telemetry       "adr0120"
+  run_check_bg "adr0120-gossip-no-vote"      "ADR-0120 zero-vote proposal returns noVotes (no fallback)" check_adr0120_gossip_no_vote_rejection     "adr0120"
+  run_check_bg "adr0120-gossip-agent"        "ADR-0120 gossip-coordinator.md has allowed-tools + body"   check_adr0120_gossip_agent_annotation      "adr0120"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0122: Hive-mind 8 memory types with TTL (T4).
 # 8-type matrix, TTL expiry, type filter, missing/unknown rejection, legacy migration.
 # ════════════════════════════════════════════════════════════════════
@@ -1852,6 +1863,17 @@ if [[ -f "$adr0119_lib" ]]; then
   )
 fi
 
+_adr0120_specs=()
+if [[ -f "$adr0119_lib" ]]; then
+  # T2 (gossip) checks live in the same lib as T1 — extended file
+  _adr0120_specs=(
+    "adr0120-gossip-accepted|ADR-0120 gossip strategy accepted at MCP wire"
+    "adr0120-gossip-telemetry|ADR-0120 propose returns gossipRound + bound + timeout"
+    "adr0120-gossip-no-vote|ADR-0120 zero-vote proposal returns noVotes (no fallback)"
+    "adr0120-gossip-agent|ADR-0120 gossip-coordinator.md has allowed-tools + body"
+  )
+fi
+
 _adr0122_specs=()
 if [[ -f "$adr0122_lib" ]]; then
   _adr0122_specs=(
@@ -2259,6 +2281,7 @@ collect_parallel "all" \
   "${_adr0104_specs[@]}" \
   "${_adr0125_specs[@]}" \
   "${_adr0119_specs[@]}" \
+  "${_adr0120_specs[@]}" \
   "${_adr0122_specs[@]}" \
   "${_adr0123_specs[@]}" \
   "${_adr0126_specs[@]}" \
