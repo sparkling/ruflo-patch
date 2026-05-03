@@ -523,6 +523,10 @@ phase17_lib="${PROJECT_DIR}/lib/acceptance-phase17-validator-fuzzing.sh"
 adr0098_lib="${PROJECT_DIR}/lib/acceptance-adr0098-checks.sh"
 [[ -f "$adr0098_lib" ]] && source "$adr0098_lib"
 
+# ADR-0100: project-root resolution (walk-up + sentinel) — 6 scenarios + grep gate
+adr0100_lib="${PROJECT_DIR}/lib/acceptance-adr0100-checks.sh"
+[[ -f "$adr0100_lib" ]] && source "$adr0100_lib"
+
 # ADR-0104: Hive-mind Queen orchestration (parser, prompt, MCP path, locking)
 adr0104_lib="${PROJECT_DIR}/lib/acceptance-adr0104-checks.sh"
 [[ -f "$adr0104_lib" ]] && source "$adr0104_lib"
@@ -1380,6 +1384,22 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0098_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0100: project-root walk-up resolver (§4 scenarios A-F) + grep gate (§3c).
+# Same gating + isolation pattern as ADR-0098 — each scenario uses a fresh
+# /tmp dir to avoid E2E_DIR's CLAUDE.md/.claude markers anchoring the
+# resolver away from the test scenario's intended root.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0100_lib" ]]; then
+  run_check_bg "adr0100-a-root"          "ADR-0100/A cwd at root → .swarm/ at root"                check_adr0100_scenario_a_root              "adr0100"
+  run_check_bg "adr0100-b-one-deep"      "ADR-0100/B cwd 1-deep → walk-up anchors at root"         check_adr0100_scenario_b_one_deep          "adr0100"
+  run_check_bg "adr0100-c-five-deep"     "ADR-0100/C cwd 5-deep → walk-up anchors at root"         check_adr0100_scenario_c_five_deep         "adr0100"
+  run_check_bg "adr0100-d-no-markers"    "ADR-0100/D no markers → fallback + persistent log"       check_adr0100_scenario_d_no_markers        "adr0100"
+  run_check_bg "adr0100-e-sentinel-pri"  "ADR-0100/E sentinel beats CLAUDE.md+.claude pair"        check_adr0100_scenario_e_sentinel_priority "adr0100"
+  run_check_bg "adr0100-f-depth-cap"     "ADR-0100/F 40-deep tree → MAX_WALK_DEPTH bail (no loop)" check_adr0100_scenario_f_depth_cap         "adr0100"
+  run_check_bg "adr0100-g-grep-gate"     "ADR-0100/G grep gate (no process.cwd in mcp-tools/*-tools.ts)" check_adr0100_scenario_g_grep_gate    "adr0100"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0104: Hive-mind Queen orchestration — 10 scenarios per ADR-0104 §7.
 # Same gating + isolation pattern as ADR-0098.
 # ════════════════════════════════════════════════════════════════════
@@ -1938,6 +1958,19 @@ if [[ -f "$adr0098_lib" ]]; then
   )
 fi
 
+_adr0100_specs=()
+if [[ -f "$adr0100_lib" ]]; then
+  _adr0100_specs=(
+    "adr0100-a-root|ADR-0100/A cwd at root → .swarm/ at root"
+    "adr0100-b-one-deep|ADR-0100/B cwd 1-deep → walk-up anchors at root"
+    "adr0100-c-five-deep|ADR-0100/C cwd 5-deep → walk-up anchors at root"
+    "adr0100-d-no-markers|ADR-0100/D no markers → fallback + persistent log"
+    "adr0100-e-sentinel-pri|ADR-0100/E sentinel beats CLAUDE.md+.claude pair"
+    "adr0100-f-depth-cap|ADR-0100/F 40-deep tree → MAX_WALK_DEPTH bail (no loop)"
+    "adr0100-g-grep-gate|ADR-0100/G grep gate (no process.cwd in mcp-tools/*-tools.ts)"
+  )
+fi
+
 _adr0104_specs=()
 if [[ -f "$adr0104_lib" ]]; then
   _adr0104_specs=(
@@ -2470,6 +2503,7 @@ collect_parallel "all" \
   "${_p16_specs[@]}" \
   "${_p17_specs[@]}" \
   "${_adr0098_specs[@]}" \
+  "${_adr0100_specs[@]}" \
   "${_adr0104_specs[@]}" \
   "${_adr0125_specs[@]}" \
   "${_adr0119_specs[@]}" \
