@@ -1,7 +1,7 @@
 # ADR-0109: Worker failure handling / fault tolerance
 
-- **Status**: Investigating (no implementation choice made)
-- **Date**: 2026-04-29
+- **Status**: Partially superseded by ADR-0131 (T12 complete, 2026-05-03). Original Option E §6 prompt protocol shipped: `commands/hive-mind.ts:495-534` + `hive-mind-tools.ts:2397-2407`. **Residual R8** (sub-queen failure escalation in hierarchical-mesh topology) carried forward to **ADR-0132**.
+- **Date**: 2026-04-29 (promoted 2026-05-01)
 - **Roadmap**: ADR-0103 item 5
 - **Scope**: hive-mind worker-failure detection, retry, quorum-with-loss
   semantics. Not federated cross-hive consensus.
@@ -304,6 +304,19 @@ ruflo-patch commit. No `Co-Authored-By` trailer.
   "worker plugins" (untrusted code in Queen's session), trusted-clique
   breaks. README must say "spawned by the Queen in the same session"
   so the boundary survives.
+- **R8 — Sub-queen failure in hierarchical-mesh topology**: ADR-0128
+  introduces a topology where sub-queens coordinate sub-hives below the
+  top-tier Queen. If a sub-queen fails (Task error, no result key,
+  mid-run crash), this ADR's flat retry-once-then-mark-absent policy is
+  ill-shaped: the sub-queen owns N workers whose results route through
+  it. Three options surface — (a) promote a worker in that sub-hive to
+  sub-queen and resume, (b) fail the sub-hive's task and propagate
+  absence to top-tier Queen, (c) absorb orphaned workers into top tier
+  and continue. Decision deferred to a follow-up ADR; T10's
+  `hierarchical-mesh` dispatch must surface sub-queen-absence as a
+  distinct event, not collapse it into the worker-absence path.
+  Cross-references: ADR-0128 §Refinement (sub-queen failure edge case),
+  ADR-0118 review-notes-triage row 54.
 
 ## Out of scope
 
