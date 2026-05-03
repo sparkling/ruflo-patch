@@ -1,6 +1,6 @@
 # ADR-0118: Hive-mind runtime gaps tracker
 
-- **Status**: Proposed (2026-05-02), **Living tracker** (per ADR-0094 pattern)
+- **Status**: Proposed (2026-05-02), **Living tracker** (per ADR-0094 pattern); all 13 Tns complete; T14 added 2026-05-03 (sub-queen failure escalation, design phase)
 - **Date**: 2026-05-02
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0116 (hive-mind marketplace plugin — provides the verification matrix audit and the ship vehicle for gap annotations)
@@ -34,6 +34,7 @@ Per `feedback-no-fallbacks.md` and `feedback-no-squelch-tests.md`, each Tn ships
 | T11 | [ADR-0130](ADR-0130-rvf-wal-fsync-durability.md) | RVF WAL fsync durability (true power-loss survival) | follow-up to T5 | medium | T5 |
 | T12 | [ADR-0131](ADR-0131-hive-mind-worker-failure-protocol.md) | Worker-failure prompt protocol (auto-status-transitions, retry, lineage) | carry-forward from ADR-0103/ADR-0109 Option E §6 | medium | T1 (soft — integration tests reach across consensus strategies) |
 | T13 | [ADR-0108](ADR-0108-mixed-type-worker-spawns.md) | Mixed-type worker spawn mechanism (`--worker-types` CLI + MCP `agentTypes` schema + round-robin + validator wiring) | carry-forward from ADR-0108 (Accepted but unwired; `validateWorkerType` validator dead-code at `validate-input.ts:49-65`) | low-medium | T8 (soft — full integration test exercises ADR-0126 prose blocks per type) |
+| T14 | [ADR-0132](ADR-0132-hive-mind-sub-queen-failure-escalation.md) | Sub-queen failure escalation (hierarchical-mesh) | ADR-0109 R8 carry-forward | medium | T10 (soft — needs hierarchical-mesh runtime), T12 (soft — extends WORKER FAILURE PROTOCOL) |
 
 ## Dependency graph
 
@@ -49,12 +50,15 @@ Notation: `Tn → Tm` means Tn depends on Tm (Tm must land first). Soft = cross-
 - T10 independent
 - T12 independent at contract level; T12 → T1 (soft, integration tests for failure-during-consensus paths)
 - T13 independent at contract level; T13 → T8 (soft, integration test for ADR-0126 prose blocks rendered per spawned worker type)
+- T14 → T10, T12 (soft, hierarchical-mesh + worker failure protocol prereqs)
 
 Direction note (corrected 2026-05-02 per ADR-0128 §Cross-task dependency posture): the prior `T10 → T8, T9` line had the arrow reversed. T9 needs T10's per-topology dispatch surface to exist; T8 cross-references topology-aware worker prompts but does not require T10 to land first.
 
 T12 added 2026-05-02 — carry-forward from ADR-0103/ADR-0109 Option E §6 worker-failure prompt protocol (no Tn assignment in the original tracker; surfaced by the comparison of older hive ADRs against the new T-series).
 
 T13 added 2026-05-02 — carry-forward from ADR-0108 (Accepted but unwired): `--worker-types` CLI flag, MCP `hive-mind_spawn` `agentTypes: array<enum>` schema extension, round-robin distribution, `--type` mutex, wire-up of the existing `validateWorkerType` validator (currently dead code at `validate-input.ts:49-65`, zero callers per the verification on 2026-05-02). The spawn mechanism is orthogonal to T8's per-type runtime behaviour.
+
+T14 added 2026-05-03 — ADR-0109 R8 carry-forward (sub-queen failure escalation in `hierarchical-mesh` topology). Design ADR ADR-0132 landed 2026-05-03 (commit `7dac66a`); runtime implementation pending. Extends T12's WORKER FAILURE PROTOCOL with sub-queen-specific escalation paths; depends on T10's hierarchical-mesh runtime for the sub-queen instantiation surface.
 
 ## Status
 
@@ -73,6 +77,7 @@ T13 added 2026-05-02 — carry-forward from ADR-0108 (Accepted but unwired): `--
 | T11 | ADR-0130 | complete | Henrik | fork 4bc336ad5 + ruflo-patch (this commit) | pending next materialise |
 | T12 | ADR-0131 | complete | Henrik | fork 4e97ce259 + ruflo-patch (this commit) | pending next materialise |
 | T13 | ADR-0108 | complete | Henrik | fork 8d423a346 + ruflo-patch b61811f | pending next materialise |
+| T14 | ADR-0132 | open | — | — | sub-queen failure escalation in hierarchical-mesh; design ADR landed 2026-05-03 (`7dac66a`); runtime work pending |
 
 Status values: `open` | `in-progress` | `escalated-to-adr` | `complete`. When a task lands, fill in `Owner`/`Commit`, set status `complete`, and confirm the ADR-0116 plugin README annotation was removed by the next materialise run.
 
@@ -96,7 +101,7 @@ Per `feedback-no-fallbacks.md` and `feedback-no-squelch-tests.md`, **annotations
 - Verification matrix audit: ADR-0116 §USERGUIDE-vs-implementation verification matrix
 - Plugin packaging: ADR-0116
 - Living tracker pattern: ADR-0094 (100% acceptance coverage program)
-- Per-task ADRs: ADR-0119, ADR-0120, ADR-0121, ADR-0122, ADR-0123, ADR-0124, ADR-0125, ADR-0126, ADR-0127, ADR-0128
+- Per-task ADRs: ADR-0119, ADR-0120, ADR-0121, ADR-0122, ADR-0123, ADR-0124, ADR-0125, ADR-0126, ADR-0127, ADR-0128, ADR-0132
 - Review-notes triage: [ADR-0118-review-notes-triage.md](ADR-0118-review-notes-triage.md) — consolidates open questions surfaced during MADR/SPARC critique of ADR-0119–ADR-0128
 - Execution plan: [ADR-0118-execution-plan.md](ADR-0118-execution-plan.md) — wave-based implementation plan for T1-T11 using parallel agent swarms (3 waves, peak 5 agents in flight)
 - All Henrik decisions resolved 2026-05-02 — see ADR-0118-review-notes-triage.md §Resolution log
