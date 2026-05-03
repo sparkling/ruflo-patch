@@ -32,8 +32,9 @@ _adr0104_hive_init() {
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Scenario 1 (§4a): .mcp.json uses direct path when claude-flow is in PATH;
+# Scenario 1 (§4a): .mcp.json uses direct path when ruflo is in PATH;
 #                   falls back to npx -y when not.
+#                   (Key flipped from `claude-flow` to `ruflo` per ADR-0117 R1.)
 # ════════════════════════════════════════════════════════════════════
 check_adr0104_mcp_direct_path() {
   _CHECK_PASSED="false"
@@ -48,9 +49,10 @@ check_adr0104_mcp_direct_path() {
     ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
   fi
 
-  # Path A: claude-flow IS available (CLI_BIN itself qualifies). Init expects
+  # Path A: ruflo IS available (CLI_BIN itself qualifies). Init expects
   # the resolved path, not the npx invocation.
-  local cf_path; cf_path=$(command -v claude-flow 2>/dev/null || true)
+  # (Key flipped from `claude-flow` to `ruflo` per ADR-0117 R1.)
+  local cf_path; cf_path=$(command -v ruflo 2>/dev/null || true)
   (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 "$CLI_BIN" init --full --quiet >/dev/null 2>&1) || true
 
   if [[ ! -f "$iso/.mcp.json" ]]; then
@@ -59,30 +61,30 @@ check_adr0104_mcp_direct_path() {
   fi
 
   local cf_cmd
-  cf_cmd=$(python3 -c "import json,sys; d=json.load(open('$iso/.mcp.json')); print((d.get('mcpServers',{}).get('claude-flow',{}) or {}).get('command',''))" 2>/dev/null)
+  cf_cmd=$(python3 -c "import json,sys; d=json.load(open('$iso/.mcp.json')); print((d.get('mcpServers',{}).get('ruflo',{}) or {}).get('command',''))" 2>/dev/null)
 
   if [[ -n "$cf_path" ]]; then
-    # Direct path expected. Either matches `which claude-flow`, or at least is
+    # Direct path expected. Either matches `which ruflo`, or at least is
     # NOT `npx` (covers the case where the resolved path differs but is still a
     # direct binary).
     if [[ "$cf_cmd" == "npx" ]]; then
-      _CHECK_OUTPUT="ADR-0104-§4a: claude-flow in PATH ($cf_path) but .mcp.json command='npx' — direct-path detection failed"
+      _CHECK_OUTPUT="ADR-0104-§4a: ruflo in PATH ($cf_path) but .mcp.json command='npx' — direct-path detection failed"
       rm -rf "$iso" 2>/dev/null; return
     fi
     if [[ -z "$cf_cmd" ]]; then
-      _CHECK_OUTPUT="ADR-0104-§4a: .mcp.json missing claude-flow.command"
+      _CHECK_OUTPUT="ADR-0104-§4a: .mcp.json missing ruflo.command"
       rm -rf "$iso" 2>/dev/null; return
     fi
   else
     # npx fallback expected when not on PATH.
     if [[ "$cf_cmd" != "npx" ]]; then
-      _CHECK_OUTPUT="ADR-0104-§4a: claude-flow NOT in PATH but .mcp.json command='$cf_cmd' (expected npx fallback)"
+      _CHECK_OUTPUT="ADR-0104-§4a: ruflo NOT in PATH but .mcp.json command='$cf_cmd' (expected npx fallback)"
       rm -rf "$iso" 2>/dev/null; return
     fi
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0104-§4a: .mcp.json claude-flow.command='$cf_cmd' (PATH detection: ${cf_path:-not-found})"
+  _CHECK_OUTPUT="ADR-0104-§4a: .mcp.json ruflo.command='$cf_cmd' (PATH detection: ${cf_path:-not-found})"
   rm -rf "$iso" 2>/dev/null
 }
 
