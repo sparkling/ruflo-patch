@@ -131,7 +131,7 @@ check_adr0124_sessions_checkpoint() {
   # Verify archive is non-empty + gunzip + parses as JSON + carries
   # schemaVersion=1 + queenPrompt.
   local payload
-  payload=$(zcat "$archive" 2>/dev/null)
+  payload=$(gunzip -c "$archive" 2>/dev/null)
   if [[ -z "$payload" ]]; then
     _CHECK_OUTPUT="ADR-0124 cp: archive gunzip empty"
     rm -rf "$iso" 2>/dev/null; return
@@ -179,8 +179,8 @@ check_adr0124_sessions_export_import_roundtrip() {
 
   # Verify exported archive carries queenType=adaptive (H6 row 32 + import path).
   local payload
-  payload=$(zcat "$export_path" 2>/dev/null)
-  if ! echo "$payload" | grep -qF '"queenType":"adaptive"'; then
+  payload=$(gunzip -c "$export_path" 2>/dev/null)
+  if ! echo "$payload" | grep -qE '"queenType":[[:space:]]*"adaptive"'; then
     _CHECK_OUTPUT="ADR-0124 rt: exported archive missing queenType=adaptive: ${payload:0:300}"
     rm -rf "$iso" 2>/dev/null; return
   fi
@@ -203,8 +203,8 @@ check_adr0124_sessions_export_import_roundtrip() {
   # Round-trip: payload of imported archive equals exported payload (modulo
   # the sessionId in the filename — the JSON content is byte-equal).
   local before after
-  before=$(zcat "$export_path" | tr -d '[:space:]')
-  after=$(zcat "$imported" | tr -d '[:space:]')
+  before=$(gunzip -c "$export_path" | tr -d '[:space:]')
+  after=$(gunzip -c "$imported" | tr -d '[:space:]')
   if [[ "$before" != "$after" ]]; then
     _CHECK_OUTPUT="ADR-0124 rt: round-trip diff — exported vs imported payload mismatch"
     rm -rf "$iso" 2>/dev/null; return
@@ -250,7 +250,7 @@ check_adr0124_resume() {
   # Verify the live state still has queenType=tactical after resume.
   out=$(cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 $cli mcp exec \
     --tool hive-mind_status --params '{}' 2>&1)
-  if ! echo "$out" | grep -qF '"queenType":"tactical"'; then
+  if ! echo "$out" | grep -qE '"queenType":[[:space:]]*"tactical"'; then
     _CHECK_OUTPUT="ADR-0124 resume: post-resume status missing queenType=tactical: ${out:0:300}"
     rm -rf "$iso" 2>/dev/null; return
   fi
@@ -284,7 +284,7 @@ check_adr0124_queen_type_persistence() {
       _CHECK_OUTPUT="ADR-0124 qt-persist: state.json missing after init"
       rm -rf "$iso" 2>/dev/null; return
     fi
-    if ! grep -qF "\"queenType\":\"$qt\"" "$state"; then
+    if ! grep -qE "\"queenType\":[[:space:]]*\"$qt\"" "$state"; then
       _CHECK_OUTPUT="ADR-0124 qt-persist: queenType=$qt not persisted in state.json"
       rm -rf "$iso" 2>/dev/null; return
     fi
@@ -311,7 +311,7 @@ check_adr0124_status_surfaces_queen_type() {
   local out
   out=$(cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 $cli mcp exec \
     --tool hive-mind_status --params '{}' 2>&1)
-  if ! echo "$out" | grep -qF '"queenType":"adaptive"'; then
+  if ! echo "$out" | grep -qE '"queenType":[[:space:]]*"adaptive"'; then
     _CHECK_OUTPUT="ADR-0124 qt-status: hive-mind_status response missing queenType=adaptive: ${out:0:300}"
     rm -rf "$iso" 2>/dev/null; return
   fi

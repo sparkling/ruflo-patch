@@ -348,10 +348,14 @@ check_adr0104_memory_distinct_keys() {
   local iso; iso=$(_e2e_isolate "adr0104-mem-dk")
   _adr0104_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0104-§5dk: hive-mind init failed in iso"; rm -rf "$iso" 2>/dev/null; return; }
 
-  # Spawn 8 background MCP set calls with distinct keys.
+  # Spawn 8 background MCP set calls with distinct keys. ADR-0122 T4 made
+  # `--type` mandatory at the MCP boundary; pass `--type system` (a
+  # permanent system entry) to satisfy MissingMemoryTypeError without
+  # changing the lock-test intent — we are testing concurrent writes, not
+  # memory-typing.
   local pids=()
   for i in 1 2 3 4 5 6 7 8; do
-    (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 30 $cli hive-mind memory --action set --key "race-key-$i" --value "value-$i" >/dev/null 2>&1) &
+    (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 30 $cli hive-mind memory --action set --type system --key "race-key-$i" --value "value-$i" >/dev/null 2>&1) &
     pids+=($!)
   done
   for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
@@ -398,9 +402,11 @@ check_adr0104_memory_same_key() {
   local iso; iso=$(_e2e_isolate "adr0104-mem-sk")
   _adr0104_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0104-§5sk: hive-mind init failed in iso"; rm -rf "$iso" 2>/dev/null; return; }
 
+  # ADR-0122 T4 — pass `--type system` (see distinct-key test above for
+  # rationale). The lock test's intent is unchanged.
   local pids=()
   for i in 1 2 3 4 5 6 7 8; do
-    (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 30 $cli hive-mind memory --action set --key "race-test" --value "writer-$i" >/dev/null 2>&1) &
+    (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 30 $cli hive-mind memory --action set --type system --key "race-test" --value "writer-$i" >/dev/null 2>&1) &
     pids+=($!)
   done
   for pid in "${pids[@]}"; do wait "$pid" 2>/dev/null || true; done
@@ -412,7 +418,11 @@ check_adr0104_memory_same_key() {
   fi
 
   # Validate the file is well-formed JSON (no torn writes) and key holds a
-  # single valid writer value.
+  # single valid writer value. ADR-0122 T4 wraps the value in a typed
+  # MemoryEntry dict (`{value, type, ttlMs, ...}`); accept both the legacy
+  # raw-string shape and the post-T4 dict shape so this check survives the
+  # shape migration without weakening the "exactly one writer wins"
+  # assertion.
   local check
   check=$(python3 -c "
 import json, sys
@@ -425,6 +435,12 @@ if val is None:
   print('MISSING')
 elif isinstance(val, str) and val.startswith('writer-'):
   print('OK:'+val)
+elif isinstance(val, dict):
+  inner = val.get('value')
+  if isinstance(inner, str) and inner.startswith('writer-') and val.get('type') == 'system':
+    print('OK:'+inner)
+  else:
+    print('UNEXPECTED:'+repr(val))
 else:
   print('UNEXPECTED:'+repr(val))
 " 2>/dev/null)

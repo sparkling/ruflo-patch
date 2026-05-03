@@ -111,7 +111,23 @@ check_adr0119_missing_queen_throws() {
   local iso; iso=$(_e2e_isolate "adr0119-missing-queen")
   _t1_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0119-§noqueen: hive-mind init failed"; rm -rf "$iso" 2>/dev/null; return; }
 
-  # Don't spawn a queen — go straight to a weighted propose.
+  # `hive-mind init` always seeds a default state.queen (default agentId =
+  # `queen-${Date.now()}`). To exercise the MissingQueenForWeightedConsensusError
+  # path we have to simulate the real-world scenario the source guards against
+  # (init race, dangling shutdown, queen nulled by error path) by removing
+  # state.queen from state.json after init and before the propose.
+  local state="$iso/.claude-flow/hive-mind/state.json"
+  if [[ ! -f "$state" ]]; then
+    _CHECK_OUTPUT="ADR-0119-§noqueen: state.json missing after init"
+    rm -rf "$iso" 2>/dev/null; return
+  fi
+  # Replace the queen object with `null` so loadHiveState rehydrates state.queen
+  # as null (falsy under `!state.queen`), matching the source guard.
+  node -e "const fs=require('fs');const p=process.argv[1];const s=JSON.parse(fs.readFileSync(p,'utf8'));s.queen=null;fs.writeFileSync(p,JSON.stringify(s,null,2));" "$state" || {
+    _CHECK_OUTPUT="ADR-0119-§noqueen: failed to null state.queen"
+    rm -rf "$iso" 2>/dev/null; return
+  }
+
   _t1_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"weighted"}'
   if echo "$_T1_OUT" | grep -qE "(MissingQueen|no queen|state\.queen|queen.*undefined)"; then
     _CHECK_PASSED="true"
@@ -203,7 +219,7 @@ check_adr0120_gossip_no_vote_rejection() {
   # Propose, then status without voting.
   _t2_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"gossip"}'
   local proposal_id
-  proposal_id=$(echo "$_T2_OUT" | grep -oE '"proposalId":"[^"]+"' | head -1 | sed 's/.*":"\(.*\)"/\1/')
+  proposal_id=$(echo "$_T2_OUT" | grep -oE '"proposalId":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"proposalId":[[:space:]]*"([^"]+)".*/\1/')
   if [[ -z "$proposal_id" ]]; then
     _CHECK_OUTPUT="ADR-0120-§novote: failed to extract proposalId (output: $_T2_OUT)"
     rm -rf "$iso" 2>/dev/null
@@ -250,11 +266,15 @@ check_adr0120_gossip_agent_annotation() {
   fi
 
   # Required: allowed-tools frontmatter + example body referencing gossip strategy.
+  # The body example uses both the markdown form (`strategy: 'gossip'`) and the
+  # JSON example form (`"strategy": "gossip"`) — accept either with a regex
+  # tolerant to the surrounding quote/space characters. Use [[:space:]] (POSIX
+  # bracket class) instead of `\s` for portability across BSD and GNU grep.
   if ! grep -qE 'allowed-tools:' "$agent_file"; then
     _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md missing allowed-tools frontmatter"
   elif ! grep -qE 'mcp__ruflo__hive-mind_consensus' "$agent_file"; then
     _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md missing mcp__ruflo__hive-mind_consensus tool reference"
-  elif ! grep -qE 'strategy[":\s]+gossip' "$agent_file"; then
+  elif ! grep -qE "strategy[\"':[:space:]]+['\"]?gossip" "$agent_file"; then
     _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md body missing strategy:'gossip' example"
   else
     _CHECK_PASSED="true"
@@ -341,7 +361,7 @@ check_adr0121_crdt_malformed_snapshot_throws() {
 
   _t3_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"crdt"}'
   local proposal_id
-  proposal_id=$(echo "$_T3_OUT" | grep -oE '"proposalId":"[^"]+"' | head -1 | sed 's/.*":"\(.*\)"/\1/')
+  proposal_id=$(echo "$_T3_OUT" | grep -oE '"proposalId":[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"proposalId":[[:space:]]*"([^"]+)".*/\1/')
   if [[ -z "$proposal_id" ]]; then
     _CHECK_OUTPUT="ADR-0121-§malformed: failed to create proposal (output: $_T3_OUT)"
     rm -rf "$iso" 2>/dev/null

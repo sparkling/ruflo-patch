@@ -103,16 +103,33 @@ check_adr0108_mcp_schema_array_enum() {
     return
   fi
 
-  # Sanity: the array+enum shape must include the 8 USERGUIDE worker types
-  # so the schema enforces the contract at the boundary.
+  # Sanity: the array+enum shape must include the 8 USERGUIDE worker types.
+  # The codemodded dist references `[...WORKER_TYPES]` (a const spread imported
+  # from validate-input.js); the literal enum values live in the imported file.
+  # We check BOTH the schema file (must spread WORKER_TYPES) and the constant
+  # source (must enumerate the 8 types) so the boundary contract is enforced
+  # end-to-end.
+  if ! grep -qE "items:[[:space:]]*\{[[:space:]]*type:[[:space:]]*'string',[[:space:]]*enum:[[:space:]]*\[\.\.\.WORKER_TYPES\]" "$__ADR0108_CLI_DIST" \
+       && ! grep -qE "\benum:[[:space:]]*\[\.\.\.WORKER_TYPES\]" "$__ADR0108_CLI_DIST"; then
+    _CHECK_OUTPUT="ADR-0108 AC#2: agentTypes schema does not spread WORKER_TYPES into its enum"
+    end_ns=$(_ns); _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+  local validate_dist
+  validate_dist="$(dirname "$__ADR0108_CLI_DIST")/validate-input.js"
+  if [[ ! -f "$validate_dist" ]]; then
+    _CHECK_OUTPUT="ADR-0108 AC#2: validate-input.js not next to mcp-tools dist (expected at $validate_dist)"
+    end_ns=$(_ns); _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
   local missing=()
   for t in researcher coder analyst tester architect reviewer optimizer documenter; do
-    if ! grep -qF "'$t'" "$__ADR0108_CLI_DIST" && ! grep -qF "\"$t\"" "$__ADR0108_CLI_DIST"; then
+    if ! grep -qF "'$t'" "$validate_dist" && ! grep -qF "\"$t\"" "$validate_dist"; then
       missing+=("$t")
     fi
   done
   if (( ${#missing[@]} > 0 )); then
-    _CHECK_OUTPUT="ADR-0108 AC#2: agentTypes enum missing types — ${missing[*]}"
+    _CHECK_OUTPUT="ADR-0108 AC#2: WORKER_TYPES const in validate-input.js missing types — ${missing[*]}"
     end_ns=$(_ns); _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
     return
   fi

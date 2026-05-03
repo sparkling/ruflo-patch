@@ -58,8 +58,8 @@ check_adr0131_prompt_carries_failure_protocol() {
   _CHECK_OUTPUT=""
 
   # Locate the compiled hive-mind.js dist (build dir or fork dist).
-  local fork_dist="/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/dist/commands/hive-mind.js"
-  local build_dist="/tmp/ruflo-build/v3/@claude-flow/cli/dist/commands/hive-mind.js"
+  local fork_dist="/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/dist/src/commands/hive-mind.js"
+  local build_dist="/tmp/ruflo-build/v3/@claude-flow/cli/dist/src/commands/hive-mind.js"
   local dist=""
   if [[ -f "$build_dist" ]]; then
     dist="$build_dist"

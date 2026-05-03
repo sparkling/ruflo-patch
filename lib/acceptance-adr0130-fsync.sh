@@ -125,13 +125,12 @@ check_adr0130_fsync_inside_lock_region() {
   fi
 
   # Extract the appendToWal function body from the compiled JS.
-  # We look for "appendToWal" then capture until the next method boundary.
-  # Awk approach: print lines from "appendToWal" header through the closing
-  # of its method body. Use the next "private async" or "async " or class
-  # boundary as a stop condition. Simpler: capture all lines from the
-  # appendToWal definition through the next 200 lines (sufficient).
+  # Anchor on the function DEFINITION (`async appendToWal`) — the comment
+  # block at the top of the file mentions `appendToWal` long before the
+  # actual definition, so anchoring on the bare token grabs comments and
+  # misses the body. The function is < 100 lines; 100 lines is sufficient.
   local body
-  body=$(grep -A 200 "appendToWal" "$dist" 2>/dev/null | head -200 || echo "")
+  body=$(grep -A 100 "async appendToWal" "$dist" 2>/dev/null | head -100 || echo "")
   if [[ -z "$body" ]]; then
     _CHECK_OUTPUT="ADR-0130-§lock: appendToWal not found in compiled dist"
     return
