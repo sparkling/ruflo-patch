@@ -575,6 +575,10 @@ adr0131_lib="${PROJECT_DIR}/lib/acceptance-adr0131-worker-failure.sh"
 adr0117_lib="${PROJECT_DIR}/lib/acceptance-adr0117-marketplace-mcp.sh"
 [[ -f "$adr0117_lib" ]] && source "$adr0117_lib"
 
+# ADR-0116: ruflo-hive-mind marketplace plugin (16 ACs + USERGUIDE anchor pre-check)
+adr0116_lib="${PROJECT_DIR}/lib/acceptance-adr0116-checks.sh"
+[[ -f "$adr0116_lib" ]] && source "$adr0116_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -716,6 +720,25 @@ run_check_bg "adr0117-umbrella-clean"   "0117 umbrella plugin.json has zero mcpS
 run_check_bg "adr0117-no-cf-alpha"      "0117 zero claude-flow@alpha refs in marketplace surface (AC#3)"            check_adr0117_no_claude_flow_alpha              "structure"
 run_check_bg "adr0117-tool-resolve"     "0117 mcp__ruflo__ skill refs resolve via tools/list (AC#4)"                check_adr0117_mcp_tool_resolution               "structure"
 run_check_bg "adr0117-codemod-stable"   "0117 codemod doesn't reintroduce mcpServers; Pass 5 still rewrites (AC#5)" check_adr0117_codemod_doesnt_readd_mcpservers   "structure"
+
+# ADR-0116: ruflo-hive-mind marketplace plugin (USERGUIDE pre-check + 15 ACs;
+# AC #13 (E2E install) intentionally manual — see acceptance-adr0116-checks.sh footer).
+run_check_bg "adr0116-anchors"          "0116 USERGUIDE anchors resolve (pre-check)"                                check_adr0116_userguide_anchors              "structure"
+run_check_bg "adr0116-mp-entry"         "0116 marketplace.json lists ruflo-hive-mind (AC#1)"                        check_adr0116_marketplace_entry              "structure"
+run_check_bg "adr0116-plugin-json"      "0116 plugin.json valid + no forbidden fields (AC#2)"                       check_adr0116_plugin_json                    "structure"
+run_check_bg "adr0116-skills"           "0116 2 skills present + frontmatter (AC#3)"                                check_adr0116_skills_present                 "structure"
+run_check_bg "adr0116-agents"           "0116 16 agents present + frontmatter (AC#4)"                               check_adr0116_agents_present                 "structure"
+run_check_bg "adr0116-commands"         "0116 11 commands present + spawn flags (AC#5)"                             check_adr0116_commands_present               "structure"
+run_check_bg "adr0116-queen-types"      "0116 3 queen types in skill + spawn (AC#6)"                                check_adr0116_queen_types                    "structure"
+run_check_bg "adr0116-worker-types"     "0116 8 worker types in hive-mind-advanced (AC#7)"                          check_adr0116_worker_types                   "structure"
+run_check_bg "adr0116-consensus"        "0116 5 protocols + 3 voting modes corpus (AC#8)"                           check_adr0116_consensus_corpus               "structure"
+run_check_bg "adr0116-memory-types"     "0116 8 memory types + TTLs in hive-mind-memory (AC#9)"                     check_adr0116_memory_types                   "structure"
+run_check_bg "adr0116-consensus-agents" "0116 7 consensus agents shipped (AC#10)"                                   check_adr0116_consensus_agents               "structure"
+run_check_bg "adr0116-cli-coverage"     "0116 6 USERGUIDE commands + stop covered (AC#11)"                          check_adr0116_cli_command_coverage           "structure"
+run_check_bg "adr0116-codemod"          "0116 codemod fully applied (AC#12)"                                        check_adr0116_codemod_applied                "structure"
+run_check_bg "adr0116-drift"            "0116 materialise drift detector (AC#14)"                                   check_adr0116_drift_detector                 "structure"
+run_check_bg "adr0116-readme-matrix"    "0116 README gap matrix matches ADR-0118 §Status (AC#15)"                   check_adr0116_readme_gap_matrix              "structure"
+run_check_bg "adr0116-cmd-frontmatter"  "0116 per-command implementation-status frontmatter (AC#16)"                check_adr0116_command_frontmatter            "structure"
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
@@ -2330,6 +2353,22 @@ collect_parallel "all" \
   "adr0117-no-cf-alpha|0117 zero claude-flow@alpha refs in marketplace surface (AC#3)" \
   "adr0117-tool-resolve|0117 mcp__ruflo__ skill refs resolve via tools/list (AC#4)" \
   "adr0117-codemod-stable|0117 codemod doesn't reintroduce mcpServers; Pass 5 still rewrites (AC#5)" \
+  "adr0116-anchors|0116 USERGUIDE anchors resolve (pre-check)" \
+  "adr0116-mp-entry|0116 marketplace.json lists ruflo-hive-mind (AC#1)" \
+  "adr0116-plugin-json|0116 plugin.json valid + no forbidden fields (AC#2)" \
+  "adr0116-skills|0116 2 skills present + frontmatter (AC#3)" \
+  "adr0116-agents|0116 16 agents present + frontmatter (AC#4)" \
+  "adr0116-commands|0116 11 commands present + spawn flags (AC#5)" \
+  "adr0116-queen-types|0116 3 queen types in skill + spawn (AC#6)" \
+  "adr0116-worker-types|0116 8 worker types in hive-mind-advanced (AC#7)" \
+  "adr0116-consensus|0116 5 protocols + 3 voting modes corpus (AC#8)" \
+  "adr0116-memory-types|0116 8 memory types + TTLs in hive-mind-memory (AC#9)" \
+  "adr0116-consensus-agents|0116 7 consensus agents shipped (AC#10)" \
+  "adr0116-cli-coverage|0116 6 USERGUIDE commands + stop covered (AC#11)" \
+  "adr0116-codemod|0116 codemod fully applied (AC#12)" \
+  "adr0116-drift|0116 materialise drift detector (AC#14)" \
+  "adr0116-readme-matrix|0116 README gap matrix matches ADR-0118 §Status (AC#15)" \
+  "adr0116-cmd-frontmatter|0116 per-command implementation-status frontmatter (AC#16)" \
   "p1-ai-scan|AI Defence scan (P1)" "p1-ai-analyze|AI Defence analyze (P1)" \
   "p1-ai-pii|AI Defence has_pii (P1)" "p1-ai-safe|AI Defence is_safe (P1)" \
   "p1-ai-learn|AI Defence learn (P1)" "p1-ai-stats|AI Defence stats (P1)" \
