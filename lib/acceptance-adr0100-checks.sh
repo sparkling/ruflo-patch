@@ -86,6 +86,23 @@ _adr0100_count_swarm_dirs() {
   echo "$n"
 }
 
+# Locate the published `types.js` (which exports findProjectRoot) inside the
+# harness-installed @sparkleideas/cli. The fork repo's dist/ is intentionally
+# never built (per CLAUDE.md "TWO COMMANDS, NOTHING ELSE" — release builds
+# under /tmp/ruflo-build/ and publishes to Verdaccio), so we must read the
+# artifact users actually install. Path layout has shifted across builds
+# (e.g. dist/mcp-tools/ vs dist/src/mcp-tools/), so we `find` rather than
+# hardcode. Same shape as `_find_pkg_js` in adr0063 / adr0065 / adr0083.
+#
+# Echoes the resolved path on stdout. Empty stdout = not found (caller MUST
+# fail loudly with that fact; per memory `feedback-no-fallbacks`, no silent
+# fork-source fallback is acceptable).
+_adr0100_find_published_types_js() {
+  local pkg_dir="${TEMP_DIR:-}/node_modules/@sparkleideas/cli"
+  if [[ -z "${TEMP_DIR:-}" || ! -d "$pkg_dir" ]]; then return; fi
+  find "$pkg_dir" -name 'types.js' -path '*/mcp-tools/*' 2>/dev/null | head -1
+}
+
 # ════════════════════════════════════════════════════════════════════
 # Scenario A — cwd at project root
 # ════════════════════════════════════════════════════════════════════
@@ -232,30 +249,27 @@ check_adr0100_scenario_d_no_markers() {
   mkdir -p "$fake_home/.ruflo"
   local persistent_log="$fake_home/.ruflo/resolver-warnings.log"
 
-  # Invoke findProjectRoot directly via the built CLI's resolver. We can't
-  # use `swarm init` here because it has additional dependencies (config
-  # files, embeddings, etc.) that may write *somewhere*. Direct node call
-  # to the built types.js is the cleanest test of the resolver contract.
+  # Invoke findProjectRoot directly via the published CLI's resolver. We
+  # can't use `swarm init` here because it has additional dependencies
+  # (config files, embeddings, etc.) that may write *somewhere*. Direct
+  # node import of the published types.js is the cleanest test of the
+  # resolver contract.
+  #
+  # IMPORTANT: source from the harness-installed @sparkleideas/cli, NOT
+  # from the fork repo. The fork's dist/ is intentionally never built
+  # (release builds under /tmp/ruflo-build/ → Verdaccio); reading from
+  # the published artifact is the contract users actually receive.
   local types_js
-  types_js="${ADR0100_FORK_DIR_OVERRIDE:-}"
-  if [[ -z "$types_js" ]]; then
-    # Resolve from upstream-branches.json (same pattern as adr0117/gate).
-    types_js=$(node -e "
-      const c = JSON.parse(require('fs').readFileSync(
-        require('path').resolve('${__ADR0100_PROJECT_DIR}', 'config', 'upstream-branches.json'), 'utf8'));
-      process.stdout.write((c.ruflo?.dir || '') + '/v3/@claude-flow/cli/dist/mcp-tools/types.js');
-    " 2>/dev/null)
-  fi
-  if [[ ! -f "$types_js" ]]; then
-    # Fall back to the .ts source via tsx if dist not built — but acceptance
-    # always runs after build, so this is the cleaner failure.
-    _CHECK_OUTPUT="ADR-0100/D: dist types.js not found at $types_js (build did not run before acceptance?)"
+  types_js=$(_adr0100_find_published_types_js)
+  if [[ -z "$types_js" || ! -f "$types_js" ]]; then
+    _CHECK_OUTPUT="ADR-0100/D: published mcp-tools/types.js not found under ${TEMP_DIR:-<TEMP_DIR-unset>}/node_modules/@sparkleideas/cli (resolved: '$types_js'; was the harness install step run before acceptance?)"
     rm -rf "$s" 2>/dev/null; return
   fi
 
+  # Published @sparkleideas/cli is type:module — must use ESM dynamic import.
   local resolved
-  resolved=$( cd "$s" && HOME="$fake_home" node -e "
-    const { findProjectRoot } = require('$types_js');
+  resolved=$( cd "$s" && HOME="$fake_home" node --input-type=module -e "
+    const { findProjectRoot } = await import('$types_js');
     process.stdout.write(findProjectRoot('$s'));
   " 2>>"$log" )
 
@@ -375,22 +389,21 @@ check_adr0100_scenario_f_depth_cap() {
   mkdir -p "$fake_home/.ruflo"
   local persistent_log="$fake_home/.ruflo/resolver-warnings.log"
 
+  # Resolve published types.js (see Scenario D for rationale — fork dist/
+  # is intentionally never built; we read what users install).
   local types_js
-  types_js=$(node -e "
-    const c = JSON.parse(require('fs').readFileSync(
-      require('path').resolve('${__ADR0100_PROJECT_DIR}', 'config', 'upstream-branches.json'), 'utf8'));
-    process.stdout.write((c.ruflo?.dir || '') + '/v3/@claude-flow/cli/dist/mcp-tools/types.js');
-  " 2>/dev/null)
-  if [[ ! -f "$types_js" ]]; then
-    _CHECK_OUTPUT="ADR-0100/F: dist types.js not found at $types_js (build did not run before acceptance?)"
+  types_js=$(_adr0100_find_published_types_js)
+  if [[ -z "$types_js" || ! -f "$types_js" ]]; then
+    _CHECK_OUTPUT="ADR-0100/F: published mcp-tools/types.js not found under ${TEMP_DIR:-<TEMP_DIR-unset>}/node_modules/@sparkleideas/cli (resolved: '$types_js'; was the harness install step run before acceptance?)"
     rm -rf "$s" 2>/dev/null; return
   fi
 
   # Bound the call by a timeout — if the resolver infinite-loops, we exit
-  # via SIGKILL and report the regression.
+  # via SIGKILL and report the regression. Published @sparkleideas/cli is
+  # type:module — must use ESM dynamic import.
   local resolved exit_code=0
-  resolved=$( HOME="$fake_home" _timeout 10 node -e "
-    const { findProjectRoot } = require('$types_js');
+  resolved=$( HOME="$fake_home" _timeout 10 node --input-type=module -e "
+    const { findProjectRoot } = await import('$types_js');
     process.stdout.write(findProjectRoot('$deep'));
   " 2>>"$log" ) || exit_code=$?
 
