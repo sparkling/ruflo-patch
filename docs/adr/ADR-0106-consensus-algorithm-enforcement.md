@@ -1,7 +1,7 @@
 # ADR-0106: Consensus algorithm enforcement
 
-- **Status**: Investigating (no implementation choice made)
-- **Date**: 2026-04-29
+- **Status**: Accepted; in-handler dispatch superseded by ADR-0119 (T1 weighted) + ADR-0120 (T2 gossip) + ADR-0121 (T3 CRDT) — all complete in ADR-0118 §Status (2026-05-03). Daemon-resident `ConsensusEngine` (Option A wiring) intentionally deferred per §Out of scope (federation infrastructure, ~1400 LOC parked). Orphaned: `forks/ruflo/v3/@claude-flow/swarm/src/consensus/{raft,byzantine,gossip,index}.ts` — preserved per §Out of scope. — Original status: Full wire-up of `swarm/src/consensus/{raft,gossip,byzantine}.ts` (443 + 513 + 431 LOC) + `ConsensusEngine` (267 LOC) into `hive-mind_consensus` MCP handler via daemon-resident pattern, per memory `feedback-no-value-judgements-on-features.md`. All 4 strategies become real protocol implementations (raft term-based leader election + log replication; gossip epoch-based propagation; byzantine PBFT vote-counting + equivocation detection — signatures-unverified annotation stays as documented limitation, not gate). Upstream's `6992d5f67` JSON-tally improvements (term-collision, Byzantine cross-vote detection) layer on top. Add CLI flag exposure (`strategy` / `term` / `quorumPreset` / `timeoutMs`) so all protocol parameters are user-addressable. Trust-model framing stays as documented context. Implementation in ADR-0103's program (post-W5; now operationalised via ADR-0118 §Status table).
+- **Date**: 2026-04-29 (promoted 2026-05-01)
 - **Roadmap**: ADR-0103 item 2
 - **Scope**: hive-mind consensus protocols (`raft` / `byzantine` / `gossip` /
   `quorum` / `crdt`) — runtime fault-tolerance properties, not just labels.
