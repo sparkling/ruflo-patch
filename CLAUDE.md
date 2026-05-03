@@ -56,9 +56,26 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 
 ## Build & Test
 
+### Canonical entrypoint — `npm run release`
+
+The single canonical publish path is `npm run release` (or `make release`),
+which proxies `bash scripts/ruflo-publish.sh`. The script handles the full
+flow under a flock:
+
+  detect merged PRs → bump versions → commit + push fork bumps →
+  copy-source → codemod → build → publish-verdaccio → acceptance
+
+The same script is what `ruflo.service` (systemd) invokes for background
+production publishes — there is **no longer a separate "npm path" vs
+"systemd path"**. Both go through `ruflo-publish.sh`.
+
+`publish:verdaccio` and `deploy` were REMOVED as npm targets — they
+let callers bypass the cascade's invariants. Use `release` instead.
+
 ### Cascading Pipeline (ADR-0038)
 
-Each npm script includes all previous steps — running a later step runs everything before it:
+The 22 task-specific npm scripts still exist for direct invocation during
+development and debugging. Each later script includes all previous steps:
 
 | # | `npm run` script | Includes | What it does |
 |---|------------------|----------|--------------|
@@ -69,17 +86,17 @@ Each npm script includes all previous steps — running a later step runs everyt
 | 5 | `copy-source` | 1-4 | Copy fork source to `/tmp/ruflo-build` |
 | 6 | `codemod` | 1-5 | Scope rename (`@claude-flow/*` → `@sparkleideas/*`) |
 | 7 | `build` | 1-6 | TypeScript compile + WASM (parallel) |
-| 8 | `publish:verdaccio` | 1-7 | Publish to Verdaccio + promote @latest |
-| 9 | `test:acceptance` | 1-8 | Acceptance checks against a real init'd project |
-| 10 | `finalize` | — | Save state, push forks, write timing (standalone) |
-| 11 | `deploy` | 1-10 | Full pipeline end-to-end |
+| 8 | `test:acceptance` | release + bash | Runs `release` first, then acceptance harness |
+| 9 | `finalize` | — | Save state, push forks, write timing (standalone) |
+| 10 | `release` | — | **Canonical** — `bash scripts/ruflo-publish.sh` (full publish + acceptance under flock) |
 
 Other scripts:
 
 ```bash
+npm run release                   # Canonical full publish + acceptance (proxies ruflo-publish.sh)
+make release ARGS=--force         # Same, via Makefile proxy
 npm run validate                  # Environment smoke test
 npm run sync                      # Fetch upstream, merge on branch, test, create PR
-npm run publish:fork              # Detect merged PRs, version bump, build, publish
 npm run test:acceptance:ruvector  # Acceptance + ruvector-heavy WASM tests (opt-in, sequential)
 ```
 
@@ -87,12 +104,12 @@ npm run test:acceptance:ruvector  # Acceptance + ruvector-heavy WASM tests (opt-
 
 | Change | Required Tests | Command |
 |--------|---------------|---------|
-| Patch fix / helper code | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run test:acceptance` |
+| Patch fix / helper code | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run release` |
 | Codemod / pipeline script | preflight + pipeline + unit | `npm run test:unit` |
 | Test script changes only | preflight + pipeline + unit | `npm run test:unit` |
-| Acceptance / publish changes | preflight + pipeline + unit + acceptance | `npm run test:unit && npm run test:acceptance` |
-| Pre-publish verification | full cascade | `npm run test:acceptance` |
-| Deploy to Verdaccio (full) | all | `npm run deploy` |
+| Acceptance / publish changes | preflight + pipeline + unit + acceptance | `npm run release` |
+| Pre-publish verification | full cascade | `npm run release` |
+| Deploy to Verdaccio (full) | all | `npm run release` |
 
 ### Test Pyramid (MANDATORY — all levels for every change)
 
@@ -108,8 +125,8 @@ npm run test:acceptance:ruvector  # Acceptance + ruvector-heavy WASM tests (opt-
 **Running tests: ALL THREE levels every time.** When asked to run/test/verify:
 
 ```bash
-npm run test:unit                                           # Level 1+2
-curl -sf http://localhost:4873/-/ping && npm run test:acceptance   # Level 3 if Verdaccio up
+npm run test:unit                                  # Level 1+2 only (no publish, no acceptance)
+curl -sf http://localhost:4873/-/ping && npm run release   # Level 3 — full cascade (publish + acceptance)
 ```
 
 The ruvector-heavy tier (P4 WASM + P5 RuVLLM) is excluded from `test:acceptance` by default — multiple concurrent WASM module loads OOM the host. Run `npm run test:acceptance:ruvector` (or `RUFLO_RUVECTOR_TESTS=1 bash scripts/test-acceptance.sh ...`) when you specifically need to exercise that surface. They run sequentially after the parallel wave joins.
@@ -132,8 +149,8 @@ Requires Verdaccio running and packages already published. Reuses existing `/tmp
 
 1. Create or update tests first (all three levels)
 2. Implement the change
-3. Run `npm run test:unit` (and `test:acceptance` if the change type requires it)
-4. Run `npm run build` if you touched fork source
+3. Run `npm run test:unit` (and `npm run release` if the change type requires acceptance)
+4. Run `npm run build` if you touched fork source and want a quick rebuild without publishing
 5. Commit
 
 ## Security Rules
