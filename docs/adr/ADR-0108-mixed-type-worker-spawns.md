@@ -1,7 +1,7 @@
 # ADR-0108: Mixed-type worker spawns
 
-- **Status**: Investigating (no implementation choice made)
-- **Date**: 2026-04-29
+- **Status**: Accepted; **carry-forward as ADR-0118 T13, Implemented (2026-05-03)**. `validateWorkerType` wired at `hive-mind-tools.ts:1336` + `commands/hive-mind.ts:1317`; `--worker-types` flag + MCP `agentTypes` schema + round-robin distribution all live.
+- **Date**: 2026-04-29 (promoted 2026-05-01)
 - **Roadmap**: ADR-0103 item 4
 - **Scope**: hive-mind worker-type heterogeneity (`researcher` / `coder` /
   `analyst` / `tester` / `architect` / `reviewer` / `optimizer` /
