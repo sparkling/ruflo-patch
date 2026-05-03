@@ -555,6 +555,14 @@ adr0108_lib="${PROJECT_DIR}/lib/acceptance-adr0108-checks.sh"
 adr0128_lib="${PROJECT_DIR}/lib/acceptance-adr0128-checks.sh"
 [[ -f "$adr0128_lib" ]] && source "$adr0128_lib"
 
+# ADR-0127: Hive-mind adaptive topology autoscaling — T9
+adr0127_lib="${PROJECT_DIR}/lib/acceptance-adr0127-adaptive.sh"
+[[ -f "$adr0127_lib" ]] && source "$adr0127_lib"
+
+# ADR-0130: RVF WAL fsync durability — T11
+adr0130_lib="${PROJECT_DIR}/lib/acceptance-adr0130-fsync.sh"
+[[ -f "$adr0130_lib" ]] && source "$adr0130_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1394,6 +1402,34 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0119_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0127: Hive-mind adaptive topology autoscaling (T9).
+# 10 checks across module presence, thresholds, scale/topology axes,
+# fault paths, partition handling, resolver hand-off.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0127_lib" ]]; then
+  run_check_bg "adr0127-module-present"      "ADR-0127 adaptive-loop.js dist exports 9 documented symbols" check_adr0127_adaptive_loop_module_present              "adr0127"
+  run_check_bg "adr0127-thresholds"          "ADR-0127 PRELIMINARY thresholds match Specification"         check_adr0127_preliminary_thresholds                    "adr0127"
+  run_check_bg "adr0127-sustained-scale-up"  "ADR-0127 sustained scale-up fires exactly once after dampening" check_adr0127_sustained_scale_up                    "adr0127"
+  run_check_bg "adr0127-oscillation-zero"    "ADR-0127 oscillation flap (20 ticks) produces zero actions" check_adr0127_oscillation_flap_zero_actions             "adr0127"
+  run_check_bg "adr0127-flip-rate-halts"     "ADR-0127 adversarial flip-rate halts loop loud"             check_adr0127_adversarial_flip_rate_halts               "adr0127"
+  run_check_bg "adr0127-partition-suspends"  "ADR-0127 partition signal suspends scaling + emits fault"   check_adr0127_partition_suspends_scaling                "adr0127"
+  run_check_bg "adr0127-cov-high-topology"   "ADR-0127 cov-high triggers exactly one switchTopology(mesh)" check_adr0127_cov_high_topology_decision               "adr0127"
+  run_check_bg "adr0127-not-impl-honoured"   "ADR-0127 NOT_IMPLEMENTED marker logged + loop continues"   check_adr0127_not_implemented_marker_honoured           "adr0127"
+  run_check_bg "adr0127-health-fields"       "ADR-0127 HealthReport carries all T9 + partition fields"   check_adr0127_health_report_carries_t9_fields           "adr0127"
+  run_check_bg "adr0127-resolver-concrete"   "ADR-0127 adaptive resolver returns concrete topology"      check_adr0127_adaptive_resolver_returns_concrete_topology "adr0127"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0130: RVF WAL fsync durability (T11).
+# fsync called at appendToWal; fsync inside lock region; e2e count growth.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0130_lib" ]]; then
+  run_check_bg "adr0130-fsync-called"        "ADR-0130 appendToWal calls fsync (Linux fdatasync, macOS fsync)" check_adr0130_appendtowal_calls_fsync   "adr0130"
+  run_check_bg "adr0130-fsync-in-lock"       "ADR-0130 fsync inside lock region (durability invariant)"   check_adr0130_fsync_inside_lock_region   "adr0130"
+  run_check_bg "adr0130-fsync-e2e-growth"    "ADR-0130 e2e fsync count growth (informational)"            check_adr0130_e2e_fsync_count_growth     "adr0130"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0122: Hive-mind 8 memory types with TTL (T4).
 # 8-type matrix, TTL expiry, type filter, missing/unknown rejection, legacy migration.
 # ════════════════════════════════════════════════════════════════════
@@ -1896,6 +1932,31 @@ if [[ -f "$adr0119_lib" ]]; then
   )
 fi
 
+_adr0127_specs=()
+if [[ -f "$adr0127_lib" ]]; then
+  _adr0127_specs=(
+    "adr0127-module-present|ADR-0127 adaptive-loop.js dist exports 9 documented symbols"
+    "adr0127-thresholds|ADR-0127 PRELIMINARY thresholds match Specification"
+    "adr0127-sustained-scale-up|ADR-0127 sustained scale-up fires exactly once after dampening"
+    "adr0127-oscillation-zero|ADR-0127 oscillation flap (20 ticks) produces zero actions"
+    "adr0127-flip-rate-halts|ADR-0127 adversarial flip-rate halts loop loud"
+    "adr0127-partition-suspends|ADR-0127 partition signal suspends scaling + emits fault"
+    "adr0127-cov-high-topology|ADR-0127 cov-high triggers exactly one switchTopology(mesh)"
+    "adr0127-not-impl-honoured|ADR-0127 NOT_IMPLEMENTED marker logged + loop continues"
+    "adr0127-health-fields|ADR-0127 HealthReport carries all T9 + partition fields"
+    "adr0127-resolver-concrete|ADR-0127 adaptive resolver returns concrete topology"
+  )
+fi
+
+_adr0130_specs=()
+if [[ -f "$adr0130_lib" ]]; then
+  _adr0130_specs=(
+    "adr0130-fsync-called|ADR-0130 appendToWal calls fsync (Linux fdatasync, macOS fsync)"
+    "adr0130-fsync-in-lock|ADR-0130 fsync inside lock region (durability invariant)"
+    "adr0130-fsync-e2e-growth|ADR-0130 e2e fsync count growth (informational)"
+  )
+fi
+
 _adr0122_specs=()
 if [[ -f "$adr0122_lib" ]]; then
   _adr0122_specs=(
@@ -2305,6 +2366,8 @@ collect_parallel "all" \
   "${_adr0119_specs[@]}" \
   "${_adr0120_specs[@]}" \
   "${_adr0121_specs[@]}" \
+  "${_adr0127_specs[@]}" \
+  "${_adr0130_specs[@]}" \
   "${_adr0122_specs[@]}" \
   "${_adr0123_specs[@]}" \
   "${_adr0126_specs[@]}" \

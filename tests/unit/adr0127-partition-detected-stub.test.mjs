@@ -1,27 +1,27 @@
 // @tier unit
-// ADR-0127 T9 pre-flight stub — type-level `partitionDetected` field on `HealthReport`.
+// ADR-0127 T9 — `partitionDetected` field on `HealthReport`.
 //
-// Per /Users/henrik/source/ruflo-patch/docs/adr/ADR-0118-execution-plan.md
-// §Pre-flight checks row 6 and ADR-0118-review-notes-triage.md row 46:
+// History: Wave 1 (b45e8e471) added a type-level stub that
+// default-initialized `partitionDetected: false` literally. Wave 3
+// (this) replaced the stub with runtime computation via
+// `detectPartitionFromHeartbeats` (from `adaptive-loop.ts`). The field
+// is now populated from heartbeat asymmetry / quorum-loss signals per
+// ADR-0127 §Refinement, NOT a hardcoded `false`.
 //
-//   `partitionDetected` does NOT exist on the `HealthReport` interface.
-//   T9 (ADR-0127, Wave 3) cannot pass its partition-asymmetric integration
-//   test without this field. Wave 1 pre-flight adds a TYPE-LEVEL stub
-//   only (no runtime detection logic) so that Wave 3's T9 implementer
-//   has a stable interface to fill in.
-//
-// This test guards the contract:
+// This test guards the post-Wave-3 contract:
 //   1. The fork source file exists.
 //   2. The `HealthReport` interface declaration contains a
-//      `partitionDetected: boolean` member (required, not optional).
+//      `partitionDetected: boolean` member (required, not optional) —
+//      unchanged from Wave 1.
 //   3. The single existing construction site in `monitorSwarmHealth`
-//      default-initializes the field (T9 will replace `false` with real
-//      detection logic; the stub MUST default-init or every other call
-//      site that constructs a HealthReport breaks compilation).
+//      references the *computed* `partitionDetected` variable, NOT the
+//      hardcoded `false` literal. The literal `partitionDetected: false`
+//      is allowed in fallback / error-path code (e.g. when corrupt
+//      heartbeats throw), but NOT in the unconditional ctor.
 //
-// MUST FAIL if a future maintainer drops the field — per
-// `feedback-no-squelch-tests.md`, this is a real string-grep assertion,
-// not a no-op.
+// MUST FAIL if a future maintainer drops the field OR reverts to the
+// hardcoded literal — per `feedback-no-squelch-tests.md`, this is a
+// real string-grep assertion, not a no-op.
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -63,10 +63,10 @@ describe('ADR-0127 T9 pre-flight: HealthReport.partitionDetected interface stub'
     );
   });
 
-  it('monitorSwarmHealth construction site default-initializes partitionDetected to false', () => {
+  it('monitorSwarmHealth construction site uses computed partitionDetected (Wave 3 contract)', () => {
     // Find the `const report: HealthReport = { ... }` construction inside
-    // monitorSwarmHealth (line ~1455). It is the ONLY HealthReport
-    // construction site in this file (greppable via that exact prefix).
+    // monitorSwarmHealth. It is the ONLY HealthReport construction site
+    // in this file (greppable via that exact prefix).
     const ctorIdx = src.indexOf('const report: HealthReport = {');
     assert.ok(
       ctorIdx >= 0,
@@ -77,10 +77,29 @@ describe('ADR-0127 T9 pre-flight: HealthReport.partitionDetected interface stub'
     assert.ok(ctorEnd > ctorIdx, 'expected `};` closing the HealthReport literal');
     const ctorBody = src.slice(ctorIdx, ctorEnd);
 
+    // Wave 3 (post-T9): the ctor must use the computed `partitionDetected`
+    // variable (set from `detectPartitionFromHeartbeats(...)`), NOT the
+    // hardcoded `partitionDetected: false` literal that Wave 1 used.
     assert.match(
       ctorBody,
+      /\bpartitionDetected,/,
+      'Wave 3 contract: HealthReport ctor must reference computed `partitionDetected` variable, not a literal',
+    );
+    assert.doesNotMatch(
+      ctorBody,
       /\bpartitionDetected\s*:\s*false\b/,
-      'monitorSwarmHealth must default-init partitionDetected to false; T9 (Wave 3) replaces this with runtime detection',
+      'Wave 3 contract: hardcoded `partitionDetected: false` must NOT appear in the ctor — that is the Wave 1 stub which has been replaced by runtime detection',
+    );
+  });
+
+  it('monitorSwarmHealth references detectPartitionFromHeartbeats (Wave 3)', () => {
+    // The runtime path: monitorSwarmHealth must call into the loop's
+    // pure helper (imported from adaptive-loop.js). Without this call,
+    // the partition-asymmetric integration test for T9 cannot pass.
+    assert.match(
+      src,
+      /detectPartitionFromHeartbeats\s*\(/,
+      'Wave 3: monitorSwarmHealth must call detectPartitionFromHeartbeats from adaptive-loop.ts',
     );
   });
 });
