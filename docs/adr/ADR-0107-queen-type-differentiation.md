@@ -1,7 +1,7 @@
 # ADR-0107: Queen type behavioral differentiation
 
-- **Status**: Investigating (no implementation choice made)
-- **Date**: 2026-04-29
+- **Status**: **Superseded by ADR-0125 (2026-05-03)**. T7 complete in ADR-0118 §Status: per-type prompt prose + CLI validation + README correction shipped. State-persistence (persist queenType across sessions) deferred as ADR-0125 §Reconciliation follow-up.
+- **Date**: 2026-04-29 (promoted 2026-05-01)
 - **Roadmap**: ADR-0103 item 3
 - **Scope**: hive-mind queen types (`strategic` / `tactical` / `adaptive`) —
   whether each value selects a distinct leadership pattern at runtime.
