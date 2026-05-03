@@ -6,8 +6,12 @@
 # Code's CWD has drifted. The canary artifact is `.swarm/` (written by
 # `swarm init`, which routes through swarm-tools.ts:46 → findProjectRoot).
 # An additional canary (Scenario G — grep gate) shells out to
-# scripts/check-no-cwd-in-handlers.sh to fail the build if any *-tools.ts
-# handler reintroduces `process.cwd()` outside an allowlisted comment.
+# scripts/check-no-cwd-in-handlers.sh to fail the build if any in-scope CLI
+# source reintroduces `process.cwd()` outside an allowlisted shape (comment,
+# string literal, or `adr-0100-allow:` annotation). Scope expanded 2026-05-03
+# from mcp-tools-only to also cover init/**, commands/**, cli/src/memory/**,
+# and @claude-flow/memory/src/** after the adr0100-b/c regressions surfaced
+# path-anchoring `process.cwd()` calls outside the original gate's coverage.
 #
 # Six scenarios per ADR-0100 §4 + the user brief (2026-05-03):
 #   A — cwd at project root after `ruflo init`        → .swarm/ at root
@@ -20,7 +24,9 @@
 #   F — depth cap (40-deep tree, MAX_WALK_DEPTH=32 in resolver)
 #       → resolver bails without infinite loop, returns startDir, log entry
 #   G — grep gate (scripts/check-no-cwd-in-handlers.sh)
-#       → no non-comment process.cwd() in mcp-tools/*-tools.ts
+#       → no non-allowlisted process.cwd() across the broadened CLI scope:
+#         mcp-tools/*-tools.ts, init/**, commands/**, cli/src/memory/**,
+#         @claude-flow/memory/src/**
 #
 # Conventions:
 #   - Each scenario writes its tempdir to ${TEST_DIR}/scenario-<X>/ so post-
@@ -438,7 +444,9 @@ check_adr0100_scenario_f_depth_cap() {
 # Scenario G — grep gate (ADR-0100 §3c)
 #
 # Wraps scripts/check-no-cwd-in-handlers.sh. The script prints to stdout
-# and exits 1 on any non-comment process.cwd() in mcp-tools/*-tools.ts.
+# and exits 1 on any non-allowlisted process.cwd() in the broadened CLI
+# scope (mcp-tools/*-tools.ts + init/** + commands/** + cli/src/memory/** +
+# @claude-flow/memory/src/**). See the script header for allowlist rules.
 # ════════════════════════════════════════════════════════════════════
 check_adr0100_scenario_g_grep_gate() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
@@ -458,7 +466,10 @@ check_adr0100_scenario_g_grep_gate() {
 
   if (( exit_code == 0 )); then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0100/G PASS: zero non-comment process.cwd() in mcp-tools/*-tools.ts"
+    # Scope expanded 2026-05-03: now covers mcp-tools/*-tools.ts +
+    # init/**/*.ts + commands/**/*.ts + cli/src/memory/**/*.ts +
+    # @claude-flow/memory/src/**/*.ts (see scripts/check-no-cwd-in-handlers.sh).
+    _CHECK_OUTPUT="ADR-0100/G PASS: zero non-allowlisted process.cwd() across CLI source (mcp-tools, init, commands, memory)"
     rm -rf "$s" 2>/dev/null
     return
   fi
