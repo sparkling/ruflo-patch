@@ -71,7 +71,7 @@ T13 added 2026-05-02 — carry-forward from ADR-0108 (Accepted but unwired): `--
 | T9 | ADR-0127 | complete | Henrik | fork b45e8e471 (Phase 1 stub) + 4bc336ad5 (Phase 2 runtime) + ruflo-patch (this commit) | pending next materialise |
 | T10 | ADR-0128 | complete | Henrik | fork 9db6978d5 + ruflo-patch d03a361 + 74f29e7 (re-wiring) | pending next materialise |
 | T11 | ADR-0130 | complete | Henrik | fork 4bc336ad5 + ruflo-patch (this commit) | pending next materialise |
-| T12 | ADR-0131 | open | — | — | — |
+| T12 | ADR-0131 | complete | Henrik | fork 4e97ce259 + ruflo-patch (this commit) | pending next materialise |
 | T13 | ADR-0108 | complete | Henrik | fork 8d423a346 + ruflo-patch b61811f | pending next materialise |
 
 Status values: `open` | `in-progress` | `escalated-to-adr` | `complete`. When a task lands, fill in `Owner`/`Commit`, set status `complete`, and confirm the ADR-0116 plugin README annotation was removed by the next materialise run.

@@ -567,6 +567,10 @@ adr0130_lib="${PROJECT_DIR}/lib/acceptance-adr0130-fsync.sh"
 adr0124_lib="${PROJECT_DIR}/lib/acceptance-adr0124-sessions.sh"
 [[ -f "$adr0124_lib" ]] && source "$adr0124_lib"
 
+# ADR-0131: Worker-failure prompt protocol — T12
+adr0131_lib="${PROJECT_DIR}/lib/acceptance-adr0131-worker-failure.sh"
+[[ -f "$adr0131_lib" ]] && source "$adr0131_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1447,6 +1451,17 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0124_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0131: Worker-failure prompt protocol (T12).
+# §6 prompt presence + auto-transition + failedWorkers summary + retry lineage.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0131_lib" ]]; then
+  run_check_bg "adr0131-prompt-protocol"     "ADR-0131 §6 worker-failure protocol present in queen prompt" check_adr0131_prompt_carries_failure_protocol  "adr0131"
+  run_check_bg "adr0131-auto-transition"     "ADR-0131 _consensus auto-transitions stale proposals"        check_adr0131_worker_failure_auto_transition   "adr0131"
+  run_check_bg "adr0131-failed-workers"      "ADR-0131 _status surfaces failedWorkers summary"             check_adr0131_status_failed_workers_summary    "adr0131"
+  run_check_bg "adr0131-retry-lineage"       "ADR-0131 retryTask preserves retryOf lineage round-trip"     check_adr0131_retry_lineage_round_trip         "adr0131"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0122: Hive-mind 8 memory types with TTL (T4).
 # 8-type matrix, TTL expiry, type filter, missing/unknown rejection, legacy migration.
 # ════════════════════════════════════════════════════════════════════
@@ -1986,6 +2001,16 @@ if [[ -f "$adr0124_lib" ]]; then
   )
 fi
 
+_adr0131_specs=()
+if [[ -f "$adr0131_lib" ]]; then
+  _adr0131_specs=(
+    "adr0131-prompt-protocol|ADR-0131 §6 worker-failure protocol present in queen prompt"
+    "adr0131-auto-transition|ADR-0131 _consensus auto-transitions stale proposals"
+    "adr0131-failed-workers|ADR-0131 _status surfaces failedWorkers summary"
+    "adr0131-retry-lineage|ADR-0131 retryTask preserves retryOf lineage round-trip"
+  )
+fi
+
 _adr0122_specs=()
 if [[ -f "$adr0122_lib" ]]; then
   _adr0122_specs=(
@@ -2398,6 +2423,7 @@ collect_parallel "all" \
   "${_adr0127_specs[@]}" \
   "${_adr0130_specs[@]}" \
   "${_adr0124_specs[@]}" \
+  "${_adr0131_specs[@]}" \
   "${_adr0122_specs[@]}" \
   "${_adr0123_specs[@]}" \
   "${_adr0126_specs[@]}" \
