@@ -539,6 +539,18 @@ adr0119_lib="${PROJECT_DIR}/lib/acceptance-hive-mind-checks.sh"
 adr0122_lib="${PROJECT_DIR}/lib/acceptance-hive-memory-types.sh"
 [[ -f "$adr0122_lib" ]] && source "$adr0122_lib"
 
+# ADR-0123: Hive-mind LRU cache + RVF-compatible WAL stack — T5
+adr0123_lib="${PROJECT_DIR}/lib/acceptance-adr0123-checks.sh"
+[[ -f "$adr0123_lib" ]] && source "$adr0123_lib"
+
+# ADR-0126: Hive-mind 8 worker-type runtime differentiation — T8
+adr0126_lib="${PROJECT_DIR}/lib/acceptance-adr0126-worker-types.sh"
+[[ -f "$adr0126_lib" ]] && source "$adr0126_lib"
+
+# ADR-0108: Mixed-type worker spawn mechanism — T13
+adr0108_lib="${PROJECT_DIR}/lib/acceptance-adr0108-checks.sh"
+[[ -f "$adr0108_lib" ]] && source "$adr0108_lib"
+
 # ADR-0128: Hive-mind topology runtime dispatch (6 topologies) — T10
 adr0128_lib="${PROJECT_DIR}/lib/acceptance-adr0128-checks.sh"
 [[ -f "$adr0128_lib" ]] && source "$adr0128_lib"
@@ -1373,6 +1385,41 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0122_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0123: Hive-mind LRU cache + RVF-compatible WAL stack (T5).
+# 100% durability bar (feedback-data-loss-zero-tolerance).
+# Concurrent-write probe runs in parallel wave; SIGKILL crash check is
+# in the post-join sequential wave (kills processes — must not race).
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0123_lib" ]]; then
+  run_check_bg "adr0123-conc-write"          "ADR-0123 100% durability under N concurrent writers"        check_adr0123_concurrent_write_durability  "adr0123"
+  run_check_bg "adr0123-no-silent-catch"     "ADR-0123 corrupt state.json surfaces (no silent fallback)"  check_adr0123_loadstate_no_silent_catch    "adr0123"
+  run_check_bg "adr0123-cache-observable"    "ADR-0123 LRU cache + WAL fsync wired in dist"               check_adr0123_lru_cache_observable         "adr0123"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0126: Hive-mind 8 worker-type runtime differentiation (T8).
+# 8 worker-type prose blocks + structural contract + queen cross-ref + throw paths.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0126_lib" ]]; then
+  run_check_bg "adr0126-all-8-blocks"            "ADR-0126 all 8 USERGUIDE worker-type prose blocks present"   check_adr0126_all_8_blocks_present     "adr0126"
+  run_check_bg "adr0126-structural-contract" "ADR-0126 prose block structural contract per type"           check_adr0126_structural_contract       "adr0126"
+  run_check_bg "adr0126-queen-xref"          "ADR-0126 queen-prompt cross-reference sentinels embedded"    check_adr0126_queen_cross_reference     "adr0126"
+  run_check_bg "adr0126-unknown-type-throws"      "ADR-0126 unknown worker type throws"                         check_adr0126_unknown_type_throws       "adr0126"
+  run_check_bg "adr0126-empty-pool-rejected"          "ADR-0126 empty pool throws (no silent score=0.5 fallback)"   check_adr0126_empty_pool_rejected       "adr0126"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0108: Mixed-type worker spawn mechanism (T13).
+# --worker-types CLI + MCP agentTypes schema + round-robin + --type mutex.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0108_lib" ]]; then
+  run_check_bg "adr0108-cli-flag"            "ADR-0108 --worker-types CLI flag registered"                 check_adr0108_cli_flag_present                "adr0108"
+  run_check_bg "adr0108-mcp-schema"          "ADR-0108 hive-mind_spawn agentTypes schema is array<enum>"   check_adr0108_mcp_schema_array_enum           "adr0108"
+  run_check_bg "adr0108-round-robin"         "ADR-0108 round-robin distribution across worker types"       check_adr0108_round_robin_distribution        "adr0108"
+  run_check_bg "adr0108-mutex"               "ADR-0108 --type and --worker-types mutex (rejects together)" check_adr0108_mutex_type_worker_types         "adr0108"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0128: Hive-mind topology runtime dispatch (T10).
 # 6 topologies + adaptive-pending-T9 + unknown-throws + queen-prompt-protocol-block.
 # ════════════════════════════════════════════════════════════════════
@@ -1817,6 +1864,38 @@ if [[ -f "$adr0122_lib" ]]; then
   )
 fi
 
+_adr0123_specs=()
+if [[ -f "$adr0123_lib" ]]; then
+  # Parallel-wave specs only. The SIGKILL crash check runs sequentially
+  # AFTER collect_parallel joins (kills processes — must not race siblings).
+  _adr0123_specs=(
+    "adr0123-conc-write|ADR-0123 100% durability under N concurrent writers"
+    "adr0123-no-silent-catch|ADR-0123 corrupt state.json surfaces (no silent fallback)"
+    "adr0123-cache-observable|ADR-0123 LRU cache + WAL fsync wired in dist"
+  )
+fi
+
+_adr0126_specs=()
+if [[ -f "$adr0126_lib" ]]; then
+  _adr0126_specs=(
+    "adr0126-all-8-blocks|ADR-0126 all 8 USERGUIDE worker-type prose blocks present"
+    "adr0126-structural-contract|ADR-0126 prose block structural contract per type"
+    "adr0126-queen-xref|ADR-0126 queen-prompt cross-reference sentinels embedded"
+    "adr0126-unknown-type-throws|ADR-0126 unknown worker type throws"
+    "adr0126-empty-pool-rejected|ADR-0126 empty pool throws (no silent score=0.5 fallback)"
+  )
+fi
+
+_adr0108_specs=()
+if [[ -f "$adr0108_lib" ]]; then
+  _adr0108_specs=(
+    "adr0108-cli-flag|ADR-0108 --worker-types CLI flag registered"
+    "adr0108-mcp-schema|ADR-0108 hive-mind_spawn agentTypes schema is array<enum>"
+    "adr0108-round-robin|ADR-0108 round-robin distribution across worker types"
+    "adr0108-mutex|ADR-0108 --type and --worker-types mutex (rejects together)"
+  )
+fi
+
 _adr0128_specs=()
 if [[ -f "$adr0128_lib" ]]; then
   _adr0128_specs=(
@@ -2181,6 +2260,9 @@ collect_parallel "all" \
   "${_adr0125_specs[@]}" \
   "${_adr0119_specs[@]}" \
   "${_adr0122_specs[@]}" \
+  "${_adr0123_specs[@]}" \
+  "${_adr0126_specs[@]}" \
+  "${_adr0108_specs[@]}" \
   "${_adr0128_specs[@]}" \
   "${_e2e_specs[@]}"
 
@@ -2248,6 +2330,22 @@ if [[ -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" && -f "$phase15_l
   run_check "p15-flaky-workflow-list"  "P15 workflow_list determinism (3x)"  check_adr0094_p15_flaky_workflow_list  "adr0094-p15"
   run_check "p15-flaky-session-list"   "P15 session_list determinism (3x)"   check_adr0094_p15_flaky_session_list   "adr0094-p15"
   _record_phase "phase15-flakiness" "$(_elapsed_ms "$_p15_start" "$(_ns)")"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0123: SIGKILL crash durability (T5) — sequential, post-parallel
+# ════════════════════════════════════════════════════════════════════
+# This check kills CLI processes mid-batch via SIGKILL to verify post-
+# restart durability. Running it in the parallel wave alongside other
+# checks would race them: the kill could land on the wrong PID or spam
+# the harness. Per ADR-0123 §Validation: "Runs sequentially after the
+# parallel wave joins (kills processes — must not race other parallel
+# checks)."
+if [[ -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/settings.json" && -f "$adr0123_lib" ]]; then
+  _adr0123_seq_start=$(_ns)
+  log "── ADR-0123: SIGKILL crash durability (sequential, post-parallel) ──"
+  run_check "adr0123-sigkill"  "ADR-0123 SIGKILL-without-power-loss preserves committed entries"  check_adr0123_sigkill_crash_durability  "adr0123"
+  _record_phase "adr0123-sigkill" "$(_elapsed_ms "$_adr0123_seq_start" "$(_ns)")"
 fi
 
 # ════════════════════════════════════════════════════════════════════

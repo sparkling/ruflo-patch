@@ -199,7 +199,11 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     const N = 8;
     const tasks = [];
     for (let i = 0; i < N; i++) {
-      tasks.push(memTool.handler({ action: 'set', key: `race-${i}`, value: `v-${i}` }));
+      // ADR-0122 (T4): `type` is now required on `set`. ADR-0123 (T5)
+      // tests the SAME lock + durability mechanism this test exercises;
+      // adding `type: 'system'` keeps the original lock-test intent intact
+      // while satisfying T4's typed-shape contract.
+      tasks.push(memTool.handler({ action: 'set', key: `race-${i}`, value: `v-${i}`, type: 'system' }));
     }
     const results = await Promise.all(tasks);
     for (const r of results) assert.strictEqual(r.success, true, `set returned ${JSON.stringify(r)}`);
@@ -215,8 +219,15 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     assert.ok(existsSync(statePath), 'state.json not created');
     const parsed = JSON.parse(readFileSync(statePath, 'utf8'));
     for (let i = 0; i < N; i++) {
-      assert.strictEqual(parsed.sharedMemory[`race-${i}`], `v-${i}`,
-        `race-${i} clobbered: got ${parsed.sharedMemory[`race-${i}`]}`);
+      // ADR-0122 (T4): each entry is now a typed MemoryEntry record.
+      // The race-${i} key value is `{ value, type, ttlMs, expiresAt, ... }`
+      // not a flat string. We assert on entry.value to preserve the
+      // original "no race-clobber" invariant while honoring the typed shape.
+      const entry = parsed.sharedMemory[`race-${i}`];
+      assert.ok(entry && typeof entry === 'object',
+        `race-${i} not present or not a typed entry: ${JSON.stringify(entry)}`);
+      assert.strictEqual(entry.value, `v-${i}`,
+        `race-${i} clobbered: got ${JSON.stringify(entry.value)}`);
     }
 
     // Lock sentinel cleaned up after final write.
@@ -239,15 +250,21 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     const N = 8;
     const tasks = [];
     for (let i = 0; i < N; i++) {
-      tasks.push(memTool.handler({ action: 'set', key: 'race-test', value: `writer-${i}` }));
+      // ADR-0122 (T4): `type` required. ADR-0123 (T5) inherits the same
+      // lock semantics this test exercises; the typed-shape change is
+      // additive — exactly one writer-* still wins under the lock.
+      tasks.push(memTool.handler({ action: 'set', key: 'race-test', value: `writer-${i}`, type: 'system' }));
     }
     await Promise.all(tasks);
 
     const statePath = join(tmp, '.claude-flow', 'hive-mind', 'state.json');
     const parsed = JSON.parse(readFileSync(statePath, 'utf8'));
-    const val = parsed.sharedMemory['race-test'];
-    assert.ok(typeof val === 'string' && val.startsWith('writer-'),
-      `race-test got unexpected value ${JSON.stringify(val)}`);
+    // ADR-0122 (T4): typed MemoryEntry shape — value is on entry.value.
+    const entry = parsed.sharedMemory['race-test'];
+    assert.ok(entry && typeof entry === 'object',
+      `race-test not present or not a typed entry: ${JSON.stringify(entry)}`);
+    assert.ok(typeof entry.value === 'string' && entry.value.startsWith('writer-'),
+      `race-test got unexpected value: ${JSON.stringify(entry.value)}`);
     assert.ok(!existsSync(`${statePath}.lock`), 'lock sentinel not removed');
   });
 });
@@ -293,18 +310,20 @@ describe('ADR-0104 §6 — Queen prompt content', () => {
 // ── 5. Behavioral: §4a mcp-generator direct-path detection ─────────────
 
 describe('ADR-0104 §4a — mcp-generator direct-path detection', () => {
-  it('mcp-generator.js exposes detectClaudeFlowPath / createClaudeFlowEntry', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
+  it('mcp-generator.js exposes detectRufloPath / createRufloEntry', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
     const src = readFileSync(MCP_GEN_DIST, 'utf8');
-    assert.match(src, /detectClaudeFlowPath/);
-    assert.match(src, /createClaudeFlowEntry/);
-    // Must reference `which claude-flow` or `where claude-flow` (Windows)
-    assert.ok(/which claude-flow/.test(src) || /where claude-flow/.test(src),
-      'no `which`/`where claude-flow` invocation found');
+    // ADR-0111 W4: upstream rebrand `claude-flow` binary -> `ruflo`.
+    // Hand-merged in mcp-generator.ts to layer detection on the rebrand.
+    assert.match(src, /detectRufloPath/);
+    assert.match(src, /createRufloEntry/);
+    // Must reference `which ruflo` or `where ruflo` (Windows)
+    assert.ok(/which ruflo/.test(src) || /where ruflo/.test(src),
+      'no `which`/`where ruflo` invocation found');
   });
 
-  it('claude-flow MCP entry uses createClaudeFlowEntry (not the npx wrapper)', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
+  it('claude-flow MCP entry uses createRufloEntry (not the npx wrapper)', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
     const src = readFileSync(MCP_GEN_DIST, 'utf8');
-    // The Claude Flow registration block invokes createClaudeFlowEntry.
-    assert.match(src, /mcpServers\['claude-flow'\]\s*=\s*createClaudeFlowEntry/);
+    // The Claude Flow registration block invokes createRufloEntry.
+    assert.match(src, /mcpServers\['claude-flow'\]\s*=\s*createRufloEntry/);
   });
 });
