@@ -1,10 +1,18 @@
 # ADR-0105: Topology behavior differentiation
 
-- **Status**: Investigating (no implementation choice made)
-- **Date**: 2026-04-29
+- **Status**: Accepted (Option C, 2026-05-02); behavioural dispatch superseded by ADR-0128 (T10 complete in ADR-0118 §Status, 2026-05-03). Original investigation residuals: none.
+- **Date**: 2026-04-29 (promoted 2026-05-01)
 - **Roadmap**: ADR-0103 item 1
 - **Scope**: hive-mind topology semantics (`hierarchical` / `mesh` /
   `hierarchical-mesh` / `adaptive`).
+
+### Implementation note (2026-05-03)
+
+State layer wired and behavioural dispatch shipped via T10/ADR-0128. Wire points:
+
+- `forks/ruflo/v3/@claude-flow/swarm/src/topology-manager.ts:1-656` — TopologyManager state layer (adjacency list, leader election, role-indexed maps)
+- `forks/ruflo/v3/@claude-flow/swarm/src/unified-coordinator.ts:139,170` — TopologyManager imported and instantiated by UnifiedSwarmCoordinator
+- `forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:91-137` — per-topology coordination-protocol blocks at the worker-spawn dispatch site (ADR-0128 ownership)
 
 ## Context
 
