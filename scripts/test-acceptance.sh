@@ -563,6 +563,10 @@ adr0127_lib="${PROJECT_DIR}/lib/acceptance-adr0127-adaptive.sh"
 adr0130_lib="${PROJECT_DIR}/lib/acceptance-adr0130-fsync.sh"
 [[ -f "$adr0130_lib" ]] && source "$adr0130_lib"
 
+# ADR-0124: Hive-mind session checkpoint/resume/export/import — T6
+adr0124_lib="${PROJECT_DIR}/lib/acceptance-adr0124-sessions.sh"
+[[ -f "$adr0124_lib" ]] && source "$adr0124_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1430,6 +1434,19 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0130_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0124: Hive-mind session checkpoint/resume/export/import (T6).
+# 6 checks covering list/checkpoint/export-import/resume + queenType (H6).
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0124_lib" ]]; then
+  run_check_bg "adr0124-sessions-list"       "ADR-0124 sessions list enumerates archives"                check_adr0124_sessions_list                  "adr0124"
+  run_check_bg "adr0124-sessions-checkpoint" "ADR-0124 sessions checkpoint produces gzipped archive"     check_adr0124_sessions_checkpoint            "adr0124"
+  run_check_bg "adr0124-sessions-roundtrip"  "ADR-0124 export-import round-trip preserves payload"       check_adr0124_sessions_export_import_roundtrip "adr0124"
+  run_check_bg "adr0124-resume"              "ADR-0124 resume restores from latest archive"              check_adr0124_resume                         "adr0124"
+  run_check_bg "adr0124-queen-type-persist"  "ADR-0124 queenType persists in state.json (H6 row 32)"     check_adr0124_queen_type_persistence         "adr0124"
+  run_check_bg "adr0124-status-queen-type"   "ADR-0124 hive-mind_status surfaces queenType (H6 row 32)"  check_adr0124_status_surfaces_queen_type     "adr0124"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0122: Hive-mind 8 memory types with TTL (T4).
 # 8-type matrix, TTL expiry, type filter, missing/unknown rejection, legacy migration.
 # ════════════════════════════════════════════════════════════════════
@@ -1957,6 +1974,18 @@ if [[ -f "$adr0130_lib" ]]; then
   )
 fi
 
+_adr0124_specs=()
+if [[ -f "$adr0124_lib" ]]; then
+  _adr0124_specs=(
+    "adr0124-sessions-list|ADR-0124 sessions list enumerates archives"
+    "adr0124-sessions-checkpoint|ADR-0124 sessions checkpoint produces gzipped archive"
+    "adr0124-sessions-roundtrip|ADR-0124 export-import round-trip preserves payload"
+    "adr0124-resume|ADR-0124 resume restores from latest archive"
+    "adr0124-queen-type-persist|ADR-0124 queenType persists in state.json (H6 row 32)"
+    "adr0124-status-queen-type|ADR-0124 hive-mind_status surfaces queenType (H6 row 32)"
+  )
+fi
+
 _adr0122_specs=()
 if [[ -f "$adr0122_lib" ]]; then
   _adr0122_specs=(
@@ -2368,6 +2397,7 @@ collect_parallel "all" \
   "${_adr0121_specs[@]}" \
   "${_adr0127_specs[@]}" \
   "${_adr0130_specs[@]}" \
+  "${_adr0124_specs[@]}" \
   "${_adr0122_specs[@]}" \
   "${_adr0123_specs[@]}" \
   "${_adr0126_specs[@]}" \
