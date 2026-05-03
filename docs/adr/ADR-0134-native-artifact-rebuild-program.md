@@ -46,21 +46,97 @@ ADR-0133's script auto-discovered napi crates via `package.json` script greps. T
 - Some targets produce one artifact, some produce many
 - Some targets have implicit transitive dependencies (rvf-node depends on rvf-runtime)
 
-A small per-fork manifest is more robust than per-pattern auto-discovery:
+A small per-fork manifest is more robust than per-pattern auto-discovery.
 
-```yaml
-# forks/ruvector/.native-targets.yaml (illustrative — design not finalised)
-- target: rvf-node
-  source: crates/rvf/rvf-runtime, crates/rvf/rvf-node
-  build: cd crates/rvf/rvf-node && napi build --platform --release
-  output: crates/rvf/rvf-node/*.darwin-arm64.node
-- target: ruvector-attention-wasm
-  source: crates/ruvector-attention-wasm
-  build: cd crates/ruvector-attention-wasm && wasm-pack build --release --target nodejs
-  output: crates/ruvector-attention-wasm/pkg/ruvector_attention_wasm_bg.wasm
+## Trigger architecture — four-layer skip cascade
+
+**Cost concern.** Naively rebuilding every native target every release is ~7 minutes minimum on darwin-arm64 (8 napi × ~30s + 5 wasm × ~60s, + commit+push). Most releases are version bumps with zero source changes — they should pay zero rebuild cost.
+
+The pipeline must skip rebuild work at four progressively-finer layers, each cheaper than running the build:
+
+| Layer | Check | Skip condition | Cost when skipped | Cost when triggered |
+|---|---|---|---|---|
+| **1. Per-fork HEAD** | `PREV_<FORK>_HEAD == NEW_<FORK>_HEAD` | Fork has no new commits at all | ~10ms (single git rev-parse) | proceed to layer 2 |
+| **2. Per-target source-glob** | `git diff --name-only $PREV $HEAD -- <target.sources>` is empty | Target's source paths unchanged within the fork's diff | ~50ms (one git diff per target) | proceed to layer 3 |
+| **3. Output-mtime cache** | all `<target.outputs>` have mtime newer than newest matched source mtime | Output already-built atop current source (e.g. another agent rebuilt locally) | ~20ms (stat + compare) | proceed to layer 4 |
+| **4. Build-tool incremental** | cargo's `target/` cache + wasm-pack cache + tsc's `.tsbuildinfo` | Per-tool incremental compile | seconds (vs. minutes cold) | full cold rebuild |
+
+These compound:
+- **Steady-state release** (no fork changes): all 4 forks skip at layer 1 → ~50ms total overhead
+- **Single-fork docs change**: 3 forks skip at layer 1; 1 fork has all targets skip at layer 2 → ~250ms
+- **Single-target source change** (e.g. ADR-0133's rvf-runtime fix): 3 forks skip at layer 1; 1 fork has 7 targets skip at layer 2, 1 target rebuild at layer 4 with cargo incremental → ~30s
+- **Cold first-run**: all targets at layer 4, cargo cache empty → ~7-10 min (acceptable for first build of the day)
+
+**Key invariant**: skip decisions are conservative (false-positive skips would reproduce the ADR-0133 regression). Layer 2's source-glob match must enumerate transitive Rust dependencies explicitly. Layer 3's output-mtime check is a safety net, not a correctness guarantee.
+
+## Manifest schema (bash-sourced for zero-dep parsing)
+
+Manifest format: bash file with helper function calls. Avoids yaml/toml/json dependency — the pipeline is already bash, and a sourced file gives full validation control.
+
+```bash
+# forks/ruvector/.native-targets.sh
+# Sourced by scripts/native-rebuild.sh.
+# Each declare_native_target call appends one entry to global TARGETS state.
+
+declare_native_target \
+  --name        "rvf-node" \
+  --sources     "crates/rvf/rvf-runtime/**/*.rs:crates/rvf/rvf-runtime/Cargo.toml:crates/rvf/rvf-node/**/*.rs:crates/rvf/rvf-node/Cargo.toml" \
+  --cwd         "crates/rvf/rvf-node" \
+  --command     "napi build --platform --release" \
+  --outputs     "crates/rvf/rvf-node/*.darwin-arm64.node" \
+  --platforms   "darwin-arm64,linux-x64-gnu" \
+  --requires    "napi"
+
+declare_native_target \
+  --name        "ruvector-attention-wasm" \
+  --sources     "crates/ruvector-attention-wasm/**/*.rs:crates/ruvector-attention-wasm/Cargo.toml" \
+  --cwd         "crates/ruvector-attention-wasm" \
+  --command     "wasm-pack build --release --target nodejs" \
+  --outputs     "crates/ruvector-attention-wasm/pkg/*.wasm" \
+  --platforms   "any" \
+  --requires    "wasm-pack"
 ```
 
-The general script reads the manifest, computes affected targets via `git diff --name-only`, runs builds, verifies outputs.
+**Required fields:**
+- `--name`: human-readable; appears in logs + acceptance assertions
+- `--sources`: colon-separated glob list. Match against `git diff --name-only`. Must enumerate transitive Rust deps (e.g. rvf-node lists rvf-runtime sources). For workspace-wide deps, use `crates/<dep>/**`.
+- `--cwd`: relative to fork root; build runs there
+- `--command`: full build command, run via `bash -c` in `<cwd>`
+- `--outputs`: file glob; mtimes verified post-build
+
+**Optional fields:**
+- `--platforms`: comma-separated host triples this target can build on. Defaults to `darwin-arm64`. Use `any` for portable builds (wasm). Targets requiring unavailable platforms are skipped silently with a log note.
+- `--requires`: comma-separated tool names to verify in PATH before building. Fail loud at pre-flight if missing — don't crash mid-build.
+
+**Validation** runs at manifest-load time:
+- Every `--cwd` path exists relative to fork root
+- Every `--sources` glob matches at least one file (catches typos)
+- Every `--requires` tool is on PATH (or target is skipped per `--platforms`)
+
+## Parallelism + concurrency
+
+Targets that pass layers 1-3 and reach layer 4 can build in parallel — each target is independent at the build-tool level (cargo handles its own dep graph internally for transitive crates).
+
+Concurrency cap: `N = max(2, $(nproc) / 2)` to avoid thrashing dev hosts. Implementable via:
+
+```bash
+echo "${affected_targets[@]}" | xargs -P "$N" -I {} bash -c '<build one>' _ {}
+```
+
+Per-target output is captured to per-target log file; aggregate to phase log only on completion. Per memory `feedback-no-tail-tests.md`: capture full output, grep after.
+
+## Failure handling
+
+- **Per-target failure**: build returns non-zero → mark target as failed, capture stderr, continue other targets. After all targets finish, fail the phase loudly with aggregated stderr per failed target.
+- **Toolchain missing**: caught at manifest-load (per `--requires`), fail BEFORE any build runs.
+- **Output not refreshed despite zero exit**: per memory `feedback-no-fallbacks.md` and `feedback-best-effort-must-rethrow-fatals.md` — treat as fatal. Build script lied; binary is stale; abort.
+- **Commit/push failure**: rebase + retry once; second failure aborts with clear error. Don't squash or force.
+
+## State tracking
+
+`scripts/.last-build-state` already tracks per-fork HEAD. That's enough for layer 1 (per-fork skip) and layer 2 (source-glob diff). No new state needed.
+
+For finer-grained per-target build-time tracking (e.g. "last time I successfully built rvf-node was at this hash"), could add `RUVECTOR_RVF_NODE_LAST_BUILT_AT=<sha>` to state file. Not strictly necessary — output-mtime check (layer 3) covers the same ground without state proliferation.
 
 ## Out of scope
 
@@ -72,10 +148,20 @@ The general script reads the manifest, computes affected targets via `git diff -
 
 ### Phase 1 — Design + ADR-0133 generalisation (1 day)
 
-- Finalise manifest schema (yaml/json/toml — pick one, document)
-- Extract ADR-0133's `napi-rebuild.sh` detection/enumeration helpers into `lib/native-rebuild-helpers.sh`
-- New `scripts/native-rebuild.sh` reads per-fork manifest, dispatches per target type
-- ADR-0133's hardcoded `napi-rebuild.sh` becomes thin wrapper over Phase 1 helpers (or fully replaced)
+- Manifest format: bash-sourced (per §Manifest schema above) — no new toolchain dependency
+- Extract ADR-0133's `napi-rebuild.sh` detection helpers into `lib/native-rebuild-helpers.sh`:
+  - `_layer1_fork_unchanged()` — `PREV_<FORK>_HEAD == NEW_<FORK>_HEAD`
+  - `_layer2_target_sources_unchanged()` — `git diff --name-only $PREV $HEAD -- <sources>` empty
+  - `_layer3_outputs_fresh()` — all outputs newer than newest source mtime
+  - `declare_native_target()` — manifest entry parser
+  - `validate_target()` — sources exist, requires-tools on PATH, cwd dir exists
+- New `scripts/native-rebuild.sh` orchestrates: per-fork manifest load → 4-layer skip cascade → parallel build → verify → commit + push
+- ADR-0133's `napi-rebuild.sh` either replaced by `native-rebuild.sh` invocation OR ported to use the new helpers internally (decide during implementation; not load-bearing)
+- Per-fork manifest written for ruvector ONLY in this phase (covers ADR-0133 + Phase 2's targets)
+- Acceptance: `lib/acceptance-adr0134-phase1.sh` asserts:
+  - All 4 skip layers correctly identified for a no-change release (verify ~50ms total overhead)
+  - rvf-node rebuild triggered when crates/rvf/rvf-runtime/locking.rs changes (validates ADR-0133 path still works)
+  - Output-mtime layer correctly skips when source unchanged but version was bumped
 
 ### Phase 2 — ruvector WASM (1 day)
 
