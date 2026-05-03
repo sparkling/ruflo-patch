@@ -1383,6 +1383,17 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0119_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0121: Hive-mind CRDT consensus protocol (T3).
+# Wire-boundary, telemetry, malformed rejection, agent annotation.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0119_lib" ]]; then
+  run_check_bg "adr0121-crdt-accepted"       "ADR-0121 crdt strategy accepted at MCP wire"               check_adr0121_crdt_strategy_accepted       "adr0121"
+  run_check_bg "adr0121-crdt-telemetry"      "ADR-0121 propose returns crdtState + crdtExpectedVoters"   check_adr0121_crdt_state_telemetry         "adr0121"
+  run_check_bg "adr0121-crdt-malformed"      "ADR-0121 malformed crdtSnapshot rejected loudly"           check_adr0121_crdt_malformed_snapshot_throws "adr0121"
+  run_check_bg "adr0121-crdt-agent"          "ADR-0121 crdt-synchronizer.md has allowed-tools"           check_adr0121_crdt_agent_annotation        "adr0121"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0122: Hive-mind 8 memory types with TTL (T4).
 # 8-type matrix, TTL expiry, type filter, missing/unknown rejection, legacy migration.
 # ════════════════════════════════════════════════════════════════════
@@ -1874,6 +1885,17 @@ if [[ -f "$adr0119_lib" ]]; then
   )
 fi
 
+_adr0121_specs=()
+if [[ -f "$adr0119_lib" ]]; then
+  # T3 (CRDT) checks live in the same lib as T1+T2 — extended file
+  _adr0121_specs=(
+    "adr0121-crdt-accepted|ADR-0121 crdt strategy accepted at MCP wire"
+    "adr0121-crdt-telemetry|ADR-0121 propose returns crdtState + crdtExpectedVoters"
+    "adr0121-crdt-malformed|ADR-0121 malformed crdtSnapshot rejected loudly"
+    "adr0121-crdt-agent|ADR-0121 crdt-synchronizer.md has allowed-tools"
+  )
+fi
+
 _adr0122_specs=()
 if [[ -f "$adr0122_lib" ]]; then
   _adr0122_specs=(
@@ -2282,6 +2304,7 @@ collect_parallel "all" \
   "${_adr0125_specs[@]}" \
   "${_adr0119_specs[@]}" \
   "${_adr0120_specs[@]}" \
+  "${_adr0121_specs[@]}" \
   "${_adr0122_specs[@]}" \
   "${_adr0123_specs[@]}" \
   "${_adr0126_specs[@]}" \

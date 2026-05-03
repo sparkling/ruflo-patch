@@ -262,3 +262,138 @@ check_adr0120_gossip_agent_annotation() {
   fi
   rm -rf "$iso" 2>/dev/null
 }
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0121 (T3) — Hive-mind CRDT consensus protocol
+# ════════════════════════════════════════════════════════════════════
+
+# Helper: invoke hive-mind_consensus MCP tool (alias to T1/T2 helpers for clarity).
+_t3_consensus_call() {
+  local iso="$1"
+  local params_json="$2"
+  local cli; cli=$(_cli_cmd)
+  _T3_OUT=$(cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 $cli mcp exec --tool hive-mind_consensus --params "$params_json" 2>&1)
+  _T3_EXIT=$?
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 9 (ADR-0121 §Acceptance criteria #1): crdt strategy is
+# accepted at the wire boundary; a propose with strategy:'crdt'
+# returns a proposalId rather than being rejected by the JSON-schema
+# validator.
+# ════════════════════════════════════════════════════════════════════
+check_adr0121_crdt_strategy_accepted() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0121-crdt-accepted")
+  _t1_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0121-§wire: hive-mind init failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  _t3_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"crdt"}'
+  if echo "$_T3_OUT" | grep -qE "(schema|enum.*crdt|not.*allowed.*crdt)"; then
+    _CHECK_OUTPUT="ADR-0121-§wire: 'crdt' rejected by schema (output: $_T3_OUT)"
+  elif echo "$_T3_OUT" | grep -qE "(proposalId|proposal-)"; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0121-§wire: 'crdt' accepted at wire boundary; proposal created"
+  else
+    _CHECK_OUTPUT="ADR-0121-§wire: unexpected response (output: $_T3_OUT)"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 10 (ADR-0121 §Acceptance criteria — crdtState telemetry):
+# propose with strategy:'crdt' surfaces crdtState (empty triple at
+# proposal creation) and crdtExpectedVoters in the response.
+# ════════════════════════════════════════════════════════════════════
+check_adr0121_crdt_state_telemetry() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0121-crdt-state")
+  _t1_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0121-§state: hive-mind init failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  _t3_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"crdt"}'
+  # The propose response must include crdtState (the merge accumulator) and
+  # crdtExpectedVoters (the voter-count snapshot for settlement).
+  if echo "$_T3_OUT" | grep -qE '"crdtState"' && \
+     echo "$_T3_OUT" | grep -qE '"crdtExpectedVoters"'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0121-§state: crdtState + crdtExpectedVoters present in propose response"
+  else
+    _CHECK_OUTPUT="ADR-0121-§state: missing crdtState/crdtExpectedVoters fields (output: $_T3_OUT)"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 11 (ADR-0121 §Acceptance criteria — malformed snapshot):
+# vote with malformed crdtSnapshot must throw, not silently coerce.
+# Per `feedback-no-fallbacks.md`: invalid CRDT-state payload throws.
+# ════════════════════════════════════════════════════════════════════
+check_adr0121_crdt_malformed_snapshot_throws() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0121-crdt-malformed")
+  _t1_hive_init "$iso" || { _CHECK_OUTPUT="ADR-0121-§malformed: hive-mind init failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  # Spawn a worker, propose, then vote with a malformed crdtSnapshot.
+  local cli; cli=$(_cli_cmd)
+  (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 30 $cli hive-mind spawn --count 1 >/dev/null 2>&1) || true
+
+  _t3_consensus_call "$iso" '{"action":"propose","type":"test","value":"v","strategy":"crdt"}'
+  local proposal_id
+  proposal_id=$(echo "$_T3_OUT" | grep -oE '"proposalId":"[^"]+"' | head -1 | sed 's/.*":"\(.*\)"/\1/')
+  if [[ -z "$proposal_id" ]]; then
+    _CHECK_OUTPUT="ADR-0121-§malformed: failed to create proposal (output: $_T3_OUT)"
+    rm -rf "$iso" 2>/dev/null
+    return
+  fi
+
+  # Submit a malformed snapshot — missing 'verdict' field.
+  _t3_consensus_call "$iso" "{\"action\":\"vote\",\"proposalId\":\"$proposal_id\",\"voterId\":\"voter-1\",\"crdtSnapshot\":{\"votes\":{\"counts\":{}},\"approvers\":{\"entries\":[],\"tombstones\":[]}}}"
+  if echo "$_T3_OUT" | grep -qE "(crdtSnapshot|votes.*approvers.*verdict|Error)"; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0121-§malformed: malformed crdtSnapshot rejected loudly"
+  else
+    _CHECK_OUTPUT="ADR-0121-§malformed: malformed snapshot silently accepted (output: $_T3_OUT)"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Scenario 12 (ADR-0121 §Acceptance criteria — agent-file annotation):
+# crdt-synchronizer.md ships with `allowed-tools:
+# [mcp__ruflo__hive-mind_consensus]` frontmatter. Static-grep against
+# the materialised project's .claude/agents/ directory.
+#
+# NOTE: this check probes whether the wire-in step from ADR-0121
+# §Implementation §4 has landed on both copies (CLI and MCP package).
+# If frontmatter is missing the check fails loudly so the gap is visible.
+# ════════════════════════════════════════════════════════════════════
+check_adr0121_crdt_agent_annotation() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local iso; iso=$(_e2e_isolate "adr0121-crdt-agent")
+  : > "$iso/.ruflo-project"
+
+  local cli; cli=$(_cli_cmd)
+  (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 $cli init --full --force >/dev/null 2>&1) || \
+    { _CHECK_OUTPUT="ADR-0121-§agent: init --full failed"; rm -rf "$iso" 2>/dev/null; return; }
+
+  local agent_file="$iso/.claude/agents/consensus/crdt-synchronizer.md"
+  if [[ ! -f "$agent_file" ]]; then
+    _CHECK_OUTPUT="ADR-0121-§agent: crdt-synchronizer.md missing in init'd project"
+    rm -rf "$iso" 2>/dev/null
+    return
+  fi
+
+  # Required: allowed-tools frontmatter referencing mcp__ruflo__hive-mind_consensus.
+  if ! grep -qE 'allowed-tools:' "$agent_file"; then
+    _CHECK_OUTPUT="ADR-0121-§agent: crdt-synchronizer.md missing allowed-tools frontmatter"
+  elif ! grep -qE 'mcp__ruflo__hive-mind_consensus' "$agent_file"; then
+    _CHECK_OUTPUT="ADR-0121-§agent: crdt-synchronizer.md missing mcp__ruflo__hive-mind_consensus tool reference"
+  else
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="ADR-0121-§agent: crdt-synchronizer.md properly annotated"
+  fi
+  rm -rf "$iso" 2>/dev/null
+}

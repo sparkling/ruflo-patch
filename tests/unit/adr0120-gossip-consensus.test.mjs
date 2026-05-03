@@ -260,8 +260,10 @@ describe('ADR-0120 (T2) — gossip consensus runtime surface', () => {
     // ADR-0120 doesn't add gossip to calculateRequiredVotes (gossip uses
     // settleCheckGossip, not threshold-based resolution). The default arm
     // continues to throw per ADR-0119 §Decision Drivers.
+    // Slice widened to 4000 chars after ADR-0121 (T3) added 'crdt' + 'gossip'
+    // explicit cases ahead of the default arm — function body grew past 2000.
     const fnIdx = src.search(/function\s+calculateRequiredVotes\s*\(/);
-    const fnSlice = src.slice(fnIdx, fnIdx + 2000);
+    const fnSlice = src.slice(fnIdx, fnIdx + 4000);
     assert.match(fnSlice, /throw\s+new\s+Error\(`?Unknown consensus strategy/);
   });
 });

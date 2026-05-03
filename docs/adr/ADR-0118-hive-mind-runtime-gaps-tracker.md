@@ -62,7 +62,7 @@ T13 added 2026-05-02 — carry-forward from ADR-0108 (Accepted but unwired): `--
 |---|---|---|---|---|---|
 | T1 | ADR-0119 | complete | Henrik (orchestrator merge after agent stall) | fork ca9e29e2c + ruflo-patch 74f29e7 | pending next materialise |
 | T2 | ADR-0120 | complete | Henrik | fork 2839874b2 + ruflo-patch ccf2c62 | pending next materialise |
-| T3 | ADR-0121 | open | — | — | — |
+| T3 | ADR-0121 | complete | Henrik | fork 49a2786dd + ruflo-patch (this commit) | pending next materialise |
 | T4 | ADR-0122 | complete | Henrik (orchestrator merge after agent stall) | fork ca9e29e2c + ruflo-patch 74f29e7 | pending next materialise |
 | T5 | ADR-0123 | complete | Henrik | fork 8d423a346 + ruflo-patch b61811f | pending next materialise |
 | T6 | ADR-0124 | open | — | — | — |
