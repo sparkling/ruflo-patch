@@ -710,13 +710,12 @@ run_check_bg "adr0113-w4g-sandbox"      "0113 plugin sandbox capability deny (Fi
 run_check_bg "adr0113-bin-selfid"       "0113 ruflo-mcp bin emits [ruflo-mcp] log tag (Fix 6.5)"       check_adr0113_proxy_bin_selfid_ruflo_mcp     "structure"
 run_check_bg "adr0115-hive-unbundled"   "0115 hive-mind_spawn NOT bundled into swarm-sprawl prohibition (R1)"  check_adr0115_claudemd_hive_unbundled        "structure"
 
-# ADR-0117: Marketplace MCP server registration + init mcp-generator fork patch
-run_check_bg "adr0117-mp-key"           "0117 plugin.json mcpServers.ruflo + @sparkleideas/cli args (AC#1)"     check_adr0117_plugin_json_keys               "structure"
-run_check_bg "adr0117-no-cf-alpha"      "0117 zero claude-flow@alpha refs in marketplace surface (AC#2)"        check_adr0117_no_claude_flow_alpha           "structure"
-run_check_bg "adr0117-codemod"          "0117 codemod preserves marketplace ruflo-key state (AC#3)"             check_adr0117_codemod_preserves              "structure"
-run_check_bg "adr0117-tools-resolve"    "0117 hive-mind plugin allowed-tools resolve to MCP server (AC#4)"      check_adr0117_allowed_tools_resolve          "structure"
-run_check_bg "adr0117-init-mcp"         "0117 init .mcp.json args use @sparkleideas/cli@latest (AC#5)"          check_adr0117_init_mcp_no_bare_ruflo         "structure"
-run_check_bg "adr0117-init-tmpls"       "0117 init .claude/{agents,commands,skills} have zero claude-flow@alpha (AC#6)" check_adr0117_init_templates_no_alpha     "structure"
+# ADR-0117 (Revision 2026-05-03): service-method MCP server registration via init
+run_check_bg "adr0117-init-svc"         "0117 init .mcp.json registers mcpServers.ruflo, no claude-flow key (AC#1)"  check_adr0117_init_service_method               "structure"
+run_check_bg "adr0117-umbrella-clean"   "0117 umbrella plugin.json has zero mcpServers blocks (AC#2)"               check_adr0117_umbrella_no_mcpservers            "structure"
+run_check_bg "adr0117-no-cf-alpha"      "0117 zero claude-flow@alpha refs in marketplace surface (AC#3)"            check_adr0117_no_claude_flow_alpha              "structure"
+run_check_bg "adr0117-tool-resolve"     "0117 mcp__ruflo__ skill refs resolve via tools/list (AC#4)"                check_adr0117_mcp_tool_resolution               "structure"
+run_check_bg "adr0117-codemod-stable"   "0117 codemod doesn't reintroduce mcpServers; Pass 5 still rewrites (AC#5)" check_adr0117_codemod_doesnt_readd_mcpservers   "structure"
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
@@ -2326,12 +2325,11 @@ collect_parallel "all" \
   "adr0113-w4g-sandbox|0113 plugin sandbox capability deny (Fix 1, W4G)" \
   "adr0113-bin-selfid|0113 ruflo-mcp bin emits [ruflo-mcp] log tag (Fix 6.5)" \
   "adr0115-hive-unbundled|0115 hive-mind_spawn NOT bundled into swarm-sprawl prohibition (R1)" \
-  "adr0117-mp-key|0117 plugin.json mcpServers.ruflo + @sparkleideas/cli args (AC#1)" \
-  "adr0117-no-cf-alpha|0117 zero claude-flow@alpha refs in marketplace surface (AC#2)" \
-  "adr0117-codemod|0117 codemod preserves marketplace ruflo-key state (AC#3)" \
-  "adr0117-tools-resolve|0117 hive-mind plugin allowed-tools resolve to MCP server (AC#4)" \
-  "adr0117-init-mcp|0117 init .mcp.json args use @sparkleideas/cli@latest (AC#5)" \
-  "adr0117-init-tmpls|0117 init .claude/{agents,commands,skills} have zero claude-flow@alpha (AC#6)" \
+  "adr0117-init-svc|0117 init .mcp.json registers mcpServers.ruflo, no claude-flow key (AC#1)" \
+  "adr0117-umbrella-clean|0117 umbrella plugin.json has zero mcpServers blocks (AC#2)" \
+  "adr0117-no-cf-alpha|0117 zero claude-flow@alpha refs in marketplace surface (AC#3)" \
+  "adr0117-tool-resolve|0117 mcp__ruflo__ skill refs resolve via tools/list (AC#4)" \
+  "adr0117-codemod-stable|0117 codemod doesn't reintroduce mcpServers; Pass 5 still rewrites (AC#5)" \
   "p1-ai-scan|AI Defence scan (P1)" "p1-ai-analyze|AI Defence analyze (P1)" \
   "p1-ai-pii|AI Defence has_pii (P1)" "p1-ai-safe|AI Defence is_safe (P1)" \
   "p1-ai-learn|AI Defence learn (P1)" "p1-ai-stats|AI Defence stats (P1)" \

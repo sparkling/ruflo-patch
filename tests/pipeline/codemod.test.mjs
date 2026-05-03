@@ -736,7 +736,45 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('rewrites claude-flow@alpha in .claude-plugin/plugin.json args', async () => {
+  // ADR-0117 Revision 2026-05-03 (R3): umbrella .claude-plugin/plugin.json
+  // no longer carries an mcpServers block — init's mcp-generator.ts is the
+  // sole registration mechanism. The fixture below reflects the post-R3
+  // state: a minimal manifest with no mcpServers. The codemod must leave
+  // it byte-identical (no Pass 5 hits, no Pass 1-4 hits — pure passthrough).
+  it('does NOT add an mcpServers block to .claude-plugin/plugin.json (post-R3 passthrough)', async () => {
+    tmp = makeTmpDir();
+    const cpDir = join(tmp, '.claude-plugin');
+    mkdirSync(cpDir, { recursive: true });
+    const pluginJson = {
+      name: 'fork-marketplace',
+      version: '2.5.0',
+      description: 'Enterprise AI agent orchestration plugin',
+      engines: {
+        claudeCode: '>=2.0.0',
+        node: '>=20.0.0',
+      },
+    };
+    const original = JSON.stringify(pluginJson, null, 2) + '\n';
+    writeFileSync(join(cpDir, 'plugin.json'), original);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+    assert.equal(result, original,
+      'post-R3 plugin.json must pass through codemod byte-identical');
+    assert.ok(!result.includes('mcpServers'),
+      'codemod must not synthesise an mcpServers block');
+  });
+
+  // Negative test (R5): codemod must NOT remove an mcpServers block if one
+  // sneaks back via an upstream merge. Removal is out of scope for codemod
+  // — that's a one-time hand edit captured in ADR-0117 Phase R3 (revert
+  // umbrella plugin.json). The acceptance check (lib/acceptance-adr0117-
+  // marketplace-mcp.sh AC#2) enforces zero mcpServers blocks at commit
+  // time; codemod is not the right layer to enforce that invariant.
+  // Pass 5 (claude-flow@alpha rewrite) DOES still apply to args inside
+  // a regression-block — verifying the rewrite-without-removal contract.
+  it('does NOT remove an mcpServers block if it returns from upstream merge (regression guard)', async () => {
     tmp = makeTmpDir();
     const cpDir = join(tmp, '.claude-plugin');
     mkdirSync(cpDir, { recursive: true });
@@ -754,10 +792,17 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
     await transform(tmp);
 
     const result = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+    // Block stays — codemod doesn't enforce R3.
+    assert.ok(result.includes('"mcpServers"'),
+      'mcpServers block must persist (codemod is not the layer that removes it)');
+    assert.ok(result.includes('"ruflo"'),
+      'mcpServers.ruflo key persists');
+    // But Pass 5 still rewrites the args inside it — that's an
+    // independent invariant (orthogonal to the block-removal concern).
     assert.ok(result.includes('"@sparkleideas/cli@latest"'),
-      'args[0] rewritten to @sparkleideas/cli@latest');
+      'Pass 5 rewrites claude-flow@alpha → @sparkleideas/cli@latest in args');
     assert.ok(!result.includes('claude-flow@alpha'),
-      'no claude-flow@alpha remains');
+      'no claude-flow@alpha remains after Pass 5');
   });
 
   it('rewrites claude-flow@alpha in .claude-plugin/hooks/hooks.json shellouts', async () => {
@@ -947,22 +992,32 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
       'root package.json (no .claude-plugin/ or plugins/ ancestor) must not be rewritten');
   });
 
-  it('is byte-stable on consecutive runs (Pass 5 idempotency)', async () => {
+  // ADR-0117 Revision 2026-05-03 (R5): byte-stability on the canonical
+  // post-R3 input (.claude-plugin/hooks/hooks.json carries the live Pass 5
+  // targets — shellouts to claude-flow@alpha — that are the only string
+  // codemod actually needs to rewrite in the marketplace surface).
+  it('is byte-stable on consecutive runs (Pass 5 idempotency, post-R3 input)', async () => {
     tmp = makeTmpDir();
-    const cpDir = join(tmp, '.claude-plugin');
-    mkdirSync(cpDir, { recursive: true });
+    const hooksDir = join(tmp, '.claude-plugin', 'hooks');
+    mkdirSync(hooksDir, { recursive: true });
     const original = JSON.stringify({
-      mcpServers: { ruflo: { command: 'npx', args: ['claude-flow@alpha', 'mcp', 'start'] } },
+      hooks: {
+        Stop: [
+          { hooks: [{ type: 'command', command: 'npx claude-flow@alpha hooks session-end' }] },
+        ],
+      },
     }, null, 2) + '\n';
-    writeFileSync(join(cpDir, 'plugin.json'), original);
+    writeFileSync(join(hooksDir, 'hooks.json'), original);
 
     await transform(tmp);
-    const after1 = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+    const after1 = readFileSync(join(hooksDir, 'hooks.json'), 'utf8');
     await transform(tmp);
-    const after2 = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+    const after2 = readFileSync(join(hooksDir, 'hooks.json'), 'utf8');
 
     assert.equal(after1, after2, 'consecutive runs produce identical output');
     assert.ok(!after1.includes('claude-flow@alpha'),
       'first run already replaced claude-flow@alpha');
+    assert.ok(after1.includes('@sparkleideas/cli@latest'),
+      'Pass 5 rewrote shellout to fork CLI');
   });
 });
