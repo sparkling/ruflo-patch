@@ -23,9 +23,17 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(dirname "$SCRIPT_DIR")"
-FORK_RUVECTOR="${ROOT_DIR}/forks/ruvector"
 
+# Single source of truth for fork dirs (ADR-0039)
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/fork-paths.sh"
+
+FORK_RUVECTOR="${FORK_DIR_RUVECTOR:?FORK_DIR_RUVECTOR not exported by lib/fork-paths.sh}"
 PREV_HEAD="${1:-}"
+
+# Marker file declared at script scope so EXIT-trap cleanup can find it
+# under set -u (defined in main, dereferenced in trap = unbound otherwise).
+MARKER=""
 
 log() {
   printf '[%s] napi-rebuild: %s\n' "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" "$*"
@@ -203,9 +211,8 @@ main() {
   fi
 
   # Snapshot mtime baseline before rebuild
-  local marker
-  marker=$(mktemp /tmp/napi-rebuild-marker.XXXXXX)
-  trap 'rm -f "$marker"' EXIT
+  MARKER=$(mktemp /tmp/napi-rebuild-marker.XXXXXX)
+  trap 'rm -f "${MARKER:-}"' EXIT
 
   # Find + rebuild
   local crates=()
@@ -229,7 +236,7 @@ main() {
     fi
   done
 
-  if ! verify_binaries_fresh "$marker"; then
+  if ! verify_binaries_fresh "$MARKER"; then
     return 1
   fi
 
