@@ -1,6 +1,6 @@
 # ADR-0062: Storage & Configuration Unification
 
-- **Status**: Accepted
+- **Status**: **Implemented (2026-05-03)** — initial unification landed; **superseded by ADR-0063** (post-implementation audit + remediation).
 - **Date**: 2026-04-05
 - **Deciders**: 8-agent analysis swarm + hive-mind review
 - **Methodology**: Deep source audit across 4 forks (ruflo, agentic-flow, ruv-FANN, ruvector)

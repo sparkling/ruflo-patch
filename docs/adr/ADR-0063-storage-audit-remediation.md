@@ -1,6 +1,6 @@
 # ADR-0063: Storage Audit Remediation
 
-- **Status**: Accepted
+- **Status**: **Implemented (2026-05-03)** — post-implementation audit + remediation of ADR-0062 complete.
 - **Date**: 2026-04-05
 - **Deciders**: 8-agent deep audit swarm
 - **Supersedes**: ADR-0062 P0-2, P1-1 (implementation bugs found by audit)

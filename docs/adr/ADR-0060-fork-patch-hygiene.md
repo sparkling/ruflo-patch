@@ -1,6 +1,6 @@
 # ADR-0060: Fork Patch Hygiene
 
-- **Status**: Active
+- **Status**: **Implemented — ongoing governance (2026-05-03)**. Rules established 2026-04-04; codified in CLAUDE.md and fork-related memory entries (`feedback-patches-in-fork.md`, `feedback-trunk-only-fork-development.md`). No further changes pending.
 - **Date**: 2026-04-04
 - **Deciders**: ruflo-patch maintainers
 - **Methodology**: 5-expert hive audit (ruflo, ruvector, agentic-flow specialists)
