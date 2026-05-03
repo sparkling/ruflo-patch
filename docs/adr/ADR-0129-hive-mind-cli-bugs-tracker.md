@@ -1,6 +1,6 @@
 # ADR-0129: Hive-mind CLI bugs surfaced during ADR-0116/0117 testing
 
-- **Status**: Proposed (2026-05-02), **Living tracker** (per ADR-0094 pattern) — last reviewed 2026-05-03; per-bug status may need refresh
+- **Status**: **Living tracker** — last triaged 2026-05-03: 1/4 closed (B3); B1, B2, B4 still open (B4 has workaround via `--worker-types`)
 - **Date**: 2026-05-02
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0116 (marketplace plugin packaging — testing surfaced these bugs), ADR-0117 (MCP server registration)
@@ -159,10 +159,10 @@ ADR-0116 doesn't pin this; the spawn command's frontmatter just says `-t` exists
 
 | Bug | Title | Status | Owner | Commit | Notes |
 |---|---|---|---|---|---|
-| B1 | `memory store` is a no-op | open | — | — | — |
-| B2 | `shutdown` undefined/No fields | open | — | — | — |
-| B3 | `--help` falls through to parent | open | — | — | affects all 11 subcommands |
-| B4 | `spawn -t a,b,c` not split | open | — | — | input-contract decision needed |
+| B1 | `memory store` is a no-op | open | — | — | last reviewed 2026-05-03; `commands/hive-mind.ts:1957` still reads action only from `--action` flag (default `list`), positional `store` dropped |
+| B2 | `shutdown` undefined/No fields | open | — | — | last reviewed 2026-05-03; CLI reads `agentsTerminated`/`stateSaved`/`shutdownTime` but MCP tool returns `workersTerminated`/`shutdownAt`/`graceful` (`hive-mind-tools.ts:2731-2739` vs `hive-mind.ts:2030-2046`) |
+| B3 | `--help` falls through to parent | complete | Henrik | 4fcd79605 | affects all 11 subcommands; fixed by `showCommandHelp(commandPath: string \| string[])` drill-loop in `index.ts:402-428` |
+| B4 | `spawn -t a,b,c` not split | partial | Henrik | 8d423a346 | last reviewed 2026-05-03; `--worker-types` (Option D) added with comma-split + round-robin (ADR-0108 T13). Original `-t a,b,c` syntax still misbehaves at `hive-mind.ts:1263` + `hive-mind-tools.ts:1351` (scalar replicated as literal); partial fix via separate flag — original input-contract decision still pending |
 
 Status values: `open` | `in-progress` | `complete` | `wontfix`. When a bug closes, fill `Owner`/`Commit`, set `complete`, and confirm the corresponding acceptance check is wired into `scripts/test-acceptance.sh`.
 
