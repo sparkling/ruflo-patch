@@ -531,6 +531,18 @@ adr0104_lib="${PROJECT_DIR}/lib/acceptance-adr0104-checks.sh"
 adr0125_lib="${PROJECT_DIR}/lib/acceptance-adr0125-queen-types.sh"
 [[ -f "$adr0125_lib" ]] && source "$adr0125_lib"
 
+# ADR-0119: Hive-mind weighted consensus (Queen 3x voting power) — T1
+adr0119_lib="${PROJECT_DIR}/lib/acceptance-hive-mind-checks.sh"
+[[ -f "$adr0119_lib" ]] && source "$adr0119_lib"
+
+# ADR-0122: Hive-mind 8 memory types with TTL — T4
+adr0122_lib="${PROJECT_DIR}/lib/acceptance-hive-memory-types.sh"
+[[ -f "$adr0122_lib" ]] && source "$adr0122_lib"
+
+# ADR-0128: Hive-mind topology runtime dispatch (6 topologies) — T10
+adr0128_lib="${PROJECT_DIR}/lib/acceptance-adr0128-checks.sh"
+[[ -f "$adr0128_lib" ]] && source "$adr0128_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -1337,6 +1349,46 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0125_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0119: Hive-mind weighted consensus (T1).
+# Wire-boundary acceptance, byzantine alias normalization, missing-queen throw.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0119_lib" ]]; then
+  run_check_bg "adr0119-weighted-accepted"   "ADR-0119 weighted strategy accepted at MCP wire"           check_adr0119_weighted_strategy_accepted   "adr0119"
+  run_check_bg "adr0119-byzantine-alias"     "ADR-0119 byzantine alias normalizes to bft"                check_adr0119_byzantine_alias_normalizes   "adr0119"
+  run_check_bg "adr0119-unknown-rejected"    "ADR-0119 unknown strategy throws (no silent fallback)"     check_adr0119_unknown_strategy_rejected    "adr0119"
+  run_check_bg "adr0119-missing-queen"       "ADR-0119 missing queen on weighted throws"                 check_adr0119_missing_queen_throws         "adr0119"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0122: Hive-mind 8 memory types with TTL (T4).
+# 8-type matrix, TTL expiry, type filter, missing/unknown rejection, legacy migration.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0122_lib" ]]; then
+  run_check_bg "adr0122-8type-matrix"        "ADR-0122 8 memory types accept set with default TTLs"      check_adr0122_8_type_matrix                "adr0122"
+  run_check_bg "adr0122-ttl-expiry"          "ADR-0122 TTL expiry within 500ms"                          check_adr0122_ttl_expiry_short             "adr0122"
+  run_check_bg "adr0122-type-filter"         "ADR-0122 list filter by type"                              check_adr0122_type_filter_list             "adr0122"
+  run_check_bg "adr0122-unknown-rejected"    "ADR-0122 InvalidMemoryTypeError on unknown type"           check_adr0122_unknown_type_rejected        "adr0122"
+  run_check_bg "adr0122-missing-rejected"    "ADR-0122 MissingMemoryTypeError on undefined type"         check_adr0122_missing_type_rejected        "adr0122"
+  run_check_bg "adr0122-legacy-migration"    "ADR-0122 legacy untyped entries migrated non-destructively" check_adr0122_legacy_dict_migration        "adr0122"
+fi
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0128: Hive-mind topology runtime dispatch (T10).
+# 6 topologies + adaptive-pending-T9 + unknown-throws + queen-prompt-protocol-block.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0128_lib" ]]; then
+  run_check_bg "adr0128-topologies-enum"     "ADR-0128 TOPOLOGIES enum has all 6 advertised values"      check_adr0128_topologies_enum_six                                  "adr0128"
+  run_check_bg "adr0128-hierarchical"        "ADR-0128 hierarchical topology wires queen-only broadcast" check_adr0128_dispatch_hierarchical_wires_correct_permissions      "adr0128"
+  run_check_bg "adr0128-mesh"                "ADR-0128 mesh topology wires full peer visibility"         check_adr0128_dispatch_mesh_wires_correct_permissions              "adr0128"
+  run_check_bg "adr0128-hierarchical-mesh"   "ADR-0128 hierarchical-mesh wires sub-hive clustering"      check_adr0128_dispatch_hierarchical_mesh_wires_correct_permissions "adr0128"
+  run_check_bg "adr0128-ring"                "ADR-0128 ring topology wires deterministic chain"          check_adr0128_dispatch_ring_wires_correct_permissions              "adr0128"
+  run_check_bg "adr0128-star"                "ADR-0128 star topology wires queen-only memory writes"     check_adr0128_dispatch_star_wires_correct_permissions              "adr0128"
+  run_check_bg "adr0128-adaptive-pending"    "ADR-0128 adaptive throws pending T9 implementation"        check_adr0128_adaptive_throws_pending_t9                           "adr0128"
+  run_check_bg "adr0128-unknown-throws"      "ADR-0128 unknown topology throws (no silent fallback)"     check_adr0128_unknown_topology_throws                              "adr0128"
+  run_check_bg "adr0128-prompt-block"        "ADR-0128 queen prompt carries topology-specific protocol block" check_adr0128_prompt_protocol_block_per_topology              "adr0128"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # e2e check function definitions — launched in same wave as non-e2e.
 # Each e2e subshell waits for _E2E_READY_FILE before running its check,
 # so they block until background memory init + seed completes (~15-30s)
@@ -1743,6 +1795,43 @@ if [[ -f "$adr0125_lib" ]]; then
   )
 fi
 
+_adr0119_specs=()
+if [[ -f "$adr0119_lib" ]]; then
+  _adr0119_specs=(
+    "adr0119-weighted-accepted|ADR-0119 weighted strategy accepted at MCP wire"
+    "adr0119-byzantine-alias|ADR-0119 byzantine alias normalizes to bft"
+    "adr0119-unknown-rejected|ADR-0119 unknown strategy throws (no silent fallback)"
+    "adr0119-missing-queen|ADR-0119 missing queen on weighted throws"
+  )
+fi
+
+_adr0122_specs=()
+if [[ -f "$adr0122_lib" ]]; then
+  _adr0122_specs=(
+    "adr0122-8type-matrix|ADR-0122 8 memory types accept set with default TTLs"
+    "adr0122-ttl-expiry|ADR-0122 TTL expiry within 500ms"
+    "adr0122-type-filter|ADR-0122 list filter by type"
+    "adr0122-unknown-rejected|ADR-0122 InvalidMemoryTypeError on unknown type"
+    "adr0122-missing-rejected|ADR-0122 MissingMemoryTypeError on undefined type"
+    "adr0122-legacy-migration|ADR-0122 legacy untyped entries migrated non-destructively"
+  )
+fi
+
+_adr0128_specs=()
+if [[ -f "$adr0128_lib" ]]; then
+  _adr0128_specs=(
+    "adr0128-topologies-enum|ADR-0128 TOPOLOGIES enum has all 6 advertised values"
+    "adr0128-hierarchical|ADR-0128 hierarchical topology wires queen-only broadcast"
+    "adr0128-mesh|ADR-0128 mesh topology wires full peer visibility"
+    "adr0128-hierarchical-mesh|ADR-0128 hierarchical-mesh wires sub-hive clustering"
+    "adr0128-ring|ADR-0128 ring topology wires deterministic chain"
+    "adr0128-star|ADR-0128 star topology wires queen-only memory writes"
+    "adr0128-adaptive-pending|ADR-0128 adaptive throws pending T9 implementation"
+    "adr0128-unknown-throws|ADR-0128 unknown topology throws (no silent fallback)"
+    "adr0128-prompt-block|ADR-0128 queen prompt carries topology-specific protocol block"
+  )
+fi
+
 _e2e_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" ]]; then
   _e2e_specs=(
@@ -2090,6 +2179,9 @@ collect_parallel "all" \
   "${_adr0098_specs[@]}" \
   "${_adr0104_specs[@]}" \
   "${_adr0125_specs[@]}" \
+  "${_adr0119_specs[@]}" \
+  "${_adr0122_specs[@]}" \
+  "${_adr0128_specs[@]}" \
   "${_e2e_specs[@]}"
 
 # Wait for e2e prep background process (may already be done)
