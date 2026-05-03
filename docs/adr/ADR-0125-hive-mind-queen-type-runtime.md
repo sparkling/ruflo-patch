@@ -1,6 +1,6 @@
 # ADR-0125: Hive-mind Queen-type runtime differentiation (Strategic / Tactical / Adaptive)
 
-- **Status**: Proposed (2026-05-02)
+- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T7 complete; fork 0748ed9e9 README + 9db6978d5 runtime). Supersedes ADR-0107 (full). Per §Reconciliation, "persist `queenType` across sessions" was a residual at proposal time; folded into T6/ADR-0124 §Specification (archive payload `queenType` field + live `state.queen.queenType` + `mcp__ruflo__hive-mind_status` surfacing).
 - **Date**: 2026-05-02
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0116 (hive-mind marketplace plugin — provides the verification matrix audit), ADR-0118 (hive-mind runtime gaps tracker — owns this task as T7)
