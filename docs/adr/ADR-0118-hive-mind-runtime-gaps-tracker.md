@@ -1,6 +1,6 @@
 # ADR-0118: Hive-mind runtime gaps tracker
 
-- **Status**: Proposed (2026-05-02), **Living tracker** (per ADR-0094 pattern); all 13 Tns complete; T14 added 2026-05-03 (sub-queen failure escalation, design phase)
+- **Status**: Proposed (2026-05-02), **Living tracker** (per ADR-0094 pattern); all 14 Tns complete (T1-T13 closed earlier; T14 closed 2026-05-03 — sub-queen failure escalation runtime + tests)
 - **Date**: 2026-05-02
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0116 (hive-mind marketplace plugin — provides the verification matrix audit and the ship vehicle for gap annotations)
@@ -77,7 +77,7 @@ T14 added 2026-05-03 — ADR-0109 R8 carry-forward (sub-queen failure escalation
 | T11 | ADR-0130 | complete | Henrik | fork 4bc336ad5 + ruflo-patch (this commit) | pending next materialise |
 | T12 | ADR-0131 | complete | Henrik | fork 4e97ce259 + ruflo-patch (this commit) | pending next materialise |
 | T13 | ADR-0108 | complete | Henrik | fork 8d423a346 + ruflo-patch b61811f | pending next materialise |
-| T14 | ADR-0132 | open | — | — | sub-queen failure escalation in hierarchical-mesh; design ADR landed 2026-05-03 (`7dac66a`); runtime work pending |
+| T14 | ADR-0132 | complete | Henrik | fork `b5692c127` (runtime + 16-case test) + `c277b2d81` (prompt block, bundled by merge race) + ruflo-patch (this commit) | sub-queen failure escalation in hierarchical-mesh; design `7dac66a` + runtime `b5692c127` (queen-coordinator subQueenFailed) |
 
 Status values: `open` | `in-progress` | `escalated-to-adr` | `complete`. When a task lands, fill in `Owner`/`Commit`, set status `complete`, and confirm the ADR-0116 plugin README annotation was removed by the next materialise run.
 

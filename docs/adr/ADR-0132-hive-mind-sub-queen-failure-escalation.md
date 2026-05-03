@@ -1,6 +1,6 @@
 # ADR-0132: Hive-mind sub-queen failure escalation in hierarchical-mesh topology (R8 follow-up)
 
-- **Status**: Proposed (2026-05-03)
+- **Status**: **Implemented (2026-05-03)** per ADR-0118 §Status (T14 complete; fork `b5692c127` runtime + `c277b2d81` prompt block bundled by merge race). subQueenFailed() handler at `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts` (+277 lines: types, state, public methods); SUB-QUEEN FAILURE PROTOCOL extension at `commands/hive-mind.ts:538-595` (sibling to T12 WORKER FAILURE PROTOCOL); integration test at `__tests__/sub-queen-failure.test.ts` (16 cases across 5 describe blocks).
 - **Date**: 2026-05-03
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0109 (parent — original R8 paragraph identified this gap), ADR-0131 (T12 worker-failure prompt protocol — sibling shape this ADR extends), ADR-0128 (T10 hierarchical-mesh topology runtime — owns the sub-queen instantiation surface this ADR fails-handles)

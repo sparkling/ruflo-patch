@@ -583,6 +583,10 @@ adr0117_lib="${PROJECT_DIR}/lib/acceptance-adr0117-marketplace-mcp.sh"
 adr0129_lib="${PROJECT_DIR}/lib/acceptance-adr0129-checks.sh"
 [[ -f "$adr0129_lib" ]] && source "$adr0129_lib"
 
+# ADR-0132: Sub-queen failure escalation (T14 — hierarchical-mesh runtime, R8 carry-forward from ADR-0109)
+adr0132_lib="${PROJECT_DIR}/lib/acceptance-adr0132-checks.sh"
+[[ -f "$adr0132_lib" ]] && source "$adr0132_lib"
+
 # ADR-0116: ruflo-hive-mind marketplace plugin (16 ACs + USERGUIDE anchor pre-check)
 adr0116_lib="${PROJECT_DIR}/lib/acceptance-adr0116-checks.sh"
 [[ -f "$adr0116_lib" ]] && source "$adr0116_lib"
@@ -733,6 +737,11 @@ run_check_bg "adr0117-codemod-stable"   "0117 codemod doesn't reintroduce mcpSer
 run_check_bg "adr0129-b1-mem-store"     "0129 B1 hive-mind memory store key value persists (positional)"           check_adr0129_b1_memory_store                   "structure"
 run_check_bg "adr0129-b2-shutdown"      "0129 B2 hive-mind shutdown renders fields without 'undefined'"             check_adr0129_b2_shutdown_fields                "structure"
 run_check_bg "adr0129-b4-comma-split"   "0129 B4 hive-mind spawn -t a,b auto-splits to 2 distinct worker types"     check_adr0129_b4_comma_split                    "structure"
+
+# ADR-0132: Sub-queen failure escalation (T14 carry-forward from ADR-0109 R8)
+run_check_bg "adr0132-prompt-block"     "0132 SUB-QUEEN FAILURE PROTOCOL heading present in queen prompt"           check_adr0132_subqueen_prompt_block_present     "structure"
+run_check_bg "adr0132-handler"          "0132 subQueenFailed() handler exported from queen-coordinator.ts"          check_adr0132_subqueen_failed_handler_exported  "structure"
+run_check_bg "adr0132-test"             "0132 sub-queen-failure.test.ts present with ≥3 it/test blocks"             check_adr0132_subqueen_failure_test_present     "structure"
 
 # ADR-0116: ruflo-hive-mind marketplace plugin (USERGUIDE pre-check + 15 ACs;
 # AC #13 (E2E install) intentionally manual — see acceptance-adr0116-checks.sh footer).
