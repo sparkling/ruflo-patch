@@ -1,6 +1,6 @@
 # ADR-0085: Bridge Deletion & Ideal State Gap Closure
 
-- **Status**: Accepted
+- **Status**: **Implemented (2026-05-03)** — closes ADR-0075 Layers 2 and 5.
 - **Date**: 2026-04-13
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent hive (queen architect, devil's advocate, registry bootstrap expert, initializer cleanup expert, dead code analyst, test strategy expert, merge conflict analyst, performance impact analyst)

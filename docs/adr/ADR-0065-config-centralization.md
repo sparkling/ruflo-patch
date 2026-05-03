@@ -1,6 +1,6 @@
 # ADR-0065: Configuration Centralization and Storage Deduplication
 
-- **Status**: Accepted (P0/P1/P2 implemented)
+- **Status**: **Implemented (2026-05-03)** — P0/P1/P2 complete; P3 deferred per §Decision.
 - **Date**: 2026-04-05
 - **Deciders**: Henrik Pettersen
 - **Builds on**: ADR-0062 (storage config unification), ADR-0063 (storage audit), ADR-0064 (controller config alignment)

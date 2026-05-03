@@ -1,6 +1,6 @@
 # ADR-0084: Dead Code Cleanup — sql.js Ghost References + Bridge Caller Migration
 
-- **Status**: Accepted
+- **Status**: **Implemented (2026-05-03)** — Phase 4 single controller complete; Phase 5 by ADR-0083.
 - **Date**: 2026-04-12
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent hive (storage architect, CJS analyst, performance engineer, merge-conflict strategist, user-impact analyst, 2 devil's advocates, queen synthesis)
