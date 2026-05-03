@@ -6,7 +6,8 @@
 #
 # Usage: bash scripts/ruflo-sync.sh [--force]
 #
-# Called by ruflo.service or npm run sync.
+# Called by ruflo.service. The npm `sync` script was removed; invoke
+# this script directly if you need to run sync outside the systemd timer.
 
 set -euo pipefail
 

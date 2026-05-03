@@ -64,7 +64,10 @@ run_tests_ci() {
   log "Running preflight + unit tests"
   local _pf_start _pf_end _ut_start _ut_end
   _pf_start=$(date +%s%N 2>/dev/null || echo 0)
-  npm run preflight --prefix "${PROJECT_DIR}" || {
+  ( cd "${PROJECT_DIR}" \
+    && node scripts/preflight.mjs \
+    && node scripts/lint-acceptance-checks.mjs > /dev/null \
+    && node scripts/lint-fail-loud.mjs ) || {
     log_error "Preflight failed"
     return 1
   }
@@ -72,7 +75,7 @@ run_tests_ci() {
   if [[ "$_pf_start" != "0" && "$_pf_end" != "0" ]]; then
     local _pf_ms=$(( (_pf_end - _pf_start) / 1000000 ))
     log "  Preflight: ${_pf_ms}ms"
-    add_cmd_timing "test-ci" "npm run preflight" "${_pf_ms}"
+    add_cmd_timing "test-ci" "preflight" "${_pf_ms}"
   fi
 
   _ut_start=$(date +%s%N 2>/dev/null || echo 0)

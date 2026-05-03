@@ -8,11 +8,14 @@
 GLOBAL_MEMORY_DIR := $(HOME)/.claude/projects/-home-claude-src-ruflo-patch/memory
 REPO_MEMORY_DIR   := .claude/memory
 
-.PHONY: memory-install memory-copy memory-link memory-status help
+.PHONY: release memory-install memory-copy memory-link memory-status help
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
 		awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
+
+release: ## Run the full publish cascade via npm run release (proxies scripts/ruflo-publish.sh)
+	@npm run release -- $(ARGS)
 
 memory-install: memory-copy memory-link ## Copy global memory files to repo and install symlink
 	@echo "Done. Memory files are in $(REPO_MEMORY_DIR)/, global store symlinked."

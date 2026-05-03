@@ -6,7 +6,7 @@
 #
 # Usage: bash scripts/ruflo-publish.sh [--force]
 #
-# Called by ruflo.service or npm run deploy.
+# Called by ruflo.service, `npm run release`, or `make release`.
 
 set -euo pipefail
 
