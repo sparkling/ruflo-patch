@@ -76,9 +76,9 @@ test-results/catalog.db-*
 .claude/scheduled_tasks.lock
 
 # Stray .claude-flow/ runtime dirs created by tools that anchored on cwd
-# instead of project root (ADR-0100 / ADR-0118 known-debt). Suppress so
-# they don't keep showing up in git status under docs/adr/, lib/, etc.
-docs/adr/.claude-flow/
-docs/**/.claude-flow/
-lib/.claude-flow/
-tests/.claude-flow/
+# instead of project root (ADR-0100 / ADR-0118 known-debt). Match the dir
+# anywhere it appears EXCEPT the project root, which is the intentional
+# runtime location (specific subpaths under root .claude-flow/ are governed
+# by the rules earlier in this file).
+**/.claude-flow/
+!/.claude-flow/
