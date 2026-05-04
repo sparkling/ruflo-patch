@@ -185,39 +185,177 @@ No. `bin/ruflo.mjs` will be ~50 lines (vs current ~60). KISS is about architectu
 ### Adversarial verdict
 The decision survives review **only with all four guards committed simultaneously**. Without them, this is a quiet regression to c76a727's bug class. Acceptance criteria (below) make the guards mandatory.
 
+## Pre-flight findings (verified 2026-05-04)
+
+These constrain the execution plan and were confirmed via direct read of the pipeline scripts:
+
+- **`publish-verdaccio.sh:155` uses `npm publish --ignore-scripts`** when publishing the wrapper. This **bypasses `prepublishOnly`** — so the lockstep check (G1) cannot rely on `prepublishOnly` alone for pipeline-time enforcement. It must be invoked directly inside `publish-verdaccio.sh` *before* the `npm publish` call. `prepublishOnly` is still useful as a defence-in-depth layer for direct `npm publish` invocations outside the pipeline.
+- **`fork-version.mjs` operates on `FORK_DIRS[]`** (the four fork repos) — it does not currently touch ruflo-patch's root `package.json`. The wrapper-pin-bump is a new concern and must be a separate phase wired into `run-fork-version.sh`, not folded into the existing `bumpAll()`.
+- **The wrapper is published from `${PROJECT_DIR}` directly** (ruflo-patch repo root), not from `/tmp/ruflo-build/`. Codemod doesn't see it. The wrapper's `package.json` IS the published artifact — what's on disk is what npm gets.
+- **`prepublishOnly` already runs `npm run test:unit`** which transitively runs `node scripts/test-runner.mjs tests/unit`. Adding `tests/unit/wrapper-no-fallback.test.mjs` is auto-included; no script wiring needed.
+
 ## Acceptance criteria
 
-1. `bin/ruflo.mjs` rewritten per Decision §"New `bin/ruflo.mjs` shape"; header references commit `c76a727` and the three c76a727 bugs by name (Guard G4)
-2. `package.json` adds exact-pin `dependencies['@sparkleideas/cli']`; `scripts/fork-version.mjs` updated to bump it alongside cli's version
-3. `scripts/check-wrapper-cli-lockstep.mjs` written; `package.json` `prepublishOnly` script runs it; failing the lockstep check exits non-zero and aborts publish (Guard G1)
-4. `tests/unit/wrapper-no-fallback.test.mjs` added; asserts `bin/ruflo.mjs` does not contain `v3/@claude-flow/cli` or any sibling dev-tree path; passes under `npm run test:unit` (Guard G2)
-5. `lib/acceptance-adr0142-bin-path.sh` added; verifies `node_modules/@sparkleideas/cli/bin/cli.js` exists in a fresh `npx @sparkleideas/ruflo@latest` install; integrated into `scripts/test-acceptance.sh` parallel wave (Guard G3)
-6. Wrapper-overhead benchmark: `time npx @sparkleideas/ruflo --version` measured before and after; documented in commit message; expected ~10× reduction
-7. `npm run release` passes end-to-end (preflight + unit + acceptance) — including the new lockstep + no-fallback + bin-path checks
-8. Manual smoke: `npx @sparkleideas/ruflo memory store …` works; `claude mcp add ruflo -- npx -y @sparkleideas/ruflo mcp start` registers cleanly and serves JSON-RPC
+1. **G1 — Lockstep enforced at pipeline time** (not just `prepublishOnly`): `scripts/check-wrapper-cli-lockstep.mjs` invoked directly from `publish-verdaccio.sh` immediately before line 155's `npm publish` call; failing exits non-zero before publish is attempted; `prepublishOnly` also runs it as defence-in-depth
+2. **G2 — No-fallback unit test** (`tests/unit/wrapper-no-fallback.test.mjs`) asserts `bin/ruflo.mjs` does not contain `v3/@claude-flow/cli`, `v3/@sparkleideas/cli`, or any sibling monorepo-relative dev-tree path; asserts a `process.exit(1)` exists in the cli-not-found branch
+3. **G3 — Bin-path acceptance** (`lib/acceptance-adr0142-bin-path.sh`): in a fresh `npx @sparkleideas/ruflo@latest` install, asserts `node_modules/@sparkleideas/cli/bin/cli.js` exists and `node node_modules/.bin/ruflo --version` prints a version. Uses the `_cli_cmd` helper per memory `reference-cli-cmd-helper.md`. Integrated into `scripts/test-acceptance.sh`'s parallel wave
+4. **G4 — Bug-history citation**: ADR-0142 + `bin/ruflo.mjs` header both reference commit `c76a727` and name the three bugs (npx cache staleness, `*` semver mismatch, ESM exports map resolution)
+5. `bin/ruflo.mjs` rewritten per Decision §"New `bin/ruflo.mjs` shape"
+6. Root `package.json` adds exact-pin `dependencies['@sparkleideas/cli']: '<current-cli-version>'`
+7. `scripts/run-fork-version.sh` extended to bump the wrapper's pin in the same invocation that bumps cli; `scripts/fork-version.mjs` exports a new helper `bumpWrapperPin(rootPath, newCliVersion)` for testability
+8. Wrapper-overhead benchmark: `time npx @sparkleideas/ruflo@latest --version` measured before vs after; recorded in benchmark commit; target ≥5× reduction (informational; not a gate)
+9. `npm run release` passes end-to-end including the new G1 + G2 + G3 checks
+10. Manual smoke: `npx @sparkleideas/ruflo@latest --help` returns cli help; `claude mcp add ruflo -- npx -y @sparkleideas/ruflo mcp start` registers and serves JSON-RPC
 
-## Implementation plan
+## Execution plan
 
-Single PR, sequenced as:
+Six commits, sequenced for atomic rollback safety. Each commit independently passes `npm run test:unit`.
 
-1. **Land the four guards first** (commits 1-3), each independently testable:
-   - Commit 1: write `lockstep` check + `tests/unit/wrapper-no-fallback.test.mjs` + `lib/acceptance-adr0142-bin-path.sh`. Currently no-op (no dep yet); tests pass trivially
-2. **Pivot the wrapper** (commit 4):
-   - Rewrite `bin/ruflo.mjs` per Decision
-   - Add exact-pin `dependencies['@sparkleideas/cli']` to root `package.json`
-   - Update `scripts/fork-version.mjs` to keep the pin in lockstep
-3. **Pipeline integration** (commit 5):
-   - Wire `prepublishOnly` to run the lockstep check
-   - Add bin-path acceptance to `test-acceptance.sh` parallel wave
-4. **Run `npm run release`** — full verification end-to-end. Must pass.
-5. **Benchmark commit** (commit 6): record before/after `time` measurements in commit message; close the ADR
+### Phase 1 — Guards as no-ops (commits 1-3)
 
-Per memory `feedback-build-scripts-only`, the only invocation is `npm run release` for full verification — no piecemeal pipeline scripts.
+Land the four guards before flipping the wrapper. Each guard is a no-op against the current (npx-redirect) wrapper and starts gating only after Phase 2 commits.
+
+#### Commit 1: lockstep check (Guard G1)
+
+Files added:
+- `scripts/check-wrapper-cli-lockstep.mjs` — node script, ESM, exit 0 / exit 1
+- `tests/unit/check-wrapper-cli-lockstep.test.mjs` — unit tests for the three branches
+
+Behaviour:
+```
+1. Read root package.json
+2. If dependencies?.['@sparkleideas/cli'] is undefined:
+   → log "[lockstep] wrapper has no @sparkleideas/cli pin yet; skipping (Phase 1 transitional state)"
+   → exit 0
+3. Else if --check-registry flag is set:
+   → query Verdaccio: npm view @sparkleideas/cli@latest version --registry http://localhost:4873
+   → if pinned !== registry-latest: print loud diff and exit 1
+   → if match: exit 0
+4. Else (--check-registry NOT set, default):
+   → just verify the pin string is a valid exact -patch.N version
+   → exit 0 / exit 1 with reason
+```
+
+`--check-registry` keeps unit tests fast (no Verdaccio dependency) while letting `publish-verdaccio.sh` enforce the strong assertion. Add `prepublishOnly` to call it without `--check-registry` (defence-in-depth: catches malformed pins).
+
+#### Commit 2: no-fallback test (Guard G2)
+
+File added: `tests/unit/wrapper-no-fallback.test.mjs`
+
+Asserts (against `bin/ruflo.mjs`):
+- Does NOT contain `'v3/@claude-flow/cli'`
+- Does NOT contain `'v3/@sparkleideas/cli'`
+- Does NOT contain `'../../v3/'` (loose dev-tree check)
+- (Once Phase 2 lands) DOES contain `process.exit(1)` in the cli-not-found branch
+
+The "DOES contain process.exit(1)" assertion is gated by detection of the new `findCliPath` function name; before Phase 2 the wrapper has no such function, so the assertion is skipped with a clear "wrapper not yet on upstream pattern" message.
+
+#### Commit 3: bin-path acceptance (Guard G3)
+
+Files added:
+- `lib/acceptance-adr0142-bin-path.sh` — bash script using `_cli_cmd` helper
+- Hook into `scripts/test-acceptance.sh` via existing `run_check_bg` pattern (model on `adr0113-fed-bin` per `test-acceptance.sh:719`)
+
+Behaviour:
+- Fresh tmp dir; `npm install @sparkleideas/ruflo@latest --registry http://localhost:4873`
+- Assert `node_modules/@sparkleideas/cli/bin/cli.js` exists (must be a regular file, not symlink only)
+- Assert `node node_modules/.bin/ruflo --version` exits 0 with non-empty stdout
+- Phase-1 expected behaviour: PASS (current redirect wrapper works fine; bin-path assertion is just future-proofing). Becomes a real gate once Phase 2 commits land
+
+After commit 3: `npm run test:unit` passes (no behaviour change yet); `npm run release` also passes (acceptance check passes against current wrapper).
+
+### Phase 2 — Pivot the wrapper (commits 4-5)
+
+#### Commit 4: rewrite `bin/ruflo.mjs` + pin dep
+
+Files modified:
+- `bin/ruflo.mjs` — full rewrite per Decision §"New `bin/ruflo.mjs` shape" including:
+  - File header citing c76a727 + naming the three bugs (Guard G4)
+  - `findCliPath()` upward walk for `node_modules/@sparkleideas/cli/bin/cli.js`
+  - **No** `v3/` dev-tree fallback — loud `process.exit(1)` with reinstall hint
+  - `try { await import(pathToFileURL(cliBin).href) } catch { exit 1 with message }`
+- Root `package.json`:
+  - Add `dependencies: { "@sparkleideas/cli": "<exact-version-from-Verdaccio-now>" }` (read with `npm view --registry http://localhost:4873` at commit time)
+  - Update `prepublishOnly` to chain `node scripts/check-wrapper-cli-lockstep.mjs` after `npm run test:unit`
+
+After commit 4: G2 unit test now actively gates (process.exit(1) detection enabled); G1 unit-mode check passes (pin is well-formed); `npm run test:unit` passes.
+
+#### Commit 5: pipeline lockstep + fork-version integration
+
+Files modified:
+- `scripts/publish-verdaccio.sh`: add a new pre-step before line 155:
+  ```bash
+  log "Verifying wrapper-cli lockstep before publishing wrapper..."
+  node "${PROJECT_DIR}/scripts/check-wrapper-cli-lockstep.mjs" --check-registry --registry http://localhost:4873 || {
+    log_error "Wrapper-cli lockstep check failed — refusing to publish stale wrapper"
+    exit 1
+  }
+  ```
+  Run AFTER cli has been published (Phase 1-3 of publish-verdaccio.sh) but BEFORE the wrapper publish. This is the moment when "cli@latest on Verdaccio" is the version we want the wrapper pinned to.
+- `scripts/fork-version.mjs`: add exported `bumpWrapperPin(rootPath, newCliVersion)`:
+  ```js
+  export async function bumpWrapperPin(rootPath, newCliVersion) {
+    const pkgPath = join(rootPath, 'package.json');
+    const pkg = JSON.parse(await readFile(pkgPath, 'utf8'));
+    if (!pkg.dependencies?.['@sparkleideas/cli']) return false;
+    if (pkg.dependencies['@sparkleideas/cli'] === newCliVersion) return false;
+    pkg.dependencies['@sparkleideas/cli'] = newCliVersion;
+    await writeFile(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+    return true;
+  }
+  ```
+- `scripts/run-fork-version.sh`: after the `node scripts/fork-version.mjs bump …` call, add:
+  ```bash
+  # ADR-0142 Guard G1: bump wrapper's pinned @sparkleideas/cli alongside cli's bump
+  CLI_PKG_JSON="${BUILD_DIR:-/tmp/ruflo-build}/v3/@claude-flow/cli/package.json"
+  if [[ -f "${CLI_PKG_JSON}" ]]; then
+    NEW_CLI_VER=$(node -e "console.log(require('${CLI_PKG_JSON}').name === '@claude-flow/cli' ? require('${CLI_PKG_JSON}').version : '')")
+    if [[ -n "${NEW_CLI_VER}" ]]; then
+      node -e "import('${PROJECT_DIR}/scripts/fork-version.mjs').then(m => m.bumpWrapperPin('${PROJECT_DIR}', '${NEW_CLI_VER}'))"
+    fi
+  fi
+  ```
+  Note: cli's package.json at this point still has its `@claude-flow/cli` name (codemod hasn't run); we extract the pre-codemod version and pin against the codemod-output name `@sparkleideas/cli`. Verify with a unit test (added in commit 1's test file).
+
+After commit 5: `npm run release` runs end-to-end with the lockstep gate firing for real; on success, wrapper is published with a fresh pin.
+
+### Phase 3 — Verification (commit 6)
+
+#### Commit 6: benchmark + close ADR
+
+Run BEFORE the merge:
+```
+hyperfine --warmup 3 --runs 20 'npx @sparkleideas/ruflo@latest --version'
+```
+And same with the npx cache pre-populated (warm). Record min/mean/max for both (cold + warm).
+
+Files modified:
+- `docs/adr/ADR-0142-wrapper-esm-import-upstream-match.md`: change Status to Accepted; add §"Benchmark results" section with the hyperfine output
+
+Commit message includes the before/after table inline.
+
+After commit 6: ADR closes. Wrapper is on upstream-pattern with all four guards enforced.
+
+### Rollback plan
+
+Each phase's commits are independent:
+- **Phase 1 only landed**: no behaviour change; wrapper still on redirect; safe to leave indefinitely
+- **Phase 2 commit 4 landed, commit 5 not**: wrapper is on upstream pattern but pipeline doesn't enforce lockstep at publish time — defence-in-depth via `prepublishOnly` still active. Safe but degraded
+- **Full landed, regression discovered**: revert commits 4-6 leaves Phase 1 guards in place against the restored redirect wrapper (no harm); revert commit 4 alone restores wrapper but keeps the unused dep pin (cosmetic only — npm install still works)
+
+### Time / risk budget
+
+- Phase 1: ~1 hour, low risk (guards are no-ops)
+- Phase 2: ~1-2 hours, medium risk (the `findCliPath` walk-up is the main concern; covered by G2 + G3)
+- Phase 3: ~30 min, low risk (verification only)
+
+Per memory `feedback-no-time-estimates.md`: these are reasoning-about-shape estimates, not deadline commitments — use only to size the work mentally, don't anchor on them.
 
 ## Reference
 
 - Original choice: commit `c76a727` (2026-03-06) — "Eliminate staleness: zero-dependency wrapper invokes CLI at runtime"
 - Upstream pattern: `/Users/henrik/source/ruvnet/ruflo/ruflo/bin/ruflo.js`
-- Pipeline lockstep entry point: `scripts/fork-version.mjs`
-- Wrapper publish entry point: `scripts/publish-verdaccio.sh:149` (Phase 4)
-- Memory entries informing this decision: `feedback-no-fallbacks.md`, `feedback-data-loss-zero-tolerance.md`, `feedback-build-scripts-only.md`, `feedback-trunk-only-fork-development.md`
+- Pipeline lockstep entry point: `scripts/fork-version.mjs` (extended) + `scripts/run-fork-version.sh`
+- Wrapper publish entry point: `scripts/publish-verdaccio.sh:155` (Phase 4 — `--ignore-scripts` flag is the reason G1 must run inline before this line)
+- `_cli_cmd` helper: per memory `reference-cli-cmd-helper.md` — required for G3 acceptance check to avoid 36× npx serialization slowdown
+- Memory entries informing this decision: `feedback-no-fallbacks.md`, `feedback-data-loss-zero-tolerance.md`, `feedback-build-scripts-only.md`, `feedback-trunk-only-fork-development.md`, `feedback-no-time-estimates.md`
