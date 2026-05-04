@@ -579,6 +579,11 @@ adr0131_lib="${PROJECT_DIR}/lib/acceptance-adr0131-worker-failure.sh"
 adr0117_lib="${PROJECT_DIR}/lib/acceptance-adr0117-marketplace-mcp.sh"
 [[ -f "$adr0117_lib" ]] && source "$adr0117_lib"
 
+# ADR-0142 G3: Wrapper bin-path stability — verify @sparkleideas/ruflo's
+# node_modules/@sparkleideas/cli/bin/cli.js exists and `ruflo --version` boots
+adr0142_lib="${PROJECT_DIR}/lib/acceptance-adr0142-bin-path.sh"
+[[ -f "$adr0142_lib" ]] && source "$adr0142_lib"
+
 # ADR-0129: Hive-mind CLI bug closeout (B1 memory store, B2 shutdown fields, B4 -t comma-split)
 adr0129_lib="${PROJECT_DIR}/lib/acceptance-adr0129-checks.sh"
 [[ -f "$adr0129_lib" ]] && source "$adr0129_lib"
@@ -718,6 +723,7 @@ run_check_bg "adr0113-fed-resolves"     "0113 plugin-agent-federation resolves o
 run_check_bg "adr0113-iot-resolves"     "0113 plugin-iot-cognitum resolves on Verdaccio (Fix 5)"       check_adr0113_iot_resolves                   "packages"
 run_check_bg "adr0113-fed-bin"          "0113 ruflo-federation bin executes (Fix 5)"                   check_adr0113_ruflo_federation_bin           "packages"
 run_check_bg "adr0113-iot-bin"          "0113 cognitum-iot bin executes (Fix 5)"                       check_adr0113_cognitum_iot_bin               "packages"
+run_check_bg "adr0142-bin-path"         "0142 G3 wrapper @sparkleideas/cli/bin/cli.js + ruflo --version"  check_adr0142_bin_path                       "packages"
 run_check_bg "adr0113-cli-rebrand"      "0113 executor uses @sparkleideas/cli@latest (Fix 6.1)"        check_adr0113_executor_uses_sparkleideas_cli "structure"
 run_check_bg "adr0113-no-opus46"        "0113 no 'Opus 4.6' strings in CLI dist (Fix 6.3)"             check_adr0113_no_opus_46_strings             "structure"
 run_check_bg "adr0113-mp-owner"         "0113 marketplace.json owner.name = sparkling (Fix 4)"         check_adr0113_marketplace_owner_sparkling    "structure"
@@ -2392,6 +2398,7 @@ collect_parallel "all" \
   "adr0113-iot-resolves|0113 plugin-iot-cognitum resolves on Verdaccio (Fix 5)" \
   "adr0113-fed-bin|0113 ruflo-federation bin executes (Fix 5)" \
   "adr0113-iot-bin|0113 cognitum-iot bin executes (Fix 5)" \
+  "adr0142-bin-path|0142 G3 wrapper @sparkleideas/cli/bin/cli.js + ruflo --version" \
   "adr0113-cli-rebrand|0113 executor uses @sparkleideas/cli@latest (Fix 6.1)" \
   "adr0113-no-opus46|0113 no 'Opus 4.6' strings in CLI dist (Fix 6.3)" \
   "adr0113-mp-owner|0113 marketplace.json owner.name = sparkling (Fix 4)" \
