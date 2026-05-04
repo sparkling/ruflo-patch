@@ -82,8 +82,23 @@ check_adr0117_init_service_method() {
     if (!ms.ruflo) { console.log('NO_RUFLO_KEY'); process.exit(0); }
     if (ms['claude-flow']) { console.log('CLAUDE_FLOW_KEY_STILL_PRESENT'); process.exit(0); }
     const args = (ms.ruflo.args || []).join(' ');
-    if (!args.includes('@sparkleideas/cli@latest')) { console.log('WRONG_ARGS:'+args); process.exit(0); }
-    console.log('OK:'+args);
+    const cmd = ms.ruflo.command || '';
+    // ADR-0143: Pass 7 promotes @sparkleideas/cli → @sparkleideas/ruflo
+    // in init-emitted MCP args (B2 — single canonical entry point through
+    // the wrapper). Accept either form during the transition window;
+    // long-term the @sparkleideas/ruflo@latest form is the contract.
+    //
+    // Two valid invocation paths from createRufloEntry():
+    //  (path 1) detectRufloPath() found a local ruflo binary
+    //           → command: <bin-path>, args: ['mcp', 'start']
+    //  (path 2) fallback → command: 'npx',
+    //           args: ['-y', '@sparkleideas/ruflo@latest', 'mcp', 'start']
+    //           (or @sparkleideas/cli@latest pre-Pass-7 transition)
+    const path1 = /\bruflo$/.test(cmd) && args === 'mcp start';
+    const path2 = args.includes('@sparkleideas/ruflo@latest') ||
+                  args.includes('@sparkleideas/cli@latest');
+    if (!path1 && !path2) { console.log('WRONG_ARGS:cmd='+cmd+' args='+args); process.exit(0); }
+    console.log('OK:'+(path1?'path1:'+cmd+' '+args:'path2:'+args));
   " 2>&1)
 
   if [[ "$result" == OK:* ]]; then

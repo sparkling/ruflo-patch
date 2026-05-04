@@ -56,7 +56,11 @@ describe('ADR-0006 follow-up: CLAUDE.md template — ruflo rebrand', () => {
   });
 
   it('preserves the one-time bootstrap `claude mcp add claude-flow` line', () => {
-    assert.match(content, /claude mcp add claude-flow -- npx -y @(claude-flow|sparkleideas)\/cli@latest/);
+    // ADR-0143: Pass 7 promotes @sparkleideas/cli → @sparkleideas/ruflo on
+    // user-facing surfaces (init/claudemd-generator output is in scope).
+    // Accept any of the three forms: pre-codemod (@claude-flow/cli),
+    // post-Pass-1-only (@sparkleideas/cli), or post-Pass-7 (@sparkleideas/ruflo).
+    assert.match(content, /claude mcp add claude-flow -- npx -y @(?:claude-flow\/cli|sparkleideas\/(?:cli|ruflo))(?:@latest)?/);
   });
 
   // ADR-0113 Fix 2 (Phase A) intentionally rebranded the MCP tool prefix:

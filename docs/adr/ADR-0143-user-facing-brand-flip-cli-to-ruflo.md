@@ -1,6 +1,6 @@
 # ADR-0143: Flip user-facing brand from `@sparkleideas/cli` to `@sparkleideas/ruflo` post-wrapper-pivot
 
-- **Status**: **Proposed (2026-05-04)** — blocked by ADR-0142 (wrapper must be on upstream-pattern ESM import before this lands; otherwise users pay 600ms-1.5s redirect overhead per command)
+- **Status**: **Accepted (2026-05-04)** — implemented across 3 commits (`9d594cf` tests-first + `4186399` Pass 7 impl + commit 3 release verification below). ADR-0142 prerequisite landed `fc96ef1`. Pass 7 contract verified post-release: **0** `@sparkleideas/cli` refs in user-facing scopes, **64** `@sparkleideas/ruflo` refs (the rebrand), **10** `@sparkleideas/cli` refs preserved in internal scopes (memory cross-package + cli's own `__tests__/`). New codemod runs ship in next bumped release.
 - **Date**: 2026-05-04
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0142 (wrapper rewrite — non-negotiable prerequisite). **Builds on**: ADR-0007 (drop-in UX), ADR-0117 (the original ruflo-namespace rebrand effort, scoped narrowly because of the wrapper perf cost), ADR-0141 (Pass 5 generalization — sister-codemod-pass design for path-scoped rewrites). Commit `8aba0ad` (Pass 6) provides analogous prior-art for an npx-context regex pass.
