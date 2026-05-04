@@ -225,10 +225,12 @@ If `[INFO] Router not available` appears, proceed normally without routing.
 ## Quick Setup
 
 ```bash
-claude mcp add claude-flow -- npx -y @sparkleideas/cli@latest
+claude mcp add claude-flow -- npx -y @sparkleideas/ruflo mcp start
 ruflo daemon start
 ruflo doctor --fix
 ```
+
+Per ADR-0143 (B2 decision) the canonical user-facing entry point is `@sparkleideas/ruflo` — the published wrapper imports `@sparkleideas/cli` in-process via ADR-0142's ESM-pattern bin (~70ms warm overhead). Direct `npx @sparkleideas/cli` invocation still works for internal/test use but is no longer the user-facing recommendation.
 
 ## Memory — where project lessons live
 
