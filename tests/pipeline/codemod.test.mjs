@@ -1040,6 +1040,129 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
   });
 });
 
+// ADR-0141 (2026-05-04): generalize Pass 5 — broader tag whitelist
+// (alpha|latest|beta|next + numeric semver) + broader path scope
+// (**/.claude/{skills,agents,commands}/** in addition to existing scope).
+// Tests-first commit: positive cases skipped pending implementation;
+// negatives active immediately.
+describe('codemod: ADR-0141 Pass 5 generalization — broader tags + path scope', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  // ── Positive: tag broadening (skipped until impl) ──
+
+  it.skip('rewrites claude-flow@latest in .claude/skills/foo/SKILL.md (fork-root scope)', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, '.claude', 'skills', 'foo');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'),
+      'Run: `npx claude-flow@latest mcp start`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    // Chained Pass 5 + Pass 7 (fork-root .claude/skills is BOTH scopes)
+    assert.ok(result.includes('@sparkleideas/ruflo@latest'),
+      'fork-root .claude/skills hits expanded Pass 5 scope; chained with Pass 7');
+    assert.ok(!result.includes('claude-flow@latest'),
+      'no claude-flow@latest remains');
+  });
+
+  it.skip('rewrites claude-flow@2.0.0-rc.1 (semver) in .claude/agents/researcher.md', async () => {
+    tmp = makeTmpDir();
+    const agentDir = join(tmp, '.claude', 'agents');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, 'researcher.md'),
+      '---\nname: researcher\n---\nUse `npx claude-flow@2.0.0-rc.1 sparc run dev`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(agentDir, 'researcher.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/ruflo@latest'),
+      'semver pin rewrites through chained Pass 5 + Pass 7');
+    assert.ok(!result.includes('claude-flow@2.0.0-rc.1'),
+      'no claude-flow@2.0.0-rc.1 remains');
+  });
+
+  it.skip('rewrites claude-flow@1.5.13 (numeric semver) in .claude/commands/foo.md', async () => {
+    tmp = makeTmpDir();
+    const cmdDir = join(tmp, '.claude', 'commands');
+    mkdirSync(cmdDir, { recursive: true });
+    writeFileSync(join(cmdDir, 'foo.md'),
+      'Pinned: `npx claude-flow@1.5.13 status`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cmdDir, 'foo.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/ruflo@latest'),
+      'numeric semver rewrites');
+  });
+
+  it.skip('rewrites claude-flow@beta and claude-flow@next (other dist-tags)', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, '.claude', 'skills', 'multi');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'),
+      '`npx claude-flow@beta foo`\n`npx claude-flow@next bar`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    assert.ok(!result.includes('claude-flow@beta'), 'beta dist-tag rewrites');
+    assert.ok(!result.includes('claude-flow@next'), 'next dist-tag rewrites');
+    const ruflo = (result.match(/@sparkleideas\/ruflo@latest/g) || []).length;
+    assert.equal(ruflo, 2, 'both dist-tags chained to wrapper brand');
+  });
+
+  // ── Positive: path scope expansion ──
+
+  it.skip('rewrites in v3/@claude-flow/mcp/.claude/skills/** (sister mcp workspace)', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, 'v3', '@claude-flow', 'mcp', '.claude', 'skills', 'verification');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'),
+      'Run: `npx claude-flow@alpha hooks pre-task`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/ruflo@latest'),
+      'sister mcp workspace .claude/skills now in Pass 5 scope (chained to Pass 7)');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'no claude-flow@alpha remains');
+  });
+
+  // ── Negative cases (active immediately — guard against regression) ──
+
+  it('does NOT rewrite claude-flow@example (non-whitelisted tag)', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, '.claude', 'skills', 'neg');
+    mkdirSync(skillDir, { recursive: true });
+    const original = 'See: `claude-flow@example` package metadata\n';
+    writeFileSync(join(skillDir, 'SKILL.md'), original);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    assert.ok(result.includes('claude-flow@example'),
+      'non-whitelisted dist-tag (alpha|latest|beta|next + numeric only) must not match');
+  });
+
+  it('does NOT rewrite subclaude-flow@latest (word boundary)', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, '.claude', 'skills', 'wb');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'),
+      'Hypothetical name: `subclaude-flow@latest`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    assert.ok(result.includes('subclaude-flow@latest'),
+      'word boundary protects mid-word matches like subclaude-flow');
+  });
+});
+
 // Pass 6 (ADR-0117 follow-up, 2026-05-04): unscoped `ruflo` inside npx
 // invocations resolves to a 404 on Verdaccio (only `@sparkleideas/ruflo`
 // is published). Pass 6 covers two surface forms: shell tokens (`npx
