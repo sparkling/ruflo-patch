@@ -57,7 +57,7 @@
   ],
   "packageManager": "npm@10",
   "dependencies": {
-    "@sparkleideas/cli": "3.5.58-patch.344"
+    "@sparkleideas/cli": "3.5.58-patch.345"
   },
   "devDependencies": {
     "verdaccio": "^6.2.9"

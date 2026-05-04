@@ -41,6 +41,25 @@ check_adr0129_b1_memory_store() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
 
+  # ── Isolation (added 2026-05-04) ─────────────────────────────────
+  # Was failing intermittently because this check wrote to the shared
+  # $E2E_DIR/.claude-flow/hive-mind/state.json. Concurrent checks
+  # (adr0104, adr0124, adr0125, ...) re-run `hive-mind init` against
+  # the same E2E_DIR which clobbers state.json — store reports OK
+  # but list sees 0 keys after the clobber. Manual repro confirmed
+  # the fork code itself is correct; the race was purely in the
+  # acceptance harness.
+  #
+  # Pattern mirrors adr0124/adr0125: get an isolated dir from
+  # _e2e_isolate, seed `.ruflo-project` so findProjectRoot anchors
+  # there, run all three CLI invocations in `cd "$iso"`. RETURN trap
+  # cleans up the iso dir even on failure paths.
+  # ─────────────────────────────────────────────────────────────────
+  local iso; iso=$(_e2e_isolate "adr0129-b1")
+  : > "$iso/.ruflo-project"
+  # shellcheck disable=SC2064  # want $iso expanded now
+  trap "rm -rf '$iso' /tmp/ruflo-adr0129-B1" RETURN
+
   local test_dir="/tmp/ruflo-adr0129-B1"
   local log="${test_dir}/.log"
   rm -rf "$test_dir"
@@ -52,20 +71,20 @@ check_adr0129_b1_memory_store() {
 
   # 1) Init the hive (force non-interactive). Capture full output.
   : > "$log"
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 30 bash -c "$cli hive-mind init --topology hierarchical-mesh --consensus byzantine 2>&1" \
   ) >> "$log" 2>&1 || true
 
   # 2) Store the key (positional dispatch — `store` alias for `set`).
   # ADR-0122 T4 requires `--type` for set; pass `knowledge` (a valid
   # MEMORY_TYPES enum value).
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 20 bash -c "$cli hive-mind memory store $key $value --type knowledge 2>&1" \
   ) >> "$log" 2>&1 || true
 
   # 3) List keys. Pass when our key appears.
   local list_log="${test_dir}/list.log"
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 20 bash -c "$cli hive-mind memory list 2>&1" \
   ) > "$list_log" 2>&1 || true
 
