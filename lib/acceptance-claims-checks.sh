@@ -99,8 +99,18 @@ check_adr0094_p1_claims_claim() { # adr0097-l2-delegator: flag set inside _mcp_i
 }
 
 check_adr0094_p1_claims_status() { # adr0097-l2-delegator: flag set inside _mcp_invoke_tool
+  # claims_status (per claims-tools.ts:430) requires {issueId, status} —
+  # NOT taskId. Was failing with "issueId must be a non-empty string"
+  # under the prior `{"taskId":...}` payload (schema drift uncaught
+  # because the check predates the issueId rename).
+  #
+  # Use a deterministic non-existent issueId so the handler short-circuits
+  # at `if (!claim) return {success:false, error:'Issue is not claimed'}`
+  # BEFORE any mutation. Response body contains "claimed" → matches the
+  # `claimed` token in the regex → check passes WITHOUT touching state,
+  # honoring the --ro intent even though the tool itself is mutating.
   _mcp_invoke_tool "claims_status" \
-    '{"taskId":"adr0094-test"}' \
+    '{"issueId":"adr0094-status-probe-nonexistent","status":"active"}' \
     'status|claim|unclaimed|claimed|not found|taskId' \
     "P1/claims_status" 15 --ro
 }

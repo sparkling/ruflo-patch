@@ -173,6 +173,28 @@ bump_fork_versions() {
   log "${bump_output}"
   add_cmd_timing "bump-versions" "node fork-version.mjs bump" "$_bump_ms"
 
+  # ADR-0142 Guard G1: bump @sparkleideas/ruflo wrapper's pinned
+  # @sparkleideas/cli alongside cli's bump. Cli's package.json (pre-codemod)
+  # sits at forks/ruflo/v3/@claude-flow/cli/package.json. The wrapper's
+  # package.json stores the dep under post-codemod name (@sparkleideas/cli)
+  # but the version string is identical. Mirrors run-fork-version.sh's
+  # integration but fires here too because ruflo-publish.sh calls
+  # fork-version.mjs directly, bypassing run-fork-version.sh.
+  local cli_pkg_json="${FORK_DIR_RUFLO}/v3/@claude-flow/cli/package.json"
+  if [[ -f "${cli_pkg_json}" ]]; then
+    local new_cli_ver
+    new_cli_ver=$(node -e "const p=require('${cli_pkg_json}'); console.log(p.name==='@claude-flow/cli'?p.version:'')")
+    if [[ -n "${new_cli_ver}" ]]; then
+      node --input-type=module -e "
+        import { bumpWrapperPin } from '${SCRIPT_DIR}/fork-version.mjs';
+        const updated = await bumpWrapperPin('${PROJECT_DIR}', '${new_cli_ver}');
+        console.log(updated
+          ? '[wrapper-pin] @sparkleideas/cli bumped to ${new_cli_ver}'
+          : '[wrapper-pin] already at ${new_cli_ver} (no change)');
+      " 2>&1 | while IFS= read -r line; do log "$line"; done
+    fi
+  fi
+
   CHANGED_PACKAGES_JSON=$(echo "$bump_output" | grep '^BUMPED_PACKAGES:' | sed 's/^BUMPED_PACKAGES://') || true
   [[ -z "${CHANGED_PACKAGES_JSON}" ]] && CHANGED_PACKAGES_JSON="all"
   DIRECTLY_CHANGED_JSON=$(echo "$bump_output" | grep '^DIRECTLY_CHANGED:' | sed 's/^DIRECTLY_CHANGED://') || true
