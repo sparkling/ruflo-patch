@@ -1,6 +1,6 @@
 # ADR-0142: Replace npx-redirect wrapper with upstream-pattern ESM import — `@sparkleideas/ruflo` becomes a thin in-process proxy
 
-- **Status**: **Proposed (2026-05-04)**
+- **Status**: **Accepted (2026-05-04)** — implemented across 6 commits (`8aba0ad` Pass 6 prerequisite + `d391ef6` G2 + `70ad73e` G3 + `bd7e7c9` Phase 2 commit 4 wrapper pivot + `4bbbb5b` Phase 2 commit 5 pipeline lockstep + commit 6 benchmarks below). All four guards (G1-G4) in place. New wrapper code on disk + committed; will deploy on next bumped release (current release run found no merged PRs and skipped the bump per pipeline normal behavior — no `--force` used to avoid Verdaccio pollution).
 - **Date**: 2026-05-04
 - **Deciders**: Henrik Pettersen
 - **Supersedes**: the architectural choice in commit `c76a727` ("Eliminate staleness: zero-dependency wrapper invokes CLI at runtime", 2026-03-06). Preserves c76a727's bug catalog as historical context; replaces its mitigation strategy.
@@ -115,9 +115,9 @@ Pin is **exact** (no `^` or `~`) per ADR-0027. The pipeline (`scripts/fork-versi
 
 ### Positive
 
-- **~10× warm-path latency reduction** for the wrapper layer (~600ms-1.5s → ~70-100ms)
+- **~2.6× warm-path latency reduction** for the wrapper layer (~240ms → ~90ms — measured 2026-05-04, see §"Benchmark results" below). Original estimate of ~10× was for cold/uncached scenarios; npx packument cache (5-min TTL) absorbs more of the redirect cost than initially modeled when both wrapper and cli caches are warm.
 - **Single-process invocation** — half the RSS, instant signal handling, cleaner stack traces
-- **Hooks scenario fixed** — 30-tool-call session pays ~3s of wrapper overhead instead of ~30s
+- **Hooks scenario fixed** — 30-tool-call session pays ~2.7s of wrapper overhead instead of ~7.2s (saves ~4.5s/session at observed warm latency)
 - **Upstream-match** — `bin/ruflo.mjs` is byte-equivalent to upstream's `ruflo/bin/ruflo.js` modulo (a) `@sparkleideas/cli` scope, (b) deleted dev-tree fallback, (c) added try/catch
 - **KISS by architecture** — 1 process, 1 dynamic import, no spawn machinery, no inter-process coordination
 
@@ -350,6 +350,38 @@ Each phase's commits are independent:
 - Phase 3: ~30 min, low risk (verification only)
 
 Per memory `feedback-no-time-estimates.md`: these are reasoning-about-shape estimates, not deadline commitments — use only to size the work mentally, don't anchor on them.
+
+## Benchmark results (2026-05-04)
+
+Methodology: 5 sequential warm runs of `--version`, `/usr/bin/time -p`. Both wrappers' npm/npx caches pre-warmed (one untimed run before measurement). hyperfine not available locally; measurement is rough but consistent across runs.
+
+```
+=== NEW wrapper (local, ESM-import) — node bin/ruflo.mjs --version ===
+real 0.09 / 0.09 / 0.09 / 0.10 / 0.09     (median 0.09s)
+
+=== OLD wrapper (Verdaccio @latest, npx-redirect) — npx --yes @sparkleideas/ruflo@latest --version ===
+real 0.24 / 0.24 / 0.24 / 0.24 / 0.24     (median 0.24s)
+```
+
+| Metric | Old (npx-redirect) | New (ESM-import) | Delta |
+|---|---|---|---|
+| Median warm latency | 240ms | 90ms | **-150ms (~2.6×)** |
+| Process count | 3 (wrapper → npx → cli) | 1 (wrapper imports cli in-process) | **-2 processes** |
+| Hook-session cost (30 calls × median) | ~7.2s | ~2.7s | **-4.5s/session** |
+
+Notes:
+- The "~10× warm latency reduction" estimate in the original ADR Decision was based on a worst-case-cold cost model (~600ms-1.5s per call). The measured warm path with both wrapper and cli caches hot shows the redirect's actual cost is ~240ms, dominated by npx subprocess overhead, not registry resolution. Updated Positive consequences to reflect ~2.6× actual.
+- Cold scenarios (first invocation of the day, npm packument cache expired) would still show the original ~10× difference, but per stated user constraint cold-start latency is not a measured concern.
+- The sub-100ms warm path takes the wrapper out of the user-perceptible-latency regime entirely. Any further optimization would target cli's own startup (the AgentDB telemetry print + CLI init), which is out of scope.
+
+### Pre-existing acceptance failures (unrelated)
+
+Release run on 2026-05-04 (commit `4bbbb5b`) found 3 acceptance failures, all pre-existing and unrelated to ADR-0142:
+- `adr0117-init-svc` — ADR-0117 marketplace MCP registration
+- `adr0129-b1-mem-store` — ADR-0129 hive-mind memory store positional args
+- `p1-cl-status` — Phase 1 claims status
+
+ADR-0142's own check `adr0142-bin-path` passed (Phase 1 transitional state — published wrapper still on Verdaccio is the old npx-redirect form; G3 reports correct transitional message). Will flip to "post-pivot OK" assertion the next time a real release bumps and republishes the wrapper with the new ESM-import code.
 
 ## Reference
 
