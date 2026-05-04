@@ -1,6 +1,6 @@
 # ADR-0141: Generalize codemod Pass 5 — broaden tag filter + path scope for `claude-flow@<ver>` rewrite
 
-- **Status**: **Proposed (2026-05-04)**
+- **Status**: **Accepted (2026-05-04)** — implemented across 3 commits (`25aa5e5` tests-first + `558efb9` Pass 5 generalization impl + commit 3 release verification below). Combined with ADR-0143 Pass 7, all 348 surveyed hits in expanded scope eliminated. Highest-density file (verification-quality SKILL.md, 73 hits) now shows 0 `claude-flow@` + 73 `@sparkleideas/ruflo@` refs (full chain Pass 1 → Pass 5 → Pass 7 fired).
 - **Date**: 2026-05-04
 - **Deciders**: Henrik Pettersen
 - **Related**: ADR-0117 (the original Pass 5 — `claude-flow@alpha` rewrite, scope-limited to `.claude-plugin/**` + `plugins/**` + `v3/@claude-flow/cli/.claude/{agents,commands,skills}/**`), commit `8aba0ad` on ruflo-patch (Pass 6 — `npx ruflo` rewrite, the `ruflo`-side analog of this gap; closed 2026-05-04 after a Verdaccio 404 on `GET /ruflo`)
