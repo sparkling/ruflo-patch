@@ -277,6 +277,74 @@ const PASS5_REPLACEMENT = '@sparkleideas/cli@latest';
 const PASS5_INIT_BUNDLED_PREFIX = 'v3/@claude-flow/cli/.claude/';
 const PASS5_INIT_BUNDLED_SUBDIRS = ['agents/', 'commands/', 'skills/'];
 
+// Pass 7 (ADR-0143, 2026-05-04): user-facing brand flip
+//   @sparkleideas/cli → @sparkleideas/ruflo
+//
+// Path-scoped — only fires in user-facing scopes:
+//   - README.md, USERGUIDE.md, CHANGELOG.md (anywhere)
+//   - scripts/install.sh
+//   - .claude/{skills,agents,commands}/** (templates copied to user .claude/)
+//   - .claude-plugin/** (umbrella manifest)
+//   - plugins/** (marketplace plugin docs)
+//   - v3/@claude-flow/cli/src/init/** (init-time strings emitted to user)
+//
+// Explicitly NOT in scope:
+//   - docs/adr/** + v3/implementation/adrs/** (historical accuracy)
+//   - **/__tests__/** (cli's own tests probe internals)
+//   - v3/@claude-flow/<workspace>/src/** EXCEPT cli/src/init/ (internal
+//     cross-package code; the cli package itself isn't being renamed)
+//
+// Lookbehind/lookahead protect against false-hits on @sparkleideas/cli-foo
+// or @sparkleideas/clinical (different packages — must not flip).
+//
+// MCP B2 decision: init's mcp-generator.ts emits `args: [..., "@sparkleideas/cli", ...]`
+// for the .mcp.json server registration; Pass 7 flips that to "@sparkleideas/ruflo"
+// so all invocations route through the wrapper (single canonical entry point).
+// See ADR-0143 §Decision §"MCP config decision: B2".
+const SPARKLEIDEAS_CLI_RE = /(?<![\w-])@sparkleideas\/cli(?![\w-])/g;
+const PASS7_REPLACEMENT = '@sparkleideas/ruflo';
+
+const PASS7_USER_FACING_SUBDIRS = [
+  '.claude/skills/', '.claude/agents/', '.claude/commands/',
+  '.claude-plugin/', 'plugins/',
+];
+const PASS7_INIT_EMITTING_PREFIX = 'v3/@claude-flow/cli/src/init/';
+const PASS7_USER_DOC_FILES = new Set(['README.md', 'CHANGELOG.md', 'USERGUIDE.md']);
+
+/**
+ * Returns true if the file is in Pass-7 scope (user-facing surfaces).
+ * Out-of-scope dirs (docs/adr/, internal cross-package src, __tests__/)
+ * checked BEFORE in-scope dirs so explicit excludes win over generic includes.
+ *
+ * Exported for tests.
+ */
+export function isPlugin7Scope(filePath, tempDir) {
+  const rel = relative(tempDir, filePath).replace(/\\/g, '/');
+  if (rel.startsWith('..') || rel === '') return false;
+  // Hard excludes (apply first so they win over generic includes)
+  if (rel.startsWith('docs/adr/') || rel.includes('/docs/adr/')) return false;
+  if (rel.startsWith('v3/implementation/adrs/')) return false;
+  if (rel.includes('__tests__/')) return false;
+  // Internal cross-package code: any v3/@claude-flow/<ws>/src/ EXCEPT cli/src/init/
+  if (rel.startsWith('v3/@claude-flow/') && rel.includes('/src/') &&
+      !rel.startsWith(PASS7_INIT_EMITTING_PREFIX)) return false;
+
+  // Includes
+  const base = basename(filePath);
+  if (PASS7_USER_DOC_FILES.has(base)) return true;
+  if (rel === 'scripts/install.sh') return true;
+  if (rel.startsWith(PASS7_INIT_EMITTING_PREFIX)) return true;
+  for (const sub of PASS7_USER_FACING_SUBDIRS) {
+    if (rel.includes('/' + sub) || rel.startsWith(sub)) return true;
+  }
+  return false;
+}
+
+/** Apply Pass 7 — caller must scope-check via isPlugin7Scope first. */
+export function applyPass7(content) {
+  return content.replace(SPARKLEIDEAS_CLI_RE, PASS7_REPLACEMENT);
+}
+
 /**
  * Returns true if the file is in the Pass-5 scope: under .claude-plugin/**,
  * plugins/**, or v3/@claude-flow/cli/.claude/{agents,commands,skills}/**
@@ -300,15 +368,17 @@ export function isPlugin5Scope(filePath, tempDir) {
 /**
  * Apply scope renaming to source file content.
  *
- * Five passes:
+ * Six passes (numbering reflects historical introduction order):
  *  1. @claude-flow/* -> @sparkleideas/* (all occurrences)
  *  2. @ruvector/* -> @sparkleideas/ruvector-* (all occurrences)
  *  3. Bare unscoped names in import/require/from contexts only
  *  4. mcp__claude-flow__* -> mcp__ruflo__* (ADR-0113 Fix 2)
  *  6. npx-context `ruflo` -> `@sparkleideas/ruflo` (shell + JS args forms)
  *
- * Pass 5 (claude-flow@alpha rewrite) is path-scoped and lives outside
- * transformSource — applied in processOneFile when isPlugin5Scope matches.
+ * Pass 5 (claude-flow@alpha rewrite, ADR-0117) and Pass 7
+ * (@sparkleideas/cli -> @sparkleideas/ruflo for user-facing surfaces,
+ * ADR-0143) are path-scoped and live outside transformSource — applied
+ * in processOneFile when isPlugin5Scope / isPlugin7Scope match.
  *
  * Exported for ADR-0113 Phase C (Fix 4) — applying codemod directly
  * to fork .md files (under forks/ruflo/plugins/ and
@@ -429,6 +499,11 @@ async function processOneFile(filePath, fileCache, tempDir) {
     // Pass 5 (ADR-0117): scope-limited claude-flow@alpha rewrite
     if (tempDir && isPlugin5Scope(filePath, tempDir)) {
       transformed = applyPass5(transformed);
+    }
+    // Pass 7 (ADR-0143): scope-limited @sparkleideas/cli → @sparkleideas/ruflo
+    // for user-facing surfaces (README/USERGUIDE/install.sh/init/.claude/etc)
+    if (tempDir && isPlugin7Scope(filePath, tempDir)) {
+      transformed = applyPass7(transformed);
     }
     if (transformed !== content) {
       await writeFile(filePath, transformed, 'utf8');

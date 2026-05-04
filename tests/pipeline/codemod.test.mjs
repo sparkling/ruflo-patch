@@ -617,12 +617,17 @@ describe('codemod: ADR-0113 — markdown extension and MCP tool prefix', () => {
     await transform(tmp);
 
     const result = readFileSync(join(tmp, 'README.md'), 'utf8');
-    assert.ok(result.includes('npx -y @sparkleideas/cli@latest swarm init'),
-      'code-fence install command rewritten');
-    assert.ok(result.includes('npx -y @sparkleideas/cli@latest doctor'),
-      'inline install command rewritten');
+    // ADR-0143: README.md is Pass 7 scope. Pass 1 rewrites
+    // @claude-flow/cli → @sparkleideas/cli, then Pass 7 promotes
+    // @sparkleideas/cli → @sparkleideas/ruflo for user-facing surfaces.
+    assert.ok(result.includes('npx -y @sparkleideas/ruflo@latest swarm init'),
+      'code-fence install command rewritten through chain');
+    assert.ok(result.includes('npx -y @sparkleideas/ruflo@latest doctor'),
+      'inline install command rewritten through chain');
     assert.ok(!result.includes('@claude-flow/cli@latest'),
       'no @claude-flow/cli@latest references remain in .md');
+    assert.ok(!result.includes('@sparkleideas/cli'),
+      'no @sparkleideas/cli remains in user-facing README.md (Pass 7)');
   });
 
   it('rewrites mcp__claude-flow__* tool prefix to mcp__ruflo__*', async () => {
@@ -799,8 +804,10 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
       'mcpServers.ruflo key persists');
     // But Pass 5 still rewrites the args inside it — that's an
     // independent invariant (orthogonal to the block-removal concern).
-    assert.ok(result.includes('"@sparkleideas/cli@latest"'),
-      'Pass 5 rewrites claude-flow@alpha → @sparkleideas/cli@latest in args');
+    // ADR-0143: .claude-plugin/ is also Pass 7 scope; chained final form
+    // promotes @sparkleideas/cli → @sparkleideas/ruflo (B2 decision).
+    assert.ok(result.includes('"@sparkleideas/ruflo@latest"'),
+      'chained Pass 5 + Pass 7 produces user-facing wrapper brand in args');
     assert.ok(!result.includes('claude-flow@alpha'),
       'no claude-flow@alpha remains after Pass 5');
   });
@@ -824,10 +831,14 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
     await transform(tmp);
 
     const result = readFileSync(join(hooksDir, 'hooks.json'), 'utf8');
-    const matches = (result.match(/@sparkleideas\/cli@latest/g) || []).length;
-    assert.equal(matches, 2, 'both shellouts rewritten');
+    // ADR-0143: .claude-plugin/ is Pass 7 scope; chained Pass 5 + Pass 7
+    // produces @sparkleideas/ruflo@latest (user-facing wrapper brand).
+    const matches = (result.match(/@sparkleideas\/ruflo@latest/g) || []).length;
+    assert.equal(matches, 2, 'both shellouts rewritten through chain');
     assert.ok(!result.includes('claude-flow@alpha'),
       'no claude-flow@alpha remains');
+    assert.ok(!result.includes('@sparkleideas/cli'),
+      'no @sparkleideas/cli remains in user-facing hooks.json');
   });
 
   it('rewrites claude-flow@alpha in plugins/<plugin>/SKILL.md', async () => {
@@ -846,8 +857,9 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
     await transform(tmp);
 
     const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
-    assert.ok(result.includes('npx @sparkleideas/cli@latest mcp start'),
-      'SKILL.md command rewritten');
+    // ADR-0143: plugins/ is Pass 7 scope; chain final form is wrapper brand.
+    assert.ok(result.includes('npx @sparkleideas/ruflo@latest mcp start'),
+      'SKILL.md command rewritten through chain (Pass 5 + Pass 7)');
     assert.ok(!result.includes('claude-flow@alpha'),
       'no claude-flow@alpha remains');
   });
@@ -904,8 +916,9 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
     await transform(tmp);
 
     const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
-    assert.ok(result.includes('@sparkleideas/cli@latest'),
-      'Pass 5 should rewrite to @sparkleideas/cli@latest in init-bundled skills');
+    // ADR-0143: init-bundled .claude/skills/ is Pass 7 scope; chain produces wrapper brand.
+    assert.ok(result.includes('@sparkleideas/ruflo@latest'),
+      'chained Pass 5 + Pass 7 should produce wrapper brand in init-bundled skills');
     assert.ok(!result.includes('claude-flow@alpha'),
       'no claude-flow@alpha should remain in init-bundled skill files');
   });
@@ -922,8 +935,9 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
     await transform(tmp);
 
     const result = readFileSync(join(agentDir, 'researcher.md'), 'utf8');
-    assert.ok(result.includes('@sparkleideas/cli@latest'),
-      'Pass 5 should rewrite agent templates');
+    // ADR-0143: init-bundled .claude/agents/ is Pass 7 scope; chain produces wrapper brand.
+    assert.ok(result.includes('@sparkleideas/ruflo@latest'),
+      'chained Pass 5 + Pass 7 should rewrite agent templates to wrapper brand');
     assert.ok(!result.includes('claude-flow@alpha'),
       'no claude-flow@alpha in init-bundled agent file');
   });
@@ -1017,8 +1031,12 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
     assert.equal(after1, after2, 'consecutive runs produce identical output');
     assert.ok(!after1.includes('claude-flow@alpha'),
       'first run already replaced claude-flow@alpha');
-    assert.ok(after1.includes('@sparkleideas/cli@latest'),
-      'Pass 5 rewrote shellout to fork CLI');
+    // ADR-0143: file is in .claude-plugin/ which is BOTH Pass 5 and Pass 7
+    // scope. Pass 5 rewrites claude-flow@alpha → @sparkleideas/cli@latest,
+    // then Pass 7 promotes @sparkleideas/cli → @sparkleideas/ruflo. Final
+    // chained output uses the user-facing wrapper brand.
+    assert.ok(after1.includes('@sparkleideas/ruflo@latest'),
+      'chained Pass 5 + Pass 7 produces user-facing wrapper brand');
   });
 });
 
@@ -1167,7 +1185,7 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
 
   // ── Positive cases (skipped until Pass 7 lands) ──
 
-  it.skip('rewrites `npx @sparkleideas/cli@latest init` in README.md', async () => {
+  it('rewrites `npx @sparkleideas/cli@latest init` in README.md', async () => {
     tmp = makeTmpDir();
     writeFileSync(join(tmp, 'README.md'),
       '## Quick start\n\nRun: `npx @sparkleideas/cli@latest init`\n');
@@ -1181,7 +1199,7 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
       'no @sparkleideas/cli remains in README.md');
   });
 
-  it.skip('rewrites `npx @sparkleideas/cli@latest doctor` in scripts/install.sh', async () => {
+  it('rewrites `npx @sparkleideas/cli@latest doctor` in scripts/install.sh', async () => {
     tmp = makeTmpDir();
     const scriptsDir = join(tmp, 'scripts');
     mkdirSync(scriptsDir, { recursive: true });
@@ -1197,7 +1215,7 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
       'no @sparkleideas/cli remains in install.sh');
   });
 
-  it.skip('rewrites JS args ["-y", "@sparkleideas/cli", "mcp", "start"] in mcp-generator.ts', async () => {
+  it('rewrites JS args ["-y", "@sparkleideas/cli", "mcp", "start"] in mcp-generator.ts', async () => {
     tmp = makeTmpDir();
     const initDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src', 'init');
     mkdirSync(initDir, { recursive: true });
@@ -1211,7 +1229,7 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
       'init-generated MCP args flip cli → ruflo (B2 decision)');
   });
 
-  it.skip('rewrites @sparkleideas/cli@<semver-pin> in skill markdown', async () => {
+  it('rewrites @sparkleideas/cli@<semver-pin> in skill markdown', async () => {
     tmp = makeTmpDir();
     const skillDir = join(tmp, '.claude', 'skills', 'foo');
     mkdirSync(skillDir, { recursive: true });
@@ -1225,7 +1243,7 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
       'semver pins rewrite cleanly');
   });
 
-  it.skip('rewrites bare @sparkleideas/cli (no version) in user prose', async () => {
+  it('rewrites bare @sparkleideas/cli (no version) in user prose', async () => {
     tmp = makeTmpDir();
     writeFileSync(join(tmp, 'README.md'),
       'Use `@sparkleideas/cli` for direct invocation, or use the wrapper.\n');
@@ -1237,7 +1255,7 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
       'bare @sparkleideas/cli (no @ver) flips in README prose');
   });
 
-  it.skip('rewrites @sparkleideas/cli inside backticks in agent markdown', async () => {
+  it('rewrites @sparkleideas/cli inside backticks in agent markdown', async () => {
     tmp = makeTmpDir();
     const agentDir = join(tmp, '.claude', 'agents');
     mkdirSync(agentDir, { recursive: true });
@@ -1323,7 +1341,7 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
 
   // ── Idempotency ──
 
-  it.skip('Pass 7 is idempotent — second run produces no changes', async () => {
+  it('Pass 7 is idempotent — second run produces no changes', async () => {
     tmp = makeTmpDir();
     writeFileSync(join(tmp, 'README.md'),
       '`npx @sparkleideas/cli@latest init`\n`npx @sparkleideas/cli@latest doctor`\n');
