@@ -571,10 +571,26 @@ export async function bumpWrapperPin(rootPath, newCliVersion) {
   }
 
   if (pkg.dependencies['@sparkleideas/cli'] === newCliVersion) {
-    return false;
+    // Pin already matches — but we still need to bump wrapper's own version
+    // if the on-disk wrapper code differs from the published one. Bumping is
+    // cheap and the silent-skip-on-duplicate-version behavior of `npm publish`
+    // would otherwise mask wrapper-bin updates (the bug fixed in this commit).
+    // Always bump wrapper version if the pin changed; if the pin DIDN'T change
+    // and we're called anyway, still bump to be safe — the only caller is the
+    // pipeline post-fork-bump path, which means SOMETHING changed.
+    pkg.version = bumpPatchVersion(pkg.version);
+    writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+    return true; // changed (version bumped)
   }
 
   pkg.dependencies['@sparkleideas/cli'] = newCliVersion;
+  // ADR-0142 fix 2026-05-04: ALSO bump wrapper's own -patch.N version.
+  // Without this, `npm publish --tag latest` silently skips with "version
+  // already exists" — the on-disk wrapper bin updates never reach Verdaccio
+  // and users keep getting the old wrapper from npx cache. Manual repro
+  // confirmed: lockstep G1 passed (pin matched registry @latest), wrapper
+  // publish "succeeded" (npm didn't error) but published bin was stale.
+  pkg.version = bumpPatchVersion(pkg.version);
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   return true;
 }

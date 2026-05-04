@@ -482,28 +482,42 @@ describe('bumpWrapperPin: ADR-0142 G1 wrapper-cli lockstep', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('updates the wrapper pin when cli version changes', async () => {
+  it('updates the wrapper pin AND bumps wrapper version when cli changes', async () => {
     tmp = makeTmpDir();
     writePkg(tmp, {
       name: '@sparkleideas/ruflo',
-      version: '1.0.0',
+      version: '3.1.0-alpha.14-patch.15',
       dependencies: { '@sparkleideas/cli': '3.5.58-patch.342' },
     });
     const updated = await bumpWrapperPin(tmp, '3.5.58-patch.343');
     assert.equal(updated, true);
     const pkg = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(pkg.dependencies['@sparkleideas/cli'], '3.5.58-patch.343');
+    // ADR-0142 fix 2026-05-04: wrapper version MUST also bump or
+    // `npm publish --tag latest` silently skips on duplicate-version,
+    // leaving Verdaccio serving the old wrapper bin forever.
+    assert.equal(pkg.version, '3.1.0-alpha.14-patch.16',
+      'wrapper own version must bump alongside cli pin');
   });
 
-  it('returns false when pin already matches (no-op idempotency)', async () => {
+  it('bumps wrapper version even when pin already matches (forces republish)', async () => {
+    // Was: returned false on no-op. Now: still bumps wrapper version because
+    // the only caller is the pipeline post-fork-bump path, which means SOMETHING
+    // about the wrapper or its tree changed. Bumping is cheap and prevents
+    // the silent-skip publish failure mode.
     tmp = makeTmpDir();
     writePkg(tmp, {
       name: '@sparkleideas/ruflo',
-      version: '1.0.0',
+      version: '3.1.0-alpha.14-patch.15',
       dependencies: { '@sparkleideas/cli': '3.5.58-patch.342' },
     });
     const updated = await bumpWrapperPin(tmp, '3.5.58-patch.342');
-    assert.equal(updated, false);
+    assert.equal(updated, true, 'returns true because version bumped');
+    const pkg = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+    assert.equal(pkg.version, '3.1.0-alpha.14-patch.16',
+      'wrapper version bumps even on pin-match (forces republish)');
+    assert.equal(pkg.dependencies['@sparkleideas/cli'], '3.5.58-patch.342',
+      'pin unchanged on no-op cli-version case');
   });
 
   it('returns false when wrapper has no @sparkleideas/cli dep (Phase 1 transitional)', async () => {
