@@ -1149,3 +1149,192 @@ describe('codemod: ADR-0117 Pass 6 — npx-context ruflo rewrite', () => {
       'no bare npx ruflo remains after first run');
   });
 });
+
+// Pass 7 (ADR-0143, 2026-05-04): user-facing brand flip from
+// @sparkleideas/cli → @sparkleideas/ruflo. Path-scoped — only fires
+// in user-facing scopes (README/USERGUIDE/install.sh, init-emitted
+// strings, plugin/skill/agent markdown). Internal cross-package code
+// in v3/@claude-flow/<workspace>/src/** is explicitly NOT in scope —
+// the cli package itself isn't being renamed; only references to it
+// from places users see are.
+//
+// Tests-first commit: positive cases are skipped pending Pass 7
+// implementation. Negative cases active immediately to confirm
+// current codemod doesn't already touch these surfaces.
+describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkleideas/ruflo', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  // ── Positive cases (skipped until Pass 7 lands) ──
+
+  it.skip('rewrites `npx @sparkleideas/cli@latest init` in README.md', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'README.md'),
+      '## Quick start\n\nRun: `npx @sparkleideas/cli@latest init`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'README.md'), 'utf8');
+    assert.ok(result.includes('npx @sparkleideas/ruflo@latest init'),
+      'README.md user prose rewrites cli → ruflo');
+    assert.ok(!result.includes('@sparkleideas/cli'),
+      'no @sparkleideas/cli remains in README.md');
+  });
+
+  it.skip('rewrites `npx @sparkleideas/cli@latest doctor` in scripts/install.sh', async () => {
+    tmp = makeTmpDir();
+    const scriptsDir = join(tmp, 'scripts');
+    mkdirSync(scriptsDir, { recursive: true });
+    writeFileSync(join(scriptsDir, 'install.sh'),
+      '#!/bin/bash\nnpx @sparkleideas/cli@latest doctor\nnpx @sparkleideas/cli@latest init --wizard\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(scriptsDir, 'install.sh'), 'utf8');
+    const matches = (result.match(/npx @sparkleideas\/ruflo@/g) || []).length;
+    assert.equal(matches, 2, 'both install.sh shellouts rewritten');
+    assert.ok(!result.includes('@sparkleideas/cli'),
+      'no @sparkleideas/cli remains in install.sh');
+  });
+
+  it.skip('rewrites JS args ["-y", "@sparkleideas/cli", "mcp", "start"] in mcp-generator.ts', async () => {
+    tmp = makeTmpDir();
+    const initDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src', 'init');
+    mkdirSync(initDir, { recursive: true });
+    writeFileSync(join(initDir, 'mcp-generator.ts'),
+      "const args = ['-y', '@sparkleideas/cli', 'mcp', 'start'];\nexport { args };\n");
+
+    await transform(tmp);
+
+    const result = readFileSync(join(initDir, 'mcp-generator.ts'), 'utf8');
+    assert.ok(result.includes("'@sparkleideas/ruflo'"),
+      'init-generated MCP args flip cli → ruflo (B2 decision)');
+  });
+
+  it.skip('rewrites @sparkleideas/cli@<semver-pin> in skill markdown', async () => {
+    tmp = makeTmpDir();
+    const skillDir = join(tmp, '.claude', 'skills', 'foo');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'),
+      'Pinned: `npx @sparkleideas/cli@3.5.0-patch.7 mcp start`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(skillDir, 'SKILL.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/ruflo@3.5.0-patch.7'),
+      'semver pins rewrite cleanly');
+  });
+
+  it.skip('rewrites bare @sparkleideas/cli (no version) in user prose', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'README.md'),
+      'Use `@sparkleideas/cli` for direct invocation, or use the wrapper.\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'README.md'), 'utf8');
+    assert.ok(result.includes('`@sparkleideas/ruflo`'),
+      'bare @sparkleideas/cli (no @ver) flips in README prose');
+  });
+
+  it.skip('rewrites @sparkleideas/cli inside backticks in agent markdown', async () => {
+    tmp = makeTmpDir();
+    const agentDir = join(tmp, '.claude', 'agents');
+    mkdirSync(agentDir, { recursive: true });
+    writeFileSync(join(agentDir, 'foo.md'),
+      '---\nname: foo\n---\nUse `@sparkleideas/cli memory store ...`\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(agentDir, 'foo.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/ruflo memory store'),
+      'inline-code in agent template rewrites');
+  });
+
+  // ── Negative cases (active immediately — guard pre-existing behavior) ──
+
+  it('does NOT rewrite @sparkleideas/cli-foo (different package, trailing -)', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'README.md'),
+      'See `@sparkleideas/cli-foo` for the foo plugin.\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'README.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/cli-foo'),
+      '@sparkleideas/cli-foo is a different package; must not be rewritten');
+    assert.ok(!result.includes('@sparkleideas/ruflo-foo'),
+      'no false-positive into @sparkleideas/ruflo-foo');
+  });
+
+  it('does NOT rewrite @sparkleideas/clinical (trailing letters)', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'docs.md'),
+      'Use `@sparkleideas/clinical` for the clinical workflow plugin.\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'docs.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/clinical'),
+      '@sparkleideas/clinical is a different package; word boundary protects it');
+  });
+
+  it('does NOT rewrite @sparkleideas/cli in docs/adr/** (historical accuracy)', async () => {
+    tmp = makeTmpDir();
+    const adrDir = join(tmp, 'docs', 'adr');
+    mkdirSync(adrDir, { recursive: true });
+    writeFileSync(join(adrDir, 'ADR-9999-test.md'),
+      '# Historical record\n\nThe `@sparkleideas/cli` package was the entry point pre-2026-05-04.\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(adrDir, 'ADR-9999-test.md'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/cli'),
+      'ADR archives must keep @sparkleideas/cli for historical accuracy');
+  });
+
+  it('does NOT rewrite @sparkleideas/cli in v3/@claude-flow/memory/src/** (internal cross-pkg)', async () => {
+    tmp = makeTmpDir();
+    const memSrc = join(tmp, 'v3', '@claude-flow', 'memory', 'src');
+    mkdirSync(memSrc, { recursive: true });
+    writeFileSync(join(memSrc, 'foo.ts'),
+      "import type { Foo } from '@sparkleideas/cli/types';\nexport { Foo };\n");
+
+    await transform(tmp);
+
+    const result = readFileSync(join(memSrc, 'foo.ts'), 'utf8');
+    assert.ok(result.includes("'@sparkleideas/cli/types'"),
+      'internal cross-package source must keep @sparkleideas/cli — only the cli package is published, not ruflo-as-package');
+  });
+
+  it('does NOT rewrite @sparkleideas/cli in cli own __tests__/', async () => {
+    tmp = makeTmpDir();
+    const testDir = join(tmp, 'v3', '@claude-flow', 'cli', '__tests__');
+    mkdirSync(testDir, { recursive: true });
+    writeFileSync(join(testDir, 'foo.test.ts'),
+      "import { foo } from '@sparkleideas/cli';\nfoo();\n");
+
+    await transform(tmp);
+
+    const result = readFileSync(join(testDir, 'foo.test.ts'), 'utf8');
+    assert.ok(result.includes("'@sparkleideas/cli'"),
+      'cli own __tests__ must keep @sparkleideas/cli (probing internals)');
+  });
+
+  // ── Idempotency ──
+
+  it.skip('Pass 7 is idempotent — second run produces no changes', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'README.md'),
+      '`npx @sparkleideas/cli@latest init`\n`npx @sparkleideas/cli@latest doctor`\n');
+
+    await transform(tmp);
+    const after1 = readFileSync(join(tmp, 'README.md'), 'utf8');
+    await transform(tmp);
+    const after2 = readFileSync(join(tmp, 'README.md'), 'utf8');
+
+    assert.equal(after1, after2, 'consecutive runs produce identical output');
+    assert.ok(!/(?<![\w-])@sparkleideas\/cli(?![\w-])/.test(after1),
+      'no @sparkleideas/cli remains after first run');
+  });
+});
