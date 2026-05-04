@@ -150,6 +150,19 @@ _record_phase "publish-verdaccio" "$(_elapsed_ms "$_p" "$(_ns)")"
 # ══════════════════════════════════════════════════════════════════
 _p=$(_ns)
 if [[ -f "${PROJECT_DIR}/package.json" ]]; then
+  # ADR-0142 Guard G1 — wrapper must pin the same @sparkleideas/cli version
+  # as is currently @latest on Verdaccio. The wrapper publish below uses
+  # --ignore-scripts which bypasses prepublishOnly, so the strict check
+  # MUST run inline here. Cli has just been published in Phase 1-3, so
+  # @latest now reflects this release's bumped version.
+  log "Verifying wrapper-cli lockstep before publishing wrapper (ADR-0142 G1)..."
+  if ! node "${PROJECT_DIR}/scripts/check-wrapper-cli-lockstep.mjs" \
+       --check-registry --registry "http://localhost:${PORT}"; then
+    log_error "Wrapper-cli lockstep check failed — refusing to publish stale wrapper"
+    log_error "fix: re-run 'npm run release' so fork-version bumps the wrapper pin in lockstep"
+    exit 1
+  fi
+
   log "Publishing local wrapper (@sparkleideas/ruflo) to Verdaccio..."
   NPM_CONFIG_REGISTRY="http://localhost:${PORT}" \
     npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || \

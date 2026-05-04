@@ -506,6 +506,49 @@ export async function bumpAll(dirs, opts = {}) {
   return { changes };
 }
 
+// ── ADR-0142 Guard G1: bump the wrapper's pinned @sparkleideas/cli ──
+
+/**
+ * Update the @sparkleideas/ruflo wrapper's package.json so its
+ * `dependencies['@sparkleideas/cli']` matches the just-bumped cli version.
+ *
+ * Called by run-fork-version.sh AFTER the fork bump completes, so cli has
+ * its new version on disk in /tmp/ruflo-build/. Reading the cli version
+ * from disk (not the registry) keeps fork-version a pure file operation —
+ * registry-side validation happens later in publish-verdaccio.sh's G1
+ * --check-registry call.
+ *
+ * Returns true if the file was updated; false if no change needed
+ * (already in lockstep, or wrapper has no @sparkleideas/cli dep — Phase 1
+ * transitional state).
+ *
+ * @param {string} rootPath - ruflo-patch repo root containing the wrapper package.json
+ * @param {string} newCliVersion - the bumped cli version (e.g. "3.5.58-patch.343")
+ */
+export async function bumpWrapperPin(rootPath, newCliVersion) {
+  const pkgPath = join(rootPath, 'package.json');
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+  } catch (e) {
+    throw new Error(`bumpWrapperPin: failed to read ${pkgPath}: ${e.message}`);
+  }
+
+  if (!pkg.dependencies?.['@sparkleideas/cli']) {
+    // Phase 1 transitional state — wrapper has no cli dep yet.
+    // Don't add one (commit 4 owns that); just no-op.
+    return false;
+  }
+
+  if (pkg.dependencies['@sparkleideas/cli'] === newCliVersion) {
+    return false;
+  }
+
+  pkg.dependencies['@sparkleideas/cli'] = newCliVersion;
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+  return true;
+}
+
 // ── Show versions (no changes) ──
 
 function showAll(dir) {

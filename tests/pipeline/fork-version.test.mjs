@@ -11,7 +11,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '../..');
 
-const { bumpPatchVersion, findPackages, bumpAll } = await import(
+const { bumpPatchVersion, findPackages, bumpAll, bumpWrapperPin } = await import(
   resolve(ROOT, 'scripts', 'fork-version.mjs')
 );
 
@@ -474,5 +474,58 @@ describe('bumpAll: idempotent version map', () => {
     await bumpAll(tmp, UNIT_OPTS);
     const after2 = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(after2.version, '3.0.0-patch.2');
+  });
+});
+
+// ADR-0142 Guard G1 — bumpWrapperPin
+describe('bumpWrapperPin: ADR-0142 G1 wrapper-cli lockstep', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('updates the wrapper pin when cli version changes', async () => {
+    tmp = makeTmpDir();
+    writePkg(tmp, {
+      name: '@sparkleideas/ruflo',
+      version: '1.0.0',
+      dependencies: { '@sparkleideas/cli': '3.5.58-patch.342' },
+    });
+    const updated = await bumpWrapperPin(tmp, '3.5.58-patch.343');
+    assert.equal(updated, true);
+    const pkg = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+    assert.equal(pkg.dependencies['@sparkleideas/cli'], '3.5.58-patch.343');
+  });
+
+  it('returns false when pin already matches (no-op idempotency)', async () => {
+    tmp = makeTmpDir();
+    writePkg(tmp, {
+      name: '@sparkleideas/ruflo',
+      version: '1.0.0',
+      dependencies: { '@sparkleideas/cli': '3.5.58-patch.342' },
+    });
+    const updated = await bumpWrapperPin(tmp, '3.5.58-patch.342');
+    assert.equal(updated, false);
+  });
+
+  it('returns false when wrapper has no @sparkleideas/cli dep (Phase 1 transitional)', async () => {
+    tmp = makeTmpDir();
+    writePkg(tmp, {
+      name: '@sparkleideas/ruflo',
+      version: '1.0.0',
+      // No dependencies block — Phase 1 transitional state
+    });
+    const updated = await bumpWrapperPin(tmp, '3.5.58-patch.343');
+    assert.equal(updated, false);
+    // Confirm we did NOT add a dependencies block
+    const pkg = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
+    assert.equal(pkg.dependencies, undefined);
+  });
+
+  it('throws on missing package.json (loud failure)', async () => {
+    tmp = makeTmpDir();
+    // No package.json written
+    await assert.rejects(
+      () => bumpWrapperPin(tmp, '3.5.58-patch.343'),
+      /failed to read.*package\.json/,
+    );
   });
 });
