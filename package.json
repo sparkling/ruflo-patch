@@ -16,7 +16,7 @@
     "test:acceptance": "npm run release && bash scripts/test-acceptance.sh --registry http://localhost:4873",
     "test:acceptance:ruvector": "npm run release && RUFLO_RUVECTOR_TESTS=1 bash scripts/test-acceptance.sh --registry http://localhost:4873",
     "finalize": "bash scripts/deploy-finalize.sh",
-    "prepublishOnly": "npm run test:unit",
+    "prepublishOnly": "npm run test:unit && node scripts/check-wrapper-cli-lockstep.mjs",
     "sync": "bash scripts/ruflo-sync.sh",
     "seed-state": "bash scripts/seed-state.sh",
     "promote": "bash scripts/promote.sh",
