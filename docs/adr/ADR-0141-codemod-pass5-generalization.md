@@ -142,26 +142,136 @@ Leave Pass 5 as-is; users hit 404s when running shipped commands.
 
 **Rejected** per memory `feedback-data-loss-zero-tolerance.md` ("Zero tolerance for silent data loss") and the user's audit prompt specifically calling out the gap. A 207-hit broken command surface is not "acceptable rate of loss".
 
-## Implementation plan
+## Pre-flight findings (verified 2026-05-04)
 
-Single PR (or single commit), staged as:
+Direct grep against `forks/ruflo` confirmed the gap:
 
-1. **Update `scripts/codemod.mjs`**:
-   - Replace `CLAUDE_FLOW_ALPHA_RE` with `CLAUDE_FLOW_VERSIONED_RE` (rename for clarity)
-   - Extend `isPlugin5Scope()` predicate with the 3 new path patterns
-   - Update Pass 5 comment block to reflect the broadened scope
-2. **Add tests** to `tests/pipeline/codemod.test.mjs` (under existing `describe('codemod: ADR-0117 Pass 5 …')` block):
-   - 3 positive cases (one per new path pattern; one per new tag form)
-   - 2 negative cases (ADR archive immutability; word-boundary)
-3. **Run `npm run test:unit`** — must show 174→181 (or similar) passing pipeline tests, no new unit failures
-4. **Run `npm run release`** — verify the build's `/tmp/ruflo-build/` shows zero gap-pattern hits in the new scope
-5. **Commit** with message `fix(codemod): generalize Pass 5 — broader tags + path scope (ADR-0141)`
+| Proposed-scope dir | Hit count |
+|---|---:|
+| `v3/@claude-flow/mcp/.claude/skills/**` | 107 |
+| `.claude/skills/**` (fork-root duplicate) | 108 |
+| `v3/@claude-flow/mcp/.claude/agents/**` | 59 |
+| `.claude/commands/**` | 34 |
+| `v3/@claude-flow/mcp/.claude/commands/**` | 33 |
+| `.claude/agents/**` | 7 |
+| **Total in proposed scope** | **348** |
 
-No fork-side changes, no acceptance-script additions (the existing `lib/acceptance-adr0117-marketplace-mcp.sh` already validates the published artifact contains zero offending tokens; broadening Pass 5 just reduces the fork-source population it has to validate against).
+Tag distribution across these 348 hits: **346 are `claude-flow@alpha`**, only 2 are `claude-flow@latest`. **Implication**: path-scope expansion is the dominant axis (~99% of hits); tag broadening is cheap insurance against future upstream tag-style changes but hits almost nothing today.
+
+Earlier estimate of "207 hits in 125 files" was an undercount — actual gap is ~348 hits. ADR Acceptance Criteria #2 still applies: post-release, grep for residual `claude-flow@<ver>` in the new scope must return 0.
+
+## Execution plan
+
+Three-commit single PR. Each commit independently passes `npm run test:unit`.
+
+### Commit 1: tests-first (TDD-style — guards before behaviour)
+
+File modified: `tests/pipeline/codemod.test.mjs`
+
+Add new cases under existing `describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces')` block (or new sibling `describe('codemod: ADR-0141 Pass 5 generalization …')`):
+
+**Positive cases** (will fail before commit 2; pass after):
+1. `claude-flow@alpha` in `v3/@claude-flow/mcp/.claude/skills/foo/SKILL.md` → rewrites to `@sparkleideas/cli@latest`
+2. `claude-flow@latest` in `.claude/skills/bar/SKILL.md` (fork-root dup) → rewrites
+3. `claude-flow@2.0.0-rc.1` in `.claude/agents/baz.md` (semver) → rewrites
+4. `claude-flow@1.5.13` (numeric semver) → rewrites
+5. `claude-flow@beta` and `claude-flow@next` (other dist-tags) → rewrite
+
+**Negative cases** (must continue to pass before AND after commit 2):
+1. `claude-flow@alpha` in `docs/adr/**/*.md` → unchanged (historical accuracy)
+2. `claude-flow@alpha` in `v3/implementation/adrs/**/*.md` → unchanged
+3. `subclaude-flow@latest` (word boundary — leading char) → unchanged
+4. `claude-flow@example` (non-whitelisted tag, non-numeric) → unchanged
+5. Bare `claude-flow` (no `@<ver>`) → unchanged
+
+**Idempotency**: rewrite, then rewrite again — output identical.
+
+After commit 1: 5 positive cases fail (regex doesn't match yet), all negative cases pass. Run `npm run test:unit` — expect 5 failures; document them in commit message as "regression-style guard tests, will go green in commit 2".
+
+Note: this deliberately violates the "tests must pass before commit" preference for this single commit, but signals intent clearly. Alternative: skip the positive cases with `it.skip()` in commit 1 and unskip in commit 2. **Pick the unskip approach** to keep `npm run test:unit` green throughout.
+
+### Commit 2: implement Pass 5 generalization
+
+File modified: `scripts/codemod.mjs`
+
+```diff
+-const CLAUDE_FLOW_ALPHA_RE = /claude-flow@alpha/g;
+-const PASS5_REPLACEMENT = '@sparkleideas/cli@latest';
++// ADR-0141: broaden Pass 5 to match all dist-tags + numeric semver.
++// Whitelist (alpha|latest|beta|next) chosen to avoid matching prose
++// like `claude-flow@example`. Numeric branch ([\d][\w.\-+]*) catches
++// semver pins. \b word boundaries prevent mid-word false-hits.
++const CLAUDE_FLOW_VERSIONED_RE = /\bclaude-flow@(alpha|latest|beta|next|[\d][\w.\-+]*)\b/g;
++const PASS5_REPLACEMENT = '@sparkleideas/cli@latest';
+```
+
+Update `isPlugin5Scope()`:
+
+```diff
+ const PASS5_INIT_BUNDLED_PREFIX = 'v3/@claude-flow/cli/.claude/';
+ const PASS5_INIT_BUNDLED_SUBDIRS = ['agents/', 'commands/', 'skills/'];
++
++// ADR-0141: extend scope to sister mcp workspace + fork-root duplicates.
++// Single `**/.claude/{skills,agents,commands}/**` predicate catches:
++//   - v3/@claude-flow/mcp/.claude/{skills,agents,commands}/**
++//   - forks/ruflo/.claude/{skills,agents,commands}/**
++//   - any future v3/@claude-flow/<workspace>/.claude/... addition
++const PASS5_CLAUDE_DOT_SUBDIRS = ['.claude/skills/', '.claude/agents/', '.claude/commands/'];
+
+ export function isPlugin5Scope(filePath, tempDir) {
+   const rel = relative(tempDir, filePath).replace(/\\/g, '/');
+   if (rel.startsWith('..') || rel === '') return false;
+   const ext = effectiveExt(basename(filePath));
+   if (ext !== '.json' && ext !== '.md') return false;
+   if (rel.startsWith('.claude-plugin/') || rel.startsWith('plugins/')) return true;
+   if (rel.startsWith(PASS5_INIT_BUNDLED_PREFIX)) {
+     const sub = rel.slice(PASS5_INIT_BUNDLED_PREFIX.length);
+     return PASS5_INIT_BUNDLED_SUBDIRS.some((d) => sub.startsWith(d));
+   }
++  // ADR-0141: any path containing /.claude/{skills,agents,commands}/
++  // qualifies, regardless of which workspace it lives in.
++  for (const sub of PASS5_CLAUDE_DOT_SUBDIRS) {
++    if (rel.includes('/' + sub) || rel.startsWith(sub)) return true;
++  }
+   return false;
+ }
+```
+
+Update `applyPass5`:
+
+```diff
+ export function applyPass5(content) {
+-  return content.replace(CLAUDE_FLOW_ALPHA_RE, PASS5_REPLACEMENT);
++  return content.replace(CLAUDE_FLOW_VERSIONED_RE, PASS5_REPLACEMENT);
+ }
+```
+
+Update Pass 5 file-header comment to reflect broadened scope.
+
+After commit 2: all 5 previously-skipped positive tests pass; all negative tests still pass. `npm run test:unit` green.
+
+### Commit 3: full release verification
+
+1. Run `npm run release` — full pipeline (preflight + unit + acceptance + Verdaccio publish + acceptance against published)
+2. Post-release verification grep:
+   ```bash
+   grep -rE 'claude-flow@(alpha|latest|beta|next|[0-9])' /tmp/ruflo-build/v3/@claude-flow/mcp/.claude/ /tmp/ruflo-build/.claude/{skills,agents,commands}/ 2>/dev/null
+   ```
+   Expected: zero hits
+3. Confirm acceptance script `lib/acceptance-adr0117-marketplace-mcp.sh` (which validates published artifact has no `claude-flow@<ver>` tokens) still passes
+4. Commit message documents: pre-release hit count (348), post-release hit count (0), zero new test failures
+
+After commit 3: ADR-0141 closes — flip Status to Accepted in a follow-up doc commit.
+
+## Rollback plan
+
+- **Commit 1 only landed**: tests with `it.skip()` — no behaviour change, no impact
+- **Commits 1+2 landed**: codemod broadened. To revert, `git revert <commit-2>` restores `/claude-flow@alpha/g` regex + narrow scope. Tests in commit 1 stay (re-skipped or removed)
+- **All landed, regression discovered**: `git revert <commit-2>` is sufficient; commits 1 and 3 are harmless without 2
 
 ## Reference
 
-- Original Pass 5: `scripts/codemod.mjs:228-269` (`CLAUDE_FLOW_ALPHA_RE`, `isPlugin5Scope`, `applyPass5`)
-- Pass 5 tests: `tests/pipeline/codemod.test.mjs:735-980` (the entire `describe('codemod: ADR-0117 Pass 5 …')` block — extend in place, don't fork)
+- Original Pass 5: `scripts/codemod.mjs:245-269` post-Pass-6 (`CLAUDE_FLOW_ALPHA_RE`, `isPlugin5Scope`, `applyPass5`)
+- Pass 5 tests: `tests/pipeline/codemod.test.mjs:735-1029` (existing `describe('codemod: ADR-0117 Pass 5 …')` block — extend in place)
 - Pass 6 (analog prior art): commit `8aba0ad`, `scripts/codemod.mjs:228-256` (`NPX_RUFLO_RE`, `NPX_ARGS_RUFLO_RE`)
-- Survey output: see chat 2026-05-04 — *"Pass 5 already covers these scopes (will be rewritten on next release): 215; Pass 5 gap (NOT in scope; would still ship broken): 125 files"*
+- Pre-flight survey: 2026-05-04, see §"Pre-flight findings" above

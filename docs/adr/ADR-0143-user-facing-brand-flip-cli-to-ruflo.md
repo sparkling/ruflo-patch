@@ -156,31 +156,166 @@ Rewrite acceptance scripts, `_cli_cmd` helper, wrapper's own `package.json`, etc
 
 **Rejected**. Internal direct-cli invocation is intentional (perf, version-control, atomic fork-source assumptions). Rebranding internals would force the wrapper to depend on itself or break the parallel acceptance harness. The split is meaningful.
 
-## Implementation plan
+## Pre-flight findings (verified 2026-05-04)
 
-Sketch only — detailed plan written when implementation begins. Single PR after ADR-0142 closes.
+Direct grep against `lib/acceptance-*.sh` (99 files total, 26 reference `@sparkleideas/cli`) found **all 78 non-path matches are either `node_modules/@sparkleideas/cli/...` path probes or error message strings like `"@sparkleideas/cli not installed in TEMP_DIR"`**. None assert against user-facing CLI output that would change after Pass 7. **Implication**: the "audit acceptance scripts" step in the original sketch is a verify-only no-op; no acceptance edits required.
 
-1. **Land Pass 7 in codemod** (1 commit):
-   - Add `SPARKLEIDEAS_CLI_RE` + `PASS7_REPLACEMENT` constants
-   - Add `isPlugin7Scope(filePath, tempDir)` predicate (mirror Pass 5's shape)
-   - Add `applyPass7(content)` function
-   - Wire into `processOneFile` after Pass 5/6
-   - Update file-header pass count comment
+This is the natural fallout from how internal/external use cleaves: acceptance scripts probe cli internals (the package itself isn't being renamed), while user-facing output probes were never grepping for the brand string in the first place.
 
-2. **Add tests** (same commit or separate):
-   - Extend `tests/pipeline/codemod.test.mjs` with `describe('codemod: ADR-0143 Pass 7 …')` per Acceptance Criteria #2
-   - All positive/negative/idempotency cases
+Pass 7 scope summary (from §Decision):
 
-3. **Audit acceptance scripts** (separate commit):
-   - Grep `lib/acceptance-*.sh` for `@sparkleideas/cli` assertions in user-facing-output checks
-   - Update each to assert `@sparkleideas/ruflo` instead
-   - Document each change in commit message
+| Source category | Approx hits | Pass 7 scope |
+|---|---:|---|
+| User-facing prose (README/USERGUIDE/install.sh) | ~40 | IN |
+| Init-generated MCP config (`mcp-generator.ts`) | ~10 | IN |
+| Init-printed help text (`executor.ts`) | ~50 | IN |
+| Plugin/agent/skill markdown | ~200 | IN |
+| Internal pipeline (`_cli_cmd`, codemod, lib/) | ~115 | OUT (ruflo-patch repo, not codemod input) |
+| Wrapper's `package.json` dep | 1 | OUT (in ruflo-patch root) |
 
-4. **Run `npm run release`** — full verification end-to-end
+Net codemod surface: ~300 user-facing flips. All other refs untouched.
 
-5. **Manual smoke** — verify init generates the new MCP config, Claude Code starts MCP via wrapper successfully
+## Execution plan
 
-6. **Update memory** — add a memory entry noting that user-facing brand is now `@sparkleideas/ruflo` so future sessions don't suggest cli-direct invocations
+Three-commit single PR, **after ADR-0142 closes**. Each commit independently passes `npm run test:unit`.
+
+### Commit 1: tests-first (TDD-style — define expected behaviour before implementation)
+
+File modified: `tests/pipeline/codemod.test.mjs`
+
+New `describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkleideas/ruflo')` block. All cases use `it.skip()` initially; unskipped in commit 2 atomically with the Pass 7 implementation (preserves green-on-every-commit per memory `feedback-fix-all-tests.md`).
+
+**Positive cases**:
+1. `npx @sparkleideas/cli@latest init` in `README.md` → rewrites to `npx @sparkleideas/ruflo@latest init`
+2. `npx @sparkleideas/cli@latest doctor` in `scripts/install.sh` → rewrites
+3. JSON args `["−y", "@sparkleideas/cli", "mcp", "start"]` in `v3/@claude-flow/cli/src/init/mcp-generator.ts` → rewrites the cli token (B2 decision)
+4. `@sparkleideas/cli@3.5.0-patch.7` (semver pin) in skill markdown → rewrites
+5. Bare `@sparkleideas/cli` (no version, no `@`) in user prose → rewrites
+6. `@sparkleideas/cli` inside backticks in `.claude/agents/foo.md` → rewrites
+
+**Negative cases**:
+1. `@sparkleideas/cli-foo` (different package, trailing `-foo`) → unchanged
+2. `@sparkleideas/clinical` (different package, trailing letters) → unchanged
+3. `@sparkleideas/cli` in `docs/adr/**/*.md` (historical accuracy) → unchanged
+4. `@sparkleideas/cli` in `forks/ruflo/v3/@claude-flow/memory/src/foo.ts` (internal cross-package) → unchanged
+5. `@sparkleideas/cli` in `forks/ruflo/v3/@claude-flow/cli/__tests__/bar.test.ts` (cli's own tests) → unchanged
+
+**Idempotency**: rewrite, then rewrite again — output identical.
+
+After commit 1: all positive cases skipped; all negative cases pass (current codemod doesn't touch these). `npm run test:unit` green.
+
+### Commit 2: implement Pass 7 + atomic test unskip
+
+File modified: `scripts/codemod.mjs`
+
+```diff
++// Pass 7 (ADR-0143, 2026-05-04): user-facing brand flip from
++// @sparkleideas/cli → @sparkleideas/ruflo. Path-scoped — only fires
++// in user-facing scopes (README/USERGUIDE/install.sh, init-emitted
++// strings, plugin/skill/agent markdown). Internal cross-package code
++// in v3/@claude-flow/<workspace>/src/** is explicitly NOT in scope —
++// the cli package itself isn't being renamed; only references to it
++// from places users see are.
++//
++// Lookbehind/lookahead protect against false-hits on
++// @sparkleideas/cli-foo or @sparkleideas/clinical.
++const SPARKLEIDEAS_CLI_RE = /(?<![\w-])@sparkleideas\/cli(?![\w-])/g;
++const PASS7_REPLACEMENT = '@sparkleideas/ruflo';
++
++// Pass 7 path scope. Mirrors Pass 5's predicate shape.
++const PASS7_USER_FACING_SUBDIRS = [
++  '.claude/skills/', '.claude/agents/', '.claude/commands/',
++  '.claude-plugin/', 'plugins/',
++];
++const PASS7_INIT_EMITTING_PREFIX = 'v3/@claude-flow/cli/src/init/';
++const PASS7_USER_DOC_FILES = new Set(['README.md', 'CHANGELOG.md', 'USERGUIDE.md']);
++
++export function isPlugin7Scope(filePath, tempDir) {
++  const rel = relative(tempDir, filePath).replace(/\\/g, '/');
++  if (rel.startsWith('..') || rel === '') return false;
++  // ADR-0143: never touch ADR archives (historical accuracy).
++  if (rel.startsWith('docs/adr/') || rel.includes('/docs/adr/')) return false;
++  if (rel.startsWith('v3/implementation/adrs/')) return false;
++  // Never touch cli's own tests or internal cross-package src.
++  if (rel.includes('__tests__/')) return false;
++  if (rel.startsWith('v3/@claude-flow/') && rel.includes('/src/') &&
++      !rel.startsWith('v3/@claude-flow/cli/src/init/')) return false;
++
++  // User-facing scopes:
++  const base = basename(filePath);
++  if (PASS7_USER_DOC_FILES.has(base)) return true;
++  if (rel === 'scripts/install.sh') return true;
++  if (rel.startsWith(PASS7_INIT_EMITTING_PREFIX)) return true;
++  for (const sub of PASS7_USER_FACING_SUBDIRS) {
++    if (rel.includes('/' + sub) || rel.startsWith(sub)) return true;
++  }
++  return false;
++}
++
++export function applyPass7(content) {
++  return content.replace(SPARKLEIDEAS_CLI_RE, PASS7_REPLACEMENT);
++}
+```
+
+Wire into `processOneFile`, after Pass 5/6:
+
+```diff
+   let transformed = transformSource(content);
+   if (tempDir && isPlugin5Scope(filePath, tempDir)) {
+     transformed = applyPass5(transformed);
+   }
++  if (tempDir && isPlugin7Scope(filePath, tempDir)) {
++    transformed = applyPass7(transformed);
++  }
+```
+
+Update file-header pass count comment.
+
+In `tests/pipeline/codemod.test.mjs`: change `it.skip(...)` → `it(...)` for all 6 positive cases.
+
+After commit 2: all positive cases pass; all negative cases still pass; `npm run test:unit` green.
+
+### Commit 3: full release verification + ADR closure
+
+1. Run `npm run release` — full pipeline (preflight + unit + acceptance + Verdaccio publish)
+2. **Post-release verification grep**:
+   ```bash
+   # User-facing scopes should have ZERO @sparkleideas/cli references after Pass 7
+   grep -rE '@sparkleideas/cli([^-\w]|$)' \
+     /tmp/ruflo-build/README.md /tmp/ruflo-build/scripts/install.sh \
+     /tmp/ruflo-build/.claude/{skills,agents,commands}/ \
+     /tmp/ruflo-build/v3/@claude-flow/cli/src/init/ \
+     /tmp/ruflo-build/plugins/ /tmp/ruflo-build/.claude-plugin/ 2>/dev/null
+   # Expected: 0 lines
+   ```
+   If any user-facing surface still contains `@sparkleideas/cli`, Pass 7 has a scope gap — fix in a follow-up
+3. **Internal scopes still have refs** (sanity check that we didn't over-broaden):
+   ```bash
+   grep -rE '@sparkleideas/cli([^-\w]|$)' /tmp/ruflo-build/v3/@claude-flow/memory/ 2>/dev/null | wc -l
+   # Expected: > 0 (these are internal cross-package refs, must stay)
+   ```
+4. **Manual smoke**:
+   - `npx @sparkleideas/ruflo@latest --version` exits 0 with version
+   - `npx @sparkleideas/ruflo@latest init` in a tmp dir generates `.mcp.json` with `args: ["-y", "@sparkleideas/ruflo", "mcp", "start"]`
+   - Add the wrapper to Claude Code: `claude mcp add ruflo-test -- npx -y @sparkleideas/ruflo mcp start`; verify it serves JSON-RPC (check `claude mcp list` shows it green)
+5. **Update memory**: add `~/.claude/projects/-Users-henrik-source-ruflo-patch/memory/reference-user-facing-brand.md` noting the brand convention is now `@sparkleideas/ruflo` for user surfaces, `@sparkleideas/cli` only for internals
+6. **Flip ADR-0143 Status to Accepted** in a follow-up doc commit
+
+Commit 3 message documents: pre-release user-facing-scope hit count (~300), post-release count (0), MCP smoke result.
+
+## Rollback plan
+
+- **Commit 1 only landed**: tests skipped — no behaviour change. Safe indefinitely
+- **Commits 1+2 landed**: codemod adds Pass 7. To revert, `git revert <commit-2>` removes the regex+predicate+wiring; tests in commit 1 stay (re-skip them)
+- **Full landed, regression discovered**: `git revert <commit-2>` is sufficient. Commit 3 is verification-only — nothing to revert
+- **MCP option B2 turns out flaky** (wrapper-startup bug crashes MCP): in-place codemod tweak — change `PASS7_USER_FACING_SUBDIRS` to exclude `v3/@claude-flow/cli/src/init/mcp-generator.ts` specifically, falling back to B1 (MCP keeps pointing at cli direct). One-line revert; documented as fallback in §Alternatives §Option B1
+
+## Reference
+
+- Wrapper-architecture prerequisite: ADR-0142 (must close first)
+- Original brand-rebrand effort (narrowly scoped due to wrapper cost): ADR-0117
+- Sister codemod passes for path-scoped rewrites: ADR-0141 (Pass 5 generalization), commit `8aba0ad` (Pass 6 — npx ruflo)
+- Pre-flight survey: 2026-05-04, see §"Pre-flight findings" above
 
 ## Reference
 
