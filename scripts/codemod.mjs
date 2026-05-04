@@ -66,6 +66,11 @@ const ALLOWED_EXTENSIONS = new Set([
   // `forks/ruflo/.claude-plugin/**/*.md` get @claude-flow/ → @sparkleideas/
   // and mcp__claude-flow__* → mcp__ruflo__* rewrites.
   '.md',
+  // ADR-0117 follow-up (2026-05-04): process .sh so install.sh and
+  // similar shell scripts get Pass 6 (npx ruflo@... → @sparkleideas/ruflo@...)
+  // plus the existing scoped-rename passes. Passes 1/2/4 are no-ops on
+  // typical shell content; Pass 3 (import-context) never matches there.
+  '.sh',
 ]);
 
 const SKIP_DIRS = new Set(['.git', 'node_modules']);
@@ -226,6 +231,30 @@ const UNSCOPED_IMPORT_RE = new RegExp(
   'g'
 );
 
+// Pass 6 (ADR-0117 follow-up, 2026-05-04): rewrite unscoped `ruflo`
+// references inside `npx`-style invocations to `@sparkleideas/ruflo`.
+// Two surface forms are covered:
+//
+//   (a) Shell tokens — `npx [-y|--yes] ruflo[@<ver>] …`
+//       Sites: scripts/install.sh, USERGUIDE.md/README.md/CLAUDE.md
+//       prose, fork mcp-bridge JS args used as shell strings.
+//
+//   (b) JS args arrays — `command: "npx", args: [["-y"|"--yes",] "ruflo", …]`
+//       Sites: forks/ruflo/ruflo/src/{,ruvocal/}mcp-bridge/index.js
+//
+// Why not path-scoped (unlike Pass 5): both regexes anchor on `npx` (or
+// `command:"npx", args:[`), so false-hits in prose are effectively
+// impossible — a literal `npx ruflo` in commentary IS a broken command
+// that should be rewritten everywhere it ships.
+//
+// Why this matters: Verdaccio (and public npm) only host
+// `@sparkleideas/ruflo`; bare `ruflo` 404s. The earlier ADR-0117 fix
+// patched 6 TS files in fork source; this pass closes the long tail
+// (legacy v2 mcp-bridge files, install.sh, all docs) durably so future
+// upstream merges can't reintroduce the regression.
+const NPX_RUFLO_RE = /(\bnpx(?:\s+(?:-y|--yes))*\s+)ruflo(?=[@\s])/g;
+const NPX_ARGS_RUFLO_RE = /(command:\s*['"]npx['"],\s*args:\s*\[\s*(?:['"](?:-y|--yes)['"],\s*)*['"])ruflo(['"])/g;
+
 // Pass 5 (ADR-0117): rewrite the unscoped `claude-flow@alpha` package
 // reference to the fork's `@sparkleideas/cli@latest`. Path-scoped to
 // shipped/init-bundled trees so we don't false-hit upstream source
@@ -271,11 +300,12 @@ export function isPlugin5Scope(filePath, tempDir) {
 /**
  * Apply scope renaming to source file content.
  *
- * Four passes:
+ * Five passes:
  *  1. @claude-flow/* -> @sparkleideas/* (all occurrences)
  *  2. @ruvector/* -> @sparkleideas/ruvector-* (all occurrences)
  *  3. Bare unscoped names in import/require/from contexts only
  *  4. mcp__claude-flow__* -> mcp__ruflo__* (ADR-0113 Fix 2)
+ *  6. npx-context `ruflo` -> `@sparkleideas/ruflo` (shell + JS args forms)
  *
  * Pass 5 (claude-flow@alpha rewrite) is path-scoped and lives outside
  * transformSource — applied in processOneFile when isPlugin5Scope matches.
@@ -301,6 +331,10 @@ export function transformSource(content) {
 
   // Pass 4 (ADR-0113 Fix 2): MCP tool prefix (mcp__claude-flow__* -> mcp__ruflo__*)
   result = result.replace(MCP_PREFIX_RE, 'mcp__ruflo__$1');
+
+  // Pass 6 (ADR-0117 follow-up): npx-context unscoped `ruflo` -> `@sparkleideas/ruflo`
+  result = result.replace(NPX_RUFLO_RE, '$1@sparkleideas/ruflo');
+  result = result.replace(NPX_ARGS_RUFLO_RE, '$1@sparkleideas/ruflo$2');
 
   return result;
 }

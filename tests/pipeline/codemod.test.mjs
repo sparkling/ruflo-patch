@@ -1021,3 +1021,131 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
       'Pass 5 rewrote shellout to fork CLI');
   });
 });
+
+// Pass 6 (ADR-0117 follow-up, 2026-05-04): unscoped `ruflo` inside npx
+// invocations resolves to a 404 on Verdaccio (only `@sparkleideas/ruflo`
+// is published). Pass 6 covers two surface forms: shell tokens (`npx
+// [-y] ruflo[@<ver>]`) and JS args arrays (`command:"npx", args:["-y",
+// "ruflo", …]`). Unlike Pass 5 it is unscoped — both regexes anchor on
+// `npx` so prose false-hits are effectively impossible.
+describe('codemod: ADR-0117 Pass 6 — npx-context ruflo rewrite', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('rewrites `npx ruflo@latest` in install.sh-style shell scripts', async () => {
+    tmp = makeTmpDir();
+    const scriptsDir = join(tmp, 'scripts');
+    mkdirSync(scriptsDir, { recursive: true });
+    const source = [
+      '#!/bin/bash',
+      'echo "Run: npx ruflo@latest init --wizard"',
+      'echo "Or:  npx ruflo@latest doctor"',
+      'npx ruflo@${VERSION} doctor 2>&1 || true',
+      'npx ruflo@${VERSION} init --yes',
+    ].join('\n');
+    writeFileSync(join(scriptsDir, 'install.sh'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(scriptsDir, 'install.sh'), 'utf8');
+    const matches = (result.match(/npx @sparkleideas\/ruflo@/g) || []).length;
+    assert.equal(matches, 4, 'all four npx invocations rewritten');
+    assert.ok(!/\bnpx ruflo@/.test(result),
+      'no bare `npx ruflo@` remains');
+  });
+
+  it('rewrites `npx -y ruflo@<ver>` (with -y flag) and preserves the flag', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'cmd.sh'),
+      'claude mcp add ruflo -- npx -y ruflo@latest mcp start\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'cmd.sh'), 'utf8');
+    assert.equal(result.trim(),
+      'claude mcp add ruflo -- npx -y @sparkleideas/ruflo@latest mcp start',
+      'only the `npx ruflo` token rewrites; `mcp add ruflo` server name preserved');
+  });
+
+  it('rewrites `npx ruflo <subcommand>` (no @-version, just a space)', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'cmd.md'),
+      '```bash\nnpx ruflo hive-mind init\nnpx ruflo plugins list\n```\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'cmd.md'), 'utf8');
+    assert.ok(result.includes('npx @sparkleideas/ruflo hive-mind init'),
+      'space-delimited subcommand rewritten');
+    assert.ok(result.includes('npx @sparkleideas/ruflo plugins list'),
+      'second invocation rewritten');
+  });
+
+  it('rewrites JS `command:"npx", args:["-y","ruflo",…]` (mcp-bridge form)', async () => {
+    tmp = makeTmpDir();
+    const srcDir = join(tmp, 'ruflo', 'src', 'mcp-bridge');
+    mkdirSync(srcDir, { recursive: true });
+    const source = [
+      'const SERVERS = [',
+      '  { name: "ruflo", command: "npx", args: ["-y", "ruflo", "mcp", "start"] },',
+      "  { name: 'other', command: 'npx', args: ['-y', 'ruflo', 'doctor'] },",
+      '];',
+    ].join('\n');
+    writeFileSync(join(srcDir, 'index.js'), source);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(srcDir, 'index.js'), 'utf8');
+    assert.ok(result.includes('"-y", "@sparkleideas/ruflo", "mcp", "start"'),
+      'double-quoted args form rewritten');
+    assert.ok(result.includes("'-y', '@sparkleideas/ruflo', 'doctor'"),
+      'single-quoted args form rewritten');
+    assert.ok(result.includes('name: "ruflo"'),
+      'server-name "ruflo" key preserved (only the npx args entry rewrites)');
+  });
+
+  it('does NOT rewrite `npx ruflo-mcp` (token boundary respected)', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'cmd.sh'), 'npx ruflo-mcp start\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'cmd.sh'), 'utf8');
+    assert.equal(result.trim(), 'npx ruflo-mcp start',
+      '`ruflo-mcp` is a different package; must not be rewritten');
+  });
+
+  it('does NOT rewrite bare `ruflo` in prose without npx context', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'README.md'),
+      '# ruflo\n\nThe `ruflo` CLI orchestrates agents. Server name: ruflo.\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(tmp, 'README.md'), 'utf8');
+    assert.ok(result.includes('# ruflo'), 'heading preserved');
+    assert.ok(result.includes('`ruflo` CLI'), 'inline-code prose preserved');
+    assert.ok(result.includes('Server name: ruflo'), 'plain prose preserved');
+    assert.ok(!result.includes('@sparkleideas/ruflo'),
+      'no rewrites applied without npx context');
+  });
+
+  it('is idempotent — second run produces no changes', async () => {
+    tmp = makeTmpDir();
+    writeFileSync(join(tmp, 'cmd.sh'),
+      'npx ruflo@latest doctor\nnpx -y ruflo@${V} init\n');
+
+    await transform(tmp);
+    const after1 = readFileSync(join(tmp, 'cmd.sh'), 'utf8');
+    await transform(tmp);
+    const after2 = readFileSync(join(tmp, 'cmd.sh'), 'utf8');
+
+    assert.equal(after1, after2, 'consecutive runs produce identical output');
+    assert.ok(after1.includes('npx @sparkleideas/ruflo@latest'),
+      'first run rewrote bare ruflo');
+    assert.ok(after1.includes('npx -y @sparkleideas/ruflo@${V}'),
+      '${V}-style version reference rewritten');
+    assert.ok(!/\bnpx (?:-y |--yes )?ruflo[@\s]/.test(after1),
+      'no bare npx ruflo remains after first run');
+  });
+});
