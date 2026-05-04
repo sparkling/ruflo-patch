@@ -975,9 +975,13 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
       '.claude/helpers/ is not a templated tree shipped to user; out of Pass 5 scope');
   });
 
-  it('does NOT rewrite claude-flow@alpha in v3/.../src/.claude/<anything> (only the cli .claude/ tree)', async () => {
-    // Make sure the path filter is anchored — other packages’ .claude trees
-    // (e.g. v3/@claude-flow/memory/.claude/) shouldn't get rewritten.
+  it('DOES rewrite claude-flow@alpha in any workspace .claude/{skills,agents,commands}/ (ADR-0141 expansion)', async () => {
+    // ADR-0141 broadened Pass 5 path scope: any workspace's
+    // .claude/{skills,agents,commands}/** now qualifies, including
+    // v3/@claude-flow/memory/.claude/, v3/@claude-flow/mcp/.claude/, etc.
+    // Pre-ADR-0141 this was a negative case (only cli/.claude/ in scope).
+    // The expansion catches the sister-workspace template duplication
+    // (e.g. mcp/.claude/skills/verification-quality/SKILL.md, 73 hits).
     tmp = makeTmpDir();
     const memDir = join(tmp, 'v3', '@claude-flow', 'memory', '.claude', 'skills', 'foo');
     mkdirSync(memDir, { recursive: true });
@@ -986,8 +990,10 @@ describe('codemod: ADR-0117 Pass 5 — claude-flow@alpha in marketplace surfaces
     await transform(tmp);
 
     const result = readFileSync(join(memDir, 'SKILL.md'), 'utf8');
-    assert.ok(result.includes('claude-flow@alpha'),
-      'only v3/@claude-flow/cli/.claude/{agents,commands,skills}/ is in scope');
+    assert.ok(!result.includes('claude-flow@alpha'),
+      'sister workspace .claude/skills/ now rewritten by Pass 5 (ADR-0141)');
+    assert.ok(result.includes('@sparkleideas/cli@latest') || result.includes('@sparkleideas/ruflo@latest'),
+      'rewrite produces fork brand (Pass 5 alone, or chained Pass 5+7 if user-facing)');
   });
 
   it('does NOT rewrite claude-flow@alpha in root package.json (negative — wrong scope)', async () => {
@@ -1051,7 +1057,7 @@ describe('codemod: ADR-0141 Pass 5 generalization — broader tags + path scope'
 
   // ── Positive: tag broadening (skipped until impl) ──
 
-  it.skip('rewrites claude-flow@latest in .claude/skills/foo/SKILL.md (fork-root scope)', async () => {
+  it('rewrites claude-flow@latest in .claude/skills/foo/SKILL.md (fork-root scope)', async () => {
     tmp = makeTmpDir();
     const skillDir = join(tmp, '.claude', 'skills', 'foo');
     mkdirSync(skillDir, { recursive: true });
@@ -1068,7 +1074,7 @@ describe('codemod: ADR-0141 Pass 5 generalization — broader tags + path scope'
       'no claude-flow@latest remains');
   });
 
-  it.skip('rewrites claude-flow@2.0.0-rc.1 (semver) in .claude/agents/researcher.md', async () => {
+  it('rewrites claude-flow@2.0.0-rc.1 (semver) in .claude/agents/researcher.md', async () => {
     tmp = makeTmpDir();
     const agentDir = join(tmp, '.claude', 'agents');
     mkdirSync(agentDir, { recursive: true });
@@ -1084,7 +1090,7 @@ describe('codemod: ADR-0141 Pass 5 generalization — broader tags + path scope'
       'no claude-flow@2.0.0-rc.1 remains');
   });
 
-  it.skip('rewrites claude-flow@1.5.13 (numeric semver) in .claude/commands/foo.md', async () => {
+  it('rewrites claude-flow@1.5.13 (numeric semver) in .claude/commands/foo.md', async () => {
     tmp = makeTmpDir();
     const cmdDir = join(tmp, '.claude', 'commands');
     mkdirSync(cmdDir, { recursive: true });
@@ -1098,7 +1104,7 @@ describe('codemod: ADR-0141 Pass 5 generalization — broader tags + path scope'
       'numeric semver rewrites');
   });
 
-  it.skip('rewrites claude-flow@beta and claude-flow@next (other dist-tags)', async () => {
+  it('rewrites claude-flow@beta and claude-flow@next (other dist-tags)', async () => {
     tmp = makeTmpDir();
     const skillDir = join(tmp, '.claude', 'skills', 'multi');
     mkdirSync(skillDir, { recursive: true });
@@ -1116,7 +1122,7 @@ describe('codemod: ADR-0141 Pass 5 generalization — broader tags + path scope'
 
   // ── Positive: path scope expansion ──
 
-  it.skip('rewrites in v3/@claude-flow/mcp/.claude/skills/** (sister mcp workspace)', async () => {
+  it('rewrites in v3/@claude-flow/mcp/.claude/skills/** (sister mcp workspace)', async () => {
     tmp = makeTmpDir();
     const skillDir = join(tmp, 'v3', '@claude-flow', 'mcp', '.claude', 'skills', 'verification');
     mkdirSync(skillDir, { recursive: true });

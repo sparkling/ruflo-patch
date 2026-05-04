@@ -255,27 +255,49 @@ const UNSCOPED_IMPORT_RE = new RegExp(
 const NPX_RUFLO_RE = /(\bnpx(?:\s+(?:-y|--yes))*\s+)ruflo(?=[@\s])/g;
 const NPX_ARGS_RUFLO_RE = /(command:\s*['"]npx['"],\s*args:\s*\[\s*(?:['"](?:-y|--yes)['"],\s*)*['"])ruflo(['"])/g;
 
-// Pass 5 (ADR-0117): rewrite the unscoped `claude-flow@alpha` package
-// reference to the fork's `@sparkleideas/cli@latest`. Path-scoped to
-// shipped/init-bundled trees so we don't false-hit upstream source
-// comments or docs/adr/** prose.
+// Pass 5 (ADR-0117 + ADR-0141 generalization 2026-05-04):
+// rewrite unscoped `claude-flow@<ver>` references to the fork's
+// `@sparkleideas/cli@latest`. Path-scoped to shipped/init-bundled
+// trees so we don't false-hit upstream source comments or
+// docs/adr/** prose.
 //
-// Scope (post-2026-05-03 expansion to close init-shipped templates gap):
-//   - .claude-plugin/**        — marketplace plugin manifests + hooks
-//   - plugins/**               — marketplace plugins (commands/agents/skills)
-//   - v3/@claude-flow/cli/.claude/{agents,commands,skills}/**
-//                              — init-bundled templates copied verbatim into
-//                                user's .claude/ on `init --full`. Any
-//                                claude-flow@alpha here ships to the user
-//                                pointing at upstream npm, bypassing fork.
+// ADR-0141 broadened both axes:
+//
+//   Tag whitelist — was /claude-flow@alpha/g, now matches:
+//     - dist-tags: alpha|latest|beta|next (whitelist; not [a-z]+ to
+//       avoid false-hits on `claude-flow@example` in prose)
+//     - numeric semver: [\d][\w.\-+]* (catches 1.5.13, 2.0.0-rc.1,
+//       0.1.0+build, etc — leading-digit forbids @-namespaces)
+//     - \b word boundaries — avoid mid-word like subclaude-flow@alpha
+//
+//   Path scope — adds **/.claude/{skills,agents,commands}/** which
+//   covers fork-root .claude/ duplicates AND sister mcp workspace
+//   v3/@claude-flow/mcp/.claude/...
+//
+// Scope (post-ADR-0141):
+//   Includes:
+//     - .claude-plugin/**, plugins/**
+//     - v3/@claude-flow/cli/.claude/{agents,commands,skills}/** (init-bundled)
+//     - **/.claude/{skills,agents,commands}/** (fork-root + mcp sister + future ws)
+//   Hard excludes (apply first):
+//     - docs/adr/** (historical accuracy — ADR-0117 negative test)
+//     - v3/implementation/adrs/**
 //
 // Applied separately from transformSource because path scoping requires
 // the file's relative path.
-const CLAUDE_FLOW_ALPHA_RE = /claude-flow@alpha/g;
+//
+// Chained interaction with Pass 7 (ADR-0143): on user-facing surfaces
+// (which are subset of Pass 5 scope), Pass 5 produces
+// `@sparkleideas/cli@latest`, then Pass 7 promotes that to
+// `@sparkleideas/ruflo@latest`. Final user-facing form is wrapper brand.
+const CLAUDE_FLOW_VERSIONED_RE = /\bclaude-flow@(?:alpha|latest|beta|next|[\d][\w.\-+]*)\b/g;
 const PASS5_REPLACEMENT = '@sparkleideas/cli@latest';
 
 const PASS5_INIT_BUNDLED_PREFIX = 'v3/@claude-flow/cli/.claude/';
 const PASS5_INIT_BUNDLED_SUBDIRS = ['agents/', 'commands/', 'skills/'];
+// ADR-0141: any path containing /.claude/{skills,agents,commands}/
+// regardless of which workspace it lives in.
+const PASS5_CLAUDE_DOT_SUBDIRS = ['.claude/skills/', '.claude/agents/', '.claude/commands/'];
 
 // Pass 7 (ADR-0143, 2026-05-04): user-facing brand flip
 //   @sparkleideas/cli → @sparkleideas/ruflo
@@ -346,9 +368,18 @@ export function applyPass7(content) {
 }
 
 /**
- * Returns true if the file is in the Pass-5 scope: under .claude-plugin/**,
- * plugins/**, or v3/@claude-flow/cli/.claude/{agents,commands,skills}/**
- * relative to tempDir, with .json or .md extension.
+ * Returns true if the file is in the Pass-5 scope.
+ *
+ * Includes (post-ADR-0141):
+ *   - `.claude-plugin/...`, `plugins/...`
+ *   - `v3/@claude-flow/cli/.claude/{agents,commands,skills}/...` (init-bundled)
+ *   - any path containing `.claude/{skills,agents,commands}/...`
+ *     (fork-root + sister mcp workspace + future workspace duplicates)
+ *
+ * Hard excludes (apply first so they win over generic includes):
+ *   - `docs/adr/...` + `v3/implementation/adrs/...` (historical accuracy)
+ *
+ * Restricted to .json or .md extensions.
  *
  * Exported for tests.
  */
@@ -357,10 +388,19 @@ export function isPlugin5Scope(filePath, tempDir) {
   if (rel.startsWith('..') || rel === '') return false;
   const ext = effectiveExt(basename(filePath));
   if (ext !== '.json' && ext !== '.md') return false;
+  // Hard excludes (ADR-0141): apply BEFORE any include check so a
+  // hypothetical docs/adr/.claude/agents/foo.md doesn't sneak in.
+  if (rel.startsWith('docs/adr/') || rel.includes('/docs/adr/')) return false;
+  if (rel.startsWith('v3/implementation/adrs/')) return false;
+  // Includes
   if (rel.startsWith('.claude-plugin/') || rel.startsWith('plugins/')) return true;
   if (rel.startsWith(PASS5_INIT_BUNDLED_PREFIX)) {
     const sub = rel.slice(PASS5_INIT_BUNDLED_PREFIX.length);
-    return PASS5_INIT_BUNDLED_SUBDIRS.some((d) => sub.startsWith(d));
+    if (PASS5_INIT_BUNDLED_SUBDIRS.some((d) => sub.startsWith(d))) return true;
+  }
+  // ADR-0141: any path containing /.claude/{skills,agents,commands}/
+  for (const sub of PASS5_CLAUDE_DOT_SUBDIRS) {
+    if (rel.includes('/' + sub) || rel.startsWith(sub)) return true;
   }
   return false;
 }
@@ -411,7 +451,7 @@ export function transformSource(content) {
 
 /** Apply Pass 5 only — assumes the caller has already scope-checked. */
 export function applyPass5(content) {
-  return content.replace(CLAUDE_FLOW_ALPHA_RE, PASS5_REPLACEMENT);
+  return content.replace(CLAUDE_FLOW_VERSIONED_RE, PASS5_REPLACEMENT);
 }
 
 // -- File walker --------------------------------------------------------------
