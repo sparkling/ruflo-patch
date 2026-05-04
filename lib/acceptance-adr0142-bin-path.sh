@@ -28,13 +28,20 @@ check_adr0142_bin_path() {
   # shellcheck disable=SC2064  # want $g3_tmp expanded now
   trap "rm -rf '$g3_tmp'" RETURN
 
-  # Fresh install of @sparkleideas/ruflo from Verdaccio
+  # Fresh install of @sparkleideas/ruflo from Verdaccio.
+  # ADR-0142 fix 2026-05-04: --cache=<isolated> prevents npm cache contention
+  # when multiple wrapper-install checks run in parallel (G3, G3-mcp-jsonrpc,
+  # AC#5 init-mcp). Without this, three concurrent `npm install` calls race
+  # on ~/.npm/_cacache and one of them silently fails at ~2.7s with an EACCES
+  # or lock-busy error — checks without --cache would intermittently FAIL
+  # while the manual single-process install always succeeds.
   (cd "$g3_tmp" \
     && echo '{"name":"g3-bin-path-test","version":"1.0.0","private":true}' > package.json \
     && echo "registry=${REGISTRY}" > .npmrc \
     && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+       --cache "$g3_tmp/.npm-cache" \
        --no-audit --no-fund --prefer-offline 2>&1 > "$g3_tmp/install.log") || {
-    _CHECK_OUTPUT="G3: npm install @sparkleideas/ruflo failed (see $g3_tmp/install.log)"
+    _CHECK_OUTPUT="G3: npm install @sparkleideas/ruflo failed (see $g3_tmp/install.log first 10 lines): $(head -10 "$g3_tmp/install.log" 2>/dev/null | tr '\n' ' ')"
     end_ns=$(_ns)
     _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
     return
@@ -120,6 +127,7 @@ check_adr0142_mcp_jsonrpc() {
     && echo '{"name":"g3-mcp-jsonrpc-test","version":"1.0.0","private":true}' > package.json \
     && echo "registry=${REGISTRY}" > .npmrc \
     && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+       --cache "$mcp_tmp/.npm-cache" \
        --no-audit --no-fund --prefer-offline 2>&1 > "$mcp_tmp/install.log") || {
     _CHECK_OUTPUT="MCP-JSONRPC: npm install failed (see $mcp_tmp/install.log)"
     end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return

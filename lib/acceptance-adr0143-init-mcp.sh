@@ -29,6 +29,7 @@ check_adr0143_init_mcp_config() {
     && echo '{"name":"adr0143-init-test","version":"1.0.0","private":true}' > package.json \
     && echo "registry=${REGISTRY}" > .npmrc \
     && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+       --cache "$init_tmp/.npm-cache" \
        --no-audit --no-fund --prefer-offline 2>&1 > "$init_tmp/install.log") || {
     _CHECK_OUTPUT="ADR-0143-init: npm install failed (see $init_tmp/install.log)"
     end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
