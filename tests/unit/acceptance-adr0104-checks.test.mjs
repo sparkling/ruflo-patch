@@ -321,9 +321,14 @@ describe('ADR-0104 §4a — mcp-generator direct-path detection', () => {
       'no `which`/`where ruflo` invocation found');
   });
 
-  it('claude-flow MCP entry uses createRufloEntry (not the npx wrapper)', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
+  it('Ruflo MCP entry uses createRufloEntry (not the npx wrapper)', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
     const src = readFileSync(MCP_GEN_DIST, 'utf8');
-    // The Claude Flow registration block invokes createRufloEntry.
-    assert.match(src, /mcpServers\['claude-flow'\]\s*=\s*createRufloEntry/);
+    // ADR-0117 Revision 2026-05-03: the umbrella MCP server key was
+    // changed from 'claude-flow' to 'ruflo' as part of the
+    // single-canonical-entry-point decision (B2). Test name + assertion
+    // updated 2026-05-04 to reflect the post-revision contract. The
+    // INTENT (verify the registration uses createRufloEntry, not a raw
+    // npx invocation) is unchanged — only the key string differs.
+    assert.match(src, /mcpServers\['ruflo'\]\s*=\s*createRufloEntry/);
   });
 });
