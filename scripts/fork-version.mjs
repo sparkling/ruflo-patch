@@ -15,7 +15,7 @@
 //   import { bumpPatchVersion, findPackages, bumpAll } from './fork-version.mjs';
 
 import { readFileSync, writeFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
-import { resolve, join, relative } from 'node:path';
+import { resolve, join, relative, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { execFile as execFileCb } from 'node:child_process';
@@ -24,6 +24,13 @@ import { promisify } from 'node:util';
 const execFileAsync = promisify(execFileCb);
 
 const __filename = fileURLToPath(import.meta.url);
+// Auto-detect ruflo-patch repo root (this file lives at <root>/scripts/fork-version.mjs).
+// Used by the CLI entry point (line ~692) to pass wrapperRoot to bumpAll, which
+// then auto-bumps the wrapper's @sparkleideas/cli pin (ADR-0142 G1) alongside
+// the cli bump itself. Tests import bumpAll directly without wrapperRoot, so
+// SCRIPT_PROJECT_ROOT is unused in test code paths — no risk of mutating
+// ruflo-patch's wrapper from a unit test.
+const SCRIPT_PROJECT_ROOT = dirname(dirname(__filename));
 
 const SKIP_DIRS = new Set(['node_modules', '.git', '.tsc-toolchain']);
 // ADR-0095 amendment (2026-05-01): @ruvector/* added so the cascade picks
@@ -405,7 +412,16 @@ export function computeBumpSet(changedPackages, allPackages) {
  * @returns {Promise<{changes: Array<{name: string, from: string, to: string, path: string}>}>}
  */
 export async function bumpAll(dirs, opts = {}) {
-  const { dryRun = false, skipNpmCheck = false, onlyPackages = null } = opts;
+  const {
+    dryRun = false,
+    skipNpmCheck = false,
+    onlyPackages = null,
+    // ADR-0142 G1: when set, after bumping forks, also bump the wrapper's
+    // pinned @sparkleideas/cli to match the just-bumped cli version. Default
+    // is undefined → no wrapper bump (test-safe). The CLI entry point passes
+    // SCRIPT_PROJECT_ROOT so `node fork-version.mjs bump …` keeps lockstep.
+    wrapperRoot = undefined,
+  } = opts;
   const dirList = Array.isArray(dirs) ? dirs : [dirs];
 
   // Discover packages across all forks
@@ -500,6 +516,20 @@ export async function bumpAll(dirs, opts = {}) {
       const original = readFileSync(pkgPath, 'utf8');
       const trailing = original.endsWith('\n') ? '\n' : '';
       writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + trailing);
+    }
+  }
+
+  // ADR-0142 G1: bump wrapper's pinned cli alongside cli's own bump. Only
+  // fires when caller explicitly opts in via wrapperRoot. Idempotent — if
+  // there's no @claude-flow/cli change OR the wrapper is already in lockstep,
+  // bumpWrapperPin returns false silently. See ADR-0142 §"Pre-flight findings".
+  if (wrapperRoot && !dryRun) {
+    const cliChange = changes.find(c => c.name === '@claude-flow/cli');
+    if (cliChange) {
+      const updated = await bumpWrapperPin(wrapperRoot, cliChange.to);
+      if (updated) {
+        console.log(`[wrapper-pin] @sparkleideas/cli bumped to ${cliChange.to}`);
+      }
     }
   }
 
@@ -689,7 +719,14 @@ if (isMainModule) {
         }
       }
 
-      const { changes } = await bumpAll(resolvedDirs, { skipNpmCheck, onlyPackages });
+      const { changes } = await bumpAll(resolvedDirs, {
+        skipNpmCheck,
+        onlyPackages,
+        // ADR-0142 G1: CLI mode → auto-bump wrapper pin alongside cli bump.
+        // Tests import bumpAll directly without this option, so they don't
+        // mutate the wrapper.
+        wrapperRoot: SCRIPT_PROJECT_ROOT,
+      });
       if (changes.length === 0) {
         console.log('No @sparkleideas/* or @claude-flow/* packages found.');
         console.log('BUMPED_PACKAGES:[]');
