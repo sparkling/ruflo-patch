@@ -205,7 +205,7 @@ These constrain the execution plan and were confirmed via direct read of the pip
 7. `scripts/run-fork-version.sh` extended to bump the wrapper's pin in the same invocation that bumps cli; `scripts/fork-version.mjs` exports a new helper `bumpWrapperPin(rootPath, newCliVersion)` for testability
 8. Wrapper-overhead benchmark: `time npx @sparkleideas/ruflo@latest --version` measured before vs after; recorded in benchmark commit; target ≥5× reduction (informational; not a gate)
 9. `npm run release` passes end-to-end including the new G1 + G2 + G3 checks
-10. Manual smoke: `npx @sparkleideas/ruflo@latest --help` returns cli help; `claude mcp add ruflo -- npx -y @sparkleideas/ruflo mcp start` registers and serves JSON-RPC
+10. **Automated** MCP JSON-RPC smoke (`adr0142-mcp-jsonrpc` acceptance check, `lib/acceptance-adr0142-bin-path.sh:check_adr0142_mcp_jsonrpc`): fresh-installs the wrapper from Verdaccio, spawns `node node_modules/.bin/ruflo mcp start` (the same invocation Claude Code uses), sends a JSON-RPC `initialize` request via stdin, asserts a well-formed `{jsonrpc, id, result|error}` response. Per project policy, no manual steps — everything via build/deploy. The "claude mcp add registers" UX half is Claude Code's responsibility, not the wrapper's; the wrapper's contract is "spawn it, it serves JSON-RPC", which this check verifies end-to-end.
 
 ## Execution plan
 

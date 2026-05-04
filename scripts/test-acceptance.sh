@@ -580,9 +580,15 @@ adr0117_lib="${PROJECT_DIR}/lib/acceptance-adr0117-marketplace-mcp.sh"
 [[ -f "$adr0117_lib" ]] && source "$adr0117_lib"
 
 # ADR-0142 G3: Wrapper bin-path stability — verify @sparkleideas/ruflo's
-# node_modules/@sparkleideas/cli/bin/cli.js exists and `ruflo --version` boots
+# node_modules/@sparkleideas/cli/bin/cli.js exists, `ruflo --version` boots,
+# AND a JSON-RPC initialize round-trip works through the wrapper (AC#10).
 adr0142_lib="${PROJECT_DIR}/lib/acceptance-adr0142-bin-path.sh"
 [[ -f "$adr0142_lib" ]] && source "$adr0142_lib"
+
+# ADR-0143 AC#5: init-generated .mcp.json registers ruflo via wrapper-canonical
+# path (B2 decision: route MCP through @sparkleideas/ruflo, not @sparkleideas/cli).
+adr0143_lib="${PROJECT_DIR}/lib/acceptance-adr0143-init-mcp.sh"
+[[ -f "$adr0143_lib" ]] && source "$adr0143_lib"
 
 # ADR-0129: Hive-mind CLI bug closeout (B1 memory store, B2 shutdown fields, B4 -t comma-split)
 adr0129_lib="${PROJECT_DIR}/lib/acceptance-adr0129-checks.sh"
@@ -724,6 +730,8 @@ run_check_bg "adr0113-iot-resolves"     "0113 plugin-iot-cognitum resolves on Ve
 run_check_bg "adr0113-fed-bin"          "0113 ruflo-federation bin executes (Fix 5)"                   check_adr0113_ruflo_federation_bin           "packages"
 run_check_bg "adr0113-iot-bin"          "0113 cognitum-iot bin executes (Fix 5)"                       check_adr0113_cognitum_iot_bin               "packages"
 run_check_bg "adr0142-bin-path"         "0142 G3 wrapper @sparkleideas/cli/bin/cli.js + ruflo --version"  check_adr0142_bin_path                       "packages"
+run_check_bg "adr0142-mcp-jsonrpc"      "0142 AC#10 MCP JSON-RPC initialize round-trip via wrapper"       check_adr0142_mcp_jsonrpc                    "packages"
+run_check_bg "adr0143-init-mcp"         "0143 AC#5 init-generated .mcp.json uses @sparkleideas/ruflo (B2)" check_adr0143_init_mcp_config                "packages"
 run_check_bg "adr0113-cli-rebrand"      "0113 executor uses @sparkleideas/cli@latest (Fix 6.1)"        check_adr0113_executor_uses_sparkleideas_cli "structure"
 run_check_bg "adr0113-no-opus46"        "0113 no 'Opus 4.6' strings in CLI dist (Fix 6.3)"             check_adr0113_no_opus_46_strings             "structure"
 run_check_bg "adr0113-mp-owner"         "0113 marketplace.json owner.name = sparkling (Fix 4)"         check_adr0113_marketplace_owner_sparkling    "structure"
@@ -2399,6 +2407,8 @@ collect_parallel "all" \
   "adr0113-fed-bin|0113 ruflo-federation bin executes (Fix 5)" \
   "adr0113-iot-bin|0113 cognitum-iot bin executes (Fix 5)" \
   "adr0142-bin-path|0142 G3 wrapper @sparkleideas/cli/bin/cli.js + ruflo --version" \
+  "adr0142-mcp-jsonrpc|0142 AC#10 MCP JSON-RPC initialize round-trip via wrapper" \
+  "adr0143-init-mcp|0143 AC#5 init-generated .mcp.json uses @sparkleideas/ruflo (B2)" \
   "adr0113-cli-rebrand|0113 executor uses @sparkleideas/cli@latest (Fix 6.1)" \
   "adr0113-no-opus46|0113 no 'Opus 4.6' strings in CLI dist (Fix 6.3)" \
   "adr0113-mp-owner|0113 marketplace.json owner.name = sparkling (Fix 4)" \

@@ -131,7 +131,7 @@ B1 documented in §Alternatives below as the conservative fallback if B2 turns o
    - Idempotency: second run produces identical output
 3. After `npm run release`, grep for `@sparkleideas/cli` in `/tmp/ruflo-build/` user-facing scopes returns 0 hits; grep in internal scopes still returns the expected refs
 4. Acceptance script audit: any acceptance check that asserts `@sparkleideas/cli` appears in user-facing files updated to assert `@sparkleideas/ruflo` instead
-5. Manual smoke after release: `npx @sparkleideas/ruflo init` generates a `.mcp.json` with `args: ["-y", "@sparkleideas/ruflo", "mcp", "start"]`; `claude` reads it and successfully starts the MCP server
+5. **Automated** init-MCP-config smoke (`adr0143-init-mcp` acceptance check, `lib/acceptance-adr0143-init-mcp.sh:check_adr0143_init_mcp_config`): fresh-installs the wrapper from Verdaccio, runs `ruflo init --yes --force` in a tmp dir, parses the generated `.mcp.json`, asserts the mcpServers entry uses the wrapper-canonical path (B2 — either `args: [..., "@sparkleideas/ruflo", ...]` for npx form OR `command: <local-bin>, args: ["mcp","start"]` for direct-bin form). Mirrors ADR-0117 AC#1's dual-path acceptance. Per project policy, no manual steps.
 6. Wrapper-overhead benchmark from ADR-0142 must be in place — if MCP boot via wrapper exceeds 200ms in measurement, fall back to B1 documented in §Alternatives
 
 ## Alternatives considered
@@ -294,10 +294,11 @@ After commit 2: all positive cases pass; all negative cases still pass; `npm run
    grep -rE '@sparkleideas/cli([^-\w]|$)' /tmp/ruflo-build/v3/@claude-flow/memory/ 2>/dev/null | wc -l
    # Expected: > 0 (these are internal cross-package refs, must stay)
    ```
-4. **Manual smoke**:
-   - `npx @sparkleideas/ruflo@latest --version` exits 0 with version
-   - `npx @sparkleideas/ruflo@latest init` in a tmp dir generates `.mcp.json` with `args: ["-y", "@sparkleideas/ruflo", "mcp", "start"]`
-   - Add the wrapper to Claude Code: `claude mcp add ruflo-test -- npx -y @sparkleideas/ruflo mcp start`; verify it serves JSON-RPC (check `claude mcp list` shows it green)
+4. **Automated smoke** (no manual steps — per project policy everything via build/deploy scripts):
+   - `adr0142-bin-path` (G3) exercises `ruflo --version` end-to-end via fresh wrapper install
+   - `adr0142-mcp-jsonrpc` (AC#10) exercises `ruflo mcp start` JSON-RPC initialize round-trip
+   - `adr0143-init-mcp` (AC#5) exercises `ruflo init` and asserts the generated `.mcp.json` uses the wrapper-canonical path
+   - All three run automatically in `npm run release`'s acceptance phase
 5. **Update memory**: add `~/.claude/projects/-Users-henrik-source-ruflo-patch/memory/reference-user-facing-brand.md` noting the brand convention is now `@sparkleideas/ruflo` for user surfaces, `@sparkleideas/cli` only for internals
 6. **Flip ADR-0143 Status to Accepted** in a follow-up doc commit
 

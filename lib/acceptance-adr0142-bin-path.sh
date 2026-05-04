@@ -85,3 +85,92 @@ check_adr0142_bin_path() {
   end_ns=$(_ns)
   _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
 }
+
+# ════════════════════════════════════════════════════════════════════
+# AC#10 (ADR-0142): MCP JSON-RPC round-trip THROUGH the wrapper
+#
+# Replaces the manual smoke "claude mcp add ruflo -- npx -y
+# @sparkleideas/ruflo mcp start; serves JSON-RPC". Per project policy,
+# everything via build/deploy scripts — never manual. This automates the
+# JSON-RPC half (the "claude mcp add" UX half is Claude Code's, not ours).
+#
+# Method:
+#   1. Fresh install of @sparkleideas/ruflo from Verdaccio (separate dir
+#      so concurrent checks don't contend)
+#   2. Spawn `node node_modules/.bin/ruflo mcp start` as a subprocess
+#      (the SAME invocation Claude Code uses)
+#   3. Send a minimal JSON-RPC `initialize` request via stdin
+#   4. Read response on stdout within timeout
+#   5. PASS if response is well-formed JSON-RPC with matching id +
+#      a `result` member (or `error.code` for tool-not-found, which
+#      still proves the wrapper imported cli + dispatched MCP mode)
+# ════════════════════════════════════════════════════════════════════
+
+check_adr0142_mcp_jsonrpc() {
+  local start_ns end_ns
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+
+  local mcp_tmp
+  mcp_tmp=$(mktemp -d /tmp/ruflo-g3-mcp-jsonrpc-XXXXX)
+  # shellcheck disable=SC2064
+  trap "rm -rf '$mcp_tmp'" RETURN
+
+  (cd "$mcp_tmp" \
+    && echo '{"name":"g3-mcp-jsonrpc-test","version":"1.0.0","private":true}' > package.json \
+    && echo "registry=${REGISTRY}" > .npmrc \
+    && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+       --no-audit --no-fund --prefer-offline 2>&1 > "$mcp_tmp/install.log") || {
+    _CHECK_OUTPUT="MCP-JSONRPC: npm install failed (see $mcp_tmp/install.log)"
+    end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
+  }
+
+  local wrapper_bin="${mcp_tmp}/node_modules/.bin/ruflo"
+  if [[ ! -x "$wrapper_bin" ]]; then
+    _CHECK_OUTPUT="MCP-JSONRPC: wrapper bin missing at ${wrapper_bin}"
+    end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
+  fi
+
+  # Build a minimal JSON-RPC initialize request. MCP spec 2024-11-05 form.
+  local req='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"adr0142-jsonrpc-probe","version":"1.0.0"}}}'
+  local resp_log="${mcp_tmp}/jsonrpc-resp.log"
+
+  # Spawn wrapper → cli → MCP server in stdio mode. Send request, capture
+  # response, kill on timeout. Exit 124 from `timeout` = SIGTERM after 15s
+  # (server kept stdin open waiting for more — that's expected MCP behavior).
+  echo "$req" | _timeout 15 "$wrapper_bin" mcp start > "$resp_log" 2>&1 || true
+
+  # Find the JSON-RPC response line. cli prints log lines like
+  # "[AgentDB] Telemetry disabled" and "[ruflo-mcp] Starting in stdio mode"
+  # before the response. Filter for lines starting with `{"jsonrpc"`.
+  local resp_line
+  resp_line=$(grep '^{"jsonrpc"' "$resp_log" | head -1)
+
+  if [[ -z "$resp_line" ]]; then
+    _CHECK_OUTPUT="MCP-JSONRPC: no JSON-RPC response from wrapper-spawned server. First 15 lines of stdout:
+$(head -15 "$resp_log" 2>/dev/null)"
+    end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
+  fi
+
+  # Parse the response and validate shape via node (jq-free).
+  local parse_result
+  parse_result=$(node -e '
+    try {
+      const r = JSON.parse(process.argv[1]);
+      if (r.jsonrpc !== "2.0") { console.log("BAD_VERSION:" + (r.jsonrpc||"<missing>")); process.exit(0); }
+      if (r.id !== 1) { console.log("BAD_ID:" + JSON.stringify(r.id)); process.exit(0); }
+      if (r.result) { console.log("OK_RESULT:" + (r.result.serverInfo?.name || r.result.protocolVersion || "result-present")); process.exit(0); }
+      if (r.error) { console.log("OK_ERROR_BUT_VALID_RPC:code=" + r.error.code); process.exit(0); }
+      console.log("BAD_NEITHER_RESULT_NOR_ERROR");
+    } catch (e) { console.log("PARSE_ERROR:" + e.message); }
+  ' "$resp_line" 2>&1)
+
+  if [[ "$parse_result" == OK_RESULT:* || "$parse_result" == OK_ERROR_BUT_VALID_RPC:* ]]; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="MCP-JSONRPC PASS: wrapper → cli → MCP server initialize round-trip OK (${parse_result})"
+    end_ns=$(_ns); _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
+  fi
+
+  _CHECK_OUTPUT="MCP-JSONRPC: response shape invalid (${parse_result}). Response: ${resp_line:0:300}"
+  end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+}
