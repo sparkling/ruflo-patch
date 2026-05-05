@@ -35,11 +35,33 @@ const ROOT = resolve(__dirname, '../..');
 const CHECK_FILE = resolve(ROOT, 'lib', 'acceptance-adr0104-checks.sh');
 const RUNNER_FILE = resolve(ROOT, 'scripts', 'test-acceptance.sh');
 
-const BUILD_DIR = '/tmp/ruflo-build/v3/@claude-flow/cli/dist/src';
-const PARSER_DIST = join(BUILD_DIR, 'parser.js');
-const HIVE_TOOLS_DIST = join(BUILD_DIR, 'mcp-tools', 'hive-mind-tools.js');
-const HIVE_CMD_DIST = join(BUILD_DIR, 'commands', 'hive-mind.js');
-const MCP_GEN_DIST = join(BUILD_DIR, 'init', 'mcp-generator.js');
+// Static structural assertions read the fork TS SOURCE (always fresh).
+// Behavioral assertions need a built JS module; prefer the codemodded build
+// (/tmp/ruflo-build) and fall back to the fork's own dist (may be stale on
+// pre-ADR-0117 source changes; that's fine — assertions in this file
+// don't gate on post-codemod brand strings).
+const FORK_SRC_DIR = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
+const CODEMOD_BUILD_DIR = '/tmp/ruflo-build/v3/@claude-flow/cli/dist/src';
+const FORK_BUILD_DIR = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/dist/src';
+
+const PARSER_SRC = join(FORK_SRC_DIR, 'parser.ts');
+const HIVE_TOOLS_SRC = join(FORK_SRC_DIR, 'mcp-tools', 'hive-mind-tools.ts');
+const HIVE_CMD_SRC = join(FORK_SRC_DIR, 'commands', 'hive-mind.ts');
+const MCP_GEN_SRC = join(FORK_SRC_DIR, 'init', 'mcp-generator.ts');
+
+function pickDistFile(rel) {
+  const codemod = join(CODEMOD_BUILD_DIR, rel);
+  const fork = join(FORK_BUILD_DIR, rel);
+  if (existsSync(codemod)) return codemod;
+  if (existsSync(fork)) return fork;
+  return codemod;
+}
+const PARSER_DIST = pickDistFile('parser.js');
+const HIVE_TOOLS_DIST = pickDistFile(join('mcp-tools', 'hive-mind-tools.js'));
+const HIVE_CMD_DIST = pickDistFile(join('commands', 'hive-mind.js'));
+const MCP_GEN_DIST = pickDistFile(join('init', 'mcp-generator.js'));
+
+const buildAvailableForBehavioral = existsSync(PARSER_DIST) || existsSync(HIVE_TOOLS_DIST);
 
 const CHECK_FN_NAMES = [
   'check_adr0104_mcp_direct_path',
@@ -118,19 +140,19 @@ describe('ADR-0104 acceptance check lib — runner wiring', () => {
 
 // ── 2. Behavioral: §1 parser hoist of --non-interactive ─────────────────
 
-const buildAvailable = existsSync(PARSER_DIST);
+const buildAvailable = buildAvailableForBehavioral;
 
 describe('ADR-0104 §1 — parser hoists --non-interactive to globalOptions', () => {
-  it('parser.js has the hoisted boolean entry', { skip: buildAvailable ? false : 'codemodded build absent — run `npm run copy-source && npm run codemod`' }, () => {
-    const src = readFileSync(PARSER_DIST, 'utf8');
+  it('parser.ts has the hoisted boolean entry', () => {
+    // ADR-0136 follow-up: read fork TS source (always fresh) instead of
+    // /tmp/ruflo-build dist (may be absent on fresh checkout).
+    const src = readFileSync(PARSER_SRC, 'utf8');
     assert.match(src, /name:\s*['"]non-interactive['"]/);
     assert.match(src, /type:\s*['"]boolean['"]/);
-    // The hoist is in initializeGlobalOptions(), not buried in some per-cmd
-    // option list. Locate the comment marker we wrote in the source fix.
     assert.match(src, /ADR-0104.*non-interactive|hoisted to globals/i);
   });
 
-  it('parse(["hive-mind","spawn","--non-interactive","obj"]) preserves obj as positional', { skip: buildAvailable ? false : 'codemodded build absent' }, async () => {
+  it('parse(["hive-mind","spawn","--non-interactive","obj"]) preserves obj as positional', { skip: buildAvailable ? false : 'compiled dist absent — run `npm run build` in forks/ruflo' }, async () => {
     const mod = await import(PARSER_DIST);
     const parser = new mod.CommandParser({ allowUnknownFlags: true });
     // Register a stub `hive-mind` command with `spawn` subcommand so the parser
@@ -154,26 +176,24 @@ describe('ADR-0104 §1 — parser hoists --non-interactive to globalOptions', ()
 // ── 3. Behavioral: §5 withHiveStoreLock under contention ────────────────
 
 describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
-  it('hive-mind-tools.js has withHiveStoreLock + atomic save', { skip: existsSync(HIVE_TOOLS_DIST) ? false : 'build absent' }, () => {
-    const src = readFileSync(HIVE_TOOLS_DIST, 'utf8');
+  it('hive-mind-tools.ts has withHiveStoreLock + atomic save', () => {
+    const src = readFileSync(HIVE_TOOLS_SRC, 'utf8');
     assert.match(src, /function\s+withHiveStoreLock/);
     assert.match(src, /O_EXCL/);
     assert.match(src, /renameSync/, 'saveHiveState must use atomic rename (tmp + rename)');
   });
 
-  it('handler routes set/delete through withHiveStoreLock; get/list bypass it', { skip: existsSync(HIVE_TOOLS_DIST) ? false : 'build absent' }, () => {
-    const src = readFileSync(HIVE_TOOLS_DIST, 'utf8');
-    // Find the hive-mind_memory handler region
+  it('handler routes set/delete through withHiveStoreLock; get/list bypass it', () => {
+    const src = readFileSync(HIVE_TOOLS_SRC, 'utf8');
     const memHandlerStart = src.indexOf("name: 'hive-mind_memory'");
     assert.ok(memHandlerStart > 0, 'hive-mind_memory tool not found');
     const memHandlerEnd = src.indexOf('},', src.indexOf('handler:', memHandlerStart) + 100);
     const handler = src.slice(memHandlerStart, memHandlerEnd);
-    // set + delete must invoke withHiveStoreLock; both branches present.
     const lockUses = (handler.match(/withHiveStoreLock/g) || []).length;
     assert.ok(lockUses >= 2, `expected ≥2 withHiveStoreLock invocations in memory handler, found ${lockUses}`);
   });
 
-  it('parallel set with distinct keys: all values persist (lock isolates writers)', { skip: existsSync(HIVE_TOOLS_DIST) ? false : 'build absent' }, async (t) => {
+  it('parallel set with distinct keys: all values persist (lock isolates writers)', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
     // Mock findProjectRoot so the hive state lands in a temp dir per test.
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-lock-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -235,7 +255,7 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
       'lock sentinel not removed after writes complete');
   });
 
-  it('parallel set on SAME key: exactly one writer-* value persists, JSON intact', { skip: existsSync(HIVE_TOOLS_DIST) ? false : 'build absent' }, async (t) => {
+  it('parallel set on SAME key: exactly one writer-* value persists, JSON intact', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-samekey-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
     process.chdir(tmp);
@@ -272,8 +292,8 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
 // ── 4. Behavioral: §6 prompt content + §3 wording ──────────────────────
 
 describe('ADR-0104 §6 — Queen prompt content', () => {
-  it('hive-mind.js prompt has TOOL USE block, no #1422 block', { skip: existsSync(HIVE_CMD_DIST) ? false : 'build absent' }, () => {
-    const src = readFileSync(HIVE_CMD_DIST, 'utf8');
+  it('hive-mind.ts prompt has TOOL USE block, no #1422 block', () => {
+    const src = readFileSync(HIVE_CMD_SRC, 'utf8');
     assert.ok(src.includes('TOOL USE'),
       'TOOL USE block missing from hive-mind.js source');
     assert.ok(src.includes('WORKER COORDINATION CONTRACT'),
@@ -288,15 +308,15 @@ describe('ADR-0104 §6 — Queen prompt content', () => {
       '#1422 header STILL PRESENT — revert incomplete');
   });
 
-  it('hive-mind.js preserves 4-phase PROTOCOL', { skip: existsSync(HIVE_CMD_DIST) ? false : 'build absent' }, () => {
-    const src = readFileSync(HIVE_CMD_DIST, 'utf8');
+  it('hive-mind.ts preserves 4-phase PROTOCOL', () => {
+    const src = readFileSync(HIVE_CMD_SRC, 'utf8');
     for (const phase of ['INITIALIZATION PHASE', 'TASK DISTRIBUTION PHASE', 'COORDINATION PHASE', 'COMPLETION PHASE']) {
       assert.ok(src.includes(phase), `4-phase PROTOCOL missing: ${phase}`);
     }
   });
 
-  it('§3: "Registered N worker slot(s)" wording present; "Spawned N agent(s)" gone', { skip: existsSync(HIVE_CMD_DIST) ? false : 'build absent' }, () => {
-    const src = readFileSync(HIVE_CMD_DIST, 'utf8');
+  it('§3: "Registered N worker slot(s)" wording present; "Spawned N agent(s)" gone', () => {
+    const src = readFileSync(HIVE_CMD_SRC, 'utf8');
     assert.ok(src.includes('Registered ') && src.includes('worker slot(s)'),
       'honest "Registered ... worker slot(s)" wording missing');
     assert.ok(src.includes('actual worker'),
@@ -310,19 +330,16 @@ describe('ADR-0104 §6 — Queen prompt content', () => {
 // ── 5. Behavioral: §4a mcp-generator direct-path detection ─────────────
 
 describe('ADR-0104 §4a — mcp-generator direct-path detection', () => {
-  it('mcp-generator.js exposes detectRufloPath / createRufloEntry', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
-    const src = readFileSync(MCP_GEN_DIST, 'utf8');
-    // ADR-0111 W4: upstream rebrand `claude-flow` binary -> `ruflo`.
-    // Hand-merged in mcp-generator.ts to layer detection on the rebrand.
+  it('mcp-generator.ts exposes detectRufloPath / createRufloEntry', () => {
+    const src = readFileSync(MCP_GEN_SRC, 'utf8');
     assert.match(src, /detectRufloPath/);
     assert.match(src, /createRufloEntry/);
-    // Must reference `which ruflo` or `where ruflo` (Windows)
     assert.ok(/which ruflo/.test(src) || /where ruflo/.test(src),
       'no `which`/`where ruflo` invocation found');
   });
 
-  it('Ruflo MCP entry uses createRufloEntry (not the npx wrapper)', { skip: existsSync(MCP_GEN_DIST) ? false : 'build absent' }, () => {
-    const src = readFileSync(MCP_GEN_DIST, 'utf8');
+  it('Ruflo MCP entry uses createRufloEntry (not the npx wrapper)', () => {
+    const src = readFileSync(MCP_GEN_SRC, 'utf8');
     // ADR-0117 Revision 2026-05-03: the umbrella MCP server key was
     // changed from 'claude-flow' to 'ruflo' as part of the
     // single-canonical-entry-point decision (B2). Test name + assertion
