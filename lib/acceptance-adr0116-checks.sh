@@ -519,9 +519,16 @@ check_adr0116_drift_detector() {
     return
   fi
 
-  local upstream_dir="${UPSTREAM_DIR:-/Users/henrik/source/ruvnet/ruflo}"
+  # ADR-0116 drift detector sources from the fork's own canonical SKILL.md
+  # path (not ruvnet upstream). Fork-only enhancements like the hive-mind v2.0.0
+  # rewrite are tracked in the fork's `v3/@claude-flow/cli/.claude/skills/...`
+  # tree per memory `feedback-no-upstream-donate-backs.md`. The drift invariant
+  # becomes: re-materialising from the fork's source-of-truth + transforms
+  # produces the same content as the plugin destination. Hand-edits to the
+  # plugin without updating the fork's canonical source still surface as drift.
+  local upstream_dir="${UPSTREAM_DIR:-/Users/henrik/source/forks/ruflo}"
   if [[ ! -d "$upstream_dir" ]]; then
-    _CHECK_OUTPUT="upstream not available at $upstream_dir (drift detector skipped)"
+    _CHECK_OUTPUT="source not available at $upstream_dir (drift detector skipped)"
     end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
     return
   fi
