@@ -150,6 +150,13 @@ check_adr0108_round_robin_distribution() {
   _CHECK_OUTPUT=""
 
   local iso; iso=$(_e2e_isolate "adr0108-round-robin")
+  # Bug-4 follow-up (2026-05-06): wipe runtime agent/hive registries so the
+  # 2/2/2 distribution assertion below isn't off by leftovers from harness
+  # init or from prior non-iso checks that wrote to the shared E2E_DIR
+  # before this iso was snapshotted. Targeted here (not in _e2e_isolate)
+  # because most tests want the iso to keep init-populated state.
+  rm -f "$iso/.claude-flow/agents.json" 2>/dev/null
+  rm -rf "$iso/.claude-flow/hive-mind" 2>/dev/null
   if ! _adr0108_hive_init "$iso"; then
     _CHECK_OUTPUT="ADR-0108 AC#3: hive-mind init failed in iso"
     rm -rf "$iso" 2>/dev/null
