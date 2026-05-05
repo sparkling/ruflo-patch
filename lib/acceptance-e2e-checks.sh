@@ -30,6 +30,14 @@ _e2e_isolate() {
   # Remove any stale RVF/WAL/lock from the copy so we start clean
   rm -f "$iso_dir/.claude-flow/memory.rvf"* "$iso_dir/.swarm/memory.rvf"* 2>/dev/null
   rm -f "$iso_dir/.swarm/memory.db"* 2>/dev/null
+  # Bug-4 follow-up (2026-05-06): also wipe per-test runtime registries so
+  # each iso starts with empty agent/hive/task state. Without this, tests
+  # that spawn agents (adr0108-round-robin, etc.) see leftovers from the
+  # harness init or from prior non-iso checks that wrote to the shared
+  # E2E_DIR. The hive-mind state.json + agents.json are typed registries
+  # that downstream tests assert exact counts on.
+  rm -f "$iso_dir/.claude-flow/agents.json" 2>/dev/null
+  rm -rf "$iso_dir/.claude-flow/hive-mind" 2>/dev/null
   echo "$iso_dir"
 }
 
