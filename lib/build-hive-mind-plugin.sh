@@ -431,8 +431,13 @@ _emit_command() {
   fi
 
   {
+    # ADR-0136 follow-up (2026-05-05): do NOT emit 'name:' in command
+    # frontmatter. Claude Code's plugin command loader rejects/silently
+    # misregisters commands that have a 'name:' field — the command name
+    # comes from the FILENAME (commands/foo.md → /foo or /<plugin>:foo).
+    # See feature-dev / claude-md-management upstream plugins for the
+    # canonical shape: just description: + optional argument-hint:.
     printf -- '---\n'
-    printf 'name: %s\n' "$name"
     printf 'description: %s\n' "$description"
     if [[ -n "$impl_status" ]]; then
       printf 'implementation-status: %s\n' "$impl_status"
