@@ -530,18 +530,26 @@ check_adr0080_store_after_init() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local e2e="${E2E_DIR}"
-  if [[ -z "$e2e" || ! -d "$e2e" ]]; then
-    _CHECK_OUTPUT="ADR-0080-10: E2E_DIR not set or missing"
+  # Bug-4 follow-up (2026-05-05): use _e2e_isolate to prevent .jslock
+  # contention with the ~10-15 concurrent memory-store callers also
+  # writing to the shared E2E_DIR during the parallel wave. The shared
+  # E2E_DIR was the structural cause of the intermittent
+  # "[StorageFactory] Failed to create storage backend (unknown)" flakes.
+  # Each iso has its own .swarm/memory.rvf + .jslock — zero contention
+  # at the cost of ~150KB / ~100ms per check. Per the council's
+  # per-test-isolation alternative report (2026-05-05).
+  local iso
+  iso=$(_e2e_isolate "adr0080-store-init") || {
+    _CHECK_OUTPUT="ADR-0080-10: _e2e_isolate failed (E2E_DIR=${E2E_DIR})"
     return
-  fi
+  }
 
   # Use the cached CLI binary + _run_and_kill wrapper so this check has
   # a 60s timeout like every other memory-store check. Raw `npx ...@latest`
   # without a timeout caused 277-317s hangs when the CLI stalled on
   # WAL-lock contention with parallel checks.
   local cli; cli=$(_cli_cmd)
-  _run_and_kill "cd '$e2e' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'adr0080-test' --value 'acceptance test entry' --namespace test" "" 60
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'adr0080-test' --value 'acceptance test entry' --namespace test" "" 60
   local store_out="$_RK_OUT"
 
   if echo "$store_out" | grep -qi 'stored\|success'; then
