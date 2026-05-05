@@ -522,7 +522,7 @@ _emit_readme() {
     printf 'Multi-round dialectic via `hive-mind_broadcast` waking idle Agent-tool workers is **aspirational** — not implemented. See ADR-0140 §Decision and `feedback-hive-orchestration-pattern.md` for the layer-bridge gap.\n\n'
     printf 'For runtime cross-talk between Agent-tool workers, two transports actually work:\n\n'
     printf '%s\n' '- **File-based** — workers read/write `/tmp/<hive-id>/{pos,reaction}-*.md` with a sleep-based barrier (validated 2026-05-04, see `reference-hive-runtime-crosstalk-pattern.md`).'
-    printf '%s\n\n' '- **Bash CLI** — `npx ruflo hive-mind memory -a set` / `-a get` from inside the worker prompt; the CLI bridges to substrate without the MCP hang.'
+    printf '%s\n\n' '- **Bash CLI** — `npx @sparkleideas/ruflo hive-mind memory -a set` / `-a get` from inside the worker prompt; the CLI bridges to substrate without the MCP hang.'
     printf 'Do **not** call `mcp__ruflo__hive-mind_memory` from sub-agent context — it hangs (~600s stall + watchdog kill). See ADR-0140 Piece 3a.\n\n'
     printf '## Known gaps vs. USERGUIDE\n\n'
     if (( ${#rows[@]} == 0 )); then
