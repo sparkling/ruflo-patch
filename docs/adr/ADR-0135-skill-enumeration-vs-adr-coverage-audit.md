@@ -1,6 +1,6 @@
 # ADR-0135: Skill + plugin enumeration vs ADR coverage audit — USERGUIDE skills, all plugin distribution channels, and skill↔plugin cross-index against fork ADRs
 
-- **Status**: **Proposed (2026-05-03)** — descriptive audit + gap tracker. **Revised 2026-05-03** with (a) full plugin enumeration across all distribution channels (Claude Code marketplace, npm optional, WASM bundled, IPFS registry, undocumented on-disk), (b) skill↔plugin cross-index, and (c) **verification appendix** with parallel-swarm cross-reference results against actual implementation (5 follow-up ADRs identified). No implementation work; subsequent ADRs will reference this matrix when adding fork-side coverage to currently-uncovered surfaces.
+- **Status**: **Proposed (2026-05-03)** — descriptive audit + gap tracker. **Revised 2026-05-03** with (a) full plugin enumeration across all distribution channels (Claude Code marketplace, npm optional, WASM bundled, IPFS registry, undocumented on-disk), (b) skill↔plugin cross-index, and (c) **verification appendix** with parallel-swarm cross-reference results against actual implementation (5 follow-up ADRs identified). **Revised 2026-05-05** with (d) init-bundle reality check: `npx @sparkleideas/ruflo@latest init --full` ships **33 standalone skills**, not the USERGUIDE-claimed 37 — see Finding 11. No implementation work; subsequent ADRs will reference this matrix when adding fork-side coverage to currently-uncovered surfaces.
 - **Date**: 2026-05-03
 - **Deciders**: Henrik Pettersen
 - **Related**: ADR-0103 (readme-claims-investigation-roadmap — closest existing tracker, but scoped to README claims, not full skill+plugin coverage matrix), ADR-0051 (remove-direct-integrations-use-plugins), ADR-0113 (plugin-system-integration-completion), ADR-0116 (hive-mind-marketplace-plugin), ADR-0117 (marketplace-mcp-server-registration), ADR-078/3-digit (agent-llm-federation-plugin), ADR-079/3-digit (iot-cognitum-plugin)
@@ -49,7 +49,7 @@ The "130+" / "137+" counts include namespaced sub-skills (`sparc:architect`, `sp
 | 13 | `flow-nexus-neural` | Flow Nexus | — | upstream-only |
 | 14 | `reasoningbank-agentdb` | Intelligence & Learning | ADR-0034 pi-brain-collective-intelligence | partial |
 | 15 | `reasoningbank-intelligence` | Intelligence & Learning | ADR-0034 pi-brain-collective-intelligence | partial |
-| 16 | **`hive-mind-advanced`** | **Intelligence & Learning** | **ADR-0104, 0114, 0115, 0119, 0120, 0121, 0122, 0123, 0124, 0125, 0126, 0127, 0128, 0131, 0132 (15 ADRs)** | **active impl — most ADR'd skill in fork** |
+| 16 | **`hive-mind-advanced`** | **Intelligence & Learning** | **ADR-0104, 0114, 0115, 0119, 0120, 0121, 0122, 0123, 0124, 0125, 0126, 0127, 0128, 0131, 0132 (15 ADRs)** | **active impl — most ADR'd skill in fork; ships via `ruflo-hive-mind` plugin, NOT in standalone init bundle (per Finding 11)** |
 | 17 | `v3-ddd-architecture` | V3 Implementation | ADR-0076 architecture-consolidation | partial |
 | 18 | `v3-security-overhaul` | V3 Implementation | ADR-0042 security-reliability | partial |
 | 19 | `v3-memory-unification` | V3 Implementation | ADR-0073, 0085, 0086, 0091, 0092, 0102, 0110 (7 ADRs) | impl |
@@ -67,10 +67,10 @@ The "130+" / "137+" counts include namespaced sub-skills (`sparc:architect`, `sp
 | 31 | `sparc-methodology` | Development Workflow | — | upstream-only |
 | 32 | `swarm-orchestration` | Development Workflow | ADR-0098 swarm-init-sprawl | partial |
 | 33 | `swarm-advanced` | Development Workflow | ADR-0098, ADR-0114 architectural-model | partial |
-| 34 | `performance-analysis` | Development Workflow | ADR-0099 performance-testing-program | partial |
-| 35 | `agentic-jujutsu` | Specialized | — | upstream-only |
-| 36 | `worker-benchmarks` | Specialized | — | upstream-only |
-| 37 | `worker-integration` | Specialized | — | upstream-only |
+| 34 | `performance-analysis` | Development Workflow | ADR-0099 performance-testing-program | partial / not-bundled (per Finding 11) |
+| 35 | `agentic-jujutsu` | Specialized | — | upstream-only / not-bundled |
+| 36 | `worker-benchmarks` | Specialized | — | upstream-only / not-bundled |
+| 37 | `worker-integration` | Specialized | — | upstream-only / not-bundled |
 
 **38th on disk:** one additional skill exists in upstream `.claude/skills/` that is filtered from this matrix per a project-standing exclusion rule (memory `feedback-no-codex-mentions.md`). It is not part of the canonical 37-skill USERGUIDE enumeration either.
 
@@ -307,6 +307,30 @@ USERGUIDE references 19 official IPFS-registry plugins but enumerates only 2 by 
 - **116 total skills** (116 = 37 + 79)
 - Plugin-shipped skills are ~68% of the actual skill surface but USERGUIDE's "Skills System" section enumerates only the 37 standalone ones — the 79 plugin-shipped skills are discoverable only via individual plugin install + `.claude/skills/` inspection.
 
+### Finding 11 — Init bundle reality: only 33 standalone skills ship via `init --full`, not 37 (re-audit 2026-05-05)
+
+A fresh `npx @sparkleideas/ruflo@latest init --full` against an empty directory produces `.claude/skills/` containing exactly **33 skills** — verified 2026-05-05 against `forks/ruflo` `main` (Verdaccio-published `@sparkleideas/ruflo@latest`). Diff against Matrix A's 37 USERGUIDE-enumerated skills:
+
+**5 Matrix A skills NOT in the init bundle:**
+| Skill | Matrix A row | Reason missing |
+|---|---|---|
+| `hive-mind-advanced` | 16 | Ships via `ruflo-hive-mind` plugin (per ADR-0139 §Provenance Correction); standalone bundle deliberately excludes it |
+| `performance-analysis` | 34 | Never bundled; available only by fetching upstream `ruvnet/ruflo` directly |
+| `agentic-jujutsu` | 35 | Never bundled |
+| `worker-benchmarks` | 36 | Never bundled |
+| `worker-integration` | 37 | Never bundled |
+
+**1 init-bundled skill NOT in Matrix A's enumeration:**
+| Skill | In bundle? | In Matrix A? | Notes |
+|---|---|---|---|
+| `browser` | ✓ | ✗ | Bundled today; absent from USERGUIDE 3995–4115 enumeration |
+
+This corroborates Finding 1 (USERGUIDE "42 Skills" header vs "37 enumerated" undocumented gap) with a third drift point: actual init-bundled count is **33**, not 37 or 42. Three different numbers across upstream documentation and behaviour.
+
+**Implication for repos using `init --full` today:** `.claude/skills/` exposes 33 standalone skills + whatever a user installs via `/plugin install` afterwards. The 79 plugin-shipped skills (Finding 10) are NOT auto-included; even `--full` is plugin-opt-in. The total reachable surface for a freshly-initialised project is `33 + 1 (hive-mind-advanced via ruflo-hive-mind if installed) + N other plugin-shipped skills via opt-in install`, not the 116 implied by the upstream surface count.
+
+**Verification one-liner (re-runnable):** create empty dir → `npm init -y` → `npx --registry http://localhost:4873 -y @sparkleideas/ruflo@latest init --full` → `ls .claude/skills/ | wc -l`. Should produce 33.
+
 ## Open questions (deferred to follow-up ADRs, not decided here)
 
 1. **Should the fork upstream a USERGUIDE patch correcting "42 Skills" → "37 Skills" or adding the 5 missing entries?** Memory `feedback-no-upstream-donate-backs.md` says no — fork-only fix. So either: fork-side USERGUIDE correction, or accept the upstream inaccuracy.
@@ -445,3 +469,4 @@ Real path: `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/plugins/examples/r
 3. **ADR-NNNN — npm plugin name and version pin reconciliation**: 10 D.2/D.3/D.4 plugins have wrong versions; `plugin-neural-coordination` vs `plugin-neural-coordinator` name mismatch. Either fix USERGUIDE upstream (banned per memory `feedback-no-upstream-donate-backs.md`) or fork-side acceptance test that pins to actual published versions.
 4. **ADR-NNNN — RuVector WASM class export contract**: rename classes to add `Plugin` suffix OR update USERGUIDE to use the actual class names. Currently the docs and code disagree. Also enumerate the 7th sibling `SONALearning`.
 5. **ADR-NNNN — IPFS registry CID drift policy**: the registry CID changes when plugins are added (CID is content-addressed). USERGUIDE pinned a specific CID that's already stale. Either refresh on each release or remove the CID claim and reference the live registry only.
+6. **ADR-NNNN — init-bundle skill set policy**: `init --full` ships 33 skills, USERGUIDE Matrix A enumerates 37, USERGUIDE header claims 42 (per Finding 11). Decide which is canonical and reconcile: either bundle the 4 missing specialized skills (`performance-analysis`, `agentic-jujutsu`, `worker-benchmarks`, `worker-integration`), or remove them from Matrix A as never-bundled, or add a third "ships standalone vs plugin vs unbundled" axis to Matrix A. Also decide whether `browser` (bundled but unenumerated) deserves a Matrix A row.

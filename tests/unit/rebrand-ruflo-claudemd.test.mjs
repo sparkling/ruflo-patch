@@ -80,12 +80,21 @@ describe('ADR-0006 follow-up: CLAUDE.md template — ruflo rebrand', () => {
     }
   });
 
-  it('preserves `ToolSearch("claude-flow ...")` MCP discovery examples', () => {
-    assert.match(content, /ToolSearch\(['"]claude-flow/);
+  // ADR-0136 (2026-05-05): ToolSearch examples now use "ruflo" namespace
+  // (post-ADR-0117 the MCP server registers as `ruflo`, so query-shape
+  // examples were flipped to match).
+  it('uses `ToolSearch("ruflo ...")` MCP discovery examples', () => {
+    assert.match(content, /ToolSearch\(['"]ruflo/);
+    assert.ok(!/ToolSearch\(['"]claude-flow/.test(content),
+      'ToolSearch examples should not reference claude-flow (ADR-0136 strip)');
   });
 
-  it('keeps the canonical RuFlo V3 header', () => {
-    assert.match(content, /Claude Code Configuration - RuFlo V3/);
+  // ADR-0136 (2026-05-05): "RuFlo V3" product framing stripped from header
+  // per "no marketing language" criterion. Header is just
+  // "# Claude Code Configuration".
+  it('header is bare "Claude Code Configuration" (no product-marketing suffix)', () => {
+    assert.match(content, /# Claude Code Configuration/);
+    assert.ok(!/RuFlo V3/.test(content), 'RuFlo V3 marketing framing stripped (ADR-0136)');
   });
 
   // ADR-0079 scope + T2-6 structure guards (paired with
