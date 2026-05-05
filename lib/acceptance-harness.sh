@@ -20,12 +20,19 @@
 # Default to half-the-cores; existing run_check_bg throttle (line ~166)
 # enforces it. Override with RUFLO_MAX_PARALLEL=N (0 disables the cap).
 if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
-  # Default 6: empirically quiet on 18-core M5 Max (was 9 = ncpu/2, which
-  # spiked load + npm cache contention against Verdaccio). Each check forks
-  # ~3-4 child procs, so 6 concurrent ≈ 18-24 active processes, leaving
-  # headroom for daemon + editor + browser. Override with
-  # RUFLO_MAX_PARALLEL=N (0 disables the cap entirely).
-  RUFLO_MAX_PARALLEL=6
+  if command -v sysctl >/dev/null 2>&1 && _ncpu=$(sysctl -n hw.ncpu 2>/dev/null) && [[ "$_ncpu" =~ ^[0-9]+$ ]]; then
+    :
+  elif [[ -r /proc/cpuinfo ]]; then
+    _ncpu=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null || echo 8)
+  else
+    _ncpu=8
+  fi
+  RUFLO_MAX_PARALLEL=$(( _ncpu / 2 ))
+  (( RUFLO_MAX_PARALLEL < 4 )) && RUFLO_MAX_PARALLEL=4
+  # Empirical ceiling of 6: 9 (ncpu/2 on 18-core M5 Max) spiked load ~13.5
+  # during the P5 native-compile phase. 6 keeps the runqueue around ~8-9.
+  (( RUFLO_MAX_PARALLEL > 6 )) && RUFLO_MAX_PARALLEL=6
+  unset _ncpu
   export RUFLO_MAX_PARALLEL
 fi
 
