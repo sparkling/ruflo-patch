@@ -1,6 +1,6 @@
 # ADR-0136: Init-generated CLAUDE.md must be AI-instruction, not user-onboarding — re-audit content principles, then add plugin/skill awareness as imperative rules
 
-- **Status**: **Accepted (2026-05-05)**. Proposed 2026-05-03; revised 2026-05-05 (post-authoring ADRs + adversarial-review pass that stripped USERGUIDE-shaped framing). Content-first ADR. Implementation in progress on `forks/ruflo` `main`.
+- **Status**: **Accepted/Implemented (2026-05-05)**. Proposed 2026-05-03; revised 2026-05-05 (post-authoring ADRs + adversarial-review pass + council closure of all 3 open questions). Implementation landed on `forks/ruflo` `main` at d3fbfccee + follow-ups. Released to Verdaccio `@sparkleideas/cli@latest` 2026-05-05.
 - **Date**: 2026-05-03
 - **Deciders**: Henrik Pettersen
 - **Related**: ADR-0135 (skill+plugin enumeration audit; canonical source-of-truth for what plugin surface exists), ADR-0070 (init-generated config acceptance), ADR-0098 (anti-sprawl phrasing already in generator), ADR-0114/0115 (hive-mind council guidance already in generator), ADR-0117 (marketplace MCP server registration — namespace flipped to `mcp__ruflo__*`), ADR-0139 (hive-mind-advanced canonical spec), ADR-0140 (hive-mind-advanced implementation outline; §Amendment 2026-05-04 row 3a closure proves sub-agents see `mcp__ruflo__*`), ADR-0143 (user-facing brand flip `@sparkleideas/cli` → `@sparkleideas/ruflo`)
@@ -35,6 +35,7 @@ Drawn from Anthropic's published guidance + observed-effective patterns in this 
 8. **Memory/doc pointers at the bottom.** "More context lives at `<path>`" is a one-line escape hatch from CLAUDE.md back to fuller docs when the AI hits an unfamiliar area.
 9. **Terseness signals load-bearing-ness.** A bullet-rule that's 3 lines long signals "this matters". A 3-paragraph explanation signals "skip this until needed". Cut filler, padding, restated rules.
 10. **Don't restate what the tool description already says.** If the rule lives in the tool's own JSONSchema description (e.g., "don't guess skill names"), it's already loaded with the tool. Restating in CLAUDE.md duplicates without adding leverage. CLAUDE.md adds value by saying *when to prefer tool A over tool B* — comparisons across tools, which no single tool description covers.
+11. **One decision, one section, one shape.** Every distinct decision the AI must make gets exactly one canonical section in CLAUDE.md, expressed in the shape that section's content demands (table for fork-in-road, bullets for invariants, pointers for catalogs). Content that targets the human rather than the AI exits CLAUDE.md entirely (CLI hints, README, `--help`). Established 2026-05-05 by council closure of Q1 (Karpathy + Cagle joint recommendation against Hejlsberg's "redundancy = feature" defense; Hejlsberg's misreading of Principle 9 — *terseness* signals load-bearing-ness, not *redundancy* — surfaced and corrected).
 
 ## Current generator scored against the rubric
 
@@ -148,11 +149,59 @@ A correct CLAUDE.md from `ruflo init --template standard` MUST:
 - **Setup commands move to README.** They run before CLAUDE.md is read; the AI inherits the env, never bootstraps.
 - **No upstream baseline to diverge from.** Both fork and upstream generators omit plugin/skill awareness today (verified 2026-05-05). This ADR adds new content rather than removing existing — "diverges from upstream" risk is moot on this axis.
 
-## Open questions (deferred)
+## Open questions — RESOLVED 2026-05-05 by council session
 
-1. Should `agentOrchestration()`'s "DEFAULT: Agent tool" framing be made even sharper? Currently 8 lines explain when to use Agent vs hive-mind_spawn. Could be a 4-row table.
-2. Should there be a `postInitHints()` that runs in the init CLI itself (printing to terminal, not CLAUDE.md), telling the user "to add plugins, run X" — replacing the role the previous draft tried to put into CLAUDE.md?
-3. Should the security and performance templates strip the protocol blocks (`## Security Protocol`, `## Performance Optimization Protocol`) further? They lean toward USERGUIDE-shape too. Out of scope for this ADR — separate audit.
+A 3-expert hive convened to close all deferred questions. Verdicts in `/tmp/adr0136-council/` (transcript-queen.md + pos-{karpathy,cagle,hejlsberg}.md). Summary by question:
+
+### Q1 — Decision-content duplication across §Agent Orchestration / §Tool Selection Rules / §When to Use What
+
+**Verdict: ACT** (2-1: Karpathy + Cagle vs Hejlsberg).
+
+**Karpathy:** the AI hits the same fork in the road three times in different shapes; Principle 9 says *terseness* signals load-bearing-ness, not redundancy.
+
+**Cagle:** information architecture violation — three sections, one decision. Recommends 5-row imperative table.
+
+**Hejlsberg's defense:** "three reading depths is a feature." Council rejected: misreads Principle 9 and creates ambiguity for future ADRs touching orchestration.
+
+**Implementation:**
+- `whenToUseWhat()` deleted from generator + all template composers
+- `agentOrchestration()` compressed from 22-line prose to a 4-row Situation/Use/Never table
+- "ruflo doctor --fix" diagnostic row migrated to `referencePointers()`
+
+### Q2 — postInitHints in CLI
+
+**Verdict: ACT minimally** (3-0 after Hejlsberg's empirical correction).
+
+**Karpathy + Cagle:** terminal output is the right surface; CLAUDE.md is for the AI mid-session, not for the human reading "how do I add plugins?".
+
+**Hejlsberg's empirical correction (accepted):** the init CLI already emits a "Next steps:" block. A separate `postInitHints()` function is scope creep. The right fix is to extend the existing block, not build new abstraction.
+
+**Implementation:**
+- Two lines appended to the existing init "Next steps:" output (in two locations in `init.ts`):
+  - `Discover plugins: ruflo plugins --help`
+  - `Discover skills:  ruflo skill list`
+- No new function, no new module
+- Bootstrap line stays in CLAUDE.md `## Support` (annotated "user runs once, AI never") — moving it would force a rebrand-test refactor for marginal benefit
+
+### Q3 — Security/Performance template protocol blocks
+
+**Verdict: ACT minimally** per Hejlsberg's conditional fix (3-0 with scope reduction).
+
+**Karpathy + Cagle:** flag-syntax bash blocks (`ruflo security scan --depth full` etc.) violate Principle 7 (reference, don't duplicate); belongs behind `--help`.
+
+**Hejlsberg's defense:** opt-in templates earn their content; rubric perfectionism overrules user's explicit `--template security` selection. Specifically defends agent-routing-code lines as **decision data, not catalogs**.
+
+**Council resolution:** Hejlsberg's distinction (decision data ≠ catalog) is correct for the agent lists; Karpathy + Cagle agree to limit the strip to flag-syntax bash blocks only.
+
+**Implementation:**
+- `securitySection()`: bash code block (`ruflo security scan --depth full / audit --report / cve --check`) → one-line `Security CLI: ruflo security --help` pointer
+- `performanceSection()`: bash code block (`ruflo performance benchmark --suite all / profile / metrics`) → one-line `Performance CLI: ruflo performance --help` pointer
+- Agent name lists + routing-code lines (`agent routing code 9` / `agent routing code 7`) **kept unchanged** — decision data per Hejlsberg
+- All imperative rule bullets unchanged
+
+## Issue 2 — `mcp__ruflo__hive-mind_spawn` prefix consistency (caught in completeness audit, not a council Q)
+
+The §Tool Selection Rules row 2 referred to bare `hive-mind_spawn` while rows 3-4 used the full `mcp__ruflo__memory_*` prefix. The AI may not recognize the bare name as an MCP tool. Fixed: `hive-mind_spawn` → `mcp__ruflo__hive-mind_spawn` in `toolSelectionRules()`.
 
 ## Revision 2026-05-05 — incorporate post-authoring ADRs
 

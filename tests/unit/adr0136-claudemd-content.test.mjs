@@ -90,9 +90,11 @@ describe('ADR-0136: AI-relevance acceptance criteria for init-generated CLAUDE.m
   });
 
   it('AC4: contains at least one decision-tree table (When X → Use Y)', () => {
-    // Standard MUST contain the toolSelectionRules table OR whenToUseWhat table.
-    const hasDecisionTable = /\|\s*Need\s*\|\s*Use\s*\|/m.test(standardOut)
-      || /\|\s*You need to\.{3}\s*\|/m.test(standardOut);
+    // ADR-0136 Q1 resolved: whenToUseWhat() deleted. The remaining decision
+    // tables are toolSelectionRules ("You need to...") and the new
+    // agentOrchestration table ("Situation | Use | Never").
+    const hasDecisionTable = /\|\s*You need to\.{3}\s*\|/m.test(standardOut)
+      || /\|\s*Situation\s*\|\s*Use\s*\|\s*Never\s*\|/m.test(standardOut);
     assert.ok(hasDecisionTable, 'standard must contain at least one decision-tree table');
   });
 
@@ -148,5 +150,49 @@ describe('ADR-0136: AI-relevance acceptance criteria for init-generated CLAUDE.m
   it('dead agentTypes() and memoryCommands() functions are removed from source', () => {
     assert.ok(!/^function agentTypes\b/m.test(source), 'agentTypes() should be removed');
     assert.ok(!/^function memoryCommands\b/m.test(source), 'memoryCommands() should be removed');
+  });
+
+  it('Q1: whenToUseWhat() function deleted (rows redundant with agentOrchestration + toolSelectionRules)', () => {
+    assert.ok(!/^function whenToUseWhat\b/m.test(source), 'whenToUseWhat() should be removed (ADR-0136 Q1)');
+    // No template composer should wire it (matches `(_opts) => whenToUseWhat()`).
+    assert.ok(!/=>\s*whenToUseWhat\(\)/.test(source), 'no template composer should wire whenToUseWhat');
+    assert.ok(!/## When to Use What/.test(standardOut), 'standard must not contain "When to Use What" section');
+    assert.ok(!/## When to Use What/.test(fullOut), 'full must not contain "When to Use What" section');
+  });
+
+  it('Q1: agentOrchestration is now a 4-row decision table (not prose)', () => {
+    const agentSec = standardOut.split(/^## /m).find(s => s.startsWith('Agent Orchestration'));
+    assert.ok(agentSec, 'standard must contain Agent Orchestration section');
+    assert.match(agentSec, /\|\s*Situation\s*\|\s*Use\s*\|\s*Never\s*\|/, 'Agent Orchestration must be a Situation/Use/Never table');
+    // Body should be terser than the old 22-line prose.
+    const bodyLines = agentSec.split('\n').filter(l => l.trim()).length;
+    assert.ok(bodyLines < 12, `Agent Orchestration should be ~6 lines, got ${bodyLines}`);
+  });
+
+  it('Q2: init CLI Next-steps block contains plugin and skill discovery hints', () => {
+    const initPath = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts';
+    const initSrc = readFileSync(initPath, 'utf8');
+    assert.match(initSrc, /Discover plugins:\s*\$\{output\.highlight\(['"]ruflo plugins --help/);
+    assert.match(initSrc, /Discover skills:\s*\$\{output\.highlight\(['"]ruflo skill list/);
+  });
+
+  it('Q3: securitySection / performanceSection use --help pointers, not flag-syntax bash blocks', () => {
+    // The fenced `ruflo security scan --depth full` block was the violation.
+    // The replacement is a `ruflo security --help` pointer.
+    assert.ok(!/ruflo security scan --depth full/.test(source),
+      'flag-syntax bash block in securitySection should be replaced by --help pointer');
+    assert.ok(!/ruflo performance benchmark --suite all/.test(source),
+      'flag-syntax bash block in performanceSection should be replaced by --help pointer');
+    assert.match(source, /Security CLI:.*ruflo security --help/);
+    assert.match(source, /Performance CLI:.*ruflo performance --help/);
+    // Agent lists + routing codes preserved (decision data, not catalogs).
+    assert.match(source, /security-architect.*threat modeling/);
+    assert.match(source, /agent routing code 9/);
+  });
+
+  it('Issue 2: hive-mind decision row uses mcp__ruflo__ prefix (not bare hive-mind_spawn)', () => {
+    const tsr = standardOut.split(/^## /m).find(s => s.startsWith('Tool Selection Rules'));
+    assert.ok(tsr, 'standard must contain Tool Selection Rules');
+    assert.match(tsr, /mcp__ruflo__hive-mind_spawn/, 'hive-mind row must use mcp__ruflo__ prefix');
   });
 });
