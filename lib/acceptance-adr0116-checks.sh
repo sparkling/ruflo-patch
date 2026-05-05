@@ -259,8 +259,12 @@ check_adr0116_commands_present() {
       missing+=("$c")
       continue
     fi
+    # ADR-0136 follow-up (2026-05-05): only check 'description' — 'name:'
+    # was removed from command frontmatter because Claude Code's plugin
+    # command loader rejects/silently misregisters commands that have a
+    # 'name:' field. Command name comes from the filename, not frontmatter.
     local field
-    for field in name description; do
+    for field in description; do
       if ! _adr0116_check_yaml_field "$f" "$field"; then
         bad_fm+=("$c:$field")
       fi
