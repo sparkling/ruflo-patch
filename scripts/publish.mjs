@@ -119,12 +119,17 @@ function buildPackageMap(buildDir) {
           if (pkg.name) {
             // Prefer non-private packages over private ones (e.g. ruvector
             // root is private: true but npm/packages/ruvector/ is publishable).
-            // For non-private duplicates, prefer parent over npm/ subdirectory.
+            // For non-private duplicates, prefer parent over generated-output
+            // subdirectories (npm/, pkg/, examples/) — those are wasm-bindgen
+            // outputs or example configs that share the parent's name post-
+            // codemod and would otherwise win the map race (ADR-0150 follow-up).
+            const SUBDIR_BLACKLIST = ['/npm/', '/pkg/', '/examples/'];
+            const isSubdir = (d) => SUBDIR_BLACKLIST.some(s => d.includes(s));
             const existing = map.get(pkg.name);
             const existingPkg = existing
               ? JSON.parse(readFileSync(resolve(existing, 'package.json'), 'utf-8'))
               : null;
-            if (!existing || existingPkg?.private || (!pkg.private && !dir.includes('/npm/'))) {
+            if (!existing || existingPkg?.private || (!pkg.private && !isSubdir(dir))) {
               map.set(pkg.name, dir);
             }
           }

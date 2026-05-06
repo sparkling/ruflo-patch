@@ -112,6 +112,8 @@ copy_source() {
     --exclude='packages/agentic-jujutsu/docs' \
     --exclude='packages/agentic-jujutsu/test-repo' \
     --exclude='packages/agentic-jujutsu/target' \
+    --exclude='packages/agentic-jujutsu/pkg' \
+    --exclude='examples/configs' \
     "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" \
     && touch "${rsync_status_dir}/agentic" &
   local pid_agentic=$!
