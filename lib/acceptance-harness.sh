@@ -205,7 +205,33 @@ run_check_bg() {
     _CHECK_PASSED="false"; _CHECK_OUTPUT=""
     local c_start c_end c_ms=0
     c_start=$(_ns)
+
+    # Per-check watchdog (default 180s, override via RUFLO_CHECK_TIMEOUT_S).
+    # Without this, a hung check (e.g. unbounded npx that prompts on stdin,
+    # daemon socket that never responds) holds its parallel slot AND
+    # collect_parallel's `wait "${BG_PIDS[@]}"` blocks forever — dragging
+    # the whole acceptance phase past RUFLO_GLOBAL_TIMEOUT_S=1500s with
+    # zero verdicts emitted. Wrapper-proxy alone caused 1340s/1448s of
+    # acceptance wall-time on 2026-05-06 (forensics in
+    # /private/tmp/claude-501/.../tasks/bn4t8vver.output L9930→L10605
+    # then 21min silence → SIGTERM at L10608). The watchdog races to
+    # write a TIMEOUT verdict file BEFORE SIGKILLing the subshell, so the
+    # parent aggregator sees the failure cleanly and the slot frees.
+    local _check_timeout="${RUFLO_CHECK_TIMEOUT_S:-180}"
+    local _sub_pid=$BASHPID
+    (
+      sleep "$_check_timeout"
+      echo "false|${_check_timeout}000|TIMEOUT after ${_check_timeout}s — run_check_bg watchdog killed ${id}" > "${PARALLEL_DIR}/${id}"
+      kill -KILL "$_sub_pid" 2>/dev/null
+    ) &
+    local _watchdog_pid=$!
+
     "$fn" || true  # don't let function failure crash subshell
+
+    # Function completed in time — cancel watchdog before it fires
+    kill "$_watchdog_pid" 2>/dev/null
+    wait "$_watchdog_pid" 2>/dev/null
+
     c_end=$(_ns)
     c_ms=$(_elapsed_ms "$c_start" "$c_end")
     local escaped; escaped=$(_escape_json "${_CHECK_OUTPUT:-${_OUT:-}}")

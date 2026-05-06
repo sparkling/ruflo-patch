@@ -30,9 +30,13 @@ check_wrapper_proxy() {
 
   local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
 
-  # 1. Verify wrapper binary installs and --version works
-  local wrapper_out
-  wrapper_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx --yes "${wrapper_pkg}" --version 2>&1) || true
+  # 1. Verify wrapper binary installs and --version works.
+  # Wrapped in _run_and_kill (60s) — without a kill ceiling this check can
+  # hang forever under npm cache contention, dragging the whole acceptance
+  # phase past RUFLO_GLOBAL_TIMEOUT_S=1500s (1340s observed in
+  # bp2cqnvlm.output: 63% of total acceptance wall-time on a single check).
+  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '${wrapper_pkg}' --version" "" 60
+  local wrapper_out="$_RK_OUT"
 
   if echo "$wrapper_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
     local ver
@@ -45,8 +49,10 @@ check_wrapper_proxy() {
     #    a second npx + parallel health checks — flaky under npm cache contention
     #    when ~20 checks run simultaneously). Doctor is already covered by
     #    the dedicated check_doctor test.
-    local proxy_out
-    proxy_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" npx "${wrapper_pkg}" status 2>&1) || true
+    # Wrapped in _run_and_kill (60s) for the same reason as call 1, plus
+    # --yes added (was missing) so npx never prompts on cache miss.
+    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '${wrapper_pkg}' status" "" 60
+    local proxy_out="$_RK_OUT"
     if echo "$proxy_out" | grep -qi 'ruflo\|swarm\|stopped\|running\|agent\|initialized\|not initialized'; then
       _CHECK_PASSED="true"
       _CHECK_OUTPUT="Wrapper proxy works: version=${ver}, status proxied OK"
