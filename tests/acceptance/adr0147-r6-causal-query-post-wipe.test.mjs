@@ -86,64 +86,61 @@ const LOG_FILE = join(tmpdir(), `adr0147-r6-${Date.now()}.log`);
 // ── Skip-or-locate harness ──────────────────────────────────────────────
 
 /**
- * Locate or install the @sparkleideas/cli published to local Verdaccio.
- * Mirrors the pattern used by adr0086-rvf-real-integration.test.mjs:
- *   - First, scan /tmp/ruflo-accept-* and /tmp/ruflo-fast-* for an existing
- *     install (fast path — populated by `npm run test:acceptance`).
- *   - Otherwise, do an idempotent on-demand install into a stable cache dir
- *     (avoids paying ~15s per test run).
- *   - If Verdaccio is unreachable, return null so all tests skip with a
- *     loud reason. Never silently fall back.
+ * Install the LATEST @sparkleideas/cli from local Verdaccio into a fresh
+ * dir per test run. Always reinstall — never reuse a cache.
+ *
+ * Why no cache reuse: prior implementation scanned /tmp/ruflo-accept-* and
+ * /tmp/ruflo-fast-* for cached installs. Pipeline runs leave stale dirs
+ * behind across deploys, and the test ended up running against an old cli
+ * version (e.g. patch.374 found post-pipeline that just published patch.484).
+ * That made the test exercise pre-fix code and report 0 results — the
+ * regression assertion fired, but against the WRONG version. Net effect:
+ * "correct fix in published artifact, test fails because it tested an old
+ * artifact." Worse than no test.
+ *
+ * Trade-off: ~15s per run for a fresh install. Acceptable given the test
+ * already takes ~65s for 124 sequential MCP invocations; 15s setup is
+ * dwarfed by the actual workload.
+ *
+ * If Verdaccio is unreachable, return null so all tests skip with a loud
+ * reason. Never silently fall back.
  */
 function locateOrInstallCli() {
-  // 1. Existing acceptance / fast-runner installs.
-  try {
-    const entries = execSync('ls -1 /tmp/ 2>/dev/null', { encoding: 'utf8' })
-      .split('\n')
-      .filter(s => s.startsWith('ruflo-accept-') || s.startsWith('ruflo-fast-'));
-    for (const name of entries) {
-      for (const candidate of ['ruflo', 'claude-flow', 'cli']) {
-        const bin = `/tmp/${name}/node_modules/.bin/${candidate}`;
-        if (existsSync(bin)) return { bin, installDir: `/tmp/${name}` };
-      }
-    }
-  } catch { /* no /tmp listing — fall through */ }
-
-  // 2. Stable on-demand install dir.
-  const ON_DEMAND_DIR = '/tmp/ruflo-r6-test-install';
-  for (const candidate of ['ruflo', 'claude-flow', 'cli']) {
-    const bin = `${ON_DEMAND_DIR}/node_modules/.bin/${candidate}`;
-    if (existsSync(bin)) return { bin, installDir: ON_DEMAND_DIR };
-  }
-
-  // 3. Probe Verdaccio.
+  // 1. Probe Verdaccio.
   try {
     execSync(`curl -sf --max-time 3 ${VERDACCIO_URL}/-/ping`, { stdio: 'ignore' });
   } catch {
     return { bin: null, error: `Verdaccio unreachable at ${VERDACCIO_URL}` };
   }
 
-  // 4. On-demand install.
+  // 2. Fresh install dir per test run — never reuse a previous install,
+  // which can be stale (different cli version than the one we just
+  // published in the same pipeline). Cleanup is best-effort in after().
+  const installDir = mkdtempSync(join(tmpdir(), 'adr0147-r6-cli-'));
+  writeFileSync(
+    join(installDir, 'package.json'),
+    JSON.stringify({ name: 'adr0147-r6-test', version: '1.0.0', private: true }),
+  );
+  writeFileSync(join(installDir, '.npmrc'), `registry=${VERDACCIO_URL}\n`);
+
+  // 3. Install @sparkleideas/cli@latest. --prefer-online forces a registry
+  // round-trip so the npm cache for the @latest dist-tag is refreshed
+  // (otherwise npm could resolve @latest from its cache and fetch a stale
+  // version). --no-audit/--no-fund keeps it tight.
   try {
-    mkdirSync(ON_DEMAND_DIR, { recursive: true });
-    writeFileSync(
-      join(ON_DEMAND_DIR, 'package.json'),
-      JSON.stringify({ name: 'adr0147-r6-test', version: '1.0.0', private: true }),
-    );
-    writeFileSync(join(ON_DEMAND_DIR, '.npmrc'), `registry=${VERDACCIO_URL}\n`);
     execSync(
-      `npm install @sparkleideas/cli --registry=${VERDACCIO_URL} --no-audit --no-fund --prefer-offline`,
-      { cwd: ON_DEMAND_DIR, stdio: 'ignore', timeout: 180_000 },
+      `npm install @sparkleideas/cli@latest --registry=${VERDACCIO_URL} --prefer-online --no-audit --no-fund`,
+      { cwd: installDir, stdio: 'ignore', timeout: 180_000 },
     );
   } catch (err) {
-    return { bin: null, error: `On-demand install failed: ${err?.message ?? String(err)}` };
+    return { bin: null, error: `Fresh install failed: ${err?.message ?? String(err)}` };
   }
 
   for (const candidate of ['ruflo', 'claude-flow', 'cli']) {
-    const bin = `${ON_DEMAND_DIR}/node_modules/.bin/${candidate}`;
-    if (existsSync(bin)) return { bin, installDir: ON_DEMAND_DIR };
+    const bin = `${installDir}/node_modules/.bin/${candidate}`;
+    if (existsSync(bin)) return { bin, installDir };
   }
-  return { bin: null, error: `Install completed but no CLI bin found in ${ON_DEMAND_DIR}/node_modules/.bin/` };
+  return { bin: null, error: `Install completed but no CLI bin found in ${installDir}/node_modules/.bin/` };
 }
 
 // ── CLI exec helpers ────────────────────────────────────────────────────
