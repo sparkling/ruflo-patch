@@ -1,6 +1,6 @@
 # ADR-0147: Refine ADR-0094 Bug-1 / Bug-2 fixes — partial-mapped fall-through and key-format parser for cross-process AgentDB reads
 
-- **Status**: Implemented 2026-05-06 — original Bug 1+2 refinements verified live (HM probes confirmed memory_search returns 5 results, causal_query effect= returns 9). **Re-opened 2026-05-06 — Bug 4 (cause= asymmetry) and Bug 5 (adr-index skill fragile body extraction) discovered post-deploy; refinements pending.**
+- **Status**: Implemented 2026-05-06 — original Bug 1+2 refinements verified live (HM probes confirmed memory_search returns 5 results, causal_query effect= returns 9). **Re-opened 2026-05-06 — Bug 4 (cause= asymmetry) and Bug 5 (adr-index skill fragile body extraction) discovered post-deploy; refinements pending.** **Re-opened again 2026-05-06 — Bug 6 (R6: read-arm fallback first-100-cap) and Bug 7 (R7: write-arm controller-mirror typo) discovered after wipe + reindex of 231 ADRs. R6 LANDED in `forks/ruflo` `main` (memory-router.ts:1929); R7 DEFERRED — initial deferral by patcher cited NodeIdMapper integration cost; ADR architect refuted citing string-tolerance at `CausalMemoryGraph.ts:233-239`; validation showed string-tolerance is conditional on GraphDatabaseAdapter being the wired runtime backend (the SQLite fallback path at lines 261-284 still uses raw `edge.fromMemoryId` against the `'episode'|'skill'|'note'|'fact'` enum). Even when R7 would succeed at the write side, the read-arm controller calls at lines 1871/1873 still use wrong arg shape, so R7-write without R7-read yields no observable improvement over R6-alone. R7 deferred until graph-adapter wiring is verified AND read-arm arg shape is also fixed (or until a runtime-tolerant best-effort R7 wrapper is designed).**
 - **Date**: 2026-05-06
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0094 (acceptance coverage), forks/ruflo `71b2ad33e` (original three-bug fix shipped in `@sparkleideas/memory@3.0.0-alpha.13-patch.358` + `@sparkleideas/cli@3.5.58-patch.380`)
@@ -543,11 +543,256 @@ Refinement 3 (Bug 4 — cause= asymmetry) and Refinement 4 (Bug 5 — skill body
 6. User: wipe adr-patterns + causal-edges, re-run `/adr-index`
 7. Verify both: `cause=ADR-0167` returns ≥10 outbound edges AND wave35-cat6 has rich body
 
+## Bug 6 — read-arm fallback first-100-cap (post-wipe 2026-05-06, R6)
+
+### Discovery
+
+After Refinements 1-4 shipped and were verified live, the user wiped the `causal-edges` and `adr-patterns` namespaces and re-ran `/adr-index` to reindex 231 ADRs from scratch. Following the wipe + reindex, `agentdb_causal_query cause=ADR-0167` returned **0 edges**, and `agentdb_causal_query effect=ADR-0167` ALSO returned **0 edges**. Bug 4's cause= path no longer found the 1 stale edge that previously masked the issue, and the effect= path that had returned 9 inbound edges pre-wipe now returned nothing.
+
+The edges are present: `mcp__ruflo__memory_list namespace:"causal-edges"` shows them, encoded with arrow-format keys (`${src}→${tgt}`) per the write path at `memory-router.ts:1831`. They are simply invisible to `causal_query` post-wipe.
+
+### Probe (2026-05-06)
+
+Read-arm fallback at `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1886-1890` calls:
+
+```ts
+const fallback = await routeMemoryOp({
+  type: 'list',
+  namespace: 'causal-edges',
+  limit: Math.max(k * 4, 100),
+});
+```
+
+This invokes `routeMemoryOp` `case 'list'` (line 1056), which calls `storage.query({ type: 'prefix', namespace, limit, offset })`. The RVF backend at `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:627-691` `query()` iterates `Array.from(this.entries.values())` (Map insertion order), filters, then `slice(offset, offset + limit)`. With limit=100 and 796 causal edges in the namespace, the first 100 by insertion order are all the read-arm sees.
+
+Pre-wipe, ADR-0205's outbound edges happened to fall in the first 100 by historical insertion order, so Bug-4's cause= probe returned at least the 1 stale row. Post-wipe + reindex, insertion order is the new wipe-then-reindex order; ADR-0167's edges fall outside the first 100 → both cause= and effect= return 0.
+
+### Root cause of post-wipe regression
+
+R3 (Refinement 3) was about always-merging controller + fallback to fix the cause=/effect= asymmetry. The merge worked when the fallback's first-100 page happened to contain the asked edges. Post-wipe, neither path returns results: the controller is empty (see Bug 7 / R7), and the fallback caps at 100 of 796 edges in arbitrary insertion order. Merge of two empty result sets is empty. **R3 was NECESSARY but not SUFFICIENT.**
+
+### Decision (Bug 6 refinement — Refinement 5 — R6)
+
+**For `cause=` queries**: keys are encoded `${src}→${tgt}` (per write path at `memory-router.ts:1831`). Push prefix filtering down into storage by passing `keyPrefix: \`${cause}→\`` to the `routeMemoryOp` list call. The RVF backend at `rvf-backend.ts:637` and SQLite backend honor `q.keyPrefix` via `e.key.startsWith(q.keyPrefix)`. This collapses the scan from O(100-cap) to O(matches) and guarantees all outbound edges for a given cause are returned regardless of insertion order or namespace size.
+
+**For `effect=` queries**: target ADR ID is the key SUFFIX (after the arrow), not a prefix. `keyPrefix` cannot be used. Instead, raise the limit to the namespace size: call `storage.count('causal-edges')` (or page via successive `offset`/`limit` requests until k matches accumulate). Becomes O(N) but bounded by actual edge count rather than an arbitrary 100-cap.
+
+This requires two changes:
+1. `MemoryOp` interface — add `keyPrefix?: string` and forward it through the `case 'list'` handler. Already landed at `memory-router.ts:54-58` and 1066-1074 (verified during probe).
+2. `routeCausalOp` `case 'query'` fallback (line 1886-1890) — pass `keyPrefix: \`${op.cause}→\`` when `op.cause` is set. When `op.effect` is set, raise limit to `await storage.count('causal-edges')` or equivalent.
+
+```ts
+// memory-router.ts case 'query' fallback — proposed (R6)
+let fallbackLimit = Math.max(k * 4, 100);
+let fallbackKeyPrefix: string | undefined;
+if (op.cause) {
+  // Keys are `${src}→${tgt}`; cause= matches a known prefix. Push down to storage.
+  fallbackKeyPrefix = `${op.cause}→`;
+  // With prefix filtering, k*4 is enough — matches are bounded by outbound count.
+} else if (op.effect) {
+  // Target is the suffix; can't prefix-filter. Raise limit to namespace size.
+  // Acceptable interim — namespace is bounded by adr_count^2 in worst case;
+  // O(N) scan until R8 (reverse index) lands. See Bug 8 candidate below.
+  try {
+    const total = await routeMemoryOp({ type: 'stats' }) as { namespaces?: Record<string, number> };
+    fallbackLimit = total.namespaces?.['causal-edges'] ?? 10000;
+  } catch { fallbackLimit = 10000; /* generous bound */ }
+}
+const fallback = await routeMemoryOp({
+  type: 'list',
+  namespace: 'causal-edges',
+  limit: fallbackLimit,
+  keyPrefix: fallbackKeyPrefix,
+});
+```
+
+### Trade-off
+
+- `cause=` becomes scan-efficient: O(matches), unbounded namespace size.
+- `effect=` remains O(N) until a reverse index lands (R8 candidate — `causal-edges-by-target` namespace mirroring writes). Acceptable interim — namespace is bounded.
+- The first-100-cap behavior elsewhere is unaddressed by R6 (see Critical Review below).
+
+### Acceptance criteria for Bug 6 (R6)
+
+- [ ] `routeCausalOp` `case 'query'` passes `keyPrefix: \`${op.cause}→\`` when `op.cause` is set
+- [ ] `routeCausalOp` `case 'query'` raises limit to namespace size (or generous bound) when `op.effect` is set
+- [ ] `tests/unit/bug2-causal-query-roundtrip.test.mjs` extended with post-wipe regression test: write 200 outbound edges from same source ADR-X (more than the 100-cap), wipe + restart simulation, query cause=ADR-X, assert all 200 edges returned
+- [ ] `tests/unit/bug2-causal-query-roundtrip.test.mjs` extended with effect= namespace-size test: write 150 inbound edges to same target ADR-Y, query effect=ADR-Y, assert all 150 returned
+- [ ] `npm run release` green
+- [ ] Live HM verification post-wipe + reindex: `causal_query cause=ADR-0167` returns N>0 edges; `causal_query effect=ADR-0167` returns M>0 edges
+
+## Bug 7 — write-arm controller-mirror typo (post-wipe 2026-05-06, R7)
+
+### Discovery
+
+Even with R6 in place, the controller-path SQLite query at `memory-router.ts:1871, 1873` (`queryCausalEffects` / `getCausalChain`) returns 0 for any cause/effect. The agentic-flow `causal_edges` SQLite table is empty — **no rows have ever been INSERTed via the controller**. All causal edges live exclusively in the KV `causal-edges` namespace (RVF + SQLite KV-fallback storage), populated by the router's KV fallback path at `memory-router.ts:1828-1838`.
+
+### Probe (2026-05-06)
+
+Write-arm at `memory-router.ts:1810` checks:
+```ts
+if (causalGraph && typeof causalGraph.addEdge === 'function') { ... addEdge call ... }
+```
+
+The agentic-flow controller at `forks/agentic-flow/packages/agentdb/src/controllers/CausalMemoryGraph.ts:213` exposes `async addCausalEdge(edge: CausalEdge): Promise<number>` — **NOT `addEdge`**. The `typeof causalGraph.addEdge === 'function'` check is **always false**. Every `routeCausalOp({type:'edge'})` call falls straight through to the KV-only fallback at lines 1828-1838.
+
+Consequence chain:
+1. SQLite `causal_edges` table never receives INSERTs.
+2. `queryCausalEffects` and `getCausalChain` (line 1871/1873) execute their SQL against an empty table.
+3. They return `[]`.
+4. Pre-R6, the read-arm relied on the namespace fallback's first-100 page; post-wipe that returns 0 too.
+5. Net effect: `causal_query` returns 0 even though 796 edges are present in the KV namespace.
+
+### Root cause of write-arm asymmetry
+
+The original Bug-3 fix (`forks/ruflo` `71b2ad33e`, 2026-05-05) added the `causalGraph.addEdge` typeof guard as a defensive check. Author of that fix presumed `addEdge` was the correct controller method name; agentic-flow's actual API uses `addCausalEdge`. The guard is permanently false, the controller is permanently bypassed. This is the same class of bug as Bug 2 (`e.value` → `e.content` field-name typo) but on the write side.
+
+### Decision (Bug 7 refinement — Refinement 6 — R7)
+
+Replace the `addEdge` typeof check with `addCausalEdge` and shape the args to match the `CausalEdge` interface. The agentic-flow controller expects:
+```ts
+addCausalEdge(edge: CausalEdge): Promise<number>
+// CausalEdge = {
+//   fromMemoryId: number | string,
+//   fromMemoryType: string,
+//   toMemoryId: number | string,
+//   toMemoryType: string,
+//   similarity?: number,
+//   uplift?: number,
+//   confidence: number,
+//   sampleSize?: number,
+//   mechanism?: string,
+//   ...
+// }
+```
+
+The controller has string-tolerant ID handling at line 233-239: `typeof edge.fromMemoryId === 'string' ? edge.fromMemoryId : mapper.getNodeId(...)`. **Caveat (added 2026-05-06 post-validation):** that branch is INSIDE `if (this.graphBackend && 'createCausalEdge' in this.graphBackend) {` at line 226 — string tolerance only applies when GraphDatabaseAdapter (AgentDB v2) is the wired backend. The SQLite fallback path at lines 261-284 inserts `edge.fromMemoryId` directly into typed numeric columns, and `from_memory_type` is constrained to `'episode'|'skill'|'note'|'fact'` (`'adr'` not valid). So R7's "no NodeIdMapper required" claim holds ONLY when GraphDatabaseAdapter is wired. We have not yet verified which backend is the runtime path in our fork's deployment.
+
+```ts
+// memory-router.ts case 'edge' — proposed (R7)
+const causalGraph = await getController<any>('causalGraph');
+if (causalGraph && typeof causalGraph.addCausalEdge === 'function') {
+  try {
+    // R7: controller's actual method name is addCausalEdge, not addEdge.
+    // Original Bug-3 fix at 71b2ad33e checked the wrong name and never reached
+    // the controller. Args follow CausalEdge interface — controller accepts
+    // string-typed memory IDs natively (CausalMemoryGraph.ts:233-239), so
+    // no NodeIdMapper integration step is required for ADR-shaped IDs.
+    await causalGraph.addCausalEdge({
+      fromMemoryId: op.sourceId || '',
+      fromMemoryType: 'adr',
+      toMemoryId: op.targetId || '',
+      toMemoryType: 'adr',
+      confidence: op.weight ?? 1.0,
+      mechanism: op.relation || '',
+      uplift: 0,
+      sampleSize: 1,
+    });
+    // Controller succeeded → also continue to KV fallback for defense-in-depth.
+    // The KV path is the canonical read source post-R6 (cause= prefix scan,
+    // effect= namespace-size scan). Dual-write keeps both reachable.
+  } catch { /* fall through to KV-only fallback below */ }
+}
+// Existing KV fallback at lines 1828-1838 still runs unconditionally — it is
+// the canonical read source for both R3 (controller+merge) and R6 (prefix-aware).
+```
+
+### Trade-off
+
+R7 is the "correct" structural fix — controller-backed queries become first-class. The dual-write (controller + KV) keeps the KV path as the canonical read source per R6, so R7 is defense-in-depth rather than a replacement. Surgery scope depends on which backend is wired: small if GraphDatabaseAdapter (string-tolerant), substantial if SQLite-only (numeric ID allocator + persistent NodeIdMapper + memoryType enum extension across two packages).
+
+**Status: DEFERRED.** Two compounding reasons:
+1. **Backend uncertainty.** GraphDatabaseAdapter vs SQLite-only is not yet verified at runtime. R7 written assuming graph-adapter could fail in SQLite-only deployments. A runtime-tolerant best-effort wrapper (try-and-fall-through) is possible but adds complexity and the always-also-write-to-KV pattern means R7's marginal benefit is just SQLite table population.
+2. **Read-arm asymmetry.** Even with R7 landed on the write side, the read arm at `memory-router.ts:1871/1873` still calls `queryCausalEffects(op.cause, k)` and `getCausalChain(op.effect, k)` with WRONG arg shapes (string keys vs `CausalQuery` struct + numeric IDs). So even when R7 successfully populates the SQLite `causal_edges` table, the controller-path read returns 0 against it. The canonical read source remains the KV namespace fallback (R6). **R7 alone, without read-arm arg-shape correction, yields zero observable improvement over R6-alone.**
+
+R7 will land when (a) GraphDatabaseAdapter is verified as the wired runtime backend, AND (b) the read-arm arg shape is corrected to match. Either condition alone is insufficient. Tracked as follow-up; not blocking the current release.
+
+### Acceptance criteria for Bug 7 (R7)
+
+- [ ] `routeCausalOp` `case 'edge'` write arm calls `causalGraph.addCausalEdge({fromMemoryId, fromMemoryType:'adr', toMemoryId, toMemoryType:'adr', confidence, mechanism, ...})` with string-typed IDs
+- [ ] KV fallback at lines 1828-1838 still runs unconditionally for defense-in-depth (dual-write)
+- [ ] `tests/unit/bug3-causal-edge-no-laundering.test.mjs` extended with controller-write assertion: write a causal edge, then assert SQLite `causal_edges` table has the row (not just the KV namespace)
+- [ ] `npm run release` green
+- [ ] Live HM verification post-deploy: re-run `/adr-index`, then `mcp__ruflo__agentdb_causal_query cause:ADR-0167` returns N>0 edges; controller name in result is `causalGraph+fallback` (not `router-fallback` alone)
+
+## Critical review (R6 + R7)
+
+### 1. Why didn't R3 catch this?
+
+R3 was about always-merging controller + fallback results to fix the cause=/effect= asymmetry. The merge worked when the fallback's first-100 page happened to contain the asked edges. Post-wipe, the wipe + reindex changed insertion order so that ADR-0167's edges fell outside the first 100. Both controller (always empty per R7) and fallback (first-100 misses post-wipe) return empty sets. Merge of two empty sets is empty. R3 was NECESSARY but not SUFFICIENT — it fixed the symptom of asymmetry but not the underlying first-100-cap (R6) or empty-controller (R7) defects.
+
+### 2. Other code paths with the same first-100-cap
+
+Audit of `routeMemoryOp({type:'list'})` callers in `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts`:
+
+| Call site | Namespace | Limit | First-100 risk |
+|---|---|---|---|
+| `memory-router.ts:1886-1890` (causal_query fallback) | `causal-edges` | `Math.max(k*4, 100)` | **Fixed by R6** |
+| `memory-router.ts:1716` (search fallback) | per-call | `op.limit ?? 10` | Low — search is similarity-ranked, no namespace-scan semantics |
+| `memory-router.ts:1572` (consolidation read) | per-call | varies | Audit needed — consolidation may scan large namespaces |
+| `memory-router.ts:1654` (memory-bridge read) | per-call | varies | Audit needed — bridge bulk operations |
+| `memory-router.ts:1610` (search-pipeline read) | per-call | varies | Lower priority — pipeline is BM25 / hash-fallback, both bounded |
+
+Two `storage.query({type:'prefix'})` direct callers within `routeMemoryOp` itself:
+- `memory-router.ts:965` — BM25 corpus pull, hard-capped at `BM25_MAX_CORPUS = 10000`. Acceptable.
+- `memory-router.ts:1063` — `case 'list'` handler, limit defaults to `op.limit || 50`. Caller-controlled; this is the one R6 fixes upstream.
+
+**Follow-up ticket**: Audit the consolidation and memory-bridge read paths (1572, 1654) for namespace-scan semantics over namespaces expected to grow beyond 100 entries. Out of scope for ADR-0147; will file as separate tracker entries.
+
+### 3. Disposition of the controller-arg-shape comment at memory-router.ts:1844-1857
+
+That comment in the read arm (`case 'query'`) explains why we always-merge controller + fallback: the controller is called with the wrong arg shape (string ADR keys instead of numeric memory IDs + CausalQuery struct), so its results are unreliable.
+
+With R7 landed, the WRITE arm now correctly calls `addCausalEdge` with the right shape — but the READ arm still passes string ADR keys to `queryCausalEffects(op.cause, k)` (line 1871) and `getCausalChain(op.effect, k)` (line 1873). The read-arm controller call shape is **still wrong**. R7 only fixes writes; it does not fix the read-arm call shape.
+
+**Disposition: KEEP the comment, with an added line referencing R6 + R7**:
+
+```ts
+// Bug-4 (ADR-0147 Refinement 3, 2026-05-06): always-merge controller +
+// namespace fallback. ... [existing comment text] ...
+//
+// Update (R6 + R7, 2026-05-06): R7 fixes the WRITE arm to call
+// addCausalEdge correctly so the SQLite table is populated. The READ arm
+// here still calls queryCausalEffects/getCausalChain with the wrong arg
+// shape (string ADR keys instead of CausalQuery struct + numeric IDs);
+// the canonical read source remains the KV namespace fallback at line
+// 1886, which R6 makes prefix-aware for cause= and namespace-sized for
+// effect=. Read-arm controller-call shape is a deferred fix — see R8.
+```
+
+### 4. R8 candidate — effect= reverse index
+
+R6's effect= path scans the entire namespace (O(N), bounded by `count('causal-edges')`). At what namespace size does this become a hot-path problem?
+
+- 1000 ADRs with avg 4 outbound edges each → 4000 causal edges. effect= scan touches 4000 entries per query. At 200 query tokens (filter + dedupe per result), each query is ~800K ops → still sub-millisecond on V8.
+- 10000 ADRs with similar fan-out → 40000 edges. ~8M ops per effect= query → ~10ms. Borderline.
+- 100000+ → unacceptable.
+
+**Recommended priority**: LOW for current scale (the user's actual workload is ~250 ADRs with ~800 edges; effect= scan is < 1ms). Becomes MEDIUM if the user's ADR count grows past 5000. Becomes HIGH if effect= queries get hot-pathed in a UI loop.
+
+**R8 implementation sketch**: dual-write to a `causal-edges-by-target` namespace at edge-write time, with key `${tgt}←${src}`. effect= queries then use the same prefix-aware fast path that R6 gives cause=. Symmetric storage cost (2x writes for causal edges); query cost becomes O(matches) symmetric. **File as separate ADR if effect= becomes a measurable hot path; until then, R6's namespace-sized scan is acceptable.**
+
+## Refinement summary table
+
+| Refinement | Bug | Status | Files |
+|---|---|---|---|
+| R1 | Bug 1 (orphan-numId) | Implemented `0dac392fb` (memory@patch.359) | `rvf-backend.ts` |
+| R2 | Bug 2 (causal_query value→content typo) | Implemented `0dac392fb` (cli@patch.381) | `memory-router.ts` |
+| R3 | Bug 4 (cause= asymmetry, always-merge) | Implemented (cli@patch.381+) | `memory-router.ts` |
+| R4 | Bug 5 (adr-index skill body extraction) | Implemented (ruflo-adr SKILL.md) | `plugins/ruflo-adr/skills/adr-index/SKILL.md` |
+| R5 | (no R5 — numbering jump for patcher alignment) | n/a | n/a |
+| R6 | Bug 6 (read-arm fallback first-100-cap) | **LANDED** (forks/ruflo `main`, memory-router.ts:1929 — verified 2026-05-06) | `memory-router.ts:54-58, 1066-1074, 1886-1944` |
+| R7 | Bug 7 (write-arm `addEdge` → `addCausalEdge` typo) | **DEFERRED** — backend uncertainty + read-arm asymmetry (see R7 §Trade-off) | `memory-router.ts:1810` (TODO comment landed at 1818-1834) |
+| R8 candidate | Bug 8 (effect= reverse index) | DEFERRED — file separately if effect= scan becomes hot | new namespace `causal-edges-by-target` |
+
 ## References
 
 - `forks/ruflo` `71b2ad33e` (original three-bug fix)
+- `forks/agentic-flow/packages/agentdb/src/controllers/CausalMemoryGraph.ts:213` (`addCausalEdge` signature)
+- `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:627-691` (RVF `query()` honors `q.keyPrefix`)
+- `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:54-58` (`MemoryOp.keyPrefix` already plumbed for R6)
 - `tests/unit/bug1-memory-search-orphan-numid.test.mjs` (existing pin, will extend)
-- `tests/unit/bug2-causal-query-roundtrip.test.mjs` (existing pin, will extend)
-- `tests/unit/bug3-causal-edge-no-laundering.test.mjs` (no changes needed)
+- `tests/unit/bug2-causal-query-roundtrip.test.mjs` (existing pin, will extend for R6)
+- `tests/unit/bug3-causal-edge-no-laundering.test.mjs` (will extend for R7 controller-write assertion)
 - USERGUIDE.md sections 3054-3180 (RVF storage), 5332-5644 (RuVector / HNSW perf)
 - ADR-0082 (no silent fallbacks), ADR-0094 (acceptance coverage program)

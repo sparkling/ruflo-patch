@@ -6,6 +6,27 @@
 
 ---
 
+## 2026-05-06 — ADR-0147 R6 + R7 — causal_query post-wipe regression — new acceptance test
+
+`tests/acceptance/adr0147-r6-causal-query-post-wipe.test.mjs` (new file, `tests/acceptance/` is a NEW directory). 2 scenarios — both reproduce the regression and FAIL pre-fix per CLAUDE.md feedback-no-squelch-tests:
+
+| Scenario | Asserts |
+|---|---|
+| `cause=ADR-CANARY` past insertion-order 100 | After 120 throwaway `THROWAWAY-NN→THROWAWAY-MM` edges + 2 canary `ADR-CANARY→{A,B}` edges, `agentdb_causal_query cause=ADR-CANARY` (default k=10) returns ≥2 results AND both `targetId=ADR-A` and `targetId=ADR-B` appear. Pre-R6 the read-arm fallback iterates Map insertion order, slices first `max(k*4, 100) = 100`, drops canaries at positions 121-122. |
+| `effect=ADR-CANARY` past insertion-order 100 | Re-uses the same TEST_PROJECT (throwaways already in place) + 2 canary `{X,Y}→ADR-CANARY` edges, then `agentdb_causal_query effect=ADR-CANARY` (default k=10) returns ≥2 results AND both `sourceId=ADR-X` and `sourceId=ADR-Y` appear. Pre-R6 the limit was `max(k*4, 100) = 100`; canaries sit at insertion-order positions 123-124. effect= queries CAN'T push down a `keyPrefix` (target is the SUFFIX of `${src}→${tgt}`), so the only post-R6 fix is to size `limit` to the full namespace count via a pre-query `count` op. |
+
+**Important k discipline.** The test calls `agentdb_causal_query` with the DEFAULT `k` (10), not k=50 or k=100. Pre-fix the fallback uses `Math.max(k*4, 100)` as its list limit — passing k=50 would yield limit=200 and the canaries at positions 121-124 would fall INSIDE the slice → regression would not reproduce. Default k=10 → limit=100 → canaries are off the end → assertion fails pre-fix exactly as intended.
+
+The test exercises real CLI subprocesses against Verdaccio at `http://localhost:4873` (per memory reference-verdaccio.md). The CLI binary resolution mirrors `_cli_cmd` in `lib/acceptance-checks.sh:23` (prefer ruflo > claude-flow > cli; on-demand install at `/tmp/ruflo-r6-test-install/` when no `/tmp/ruflo-accept-*` install is found).
+
+R7's contribution is documentary: the `case 'edge'` arm checks `typeof causalGraph.addEdge === 'function'` (always false — controller exposes `addCausalEdge` with a different numeric-IDs contract). R7's TODO at `memory-router.ts:1820` documents the controller-shape gap so future readers don't chase a "controller available" path that never fires. The behavioral contract is pinned by R6's reads-find-them assertions: writes succeed via the namespace fallback, R6's reads find them.
+
+**Tests directory addition.** `tests/acceptance/` is a new top-level directory (siblings: `tests/pipeline/`, `tests/unit/`). `scripts/test-runner.mjs` defaults to scanning `tests/pipeline` + `tests/unit` only — running this test requires `node --test --test-timeout=600000 tests/acceptance/adr0147-r6-causal-query-post-wipe.test.mjs` directly. A follow-up may add `npm run test:acceptance:mjs` to wire the new directory in if more `.test.mjs` acceptance tests land.
+
+**Test inventory.** No standalone inventory file exists in this repo — `test-manifest.json` is generated at runtime by `test-runner.mjs` from whatever `.test.mjs` files it finds. Nothing to increment manually. The `ADR-0094-log.md` (this file, per memory project-adr0094-living-tracker.md) is the canonical living tracker; this entry is the registration.
+
+---
+
 ## 2026-04-28 — ADR-0104 hive-mind Queen orchestration — 10 acceptance scenarios + paired unit test
 
 ADR-0104 ships in fork (`forks/ruflo` main branch, pre-push) and ruflo-patch (this commit). Six source-level changes across four files closed the gap between README claim ("Queen-led hive-mind with shared memory and consensus") and observed behavior (Queen prompt forbade Task tool; MCP `agent_spawn` was a JSON-stub; defaults swallowed objectives; concurrent MCP `hive-mind_memory` writes race-clobbered).

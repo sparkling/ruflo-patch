@@ -3,7 +3,8 @@
 //
 // Usage: node scripts/test-runner.mjs tests/pipeline   — pipeline tests only
 //        node scripts/test-runner.mjs tests/unit        — unit tests only
-//        node scripts/test-runner.mjs                   — both subdirectories
+//        node scripts/test-runner.mjs tests/acceptance  — acceptance tests only
+//        node scripts/test-runner.mjs                   — all three subdirectories
 //        node scripts/test-runner.mjs --save-results    — save TAP + manifest
 
 import { spawn, execSync } from 'node:child_process';
@@ -35,8 +36,15 @@ if (positionalArgs.length > 0) {
   // Resolve each arg relative to project root
   scanDirs = positionalArgs.map(a => resolve(projectRoot, a));
 } else {
-  // Default: scan both subdirectories (not tests/ root)
-  scanDirs = [resolve(testsDir, 'pipeline'), resolve(testsDir, 'unit')];
+  // Default: scan all three subdirectories (not tests/ root). Acceptance
+  // added 2026-05-06 (ADR-0147 R6) — heavy E2E tests carry their own
+  // {timeout:600_000} via node:test it()-options, so the runner's
+  // 120s --test-timeout default doesn't truncate them.
+  scanDirs = [
+    resolve(testsDir, 'pipeline'),
+    resolve(testsDir, 'unit'),
+    resolve(testsDir, 'acceptance'),
+  ];
 }
 
 let allFiles = [];
@@ -89,7 +97,13 @@ const t0 = Date.now();
 import { availableParallelism } from 'node:os';
 const defaultConcurrency = Math.min(availableParallelism(), 12);
 const concurrency = parseInt(process.env.TEST_CONCURRENCY || String(defaultConcurrency), 10);
-const args = ['--test', ...allFiles];
+// Per-test timeout (ms). 0 means infinite — has caused 30-minute pipeline
+// deadlocks when an in-process flock self-races (Group 7 of
+// adr0086-rvf-integration.test.mjs, 2026-05-04). Default 120s = generous for
+// integration probes (ADR-0095 N=6 ran 54s) but bounded so any future hang
+// fails loud, not silent. Override via TEST_PER_TEST_TIMEOUT env var.
+const perTestTimeout = parseInt(process.env.TEST_PER_TEST_TIMEOUT || '120000', 10);
+const args = ['--test', `--test-timeout=${perTestTimeout}`, ...allFiles];
 if (concurrency > 0) {
   args.splice(1, 0, `--test-concurrency=${concurrency}`);
 }
