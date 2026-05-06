@@ -188,7 +188,7 @@ ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 (cd "$ACCEPT_TEMP" \
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=${REGISTRY}" > .npmrc \
-  && npm install @sparkleideas/cli @sparkleideas/agent-booster @sparkleideas/plugins @sparkleideas/memory \
+  && npm install @sparkleideas/cli @sparkleideas/ruflo @sparkleideas/agent-booster @sparkleideas/plugins @sparkleideas/memory \
      @sparkleideas/plugin-agent-federation @sparkleideas/plugin-iot-cognitum \
      --registry "$REGISTRY" --no-audit --no-fund --prefer-offline 2>&1) || {
   log_error "Failed to install packages from ${REGISTRY}"; exit 1

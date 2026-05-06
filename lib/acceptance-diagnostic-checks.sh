@@ -28,14 +28,25 @@ check_wrapper_proxy() {
   start_ns=$(date +%s%N 2>/dev/null || echo 0)
   _CHECK_PASSED="false"
 
-  local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
+  # Use the wrapper installed by the harness at TEMP_DIR (added to the
+  # shared install in scripts/test-acceptance.sh:191 alongside cli/booster/
+  # plugins/etc.). Avoids the per-call npx download of 675 packages that
+  # made wrapper-proxy 92% of acceptance wall-time post-bd7e7c9 (ADR-0142
+  # wrapper pivot). Falls back to npx if the install isn't present —
+  # preserves behavior for ad-hoc test-acceptance.sh runs that bypass the
+  # main install phase.
+  local wrapper_bin="${TEMP_DIR}/node_modules/.bin/ruflo"
 
   # 1. Verify wrapper binary installs and --version works.
-  # Wrapped in _run_and_kill (60s) — without a kill ceiling this check can
-  # hang forever under npm cache contention, dragging the whole acceptance
-  # phase past RUFLO_GLOBAL_TIMEOUT_S=1500s (1340s observed in
-  # bp2cqnvlm.output: 63% of total acceptance wall-time on a single check).
-  _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '${wrapper_pkg}' --version" "" 60
+  # 60s _run_and_kill is now defense-in-depth (the install path should
+  # complete in <100ms); the watchdog at run_check_bg also caps at 180s.
+  if [[ -x "$wrapper_bin" ]]; then
+    _run_and_kill "$wrapper_bin --version" "" 60
+  else
+    # Fallback: npx (slow, but only if shared install missing)
+    local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
+    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '${wrapper_pkg}' --version" "" 60
+  fi
   local wrapper_out="$_RK_OUT"
 
   if echo "$wrapper_out" | grep -qE '[0-9]+\.[0-9]+\.[0-9]+'; then
@@ -49,9 +60,12 @@ check_wrapper_proxy() {
     #    a second npx + parallel health checks — flaky under npm cache contention
     #    when ~20 checks run simultaneously). Doctor is already covered by
     #    the dedicated check_doctor test.
-    # Wrapped in _run_and_kill (60s) for the same reason as call 1, plus
-    # --yes added (was missing) so npx never prompts on cache miss.
-    _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '${wrapper_pkg}' status" "" 60
+    if [[ -x "$wrapper_bin" ]]; then
+      _run_and_kill "cd '$TEMP_DIR' && $wrapper_bin status" "" 60
+    else
+      local wrapper_pkg="${RUFLO_WRAPPER_PKG:-@sparkleideas/ruflo@latest}"
+      _run_and_kill "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' npx --yes '${wrapper_pkg}' status" "" 60
+    fi
     local proxy_out="$_RK_OUT"
     if echo "$proxy_out" | grep -qi 'ruflo\|swarm\|stopped\|running\|agent\|initialized\|not initialized'; then
       _CHECK_PASSED="true"
