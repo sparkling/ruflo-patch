@@ -121,6 +121,167 @@ function walk(dir, results) {
   }
 }
 
+// ── Plugin manifest discovery + bump (ADR-0147 Refinement 5) ──
+//
+// Plugin manifests live at `<forkDir>/plugins/<name>/.claude-plugin/plugin.json`
+// and aren't npm packages — they're shipped via the marketplace (sparkling/ruflo
+// repo). Their version field gates `claude plugin update <name>@<marketplace>`:
+// if the version doesn't change between releases, the update tool reports
+// "already at the latest version" and clients keep the old SKILL.md content.
+//
+// Fix (ADR-0147 Refinement 5): when `bump-versions` runs in the publish
+// pipeline and a plugin's source files (skills/agents/commands/SKILL.md/etc.)
+// have changed since the last release SHA, also bump the plugin's
+// `version` field via patch increment (0.1.0 → 0.1.1). This keeps plugin
+// versioning lockstep with content changes — analogous to how
+// fork-version.mjs auto-bumps `-patch.N` for npm packages.
+//
+// Plugin versions use plain semver (no `-patch.N` suffix). Manifest format
+// expected: `{ "name": "ruflo-<x>", "version": "0.1.0", ... }`. Files
+// missing `version` are skipped (logged warning).
+
+/**
+ * Find all plugin manifests in a fork tree.
+ * Looks for `<forkDir>/plugins/<name>/.claude-plugin/plugin.json`.
+ *
+ * @param {string} forkDir - fork root
+ * @returns {Array<{manifestPath: string, pluginDir: string, name: string, version: string}>}
+ */
+export function findPluginManifests(forkDir) {
+  const results = [];
+  const pluginsRoot = join(forkDir, 'plugins');
+  let pluginEntries;
+  try { pluginEntries = readdirSync(pluginsRoot); } catch { return results; }
+
+  for (const entry of pluginEntries) {
+    if (SKIP_DIRS.has(entry)) continue;
+    const pluginDir = join(pluginsRoot, entry);
+    const manifestPath = join(pluginDir, '.claude-plugin', 'plugin.json');
+    let raw, manifest;
+    try {
+      raw = readFileSync(manifestPath, 'utf8');
+      manifest = JSON.parse(raw);
+    } catch { continue; /* manifest absent or malformed — skip */ }
+    if (!manifest.name || typeof manifest.version !== 'string') continue;
+    results.push({
+      manifestPath,
+      pluginDir,
+      name: manifest.name,
+      version: manifest.version,
+    });
+  }
+  return results;
+}
+
+/**
+ * Bump a plain semver patch version: 0.1.0 → 0.1.1, 1.2.3 → 1.2.4.
+ * Returns null if the version is malformed (caller logs).
+ *
+ * @param {string} version - plain semver (no prerelease tag, no -patch.N)
+ * @returns {string|null}
+ */
+export function bumpPluginPatch(version) {
+  const m = version.match(/^(\d+)\.(\d+)\.(\d+)(.*)$/);
+  if (!m) return null;
+  const [, major, minor, patch, rest] = m;
+  return `${major}.${minor}.${parseInt(patch, 10) + 1}${rest}`;
+}
+
+/**
+ * Detect which plugin manifests have source-file changes between oldSha and HEAD.
+ *
+ * @param {Array<{manifestPath: string, pluginDir: string}>} manifests
+ * @param {Map<string, string>} changedShas - map of forkDir → oldSha
+ * @returns {Promise<Set<string>>} set of manifest paths whose source files changed
+ */
+export async function detectChangedPlugins(manifests, changedShas) {
+  const changed = new Set();
+  for (const [forkDir, oldSha] of changedShas) {
+    const forkManifests = manifests.filter(m => m.pluginDir.startsWith(forkDir + '/'));
+    if (forkManifests.length === 0) continue;
+
+    // Empty SHA → first run; treat all plugins as changed.
+    if (!oldSha) {
+      for (const m of forkManifests) changed.add(m.manifestPath);
+      continue;
+    }
+
+    let changedFiles;
+    try {
+      const { stdout } = await execFileAsync(
+        'git', ['diff', '--name-only', `${oldSha}..HEAD`],
+        { cwd: forkDir, timeout: 15_000 }
+      );
+      changedFiles = stdout.trim().split('\n').filter(Boolean);
+    } catch {
+      // git diff failed (shallow clone, etc.) — conservatively treat all as changed
+      for (const m of forkManifests) changed.add(m.manifestPath);
+      continue;
+    }
+    if (changedFiles.length === 0) continue;
+
+    for (const file of changedFiles) {
+      const absFile = join(forkDir, file);
+      for (const m of forkManifests) {
+        if (absFile.startsWith(m.pluginDir + '/')) {
+          // ADR-0147 Refinement 5: skip plugin.json itself — only count
+          // SOURCE-file changes (skills/agents/commands/etc.). If only
+          // plugin.json was edited (e.g. a manual version bump), don't
+          // re-bump and double-tick the version.
+          if (absFile === m.manifestPath) continue;
+          changed.add(m.manifestPath);
+          break;
+        }
+      }
+    }
+  }
+  return changed;
+}
+
+/**
+ * Bump plugin versions for changed plugins. Writes plugin.json files.
+ * Returns the list of bumps performed.
+ *
+ * @param {string[]} forkDirs - fork root dirs
+ * @param {Map<string, string>} changedShas - map of forkDir → oldSha
+ * @param {object} opts
+ * @param {boolean} opts.dryRun
+ * @returns {Promise<Array<{name: string, manifestPath: string, from: string, to: string}>>}
+ */
+export async function bumpChangedPlugins(forkDirs, changedShas, opts = {}) {
+  const { dryRun = false } = opts;
+  const allManifests = [];
+  for (const dir of forkDirs) {
+    allManifests.push(...findPluginManifests(dir));
+  }
+  if (allManifests.length === 0) return [];
+
+  const changedPaths = await detectChangedPlugins(allManifests, changedShas);
+  if (changedPaths.size === 0) return [];
+
+  const bumps = [];
+  for (const m of allManifests) {
+    if (!changedPaths.has(m.manifestPath)) continue;
+    const next = bumpPluginPatch(m.version);
+    if (!next) {
+      console.warn(`[plugin-bump] skip ${m.name}: malformed version "${m.version}"`);
+      continue;
+    }
+    bumps.push({ name: m.name, manifestPath: m.manifestPath, from: m.version, to: next });
+    if (!dryRun) {
+      // Read fresh, mutate version, write back — preserves field order
+      // for json fields besides version.
+      const raw = readFileSync(m.manifestPath, 'utf8');
+      const updated = raw.replace(
+        /("version"\s*:\s*")[^"]+(")/,
+        `$1${next}$2`,
+      );
+      writeFileSync(m.manifestPath, updated);
+    }
+  }
+  return bumps;
+}
+
 // ── npm registry queries ──
 
 /**
@@ -755,6 +916,38 @@ if (isMainModule) {
         // Output bumped packages as JSON for downstream consumers (deduplicated)
         const bumpedNames = [...new Set(changes.map(c => toNpmName(c.name)))];
         console.log(`BUMPED_PACKAGES:${JSON.stringify(bumpedNames)}`);
+      }
+
+      // ADR-0147 Refinement 5: also bump plugin manifests when their source
+      // files (skills/agents/commands) changed. Plugins ship via the
+      // marketplace, not npm, so they need version bumps separately. Without
+      // this, `claude plugin update <name>@<marketplace>` reports
+      // "already at the latest version" and clients keep stale SKILL.md.
+      // Only runs when --changed-shas is passed (publish-pipeline path);
+      // for non-CI manual `bump` invocations we conservatively bump all
+      // plugins (treats first run as changed-everything).
+      if (changedShasIdx !== -1 && process.argv[changedShasIdx + 1]) {
+        const raw = process.argv[changedShasIdx + 1];
+        const changedShas = new Map();
+        for (const entry of raw.split(',')) {
+          const colonIdx = entry.lastIndexOf(':');
+          if (colonIdx === -1) continue;
+          const dir = resolve(entry.slice(0, colonIdx));
+          const sha = entry.slice(colonIdx + 1);
+          changedShas.set(dir, sha || '');
+        }
+        const pluginBumps = await bumpChangedPlugins(resolvedDirs, changedShas);
+        if (pluginBumps.length === 0) {
+          console.log('No plugin source changes — skipping plugin version bump');
+          console.log('BUMPED_PLUGINS:[]');
+        } else {
+          console.log(`Bumped ${pluginBumps.length} plugin(s):\n`);
+          for (const p of pluginBumps) {
+            console.log(`  ${p.name}: ${p.from} -> ${p.to}`);
+          }
+          const pluginNames = [...new Set(pluginBumps.map(p => p.name))];
+          console.log(`BUMPED_PLUGINS:${JSON.stringify(pluginNames)}`);
+        }
       }
     } else if (command === 'reconcile') {
       await reconcileWithNpm();
