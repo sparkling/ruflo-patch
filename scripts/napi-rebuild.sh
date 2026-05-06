@@ -126,7 +126,14 @@ find_napi_crates_for_fork() {
     napi_parse_entry "$entry" || continue
     if [[ "$NAPI_FORK_DIR" == "$fork_dir" ]]; then
       local crate_dir="${NAPI_FORK_DIR}/${NAPI_CRATE_PATH}"
-      if [[ -f "${crate_dir}/package.json" ]]; then
+      [[ -f "${crate_dir}/package.json" ]] || continue
+      # Only include crates whose package.json has a `build` script that runs
+      # `napi build`. Some workspace crates (e.g. ruvector-graph-node, sona)
+      # ship pre-built .node files without a build script — silently skip per
+      # original ADR-0133 behaviour.
+      local build_script
+      build_script=$(jq -r '.scripts.build // empty' "${crate_dir}/package.json" 2>/dev/null)
+      if [[ "$build_script" == *"napi build"* ]]; then
         echo "$crate_dir"
       fi
     fi
