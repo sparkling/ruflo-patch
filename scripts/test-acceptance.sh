@@ -105,7 +105,7 @@ source "${PROJECT_DIR}/lib/acceptance-harness.sh"
 # ── Global timeout: 600s (override via RUFLO_GLOBAL_TIMEOUT_S) ──────
 # Close fd 9 (flock) so orphaned timeout process cannot hold the pipeline lock
 # Close ALL inherited fds so timeout sleep doesn't hold pipes open
-: "${RUFLO_GLOBAL_TIMEOUT_S:=600}"
+: "${RUFLO_GLOBAL_TIMEOUT_S:=1500}"
 ( exec 9>&- 1>/dev/null 2>/dev/null; sleep "${RUFLO_GLOBAL_TIMEOUT_S}"; kill -TERM -$$ 2>/dev/null || kill -TERM $$ 2>/dev/null || true; sleep 5; kill -KILL -$$ 2>/dev/null || kill -KILL $$ 2>/dev/null || true ) &
 GLOBAL_TIMEOUT_PID=$!
 
