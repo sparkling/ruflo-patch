@@ -14,22 +14,43 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
 function findRvfBackendDist() {
+  // Codemodded build (post `npm run codemod` + `build:tsc`) — fresh and
+  // always complete. Prefer over fork's local dist which may have missing
+  // transitive deps (hnsw-lite.js etc.) if the fork wasn't rebuilt recently.
   const candidates = [
-    '/tmp/ruflo-build/v3/@claude-flow/memory/dist/src/rvf-backend.js',
-    '/tmp/ruflo-unit-rvf-install/node_modules/@sparkleideas/memory/dist/src/rvf-backend.js',
+    '/tmp/ruflo-build/dist/v3/@claude-flow/memory/src/rvf-backend.js',
+    '/tmp/ruflo-build/v3/@claude-flow/memory/dist/rvf-backend.js',
   ];
-  for (const c of candidates) if (existsSync(c)) return c;
-  // Acceptance install dirs
+  for (const c of candidates) if (existsSync(c)) {
+    const sibling = c.replace('rvf-backend.js', 'hnsw-lite.js');
+    if (existsSync(sibling)) return c;
+  }
+  // Acceptance install dirs (also have complete deps)
   let entries;
   try { entries = readdirSync('/tmp'); } catch { entries = []; }
   for (const name of entries) {
     if (!name.startsWith('ruflo-accept-')) continue;
-    const p = join('/tmp', name, 'node_modules', '@sparkleideas', 'memory', 'dist', 'src', 'rvf-backend.js');
-    if (existsSync(p)) return p;
+    for (const sub of [
+      ['node_modules', '@sparkleideas', 'memory', 'dist', 'rvf-backend.js'],
+      ['node_modules', '@sparkleideas', 'memory', 'dist', 'src', 'rvf-backend.js'],
+    ]) {
+      const p = join('/tmp', name, ...sub);
+      if (existsSync(p)) {
+        const sibling = p.replace('rvf-backend.js', 'hnsw-lite.js');
+        if (existsSync(sibling)) return p;
+      }
+    }
   }
-  // Fork-side dist (always present post fork-side build)
-  const forkDist = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/src/rvf-backend.js';
-  if (existsSync(forkDist)) return forkDist;
+  // Fork-side dist (LAST RESORT — may be incomplete)
+  for (const fp of [
+    '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/rvf-backend.js',
+    '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/src/rvf-backend.js',
+  ]) {
+    if (existsSync(fp)) {
+      const sibling = fp.replace('rvf-backend.js', 'hnsw-lite.js');
+      if (existsSync(sibling)) return fp;
+    }
+  }
   return null;
 }
 
@@ -47,11 +68,15 @@ describe('Bug-1: RvfBackend.search() must self-heal orphan numIds (HNSW invarian
 
   after(() => { try { rmSync(workDir, { recursive: true, force: true }); } catch {} });
 
-  it('source contains the orphan-self-heal branch (regression pin)', { skip: !distPath ? 'rvf-backend dist absent' : false }, async () => {
+  it('source contains the orphan-self-heal branch (regression pin)', async () => {
+    // Read the fork TS source directly (always reliable — independent of
+    // build state). Build artifacts can lag behind source due to tsc
+    // incremental cache (Bug-6 fixed in build-packages.sh, but the
+    // regression-pin should not depend on the build at all).
     const fs = await import('node:fs');
-    const src = fs.readFileSync(distPath, 'utf8');
-    // The fix introduces mappedHits/orphanHits counters and a fall-through.
-    assert.match(src, /orphanHits|mappedHits/, 'orphan-numId tracking must be present in compiled rvf-backend');
+    const FORK_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts';
+    const src = fs.readFileSync(FORK_SRC, 'utf8');
+    assert.match(src, /orphanHits|mappedHits/, 'orphan-numId tracking must be present in fork source rvf-backend.ts');
     assert.match(src, /pureTsSearch/, 'pure-TS fallback must exist');
   });
 

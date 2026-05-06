@@ -74,11 +74,19 @@ describe('Bug-4: StorageFactory retries once on ELOCKACQUIRE', () => {
 // the same path and verify they all succeed.
 describe('Bug-4: concurrent RvfBackend init succeeds across N processes', () => {
   function findRvfBackendDist() {
+    // Codemodded build (fresh) preferred over fork's local dist (may have
+    // missing transitive deps like hnsw-lite.js if the fork wasn't built
+    // recently). The freshly-built tree is always complete.
     const candidates = [
+      '/tmp/ruflo-build/dist/v3/@claude-flow/memory/src/rvf-backend.js',
       '/tmp/ruflo-build/v3/@claude-flow/memory/dist/rvf-backend.js',
       '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/dist/rvf-backend.js',
     ];
-    for (const c of candidates) if (existsSync(c)) return c;
+    for (const c of candidates) if (existsSync(c)) {
+      // Sanity: verify hnsw-lite.js sibling is present (transitive import).
+      const sibling = c.replace('rvf-backend.js', 'hnsw-lite.js');
+      if (existsSync(sibling)) return c;
+    }
     return null;
   }
 
