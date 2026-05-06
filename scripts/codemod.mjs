@@ -46,6 +46,11 @@ export const UNSCOPED_MAP = {
   'agentdb-onnx': '@sparkleideas/agentdb-onnx',
   'cuda-wasm': '@sparkleideas/cuda-wasm',
   'ruvector': '@sparkleideas/ruvector',
+  // ADR-0150 follow-up: agentic-jujutsu (AI-native VCS) — pipeline now builds
+  // + bundles its darwin-arm64 .node binary via napi-rebuild.sh +
+  // bundle-native-binaries.sh multi-fork support. Codemod renames the package
+  // so it publishes to Verdaccio as @sparkleideas/agentic-jujutsu.
+  'agentic-jujutsu': '@sparkleideas/agentic-jujutsu',
   // RuVector unscoped platform packages
   'ruvector-core-darwin-arm64': '@sparkleideas/ruvector-core-darwin-arm64',
   'ruvector-core-darwin-x64': '@sparkleideas/ruvector-core-darwin-x64',
@@ -65,11 +70,21 @@ const ALLOWED_EXTENSIONS = new Set([
   // marketplace docs in `forks/ruflo/plugins/**/*.md` and
   // `forks/ruflo/.claude-plugin/**/*.md` get @claude-flow/ → @sparkleideas/
   // and mcp__claude-flow__* → mcp__ruflo__* rewrites.
+  //
+  // Drift-prevention follow-up (2026-05-04): Pass 4 (MCP_PREFIX_RE) also
+  // covers init-bundled content under `forks/ruflo/.claude/**` — settings
+  // (.json), agents/skills/commands docs (.md), and helper shell scripts
+  // (.sh) — so upstream merges that re-introduce `mcp__claude-flow__*`
+  // identifiers in those trees are corrected at codemod time. Locked in
+  // by the `.claude/** drift-prevention` test cases in
+  // tests/pipeline/codemod.test.mjs.
   '.md',
   // ADR-0117 follow-up (2026-05-04): process .sh so install.sh and
   // similar shell scripts get Pass 6 (npx ruflo@... → @sparkleideas/ruflo@...)
   // plus the existing scoped-rename passes. Passes 1/2/4 are no-ops on
   // typical shell content; Pass 3 (import-context) never matches there.
+  // Also covers `.claude/helpers/*.sh` (e.g. setup-mcp.sh) so any
+  // `mcp__claude-flow__*` references in shell helpers get Pass 4 rewrite.
   '.sh',
 ]);
 
@@ -200,10 +215,14 @@ const SCOPED_RE = /@claude-flow\//g;
 //
 // Phase C addendum: also match the literal-asterisk glob form
 // `mcp__claude-flow__*` used in plugin docs ("valid `mcp__claude-flow__*`
-// identifiers"). The capture group is `[a-zA-Z0-9_]+|\*` so both tool-
-// name suffixes (e.g. `memory_store`) and the documentation glob get
-// rewritten.
-const MCP_PREFIX_RE = /mcp__claude-flow__([a-zA-Z0-9_]+|\*)/g;
+// identifiers").
+//
+// Drift-prevention 2026-05-04: also match the permission-glob form
+// `mcp__claude-flow__:*` used in `.claude/settings.json` permission
+// allow/deny lists (Claude Code's "all tools from this server"
+// shorthand). The capture group is `[a-zA-Z0-9_]+|\*|:\*` so all three
+// forms (tool-name suffix, doc glob, permission glob) get rewritten.
+const MCP_PREFIX_RE = /mcp__claude-flow__([a-zA-Z0-9_]+|\*|:\*)/g;
 
 // Step 1b: RuVector scoped replacement -- @ruvector/ -> @sparkleideas/ruvector-
 // Transforms @ruvector/core -> @sparkleideas/ruvector-core, etc.
@@ -440,6 +459,15 @@ export function transformSource(content) {
   });
 
   // Pass 4 (ADR-0113 Fix 2): MCP tool prefix (mcp__claude-flow__* -> mcp__ruflo__*)
+  //
+  // Runs unconditionally on every allowed-extension file in the build tree
+  // (.json/.md/.sh — see ALLOWED_EXTENSIONS). Coverage therefore includes
+  // marketplace docs (`plugins/**`, `.claude-plugin/**`) AND the init-
+  // bundled `.claude/**` tree (settings.json, agents/skills/commands .md,
+  // helper .sh scripts). Drift-prevention contract: any future narrowing
+  // of this scope must NOT exclude `.claude/**` — the
+  // ".claude/** drift-prevention" tests in
+  // tests/pipeline/codemod.test.mjs lock that in.
   result = result.replace(MCP_PREFIX_RE, 'mcp__ruflo__$1');
 
   // Pass 6 (ADR-0117 follow-up): npx-context unscoped `ruflo` -> `@sparkleideas/ruflo`

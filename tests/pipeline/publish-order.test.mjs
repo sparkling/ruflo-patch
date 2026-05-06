@@ -45,6 +45,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/ruvector-learning-wasm': [],
   '@sparkleideas/agentdb': [],
   '@sparkleideas/agentic-flow': [],
+  '@sparkleideas/agentic-jujutsu': [],  // ADR-0150 follow-up — has only @qudag/napi-core (external) + bundled darwin-arm64.node
   '@sparkleideas/ruv-swarm': [],
   // Level 2
   '@sparkleideas/shared': [],
@@ -187,19 +188,19 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (22+5+7+24+2)', () => {
+    it('all expected packages are present across all levels (23+5+7+24+2)', () => {
       const allPackages = LEVELS.flat();
       // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5: L1=22, L2=5, L3=7,
       // L4=24 (22 base + 2 ADR-0113 federation/iot plugins), L5=2
-      assert.equal(LEVELS[0].length, 22, 'Level 1 should have 22 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm/learning WASM)');
+      assert.equal(LEVELS[0].length, 23, 'Level 1 should have 23 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm/learning WASM + ADR-0150 agentic-jujutsu)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
       assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
       assert.equal(LEVELS[3].length, 24, 'Level 4 should have 24 packages (22 base + ADR-0113 federation + iot)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        60,
-        `Expected 60 packages total (ADR-0113 Fix 5: 58 base + federation + iot), got ${allPackages.length}`
+        61,
+        `Expected 61 packages total (ADR-0113 Fix 5: 58 base + federation + iot + ADR-0150 agentic-jujutsu), got ${allPackages.length}`
       );
     });
 

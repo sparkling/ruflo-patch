@@ -24,6 +24,7 @@
         "@sparkleideas/ruvector-learning-wasm",
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
+        "@sparkleideas/agentic-jujutsu",
         "@sparkleideas/ruv-swarm",
         "@sparkleideas/agent-booster",
         "@sparkleideas/agentdb-onnx"
