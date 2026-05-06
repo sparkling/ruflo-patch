@@ -26,8 +26,15 @@ check_adr0147_r6_causal_query() {
     return
   fi
 
-  local log_file
-  log_file=$(mktemp /tmp/adr0147-r6-acceptance-XXXXX.log)
+  # macOS BSD mktemp doesn't substitute X's unless they're the LAST chars of
+  # the template. With ".log" suffix the X's are NOT last → mktemp returns
+  # the literal filename, which collides on repeated pipeline runs ("File
+  # exists" error and an empty log_file). Rename trick: mktemp with X's at
+  # end, then add the .log suffix.
+  local log_file _tmp
+  _tmp=$(mktemp /tmp/adr0147-r6-acceptance-XXXXXX)
+  log_file="${_tmp}.log"
+  mv "$_tmp" "$log_file" 2>/dev/null || log_file="$_tmp"
 
   # Run via test-runner so any future tests/acceptance/*.test.mjs get picked
   # up automatically. The runner scans the directory and forwards to
