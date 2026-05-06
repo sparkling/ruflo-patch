@@ -590,6 +590,14 @@ adr0142_lib="${PROJECT_DIR}/lib/acceptance-adr0142-bin-path.sh"
 adr0143_lib="${PROJECT_DIR}/lib/acceptance-adr0143-init-mcp.sh"
 [[ -f "$adr0143_lib" ]] && source "$adr0143_lib"
 
+# ADR-0147 R6 + RVF symmetric metadataPath fix (2026-05-06): wraps the
+# node:test acceptance test at tests/acceptance/adr0147-r6-causal-query-*.
+# Verifies post-publish that causal_query returns canary edges past the
+# broken first-100-cap (R6), AND that inserts persist across fresh
+# `cli mcp exec` MCP server processes (RVF symmetric metadataPath).
+adr0147_r6_lib="${PROJECT_DIR}/lib/acceptance-adr0147-r6-causal-query.sh"
+[[ -f "$adr0147_r6_lib" ]] && source "$adr0147_r6_lib"
+
 # ADR-0129: Hive-mind CLI bug closeout (B1 memory store, B2 shutdown fields, B4 -t comma-split)
 adr0129_lib="${PROJECT_DIR}/lib/acceptance-adr0129-checks.sh"
 [[ -f "$adr0129_lib" ]] && source "$adr0129_lib"
@@ -731,6 +739,7 @@ run_check_bg "adr0113-fed-bin"          "0113 ruflo-federation bin executes (Fix
 run_check_bg "adr0113-iot-bin"          "0113 cognitum-iot bin executes (Fix 5)"                       check_adr0113_cognitum_iot_bin               "packages"
 run_check_bg "adr0142-bin-path"         "0142 G3 wrapper @sparkleideas/cli/bin/cli.js + ruflo --version"  check_adr0142_bin_path                       "packages"
 run_check_bg "adr0142-mcp-jsonrpc"      "0142 AC#10 MCP JSON-RPC initialize round-trip via wrapper"       check_adr0142_mcp_jsonrpc                    "packages"
+run_check_bg "adr0147-r6-causal-query"  "0147 R6 + RVF symmetry — causal_query past first-100-cap, cross-process persist" check_adr0147_r6_causal_query "data"
 run_check_bg "adr0143-init-mcp"         "0143 AC#5 init-generated .mcp.json uses @sparkleideas/ruflo (B2)" check_adr0143_init_mcp_config                "packages"
 run_check_bg "adr0113-cli-rebrand"      "0113 executor uses @sparkleideas/cli@latest (Fix 6.1)"        check_adr0113_executor_uses_sparkleideas_cli "structure"
 run_check_bg "adr0113-no-opus46"        "0113 no 'Opus 4.6' strings in CLI dist (Fix 6.3)"             check_adr0113_no_opus_46_strings             "structure"

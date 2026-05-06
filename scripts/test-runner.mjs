@@ -36,15 +36,17 @@ if (positionalArgs.length > 0) {
   // Resolve each arg relative to project root
   scanDirs = positionalArgs.map(a => resolve(projectRoot, a));
 } else {
-  // Default: scan all three subdirectories (not tests/ root). Acceptance
-  // added 2026-05-06 (ADR-0147 R6) — heavy E2E tests carry their own
-  // {timeout:600_000} via node:test it()-options, so the runner's
-  // 120s --test-timeout default doesn't truncate them.
-  scanDirs = [
-    resolve(testsDir, 'pipeline'),
-    resolve(testsDir, 'unit'),
-    resolve(testsDir, 'acceptance'),
-  ];
+  // Default: scan pipeline + unit only. Acceptance is OPT-IN (invoke
+  // explicitly via `node scripts/test-runner.mjs tests/acceptance`)
+  // because acceptance tests need a published package on Verdaccio —
+  // including them in `test-ci` (which runs BEFORE publish) creates a
+  // chicken-and-egg where the fix-being-deployed can't validate against
+  // itself. See tests/CLAUDE.md "Anti-patterns": "Run `npm run
+  // test:acceptance` without published packages — acceptance needs a
+  // registry". Briefly added to default scan 2026-05-06 (ADR-0147 R6
+  // commit dc53623), reverted same day after pipeline test-ci ran the
+  // acceptance test against pre-fix patch.388 and aborted publish.
+  scanDirs = [resolve(testsDir, 'pipeline'), resolve(testsDir, 'unit')];
 }
 
 let allFiles = [];
