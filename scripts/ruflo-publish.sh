@@ -76,7 +76,7 @@ check_merged_prs() {
   log "  fetch all forks (parallel): ${_ms}ms"
   add_cmd_timing "merge-detect" "git fetch all (parallel)" "$_ms"
 
-  # Pass 2: process results (SHA compare, fast-forward)
+  # Pass 2: process results (FF first, then SHA compare on HEAD)
   for i in "${!FORK_NAMES[@]}"; do
     local name="${FORK_NAMES[$i]}"
     local dir="${FORK_DIRS[$i]}"
@@ -86,39 +86,15 @@ check_merged_prs() {
       continue
     fi
 
-    local origin_sha state_sha
-    origin_sha=$(git -C "${dir}" rev-parse origin/main 2>/dev/null) || continue
-
-    state_sha=$(get_prev_head "$name")
-
-    if [[ -z "$state_sha" ]]; then
-      log "No previous state for ${name} — treating as new (origin=${origin_sha:0:12})"
-      any_changed=true
-      if [[ -n "$CHANGED_FORK_SHAS" ]]; then
-        CHANGED_FORK_SHAS="${CHANGED_FORK_SHAS},${dir}:"
-      else
-        CHANGED_FORK_SHAS="${dir}:"
-      fi
-    elif [[ "$origin_sha" == "$state_sha" ]]; then
-      log "No new merges for ${name} (origin=${origin_sha:0:12})"
-    elif git -C "${dir}" merge-base --is-ancestor "$origin_sha" "$state_sha" 2>/dev/null; then
-      log "No new merges for ${name} (state ahead: state=${state_sha:0:12}, origin=${origin_sha:0:12})"
-    else
-      log "New commits on origin/main for ${name}: state=${state_sha:0:12} -> origin=${origin_sha:0:12}"
-      any_changed=true
-      if [[ -n "$CHANGED_FORK_SHAS" ]]; then
-        CHANGED_FORK_SHAS="${CHANGED_FORK_SHAS},${dir}:${state_sha}"
-      else
-        CHANGED_FORK_SHAS="${dir}:${state_sha}"
-      fi
-    fi
-
-    # Try fast-forwarding local main to origin/main, but DO NOT reset
-    # destructively if FF fails. A failing FF means local is ahead of
-    # origin (= ruvnet, read-only) — that's our normal state when we
-    # have unpublished fork commits ahead of upstream. A `reset --hard
-    # origin/main` here would silently nuke our work; the bug bit us
-    # 2026-04-30 wiping 12 trunk-pivot commits across 4 forks.
+    # FF local main to origin/main FIRST (so HEAD includes any new upstream
+    # commits before we read it). Per `reference-fork-workflow.md` and
+    # `feedback-no-upstream-donate-backs.md`, our fork commits live on
+    # sparkling/main only — origin = ruvnet is read-only. NEVER reset
+    # destructively if FF fails: a failing FF means local is ahead of
+    # origin (our normal state with unpublished fork commits). A
+    # `reset --hard origin/main` here would silently nuke our work;
+    # the bug bit us 2026-04-30 wiping 12 trunk-pivot commits across
+    # 4 forks. Just continue.
     local _ff_start; _ff_start=$(_ns)
     git -C "${dir}" checkout main --quiet 2>/dev/null || true
     if ! git -C "${dir}" merge --ff-only origin/main --quiet 2>/dev/null; then
@@ -128,9 +104,37 @@ check_merged_prs() {
     log "  fast-forward ${name}: ${_ff_ms}ms"
     add_cmd_timing "merge-detect" "git ff-merge ${name}" "$_ff_ms"
 
-    local new_sha
-    new_sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
-    set_fork_head "$name" "$new_sha"
+    # Detection compares HEAD (post-FF — includes both upstream merges AND
+    # our own fork-side commits to sparkling/main) against the last-verified
+    # state_sha. Earlier versions compared origin/main (ruvnet, read-only),
+    # which silently missed all our fork-side work — bug observed 2026-05-04
+    # when ruvector commit 38191e27e (WriterLock bounded-wait flock) sat
+    # unpublished because origin/main hadn't moved.
+    local head_sha state_sha
+    head_sha=$(git -C "${dir}" rev-parse HEAD 2>/dev/null) || continue
+    state_sha=$(get_prev_head "$name")
+
+    if [[ -z "$state_sha" ]]; then
+      log "No previous state for ${name} — treating as new (head=${head_sha:0:12})"
+      any_changed=true
+      if [[ -n "$CHANGED_FORK_SHAS" ]]; then
+        CHANGED_FORK_SHAS="${CHANGED_FORK_SHAS},${dir}:"
+      else
+        CHANGED_FORK_SHAS="${dir}:"
+      fi
+    elif [[ "$head_sha" == "$state_sha" ]]; then
+      log "No new commits for ${name} (head=${head_sha:0:12})"
+    else
+      log "New commits for ${name}: state=${state_sha:0:12} -> head=${head_sha:0:12}"
+      any_changed=true
+      if [[ -n "$CHANGED_FORK_SHAS" ]]; then
+        CHANGED_FORK_SHAS="${CHANGED_FORK_SHAS},${dir}:${state_sha}"
+      else
+        CHANGED_FORK_SHAS="${dir}:${state_sha}"
+      fi
+    fi
+
+    set_fork_head "$name" "$head_sha"
   done
 
   if [[ "$any_changed" == "true" ]]; then
@@ -289,11 +293,14 @@ main() {
     return 0
   fi
 
-  # ADR-0133: Detect ruvector Rust source changes and rebuild napi .node binaries
+  # ADR-0133/0150: Detect Rust source changes across all napi-shipping forks
+  # (ruvector + agentic-flow per lib/napi-config.sh) and rebuild .node binaries
   # before bump-versions, so the rebuilt binaries land on fork main and ship
   # via the normal copy-source path. Without this, .rs changes can publish but
-  # the .node files stay stale (real regression observed 2026-05-03).
-  run_phase "napi-rebuild" bash "${SCRIPT_DIR}/napi-rebuild.sh" "${PREV_RUVECTOR_HEAD:-}"
+  # the .node files stay stale.
+  run_phase "napi-rebuild" bash "${SCRIPT_DIR}/napi-rebuild.sh" \
+    "${PREV_RUVECTOR_HEAD:-}" \
+    "${PREV_AGENTIC_HEAD:-}"
 
   # Bump versions in forks
   run_phase "bump-versions" bump_fork_versions

@@ -93,9 +93,17 @@ copy_source() {
   rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P .build-manifest.json' --filter='P .wasm-cache.json' --filter='P .last-verified.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
     && touch "${rsync_status_dir}/ruflo" &
   local pid_ruflo=$!
+  # ADR-0150: narrow .node exclude — keep darwin-arm64 (the only arch we build)
+  # so it ships through to the publish package. Other arches ship via per-arch
+  # optional-dep packages from upstream public npm or are absent (bug we accept
+  # for now per ADR-0150 §"Cross-platform shipping" risk note).
   rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P wasm/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' \
     --exclude=node_modules --exclude=.git \
-    --exclude='packages/agentic-jujutsu/*.node' \
+    --exclude='packages/agentic-jujutsu/*.linux-*.node' \
+    --exclude='packages/agentic-jujutsu/*.win32-*.node' \
+    --exclude='packages/agentic-jujutsu/*.android-*.node' \
+    --exclude='packages/agentic-jujutsu/*.darwin-x64*.node' \
+    --exclude='packages/agentic-jujutsu/*.darwin-universal*.node' \
     --exclude='packages/agentic-jujutsu/*.tgz' \
     --exclude='packages/agentic-jujutsu/tests' \
     --exclude='packages/agentic-jujutsu/benchmarks' \

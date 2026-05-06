@@ -7,11 +7,34 @@
 #
 # Called by: copy-source.sh after rsync, before codemod.
 # ADR-0071: RuVector Native Binary Management
+# ADR-0150: Generalised to multi-fork via lib/napi-config.sh
 
 set -euo pipefail
 
 BUILD_DIR="${1:?Usage: bundle-native-binaries.sh <build-dir>}"
-RUVECTOR_DIR="$BUILD_DIR/cross-repo/ruvector"
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Source napi config (ADR-0150). lib/fork-paths.sh is needed by napi-config.sh.
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/fork-paths.sh"
+# shellcheck source=/dev/null
+source "${ROOT_DIR}/lib/napi-config.sh"
+
+# Map fork dir to its location in /tmp/ruflo-build/. cross-repo for ruvector
+# (legacy ADR-0071); v3/ for in-tree forks like agentic-flow.
+fork_to_build_path() {
+  local fork_dir="$1"
+  case "$fork_dir" in
+    "$FORK_DIR_RUVECTOR") echo "$BUILD_DIR/cross-repo/ruvector" ;;
+    "$FORK_DIR_AGENTIC")  echo "$BUILD_DIR/cross-repo/agentic-flow" ;;
+    *) echo "" ;;
+  esac
+}
+
+# Legacy alias retained for the rvf-node helper below
+RUVECTOR_DIR="$(fork_to_build_path "$FORK_DIR_RUVECTOR")"
 
 # Detect platform
 PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -25,15 +48,16 @@ TRIPLE="${PLATFORM}-${ARCH}"   # e.g. darwin-arm64
 copied=0
 skipped=0
 
-# copy_binary SRC_DIR DEST_DIR
+# copy_binary SRC_DIR DEST_DIR DISPLAY_PREFIX
 #   Finds *.${TRIPLE}.node files in SRC_DIR and copies them to DEST_DIR.
 #   Skips silently when the source dir or binary does not exist.
 copy_binary() {
   local src_dir="$1"
   local dest_dir="$2"
+  local display_prefix="${3:-$src_dir}"
 
   if [[ ! -d "$src_dir" ]]; then
-    echo "  skip: source dir missing — ${src_dir#"$RUVECTOR_DIR/"}"
+    echo "  skip: source dir missing — ${src_dir#"$display_prefix/"}"
     skipped=$((skipped + 1))
     return
   fi
@@ -48,45 +72,50 @@ copy_binary() {
   done
 
   if [[ $found -eq 0 ]]; then
-    echo "  skip: no *.${TRIPLE}.node in ${src_dir#"$RUVECTOR_DIR/"}"
+    echo "  skip: no *.${TRIPLE}.node in ${src_dir#"$display_prefix/"}"
     skipped=$((skipped + 1))
   fi
 }
 
 echo "=== bundle-native-binaries === platform=${TRIPLE}"
-echo "    ruvector dir: $RUVECTOR_DIR"
 echo ""
 
-if [[ ! -d "$RUVECTOR_DIR" ]]; then
-  echo "WARN: ruvector dir does not exist — nothing to bundle"
-  exit 0
-fi
+# ── Iterate NAPI_PACKAGES (ADR-0150) ────────────────────────────────────
+# Each entry maps a SOURCE crate dir → DEST npm-publish dir. The build tree
+# ($BUILD_DIR) mirrors fork structure under cross-repo/<name> or v3/<name>,
+# so we translate the fork-relative paths from the config to build-tree paths.
 
-# ── Mappings: crate build dir → parent package dir ──────────────────────
+for entry in "${NAPI_PACKAGES[@]}"; do
+  napi_parse_entry "$entry" || continue
+  build_root=$(fork_to_build_path "$NAPI_FORK_DIR")
+  if [[ -z "$build_root" ]]; then
+    echo "  skip: unmapped fork ${NAPI_FORK_DIR}"
+    skipped=$((skipped + 1))
+    continue
+  fi
+  if [[ ! -d "$build_root" ]]; then
+    echo "  skip: build root missing for $(basename "$NAPI_FORK_DIR")"
+    continue
+  fi
 
-copy_binary \
-  "$RUVECTOR_DIR/crates/ruvector-graph-node" \
-  "$RUVECTOR_DIR/npm/packages/graph-node"
+  src_dir="${build_root}/${NAPI_CRATE_PATH}"
+  dest_dir="${build_root}/${NAPI_DEST_NPM_DIR}"
 
-copy_binary \
-  "$RUVECTOR_DIR/crates/ruvector-node" \
-  "$RUVECTOR_DIR/npm/packages/core"
+  # When src == dest (single-binary packages like agentic-jujutsu), the binary
+  # is already in the publish dir — bundling is a no-op verification.
+  if [[ "$src_dir" == "$dest_dir" ]]; then
+    if [[ -d "$src_dir" ]] && ls "$src_dir"/*."${TRIPLE}".node >/dev/null 2>&1; then
+      echo "  ✓ in-place: $(basename "$NAPI_FORK_DIR")/${NAPI_CRATE_PATH} (binary already at publish dir)"
+      copied=$((copied + 1))
+    else
+      echo "  skip: no binary at $(basename "$NAPI_FORK_DIR")/${NAPI_CRATE_PATH}/*.${TRIPLE}.node"
+      skipped=$((skipped + 1))
+    fi
+    continue
+  fi
 
-copy_binary \
-  "$RUVECTOR_DIR/crates/ruvector-router-ffi" \
-  "$RUVECTOR_DIR/npm/packages/router"
-
-copy_binary \
-  "$RUVECTOR_DIR/crates/ruvector-tiny-dancer-node" \
-  "$RUVECTOR_DIR/npm/packages/tiny-dancer"
-
-copy_binary \
-  "$RUVECTOR_DIR/crates/sona" \
-  "$RUVECTOR_DIR/npm/packages/sona"
-
-copy_binary \
-  "$RUVECTOR_DIR/examples/ruvLLM" \
-  "$RUVECTOR_DIR/npm/packages/ruvllm"
+  copy_binary "$src_dir" "$dest_dir" "$build_root"
+done
 
 # ADR-0095 amendment (2026-05-01): rvf-node added to the bundle list.
 # Without this entry, the `.node` binary in `npm/packages/rvf-node/` was
