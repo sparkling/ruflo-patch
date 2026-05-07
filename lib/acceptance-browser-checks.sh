@@ -154,43 +154,52 @@ check_adr0094_p4_browser_navigation() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/browser-nav-XXXXX)
-  local all_output=""
-  local tools_invoked=0
-  local tools_responded=0
+  local resp_file; resp_file=$(mktemp /tmp/browser-nav-resp-XXXXX)
 
-  _nav_try() {
-    local tool="$1" params="$2" pat="$3"
-    local cmd
-    if [[ -n "$params" && "$params" != "{}" ]]; then
-      cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool $tool --params '$params'"
-    else
-      cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool $tool"
-    fi
-    tools_invoked=$((tools_invoked + 1))
-    _run_and_kill_ro "$cmd" "$work" 15
-    local body; body=$(cat "$work" 2>/dev/null || echo "")
-    body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
-    all_output="${all_output}
-[${tool}] ${body}"
-    # Count as responded if it didn't say "not found"
-    if ! echo "$body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # Refactored 2026-05-07: was 9 sequential `cli mcp exec` calls (each
+  # spawning a fresh Playwright = ~13s × 9 = 115s wall time, the long
+  # pole of the entire acceptance phase). Now batches all 9 JSON-RPC
+  # tools/call requests through a SINGLE `cli mcp start` invocation —
+  # one Playwright launch (~10s) + 9 in-process tool dispatches (~100ms
+  # each) ≈ 12s wall time. Same coverage: each tool's id appears in the
+  # response stream → counted as "responded" unless the response is a
+  # tool-not-found error. Mirrors the adr0117 AC#4 pattern at
+  # lib/acceptance-adr0117-marketplace-mcp.sh:256.
+  local reqs
+  reqs=$'{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"acc-p4-nav","version":"0.0.0"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_open","arguments":{"url":"about:blank"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"browser_get-url","arguments":{}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_get-title","arguments":{}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"browser_back","arguments":{}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"browser_forward","arguments":{}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"browser_reload","arguments":{}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"browser_wait","arguments":{"timeout":500}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"browser_screenshot","arguments":{}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"browser_close","arguments":{}}}\n'
+
+  # Single mcp start invocation. Stdio server hangs after responses
+  # (waits for more input), so _timeout SIGKILLs it. 60s covers cold
+  # Playwright launch + 9 tool dispatches with margin.
+  (
+    cd "$E2E_DIR" || exit 99
+    printf '%s' "$reqs" | _timeout 60 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
+  ) > "$resp_file" 2>/dev/null || true
+
+  # Count tools that responded (id 1..9). A response with the matching
+  # id and no "tool not found" error counts as responded — same
+  # semantic as the prior _nav_try counter.
+  local tools_invoked=9 tools_responded=0
+  local all_output
+  all_output=$(cat "$resp_file" 2>/dev/null || echo "")
+  for tid in 1 2 3 4 5 6 7 8 9; do
+    local resp_line
+    resp_line=$(grep -oE "\"id\":${tid}[^0-9].*" "$resp_file" 2>/dev/null | head -1)
+    if [[ -n "$resp_line" ]] && ! echo "$resp_line" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
       tools_responded=$((tools_responded + 1))
     fi
-  }
+  done
 
-  # Invoke the 9 navigation-group tools
-  _nav_try "browser_open"       '{"url":"about:blank"}'  'open|blank|page|ok'
-  _nav_try "browser_get-url"    '{}'                      'about:blank|url|http'
-  _nav_try "browser_get-title"  '{}'                      'title|blank'
-  _nav_try "browser_back"       '{}'                      'back|navigat|ok'
-  _nav_try "browser_forward"    '{}'                      'forward|navigat|ok'
-  _nav_try "browser_reload"     '{}'                      'reload|refresh|ok'
-  _nav_try "browser_wait"       '{"timeout":500}'         'wait|timeout|ok|done'
-  _nav_try "browser_screenshot" '{}'                      'screenshot|base64|image|png|data'
-  _nav_try "browser_close"      '{}'                      'close|ok|done'
-
-  rm -f "$work" 2>/dev/null
+  rm -f "$resp_file" 2>/dev/null
 
   if [[ $tools_responded -eq 0 ]]; then
     _CHECK_PASSED="skip_accepted"
@@ -198,7 +207,6 @@ check_adr0094_p4_browser_navigation() {
     return
   fi
 
-  # At least one tool responded — check for playwright-missing at runtime
   if echo "$all_output" | grep -qiE 'playwright.*not (found|installed)|executable.*not found|install.*playwright'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P4/browser_navigation: Playwright unavailable at runtime — $(echo "$all_output" | head -5 | tr '\n' ' ')"
@@ -206,7 +214,7 @@ check_adr0094_p4_browser_navigation() {
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="P4/browser_navigation: ${tools_responded}/${tools_invoked} navigation tools responded"
+  _CHECK_OUTPUT="P4/browser_navigation: ${tools_responded}/${tools_invoked} navigation tools responded (single MCP session, batched JSON-RPC)"
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -224,44 +232,44 @@ check_adr0094_p4_browser_interaction() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/browser-interact-XXXXX)
-  local all_output=""
-  local tools_invoked=0
-  local tools_responded=0
+  local resp_file; resp_file=$(mktemp /tmp/browser-interact-resp-XXXXX)
 
-  _interact_try() {
-    local tool="$1" params="$2"
-    local cmd
-    if [[ -n "$params" && "$params" != "{}" ]]; then
-      cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool $tool --params '$params'"
-    else
-      cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool $tool"
-    fi
-    tools_invoked=$((tools_invoked + 1))
-    _run_and_kill_ro "$cmd" "$work" 15
-    local body; body=$(cat "$work" 2>/dev/null || echo "")
-    body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
-    all_output="${all_output}
-[${tool}] ${body}"
-    if ! echo "$body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
+  # Refactored 2026-05-07: was 11 sequential `cli mcp exec` calls (each
+  # spawning Playwright fresh = ~3s × 11 = ~35s wall time). Now batches
+  # all 11 tools/call requests through a SINGLE `cli mcp start`
+  # invocation. Same coverage; one Playwright launch + 11 in-process
+  # dispatches ≈ 12s wall.
+  local reqs
+  reqs=$'{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"acc-p4-int","version":"0.0.0"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_fill","arguments":{"selector":"input","value":"test"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"browser_click","arguments":{"selector":"body"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"browser_get-value","arguments":{"selector":"input"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"browser_hover","arguments":{"selector":"body"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":5,"method":"tools/call","params":{"name":"browser_press","arguments":{"key":"Enter"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":6,"method":"tools/call","params":{"name":"browser_type","arguments":{"text":"hello"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":7,"method":"tools/call","params":{"name":"browser_select","arguments":{"selector":"select","value":"opt1"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":8,"method":"tools/call","params":{"name":"browser_check","arguments":{"selector":"input[type=checkbox]"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"browser_uncheck","arguments":{"selector":"input[type=checkbox]"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":10,"method":"tools/call","params":{"name":"browser_get-text","arguments":{"selector":"body"}}}\n'
+  reqs+=$'{"jsonrpc":"2.0","id":11,"method":"tools/call","params":{"name":"browser_scroll","arguments":{"direction":"down"}}}\n'
+
+  (
+    cd "$E2E_DIR" || exit 99
+    printf '%s' "$reqs" | _timeout 60 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
+  ) > "$resp_file" 2>/dev/null || true
+
+  local tools_invoked=11 tools_responded=0
+  local all_output
+  all_output=$(cat "$resp_file" 2>/dev/null || echo "")
+  for tid in 1 2 3 4 5 6 7 8 9 10 11; do
+    local resp_line
+    resp_line=$(grep -oE "\"id\":${tid}[^0-9].*" "$resp_file" 2>/dev/null | head -1)
+    if [[ -n "$resp_line" ]] && ! echo "$resp_line" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
       tools_responded=$((tools_responded + 1))
     fi
-  }
+  done
 
-  # Invoke the 11 interaction-group tools
-  _interact_try "browser_fill"    '{"selector":"input","value":"test"}'
-  _interact_try "browser_click"   '{"selector":"body"}'
-  _interact_try "browser_get-value" '{"selector":"input"}'
-  _interact_try "browser_hover"   '{"selector":"body"}'
-  _interact_try "browser_press"   '{"key":"Enter"}'
-  _interact_try "browser_type"    '{"text":"hello"}'
-  _interact_try "browser_select"  '{"selector":"select","value":"opt1"}'
-  _interact_try "browser_check"   '{"selector":"input[type=checkbox]"}'
-  _interact_try "browser_uncheck" '{"selector":"input[type=checkbox]"}'
-  _interact_try "browser_get-text" '{"selector":"body"}'
-  _interact_try "browser_scroll"  '{"direction":"down"}'
-
-  rm -f "$work" 2>/dev/null
+  rm -f "$resp_file" 2>/dev/null
 
   if [[ $tools_responded -eq 0 ]]; then
     _CHECK_PASSED="skip_accepted"
@@ -276,7 +284,7 @@ check_adr0094_p4_browser_interaction() {
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="P4/browser_interaction: ${tools_responded}/${tools_invoked} interaction tools responded"
+  _CHECK_OUTPUT="P4/browser_interaction: ${tools_responded}/${tools_invoked} interaction tools responded (single MCP session, batched JSON-RPC)"
 }
 
 # ════════════════════════════════════════════════════════════════════
