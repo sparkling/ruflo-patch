@@ -195,6 +195,27 @@ ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 
+# Phase: Shared wrapper-solo install (started in BACKGROUND, joined
+# before parallel wave). Three wrapper-install checks each previously
+# did `npm install @sparkleideas/ruflo --cache=<isolated>` (~82-93s
+# wall, the post-browser-refactor long pole). The --cache=<isolated>
+# defeats npm cache reuse, hence slow. Strategy: build one shared
+# install in background, join before parallel wave. By the time setup
+# phases finish (~78s), the wrapper install (~70s) is already done —
+# no additional sequential time.
+WRAPPER_SOLO_TEMP=$(mktemp -d /tmp/ruflo-wrapper-solo-XXXXX)
+export WRAPPER_SOLO_TEMP
+WRAPPER_SOLO_PID=""
+(
+  cd "$WRAPPER_SOLO_TEMP" \
+    && echo '{"name":"wrapper-solo-test","version":"1.0.0","private":true}' > package.json \
+    && echo "registry=${REGISTRY}" > .npmrc \
+    && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+       --cache "$WRAPPER_SOLO_TEMP/.npm-cache" \
+       --no-audit --no-fund --prefer-offline 2>&1 > "$WRAPPER_SOLO_TEMP/install.log"
+) &
+WRAPPER_SOLO_PID=$!
+
 # Phase: Structural checks (validate harness, not tests)
 _p=$(_ns)
 structural_fail=0
@@ -672,6 +693,16 @@ check_plugin_install() {
 # One collect_parallel replaces 7 sequential barriers.
 # ════════════════════════════════════════════════════════════════════
 _g=$(_ns)
+# Join the background wrapper-solo install before launching the
+# parallel wave (which has 3 checks that consume WRAPPER_SOLO_TEMP).
+# By this point setup phases (~78s) have run, and the wrapper install
+# (~70s) should be done — wait is a no-op in the common case.
+if [[ -n "${WRAPPER_SOLO_PID:-}" ]]; then
+  _wp=$(_ns)
+  wait "$WRAPPER_SOLO_PID" 2>/dev/null || true
+  _record_phase "wrapper-solo-join" "$(_elapsed_ms "$_wp" "$(_ns)")"
+fi
+
 log "── all non-e2e checks (mega-parallel wave) ──"
 PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
 
