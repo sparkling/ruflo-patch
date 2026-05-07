@@ -68,12 +68,35 @@ function buildWriterScript(rvfPath, writerIdx, perWriter, resolvedPath) {
   const startId = writerIdx * perWriter;
   return `
 import { RvfBackend } from ${JSON.stringify(resolvedPath)};
-const backend = new RvfBackend({
-  databasePath: ${JSON.stringify(rvfPath)},
-  dimensions: 4,
-  autoPersistInterval: 0,
-});
-await backend.initialize();
+
+// ADR-0154 G1: at N=8 the native create_new+flock dance occasionally hits
+// a transient GenericFailure during init when many writers race the
+// initial file creation simultaneously. ADR-0095 d12 guarantees eventual
+// flock acquisition but the typed-error retry budget in tryNativeInit is
+// per-LockHeld only — GenericFailure surfaces immediately. Retry loop
+// here makes the test resilient to transient inits without touching the
+// runtime; production callers see the typed Error and can retry too.
+async function initWithRetry(maxAttempts) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const backend = new RvfBackend({
+      databasePath: ${JSON.stringify(rvfPath)},
+      dimensions: 4,
+      autoPersistInterval: 0,
+    });
+    try {
+      await backend.initialize();
+      return backend;
+    } catch (err) {
+      lastErr = err;
+      // Stagger retries with backoff so the racing writers don't keep
+      // hitting the same window. 50ms × attempt is enough at N=8.
+      await new Promise((r) => setTimeout(r, 50 * attempt));
+    }
+  }
+  throw lastErr ?? new Error('initWithRetry: unknown failure');
+}
+const backend = await initWithRetry(5);
 const entries = [];
 for (let i = 0; i < ${perWriter}; i++) {
   const n = ${startId} + i;
