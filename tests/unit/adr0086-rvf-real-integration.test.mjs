@@ -650,20 +650,14 @@ describe('ADR-0086 RVF real integration: Group 4 — persistence and reopen', ()
     const got = await reopened.getByKey('persist-ns', 'persist-key');
     assert.ok(got, 'persisted entry must be retrievable after reopen');
     assert.equal(got.content, 'persisted content');
-    // ADR-0154: id round-trip is the long-term contract (entry-blob preserves
-    // it). During the bootstrap window where META_SEG persistence shipped
-    // before id-preservation, a synthetic `${ns}:${key}` id is acceptable.
-    // Once the id-preservation fix lands in @latest, only 'p1' will pass.
-    assert.ok(got.id === 'p1' || got.id === 'persist-ns:persist-key',
-      `id must round-trip (expected 'p1', or transitional 'persist-ns:persist-key'), got ${JSON.stringify(got.id)}`);
-    // ADR-0154 transitional: embedding round-trip via entry-blob lands in
-    // the next publish. Until @latest carries the blob-includes-embedding
-    // fix, embedding is undefined when restored from META_SEG. Acceptance
-    // assertion: embedding either present (post-fix) or undefined (pre-fix
-    // bootstrap window). Drop the OR clause once @latest catches up.
-    if (got.embedding) {
-      assert.equal(got.embedding.length, 3, 'embedding length must round-trip');
-    }
+    // ADR-0154: id round-trips via the META_SEG entry-blob, which preserves
+    // the original MemoryEntry.id assigned at store() time.
+    assert.equal(got.id, 'p1', 'id must round-trip via entry-blob');
+    // ADR-0154: embedding round-trips via the runtime's getVector(id) reader.
+    // The embedding was stored in VEC_SEG by ingestBatch and is restored on
+    // load by loadFromNativeSegments.
+    assert.ok(got.embedding, 'embedding must survive reopen via getVector');
+    assert.equal(got.embedding.length, 3, 'embedding length must round-trip');
 
     await reopened.shutdown();
   });
@@ -745,11 +739,8 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
     await recovered.initialize();
     const got = await recovered.getByKey('crash-ns', 'crash-key');
     assert.ok(got, 'WAL replay must recover the unsaved entry');
-    // ADR-0154 transitional: synthetic id from META_SEG fallback path is
-    // tolerated. The id-preservation fix lands in the next publish; until
-    // then `${ns}:${key}` from the per-field decode is acceptable.
-    assert.ok(got.id === 'c1' || got.id === 'crash-ns:crash-key',
-      `id must round-trip (expected 'c1', or transitional 'crash-ns:crash-key'), got ${JSON.stringify(got.id)}`);
+    // ADR-0154: id round-trips via the entry-blob.
+    assert.equal(got.id, 'c1', 'id must round-trip via entry-blob');
     assert.equal(got.content, 'crash content');
     await recovered.shutdown();
   });
@@ -877,21 +868,11 @@ describe('ADR-0086 RVF real integration: Group 7 — bulk operations', () => {
     const before = await backend.count('bulk');
     assert.equal(before, 10, 'bulk entries must persist between sub-tests');
 
-    // ADR-0154 transitional: @latest's loadFromNativeSegments may produce
-    // synthetic ids (`bulk:bulk-key-i`) until the id-preservation fix
-    // lands in @latest. Look up the actual stored ids by namespace+key
-    // composite first, then bulkDelete by whatever id the load path
-    // produced. Once @latest catches up, the synthetic-id branch becomes
-    // dead code and can be removed.
-    const idsToDelete = [];
-    for (let i = 0; i < 5; i++) {
-      const found = await backend.getByKey('bulk', `bulk-key-${i}`);
-      if (found && found.id) idsToDelete.push(found.id);
-    }
-    assert.equal(idsToDelete.length, 5,
-      `expected 5 entries by namespace+key, found ${idsToDelete.length}`);
-
-    const deleted = await backend.bulkDelete(idsToDelete);
+    // ADR-0154: id round-trips via the entry-blob, so bulkDelete with the
+    // original literal ids works directly.
+    const deleted = await backend.bulkDelete([
+      'bulk-0', 'bulk-1', 'bulk-2', 'bulk-3', 'bulk-4',
+    ]);
     assert.equal(deleted, 5, 'bulkDelete must report 5 removed');
     assert.equal(await backend.count('bulk'), 5);
     await backend.shutdown();

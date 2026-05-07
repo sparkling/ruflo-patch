@@ -261,16 +261,9 @@ describe('ADR-0090 A4 integration: real RvfBackend concurrent writers', () => {
       await verifier.initialize();
       let foundKeys = 0;
       for (let i = 1; i <= N; i++) {
-        // ADR-0154 transitional: native segment load may produce a
-        // synthetic id (`${ns}:${key}`) until the id-preservation fix
-        // lands in @latest. Try get-by-id first (the original contract);
-        // fall back to getByKey via the user-facing namespace+key
-        // composite, which works in both the legacy and the post-fix
-        // load path.
-        let entry = await verifier.get(`it-writer-${i}`);
-        if (!entry) {
-          entry = await verifier.getByKey('rvf-a4-it', `it-writer-${i}`);
-        }
+        // ADR-0154: id round-trips via the entry-blob, so get-by-id works
+        // directly with the literal id the writer used.
+        const entry = await verifier.get(`it-writer-${i}`);
         if (entry) foundKeys++;
       }
       await verifier.shutdown();
