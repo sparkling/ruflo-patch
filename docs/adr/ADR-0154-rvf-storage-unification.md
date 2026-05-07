@@ -1,9 +1,10 @@
 # ADR-0154: RVF storage unification — remove `.meta` sidecar, align with upstream ADR-029
 
-- **Status**: Proposed 2026-05-07
+- **Status**: **Accepted** 2026-05-07 — implementation underway. Aligns the fork with upstream rUv vision (RuVector ADR-029) and resumes the fork's own original ADR-0057 single-file plan that was deferred during the 2026-04-18 emergency workaround.
 - **Date**: 2026-05-07
 - **Deciders**: Henrik Pettersen
-- **Related**: ADR-0095 (RVF inter-process convergence — superseded for the dual-write portion), ADR-0057 fork (original single-file plan), upstream `ruvnet/RuVector` ADR-029 (canonical RVF format), upstream ADR-001 (superseded prior split design)
+- **Decision**: Adopt **Option 1** from §"Real options" — implement single-file unification per upstream ADR-029. Native is the canonical implementation; pure-TS becomes a thin wrapper around native segment APIs; the `.meta` sidecar is deleted entirely. Options 2 (drop native) and 3 (status quo) explicitly rejected — Option 2 sacrifices alignment with the canonical ruvnet design without empirical justification; Option 3 leaves the bug class alive.
+- **Related**: ADR-0095 (RVF inter-process convergence — superseded for the dual-write portion), ADR-0057 fork (original single-file plan, now resumed), upstream `ruvnet/RuVector` ADR-029 (canonical RVF format mandate), upstream ADR-001 (superseded prior split design)
 
 ## Context
 
@@ -99,6 +100,72 @@ Align with upstream ADR-029 and the fork's own original ADR-0057 plan: **single 
 - ADR-0153 (acceptance phase fixes) stays as-is — those are independent.
 - Existing HM-style projects keep working via the legacy fall-through during the migration window. The fall-through gets removed in the cleanup step (5).
 - Pure-TS fallback for `:memory:` mode (in-memory testing) stays. That's separate from the disk persistence path.
+
+## Implementation tracking
+
+Each item below maps to a deliverable. Status updates in-place as work lands.
+
+### Phase 1 — Native crate extension (in `forks/ruvector/crates/rvf/rvf-node/`)
+
+- [ ] **1a.** Add `"bytes"` branch to `parse_metadata_entry` (`rvf-node/src/lib.rs:328-357`). Maps `RvfMetadataEntry { valueType: "bytes", value: ... }` → `MetadataValue::Bytes(Vec<u8>)`. ~5 LoC.
+- [ ] **1b.** Confirm `ingestBatch` handles the new variant end-to-end through the napi boundary (TS → Rust → segment write). Add a Rust unit test.
+- [ ] **1c.** Bump `rvf-node` patch version. Publish to Verdaccio under `@sparkleideas/ruvector-rvf-node` (codemod auto-renames the scope). Update peer-pin in `forks/ruflo/v3/@claude-flow/memory/package.json`.
+
+### Phase 2 — Field-ID registry (in `forks/ruflo/v3/@claude-flow/memory/`)
+
+- [ ] **2a.** New file `src/rvf-segment-fields.ts` reserving stable `field_id: u16` for the MemoryEntry shape:
+  - `1` = `key` (string)
+  - `2` = `namespace` (string)
+  - `3` = `content` (string)
+  - `4` = `tags-json` (string-encoded JSON array)
+  - `5` = `metadata-json` (string-encoded JSON object)
+  - `6` = `accessLevel` (string)
+  - `7` = `ownerId` (string, optional)
+  - `8` = `createdAt` (i64 ms)
+  - `9` = `updatedAt` (i64 ms)
+  - `10` = `version` (i64)
+  - `11` = `references-json` (string-encoded JSON array)
+  - `99` = `entry-blob` (bytes — full serialized MemoryEntry minus embedding, for forward-compat)
+- [ ] **2b.** Add a doc comment block in the new file explaining: field_ids are wire format, never reorder/remove existing IDs, append-only.
+
+### Phase 3 — Persistence rework (in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts`)
+
+- [ ] **3a.** Build `RvfMetadataEntry[]` per vector at all 3 `ingestBatch` call sites (lines 496, 822, 1613). Each entry array = the fixed-fields above for that MemoryEntry.
+- [ ] **3b.** Pass the array as the third argument to `nativeDb.ingestBatch(vectors, [numId], metadata)`.
+- [ ] **3c.** Confirm via `RVF_DEBUG=1` log that segments include `Meta` (0x07) entries with the expected field IDs.
+
+### Phase 4 — Load rework (in `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts`)
+
+- [ ] **4a.** Replace `.meta` JSON parse path in `loadFromDisk` with native segment iteration. Read all `Meta` segments, reconstruct `MemoryEntry` from field_id values, populate `this.entries`.
+- [ ] **4b.** Delete the `RVF\0` magic peek + dual-magic dispatch logic.
+- [ ] **4c.** Delete `_deferredCorruptReason` and the fallback machinery — with one format on disk, there's no "wrong magic" branch left to hit.
+
+### Phase 5 — Code deletion (the cleanup)
+
+- [ ] **5a.** Delete `MAGIC = 'RVF\0'` constant (`rvf-backend.ts:54`).
+- [ ] **5b.** Delete `metadataPath` getter — the entire construct that ADR-0153 simplified is now redundant.
+- [ ] **5c.** Delete `persistToDiskInner` pure-TS path (lines 2673-2702 — the `magicBuf + headerBuf + entryBuffers` Buffer.concat).
+- [ ] **5d.** Delete legacy fall-through (`loadFromDisk` lines 2293-2328) — the SFVR-magic peek branch in pure-TS mode that was added for fork's pure-TS-only era.
+- [ ] **5e.** Delete `_pendingNativeIngest` deferred-ingest path — with metadata in segments, native is authoritative on load. No deferred re-ingest needed.
+
+### Phase 6 — Acceptance + migration
+
+- [ ] **6a.** New acceptance test `tests/acceptance/adr0154-single-file-storage.test.mjs` — write 200 entries, kill process, restart, assert 200 entries readable. No `.meta` file appears on disk.
+- [ ] **6b.** Cross-process concurrency test (the bug class that drove ADR-0095) — N=8 concurrent writers, 100% durability, no orphan-numIds.
+- [ ] **6c.** One-shot migration tool (`scripts/migrate-meta-to-segments.mjs`) for existing HM-style projects: read `.meta` JSON, ingestBatch into a fresh native file with metadata. Document explicitly; not part of runtime.
+- [ ] **6d.** Update ADR-0095 to mark the dual-write portion as Superseded by ADR-0154 (Implemented).
+
+## Implementation order rationale
+
+Phase 1 must land first (native binding can't accept bytes metadata until then). Phase 2 is pure config, can run concurrently with Phase 1. Phases 3-4 require Phase 1 published. Phase 5 cleanup runs only after Phases 3-4 are fully validated — deletion is irreversible and proves there's nothing relying on the dead code. Phase 6 is the integration verification.
+
+Sequencing prevents a half-state where the binding has the new path but the TS doesn't use it (no harm), but blocks ever shipping a TS that requires bytes-metadata before the binding supports it.
+
+## Out of scope (deliberate)
+
+- Performance benchmarking of native HNSW vs pure-TS HnswLite. The unification ADR doesn't depend on it; even if pure-TS were faster, single-file storage via segments is still correct per upstream design.
+- Cold-tier sharding (`data.rvf.cold.0`) per `RuVector/docs/research/rvf/spec/01-segment-model.md`. Useful future work; not blocking unification.
+- Migrating existing test data sets. The acceptance tests use fresh fixtures; legacy data migrates via the one-shot tool in 6c.
 
 ## References
 
