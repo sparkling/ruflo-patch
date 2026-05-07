@@ -262,6 +262,24 @@ if [[ -z "$CLI_BIN" ]]; then
   log_error "CLI binary not found at ${ACCEPT_TEMP}/node_modules/.bin/{ruflo,claude-flow,cli} — harness abort"; exit 1
 fi
 
+# Phase 5 init in BACKGROUND. The original phase5-init-config phase
+# spent ~40s on `cli init --full --force --with-embeddings` (sequential)
+# before its parallel checks could run. Moving the init early lets it
+# overlap with structural / harness-init / e2e-snapshot / phase4-daemon
+# (~31s sequential), so by the time Phase 5 needs it (~80s into the
+# script), the init is done. Net Phase 5 wall: 40s+5s checks → ~5s
+# checks (waited).
+_P5_DIR=$(mktemp -d /tmp/ruflo-p5-XXXXX)
+export _P5_DIR
+_P5_INIT_LOG="${_P5_DIR}/.init-log.txt"
+P5_INIT_PID=""
+(
+  cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+    "$CLI_BIN" init --full --force --with-embeddings \
+      --embedding-model "Xenova/all-mpnet-base-v2" 2>"$_P5_INIT_LOG"
+) &
+P5_INIT_PID=$!
+
 # ── ADR-0068: Unified embedding config (explicit, never rely on defaults) ──
 # These are the canonical values for the all-mpnet-base-v2 model.
 # Tests MUST fail if any of these change — that's the point.
@@ -2803,24 +2821,18 @@ p5_lib="${PROJECT_DIR}/lib/acceptance-init-generated-checks.sh"
 if [[ -f "$p5_lib" ]]; then
   source "$p5_lib"
 
-  # Create a completely fresh directory for Phase 5
-  _P5_DIR=$(mktemp -d /tmp/ruflo-p5-XXXXX)
   PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
 
-  # Run init in the fresh dir using the already-installed CLI (not npx — avoids npm 11 crash
-  # on missing optional WASM deps). Use Xenova/ prefix for model name (ADR-0069 canonical).
-  # Capture stderr to a log file instead of discarding — aids debugging.
-  _P5_INIT_LOG="${_P5_DIR}/.init-log.txt"
+  # Phase 5 init was started in BACKGROUND right after CLI_BIN was set
+  # (~line 264). Wait for it here. By this point setup phases (~80s)
+  # have run, so the init (~40s) is already done — wait is a no-op in
+  # the common case.
+  if [[ -n "${P5_INIT_PID:-}" ]]; then
+    wait "$P5_INIT_PID" 2>/dev/null || log "WARN: Phase 5 init exited non-zero (see ${_P5_INIT_LOG:-?})"
+  fi
   if [[ ! -d "$ACCEPT_TEMP" ]]; then
     log_error "Phase 5: ACCEPT_TEMP torn down (global timeout fired?) — aborting"
     exit 1
-  fi
-  if [[ -x "$CLI_BIN" ]]; then
-    (cd "$_P5_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force --with-embeddings --embedding-model "Xenova/all-mpnet-base-v2" 2>"$_P5_INIT_LOG") || {
-      log "WARN: Phase 5 init exited non-zero (see $_P5_INIT_LOG)"
-    }
-  else
-    log "WARN: CLI_BIN not set — Phase 5 init skipped"
   fi
 
   # Export for check functions (lib uses P5_DIR without underscore)
