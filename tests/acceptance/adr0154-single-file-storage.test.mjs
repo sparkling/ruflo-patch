@@ -59,6 +59,7 @@ import {
   existsSync,
   readdirSync,
   copyFileSync,
+  readFileSync,
   statSync,
 } from 'node:fs';
 import { join } from 'node:path';
@@ -210,16 +211,17 @@ describe('ADR-0154 Phase 0: single-file storage end-state', () => {
     appendFileSync(LOG_FILE, `=== END ${new Date().toISOString()} ===\n`);
   });
 
-  it(`after ${SMALL_BATCH} stores, .swarm/memory.rvf.meta is either absent OR consistent with .rvf`,
+  it(`after ${SMALL_BATCH} stores, .swarm/memory.rvf is SFVR native and .swarm/memory.rvf.meta (if present) is RVF\\0 legacy`,
      { timeout: 600_000 }, (t) => {
     if (SKIP_REASON) { t.skip(SKIP_REASON); return; }
 
-    appendFileSync(LOG_FILE, `\n--- Test 1: ${SMALL_BATCH} stores → .meta consistency check ---\n`);
+    appendFileSync(LOG_FILE, `\n--- Test 1: ${SMALL_BATCH} stores → file format consistency check ---\n`);
     for (let i = 0; i < SMALL_BATCH; i++) {
       memoryStore(CLI_BIN, TEST_PROJECT, `t1-key-${i}`, `t1-value-${i}-${'x'.repeat(64)}`);
     }
 
     const meta = metaFilePath(TEST_PROJECT);
+    const rvfPath = meta.replace(/\.meta$/, '');
     const swarmInventory = listSwarmFiles(TEST_PROJECT);
     appendFileSync(
       LOG_FILE,
@@ -227,29 +229,33 @@ describe('ADR-0154 Phase 0: single-file storage end-state', () => {
       + swarmInventory.map((f) => `  ${f.name} (${f.size}B)`).join('\n') + '\n',
     );
 
-    // ADR-0154 G2 + bootstrap window (2026-05-07): Phase 5c conditional
-    // skip is in HEAD on forks/ruflo (commit 1abf3f46f) but won't reach
-    // @latest until the next stable green publish. Until then, the
-    // running cli writes .meta unconditionally on shutdown. The strict
-    // "no .meta" assertion is gated on @latest carrying the new logic.
-    //
-    // Bootstrap window check:
-    //   • If .meta is absent → end-state achieved (post-fix); good.
-    //   • If .meta is present → consistent with the older publish; the
-    //     HM-class bug class is still closed by Phase 4 loader preference
-    //     (Test 4 verifies). Re-tighten to strict !existsSync after
-    //     @latest stabilizes.
+    // ADR-0154 delivered contract (G4 reconciliation 2026-05-07T18):
+    // Phase 5c conditional suppress was reverted (broke session_save/
+    // restore). HM-class bug closed by loader-preference, not by
+    // removing .meta. Test the actual contract:
+    //   • .rvf MUST exist with SFVR magic (native canonical writer)
+    //   • .meta MAY exist; when present, MUST be RVF\0 (legacy sidecar
+    //     format — never SFVR, that's reserved for .rvf)
+    //   • Test 4 verifies the load-order closure (stale .meta + live
+    //     .rvf → entries from .rvf win).
+    assert.ok(existsSync(rvfPath), `.rvf canonical file must exist at ${rvfPath}`);
+    const rvfBuf = readFileSync(rvfPath);
+    assert.ok(rvfBuf.length >= 8, '.rvf file must be at least 8 bytes');
+    const rvfIsSfvr = rvfBuf[0] === 0x53 && rvfBuf[1] === 0x46 && rvfBuf[2] === 0x56 && rvfBuf[3] === 0x52;
+    assert.ok(rvfIsSfvr,
+      `.rvf must have SFVR magic (native canonical writer), got ${rvfBuf.subarray(0, 4).toString('hex')}`);
+
     if (existsSync(meta)) {
+      const metaBuf = readFileSync(meta);
+      assert.ok(metaBuf.length >= 8, '.meta file (if present) must be at least 8 bytes');
+      const metaIsRvfLegacy = metaBuf[0] === 0x52 && metaBuf[1] === 0x56 && metaBuf[2] === 0x46 && metaBuf[3] === 0x00;
+      assert.ok(metaIsRvfLegacy,
+        `.meta sidecar must have RVF\\0 magic (legacy format — SFVR is reserved for .rvf), got ${metaBuf.subarray(0, 4).toString('hex')}`);
       const metaSize = swarmInventory.find((f) => f.name === 'memory.rvf.meta')?.size ?? 0;
-      appendFileSync(
-        LOG_FILE,
-        `[BOOTSTRAP] .meta present (${metaSize}B) after ${SMALL_BATCH} stores. Expected ` +
-        `under @latest pre-1abf3f46f; HM-class bug closure still verified by Test 4.\n`,
-      );
+      appendFileSync(LOG_FILE, `[OK] .meta present (${metaSize}B, RVF\\0 legacy) + .rvf present (SFVR native). HM-class closure: Test 4.\n`);
     } else {
-      appendFileSync(LOG_FILE, `[OK] .meta absent — single-file end-state achieved.\n`);
+      appendFileSync(LOG_FILE, `[OK] .meta absent — single-file state. .rvf SFVR present.\n`);
     }
-    assert.ok(true, 'bootstrap window — strict "no .meta" assertion gated on next publish');
   });
 
   it(`after ${FULL_BATCH} stores + simulated MCP restart, all ${FULL_BATCH} entries readable`,

@@ -585,7 +585,7 @@ describe('ADR-0086 RVF real integration: Group 4 — persistence and reopen', ()
     if (dir) tryRm(dir);
   });
 
-  it('store + shutdown writes a durable on-disk artifact (RVF\\0 legacy or SFVR per ADR-0154)', { skip }, async () => {
+  it('store + shutdown writes a durable on-disk artifact (RVF\\0 legacy `.meta` per ADR-0154)', { skip }, async () => {
     const backend = new RvfBackend({
       databasePath: dbPath,
       dimensions: 3,
@@ -604,31 +604,27 @@ describe('ADR-0086 RVF real integration: Group 4 — persistence and reopen', ()
     );
     await backend.shutdown();
 
-    // ADR-0154: durable artifact may be either the legacy `.rvf.meta` sidecar
-    // (pure-TS / pre-Phase-5c) or the unified `.rvf` (native, post-Phase-5c).
-    // Either format is acceptable; the contract is "data is durable on disk".
-    // Magic byte assertions are now expanded to accept both:
-    //   RVF\0 (0x52,0x56,0x46,0x00) — legacy pure-TS format
-    //   SFVR  (0x53,0x46,0x56,0x52) — native segment format
+    // ADR-0154 delivered contract (G4 reconciliation 2026-05-07T18): `.meta`
+    // is unconditionally written with RVF\0 magic. Phase 5c conditional
+    // suppress was reverted because it broke session_save/restore. The
+    // canonical .rvf (SFVR native) is the source of truth at load time;
+    // `.meta` exists alongside as a legacy sidecar but is silently
+    // ignored by the loader when META_SEGs are present in .rvf. HM-class
+    // bug class is closed by Phase 4 loader-preference, not file-removal.
     const metaPath = metadataFilePath(dbPath);
     assert.ok(existsSync(metaPath), `metadata file must exist at ${metaPath}`);
 
     const buf = readFileSync(metaPath);
     assert.ok(buf.length >= 8, 'metadata file must be at least 8 bytes');
 
-    // ADR-0154 G2 (2026-05-07): native is the canonical writer. The strict
-    // SFVR-only assertion is gated on @latest carrying the conditional
-    // Phase 5c skip (commit 1abf3f46f in forks/ruflo): once that publishes,
-    // .meta is suppressed entirely when all entries have embeddings, so
-    // metadataFilePath() falls through to the .rvf main file (always SFVR
-    // for native-active backends). Until @latest catches up, the .meta
-    // sidecar still exists with legacy RVF\0 magic (older publish wrote
-    // unconditionally). Accept either; re-tighten in the cycle after the
-    // next stable green run.
-    const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
+    // The .meta sidecar is the legacy pure-TS format — magic RVF\0
+    // (0x52,0x56,0x46,0x00). SFVR appears in the .rvf main file, never in
+    // .meta. metadataFilePath() always returns the .meta path when
+    // present, which is post-revert always. So this assertion is
+    // strictly RVF\0 — any other magic indicates a regression.
     const isRvfLegacy = buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x00;
-    assert.ok(isSfvrNative || isRvfLegacy,
-      `magic bytes must be SFVR (ADR-0154 native) or RVF\\0 (legacy fallback), got ${buf.subarray(0, 4).toString('hex')}`);
+    assert.ok(isRvfLegacy,
+      `.meta sidecar must have RVF\\0 magic (the only magic ever written to .meta under the delivered ADR-0154 contract), got ${buf.subarray(0, 4).toString('hex')}`);
   });
 
   it('a fresh RvfBackend instance loads the persisted entry', { skip }, async () => {
@@ -947,20 +943,20 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
     await backend.shutdown();
   });
 
-  it('after shutdown(), the metadata file is parseable (SFVR native or RVF\\0 legacy)', { skip }, async () => {
+  it('after shutdown(), the .meta sidecar is parseable as RVF\\0 legacy', { skip }, async () => {
     const metaPath = metadataFilePath(dbPath);
     assert.ok(existsSync(metaPath), 'metadata file must exist after shutdown');
     const buf = readFileSync(metaPath);
 
-    // ADR-0154 G2 (2026-05-07): same gating as Group 4 test 1 above. The
-    // strict SFVR-only assertion is gated on @latest carrying the
-    // conditional Phase 5c skip (forks/ruflo 1abf3f46f). Tighten in the
-    // cycle after the next stable green publish.
+    // ADR-0154 delivered contract (G4 reconciliation 2026-05-07T18): the
+    // .meta sidecar is unconditionally written with RVF\0 magic on every
+    // persistToDiskInner. SFVR is reserved for the .rvf main file (native
+    // path). HM-class bug class is closed by loader-preference, not by
+    // suppressing this sidecar.
     assert.ok(buf.length >= 8, 'file must contain at least 8 bytes');
-    const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
     const isRvfLegacy = buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x00;
-    assert.ok(isSfvrNative || isRvfLegacy,
-      `magic bytes must be SFVR (ADR-0154 native) or RVF\\0 (legacy fallback), got ${buf.subarray(0, 4).toString('hex')}`);
+    assert.ok(isRvfLegacy,
+      `.meta sidecar must have RVF\\0 magic (the only magic ever written to .meta under the delivered ADR-0154 contract), got ${buf.subarray(0, 4).toString('hex')}`);
   });
 
   it('lock file is not left behind after shutdown', { skip }, () => {
