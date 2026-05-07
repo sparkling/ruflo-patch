@@ -178,17 +178,17 @@ check_adr0094_p4_browser_navigation() {
   reqs+=$'{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"browser_close","arguments":{}}}\n'
 
   # Single mcp start invocation. Stdio server hangs after responses
-  # (waits for more input), so _timeout SIGKILLs it. 50s covers cold
-  # Playwright launch + 9 navigation tool dispatches (each browser op
-  # is ~1-3s real wall when actually navigating). Was 45s; observed
-  # 45.4s wall on a re-run under bg phase5 init load — right at the
-  # boundary. 50s gives ~5s headroom against the boundary skip-
-  # accepted flake. Interaction check (11 tools, mostly stateless
-  # against blank page) gets away with 25s because each tool errors
-  # fast on missing elements.
+  # (waits for more input), so _timeout SIGKILLs it. 75s gives hard
+  # margin: was 50s, but observed 1/3 runs producing skip_accepted
+  # because all 9 tools didn't respond within 50s under bg phase5 init
+  # CPU contention. The actual happy-path is ~45s; 75s gives 30s
+  # headroom for variance. Cost: +25s on the long-pole wall in the
+  # common case (server hangs ~30s after EOF). Worth it for 100%
+  # stability per "no skips" goal. Interaction check (11 tools, mostly
+  # stateless against blank page) gets away with 25s.
   (
     cd "$E2E_DIR" || exit 99
-    printf '%s' "$reqs" | _timeout 50 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
+    printf '%s' "$reqs" | _timeout 75 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
   ) > "$resp_file" 2>/dev/null || true
 
   # Count tools that responded (id 1..9). A response with the matching
