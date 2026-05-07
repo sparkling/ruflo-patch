@@ -29,9 +29,14 @@ if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
   fi
   RUFLO_MAX_PARALLEL=$(( _ncpu / 2 ))
   (( RUFLO_MAX_PARALLEL < 4 )) && RUFLO_MAX_PARALLEL=4
-  # Empirical ceiling of 6: 9 (ncpu/2 on 18-core M5 Max) spiked load ~13.5
-  # during the P5 native-compile phase. 6 keeps the runqueue around ~8-9.
-  (( RUFLO_MAX_PARALLEL > 6 )) && RUFLO_MAX_PARALLEL=6
+  # Ceiling raised back to ncpu/2 (was capped at 6) on 2026-05-07 after
+  # the wrapper-proxy regression was fixed (lib/acceptance-diagnostic-checks.sh
+  # now uses pre-installed binary instead of per-call npx). The original 9
+  # → 6 cap was reactive to wrapper-proxy holding a slot for 1340s + npm
+  # cache contention from its retries — neither condition exists post-fix.
+  # April baseline (ncpu/2 cap, no wrapper-proxy regression): 561 checks
+  # ran in 70s wall (122x effective parallelism). With wrapper-proxy
+  # bounded and cap restored, target is ~120-180s for the current 712.
   unset _ncpu
   export RUFLO_MAX_PARALLEL
 fi
