@@ -178,14 +178,17 @@ check_adr0094_p4_browser_navigation() {
   reqs+=$'{"jsonrpc":"2.0","id":9,"method":"tools/call","params":{"name":"browser_close","arguments":{}}}\n'
 
   # Single mcp start invocation. Stdio server hangs after responses
-  # (waits for more input), so _timeout SIGKILLs it. 45s covers cold
+  # (waits for more input), so _timeout SIGKILLs it. 50s covers cold
   # Playwright launch + 9 navigation tool dispatches (each browser op
-  # is ~1-3s real wall when actually navigating). Interaction check
-  # (11 tools, mostly stateless against blank page) gets away with 25s
-  # because each tool errors fast on missing elements.
+  # is ~1-3s real wall when actually navigating). Was 45s; observed
+  # 45.4s wall on a re-run under bg phase5 init load — right at the
+  # boundary. 50s gives ~5s headroom against the boundary skip-
+  # accepted flake. Interaction check (11 tools, mostly stateless
+  # against blank page) gets away with 25s because each tool errors
+  # fast on missing elements.
   (
     cd "$E2E_DIR" || exit 99
-    printf '%s' "$reqs" | _timeout 45 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
+    printf '%s' "$reqs" | _timeout 50 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
   ) > "$resp_file" 2>/dev/null || true
 
   # Count tools that responded (id 1..9). A response with the matching
