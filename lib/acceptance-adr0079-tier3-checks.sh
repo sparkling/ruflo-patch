@@ -219,9 +219,14 @@ check_t3_2_rvf_concurrent_writes() {
   void_main_rvf_path() { :; }
   void_main_rvf_path "$main_rvf_path"
 
-  # Parse RVF header to read entryCount. The format is:
-  #   magic (4) + headerLen u32le (4) + JSON header of that length
-  # The JSON header has `entryCount` as an integer field.
+  # Parse RVF header to read entryCount. Two formats are valid:
+  #   - Legacy pure-TS RVF\0: magic (4) + headerLen u32le (4) + JSON header
+  #   - Native SFVR (ADR-0154 + ADR-0095 d12): magic (4) is the segment magic;
+  #     the entryCount is not available via direct byte parse and the CLI
+  #     list (below) is the authoritative cross-check.
+  # When the file is native (SFVR), entry_count is reported as "NATIVE" —
+  # the assertion below treats that as "skip the header cross-check, defer
+  # to CLI list".
   local entry_count
   entry_count=$(node -e '
     const fs = require("fs");
@@ -230,6 +235,7 @@ check_t3_2_rvf_concurrent_writes() {
       const raw = fs.readFileSync(path);
       if (raw.length < 8) { console.log("ERR:file-too-small"); process.exit(0); }
       const magic = String.fromCharCode(raw[0], raw[1], raw[2], raw[3]);
+      if (magic === "SFVR") { console.log("NATIVE"); process.exit(0); }
       if (magic !== "RVF\0") { console.log("ERR:bad-magic:" + JSON.stringify(magic)); process.exit(0); }
       const headerLen = raw.readUInt32LE(4);
       if (8 + headerLen > raw.length) { console.log("ERR:truncated-header"); process.exit(0); }
@@ -267,9 +273,17 @@ check_t3_2_rvf_concurrent_writes() {
   #  .rvf.lock after completion") is removed — the new flock-based
   #  WriterLock keeps the file across process exit by design. See
   #  comment on `dangling_lock` above.
-  if [[ "$ns_hits" -eq "$N" && "$entry_count" -ge "$N" ]]; then
+  # ADR-0154: when entry_count is "NATIVE", the .rvf is in native SFVR
+  # format (ingestBatch+META_SEG persistence). The header byte-parse
+  # cross-check no longer applies; the CLI namespace list is authoritative.
+  local header_ok="false"
+  if [[ "$entry_count" == "NATIVE" ]] || [[ "$entry_count" =~ ^[0-9]+$ && "$entry_count" -ge "$N" ]]; then
+    header_ok="true"
+  fi
+
+  if [[ "$ns_hits" -eq "$N" && "$header_ok" == "true" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="T3-2: ${N}/${N} RVF concurrent writers persisted (header entryCount=${entry_count}, cli_ok=${cli_ok})"
+    _CHECK_OUTPUT="T3-2: ${N}/${N} RVF concurrent writers persisted (header=${entry_count}, cli_ok=${cli_ok})"
   elif [[ "$ns_hits" -eq 0 ]]; then
     _CHECK_OUTPUT="T3-2: zero entries persisted after ${N} concurrent stores (entryCount=${entry_count}, cli_ok=${cli_ok}, cli_err=${cli_err}) — lock acquisition broken"
   else
