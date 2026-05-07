@@ -15,14 +15,24 @@ import { readFileSync, existsSync } from 'node:fs';
 
 const MEMORY_SRC      = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src';
 const RVF_PATH        = `${MEMORY_SRC}/rvf-backend.ts`;
+const RVF_TYPES_PATH  = `${MEMORY_SRC}/rvf-backend-types.ts`;
+const RVF_ERRORS_PATH = `${MEMORY_SRC}/rvf-backend-errors.ts`;
 const FACTORY_PATH    = `${MEMORY_SRC}/storage-factory.ts`;
 const RESOLVE_PATH    = `${MEMORY_SRC}/resolve-config.ts`;
 
-assert.ok(existsSync(RVF_PATH),     `rvf-backend.ts not found at ${RVF_PATH}`);
-assert.ok(existsSync(FACTORY_PATH), `storage-factory.ts not found at ${FACTORY_PATH}`);
-assert.ok(existsSync(RESOLVE_PATH), `resolve-config.ts not found at ${RESOLVE_PATH}`);
+assert.ok(existsSync(RVF_PATH),         `rvf-backend.ts not found at ${RVF_PATH}`);
+assert.ok(existsSync(RVF_TYPES_PATH),   `rvf-backend-types.ts not found at ${RVF_TYPES_PATH}`);
+assert.ok(existsSync(RVF_ERRORS_PATH),  `rvf-backend-errors.ts not found at ${RVF_ERRORS_PATH}`);
+assert.ok(existsSync(FACTORY_PATH),     `storage-factory.ts not found at ${FACTORY_PATH}`);
+assert.ok(existsSync(RESOLVE_PATH),     `resolve-config.ts not found at ${RESOLVE_PATH}`);
 
-const rvfSrc     = readFileSync(RVF_PATH,     'utf-8');
+// ADR-0154 G7: rvf-backend module surface split across three files.
+// Concatenate so structural checks (interface declarations, class-method
+// bodies) find content wherever it lives in the module surface.
+const rvfSrc =
+  readFileSync(RVF_PATH, 'utf-8') + '\n' +
+  readFileSync(RVF_TYPES_PATH, 'utf-8') + '\n' +
+  readFileSync(RVF_ERRORS_PATH, 'utf-8');
 const factorySrc = readFileSync(FACTORY_PATH, 'utf-8');
 const resolveSrc = readFileSync(RESOLVE_PATH, 'utf-8');
 

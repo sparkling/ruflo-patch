@@ -25,10 +25,22 @@ import { readFileSync } from 'node:fs';
 // ============================================================================
 
 const MEM = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src';
-const RVF_PATH  = `${MEM}/rvf-backend.ts`;
-const HNSW_PATH = `${MEM}/hnsw-lite.ts`;
+const RVF_PATH        = `${MEM}/rvf-backend.ts`;
+const RVF_TYPES_PATH  = `${MEM}/rvf-backend-types.ts`;
+const RVF_ERRORS_PATH = `${MEM}/rvf-backend-errors.ts`;
+const HNSW_PATH       = `${MEM}/hnsw-lite.ts`;
 
-const rvfSrc  = readFileSync(RVF_PATH, 'utf-8');
+// ADR-0154 G7: rvf-backend module surface is split across three files.
+// `rvfSrc` is the concatenation, used for module-level structural checks
+// (constants, interface declarations, validatePath body, etc). The
+// extractMethod() regex in this file requires class-method indentation
+// (^  ) so it only matches RvfBackend class methods (in rvf-backend.ts) —
+// concatenating the type/error sources is safe; their top-level
+// declarations don't have the 2-space class indent.
+const rvfSrc =
+  readFileSync(RVF_PATH, 'utf-8') + '\n' +
+  readFileSync(RVF_TYPES_PATH, 'utf-8') + '\n' +
+  readFileSync(RVF_ERRORS_PATH, 'utf-8');
 const hnswSrc = readFileSync(HNSW_PATH, 'utf-8');
 
 // ============================================================================
@@ -543,9 +555,12 @@ describe('ADR-0086 RVF integration: Group 4 — namespace isolation', () => {
 
 describe('ADR-0086 RVF integration: Group 5 — file format constants', () => {
   it('MAGIC constant is RVF followed by null byte', () => {
-    // Source has: const MAGIC = 'RVF\0';
+    // Source has: const MAGIC = 'RVF\0';  (legacy single-file layout)
+    //   or:       export const MAGIC = 'RVF\0';  (post-G7 split)
     // readFileSync gives us the raw escape, so we check for the literal chars
-    const magicLine = rvfSrc.split('\n').find(l => l.startsWith('const MAGIC'));
+    const magicLine = rvfSrc.split('\n').find(
+      (l) => /^(?:export\s+)?const MAGIC\b/.test(l),
+    );
     assert.ok(magicLine, 'MAGIC constant must be defined');
     assert.ok(magicLine.includes('RVF'),
       'MAGIC must contain RVF');
@@ -574,19 +589,29 @@ describe('ADR-0086 RVF integration: Group 5 — file format constants', () => {
   });
 
   it('validatePath rejects null bytes in paths', () => {
-    const validateBody = rvfSrc.slice(
-      rvfSrc.indexOf('function validatePath'),
-      rvfSrc.indexOf('\n\nconst DEFAULT_WAL')
-    );
+    // ADR-0154 G7: validatePath moved to rvf-backend-types.ts where the
+    // DEFAULT_WAL_COMPACTION_THRESHOLD declaration uses `export const`
+    // (re-import into rvf-backend.ts requires the export). The
+    // body-end marker matches both `\n\nconst DEFAULT_WAL` (legacy
+    // single-file layout) and `\n\nexport const DEFAULT_WAL` (post-G7
+    // split) so the test is layout-tolerant.
+    const validateMatch = rvfSrc.match(/(function validatePath[\s\S]*?)\n\n(?:export\s+)?const DEFAULT_WAL/);
+    assert.ok(validateMatch, 'validatePath body must be locatable in the rvf-backend module surface');
+    const validateBody = validateMatch[1];
     assert.ok(validateBody.includes('null bytes'),
       'validatePath must throw on null bytes');
   });
 
   it('validatePath allows :memory: as a special path', () => {
-    const validateBody = rvfSrc.slice(
-      rvfSrc.indexOf('function validatePath'),
-      rvfSrc.indexOf('\n\nconst DEFAULT_WAL')
-    );
+    // ADR-0154 G7: validatePath moved to rvf-backend-types.ts where the
+    // DEFAULT_WAL_COMPACTION_THRESHOLD declaration uses `export const`
+    // (re-import into rvf-backend.ts requires the export). The
+    // body-end marker matches both `\n\nconst DEFAULT_WAL` (legacy
+    // single-file layout) and `\n\nexport const DEFAULT_WAL` (post-G7
+    // split) so the test is layout-tolerant.
+    const validateMatch = rvfSrc.match(/(function validatePath[\s\S]*?)\n\n(?:export\s+)?const DEFAULT_WAL/);
+    assert.ok(validateMatch, 'validatePath body must be locatable in the rvf-backend module surface');
+    const validateBody = validateMatch[1];
     assert.ok(validateBody.includes(':memory:'),
       'validatePath must accept :memory: as valid');
   });

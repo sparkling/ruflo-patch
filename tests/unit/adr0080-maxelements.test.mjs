@@ -20,7 +20,13 @@ const FORK_CLI_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
 const resolveConfigSrc = readFileSync(resolve(FORK_MEMORY_SRC, 'resolve-config.ts'), 'utf-8');
 const configTemplateSrc = readFileSync(resolve(FORK_CLI_SRC, 'init/config-template.ts'), 'utf-8');
 const databaseProvSrc = readFileSync(resolve(FORK_MEMORY_SRC, 'database-provider.ts'), 'utf-8');
-const rvfBackendSrc = readFileSync(resolve(FORK_MEMORY_SRC, 'rvf-backend.ts'), 'utf-8');
+// ADR-0154 G7: rvf-backend module surface is split across rvf-backend.ts +
+// rvf-backend-types.ts + rvf-backend-errors.ts. Concatenate so structural
+// greps for constants find them wherever they live in the module surface.
+const rvfBackendSrc =
+  readFileSync(resolve(FORK_MEMORY_SRC, 'rvf-backend.ts'), 'utf-8') + '\n' +
+  readFileSync(resolve(FORK_MEMORY_SRC, 'rvf-backend-types.ts'), 'utf-8') + '\n' +
+  readFileSync(resolve(FORK_MEMORY_SRC, 'rvf-backend-errors.ts'), 'utf-8');
 
 // ============================================================================
 // 1. resolve-config canonical default is 100_000
