@@ -19,34 +19,21 @@ check_adr0143_init_mcp_config() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
 
-  # init_tmp is the working dir where `ruflo init` writes .mcp.json + state.
-  # Must be per-check (init mutates cwd state). For the wrapper BINARY,
-  # symlink node_modules from the shared wrapper-solo install built at
-  # harness boot — eliminates the per-check 70s npm install while
-  # preserving per-check init isolation. Falls back to fresh install if
-  # WRAPPER_SOLO_TEMP isn't set.
   local init_tmp
   init_tmp=$(mktemp -d /tmp/ruflo-adr0143-init-mcp-XXXXX)
   # shellcheck disable=SC2064
   trap "rm -rf '$init_tmp'" RETURN
 
-  if [[ -n "${WRAPPER_SOLO_TEMP:-}" && -d "${WRAPPER_SOLO_TEMP}/node_modules/@sparkleideas/ruflo" ]]; then
-    # Reuse shared wrapper install via symlink — same pattern as
-    # _e2e_isolate uses for the main install (lib/acceptance-e2e-checks.sh:24).
-    ln -s "${WRAPPER_SOLO_TEMP}/node_modules" "${init_tmp}/node_modules"
-    cp "${WRAPPER_SOLO_TEMP}/package.json" "${init_tmp}/package.json" 2>/dev/null
-    echo "registry=${REGISTRY}" > "${init_tmp}/.npmrc"
-  else
-    (cd "$init_tmp" \
-      && echo '{"name":"adr0143-init-test","version":"1.0.0","private":true}' > package.json \
-      && echo "registry=${REGISTRY}" > .npmrc \
-      && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
-         --cache "$init_tmp/.npm-cache" \
-         --no-audit --no-fund --prefer-offline 2>&1 > "$init_tmp/install.log") || {
-      _CHECK_OUTPUT="ADR-0143-init: npm install failed (see $init_tmp/install.log)"
-      end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
-    }
-  fi
+  # Install wrapper into tmp dir
+  (cd "$init_tmp" \
+    && echo '{"name":"adr0143-init-test","version":"1.0.0","private":true}' > package.json \
+    && echo "registry=${REGISTRY}" > .npmrc \
+    && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+       --cache "$init_tmp/.npm-cache" \
+       --no-audit --no-fund --prefer-offline 2>&1 > "$init_tmp/install.log") || {
+    _CHECK_OUTPUT="ADR-0143-init: npm install failed (see $init_tmp/install.log)"
+    end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
+  }
 
   local wrapper_bin="${init_tmp}/node_modules/.bin/ruflo"
   if [[ ! -x "$wrapper_bin" ]]; then
