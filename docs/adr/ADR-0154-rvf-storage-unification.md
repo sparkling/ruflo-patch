@@ -1,6 +1,6 @@
 # ADR-0154: RVF storage unification — remove `.meta` sidecar, align with upstream ADR-029
 
-- **Status**: **Accepted** 2026-05-07 — implementation underway. Aligns the fork with upstream rUv vision (RuVector ADR-029) and resumes the fork's own original ADR-0057 single-file plan that was deferred during the 2026-04-18 emergency workaround.
+- **Status**: **Accepted with Amendment 2026-05-07** — implementation underway after swarm validation revised Phase 1 scope from "~5 LoC" to ~250–400 LoC of runtime work (META_SEG persistence is dead-code scaffolding, not a wired primitive — see Amendment section). Aligns the fork with upstream rUv vision (RuVector ADR-029) and resumes the fork's own original ADR-0057 single-file plan that was deferred during the 2026-04-18 emergency workaround.
 - **Date**: 2026-05-07
 - **Deciders**: Henrik Pettersen
 - **Decision**: Adopt **Option 1** from §"Real options" — implement single-file unification per upstream ADR-029. Native is the canonical implementation; pure-TS becomes a thin wrapper around native segment APIs; the `.meta` sidecar is deleted entirely. Options 2 (drop native) and 3 (status quo) explicitly rejected — Option 2 sacrifices alignment with the canonical ruvnet design without empirical justification; Option 3 leaves the bug class alive.
@@ -274,3 +274,96 @@ Sequencing prevents a half-state where the binding has the new path but the TS d
 - `rvf-node/src/lib.rs:328-357` — `parse_metadata_entry` (the gap)
 - `rvf-node/src/lib.rs:476-480` + `index.d.ts:178-180` — `ingestBatch(vectors, ids, metadata)` already accepts the third arg
 - `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:54, 496, 707-727, 745, 822, 1613, 2293-2328, 2673-2740` — current dual-write code paths to be removed
+
+---
+
+## Amendment 2026-05-07 — Swarm validation findings
+
+A 4-agent swarm (upstream-intent analyst, runtime source analyst, git history archaeologist, devil's advocate) was convened on the same day the ADR was accepted to validate it before implementation began. The swarm identified seven defects in the plan that, taken together, would have produced (a) silent data loss in the HM-class scenario the ADR cites as motivating evidence, (b) a memory backend that breaks on Alpine/musl deployments, and (c) acceptance criteria that are structurally unsatisfiable by the listed phases. The original Decision is preserved above for provenance; the corrections below are additive.
+
+### Findings
+
+**F1 — "Single-file mandate" is overstated.** The fork ADR reads upstream's tagline (`crates/rvf/README.md:6` *"One file. Store vectors. Ship models. Boot services. Prove everything."*) as a normative requirement. Upstream ADR-029 itself documents optional multi-file modes (`.rvf.cold.N`, `.rvf.idx.N` at `ADR-029:413-414`). The norm is "one file by default"; multi-file shards are a sanctioned future option. The "Option 2 (drop native)" rejection should rest on technical grounds (perf, alignment with the canonical encoder/decoder), not on a mandate that doesn't exist.
+
+**F2 — META_SEG persistence is dead-code scaffolding, not a wired primitive.** The ADR's claim that "the native binding already supports metadata storage" is structurally false. Evidence:
+- `RvfStore::ingest_batch` (`store.rs:253-360`) accepts metadata at line 257 and inserts it into in-memory `MetadataStore` at line 336. **`write_meta_seg` is never called.** Nothing reaches disk.
+- `RvfStore::boot()` (`store.rs:1785-1845`) iterates only `SegmentType::Vec` (line 1812). META_SEGs in the segment directory are silently ignored. After restart, `self.metadata` is empty.
+- `MetadataStore::insert` (`filter.rs:81-87`) routes through `metadata_value_to_filter` (`filter.rs:165-172`) which maps `MetadataValue::Bytes(_) → FilterValue::String(String::new())` — silent data loss for binary payloads.
+- No public `RvfStore::get_metadata(vid)` reader exists. `RvfDatabase` (napi) has no method that returns per-vector metadata to JS.
+- `write_meta_seg` (`write_path.rs:101-111`) is `#[allow(dead_code)]`. Git archaeology confirms zero callers since its introduction in commit `3bb6c438` (2026-02-14, the original Feb-14 mega-drop). The `#[allow(dead_code)]` annotation is the original author admitting at land-time that the persistence path was not wired. Zero TODOs/FIXMEs document the gap; zero commits in the last 60 days touch metadata persistence semantics. Safe to assume no upstream collision risk for the fork to wire it.
+
+**F3 — Upstream META_SEG payload format IS specified — fork was about to re-invent it.** Upstream `docs/research/rvf/spec/08-filtered-search.md:22-148` defines the on-disk META_SEG payload in detail: 64-byte Meta Header (schema_id u32, vector_id_range_start/end u64, field_count u16, encoding u8), per-field directory (field_id u16, field_type u8, flags u8, field_offset u32), column-oriented per-vector data with 64-byte alignment and a documented field-type enum (0x00 string dictionary-encoded, 0x01 u32, 0x02 u64, 0x03 f32, 0x04 enum packed, 0x05 bool packed). The original Phase 2 ("invent a TS-side `field_id: u16` registry") would have produced a fork-specific encoding incompatible with upstream. The corrected Phase 2 implements upstream's documented format in `rvf-runtime`.
+
+**F4 — Acceptance criteria #5 and #6 are structurally unsatisfiable by the listed phases.** "Write 200 entries, kill process, restart → 200 entries readable" and "cross-process concurrent write → 100% durability" both require runtime work the original ADR did not list: a META_SEG encoder in `ingest_batch`, a META_SEG replay in `boot()`, a non-lossy `MetadataStore` (or parallel store keyed by `(vid, field_id)`), a public reader on `RvfStore`, and napi exposure of that reader. Realistic native-side scope: ~250–400 LoC, not the original "~5 LoC" estimate.
+
+**F5 — Phase 5c risks platform breakage.** `forks/ruvector/crates/rvf/rvf-node/npm/` ships 5 prebuild targets: `darwin-{arm64,x64}`, `linux-{arm64,x64}-gnu`, `win32-x64-msvc`. **Missing: `linux-x64-musl`** (Alpine — the canonical Docker base for `node:alpine` images), `linux-arm-gnueabihf`, `win32-arm64`. Phase 5c (delete pure-TS disk persist) leaves no fallback when `tryNativeInit` returns false; the memory backend silently breaks on Alpine. Risk R3's claim "ships native binaries for all major platforms" is false as written.
+
+**F6 — Migration tool 6c is silently lossy.** The ADR's pseudo-code for `migrate-meta-to-segments.mjs` reads `.meta` *or* falls through to `.rvf`. In the HM scenario the ADR cites as motivating evidence — `.rvf` 863 entries (live) and `.meta` 329 entries (4-day-old stale) — that "or" rule picks the stale 329 and discards 534 entries. Per `feedback-data-loss-zero-tolerance`, that is not acceptable. The tool MUST detect divergent populations (different entry counts, or different last-write timestamps) and refuse with diagnostic output rather than guessing.
+
+**F7 — ADR-0095 supersession is too coarse; phase ordering is unsafe.** ADR-0095 reached 40/40 PASS through 14 amendment cycles, only one of which (d5) is the dual-write sidecar that 0154 supersedes. The remaining invariants — d11 (fsync-before-rename), d12 (`flock(LOCK_EX)`), d13 (re-entrant JS lock with depth counter), d14 (`create_new` after `flock`) — are load-bearing pre-conditions of any unified-storage design and must be carried forward, not retired. Separately, the ADR's Phase 5d (delete loader fall-through at `rvf-backend.ts:2293-2328`) was scheduled before per-project migrations are demonstrably complete; that fall-through is the only manual-recovery escape from a stale `.meta` state. Shipping 5d before 6c is run on every project with a pre-existing `.meta` strands those projects with no recovery path.
+
+### Amendments to the plan
+
+The numbered phases below replace the original Phases 1–6 in the implementation tracking section. Original phase numbers retained for traceability.
+
+**Phase 0 (NEW, blocks all others) — Failing acceptance harness.** Land `tests/acceptance/adr0154-single-file-storage.test.mjs` in failing state before any implementation. Asserts: (a) post-init project has zero `.meta` files anywhere under `.swarm/`; (b) post-200-entry store + restart, all 200 entries readable with content + embedding intact; (c) cross-process N=8 store from 8 sub-processes, final `.rvf` has 8 unique entries, no orphan numIds; (d) no `.meta` artifact at any point during the test. Per CLAUDE.md "Create or update tests first" and the Karpathy global "Add validation → Write tests for invalid inputs, then make them pass". If this test passes on current `cli@latest`, the ADR is solving for an aesthetic and Option 3 (status quo) becomes the rational choice; if it fails, that failure IS the empirical case.
+
+**Phase 1 (REVISED) — Native runtime metadata persistence (~250–400 LoC, in `forks/ruvector/crates/rvf/`).** Replaces the original "~5 LoC parse_metadata_entry branch" — that 5-LoC change is necessary but not sufficient. Subtasks:
+- **1a.** `parse_metadata_entry` "bytes" branch + `value_bytes: Option<Buffer>` field on `RvfMetadataEntry` napi struct. *(Already landed in this session; ~10 LoC. Keep.)*
+- **1b.** `FilterValue::Bytes(Vec<u8>)` enum variant in `rvf-runtime/src/filter.rs`, OR a parallel `metadata_full: HashMap<(u64, u16), MetadataValue>` store keyed by `(vector_id, field_id)` that preserves the full `MetadataValue` (recommended — keeps `FilterValue` lean for filtering, separates retrieval concerns).
+- **1c.** META_SEG payload encoder in `rvf-runtime/src/write_path.rs` per upstream `08-filtered-search.md:22-148` (Meta Header + Field Directory + column-oriented per-vector data). Or, as a documented stop-gap, an **opaque length-prefixed record stream** (`(vid u64, entry_count u32, [field_id u16, value_type u8, value_len u32, value bytes...])`) — simpler to implement, sacrifices upstream-spec compatibility temporarily, opens an explicit follow-up debt to reach spec compliance. Pick one and document the choice in the ADR before coding.
+- **1d.** `RvfStore::ingest_batch` calls `write_meta_seg(payload)` immediately after `write_vec_seg`. Same id range + epoch.
+- **1e.** `RvfStore::boot()` iterates `segment_dir` for `SegmentType::Meta`, decodes payloads via the format from 1c, populates the metadata store from 1b.
+- **1f.** Public reader: `RvfStore::get_metadata(vid: u64) -> Vec<MetadataEntry>` and/or `iter_metadata() -> impl Iterator<Item=(u64, &[MetadataEntry])>`.
+- **1g.** napi exposure: `RvfDatabase::get_metadata_entries(id: i64) -> Vec<RvfMetadataEntry>` returning the same shape consumed by `ingestBatch`.
+- **1h.** Rust integration test: 200 vectors with mixed-type metadata, drop store, reopen, verify all metadata round-trips bit-exact (especially `Bytes`).
+- **1i.** Bump `rvf-node` patch version, publish to Verdaccio under `@sparkleideas/ruvector-rvf-node`.
+
+**Phase 2 (REVISED) — TS-side field mapping (in `forks/ruflo/v3/@claude-flow/memory/`).** Replaces the original "field-ID registry" framing. The TS layer maps `MemoryEntry` fields onto the on-disk format chosen in Phase 1c. If 1c picks upstream's spec-08 format, the registry maps each `MemoryEntry` field to one of `0x00–0x05` field types and a stable `field_id: u16`. If 1c picks the opaque-record stop-gap, the registry assigns `field_id: u16` and the TS encoder/decoder mirrors what the runtime expects. File: `src/rvf-segment-fields.ts`. Same field IDs as the original Phase 2 (`key=1, namespace=2, content=3, tags-json=4, metadata-json=5, accessLevel=6, ownerId=7, createdAt=8, updatedAt=9, version=10, references-json=11, entry-blob=99`).
+
+**Phases 3, 4, 5 (UNCHANGED, but blocked on Phase 1).** Persistence rework, load rework, and dead-code deletion in `rvf-backend.ts` proceed as originally specified once the native binding can persist + return metadata.
+
+**Phase 5c (CONDITIONAL) — Pure-TS disk persist deletion.** Blocked until **either** (a) `linux-x64-musl` prebuild added to `rvf-node` napi target matrix and `:musl` Docker smoke test passes in CI, **or** (b) explicit support drop is documented in user-visible release notes and a hard `RvfNoNativeBindingError` is thrown at backend construction time on unsupported platforms (no silent failure mode). The "memory backend silently breaks on Alpine" outcome is unacceptable.
+
+**Phase 5d (CONDITIONAL) — Loader fall-through deletion.** Blocked per project until 6c migration has been demonstrably run on that project's `.swarm/`. For HM specifically: 6c migration must complete before any cli release ships with 5d. Recovery path during the rollout window is explicitly documented as: "if migration fails, revert cli to a pre-5d patch version, restore `.meta` from `.bak-*`, retry."
+
+**Phase 6a (PROMOTED to Phase 0).** See above.
+
+**Phase 6b (UNCHANGED, but with concrete test scenario).** Cross-process concurrency test must be N=8 sub-processes each calling `RvfBackend.bulkInsert(100 entries)` against the same `.swarm/memory.rvf`, asserting (a) final entry count is exactly 800, (b) all 800 entries readable + searchable, (c) no orphan numIds, (d) no `.meta` artifact. Validates that ADR-0095 d11–d14 invariants survive the unified path.
+
+**Phase 6c (REVISED) — Migration tool with hard reconciliation rule.** `scripts/migrate-meta-to-segments.mjs` MUST detect divergent populations between `.meta` and `.rvf`. Decision rule:
+- If only `.meta` exists: read it, write fresh `.rvf` with META_SEGs, delete `.meta`. Idempotent.
+- If only `.rvf` exists (already-unified): print "already migrated", exit 0.
+- If both exist with **same** entry count and same hash of (sorted by id) entry contents: trust either; prefer `.rvf`; delete `.meta`.
+- If both exist with **different** entry counts OR different content hashes: **REFUSE.** Print diagnostic showing both populations + last-write timestamps + sample diverging entries. Require explicit user choice: `--prefer-rvf`, `--prefer-meta`, or manual reconciliation. Default action: exit non-zero with no file modification.
+- Round-trip acceptance: synthetic 200-entry `.meta` → migrate → reopen → assert 200 entries present + searchable + embeddings bit-exact.
+
+**Phase 6d (REVISED) — ADR-0095 supersession scope.** Mark only **d5 (sidecar dual-write)** as superseded by ADR-0154. Keep d11 (fsync-before-rename), d12 (`flock(LOCK_EX)`), d13 (re-entrant JS lock with depth counter), and d14 (`create_new` after `flock`) as **active load-bearing invariants** that ADR-0154 inherits and depends on. Add an "ADR-0154 carries forward" note to ADR-0095 d11–d14 entries; do not retire them.
+
+### Risk register additions
+
+- **R4: Platform support gap (Alpine/musl, win32-arm64, linux-armv7).** The `rvf-node` napi build matrix omits `linux-x64-musl` (the canonical Docker base for many CI/CD images) and ARM/Windows-on-ARM variants. Phase 5c deletes the pure-TS disk persist fallback; without an Alpine prebuild, the memory backend breaks on Alpine in production. **Mitigation:** add `linux-x64-musl` to the napi prebuild matrix (1–2 days) before Phase 5c, OR retain the pure-TS disk persist behind an explicit `RUFLO_FORCE_PURETS=1` env flag with loud logging (rejected variant — drift risk). Preferred: add the prebuild.
+- **R5: ADR-0095 d11–d14 invariants under the new path.** The unified `.rvf` write path uses `RvfDatabase.open/create` which currently includes d11–d14. **Mitigation:** Phase 0 acceptance test 6b explicitly stresses the cross-process concurrent-write scenario; if it ever regresses, d11–d14 implementations in `rvf-runtime/src/store.rs` and `rvf-runtime/src/locking.rs` are the regression locus.
+- **R6: Phase 1c on-disk format choice (upstream spec vs opaque stop-gap).** Upstream-spec format (`08-filtered-search.md`) produces a binary compatible with future RuVector tooling but is more code. Opaque-record stop-gap is faster to implement but produces a fork-specific format that would later need migrating to the upstream spec. **Mitigation:** decide in writing before coding; if stop-gap is chosen, file a follow-up ADR at the same time that schedules the upstream-spec migration.
+
+### Updated implementation order rationale
+
+1. **Phase 0 (failing acceptance test) FIRST.** Establishes the empirical case. If it passes on current code, ADR-0154 is solving for an aesthetic and Option 3 (status quo) becomes rational; pause and re-evaluate.
+2. **Phase 1 (native runtime extension) SECOND.** Without persisted metadata, every later phase is theatre.
+3. **Phase 2 (TS field mapping) THIRD, in parallel with 1.**
+4. **Phases 3, 4 (persistence + load rework in rvf-backend.ts) FOURTH.** Replace `.meta` paths with the new native API.
+5. **Phase 6c (migration tool) FIFTH.** Run on every project with pre-existing `.meta` (HM at minimum) and verify Phase 0 test passes against migrated artifacts.
+6. **Phase 5a–5c (dead-code deletion + R4 platform gate) SIXTH.** Only after Phase 0 passes and R4 prebuild lands.
+7. **Phase 5d (loader fall-through deletion) LAST, per project.** Each project's loader fall-through is removed only after 6c has run successfully on it.
+
+The original rationale ("native binding must support before TS uses it") is preserved as a sub-constraint within step 2; the ship-order constraint added by F7 (5d blocks on 6c per project) is new.
+
+### Source artifacts for this amendment
+
+- Swarm task IDs (output files in `/private/tmp/claude-501/-Users-henrik-source-ruflo-patch/5c7585e2-35b3-4c6d-b342-38d4c0608a6f/tasks/`):
+  - Upstream-intent analyst: `a3606de39b8417926.output`
+  - Runtime source analyst: `aafd9782903bdbd52.output`
+  - Git history archaeologist: `a710850652e35d431.output`
+  - Devil's advocate: `aca23f0766342b351.output`
+- Queen-DA dialectic: 5-round single-thread persona-play, transcript in conversation history (not externally archived; per `feedback-hive-discussion-mechanics`, single-thread is valid when each turn engages prior claims by name).
+- Primary source citations preserved inline above.
