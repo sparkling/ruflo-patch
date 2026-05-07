@@ -182,7 +182,7 @@ check_adr0094_p4_browser_navigation() {
   # Playwright launch + 9 tool dispatches with margin.
   (
     cd "$E2E_DIR" || exit 99
-    printf '%s' "$reqs" | _timeout 60 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
+    printf '%s' "$reqs" | _timeout 25 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
   ) > "$resp_file" 2>/dev/null || true
 
   # Count tools that responded (id 1..9). A response with the matching
@@ -255,7 +255,7 @@ check_adr0094_p4_browser_interaction() {
 
   (
     cd "$E2E_DIR" || exit 99
-    printf '%s' "$reqs" | _timeout 60 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
+    printf '%s' "$reqs" | _timeout 25 bash -c "NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp start 2>/dev/null"
   ) > "$resp_file" 2>/dev/null || true
 
   local tools_invoked=11 tools_responded=0
