@@ -1498,7 +1498,7 @@ fi
 # Same gating + isolation pattern as ADR-0098.
 # ════════════════════════════════════════════════════════════════════
 if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0104_lib" ]]; then
-  run_check_bg "adr0104-mcp-path"        "ADR-0104-§4a .mcp.json direct-path detection"     check_adr0104_mcp_direct_path           "adr0104"
+  run_check_bg "adr0104-mcp-path"        "ADR-0155 .mcp.json npx-@latest unconditional"     check_adr0104_mcp_direct_path           "adr0104"
   run_check_bg "adr0104-obj-required"    "ADR-0104-§2 --claude requires objective"          check_adr0104_objective_required        "adr0104"
   run_check_bg "adr0104-obj-via-flag"    "ADR-0104-§2 -o objective preserved in prompt"     check_adr0104_objective_via_flag        "adr0104"
   run_check_bg "adr0104-noninter-global" "ADR-0104-§1 --non-interactive global flag"        check_adr0104_non_interactive_global    "adr0104"
@@ -2068,7 +2068,7 @@ fi
 _adr0104_specs=()
 if [[ -f "$adr0104_lib" ]]; then
   _adr0104_specs=(
-    "adr0104-mcp-path|ADR-0104-§4a .mcp.json direct-path detection"
+    "adr0104-mcp-path|ADR-0155 .mcp.json npx-@latest unconditional"
     "adr0104-obj-required|ADR-0104-§2 --claude requires objective"
     "adr0104-obj-via-flag|ADR-0104-§2 -o objective preserved in prompt"
     "adr0104-noninter-global|ADR-0104-§1 --non-interactive global flag"
