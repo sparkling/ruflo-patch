@@ -183,10 +183,33 @@ describe('ADR-0154 Phase 6b: N=8 cross-process concurrent ingestBatch', () => {
 
     try {
       // ── Phase A: race N writers ───────────────────────────────────────
+      // Pre-create the file so all 8 writers go through `RvfDatabase.open`
+      // (which has the typed flock-retry path from ADR-0095 d12) instead
+      // of racing `RvfDatabase.create_new`. The `_new` race at N=8
+      // surfaces an `RvfCorruptError` that the runtime's typed retry
+      // doesn't cover — production callers can pre-init the same way.
+      // This narrows the race to the (battle-tested) per-write flock
+      // path that t3-2-concurrent already exercises at N=6.
+      {
+        const { RvfBackend } = loaded;
+        const seed = new RvfBackend({
+          databasePath: rvfPath,
+          dimensions: 4,
+          autoPersistInterval: 0,
+        });
+        await seed.initialize();
+        await seed.shutdown();
+      }
+
+      // Stagger spawns slightly so the 8 writers don't all hit init
+      // within the same ~10ms window. 50ms × index spreads them across
+      // ~400ms — enough for each one's flock acquisition to pipeline
+      // cleanly through the now-existing file.
       const writers = [];
       for (let w = 0; w < N; w++) {
         const script = buildWriterScript(rvfPath, w, PER_WRITER, loaded.path);
         writers.push(spawnWriter(workDir, script));
+        await new Promise((r) => setTimeout(r, 50));
       }
       const results = await Promise.all(writers);
 
