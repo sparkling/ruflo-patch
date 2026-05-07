@@ -83,6 +83,99 @@ Align with upstream ADR-029 and the fork's own original ADR-0057 plan: **single 
 | HM-style legacy migration | only one format on disk; no migration to navigate |
 | `RvfStore::create` race remnants | already fixed at patch.302; remaining workaround code goes away |
 
+### HM hejlsberg case study (real-world manifestation of the bug class)
+
+The `hm/semantic-modelling/.claude/worktrees/snappy-drifting-hejlsberg` project exhibited every failure mode the dual-file design produces. Capturing it here so future readers see the concrete impact and the remediation chain.
+
+#### What happened
+
+After ADR-0147 work (R6 read-arm fallback + RVF symmetric metadataPath) deployed via `@sparkleideas/cli@3.5.58-patch.388`, HM's storage state was:
+
+```
+memory.rvf       — 14MB, RVF\0 magic, header.entryCount = 863  (live, today 18:12)
+memory.rvf.meta  — 5.5MB, RVF\0 magic, header.entryCount = 329  (stale, today 11:12)
+```
+
+The 863 entries represented a wipe-and-reindex session of all 231 ADRs (with hierarchical-store + causal-edge + memory_store per ADR producing ~611 derived edges) — the user's actual current work. The 329 was a 4-day-old stale snapshot.
+
+User restarted Claude Code → MCP server reload → `loadFromDisk` ran the dual-magic peek logic → found `.meta` exists → preferred it → loaded 329 entries → **the 863-entry re-index session was invisible**. `agentdb_causal_query cause=ADR-0167` returned 0; `memory_search` showed 329 unrelated entries.
+
+#### Mapping to the bug class ADR-0154 eliminates
+
+| HM symptom | Root cause in dual-file design |
+|---|---|
+| `causal_query` returns 0 for known edges | Loader pulled stale `.meta` (329) instead of live `.rvf` (863) — the asymmetric writer/reader (ADR-0153 R6) gap |
+| Re-index session work invisible across MCP restart | `metadataPath` getter returned different paths in different modes; old asymmetric writer wrote to main path, new loader preferred `.meta` |
+| Recovery required moving `.meta` aside | Loader's pre-existing fall-through (`if no .meta, peek main path for RVF\\0`) is the only escape from the dual-file trap; that fall-through is itself dead-end code post-unification |
+| Risk of further data loss on every restart | Each restart could trigger compactWal → overwrite the 14MB `.rvf` with 329-state in-memory snapshot → permanent loss of the 534 missing entries |
+| Orphan MCP servers running stale binaries | The pinned `.mcp.json` path (`npx _npx/906e6debb112be6d/...`) referenced an old install; new fixes invisible until restart |
+
+Every one of these is downstream of "two files, one of them stale, loader picks wrong one". Unification removes the trap entirely — there's no second file to be stale relative to.
+
+#### Operational recovery applied 2026-05-07
+
+(Not in the ADR's scope; documented here so the chain is complete.)
+
+```bash
+HM=/Users/henrik/source/hm/semantic-modelling/.claude/worktrees/snappy-drifting-hejlsberg
+SWARM="$HM/.swarm"
+TS=$(date +%s)
+
+# 1. Backups
+cp "$HM/.mcp.json"          "$HM/.mcp.json.bak-$TS"
+cp "$SWARM/memory.rvf"      "$SWARM/memory.rvf.bak-$TS-live-863"
+cp "$SWARM/memory.rvf.meta" "$SWARM/memory.rvf.meta.bak-$TS-stale-329"
+
+# 2. Switch .mcp.json from pinned npx cache path to @latest resolution
+#    (so future restarts always pick up current published cli)
+python3 -c "..."   # rewrite mcpServers.ruflo to use 'npx -y @sparkleideas/ruflo@latest'
+
+# 3. Move stale .meta out of loader's preferred path
+mv "$SWARM/memory.rvf.meta" "$SWARM/memory.rvf.meta.disabled-$TS"
+
+# 4. Kill orphan MCP servers (pinned to old binary)
+pkill -KILL -f '@sparkleideas/cli/bin/cli.js mcp'
+
+# 5. User re-enters Claude Code → fresh MCP loads from memory.rvf (863) →
+#    first compactWal materializes a fresh memory.rvf.meta (post-fix
+#    metadataPath always returns .meta) → 863 entries reachable.
+```
+
+This used **only pre-existing general code paths** (no HM-specific recovery logic added to `rvf-backend.ts`):
+- The loader's "if no `.meta`, fall through to main path" branch (`rvf-backend.ts:2293-2328`)
+- compactWal serializing in-memory `this.entries` → `metadataPath` (per ADR-0147 R6 fix)
+
+#### Long-term migration (Phase 6c of the implementation tracking)
+
+Once Phases 1-5 land, HM (and any other project with a legacy `.meta`) needs a one-shot migration:
+
+```
+scripts/migrate-meta-to-segments.mjs <project-root>
+
+Reads:  ${project}/.swarm/memory.rvf.meta   (RVF\0 JSON entries with embeddings)
+        ${project}/.swarm/memory.rvf        (legacy data if .meta absent)
+
+Writes: ${project}/.swarm/memory.rvf        (fresh SFVR with META_SEG entries)
+
+Steps:
+  1. Open .meta (or fall through to .rvf), parse all MemoryEntry records.
+  2. For each entry, build RvfMetadataEntry[] with the field-ID registry from Phase 2.
+  3. RvfDatabase.openOrCreate(path-to-temp), ingestBatch(vectors, ids, metadata) in batches.
+  4. Atomically replace .swarm/memory.rvf with the new file.
+  5. Delete .swarm/memory.rvf.meta + any .meta.disabled-* + .meta.bak-* siblings.
+  6. Print summary: N entries migrated, M segments written, file size change.
+```
+
+Idempotent: re-running on an already-migrated project (single SFVR file with segments) detects via header inspection and exits 0 with `already migrated` message.
+
+Acceptance test for the migration tool itself: round-trip a known-shape `.meta` (synthetic 200 entries) → migrate → reopen via the new single-file path → assert all 200 entries present + searchable + embeddings intact.
+
+For HM specifically (after Phase 1-5 deploy):
+1. Stop MCP in HM
+2. Run `node scripts/migrate-meta-to-segments.mjs /path/to/hm/.../.swarm`
+3. Restart MCP — single `memory.rvf` with all 863 entries as native vectors + segment metadata
+4. The `.meta.disabled-*` and `.bak-*` files are now redundant — can be archived or deleted
+
 ### Risks + mitigations
 
 - **R1: native binding upgrade required.** The `"bytes"` branch addition to `parse_metadata_entry` lives in `rvf-node` (Rust + napi). Either (a) upstream PR + wait for release, (b) fork the binding under `@sparkleideas/ruvector-rvf-node` and ship the change ourselves. Per fork policy (`feedback-no-upstream-donate-backs`), option (b).
