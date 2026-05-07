@@ -62,14 +62,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Pre-creating the file + jittered retries don't recover.
 //
 // ADR-0095 was empirically validated at N=6 (t3-2-concurrent and the
-// 40-trial diag-rvf-interproc-race matrix). Lowering N to 6 here matches
-// the reliable baseline and satisfies the spirit of the amendment (cross-
-// process write durability under contention). The runtime fix to push
-// past N=6 — extending d12's typed-retry to cover the cold-start
-// RvfCorruptError shape — is tracked as a follow-up to ADR-0095.
-const N = 6;                       // writer subprocesses (was 8 — runtime gap; see comment)
+// 40-trial diag-rvf-interproc-race matrix). Lifted back to N=8
+// (originally specified in ADR-0154 Phase 6b amendment) on 2026-05-07
+// after the d12 typed-retry was extended to cover cold-start
+// RvfCorruptError shapes (ManifestNotFound / InvalidManifest /
+// InvalidChecksum) at rvf-runtime/src/store.rs:90 — these previously
+// escaped the retry layer because they aren't LockHeld, leaking through
+// the JS-side initWithRetry as fatal under N>=8 contention.
+const N = 8;                       // writer subprocesses (originally specified in ADR-0154 Phase 6b)
 const PER_WRITER = 100;            // entries per writer
-const TOTAL = N * PER_WRITER;      // 600 entries on disk after all complete
+const TOTAL = N * PER_WRITER;      // 800 entries on disk after all complete
 const NS = 'adr0154-cross-process';
 
 // ── Writer subprocess builder ──────────────────────────────────────────────
