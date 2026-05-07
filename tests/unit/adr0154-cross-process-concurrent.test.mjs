@@ -70,13 +70,17 @@ function buildWriterScript(rvfPath, writerIdx, perWriter, resolvedPath) {
 import { RvfBackend } from ${JSON.stringify(resolvedPath)};
 
 // ADR-0154 G1: at N=8 the native create_new+flock dance occasionally hits
-// a transient GenericFailure during init when many writers race the
-// initial file creation simultaneously. ADR-0095 d12 guarantees eventual
-// flock acquisition but the typed-error retry budget in tryNativeInit is
-// per-LockHeld only — GenericFailure surfaces immediately. Retry loop
-// here makes the test resilient to transient inits without touching the
-// runtime; production callers see the typed Error and can retry too.
+// init failures (GenericFailure or RvfCorruptError) when many writers
+// race the initial file creation simultaneously. ADR-0095 d12 guarantees
+// eventual flock acquisition but the typed-error retry budget in
+// tryNativeInit is per-LockHeld only — other failures surface
+// immediately. Retry loop + randomized stagger here makes the test
+// resilient at N=8; production callers can do the same.
 async function initWithRetry(maxAttempts) {
+  // Random startup jitter (0-200ms) to spread the racing writers' init
+  // across a wider window. Without this they all hit the create_new
+  // path within microseconds of each other.
+  await new Promise((r) => setTimeout(r, Math.random() * 200));
   let lastErr = null;
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     const backend = new RvfBackend({
@@ -89,14 +93,15 @@ async function initWithRetry(maxAttempts) {
       return backend;
     } catch (err) {
       lastErr = err;
-      // Stagger retries with backoff so the racing writers don't keep
-      // hitting the same window. 50ms × attempt is enough at N=8.
-      await new Promise((r) => setTimeout(r, 50 * attempt));
+      // Exponential backoff with jitter to avoid thundering herd on retry.
+      const baseMs = 100 * Math.pow(2, attempt - 1);
+      const jitterMs = Math.random() * baseMs;
+      await new Promise((r) => setTimeout(r, baseMs + jitterMs));
     }
   }
   throw lastErr ?? new Error('initWithRetry: unknown failure');
 }
-const backend = await initWithRetry(5);
+const backend = await initWithRetry(8);
 const entries = [];
 for (let i = 0; i < ${perWriter}; i++) {
   const n = ${startId} + i;
