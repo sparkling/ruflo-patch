@@ -195,6 +195,28 @@ ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 
+# Phase: Shared wrapper-solo install (added 2026-05-07)
+# Three wrapper-install checks (adr0142-bin-path, adr0142-mcp-jsonrpc,
+# adr0143-init-mcp) each previously did their own `npm install
+# @sparkleideas/ruflo` (~70s each per pipeline-timing.json) — three
+# parallel installs racing on the global npm cache, which is why each
+# previously needed --cache=<isolated>. Sharing one solo-install dir
+# eliminates the redundant work AND the contention. Each check now
+# verifies install correctness against this pre-built dir; the
+# harness install above failing would already have aborted the run.
+_p=$(_ns)
+WRAPPER_SOLO_TEMP=$(mktemp -d /tmp/ruflo-wrapper-solo-XXXXX)
+export WRAPPER_SOLO_TEMP
+(cd "$WRAPPER_SOLO_TEMP" \
+  && echo '{"name":"wrapper-solo-test","version":"1.0.0","private":true}' > package.json \
+  && echo "registry=${REGISTRY}" > .npmrc \
+  && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+     --cache "$WRAPPER_SOLO_TEMP/.npm-cache" \
+     --no-audit --no-fund --prefer-offline 2>&1 > "$WRAPPER_SOLO_TEMP/install.log") || {
+  log_error "Failed to build shared wrapper-solo install at ${WRAPPER_SOLO_TEMP}"; exit 1
+}
+_record_phase "wrapper-solo-install" "$(_elapsed_ms "$_p" "$(_ns)")"
+
 # Phase: Structural checks (validate harness, not tests)
 _p=$(_ns)
 structural_fail=0

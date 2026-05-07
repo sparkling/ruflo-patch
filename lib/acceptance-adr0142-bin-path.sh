@@ -23,29 +23,32 @@ check_adr0142_bin_path() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
 
+  # Use shared wrapper-solo install built once at harness boot
+  # (scripts/test-acceptance.sh wrapper-solo-install phase, 2026-05-07).
+  # Eliminates the per-check 70s npm install + the cache-contention race
+  # that drove the original --cache=<isolated> workaround. Falls back to
+  # a per-check install if WRAPPER_SOLO_TEMP isn't set (ad-hoc test runs).
   local g3_tmp
-  g3_tmp=$(mktemp -d /tmp/ruflo-g3-bin-path-XXXXX)
-  # shellcheck disable=SC2064  # want $g3_tmp expanded now
-  trap "rm -rf '$g3_tmp'" RETURN
+  if [[ -n "${WRAPPER_SOLO_TEMP:-}" && -d "${WRAPPER_SOLO_TEMP}/node_modules/@sparkleideas/ruflo" ]]; then
+    g3_tmp="$WRAPPER_SOLO_TEMP"
+    # NOTE: don't trap-rm — this dir is shared across checks
+  else
+    g3_tmp=$(mktemp -d /tmp/ruflo-g3-bin-path-XXXXX)
+    # shellcheck disable=SC2064  # want $g3_tmp expanded now
+    trap "rm -rf '$g3_tmp'" RETURN
 
-  # Fresh install of @sparkleideas/ruflo from Verdaccio.
-  # ADR-0142 fix 2026-05-04: --cache=<isolated> prevents npm cache contention
-  # when multiple wrapper-install checks run in parallel (G3, G3-mcp-jsonrpc,
-  # AC#5 init-mcp). Without this, three concurrent `npm install` calls race
-  # on ~/.npm/_cacache and one of them silently fails at ~2.7s with an EACCES
-  # or lock-busy error — checks without --cache would intermittently FAIL
-  # while the manual single-process install always succeeds.
-  (cd "$g3_tmp" \
-    && echo '{"name":"g3-bin-path-test","version":"1.0.0","private":true}' > package.json \
-    && echo "registry=${REGISTRY}" > .npmrc \
-    && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
-       --cache "$g3_tmp/.npm-cache" \
-       --no-audit --no-fund --prefer-offline 2>&1 > "$g3_tmp/install.log") || {
-    _CHECK_OUTPUT="G3: npm install @sparkleideas/ruflo failed (see $g3_tmp/install.log first 10 lines): $(head -10 "$g3_tmp/install.log" 2>/dev/null | tr '\n' ' ')"
-    end_ns=$(_ns)
-    _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
-    return
-  }
+    (cd "$g3_tmp" \
+      && echo '{"name":"g3-bin-path-test","version":"1.0.0","private":true}' > package.json \
+      && echo "registry=${REGISTRY}" > .npmrc \
+      && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+         --cache "$g3_tmp/.npm-cache" \
+         --no-audit --no-fund --prefer-offline 2>&1 > "$g3_tmp/install.log") || {
+      _CHECK_OUTPUT="G3: npm install @sparkleideas/ruflo failed (see $g3_tmp/install.log first 10 lines): $(head -10 "$g3_tmp/install.log" 2>/dev/null | tr '\n' ' ')"
+      end_ns=$(_ns)
+      _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+      return
+    }
+  fi
 
   # (a) wrapper bin exists
   local wrapper_bin="${g3_tmp}/node_modules/.bin/ruflo"
@@ -118,20 +121,29 @@ check_adr0142_mcp_jsonrpc() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
 
+  # Use shared wrapper-solo install (built once at harness boot in
+  # scripts/test-acceptance.sh wrapper-solo-install phase, 2026-05-07).
+  # MCP-JSONRPC check is stateless wrt the install dir — just sends a
+  # JSON-RPC initialize over stdin. Falls back to per-check install if
+  # WRAPPER_SOLO_TEMP isn't set (ad-hoc test runs).
   local mcp_tmp
-  mcp_tmp=$(mktemp -d /tmp/ruflo-g3-mcp-jsonrpc-XXXXX)
-  # shellcheck disable=SC2064
-  trap "rm -rf '$mcp_tmp'" RETURN
+  if [[ -n "${WRAPPER_SOLO_TEMP:-}" && -d "${WRAPPER_SOLO_TEMP}/node_modules/@sparkleideas/ruflo" ]]; then
+    mcp_tmp="$WRAPPER_SOLO_TEMP"
+  else
+    mcp_tmp=$(mktemp -d /tmp/ruflo-g3-mcp-jsonrpc-XXXXX)
+    # shellcheck disable=SC2064
+    trap "rm -rf '$mcp_tmp'" RETURN
 
-  (cd "$mcp_tmp" \
-    && echo '{"name":"g3-mcp-jsonrpc-test","version":"1.0.0","private":true}' > package.json \
-    && echo "registry=${REGISTRY}" > .npmrc \
-    && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
-       --cache "$mcp_tmp/.npm-cache" \
-       --no-audit --no-fund --prefer-offline 2>&1 > "$mcp_tmp/install.log") || {
-    _CHECK_OUTPUT="MCP-JSONRPC: npm install failed (see $mcp_tmp/install.log)"
-    end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
-  }
+    (cd "$mcp_tmp" \
+      && echo '{"name":"g3-mcp-jsonrpc-test","version":"1.0.0","private":true}' > package.json \
+      && echo "registry=${REGISTRY}" > .npmrc \
+      && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+         --cache "$mcp_tmp/.npm-cache" \
+         --no-audit --no-fund --prefer-offline 2>&1 > "$mcp_tmp/install.log") || {
+      _CHECK_OUTPUT="MCP-JSONRPC: npm install failed (see $mcp_tmp/install.log)"
+      end_ns=$(_ns); _EXIT=1; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"; return
+    }
+  fi
 
   local wrapper_bin="${mcp_tmp}/node_modules/.bin/ruflo"
   if [[ ! -x "$wrapper_bin" ]]; then
