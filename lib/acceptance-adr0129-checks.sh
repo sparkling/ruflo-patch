@@ -125,6 +125,16 @@ check_adr0129_b2_shutdown_fields() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
 
+  # Isolation (added 2026-05-07): mirrors B1's pattern. Without isolation,
+  # B2's hive-mind init/spawn/shutdown races with sibling B4 (and other
+  # adr0124/adr0125 hive-mind checks) sharing $E2E_DIR — at cap=9
+  # parallelism the spawn calls observed "Hive-mind not initialized"
+  # because a sibling's init wiped state.json mid-run.
+  local iso; iso=$(_e2e_isolate "adr0129-b2")
+  : > "$iso/.ruflo-project"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' /tmp/ruflo-adr0129-B2" RETURN
+
   local test_dir="/tmp/ruflo-adr0129-B2"
   local log="${test_dir}/.log"
   local shutdown_log="${test_dir}/shutdown.log"
@@ -135,18 +145,18 @@ check_adr0129_b2_shutdown_fields() {
 
   : > "$log"
   # 1) Init.
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 30 bash -c "$cli hive-mind init --topology hierarchical-mesh --consensus byzantine 2>&1" \
   ) >> "$log" 2>&1 || true
 
   # 2) Spawn 2 workers so shutdown has a non-zero count to render.
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 20 bash -c "$cli hive-mind spawn -n 2 2>&1" \
   ) >> "$log" 2>&1 || true
 
   # 3) Shutdown (--force skips the interactive confirm). Capture into
   # shutdown_log so the assertions are scoped to the shutdown surface.
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 20 bash -c "$cli hive-mind shutdown --force 2>&1" \
   ) > "$shutdown_log" 2>&1 || true
 
@@ -210,6 +220,16 @@ check_adr0129_b4_comma_split() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
 
+  # Isolation (added 2026-05-07): mirrors B1's pattern. Without isolation,
+  # B4's init+spawn races with B1/B2 + sibling adr0124/adr0125 hive-mind
+  # checks sharing $E2E_DIR. Observed at cap=9: the spawn step reported
+  # "Hive-mind not initialized" because a sibling check's init wiped
+  # state.json between B4's init and spawn calls.
+  local iso; iso=$(_e2e_isolate "adr0129-b4")
+  : > "$iso/.ruflo-project"
+  # shellcheck disable=SC2064
+  trap "rm -rf '$iso' /tmp/ruflo-adr0129-B4" RETURN
+
   local test_dir="/tmp/ruflo-adr0129-B4"
   local log="${test_dir}/.log"
   local spawn_log="${test_dir}/spawn.log"
@@ -220,14 +240,14 @@ check_adr0129_b4_comma_split() {
 
   : > "$log"
   # 1) Init the hive.
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 30 bash -c "$cli hive-mind init --topology hierarchical-mesh --consensus byzantine 2>&1" \
   ) >> "$log" 2>&1 || true
 
   # 2) Spawn 2 workers with `-t researcher,coder --format json`. The
   # JSON output prints the full MCP response, including per-worker
   # agentType field (ADR-0108 T13 round-robin contract).
-  ( cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" \
+  ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" \
       _timeout 30 bash -c "$cli hive-mind spawn -n 2 -t researcher,coder --format json 2>&1" \
   ) > "$spawn_log" 2>&1 || true
 
