@@ -101,6 +101,11 @@ function buildWriterScript(rvfPath, key, value, resolvedPath) {
     '  accessCount: 0,',
     '  lastAccessedAt: Date.now(),',
     '  version: 1,',
+    // ADR-0154: native META_SEG persistence requires an embedding. Without
+    // one, ingestBatch is skipped and the entry only lives in the legacy
+    // .meta sidecar — which Phase 5c skips when native is active. Supply
+    // a 4-dim placeholder matching the dimensions option above.
+    '  embedding: new Float32Array([0.1, 0.2, 0.3, 0.4]),',
     '});',
     'await backend.shutdown();',
     'process.exit(0);',

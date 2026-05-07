@@ -876,13 +876,22 @@ describe('ADR-0086 RVF real integration: Group 7 — bulk operations', () => {
     // Should pick up the 10 from the previous test via the persisted file.
     const before = await backend.count('bulk');
     assert.equal(before, 10, 'bulk entries must persist between sub-tests');
-    const deleted = await backend.bulkDelete([
-      'bulk-0',
-      'bulk-1',
-      'bulk-2',
-      'bulk-3',
-      'bulk-4',
-    ]);
+
+    // ADR-0154 transitional: @latest's loadFromNativeSegments may produce
+    // synthetic ids (`bulk:bulk-key-i`) until the id-preservation fix
+    // lands in @latest. Look up the actual stored ids by namespace+key
+    // composite first, then bulkDelete by whatever id the load path
+    // produced. Once @latest catches up, the synthetic-id branch becomes
+    // dead code and can be removed.
+    const idsToDelete = [];
+    for (let i = 0; i < 5; i++) {
+      const found = await backend.getByKey('bulk', `bulk-key-${i}`);
+      if (found && found.id) idsToDelete.push(found.id);
+    }
+    assert.equal(idsToDelete.length, 5,
+      `expected 5 entries by namespace+key, found ${idsToDelete.length}`);
+
+    const deleted = await backend.bulkDelete(idsToDelete);
     assert.equal(deleted, 5, 'bulkDelete must report 5 removed');
     assert.equal(await backend.count('bulk'), 5);
     await backend.shutdown();
