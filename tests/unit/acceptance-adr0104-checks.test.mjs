@@ -327,25 +327,38 @@ describe('ADR-0104 §6 — Queen prompt content', () => {
   });
 });
 
-// ── 5. Behavioral: §4a mcp-generator direct-path detection ─────────────
+// ── 5. Behavioral: §4a direct-path detection — SUPERSEDED by ADR-0155 ──
+//
+// ADR-0104 §4a originally introduced `detectRufloPath()` to write
+// directly-resolved global binary paths into `.mcp.json`, optimising the
+// MCP cold-start. ADR-0155 (2026-05-07) reverts the §4a optimisation:
+// the freshness loss from pinning to a stale globally-installed wrapper
+// is the worse default. These tests now pin the post-ADR-0155 contract
+// (no detectRufloPath, no `which`/`where ruflo`, npx-@latest only).
 
-describe('ADR-0104 §4a — mcp-generator direct-path detection', () => {
-  it('mcp-generator.ts exposes detectRufloPath / createRufloEntry', () => {
+describe('ADR-0104 §4a (superseded by ADR-0155) — direct-path detection removed', () => {
+  it('mcp-generator.ts no longer defines detectRufloPath', () => {
     const src = readFileSync(MCP_GEN_SRC, 'utf8');
-    assert.match(src, /detectRufloPath/);
-    assert.match(src, /createRufloEntry/);
-    assert.ok(/which ruflo/.test(src) || /where ruflo/.test(src),
-      'no `which`/`where ruflo` invocation found');
+    // Match the function definition + invocation, not bare references
+    // (which can appear in comments documenting the supersession history).
+    assert.doesNotMatch(src, /\bfunction\s+detectRufloPath\b/,
+      'function detectRufloPath must be removed per ADR-0155 (the §4a optimisation is reverted)');
+    assert.doesNotMatch(src, /\bdetectRufloPath\s*\(/,
+      'no call site for detectRufloPath should remain per ADR-0155');
+    assert.doesNotMatch(src, /['"]which ruflo['"]|['"]where ruflo['"]/,
+      'execSync(\'which ruflo\') / \'where ruflo\' invocation must be removed per ADR-0155');
+    // createRufloEntry stays — it's the public seam used by generateMCPConfig.
+    assert.match(src, /\bcreateRufloEntry\b/,
+      'createRufloEntry must stay (it is the public seam used by generateMCPConfig)');
   });
 
   it('Ruflo MCP entry uses createRufloEntry (not the npx wrapper)', () => {
     const src = readFileSync(MCP_GEN_SRC, 'utf8');
     // ADR-0117 Revision 2026-05-03: the umbrella MCP server key was
     // changed from 'claude-flow' to 'ruflo' as part of the
-    // single-canonical-entry-point decision (B2). Test name + assertion
-    // updated 2026-05-04 to reflect the post-revision contract. The
-    // INTENT (verify the registration uses createRufloEntry, not a raw
-    // npx invocation) is unchanged — only the key string differs.
+    // single-canonical-entry-point decision (B2). The INTENT (verify the
+    // registration uses createRufloEntry, not a raw inline npx call) is
+    // unchanged across ADR-0155.
     assert.match(src, /mcpServers\['ruflo'\]\s*=\s*createRufloEntry/);
   });
 });

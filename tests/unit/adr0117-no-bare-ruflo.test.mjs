@@ -27,25 +27,42 @@ const PATCHED_FILES = [
 
 describe('ADR-0117 fork source — no bare ruflo@latest', () => {
   for (const path of PATCHED_FILES) {
-    it(`${path.split('/').slice(-2).join('/')}: zero \`ruflo@latest\` references`, () => {
+    it(`${path.split('/').slice(-2).join('/')}: zero bare \`ruflo@latest\` references`, () => {
       assert.ok(existsSync(path), `expected fork source file to exist: ${path}`);
       const src = readFileSync(path, 'utf8');
 
-      const matches = src.match(/ruflo@(latest|alpha)/g) || [];
+      // ADR-0155 (2026-05-07): mcp-generator now writes
+      // `@sparkleideas/ruflo@latest` (user-facing wrapper, ADR-0143). The
+      // negative lookbehind ensures the bare-ruflo regression guard
+      // doesn't false-positive on the scoped `@sparkleideas/ruflo@latest`
+      // form — only an unscoped `ruflo@latest` (which would resolve to
+      // upstream's package on public npm) is flagged.
+      const matches = src.match(/(?<!@sparkleideas\/)ruflo@(latest|alpha)/g) || [];
       assert.equal(
         matches.length,
         0,
-        `${path} still contains ${matches.length} bare \`ruflo@latest\` ref(s) — should be \`@sparkleideas/cli@latest\``,
+        `${path} still contains ${matches.length} bare \`ruflo@latest\` ref(s) — should be \`@sparkleideas/ruflo@latest\` (ADR-0155)`,
       );
     });
   }
 
-  it('mcp-generator.createRufloEntry fallback uses @sparkleideas/cli@latest', () => {
+  it('mcp-generator.createRufloEntry uses @sparkleideas/ruflo@latest (ADR-0155)', () => {
+    // ADR-0155 (2026-05-07) supersedes ADR-0104 §4a: createRufloEntry
+    // unconditionally returns the npx form with the user-facing wrapper
+    // package (@sparkleideas/ruflo, ADR-0143), not the internal
+    // @sparkleideas/cli. The directly-resolved-global-path branch is
+    // removed entirely; freshness beats cold-start optimisation per
+    // `feedback-always-npx-for-ruflo`.
     const src = readFileSync(`${FORK_ROOT}/init/mcp-generator.ts`, 'utf8');
     assert.match(
       src,
-      /createMCPServerEntry\(\['@sparkleideas\/cli@latest', 'mcp', 'start'\]/,
-      'createRufloEntry fallback should call createMCPServerEntry with @sparkleideas/cli@latest',
+      /createMCPServerEntry\(\['@sparkleideas\/ruflo@latest', 'mcp', 'start'\]/,
+      'createRufloEntry should call createMCPServerEntry with @sparkleideas/ruflo@latest',
+    );
+    assert.doesNotMatch(
+      src,
+      /@sparkleideas\/cli@latest['"\s]*,\s*['"]mcp['"]/,
+      'createRufloEntry must NOT use @sparkleideas/cli@latest (internal-only per ADR-0143)',
     );
   });
 });
