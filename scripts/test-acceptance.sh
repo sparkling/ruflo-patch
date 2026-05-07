@@ -1269,7 +1269,11 @@ fi
 # ADR-0094 Phase 9: Concurrency matrix (4 checks, ≤30s wall-clock).
 # Each uses _with_iso_cleanup. RVF row is delegated to t3-2 (ADR-0095).
 if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase9_lib" ]]; then
-  run_check_bg "p9-rvf-delegated" "P9 RVF concurrency delegated to t3-2" check_adr0094_p9_rvf_concurrent_writes_delegated "adr0094-p9"
+  # p9-rvf-delegated removed 2026-05-07: the stub emitted SKIP_ACCEPTED
+  # pointing to t3-2-concurrent (registered at line 958, runs every
+  # acceptance phase). Per "no skips" goal — t3-2 IS the actual coverage,
+  # the stub added nothing but a "see also" pointer that counted toward
+  # skip totals.
   run_check_bg "p9-claims-winner" "P9 claims exactly-one-winner (6 racers)" check_adr0094_p9_claims_single_winner "adr0094-p9"
   run_check_bg "p9-session-noint" "P9 session no interleave (2 writers)" check_adr0094_p9_session_no_interleave "adr0094-p9"
   run_check_bg "p9-workflow-one" "P9 workflow exactly-one-created (4 racers)" check_adr0094_p9_workflow_concurrent_start "adr0094-p9"
@@ -1870,7 +1874,7 @@ fi
 _p9_specs=()
 if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase9_lib" ]]; then
   _p9_specs=(
-    "p9-rvf-delegated|P9 RVF concurrency delegated to t3-2"
+    # p9-rvf-delegated removed 2026-05-07 — see comment at run_check_bg site (~L1272)
     "p9-claims-winner|P9 claims exactly-one-winner (6 racers)"
     "p9-session-noint|P9 session no interleave (2 writers)"
     "p9-workflow-one|P9 workflow exactly-one-created (4 racers)"

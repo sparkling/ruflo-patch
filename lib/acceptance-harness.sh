@@ -29,14 +29,16 @@ if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
   fi
   RUFLO_MAX_PARALLEL=$(( _ncpu / 2 ))
   (( RUFLO_MAX_PARALLEL < 4 )) && RUFLO_MAX_PARALLEL=4
-  # Ceiling raised back to ncpu/2 (was capped at 6) on 2026-05-07 after
-  # the wrapper-proxy regression was fixed (lib/acceptance-diagnostic-checks.sh
-  # now uses pre-installed binary instead of per-call npx). The original 9
-  # → 6 cap was reactive to wrapper-proxy holding a slot for 1340s + npm
-  # cache contention from its retries — neither condition exists post-fix.
-  # April baseline (ncpu/2 cap, no wrapper-proxy regression): 561 checks
-  # ran in 70s wall (122x effective parallelism). With wrapper-proxy
-  # bounded and cap restored, target is ~120-180s for the current 712.
+  # Empirical ceiling of 6 retained: tried raising back to ncpu/2 after
+  # the wrapper-proxy fix (2026-05-07), but at cap=9 the ADR-0129 sibling
+  # checks (B1/B2/B4) all share $E2E_DIR for hive-mind init+spawn and race
+  # under higher parallelism — adr0129-b4 fails with "Hive-mind not
+  # initialized" because B1/B2 wipe state between B4's init and spawn.
+  # 30s saving from cap=9 not worth a flaky test. Real fix would be to
+  # isolate the ADR-0129 sibling state via _e2e_isolate (R8 follow-up);
+  # for now the 6-cap stays. April baseline cap=9 (561 checks in 70s)
+  # didn't have the ADR-0129 race because those checks didn't exist yet.
+  (( RUFLO_MAX_PARALLEL > 6 )) && RUFLO_MAX_PARALLEL=6
   unset _ncpu
   export RUFLO_MAX_PARALLEL
 fi
