@@ -227,28 +227,38 @@ describe('ADR-0154 Phase 0: single-file storage end-state', () => {
       + swarmInventory.map((f) => `  ${f.name} (${f.size}B)`).join('\n') + '\n',
     );
 
-    // ADR-0154 long-term goal: single canonical .rvf, no .meta sidecar. The
-    // strict "no .meta" assertion is deferred until the runtime accepts
-    // vector-less metadata segments (today, entries without embeddings only
-    // persist via .meta). The bug class ADR-0154 actually fixes — the HM-style
-    // stale-.meta + live-.rvf divergence — is verified by Test 4 below
-    // (loadFromDisk now prefers native segments per Phase 4).
+    // ADR-0154 G2 (2026-05-07): Phase 5c conditional skip is now active.
+    // When all in-memory entries have embeddings (production path: the
+    // CLI's embedding pipeline runs before persist), the native META_SEG
+    // path covers everything and `.meta` is NOT written. The strict
+    // assertion below catches a regression to unconditional `.meta`-write
+    // for embedded entries — exactly the half-measure the validation
+    // swarm flagged as G4.
     //
-    // Test 1's relaxed assertion: log the inventory for ops visibility.
-    // Soft-fail behavior would mask regressions, so we keep the test visible
-    // but informational. The HM bug class assertion remains hard in Test 4.
+    // If `.meta` exists despite all entries having embeddings, that's a
+    // regression: the loader+writer asymmetry the ADR set out to eliminate
+    // is back. The HM-class bug class is closed mechanically by Phase 4
+    // loader preference (Test 4); this test catches the writer-side
+    // attractor surface.
     if (existsSync(meta)) {
+      const metaSize = swarmInventory.find((f) => f.name === 'memory.rvf.meta')?.size ?? 0;
       appendFileSync(
         LOG_FILE,
-        `[INFO] .meta sidecar still present after ${SMALL_BATCH} stores. ADR-0154 long-term ` +
-        `goal is to remove it; deferred while non-embedding entries lack a runtime path. ` +
-        `HM-class data loss is fixed by Phase 4 loader preference; verified by Test 4.\n`,
+        `[FAIL] .meta present (${metaSize}B) after ${SMALL_BATCH} stores; expected absent ` +
+        `under ADR-0154 conditional Phase 5c skip (all embedded entries flow through META_SEG).\n`,
       );
-    } else {
-      appendFileSync(LOG_FILE, `[OK] .meta absent after ${SMALL_BATCH} stores — single-file end-state achieved.\n`);
     }
-    // Always pass — substantive regression gate is Test 4.
-    assert.ok(true);
+    assert.ok(
+      !existsSync(meta),
+      `ADR-0154 REGRESSION: .swarm/memory.rvf.meta exists after ${SMALL_BATCH} stores via the ` +
+      `embedding-aware CLI path. Phase 5c conditional skip should suppress the .meta write ` +
+      `when (a) native is active AND (b) all entries have embeddings AND (c) no prior .meta ` +
+      `is on disk. If this test fails, persistToDiskInner is unconditionally writing .meta — ` +
+      `the writer-side half of the HM-class attractor surface is back.\n` +
+      `Path: ${meta}\n` +
+      `Full log: ${LOG_FILE}\n` +
+      `.swarm/ inventory:\n${swarmInventory.map((f) => `  ${f.name} (${f.size}B)`).join('\n')}`,
+    );
   });
 
   it(`after ${FULL_BATCH} stores + simulated MCP restart, all ${FULL_BATCH} entries readable`,

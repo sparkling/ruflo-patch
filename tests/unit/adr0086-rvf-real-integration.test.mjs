@@ -616,25 +616,14 @@ describe('ADR-0086 RVF real integration: Group 4 — persistence and reopen', ()
     const buf = readFileSync(metaPath);
     assert.ok(buf.length >= 8, 'metadata file must be at least 8 bytes');
 
-    const isRvfLegacy = buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x00;
+    // ADR-0154 G2 (2026-05-07): native is the canonical writer. The OR-clause
+    // tolerance for legacy RVF\0 was a bootstrap-window relaxation; tightened
+    // to require SFVR.
     const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
-    assert.ok(isRvfLegacy || isSfvrNative,
-      `magic bytes must be either RVF\\0 (legacy) or SFVR (ADR-0154 native), got ${buf.subarray(0, 4).toString('hex')}`);
-
-    // Legacy-only: RVF\0 has a JSON header we can parse + cross-check.
-    // Native SFVR is segment-based with no equivalent top-level header;
-    // the durability cross-check happens in the next test (round-trip).
-    if (isRvfLegacy) {
-      const headerLen = buf.readUInt32LE(4);
-      assert.ok(headerLen > 0, 'header length must be > 0');
-      assert.ok(8 + headerLen <= buf.length, 'header must fit inside the file');
-      const headerJson = buf.subarray(8, 8 + headerLen).toString('utf-8');
-      const header = JSON.parse(headerJson);
-      assert.equal(header.version, 1, 'header.version must be 1');
-      assert.equal(header.dimensions, 3, 'header.dimensions must round-trip');
-      assert.ok(typeof header.entryCount === 'number', 'header.entryCount must be a number');
-      assert.ok(header.entryCount >= 1, 'header must report at least one stored entry');
-    }
+    assert.ok(isSfvrNative,
+      `magic bytes must be SFVR (ADR-0154 native segment format), got ${buf.subarray(0, 4).toString('hex')}`);
+    // Native segment-based file has no top-level JSON header; the durability
+    // round-trip is verified by the next test (Group 4 test 2).
   });
 
   it('a fresh RvfBackend instance loads the persisted entry', { skip }, async () => {
@@ -953,50 +942,20 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
     await backend.shutdown();
   });
 
-  it('after shutdown(), the metadata file has the full RVF binary layout', { skip }, async () => {
+  it('after shutdown(), the metadata file uses the native SFVR segment format', { skip }, async () => {
     const metaPath = metadataFilePath(dbPath);
     assert.ok(existsSync(metaPath), 'metadata file must exist after shutdown');
     const buf = readFileSync(metaPath);
 
-    // 1. Magic bytes — RVF\0 (legacy pure-TS) or SFVR (ADR-0154 native segments).
+    // ADR-0154 G2 (2026-05-07): native is the canonical writer; the OR-clause
+    // tolerance for legacy RVF\0 was a bootstrap-window relaxation. Tightened
+    // to require SFVR. Native segment layout is verified by rvf-runtime's
+    // own tests (forks/ruvector/crates/rvf/tests/...); TS-side contract is
+    // "the file exists and is parseable by RvfBackend on reopen" (Group 4).
     assert.ok(buf.length >= 8, 'file must contain at least 8 bytes');
-    const isRvfLegacy = buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x00;
     const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
-    assert.ok(isRvfLegacy || isSfvrNative,
-      `magic bytes must be RVF\\0 or SFVR, got ${buf.subarray(0, 4).toString('hex')}`);
-
-    if (!isRvfLegacy) {
-      // Native SFVR — internal segment layout is verified by the rvf-runtime
-      // crate's own tests (forks/ruvector/crates/rvf/tests/...). The TS-side
-      // contract is just "the file exists and is parseable by RvfBackend on
-      // reopen", which is covered by Group 4's persistence tests.
-      return;
-    }
-
-    // 2. Header length and JSON header (legacy format only)
-    const headerLen = buf.readUInt32LE(4);
-    assert.ok(headerLen > 0 && headerLen < 10 * 1024 * 1024, 'header length must be sane');
-    const header = JSON.parse(buf.subarray(8, 8 + headerLen).toString('utf-8'));
-    assert.equal(header.version, 1);
-    assert.equal(header.dimensions, 3);
-    assert.equal(typeof header.entryCount, 'number');
-    assert.ok(header.entryCount >= 1, 'header.entryCount must reflect stored entries');
-
-    // 3. At least one length-prefixed entry follows the header
-    let offset = 8 + headerLen;
-    assert.ok(offset + 4 <= buf.length, 'must have room for an entry length prefix');
-    const entryLen = buf.readUInt32LE(offset);
-    assert.ok(entryLen > 0, 'entry length must be > 0');
-    assert.ok(
-      offset + 4 + entryLen <= buf.length,
-      'first entry must fit inside the file',
-    );
-    const entryJson = buf.subarray(offset + 4, offset + 4 + entryLen).toString('utf-8');
-    const entry = JSON.parse(entryJson);
-    assert.equal(entry.id, 'f1', 'first persisted entry must be f1');
-    assert.equal(entry.key, 'fk1');
-    assert.equal(entry.content, 'format-test');
-    assert.equal(entry.namespace, 'fmt');
+    assert.ok(isSfvrNative,
+      `magic bytes must be SFVR (ADR-0154 native), got ${buf.subarray(0, 4).toString('hex')}`);
   });
 
   it('lock file is not left behind after shutdown', { skip }, () => {

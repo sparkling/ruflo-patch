@@ -219,18 +219,131 @@ if (chosenSource === 'rvf') {
   process.exit(0);
 }
 
-// chosenSource === 'meta': we need to rebuild .rvf from .meta entries.
-// This requires the RvfBackend, which means a Verdaccio install.
-console.error('--prefer-meta migration requires running through @sparkleideas/memory:');
-console.error('');
-console.error('  1. Move existing .rvf aside:');
-console.error(`     mv "${rvfPath}" "${rvfPath}.pre-migration-${ts}"`);
-console.error('  2. Open a fresh RvfBackend on the project; for each entry in');
-console.error(`     ${metaPath}, call backend.store(entry).`);
-console.error('  3. Archive the source .meta:');
-console.error(`     mv "${metaPath}" "${metaPath}.migrated-${ts}"`);
-console.error('');
-console.error('A scripted version is tracked as ADR-0154 follow-up; this stub');
-console.error('refuses rather than implement an automated rebuild that could');
-console.error('lose data on edge cases (per feedback-data-loss-zero-tolerance).');
-process.exit(3);
+// chosenSource === 'meta' (G6 follow-up 2026-05-07): rebuild .rvf from
+// .meta entries via the published RvfBackend. This is the path HM-style
+// projects need when their .rvf is the stale source and .meta is live.
+//
+// Strategy: archive .rvf as .pre-migration-<ts>, open a fresh RvfBackend
+// on the path (which creates a new native SFVR file), bulkInsert all
+// .meta entries (preserving id, key, namespace, content, embedding), then
+// archive .meta as .migrated-<ts>. After this, loadFromNativeSegments
+// finds all entries in the new META_SEGs.
+//
+// Rollback recipe (printed on success):
+//   mv .rvf.pre-migration-<ts> .rvf
+//   mv .meta.migrated-<ts>     .meta
+
+if (metaSnapshot.entries.length === 0) {
+  console.error(`error: --prefer-meta requires at least one entry in .meta; got 0.`);
+  console.error(`Path: ${metaPath}`);
+  process.exit(3);
+}
+
+// Resolve the published RvfBackend. We require it lazily so the tool is
+// usable for the --prefer-rvf path even when @sparkleideas/memory isn't
+// installed. Per feedback-no-fallbacks: install loudly if missing.
+async function loadRvfBackendOrInstall() {
+  const candidates = [
+    '@sparkleideas/memory',
+    join(projectRoot, 'node_modules', '@sparkleideas', 'memory', 'dist', 'rvf-backend.js'),
+  ];
+  for (const c of candidates) {
+    try {
+      const mod = await import(c);
+      if (mod && mod.RvfBackend) return mod.RvfBackend;
+    } catch {}
+  }
+  // On-demand install into a scratch dir against the local Verdaccio.
+  const { execSync } = await import('node:child_process');
+  const { mkdtempSync } = await import('node:fs');
+  const installDir = mkdtempSync(join('/tmp', 'mig-meta-rvf-'));
+  try {
+    execSync(`curl -sf --max-time 3 http://localhost:4873/-/ping`, { stdio: 'ignore' });
+  } catch {
+    console.error(`error: @sparkleideas/memory not resolvable and Verdaccio is unreachable.`);
+    console.error(`Bring up Verdaccio at http://localhost:4873 (memory reference-verdaccio.md), or pre-install the package, then re-run.`);
+    process.exit(3);
+  }
+  try {
+    execSync(
+      `npm install --prefix ${installDir} --registry=http://localhost:4873 --no-save @sparkleideas/memory@latest`,
+      { stdio: 'ignore', timeout: 180_000 },
+    );
+  } catch (err) {
+    console.error(`error: install of @sparkleideas/memory@latest from Verdaccio failed: ${err.message}`);
+    process.exit(3);
+  }
+  const mod = await import(join(installDir, 'node_modules', '@sparkleideas', 'memory', 'dist', 'rvf-backend.js'));
+  if (!mod.RvfBackend) {
+    console.error(`error: imported @sparkleideas/memory but no RvfBackend export found.`);
+    process.exit(3);
+  }
+  log(`installed @sparkleideas/memory@latest into ${installDir}`);
+  return mod.RvfBackend;
+}
+
+const RvfBackend = await loadRvfBackendOrInstall();
+
+// Step 1: archive the existing .rvf (if any) so we never lose its bytes.
+let rvfArchive = null;
+if (existsSync(rvfPath)) {
+  rvfArchive = `${rvfPath}.pre-migration-${ts}`;
+  renameSync(rvfPath, rvfArchive);
+  console.log(`archived: ${rvfPath} → ${rvfArchive}`);
+}
+
+// Also move the WAL aside; the new backend writes a fresh one.
+let walArchive = null;
+if (existsSync(walPath)) {
+  walArchive = `${walPath}.pre-migration-${ts}`;
+  renameSync(walPath, walArchive);
+  console.log(`archived: ${walPath} → ${walArchive}`);
+}
+
+// Step 2: derive dimensions from the first .meta entry's embedding (or
+// fall back to the legacy 768-dim default). All entries must share the
+// same dimension; the legacy .meta format already enforced this.
+const sampleEmbedding = metaSnapshot.entries.find((e) => e.embedding && e.embedding.length > 0);
+const dimensions = sampleEmbedding ? sampleEmbedding.embedding.length : 768;
+log(`rebuild dimensions: ${dimensions} (${sampleEmbedding ? 'from .meta sample' : 'fallback default'})`);
+
+// Step 3: open a fresh RvfBackend on the (now-empty) path, bulkInsert all
+// .meta entries. RvfBackend.bulkInsert calls native ingestBatch with
+// metadata for each entry → META_SEGs land in the new .rvf.
+const backend = new RvfBackend({
+  databasePath: rvfPath,
+  dimensions,
+  autoPersistInterval: 0,
+});
+try {
+  await backend.initialize();
+  await backend.bulkInsert(metaSnapshot.entries);
+  log(`bulkInsert: ${metaSnapshot.entries.length} entries`);
+
+  // Step 4: verify count round-trips (defense-in-depth before archiving .meta).
+  const afterCount = await backend.count();
+  if (afterCount !== metaSnapshot.entries.length) {
+    console.error(
+      `error: bulkInsert wrote ${afterCount} entries but .meta had ${metaSnapshot.entries.length}. Aborting before archiving .meta.`
+    );
+    if (rvfArchive) renameSync(rvfArchive, rvfPath);
+    if (walArchive) renameSync(walArchive, walPath);
+    process.exit(3);
+  }
+} finally {
+  await backend.shutdown();
+}
+
+// Step 5: archive .meta as .migrated-<ts>. After this, loadFromDisk on
+// future opens reads native segments only.
+const metaArchive = `${metaPath}.migrated-${ts}`;
+renameSync(metaPath, metaArchive);
+console.log(`archived: ${metaPath} → ${metaArchive}`);
+
+console.log(``);
+console.log(`migration complete: rebuilt .rvf from .meta (${metaSnapshot.entries.length} entries).`);
+console.log(`rollback recipe (if needed):`);
+if (rvfArchive) console.log(`  mv "${rvfArchive}" "${rvfPath}"`);
+if (walArchive) console.log(`  mv "${walArchive}" "${walPath}"`);
+console.log(`  mv "${metaArchive}" "${metaPath}"`);
+process.exit(0);

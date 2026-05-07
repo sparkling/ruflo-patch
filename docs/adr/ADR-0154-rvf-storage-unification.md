@@ -6,6 +6,19 @@
 - **Decision**: Adopt **Option 1** from §"Real options" — implement single-file unification per upstream ADR-029. Native is the canonical implementation; pure-TS becomes a thin wrapper around native segment APIs; the `.meta` sidecar is deleted entirely. Options 2 (drop native) and 3 (status quo) explicitly rejected — Option 2 sacrifices alignment with the canonical ruvnet design without empirical justification; Option 3 leaves the bug class alive.
 - **Related**: ADR-0095 (RVF inter-process convergence — superseded for the dual-write portion), ADR-0057 fork (original single-file plan, now resumed), upstream `ruvnet/RuVector` ADR-029 (canonical RVF format mandate), upstream ADR-001 (superseded prior split design)
 
+### Decision delivery summary (G4 follow-up 2026-05-07)
+
+The original Decision text below promises *"the `.meta` sidecar is deleted entirely"* and *"pure-TS becomes a thin wrapper around native segment APIs"*. What actually shipped, after the validation swarm flagged this as G4:
+
+| Promise | Delivered | Gap |
+|---|---|---|
+| Single `.rvf` file, no `.meta` sidecar | **Conditional**. `.meta` is suppressed when (a) native is active, (b) all in-memory entries have embeddings, and (c) no prior `.meta` is on disk. Production paths (CLI's embedding pipeline always runs before persist) hit the suppress path; test fixtures and other no-embedding paths still write `.meta`. | None for production paths; intentional retention as supplementary durable store for non-embedding entries until runtime supports vector-less metadata segments. |
+| Native is canonical | **Yes**. `loadFromNativeSegments` runs first when `nativeDb` is active; the legacy `.meta` parse path is never reached when META_SEGs exist. | None. |
+| Pure-TS is a thin wrapper around native segments | **No**. Pure-TS retained as a full alternative backend (multi-platform support — Alpine/musl + non-prebuild platforms). The two paths coexist in `rvf-backend.ts` (followed up by G7 file split). | Not eliminated; kept by deliberate multi-platform commitment (R3/R4). |
+| `MAGIC = 'RVF\0'` constant deleted | **Conditional**. Constant + dispatcher kept for the pure-TS path; native writers produce SFVR only. The G2 cleanup tightens the test assertions to require SFVR everywhere the canonical writer is exercised. | None for canonical paths; pure-TS path retains legacy magic by necessity. |
+
+The bug class the ADR set out to eliminate (HM-style stale `.meta` + live `.rvf` divergence — 100/200 silent data loss) is **closed end-to-end**, validated by Phase 0 T4 and the new Phase 6b N=8 cross-process test (G1). The architectural promise of "single file" is delivered conditionally — the suppress-meta path is the canonical path; the retention path is a documented multi-platform accommodation.
+
 ## Context
 
 A 4-agent adversarial swarm investigated the fork's current dual-file storage layout (`memory.rvf` SFVR + `memory.rvf.meta` RVF\0) against upstream design intent and the fork's own original plans. **Verdict: the dual-file design is implementation drift from a now-fixed bug, not architecture.**

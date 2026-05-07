@@ -85,6 +85,33 @@ echo ""
 # ($BUILD_DIR) mirrors fork structure under cross-repo/<name> or v3/<name>,
 # so we translate the fork-relative paths from the config to build-tree paths.
 
+# ADR-0154 G3 (2026-05-07): copy cross-compiled prebuilds from npm/<platform>/
+# subdirs into the package root as `index.<platform>.node` so the napi
+# dispatcher's local-file check finds them. Without this, only the host
+# platform's binary loads at runtime; cross-compiled binaries (e.g.
+# linux-x64-musl produced via `napi build --target ...`) ship in the tarball
+# but the dispatcher can't find them — falls through to a non-existent
+# per-platform package and crashes with MODULE_NOT_FOUND on Alpine.
+copy_crossbuilt_to_root() {
+  local crate_dir="$1"
+  local display_prefix="${2:-$crate_dir}"
+  local binary_name="$3"
+  local npm_dir="${crate_dir}/npm"
+  if [[ ! -d "$npm_dir" ]]; then return; fi
+  for plat_dir in "$npm_dir"/*/; do
+    [[ -d "$plat_dir" ]] || continue
+    local plat
+    plat="$(basename "$plat_dir")"
+    local source_file="${plat_dir}${binary_name}.${plat}.node"
+    local target_file="${crate_dir}/index.${plat}.node"
+    if [[ -f "$source_file" ]] && [[ ! -f "$target_file" ]]; then
+      cp -p "$source_file" "$target_file"
+      echo "  ✓ crossbuilt → root: ${target_file#"$display_prefix/"}"
+      copied=$((copied + 1))
+    fi
+  done
+}
+
 for entry in "${NAPI_PACKAGES[@]}"; do
   napi_parse_entry "$entry" || continue
   build_root=$(fork_to_build_path "$NAPI_FORK_DIR")
@@ -100,6 +127,17 @@ for entry in "${NAPI_PACKAGES[@]}"; do
 
   src_dir="${build_root}/${NAPI_CRATE_PATH}"
   dest_dir="${build_root}/${NAPI_DEST_NPM_DIR}"
+
+  # ADR-0154 G3: also bundle cross-compiled prebuilds (e.g. linux-x64-musl
+  # built on macOS via the messense toolchain). The `binaryName` is read
+  # from the napi block in package.json — for rvf-node it's "rvf-node",
+  # for ruvector-node it's "ruvector-node", etc.
+  if [[ -f "${src_dir}/package.json" ]]; then
+    bin_name=$(jq -r '.napi.binaryName // empty' "${src_dir}/package.json" 2>/dev/null)
+    if [[ -n "$bin_name" ]]; then
+      copy_crossbuilt_to_root "$src_dir" "$build_root" "$bin_name"
+    fi
+  fi
 
   # When src == dest (single-binary packages like agentic-jujutsu), the binary
   # is already in the publish dir — bundling is a no-op verification.
