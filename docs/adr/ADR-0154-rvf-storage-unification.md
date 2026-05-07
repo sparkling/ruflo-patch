@@ -1,6 +1,6 @@
 # ADR-0154: RVF storage unification — remove `.meta` sidecar, align with upstream ADR-029
 
-- **Status**: **Implemented (Phases 0–4 + gated Phase 5c) 2026-05-07** — pipeline GREEN at 674/674 acceptance; Phase 0 ADR-0154 acceptance suite 4/4 including the HM-class regression (was 100/200 entries readable, now 200/200). Phase 5a/5b/5d hard deletes, Phase 5c platform gate (Alpine/musl), Phase 6c migration tool, and runtime `getVector(id)` API tracked as follow-up tasks; see "Implementation log 2026-05-07" section below.
+- **Status**: **Implemented + Validated 2026-05-07** — pipeline GREEN at 674/674 acceptance; Phase 0 ADR-0154 acceptance suite 4/4 including the HM-class regression (was 100/200 entries readable, now 200/200). Post-implementation 4-agent validation swarm (implementation auditor, test coverage analyst, bug class hunter, devil's advocate) confirms the bug class is closed end-to-end and identifies three concrete gaps for full completion. See "Implementation log 2026-05-07" and "Validation 2026-05-07" sections below.
 - **Date**: 2026-05-07
 - **Deciders**: Henrik Pettersen
 - **Decision**: Adopt **Option 1** from §"Real options" — implement single-file unification per upstream ADR-029. Native is the canonical implementation; pure-TS becomes a thin wrapper around native segment APIs; the `.meta` sidecar is deleted entirely. Options 2 (drop native) and 3 (status quo) explicitly rejected — Option 2 sacrifices alignment with the canonical ruvnet design without empirical justification; Option 3 leaves the bug class alive.
@@ -441,6 +441,62 @@ T4 is the substantive proof that the bug class ADR-0154 set out to fix is now cl
 
 | Repo | Commit | Subject |
 |---|---|---|
-| `forks/ruvector` (sparkling/main) | `228cb6a19` | feat(rvf): META_SEG persistence — wire metadata to disk per ADR-0154 |
-| `forks/ruflo` (sparkling/main) | `567ff7bfe` | fix(memory): include embedding in META_SEG entry-blob for round-trip |
-| `ruflo-patch` (origin/main) | `2bbbbcf` | test(adr0086,adr0090): add embeddings + composite-key lookup for bootstrap |
+| `forks/ruvector` (sparkling/main) | `d2355672d` | feat(rvf-node): add linux-x64-musl prebuild for Alpine support (R4) |
+| `forks/ruflo` (sparkling/main) | `76c26485e` | fix(memory): drop embedding from blob, restore via getVector(id) |
+| `ruflo-patch` (origin/main) | `c0c0c4a` | test(adr0154): drop transitional bootstrap relaxations after @latest stabilized |
+
+---
+
+## Validation 2026-05-07 — post-implementation swarm review
+
+A second 4-agent swarm reviewed the IMPLEMENTATION (not the plan) on the same day it landed. Roles: **Implementation auditor** (code vs ADR phase plan), **Test coverage analyst** (assertion-to-criterion traceability), **Bug class hunter** (empirical HM regression check + attack-surface walkthrough), **Devil's advocate** (attack the implementation).
+
+### Convergent verdicts
+
+**HM-class bug closed (3 of 4 workers independently confirm).** T4 in `tests/acceptance/adr0154-single-file-storage.test.mjs` reproduces the HM scenario (100 entries → snapshot `.meta` → write 100 more → restore stale `.meta` → expect 200 readable) and verified 200/200 in 7 independent pipeline runs plus a fresh Phase 0 run executed during validation (4/4 pass). The fix is **structural**, not heuristic: `loadFromDisk` calls `loadFromNativeSegments` first; on success it returns early at `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:2395`, never reaching the legacy `.meta` parse path. There is no "prefer larger / newer / live" comparison to be fooled.
+
+**Test coverage is comprehensive for what landed.** ~31 tests across 5 levels (Rust codec unit 8, Rust integration round-trip 3, TS field-mapping unit 9, mjs acceptance 4, migration tool unit 7). Every Amendment finding F1–F7 has at least one test attached.
+
+### Convergent gaps (all 4 workers, or 2-of-4 with file:line evidence)
+
+**G1 (3 workers): Phase 6b N=8 cross-process test absent.** The amendment specified verbatim: *"N=8 sub-processes each calling `RvfBackend.bulkInsert(100 entries)` against the same `.swarm/memory.rvf`, asserting (a) final entry count is exactly 800, (b) all 800 entries readable + searchable, (c) no orphan numIds, (d) no `.meta` artifact"*. None of the 4 acceptance tests exercises this scenario. Implementation log claimed coverage via `t3-2-concurrent` but that test predates ADR-0154 and validates final entry count only (N=6, no metadata, no orphan-numId check, no inventory check). ADR-0095 d11–d14 invariants are inherited mechanism-untested under the unified path — any silent regression to wrong-but-passing-by-luck (timing-dependent) survives the suite.
+
+**G2 (DA-confirmed, file:line verified): Test relaxation cleanup incomplete.** Task #15 was marked complete claiming *"all 4 transitional `||` clauses dropped"*. Two survive:
+- `tests/unit/adr0086-rvf-real-integration.test.mjs:621` — `assert.ok(isRvfLegacy || isSfvrNative, ...)`
+- `tests/unit/adr0086-rvf-real-integration.test.mjs:965` — `assert.ok(isRvfLegacy || isSfvrNative, ...)`
+
+Plus `tests/acceptance/adr0154-single-file-storage.test.mjs:251` still has `assert.ok(true)` (T1 informational mode). Per `feedback-no-squelch-tests` and Acceptance Criterion #4 (*"`MAGIC = 'RVF\0'` constant deleted; the only valid magic on disk is upstream's `SFVR`"*), these tolerate exactly the regression the ADR set out to eliminate — a published CLI that writes legacy `RVF\0` instead of native `SFVR`.
+
+**G3 (DA): Alpine prebuild verified file-existence-only, not load-correctness.** `forks/ruvector/crates/rvf/rvf-node/npm/linux-x64-musl/rvf-node.linux-x64-musl.node` exists (1.28 MB ELF musl, BuildID `b010abcf...`), cross-compiled on macOS via the Homebrew musl-cross toolchain. The pipeline confirms it ships in the published tarball. **No Alpine container load test exists** in `scripts/`, `.github/`, or `tests/`. The R4 mitigation (*"add `linux-x64-musl` to the napi prebuild matrix... before Phase 5c"*) is satisfied at the file level but not at the runtime level. First time someone runs the CLI in `node:alpine` they will load a binary that has never been verified to load.
+
+### DA-only findings (single-worker, lower priority)
+
+**G4: Phase 5c is a half-measure framing.** Decision text reads "single `.rvf` file, sidecar removed entirely". What shipped is "loader prefers native segments while sidecar still on disk for non-embedding entries". The bug class is closed *because* `loadFromNativeSegments` runs first, not because there is a single source of truth. The architectural invariant (no second source to be stale relative to) was relaxed during implementation; this is documented in the Implementation log and is a deliberate trade-off, but should be called out as such rather than implicitly framed as "Phase 5c gated".
+
+**G5: `getVector(id)` causes O(N) napi crossings on load** (one per entry: getMetadataEntries + getVector). At 10K entries that is 20K mutex-serialised napi calls per backend init. Unbenchmarked. Alternative designs (batch reader, or keep embedding in the blob) avoid the cost. Worth measuring before scaling memory backends past ~5K entries.
+
+**G6: Phase 6c migration tool's `--prefer-meta` exits 3 with manual instructions** instead of executing the migration. The Amendment's acceptance ("synthetic 200-entry `.meta` → migrate → reopen → assert 200 entries present") is unreachable end-to-end through the tool. For HM specifically (the motivating scenario), the `--prefer-meta` path is what would be needed if `.rvf` were the stale source; the tool refuses to do that work and prints manual rebuild steps. Unit tests validate exit codes, not round-trip semantics.
+
+**G7: `rvf-backend.ts` is 2,980 lines** — 6× the project's CLAUDE.md `Keep files under 500 lines` rule. Both pure-TS (`MAGIC`, `metadataPath`, `persistToDiskInner` JSON header, `peekDimensions` dual-magic, legacy fall-through) and native (`loadFromNativeSegments`, `_reserveAssignedNativeId`, `getVector` round-trip) paths coexist by design. Hard deletes (Phase 5a/5b/5d) are the right resolution; they are blocked on G1 + G3.
+
+### Three converged recommendations
+
+In priority order:
+
+1. **Fix G1: add `tests/acceptance/adr0154-cross-process-concurrent.test.mjs`** with the verbatim N=8 sub-process scenario the amendment specified. Without this, ADR-0095 d11–d14 inheritance is mechanism-untested under the unified path; the next concurrency regression escapes detection.
+2. **Fix G3: add a `make verify-alpine` target** (or `bash scripts/verify-alpine.sh`) that runs `docker run --rm -v $PWD:/x node:alpine sh -c 'cd /x && npm i @sparkleideas/cli@latest && node -e "require(\"@sparkleideas/ruvector-rvf-node\")"'` against the published artifact on every release. Until this runs, Phase 5c hard-deletes (Phase 5a/5b/5d) cannot safely land — the deletion is the whole point of ADR-0154's single-file end-state.
+3. **Fix G2: drop the two surviving `|| isSfvrNative` clauses** in `tests/unit/adr0086-rvf-real-integration.test.mjs:621, 965` and replace `assert.ok(true)` in `tests/acceptance/adr0154-single-file-storage.test.mjs:251` with a real assertion. Re-tighten task #15 — Phase 0 T1 should fail loudly when `.meta` exists, gated on Phase 5a/5b/5d landing.
+
+### Source artifacts for this validation
+
+Worker output files in `/private/tmp/claude-501/.../tasks/`:
+- Implementation auditor: `ae1ccc66654d4330a.output`
+- Test coverage analyst: `ab791ae52f6abb8ad.output`
+- Bug class hunter: `aed82b9d3f041ad1a.output` (re-ran Phase 0 fresh: 4/4 pass, T4 = 200/200)
+- Devil's advocate: `ac17af5a3bebeba21.output`
+
+### Net verdict
+
+The implementation is **functionally complete and shippable** — the HM-class bug class is closed end-to-end, the platform support is multi-platform, the acceptance suite is green at 674/674. It is **not "done done" relative to the amendment's stated criteria**: G1 (cross-process concurrency test), G2 (test relaxation cleanup), and G3 (Alpine load-test) are the difference between "shipped" and "complete". G4–G7 are documented design choices or deferred follow-ups; they are not blocking.
+
+The Decision section's promise (*"sidecar removed entirely"*) was relaxed to *"loader prefers native; sidecar still produced for entries without embeddings"*. This trade-off is documented but should be considered when evaluating whether to declare the ADR closed: the bug class is closed; the architectural promise is partially delivered.
