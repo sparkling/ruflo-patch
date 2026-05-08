@@ -14,6 +14,7 @@ NEW_RUFLO_HEAD=""
 NEW_AGENTIC_HEAD=""
 NEW_FANN_HEAD=""
 NEW_RUVECTOR_HEAD=""
+NEW_AGENTDB_HEAD=""  # ADR-0161: 5th fork
 
 # ---------------------------------------------------------------------------
 # Upstream SHAs (loaded from state, updated by sync)
@@ -23,6 +24,7 @@ UPSTREAM_RUFLO_SHA=""
 UPSTREAM_AGENTIC_SHA=""
 UPSTREAM_FANN_SHA=""
 UPSTREAM_RUVECTOR_SHA=""
+UPSTREAM_AGENTDB_SHA=""  # ADR-0161: 5th fork
 
 # ---------------------------------------------------------------------------
 # Selective version bumping (publish-only)

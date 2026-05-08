@@ -49,6 +49,7 @@ eval "$(node -e "
   const SHORT = {
     'ruflo': 'RUFLO', 'agentic-flow': 'AGENTIC',
     'ruv-FANN': 'FANN', 'ruvector': 'RUVECTOR',
+    'agentdb': 'AGENTDB',  // ADR-0161: 5th fork
   };
   for (const n of names) {
     const s = SHORT[n] || n.replace(/-/g, '_').toUpperCase();
@@ -79,6 +80,7 @@ declare -A _FORK_HEAD_PREFIX=(
   [agentic-flow]=AGENTIC
   [ruv-FANN]=FANN
   [ruvector]=RUVECTOR
+  [agentdb]=AGENTDB
 )
 
 # set_fork_head "ruflo" "$sha"  →  NEW_RUFLO_HEAD="$sha"

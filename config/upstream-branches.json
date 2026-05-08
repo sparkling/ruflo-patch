@@ -22,5 +22,11 @@
     "branch": "main",
     "url": "https://github.com/ruvnet/RuVector.git",
     "notes": "Active development on main"
+  },
+  "agentdb": {
+    "dir": "/Users/henrik/source/forks/agentdb",
+    "branch": "main",
+    "url": "https://github.com/ruvnet/agentdb.git",
+    "notes": "Standalone agentdb extracted from agentic-flow 2026-05-06; ADR-0161"
   }
 }

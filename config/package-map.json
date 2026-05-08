@@ -74,8 +74,12 @@
       "clonePath": "/home/claude/src/upstream/ruflo"
     },
     "ruvnet/agentic-flow": {
-      "packages": ["agentdb", "agentic-flow"],
+      "packages": ["agentic-flow"],
       "clonePath": "/home/claude/src/upstream/agentic-flow"
+    },
+    "ruvnet/agentdb": {
+      "packages": ["agentdb", "agentdb-onnx"],
+      "clonePath": "/home/claude/src/upstream/agentdb"
     },
     "ruvnet/ruv-FANN": {
       "packages": ["ruv-swarm"],
