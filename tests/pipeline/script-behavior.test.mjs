@@ -52,8 +52,9 @@ describe('fork-paths.sh', () => {
       "bash -c 'source lib/fork-paths.sh && echo ${#FORK_NAMES[@]} && echo ${#FORK_DIRS[@]} && echo ${#UPSTREAM_URLS[@]}'",
     );
     const lines = output.trim().split('\n');
-    assert.equal(lines[0], '4', 'FORK_NAMES should have 4 entries');
-    assert.equal(lines[1], '4', 'FORK_DIRS should have 4 entries');
-    assert.equal(lines[2], '4', 'UPSTREAM_URLS should have 4 entries');
+    // ADR-0161: agentdb is the 5th fork (added 2026-05-08)
+    assert.equal(lines[0], '5', 'FORK_NAMES should have 5 entries (post-ADR-0161)');
+    assert.equal(lines[1], '5', 'FORK_DIRS should have 5 entries (post-ADR-0161)');
+    assert.equal(lines[2], '5', 'UPSTREAM_URLS should have 5 entries (post-ADR-0161)');
   });
 });

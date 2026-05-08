@@ -319,10 +319,14 @@ describe('F1 reality: upgradeEmbeddingService shipped shape (ONNX -> Enhanced ->
       /ONNXEmbeddingService/,
       'upgradeEmbeddingService must reference ONNXEmbeddingService (tier 1)'
     );
+    // Post-ADR-0161 step 8: agentdb-onnx is consumed via npm name (codemod
+    // rewrites bare 'agentdb-onnx' → '@sparkleideas/agentdb-onnx' at publish).
+    // Pre-migration this was a workspace-relative '../../../packages/agentdb-onnx/...'
+    // path; the named-import pattern is the migration's intended new shape.
     assert.match(
       body,
-      /packages\/agentdb-onnx\/src\/services\/ONNXEmbeddingService/,
-      'upgradeEmbeddingService must dynamic-import ONNXEmbeddingService from the local agentdb-onnx package'
+      /import\s*\(\s*[^)]*['"](?:@sparkleideas\/)?agentdb-onnx['"]/,
+      'upgradeEmbeddingService must dynamic-import ONNXEmbeddingService from the agentdb-onnx package (npm name; codemod scopes at publish)'
     );
   });
 
@@ -398,7 +402,7 @@ describe('F1: ONNX package export surface', () => {
 
   const ONNX_SRC = resolve(
     __thisDir,
-    '../../../forks/agentdb-onnx/src/services/ONNXEmbeddingService.ts'
+    '../../../forks/agentdb/packages/agentdb-onnx/src/services/ONNXEmbeddingService.ts'
   );
 
   it('agentdb-onnx package source file exists at the imported path', () => {

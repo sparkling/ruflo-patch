@@ -18,17 +18,20 @@ import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { execSync } from 'node:child_process';
 
-const FORK_ROOT = '/Users/henrik/source/forks/agentic-flow';
+const FORK_ROOT_AGENTIC = '/Users/henrik/source/forks/agentic-flow';
+const FORK_ROOT = '/Users/henrik/source/forks/agentdb';
 const SHARED_MODULE = join(
   FORK_ROOT,
-  'packages/agentdb/src/config/embedding-config.ts',
+  'src/config/embedding-config.ts',
 );
 
+// Post-ADR-0161: paths split between two forks.
+// agentic-flow callers stay in forks/agentic-flow; agentdb caller moved to forks/agentdb.
 const KNOWN_CALLERS = [
-  'agentic-flow/src/services/sona-agentdb-integration.ts',
-  'agentic-flow/src/intelligence/RuVectorIntelligence.ts',
-  'agentic-flow/src/mcp/fastmcp/tools/hooks/intelligence-tools.ts',
-  'packages/agentdb/src/backends/rvf/SonaLearningBackend.ts',
+  { rel: 'agentic-flow/src/services/sona-agentdb-integration.ts', root: FORK_ROOT_AGENTIC },
+  { rel: 'agentic-flow/src/intelligence/RuVectorIntelligence.ts', root: FORK_ROOT_AGENTIC },
+  { rel: 'agentic-flow/src/mcp/fastmcp/tools/hooks/intelligence-tools.ts', root: FORK_ROOT_AGENTIC },
+  { rel: 'src/backends/rvf/SonaLearningBackend.ts', root: FORK_ROOT },
 ];
 
 function rgCount(pattern) {
@@ -105,8 +108,9 @@ test('ADR-0069 A4: shared helper is fault-tolerant on missing config', () => {
   );
 });
 
-for (const rel of KNOWN_CALLERS) {
-  const abs = join(FORK_ROOT, rel);
+for (const caller of KNOWN_CALLERS) {
+  const { rel, root } = caller;
+  const abs = join(root, rel);
   test(`ADR-0069 A4: ${rel} imports readEwcLambdaFromConfig from shared module`, () => {
     assert.ok(existsSync(abs), `caller file missing: ${abs}`);
     const src = readFileSync(abs, 'utf-8');

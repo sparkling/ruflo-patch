@@ -1,187 +1,92 @@
 // @tier unit
-// ADR-0069 swarm review 2026-04-21, advisory A3:
+// ADR-0069 swarm review 2026-04-21, advisory A3 (post-ADR-0161 migration):
 //
-//   agentdb-service.ts::upgradeEmbeddingService() uses a relative dynamic
-//   import to load ONNXEmbeddingService:
+//   Pre-migration: agentdb-service.ts::upgradeEmbeddingService() used a
+//   workspace-relative dynamic import for ONNXEmbeddingService:
 //       await import('../../../packages/agentdb-onnx/src/services/ONNXEmbeddingService.js')
-//   The reviewer flagged that there is no publish-layer check proving the
-//   relative path resolves inside the published tarball at runtime.
+//   Post-ADR-0161 step 8: rewritten to npm-name import
+//       await import('agentdb-onnx')  // codemod scopes to '@sparkleideas/agentdb-onnx' at publish
+//   The relocated agentdb-onnx now lives at forks/agentdb/packages/agentdb-onnx/.
 //
-// This unit test is the build-layer half of that coverage. It verifies,
-// without invoking any real runtime import:
+// This unit test verifies the post-migration shape:
 //
-//   1. The relative import literal is still present in BOTH the fork TS
-//      source AND the compiled fork dist JS.
-//   2. The target ONNXEmbeddingService.js file exists inside the fork
-//      dist at the location the relative path resolves to. If it does
-//      not, the shipped tarball will also be missing it (since the
-//      agentic-flow package.json `files` whitelist includes "dist").
-//   3. The compiled file exports an `ONNXEmbeddingService` class. We
-//      check this with a string-level regex over the compiled .js —
-//      the same style used by the sibling adr0069-f3-booster test.
-//   4. Chain order: the ONNX literal in the compiled agentdb-service.js
-//      appears BEFORE the EnhancedEmbeddingService literal (ONNX is the
-//      preferred tier; ADR-0069 F3 §3).
-//
-// No mocks, no live imports — pure structural file inspection. This is
-// paired with the acceptance check
-// `check_adr0069_f3_onnx_import_resolvable` (lib/acceptance-adr0069-f3-checks.sh)
-// which exercises the dynamic import against the *installed* tarball.
+//   1. The ONNX npm-name import literal is in the fork TS source.
+//   2. agentdb-onnx is declared as a dep of agentic-flow (consumer dep).
+//   3. The agentdb-onnx source has ONNXEmbeddingService class export.
+//   4. Chain order: ONNX import precedes Enhanced import in the upgrade fn.
+//   5. Tier-failure logging is loud (ADR-0082 no-silent-fallback).
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync, existsSync, statSync } from 'node:fs';
-import { dirname, resolve, normalize } from 'node:path';
+import { readFileSync, existsSync } from 'node:fs';
 
 const FORK_SRC =
   '/Users/henrik/source/forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts';
-const FORK_DIST =
-  '/Users/henrik/source/forks/agentic-flow/agentic-flow/dist/agentic-flow/src/services/agentdb-service.js';
+const ONNX_SRC =
+  '/Users/henrik/source/forks/agentdb/packages/agentdb-onnx/src/services/ONNXEmbeddingService.ts';
+const AGENTIC_PKG_JSON =
+  '/Users/henrik/source/forks/agentic-flow/agentic-flow/package.json';
 
-// Expected relative path literal in both source and dist
-const EXPECTED_REL_PATH =
-  '../../../packages/agentdb-onnx/src/services/ONNXEmbeddingService.js';
+// Post-ADR-0161 expected import literal (codemod renames bare 'agentdb-onnx'
+// to '@sparkleideas/agentdb-onnx' at publish, so we accept either form).
+const ONNX_IMPORT_RE = /['"](?:@sparkleideas\/)?agentdb-onnx['"]/;
+const ENHANCED_IMPORT_RE = /EnhancedEmbeddingService/;
 
-describe('ADR-0069 F3 §3 (A3): ONNX relative import is resolvable', () => {
-  it('fork TS source contains the ONNX relative import literal', () => {
+describe('ADR-0069 F3 §3 (A3): ONNX import is wired (post-ADR-0161 npm-name shape)', () => {
+  it('fork TS source contains the agentdb-onnx import literal', () => {
     assert.ok(existsSync(FORK_SRC), `fork source missing: ${FORK_SRC}`);
     const ts = readFileSync(FORK_SRC, 'utf8');
-    assert.ok(
-      ts.includes(EXPECTED_REL_PATH),
-      `fork TS source at ${FORK_SRC} does not contain the expected ONNX import literal '${EXPECTED_REL_PATH}'. If this test fails the upgrade chain has been rewritten; update EXPECTED_REL_PATH or the acceptance check will drift from reality.`,
+    assert.match(
+      ts,
+      ONNX_IMPORT_RE,
+      `fork TS source must contain dynamic import of (@sparkleideas/)?agentdb-onnx — post-ADR-0161 step 8 the workspace-relative path was replaced with the npm name.`,
     );
   });
 
-  it('fork dist JS still contains the ONNX relative import literal', () => {
+  it('agentic-flow declares agentdb-onnx as a dependency', () => {
+    const pkg = JSON.parse(readFileSync(AGENTIC_PKG_JSON, 'utf8'));
+    const deps = { ...(pkg.dependencies ?? {}), ...(pkg.optionalDependencies ?? {}) };
+    const onnxDep = deps['agentdb-onnx'] || deps['@sparkleideas/agentdb-onnx'];
     assert.ok(
-      existsSync(FORK_DIST),
-      `fork dist missing: ${FORK_DIST} — run \`cd forks/agentic-flow/agentic-flow && npm run build\``,
-    );
-    const js = readFileSync(FORK_DIST, 'utf8');
-    assert.ok(
-      js.includes(EXPECTED_REL_PATH),
-      `fork dist at ${FORK_DIST} does not contain '${EXPECTED_REL_PATH}'. tsc must preserve the literal so node can resolve it at runtime. If this fails after a build config change, the ONNX tier will silently fall through every install.`,
+      onnxDep,
+      `agentic-flow/package.json must declare agentdb-onnx (or @sparkleideas/agentdb-onnx) — post-ADR-0161 step 8.4. found deps: ${Object.keys(deps).join(', ')}`,
     );
   });
 
-  it('the relative path resolves to a file that exists in the fork dist', () => {
-    // Resolve relative to the compiled agentdb-service.js, not the TS source.
-    // That is what node's runtime `import()` does.
-    const svcDir = dirname(FORK_DIST);
-    const resolved = normalize(resolve(svcDir, EXPECTED_REL_PATH));
-
-    assert.ok(
-      existsSync(resolved),
-      `relative import target does NOT exist: ${resolved}. The compiled agentdb-service.js references a path the build does not emit. Fix: confirm tsc picks up packages/agentdb-onnx through transitive imports (moduleResolution: bundler), or vendor the service into packages/agentdb.`,
-    );
-
-    const st = statSync(resolved);
-    assert.ok(st.isFile(), `resolved path is not a regular file: ${resolved}`);
-    assert.ok(st.size > 0, `resolved file is empty: ${resolved}`);
-  });
-
-  it('the resolved ONNXEmbeddingService.js exports an ONNXEmbeddingService class', () => {
-    const svcDir = dirname(FORK_DIST);
-    const resolved = normalize(resolve(svcDir, EXPECTED_REL_PATH));
-    assert.ok(existsSync(resolved), `resolved file missing: ${resolved}`);
-
-    const js = readFileSync(resolved, 'utf8');
-    // The compiled output can take several shapes depending on tsc target:
-    //   export class ONNXEmbeddingService { ... }
-    //   exports.ONNXEmbeddingService = ...;
-    //   class ONNXEmbeddingService_1 { ... }; export { ONNXEmbeddingService_1 as ONNXEmbeddingService };
-    // Accept any of them.
+  it('agentdb-onnx source exports an ONNXEmbeddingService class', () => {
+    assert.ok(existsSync(ONNX_SRC), `agentdb-onnx source missing: ${ONNX_SRC}`);
+    const ts = readFileSync(ONNX_SRC, 'utf8');
     const hasExport =
-      /export\s+class\s+ONNXEmbeddingService\b/.test(js) ||
-      /exports\.ONNXEmbeddingService\s*=/.test(js) ||
-      /export\s*\{[^}]*\bONNXEmbeddingService\b[^}]*\}/.test(js);
-
+      /export\s+class\s+ONNXEmbeddingService\b/.test(ts) ||
+      /export\s*\{[^}]*\bONNXEmbeddingService\b/.test(ts);
     assert.ok(
       hasExport,
-      `ONNXEmbeddingService is not exported from ${resolved}. The upgrade chain's dynamic import will succeed but the destructure will fail with "ONNXEmbeddingService export not found".`,
+      `ONNXEmbeddingService class must be exported from ${ONNX_SRC}.`,
     );
   });
 
-  it('chain order in compiled dist: inside upgradeEmbeddingService(), ONNX import precedes Enhanced import', () => {
-    // Scope the order assertion to the upgrade function only. Other
-    // places in the file (e.g. the basic `ensureEmbedder` path) may
-    // legitimately mention EnhancedEmbeddingService first without
-    // implying a tier-order regression.
-    const js = readFileSync(FORK_DIST, 'utf8');
-    // Anchor at the function declaration, not the call-site or JSDoc.
-    // Try both the async form and the bare method form to stay robust
-    // against tsc emit differences.
-    let fnStart = js.indexOf('async upgradeEmbeddingService(');
-    if (fnStart < 0) fnStart = js.indexOf('upgradeEmbeddingService() {');
+  it('chain order in fork TS: ONNX import precedes Enhanced reference inside upgradeEmbeddingService()', () => {
+    const ts = readFileSync(FORK_SRC, 'utf8');
+    const fnStart = ts.search(/private\s+async\s+upgradeEmbeddingService\s*\(/);
+    assert.ok(fnStart >= 0, 'upgradeEmbeddingService not found');
+    // 12000-char window covers the ONNX + Enhanced + Basic chain
+    const fnWindow = ts.slice(fnStart, Math.min(fnStart + 12000, ts.length));
+    const onnxIdx = fnWindow.search(ONNX_IMPORT_RE);
+    const enhancedIdx = fnWindow.search(ENHANCED_IMPORT_RE);
+    assert.ok(onnxIdx >= 0, 'ONNX import not found in upgradeEmbeddingService window');
+    assert.ok(enhancedIdx >= 0, 'EnhancedEmbeddingService not found in upgradeEmbeddingService window');
     assert.ok(
-      fnStart >= 0,
-      `compiled dist lacks upgradeEmbeddingService function declaration (${FORK_DIST})`,
-    );
-    // Isolate a window starting at the function declaration, large
-    // enough to contain both tier blocks (~8k chars is plenty for the
-    // full ONNX + Enhanced + Basic chain).
-    const windowEnd = Math.min(fnStart + 12000, js.length);
-    const fnWindow = js.slice(fnStart, windowEnd);
-
-    const onnxImportIdx = fnWindow.indexOf(EXPECTED_REL_PATH);
-    const enhancedImportIdx = fnWindow.indexOf(
-      '../../../packages/agentdb/src/controllers/EnhancedEmbeddingService.js',
-    );
-    assert.ok(
-      onnxImportIdx >= 0,
-      `upgradeEmbeddingService() window lacks the ONNX import literal (${FORK_DIST})`,
-    );
-    assert.ok(
-      enhancedImportIdx >= 0,
-      `upgradeEmbeddingService() window lacks the Enhanced import literal (${FORK_DIST})`,
-    );
-    assert.ok(
-      onnxImportIdx < enhancedImportIdx,
-      `chain ORDER wrong inside upgradeEmbeddingService(): ONNX import at offset ${onnxImportIdx}, Enhanced import at offset ${enhancedImportIdx} (both offsets are within the function window). ADR-0069 F3 §3 requires ONNX → Enhanced → Basic.`,
-    );
-  });
-
-  // Regression guard for 2026-04-21 acceptance failure:
-  //   `check_adr0069_f3_onnx_tier_active` compared the first file-wide
-  //   occurrence of 'ONNXEmbeddingService' (JSDoc inside
-  //   upgradeEmbeddingService() — line ~392) against the first file-wide
-  //   occurrence of 'EnhancedEmbeddingService' (a comment in init() —
-  //   line ~232), producing a false "chain ORDER wrong" failure. Both
-  //   this test and the acceptance check must scope the order comparison
-  //   to the upgrade function body. This assertion pins the bad pattern:
-  //   if someone regresses either check back to a global first-match
-  //   comparison, this test demonstrates why it is wrong.
-  it('file-wide first-occurrence order is NOT a valid tier-order signal (acceptance regression 2026-04-21)', () => {
-    const js = readFileSync(FORK_DIST, 'utf8');
-    const firstOnnx = js.indexOf('ONNXEmbeddingService');
-    const firstEnhanced = js.indexOf('EnhancedEmbeddingService');
-    assert.ok(firstOnnx >= 0 && firstEnhanced >= 0, 'both names should be present in compiled dist');
-    // Today in the real compiled dist, Enhanced appears first globally
-    // because init() has an "EnhancedEmbeddingService" comment before
-    // upgradeEmbeddingService()'s JSDoc. This is harmless; the assertion
-    // documents it so a reviewer does not silently reintroduce a global
-    // first-occurrence compare as the order signal. If this equality
-    // ever flips, either the source changed or tsc emit order changed —
-    // revisit both scoped checks and update the doc.
-    assert.ok(
-      firstEnhanced < firstOnnx,
-      `global-first-occurrence of EnhancedEmbeddingService (${firstEnhanced}) should come BEFORE ONNXEmbeddingService (${firstOnnx}) in the compiled dist — this is the exact layout that breaks naive file-wide order checks. If it flips, a rewrite of init() or the JSDoc happened; re-audit the scoped order guards in this test and in lib/acceptance-adr0069-f3-checks.sh::check_adr0069_f3_onnx_tier_active.`,
+      onnxIdx < enhancedIdx,
+      `chain ORDER wrong: ONNX import at offset ${onnxIdx}, Enhanced at offset ${enhancedIdx}. ADR-0069 F3 §3 requires ONNX → Enhanced → Basic.`,
     );
   });
 
   it('compiled dist still logs loudly on tier failure (ADR-0082)', () => {
-    // The upgrade chain's ONNX catch block must NOT swallow silently.
-    // We check that within ~200 chars after the ONNX import literal there is
-    // a console.warn/error reference — same shape as F3-8 acceptance check.
-    const js = readFileSync(FORK_DIST, 'utf8');
-    const onnxIdx = js.indexOf(EXPECTED_REL_PATH);
-    assert.ok(onnxIdx >= 0, 'ONNX import literal not found — earlier tests should have caught this');
-
-    // Search the full upgrade function for any console.warn mentioning ONNX.
-    const hasLoudLog = /console\.(warn|error)[^;]*ONNX/.test(js);
+    const ts = readFileSync(FORK_SRC, 'utf8');
+    const hasLoudLog = /console\.(warn|error)[^;]*ONNX/.test(ts);
     assert.ok(
       hasLoudLog,
-      `compiled dist has no console.warn/error referencing ONNX — the ONNX tier catch block may have been stripped or weakened, which is an ADR-0082 silent-fallback violation.`,
+      `fork TS has no console.warn/error referencing ONNX — ADR-0082 silent-fallback violation.`,
     );
   });
 });

@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 const FORK_ROOT = '/Users/henrik/source/forks/agentic-flow';
 const AF_SRC    = join(FORK_ROOT, 'agentic-flow', 'src');
-const ADB_SRC   = join(FORK_ROOT, 'packages', 'agentdb', 'src');
+const ADB_SRC   = '/Users/henrik/source/forks/agentdb/src';
 
 const INTEL_TOOLS_PATH   = join(AF_SRC, 'mcp', 'fastmcp', 'tools', 'hooks', 'intelligence-tools.ts');
 const SONA_BACKEND_PATH  = join(ADB_SRC, 'backends', 'rvf', 'SonaLearningBackend.ts');

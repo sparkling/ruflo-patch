@@ -46,8 +46,10 @@ import { tmpdir } from 'node:os';
 // ============================================================================
 
 const FORK_AGENTIC = '/Users/henrik/source/forks/agentic-flow';
-const NIGHTLY_LEARNER_PATH = `${FORK_AGENTIC}/packages/agentdb/src/controllers/NightlyLearner.ts`;
-const FRONTIER_SCHEMA_PATH = `${FORK_AGENTIC}/packages/agentdb/src/schemas/frontier-schema.sql`;
+// Post-ADR-0161: agentdb files moved from forks/agentic-flow/packages/agentdb/ to forks/agentdb/
+const FORK_AGENTDB = '/Users/henrik/source/forks/agentdb';
+const NIGHTLY_LEARNER_PATH = `${FORK_AGENTDB}/src/controllers/NightlyLearner.ts`;
+const FRONTIER_SCHEMA_PATH = `${FORK_AGENTDB}/src/schemas/frontier-schema.sql`;
 
 // ============================================================================
 // Helpers

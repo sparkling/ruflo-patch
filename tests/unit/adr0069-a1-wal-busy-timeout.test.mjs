@@ -22,6 +22,7 @@ import { execSync } from 'node:child_process';
 import path from 'node:path';
 
 const FORK_ROOT = '/Users/henrik/source/forks/agentic-flow';
+const FORK_ROOT_AGENTDB = '/Users/henrik/source/forks/agentdb';
 
 function listTrackedFiles() {
   const out = execSync('git ls-files', { cwd: FORK_ROOT, encoding: 'utf8' });
@@ -94,24 +95,26 @@ test('ADR-0069 A1: every production WAL-init file sets busy_timeout', () => {
 test('ADR-0069 A1: known-fixed sites still contain busy_timeout (regression guard)', () => {
   const expected = [
     // Originally fixed by 196d2b9 / a7d5b95
-    'agentic-flow/src/agentdb/cli/agentdb-cli.ts',
-    'agentic-flow/src/agentdb/benchmarks/frontier-benchmark.ts',
-    'agentic-flow/src/agentdb/benchmarks/comprehensive-benchmark.ts',
-    'agentic-flow/src/reasoningbank/db/queries.ts',
-    'agentic-flow/src/intelligence/EmbeddingCache.ts',
-    'agentic-flow/src/intelligence/IntelligenceStore.ts',
-    'agentic-flow/src/workers/worker-registry.ts',
-    'packages/agentdb/src/mcp/agentdb-mcp-server.ts',
-    'packages/agentdb/src/db/migrations/apply-migration.ts',
-    'packages/agentdb/src/cli/agentdb-cli.ts',
-    'packages/agentdb/src/cli/commands/init.ts',
+    { rel: 'agentic-flow/src/agentdb/cli/agentdb-cli.ts', root: FORK_ROOT },
+    { rel: 'agentic-flow/src/agentdb/benchmarks/frontier-benchmark.ts', root: FORK_ROOT },
+    { rel: 'agentic-flow/src/agentdb/benchmarks/comprehensive-benchmark.ts', root: FORK_ROOT },
+    { rel: 'agentic-flow/src/reasoningbank/db/queries.ts', root: FORK_ROOT },
+    { rel: 'agentic-flow/src/intelligence/EmbeddingCache.ts', root: FORK_ROOT },
+    { rel: 'agentic-flow/src/intelligence/IntelligenceStore.ts', root: FORK_ROOT },
+    { rel: 'agentic-flow/src/workers/worker-registry.ts', root: FORK_ROOT },
+    // Post-ADR-0161: agentdb files moved from packages/agentdb/src/ to forks/agentdb/src/
+    { rel: 'src/mcp/agentdb-mcp-server.ts', root: FORK_ROOT_AGENTDB },
+    { rel: 'src/db/migrations/apply-migration.ts', root: FORK_ROOT_AGENTDB },
+    { rel: 'src/cli/agentdb-cli.ts', root: FORK_ROOT_AGENTDB },
+    { rel: 'src/cli/commands/init.ts', root: FORK_ROOT_AGENTDB },
     // Added by this task (ADR-0069 A1 residual round 3)
-    'agentic-flow/src/reasoningbank/db/queries.js',
-    'examples/research-swarm/lib/db-utils.js',
-    'examples/research-swarm/scripts/optimize-db.js',
+    { rel: 'agentic-flow/src/reasoningbank/db/queries.js', root: FORK_ROOT },
+    { rel: 'examples/research-swarm/lib/db-utils.js', root: FORK_ROOT },
+    { rel: 'examples/research-swarm/scripts/optimize-db.js', root: FORK_ROOT },
   ];
-  for (const rel of expected) {
-    const abs = path.join(FORK_ROOT, rel);
+  for (const item of expected) {
+    const { rel, root } = item;
+    const abs = path.join(root, rel);
     const content = readFileSync(abs, 'utf8');
     assert.match(
       content,

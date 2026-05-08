@@ -43,7 +43,7 @@ function mockCtor(methods = {}) {
 const FORKS_ROOT = join(import.meta.dirname, '..', '..', '..', 'forks');
 const AGENTDB_SOURCE = join(
   FORKS_ROOT,
-  'agentic-flow', 'packages', 'agentdb', 'src', 'core', 'AgentDB.ts',
+  'agentdb', 'src', 'core', 'AgentDB.ts',
 );
 
 // ============================================================================
