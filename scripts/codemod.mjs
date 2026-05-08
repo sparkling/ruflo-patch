@@ -224,6 +224,28 @@ const SCOPED_RE = /@claude-flow\//g;
 // forms (tool-name suffix, doc glob, permission glob) get rewritten.
 const MCP_PREFIX_RE = /mcp__claude-flow__([a-zA-Z0-9_]+|\*|:\*)/g;
 
+// ADR-0161 step 6: Pass 8 — MCP tool prefix migration for agentdb.
+// Rewrites `mcp__agentic-flow__agentdb_<tool>` → `mcp__agentdb__<tool>`.
+// New ruvnet/agentdb (post-extraction) registers its MCP server as
+// `name: 'agentdb'` (verified at forks/agentdb/src/mcp/agentdb-mcp-server.ts:282)
+// so Claude Code namespaces tools as `mcp__agentdb__*` rather than the
+// previous `mcp__agentic-flow__agentdb_*` (when agentdb was vendored
+// inside agentic-flow's MCP server).
+//
+// Pass numbering: this is Pass 8, NOT Pass 7 — Pass 7 is already taken by
+// ADR-0143's `@sparkleideas/cli → @sparkleideas/ruflo` flip (line ~321).
+//
+// Coverage per Agent 06's audit (during the 15-agent council review):
+// 23 references in *.md documentation across ruflo-patch + forks/agentic-flow;
+// ZERO in production code. So this is essentially a documentation rewrite —
+// zero runtime regression risk. Pass 8 also covers `:*` (permission glob) +
+// `*` (doc glob) forms by capturing `[a-zA-Z0-9_]+|\*|:\*`.
+//
+// Order: Pass 8 runs AFTER Pass 4 in transformSource() — the prefixes don't
+// overlap (`mcp__claude-flow__` vs `mcp__agentic-flow__agentdb_`) so order
+// is for determinism, not correctness.
+const MCP_AGENTDB_PREFIX_RE = /mcp__agentic-flow__agentdb_([a-zA-Z0-9_]+|\*|:\*)/g;
+
 // Step 1b: RuVector scoped replacement -- @ruvector/ -> @sparkleideas/ruvector-
 // Transforms @ruvector/core -> @sparkleideas/ruvector-core, etc.
 const RUVECTOR_SCOPED_RE = /@ruvector\//g;
@@ -469,6 +491,12 @@ export function transformSource(content) {
   // ".claude/** drift-prevention" tests in
   // tests/pipeline/codemod.test.mjs lock that in.
   result = result.replace(MCP_PREFIX_RE, 'mcp__ruflo__$1');
+
+  // Pass 8 (ADR-0161 step 6): MCP tool prefix for agentdb after extraction
+  //   mcp__agentic-flow__agentdb_<tool> -> mcp__agentdb__<tool>
+  // Runs unconditionally on every allowed-extension file (same scope as Pass 4).
+  // Order: AFTER Pass 4 to ensure determinism (no prefix overlap).
+  result = result.replace(MCP_AGENTDB_PREFIX_RE, 'mcp__agentdb__$1');
 
   // Pass 6 (ADR-0117 follow-up): npx-context unscoped `ruflo` -> `@sparkleideas/ruflo`
   result = result.replace(NPX_RUFLO_RE, '$1@sparkleideas/ruflo');
