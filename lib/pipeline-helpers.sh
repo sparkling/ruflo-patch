@@ -48,6 +48,7 @@ write_build_manifest() {
   "agentic_head": "${NEW_AGENTIC_HEAD:-}",
   "fann_head": "${NEW_FANN_HEAD:-}",
   "ruvector_head": "${NEW_RUVECTOR_HEAD:-}",
+  "agentdb_head": "${NEW_AGENTDB_HEAD:-}",
   "codemod_hash": "${codemod_hash}",
   "packages_compiled": ${compiled_count},
   "packages_total": ${total_count}

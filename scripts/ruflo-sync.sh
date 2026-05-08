@@ -336,11 +336,11 @@ main() {
     local _vm_data
     _vm_data=$(node -e "
       const m=JSON.parse(require('fs').readFileSync('$_verify_manifest','utf-8'));
-      console.log([m.ruflo_head,m.agentic_head,m.fann_head,m.ruvector_head,m.codemod_hash].join(':'));
+      console.log([m.ruflo_head,m.agentic_head,m.fann_head,m.ruvector_head,m.agentdb_head,m.codemod_hash].join(':'));
     " 2>/dev/null) || _vm_data=""
 
-    local _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_codemod
-    IFS=':' read -r _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_codemod <<< "$_vm_data"
+    local _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_agentdb _vm_codemod
+    IFS=':' read -r _vm_ruflo _vm_agentic _vm_fann _vm_ruvector _vm_agentdb _vm_codemod <<< "$_vm_data"
     local _current_codemod
     _current_codemod=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || _current_codemod=""
 
@@ -348,6 +348,7 @@ main() {
           "${_vm_agentic}" == "${NEW_AGENTIC_HEAD}" && \
           "${_vm_fann}" == "${NEW_FANN_HEAD}" && \
           "${_vm_ruvector}" == "${NEW_RUVECTOR_HEAD}" && \
+          "${_vm_agentdb}" == "${NEW_AGENTDB_HEAD}" && \
           "${_vm_codemod}" == "${_current_codemod}" ]]; then
       log "Skipping acceptance — already verified by publish stage"
       skip_acceptance=true

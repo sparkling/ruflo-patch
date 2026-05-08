@@ -83,8 +83,8 @@ copy_source() {
   log "Copying fork source to ${TEMP_DIR}"
   local _cp_start _cp_end
 
-  # Copy all 3 forks in parallel (uses all available I/O bandwidth)
-  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN" "${TEMP_DIR}/cross-repo/ruvector"
+  # ADR-0161: agentdb is the 5th fork (4 cross-repo dirs)
+  mkdir -p "${TEMP_DIR}/cross-repo/agentic-flow" "${TEMP_DIR}/cross-repo/ruv-FANN" "${TEMP_DIR}/cross-repo/ruvector" "${TEMP_DIR}/cross-repo/agentdb"
 
   _cp_start=$(date +%s%N 2>/dev/null || echo 0)
   local rsync_status_dir
@@ -123,12 +123,16 @@ copy_source() {
   rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" \
     && touch "${rsync_status_dir}/ruvector" &
   local pid_ruvector=$!
-  wait $pid_ruflo $pid_agentic $pid_fann $pid_ruvector
+  # ADR-0161: agentdb 5th fork
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTDB}/" "${TEMP_DIR}/cross-repo/agentdb/" \
+    && touch "${rsync_status_dir}/agentdb" &
+  local pid_agentdb=$!
+  wait $pid_ruflo $pid_agentic $pid_fann $pid_ruvector $pid_agentdb
   _cp_end=$(date +%s%N 2>/dev/null || echo 0)
 
   # Verify all rsync operations succeeded
   local rsync_failures=0
-  for fork_name in ruflo agentic fann ruvector; do
+  for fork_name in ruflo agentic fann ruvector agentdb; do
     if [[ ! -f "${rsync_status_dir}/${fork_name}" ]]; then
       log_error "rsync failed for ${fork_name}"
       rsync_failures=$((rsync_failures + 1))
@@ -144,9 +148,9 @@ copy_source() {
   if [[ "$_cp_start" != "0" && "$_cp_end" != "0" ]]; then
     _cp_ms=$(( (_cp_end - _cp_start) / 1000000 ))
     log "  Parallel copy completed in ${_cp_ms}ms"
-    add_cmd_timing "copy-source" "rsync (4 forks parallel)" "${_cp_ms}"
+    add_cmd_timing "copy-source" "rsync (5 forks parallel)" "${_cp_ms}"
   fi
-  log "Source copied to temp directory (4 forks merged, parallel)"
+  log "Source copied to temp directory (5 forks merged, parallel — ADR-0161)"
 
   # ADR-0069: Clear stale dist/ for packages with patched .ts source.
   # The rsync --filter='P dist/' preserves compiled JS to avoid recompiling

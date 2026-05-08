@@ -339,7 +339,7 @@ main() {
   local _verify_codemod_hash
   _verify_codemod_hash=$(sha256sum "${SCRIPT_DIR}/codemod.mjs" 2>/dev/null | cut -d' ' -f1) || _verify_codemod_hash=""
   cat > "$_verify_manifest" <<VMANIFEST
-{"ruflo_head":"${NEW_RUFLO_HEAD:-}","agentic_head":"${NEW_AGENTIC_HEAD:-}","fann_head":"${NEW_FANN_HEAD:-}","ruvector_head":"${NEW_RUVECTOR_HEAD:-}","codemod_hash":"${_verify_codemod_hash}","verified_at":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"}
+{"ruflo_head":"${NEW_RUFLO_HEAD:-}","agentic_head":"${NEW_AGENTIC_HEAD:-}","fann_head":"${NEW_FANN_HEAD:-}","ruvector_head":"${NEW_RUVECTOR_HEAD:-}","agentdb_head":"${NEW_AGENTDB_HEAD:-}","codemod_hash":"${_verify_codemod_hash}","verified_at":"$(date -u '+%Y-%m-%dT%H:%M:%SZ')"}
 VMANIFEST
   log "Verification manifest written"
 

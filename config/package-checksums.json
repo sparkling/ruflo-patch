@@ -1,7 +1,7 @@
 {
   "codemod_hash": "a413652027243221971390585f77a4afbd92dc9142ee3abecb1a4f3fa4926562",
   "patch_dir_hash": "295365e21f73f4be596e7b45a3708a7e462d42fe9e9b59bb8662da5aa55beb4c",
-  "generated_at": "2026-03-07T20:53:25.997Z",
+  "generated_at": "2026-05-08T21:11:26.304Z",
   "checksums": {
     "@sparkleideas/agentic-flow": "sha256:0dad4f2e331666b62678ef9d415b406e1fcd313734517703d8a0191f062456fc",
     "agentic-flow-quic": "sha256:5d7db6014737b2df6aaf8cbf91e25d482bdcbce7303f8c692685203c4b01cdca",
@@ -15,8 +15,8 @@
     "@sparkleideas/agent-booster": "sha256:405af9cf3891f593bf4da769c460a3edc6ba87e7dba9c95051682f181d67d9c1",
     "agent-booster-cli": "sha256:903ace96a8639859f620455b84e478a8ece0667bcecc59b264e1cd2e2c9efa74",
     "@agentdb/benchmarks": "sha256:f5b40f84b25eb6bc62b00de1148b85022f9705f66861802f1ae6e53f8ce65547",
-    "@sparkleideas/agentdb": "sha256:9366c9567a16bc53486eeb31d1055ee9c7108af3a8d88eaaf81d23cd4ce727a4",
-    "@sparkleideas/agentdb-onnx": "sha256:b6041191a695e0657124a40699e179655a53a9e77137dbc983ceaa9eaa30b13b",
+    "@sparkleideas/agentdb": "sha256:c274d00a8aa44799b871020f970cfeef4cd0c17718c7904cda183fa99f65ab23",
+    "@sparkleideas/agentdb-onnx": "sha256:0b6048585ef645cc4f0c5df9818278a289be3212a9b8426e44524572d3631723",
     "@agentic-jujutsu/e2b-tests": "sha256:860bed0b7d4873b68d211d0b3eb126526c5c332ba97fc84ea7e2e76d822f6280",
     "@medai/backend": "sha256:fc537ddd7d4537c190d7668da78a284f883782d4f0319e7ab5f6449a52db3ba6",
     "@agentic-flow/e2b-benchmarks": "sha256:b584cba4fdf4524301b350434d85406506beead7e6fea54a551e55fb6e2c868a",
