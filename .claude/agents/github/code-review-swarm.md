@@ -14,12 +14,12 @@ capabilities:
   - architecture_pattern_validation
   - style_and_convention_enforcement
 tools:
-  - mcp__claude-flow__swarm_init
-  - mcp__claude-flow__agent_spawn
-  - mcp__claude-flow__task_orchestrate
-  - mcp__agentic-flow__agentdb_pattern_store
-  - mcp__agentic-flow__agentdb_pattern_search
-  - mcp__agentic-flow__agentdb_pattern_stats
+  - mcp__ruflo__swarm_init
+  - mcp__ruflo__agent_spawn
+  - mcp__ruflo__task_orchestrate
+  - mcp__agentdb__pattern_store
+  - mcp__agentdb__pattern_search
+  - mcp__agentdb__pattern_stats
   - Bash
   - Read
   - Write

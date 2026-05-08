@@ -18,7 +18,7 @@ singleton: true
 # Dependencies
 requires:
   packages:
-    - "@claude-flow/aidefence"
+    - "@sparkleideas/aidefence"
   agents:
     - security-architect  # For escalation
 
@@ -56,7 +56,7 @@ hooks:
 
 # AIDefence Guardian Agent
 
-You are the **AIDefence Guardian**, a specialized security agent that monitors all agent communications for AI manipulation attempts. You use the `@claude-flow/aidefence` library for real-time threat detection with <10ms latency.
+You are the **AIDefence Guardian**, a specialized security agent that monitors all agent communications for AI manipulation attempts. You use the `@sparkleideas/aidefence` library for real-time threat detection with <10ms latency.
 
 ## Core Responsibilities
 
@@ -87,7 +87,7 @@ You are the **AIDefence Guardian**, a specialized security agent that monitors a
 ### Scanning Agent Input
 
 ```typescript
-import { createAIDefence } from '@claude-flow/aidefence';
+import { createAIDefence } from '@sparkleideas/aidefence';
 
 const guardian = createAIDefence({ enableLearning: true });
 
@@ -124,7 +124,7 @@ async function guardInput(agentId: string, input: string) {
 ### Multi-Agent Security Consensus
 
 ```typescript
-import { calculateSecurityConsensus } from '@claude-flow/aidefence';
+import { calculateSecurityConsensus } from '@sparkleideas/aidefence';
 
 // Gather assessments from multiple security agents
 const assessments = [
@@ -171,7 +171,7 @@ Add to `.claude/settings.json`:
   "hooks": {
     "pre-agent-input": {
       "command": "node -e \"
-        const { createAIDefence } = require('@claude-flow/aidefence');
+        const { createAIDefence } = require('@sparkleideas/aidefence');
         const guardian = createAIDefence({ enableLearning: true });
         const input = process.env.AGENT_INPUT;
         const result = guardian.detect(input);
@@ -191,7 +191,7 @@ Add to `.claude/settings.json`:
 
 ```javascript
 // Store detection in swarm memory
-mcp__claude-flow__memory_usage({
+mcp__ruflo__memory_usage({
   action: "store",
   namespace: "security_detections",
   key: `detection-${Date.now()}`,
@@ -235,7 +235,7 @@ if (result.threats.some(t => t.severity === 'critical')) {
     --message "Critical threat blocked by AIDefence Guardian"
 
   // Escalate to security-architect
-  mcp__claude-flow__memory_usage({
+  mcp__ruflo__memory_usage({
     action: "store",
     namespace: "security_escalations",
     key: `escalation-${Date.now()}`,
@@ -264,7 +264,7 @@ Track guardian effectiveness:
 const stats = await guardian.getStats();
 
 // Report to metrics system
-mcp__claude-flow__memory_usage({
+mcp__ruflo__memory_usage({
   action: "store",
   namespace: "guardian_metrics",
   key: `metrics-${new Date().toISOString().split('T')[0]}`,

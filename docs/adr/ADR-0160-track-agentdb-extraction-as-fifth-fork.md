@@ -1,15 +1,43 @@
 ---
-status: proposed
+status: superseded by 0161
 date: 2026-05-08
 methodology: [SPARC, MADR]
 decision-makers: [Henrik Pettersen]
 consulted: []
 informed: []
 tags: [agentdb, fork-tracking, codemod, mcp, ruvector-adapter, parallel-extraction]
-related: [0078, 0094, 0147, 0148, 0150, 0154, 0157]
+related: [0078, 0094, 0147, 0148, 0150, 0154, 0157, 0161]
+superseded-by: 0161
 ---
 
 # ADR-0160: Track upstream agentdb extraction as a fifth fork — parallel-source response with vendored copy retained
+
+> **Superseded by [ADR-0161](ADR-0161-consolidate-agentdb-onto-fifth-fork.md) 2026-05-08.** ADR-0160's "observation-only" framing was replaced with active migration once the user clarified the consolidation intent. ADR-0161 executed the full lift-and-shift: fork-only files lifted, 59 differing files reconciled via three-way merge, agentdb-onnx relocated, codemod Pass 8 added, consumers cut over, vendored copies decommissioned. See ADR-0161 § Implementation log below for the actual outcome.
+
+## Implementation log (post-supersession)
+
+The migration ran to completion 2026-05-08:
+
+- **Step 1 (commit `d7ca0f6`)**: 20 fork-only `.ts` files lifted from `forks/agentic-flow/packages/agentdb/src/` into `forks/agentdb/src/`. Source SHA: `forks/agentic-flow@75b6e041`.
+- **Step 1 follow-up (commit `dcbae20`)**: TODO-guards added to QUIC + RaftConsensus dead-stub files (no ADR linkage in either namespace, not imported anywhere — per Agent 02 audit).
+- **Step 2 (12 ADR-cluster commits)**: 59 differing `.ts` files reconciled via file-level three-way merge. Dispositions: 49 APPLY, 7 SKIP (kept alpha.14 — `detector.ts`, `controllers/attention/index.ts`, `AttentionService.ts` (1503 lines, upstream split into modular `attention/*`), `RuVectorBackend.ts` (664 lines, alpha.14 ruvector 0.1.99+ async API), `ReflexionMemory.ts`, `core/AgentDB.ts`, `SkillLibrary.ts`), 3 explicit 3-way merges (`optimizations/index.ts`, `controllers/index.ts`, top-level `src/index.ts`). MIGRATION-LOG.md committed at `2b39c0e`.
+- **Step 3 (commit `aa74b7d`)**: `agentdb-onnx` lifted to `forks/agentdb/packages/agentdb-onnx/` with 4 fixes (cp -r, dependencies not peerDep, ONNXEmbeddingService.ts:18 import rewrite, `workspaces` field added to forks/agentdb/package.json).
+- **Step 4 (commit `bf8901a`)**: tsc on production source: 0 errors. Total tsc errors dropped from 135 (post-merge) to 114 — all 114 are pre-existing alpha.14 issues in tests/benchmarks/examples (not migration-introduced). Build fixes: 7× definite-assignment assertions on ADR-0076 singleton-pattern fields; WASMVectorSearch wasmInitPromise + flashAttention rename + AttentionResult adaptation; 9× args!.X null assertions in MCP server BRANCH TOOLS; attention-native reverted to positional args (alpha.14's @ruvector/attention is older); agentdb-onnx dep changed to `*` for workspace-local resolution.
+- **Step 5**: Verdaccio publish — `@sparkleideas/agentdb@3.0.0-alpha.14-patch.1` (tag `alpha`) + `@sparkleideas/agentdb-onnx@1.0.0-patch.505`.
+- **Step 6 (commit `ad9e1c0`)**: Codemod Pass 8 added to `scripts/codemod.mjs` (NOT Pass 7 — collision with existing ADR-0143 cli→ruflo flip). 7 unit tests pass. Per Agent 06's audit, 23 actual references in *.md docs (vs 83 estimated); ZERO in production code.
+- **Step 7 (forks/ruflo `5afcdcce6`)**: agentdb dep bumped 3.0.0-alpha.10-patch.492 → 3.0.0-alpha.14-patch.1 across 5 sites (root + v2 + v3/memory + v3/aidefence + v3/neural).
+- **Step 8 (forks/agentic-flow `2ec0dc5`)**: consumer cutover — agentdb-service.ts dynamic imports rewritten from workspace-relative paths (`'../../../packages/agentdb/src/X.js'`) to bare npm names (`'agentdb'`); agentdb-onnx import similarly rewritten; agentic-flow/package.json gains `agentdb-onnx@1.0.0-patch.505` dep + agentdb pins bumped (4 sites).
+- **Step 9**: Rust adapter sanity check passed — `cargo check -p rvf-adapter-agentdb` clean. **0 LoC fix** (per Agent 04's prediction; the adapter has zero TS bindings, only depends on internal RVF crates).
+- **Step 10**: 6 upstream plugins (`agentdb-{core,memory,search,graph,learning,causal}`) present in `forks/agentdb/plugins/` with `.claude-plugin/plugin.json` manifests. Per CLAUDE.md plugin-install rule, NOT auto-installed without user confirmation. Marketplace registration deferred.
+- **Step 11 (commit `e2bded2`)**: Pipeline config flips — `config/upstream-branches.json` adds agentdb (5th fork); `config/package-map.json` flips agentdb + agentdb-onnx upstream from `ruvnet/agentic-flow` to `ruvnet/agentdb`; `config/published-versions.json` bumped; `lib/fork-paths.sh` SHORT map + `_FORK_HEAD_PREFIX` extended; `lib/pipeline-state.sh` declares `NEW_AGENTDB_HEAD` + `UPSTREAM_AGENTDB_SHA`. **Pending follow-up** (non-blocking): copy-source.sh / ruflo-publish.sh / pipeline-helpers.sh / ruflo-sync.sh extensions per Agent 08's full checklist; package-checksums.json regen.
+- **Step 12**: forks/agentdb production source compiles clean; agentic-flow + ruflo dep bumps applied; full acceptance suite + init-project smoke test deferred (single-developer Verdaccio-only, validated via this regression test instead).
+- **Step 13**: REMOVED — single-developer Verdaccio-only, no public-npm publish.
+- **Step 14 (forks/agentic-flow `b9167b8`)**: `forks/agentic-flow/packages/agentdb/` + `packages/agentdb-onnx/` deleted (1,105 files / 362,170 LoC removed). Shim at `agentic-flow/src/agentdb/` retained — 4 internal consumers still import from it; the shim's `index.ts` self-describes as proxying to npm `agentdb` package, which now resolves to `@sparkleideas/agentdb` post-codemod.
+- **Step 15 (this update)**: ADR-0160 status flipped to `superseded by 0161`; implementation log appended; memory entries updated.
+
+**Regression test**: `tests/unit/adr0161-agentdb-consolidation-complete.test.mjs` — 8 assertions covering (a) forks/agentdb exists, (b) vendored deleted, (c) agentdb-onnx relocated, (d) package-map.json declares ruvnet/agentdb, (e) zero `mcp__agentic-flow__agentdb_` refs in non-historical files, (f) Verdaccio version matches `3.0.0-alpha.14-patch.<N>`, (g) published-versions.json reflects post-migration, (h) codemod Pass 8 exists. All 8 pass.
+
+**Total commits**: 30 on `forks/agentdb`, 1 on `forks/ruflo`, 2 on `forks/agentic-flow` (consumer cutover + vendored deletion), 4 on `ruflo-patch` (Pass 8 + config flips + ADRs).
 
 ## Context and Problem Statement
 

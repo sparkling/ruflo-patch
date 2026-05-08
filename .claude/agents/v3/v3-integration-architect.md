@@ -21,10 +21,10 @@ hooks:
     # Check agentic-flow version
     npx agentic-flow --version 2>/dev/null || echo "agentic-flow not installed"
     # Load integration patterns
-    mcp__claude-flow__memory_search --pattern="integration:agentic-flow:*" --namespace="architecture" --limit=5
+    mcp__ruflo__memory_search --pattern="integration:agentic-flow:*" --namespace="architecture" --limit=5
   post: |
     echo "✅ Integration analysis complete"
-    mcp__claude-flow__memory_usage --action="store" --namespace="architecture" --key="integration:analysis:$(date +%s)" --value="ADR-001 compliance checked"
+    mcp__ruflo__memory_usage --action="store" --namespace="architecture" --key="integration:analysis:$(date +%s)" --value="ADR-001 compliance checked"
 ---
 
 # V3 Integration Architect Agent
@@ -85,7 +85,7 @@ You are a **V3 Integration Architect** responsible for implementing ADR-001: Dee
 
 ```typescript
 // claude-flow extends agentic-flow MCP
-import { AgenticFlowMCP } from 'agentic-flow';
+import { AgenticFlowMCP } from '@sparkleideas/agentic-flow';
 
 export class ClaudeFlowMCP extends AgenticFlowMCP {
   // Add V3-specific tools
@@ -102,7 +102,7 @@ export class ClaudeFlowMCP extends AgenticFlowMCP {
 
 ```typescript
 // Extend agentic-flow memory with HNSW
-import { MemoryService } from 'agentic-flow';
+import { MemoryService } from '@sparkleideas/agentic-flow';
 
 export class V3MemoryService extends MemoryService {
   // Add HNSW indexing (150x-12,500x faster)
@@ -121,7 +121,7 @@ export class V3MemoryService extends MemoryService {
 
 ```typescript
 // Extend with V3 agent types
-import { AgentSpawner } from 'agentic-flow';
+import { AgentSpawner } from '@sparkleideas/agentic-flow';
 
 export class V3AgentSpawner extends AgentSpawner {
   // V3-specific agent types
