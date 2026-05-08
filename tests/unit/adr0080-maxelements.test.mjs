@@ -620,7 +620,7 @@ describe('ADR-0080: config alignment across settings-generator, config-template,
 // ============================================================================
 
 const agentDbSrc = readFileSync(
-  resolve('/Users/henrik/source/forks/agentic-flow/packages/agentdb/src', 'core/AgentDB.ts'),
+  resolve('/Users/henrik/source/forks/agentdb/src', 'core/AgentDB.ts'),
   'utf-8',
 );
 const ctrlRegistrySrc = readFileSync(

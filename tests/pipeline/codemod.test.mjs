@@ -733,6 +733,126 @@ describe('codemod: ADR-0113 — markdown extension and MCP tool prefix', () => {
   });
 });
 
+// Drift-prevention (2026-05-04): Pass 4 (MCP tool prefix rewrite) MUST
+// cover the init-bundled `.claude/**` tree, not just plugin/marketplace
+// docs. Upstream merges occasionally re-introduce `mcp__claude-flow__*`
+// identifiers in `.claude/settings.json`, agents/skills/commands .md,
+// and helper .sh scripts; codemod is the structural complement to the
+// fork-source one-shot patches. These tests lock the contract in so a
+// later narrowing of Pass 4's scope (e.g. path-scoping it like Pass 5)
+// cannot silently drop `.claude/**` coverage.
+describe('codemod: .claude/** drift-prevention — Pass 4 covers init-bundled tree', () => {
+  let tmp;
+  let outsideTmp;
+  afterEach(() => {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+    if (outsideTmp) rmSync(outsideTmp, { recursive: true, force: true });
+    tmp = undefined;
+    outsideTmp = undefined;
+  });
+
+  it('rewrites mcp__claude-flow__:* in .claude/settings.json (json extension, permission-glob form)', async () => {
+    tmp = makeTmpDir();
+    const claudeDir = join(tmp, '.claude');
+    mkdirSync(claudeDir, { recursive: true });
+    const settings = {
+      permissions: {
+        allow: [
+          'mcp__claude-flow__:*',
+          'mcp__claude-flow__memory_store',
+        ],
+      },
+    };
+    writeFileSync(join(claudeDir, 'settings.json'),
+      JSON.stringify(settings, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(claudeDir, 'settings.json'), 'utf8');
+    assert.ok(result.includes('mcp__ruflo__:*'),
+      'permission-glob form `mcp__claude-flow__:*` rewritten to `mcp__ruflo__:*`');
+    assert.ok(result.includes('mcp__ruflo__memory_store'),
+      'specific tool name rewritten in settings.json');
+    assert.ok(!result.includes('mcp__claude-flow__'),
+      'no mcp__claude-flow__ references remain in .claude/settings.json');
+  });
+
+  it('rewrites mcp__claude-flow__* in .claude/helpers/setup-mcp.sh (sh extension)', async () => {
+    tmp = makeTmpDir();
+    const helpersDir = join(tmp, '.claude', 'helpers');
+    mkdirSync(helpersDir, { recursive: true });
+    const shellSource = [
+      '#!/usr/bin/env bash',
+      '# Bootstraps MCP tool registration',
+      'echo "Registering mcp__claude-flow__memory_store..."',
+      'register_tool mcp__claude-flow__swarm_init',
+      'register_tool mcp__claude-flow__agent_spawn',
+    ].join('\n');
+    writeFileSync(join(helpersDir, 'setup-mcp.sh'), shellSource);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(helpersDir, 'setup-mcp.sh'), 'utf8');
+    assert.ok(result.includes('mcp__ruflo__memory_store'),
+      'tool name in shell echo rewritten');
+    assert.ok(result.includes('mcp__ruflo__swarm_init'),
+      'tool name in shell command-arg rewritten');
+    assert.ok(result.includes('mcp__ruflo__agent_spawn'),
+      'second tool name rewritten');
+    assert.ok(!result.includes('mcp__claude-flow__'),
+      'no mcp__claude-flow__ references remain in .claude/helpers/setup-mcp.sh');
+  });
+
+  it('rewrites mcp__claude-flow__* in .claude/agents/<agent>.md (md extension)', async () => {
+    tmp = makeTmpDir();
+    const agentsDir = join(tmp, '.claude', 'agents');
+    mkdirSync(agentsDir, { recursive: true });
+    const agentDoc = [
+      '# Researcher Agent',
+      '',
+      'This agent uses `mcp__claude-flow__memory_search` to retrieve context.',
+    ].join('\n');
+    writeFileSync(join(agentsDir, 'researcher.md'), agentDoc);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(agentsDir, 'researcher.md'), 'utf8');
+    assert.ok(result.includes('mcp__ruflo__memory_search'),
+      'agent doc tool reference rewritten');
+    assert.ok(!result.includes('mcp__claude-flow__'),
+      'no mcp__claude-flow__ references remain in agent doc');
+  });
+
+  it('does NOT rewrite files OUTSIDE the codemod tempDir (path-scoping bound)', async () => {
+    // Confirms `transform(tempDir)` only walks files under tempDir — a
+    // sentinel `.md` in a sibling tmp tree must remain byte-identical.
+    // This is the structural guarantee that path-scoping (whether implicit
+    // via the walker or explicit via isPlugin*Scope) cannot leak the
+    // transform into arbitrary filesystem locations.
+    tmp = makeTmpDir();
+    outsideTmp = makeTmpDir();
+    const original = 'See `mcp__claude-flow__memory_store` for details.\n';
+    const outsideFile = join(outsideTmp, 'foo.md');
+    writeFileSync(outsideFile, original);
+
+    // Sibling file inside tmp confirms codemod IS running and would have
+    // rewritten the outside file if scope were unbounded.
+    writeFileSync(join(tmp, 'in-scope.md'), original);
+
+    await transform(tmp);
+
+    const outsideResult = readFileSync(outsideFile, 'utf8');
+    assert.equal(outsideResult, original,
+      'file outside tempDir must not be transformed (path-scoping bound)');
+    assert.ok(outsideResult.includes('mcp__claude-flow__memory_store'),
+      'outside file retains original mcp__claude-flow__ reference verbatim');
+
+    const inScopeResult = readFileSync(join(tmp, 'in-scope.md'), 'utf8');
+    assert.ok(inScopeResult.includes('mcp__ruflo__memory_store'),
+      'in-scope sibling was rewritten (sanity — codemod did run)');
+  });
+});
+
 // ADR-0117 Pass 5: rewrite the unscoped `claude-flow@alpha` package
 // reference in marketplace surfaces (.claude-plugin/** and plugins/**) so
 // upstream-merge regressions don't reintroduce the broken public-npm

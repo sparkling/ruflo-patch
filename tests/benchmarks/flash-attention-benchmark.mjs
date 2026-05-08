@@ -236,7 +236,7 @@ async function loadAttentionService() {
   } catch { /* next */ }
 
   try {
-    const mod = await import('/Users/henrik/source/forks/agentic-flow/packages/agentdb/dist/src/index.js');
+    const mod = await import('/Users/henrik/source/forks/agentdb/dist/src/index.js');
     return { AS: mod.AttentionService, src: 'fork dist' };
   } catch { /* next */ }
 

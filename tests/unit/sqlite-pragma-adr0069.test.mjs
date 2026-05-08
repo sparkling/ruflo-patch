@@ -102,7 +102,7 @@ describe('ADR-0069 A1: AgentDB config-driven pragmas', () => {
 
   it('AgentDBConfig has sqlite field', () => {
     const src = readFileSync(
-      join(FORKS, 'agentic-flow/packages/agentdb/src/core/AgentDB.ts'),
+      join(FORKS, 'agentdb/src/core/AgentDB.ts'),
       'utf-8'
     );
     assert.match(src, /sqlite\?:\s*\{/, 'AgentDBConfig must have sqlite? field');
@@ -110,7 +110,7 @@ describe('ADR-0069 A1: AgentDB config-driven pragmas', () => {
 
   it('pragmas use config values with fallback defaults', () => {
     const src = readFileSync(
-      join(FORKS, 'agentic-flow/packages/agentdb/src/core/AgentDB.ts'),
+      join(FORKS, 'agentdb/src/core/AgentDB.ts'),
       'utf-8'
     );
     assert.match(src, /sq\?\.cacheSize\s*\?\?\s*-64000/, 'cacheSize fallback must be -64000');
@@ -121,7 +121,7 @@ describe('ADR-0069 A1: AgentDB config-driven pragmas', () => {
 
   it('sq variable is declared outside the try block (accessible in catch)', () => {
     const src = readFileSync(
-      join(FORKS, 'agentic-flow/packages/agentdb/src/core/AgentDB.ts'),
+      join(FORKS, 'agentdb/src/core/AgentDB.ts'),
       'utf-8'
     );
     // sq must be declared before the try block

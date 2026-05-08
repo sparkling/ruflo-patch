@@ -11,7 +11,7 @@ import { resolve } from 'node:path';
 
 const HOME = process.env.HOME ?? '/home/claude';
 const CONFIG_SRC = resolve(
-  HOME, 'src/forks/agentic-flow/packages/agentdb/src/config/embedding-config.ts',
+  HOME, 'src/forks/agentdb/src/config/embedding-config.ts',
 );
 let source = '';
 try { source = readFileSync(CONFIG_SRC, 'utf-8'); } catch { /* fork may be absent */ }

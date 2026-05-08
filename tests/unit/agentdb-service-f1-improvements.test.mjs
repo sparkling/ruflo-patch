@@ -398,7 +398,7 @@ describe('F1: ONNX package export surface', () => {
 
   const ONNX_SRC = resolve(
     __thisDir,
-    '../../../forks/agentic-flow/packages/agentdb-onnx/src/services/ONNXEmbeddingService.ts'
+    '../../../forks/agentdb-onnx/src/services/ONNXEmbeddingService.ts'
   );
 
   it('agentdb-onnx package source file exists at the imported path', () => {

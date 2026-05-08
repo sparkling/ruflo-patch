@@ -31,7 +31,7 @@ function mockFn(impl) {
 const FORK_ROOT = '/Users/henrik/source/forks/agentic-flow';
 // agentic-flow has a nested agentic-flow/ subdir for the main source
 const AF_SRC = join(FORK_ROOT, 'agentic-flow', 'src');
-const AGENTDB_SRC = join(FORK_ROOT, 'packages', 'agentdb', 'src');
+const AGENTDB_SRC = '/Users/henrik/source/forks/agentdb/src';
 
 // ============================================================================
 // Test 1: rate-limiter-config.ts exists and exports expected functions

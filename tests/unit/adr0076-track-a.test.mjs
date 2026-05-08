@@ -241,7 +241,7 @@ describe('A4: dual-instance controller guards', () => {
     'LearningSystem',
     'ExplainableRecall',
   ];
-  const base = '/Users/henrik/source/forks/agentic-flow/packages/agentdb/src/controllers';
+  const base = '/Users/henrik/source/forks/agentdb/src/controllers';
 
   for (const name of controllers) {
     it(`${name} has singleton guard variable`, () => {
