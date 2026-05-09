@@ -274,10 +274,11 @@ run_build() {
 
   # Build packages outside v3/@claude-flow/ (cross-repo, v3/plugins/*)
   local -a extra_pkg_dirs=()
-  # Cross-repo packages (agentic-flow fork)
+  # Cross-repo packages: agentdb fork (ADR-0161 — moved out of agentic-flow/packages/),
+  # agentdb-onnx sibling under it (ADR-0161 step 3), agent-booster (still in agentic-flow).
   for extra_dir in \
-    "${TEMP_DIR}/cross-repo/agentic-flow/packages/agentdb" \
-    "${TEMP_DIR}/cross-repo/agentic-flow/packages/agentdb-onnx" \
+    "${TEMP_DIR}/cross-repo/agentdb" \
+    "${TEMP_DIR}/cross-repo/agentdb/packages/agentdb-onnx" \
     "${TEMP_DIR}/cross-repo/agentic-flow/packages/agent-booster"; do
     [[ -d "$extra_dir" && -f "$extra_dir/tsconfig.json" ]] && extra_pkg_dirs+=("$extra_dir")
   done

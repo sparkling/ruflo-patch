@@ -390,9 +390,19 @@ describe('ADR-0090 Tier B2: loadFromDisk does NOT throw on valid recovery paths'
 
 describe('ADR-0090 Tier B2: fork patch shipped in dist', () => {
   const dist = (() => {
+    // Post-ADR-0154 G7: RvfCorruptError class + its error strings are extracted
+    // out of rvf-backend.js into rvf-backend-errors.js. Concat both so the
+    // assertions still find the literals regardless of which file they ended
+    // up in. See forks/ruflo/v3/@claude-flow/memory/src/rvf-backend-errors.ts.
     for (const name of readdirSync('/tmp').filter(n => n.startsWith('ruflo-accept-') || n.startsWith('ruflo-fast-'))) {
-      const candidate = join('/tmp', name, 'node_modules', '@sparkleideas', 'memory', 'dist', 'rvf-backend.js');
-      if (existsSync(candidate)) return readFileSync(candidate, 'utf-8');
+      const distRoot = join('/tmp', name, 'node_modules', '@sparkleideas', 'memory', 'dist');
+      const main = join(distRoot, 'rvf-backend.js');
+      const errs = join(distRoot, 'rvf-backend-errors.js');
+      if (existsSync(main)) {
+        let combined = readFileSync(main, 'utf-8');
+        if (existsSync(errs)) combined += '\n' + readFileSync(errs, 'utf-8');
+        return combined;
+      }
     }
     return null;
   })();
@@ -401,9 +411,9 @@ describe('ADR-0090 Tier B2: fork patch shipped in dist', () => {
     assert.match(dist, /RvfCorruptError/,
       'dist must contain the RvfCorruptError name tag');
     assert.match(dist, /is corrupt:/,
-      'dist must contain the corruption diagnostic prefix');
+      'dist must contain the corruption diagnostic prefix (post-ADR-0154 G7: in rvf-backend-errors.js)');
     assert.match(dist, /Refusing to start with empty state/,
-      'dist must contain the user-facing overwrite warning');
+      'dist must contain the user-facing overwrite warning (post-ADR-0154 G7: in rvf-backend-errors.js)');
   });
 
   it('dist skips native binary path when nativeDb is set', { skip: !dist }, () => {
