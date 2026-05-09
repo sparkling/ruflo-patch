@@ -47,6 +47,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/agentic-flow': [],
   '@sparkleideas/agentic-jujutsu': [],  // ADR-0150 follow-up — has only @qudag/napi-core (external) + bundled darwin-arm64.node
   '@sparkleideas/ruv-swarm': [],
+  '@sparkleideas/cli-core': [],  // ADR-0162 follow-up — Level 1, no v3-internal deps; cli (Level 5) re-exports from it
   // Level 2
   '@sparkleideas/shared': [],
   '@sparkleideas/memory': ['@sparkleideas/agentdb'],
@@ -192,15 +193,15 @@ describe('Topological publish order (ADR-0014)', () => {
       const allPackages = LEVELS.flat();
       // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5: L1=22, L2=5, L3=7,
       // L4=24 (22 base + 2 ADR-0113 federation/iot plugins), L5=2
-      assert.equal(LEVELS[0].length, 23, 'Level 1 should have 23 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm/learning WASM + ADR-0150 agentic-jujutsu)');
+      assert.equal(LEVELS[0].length, 24, 'Level 1 should have 24 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm/learning WASM + ADR-0150 agentic-jujutsu + ADR-0162 cli-core)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
       assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
       assert.equal(LEVELS[3].length, 24, 'Level 4 should have 24 packages (22 base + ADR-0113 federation + iot)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        61,
-        `Expected 61 packages total (ADR-0113 Fix 5: 58 base + federation + iot + ADR-0150 agentic-jujutsu), got ${allPackages.length}`
+        62,
+        `Expected 62 packages total (ADR-0113 Fix 5: 58 base + federation + iot + ADR-0150 agentic-jujutsu + ADR-0162 cli-core), got ${allPackages.length}`
       );
     });
 

@@ -176,14 +176,20 @@ run_build() {
   # Build groups map to publish levels 2-5 (level 1 packages are cross-repo).
   # Only v3/@claude-flow/* packages are built here; plugins and cross-repo
   # packages are handled separately below.
-  local -a group_0 group_1 group_2 group_3
+  local -a group_0 group_1 group_2 group_3 group_4
   local -a all_groups
 
   # Known v3/@claude-flow/ packages (used to filter out cross-repo and plugin packages)
   # ADR-0113 Fix 5: federation + iot plugins live under v3/@claude-flow/plugin-*
   # (not v3/plugins/ like other plugins — upstream merge layout). Add them
   # here so build groups pick them up via JSON filter at level 4.
-  local -A _v3_packages=([shared]=1 [memory]=1 [embeddings]=1 [codex]=1 [aidefence]=1
+  # ADR-0162 follow-up (2026-05-09): cli-core registered here so the
+  # publish pipeline re-tsc's it after codemod. Pre-F-2 it didn't exist;
+  # post-F-2 it sits at Level 1 (no v3-internal deps) and the cli (Level 5)
+  # re-exports from it. Without this entry cli-core's dist is whatever the
+  # fork rsynced — stale if a fork-side source change lands without a
+  # local `npm run build`.
+  local -A _v3_packages=([cli-core]=1 [shared]=1 [memory]=1 [embeddings]=1 [codex]=1 [aidefence]=1
     [neural]=1 [hooks]=1 [browser]=1 [plugins]=1 [providers]=1 [claims]=1
     [guidance]=1 [mcp]=1 [integration]=1 [deployment]=1 [swarm]=1
     [security]=1 [performance]=1 [testing]=1 [cli]=1
@@ -196,13 +202,16 @@ run_build() {
   _build_groups_json=$(node -e "
     const fs = require('fs');
     const data = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/publish-levels.json', 'utf-8'));
-    const v3set = new Set(['shared','memory','embeddings','codex','aidefence',
+    const v3set = new Set(['cli-core','shared','memory','embeddings','codex','aidefence',
       'neural','hooks','browser','plugins','providers','claims',
       'guidance','mcp','integration','deployment','swarm',
       'security','performance','testing','cli',
       // ADR-0113 Fix 5: federation + iot plugins live under v3/@claude-flow/
       'plugin-agent-federation','plugin-iot-cognitum']);
-    for (let i = 1; i < data.levels.length; i++) {
+    // ADR-0162 follow-up: start at i=0 so Level 1 v3 packages (cli-core)
+    // get a build group. The v3set filter still excludes cross-repo Level
+    // 1 entries (ruvector*, agentdb, etc.) which build in their own forks.
+    for (let i = 0; i < data.levels.length; i++) {
       const pkgs = data.levels[i].packages
         .map(p => p.replace('@sparkleideas/', ''))
         .filter(p => v3set.has(p));
@@ -230,11 +239,14 @@ run_build() {
     done
   else
     log "WARN: Could not read publish-levels.json for build groups — using hardcoded fallback"
-    group_0=(shared memory embeddings codex aidefence)
-    group_1=(neural hooks browser plugins providers claims)
-    group_2=(guidance mcp integration deployment swarm security performance testing)
-    group_3=(cli)
-    all_groups=("group_0" "group_1" "group_2" "group_3")
+    # ADR-0162 follow-up: cli-core ships at Level 1 (no v3-internal deps),
+    # cli (Level 5) re-exports from it.
+    group_0=(cli-core)
+    group_1=(shared memory embeddings codex aidefence)
+    group_2=(neural hooks browser plugins providers claims)
+    group_3=(guidance mcp integration deployment swarm security performance testing)
+    group_4=(cli)
+    all_groups=("group_0" "group_1" "group_2" "group_3" "group_4")
   fi
 
   local _group_idx=0

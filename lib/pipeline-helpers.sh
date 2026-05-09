@@ -19,6 +19,12 @@ copy_source() {
 
 run_codemod() {
   node "${SCRIPT_DIR}/codemod.mjs" "${TEMP_DIR}"
+  # ADR-0162 follow-up: after rename, link workspace-internal @sparkleideas/*
+  # deps so test-ci can resolve runtime bare specifiers (e.g.
+  # cli/dist/src/output.js → @sparkleideas/cli-core/output) without
+  # needing pnpm install. Externals (rabitq-wasm, agentdb, etc.) resolve
+  # from Verdaccio at acceptance.
+  node "${SCRIPT_DIR}/codemod-symlink-workspace.mjs" "${TEMP_DIR}"
 }
 
 run_build() {
