@@ -27,7 +27,8 @@
         "@sparkleideas/agentic-jujutsu",
         "@sparkleideas/ruv-swarm",
         "@sparkleideas/agent-booster",
-        "@sparkleideas/agentdb-onnx"
+        "@sparkleideas/agentdb-onnx",
+        "@sparkleideas/cli-core"
       ]
     },
     {
