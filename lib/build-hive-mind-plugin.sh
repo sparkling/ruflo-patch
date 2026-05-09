@@ -81,7 +81,10 @@ _log "dest=$PLUGIN_DIR"
 # Format: "plugin/relative/path|upstream/relative/path"
 _pairs_skills=(
   "skills/hive-mind/SKILL.md|.agents/skills/hive-mind/SKILL.md"
-  "skills/hive-mind-advanced/SKILL.md|v3/@claude-flow/cli/.claude/skills/hive-mind-advanced/SKILL.md"
+  # Upstream PR #1836 (commit 6902716f6, 2026-05-07) consolidated SKILL.md
+  # sources: v3/@claude-flow/cli/.claude/skills/ was removed; the canonical
+  # path now lives at the repo root.
+  "skills/hive-mind-advanced/SKILL.md|.claude/skills/hive-mind-advanced/SKILL.md"
 )
 
 _pairs_agents=(

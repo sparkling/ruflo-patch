@@ -131,17 +131,21 @@ check_adr0094_p4_github_pr_manage() { # adr0097-l2-delegator: flag set inside _g
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Check 3: github_metrics — documented local stub
+# Check 3: github_metrics — local stub OR real gh-CLI surface
 # ════════════════════════════════════════════════════════════════════
-# Handler returns {success:false, _stub:true, message:"...local-only stubs...",
-#                  localData:{storedRepos, localIssueCount, localPrCount, ...}}.
-# The _stub marker is load-bearing: when the fork implements real API calls,
-# this regex will stop matching and the check will FAIL — forcing a rewrite.
+# Pre-2026-05 the handler was a documented local stub returning
+# {_stub:true, localData:{...}}. The 2026-05 sync (upstream PR #1859)
+# replaced the stub with a real gh-CLI implementation that returns
+# {_real:true, timeRange, since, commits, releases, branches}. The
+# acceptance check now accepts EITHER shape — the legacy stub markers
+# OR the new real shape — so the test stays green across the rollout
+# without forcing a fork divergence and without weakening the no-empty
+# / no-silent-pass invariants in `_github_invoke_tool`.
 check_adr0094_p4_github_metrics() { # adr0097-l2-delegator: flag set inside _github_invoke_tool
   _github_invoke_tool \
     "github_metrics" \
     '{}' \
-    '"_stub":\s*true|local-only stubs|"localData"' \
+    '"_stub":\s*true|local-only stubs|"localData"|"_real":\s*true|"timeRange"|"commits"' \
     "github_metrics" \
     15
 }
@@ -161,15 +165,17 @@ check_adr0094_p4_github_repo_analyze() { # adr0097-l2-delegator: flag set inside
 }
 
 # ════════════════════════════════════════════════════════════════════
-# Check 5: github_workflow — documented local stub
+# Check 5: github_workflow — local stub OR real gh-CLI surface
 # ════════════════════════════════════════════════════════════════════
-# Handler returns {success:false, _stub:true, message:"...workflow operations require actual GitHub API access...",
-#                  localData:{requestedAction, workflowId, ref}}.
+# Pre-2026-05 returned {_stub:true, localData:{requestedAction,...}}.
+# The 2026-05 sync replaced the stub with a real gh-CLI shim. With no
+# remote runs the `list` action now returns {_real:true, requestedAction:'list',
+# runs:[], workflows:[]}. Accept either shape (see github_metrics).
 check_adr0094_p4_github_workflow() { # adr0097-l2-delegator: flag set inside _github_invoke_tool
   _github_invoke_tool \
     "github_workflow" \
     '{}' \
-    '"_stub":\s*true|local-only stubs|"requestedAction"' \
+    '"_stub":\s*true|local-only stubs|"requestedAction"|"_real":\s*true|"runs"|"workflows"' \
     "github_workflow" \
     15
 }

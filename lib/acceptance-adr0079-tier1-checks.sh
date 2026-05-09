@@ -254,9 +254,14 @@ check_t1_4_sqlite_verify() {
     [[ -f "$candidate" ]] && db_path="$candidate" && break
   done
 
-  # Aggressive search if no known path matched
+  # Aggressive search if no known path matched.
+  # Only scan SQLite-compatible files: *.db / *.sqlite. Excluding *.rvf is
+  # critical — RVF is a binary HNSW container, not SQLite. Including .rvf
+  # here caused "file is not a database (26)" when the find returned the
+  # .rvf before any .db (post-ADR-0080 RVF-primary projects often have a
+  # populated .rvf created before the .db schema is touched).
   if [[ -z "$db_path" ]]; then
-    db_path=$(find "$dir" \( -name "*.db" -o -name "*.sqlite" -o -name "*.rvf" \) \
+    db_path=$(find "$dir" \( -name "*.db" -o -name "*.sqlite" \) \
       -not -path "*/node_modules/*" -type f 2>/dev/null | head -1)
   fi
 

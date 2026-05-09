@@ -213,7 +213,10 @@ check_adr0117_mcp_tool_resolution() {
   # 1) Collect the union of mcp__ruflo__<tool> suffixes from init-bundled
   # SKILL.md `allowed-tools:` frontmatter (post-R2 these are the source of
   # truth for what tools the user-facing skills expect).
-  local skills_dir="${__ADR0117_FORK_DIR}/v3/@claude-flow/cli/.claude/skills"
+  # Upstream PR #1836 (commit 6902716f6, 2026-05-07) consolidated SKILL.md
+  # sources: v3/@claude-flow/cli/.claude/skills/ was pruned as duplicate;
+  # canonical location is now the repo-root .claude/skills/.
+  local skills_dir="${__ADR0117_FORK_DIR}/.claude/skills"
   if [[ ! -d "$skills_dir" ]]; then
     _CHECK_OUTPUT="ADR-0117 AC#4 failed: $skills_dir missing (R2 not applied?)"
     end_ns=$(_ns); _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"

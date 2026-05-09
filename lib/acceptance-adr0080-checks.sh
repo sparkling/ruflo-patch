@@ -657,7 +657,19 @@ check_adr0080_rvf_has_entries() {
     return
   fi
 
-  # Look for RVF file in .swarm/ or at path specified in embeddings.json
+  # ADR-0080-14 verifies the RVF backend produces a populated `.swarm/memory.rvf`
+  # after init + store. The harness `memory init` only creates `.swarm/memory.db`
+  # (SQLite); the `.rvf` file is materialized on the first `memory store` call
+  # via the dual-write path. Earlier revisions of this check relied on a sibling
+  # `e2e-store-rvf` to run first and populate E2E_DIR/.swarm/memory.rvf, but the
+  # checks live in different parallel groups so ordering is not guaranteed —
+  # the result was an order-dependent flake (RUN may pass or fail depending on
+  # how the scheduler interleaves the groups).
+  #
+  # Take ownership of the precondition: do an iso-private memory store first
+  # so the assertion has its own RVF to inspect. We still check the canonical
+  # E2E_DIR paths first (preserves the historical "header present" partial-pass
+  # branch when a sibling check did populate it).
   local rvf_path=""
 
   # Try embeddings.json databasePath first
@@ -680,8 +692,33 @@ check_adr0080_rvf_has_entries() {
     done
   fi
 
+  # No RVF in E2E_DIR yet — do a private iso store so the precondition is
+  # satisfied without depending on a sibling check having run first.
   if [[ -z "$rvf_path" || ! -f "$rvf_path" ]]; then
-    _CHECK_OUTPUT="ADR-0080-14: no RVF file found in E2E_DIR"
+    local iso=""
+    if declare -F _e2e_isolate >/dev/null; then
+      iso=$(_e2e_isolate "adr0080-rvf-size")
+    fi
+    if [[ -n "$iso" && -d "$iso" ]]; then
+      local cli; cli=""
+      if declare -F _cli_cmd >/dev/null; then cli=$(_cli_cmd); fi
+      [[ -z "$cli" ]] && cli="${CLI_BIN:-}"
+      if [[ -n "$cli" ]]; then
+        local marker="adr0080-14-$$-$(date +%s)"
+        if declare -F _run_and_kill >/dev/null; then
+          _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$marker' --value 'adr0080-14 rvf-size probe payload' --namespace adr0080-14 2>&1" "" 45
+        else
+          (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory store --key "$marker" --value 'adr0080-14 rvf-size probe payload' --namespace adr0080-14 >/dev/null 2>&1) || true
+        fi
+        if [[ -f "$iso/.swarm/memory.rvf" ]]; then
+          rvf_path="$iso/.swarm/memory.rvf"
+        fi
+      fi
+    fi
+  fi
+
+  if [[ -z "$rvf_path" || ! -f "$rvf_path" ]]; then
+    _CHECK_OUTPUT="ADR-0080-14: no RVF file produced after memory store — RVF backend is not creating .swarm/memory.rvf"
     return
   fi
 
