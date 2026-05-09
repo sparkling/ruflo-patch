@@ -60,6 +60,11 @@ export const UNSCOPED_MAP = {
   // RuVector WASM packages (wasm-pack generates unscoped names)
   'ruvector-attention-wasm': '@sparkleideas/ruvector-attention-wasm',
   'ruvector-attention-unified-wasm': '@sparkleideas/ruvector-attention-unified-wasm',
+  // wasm-pack output for `forks/ruvector/{crates,npm/packages}/ruvllm-wasm/`
+  // — name field is unscoped `ruvllm-wasm`. LEVELS lists this under the
+  // ruvector- prefix; preflight-discover reads UNSCOPED_MAP as the in-scope
+  // signal, so register the mapping here.
+  'ruvllm-wasm': '@sparkleideas/ruvector-ruvllm-wasm',
 };
 
 // -- File filters -------------------------------------------------------------
