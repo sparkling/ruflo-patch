@@ -235,7 +235,15 @@ check_t3_2_rvf_concurrent_writes() {
       const raw = fs.readFileSync(path);
       if (raw.length < 8) { console.log("ERR:file-too-small"); process.exit(0); }
       const magic = String.fromCharCode(raw[0], raw[1], raw[2], raw[3]);
+      // Native magics — defer entryCount to CLI list cross-check.
+      // - "SFVR" : pre-ADR-0167 native (4-byte segment magic at offset 0)
+      // - "RVFR" + "OOT\0" : post-ADR-0167 native (8-byte RootHeader prefix
+      //   "RVFROOT\0" reserved at offset 0..128 for the atomic root pointer)
       if (magic === "SFVR") { console.log("NATIVE"); process.exit(0); }
+      if (raw.length >= 8) {
+        const eight = String.fromCharCode(raw[0], raw[1], raw[2], raw[3], raw[4], raw[5], raw[6], raw[7]);
+        if (eight === "RVFROOT\0") { console.log("NATIVE"); process.exit(0); }
+      }
       if (magic !== "RVF\0") { console.log("ERR:bad-magic:" + JSON.stringify(magic)); process.exit(0); }
       const headerLen = raw.readUInt32LE(4);
       if (8 + headerLen > raw.length) { console.log("ERR:truncated-header"); process.exit(0); }

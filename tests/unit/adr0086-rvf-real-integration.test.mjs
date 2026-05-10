@@ -613,12 +613,21 @@ describe('ADR-0086 RVF real integration: Group 4 — persistence and reopen', ()
     assert.ok(!existsSync(dbPath + '.meta'),
       `Phase B1 forbids .meta sidecar when nativeDb is active; found ${dbPath}.meta`);
 
-    // Canonical durable artifact is the .rvf with SFVR native magic.
+    // Canonical durable artifact is the .rvf with NATIVE magic. Post
+    // ADR-0167 Phase 1 (2026-05-10) the native format leads with an
+    // 8-byte RootHeader at offset 0..128 whose magic is `RVFROOT\0`.
+    // Pre-Phase-1 native files lead with the segment magic `SFVR`.
+    // Accept BOTH as valid native shapes (existing .rvf files
+    // compacted post-Phase-1 carry RVFROOT\0; legacy untouched files
+    // still carry SFVR).
     const buf = readFileSync(dbPath);
     assert.ok(buf.length >= 8, '.rvf file must be at least 8 bytes');
     const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
-    assert.ok(isSfvrNative,
-      `.rvf must have SFVR native magic post Phase B1, got ${buf.subarray(0, 4).toString('hex')}`);
+    const isRootHeaderNative =
+      buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x52 &&
+      buf[4] === 0x4F && buf[5] === 0x4F && buf[6] === 0x54 && buf[7] === 0x00;
+    assert.ok(isSfvrNative || isRootHeaderNative,
+      `.rvf must have SFVR or RVFROOT\\0 native magic post Phase B1, got ${buf.subarray(0, 8).toString('hex')}`);
   });
 
   it('a fresh RvfBackend instance loads the persisted entry', { skip }, async () => {
@@ -948,9 +957,15 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
     assert.ok(existsSync(dbPath), '.rvf file must exist after shutdown');
     const buf = readFileSync(dbPath);
     assert.ok(buf.length >= 8, '.rvf file must contain at least 8 bytes');
+    // ADR-0167 Phase 1 (2026-05-10): native files now lead with the
+    // 8-byte `RVFROOT\0` RootHeader magic. Pre-Phase-1 files still lead
+    // with the 4-byte segment magic `SFVR`. Accept both shapes here.
     const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
-    assert.ok(isSfvrNative,
-      `.rvf must have SFVR native magic post Phase B1, got ${buf.subarray(0, 4).toString('hex')}`);
+    const isRootHeaderNative =
+      buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x52 &&
+      buf[4] === 0x4F && buf[5] === 0x4F && buf[6] === 0x54 && buf[7] === 0x00;
+    assert.ok(isSfvrNative || isRootHeaderNative,
+      `.rvf must have SFVR or RVFROOT\\0 native magic post Phase B1, got ${buf.subarray(0, 8).toString('hex')}`);
   });
 
   it('lock file is not left behind after shutdown', { skip }, () => {
