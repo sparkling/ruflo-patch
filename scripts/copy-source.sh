@@ -181,6 +181,21 @@ copy_source() {
   if [[ -x "${SCRIPT_DIR}/bundle-native-binaries.sh" ]]; then
     bash "${SCRIPT_DIR}/bundle-native-binaries.sh" "${TEMP_DIR}" || log "WARN: bundle-native-binaries failed (non-fatal)"
   fi
+
+  # ADR-0164 Phase A0e: Bundle the on-init migration tool into the cli package
+  # so MCP-start can spawn it. Source-of-truth lives in ruflo-patch (keeps
+  # tests/unit/adr0154-migration-tool.test.mjs:26 path resolution intact).
+  local cli_scripts_dir="${TEMP_DIR}/v3/@claude-flow/cli/scripts"
+  if [[ -d "$(dirname "${cli_scripts_dir}")" ]]; then
+    mkdir -p "${cli_scripts_dir}"
+    if [[ -f "${PROJECT_DIR}/scripts/migrate-meta-to-segments.mjs" ]]; then
+      cp "${PROJECT_DIR}/scripts/migrate-meta-to-segments.mjs" "${cli_scripts_dir}/migrate-meta-to-segments.mjs"
+      log "  Bundled migrate-meta-to-segments.mjs into cli/scripts/ (ADR-0164 A0e)"
+    else
+      log_error "ADR-0164 A0e: migrate-meta-to-segments.mjs missing at ${PROJECT_DIR}/scripts/"
+      return 1
+    fi
+  fi
 }
 
 # ---------------------------------------------------------------------------

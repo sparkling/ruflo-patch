@@ -585,7 +585,7 @@ describe('ADR-0086 RVF real integration: Group 4 — persistence and reopen', ()
     if (dir) tryRm(dir);
   });
 
-  it('store + shutdown writes a durable on-disk artifact (RVF\\0 legacy `.meta` per ADR-0154)', { skip }, async () => {
+  it('store + shutdown writes a durable on-disk artifact (single-file SFVR per ADR-0164 Phase B1)', { skip }, async () => {
     const backend = new RvfBackend({
       databasePath: dbPath,
       dimensions: 3,
@@ -604,27 +604,21 @@ describe('ADR-0086 RVF real integration: Group 4 — persistence and reopen', ()
     );
     await backend.shutdown();
 
-    // ADR-0154 delivered contract (G4 reconciliation 2026-05-07T18): `.meta`
-    // is unconditionally written with RVF\0 magic. Phase 5c conditional
-    // suppress was reverted because it broke session_save/restore. The
-    // canonical .rvf (SFVR native) is the source of truth at load time;
-    // `.meta` exists alongside as a legacy sidecar but is silently
-    // ignored by the loader when META_SEGs are present in .rvf. HM-class
-    // bug class is closed by Phase 4 loader-preference, not file-removal.
-    const metaPath = metadataFilePath(dbPath);
-    assert.ok(existsSync(metaPath), `metadata file must exist at ${metaPath}`);
+    // ADR-0164 Phase B1 (commit 08455b51c, 2026-05-10): when nativeDb is
+    // active, persistToDiskInner suppresses the `.meta` sidecar write —
+    // metadata persists in native META_SEGs inside the canonical .rvf
+    // (SFVR magic). The architectural promise of single-file storage
+    // is delivered. The previous ADR-0154 G4 contract (`.meta` always
+    // written with RVF\0) is superseded under δ-strict.
+    assert.ok(!existsSync(dbPath + '.meta'),
+      `Phase B1 forbids .meta sidecar when nativeDb is active; found ${dbPath}.meta`);
 
-    const buf = readFileSync(metaPath);
-    assert.ok(buf.length >= 8, 'metadata file must be at least 8 bytes');
-
-    // The .meta sidecar is the legacy pure-TS format — magic RVF\0
-    // (0x52,0x56,0x46,0x00). SFVR appears in the .rvf main file, never in
-    // .meta. metadataFilePath() always returns the .meta path when
-    // present, which is post-revert always. So this assertion is
-    // strictly RVF\0 — any other magic indicates a regression.
-    const isRvfLegacy = buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x00;
-    assert.ok(isRvfLegacy,
-      `.meta sidecar must have RVF\\0 magic (the only magic ever written to .meta under the delivered ADR-0154 contract), got ${buf.subarray(0, 4).toString('hex')}`);
+    // Canonical durable artifact is the .rvf with SFVR native magic.
+    const buf = readFileSync(dbPath);
+    assert.ok(buf.length >= 8, '.rvf file must be at least 8 bytes');
+    const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
+    assert.ok(isSfvrNative,
+      `.rvf must have SFVR native magic post Phase B1, got ${buf.subarray(0, 4).toString('hex')}`);
   });
 
   it('a fresh RvfBackend instance loads the persisted entry', { skip }, async () => {
@@ -695,16 +689,16 @@ describe('ADR-0086 RVF real integration: Group 5 — WAL replay after crash', ()
     // ── Crash-simulation contract ──────────────────────────────────────
     // The contract being verified: data is durable IMMEDIATELY after
     // store() returns, BEFORE any shutdown call. Per ADR-0090 Tier B7,
-    // store() compacts the WAL into .meta synchronously (see
-    // rvf-backend.js's `if (this.walPath) { await this.compactWal(); }`
-    // branch). So the assertion below is the actual durability check —
-    // if the system loses data, it would be visible here, before shutdown.
+    // store() compacts the WAL synchronously. Post-ADR-0164 Phase B the
+    // legacy `.meta` sidecar is no longer written (META_SEGs in the main
+    // `.rvf` carry vectorless entries instead). The assertion below is
+    // the actual durability check — if the system loses data, it would
+    // be visible here, before shutdown.
     const durable =
       existsSync(dbPath + '.wal') ||
-      existsSync(dbPath + '.meta') ||
       existsSync(dbPath);
     assert.ok(durable,
-      `after store(), expected .wal or .meta or main file to exist at ${dbPath}`);
+      `after store(), expected .wal or main file to exist at ${dbPath}`);
 
     // ── Test-framework hygiene (NOT part of the durability contract) ──
     // The next test in this group ("a fresh instance recovers...") opens
@@ -921,16 +915,16 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
     await backend.store(
       makeEntry({ id: 'f1', key: 'fk1', content: 'format-test', namespace: 'fmt' }),
     );
-    // Per ADR-0090 Tier B7 the WAL is compacted into .meta on every store.
-    // Accept either layout: WAL sidecar (pre-B7) OR compacted .meta/main
-    // (post-B7). What matters for the file-format contract is that some
-    // durable artifact exists after store() completes.
+    // Per ADR-0090 Tier B7 the WAL is compacted on every store. Post-ADR-0164
+    // Phase B the legacy `.meta` sidecar is no longer written; the durable
+    // artifact set is now {WAL sidecar, main .rvf}. What matters for the
+    // file-format contract is that some durable artifact exists after store()
+    // completes.
     const durable =
       existsSync(dbPath + '.wal') ||
-      existsSync(dbPath + '.meta') ||
       existsSync(dbPath);
     assert.ok(durable,
-      `after store(), expected .wal or .meta or main file to exist at ${dbPath}`);
+      `after store(), expected .wal or main file to exist at ${dbPath}`);
     // JS-side advisory lock (`.jslock`, see rvf-backend.ts ADR-0095 amendment
     // 2026-04-30) is acquired/released within store() — it must be gone now.
     // The native rvf-runtime WriterLock at `.lock` is intentionally held for
@@ -943,20 +937,20 @@ describe('ADR-0086 RVF real integration: Group 8 — file format', () => {
     await backend.shutdown();
   });
 
-  it('after shutdown(), the .meta sidecar is parseable as RVF\\0 legacy', { skip }, async () => {
-    const metaPath = metadataFilePath(dbPath);
-    assert.ok(existsSync(metaPath), 'metadata file must exist after shutdown');
-    const buf = readFileSync(metaPath);
+  it('after shutdown(), the .rvf is parseable as SFVR native (single-file post Phase B1)', { skip }, async () => {
+    // ADR-0164 Phase B1 (commit 08455b51c, 2026-05-10): under δ-strict
+    // with nativeDb active, persistToDiskInner suppresses the `.meta`
+    // sidecar. Metadata lives in native META_SEGs inside the .rvf.
+    // The previous "RVF\\0 legacy `.meta`" contract is superseded.
+    assert.ok(!existsSync(dbPath + '.meta'),
+      `Phase B1 forbids .meta sidecar; found ${dbPath}.meta`);
 
-    // ADR-0154 delivered contract (G4 reconciliation 2026-05-07T18): the
-    // .meta sidecar is unconditionally written with RVF\0 magic on every
-    // persistToDiskInner. SFVR is reserved for the .rvf main file (native
-    // path). HM-class bug class is closed by loader-preference, not by
-    // suppressing this sidecar.
-    assert.ok(buf.length >= 8, 'file must contain at least 8 bytes');
-    const isRvfLegacy = buf[0] === 0x52 && buf[1] === 0x56 && buf[2] === 0x46 && buf[3] === 0x00;
-    assert.ok(isRvfLegacy,
-      `.meta sidecar must have RVF\\0 magic (the only magic ever written to .meta under the delivered ADR-0154 contract), got ${buf.subarray(0, 4).toString('hex')}`);
+    assert.ok(existsSync(dbPath), '.rvf file must exist after shutdown');
+    const buf = readFileSync(dbPath);
+    assert.ok(buf.length >= 8, '.rvf file must contain at least 8 bytes');
+    const isSfvrNative = buf[0] === 0x53 && buf[1] === 0x46 && buf[2] === 0x56 && buf[3] === 0x52;
+    assert.ok(isSfvrNative,
+      `.rvf must have SFVR native magic post Phase B1, got ${buf.subarray(0, 4).toString('hex')}`);
   });
 
   it('lock file is not left behind after shutdown', { skip }, () => {

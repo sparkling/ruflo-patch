@@ -32,7 +32,7 @@
 //   2 — usage error / project root not found
 //   3 — internal error during migration
 
-import { readFileSync, existsSync, statSync, renameSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, statSync, renameSync, readdirSync, openSync, readSync, closeSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 
@@ -44,11 +44,12 @@ const flags = {
   preferMeta: argv.includes('--prefer-meta'),
   dryRun: argv.includes('--dry-run'),
   verbose: argv.includes('--verbose') || argv.includes('-v'),
+  quiet: argv.includes('--quiet'),
 };
 const positional = argv.filter((a) => !a.startsWith('-'));
 
 if (positional.length !== 1) {
-  console.error('Usage: migrate-meta-to-segments.mjs <project-root> [--prefer-rvf|--prefer-meta] [--dry-run]');
+  console.error('Usage: migrate-meta-to-segments.mjs <project-root> [--prefer-rvf|--prefer-meta] [--dry-run] [--quiet]');
   process.exit(2);
 }
 
@@ -74,12 +75,24 @@ const log = flags.verbose ? (msg) => console.error(`[migrate] ${msg}`) : () => {
 
 function inspectMeta(path) {
   if (!existsSync(path)) return null;
-  const buf = readFileSync(path);
-  if (buf.length < 8) return { path, size: buf.length, format: 'truncated', count: 0 };
-  const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
-  if (magic !== 'RVF\0') {
-    return { path, size: buf.length, format: 'unknown', magic, count: 0 };
+  // Perf: peek the 4-byte magic with a tiny read before slurping the file.
+  // Avoids multi-MB readFileSync on legacy `.meta` sidecars when the magic
+  // doesn't match (cold-disk APFS path was load-bearing pre-fix).
+  const size = statSync(path).size;
+  if (size < 8) return { path, size, format: 'truncated', count: 0 };
+  const magicBuf = Buffer.alloc(4);
+  const fd = openSync(path, 'r');
+  try {
+    readSync(fd, magicBuf, 0, 4, 0);
+  } finally {
+    closeSync(fd);
   }
+  const magic = String.fromCharCode(magicBuf[0], magicBuf[1], magicBuf[2], magicBuf[3]);
+  if (magic !== 'RVF\0') {
+    return { path, size, format: 'unknown', magic, count: 0 };
+  }
+  // Magic matches — now we need the full buffer for the entry-parse loop.
+  const buf = readFileSync(path);
   // Legacy pure-TS RVF\0: magic(4) + headerLen u32le + JSON header + length-prefixed entries
   let offset = 4;
   const headerLen = buf.readUInt32LE(offset);
@@ -112,16 +125,25 @@ function inspectMeta(path) {
 
 function inspectRvfNative(path) {
   if (!existsSync(path)) return null;
-  const buf = readFileSync(path);
-  if (buf.length < 4) return { path, size: buf.length, format: 'truncated' };
-  const magic = String.fromCharCode(buf[0], buf[1], buf[2], buf[3]);
+  // Perf: peek the 4-byte magic with a tiny read instead of slurping the
+  // whole file. The .rvf can be hundreds of MB; we only need the magic.
+  const size = statSync(path).size;
+  if (size < 4) return { path, size, format: 'truncated' };
+  const magicBuf = Buffer.alloc(4);
+  const fd = openSync(path, 'r');
+  try {
+    readSync(fd, magicBuf, 0, 4, 0);
+  } finally {
+    closeSync(fd);
+  }
+  const magic = String.fromCharCode(magicBuf[0], magicBuf[1], magicBuf[2], magicBuf[3]);
   if (magic === 'RVF\0') {
-    return { path, size: buf.length, format: 'rvf-legacy-purets', note: 'main path holds legacy format' };
+    return { path, size, format: 'rvf-legacy-purets', note: 'main path holds legacy format' };
   }
   if (magic === 'SFVR') {
-    return { path, size: buf.length, format: 'sfvr-native', note: 'native segment-based file' };
+    return { path, size, format: 'sfvr-native', note: 'native segment-based file' };
   }
-  return { path, size: buf.length, format: 'unknown', magic };
+  return { path, size, format: 'unknown', magic };
 }
 
 function hashEntries(entries) {
@@ -144,12 +166,16 @@ const rvfPresent = !!rvfSnapshot;
 const rvfIsNative = rvfSnapshot?.format === 'sfvr-native';
 
 if (!metaPresent && rvfIsNative) {
-  console.log(`already migrated: ${rvfPath} is native (SFVR), no .meta sidecar — nothing to do.`);
+  if (!flags.quiet) {
+    console.log(`already migrated: ${rvfPath} is native (SFVR), no .meta sidecar — nothing to do.`);
+  }
   process.exit(0);
 }
 
 if (!metaPresent && !rvfPresent) {
-  console.log(`empty project: no .rvf, no .meta — nothing to migrate.`);
+  if (!flags.quiet) {
+    console.log(`empty project: no .rvf, no .meta — nothing to migrate.`);
+  }
   process.exit(0);
 }
 
@@ -187,7 +213,9 @@ if (metaPresent && rvfIsNative) {
   chosenSource = 'meta';
 } else if (rvfIsNative) {
   // .rvf is native but .meta is empty/absent. Already migrated; nothing to do.
-  console.log(`already migrated: ${rvfPath} is native, no .meta to migrate.`);
+  if (!flags.quiet) {
+    console.log(`already migrated: ${rvfPath} is native, no .meta to migrate.`);
+  }
   process.exit(0);
 }
 

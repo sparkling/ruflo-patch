@@ -330,14 +330,18 @@ describe('ADR-0154 Phase 0: single-file storage end-state', () => {
     for (const f of inventory) {
       // Out of scope (separate concern, not flagged here):
       if (f.name.startsWith('memory.db')) continue;
-      // RVF allowed (canonical + transitional):
-      // memory.rvf.meta is TRANSITIONAL — long-term goal is to remove it,
-      // but until the runtime accepts vector-less metadata segments, it's
-      // still written for entries without embeddings. The HM-class data
-      // loss bug class is closed by Phase 4 (loader prefers native segments
-      // when both exist), not by removing the file.
+      // RVF allowed (canonical end-state, post-ADR-0164 Phase B):
+      // memory.rvf.meta is FORBIDDEN — Phase B (atomic with A0) deletes the
+      // legacy `.meta` sidecar machinery. Vectorless entries land in native
+      // META_SEGs of the `.rvf` itself. The migration tool handles existing
+      // `.meta` installs.
       if (f.name === 'memory.rvf' || f.name === 'memory.rvf.wal'
-          || f.name === 'memory.rvf.lock' || f.name === 'memory.rvf.meta') continue;
+          || f.name === 'memory.rvf.lock') continue;
+      // RVF disallowed (post-ADR-0164 Phase B):
+      if (f.name === 'memory.rvf.meta') {
+        violations.push(`legacy .meta sidecar produced (forbidden under ADR-0164 Phase B): ${f.name} (${f.size}B)`);
+        continue;
+      }
       // RVF disallowed (atomic-rename staging persisted post-clean-exit):
       if (f.name === 'memory.rvf.tmp' || f.name === 'memory.rvf.meta.tmp') {
         violations.push(`atomic-rename staging artifact persisted post-shutdown: ${f.name} (${f.size}B)`);

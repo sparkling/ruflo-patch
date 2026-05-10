@@ -459,19 +459,31 @@ describe('ADR-0090 Tier B1 + ADR-0112 Phase 2: fork patch — fatal-init error p
 
   it('fork source uses _isFatalInitError in outer IIFE catch', { skip: !existsSync(FORK_SRC) }, () => {
     const src = readFileSync(FORK_SRC, 'utf-8');
-    // The helper is used at >= 4 sites: inner catch, outer IIFE catch,
-    // _doInit storage catch, _doInit registry catch
+    // ADR-0165 (2026-05-10): _doInit registry catch was hardened from
+    // discriminated `if (_isFatalInitError(e)) throw e` (silent continue
+    // on non-fatal) to UNCONDITIONAL throw. The helper is now used at
+    // >= 3 sites: inner catch in initControllerRegistry, outer IIFE
+    // catch, _doInit storage catch. The _doInit registry catch no
+    // longer needs the helper because every error there is fatal.
     const helperCalls = (src.match(/_isFatalInitError\(e\)/g) || []).length;
-    assert.ok(helperCalls >= 4,
-      `expected >= 4 _isFatalInitError(e) call sites, found ${helperCalls}`);
+    assert.ok(helperCalls >= 3,
+      `expected >= 3 _isFatalInitError(e) call sites, found ${helperCalls}`);
   });
 
   it('fork source re-throws fatal errors in _doInit (not silent continue)', { skip: !existsSync(FORK_SRC) }, () => {
     const src = readFileSync(FORK_SRC, 'utf-8');
     const doInitSlice = src.slice(src.indexOf('async function _doInit'),
                                  src.indexOf('async function _doInit') + 4000);
-    assert.match(doInitSlice, /catch\s*\(e\)\s*\{[^}]*_isFatalInitError\(e\)[^}]*throw e[^}]*\}/s,
-      '_doInit catch must call _isFatalInitError(e) and throw e on a match');
+    // ADR-0165 hardening: _doInit's registry catch is now unconditional
+    // throw, not discriminated. Accept EITHER pattern:
+    //   (a) discriminated: catch (e) { ... _isFatalInitError(e) ... throw e }
+    //   (b) unconditional: catch (e) { ... throw new Error(... fatal per ADR-0165 ...) }
+    // Both prove _doInit re-throws fatal init errors rather than silently
+    // continuing with `_initialized = true`.
+    const discriminated = /catch\s*\(e\)\s*\{[^}]*_isFatalInitError\(e\)[^}]*throw e[^}]*\}/s.test(doInitSlice);
+    const unconditional = /catch\s*\(e\)\s*\{[^}]*throw\s+new\s+Error\([^)]*ADR-0165[^)]*\)/s.test(doInitSlice);
+    assert.ok(discriminated || unconditional,
+      '_doInit catch must call _isFatalInitError(e) and throw e on a match, OR unconditionally throw with ADR-0165 marker');
   });
 
   // ADR-0112 Phase 2 note: the prior dist test pointed at the fork's own
