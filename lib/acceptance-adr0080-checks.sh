@@ -694,28 +694,25 @@ check_adr0080_rvf_has_entries() {
 
   # No RVF in E2E_DIR yet — do a private iso store so the precondition is
   # satisfied without depending on a sibling check having run first.
+  local _adr0080_iso=""
   if [[ -z "$rvf_path" || ! -f "$rvf_path" ]]; then
-    local iso=""
-    if declare -F _e2e_isolate >/dev/null; then
-      iso=$(_e2e_isolate "adr0080-rvf-size")
-    fi
-    if [[ -n "$iso" && -d "$iso" ]]; then
-      local cli; cli=""
-      if declare -F _cli_cmd >/dev/null; then cli=$(_cli_cmd); fi
+    _adr0080_iso=$(_e2e_isolate "adr0080-rvf-size")
+    if [[ -n "$_adr0080_iso" && -d "$_adr0080_iso" ]]; then
+      local cli; cli=$(_cli_cmd)
       [[ -z "$cli" ]] && cli="${CLI_BIN:-}"
       if [[ -n "$cli" ]]; then
         local marker="adr0080-14-$$-$(date +%s)"
-        if declare -F _run_and_kill >/dev/null; then
-          _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$marker' --value 'adr0080-14 rvf-size probe payload' --namespace adr0080-14 2>&1" "" 45
-        else
-          (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" $cli memory store --key "$marker" --value 'adr0080-14 rvf-size probe payload' --namespace adr0080-14 >/dev/null 2>&1) || true
-        fi
-        if [[ -f "$iso/.swarm/memory.rvf" ]]; then
-          rvf_path="$iso/.swarm/memory.rvf"
+        _run_and_kill "cd '$_adr0080_iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$marker' --value 'adr0080-14 rvf-size probe payload' --namespace adr0080-14 2>&1" "" 45
+        if [[ -f "$_adr0080_iso/.swarm/memory.rvf" ]]; then
+          rvf_path="$_adr0080_iso/.swarm/memory.rvf"
         fi
       fi
     fi
   fi
+  # Cleanup the private iso (if any) on every exit path of this function.
+  # Trap-based via RETURN ensures cleanup even on early `_CHECK_OUTPUT` returns.
+  # shellcheck disable=SC2064
+  trap "[[ -n '$_adr0080_iso' && -d '$_adr0080_iso' ]] && rm -rf '$_adr0080_iso' 2>/dev/null; trap - RETURN" RETURN
 
   if [[ -z "$rvf_path" || ! -f "$rvf_path" ]]; then
     _CHECK_OUTPUT="ADR-0080-14: no RVF file produced after memory store — RVF backend is not creating .swarm/memory.rvf"

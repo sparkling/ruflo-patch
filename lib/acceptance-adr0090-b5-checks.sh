@@ -169,9 +169,16 @@ _b5_check_controller_roundtrip() {
   # ─── Step 2: cold-start init to create schema ─────────────────────
   # agentdb_health forces the controller registry to hydrate. Debt 15
   # (A1) showed this is the minimum init to get `.swarm/memory.db`
-  # created. We use the read-only variant because health is side-
-  # effect-free; the store call below uses the write variant.
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  # created.
+  #
+  # NOTE: this looks like a read-only call but it isn't — `ensureRouter()`
+  # runs as a side effect, which CREATEs the SQLite DDL on disk. The
+  # earlier `_run_and_kill_ro` variant skipped the WAL-flush grace and was
+  # observed to SIGTERM before SQLite's checkpoint completed under parallel
+  # load, leaving `.swarm/memory.db` half-created (or absent) by the time
+  # the subsequent store call ran. Use the write variant so the 1s grace
+  # period gives the schema-creation transaction a chance to fsync.
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # ─── Step 3: invoke the controller's store MCP tool ───────────────
   local store_out="$work/store.out"
@@ -431,7 +438,7 @@ $(echo "$store_body" | head -10)"
   # reopen with a fresh CLI invocation. If the row drops to 0, the
   # "persistence" was in-memory only — the process died and took
   # everything with it. This is the same shape as Debt 15 Step 4.
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/restart.out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/restart.out" 30
 
   local count_after_restart
   count_after_restart=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM $sqlite_table WHERE $marker_col LIKE '${marker_value}%';" 2>/dev/null)
@@ -618,7 +625,7 @@ _b5_probe_causal_edge_persistence() {
   local db_file="$iso/.swarm/memory.db"
 
   # ─── Step 1: cold-start init (hydrate registry, create .swarm dir) ──
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # ─── Step 2: invoke agentdb_causal-edge with validated params ───────
   local edge_params="{\"sourceId\":\"$source_id\",\"targetId\":\"$target_id\",\"relation\":\"causes\",\"weight\":0.8,\"uplift\":0.7,\"confidence\":0.9}"
@@ -814,7 +821,7 @@ _b5_check_causal_pipeline() {
   local db_file="$iso/.swarm/memory.db"
 
   # ─── Step 2: cold-start init to create schema ─────────────────────
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
   local health_body; health_body=$(cat "$work/health.out" 2>/dev/null || echo "")
 
   # ─── Step 3: Assertion B — .swarm/memory.db exists ────────────────
@@ -947,7 +954,7 @@ _b5_seeded_probe() {
   local db_file="$iso/.swarm/memory.db"
 
   # Cold-start health hydrates the registry.
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # Seed. Failures are non-fatal - probe classifies the outcome.
   local seed_log="$work/seed.log"
@@ -1303,7 +1310,7 @@ check_adr0090_b5_gnnService() {
   local work; work=$(mktemp -d "/tmp/b5-gnnService-work-XXXXX")
 
   # Cold-start init to hydrate the controller registry.
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # Probe the tool. Default action is 'stats' (empty params are fine).
   local probe_out="$work/probe.out"
@@ -1393,7 +1400,7 @@ check_adr0090_b5_semanticRouter() {
 
   # 1. Cold-start health hydrates the ControllerRegistry so semanticRouter
   #    is constructed + initialize()'d before we probe.
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # 2. Baseline RVF entry count. The file byte layout is
   #    `SFVR` (4 bytes magic) + `01 05 00 00` (version) + 8-byte LE count.
@@ -1602,7 +1609,7 @@ check_adr0090_b5_sonaTrajectory() {
   # Step 0: cold-start to hydrate the controller registry (deferred
   # controllers include sonaTrajectory per ADR-0048 level 5 — health
   # probe waits on deferred init).
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # Step 1: stats baseline
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_sona_trajectory_store --params '{\"action\":\"stats\"}' 2>&1" "$work/stats-before.out" 30
