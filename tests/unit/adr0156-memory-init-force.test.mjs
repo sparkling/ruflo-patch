@@ -18,7 +18,7 @@
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
-import { readFileSync, existsSync, statSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 
 const FORK_CLI_SRC    = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
 const FORK_MEMORY_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src';
@@ -162,24 +162,22 @@ describe('ADR-0156 — memory init action wires --force + honest dbPath', () => 
   });
 });
 
-describe('ADR-0156 — behavioural smoke (gated on dist freshness)', () => {
-  // These behavioural tests skip when the dist build is older than the
-  // source. The pipeline rebuilds before publishing so they exercise
-  // post-rebuild. Local dev between source edits and the next build will
-  // see them skip rather than false-fail.
-  const distRouterPath = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/dist/src/memory/memory-router.js';
-  const srcRouterPath = ROUTER_SRC;
+describe('ADR-0156 — behavioural smoke (gated on codemod build presence)', () => {
+  // These behavioural tests run against the codemod'd build at /tmp/ruflo-build —
+  // the same artifact the pipeline publishes. This is more meaningful than the
+  // fork's own dist (which is never updated by `npm run build`). The original
+  // fork-dist freshness gate caused spurious skips whenever fork source was
+  // edited without rebuilding locally; the codemod dist is always rebuilt by
+  // `npm run release` before publish.
+  //
+  // If /tmp/ruflo-build is absent (clean CI before first build), the test fails
+  // loudly with a clear message — per feedback-no-fallbacks, skips are not
+  // acceptable for working features.
+  const distRouterPath = '/tmp/ruflo-build/v3/@claude-flow/cli/dist/src/memory/memory-router.js';
 
-  function distFresh() {
-    if (!existsSync(distRouterPath)) return false;
-    return statSync(distRouterPath).mtimeMs >= statSync(srcRouterPath).mtimeMs;
-  }
-
-  it('imported router exposes getActiveBackendPath as a callable', async (t) => {
-    if (!distFresh()) {
-      t.skip('dist stale or missing — pipeline rebuilds before publish');
-      return;
-    }
+  it('imported router exposes getActiveBackendPath as a callable', async () => {
+    assert.ok(existsSync(distRouterPath),
+      `codemod dist missing at ${distRouterPath} — run npm run release to build`);
     const mod = await import(distRouterPath);
     assert.equal(typeof mod.getActiveBackendPath, 'function',
       'memory-router dist must export getActiveBackendPath as a function');
@@ -191,11 +189,9 @@ describe('ADR-0156 — behavioural smoke (gated on dist freshness)', () => {
       'RVF_CANONICAL_EXTENSIONS must have 6 entries (main + 5 sibling exts)');
   });
 
-  it('getActiveBackendPath returns null before init', async (t) => {
-    if (!distFresh()) {
-      t.skip('dist stale or missing');
-      return;
-    }
+  it('getActiveBackendPath returns null before init', async () => {
+    assert.ok(existsSync(distRouterPath),
+      `codemod dist missing at ${distRouterPath} — run npm run release to build`);
     const mod = await import(distRouterPath);
     // Reset to ensure a clean pre-init state.
     if (typeof mod.resetRouter === 'function') mod.resetRouter();
