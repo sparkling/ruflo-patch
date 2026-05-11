@@ -69,7 +69,7 @@ ADR-0166 is therefore **partially superseded for the `agentdb_*` axis**:
 
 - Phase 1 (wire `vectorBackend` field): **survives** — it was a correctness fix, applies on any substrate.
 - Phase 1.5 (delete dead `graphBackend` param): **survives** — pure cleanup, applies on any substrate.
-- Phase 2 (split `vectorBackend` into `vectorIndex` + `primaryStorage`): **survives** — the orthogonal axes framing is still right; this ADR widens `primaryStorage` from `'sqlite'` to `'sqlite' | 'pglite' | 'postgres'` (with sqlite retiring) and reframes `vectorIndex` to include `'pgvector'` and `'postgres-cli'`.
+- Phase 2 (split `vectorBackend` into `vectorIndex` + `primaryStorage`): **survives** — the orthogonal axes framing is still right; this ADR **replaces** the `primaryStorage` union from `'sqlite'` to `'pglite' | 'postgres'` (the `'sqlite'` value is removed outright per §"No-fallback policy", not kept alongside during transition) and reframes `vectorIndex` to add `'pgvector'` and `'postgres-cli'` (with `'ruvector'` and `'hnswlib'` retiring per §"Implementation pre-flight").
 - Phase 3 (Option F, sqlite-vec mirrors): **superseded on technical merits.** The vec0 mirror writes shipped in patches 46-48 against the SQLite-substrate assumption; with the substrate retiring, the mirrors become obsolete. They stay in the code for now (harmless), but no new wiring extends them, and Phase D removes them.
 - The axis-separation rule (memory_* RVF, agentdb_* SQL) **survives, with SQL = PostgreSQL** rather than SQLite.
 
@@ -89,11 +89,32 @@ ADR-0166 is therefore **partially superseded for the `agentdb_*` axis**:
 
 This is a strict reading of `feedback-no-fallbacks`. Any softening (cascade, graceful degradation, auto-import) reopens the substrate decision via a new ADR.
 
+### Implementation pre-flight (decisions named upfront so Phase A doesn't stall on them)
+
+Each item below is a decision made now so phase execution doesn't have to re-litigate it mid-stream. None of these is in-scope for renegotiation during Phase A; if a decision turns out wrong it's a follow-up ADR.
+
+1. **`vectorIndex: 'ruvector'` and `vectorIndex: 'hnswlib'` are retired.** In the postgres world, vectors are first-class column types indexed by pgvector inside the relational table — there is no separate in-memory HNSW axis to select. The valid `vectorIndex` values become `'auto' | 'pgvector' | 'postgres-cli' | 'sqlite-vec'`-retired. Phase A wires both `'ruvector'` and `'hnswlib'` to throw a clear loud error pointing users to `'pgvector'` or `'auto'`. No deprecation period — the values are loud-rejected immediately per `feedback-no-fallbacks`.
+
+2. **`forks/agentdb/src/db-unified.ts` is retired in Phase A.** The "graph mode vs sqlite-legacy" framing collapses under a single postgres substrate. Phase A deletes the file and updates `core/AgentDB.ts` to instantiate `PostgresBackend` directly. The standalone `agentdb-mcp-server.ts` (which uses `createUnifiedDatabase` at line 243) is rewritten in Phase A to open `PostgresBackend` directly — same shape as ADR-0166 Phase 3's `agentdb-mcp-server.ts:247` defang removal, just routed to postgres instead of sqlite-vec.
+
+3. **Browser/edge entry points adopt pglite-IndexedDB in Phase A.** pglite supports IndexedDB-backed storage in browser. The browser bundle (`browser-entry.js`, `dist/` browser build) routes to pglite-IndexedDB. If pglite cannot initialize in a target browser, boot throws loudly — no fallback to sql.js, no fallback to in-memory-only. Per `feedback-no-fallbacks`, browser users get the same fail-loud contract as Node users.
+
+4. **Existing `tests/adr0166-*.test.ts` are rewritten or deleted in Phase D.** The Phase 3 contract tests assert vec0 virtual tables and Option F mirror writes — both retire when SQLite retires. Phase D either deletes those tests (`adr0166-phase3-optionf-virtual-tables.test.ts`, `adr0166-phase3-controller-wiring.test.ts`) or rewrites them to assert the postgres-native contracts (pgvector HNSW indexes exist; controllers write to the right tables). The Phase 1 + 1.5 + 2 tests survive substrate-agnostically.
+
+5. **Ruflo + agentic-flow call-site audit in Phase A.** The fork has ~9 call sites that pass `vectorBackend` (legacy) through to AgentDB. Phase A enumerates and updates them as part of the substrate plumbing PR, not as a follow-up. Files to audit and update:
+   - `forks/ruflo/v3/@claude-flow/memory/src/agentdb-backend.ts` (lines 92, 124, 303)
+   - `forks/ruflo/v3/@claude-flow/memory/src/controller-registry.ts` (multiple sites; the comments documenting agentdb constructor signatures need refreshing too)
+   - `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:561` (currently sets `vectorBackend: 'ruvector'`; becomes `vectorIndex: 'pgvector'` or `'auto'`)
+   - `forks/ruflo/v3/@claude-flow/cli/src/init/types.ts:247`, `init/settings-generator.ts:132` (init template)
+   - `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts:1091` (controller resolver)
+   - `forks/ruflo/v3/@claude-flow/neural/src/reasoning-bank.ts:219`
+   - `forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts` (HierarchicalMemory + MemoryConsolidation construction)
+
 ### Phased plan
 
 **Phase A — substrate plumbing + fail-loud gates (no in-flight fallback).**
 
-1. Add `@ruvector/postgres-cli@0.2.8+`, `@electric-sql/pglite@0.4.5+`, and `pg@^8.11.0` to `forks/agentdb/package.json`. **All three required (not optional)** — pglite covers the embedded case, pg covers the server case, postgres-cli covers the higher-level capabilities. Missing any → loud install/boot error per `feedback-no-fallbacks`.
+1. Add `@ruvector/postgres-cli@0.2.8+`, `@electric-sql/pglite@0.4.5+`, and `pg@^8.11.0` to `forks/agentdb/package.json` as required deps. **Boot-gate enforcement is staged**: in Phase A the deps must IMPORT successfully (their absence at install time throws); the strict "pglite or `postgres://` connection or throw" runtime check activates with Phase B's first controller commit. This avoids the in-between state where the boot gate refuses to start AgentDB even though every controller is still using SQLite. Phase A introduces the postgres substrate; Phase B's first controller commit (HierarchicalMemory port) is what flips the boot gate to strict.
 2. New backend: `forks/agentdb/src/backends/postgres/PostgresBackend.ts` implementing the `VectorBackend` interface. Two connection modes:
    - **Embedded (pglite)**: default when no `connectionString` is set. Persists to `.swarm/memory.pglite/`. Boot throws loudly if pglite import fails (no fallback to sqlite).
    - **Server (`postgres://...`)**: when `connectionString` is set via `AGENTDB_POSTGRES_URL` env or `AgentDBConfig.connectionString`. Boot throws loudly if connection fails (no fallback to pglite, no fallback to sqlite).
@@ -148,6 +169,17 @@ Each commit also flips its acceptance check to run against pglite (default test 
 3. **`@ruvector/cluster` / `@ruvector/server` adoption.** Both are 2.7KB placeholder packages today; can't adopt nothing. Skip until substrates ship.
 4. **agentic-flow side of the upstream timeline** (Phases 5-8: RuvLLM orchestration, circuit breakers, neuromorphic, etc.). Outside `forks/agentdb` scope.
 5. **Backward compatibility shim** that lets users run on legacy SQLite during transition. The rollout DOES NOT keep SQLite alive as a runtime fallback. Each Phase B controller commit dead-strips its SQLite path atomically. No long-tail compat. No silent degradation. No automatic fallback per `feedback-no-fallbacks` + user-binding directive 2026-05-11 ("postgres, or fail fast, fail loud").
+
+### Known minor gaps to revisit during execution
+
+These are not blocking but warrant note. Each gets resolved during the phase it affects; the ADR doesn't pre-commit to specific answers.
+
+- **Migration script fidelity.** `agentdb migrate --from sqlite --to pglite` (Phase D) needs to specify: FTS5 → tsvector re-indexing strategy; BLOB → BYTEA byte-fidelity guarantees; idempotency on re-run; an acceptance test gate before the CLI ships.
+- **Acceptance test infrastructure under pglite.** pglite cold-start in a fresh `/tmp/ruflo-accept-*` may exceed ADR-0086's 30s `_run_and_kill_ro` budget on first invocation. Profile during Phase A; bump the budget or warm-start pglite once before the harness if needed.
+- **CausalMemoryGraph + `@ruvector/graph-node` relationship.** Under postgres with native `WITH RECURSIVE`, the graph-node Cypher path may collapse. Phase B item 9 names the SQL port; the question of whether graph-node stays alongside (for hyperedges per Task #30) or retires entirely on this controller is resolved during that commit.
+- **Performance benchmark in confirmation criteria.** Upstream claims "10x faster than SQLite" for postgres-cli. Phase C should capture a before/after benchmark on a representative workload (memory-store loop, recall path) — not as a numeric gate, but to confirm no regression and to document the substrate change's actual impact.
+- **Phase E (graph-node deepening) is currently homeless.** Task #30 (`@ruvector/graph-node` Cypher querySync + begin/commit/rollback + createHyperedge) is parked in the task list but not in this ADR. Either fold into this ADR as Phase E (independent of A/B/C/D) or leave as a follow-up ADR. Decide once Phase A is in flight.
+- **`depends-on: [ADR-0073, ADR-0166]` frontmatter while also partially superseding ADR-0166.** Acceptable per the typed-relation convention (the relation is "depends on prior context", not "depends on prior decision"), but worth checking once `adr-review` lint runs.
 
 ### Consequences
 
