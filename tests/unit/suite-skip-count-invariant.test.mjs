@@ -51,8 +51,16 @@ const SKIP_PATTERNS = [
 
 // Populate if/when sibling agents identify skips they cannot eliminate.
 // Shape: { 'filename.test.mjs': { count: N, reason: 'justification' } }
-// Start empty — after A1/A2/A3 land, the ceiling is zero.
-const KNOWN_LEGITIMATE_SKIPS = {};
+const KNOWN_LEGITIMATE_SKIPS = {
+  'adr-0093-nightly-learner-migration.test.mjs': {
+    count: 3,
+    reason: 'ADR-0170 Phase B retires the PRAGMA-based runtime migration in NightlyLearner.ts (commit b48f862). Three describe.skip blocks paired with the SQLite-era PRAGMA table_info / DROP migration code. Phase D deletes this file.',
+  },
+  'sqlite-pragma-adr0069.test.mjs': {
+    count: 2,
+    reason: 'ADR-0170 Phase B retires the SQLite open path in AgentDB.initialize(). Two it.skip tests source-grepped the better-sqlite3 pragma block (const sq + sq?.cacheSize ?? -64000). Phase D removes the sqlite config field outright.',
+  },
+};
 
 function countSkipsInFile(filePath) {
   const src = readFileSync(filePath, 'utf8');

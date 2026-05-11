@@ -87,11 +87,18 @@ if (!existsSync(NIGHTLY_LEARNER_PATH)) {
 }
 const nightlySrc = readFileSync(NIGHTLY_LEARNER_PATH, 'utf-8');
 
+// ADR-0170 Phase B retires the PRAGMA-based runtime migration in
+// NightlyLearner.ts. The 8 tests below were paired with the SQLite-era
+// migration code (PRAGMA table_info, DROP TABLE on incompatible schema,
+// OLD_COLS set). Postgres canonical schema lives in frontier-schema.sql;
+// the runtime migration block was dead-stripped in commit b48f862.
+// Phase D deletes this test file entirely; this skip is interim.
+
 // ============================================================================
 // Group 1 — Source invariants
 // ============================================================================
 
-describe('ADR-0093 A1: NightlyLearner schema migration — Group 1: source invariants', () => {
+describe.skip('ADR-0093 A1: NightlyLearner schema migration — Group 1: source invariants', () => {
   it('references the advisory and the owning ADR', () => {
     assert.ok(
       /ADR-0093/.test(nightlySrc),
@@ -194,7 +201,7 @@ const SQLITE3_AVAILABLE = sqlite3Available();
 let tmpDir;
 let dbPath;
 
-describe('ADR-0093 A1: NightlyLearner schema migration — Group 2: behavioral', () => {
+describe.skip('ADR-0093 A1: NightlyLearner schema migration — Group 2: behavioral', () => {
   before(() => {
     if (!SQLITE3_AVAILABLE) return;
     tmpDir = mkdtempSync(join(tmpdir(), 'adr0093-a1-'));
@@ -463,7 +470,7 @@ describe('ADR-0093 A1: NightlyLearner schema migration — Group 2: behavioral',
 // Group 3 — canonical schema parity with frontier-schema.sql
 // ============================================================================
 
-describe('ADR-0093 A1: NightlyLearner schema migration — Group 3: schema parity', () => {
+describe.skip('ADR-0093 A1: NightlyLearner schema migration — Group 3: schema parity', () => {
   it('frontier-schema.sql exists (canonical reference)', () => {
     assert.ok(
       existsSync(FRONTIER_SCHEMA_PATH),
