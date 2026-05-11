@@ -30,6 +30,13 @@ _e2e_isolate() {
   # Remove any stale RVF/WAL/lock from the copy so we start clean
   rm -f "$iso_dir/.claude-flow/memory.rvf"* "$iso_dir/.swarm/memory.rvf"* 2>/dev/null
   rm -f "$iso_dir/.swarm/memory.db"* 2>/dev/null
+  # ADR-0170 Phase B: also wipe the copied pglite cluster — pglite is
+  # single-tenant per dataDir, and re-opening a cp'd cluster under
+  # parallel iso load corrupts state. Each iso boots a fresh cluster
+  # (~673 ms cold-init or ~94 ms warm-reopen via cwd). The cluster
+  # contains zero useful state pre-acceptance anyway (PostgresBackend
+  # initializes schema on every boot).
+  rm -rf "$iso_dir/.swarm/memory.pglite" 2>/dev/null
   echo "$iso_dir"
 }
 
