@@ -9,12 +9,19 @@ implements: []
 
 # AgentDB persistence — axis-separated dual-storage with Option F
 
-> **Status**: accepted (2026-05-11). Phase 1 + 1.5 + 2 + Phase 3 (Option F)
+> **Status**: accepted (2026-05-11), **partially superseded by ADR-0170 (2026-05-11)**. Phase 1 + 1.5 + 2 + Phase 3 (Option F)
 > foundation + Phase 3 per-controller wiring for 5 of 9 augmented controllers
 > shipped across patches 44–48 on Verdaccio. Amendment 2026-05-11f is the binding
-> final record. Earlier amendments are partially superseded but preserved for
-> evidence in §"Amendments". Remaining Phase 3 wiring (ExplainableRecall,
-> QUICServer; SyncCoordinator has no vector ops) is incremental future work.
+> final record FOR THE SQLITE PATH.
+>
+> **ADR-0170 (2026-05-11) supersedes this ADR's substrate decision for the `agentdb_*` axis**:
+> PostgreSQL (pglite embedded, postgres server) replaces SQLite. The Option F vec0 mirror
+> work shipped in patches 46-48 is superseded — Phase 3 is no longer extended to remaining
+> controllers (ExplainableRecall, QUICServer). The Phase 1 + 1.5 + 2 correctness fixes
+> (`vectorBackend` field wire, dead `graphBackend` removal, `vectorIndex`/`primaryStorage`
+> split) survive on any substrate. The axis-separation framing (memory_* RVF, agentdb_* SQL)
+> survives — only the SQL identity changes from SQLite to PostgreSQL. See ADR-0170 for
+> the substrate-replacement plan and rationale.
 
 ## Implementation status (2026-05-11)
 
