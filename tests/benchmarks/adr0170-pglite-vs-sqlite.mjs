@@ -83,6 +83,7 @@ const PROJECT_DIR = args.projectDir
   || (() => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr0170-bench-'));
         fs.mkdirSync(path.join(dir, '.swarm'), { recursive: true });
+        fs.writeFileSync(path.join(dir, '.ruflo-project'), '');
         return dir;
       })();
 
@@ -167,7 +168,7 @@ function runStorePhase() {
   for (let i = 0; i < NUM_STORE_OPS; i++) {
     const item = buildCorpusItem(i);
     const { elapsed, status, stderr } = runCli(
-      ['memory', 'store', escapeShell(item.key), escapeShell(item.value)],
+      ['memory', 'store', '-k', escapeShell(item.key), '--value', escapeShell(item.value)],
       PROJECT_DIR,
     );
     if (status !== 0) {
@@ -190,7 +191,7 @@ function runSearchPhase() {
     // similarity is expected.
     const seed = CORPUS_SEED[i % CORPUS_SEED.length];
     const { elapsed, status, stderr } = runCli(
-      ['memory', 'search', escapeShell(seed)],
+      ['memory', 'search', '-q', escapeShell(seed)],
       PROJECT_DIR,
     );
     if (status !== 0) {

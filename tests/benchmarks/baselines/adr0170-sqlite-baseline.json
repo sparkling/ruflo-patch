@@ -1,0 +1,30 @@
+{
+  "schema": "adr0170-benchmark-v1",
+  "substrate": "sqlite",
+  "generated_at": "2026-05-11T20:27:39.352Z",
+  "acceptance_run_id": "accept-2026-05-11T200901Z",
+  "agentdb_version": "3.0.0-alpha.14-patch.52",
+  "note": "Phase A HEAD baseline (controllers still on better-sqlite3; PostgresBackend wired but no controller routes through it). RSS measurement bug: rss_peak_bytes captures negligible bytes (51KB), not actual process RSS. Phase C exit gate should compare wall-clock + latency p50/p95 primarily; treat RSS as unreliable until benchmark RSS bug fixed.",
+  "cli_cmd": "npx -y @sparkleideas/ruflo@latest",
+  "project_dir": "/var/folders/mc/84_j0pt91wg9c1yrc9b9sjtr0000gn/T/adr0170-bench-1KM59H",
+  "host": {
+    "platform": "darwin",
+    "node_version": "v24.14.1",
+    "cpu_count": 18
+  },
+  "store": {
+    "count": 200,
+    "p50_ms": 732.3856244999915,
+    "p95_ms": 853.4597353999851,
+    "errors": 0
+  },
+  "search": {
+    "count": 50,
+    "p50_ms": 894.4069164999964,
+    "p95_ms": 980.7886269000155,
+    "errors": 0
+  },
+  "total_wall_ms": 196297.029458,
+  "rss_peak_bytes": 51264,
+  "rss_peak_mb": 0.04888916015625
+}
