@@ -77,15 +77,34 @@ ADR-0166 is therefore **partially superseded for the `agentdb_*` axis**:
 
 **Unchanged.** RVF-primary stays per ADR-0073. ADR-0167/0168 cross-process coordination work continues for `memory_*`. The `.swarm/memory.rvf` file is still the canonical store for memory_* operations. This ADR addresses the `agentdb_*` axis only.
 
+### No-fallback policy (load-bearing)
+
+**Per `feedback-no-fallbacks` and the user-binding directive 2026-05-11 ("no automatic fallback — postgres, or fail fast, fail loud"):**
+
+- **No runtime fallback between substrates.** PostgreSQL (pglite-embedded or `postgres://` server) is the sole runtime persistence option. If postgres is unreachable, AgentDB throws at boot — never silently downgrades to SQLite or anything else.
+- **No `'sqlite'` value in `primaryStorage`** going forward. The Phase 2 union widens from `'sqlite'` to `'pglite' | 'postgres'` (sqlite is removed, not deprecated alongside).
+- **No silent dep-import fallback.** If `pglite` or `@ruvector/postgres-cli` cannot be loaded at boot, AgentDB throws with a diagnostic message naming the missing package — does not fall through to sql.js or better-sqlite3.
+- **No "transition fallback"** during the controller-port phase. Each Phase B commit dead-strips the SQLite path for its controller atomically. There is no in-flight state where a controller silently routes to SQLite if postgres fails — the controller either runs on postgres or throws.
+- **No automatic data migration.** Existing `.swarm/memory.db` files don't auto-import. Users with legacy state run the one-shot `agentdb migrate --from sqlite --to pglite` CLI (Phase D) explicitly. Boot against a `.db` file with `primaryStorage: 'pglite'` throws "incompatible legacy database — run `agentdb migrate`".
+
+This is a strict reading of `feedback-no-fallbacks`. Any softening (cascade, graceful degradation, auto-import) reopens the substrate decision via a new ADR.
+
 ### Phased plan
 
-**Phase A — substrate plumbing (foundation, no behavior change yet).**
+**Phase A — substrate plumbing + fail-loud gates (no in-flight fallback).**
 
-1. Add `@ruvector/postgres-cli@0.2.8+`, `@electric-sql/pglite@0.4.5+`, and `pg@^8.11.0` to `forks/agentdb/package.json` (postgres-cli + pg as optional, pglite as required to preserve the embedded-default story).
-2. New backend: `forks/agentdb/src/backends/postgres/PostgresBackend.ts` implementing the `VectorBackend` interface. Two connection modes: embedded (pglite, default — no connection string needed, persists to `.swarm/memory.pglite/`) and server (`postgres://...` from `AGENTDB_POSTGRES_URL` env or config).
-3. Wire into `backends/factory.ts`: `createBackend('postgres', config)` → `new PostgresBackend(config)`; `'auto'` cascade prefers postgres-cli when available.
-4. Widen `AgentDBConfig.primaryStorage` union from `'sqlite'` to `'pglite' | 'postgres'` (default `'pglite'`). Add `connectionString?: string` config field.
-5. Schema port: rewrite `schemas/schema.sql` + `schemas/frontier-schema.sql` to PostgreSQL dialect — most tables are identical; differences are limited to `INTEGER PRIMARY KEY AUTOINCREMENT` → `BIGSERIAL PRIMARY KEY`, `INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))` → `BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT`, `BLOB` → `BYTEA`, FTS5 virtual tables → `tsvector` columns + GIN indexes.
+1. Add `@ruvector/postgres-cli@0.2.8+`, `@electric-sql/pglite@0.4.5+`, and `pg@^8.11.0` to `forks/agentdb/package.json`. **All three required (not optional)** — pglite covers the embedded case, pg covers the server case, postgres-cli covers the higher-level capabilities. Missing any → loud install/boot error per `feedback-no-fallbacks`.
+2. New backend: `forks/agentdb/src/backends/postgres/PostgresBackend.ts` implementing the `VectorBackend` interface. Two connection modes:
+   - **Embedded (pglite)**: default when no `connectionString` is set. Persists to `.swarm/memory.pglite/`. Boot throws loudly if pglite import fails (no fallback to sqlite).
+   - **Server (`postgres://...`)**: when `connectionString` is set via `AGENTDB_POSTGRES_URL` env or `AgentDBConfig.connectionString`. Boot throws loudly if connection fails (no fallback to pglite, no fallback to sqlite).
+3. Wire into `backends/factory.ts`: `createBackend('postgres', config)` → `new PostgresBackend(config)`. The factory's `'auto'` cascade is **removed for the relational substrate axis** — `primaryStorage` has no auto-cascade. Only `vectorIndex` retains 'auto' (it picks pgvector when available, throws loudly when not).
+4. Replace `AgentDBConfig.primaryStorage` union: `'sqlite'` → `'pglite' | 'postgres'` (default `'pglite'`). The `'sqlite'` value is REMOVED, not deprecated. Add `connectionString?: string` config field (server mode opt-in).
+5. Schema port: rewrite `schemas/schema.sql` + `schemas/frontier-schema.sql` to PostgreSQL dialect. Differences: `INTEGER PRIMARY KEY AUTOINCREMENT` → `BIGSERIAL PRIMARY KEY`, `INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))` → `BIGINT NOT NULL DEFAULT EXTRACT(EPOCH FROM NOW())::BIGINT`, `BLOB` → `BYTEA`, FTS5 virtual tables → `tsvector` columns + GIN indexes.
+6. **Fail-loud gates** added at boot:
+   - `if (!pglite && !connectionString) throw new Error("Cannot initialize AgentDB: pglite unavailable and no connectionString provided")`.
+   - `if (connectionString && !canReachPostgres(connectionString)) throw new Error("Cannot reach postgres at ${connectionString}")`.
+   - `if (legacy .db file detected) throw new Error("Legacy SQLite database detected. Run 'agentdb migrate --from sqlite --to pglite'. No auto-migration.")`.
+   - Any of these errors is FATAL — never caught-and-degraded.
 
 **Phase B — controller port (one controller at a time, each its own commit + acceptance run).**
 
@@ -103,7 +122,7 @@ Per ADR-0166 Phase 3's incremental pattern, port each controller's SQL to the po
 10. CausalRecall (HARD — JOIN + ORDER BY rerank)
 11. NightlyLearner (HARD — cross-product self-JOIN + GROUP BY + HAVING)
 
-Each commit also flips its acceptance check to run against pglite (default test env). After all 11 land, the SQLite code paths are dead and can be removed in Phase D.
+Each commit also flips its acceptance check to run against pglite (default test env) **and dead-strips the SQLite code path for that controller in the same commit**. After all 11 land, the SQLite code is fully unreachable from any controller. Phase D becomes a confirmation pass (`grep -r 'better-sqlite3\|sql.js\|sqlite-vec' src/` returns zero hits in controller code), not a removal pass.
 
 **Phase C — vector ops integration.**
 
@@ -112,15 +131,15 @@ Each commit also flips its acceptance check to run against pglite (default test 
 3. Wire `@ruvector/postgres-cli` for the higher-level features it exposes (53+ SQL functions, 39 attention mechanisms per upstream docs). Audit which are actually useful for the fork.
 4. Acceptance tests cover the postgres-native `SELECT ... ORDER BY embedding <-> ?` k-NN path.
 
-**Phase D — cleanup.**
+**Phase D — confirmation + orphan removal (NOT a fallback removal — Phase B already did that atomically).**
 
-1. Delete the sqlite-vec / vec0 mirror code from the 5 wired Option F controllers (HM, Reflexion, Skills, ReasoningBank, LearningSystem). The mirror writes are no longer needed.
-2. Delete `@sparkleideas/agentdb`'s `better-sqlite3` and `sql.js` deps (they remain as historical dependencies during Phases A-C for fallback safety; cleared once all controllers ported).
-3. Delete `forks/agentdb/src/backends/hnswlib/` and reroute the lone `vectorIndex: 'hnswlib'` value to pgvector (hnswlib's role is replaced by pgvector's HNSW).
-4. Delete `db-fallback.ts` (sql.js path).
-5. Delete the sqlite-vec optional dep.
-6. Update memory `project-rvf-primary.md` to reflect the new agentdb_* substrate.
-7. Mark ADR-0166's Option F as superseded.
+1. Confirm Phase B fully dead-stripped SQLite from every controller: `grep -r 'better-sqlite3\|sql.js\|sqlite-vec\|sqljs\|hmem_vec\|reflexion_episode_vec\|skill_vec\|reasoning_pattern_vec\|learning_vec' forks/agentdb/src/controllers/` returns zero hits. Otherwise the rollout was incomplete; loop back.
+2. Delete now-orphaned deps from `forks/agentdb/package.json`: `better-sqlite3`, `sql.js`, `hnswlib-node`, `sqlite-vec`. Update lockfile.
+3. Delete the now-orphaned source: `forks/agentdb/src/backends/hnswlib/`, `forks/agentdb/src/db-fallback.ts`, the sqlite-vec extension loader from `AgentDB.ts`, the `createOptionFVirtualTables` method, the Option F mirror writes from the 5 wired controllers (these are already dead per Phase B but the dead-code lines remain in the diff for review-clarity; Phase D removes the lines).
+4. Reroute the `vectorIndex: 'hnswlib'` config value: throw a clear error pointing users to `'pgvector'` or `'auto'`.
+5. Add the one-shot CLI: `agentdb migrate --from sqlite --to pglite <path>`. Reads legacy `.db` files, writes to `.pglite/`. Idempotent. Not invoked automatically — user runs it explicitly per `feedback-no-fallbacks`.
+6. Update memory `project-rvf-primary.md` to reflect the new agentdb_* substrate (postgres-only).
+7. Mark ADR-0166's Option F as fully superseded (status → `superseded by ADR-0170`).
 
 ### Out of scope
 
@@ -128,7 +147,7 @@ Each commit also flips its acceptance check to run against pglite (default test 
 2. **Migration of existing user `.swarm/memory.db` files.** A one-shot `agentdb migrate --from sqlite --to pglite` CLI lives in Phase D; users opt in. No automatic mass-migration.
 3. **`@ruvector/cluster` / `@ruvector/server` adoption.** Both are 2.7KB placeholder packages today; can't adopt nothing. Skip until substrates ship.
 4. **agentic-flow side of the upstream timeline** (Phases 5-8: RuvLLM orchestration, circuit breakers, neuromorphic, etc.). Outside `forks/agentdb` scope.
-5. **Backward compatibility shim** that lets users run on legacy SQLite during transition. Phase B keeps the SQLite code paths alive for the duration of the port; Phase D deletes them. No long-tail compat.
+5. **Backward compatibility shim** that lets users run on legacy SQLite during transition. The rollout DOES NOT keep SQLite alive as a runtime fallback. Each Phase B controller commit dead-strips its SQLite path atomically. No long-tail compat. No silent degradation. No automatic fallback per `feedback-no-fallbacks` + user-binding directive 2026-05-11 ("postgres, or fail fast, fail loud").
 
 ### Consequences
 
