@@ -261,6 +261,15 @@ The fork is deliberately diverging from upstream on the substrate axis. The hone
 
 **Therefore this ADR is fork-leading, not upstream-tracking.** The fork is choosing a SQL substrate upstream has explicitly not chosen. The substrate-axis divergence is real and should be owned in this document and in future upstream-sync work.
 
+#### Controller-set audit precision (2026-05-11)
+
+Verified Phase B's 11-controller port list against the standalone `ruvnet/agentdb@3.0.0-alpha.14` repo (the authoritative upstream — `ruvnet/agentic-flow/packages/agentdb/` was deleted by ADR-0161 on 2026-05-08). Findings:
+
+- **6 controllers in `forks/agentdb/src/controllers/` are fork-only** (no upstream equivalent): `HierarchicalMemory`, `MemoryConsolidation`, `StreamingEmbeddingService`, `QUICConnection`, `QUICConnectionPool`, `QUICStreamManager`.
+- **3 controllers I'd initially miscalled fork-only actually exist upstream** but hold zero SQL state and are therefore correctly excluded from Phase B: `MincutService` (434 LoC, pure WASM/NAPI compute), `SparsificationService` (492 LoC, same), `prerequisites.ts` (283 LoC, utility functions).
+- **Phase B's 11-controller list is unchanged** — the audit confirmed inclusion accuracy (every SQL-bearing controller is in the list) and exclusion accuracy (every pure-compute controller is omitted).
+- Upstream commit cadence on standalone `ruvnet/agentdb` since init 2026-05-06: 7 commits total, all 2026-05-06, then dormant. The version (`3.0.0-alpha.14`) carried over from prior agentic-flow vendored work, not progressed by the standalone repo.
+
 #### Useful upstream references (citations, not rationale)
 
 - `@ruvector/postgres-cli@0.2.8` on npm — 46 files, real package, documented as "53+ SQL functions, 39 attention mechanisms" in `ruvnet/agentic-flow/docs/DOCUMENTATION_ORGANIZATION_SUMMARY.md`. Cited as evidence the dependency is consumable, not as evidence upstream is moving toward it.
