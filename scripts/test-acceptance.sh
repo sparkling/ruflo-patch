@@ -337,6 +337,29 @@ fi
 _record_phase "harness-init" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0170 Phase A.9 harness gate: assert pglite cluster initialized.
+#
+# Per `/tmp/adr0170-resolution-I.md` §"Concrete spec for Phase A":
+# `harness-init` produces the pglite cluster at
+# `${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION`. Downstream e2e + iso
+# snapshots inherit a warm cluster via `cp -r` (~95 ms warm-reopen cost
+# per check, vs ~673 ms cold-init).
+#
+# In Phase A this gate is SOFT (warn-only) — agentdb runs on better-
+# sqlite3 under live controllers until Phase B controller ports flip the
+# substrate. The gate is enforced HARD (fail-loud, exit 1) starting with
+# Phase B's first controller commit.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION" ]]; then
+  log "  ADR-0170 harness gate: pglite cluster present at \${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION"
+else
+  log "  ADR-0170 harness gate: pglite cluster NOT YET initialized — Phase A bootstrap still uses better-sqlite3"
+  # Phase A (current): WARN, do not exit. Phase B's first controller commit flips
+  # this to fail-loud per ADR-0170 §Phase A item 1 ("strict 'pglite or postgres
+  # or throw' runtime check activates with Phase B's first controller commit").
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # Pre-create e2e snapshot BEFORE non-e2e checks touch $ACCEPT_TEMP.
 # This lets us start e2e memory init in the background, overlapping
 # with the non-e2e wave (~8-10s saved on the critical path).
