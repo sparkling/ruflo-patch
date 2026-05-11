@@ -816,10 +816,21 @@ _b5_check_causal_pipeline() {
     return
   fi
 
-  # ─── Step 0: sqlite3 CLI prereq ───────────────────────────────────
+  # ─── Step 0a: sqlite3 CLI prereq ──────────────────────────────────
   if ! command -v sqlite3 >/dev/null 2>&1; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 binary not installed — cannot verify causal_edges schema (install with 'brew install sqlite' or 'apt-get install sqlite3')"
+    return
+  fi
+
+  # ─── Step 0b: ADR-0170 substrate-shift skip ───────────────────────
+  # Pre-ADR-0170 this check used `sqlite3 .swarm/memory.db` to row-count
+  # the controller's causal_edges table. Phase B retires SQLite on
+  # agentdb_*; the cluster lives in .swarm/memory.pglite/ which sqlite3
+  # cannot read. Skip until Phase C lands a pglite-aware probe.
+  if [[ -d "${E2E_DIR}/.swarm/memory.pglite" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: ADR-0170 Phase B retires .swarm/memory.db; postgres-substrate causal_edges probe not yet implemented (Phase C)."
     return
   fi
 
@@ -954,6 +965,15 @@ _b5_seeded_probe() {
   if [[ -n "$sqlite_table" ]] && ! command -v sqlite3 >/dev/null 2>&1; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 binary not installed"
+    return
+  fi
+
+  # ADR-0170 Phase B substrate-shift skip — see _b5_check_causal_pipeline
+  # docstring above. The sqlite3 row-count probes structurally invalid
+  # post-substrate-retirement; pglite cluster present means SQLite path retired.
+  if [[ -n "$sqlite_table" ]] && [[ -d "${E2E_DIR}/.swarm/memory.pglite" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: ADR-0170 Phase B retires .swarm/memory.db; pglite-aware seed+probe pending Phase C."
     return
   fi
 

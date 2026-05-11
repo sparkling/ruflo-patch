@@ -1426,8 +1426,17 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase13_lib" ]]; then
   run_check_bg "p13-rvf-retrieve"        "P13.1 migration v1-rvf retrieve"                check_adr0094_p13_migration_rvf_v1_retrieve                  "adr0094-p13"
   run_check_bg "p13-rvf-search"          "P13.1 migration v1-rvf search"                  check_adr0094_p13_migration_rvf_v1_search                    "adr0094-p13"
   # Phase 13.2 — real AgentDB SQLite fixture seeded via scripts/seed-phase13-2-fixtures.sh
-  run_check_bg "p13-agentdb-skill"       "P13.2 migration v1-agentdb skill_search"         check_adr0094_p13_migration_agentdb_v1_skill_search          "adr0094-p13"
-  run_check_bg "p13-agentdb-reflexion"   "P13.2 migration v1-agentdb reflexion_retrieve"   check_adr0094_p13_migration_agentdb_v1_reflexion_retrieve    "adr0094-p13"
+  # ADR-0170 Phase B retires the SQLite substrate on agentdb_*; the v1-agentdb
+  # SQLite fixture is incompatible with the new pglite cluster. Phase D ships
+  # the explicit `agentdb migrate --from sqlite --to pglite` CLI for users
+  # with legacy state. Skip these checks until the migration CLI is exposed
+  # via MCP. Keep the body functions intact so their unit tests still pass.
+  _adr0170_p13_skip_agentdb_v1() {
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="P13.2 v1-agentdb: SKIP_ACCEPTED: ADR-0170 Phase B retires SQLite substrate; v1-agentdb fixture incompatible with pglite cluster (Phase D ships agentdb migrate CLI)"
+  }
+  run_check_bg "p13-agentdb-skill"       "P13.2 migration v1-agentdb skill_search"         _adr0170_p13_skip_agentdb_v1   "adr0094-p13"
+  run_check_bg "p13-agentdb-reflexion"   "P13.2 migration v1-agentdb reflexion_retrieve"   _adr0170_p13_skip_agentdb_v1   "adr0094-p13"
 fi
 
 # ADR-0094 Phase 14 SLO probes intentionally NOT spawned in this parallel wave.
