@@ -178,6 +178,104 @@ Each Phase B commit also flips its acceptance check to run against pglite (defau
 6. Update memory `project-rvf-primary.md` to reflect the new agentdb_* substrate (postgres-only).
 7. Mark ADR-0166's Option F as fully superseded (status → `superseded by ADR-0170`). At the same time, flip ADR-0170's frontmatter: add `supersedes: [ADR-0166]` and remove ADR-0166 from `depends-on:` to satisfy the indexer's directed-edge requirement (per resolution `/tmp/adr0170-resolution-L-M.md`).
 
+### Multi-agent execution plan
+
+Each phase below can run as a coordinated agent swarm to compress wall-clock time. The plan respects three hard constraints: (1) **one release-pipeline runner at a time** (the fork's pipeline holds a flock per `feedback-build-scripts-only` + `reference-pipeline-publish-paths`); (2) **each commit on `forks/agentdb` main must keep the full acceptance suite green** per `feedback-fix-all-tests`; (3) **no silent fallback** between substrates per the §"No-fallback policy" above. Parallelism happens on *patch preparation*; serialization happens on *merge + release*.
+
+#### Pre-flight (sequential, single agent)
+
+1. **Baseline capture agent** — runs `tests/benchmarks/adr0170-pglite-vs-sqlite.mjs --substrate sqlite` on the last green acceptance run before Phase B starts (e.g., `accept-2026-05-11T173048Z`). Commits the result to `tests/benchmarks/baselines/adr0170-sqlite-baseline.json`. Phase A's merge commit references this baseline.
+
+#### Phase A — single coordinator agent
+
+Phase A is not parallelizable: schema port, factory wiring, fail-loud gates, and the dataDir resolution all touch the same files. One agent (`backend-dev` or `adr-architect` subagent_type) executes Phase A linearly. Commits at the boundary of each item-numbered step. Release at the end of Phase A.
+
+#### Phase B — Wave 1a (9 parallel agents, then Wave 1b, then merge)
+
+The 13 SQL-bearing controllers split into two waves by dependency.
+
+**Wave 1a (parallel, 9 independent agents)** — controllers that don't read from other controllers' tables. Each agent owns one controller, ports the SQL dialect, dead-strips the SQLite path, dead-strips the `@ruvector/graph-node` Cypher branch where applicable, runs `npm run test:unit` locally for fast feedback, prepares a patch (does **not** run `npm run release`).
+
+| Agent | Controller | SQL lines | Graph-node branch to strip? |
+|---|---|---|---|
+| B-1 | HierarchicalMemory | 19 | no |
+| B-2 | ReflexionMemory | 28 | yes (lines 347-350, 418-428, 986-1067 per resolution J) |
+| B-3 | SkillLibrary | 28 | yes (lines 172-196, 316-321 per resolution J) |
+| B-4 | ReasoningBank | 24 | no |
+| B-5 | ExplainableRecall | 26 | no |
+| B-6 | LearningSystem | 51 | no |
+| B-7 | CausalMemoryGraph | 29 | yes (lines 227-260 per resolution J) |
+| B-8 | NightlyLearner | 26 | no |
+| B-9 | EmbeddingService + EnhancedEmbeddingService (bundled, no SQL) | 0 | no — connection-aware updates only |
+
+**Wave 1b (parallel, 5 dependent agents)** — controllers that read from Wave 1a's ported tables. Run only after Wave 1a merges.
+
+| Agent | Controller | Depends on Wave 1a | Notes |
+|---|---|---|---|
+| B-10 | MemoryConsolidation | HM | Reads HM's `hierarchical_memory` table |
+| B-11 | CausalRecall | CausalMemoryGraph | Joins `causal_edges` (CMG's table) |
+| B-12 | SyncCoordinator | Reflexion + Skills | Reads `episodes`, `skills`, `skill_edges` cross-table |
+| B-13 | QUICServer | Reflexion + Skills | Read-only `SELECT * FROM (episodes\|skills\|skill_edges)` |
+| B-14 | HNSWIndex | ReasoningBank | Existence guard `SELECT 1 FROM pattern_embeddings` |
+
+**Coordinator agent (single, runs Phase B merge + release loop):**
+
+1. Wait for each Wave 1a agent to signal patch-ready. Pull each patch, run a fast local sanity check (`npm run test:unit`), merge to `forks/agentdb` main in topological order. Resolve merge conflicts (rare — controllers are file-disjoint).
+2. After Wave 1a's 9 commits land on main, run `npm run release` **once** for the wave. The wave must pass 674/674 acceptance; any failure halts the wave and the failing controller's commit is reverted + revised.
+3. Repeat for Wave 1b.
+4. Wave 1a + 1b together = 14 commits, 2 release cycles. Each release runs the full acceptance suite against pglite (default).
+
+**Why per-wave release, not per-commit:** the fork's pipeline takes ~7 min per release. 14 commits × 7 min = 98 min of release time if serialized per-commit. Per-wave is 14 min total. Per-commit acceptance is overkill when controllers are file-disjoint and unit tests catch most regressions.
+
+**Why not per-controller release:** the fork's flock prevents concurrent releases; per-commit serialization wastes wall-clock without earning signal.
+
+#### Phase C — 2 sequential agents
+
+1. **pgvector integration agent** (`backend-dev` subagent_type) — adds pgvector HNSW indexes to ported tables; switches controllers from `vectorBackend.insert(...)` parallel-writes to single-row INSERTs with pgvector columns; rewrites k-NN paths to `ORDER BY embedding <-> ?`. Commits per controller. One release at the end of pgvector integration.
+2. **Benchmark agent** (`Benchmark Suite` subagent_type) — runs `tests/benchmarks/adr0170-pglite-vs-sqlite.mjs` against the post-Phase-C build. Compares to baseline. **Halts on >10% regression on any metric** per `feedback-no-squelch-tests`. Commits result to `test-results/benchmarks/`. This commit is Phase C's exit gate.
+
+#### Phase D — single coordinator agent
+
+Phase D is mostly mechanical (greps + deletions + frontmatter flips); not parallelizable. One agent (`adr-architect`):
+
+1. Grep-confirms zero SQLite + graph-node references in `forks/agentdb/src/controllers/`. If non-zero, halt and report the offending controllers — Phase B was incomplete.
+2. Deletes orphaned deps from `package.json`. Updates lockfile.
+3. Deletes orphaned source: `backends/hnswlib/`, `db-fallback.ts`, `backends/graph/GraphDatabaseAdapter.ts`, Option F mirror code, sqlite-vec extension loader, `createOptionFVirtualTables`, `enableGraph` config field.
+4. Builds the `agentdb migrate --from sqlite --to pglite` CLI per gap-H spec. Contract test at `tests/acceptance/adr0170-migration-roundtrip.test.mjs` must pass before the CLI ships.
+5. Updates memory `project-rvf-primary.md` to reflect the new agentdb_* substrate (postgres-only).
+6. Flips frontmatter: ADR-0166 status → `superseded`; ADR-0170 frontmatter adds `supersedes: [ADR-0166]` and removes ADR-0166 from `depends-on:`.
+7. Final release: full acceptance suite must pass 674/674 with CI restricted to pglite-only paths.
+
+#### Wall-clock estimate (release cycles, not total time)
+
+The fork's release pipeline takes ~7 min; the rest of the work parallelizes inside agent prep time. Conservative cycle count, not minute count, to avoid `feedback-no-time-estimates` violation:
+
+| Phase | Release cycles | Coordination shape |
+|---|---|---|
+| Pre-flight (baseline) | 0 (no source change; baseline captured at HEAD) | 1 agent |
+| Phase A | 1 | 1 agent linear |
+| Phase B Wave 1a | 1 | 9 parallel + 1 coordinator |
+| Phase B Wave 1b | 1 | 5 parallel + 1 coordinator |
+| Phase C | 1 (pgvector) + 1 (benchmark exit gate) | 2 agents sequential |
+| Phase D | 1 | 1 agent linear |
+| **Total** | **6 release cycles** | up to **9 agents in parallel** at Wave 1a peak |
+
+If any wave fails its acceptance gate, the coordinator reverts the failing commit + cycles back to the responsible agent for revision. The 6-cycle estimate assumes Wave 1a, 1b, C-pgvector, and C-benchmark each pass first time.
+
+#### Spawning the swarm
+
+When ready to execute (not yet — this is plan, not action), the swarm is launched via parallel `Agent` calls in a single message:
+
+```
+Agent (subagent_type="backend-dev", run_in_background=true) — Phase A coordinator
+Agent (subagent_type="backend-dev", run_in_background=true) — Phase B-1 HierarchicalMemory
+… (8 more for Wave 1a)
+```
+
+Each agent gets a self-contained brief naming its controller, its dependencies (none for Wave 1a), its exit criteria (commit ready + unit tests green), and its non-action constraint (does not run `npm run release` — the coordinator does).
+
+The coordinator agent's brief includes the topological merge order, the release-after-wave rule, and the revert-on-failure protocol.
+
 ### Out of scope
 
 1. **`memory_*` axis changes.** RVF stays primary for memory_*; this ADR addresses agentdb_* only.
