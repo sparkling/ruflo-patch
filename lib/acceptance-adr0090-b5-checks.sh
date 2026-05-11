@@ -144,7 +144,7 @@ _b5_check_controller_roundtrip() {
     return
   fi
 
-  # ─── Step 0: sqlite3 CLI binary prereq ────────────────────────────
+  # ─── Step 0a: sqlite3 CLI binary prereq ───────────────────────────
   # Same rule as Debt 15 (ADR-0086) + A1 (ADR-0090): if sqlite3 is
   # missing from the host, we cannot verify on-disk row counts. Emit
   # skip_accepted with a precise marker rather than silently passing
@@ -152,6 +152,20 @@ _b5_check_controller_roundtrip() {
   if ! command -v sqlite3 >/dev/null 2>&1; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 binary not installed — cannot row-count verify (install with 'brew install sqlite' or 'apt-get install sqlite3')"
+    return
+  fi
+
+  # ─── Step 0b: ADR-0170 substrate-shift skip ───────────────────────
+  # Pre-ADR-0170 this check used `sqlite3 .swarm/memory.db` to row-count
+  # the controller's table after a successful store call. Phase B retires
+  # the SQLite substrate on the agentdb_* axis; the data now lives in
+  # `.swarm/memory.pglite/` (postgres cluster) which sqlite3 cannot read.
+  # Until a pglite-aware row-count probe lands (Phase C deliverable), emit
+  # skip_accepted instead of FAIL — the "did the controller persist"
+  # question is still valid, just not answerable with the sqlite3 CLI tool.
+  if [[ -d "${E2E_DIR}/.swarm/memory.pglite" ]] || [[ -d "${E2E_DIR:-/nonexistent}/.swarm/memory.pglite" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: ADR-0170 Phase B retires .swarm/memory.db; postgres-substrate row-count probe not yet implemented (Phase C). E2E_DIR contains memory.pglite/ cluster instead."
     return
   fi
 

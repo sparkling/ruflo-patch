@@ -623,6 +623,18 @@ check_adr0086_debt15_sqlite_path() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
+  # ─── Step 0: ADR-0170 substrate-shift skip ────────────────────────
+  # Pre-ADR-0170 this test asserted .swarm/memory.db (SQLite) exists and
+  # contains the SQLite magic header. Phase B retires the SQLite substrate
+  # on the agentdb_* axis; data now lives in .swarm/memory.pglite/ which
+  # has no SQLite-format file. The "controller persists to SQLite" contract
+  # itself is structurally invalidated — Phase D rewrites/deletes this check.
+  if [[ -d "${TEMP_DIR:-/nonexistent}/.swarm/memory.pglite" ]]; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="Debt 15: SKIP_ACCEPTED: ADR-0170 Phase B retires SQLite substrate; .swarm/memory.pglite/ cluster present instead."
+    return
+  fi
+
   # ─── Step 1: sqlite3 binary prereq (ADR-0090 A1 + ADR-0082 rule) ───
   # This check requires the `sqlite3` binary to query the SQLite file
   # directly. better-sqlite3 would be a node dep (contradicts Tier B4

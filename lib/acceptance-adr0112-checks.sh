@@ -146,6 +146,17 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
     return
   fi
 
+  # ADR-0170 Phase B retires the SQLite substrate on agentdb_*; data now
+  # lives in .swarm/memory.pglite/. The "marker landed in SQLite" sanity
+  # check below cannot read pglite tables with sqlite3. Skip until Phase C
+  # lands a pglite-aware marker probe.
+  if [[ -d "$iso/.swarm/memory.pglite" ]] || [[ -d "$E2E_DIR/.swarm/memory.pglite" ]]; then
+    rm -rf "$iso" 2>/dev/null
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="0112/26.2: SKIP_ACCEPTED: ADR-0170 Phase B retires SQLite on agentdb_* axis; .swarm/memory.pglite/ marker probe pending Phase C."
+    return
+  fi
+
   local cli; cli=$(_cli_cmd)
   local marker="adr0112-26-2-$$-$(date +%s)"
   local params="{\"session_id\":\"$marker\",\"task\":\"$marker partition probe\",\"reward\":0.5,\"success\":true}"

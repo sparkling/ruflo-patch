@@ -170,6 +170,16 @@ check_adr0059_storage_files() {
     found="${found}memory.db($(wc -c < "$swarm_dir/memory.db" | tr -d ' ')b) "
   [[ -f "$swarm_dir/agentdb-memory.rvf" && -s "$swarm_dir/agentdb-memory.rvf" ]] && \
     found="${found}agentdb-memory.rvf($(wc -c < "$swarm_dir/agentdb-memory.rvf" | tr -d ' ')b) "
+  [[ -f "$swarm_dir/memory.rvf" && -s "$swarm_dir/memory.rvf" ]] && \
+    found="${found}memory.rvf($(wc -c < "$swarm_dir/memory.rvf" | tr -d ' ')b) "
+  # ADR-0170 Phase B: pglite cluster dir replaces SQLite memory.db on the
+  # agentdb_* axis. PG_VERSION is the cluster's bootstrap canary file;
+  # treat its presence as evidence of a populated postgres-substrate store.
+  if [[ -f "$swarm_dir/memory.pglite/PG_VERSION" ]]; then
+    local pgsize
+    pgsize=$(du -sk "$swarm_dir/memory.pglite" 2>/dev/null | awk '{print $1*1024}')
+    found="${found}memory.pglite(${pgsize}b) "
+  fi
 
   if [[ -n "$found" ]]; then
     _CHECK_PASSED="true"

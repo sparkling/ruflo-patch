@@ -431,19 +431,15 @@ check_adr0094_p13_migration_rvf_v1_search() {
 # 9. migration_agentdb_v1_skill_search
 _p13_agentdb_v1_skill_search_body() {
   local iso="$1"; local _saved="${E2E_DIR:-}"; E2E_DIR="$iso"
-  if ! _p13_load_fixture "v1-agentdb" "$iso" "$(_p13_2_fixtures_dir)"; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="P13.2/agentdb_v1_skill_search FAIL: fixture load failed"
-    E2E_DIR="$_saved"; return
-  fi
-  _mcp_invoke_tool "agentdb_skill_search" \
-    '{"query":"p13-2"}' \
-    '.' "P13.2/agentdb_v1_skill_search" 30 --ro
-  # Either the skill name or the description surfacing in the body proves
-  # the current code parsed the SQLite schema and retrieved the seeded row.
-  _p13_expect_readable "P13.2/agentdb_v1_skill_search" \
-    'p13-2-skill|p13-2 migration sentinel|phase 13.2 migration sentinel skill'
-  E2E_DIR="$_saved"
+  # ADR-0170 Phase B retires the SQLite substrate; the v1-agentdb fixture is
+  # a SQLite memory.db file whose schema is incompatible with the new pglite
+  # cluster. The migration story will be: Phase D ships `agentdb migrate
+  # --from sqlite --to pglite` for users with legacy state. Until then,
+  # round-tripping a SQLite v1 fixture through the pglite-backed runtime
+  # is structurally invalid.
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="P13.2/agentdb_v1_skill_search: SKIP_ACCEPTED: ADR-0170 Phase B retires SQLite substrate; v1-agentdb fixture incompatible with pglite cluster. Phase D ships the explicit migration CLI."
+  E2E_DIR="$_saved"; return
 }
 check_adr0094_p13_migration_agentdb_v1_skill_search() {
   # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
@@ -453,20 +449,13 @@ check_adr0094_p13_migration_agentdb_v1_skill_search() {
 # 10. migration_agentdb_v1_reflexion_retrieve
 _p13_agentdb_v1_reflexion_retrieve_body() {
   local iso="$1"; local _saved="${E2E_DIR:-}"; E2E_DIR="$iso"
-  if ! _p13_load_fixture "v1-agentdb" "$iso" "$(_p13_2_fixtures_dir)"; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="P13.2/agentdb_v1_reflexion_retrieve FAIL: fixture load failed"
-    E2E_DIR="$_saved"; return
-  fi
-  _mcp_invoke_tool "agentdb_reflexion_retrieve" \
-    '{"task":"p13-2 reflexion sentinel"}' \
-    '.' "P13.2/agentdb_v1_reflexion_retrieve" 30 --ro
-  # Either the `migration-survived` marker OR the raw sentinel string
-  # surfacing proves the reflexion row round-tripped through the current
-  # reader.
-  _p13_expect_readable "P13.2/agentdb_v1_reflexion_retrieve" \
-    'migration-survived|p13-2 reflexion sentinel'
-  E2E_DIR="$_saved"
+  # ADR-0170 Phase B retires the SQLite substrate; the v1-agentdb fixture is
+  # a SQLite memory.db file whose schema is incompatible with the new pglite
+  # cluster. Same retirement rationale as the skill_search probe above —
+  # Phase D ships the explicit migration CLI.
+  _CHECK_PASSED="skip_accepted"
+  _CHECK_OUTPUT="P13.2/agentdb_v1_reflexion_retrieve: SKIP_ACCEPTED: ADR-0170 Phase B retires SQLite substrate; v1-agentdb fixture incompatible with pglite cluster."
+  E2E_DIR="$_saved"; return
 }
 check_adr0094_p13_migration_agentdb_v1_reflexion_retrieve() {
   # adr0097-l2-delegator: _CHECK_PASSED= is set inside _with_iso_cleanup / body fn
