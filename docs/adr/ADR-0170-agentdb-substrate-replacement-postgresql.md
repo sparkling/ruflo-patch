@@ -129,21 +129,31 @@ Each item below is a decision made now so phase execution doesn't have to re-lit
 
 **Phase B — controller port (one controller at a time, each its own commit + acceptance run).**
 
-Per ADR-0166 Phase 3's incremental pattern, port each controller's SQL to the postgres dialect:
+Per ADR-0166 Phase 3's incremental pattern, port each SQL-bearing controller's SQL to the postgres dialect. The list below is the **complete set of SQL-bearing controllers in `forks/agentdb/src/controllers/`**, derived from a `grep -E "this.db.(prepare|exec|run)|CREATE TABLE|INSERT INTO|SELECT.*FROM"` audit on 2026-05-11:
 
-1. EmbeddingService + EnhancedEmbeddingService (no SQL state, just connection-aware)
-2. HierarchicalMemory (TRIVIAL — schema port)
-3. MemoryConsolidation (TRIVIAL — schema port)
-4. ReflexionMemory (MODERATE — `episode_embeddings` BYTEA + pgvector column variant)
-5. SkillLibrary (MODERATE — same)
-6. ReasoningBank (MODERATE — same; verify GROUP BY queries on postgres)
-7. ExplainableRecall (MODERATE — `recall_certificates` schema port + tsvector for query_text)
-8. LearningSystem (HARD — RL aggregations over `learning_state_embeddings`; verify GROUP BY semantics)
-9. CausalMemoryGraph (HARDEST — `WITH RECURSIVE` 5-hop traversal — postgres syntax differs from sqlite slightly)
-10. CausalRecall (HARD — JOIN + ORDER BY rerank)
-11. NightlyLearner (HARD — cross-product self-JOIN + GROUP BY + HAVING)
+1. HierarchicalMemory (TRIVIAL — 19 SQL lines, fork-only; schema port)
+2. MemoryConsolidation (TRIVIAL — 13 SQL lines, fork-only; schema port)
+3. ReflexionMemory (MODERATE — 28 SQL lines; `episode_embeddings` BYTEA + pgvector column variant)
+4. SkillLibrary (MODERATE — 28 SQL lines; same)
+5. ReasoningBank (MODERATE — 24 SQL lines; verify GROUP BY queries on postgres)
+6. ExplainableRecall (MODERATE — 26 SQL lines; `recall_certificates` schema port + tsvector for query_text)
+7. LearningSystem (HARD — 51 SQL lines; RL aggregations over `learning_state_embeddings`; verify GROUP BY semantics)
+8. CausalMemoryGraph (HARDEST — 29 SQL lines; `WITH RECURSIVE` 5-hop traversal — postgres syntax differs from sqlite slightly)
+9. CausalRecall (HARD — 7 SQL lines; JOIN + ORDER BY rerank)
+10. NightlyLearner (HARD — 26 SQL lines; cross-product self-JOIN + GROUP BY + HAVING)
+11. SyncCoordinator (MODERATE — 9 SQL lines; owns its own `sync_state` table + reads `episodes`/`skills`/`skill_edges` from other controllers; sync-protocol; dialect port + cross-table reads)
+12. QUICServer (TRIVIAL — 6 SQL lines, all read-only `SELECT * FROM (episodes|skills|skill_edges)`; dialect-correctness check only; no schema of its own)
+13. HNSWIndex (TRIVIAL — 1 SQL line; existence guard `SELECT 1 FROM pattern_embeddings`; internal helper)
 
-Each commit also flips its acceptance check to run against pglite (default test env) **and dead-strips the SQLite code path for that controller in the same commit**. After all 11 land, the SQLite code is fully unreachable from any controller. Phase D becomes a confirmation pass (`grep -r 'better-sqlite3\|sql.js\|sqlite-vec' src/` returns zero hits in controller code), not a removal pass.
+**Connection-aware updates only (no SQL dialect changes needed):**
+
+- EmbeddingService, EnhancedEmbeddingService — 0 SQL lines each; need to receive the postgres-backed `db` handle through the existing constructor pipe, no schema work.
+
+**Out of Phase B (zero SQL state, no port needed):**
+
+AttentionService, ContextSynthesizer, MemoryController, MetadataFilter, MincutService, MMRDiversityRanker, QUICClient, QUICConnection, QUICConnectionPool, QUICStreamManager, SparsificationService, StreamingEmbeddingService, WASMVectorSearch — all pure compute / transport / utility with no `this.db.*` calls.
+
+Each Phase B commit also flips its acceptance check to run against pglite (default test env) **and dead-strips the SQLite code path for that controller in the same commit**. After all 13 land, the SQLite code is fully unreachable from any controller. Phase D becomes a confirmation pass (`grep -r 'better-sqlite3\|sql.js\|sqlite-vec' src/` returns zero hits in controller code), not a removal pass.
 
 **Phase C — vector ops integration.**
 
@@ -267,7 +277,7 @@ Verified Phase B's 11-controller port list against the standalone `ruvnet/agentd
 
 - **6 controllers in `forks/agentdb/src/controllers/` are fork-only** (no upstream equivalent): `HierarchicalMemory`, `MemoryConsolidation`, `StreamingEmbeddingService`, `QUICConnection`, `QUICConnectionPool`, `QUICStreamManager`.
 - **3 controllers I'd initially miscalled fork-only actually exist upstream** but hold zero SQL state and are therefore correctly excluded from Phase B: `MincutService` (434 LoC, pure WASM/NAPI compute), `SparsificationService` (492 LoC, same), `prerequisites.ts` (283 LoC, utility functions).
-- **Phase B's 11-controller list is unchanged** — the audit confirmed inclusion accuracy (every SQL-bearing controller is in the list) and exclusion accuracy (every pure-compute controller is omitted).
+- **Phase B's port list grew from 11 to 13 controllers** after the SQL-state audit. The original list missed three SQL-bearing controllers wired by ruflo's controller-registry but not by AgentDB's own `getController()` switch: `SyncCoordinator` (9 SQL lines, owns `sync_state`), `QUICServer` (6 SQL lines, read-only against other controllers' tables), and `HNSWIndex` (1 SQL line, existence guard). The audit also confirmed exclusion accuracy: 13 other controllers in `/controllers/` have zero SQL state (AttentionService, ContextSynthesizer, MemoryController, MetadataFilter, MincutService, MMRDiversityRanker, QUICClient/Connection/Pool/StreamManager, SparsificationService, StreamingEmbeddingService, WASMVectorSearch) and are correctly omitted from Phase B. EmbeddingService + EnhancedEmbeddingService also have zero SQL state but need connection-aware updates (separate bucket within Phase B).
 - Upstream commit cadence on standalone `ruvnet/agentdb` since init 2026-05-06: 7 commits total, all 2026-05-06, then dormant. The version (`3.0.0-alpha.14`) carried over from prior agentic-flow vendored work, not progressed by the standalone repo.
 
 #### Useful upstream references (citations, not rationale)
