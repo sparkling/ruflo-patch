@@ -30,7 +30,7 @@ implements: []
 | Phase 3 (Option F) — ExplainableRecall + QUICServer | **deferred** | `recall_vec` virtual table is created; ExplainableRecall's `recall_certificates` is metadata-only at the controller level (no embedding column to mirror without re-architecting the chunk-retrieval pipeline). QUICServer has minimal vector ops per the ADR. Both can be wired in a follow-up if a concrete need emerges |
 | Phase 3 (Option F) — MemoryConsolidation | **implicit accepted** | Consolidation creates semantic memories via `hierarchicalMemory.store(...)` which already flows through the HierarchicalMemory Option F mirror; the `consolidated_vec` virtual table is provisioned but unused at the controller level |
 | Phase 3 (Option F) — SyncCoordinator | **N/A** | No vector ops per the ADR |
-| Parallel track — ADR-007 Phase 1 capability adoption | **in progress** | Independent of phase plan; tracked in ADR-0094 |
+| Parallel track — ADR-007 Phase 1 capability adoption | **mostly wired (~5/9 audited as already in fork)** | A 2026-05-11 audit found 4 items already wired (EWC++, SIMD activations, RVF compression profiles, router save/load) and 1 partially wired (SONA — module imported but `addTrajectoryContext` not called in recall paths). Real remaining gaps: RLM controller, native ruvllm.ReasoningBank fast path, adaptive `ef_search` via SolverBandit, SONA recall-path enrichment, vec0 mirror batching. Each ~20–200 LoC, tracked in ADR-0094 |
 
 Five of nine augmented controllers are actively wired (HierarchicalMemory,
 ReflexionMemory, SkillLibrary, ReasoningBank, LearningSystem). The two
@@ -257,19 +257,35 @@ Per Storage Architect's Phase 4 Commitment A: start with sqlite-vec for Phase 3 
 
 Per `feedback-no-value-judgements-on-features` ("wire all upstream capability"), upstream agentdb ADR-007 Phase 1 capabilities should ship independently of any phase above. **No substrate-flip dependency.** Phase 1 of upstream ADR-007 is already complete substrate-side; the work is fork-side wiring.
 
-**Capabilities to wire** (each is its own ~50-200 LoC workstream):
+**Upstream context (the original 9-item list).** Upstream `ruvnet/agentic-flow/packages/agentdb` declares 11 `@ruvector/*` packages as dependencies and ADR-007 §"Gap Analysis" reports adoption depth of ~30% on average (rvf ~45%, attention ~15%, ruvllm ~10%, graph-node ~15%, router ~30%, sona ~30%). Phase 1 enumerates 11 capability wirings to raise that. Upstream marks Phase 1 as **Complete** (2026-02-17) — the @ruvector substrates ship working APIs and most of the consumer-side wiring landed there.
 
-- Native optimizers + EWC++ (`@ruvector/ruvllm.EwcManager`)
-- Full SIMD activation functions (`@ruvector/ruvllm.SimdOps`)
-- RVF compression profiles (`none`/`scalar`/`product`)
-- `@ruvector/router` save/load (currently unused in ruflo — quick win)
-- SONA context enrichment (`@ruvector/sona`)
-- RLM controller for retrieval-augmented generation (`@ruvector/ruvllm.RlmController`)
-- Batch operations
-- ReasoningBank native fast path (`@ruvector/ruvllm.ReasoningBank`)
-- Adaptive `ef_search` via `@ruvector/rvf-solver` Thompson Sampling
+**Fork audit (2026-05-11).** A bench-audit against `forks/agentdb/src/` shows the picture is much narrower than ADR-007's full list suggests — most of Phase 1 already rode in via past forks/upstream merges:
+
+| ADR-007 Phase 1 item | Fork state | Pointer |
+|---|---|---|
+| Native optimizers + EWC++ | **wired** | `backends/rvf/NativeAccelerator.ts:461` (`loadEwcManager` lazy-imports `@ruvector/ruvllm.EwcManager`) |
+| Full SIMD activation functions | **wired** | `backends/rvf/NativeAccelerator.ts:104-120` (matvec/softmax/relu/gelu) + `:388` import of `@ruvector/ruvllm.SimdOps` |
+| RVF compression profiles | **wired** | `backends/rvf/RvfBackend.ts:54` — `compression?: 'none' \| 'scalar' \| 'product'` config field exists |
+| `@ruvector/router` save/load | **wired** | `backends/rvf/NativeAccelerator.ts:431-433` (`router.SemanticRouter.load(p)`) + `backends/rvf/SemanticQueryRouter.ts:129` |
+| SONA context enrichment | **partial** | `SonaTrajectoryService` is imported at module scope in `core/AgentDB.ts`; `backends/rvf/SonaLearningBackend.ts` exists. Gap is narrow: `HierarchicalMemory.recall()` and `ReflexionMemory.search()` don't call `addTrajectoryContext(...)` to enrich results |
+| RLM controller for RAG | **missing** | Zero references to `RlmController` in `forks/agentdb/src/`. New `getController('rlm')` + thin facade needed |
+| Batch operations | **partial** | `BatchOperations` exists as a lazy `getController('batchOperations')` singleton, but Option F vec0 mirror INSERTs (Phase 3 above) are still per-row. Gap: batch the mirror writes + adopt `@ruvector/core.insertBatch` where applicable |
+| ReasoningBank native fast path | **missing** | Zero references to `@ruvector/ruvllm.ReasoningBank` in the fork. The TS `ReasoningBank` controller is the only path; native Float64Array-optimized variant should sit behind a lazy-import fast path |
+| Adaptive `ef_search` via Thompson Sampling | **partial** | `SolverBandit` exists at `backends/rvf/SolverBandit.ts` and is wired into `AdaptiveIndexTuner.ts` for temporal-compression decisions — **not** into search-time efSearch. Gap: consult the bandit at `RuVectorBackend.search` / `HNSWLibBackend.search` / `RvfBackend.search` with a query-quality reward |
+
+**Real remaining wiring** (~3-5 small workstreams, not 9):
+
+- RLM controller for RAG (`@ruvector/ruvllm.RlmController`) — ~100-200 LoC, brand-new facade
+- ReasoningBank native fast path (`@ruvector/ruvllm.ReasoningBank`) — ~80-150 LoC, lazy-import + try/catch
+- Adaptive `ef_search` via `@ruvector/rvf-solver` — ~80-150 LoC across 3 search call sites
+- SONA `addTrajectoryContext` in recall paths — ~20-40 LoC across 2 call sites once enrichment shape is decided
+- Batch the Option F vec0 mirror INSERTs (perf optimization, not a missing capability) — ~50-150 LoC
 
 Each wiring lands as a separate small commit; track in ADR-0094 (living acceptance-coverage tracker).
+
+### Note: postgres backend is additive, not a substrate flip
+
+Upstream's optimized timeline (`ruvnet/agentic-flow/docs/ruvector-ecosystem/OPTIMIZED_MASTER_TIMELINE.md`) introduces `@ruvector/postgres-cli@0.2.6` as **an additional VectorBackend** alongside SQLite/RVF/HNSWLib, targeting an enterprise persistence tier (~10x faster than SQLite for that profile). This is the same pluggable-backend axis ADR-0166 already accommodates — not a substrate flip away from SQLite or RVF. The fork's "SQLite primary on the `agentdb_*` axis" stance is consistent with upstream's direction; postgres-cli would simply become a fourth `VectorBackend` selector value when it stabilizes.
 
 ### Out of scope
 
