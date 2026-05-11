@@ -6,6 +6,39 @@
 
 ---
 
+## 2026-05-11 — ADR-0166 Option F shipped — 5/9 controllers wired, 674/674 green
+
+ADR-0166 Phase 1 + 1.5 + 2 + Phase 3 (Option F) shipped across agentdb patches 44–48. Five of nine augmented controllers now mirror their embedding writes into a sqlite-vec `vec0` virtual table for SQL-side k-NN; the remaining four are either implicit-via-HM, deferred (no clear embedding pipeline at controller level), or N/A. Validating acceptance run: `accept-2026-05-11T173048Z` — 674 pass / 0 fail / 0 skip_accepted (5m 5s wall-clock).
+
+### Coverage entries
+
+| Controller | vec0 virtual table | Mirror call sites | Validated by |
+|---|---|---|---|
+| HierarchicalMemory | `hmem_vec` (`+id TEXT`) | `store()` INSERT + `forget()` DELETE | `adr0090-b5-hierarchicalMemory` (B5 roundtrip), `tests/adr0166-phase3-controller-wiring.test.ts`'s "HierarchicalMemory.store mirrors..." case |
+| ReflexionMemory | `reflexion_episode_vec` (`+id TEXT`) | `storeEmbedding()` INSERT + `deleteEpisode()` DELETE | `adr0090-b5-reflexion` (B5 roundtrip), `adr0094-p1-rb-store`, `adr0094-p1-rb-search`, `tests/adr0166-phase3-controller-wiring.test.ts`'s "ReflexionMemory.storeEpisode mirrors..." case |
+| SkillLibrary | `skill_vec` (`+id TEXT`) | `storeSkillEmbeddingLegacy()` DELETE-then-INSERT (upsert) | `adr0090-b5-skillLibrary` (B5 roundtrip), `adr0094-p1-sk-create`, `adr0094-p1-sk-search`, Phase 3 contract test's "SkillLibrary.createSkill..." case |
+| ReasoningBank | `reasoning_pattern_vec` (`+id TEXT`) | `createPattern()` DELETE-then-INSERT + `deletePattern()` DELETE | `adr0090-b5-reasoningBank` (B5 roundtrip), `adr0094-p1-rsg-store`, `adr0094-p1-rsg-search`, Phase 3 contract test's "ReasoningBank.createPattern..." case. GROUP BY queries unchanged (PERMANENT_SQLITE_CARVE_OUT) |
+| LearningSystem | `learning_vec` (`+id TEXT`) | `getOrCreateStateEmbedding()` INSERT (via `learning_state_embeddings.rowid`) | `adr0090-b5-learningSystem` (B5 roundtrip), `adr0094-p5-le-*` (learning lifecycle checks). GROUP BY aggregations unchanged (PERMANENT_SQLITE_CARVE_OUT) |
+
+### Deferred (Phase 3 §"controllers to augment" footnotes — not blocking the ADR)
+
+| Controller | vec0 virtual table | Reason for deferral |
+|---|---|---|
+| MemoryConsolidation | `consolidated_vec` (provisioned, unused) | `createSemanticMemory()` calls `hierarchicalMemory.store('semantic', ...)` which already flows through HM's `hmem_vec` mirror — implicit Option F coverage. Consolidation has no controller-local embedding pipeline of its own |
+| ExplainableRecall | `recall_vec` (provisioned, unused) | `recall_certificates` is metadata-only at the controller level (chunk_ids, merkle_root, proof_chain); chunks + their embeddings are produced upstream by HM/Reflexion/Skills and already mirrored there. Wiring `recall_vec` would require re-architecting the chunk-retrieval pipeline |
+| QUICServer | (no vec table provisioned) | ADR Phase 3 §"controllers to augment" footnote: "vector ops minimal; evaluate per controller" — no per-store embedding write to mirror |
+| SyncCoordinator | (no vec table provisioned) | ADR notes "no vector ops; no augmentation needed" |
+
+### Bug surfaced + fixed during rollout
+
+p4 acceptance run (`accept-2026-05-11T172046Z`, 671/674 — 3 fails) surfaced an issue in patch.47's per-controller wiring: `+id INTEGER` auxiliary columns on `vec0` virtual tables reject JS Number bindings under better-sqlite3 with `auxiliary column id has type INTEGER, but FLOAT was provided` — regardless of `Number.isInteger`. Resolution in patch.48 (commit `5865a91`): use `+id TEXT` uniformly across all 7 vec0 virtual tables, controllers stringify numeric ids via `String(id)` at the mirror call site. p5 (`accept-2026-05-11T173048Z`) returned 674/674.
+
+### Streak status
+
+Two consecutive green runs at this checkpoint: `accept-2026-05-11T171003Z` (HM-only wiring, 674/674) + `accept-2026-05-11T173048Z` (5-controller wiring + aux-id fix, 674/674). The 3-anchors-with-2h-gap close criterion already cleared by ADR-0094's 2026-04-21 closure; this entry registers the additional coverage without re-running the streak gate.
+
+---
+
 ## 2026-05-09 — ADR-0094 RE-CLOSED post-ADR-0161 (agentdb extraction) — 674/674 green
 
 Parent ADR-0094 status remains **Closed** (originally 2026-04-21). The ADR-0161 agentdb-fork-extraction migration introduced 12 acceptance regressions (run `accept-2026-05-08T230605Z`: 649 pass / 12 fail / 13 skip_accepted) which were all root-caused and fixed in 4 release iterations today, returning the cascade to 0-fail without skip-bucket masking.
