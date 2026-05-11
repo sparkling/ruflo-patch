@@ -337,26 +337,29 @@ fi
 _record_phase "harness-init" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
-# ADR-0170 Phase A.9 harness gate: assert pglite cluster initialized.
+# ADR-0170 Phase B.1 harness gate (HARD): pglite cluster must exist.
 #
-# Per `/tmp/adr0170-resolution-I.md` §"Concrete spec for Phase A":
-# `harness-init` produces the pglite cluster at
-# `${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION`. Downstream e2e + iso
-# snapshots inherit a warm cluster via `cp -r` (~95 ms warm-reopen cost
-# per check, vs ~673 ms cold-init).
+# Per ADR-0170 §Phase A item 1 footnote and §Phase A item 8: the strict
+# "pglite cluster or fail" gate activates with Phase B's first controller
+# commit (HierarchicalMemory port — this commit). `harness-init` produces
+# the cluster at `${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION`; if it's
+# missing after harness-init, the postgres-substrate boot path is broken
+# and every downstream check would either fall through silently or fail
+# with a misleading error. Per `feedback-no-fallbacks` + `feedback-data-
+# loss-zero-tolerance`, fail loud here so the responsible commit is
+# obvious from the acceptance log.
 #
-# In Phase A this gate is SOFT (warn-only) — agentdb runs on better-
-# sqlite3 under live controllers until Phase B controller ports flip the
-# substrate. The gate is enforced HARD (fail-loud, exit 1) starting with
-# Phase B's first controller commit.
+# Downstream e2e + iso snapshots inherit the warm cluster via `cp -r`
+# (~95 ms warm-reopen per check vs ~673 ms cold-init, per
+# `/tmp/adr0170-resolution-I.md` profiling).
 # ════════════════════════════════════════════════════════════════════
 if [[ -f "${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION" ]]; then
   log "  ADR-0170 harness gate: pglite cluster present at \${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION"
 else
-  log "  ADR-0170 harness gate: pglite cluster NOT YET initialized — Phase A bootstrap still uses better-sqlite3"
-  # Phase A (current): WARN, do not exit. Phase B's first controller commit flips
-  # this to fail-loud per ADR-0170 §Phase A item 1 ("strict 'pglite or postgres
-  # or throw' runtime check activates with Phase B's first controller commit").
+  log "  ADR-0170 harness gate FAILED: pglite cluster not initialized at \${ACCEPT_TEMP}/.swarm/memory.pglite/PG_VERSION after harness-init."
+  log "  Phase B.1+ requires PostgresBackend (pglite-embedded) under HierarchicalMemory and following controllers."
+  log "  Investigate harness-init output above; do NOT bypass with --skip-gates or similar."
+  exit 1
 fi
 
 # ════════════════════════════════════════════════════════════════════
