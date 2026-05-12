@@ -1,11 +1,16 @@
 // @tier unit
-// ADR-0090 Tier B5: 15-controller SQLite row-count round-trip tests.
+// ADR-0090 Tier B5: 14-controller SQLite row-count round-trip tests.
 //
 // Drives the REAL bash helper (`_b5_check_controller_roundtrip`) and
-// the 15 thin check wrappers in subshells. The CLI is stubbed as a
+// the 14 thin check wrappers in subshells. The CLI is stubbed as a
 // bash shim that writes a canned response to stdout when a given MCP
 // tool is invoked, and optionally writes a SQLite file directly so
 // the helper's sqlite3 verification can run.
+//
+// ADR-0170 Phase D follow-up (2026-05-12): the original 15-controller set
+// dropped to 14 when graphAdapter was retired. Fork commit 9ec9a87 deleted
+// GraphDatabaseAdapter and @ruvector/graph-node; per user "no skips"
+// directive, the test was removed not skipped.
 //
 // Cases per check (≥ 2 total):
 //   * happy:       stub claims tool success + writes a real SQLite row
@@ -17,10 +22,10 @@
 //
 // Plus static-source + wiring assertions:
 //   * helper exists and is non-trivial
-//   * 15 check functions exist and delegate to the helper (thin)
+//   * 14 check functions exist and delegate to the helper (thin)
 //   * loader line in acceptance-checks.sh
-//   * 15 run_check_bg rows in scripts/test-acceptance.sh
-//   * 15 collect_parallel spec lines
+//   * 14 run_check_bg rows in scripts/test-acceptance.sh
+//   * 14 collect_parallel spec lines
 //   * _CHECK_PASSED only takes the 3 canonical values
 //
 // Plus three-way bucket tests:
@@ -55,10 +60,11 @@ const HARNESS_FILE = resolve(ROOT, 'lib', 'acceptance-harness.sh');
 const RUNNER_FILE = resolve(ROOT, 'scripts', 'test-acceptance.sh');
 
 // ──────────────────────────────────────────────────────────────────────
-// CONTROLLER MATRIX — one source of truth for the 15 B5 checks.
+// CONTROLLER MATRIX — one source of truth for the 14 B5 checks.
 // Derived from the fork's ControllerName union
 // (@claude-flow/memory/src/controller-registry.ts:54-106), verified
 // against each wrapper's args in acceptance-adr0090-b5-checks.sh.
+// ADR-0170 Phase D dropped count from 15 → 14 (graphAdapter retired).
 // ──────────────────────────────────────────────────────────────────────
 
 // `migrated: '<helper>'` marks checks that no longer use the shared
@@ -83,7 +89,10 @@ const CHECKS = [
   { controller: 'attentionService',    fn: 'check_adr0090_b5_attentionService',    tool: 'agentdb_attention_metrics',  table: 'attention_metrics',   markerCol: 'sample',    migrated: 'seeded-probe' },
   { controller: 'gnnService',          fn: 'check_adr0090_b5_gnnService',          tool: 'agentdb_neural_patterns',    table: null,                  markerCol: 'pattern', inMemoryOnly: true },
   { controller: 'semanticRouter',      fn: 'check_adr0090_b5_semanticRouter',      tool: 'agentdb_semantic_route',     table: 'semantic_routes',     markerCol: 'input',   migrated: 'seeded-probe' },
-  { controller: 'graphAdapter',        fn: 'check_adr0090_b5_graphAdapter',        tool: 'agentdb_causal-edge',        table: 'exp_edges',           markerCol: 'label',   migrated: 'seeded-probe' },
+  // ADR-0170 Phase D follow-up: graphAdapter retired. The controller and the
+  // @ruvector/graph-node dep were deleted in fork commit 9ec9a87. Per user
+  // "no skips" directive, the row was removed (not retained as a permanent
+  // skip_accepted) — testing a deleted controller is meaningless.
   { controller: 'sonaTrajectory',      fn: 'check_adr0090_b5_sonaTrajectory',      tool: 'agentdb_sona_trajectory_store', table: null,                 markerCol: 'pattern', inMemoryOnly: true },
   { controller: 'nightlyLearner',      fn: 'check_adr0090_b5_nightlyLearner',      tool: 'agentdb_learner_run',        table: 'learning_sessions',   markerCol: 'metadata', migrated: 'causal-pipeline' },
   { controller: 'explainableRecall',   fn: 'check_adr0090_b5_explainableRecall',   tool: 'agentdb_causal_recall',      table: 'recall_certificates', markerCol: 'query',   migrated: 'causal-pipeline' },
@@ -268,10 +277,10 @@ function teardown(dir) {
 }
 
 // ──────────────────────────────────────────────────────────────────────
-// STATIC SOURCE — helper exists, 15 wrappers exist, wiring present
+// STATIC SOURCE — helper exists, 14 wrappers exist, wiring present
 // ──────────────────────────────────────────────────────────────────────
 
-describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => {
+describe('ADR-0090 Tier B5 static source — helper + 14 check wrappers', () => {
   const source = readFileSync(CHECK_FILE, 'utf-8');
 
   it('defines the shared helper _b5_check_controller_roundtrip', () => {
@@ -293,7 +302,7 @@ describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => 
       `helper must contain substantive logic, got ${lines.length} non-blank lines`);
   });
 
-  it('fifteen check functions exist (one per controller)', () => {
+  it('fourteen check functions exist (one per controller)', () => {
     for (const c of CHECKS) {
       assert.match(source, new RegExp(`${c.fn}\\(\\)\\s*\\{`),
         `function ${c.fn} must be defined`);
@@ -369,7 +378,7 @@ describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => 
       'loader must source acceptance-adr0090-b5-checks.sh');
   });
 
-  it('all 15 checks wired into scripts/test-acceptance.sh as run_check_bg', () => {
+  it('all 14 checks wired into scripts/test-acceptance.sh as run_check_bg', () => {
     const runner = readFileSync(RUNNER_FILE, 'utf-8');
     for (const c of CHECKS) {
       const id = `adr0090-b5-${c.controller}`;
@@ -380,7 +389,7 @@ describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => 
     }
   });
 
-  it('all 15 checks listed in collect_parallel spec block', () => {
+  it('all 14 checks listed in collect_parallel spec block', () => {
     const runner = readFileSync(RUNNER_FILE, 'utf-8');
     for (const c of CHECKS) {
       const id = `adr0090-b5-${c.controller}`;
@@ -389,7 +398,7 @@ describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => 
     }
   });
 
-  it('all 15 checks use the "controller" group', () => {
+  it('all 14 checks use the "controller" group', () => {
     const runner = readFileSync(RUNNER_FILE, 'utf-8');
     for (const c of CHECKS) {
       const id = `adr0090-b5-${c.controller}`;
@@ -418,7 +427,7 @@ describe('ADR-0090 Tier B5 static source — helper + 15 check wrappers', () => 
 });
 
 // ──────────────────────────────────────────────────────────────────────
-// Behavioural tests — 2 scenarios per check × 15 = 30 cases
+// Behavioural tests — 2 scenarios per check × 14 = 28 cases
 //   a) not-available (current published build behavior) → skip_accepted
 //   b) unknown-tool                                      → skip_accepted
 // ──────────────────────────────────────────────────────────────────────

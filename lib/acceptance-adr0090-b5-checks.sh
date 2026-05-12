@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# lib/acceptance-adr0090-b5-checks.sh — ADR-0090 Tier B5: 15-controller
+# lib/acceptance-adr0090-b5-checks.sh — ADR-0090 Tier B5: 14-controller
 # SQLite row-count round-trip acceptance checks.
+# (Originally 15; ADR-0170 Phase D retired graphAdapter in fork commit 9ec9a87.)
 #
 # Requires: acceptance-harness.sh + acceptance-checks.sh sourced first.
 # Caller MUST set: E2E_DIR, TEMP_DIR, REGISTRY, PKG
@@ -1290,21 +1291,15 @@ _b5_seed_causal_graph() {
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_causal-edge' --params '{\"sourceId\":\"b5-cgraph-src\",\"targetId\":\"b5-cgraph-tgt\",\"relation\":\"seeded caused\",\"weight\":0.8}' 2>&1" "$work/seed-cedge.out" 20
 }
 
-# graphAdapter: W2-I6 added agentdb_graph_node_create / agentdb_graph_edge_create /
-# agentdb_graph_node_get MCP tools to the ruflo CLI, and controller-registry.ts:993
-# gates construction on `enableGraph: config.controllers?.graphAdapter === true`.
-# Seed step enables the controller via `config set`, then creates a node + edge.
-# skip_accepted is kept ONLY when the tool responds with "graphAdapter not available"
-# AND config.set itself failed (older build without this patch).
-# Distinct seed keys prevent cross-contamination on parallel runs.
-_b5_seed_graph_adapter() {
-  local iso="$1" cli="$2" work="$3"
-  # Enable graphAdapter controller in the isolated project config.
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli config set --key controllers.graphAdapter --value true 2>&1" "$work/seed-gcfg.out" 15
-  # Seed a node and edge via the new dedicated MCP tools.
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_graph_node_create' --params '{\"id\":\"b5-gadapt-src\",\"label\":\"node\",\"properties\":{\"name\":\"src\"}}' 2>&1" "$work/seed-gnode.out" 20
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool 'agentdb_graph_edge_create' --params '{\"from\":\"b5-gadapt-src\",\"to\":\"b5-gadapt-tgt\",\"type\":\"seeded-graph-edge\"}' 2>&1" "$work/seed-gedge.out" 20
-}
+# ────────────────────────────────────────────────────────────────────
+# B5-12 graphAdapter retired: ADR-0170 Phase D deleted GraphDatabaseAdapter
+# and the @ruvector/graph-node dep (commit 9ec9a87). The Cypher branches in
+# CausalMemoryGraph / ReflexionMemory / SkillLibrary were dead-stripped
+# atomically with each Wave 1a controller port. No controller now reads
+# from a graph substrate — testing it is meaningless. The _b5_seed_graph_adapter
+# helper and check_adr0090_b5_graphAdapter wrapper that referenced this
+# controller have been removed (not skip-ed) per user "no skips" directive.
+# ────────────────────────────────────────────────────────────────────
 
 # ────────────────────────────────────────────────────────────────────
 # B5-5: causalRecall — `agentdb_causal_recall` tool.
@@ -1693,44 +1688,18 @@ RVF delta=$delta (baseline=$baseline_count → after=$after_count), ns_hits=$ns_
 }
 
 # ────────────────────────────────────────────────────────────────────
-# B5-12: graphAdapter — W2-I6 DEDICATED MCP TOOLS + enableGraph config.
+# B5-12: graphAdapter — RETIRED.
 #
-# W2-I6 (fork ruflo commit ff826a846): added agentdb_graph_node_create,
-# agentdb_graph_edge_create, agentdb_graph_node_get tools. Seed step
-# calls `config set controllers.graphAdapter true` to enable the
-# controller (controller-registry.ts:993 gates on enableGraph:true,
-# and fork memory-router.ts:422-440 propagates the config.controllers.
-# graphAdapter flag to the enabled list), then creates a node via the
-# dedicated MCP tool. createNode returns success and the on-disk
-# `.swarm/memory.graph` file grows — but @ruvector/graph-node's
-# native `query()` binding returns zero nodes for any MATCH (confirmed
-# 2026-04-19 same-process: createNode → MATCH (n) RETURN n yields
-# length 0). The Cypher query engine in the Rust-backed
-# @ruvector/graph-node package is incomplete; fixing it is a separate
-# upstream track on the ruvector repo (not agentdb, not ruflo).
+# ADR-0170 Phase D (commit 9ec9a87) deleted GraphDatabaseAdapter and the
+# @ruvector/graph-node dependency. The graph substrate is gone — every
+# Cypher branch in CausalMemoryGraph, ReflexionMemory, and SkillLibrary
+# was dead-stripped atomically with each Wave 1a controller port (per
+# resolution-J). On-disk format count dropped from 3 → 2 (postgres + RVF).
 #
-# Probe: agentdb_graph_node_get with id="b5-gadapt-src".
-# pass_regex: {success:true,...} response with nodeId or nodes array.
-# trivial_regex: "graphAdapter not available" OR "nodes":\[\] — the
-#   latter is the @ruvector/graph-node query() incompleteness; the
-#   controller is wired and writes persist, but reads come back empty.
-#   Classified as skip_accepted with a clear upstream-ticket pointer.
-#   ADR-0082: no silent pass — if node_get ever returns non-empty
-#   (meaning upstream fixed the query binding), the check auto-flips
-#   to PASS and the skip signal surfaces the progress.
-# No sqlite_table — graphAdapter uses RuVector graph DB, not SQLite.
+# Per user "no skips" directive: the wrapper that previously returned
+# skip_accepted was deleted, not retained as a permanent skip. Testing a
+# retired controller is meaningless; the deletion is the test's outcome.
 # ────────────────────────────────────────────────────────────────────
-check_adr0090_b5_graphAdapter() { # adr0097-l2-delegator: flag set inside _b5_seeded_probe
-  _b5_seeded_probe \
-    "graphAdapter" \
-    "_b5_seed_graph_adapter" \
-    "agentdb_graph_node_get" \
-    "{\"id\":\"b5-gadapt-src\"}" \
-    '"success"[[:space:]]*:[[:space:]]*true' \
-    'graphAdapter not available' \
-    "" \
-    30
-}
 
 # ────────────────────────────────────────────────────────────────────
 # B5-13: sonaTrajectory — W2-I5 DEDICATED TOOL, STATE-DIFF VERIFICATION.

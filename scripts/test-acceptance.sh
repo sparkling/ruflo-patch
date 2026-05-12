@@ -792,7 +792,9 @@ run_check_bg "adr0090-b5-memoryConsolidation" "B5 memoryConsolidation roundtrip"
 run_check_bg "adr0090-b5-attentionService"    "B5 attentionService roundtrip"    check_adr0090_b5_attentionService    "controller"
 run_check_bg "adr0090-b5-gnnService"          "B5 gnnService roundtrip"          check_adr0090_b5_gnnService          "controller"
 run_check_bg "adr0090-b5-semanticRouter"      "B5 semanticRouter roundtrip"      check_adr0090_b5_semanticRouter      "controller"
-run_check_bg "adr0090-b5-graphAdapter"        "B5 graphAdapter roundtrip"        check_adr0090_b5_graphAdapter        "controller"
+# ADR-0170 Phase D follow-up: B5 graphAdapter retired — controller deleted
+# in fork commit 9ec9a87 alongside the @ruvector/graph-node dep removal.
+# Per user "no skips" directive, the check is removed not skipped.
 run_check_bg "adr0090-b5-sonaTrajectory"      "B5 sonaTrajectory roundtrip"      check_adr0090_b5_sonaTrajectory      "controller"
 run_check_bg "adr0090-b5-nightlyLearner"      "B5 nightlyLearner roundtrip"      check_adr0090_b5_nightlyLearner      "controller"
 run_check_bg "adr0090-b5-explainableRecall"   "B5 explainableRecall roundtrip"   check_adr0090_b5_explainableRecall   "controller"
@@ -2487,7 +2489,6 @@ collect_parallel "all" \
   "adr0090-b5-attentionService|B5 attentionService roundtrip" \
   "adr0090-b5-gnnService|B5 gnnService roundtrip" \
   "adr0090-b5-semanticRouter|B5 semanticRouter roundtrip" \
-  "adr0090-b5-graphAdapter|B5 graphAdapter roundtrip" \
   "adr0090-b5-sonaTrajectory|B5 sonaTrajectory roundtrip" \
   "adr0090-b5-nightlyLearner|B5 nightlyLearner roundtrip" \
   "adr0090-b5-explainableRecall|B5 explainableRecall roundtrip" \

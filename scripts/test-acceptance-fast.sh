@@ -265,7 +265,7 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0090-b5"* || "$_FAST_RUN_GROUPS" == "b5" || "$
   _fast_run "b5-attentionService"    check_adr0090_b5_attentionService
   _fast_run "b5-gnnService"          check_adr0090_b5_gnnService
   _fast_run "b5-semanticRouter"      check_adr0090_b5_semanticRouter
-  _fast_run "b5-graphAdapter"        check_adr0090_b5_graphAdapter
+  # ADR-0170 Phase D follow-up: graphAdapter retired (controller deleted).
   _fast_run "b5-sonaTrajectory"      check_adr0090_b5_sonaTrajectory
   _fast_run "b5-nightlyLearner"      check_adr0090_b5_nightlyLearner
   _fast_run "b5-explainableRecall"   check_adr0090_b5_explainableRecall
