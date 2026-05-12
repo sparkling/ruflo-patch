@@ -1,0 +1,91 @@
+{
+  "schema": "adr0170-benchmark-v2",
+  "phase": "C.3 post-fix",
+  "substrate": "pglite",
+  "agentdb_version": "3.0.0-alpha.14-patch.73",
+  "cli_version": "3.7.0-alpha.10-patch.62",
+  "fork_commit": "c828732c4",
+  "acceptance_run_id": "accept-2026-05-12T022154Z",
+  "generated_at_utc": "2026-05-12T02:30:00.000Z",
+  "fix_summary": "ADR-0170 Phase C.3 — lazy ControllerRegistry init. Split _doInit (RVF storage) from _doInitRegistry (agentdb_* registry). memory_*-axis routes (routeMemoryOp, routeEmbeddingOp) call ensureRouter(); agentdb_*-axis routes (routePatternOp, routeFeedbackOp, routeSessionOp, routeLearningOp, routeReflexionOp, routeCausalOp, getController) call ensureRegistry(). The benchmark's memory store/search ops are memory_*-axis-only, so they no longer pay the agentdb_* substrate bootstrap cost per CLI invocation.",
+  "warm_reopen": {
+    "store": {
+      "p50_ms": 556.1482289999949,
+      "p95_ms": 612.8217018000014,
+      "errors": 0
+    },
+    "search": {
+      "p50_ms": 532.3748545000126,
+      "p95_ms": 588.6956214999881,
+      "errors": 0
+    },
+    "total_wall_ms": 167561.525625
+  },
+  "cold": {
+    "store": {
+      "p50_ms": 545.7304369999947,
+      "p95_ms": 586.7002437499978,
+      "errors": 0
+    },
+    "search": {
+      "p50_ms": 531.5426454999979,
+      "p95_ms": 571.1206208000046,
+      "errors": 0
+    },
+    "total_wall_ms": 136827.870917
+  },
+  "comparison_vs_committed_baseline": {
+    "baseline_run_id": "accept-2026-05-11T200901Z",
+    "baseline_agentdb_version": "3.0.0-alpha.14-patch.52",
+    "baseline_store_p50": 732.3856244999915,
+    "baseline_store_p95": 853.4597353999851,
+    "baseline_search_p50": 894.4069164999964,
+    "baseline_search_p95": 980.7886269000155,
+    "baseline_wall_ms": 196297.029458,
+    "deltas_warm_reopen_vs_baseline_pct": {
+      "store_p50": -24.06,
+      "store_p95": -28.20,
+      "search_p50": -40.48,
+      "search_p95": -39.98,
+      "wall": -14.64
+    }
+  },
+  "comparison_vs_phase_c2_failed": {
+    "phase_c2_run_id": "test-results/benchmarks/adr0170-2026-05-12T020412Z.json",
+    "phase_c2_store_p50": 952.1519584999987,
+    "phase_c2_store_p95": 1019.8422124999903,
+    "phase_c2_search_p50": 938.3545000000013,
+    "phase_c2_search_p95": 977.996408549996,
+    "phase_c2_wall_ms": 238799.536625,
+    "deltas_postfix_vs_c2_pct": {
+      "store_p50": -41.59,
+      "store_p95": -39.91,
+      "search_p50": -43.27,
+      "search_p95": -39.81,
+      "wall": -29.83
+    }
+  },
+  "gate_decision": {
+    "threshold_pct": 10,
+    "rule": "no >10% regression vs SQLite baseline on any of (store p50, store p95, search p50, search p95, total wall). Speedup is fine.",
+    "metrics": {
+      "store_p50": { "pct_change": -24.06, "is_regression": false, "exceeds_threshold": false },
+      "store_p95": { "pct_change": -28.20, "is_regression": false, "exceeds_threshold": false },
+      "search_p50": { "pct_change": -40.48, "is_regression": false, "exceeds_threshold": false },
+      "search_p95": { "pct_change": -39.98, "is_regression": false, "exceeds_threshold": false },
+      "wall": { "pct_change": -14.64, "is_regression": false, "exceeds_threshold": false }
+    },
+    "status": "PASS",
+    "notes": "Per ADR-0170 §'Performance benchmark gate': the rule is about regressions (slowdowns) — 'if pglite is slower by >10% on any metric, root-cause fix the regression'. Speedup is acceptable. The 14-40% speedup is the direct result of the C.3 lazy init: the benchmark drives `memory store` + `memory search`, both memory_*-axis-only operations. Pre-C.3 they paid the full agentdb_* registry init cost on every CLI invocation; post-C.3 they only init RVF. The agentdb_* substrate is initialized on-demand by agentdb_*-axis tools (agentdb_reflexion_store, agentdb_skill_create, etc.) — those still pay the full init cost when invoked, which is correct behavior."
+  },
+  "verification": {
+    "unit_tests_added": "tests/unit/adr0170-c3-lazy-registry-init.test.mjs (5 groups, 21 assertions)",
+    "unit_test_run": "4221/4221 pass (npm run test:unit, 64.7s)",
+    "acceptance_run": "674/674 pass (accept-2026-05-12T022154Z, 321s)",
+    "fork_commit_sha": "c828732c4",
+    "files_touched": [
+      "forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts (+150 -24)",
+      "forks/ruflo/v3/@claude-flow/cli/src/index.ts (+5)"
+    ]
+  }
+}

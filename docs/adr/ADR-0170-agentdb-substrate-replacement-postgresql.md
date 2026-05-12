@@ -1,9 +1,9 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-11
 tags: [agentdb, postgres, pglite, ruvector, graph-node, substrate-replacement, fork-divergence]
-supersedes: []
-depends-on: [ADR-0073, ADR-0166]
+supersedes: [ADR-0166]
+depends-on: [ADR-0073]
 implements: []
 ---
 

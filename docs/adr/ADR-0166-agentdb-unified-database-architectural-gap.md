@@ -1,8 +1,9 @@
 ---
-status: accepted
+status: superseded
 date: 2026-05-10
 tags: [agentdb, ruvector, sqlite, sqlite-vec, axis-separation, option-f, persistence, dialectical-council]
 supersedes: []
+superseded-by: [ADR-0170]
 depends-on: [ADR-0056, ADR-0067, ADR-0069, ADR-0073, ADR-0154, ADR-0165, ADR-0167]
 implements: []
 ---

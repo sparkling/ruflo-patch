@@ -628,35 +628,61 @@ const ctrlRegistrySrc = readFileSync(
   'utf-8',
 );
 
-describe('ADR-0080: enableGraph guard prevents unwanted .graph file', () => {
-  it('AgentDB config interface defines enableGraph as optional boolean', () => {
+// ADR-0080 → ADR-0170 Phase D (2026-05-12): the enableGraph + .graph-file
+// concern is retired. @ruvector/graph-node was removed as an
+// optionalDependency per resolution-J; Cypher queries on
+// causal/reflexion/skill tables route through postgres `WITH RECURSIVE`.
+// The test contract flips from "guard prevents .graph file creation" to
+// "config field is loud-rejected — calling .initialize() with
+// enableGraph:true throws a typed error pointing to ADR-0170".
+describe('ADR-0080 → ADR-0170 Phase D: enableGraph is loud-rejected (graph-node retired)', () => {
+  it('AgentDB config interface still declares enableGraph (so TS errors point to the retirement docs)', () => {
+    // The field stays in the interface so consumers passing it get a
+    // typed-error message at runtime instead of a TS compile error that
+    // obscures the migration intent. The JSDoc on the field documents
+    // the retirement.
     assert.ok(
       agentDbSrc.includes('enableGraph?: boolean'),
-      'AgentDB config must define enableGraph?: boolean',
+      'AgentDB config must still declare enableGraph?: boolean (with retirement docs in JSDoc) so consumers get a typed-error runtime path, not a TS compile error',
     );
   });
 
-  it('AgentDB gates graph adapter creation on enableGraph', () => {
-    assert.ok(
-      agentDbSrc.includes('if (this.config.enableGraph)'),
-      'AgentDB must guard graph adapter creation with if (this.config.enableGraph)',
-    );
-  });
-
-  it('AgentDB only imports GraphDatabaseAdapter inside the guard', () => {
+  it('AgentDB.initialize() loud-rejects enableGraph:true with ADR-0170 marker', () => {
+    // The old guard `if (this.config.enableGraph) { try { import GraphDatabaseAdapter ... } }`
+    // is replaced by `if (this.config.enableGraph) { throw new Error("... ADR-0170 Phase D ...") }`.
     const guardIdx = agentDbSrc.indexOf('if (this.config.enableGraph)');
-    assert.ok(guardIdx > -1, 'enableGraph guard must exist');
-    const guardBlock = agentDbSrc.slice(guardIdx, guardIdx + 500);
+    assert.ok(guardIdx > -1, 'enableGraph guard must exist (now as a loud-reject)');
+    const guardBlock = agentDbSrc.slice(guardIdx, guardIdx + 800);
     assert.ok(
-      guardBlock.includes('GraphDatabaseAdapter'),
-      'GraphDatabaseAdapter import must be inside the enableGraph guard',
+      /throw\s+new\s+Error\(/.test(guardBlock),
+      'enableGraph guard must throw, not silently no-op or attempt construction',
+    );
+    assert.ok(
+      /ADR-0170/.test(guardBlock),
+      'enableGraph rejection must carry the ADR-0170 marker pointing to the retirement docs',
     );
   });
 
-  it('controller-registry passes enableGraph from config.controllers.graphAdapter', () => {
+  it('GraphDatabaseAdapter import is GONE from AgentDB.ts (Phase D dead-strip)', () => {
+    assert.ok(
+      !agentDbSrc.includes("from '../backends/graph/GraphDatabaseAdapter"),
+      'GraphDatabaseAdapter import must be removed — backends/graph/GraphDatabaseAdapter.ts deleted in Phase D',
+    );
+    assert.ok(
+      !agentDbSrc.includes('import(\'../backends/graph/GraphDatabaseAdapter.js\')'),
+      'Dynamic import of GraphDatabaseAdapter must be removed too',
+    );
+  });
+
+  it('controller-registry still passes enableGraph through (forward-compat with loud-reject)', () => {
+    // The registry forwards the user's `config.controllers.graphAdapter`
+    // setting to AgentDB. Pre-Phase-D this turned on the .graph file;
+    // post-Phase-D the AgentDB constructor throws if it's true. The
+    // forwarding stays so the rejection happens at the AgentDB boundary
+    // with the proper ADR-0170 marker, not silently on the registry side.
     assert.ok(
       ctrlRegistrySrc.includes("enableGraph: config.controllers?.graphAdapter === true"),
-      'controller-registry must pass enableGraph: config.controllers?.graphAdapter === true',
+      'controller-registry must still forward enableGraph: config.controllers?.graphAdapter === true so the loud-reject happens at AgentDB.initialize() with ADR-0170 marker',
     );
   });
 });
