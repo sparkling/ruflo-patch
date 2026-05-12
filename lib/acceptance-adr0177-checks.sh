@@ -30,6 +30,19 @@ _adr0177_cfg() {
   node -e "try{const c=JSON.parse(require('fs').readFileSync('${file}','utf-8'));console.log(${expr})}catch(e){}" 2>/dev/null
 }
 
+# Read a JSON path from .claude-flow/embeddings.json — the runtime-canonical
+# file that agentdb's config-chain accessor (`getConfig()` in
+# forks/agentdb/src/core/config-chain.ts) consumes. Distinct shape from
+# config.json: top-level `model`/`dimension`/`provider` instead of nested
+# `embedding.*`. Per executor.ts:1399-1476 the file is always written when
+# `--with-embeddings` is passed; the integration tests assert against
+# config.json, but at runtime the substrate reads embeddings.json. Asserting
+# both surfaces ensures the chain works end-to-end (write + read).
+_adr0177_emb() {
+  local file="$1" expr="$2"
+  node -e "try{const e=JSON.parse(require('fs').readFileSync('${file}','utf-8'));console.log(${expr})}catch(e){}" 2>/dev/null
+}
+
 # Run `ruflo init` into $1 with optional --embedding-model $2. Captures
 # combined stdout/stderr to $1/.init-log.txt. Honours the 120s ceiling used
 # in the global harness (init is the long pole — full model warm-up).
@@ -147,8 +160,34 @@ check_adr0177_default_config_keys() {
     return
   fi
 
+  # Companion assertion: .claude-flow/embeddings.json — runtime-canonical
+  # file consumed by agentdb's config-chain accessor. Same model/dimension
+  # must land here; provider is the raw `transformers.js` (normalized to
+  # `onnx` inside the accessor, see config-chain.ts:170).
+  local emb="${dir}/.claude-flow/embeddings.json"
+  if [[ ! -f "$emb" ]]; then
+    _CHECK_OUTPUT="default-config: 7-key invariant OK in config.json but ${emb} missing — agentdb accessor will not see init settings"
+    return
+  fi
+  local emb_mismatches=""
+  v=$(_adr0177_emb "$emb" "e.model")
+  [[ "$v" != "Xenova/all-mpnet-base-v2" ]] && emb_mismatches="${emb_mismatches} embeddings.json.model=${v:-missing}(want:Xenova/all-mpnet-base-v2);"
+  v=$(_adr0177_emb "$emb" "e.dimension")
+  [[ "$v" != "768" ]] && emb_mismatches="${emb_mismatches} embeddings.json.dimension=${v:-missing}(want:768);"
+  # Provider is normalized to `onnx` by the accessor; accept either raw
+  # `transformers.js` (current executor output) or canonical `onnx`.
+  v=$(_adr0177_emb "$emb" "e.provider")
+  if [[ "$v" != "transformers.js" && "$v" != "transformers" && "$v" != "onnx" ]]; then
+    emb_mismatches="${emb_mismatches} embeddings.json.provider=${v:-missing}(want:transformers.js|onnx);"
+  fi
+
+  if [[ -n "$emb_mismatches" ]]; then
+    _CHECK_OUTPUT="default-config: config.json OK but embeddings.json mismatches (agentdb runtime read):${emb_mismatches}"
+    return
+  fi
+
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="default-config: all 7 canonical keys present with expected values"
+  _CHECK_OUTPUT="default-config: 7 keys in config.json + matching model/dim in embeddings.json (runtime canonical)"
 }
 
 # check_adr0177_default_roundtrip — store + retrieve a memory entry, then
@@ -238,6 +277,18 @@ check_adr0177_flag_bge_768() {
     return
   fi
 
+  # Verify embeddings.json (runtime-canonical) matches.
+  local emb="${dir}/.claude-flow/embeddings.json"
+  if [[ -f "$emb" ]]; then
+    local em ed
+    em=$(_adr0177_emb "$emb" "e.model")
+    ed=$(_adr0177_emb "$emb" "e.dimension")
+    if [[ "$em" != "Xenova/bge-base-en-v1.5" || "$ed" != "768" ]]; then
+      _CHECK_OUTPUT="flag-bge: config.json OK but embeddings.json {model=${em:-missing}, dimension=${ed:-missing}} disagrees (want:bge,768)"
+      return
+    fi
+  fi
+
   # Drive a store so the RvfBackend writes its segment with the configured dim.
   _run_and_kill \
     "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' '${CLI_BIN}' memory init --force" \
@@ -289,6 +340,18 @@ check_adr0177_flag_minilm_384() {
   if [[ "$dim" != "384" ]]; then
     _CHECK_OUTPUT="flag-minilm: embedding.dimension=${dim:-missing} (want:384 — auto-adjust failed; lookup table not consulted?)"
     return
+  fi
+
+  # Verify embeddings.json (runtime-canonical) matches.
+  local emb="${dir}/.claude-flow/embeddings.json"
+  if [[ -f "$emb" ]]; then
+    local em ed
+    em=$(_adr0177_emb "$emb" "e.model")
+    ed=$(_adr0177_emb "$emb" "e.dimension")
+    if [[ "$em" != "Xenova/all-MiniLM-L6-v2" || "$ed" != "384" ]]; then
+      _CHECK_OUTPUT="flag-minilm: config.json OK but embeddings.json {model=${em:-missing}, dimension=${ed:-missing}} disagrees (want:miniLM,384)"
+      return
+    fi
   fi
 
   # Drive a store so the RvfBackend writes a fresh segment at 384.
