@@ -166,7 +166,7 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
 
 1. **Add an end-to-end acceptance check** in `ruflo-patch/lib/acceptance-adr0177-checks.sh` (or sibling): `ruflo init` → `agentdb_hierarchical-store` records at paths `adr/ADR-001..003` → `agentdb_hierarchical-query` with pattern `adr/*` → assert 3 results. Validates the full 3-layer chain (controller method → orchestration → MCP registration).
 
-2. **Upstream PR proposing `HierarchicalMemory` for `ruvnet/agentdb`.** Cite the README's existing claims (lines 94, 103, 181-187, 246) as motivation — upstream advertises the capability; the PR delivers it. Pair with ADR-0177 Phase 7 (orphan-fix PR) for maintainer-relationship value.
+2. **~~Upstream PR proposing `HierarchicalMemory` for `ruvnet/agentdb`.~~** **[🔻 Retired 2026-05-12 per `feedback-no-upstream-donate-backs.md`. Fork improvements stay fork-only; no PRs to ruvnet/* repos. The restored class lives in fork only; upstream users continue to receive the README's promise unfulfilled — that's upstream's problem, not the fork's. Original text preserved for traceability.]** Cite the README's existing claims (lines 94, 103, 181-187, 246) as motivation — upstream advertises the capability; the PR delivers it. Pair with ADR-0177 Phase 7 (orphan-fix PR) for maintainer-relationship value.
 
 3. **Cherry-pick non-postgres improvements** from commits between `bd760f2` and archive HEAD. Audit each for relevance (bug fixes, perf tweaks); ignore postgres-specific changes.
 
