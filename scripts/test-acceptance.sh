@@ -42,6 +42,9 @@
 #                adr0086-b3-health, adr0086-t33-track, adr0086-debt15
 #   adr0088    — adr0088-no-ipc, adr0088-status, adr0088-init-no,
 #                adr0088-init-yes, adr0088-daemon-ok
+#   adr0177    — adr0177-default-keys, adr0177-default-rt,
+#                adr0177-flag-bge-768, adr0177-flag-mini-384
+#                (Phase 5; runs inside the phase5-init-config wave)
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -2909,6 +2912,19 @@ if [[ -f "$p5_lib" ]]; then
   run_check_bg "p5-compat-noforce" "no overwrite without --force"  check_p5_compat_no_overwrite   "p5-compat"
   run_check_bg "p5-compat-cfgset"  "config set/get round-trip"     check_p5_compat_config_set     "p5-compat"
 
+  # Group 6: ADR-0177 Phase 1.6 (f) — embedding config-chain wiring
+  # Validates that init writes embedding.* + index.hnsw.* into config.json,
+  # AgentDB reads it back, and --embedding-model switches model + dim.
+  # Each check spins its own mktemp dir + runs init — slowest path in Phase 5.
+  adr0177_lib="${PROJECT_DIR}/lib/acceptance-adr0177-checks.sh"
+  if [[ -f "$adr0177_lib" ]]; then
+    source "$adr0177_lib"
+    run_check_bg "adr0177-default-keys"   "ADR-0177 default config keys"     check_adr0177_default_config_keys  "adr0177"
+    run_check_bg "adr0177-default-rt"     "ADR-0177 default roundtrip"       check_adr0177_default_roundtrip    "adr0177"
+    run_check_bg "adr0177-flag-bge-768"   "ADR-0177 --embedding-model bge"   check_adr0177_flag_bge_768         "adr0177"
+    run_check_bg "adr0177-flag-mini-384"  "ADR-0177 --embedding-model mini"  check_adr0177_flag_minilm_384      "adr0177"
+  fi
+
   # Collect all Phase 5 parallel checks
   collect_parallel \
     "p5-cfg-valid|config.json valid" \
@@ -2933,7 +2949,11 @@ if [[ -f "$p5_lib" ]]; then
     "p5-flag-simthresh|init --similarity-threshold" \
     "p5-flag-maxagents|init --max-agents 10" \
     "p5-compat-noforce|no overwrite without --force" \
-    "p5-compat-cfgset|config set/get round-trip"
+    "p5-compat-cfgset|config set/get round-trip" \
+    "adr0177-default-keys|ADR-0177 default config keys" \
+    "adr0177-default-rt|ADR-0177 default roundtrip" \
+    "adr0177-flag-bge-768|ADR-0177 --embedding-model bge" \
+    "adr0177-flag-mini-384|ADR-0177 --embedding-model mini"
 
   # Cleanup
   rm -rf "$_P5_DIR" 2>/dev/null

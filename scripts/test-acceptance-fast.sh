@@ -7,7 +7,7 @@
 # Usage:
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
-# Groups: all, p3, p4, p5, adr0059, adr0085, e2e-core, e2e-storage
+# Groups: all, p3, p4, p5, adr0059, adr0085, adr0177, e2e-core, e2e-storage
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -388,6 +388,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"p10"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
     _fast_run "p10-sess-same-name" check_adr0094_p10_session_save_same_name
     _fast_run "p10-cfg-same-key"   check_adr0094_p10_config_set_same_key
     _fast_run "p10-init-reinvoke"  check_adr0094_p10_init_full_reinvoke
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0177"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0177-checks.sh" ]]; then
+    # acceptance-adr0177-checks.sh sourced via the glob loop above
+    echo "── ADR-0177 Phase 1.6 (embedding config chain) ──"
+    _fast_run "adr0177-default-keys"  check_adr0177_default_config_keys
+    _fast_run "adr0177-default-rt"    check_adr0177_default_roundtrip
+    _fast_run "adr0177-flag-bge-768"  check_adr0177_flag_bge_768
+    _fast_run "adr0177-flag-mini-384" check_adr0177_flag_minilm_384
   fi
 fi
 
