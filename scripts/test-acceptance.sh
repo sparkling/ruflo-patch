@@ -45,6 +45,8 @@
 #   adr0177    — adr0177-default-keys, adr0177-default-rt,
 #                adr0177-flag-bge-768, adr0177-flag-mini-384
 #                (Phase 5; runs inside the phase5-init-config wave)
+#   adr0178    — adr0178-hquery-e2e (agentdb_hierarchical-query 5-phase)
+#                (Phase 5; runs inside the phase5-init-config wave)
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -2925,6 +2927,17 @@ if [[ -f "$p5_lib" ]]; then
     run_check_bg "adr0177-flag-mini-384"  "ADR-0177 --embedding-model mini"  check_adr0177_flag_minilm_384      "adr0177"
   fi
 
+  # Group 7: ADR-0176 Phase 3 / ADR-0178 — agentdb_hierarchical-query E2E
+  # Validates the new MCP tool (registered today): tool dispatch →
+  # orchestration handler → HierarchicalMemory.query glob enumeration.
+  # One check, 5 phases (wildcard, ?-glob, tier mismatch, limit, no-match)
+  # against a single init'd project to amortise the 120s init cost.
+  adr0178_lib="${PROJECT_DIR}/lib/acceptance-adr0178-checks.sh"
+  if [[ -f "$adr0178_lib" ]]; then
+    source "$adr0178_lib"
+    run_check_bg "adr0178-hquery-e2e"     "ADR-0178 hierarchical-query E2E"  check_adr0178_hierarchical_query_e2e  "adr0178"
+  fi
+
   # Collect all Phase 5 parallel checks
   collect_parallel \
     "p5-cfg-valid|config.json valid" \
@@ -2953,7 +2966,8 @@ if [[ -f "$p5_lib" ]]; then
     "adr0177-default-keys|ADR-0177 default config keys" \
     "adr0177-default-rt|ADR-0177 default roundtrip" \
     "adr0177-flag-bge-768|ADR-0177 --embedding-model bge" \
-    "adr0177-flag-mini-384|ADR-0177 --embedding-model mini"
+    "adr0177-flag-mini-384|ADR-0177 --embedding-model mini" \
+    "adr0178-hquery-e2e|ADR-0178 hierarchical-query E2E"
 
   # Cleanup
   rm -rf "$_P5_DIR" 2>/dev/null
