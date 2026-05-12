@@ -151,6 +151,14 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
 * Bad, because fork now carries an 836-LoC `HierarchicalMemory.ts` (781 restored + 55 added) that upstream doesn't have. Future upstream-sync agents need to be aware. Mitigation: file is documented as fork-only via index.ts comment + this ADR + a memory entry (Open Follow-up #6).
 * Bad, because the restored `bd760f2` snapshot is months stale; non-postgres improvements made between `bd760f2` and archive HEAD are not in the restored file. Mitigation: per-commit cherry-pick is Open Follow-up #3 if specific gaps surface.
 * Bad, because other fork-only controllers the reset also removed (`MemoryConsolidation`, `QUICConnection*`, `QUICConnectionPool`, `QUICStreamManager`, `StreamingEmbeddingService`) remain unrestored. Their consumers (if any) continue routing to stubs. Mitigation: Open Follow-up #4 — catalog and decide per consumer audit.
+* Bad, because **HierarchicalMemory has no in-class concurrency control**. Source-read confirms zero locks, no transactions, no atomic ops — relies entirely on the layers below (SQLite WAL + RVF's `flock`+`.jslock` from ADR-0095 + the vectorless-recovery fix from ADR-0163). Five specific gaps live above those substrates:
+  - **Multi-write non-atomicity** in `store()` (HierarchicalMemory.ts:265-303): SQL `INSERT INTO hierarchical_memory` + `vectorBackend.insert()` + optional `hmem_vec` virtual-table mirror are 3 independent writes outside any transaction. Lines 305-310 explicitly acknowledge: *"a write that succeeds on the relational table but fails on the vec mirror leaves them inconsistent. Surface the error rather than silently swallowing."* Fails loud per `feedback-no-fallbacks` — inconsistency remains.
+  - **In-memory cache races**: `workingMemoryCache` (Map) + `episodicMemoryIndex` (Map) accessed without locks. JS single-thread covers the common case; `await` boundaries allow interleaving.
+  - **Auto-consolidation races**: `checkConsolidation()` runs from inside `store()` when `autoConsolidate: true`. Concurrent stores all trigger consolidation passes.
+  - **Non-atomic `promote()`**: read accessCount → compare → update tier. Concurrent recalls can double-promote.
+  - **No optimistic-concurrency token**: no `version`/`etag` on `MemoryItem`. `rehearse()` + `promote()` last-writer-wins on timestamp fields.
+
+  Hierarchical-memory operations sit on top of substrate-level concurrency work tracked by ADR-0163 (closed for the t3-2 6-writer case via `7deff1027` vectorless-recovery fix), ADR-0167 + ADR-0168 (cross-process N=8 work continues). The `adr0090-b5-hierarchicalMemory` test bucket was one of the 14 failing buckets ADR-0163 cluster-tracked; needs re-verification against the restored class. Mitigation: Open Follow-up #8 catalogs the in-class gaps and decisions.
 
 ## Verification
 
@@ -187,3 +195,15 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
    - (c) Document the limitation explicitly in the MCP tool descriptions and fix the misleading consumer docs (knowledge-graph README + kg.md + kg-extract). Lowest-effort but doesn't deliver the feature.
 
    Defer the decision pending consumer audit (does anything other than knowledge-graph actually rely on cross-namespace separation?).
+
+8. **In-class concurrency control for HierarchicalMemory.** Per the consequence bullet above, the restored class has no in-class primitives. Five specific gaps (multi-write non-atomicity, cache races, auto-consolidation races, non-atomic promote, no optimistic-concurrency token) sit on top of the substrate-level concurrency story (ADR-0163 / 0167 / 0168). Three design decisions to make:
+
+   - **(a) Wrap `store()` SQL + vector + hmem_vec writes in a SQL transaction.** Smallest change, addresses the load-bearing multi-write desync case (HierarchicalMemory.ts:265-303). Implementation: open `BEGIN IMMEDIATE` on `this.db` before line 265; `COMMIT` after line 311; wrap `vectorBackend.insert()` failure in `ROLLBACK` if the SQL transaction supports it. Vector backend writes are NOT in the same transaction (different connection / different file), so this fixes SQL+hmem_vec atomicity but not SQL+vectorBackend — that desync remains. Net: partial fix; reduces the failure surface from 3-way to 2-way.
+
+   - **(b) Add async mutex to working/episodic cache + auto-consolidation.** Broader change. Use a lightweight async-mutex pattern (e.g., `p-mutex` or a hand-rolled `Promise`-chained queue) around all `workingMemoryCache` / `episodicMemoryIndex` mutations + the `checkConsolidation()` call. Reduces interleaving risk under high concurrency. Doesn't help the multi-write desync (that's substrate-level).
+
+   - **(c) Add `version` field + optimistic-update for `promote()` + `rehearse()`.** Largest change. New column `version` on `hierarchical_memory` SQL table (default 0; incremented on every update). `promote()` / `rehearse()` use `UPDATE ... WHERE id = ? AND version = ?` and retry on 0-rows-affected. Eliminates double-promote / last-writer-wins races. Requires schema migration.
+
+   **Pre-requirement — verification step:** before deciding (a)/(b)/(c), re-verify the `adr0090-b5-hierarchicalMemory` test bucket against today's restored class. ADR-0163 closed t3-2 with the vectorless-recovery fix; if `b5-hierarchicalMemory` passes post-restoration + post-`npm run release`, the existing substrate fixes are sufficient and the in-class gaps may be theoretical-only. If it still fails (concurrent-write durability degraded for the hierarchical path specifically), escalate to a dedicated concurrency-fix ADR rather than incrementally adding (a)/(b)/(c).
+
+   Lean: do the verification first; pick (a) if any in-class gap is empirically reachable; defer (b) + (c) unless a specific failure mode justifies them.
