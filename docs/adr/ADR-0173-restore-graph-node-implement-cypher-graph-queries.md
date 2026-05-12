@@ -1,184 +1,223 @@
 ---
 status: proposed
 date: 2026-05-12
-tags: [graph-database, cypher, hyperedges, ruvector, graph-node, retirement-reversal, upstream-alignment, adr-0170, adr-0172]
+tags: [graph-database, cypher, apache-age, pgvector, postgres-server, cycle-clause, council-deliberation, adr-0170, adr-0172]
 supersedes: []
 depends-on: [ADR-0170, ADR-0172]
 implements: []
 ---
 
-# Restore `@ruvector/graph-node` and implement Cypher graph queries
+# Graph workload strategy: Apache AGE on PG-server + E-Hardened CYCLE for existing recursive callsites
 
 ## Context and Problem Statement
 
-ADR-0170 Phase D (gap-J resolution, 2026-05-12) retired `@ruvector/graph-node` entirely: deleted `forks/agentdb/src/backends/graph/GraphDatabaseAdapter.ts`, removed the dep from `package.json`, made `enableGraph: true` loud-reject at config validation, and dead-stripped the Cypher branches from CausalMemoryGraph, ReflexionMemory, and SkillLibrary.
+ADR-0170 Phase D (gap-J resolution, 2026-05-11) retired `@ruvector/graph-node` from the agentdb_* substrate on three grounds: (1) the Cypher WHERE evaluator at `GraphDatabaseAdapter.ts:246` was admittedly incomplete; (2) `enableGraph: false` was the de facto default; (3) `createHyperedge`/`searchHyperedges` had zero in-fork call sites. The retirement reduced the on-disk format count to 2 (postgres + RVF), satisfying ADR-0166's consolidation goal.
 
-A subsequent audit (triggered by the same user investigation that produced ADR-0172) compared the retirement against **upstream's** stated direction and surfaced a contradiction:
+A user audit on 2026-05-12 (post-ADR-0170 acceptance) flagged that the retirement may have over-reached: upstream `ruvnet/agentdb` ADR-007 lists `@ruvector/graph-node` as HIGH-priority Phase 1 integration work (Cypher querySync, transactions, batch insert) and upstream `ruvnet/ruflo` USERGUIDE features Cypher graph queries as a headline capability. The user invoked `feedback-no-value-judgements-on-features` ("Don't curate features — import ALL upstream/orphaned capability") to challenge the retirement.
 
-1. **Upstream `ruvnet/agentdb` ADR-007** ("ruvector-full-capability-integration") lists `@ruvector/graph-node@0.1.26` as **85% UNUSED** and identifies HIGH-priority work to use *more* of it, not less: Cypher querySync (Phase 1), transactions (Phase 1), batch insert (Phase 1), hyperedges (Phase 2), k-hop neighbors (Phase 2), streaming + subscriptions (Phase 4). Direct upstream quote: "Cypher support would replace the current imperative query building with declarative graph queries."
+The fork has graph-shaped data and graph consumers across multiple layers:
 
-2. **Upstream `ruvnet/ruflo` USERGUIDE.md** features Graph Queries as a **headline capability**: "Graph Queries — Full Cypher syntax (MATCH, WHERE, CREATE)". Example code shows direct Cypher:
-   ```js
-   await db.execute("CREATE (a:Person {name: 'Alice'})-[:KNOWS]->(b:Person {name: 'Bob'})");
-   ```
-   `@ruvector/graph-node` is listed in the official 11-package ruvector ecosystem alongside `@ruvector/core`, `@ruvector/gnn`, `@ruvector/router`, etc.
+- **5 decision-record skills** (`adr-index`, `adr-create`, `odr-index`, `odr-create`, `odr-review`) maintain typed-relation dependency graphs (`supersedes`/`depends-on`/`implements`) via `mcp__ruflo__agentdb_causal-edge` + `agentdb_hierarchical-store` MCP tools
+- **13+ graph-shaped MCP tools** registered in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts`: causal-edge, causal-query, graph_node_create/get, graph_edge_create, hierarchical_*, skill_*
+- **`forks/ruflo/v3/@claude-flow/memory/src/memory-graph.ts`** (405 LoC pure-TS): in-process knowledge graph with PageRank + Louvain/label-propagation
+- **`forks/agentdb/src/controllers/SparsificationService.ts`**: Personalized PageRank, spectral methods, random walk over adjacency lists
+- **`forks/ruflo/v3/@claude-flow/plugins/src/integrations/ruvector/gnn.ts`**: GNN analysis surface
+- **Coordination agents** (`pagerank-analyzer`, `mesh-coordinator`, `consensus-coordinator`, `topology-optimizer`)
 
-3. **Upstream considers PostgreSQL and graph-node complementary, not substitutable.** USERGUIDE lists them separately: "RuVector PostgreSQL — Enterprise Vector Database (77+ SQL functions)" AND "`@ruvector/graph-node` — Graph DB with Cypher queries". They serve different workload shapes.
+ADR-0170 Phase B explicitly ported `CausalMemoryGraph.ts` to use postgres `WITH RECURSIVE` (lines 469 and 532) for 5-hop causal chain traversal with cycle prevention via `path NOT LIKE '%X%'` substring scans — an O(N²) anti-pattern on cyclic graphs of any meaningful size.
 
-4. **`feedback-no-value-judgements-on-features`** (project memory, load-bearing): "Don't curate features — import ALL upstream/orphaned capability. Default to WIRE for any 'wire vs don't wire' decision. NEVER gate on 'trust model doesn't justify it' / 'scale doesn't demand it' / 'redundant' / 'edge case'. Architectural conflicts are solvable via composition, not blocking. Annotate trade-offs in code comments; ship the full surface; let user judge usage."
+The decision space the user opened (PG-server-mode acceptable; OSS / self-hosted only; pglite dropped as embedded target; PR #375 patchable in-fork):
 
-   The gap-J resolution gated graph-node retirement on three patterns this memory explicitly forbids:
-   - "Cypher WHERE evaluator is admittedly incomplete" → trust-model gating
-   - "`createHyperedge`/`searchHyperedges` have zero in-fork call sites" → scale gating ("edge case")
-   - "`enableGraph: false` is the de facto default" → redundancy gating (this is *also* the disabled-by-default anti-pattern ADR-0172 separately targets)
-
-5. **PostgreSQL/pgvector does not functionally replace graph-node.** Phase C-1 verified the *actually-used* surface (multi-hop traversal via `WITH RECURSIVE`, node CRUD via tables, similarity via pgvector). But the *aspirational* surface (Cypher syntax, property graphs, hyperedges, k-hop primitives, subscriptions, graph algorithms) is not available in plain pgvector. Three options to provide it:
-   - Re-vendor `@ruvector/graph-node` (this ADR's choice — aligns with upstream)
-   - Apache AGE postgres extension (Cypher inside postgres, but not shipped with pglite default)
-   - Build out the WITH RECURSIVE patterns more (lost capabilities permanent)
-
-The retirement was a value judgement on the aspirational surface. Per the memory, this is exactly the curation rule we agreed not to make.
-
-### Scope clarification — what stays retired
-
-This ADR does not un-retire `hnswlib-node` or `sqlite-vec`. Those retirements stand:
-
-- **`hnswlib-node`**: in-memory HNSW index, replaced by pgvector HNSW (Phase C-1). Same algorithm, persistence + query-planner integration are upgrades. No upstream signal that hnswlib-node is meant as a complementary surface to pgvector; both provide the same HNSW algorithm.
-- **`sqlite-vec`**: SQLite virtual-table vector extension. Retired alongside SQLite itself per ADR-0170's substrate replacement. Equivalent surface is pgvector.
-
-`@ruvector/graph-node` is materially different: it provides **graph capabilities pgvector does not** (Cypher, hyperedges, k-hop primitives, property graphs). The retirement loses these without replacement.
+- **Option A** — Restore `@ruvector/graph-node` (npm pkg, NAPI to Rust `ruvector-graph` crate). User-explicit framing for ADR-0173 originally.
+- **Option B** — Apache AGE on PostgreSQL server (Cypher inside postgres; ASF top-level project).
+- **Option C** — `ruvector-postgres@0.3.0` (Rust pgrx extension embedding Cypher AST + parser + executor inside postgres).
+- **Option D** — OSS property graph DB (Neo4j CE / JanusGraph / Memgraph / KuzuDB / NebulaGraph / ArangoDB / Dgraph / TerminusDB / LadybugDB / Vela-Engineering/kuzu).
+- **Option E** — Status quo + native PG14+ `CYCLE` clause (E-Hardened): rewrite `path NOT LIKE` cycle detection to standard SQL `CYCLE … SET is_cycle USING path_array`; add covering indices; capture telemetry.
 
 ## Decision Drivers
 
-* **Upstream alignment.** Upstream `ruvnet/agentdb` ADR-007 has graph-node as Phase 1 (HIGH priority) integration work. Upstream `ruvnet/ruflo` USERGUIDE features Cypher graph queries as a headline. Diverging from upstream on this axis would force ongoing translation cost during upstream-sync.
-* **`feedback-no-value-judgements-on-features`** (project memory). The gap-J reasoning relied on patterns this memory forbids (incompleteness gating, zero-call-sites gating, default-disabled gating).
-* **ADR-0166 axis-separation preserved.** memory_* axis = RVF; agentdb_* axis = postgres for relational, graph-node for graph. The graph axis is a fork in the agentdb_* substrate, not a violation of axis-separation — it's a *deeper* substrate decomposition that mirrors upstream's architecture.
-* **ADR-0172 init-template alignment.** ADR-0172 already proposes flipping disabled-by-default controller flags. `graphAdapter: true` joins that flip as part of the same audit work; the two ADRs reinforce each other.
-* **Capability gap is real.** Cypher syntax, hyperedges, k-hop neighbors, graph subscriptions — none replaceable by plain pgvector. WITH RECURSIVE covers some traversal but not the wider graph-query surface.
-* **No-fallback policy** (`feedback-no-fallbacks`, ADR-0170 §"No-fallback policy"). Restoration must keep the fail-loud posture: if `@ruvector/graph-node` is unavailable at boot, the controller fails loud — not silent fallback to "graph operations unavailable, using SQL only".
+* **User-binding constraints**: OSS / self-hosted only; PG-server is the substrate (pglite dropped); no commercial managed services (RDS / Supabase / Neon / Cloud SQL excluded); capability-driven framing (graphs haven't been available, so absence of multi-hop callsites is consequence, not signal); patch-repo charter permits in-fork engine work (`feedback-patches-in-fork`).
+* **`feedback-no-value-judgements-on-features`** — "ship the full surface that already exists upstream"; this authorizes adopting AGE's existing openCypher engine but does NOT authorize building a new Cypher executor from scratch.
+* **`feedback-no-fallbacks`** — shipping a Cypher API whose `query()` silently no-ops (hollow execution) violates fail-loud invariants.
+* **`feedback-data-loss-zero-tolerance`** — hollow `query()` returning silently wrong results is an answer-correctness data-loss issue.
+* **ADR-0170 substrate consolidation** — agentdb_* axis is PG-server (pglite-embedded retired by user directive); choice should not bifurcate substrate.
+* **License hard-blocks**: Neo4j CE (GPLv3), Memgraph (BSL), ArangoDB (BSL ≥3.12), FalkorDB (source-available SSPL).
+* **Capability surface latent**: 5 skills + 13 MCP tools + memory-graph.ts + Sparsification + GNN + coord agents = real graph workload that's currently linearized into SQL, in-process TS, or stub-routed via MCP tools to non-graph stores.
 
 ## Considered Options
 
-* **Option A** — Status quo. Keep graph-node retired. Document the capability gap. Accept the divergence from upstream.
-* **Option B** — Restore `@ruvector/graph-node` dep + `GraphDatabaseAdapter.ts` + the 3 controller branches. Fix the incomplete Cypher WHERE evaluator. Enable `graphAdapter: true` in init template. Composition: graph-node and postgres coexist; each handles its strength. **Upstream-aligned.**
-* **Option C** — Adopt Apache AGE postgres extension instead. Cypher support lands inside postgres. Single substrate. Requires extension-loading work on pglite + server postgres; pglite may not support AGE natively.
-* **Option D** — Build out the WITH RECURSIVE / SQL graph patterns more. No new dep. Accept that Cypher syntax, hyperedges, etc. remain unavailable. Equivalent to a stronger Option A.
+* **Option A** — Restore `@ruvector/graph-node` + patch the Cypher executor in-fork.
+* **Option B** — Apache AGE on PG-server alongside pgvector.
+* **Option C** — `ruvector-postgres` Cypher extension.
+* **Option D** — OSS property graph DB (Vela-Kuzu / LadybugDB / JanusGraph / HugeGraph / NebulaGraph / Dgraph / TerminusDB).
+* **Option E** — Status quo + PG14+ `CYCLE` clause migration (E-Hardened).
+* **Option B + Option E composition** — AGE as primary graph substrate + E-Hardened CYCLE for the 2 existing recursive callsites on the same PG-server.
 
 ## Decision Outcome
 
-Chosen option: **Option B** — Restore `@ruvector/graph-node` and implement the Cypher graph surface. graph-node coexists with postgres in the agentdb_* substrate; each handles its strength.
+Chosen option: **Option B (Apache AGE) as the load-bearing graph substrate on PG-server + Option E (E-Hardened CYCLE clause migration) for the 2 existing recursive-CTE callsites in `CausalMemoryGraph.ts`, running alongside AGE on the same PG-server.**
 
-### Rationale
+Rationale (council deliberation across three rounds, full transcripts in `docs/council/`):
 
-1. **Upstream architecture wins on technical merit too.** Cypher is a declarative, well-understood graph query language. Hyperedges, k-hop neighbors, graph subscriptions are real capabilities consumers (skills, hives, swarms) can use. WITH RECURSIVE covers a subset; the rest is genuinely lost.
+1. **PG-server-only deployment collapses AGE's prior deployment-blocker.** Under R1/R2 framing, AGE-not-in-pglite was a material concern. R3's drop-pglite-forever directive nullifies it. AGE is no longer "for some users" — it IS the substrate.
+2. **The capability surface is real but doesn't push toward Cypher syntax specifically — it pushes toward typed-edge LPG persistence + graph algorithms.** AGE delivers the LPG storage shape cleanly. Cypher comes free for future callsites. Graph algorithms (PageRank, Louvain, PPR) stay substrate-orthogonal via in-process TS or Rust/NAPI.
+3. **Option A's "graph-node Cypher patch" is engine construction, not patching.** Direct source-read evidence: `crates/ruvector-graph/src/executor/mod.rs:129-133` is a placeholder returning `Vec::new()` unconditionally; all 21 Cypher execution tests have `db.execute()` assertions commented out. Realistic Rust scope: 2,000-5,000 LoC + tests, multi-person-month. `feedback-no-value-judgements-on-features` authorizes shipping upstream features that exist; AGE has the surface, graph-node has only a parser.
+4. **Option C (ruvector-postgres) confirmed partially hollow.** DA direct read of `crates/ruvector-postgres/src/graph/cypher/executor.rs` (632 LoC): MATCH/CREATE/RETURN real; WHERE evaluates globally not per-row (broken); SET/DELETE/WITH are stubs; variable-length paths missing; multi-hop transitive joins missing.
+5. **Option D candidates eliminated by deployment topology**: Kuzu/LadybugDB/Vela-Engineering/kuzu have no live server-mode option (`kuzudb/api-server` archived 2025-10-10; Kuzu is embedded-only by design; Vela's fork preserves that). JanusGraph requires Cassandra/HBase backing. HugeGraph + NebulaGraph add a second daemon for capability AGE delivers in the same substrate. Neo4j CE / Memgraph / ArangoDB blocked by license.
+6. **Native PG14+ `CYCLE … SET … USING …`** is the canonical replacement for `path NOT LIKE` substring cycle detection. Wins on indexed array-membership semantics; standard SQL; runs alongside AGE on the same PG-server with no codepath overlap.
 
-2. **`feedback-no-value-judgements-on-features` is load-bearing project memory.** It exists because past retirements based on "incomplete" or "edge case" gating cost the fork capabilities that turned out to matter. Reversing this retirement honors that memory.
+### Scope
 
-3. **Option C (Apache AGE) is interesting but riskier.** AGE inside pglite is unproven; AGE on a server postgres requires SUPERUSER privilege to `CREATE EXTENSION` (a pre-existing concern from PostgresBackend's pgvector loading). Re-vendoring graph-node is the path upstream chose and the path the existing controller code already has shape for (the dead-stripped branches are in git history).
+**AGE adoption** (Option B):
 
-4. **Composition resolves the "consolidation goal" objection.** ADR-0170's "consolidation to 2 substrates (postgres + RVF)" was a legitimate goal, but per the memory: "Architectural conflicts are solvable via composition, not blocking." Three substrates (postgres + RVF + .graph) is the upstream-shipped state. The trade-off is real but the memory says to accept it and annotate, not exclude.
+1. Add Apache AGE extension to the agentdb PG-server install. Pin to AGE 1.6.0 stable + PG16 initially; bump to 1.7.0 GA + PG17 when AGE 1.7.0 GA ships.
+2. In `forks/agentdb/src/backends/postgres/PostgresBackend.ts`, add per-connection initialization hook: `LOAD 'age'; SET search_path = ag_catalog, "$user", public;`. Boot-time validation: smoke-query `SELECT * FROM cypher('_smoke', $$ MATCH (n) RETURN n LIMIT 0 $$) AS (v agtype)` — fail loud if AGE unreachable.
+3. Configure `shared_preload_libraries = 'age'` in postgresql.conf for PgBouncer transaction-mode compatibility.
+4. Ship `forks/agentdb/docker/Dockerfile.age` based on `apache/age:PG17_latest` (or apt-installed for non-Docker installs).
+5. New MCP tool: `agentdb_cypher_query` (auth + parameterized) backed by AGE.
+6. Existing `agentdb_graph_node_create / graph_edge_create / graph_node_get` MCP tools (currently returning errors per the disabled-by-default `graphAdapter` controller — see ADR-0172) re-implemented against AGE-backed storage.
+7. **AGE wired-but-unused for immediate post-decision state.** Existing graph consumers (5 skills, memory-graph.ts, MCP tools routing through RVF namespaces, coord agents) do NOT migrate to AGE in this ADR's scope. Migration of each consumer is a separate decision when a callsite genuinely benefits — avoids "build empty surfaces" anti-pattern.
 
-### Phased plan
+**E-Hardened migration** (Option E, same PG-server):
 
-**Phase A — restore the dep + adapter (no controller changes yet).**
-
-1. Add to `forks/agentdb/package.json`: `"@ruvector/graph-node": "^2.0.4"` (latest as of audit). Match the upstream agentic-flow v2 plan's version where alignment matters.
-2. Restore `forks/agentdb/src/backends/graph/GraphDatabaseAdapter.ts` from git history (parent of commit `4d83da2`, which was b7-causal-memory-graph's port). Use `git show <parent>:src/backends/graph/GraphDatabaseAdapter.ts`.
-3. Restore the `forks/agentdb/src/backends/graph/` directory and any sibling files (NodeIdMapper, GraphBackend interface).
-4. Wire back into `forks/agentdb/src/core/AgentDB.ts`: the `if (this.config.enableGraph) { GraphDatabaseAdapter.initialize(); }` block per ADR-0170 line 384-407. Add `await graphAdapter.initialize()`.
-5. Restore the `enableGraph` field on `AgentDBConfig`. Reverse the Phase D loud-reject. Default to `false` for backward compatibility; ADR-0172 Phase B flips the init-template default to `true`.
-
-Commit: `adr-0173 Phase A: restore @ruvector/graph-node + GraphDatabaseAdapter (gap-J retirement reversal)`. Push to sparkling.
-
-**Phase B — fix the incomplete Cypher WHERE evaluator.**
-
-1. Locate the documented-incomplete evaluator at `GraphDatabaseAdapter.ts:246` (per gap-J resolution doc). Identify which Cypher WHERE clause types are unsupported.
-2. Implement support for the missing clause types. Acceptance: a contract test exercising the previously-broken cases must pass.
-3. If completing the WHERE evaluator is non-trivial, ALTERNATIVELY: delegate the WHERE evaluation to graph-node's native `querySync(cypher)` API (per upstream ADR-007's Phase 1 work). The adapter becomes a thin wrapper; native graph-node handles Cypher parsing + evaluation.
-
-Commit: `adr-0173 Phase B: complete Cypher WHERE evaluator (graph-node native querySync delegation OR JS completion)`.
-
-**Phase C — restore the 3 controller branches.**
-
-1. **CausalMemoryGraph** (lines 227-260 per gap-J): restore the graph-Cypher branch alongside the WITH RECURSIVE branch. When `enableGraph` true and graphAdapter available, Cypher is the primary path; SQL is fallback. **NOT silent fallback** — both paths are exercised and consistency between them is verified at acceptance time. Per `feedback-no-fallbacks`, the dual-write is explicit and the read returns the same data from either path.
-2. **ReflexionMemory** (lines 347-350, 418-428, 986-1067): restore `retrieveFromGraphAdapter`, `retrieveFromGenericGraph`, `createEpisodeGraphNode`, and the deleteEpisode graph branches.
-3. **SkillLibrary** (lines 172-196, 316-321): restore the graph-skill creation and graph-skill search branches.
-
-Per-controller commits:
-- `adr-0173 Phase C.1: CausalMemoryGraph re-wires graph-node Cypher branch`
-- `adr-0173 Phase C.2: ReflexionMemory re-wires graph-node episode operations`
-- `adr-0173 Phase C.3: SkillLibrary re-wires graph-node skill operations`
-
-**Phase D — wire upstream ADR-007 Phase 1 graph-node capabilities.**
-
-Per upstream agentdb ADR-007's Phase 1 (HIGH priority):
-1. **Cypher querySync** as the primary controller query mechanism (the adapter's `query()` method).
-2. **Transactions** wired into the controller mutation surface — multi-step graph mutations get ACID guarantees.
-3. **Batch insert** for bulk node/edge ingest (10-100x speedup per upstream's claim).
-
-Commits per capability.
-
-**Phase E — enable `graphAdapter: true` in init template + acceptance.**
-
-1. Update `forks/ruflo/v3/@claude-flow/cli/src/init/config-template.ts:163` (or wherever `agentMemoryScope` lives) to add `graphAdapter: true` to `controllers.enabled` (or set `enableGraph: true` on the AgentDBConfig pass-through).
-2. Update memory `project-rvf-primary.md`: the agentdb_* substrate is PostgreSQL + graph-node (composition); the memory currently says PostgreSQL-only.
-3. Run full acceptance: target 674/674 PASS (no skips). The B5/graphAdapter test ADR-0172 Phase D retired must be RESURRECTED — restore the test, restore the controller list entry, restore the runner invocations. Total count returns to 674.
-4. Final release.
-
-Commit: `adr-0173 Phase E: enable graphAdapter by default; restore B5/graphAdapter acceptance test`.
-
-### What this means for ADR-0170 and ADR-0172
-
-- **ADR-0170 Phase D's gap-J resolution is partially reversed.** The substrate replacement (SQLite → pglite) survives; only the graph-node retirement portion of Phase D reverses. ADR-0170 status stays `accepted` (the bulk of the work was correct).
-- **ADR-0172 Phase B's init-template flip** extends to include `graphAdapter: true`. The two ADRs land their init-template work coordinated.
-- **ADR-0166's axis-separation preserved.** The agentdb_* axis is PostgreSQL for relational + pgvector for vectors + graph-node for graphs. Three substrates with explicit roles, composed.
-
-### Consequences
-
-* Good, because Cypher graph queries return to the agentdb_* surface (alignment with upstream's headline capability).
-* Good, because hyperedges, k-hop neighbors, graph subscriptions become available again (capabilities pgvector does not provide).
-* Good, because upstream-sync friction decreases — when upstream lands ADR-007's Phase 2-4 graph-node work, we can pull it forward without architectural reversal.
-* Good, because the `feedback-no-value-judgements-on-features` precedent gets reinforced by a visible reversal, not just lip service.
-* Good, because the incomplete Cypher WHERE evaluator gets *fixed*, not deleted-around — solving a real bug instead of removing the surface that exposed it.
-* Bad, because on-disk substrate count returns to 3 (postgres + RVF + .graph), undoing ADR-0170's consolidation. Trade-off is explicit per the memory.
-* Bad, because graph-node restoration adds native-module dep (NAPI bindings). Install-time complexity returns to where it was pre-ADR-0170. This is upstream's posture; we re-adopt it.
-* Bad, because the dual-substrate consistency (graph-node + postgres reading/writing the same logical entity) reintroduces sync challenges that gap-J flagged. Mitigation: per-controller, the graph branch is the *primary* path; postgres is the relational metadata; controllers explicitly write to both and verify consistency at acceptance time (no silent dual-write per ADR-0082).
-* Neutral, because pgvector continues to handle vector similarity (graph-node's vector capabilities are not used to replace pgvector — graph-node is for graph queries, pgvector is for k-NN).
-
-### Confirmation
-
-Compliance verified by:
-
-1. **Phase A complete** when `@ruvector/graph-node` is in `forks/agentdb/package.json` deps, `GraphDatabaseAdapter.ts` exists, `enableGraph: true` no longer throws at config validation, and `await graphAdapter.initialize()` is called when `enableGraph: true`.
-2. **Phase B complete** when a contract test for the previously-incomplete Cypher WHERE clauses passes against the rewired adapter.
-3. **Phase C complete** when the 3 controllers' graph branches are restored and acceptance covers both the graph-path and SQL-path with consistency verification.
-4. **Phase D complete** when querySync/transactions/batch-insert from upstream ADR-007 Phase 1 are wired into the adapter and exercised by tests.
-5. **Phase E complete** when init template generates `enableGraph: true` (or `graphAdapter: true`) by default, the B5/graphAdapter acceptance test is restored, and the suite passes 674/674.
+1. Rewrite `forks/agentdb/src/controllers/CausalMemoryGraph.ts:469` (`getCausalChain`) and `:532` (`getCausalChainWithAttention`) from `path NOT LIKE '%X%'` substring cycle detection to PG14+ `CYCLE id SET is_cycle USING path_array`. Path becomes integer array; line 506's `row.path.split('->').map(Number)` simplifies to direct array consumption.
+2. Add covering indices:
+   - `CREATE INDEX IF NOT EXISTS idx_causal_edges_from_conf ON causal_edges(from_memory_id, confidence) WHERE confidence >= 0.5;`
+   - `CREATE INDEX IF NOT EXISTS idx_skill_links_parent_rel_weight ON skill_links(parent_skill_id, relationship, weight DESC);`
+3. Add p50/p95 telemetry spans around both `getCausalChain` and `getCausalChainWithAttention`. **No measured baseline exists today — telemetry capture MUST precede the migration.**
 
 ### Out of scope
 
-* **Apache AGE adoption** (Option C). Defer for now; revisit if `@ruvector/graph-node` becomes unmaintained.
-* **Hyperedge consumer wiring**. Phase D wires the capability; deciding which controllers should USE hyperedges is downstream design work (ADR follow-up). Memory `feedback-no-value-judgements-on-features` says ship the surface; consumers can adopt when ready.
-* **Graph algorithms (PageRank, centrality, community detection)**. Listed in upstream USERGUIDE as graph-node capabilities; not wired by Phase D. Future ADR if/when needed.
-* **Reversing `hnswlib-node` or `sqlite-vec` retirements**. Those substrates ARE genuinely replaced (pgvector covers them). graph-node is the only one with a real capability gap post-retirement.
+* **Migration of existing graph consumers to AGE-backed storage.** Each consumer migrates when its callsite materially benefits, decided per consumer.
+* **AGE graph algorithm integration** (PageRank, Louvain, etc.). PPR stays in `@ruvector/sparsifier` (NAPI/WASM); `memory-graph.ts` keeps in-process pure-TS PageRank/Louvain. Substrate-orthogonal; revisit if a future callsite needs in-DB analytics.
+* **Hyperedge primitives.** No consuming callsite; junction-table reification suffices when needed.
+* **graph-node Cypher patch** (Option A scope). Deferred to watch state with named trigger criteria below.
+
+### Consequences
+
+* Good, because the agentdb_* substrate stays single (PG-server) — backup, replication, PITR, connection pooling, auth all inherit postgres-standard tooling. One backup story, one restore drill, one HA pattern.
+* Good, because `agentdb_cypher_query` and AGE-backed graph MCP tools provide a real openCypher engine for future graph workloads (decision-record traversal, ADR/ODR dependency queries, future LPG-shaped consumers).
+* Good, because E-Hardened on the 2 existing recursive-CTE sites uses standard PG14+ `CYCLE` syntax — planner-friendly, indexed, no string-scan anti-pattern, no engine swap.
+* Good, because Vela-Kuzu, LadybugDB, and Kuzu are all eliminated on architectural grounds (embedded-only, no live server mode) — the council reached this honestly rather than dismissing on maintenance fears.
+* Good, because hollow-Cypher findings in A and C are recorded in the council transcripts as load-bearing evidence — future revisits won't repeat the audit.
+* Bad, because AGE adds a build/install dependency to the agentdb PG-server target. Mitigation: Dockerfile-baked install; install matrix pinned to one PG major per release; apt repo packages available for major distros.
+* Bad, because `agtype` return values require marshalling at the controller layer (vs JSONB which is already idiomatic). For analyst-shaped queries needing NetworkX-style traversal, this is real but bounded overhead; ruflo's in-process algorithms bypass it entirely.
+* Bad, because AGE's openCypher coverage has documented quirks (NULL handling in list comprehensions, `WHERE EXISTS { ... }` crashes, `MATCH` after `WITH` boundary edge cases). Ruflo's planned Cypher use avoids these; document the no-go list in the AGE wrapper.
+* Neutral, because the AGE wired-but-unused initial state honors capability-driven framing (capability is present for future consumers) without forcing premature migration (avoids "build empty surfaces").
+* Neutral, because graph-node deferral leaves the user's "we can easily fix it" claim on the table for future reconsideration with named triggers.
+
+### Confirmation
+
+Compliance is verified by:
+
+1. **AGE foundation lands** when `apache/age` extension is loadable on the agentdb PG-server target; `forks/agentdb/src/backends/postgres/PostgresBackend.ts` emits the `LOAD 'age'; SET search_path = ag_catalog, "$user", public;` prelude on every connection acquire; boot validation smoke-query passes against a tiny known graph; failing-to-load AGE throws loudly at boot per `feedback-no-fallbacks`.
+2. **E-Hardened CYCLE migration lands** when `forks/agentdb/src/controllers/CausalMemoryGraph.ts` no longer contains `path NOT LIKE` and uses `CYCLE id SET is_cycle USING path_array` instead; covering indices `idx_causal_edges_from_conf` and `idx_skill_links_parent_rel_weight` exist; p50/p95 telemetry spans emit metrics on both `getCausalChain` and `getCausalChainWithAttention`.
+3. **`agentdb_cypher_query` MCP tool exists** with parameterized inputs (no string-concat Cypher); request/response contract test ensures fail-loud on AGE unavailable.
+4. **Council transcripts linked** from the ADR `## More Information` section: `docs/council/ADR-0173-graph-db-council-r1-transcript.md`, `-r2-transcript.md`, `-r3-transcript.md`.
+
+### Watch triggers for Option A reconsideration
+
+Defer Option A (graph-node + Cypher patch in fork) but reopen if any of these materialize:
+
+* A Cypher operator ruflo needs that AGE doesn't ship (with documented failure mode against an actual workload).
+* A hyperedge callsite where junction-node reification is provably insufficient (e.g., n-ary causal-attribution semantics that lose information when binarized).
+* An embedded-Rust execution path requirement orthogonal to Cypher syntax (e.g., future need to run graph queries inside a Rust agent process without round-tripping through postgres).
+
+Without one of these triggers, Option A stays deferred. `feedback-no-value-judgements-on-features` is read as "ship the surface upstream has," not "build the surface upstream is missing."
+
+## Pros and Cons of the Options
+
+### Option A — Restore `@ruvector/graph-node` + patch Cypher executor
+
+* Good, because hyperedges are unique to A among OSS options.
+* Good, because PR #375 is a small 3-function reorder (144 LoC), patchable in `forks/ruvector/` per `feedback-patches-in-fork`.
+* Good, because Rust integration aligns with RuVector ownership patterns the fork already maintains.
+* Bad, because `crates/ruvector-graph/src/executor/mod.rs:129-133` is a placeholder returning `Vec::new()` unconditionally — there is no Cypher executor to expose. README claim "Parse and execute Cypher queries" is misleading; parsing only.
+* Bad, because the patch scope is engine construction (2,000-5,000 LoC Rust + 1,000-2,000 LoC tests) — multi-person-month work substituting for AGE's mature engine.
+* Bad, because A's standalone redb-backed process is a separate substrate from postgres — no cross-engine joins for hybrid graph+vector+relational queries.
+* Bad, because no consuming callsite needs hyperedges (every existing graph use is binary); the unique advantage is unconsumed.
+
+### Option B — Apache AGE on PG-server + pgvector composition
+
+* Good, because AGE ships a real OpenCypher engine today (with documented quirks).
+* Good, because single PG-server substrate — backup, HA, auth, observability all inherit postgres patterns; zero new ops surface beyond an extension install.
+* Good, because AGE composes with pgvector in the same query plan (single transaction, single MVCC snapshot, no cross-process tax).
+* Good, because Apache Software Foundation top-level project — active commit cadence, governance stability, license-clean (Apache 2.0).
+* Good, because user explicitly authorized server-mode dependency.
+* Bad, because AGE source-build per PG major version × per arch is real but bounded under self-hosted-only (one PG major per ruflo release).
+* Bad, because per-connection `LOAD 'age'; SET search_path...` ritual is a footgun if missed; mitigated by `PostgresBackend.ts` connection-acquire hook with boot validation.
+* Bad, because `agtype` return values require marshalling layer at the controller; bounded overhead for analyst-shaped queries.
+* Bad, because variable-length-path queries in AGE bypass postgres indexes (Trendyol production writeup); mitigated by keeping `CausalMemoryGraph.ts` 5-hop traversal on E-Hardened SQL, not AGE Cypher.
+
+### Option C — `ruvector-postgres@0.3.0` Cypher extension
+
+* Good, because PG-substrate-aligned (in-postgres-process, single-plan hybrid with pgvector preserved).
+* Good, because Rust integration matches RuVector ownership.
+* Bad, because executor is partially hollow: WHERE evaluates globally not per-row; SET/DELETE/WITH are stubs; variable-length paths missing; multi-hop transitive joins missing; AND/OR/IS NULL/IN/arithmetic unsupported.
+* Bad, because patch scope to make executor functional for ruflo's queries is ~540 LoC minimum (2-3 engineer-weeks); for broader Cypher subset, 1,500-3,000+ LoC.
+* Bad, because ruvector-postgres ships its own parallel Cypher AST + parser + executor independent of `ruvector-graph` crate (two parallel implementations in same upstream repo).
+* Bad, because production issues `#48` (HNSW access methods disabled >5 months) and `#271` (HNSW interferes with planner, Fly.io production failure) suggest the crate is not production-grade.
+
+### Option D — OSS property graph DB (Vela-Kuzu / Lady / JanusGraph / HugeGraph / NebulaGraph / Dgraph / TerminusDB)
+
+* Good, because Vela-Engineering/kuzu inherits Kuzu's real Cypher executor + concurrent multi-writer.
+* Good, because JanusGraph (Apache 2.0) has TinkerPop ecosystem and is production-proven at billion-edge scale.
+* Bad, because Kuzu / LadybugDB / Vela-Kuzu are embedded-only by design (per Kuzu docs verbatim). `kuzudb/api-server` (the only REST wrapper) archived 2025-10-10. Under PG-server-only deployment topology, embedded-Kuzu-in-Node ≡ embedded-pglite-in-Node (eliminated by user directive).
+* Bad, because JanusGraph mandates Cassandra/HBase backing store — heavier operational substrate than AGE-in-PG.
+* Bad, because HugeGraph + NebulaGraph add a second daemon for capability AGE delivers in the same substrate.
+* Bad, because Neo4j CE (GPLv3), Memgraph (BSL/MEL), ArangoDB (BSL) are all license-blocked for the fork's distribution posture.
+* Bad, because NetworkX-native interop advantage that some Round 1/2 framings cited is Python-only — irrelevant for ruflo's JS/Rust runtime.
+
+### Option E — Status quo + PG14+ CYCLE clause migration (E-Hardened)
+
+* Good, because two sites, one file (`CausalMemoryGraph.ts`), one migration; ~50 LoC + 2 indices; zero new substrate.
+* Good, because PG14+ native `CYCLE … SET … USING …` is standard SQL; planner uses indexed array-membership; no `path NOT LIKE` substring-scan anti-pattern.
+* Good, because runs on the same PG-server as AGE; no codepath overlap, no fallback path.
+* Bad, because doesn't deliver Cypher syntax for future graph-shaped consumers; doesn't deliver LPG typed-edge storage; doesn't help the broader capability surface.
+* Bad, because on its own, capability ceiling is real — every new graph workload re-derives semantics in SQL.
 
 ## More Information
 
+### Council deliberation
+
+This ADR's verdict emerged from three rounds of dialectical deliberation in the `graph-db-council` agent team (mesh topology, 8 participants: 6 specialist experts + devil's-advocate + queen-orchestrator, with queen and DA participating alongside experts in real-time per `feedback-council-queen-da-alongside-experts.md` for R3).
+
+* **Round 1 transcript**: `docs/council/ADR-0173-graph-db-council-r1-transcript.md` — initial framings; verdict: E-Hardened + additive AGE for server-mode; DA fact-checks (pglite-AGE doesn't exist; Vela "phantom" R1 finding later corrected in R2; PG14+ CYCLE clause).
+* **Round 2 transcript**: `docs/council/ADR-0173-graph-db-council-r2-transcript.md` — constraint reframing (pglite-AGE moot under PG-server-mode; PR #375 fixable; OSS+self-hosted only); load-bearing hollow-Cypher finding for graph-node and ruvector-postgres; verdict: E-Hardened primary + AGE additive.
+* **Round 3 transcript**: `docs/council/ADR-0173-graph-db-council-r3-transcript.md` — drop-pglite-forever directive; capability-driven framing replaces consumer-driven; team-lead reconnaissance surfaces real consumer surface (5 skills + 13 MCP tools + memory-graph.ts + Sparsification + GNN + coord agents); 5/6 experts converge on AGE; final verdict locks in.
+
+### Honest acknowledgment of evolution
+
+Queen's framing (R3): "R1's 'additive AGE' was right for a dual-substrate world; R2's 'E-Hardened primary' was right when no consumers existed; R3's 'AGE primary on PG-only with E-Hardened on the side' is right under the actual deployment-target + capability-surface constraints. Each round was correct for the inputs it had; what changed is the inputs."
+
+Material errors corrected across rounds:
+
+* **R1**: postgres-architect's "AGE bundled in pglite" claim — DA verified as false; pglite has no AGE WASM build.
+* **R2**: DA's "Vela fork is phantom" finding — `Vela-Engineering/kuzu` exists; DA search terms missed it; corrected in R2 by performance-engineer + R3 confirmation by oss-graph-landscape.
+* **R2**: ruvector-status-analyst's "ruvector-graph has Cypher executor we just need to expose" assumption — direct source-read in R3 confirmed `execute_sequential` is a placeholder returning `Vec::new()`.
+* **R1/R2**: performance-engineer's "374× speedup" headline — R2 clarified that's Q8 unfiltered; Q9 filtered (matching ruflo's workload) is ~31×; mental "divide by 10" rule for filtered queries.
+* **R3**: graph-theory-expert's R2 framing weighted 70% pure-graph / 30% hybrid — R3 honest concession that capability-driven framing shifts it to 30% pure-graph / 60% hybrid (every memory/skill/episode/ADR has an embedding, so most queries are hybrid vector+graph).
+
 ### Related ADRs
 
-* **ADR-0170** — Substrate replacement (SQLite → pglite). Phase D's gap-J resolution is partially reversed by this ADR; the substrate replacement itself is preserved.
-* **ADR-0172** — Router silent-fallback + disabled-controller audit. Phase B's init-template flip extends to include `graphAdapter: true`. The two ADRs land their init defaults in coordination.
-* **ADR-0166** — Axis-separation. The agentdb_* substrate decomposes into postgres (relational + vector) + graph-node (graph); the axis-separation rule is preserved at a coarser level.
-* **ADR-0117** — Marketplace MCP server registration. The graphAdapter controller's MCP tools (`agentdb_graph_node_create`, `agentdb_graph_edge_create`, etc.) return to the surface; consumers can call them.
-* **Upstream `ruvnet/agentdb` ADR-007** — "ruvector-full-capability-integration". Lists graph-node's unused Cypher/transactions/hyperedges/batch as Phase 1-2 work. This ADR ports upstream's intended direction into the fork.
+* **ADR-0166** — agentdb unified database architectural gap (superseded by ADR-0170).
+* **ADR-0170** — agentdb substrate replacement — PostgreSQL primary. This ADR runs entirely on the PG-server target ADR-0170 introduced; it does not change the substrate, only adds AGE + pgvector extensions on top.
+* **ADR-0172** — router silent-fallback + disabled-controller audit. The 5 disabled-by-default controllers ADR-0172 names include `graphAdapter` (the abstraction that would have backed graph-node); under this ADR, `graphAdapter` is retired and the new `agentdb_cypher_query` MCP tool replaces its planned surface.
 
-### Why this surfaces now
+### Upstream references (citations, not directional signals)
 
-User question 2026-05-12 ("why did we do this?" re: graph-node retirement) triggered a re-read of gap-J's reasoning against `feedback-no-value-judgements-on-features` and upstream agentdb ADR-007. The conflict became evident; the user requested an ADR to reverse the retirement.
+* `@ruvector/graph-node@2.0.4` (npm) — 22,204 LoC Rust engine; verified Cypher executor is placeholder (council R3 source-read).
+* Apache AGE — Apache top-level project; v1.7.0-rc0 for PG18 (Jan 2026); 4,496 stars; openCypher implementation.
+* `kuzudb/kuzu` — archived 2025-10-10. `kuzudb/api-server` (Express.js REST wrapper) archived same day.
+* `Vela-Engineering/kuzu` — real fork (29 stars, MIT, last push 2026-03-09); inherits Kuzu's embedded-only architecture.
+* Trendyol AGE production writeup (April 2026) — variable-length-path queries bypass postgres indexes; mitigation via iterative fixed-depth Cypher queries.
+* PG14+ `WITH RECURSIVE ... CYCLE` clause — postgresql.org/docs; standard SQL since SQL:1999, postgres support since PG14.
 
-### Upstream package versions to align
+### Open follow-ups (per Queen R3 synthesis)
 
-- `@ruvector/graph-node@^2.0.4` (current Verdaccio + npm-registry)
-- Alongside `@ruvector/core@^0.1.30+`, `@ruvector/gnn@^0.1.23+`, etc. — the broader ecosystem ADR-007 references.
-
-Per ADR-0170 Phase A's `optionalDependencies` posture for `@ruvector/postgres-cli`: consider whether graph-node should be `dependencies` (hard requirement) or `optionalDependencies` (graceful degrade). Per `feedback-no-fallbacks`, hard `dependencies` is correct — if graph-node fails to load and `enableGraph: true`, AgentDB throws at boot. If `enableGraph: false`, the dep load is skipped entirely.
+1. **AGE install verification** on the agentdb PG-server target before this ADR's scope-of-work lands.
+2. **Baseline p50/p95 capture** on `getCausalChain` and `getCausalChainWithAttention` *before* CYCLE-clause migration — answer-of-record to "what's the hot-path latency" question.
+3. **Per-consumer migration audit** for AGE adoption (ADR/ODR edges good fit; memory-graph.ts probable; `agentdb_graph_*` MCP tools direct; SparsificationService no; coord agents no).
+4. **`agentdb_cypher_query` MCP tool design** — auth, sandboxing, parameterized Cypher (no string-concat) to prevent injection across MCP boundary.
+5. **graph-node watch trigger criteria** documented in this ADR's `Watch triggers for Option A reconsideration` section above.
+6. **Hyperedge use-case watch**: revisit if a multi-party causal-attribution callsite emerges where junction-reification is provably insufficient.
