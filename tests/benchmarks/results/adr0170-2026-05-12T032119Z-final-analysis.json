@@ -1,0 +1,94 @@
+{
+  "schema": "adr0170-benchmark-v2",
+  "phase": "Phase D follow-up (graphAdapter retirement + gate re-verify)",
+  "substrate": "pglite",
+  "agentdb_version": "3.0.0-alpha.14-patch.77",
+  "cli_version": "3.7.0-alpha.10-patch.65",
+  "wrapper_version_via_cli": "3.7.0-alpha.10-patch.62 (ruflo@latest dist-tag still pins patch.58 → cli@patch.62)",
+  "fork_commit_ruflo": "1123c7fc9 (HEAD of forks/ruflo main, includes c828732c4 Phase C.3)",
+  "acceptance_run_id": "accept-2026-05-12T031118Z",
+  "generated_at_utc": "2026-05-12T03:21:19Z",
+  "fix_summary": "ADR-0170 Phase D follow-up — retire B5 graphAdapter test (controller deleted in forks/agentdb 9ec9a87 alongside @ruvector/graph-node dep removal). Per user 'no skips' directive, the wrapper was deleted (not retained as skip_accepted). Acceptance suite drops 674 (673 PASS + 1 skip_accepted) → 673 (673 PASS + 0 skip_accepted). Coupled with Phase C.3 (commit 3bf4eab) lazy-init memory_*-axis routes: memory store/search no longer pays the agentdb_* ControllerRegistry init cost on every CLI invocation.",
+  "ruflo_patch_commit": "81624f9 adr-0170 Phase D follow-up: retire B5 graphAdapter test (controller removed in 9ec9a87)",
+  "result": {
+    "store": {
+      "count": 200,
+      "p50_ms": 551.022208500006,
+      "p95_ms": 593.7084503000044,
+      "errors": 0
+    },
+    "search": {
+      "count": 50,
+      "p50_ms": 536.4740210000018,
+      "p95_ms": 555.8464623499997,
+      "errors": 0
+    },
+    "total_wall_ms": 138241.669417,
+    "rss_peak_bytes": 56128,
+    "rss_peak_mb": 0.05352783203125
+  },
+  "comparison_vs_committed_baseline": {
+    "baseline_file": "tests/benchmarks/baselines/adr0170-sqlite-baseline.json",
+    "baseline_run_id": "accept-2026-05-11T200901Z",
+    "baseline_agentdb_version": "3.0.0-alpha.14-patch.52",
+    "baseline_store_p50": 732.3856244999915,
+    "baseline_store_p95": 853.4597353999851,
+    "baseline_search_p50": 894.4069164999964,
+    "baseline_search_p95": 980.7886269000155,
+    "baseline_wall_ms": 196297.029458,
+    "deltas_vs_baseline_pct": {
+      "store_p50": -24.76,
+      "store_p95": -30.44,
+      "search_p50": -40.02,
+      "search_p95": -43.33,
+      "wall": -29.58
+    }
+  },
+  "comparison_vs_phase_c3_postfix": {
+    "phase_c3_run_file": "tests/benchmarks/results/adr0170-2026-05-12T030000Z-phaseC3-postfix-analysis.json",
+    "phase_c3_warm_store_p50": 556.1482289999949,
+    "phase_c3_warm_store_p95": 612.8217018000014,
+    "phase_c3_warm_search_p50": 532.3748545000126,
+    "phase_c3_warm_search_p95": 588.6956214999881,
+    "phase_c3_warm_wall_ms": 167561.525625,
+    "deltas_final_vs_c3_warm_pct": {
+      "store_p50": -0.92,
+      "store_p95": -3.12,
+      "search_p50": 0.77,
+      "search_p95": -5.58,
+      "wall": -17.50
+    },
+    "notes": "Final run matches Phase C.3 post-fix steady-state within noise (<6% absolute drift on per-op latencies). Wall-clock improved 17% due to no first-call npx cache miss (the prior pipeline left the npx cache warm). Confirms the C.3 lazy-init optimization is stable across runs and the graphAdapter retirement did not regress any metric."
+  },
+  "gate_decision": {
+    "threshold_pct": 10,
+    "rule": "Per ADR-0170 §'Performance benchmark gate': no >10% regression vs SQLite baseline on any of (store p50, store p95, search p50, search p95, total wall). Speedup is acceptable; the rule is about slowdowns.",
+    "metrics": {
+      "store_p50": { "pct_change": -24.76, "is_regression": false, "exceeds_threshold": false, "gate": "PASS" },
+      "store_p95": { "pct_change": -30.44, "is_regression": false, "exceeds_threshold": false, "gate": "PASS" },
+      "search_p50": { "pct_change": -40.02, "is_regression": false, "exceeds_threshold": false, "gate": "PASS" },
+      "search_p95": { "pct_change": -43.33, "is_regression": false, "exceeds_threshold": false, "gate": "PASS" },
+      "wall": { "pct_change": -29.58, "is_regression": false, "exceeds_threshold": false, "gate": "PASS" }
+    },
+    "status": "PASS",
+    "narrative": "Every metric is a SPEEDUP vs the SQLite baseline. The C.3 lazy ControllerRegistry init (memory_*-axis routes no longer pay agentdb_* substrate cost) accounts for ~24-43% of the per-op improvement; the Phase D dead-code stripping (sqlite-vec, hnswlib, graph-node, GraphDatabaseAdapter) accounts for the remaining tail. Memory consumption (rss_peak_bytes captured at the bench-process level, not the spawned CLI) is informational only — the bench's RSS-capture bug from gap-K is still present (~54KB reported is the bench wrapper's own RSS, not the spawnSync child's). Per `feedback-no-squelch-tests` the 10% band was NOT widened. Per `feedback-no-fallbacks` lazy init preserves loud-fail semantics — the agentdb_*-axis path still throws ADR-0165 markers if the substrate is unreachable on first agentdb_* tool call."
+  },
+  "verification": {
+    "graphAdapter_retirement": {
+      "files_touched_in_ruflo_patch": [
+        "lib/acceptance-adr0090-b5-checks.sh (deleted _b5_seed_graph_adapter + check_adr0090_b5_graphAdapter; -68 lines, +47 lines of retirement notes)",
+        "scripts/test-acceptance.sh (deleted run_check_bg + collect_parallel spec)",
+        "scripts/test-acceptance-fast.sh (deleted _fast_run)",
+        "tests/unit/adr0090-b5-controller-roundtrips.test.mjs (deleted CHECKS row; updated 15→14 in 7 strings/comments)"
+      ],
+      "fork_commit_referenced": "forks/agentdb 9ec9a87 (Phase D dead-strip of GraphDatabaseAdapter + @ruvector/graph-node)",
+      "no_fallback_check": "the retired controller is GONE — no skip_accepted, no router-fallback, no try/catch wrapper. AgentDB throws loudly on any attempt to instantiate it via enableGraph:true (loud-rejected with ADR-0170 marker per controller-registry's forwarding rule)."
+    },
+    "acceptance_run": {
+      "run_dir": "test-results/accept-2026-05-12T031118Z",
+      "summary": "673 PASS / 0 FAIL / 0 SKIP / 673 TOTAL",
+      "delta_vs_previous": "previous 674/673+1skip → final 673/673+0skip (graphAdapter test removed, not skipped)"
+    },
+    "unit_test_run": "4220 PASS / 0 FAIL / 7 SKIP (allowed per suite-skip-count-invariant.test.mjs KNOWN_LEGITIMATE_SKIPS); 80.5s"
+  }
+}

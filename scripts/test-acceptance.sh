@@ -780,7 +780,8 @@ run_check_bg "adr0090-b3-consolidate" "Worker consolidate metrics (B3)" check_ad
 run_check_bg "adr0090-b3-testgaps"    "Worker testgaps metrics (B3)"    check_adr0090_b3_testgaps    "data"
 run_check_bg "adr0090-b6a-daemon"     "Daemon-state round-trip (B6a)"   check_adr0090_b6a_daemon_state "daemon"
 
-# ADR-0090 Tier B5: 15-controller SQLite row-count round-trips (controller group)
+# ADR-0090 Tier B5: 14-controller pglite row-count round-trips (controller group)
+# (Originally 15; ADR-0170 Phase D retired graphAdapter in fork commit 9ec9a87.)
 run_check_bg "adr0090-b5-reflexion"           "B5 reflexion roundtrip"           check_adr0090_b5_reflexion           "controller"
 run_check_bg "adr0090-b5-skillLibrary"        "B5 skillLibrary roundtrip"        check_adr0090_b5_skillLibrary        "controller"
 run_check_bg "adr0090-b5-reasoningBank"       "B5 reasoningBank roundtrip"       check_adr0090_b5_reasoningBank       "controller"

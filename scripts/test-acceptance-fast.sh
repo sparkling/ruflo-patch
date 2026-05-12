@@ -253,7 +253,7 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0104"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
 fi
 
 if [[ "$_FAST_RUN_GROUPS" == *"adr0090-b5"* || "$_FAST_RUN_GROUPS" == "b5" || "$_FAST_RUN_GROUPS" == "all" ]]; then
-  echo "── ADR-0090 B5 (15-controller SQLite round-trip) ──"
+  echo "── ADR-0090 B5 (14-controller pglite round-trip; graphAdapter retired ADR-0170 Phase D) ──"
   _fast_run "b5-reflexion"           check_adr0090_b5_reflexion
   _fast_run "b5-skillLibrary"        check_adr0090_b5_skillLibrary
   _fast_run "b5-reasoningBank"       check_adr0090_b5_reasoningBank
