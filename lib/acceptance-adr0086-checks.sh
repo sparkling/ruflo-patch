@@ -610,10 +610,13 @@ _debt15_count_reflexion_rows() {
     echo ""
     return 0
   fi
+  # ADR-0170 Phase C.1: pgvector extension required for tables with
+  # vector columns (e.g. episode_embeddings.embedding).
   local out
   out=$(cd "$proj_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const exists = await db.query(\"SELECT to_regclass('public.episodes') IS NOT NULL AS e\");

@@ -51,9 +51,12 @@ _adr0112_db_contains_marker() {
   local marker="$2"
   [[ -f "$proj_dir/.swarm/memory.pglite/PG_VERSION" ]] || return 1
   local out
+  # ADR-0170 Phase C.1: pgvector extension required for tables with
+  # vector columns (e.g. hierarchical_memory.embedding).
   out=$(cd "$proj_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 const marker = process.argv[1];
 try {

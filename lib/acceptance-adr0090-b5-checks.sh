@@ -123,10 +123,18 @@ _pglite_count_rows() {
     echo "-1"
     return 1
   fi
+  # ADR-0170 Phase C.1: pglite probe must load the `vector` extension at
+  # PGlite construction time. Without `extensions: { vector }`, the
+  # wasm runtime can't parse tables that have `vector(N)` columns —
+  # even simple COUNT queries fail with "type vector does not exist".
+  # The agentdb controllers install the extension wasm binary at
+  # initialize() time; the probe just needs to register it in the
+  # session via the same subpath import.
   local out
   out=$(cd "$iso_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1\`, ['${marker_value}%']);
@@ -144,7 +152,8 @@ try {
     sleep 0.25
     out=$(cd "$iso_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1\`, ['${marker_value}%']);
@@ -180,10 +189,13 @@ _pglite_table_exists() {
     echo "0"
     return 0
   fi
+  # ADR-0170 Phase C.1: load pgvector extension so tables with vector
+  # columns parse correctly.
   local out
   out=$(cd "$iso_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const r = await db.query(\`SELECT to_regclass('public.${table}') IS NOT NULL AS exists\`);
@@ -207,9 +219,12 @@ _pglite_table_list() {
     echo ""
     return 0
   fi
+  # ADR-0170 Phase C.1: pgvector extension required for tables with
+  # vector columns to be readable.
   cd "$iso_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const r = await db.query(\"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename\");
@@ -231,9 +246,12 @@ _pglite_first_value() {
     echo ""
     return 1
   fi
+  # ADR-0170 Phase C.1: pgvector extension required for tables with
+  # vector columns to be readable.
   cd "$iso_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const r = await db.query(\`SELECT \"${marker_col}\" AS v FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1 ORDER BY \"${marker_col}\" DESC LIMIT 1\`, ['${marker_value}%']);
@@ -814,9 +832,12 @@ _b5_probe_causal_edge_persistence() {
     has_table=$(_pglite_table_exists "$iso" "causal_edges")
     if [[ "$has_table" == "1" ]]; then
       local row_match
+      # ADR-0170 Phase C.1: causal_edges now has a vector(768) embedding column;
+      # probe must load pgvector extension.
       row_match=$(cd "$iso" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const r = await db.query(\`SELECT COUNT(*)::int AS c FROM causal_edges WHERE mechanism LIKE \$1 OR metadata::text LIKE \$1\`, ['%${marker}%']);
@@ -1132,10 +1153,12 @@ _b5_seeded_probe() {
         return
       fi
       # Total row count (any marker, used for "has at least one INSERT")
+      # ADR-0170 Phase C.1: pgvector extension required.
       local row_count
       row_count=$(cd "$iso" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${pg_table}\"\`);
@@ -1242,10 +1265,13 @@ _b5_seed_consolidation() {
   # the sqlite3 UPDATE). Test-only shortcut that nudges the threshold
   # values getConsolidationCandidates() expects — would otherwise need
   # repeated access patterns to reach organically.
+  # ADR-0170 Phase C.1: hierarchical_memory has an embedding vector(768) column;
+  # probe must load pgvector extension.
   if [[ -f "$iso/.swarm/memory.pglite/PG_VERSION" ]]; then
     (cd "$iso" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
-const db = new PGlite('.swarm/memory.pglite');
+const { vector } = await import('@electric-sql/pglite/vector');
+const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
 await db.ready;
 try {
   await db.query(\"UPDATE hierarchical_memory SET importance = 0.8, access_count = 5 WHERE tier = 'episodic'\");
