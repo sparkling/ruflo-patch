@@ -22,14 +22,65 @@ After today's ADR-0177 reset (fork's agentdb → upstream HEAD `a478ab3`) hierar
 
 Net: of the 4 hierarchical-* MCP tools any skill could reasonably call, **only 1 worked** (`agentdb_causal-edge` — survived both the underscore rename and the missing-class issue).
 
-## Audit context — why upstream's README didn't help
+## Audit context — what upstream documents vs ships, what downstream consumes
 
-Upstream `ruvnet/agentdb/README.md` documents "10 Hierarchical / Causal Memory tools" (lines 181-187) including `agentdb_hierarchical_store / _recall / _delete` etc., plus a "hierarchical recall for /adr-index" promise (line 246). But upstream's actual code ships **none of them**:
+### Upstream agentdb promises what it doesn't deliver
+
+`ruvnet/agentdb/README.md` documents the surface in 5 places:
+- Line 94: lists `agentdb_hierarchical_store` among the 41 advertised MCP tools
+- Line 103: "hierarchical context" as one of 6 cognitive-memory patterns
+- Line 110: "hierarchical recall, delete" in the MCP tools feature bullet
+- **Lines 181-187:** detailed 10-row "Hierarchical / Causal Memory tools" table — `agentdb_hierarchical_store` (*"Tier-aware memory store (working / short / long)"*), `_recall` (*"Tier-filtered retrieval"*), `_delete` (*"Remove hierarchical entry by key"*)
+- Line 246: "hierarchical recall for /adr-index" cited as a ruflo integration
+
+But upstream's actual code ships **none of them**:
 - `src/mcp/agentdb-mcp-server.ts` registers zero `hierarchical_*` tools
 - `src/controllers/HierarchicalMemory.ts` does not exist
-- The hierarchical-* tools live downstream in ruflo's `agentdb-tools.ts`, consuming a `HierarchicalMemory` class the fork added via ADR-066
+- `docs/adrs/` (ADR-002 through ADR-010) has zero design content — only adjacent mentions (ADR-006 cites HiAgent academic paper, ADR-007 mentions "hierarchical memory relationships" as future capability, ADR-002 mentions hyperbolic embeddings)
+- The `hierarchical` token in `src/` resolves only to unrelated concepts: `hierarchicalForward` (GNN matrix op), `HierarchicalNSW` (HNSW algorithm), `topology: 'hierarchical'` (swarm compat type)
 
-So upstream's README describes fork-only capabilities as if they were upstream. The reset to upstream therefore removed the actual implementation while preserving the documentation that promises it works.
+Upstream ruflo's `CHANGELOG.md:18` confirms the origin: *"AgentDB v3.0.0-alpha.9: 8 new controllers (HierarchicalMemory, MemoryConsolidation, SemanticRouter, GNNService, RVFOptimizer, MutationGuard, AttestationLog, GuardedVectorBackend) + 6 MCP tools"* — HierarchicalMemory was a downstream addition packaged into agentdb's release. The reset to upstream removed the actual implementation while preserving the documentation that promises it works.
+
+### Downstream consumption is broad — not isolated to /adr-index
+
+Five upstream `ruflo` plugins reference `agentdb_hierarchical-*` tools across ~17 skill / agent / command / README files:
+
+| Plugin | Files | What they call |
+|---|---|---|
+| `ruflo-adr` | adr-create, adr-review (SKILLs), adr-architect (agent), adr (command), REFERENCE.md | `-store` + `-query` for ADR tree + edge tracking |
+| `ruflo-knowledge-graph` | kg-traverse, kg-extract (SKILLs), graph-navigator (agent), kg (command), README | `-store` + `-recall` for entity nodes + relation edges |
+| `ruflo-goals` | deep-research, dossier-collect, horizon-track (SKILLs), deep-researcher, dossier-investigator (agents) | `-store` + `-recall` for goal/dossier persistence |
+| `ruflo-market-data` | data-engineer (agent) | `-store` + `-recall` for OHLCV data + pattern metadata |
+
+The hierarchical-* surface is load-bearing for at least 4 distinct downstream concerns: ADR tracking, knowledge graphs, goal/research workflows, and market data pipelines. ADR-0176's "/adr-index" framing understated the consumer count by ~4×.
+
+### Latent UX bug: namespace argument silently dropped
+
+`ruflo-market-data/docs/adrs/0001-market-data-contract.md:19` documents a known issue with the hierarchical-* tools:
+
+> *"agentdb_hierarchical-* routes by **tier** (`working|episodic|semantic`), not namespace. The namespace arg was silently ignored."*
+
+But several consumers continue to write namespace as if it worked:
+- `plugins/ruflo-knowledge-graph/README.md:58` — *"Entity nodes are stored via `agentdb_hierarchical-store`"* (combined with `commands/kg.md:12`'s *"in the `knowledge-graph` namespace"* claim)
+- `plugins/ruflo-knowledge-graph/skills/kg-extract/SKILL.md:27` — assumes namespace separation
+
+Skill calls reach the tool but the namespace argument has no runtime effect — records collide across namespaces in the underlying `hierarchical_memory` SQL table. Out of scope for this fix; tracked as Open Follow-up #7.
+
+### Prior ADR history on this surface
+
+Several ruflo-patch ADRs have touched hierarchical memory:
+
+| ADR | What it touched |
+|---|---|
+| ADR-0050 §N5 | Fixed (`[x]`): `agentdb_hierarchical-recall` missing `success` field in response shape |
+| ADR-0068 | Listed `hierarchicalMemory` as one of the controllers needing config-chain wiring for Phase F1 |
+| ADR-0069 | Documented that HierarchicalMemory / MemoryConsolidation were directly constructed (bypassing getController) and that their constructor `graphBackend` parameter was never read |
+| ADR-0112 | Listed HierarchicalMemory as one of ~10 controllers using the AgentDB SQLite store (`hierarchical_memory` table) |
+| ADR-0154 | Referenced hierarchical-store in a 231-ADR wipe-and-reindex test |
+| ADR-0163 | `adr0090-b5-hierarchicalMemory` test bucket for concurrent-writer data-loss investigation |
+| ADR-0166 Phase 1.5 | Removed the dead `graphBackend` parameter from HierarchicalMemory's constructor — visible in the restored class's header comment |
+| ADR-0176 Phase 3 | Specified implementing `hierarchical-query`; today's commits land it |
+| **ADR-0178** (this) | Documents the fix |
 
 ## The fix (3 commits, 2 repos)
 
@@ -129,3 +180,10 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
 5. **Skill-manifest ↔ MCP-registry CI guard** (per ADR-0176 Open Follow-up #2). Parse every `SKILL.md` in `forks/ruflo/plugins/`, extract `allowed-tools` MCP names, assert each is registered at boot. Prevents future drift like the underscore/dash mismatch or `hierarchical-query`-without-implementation.
 
 6. **Document HierarchicalMemory as a fork-only file** via a project memory entry — so future upstream-sync agents see "expected to be fork-only" rather than being surprised by a file upstream doesn't have.
+
+7. **Fix the namespace-silently-dropped UX bug** (per the audit finding in §"Latent UX bug"). `agentdb_hierarchical-*` routes by tier, not namespace. Two consumers continue to pass namespace as if it worked: `plugins/ruflo-knowledge-graph/README.md:58` + `commands/kg.md:12` (writes "knowledge-graph" namespace); `plugins/ruflo-knowledge-graph/skills/kg-extract/SKILL.md:27` (assumes namespace separation). Three options:
+   - (a) Add namespace support to HierarchicalMemory schema (`hierarchical_memory` SQL table grows a `namespace` column, indexed; `store()` accepts it; `recall()` + `query()` filter on it). Requires migration.
+   - (b) Have the orchestration handlers (`hierarchicalStore` / `hierarchicalRecall` / `hierarchicalQuery`) embed the namespace into the `content` field as a path prefix (`namespace:path`), preserving the tier-routing for storage. Caller-side concern, no schema change.
+   - (c) Document the limitation explicitly in the MCP tool descriptions and fix the misleading consumer docs (knowledge-graph README + kg.md + kg-extract). Lowest-effort but doesn't deliver the feature.
+
+   Defer the decision pending consumer audit (does anything other than knowledge-graph actually rely on cross-namespace separation?).
