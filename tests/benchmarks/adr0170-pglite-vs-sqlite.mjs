@@ -36,7 +36,7 @@ import * as path from 'node:path';
 // ----------------------------------------------------------------------------
 
 function parseArgs(argv) {
-  const args = { substrate: null, cliCmd: null, projectDir: null };
+  const args = { substrate: null, cliCmd: null, projectDir: null, keySuffix: null };
   for (let i = 2; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === '--substrate') {
@@ -45,10 +45,14 @@ function parseArgs(argv) {
       args.cliCmd = argv[++i];
     } else if (arg === '--project-dir') {
       args.projectDir = argv[++i];
+    } else if (arg === '--key-suffix') {
+      // ADR-0170 Phase C-2: optional suffix so a warm-reopen rerun in the
+      // same project-dir uses distinct keys (avoids the dedupe/no-op path).
+      args.keySuffix = argv[++i];
     } else if (arg === '-h' || arg === '--help') {
       console.error(
         'Usage: adr0170-pglite-vs-sqlite.mjs --substrate <sqlite|pglite> ' +
-          '[--cli-cmd <ruflo-cmd>] [--project-dir <dir>]',
+          '[--cli-cmd <ruflo-cmd>] [--project-dir <dir>] [--key-suffix <s>]',
       );
       process.exit(arg === '-h' || arg === '--help' ? 0 : 1);
     }
@@ -77,15 +81,28 @@ const CLI_CMD = args.cliCmd
   || 'npx -y @sparkleideas/ruflo@latest';
 
 // Resolve the project directory. The benchmark needs a project root with
-// `.swarm/` so `ruflo memory store` writes to a real backing store.
+// `.swarm/` AND `.claude-flow/` so `ruflo memory store` resolves the
+// memory.rvf to the project-local path. Without `.claude-flow/`, the CLI
+// falls back to `$HOME/.claude-flow/data/memory.rvf` (user-global RVF),
+// which accumulates state across bench runs and triggers spurious
+// "key already exists" errors when the same key prefix is reused.
+// (Fixed 2026-05-12 in Phase C-2; the baseline was captured under the
+// broken behavior but happened to succeed because its keys were
+// `bench-store-sqlite-*` which had no global collisions at the time.)
 const PROJECT_DIR = args.projectDir
   || process.env.RUFLO_PROJECT_DIR
   || (() => {
         const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'adr0170-bench-'));
         fs.mkdirSync(path.join(dir, '.swarm'), { recursive: true });
+        fs.mkdirSync(path.join(dir, '.claude-flow'), { recursive: true });
         fs.writeFileSync(path.join(dir, '.ruflo-project'), '');
         return dir;
       })();
+
+// Ensure `.claude-flow/` and `.swarm/` exist even when --project-dir is
+// passed in (e.g. for warm-reopen reruns in the same dir).
+fs.mkdirSync(path.join(PROJECT_DIR, '.claude-flow'), { recursive: true });
+fs.mkdirSync(path.join(PROJECT_DIR, '.swarm'), { recursive: true });
 
 // Representative corpus seed. Keep it deterministic and small enough that
 // 200 store ops complete in reasonable time on a dev laptop. The corpus
@@ -106,8 +123,9 @@ const CORPUS_SEED = [
 
 function buildCorpusItem(i) {
   const seed = CORPUS_SEED[i % CORPUS_SEED.length];
+  const suffix = args.keySuffix ? `-${args.keySuffix}` : '';
   return {
-    key: `bench-store-${args.substrate}-${i}`,
+    key: `bench-store-${args.substrate}${suffix}-${i}`,
     value: `${seed} Iteration ${i}/${NUM_STORE_OPS}. ` +
       `Timestamp ${Date.now()}. Seed offset ${i % CORPUS_SEED.length}.`,
   };
@@ -238,7 +256,12 @@ const totalWallMs = performance.now() - overallStart;
 const rssPeakBytes = captureRssPeak();
 
 const report = {
-  schema: 'adr0170-benchmark-v1',
+  // schema bumped from v1 → v2 ADR-0170 Phase C-2: adds samples_ms arrays
+  // so post-process can slice warmup (first N) vs steady-state (rest).
+  // No measurement-methodology change — same performance.now() deltas,
+  // same NUM_STORE_OPS / NUM_SEARCH_OPS counts, same CLI invocation.
+  // Per blocker 3 in /tmp/adr0170-phaseC1-report.md.
+  schema: 'adr0170-benchmark-v2',
   substrate: args.substrate,
   generated_at: new Date().toISOString(),
   cli_cmd: CLI_CMD,
@@ -251,10 +274,12 @@ const report = {
   store: {
     ...summarizeLatency(store.samples),
     errors: store.errors.length,
+    samples_ms: store.samples,
   },
   search: {
     ...summarizeLatency(search.samples),
     errors: search.errors.length,
+    samples_ms: search.samples,
   },
   total_wall_ms: totalWallMs,
   rss_peak_bytes: rssPeakBytes,
