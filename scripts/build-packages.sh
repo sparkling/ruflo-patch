@@ -339,6 +339,21 @@ run_build() {
       log "  EXTRA (${#extra_pkg_dirs[@]} pkgs): ${_extra_ms}ms wall-clock"
       add_cmd_timing "build" "extra (${#extra_pkg_dirs[@]} pkgs)" "${_extra_ms}"
     fi
+
+    # ADR-0170 Phase B (2026-05-12 build-system fix): the fork-source build
+    # runs `tsc` directly (not `npm run build`), so the upstream `copy:schemas`
+    # npm script never fires. AgentDB.ts loads `../../schemas/{schema,frontier-schema}.sql`
+    # at boot — those files must exist in `dist/schemas/` for the postgres
+    # cluster to get its full schema (`causal_edges`, `recall_certificates`,
+    # `consolidation_log`, etc.). Without them, only controller-side bootstrap
+    # tables (e.g. ReflexionMemory's `episodes`) appear and CausalMemoryGraph /
+    # ExplainableRecall / NightlyLearner fail with "table missing".
+    local _agentdb_src="${TEMP_DIR}/cross-repo/agentdb"
+    if [[ -d "${_agentdb_src}/src/schemas" && -d "${_agentdb_src}/dist" ]]; then
+      mkdir -p "${_agentdb_src}/dist/schemas"
+      cp "${_agentdb_src}/src/schemas/"*.sql "${_agentdb_src}/dist/schemas/" 2>/dev/null && \
+        log "  copy:schemas → cross-repo/agentdb/dist/schemas/ ($(ls "${_agentdb_src}/dist/schemas/" | wc -l | tr -d ' ') files)"
+    fi
   fi
 
   # Collect results from per-package files (avoids shared-file race condition)

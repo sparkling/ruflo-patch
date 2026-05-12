@@ -90,6 +90,163 @@
 #     pretend-real but storing nothing — silent-pass regression).
 
 # ════════════════════════════════════════════════════════════════════
+# Shared helper: _pglite_count_rows (ADR-0170 Phase B substrate probe)
+# ════════════════════════════════════════════════════════════════════
+#
+# Counts rows in a pglite table where a marker column matches a value
+# (LIKE prefix). Replaces the old `sqlite3 .swarm/memory.db "SELECT
+# COUNT(*) ..."` probe; pglite is opened via dynamic `import()` of
+# @electric-sql/pglite from the iso dir so the resolved package is the
+# one the controllers wrote into.
+#
+# Positional args:
+#   $1 iso_dir       — Project dir containing `.swarm/memory.pglite/`.
+#   $2 table         — PostgreSQL table name (e.g. `episodes`, `skills`).
+#   $3 marker_col    — Column to filter on.
+#   $4 marker_value  — Marker prefix (LIKE `${marker_value}%`).
+#
+# Echoes the row count (integer, possibly 0) and returns 0 on success.
+# On any failure (pglite import, query error, missing cluster), echoes
+# `-1` and returns 1 — callers MUST distinguish from a real 0 count.
+#
+# Single retry on transient pglite ESM/CJS loader flakes: the import is
+# attempted twice with 250 ms backoff. Per the remediation report the
+# ESM-as-CJS error is non-deterministic and recovers on a second attempt
+# within the same process tree.
+_pglite_count_rows() {
+  local iso_dir="$1" table="$2" marker_col="$3" marker_value="$4"
+  if [[ -z "$iso_dir" || -z "$table" || -z "$marker_col" || -z "$marker_value" ]]; then
+    echo "-1"
+    return 1
+  fi
+  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
+    echo "-1"
+    return 1
+  fi
+  local out
+  out=$(cd "$iso_dir" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1\`, ['${marker_value}%']);
+  process.stdout.write(String(r.rows[0]?.c ?? 0));
+} catch (e) {
+  process.stderr.write('PGLITE_PROBE_ERROR: ' + e.message);
+  process.exit(2);
+} finally {
+  await db.close();
+}
+" 2>/dev/null)
+  local rc=$?
+  if [[ $rc -ne 0 ]]; then
+    # Retry once after a brief backoff (per remediation: transient ESM-loader flake)
+    sleep 0.25
+    out=$(cd "$iso_dir" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1\`, ['${marker_value}%']);
+  process.stdout.write(String(r.rows[0]?.c ?? 0));
+} catch (e) {
+  process.stderr.write('PGLITE_PROBE_ERROR: ' + e.message);
+  process.exit(2);
+} finally {
+  await db.close();
+}
+" 2>/dev/null)
+    rc=$?
+  fi
+  if [[ $rc -ne 0 || -z "$out" ]]; then
+    echo "-1"
+    return 1
+  fi
+  # Sanitize to integer (defensive — node should only print digits)
+  out=$(echo "$out" | tr -dc '0-9')
+  echo "${out:-0}"
+  return 0
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Shared helper: _pglite_table_exists
+# ════════════════════════════════════════════════════════════════════
+#
+# Echoes "1" if the named table exists in `.swarm/memory.pglite/`, else
+# "0". Always returns 0 (so callers can `if [[ "$(...)" == "1" ]]`).
+_pglite_table_exists() {
+  local iso_dir="$1" table="$2"
+  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
+    echo "0"
+    return 0
+  fi
+  local out
+  out=$(cd "$iso_dir" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  const r = await db.query(\`SELECT to_regclass('public.${table}') IS NOT NULL AS exists\`);
+  process.stdout.write(r.rows[0]?.exists ? '1' : '0');
+} catch (e) {
+  process.stdout.write('0');
+} finally {
+  await db.close();
+}
+" 2>/dev/null)
+  echo "${out:-0}"
+  return 0
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Shared helper: _pglite_table_list — comma-separated table names.
+# ════════════════════════════════════════════════════════════════════
+_pglite_table_list() {
+  local iso_dir="$1"
+  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
+    echo ""
+    return 0
+  fi
+  cd "$iso_dir" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  const r = await db.query(\"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename\");
+  process.stdout.write(r.rows.map(x => x.tablename).join(','));
+} catch (e) {
+  process.stdout.write('PGLITE_LIST_ERROR:' + e.message);
+} finally {
+  await db.close();
+}
+" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
+# Shared helper: _pglite_first_value — first marker_col value matching marker.
+# ════════════════════════════════════════════════════════════════════
+_pglite_first_value() {
+  local iso_dir="$1" table="$2" marker_col="$3" marker_value="$4"
+  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
+    echo ""
+    return 1
+  fi
+  cd "$iso_dir" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  const r = await db.query(\`SELECT \"${marker_col}\" AS v FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1 ORDER BY \"${marker_col}\" DESC LIMIT 1\`, ['${marker_value}%']);
+  process.stdout.write(String(r.rows[0]?.v ?? ''));
+} catch (e) {
+  process.stdout.write('PGLITE_VALUE_ERROR:' + e.message);
+} finally {
+  await db.close();
+}
+" 2>/dev/null
+}
+
+# ════════════════════════════════════════════════════════════════════
 # Shared helper: _b5_check_controller_roundtrip
 # ════════════════════════════════════════════════════════════════════
 #
@@ -120,11 +277,21 @@
 #   - _CHECK_OUTPUT  — diagnostic tagged "B5/<controller>:"
 #   - Isolates the project dir via _e2e_isolate
 #   - Cleans iso + work dirs on every exit path
+#
+# ADR-0170 update (2026-05-12): pglite-aware row counting replaces the
+# sqlite3 CLI probe. Each iso runs the controller's MCP store call, then
+# this helper opens the iso's `.swarm/memory.pglite/` cluster via a tiny
+# Node ESM oneliner and counts rows matching the marker. The Node probe
+# uses `await import('@electric-sql/pglite')` from the iso dir so the
+# resolved pglite package is the one the agentdb controller wrote into.
+#
+# No skip_accepted branches remain — sqlite3 is no longer a dependency,
+# and there is no pglite-vs-sqlite substrate ambiguity to gate on.
 _b5_check_controller_roundtrip() {
   local controller="$1"
   local mcp_tool="$2"
   local mcp_params="$3"
-  local sqlite_table="$4"
+  local pg_table="$4"
   local marker_col="$5"
   local marker_value="$6"
   local timeout_s="${7:-30}"
@@ -134,38 +301,13 @@ _b5_check_controller_roundtrip() {
 
   # ─── Preconditions ────────────────────────────────────────────────
   if [[ -z "$controller" || -z "$mcp_tool" || -z "$mcp_params" \
-        || -z "$sqlite_table" || -z "$marker_col" || -z "$marker_value" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: helper called with missing args (controller=$controller tool=$mcp_tool table=$sqlite_table marker_col=$marker_col)"
+        || -z "$pg_table" || -z "$marker_col" || -z "$marker_value" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: helper called with missing args (controller=$controller tool=$mcp_tool table=$pg_table marker_col=$marker_col)"
     return
   fi
 
   if [[ -z "${E2E_DIR:-}" || ! -d "$E2E_DIR" ]]; then
     _CHECK_OUTPUT="B5/${controller}: E2E_DIR not set or missing (caller must set it)"
-    return
-  fi
-
-  # ─── Step 0a: sqlite3 CLI binary prereq ───────────────────────────
-  # Same rule as Debt 15 (ADR-0086) + A1 (ADR-0090): if sqlite3 is
-  # missing from the host, we cannot verify on-disk row counts. Emit
-  # skip_accepted with a precise marker rather than silently passing
-  # (ADR-0082 violation) or silently failing (drowns real regressions).
-  if ! command -v sqlite3 >/dev/null 2>&1; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 binary not installed — cannot row-count verify (install with 'brew install sqlite' or 'apt-get install sqlite3')"
-    return
-  fi
-
-  # ─── Step 0b: ADR-0170 substrate-shift skip ───────────────────────
-  # Pre-ADR-0170 this check used `sqlite3 .swarm/memory.db` to row-count
-  # the controller's table after a successful store call. Phase B retires
-  # the SQLite substrate on the agentdb_* axis; the data now lives in
-  # `.swarm/memory.pglite/` (postgres cluster) which sqlite3 cannot read.
-  # Until a pglite-aware row-count probe lands (Phase C deliverable), emit
-  # skip_accepted instead of FAIL — the "did the controller persist"
-  # question is still valid, just not answerable with the sqlite3 CLI tool.
-  if [[ -d "${E2E_DIR}/.swarm/memory.pglite" ]] || [[ -d "${E2E_DIR:-/nonexistent}/.swarm/memory.pglite" ]]; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: ADR-0170 Phase B retires .swarm/memory.db; postgres-substrate row-count probe not yet implemented (Phase C). E2E_DIR contains memory.pglite/ cluster instead."
     return
   fi
 
@@ -178,20 +320,14 @@ _b5_check_controller_roundtrip() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
-  local db_file="$iso/.swarm/memory.db"
+  local pg_cluster="$iso/.swarm/memory.pglite"
 
   # ─── Step 2: cold-start init to create schema ─────────────────────
-  # agentdb_health forces the controller registry to hydrate. Debt 15
-  # (A1) showed this is the minimum init to get `.swarm/memory.db`
-  # created.
-  #
-  # NOTE: this looks like a read-only call but it isn't — `ensureRouter()`
-  # runs as a side effect, which CREATEs the SQLite DDL on disk. The
-  # earlier `_run_and_kill_ro` variant skipped the WAL-flush grace and was
-  # observed to SIGTERM before SQLite's checkpoint completed under parallel
-  # load, leaving `.swarm/memory.db` half-created (or absent) by the time
-  # the subsequent store call ran. Use the write variant so the 1s grace
-  # period gives the schema-creation transaction a chance to fsync.
+  # agentdb_health forces the controller registry to hydrate. Under
+  # ADR-0170 Phase B this triggers PostgresBackend.initialize() which
+  # bootstraps `.swarm/memory.pglite/` (PG_VERSION + base/ + pg_wal/).
+  # The 1s grace period in _run_and_kill (write variant) gives the
+  # schema bootstrap a chance to fsync before the next call.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # ─── Step 3: invoke the controller's store MCP tool ───────────────
@@ -241,8 +377,8 @@ _b5_check_controller_roundtrip() {
   #     issue in the MCP router, not in our target controller — we
   #     classify as skip_accepted so the diagnostic surfaces without
   #     drowning real regressions.
-  if echo "$store_body" | grep -qiE "no such table:?[[:space:]]*${sqlite_table}\b"; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: MCP tool returned 'no such table: $sqlite_table' — controller claims table but never created it (silent in-memory fallback per ADR-0082): $(echo "$store_body" | head -3 | tr '\n' ' ')"
+  if echo "$store_body" | grep -qiE "no such table:?[[:space:]]*${pg_table}\b|relation \"?${pg_table}\"? does not exist"; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: MCP tool returned missing-table error for '$pg_table' — controller claims table but never created it (silent in-memory fallback per ADR-0082): $(echo "$store_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -400,21 +536,21 @@ $(echo "$store_body" | head -10)"
     return
   fi
 
-  # ─── Step 5: verify the SQLite table exists ───────────────────────
-  # Controller exit-code 0 + .swarm/memory.db created → the controller
-  # should have created its schema. If the table is missing, this is
-  # a FAIL (not skip_accepted) — the controller bailed to in-memory
-  # state without surfacing an error, classic ADR-0082 silent-pass.
-  if [[ ! -f "$db_file" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.db not created after successful store call — no persistence reached disk (silent in-memory fallback, ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
+  # ─── Step 5: verify the pglite cluster exists ─────────────────────
+  # Controller exit-code 0 + `.swarm/memory.pglite/PG_VERSION` present →
+  # PostgresBackend bootstrapped its cluster. If the cluster is absent,
+  # the controller bailed to in-memory state without surfacing an
+  # error — classic ADR-0082 silent-pass.
+  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.pglite/PG_VERSION not created after successful store call — no persistence reached disk (silent in-memory fallback, ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
 
   local has_table
-  has_table=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name='$sqlite_table';" 2>/dev/null)
-  if [[ -z "$has_table" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: store call succeeded but table '$sqlite_table' does not exist in .swarm/memory.db — controller silently bailed to in-memory state (ADR-0082). Existing tables: $(sqlite3 "$db_file" ".tables" 2>/dev/null | tr '\n' ' ')"
+  has_table=$(_pglite_table_exists "$iso" "$pg_table")
+  if [[ "$has_table" != "1" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: store call succeeded but table '$pg_table' does not exist in pglite cluster — controller silently bailed to in-memory state (ADR-0082). Existing tables: $(_pglite_table_list "$iso")"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -424,12 +560,10 @@ $(echo "$store_body" | head -10)"
   # controller might append (timestamps, etc.). If count is 0 we FAIL
   # — the exit-0 + table-exists combination promised persistence.
   local count_after_store
-  count_after_store=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM $sqlite_table WHERE $marker_col LIKE '${marker_value}%';" 2>/dev/null)
-  count_after_store=$(echo "$count_after_store" | tr -dc '0-9')
-  count_after_store="${count_after_store:-0}"
+  count_after_store=$(_pglite_count_rows "$iso" "$pg_table" "$marker_col" "$marker_value")
 
   if [[ "$count_after_store" -lt 1 ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: store succeeded via MCP but 0 rows in $sqlite_table WHERE $marker_col LIKE '${marker_value}%' — controller wrote to in-memory state, not SQLite (ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
+    _CHECK_OUTPUT="B5/${controller}: FAIL: store succeeded via MCP but 0 rows in $pg_table WHERE $marker_col LIKE '${marker_value}%' (pglite probe count=$count_after_store) — controller wrote to in-memory state, not pglite (ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -440,7 +574,7 @@ $(echo "$store_body" | head -10)"
   # where a tool claims to write to `task` but actually writes to
   # `name` or similar.
   local stored_val
-  stored_val=$(sqlite3 "$db_file" "SELECT $marker_col FROM $sqlite_table WHERE $marker_col LIKE '${marker_value}%' ORDER BY rowid DESC LIMIT 1;" 2>/dev/null)
+  stored_val=$(_pglite_first_value "$iso" "$pg_table" "$marker_col" "$marker_value")
   if [[ "$stored_val" != "${marker_value}"* ]]; then
     _CHECK_OUTPUT="B5/${controller}: FAIL: row present but $marker_col='$stored_val' does not start with marker '$marker_value' — wrong column wired?"
     rm -rf "$work" "$iso" 2>/dev/null
@@ -448,19 +582,17 @@ $(echo "$store_body" | head -10)"
   fi
 
   # ─── Step 8: restart-persistence proof ────────────────────────────
-  # Kill the prior CLI process (already killed by _run_and_kill) and
-  # reopen with a fresh CLI invocation. If the row drops to 0, the
-  # "persistence" was in-memory only — the process died and took
-  # everything with it. This is the same shape as Debt 15 Step 4.
+  # Reopen the iso with a fresh CLI invocation. If the row drops to 0
+  # across the restart, the "persistence" was in-memory only — the
+  # process died and took everything with it. This is the same shape
+  # as Debt 15 Step 4.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/restart.out" 30
 
   local count_after_restart
-  count_after_restart=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM $sqlite_table WHERE $marker_col LIKE '${marker_value}%';" 2>/dev/null)
-  count_after_restart=$(echo "$count_after_restart" | tr -dc '0-9')
-  count_after_restart="${count_after_restart:-0}"
+  count_after_restart=$(_pglite_count_rows "$iso" "$pg_table" "$marker_col" "$marker_value")
 
   if [[ "$count_after_restart" -lt "$count_after_store" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: row count dropped across CLI restart (store=$count_after_store, restart=$count_after_restart) — in-memory fallback, WAL not flushed"
+    _CHECK_OUTPUT="B5/${controller}: FAIL: row count dropped across CLI restart (store=$count_after_store, restart=$count_after_restart) — in-memory fallback, pglite WAL not flushed"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -468,7 +600,7 @@ $(echo "$store_body" | head -10)"
   # ─── Step 9: cleanup + PASS ───────────────────────────────────────
   rm -rf "$work" "$iso" 2>/dev/null
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="B5/${controller}: PASS: $sqlite_table rows=$count_after_store (marker '$marker_value' in $marker_col) survived CLI restart (after_restart=$count_after_restart)"
+  _CHECK_OUTPUT="B5/${controller}: PASS: $pg_table rows=$count_after_store (marker '$marker_value' in $marker_col) survived CLI restart (after_restart=$count_after_restart)"
 }
 
 # ════════════════════════════════════════════════════════════════════
@@ -636,7 +768,7 @@ _b5_probe_causal_edge_persistence() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
-  local db_file="$iso/.swarm/memory.db"
+  local pg_cluster="$iso/.swarm/memory.pglite"
 
   # ─── Step 1: cold-start init (hydrate registry, create .swarm dir) ──
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
@@ -671,23 +803,30 @@ _b5_probe_causal_edge_persistence() {
     return
   fi
 
-  # ─── Step 5a: probe SQLite causal_edges (terminal state B) ──────────
-  # ADR-0086 allows both RVF and SQLite as valid terminals. SQLite is
-  # the "future" path when upstream wires addEdge() on
-  # CausalMemoryGraph. Probe first (cheaper than RVF list) — if it has
-  # rows matching our marker, that's a pass.
-  local sqlite_hit="false"
-  local sqlite_hint=""
-  if command -v sqlite3 >/dev/null 2>&1 && [[ -f "$db_file" ]]; then
+  # ─── Step 5a: probe pglite causal_edges (terminal state B) ──────────
+  # ADR-0086 allows both RVF and SQL (now PostgreSQL via ADR-0170) as
+  # valid terminals. SQL is the "future" path when the controller wires
+  # addEdge() on CausalMemoryGraph against the postgres substrate.
+  local sql_hit="false"
+  local sql_hint=""
+  if [[ -f "$pg_cluster/PG_VERSION" ]]; then
     local has_table
-    has_table=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name='causal_edges';" 2>/dev/null)
-    if [[ -n "$has_table" ]]; then
+    has_table=$(_pglite_table_exists "$iso" "causal_edges")
+    if [[ "$has_table" == "1" ]]; then
       local row_match
-      row_match=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM causal_edges WHERE mechanism LIKE '%$marker%' OR metadata LIKE '%$marker%';" 2>/dev/null)
+      row_match=$(cd "$iso" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM causal_edges WHERE mechanism LIKE \$1 OR metadata::text LIKE \$1\`, ['%${marker}%']);
+  process.stdout.write(String(r.rows[0]?.c ?? 0));
+} catch (e) { process.stdout.write('0'); } finally { await db.close(); }
+" 2>/dev/null)
       row_match=$(echo "$row_match" | tr -dc '0-9'); row_match="${row_match:-0}"
       if [[ "$row_match" -ge 1 ]]; then
-        sqlite_hit="true"
-        sqlite_hint="SQLite causal_edges matched=$row_match"
+        sql_hit="true"
+        sql_hint="pglite causal_edges matched=$row_match"
       fi
     fi
   fi
@@ -713,10 +852,10 @@ _b5_probe_causal_edge_persistence() {
   # ─── Step 6: decide outcome ─────────────────────────────────────────
   # PASS if either terminal state confirmed. FAIL if neither — the tool
   # reported success but persistence is invisible (ADR-0082 silent-pass).
-  if [[ "$sqlite_hit" == "true" || "$rvf_hit" == "true" ]]; then
+  if [[ "$sql_hit" == "true" || "$rvf_hit" == "true" ]]; then
     local hints=""
-    [[ "$sqlite_hit" == "true" ]] && hints="${hints}${sqlite_hint}; "
-    [[ "$rvf_hit"    == "true" ]] && hints="${hints}${rvf_hint}; "
+    [[ "$sql_hit" == "true" ]] && hints="${hints}${sql_hint}; "
+    [[ "$rvf_hit" == "true" ]] && hints="${hints}${rvf_hint}; "
     local edge_snippet; edge_snippet=$(echo "$edge_body" | head -5 | tr '\n' ' ' | cut -c1-200)
     rm -rf "$work" "$iso" 2>/dev/null
     _CHECK_PASSED="true"
@@ -724,12 +863,12 @@ _b5_probe_causal_edge_persistence() {
     return
   fi
 
-  # Neither RVF nor SQLite shows the edge → silent-pass regression.
+  # Neither RVF nor pglite shows the edge → silent-pass regression.
   local edge_snippet; edge_snippet=$(echo "$edge_body" | head -5 | tr '\n' ' ' | cut -c1-200)
   local rvf_snippet; rvf_snippet=$(echo "$rvf_body" | head -3 | tr '\n' ' ' | cut -c1-200)
-  local db_tables
-  db_tables=$(sqlite3 "$db_file" ".tables" 2>/dev/null | tr '\n' ' ' | cut -c1-160)
-  _CHECK_OUTPUT="B5/${controller}: FAIL: agentdb_causal-edge success=true but edge not visible in either terminal state (ADR-0082 silent-pass). Tool: $edge_snippet | RVF list: $rvf_snippet | DB tables: $db_tables"
+  local pg_tables
+  pg_tables=$(_pglite_table_list "$iso" | cut -c1-160)
+  _CHECK_OUTPUT="B5/${controller}: FAIL: agentdb_causal-edge success=true but edge not visible in either terminal state (ADR-0082 silent-pass). Tool: $edge_snippet | RVF list: $rvf_snippet | pglite tables: $pg_tables"
   rm -rf "$work" "$iso" 2>/dev/null
 }
 
@@ -816,24 +955,6 @@ _b5_check_causal_pipeline() {
     return
   fi
 
-  # ─── Step 0a: sqlite3 CLI prereq ──────────────────────────────────
-  if ! command -v sqlite3 >/dev/null 2>&1; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 binary not installed — cannot verify causal_edges schema (install with 'brew install sqlite' or 'apt-get install sqlite3')"
-    return
-  fi
-
-  # ─── Step 0b: ADR-0170 substrate-shift skip ───────────────────────
-  # Pre-ADR-0170 this check used `sqlite3 .swarm/memory.db` to row-count
-  # the controller's causal_edges table. Phase B retires SQLite on
-  # agentdb_*; the cluster lives in .swarm/memory.pglite/ which sqlite3
-  # cannot read. Skip until Phase C lands a pglite-aware probe.
-  if [[ -d "${E2E_DIR}/.swarm/memory.pglite" ]]; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: ADR-0170 Phase B retires .swarm/memory.db; postgres-substrate causal_edges probe not yet implemented (Phase C)."
-    return
-  fi
-
   # ─── Step 1: isolate project dir ──────────────────────────────────
   local iso; iso=$(_e2e_isolate "b5-${controller}")
   if [[ -z "$iso" || ! -d "$iso" ]]; then
@@ -843,29 +964,30 @@ _b5_check_causal_pipeline() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
-  local db_file="$iso/.swarm/memory.db"
+  local pg_cluster="$iso/.swarm/memory.pglite"
 
   # ─── Step 2: cold-start init to create schema ─────────────────────
+  # agentdb_health hydrates the controller registry which triggers
+  # PostgresBackend.initialize() → pglite cluster bootstrap.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
   local health_body; health_body=$(cat "$work/health.out" 2>/dev/null || echo "")
 
-  # ─── Step 3: Assertion B — .swarm/memory.db exists ────────────────
-  if [[ ! -f "$db_file" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.db not created by agentdb_health cold-start — controller registry did not hydrate (health output first 3 lines): $(echo "$health_body" | head -3 | tr '\n' ' ')"
+  # ─── Step 3: Assertion B — pglite cluster exists ──────────────────
+  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.pglite/PG_VERSION not created by agentdb_health cold-start — PostgresBackend did not bootstrap (health output first 3 lines): $(echo "$health_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
 
   # ─── Step 4: Assertion C — causal_edges table exists ──────────────
-  # This is the regression-guard for the W2-I3 fork fix (agentic-flow
-  # commit 8238837). If the table is missing after cold-start, the
-  # CausalMemoryGraph constructor DDL has regressed and the upstream
-  # "no such table: causal_edges" bug is back — FAIL loudly per
-  # ADR-0082 (no silent-pass on broken features).
+  # CausalMemoryGraph's constructor schema bootstrap (ADR-0170 Wave 1a)
+  # MUST create `causal_edges` against pglite. Missing = either the
+  # controller isn't wired, the DDL regressed, or the substrate fell
+  # through to in-memory state — all ADR-0082 silent-pass shapes.
   local has_table
-  has_table=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name='causal_edges';" 2>/dev/null)
-  if [[ -z "$has_table" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: causal_edges table missing after agentdb_health cold-start — CausalMemoryGraph constructor DDL regressed (W2-I3 fix in agentic-flow commit 8238837). Existing tables: $(sqlite3 "$db_file" ".tables" 2>/dev/null | tr '\n' ' ')"
+  has_table=$(_pglite_table_exists "$iso" "causal_edges")
+  if [[ "$has_table" != "1" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: causal_edges table missing in pglite cluster after agentdb_health cold-start — CausalMemoryGraph DDL not reached (ADR-0170 Wave 1a regression?). Existing tables: $(_pglite_table_list "$iso")"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -876,10 +998,12 @@ _b5_check_causal_pipeline() {
   local tool_exit="${_RK_EXIT:-1}"
   local tool_body; tool_body=$(cat "$tool_out" 2>/dev/null || echo "")
 
-  # ─── Step 6: Assertion D — no "no such table: causal_edges" ──────
-  # The bug's original symptom. Any occurrence = fix has regressed.
-  if echo "$tool_body" | grep -qiE 'no such table:?[[:space:]]*causal_edges\b'; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: tool '$mcp_tool' still reports 'no such table: causal_edges' after fork fix — CausalMemoryGraph DDL not reached. Tool output (first 5 lines): $(echo "$tool_body" | head -5 | tr '\n' ' ')"
+  # ─── Step 6: Assertion D — no missing-table error for causal_edges
+  # The original W2-I3 bug's symptom in SQLite-form was "no such table"; the
+  # postgres-form is "relation \"causal_edges\" does not exist". Both
+  # indicate the schema bootstrap never ran.
+  if echo "$tool_body" | grep -qiE 'no such table:?[[:space:]]*causal_edges\b|relation "?causal_edges"? does not exist'; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: tool '$mcp_tool' still reports missing causal_edges table — CausalMemoryGraph DDL not reached. Tool output (first 5 lines): $(echo "$tool_body" | head -5 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -962,21 +1086,6 @@ _b5_seeded_probe() {
     _CHECK_OUTPUT="B5/${controller}: E2E_DIR not set or missing"
     return
   fi
-  if [[ -n "$sqlite_table" ]] && ! command -v sqlite3 >/dev/null 2>&1; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 binary not installed"
-    return
-  fi
-
-  # ADR-0170 Phase B substrate-shift skip — see _b5_check_causal_pipeline
-  # docstring above. The sqlite3 row-count probes structurally invalid
-  # post-substrate-retirement; pglite cluster present means SQLite path retired.
-  if [[ -n "$sqlite_table" ]] && [[ -d "${E2E_DIR}/.swarm/memory.pglite" ]]; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: ADR-0170 Phase B retires .swarm/memory.db; pglite-aware seed+probe pending Phase C."
-    return
-  fi
-
   local iso; iso=$(_e2e_isolate "b5-seed-${controller}")
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_OUTPUT="B5/${controller}: failed to create isolated project dir"
@@ -985,7 +1094,10 @@ _b5_seeded_probe() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "/tmp/b5-seed-${controller}-work-XXXXX")
-  local db_file="$iso/.swarm/memory.db"
+  local pg_cluster="$iso/.swarm/memory.pglite"
+  # ADR-0170: $sqlite_table named for historical reasons; under Phase B
+  # this is the pglite table name (identical schema-level identifier).
+  local pg_table="$sqlite_table"
 
   # Cold-start health hydrates the registry.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
@@ -1006,31 +1118,40 @@ _b5_seeded_probe() {
 
   # Non-trivial after seed -> PASS.
   if echo "$probe_body" | grep -qE "$pass_regex"; then
-    if [[ -n "$sqlite_table" ]]; then
-      if [[ ! -f "$db_file" ]]; then
-        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but .swarm/memory.db missing — in-memory fallback (ADR-0082). Probe: $(echo "$probe_body" | head -3 | tr '\n' ' ')"
+    if [[ -n "$pg_table" ]]; then
+      if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
+        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but .swarm/memory.pglite/PG_VERSION missing — in-memory fallback (ADR-0082). Probe: $(echo "$probe_body" | head -3 | tr '\n' ' ')"
         rm -rf "$work" "$iso" 2>/dev/null
         return
       fi
       local has_table
-      has_table=$(sqlite3 "$db_file" "SELECT name FROM sqlite_master WHERE type='table' AND name='$sqlite_table';" 2>/dev/null)
-      if [[ -z "$has_table" ]]; then
-        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but table '$sqlite_table' absent (ADR-0082). Tables: $(sqlite3 "$db_file" ".tables" 2>/dev/null | tr '\n' ' ')"
+      has_table=$(_pglite_table_exists "$iso" "$pg_table")
+      if [[ "$has_table" != "1" ]]; then
+        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but table '$pg_table' absent in pglite cluster (ADR-0082). Tables: $(_pglite_table_list "$iso")"
         rm -rf "$work" "$iso" 2>/dev/null
         return
       fi
+      # Total row count (any marker, used for "has at least one INSERT")
       local row_count
-      row_count=$(sqlite3 "$db_file" "SELECT COUNT(*) FROM $sqlite_table;" 2>/dev/null)
+      row_count=$(cd "$iso" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${pg_table}\"\`);
+  process.stdout.write(String(r.rows[0]?.c ?? 0));
+} catch (e) { process.exit(2); } finally { await db.close(); }
+" 2>/dev/null)
       row_count=$(echo "$row_count" | tr -dc '0-9'); row_count="${row_count:-0}"
       if [[ "$row_count" -lt 1 ]]; then
-        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but $sqlite_table has 0 rows (ADR-0082). Probe: $(echo "$probe_body" | head -5 | tr '\n' ' ')"
+        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but $pg_table has 0 rows (ADR-0082). Probe: $(echo "$probe_body" | head -5 | tr '\n' ' ')"
         rm -rf "$work" "$iso" 2>/dev/null
         return
       fi
       local probe_snippet; probe_snippet=$(echo "$probe_body" | head -5 | tr '\n' ' ' | cut -c1-220)
       rm -rf "$work" "$iso" 2>/dev/null
       _CHECK_PASSED="true"
-      _CHECK_OUTPUT="B5/${controller}: PASS: seeded via $seed_fn; probe non-trivial; $sqlite_table rows=$row_count on disk. Probe: ${probe_snippet}"
+      _CHECK_OUTPUT="B5/${controller}: PASS: seeded via $seed_fn; probe non-trivial; $pg_table rows=$row_count on disk. Probe: ${probe_snippet}"
       return
     fi
     local probe_snippet; probe_snippet=$(echo "$probe_body" | head -5 | tr '\n' ' ' | cut -c1-240)
@@ -1117,9 +1238,19 @@ _b5_seed_consolidation() {
   for i in 1 2 3 4 5 6 7 8; do
     _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_hierarchical_store --params '{\"key\":\"b5-consol-seed-'${i}'\",\"value\":\"Episodic memory '${i}' with sufficient content for consolidation\",\"tier\":\"episodic\"}' 2>&1" "$work/seed-hmem-${i}.out" 20
   done
-  local db_file="$iso/.swarm/memory.db"
-  if [[ -f "$db_file" ]]; then
-    sqlite3 "$db_file" "UPDATE hierarchical_memory SET importance = 0.8, access_count = 5 WHERE tier = 'episodic';" 2>/dev/null || true
+  # ADR-0170 Phase B: bump importance/access_count via pglite (replaces
+  # the sqlite3 UPDATE). Test-only shortcut that nudges the threshold
+  # values getConsolidationCandidates() expects — would otherwise need
+  # repeated access patterns to reach organically.
+  if [[ -f "$iso/.swarm/memory.pglite/PG_VERSION" ]]; then
+    (cd "$iso" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+try {
+  await db.query(\"UPDATE hierarchical_memory SET importance = 0.8, access_count = 5 WHERE tier = 'episodic'\");
+} catch (e) { /* table may not exist if HM not wired */ } finally { await db.close(); }
+" 2>/dev/null) || true
   fi
 }
 

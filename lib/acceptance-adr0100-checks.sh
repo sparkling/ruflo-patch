@@ -323,18 +323,21 @@ check_adr0100_scenario_e_sentinel_priority() {
   # Outer: a real ruflo init.
   _adr0100_init "$s"
 
-  # ADR-0170 Phase B: PostgresBackend's resolveDataDir() eagerly mkdirs
-  # ${cwd}/.swarm/memory.pglite/ on initialize(). The outer ruflo init now
-  # creates a .swarm/ dir at $s/ (alongside the legitimate inner $s/sub/inner/.swarm/),
-  # making the "expected 1 .swarm/, found 2" assertion structurally invalid.
-  # Sentinel priority is still verified by the inner $inner/.swarm/ assertion
-  # and the cli's findProjectRoot() resolution; the "exactly one .swarm/"
-  # invariant doesn't survive the pglite-dir bootstrap.
-  if [[ -d "$s/.swarm/memory.pglite" ]] || [[ -d "${E2E_DIR:-/nonexistent}/.swarm/memory.pglite" ]]; then
-    rm -rf "$s" 2>/dev/null
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="ADR-0100/E: SKIP_ACCEPTED: ADR-0170 Phase B PostgresBackend bootstrap eagerly creates outer .swarm/memory.pglite/; 'exactly 1 .swarm/' invariant retired."
-    return
+  # ADR-0170 Phase B: PostgresBackend.resolveDataDir() eagerly mkdirs
+  # `${cwd}/.swarm/memory.pglite/` on initialize(). The outer `ruflo init`
+  # creates `$s/.swarm/` containing the pglite substrate AND `memory.rvf`
+  # for the memory_* axis. The original "exactly 1 .swarm/" invariant was
+  # structurally retired; the surviving invariant — **sentinel priority**
+  # — is verified by snapshotting outer `.swarm/` contents BEFORE the
+  # inner swarm_init runs, then asserting no NEW files appear at outer
+  # after swarm_init. Anything added to outer post-snapshot indicates
+  # swarm_init bypassed the inner sentinel and wrote there.
+
+  # Snapshot outer `.swarm/` immediately post-init (baseline).
+  local outer_snapshot_pre=""
+  if [[ -d "$s/.swarm" ]]; then
+    # Use ls -A (POSIX) — show all entries except . / .., one per line.
+    outer_snapshot_pre=$(cd "$s/.swarm" && ls -A 2>/dev/null | sort -u)
   fi
 
   # Inner: just a sentinel + a writable .swarm parent. Don't init — we want
@@ -346,22 +349,26 @@ check_adr0100_scenario_e_sentinel_priority() {
 
   _adr0100_swarm_init "$inner" "$log"
 
-  local total; total=$(_adr0100_count_swarm_dirs "$s")
-  if [[ "$total" != "1" ]]; then
-    _CHECK_OUTPUT="ADR-0100/E: expected 1 .swarm/ (at inner sentinel'd root), found $total; tree: $(find "$s" -name '.swarm' -type d | tr '\n' ' ')"
-    return
-  fi
   if [[ ! -d "$inner/.swarm" ]]; then
     _CHECK_OUTPUT="ADR-0100/E: .swarm/ did NOT land at $inner; tree: $(find "$s" -name '.swarm' -type d | tr '\n' ' ')"
     return
   fi
+
+  # Sentinel priority test (delta): outer .swarm/ MUST NOT have grown any
+  # new files after the inner swarm_init. Compare post-state to baseline.
+  local outer_snapshot_post=""
   if [[ -d "$s/.swarm" ]]; then
-    _CHECK_OUTPUT="ADR-0100/E: sentinel priority FAILED — .swarm/ landed at outer $s/.swarm/, not inner"
+    outer_snapshot_post=$(cd "$s/.swarm" && ls -A 2>/dev/null | sort -u)
+  fi
+  local outer_new
+  outer_new=$(comm -13 <(echo "$outer_snapshot_pre") <(echo "$outer_snapshot_post") | tr '\n' ' ')
+  if [[ -n "${outer_new// /}" ]]; then
+    _CHECK_OUTPUT="ADR-0100/E: sentinel priority FAILED — outer $s/.swarm/ gained new files after inner swarm_init (sentinel bypassed): $outer_new"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="ADR-0100/E PASS: inner sentinel beat outer CLAUDE.md+.claude (.swarm/ at $inner/.swarm)"
+  _CHECK_OUTPUT="ADR-0100/E PASS: inner sentinel beat outer CLAUDE.md+.claude (.swarm/ at $inner/.swarm; outer .swarm/ unchanged post-inner-init)"
   rm -rf "$s" 2>/dev/null
 }
 

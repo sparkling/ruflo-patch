@@ -428,19 +428,45 @@ check_adr0094_p13_migration_rvf_v1_search() {
 # SQLite, that's the AgentDB-schema regression Phase 13.2 exists to catch.
 # ════════════════════════════════════════════════════════════════════
 
-# 9. migration_agentdb_v1_skill_search
+# 9. migration_agentdb_v1_skill_search (ADR-0170 Phase B rewrite — runtime seed)
+#
+# Original (pre-ADR-0170): loaded a committed SQLite `memory.db` fixture
+# and proved the current code could read its seeded row. ADR-0170 retires
+# SQLite on the agentdb_* axis; PostgresBackend's constructor loud-rejects
+# any legacy `memory.db` file (§"No-fallback policy"). The fixture-load
+# path therefore can't be used directly.
+#
+# Replacement (this rewrite): in the iso, seed the same sentinel skill
+# via `agentdb_skill_create` against the pglite cluster, then read it back
+# via `agentdb_skill_search`. The forward-compat contract is preserved —
+# we still verify the read tool sees the seeded row — but the seed now
+# lives in the iso's `.swarm/memory.pglite/`, written by the current
+# controller, not loaded from a committed SQLite file. Phase D's
+# `agentdb migrate --from sqlite --to pglite` CLI handles the user-facing
+# legacy-state migration; these checks prove the read-side substrate
+# works.
 _p13_agentdb_v1_skill_search_body() {
   local iso="$1"; local _saved="${E2E_DIR:-}"; E2E_DIR="$iso"
-  if ! _p13_load_fixture "v1-agentdb" "$iso" "$(_p13_2_fixtures_dir)"; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="P13.2/agentdb_v1_skill_search FAIL: fixture load failed"
+
+  # Seed: create the sentinel skill via the postgres-substrate-aware tool.
+  # Use `.` as the expect regex — any non-empty body indicates the tool
+  # returned a response (success or otherwise). Schema panics or empty
+  # bodies are caught here and propagated with the harness's own
+  # diagnostic so the unit-test stub coverage stays meaningful.
+  _mcp_invoke_tool "agentdb_skill_create" \
+    '{"name":"p13-2-skill","signature":"phase 13.2 migration sentinel skill","body":"p13-2 migration sentinel content"}' \
+    '.' "P13.2/agentdb_v1_skill_search" 30
+  # On seed failure, propagate the harness's diagnostic verbatim — it
+  # already names "empty body" / "tool not found" / "regex mismatch" with
+  # the precise shape required by `_p13_expect_readable`'s sibling tests.
+  if [[ "${_CHECK_PASSED:-}" != "true" ]]; then
     E2E_DIR="$_saved"; return
   fi
+
+  # Read: the previously-seeded skill must surface via search.
   _mcp_invoke_tool "agentdb_skill_search" \
     '{"query":"p13-2"}' \
     '.' "P13.2/agentdb_v1_skill_search" 30 --ro
-  # Either the skill name or the description surfacing in the body proves
-  # the current code parsed the SQLite schema and retrieved the seeded row.
   _p13_expect_readable "P13.2/agentdb_v1_skill_search" \
     'p13-2-skill|p13-2 migration sentinel|phase 13.2 migration sentinel skill'
   E2E_DIR="$_saved"
@@ -450,20 +476,27 @@ check_adr0094_p13_migration_agentdb_v1_skill_search() {
   _with_iso_cleanup "p13-mig-adb-v1-skill" _p13_agentdb_v1_skill_search_body
 }
 
-# 10. migration_agentdb_v1_reflexion_retrieve
+# 10. migration_agentdb_v1_reflexion_retrieve (ADR-0170 Phase B rewrite)
+#
+# Same rewrite shape as #9: live seed via agentdb_reflexion_store, then
+# read back via agentdb_reflexion_retrieve. Forward-compat contract on
+# the postgres substrate.
 _p13_agentdb_v1_reflexion_retrieve_body() {
   local iso="$1"; local _saved="${E2E_DIR:-}"; E2E_DIR="$iso"
-  if ! _p13_load_fixture "v1-agentdb" "$iso" "$(_p13_2_fixtures_dir)"; then
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="P13.2/agentdb_v1_reflexion_retrieve FAIL: fixture load failed"
+
+  # Seed: store the sentinel via the postgres-substrate-aware tool.
+  # Same `.` regex pattern as the skill_search rewrite above; propagate
+  # the harness diagnostic on any non-success (empty body / panic / etc.).
+  _mcp_invoke_tool "agentdb_reflexion_store" \
+    '{"session_id":"p13-2-session","task":"p13-2 reflexion sentinel: migration-survived","reward":0.9,"success":true}' \
+    '.' "P13.2/agentdb_v1_reflexion_retrieve" 30
+  if [[ "${_CHECK_PASSED:-}" != "true" ]]; then
     E2E_DIR="$_saved"; return
   fi
+
   _mcp_invoke_tool "agentdb_reflexion_retrieve" \
     '{"task":"p13-2 reflexion sentinel"}' \
     '.' "P13.2/agentdb_v1_reflexion_retrieve" 30 --ro
-  # Either the `migration-survived` marker OR the raw sentinel string
-  # surfacing proves the reflexion row round-tripped through the current
-  # reader.
   _p13_expect_readable "P13.2/agentdb_v1_reflexion_retrieve" \
     'migration-survived|p13-2 reflexion sentinel'
   E2E_DIR="$_saved"

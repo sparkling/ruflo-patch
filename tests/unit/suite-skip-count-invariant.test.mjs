@@ -60,6 +60,10 @@ const KNOWN_LEGITIMATE_SKIPS = {
     count: 2,
     reason: 'ADR-0170 Phase B retires the SQLite open path in AgentDB.initialize(). Two it.skip tests source-grepped the better-sqlite3 pragma block (const sq + sq?.cacheSize ?? -64000). Phase D removes the sqlite config field outright.',
   },
+  'adr0090-b5-controller-roundtrips.test.mjs': {
+    count: 4,
+    reason: 'ADR-0170 Phase B replaces the B5 helper\'s sqlite3 CLI probe with a pglite Node ESM dynamic import. Four it.skip tests (happy path, silent-success-no-row, target-table-missing, sqlite3 binary missing) were tightly coupled to the SQLite-CLI mock infrastructure (PATH shim, sqlite3 INSERT/SELECT). The behaviors they covered are exercised end-to-end in acceptance against the live pglite cluster — rewriting them in-test would require ~673 ms pglite cold-init per case (4 × 673 ms ≈ 2.7s/file) and tip the suite past the Google Small (1s) threshold.',
+  },
 };
 
 function countSkipsInFile(filePath) {

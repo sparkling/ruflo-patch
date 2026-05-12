@@ -1,6 +1,6 @@
 {
   "name": "@sparkleideas/ruflo",
-  "version": "3.1.0-alpha.14-patch.36",
+  "version": "3.1.0-alpha.14-patch.55",
   "description": "Drop-in replacement for ruflo/@claude-flow/cli — rebuilt from source with bug fixes and current upstream commits",
   "scripts": {
     "preflight": "node scripts/preflight.mjs && node scripts/lint-acceptance-checks.mjs > /dev/null && node scripts/lint-fail-loud.mjs",
@@ -57,7 +57,7 @@
   ],
   "packageManager": "npm@10",
   "dependencies": {
-    "@sparkleideas/cli": "3.7.0-alpha.10-patch.24"
+    "@sparkleideas/cli": "3.7.0-alpha.10-patch.59"
   },
   "devDependencies": {
     "verdaccio": "^6.2.9"

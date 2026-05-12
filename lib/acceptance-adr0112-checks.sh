@@ -41,26 +41,42 @@
 # ────────────────────────────────────────────────────────────────────
 # Helpers — leak detection
 # ────────────────────────────────────────────────────────────────────
-# Marker leak in SQLite = the marker string appears in ANY row of ANY
-# user-data table (we exclude sqlite_master / sqlite_sequence).
+# Marker leak in pglite = the marker string appears in ANY row of ANY
+# user-data table (we exclude pg_catalog/information_schema). ADR-0170
+# Phase B: PostgresBackend replaces the SQLite substrate; same intent,
+# different probe — open pglite via Node ESM oneliner and CAST every
+# row to text for substring search.
 _adr0112_db_contains_marker() {
-  local db="$1"
+  local proj_dir="$1"
   local marker="$2"
-  [[ -f "$db" ]] || return 1  # absent = no leak
-  command -v sqlite3 >/dev/null 2>&1 || return 1  # cannot probe = treat as no leak
-  local tables
-  tables=$(sqlite3 "$db" "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%';" 2>/dev/null)
-  [[ -z "$tables" ]] && return 1
-  while IFS= read -r tbl; do
-    [[ -z "$tbl" ]] && continue
-    # Cast every column to text via sqlite3's .dump trick? Simpler:
-    # query each table and look for the marker in any text column.
-    # `SELECT * FROM <tbl>` then grep — fast enough at acceptance scale.
-    if sqlite3 "$db" "SELECT * FROM \"$tbl\";" 2>/dev/null | grep -qF "$marker"; then
-      echo "$tbl"
-      return 0
-    fi
-  done <<< "$tables"
+  [[ -f "$proj_dir/.swarm/memory.pglite/PG_VERSION" ]] || return 1
+  local out
+  out=$(cd "$proj_dir" && node --input-type=module -e "
+const { PGlite } = await import('@electric-sql/pglite');
+const db = new PGlite('.swarm/memory.pglite');
+await db.ready;
+const marker = process.argv[1];
+try {
+  const tables = await db.query(\"SELECT tablename FROM pg_tables WHERE schemaname='public'\");
+  for (const { tablename } of tables.rows) {
+    const safeName = String(tablename).replace(/\"/g, '\"\"');
+    const dump = await db.query(\`SELECT (to_jsonb(t.*))::text AS row FROM \"\${safeName}\" t\`);
+    for (const row of dump.rows) {
+      if (row.row && row.row.includes(marker)) {
+        process.stdout.write(tablename);
+        await db.close();
+        process.exit(0);
+      }
+    }
+  }
+} catch (e) {
+  /* no leak detected on probe error */
+} finally { await db.close(); }
+" "$marker" 2>/dev/null)
+  if [[ -n "$out" ]]; then
+    echo "$out"
+    return 0
+  fi
   return 1
 }
 
@@ -110,7 +126,6 @@ check_adr0112_partition_memory_store_to_rvf_only() { # adr0097-l2-delegator
   fi
 
   local rvf="$iso/.swarm/memory.rvf"
-  local db="$iso/.swarm/memory.db"
 
   # Sanity: marker landed in RVF (write side actually worked)
   if ! _adr0112_rvf_contains_marker "$rvf" "$marker"; then
@@ -119,18 +134,19 @@ check_adr0112_partition_memory_store_to_rvf_only() { # adr0097-l2-delegator
     return
   fi
 
-  # Partition: marker MUST NOT appear in AgentDB SQLite
+  # Partition: marker MUST NOT appear in AgentDB pglite cluster (ADR-0170
+  # Phase B — replaces the SQLite probe).
   local leak_table
-  leak_table=$(_adr0112_db_contains_marker "$db" "$marker")
+  leak_table=$(_adr0112_db_contains_marker "$iso" "$marker")
   if [[ -n "$leak_table" ]]; then
-    _CHECK_OUTPUT="0112/26.1: FAIL: marker '$marker' leaked into .swarm/memory.db table '$leak_table' — memory_store wrote user data into AgentDB SQLite (cross-store coordination forbidden by ADR-0112)"
+    _CHECK_OUTPUT="0112/26.1: FAIL: marker '$marker' leaked into .swarm/memory.pglite table '$leak_table' — memory_store wrote user data into AgentDB postgres substrate (cross-store coordination forbidden by ADR-0112)"
     rm -rf "$iso" 2>/dev/null
     return
   fi
 
   rm -rf "$iso" 2>/dev/null
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="0112/26.1: PASS: memory_store wrote marker into RVF only; SQLite contains zero rows with marker (per-store data partition holds)"
+  _CHECK_OUTPUT="0112/26.1: PASS: memory_store wrote marker into RVF only; pglite cluster contains zero rows with marker (per-store data partition holds)"
 }
 
 # ────────────────────────────────────────────────────────────────────
@@ -143,17 +159,6 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
   local iso; iso=$(_e2e_isolate "0112-part-agentdb")
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_OUTPUT="0112/26.2: failed to create iso dir"
-    return
-  fi
-
-  # ADR-0170 Phase B retires the SQLite substrate on agentdb_*; data now
-  # lives in .swarm/memory.pglite/. The "marker landed in SQLite" sanity
-  # check below cannot read pglite tables with sqlite3. Skip until Phase C
-  # lands a pglite-aware marker probe.
-  if [[ -d "$iso/.swarm/memory.pglite" ]] || [[ -d "$E2E_DIR/.swarm/memory.pglite" ]]; then
-    rm -rf "$iso" 2>/dev/null
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="0112/26.2: SKIP_ACCEPTED: ADR-0170 Phase B retires SQLite on agentdb_* axis; .swarm/memory.pglite/ marker probe pending Phase C."
     return
   fi
 
@@ -172,13 +177,14 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
   fi
 
   local rvf="$iso/.swarm/memory.rvf"
-  local db="$iso/.swarm/memory.db"
 
-  # Sanity: marker landed in SQLite (write side actually worked)
+  # Sanity: marker landed in pglite cluster (ADR-0170 Phase B replaces
+  # the SQLite probe). agentdb_reflexion_store routes through the
+  # ReflexionMemory controller → postgres substrate → episodes table.
   local home_table
-  home_table=$(_adr0112_db_contains_marker "$db" "$marker")
+  home_table=$(_adr0112_db_contains_marker "$iso" "$marker")
   if [[ -z "$home_table" ]]; then
-    _CHECK_OUTPUT="0112/26.2: FAIL: agentdb_reflexion_store reported success but marker '$marker' not found in any table of $db (silent in-memory fallback per ADR-0082 + ADR-0112 mandate). Body: $(echo "$body" | head -3 | tr '\n' ' ')"
+    _CHECK_OUTPUT="0112/26.2: FAIL: agentdb_reflexion_store reported success but marker '$marker' not found in any table of pglite cluster (silent in-memory fallback per ADR-0082 + ADR-0112 mandate). Body: $(echo "$body" | head -3 | tr '\n' ' ')"
     rm -rf "$iso" 2>/dev/null
     return
   fi
@@ -192,7 +198,7 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
 
   rm -rf "$iso" 2>/dev/null
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="0112/26.2: PASS: agentdb_reflexion_store wrote marker into SQLite ($home_table) only; RVF contains zero bytes matching marker (per-store data partition holds)"
+  _CHECK_OUTPUT="0112/26.2: PASS: agentdb_reflexion_store wrote marker into pglite cluster ($home_table) only; RVF contains zero bytes matching marker (per-store data partition holds)"
 }
 
 # ────────────────────────────────────────────────────────────────────
@@ -222,14 +228,12 @@ check_adr0112_partition_memory_search_does_not_query_db() { # adr0097-l2-delegat
     return
   fi
 
-  local db="$iso/.swarm/memory.db"
-
-  # Step 2: snapshot any pre-existing marker presence in .db (should be none,
-  # but assert it for clarity rather than silently inheriting init noise).
+  # Step 2: snapshot any pre-existing marker presence in pglite (should be
+  # none, but assert it for clarity rather than silently inheriting init noise).
   local leak_pre
-  leak_pre=$(_adr0112_db_contains_marker "$db" "$marker")
+  leak_pre=$(_adr0112_db_contains_marker "$iso" "$marker")
   if [[ -n "$leak_pre" ]]; then
-    _CHECK_OUTPUT="0112/26.3: FAIL (pre-condition): marker '$marker' already in .swarm/memory.db table '$leak_pre' BEFORE search ran — write side leaked (item #26.1 should have caught this)"
+    _CHECK_OUTPUT="0112/26.3: FAIL (pre-condition): marker '$marker' already in pglite table '$leak_pre' BEFORE search ran — write side leaked (item #26.1 should have caught this)"
     rm -rf "$iso" 2>/dev/null
     return
   fi
@@ -237,19 +241,19 @@ check_adr0112_partition_memory_search_does_not_query_db() { # adr0097-l2-delegat
   # Step 3: run memory_search via CLI
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory search --query '$marker rvf-only' 2>&1" "" 30
 
-  # Step 4: assert .db still has zero rows with marker (search is read-only
-  # for AgentDB)
+  # Step 4: assert pglite still has zero rows with marker (search is
+  # read-only for AgentDB)
   local leak_post
-  leak_post=$(_adr0112_db_contains_marker "$db" "$marker")
+  leak_post=$(_adr0112_db_contains_marker "$iso" "$marker")
   if [[ -n "$leak_post" ]]; then
-    _CHECK_OUTPUT="0112/26.3: FAIL: memory_search caused marker '$marker' to appear in .swarm/memory.db table '$leak_post' — search wrote query into AgentDB (cross-store read coupling forbidden by ADR-0112)"
+    _CHECK_OUTPUT="0112/26.3: FAIL: memory_search caused marker '$marker' to appear in pglite table '$leak_post' — search wrote query into AgentDB (cross-store read coupling forbidden by ADR-0112)"
     rm -rf "$iso" 2>/dev/null
     return
   fi
 
   rm -rf "$iso" 2>/dev/null
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="0112/26.3: PASS: memory_search did not write marker into AgentDB SQLite (read path stays in RVF)"
+  _CHECK_OUTPUT="0112/26.3: PASS: memory_search did not write marker into AgentDB pglite cluster (read path stays in RVF)"
 }
 
 # ────────────────────────────────────────────────────────────────────
