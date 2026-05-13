@@ -122,4 +122,5 @@ Accept alpha.14 base. Fold MCP prefix + 6 plugins + agentdb-onnx into this ADR. 
 - ADR-0148, ADR-0150: sibling pattern for MCP audit + NAPI build
 - ADR-0143: codemod context for Pass 7
 - New fork: `forks/agentdb` (cloned 2026-05-08 from `ruvnet/agentdb` HEAD `a478ab3`); MCP server `name: 'agentdb'` at `src/mcp/agentdb-mcp-server.ts:282`
+- **Migration log**: `forks/agentdb/MIGRATION-LOG.md` — file-level disposition table for the lift (20 fork-only files in Step 1 commit `d7ca0f6`; 59 differing-file reconciliations in Step 2). Restored 2026-05-13 after the ADR-0177 reset removed it; see [[project-fork-only-controllers]] memory for the full restoration catalog.
 - Memory: `feedback-data-loss-zero-tolerance`, `feedback-no-history-squash`, `feedback-trunk-only-fork-development`, `feedback-never-touch-hz-remote`, `feedback-no-value-judgements-on-features`, `feedback-fix-all-tests`, `feedback-no-squelch-tests`, `feedback-test-in-init-projects`, `reference-pipeline-publish-paths`, `reference-verdaccio`, `project-agentdb-parallel-extraction`, `reference-fork-workflow`
