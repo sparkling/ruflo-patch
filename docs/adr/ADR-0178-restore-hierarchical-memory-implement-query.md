@@ -150,7 +150,7 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
 * Good, because the underscore-normalization revert (commit `8c9d9ab81`) also fixes 9 other tools beyond hierarchical-* (`pattern-store` / `-search`, `session-start` / `-end`, `context-synthesize`, `semantic-route`, `reflexion-retrieve` / `-store`, `causal-query` / `-recall`, `batch-optimize`) that had the same skill ↔ registry mismatch. Single revert, broader benefit.
 * Bad, because fork now carries an 836-LoC `HierarchicalMemory.ts` (781 restored + 55 added) that upstream doesn't have. Future upstream-sync agents need to be aware. Mitigation: file is documented as fork-only via index.ts comment + this ADR + a memory entry (Open Follow-up #6).
 * Bad, because the restored `bd760f2` snapshot is months stale; non-postgres improvements made between `bd760f2` and archive HEAD are not in the restored file. Mitigation: per-commit cherry-pick is Open Follow-up #3 if specific gaps surface.
-* Bad, because other fork-only controllers the reset also removed (`MemoryConsolidation`, `QUICConnection*`, `QUICConnectionPool`, `QUICStreamManager`, `StreamingEmbeddingService`) remain unrestored. Their consumers (if any) continue routing to stubs. Mitigation: Open Follow-up #4 — catalog and decide per consumer audit.
+* ~~Bad, because other fork-only controllers the reset also removed (`MemoryConsolidation`, `QUICConnection*`, `QUICConnectionPool`, `QUICStreamManager`, `StreamingEmbeddingService`) remain unrestored. Their consumers (if any) continue routing to stubs.~~ **[Resolved 2026-05-13:** all of the named files restored across commits `4295d7a` (MemoryConsolidation + 4 tests), `9733a08` (StreamingEmbeddingService + 5 services + RVFOptimizer), and the QUIC* + RaftConsensus restoration commit. `MemoryConsolidation` + `StreamingEmbeddingService` now have working consumers via controller-registry; QUIC* + Raft remain scaffolding (no consumers, no boot wiring) per ADR-0177 Open Follow-up #9. Catalog: memory `project-fork-only-controllers`. Open Follow-up #4 closed.**]**
 * Bad, because **HierarchicalMemory has no in-class concurrency control**. Source-read confirms zero locks, no transactions, no atomic ops — relies entirely on the layers below (SQLite WAL + RVF's `flock`+`.jslock` from ADR-0095 + the vectorless-recovery fix from ADR-0163). Five specific gaps live above those substrates:
   - **Multi-write non-atomicity** in `store()` (HierarchicalMemory.ts:265-303): SQL `INSERT INTO hierarchical_memory` + `vectorBackend.insert()` + optional `hmem_vec` virtual-table mirror are 3 independent writes outside any transaction. Lines 305-310 explicitly acknowledge: *"a write that succeeds on the relational table but fails on the vec mirror leaves them inconsistent. Surface the error rather than silently swallowing."* Fails loud per `feedback-no-fallbacks` — inconsistency remains.
   - **In-memory cache races**: `workingMemoryCache` (Map) + `episodicMemoryIndex` (Map) accessed without locks. JS single-thread covers the common case; `await` boundaries allow interleaving.
@@ -178,12 +178,12 @@ Each layer was a promise the fork made and didn't keep. This ADR records closing
 
 3. **Cherry-pick non-postgres improvements** from commits between `bd760f2` and archive HEAD. Audit each for relevance (bug fixes, perf tweaks); ignore postgres-specific changes.
 
-4. **Catalog the other fork-only controllers still unrestored:**
-   - `MemoryConsolidation.ts` (depends on HierarchicalMemory; natural follow-on)
-   - `QUICConnection.ts` / `QUICConnectionPool.ts` / `QUICStreamManager.ts` (distributed-sync surface)
-   - `StreamingEmbeddingService.ts` (streaming variant of EmbeddingService)
+4. **~~Catalog the other fork-only controllers still unrestored.~~** **[✅ Resolved 2026-05-13.]**
+   - `MemoryConsolidation.ts` — restored in commit `4295d7a` (high-priority: controller-registry expects it)
+   - `StreamingEmbeddingService.ts` — restored in commit `9733a08` (medium-priority batch with 5 services + RVFOptimizer)
+   - `QUICConnection.ts` / `QUICConnectionPool.ts` / `QUICStreamManager.ts` + `consensus/RaftConsensus.ts` — restored 2026-05-13 from snapshot `bd760f2` per ADR-0177 Open Follow-up #9 update; scaffolding-only (zero current consumers, `// TODO: ADR required before activation` markers preserved). Activation still gated on a distributed-mode ADR.
 
-   For each: audit downstream callers, decide restore vs accept-stub.
+   Catalog of all restored + deferred fork-only files lives in memory entries `project-fork-only-controllers` + `project-adr0178-deferred-restorations`.
 
 5. **Skill-manifest ↔ MCP-registry CI guard** (per ADR-0176 Open Follow-up #2). Parse every `SKILL.md` in `forks/ruflo/plugins/`, extract `allowed-tools` MCP names, assert each is registered at boot. Prevents future drift like the underscore/dash mismatch or `hierarchical-query`-without-implementation.
 
