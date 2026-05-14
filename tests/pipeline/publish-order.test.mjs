@@ -44,7 +44,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/ruvector-ruvllm-wasm': [],
   '@sparkleideas/ruvector-learning-wasm': [],
   '@sparkleideas/config-chain': [],  // ADR-0177 Phase 1.6 — no internal deps; consumed by memory + agentdb
-  '@sparkleideas/agentdb': ['@sparkleideas/config-chain'],
+  '@sparkleideas/agentdb': [],
   '@sparkleideas/agentic-flow': [],
   '@sparkleideas/agentic-jujutsu': [],  // ADR-0150 follow-up — has only @qudag/napi-core (external) + bundled darwin-arm64.node
   '@sparkleideas/ruv-swarm': [],
