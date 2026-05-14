@@ -1,0 +1,629 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0067-original-vision-controller-wiring</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="adr-0067-the-original-vision----how-controller-wiring-was-supposed-to-work">ADR-0067: The Original Vision -- How Controller Wiring Was Supposed to Work</h1>
+<p><strong>Status</strong>: Closed (informational, kept for history) — 2026-04-21
+<strong>Date</strong>: 2026-04-05
+<strong>Context</strong>: Synthesized from upstream code evidence to guide future refactoring
+<strong>Architecture</strong>: <a href="../architecture/controller-wiring-vision.html">Controller Wiring Vision</a>
+<strong>Implements</strong>: <a href="ADR-0066-controller-config-unification.html">ADR-0066 — Controller Configuration Unification</a></p>
+<hr>
+<h2 id="1-the-intended-relationship-between-agentdb-and-controllerregistry">1. The Intended Relationship Between AgentDB and ControllerRegistry</h2>
+<p>AgentDB was designed as a self-contained database wrapper. Its <code>initialize()</code> method (AgentDB.ts lines 72-181) creates exactly 8 domain controllers -- ReflexionMemory, SkillLibrary, ReasoningBank, CausalMemoryGraph, CausalRecall, LearningSystem, ExplainableRecall, NightlyLearner -- plus infrastructure objects (EmbeddingService, GraphTransformerService, vectorBackend, mutationGuard, attestationLog). Its <code>getController()</code> switch (lines 183-223) exposes 13 named accessors for these objects. That is the full extent of AgentDB&#39;s controller surface.</p>
+<p>ControllerRegistry (controller-registry.ts) was added later under ADR-053 as a CLI-layer wrapper. Its header comment on line 4 is explicit: &quot;Wraps the AgentDB class and adds CLI-specific controllers from @claude-flow/memory.&quot; The registry&#39;s type system declares two disjoint unions: <code>AgentDBControllerName</code> (15 names, lines 34-49) and <code>CLIControllerName</code> (31 names, lines 54-85). The design intent is a two-tier model:</p>
+<ul>
+<li><strong>Tier 1 (AgentDB)</strong>: Core data controllers. Created by AgentDB.initialize(), accessed via <code>agentdb.getController(name)</code>.</li>
+<li><strong>Tier 2 (CLI-layer)</strong>: Orchestration, caching, attention, security infrastructure. Created directly by the registry&#39;s <code>createController()</code> factory.</li>
+</ul>
+<p>The registry&#39;s <code>get&lt;T&gt;()</code> method (lines 422-440) implements this correctly: check CLI-layer first, fall back to AgentDB&#39;s getController(). The <em>intent</em> was delegation for Tier 1 controllers.</p>
+<p><strong>But that intent was never fully realized.</strong> The registry&#39;s <code>createController()</code> factory (lines 753-1276) directly instantiates many controllers that AgentDB already creates internally. For example, ReasoningBank (line 888), CausalRecall (line 909), LearningSystem (line 919), ExplainableRecall (line 929), and NightlyLearner (line 939) are all constructed fresh by the registry using <code>new RB(this.agentdb.database, ...)</code> -- creating <em>second copies</em> that shadow the ones AgentDB already holds. Only three controllers (skills, reflexion, causalGraph at lines 897-904) actually delegate to <code>agentdb.getController()</code>.</p>
+<p>This means the system runs with two copies of most domain controllers, each holding its own internal state. The original AgentDB copies sit idle inside the AgentDB instance, unreachable.</p>
+<h2 id="2-the-intended-config-flow">2. The Intended Config Flow</h2>
+<p>Two separate config resolution paths exist, and the evidence suggests this was originally a staged design that never converged.</p>
+<p><strong>AgentDB&#39;s path</strong>: <code>getEmbeddingConfig()</code> in <code>agentdb/src/config/embedding-config.ts</code> (lines 86-146) is a layered resolver: defaults, embeddings.json, env vars, MODEL_REGISTRY auto-derivation, explicit overrides. AgentDB.initialize() calls it at line 97-100 to resolve dimension and model. This is the authoritative source of truth for embedding configuration.</p>
+<p><strong>The CLI&#39;s path</strong>: <code>RuntimeConfig</code> in controller-registry.ts (lines 126-196) is the CLI&#39;s config surface. It accepts <code>dimension</code>, <code>embeddingGenerator</code>, and sub-configs for attention, rate limiting, etc. The memory-bridge (memory-bridge.ts lines 123-154) constructs this config by reading <code>.claude-flow/config.json</code> and <code>.claude-flow/embeddings.json</code> project files.</p>
+<p>The critical gap: when the registry calls <code>new AgentDBClass({ dbPath, maxElements })</code> at line 582-585, it passes only <code>dbPath</code> and <code>maxElements</code>. It does NOT pass <code>dimension</code>, <code>embeddingModel</code>, or any embedding config. AgentDB therefore resolves its own config independently via <code>getEmbeddingConfig()</code>. Meanwhile, the registry resolves dimension separately at lines 320-330 and stores it in <code>this.resolvedDimension</code>. These two resolution paths <em>should</em> agree because they both read the same <code>embeddings.json</code> file, but there is no guarantee -- if one reads a stale cache or a different cwd, they diverge silently, and controllers created by the registry get a different dimension than controllers created by AgentDB.</p>
+<p>The intended fix is visible in the ADR-0064 comment at line 293: &quot;Resolved dimension from config -&gt; getEmbeddingConfig() -&gt; 768 fallback.&quot; The plan was to make the registry <em>call</em> AgentDB&#39;s getEmbeddingConfig() as the single source, which it does at lines 325-329, but this resolution happens <em>after</em> AgentDB has already initialized with its own independent resolution.</p>
+<h2 id="3-the-intended-singleton-pattern">3. The Intended Singleton Pattern</h2>
+<p>Three distinct singleton strategies are visible in the codebase, indicating an incomplete migration:</p>
+<p><strong>Strategy A -- Module-level singleton (getAccelerator)</strong>: NativeAccelerator uses a <code>getAccelerator()</code> factory function (referenced in controller-registry.ts line 1190). The registry correctly calls this function rather than constructing a new instance. This is the cleanest pattern.</p>
+<p><strong>Strategy B -- Constructor injection with fallback (ADR-0040)</strong>: NightlyLearner (NightlyLearner.ts lines 86-95) and CausalRecall (CausalRecall.ts lines 72-82) accept optional pre-created singletons in their constructors. The ADR-0040 comment at line 92 reads: &quot;accept pre-created singletons to avoid duplicate instances.&quot; If no singleton is provided, they create their own copies internally. The registry&#39;s NightlyLearner case (controller-registry.ts lines 946-953) correctly passes pre-created causalGraph, reflexion, and skills via <code>this.get()</code>. But AgentDB.initialize() at lines 160 does NOT -- it constructs NightlyLearner without passing pre-created singletons, so AgentDB&#39;s internal NightlyLearner creates its own CausalMemoryGraph, ReflexionMemory, and SkillLibrary. This means AgentDB&#39;s NightlyLearner runs with duplicates even without the registry.</p>
+<p><strong>Strategy C -- No singleton at all (AttentionService)</strong>: AttentionService has no singleton pattern. The registry creates one at level 2 (line 1143). NightlyLearner creates another internally at line 99 when <code>ENABLE_FLASH_CONSOLIDATION</code> is true. The LegacyAttentionAdapter (LegacyAttentionAdapter.ts) creates yet another as a compatibility wrapper. TelemetryManager, by contrast, uses a proper <code>getInstance()</code> class-level singleton (telemetry.ts line 107).</p>
+<p>The duplication is partially accidental (AgentDB was written before the registry existed and never retrofitted) and partially a design gap (ADR-0040 solved the constructor injection pattern but was only applied to NightlyLearner and CausalRecall, not to AgentDB.initialize() itself).</p>
+<h2 id="4-what-went-wrong">4. What Went Wrong</h2>
+<p>Three architectural failures compound each other:</p>
+<p><strong>Failure 1 -- AgentDB was never made registry-aware.</strong> ADR-053 mandated that the registry wrap AgentDB, but AgentDB.initialize() still creates all its controllers unconditionally. The registry cannot suppress this. The correct fix would have been to either (a) make AgentDB accept pre-created controllers (extending the ADR-0040 pattern to all controllers) or (b) make AgentDB lazy, only creating controllers on first <code>getController()</code> call. Neither was done.</p>
+<p><strong>Failure 2 -- The registry re-creates instead of reusing.</strong> For 8 controllers (ReasoningBank, CausalRecall, LearningSystem, ExplainableRecall, NightlyLearner, GraphTransformer, MutationGuard, AttestationLog), the registry constructs new instances rather than fetching AgentDB&#39;s existing ones. The comment at line 883 acknowledges this: &quot;AgentDB.getController() only supports: reflexion/memory, skills, causalGraph/causal&quot;. Rather than extending AgentDB&#39;s getController() to cover all 8 names, the registry worked around the gap by direct construction. This doubled the instance count. Only 3 controllers (skills, reflexion, causalGraph) actually delegate to <code>agentdb.getController()</code>. A third wiring layer — <code>AgentDBService</code> (1,679 lines in <code>agentic-flow/src/services/agentdb-service.ts</code>) — creates yet another full set of controller instances independently of both AgentDB core and the registry, meaning a fully wired system can have up to three copies of most domain controllers.</p>
+<p><strong>Failure 3 -- Config flows were never unified.</strong> RuntimeConfig and AgentDBConfig evolved independently. The memory-bridge assembles RuntimeConfig from project JSON files, but the subset passed to AgentDB&#39;s constructor is minimal (dbPath + maxElements). The rest (dimension, attention config, rate limiter config) is used only by the registry&#39;s own controller creation, not forwarded to AgentDB.</p>
+<p>The relevant ADRs are: ADR-053 (registry introduction), ADR-0040 (singleton injection), ADR-0056 (AttentionService consolidation), ADR-0062 (attention suite wiring), ADR-0064 (config alignment). None of these were fully completed.</p>
+<h2 id="5-the-correct-solutions-architecture">5. The Correct Solutions Architecture</h2>
+<p>Based on the author&#39;s documented intent across the ADR comments, the target architecture has three parts:</p>
+<p><strong>Part A -- Wire singletons in AgentDB.initialize() (immediate fix).</strong> At AgentDB.ts:157, pass <code>controllerVB</code> to CausalRecall and the already-constructed <code>causalGraph</code>/<code>explainableRecall</code> (matching the MCP server&#39;s correct pattern at agentdb-mcp-server.ts:321-328). At AgentDB.ts:160, pass <code>causalGraph</code>, <code>reflexion</code>, and <code>skills</code> to NightlyLearner. These are two-line fixes that complete the ADR-0040 intent within AgentDB itself, benefiting ALL three wiring layers (AgentDB core, AgentDBService, and ControllerRegistry).</p>
+<p><strong>Part B -- The registry delegates to AgentDB for Tier 1 controllers.</strong> For the 8 controllers that AgentDB already creates and manages (reasoningBank, causalRecall, learningSystem, explainableRecall, nightlyLearner, graphTransformer, mutationGuard, attestationLog), the registry calls <code>agentdb.getController(name)</code> instead of constructing duplicate instances. This requires extending AgentDB&#39;s <code>getController()</code> switch to cover all 8 names — upstream ADR-055 documented that only 5 names (reflexion, skills, causalGraph, vectorBackend, graphAdapter) were reliable. The extension is a prerequisite. For CLI-layer controllers (31 names), the registry continues to create and manage them directly.</p>
+<p><strong>Part C -- Config merges into a single path.</strong> RuntimeConfig should be the outer surface that feeds into AgentDBConfig. The registry should call <code>getEmbeddingConfig()</code> once, store the result, and pass dimension/model to AgentDB&#39;s constructor so both layers agree. The memory-bridge already assembles the right data (embeddings.json dimension, config.json controller settings) -- it just needs to pipe all of it through a single resolution.</p>
+<p><strong>Note on architectural scope</strong>: These changes complete the wiring that the upstream author designed but left partially connected. They do NOT restructure the architecture — AgentDB continues to eagerly construct its controllers, and the registry continues to wrap AgentDB. The long-term vision of making AgentDB a lazy container (constructing controllers on first <code>getController()</code> access) is a larger refactor that goes beyond completing the existing design.</p>
+<p><strong>Where the intent is incomplete or contradictory</strong>: The ADR-0040 pattern (accept pre-created singletons) and the ADR-053 pattern (registry wraps AgentDB) address the same problem from different directions. ADR-0040 improves AgentDB&#39;s internal wiring (pass singletons to constructors). ADR-053 improves the CLI&#39;s external wiring (delegate to AgentDB via getController). Both are needed — Part A fixes AgentDB internally, Part B fixes the registry externally. Together they ensure that whether controllers are accessed through AgentDB directly (MCP server path via AgentDBService) or through the registry (CLI path), the same correctly-wired instances are used.</p>
+<h2 id="6-evidence-the-two-concrete-adr-violations-in-agentdbts">6. Evidence: The Two Concrete ADR Violations in AgentDB.ts</h2>
+<p>The AgentDB expert found the smoking gun — two explicit ADR violations that prove the gap between intent and implementation:</p>
+<h3 id="adr-0040-violation-lines-157-160">ADR-0040 Violation (lines 157, 160)</h3>
+<p><code>NightlyLearner</code> and <code>CausalRecall</code> both have constructors with optional singleton params, annotated with <code>// ADR-0040: accept pre-created singletons to avoid duplicate instances</code>. But <code>AgentDB.initialize()</code> constructs them WITHOUT passing the already-created singletons:</p>
+<pre><code class="hljs language-typescript"><span class="hljs-comment">// Line 157 — CausalRecall gets NO singletons despite causalGraph being at line 156</span>
+<span class="hljs-variable language_">this</span>.<span class="hljs-property">causalRecall</span> = <span class="hljs-keyword">new</span> <span class="hljs-title class_">CausalRecall</span>(<span class="hljs-variable language_">this</span>.<span class="hljs-property">db</span>, <span class="hljs-variable language_">this</span>.<span class="hljs-property">embedder</span>);
+
+<span class="hljs-comment">// Line 160 — NightlyLearner gets NO singletons despite all 3 being available</span>
+<span class="hljs-variable language_">this</span>.<span class="hljs-property">nightlyLearner</span> = <span class="hljs-keyword">new</span> <span class="hljs-title class_">NightlyLearner</span>(<span class="hljs-variable language_">this</span>.<span class="hljs-property">db</span>, <span class="hljs-variable language_">this</span>.<span class="hljs-property">embedder</span>);</code></pre>
+<p>At this point, <code>this.causalGraph</code> (line 156), <code>this.explainableRecall</code> (line 159), <code>this.reflexion</code> (line 153), and <code>this.skills</code> (line 154) are all already constructed. The fix documented by ADR-0040 was to pass them in — but the code that does the construction never implemented this.</p>
+<h3 id="adr-0056-violation-line-157">ADR-0056 Violation (line 157)</h3>
+<p><code>CausalRecall</code> accepts an optional <code>vectorBackend</code> parameter and uses it for &quot;100x faster&quot; vector search (per its own comment at line 155). The MCP server at <code>agentdb-mcp-server.ts:321-328</code> correctly passes <code>vectorBackend</code> per the <code>// ADR-0056</code> comment. But <code>AgentDB.ts</code> line 157 does NOT pass <code>controllerVB</code>, even though it&#39;s available and is passed to <code>reflexion</code>, <code>skills</code>, and <code>reasoning</code> on lines 153-155.</p>
+<p>The MCP server has the CORRECT wiring pattern. <code>AgentDB.ts</code> has the BROKEN pattern. The fix was implemented in the wrong place and never backported.</p>
+<h2 id="7-the-consistent-upstream-pattern-build-without-connecting">7. The Consistent Upstream Pattern: Build Without Connecting</h2>
+<p>The ADR chain analyst found the same structural failure across ALL upstream ADRs:</p>
+<table>
+<thead>
+<tr>
+<th>ADR</th>
+<th>What was built</th>
+<th>What was never connected</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ADR-006</td>
+<td><code>MemoryService</code> with pluggable backends</td>
+<td>CLI never used it (kept raw sql.js)</td>
+</tr>
+<tr>
+<td>ADR-009</td>
+<td><code>HybridBackend</code> with routing</td>
+<td>Never injected into CLI</td>
+</tr>
+<tr>
+<td>ADR-001 (agentdb-v2)</td>
+<td><code>VectorBackend</code> interface</td>
+<td><code>ReasoningBank</code>/<code>SkillLibrary</code> never given a VectorBackend</td>
+</tr>
+<tr>
+<td>ADR-028</td>
+<td>39-mechanism <code>AttentionService</code> design</td>
+<td>Package never built; only WASM stubs exist</td>
+</tr>
+<tr>
+<td>ADR-053</td>
+<td><code>ControllerRegistry</code> wrapping AgentDB</td>
+<td>Only 3 of 13 controllers delegate; rest duplicated</td>
+</tr>
+<tr>
+<td>ADR-055</td>
+<td>Bug fixes for ADR-053</td>
+<td>Documented <code>getController()</code> only reliable for 5 names</td>
+</tr>
+</tbody></table>
+<p>The pattern is: components are designed, implemented, and exported — but the wiring layer that connects them to consumers is never completed. Each subsequent ADR (053→055→059→060→061→062→063→064→065) patches another subset of the gap, but none has completed the full circuit.</p>
+<h2 id="8-attentionservice-was-never-meant-to-be-a-singleton">8. AttentionService Was Never Meant to Be a Singleton</h2>
+<p>ADR-028 (Neural Attention Mechanisms) explicitly designed <code>AttentionService</code> for multiple instances:</p>
+<ul>
+<li><code>SONAWithAttention</code> creates TWO instances — one for Flash Attention (self-attention layers), one for MoE attention (expert routing)</li>
+<li>The intended <code>@claude-flow/attention</code> package (39 mechanism types) was designed as an instantiable class with per-use configuration</li>
+<li>The singleton pattern was a pragmatic narrowing introduced by the WIRING-PLAN (Section 1.2: <code>svc.getAttentionService()</code>), not the original design</li>
+</ul>
+<p>However, the current 4 duplicate instances are NOT the intended multi-instance design either. They&#39;re accidental — each consumer creates its own because there&#39;s no injection mechanism. The correct architecture (per the evidence) is: multiple AttentionService instances are valid when intentionally configured for different use cases, but unintentional duplicates with identical config should be shared.</p>
+<h2 id="9-the-four-layer-architecture-as-intended">9. The Four-Layer Architecture (As Intended)</h2>
+<p>Based on all evidence, the author&#39;s intended architecture has four layers:</p>
+<pre><code class="hljs">Layer 4: config.json / embeddings.json
+          ↓ read by memory-bridge.ts
+Layer 3: memory-bridge.ts (CLI entry point)
+          ↓ constructs RuntimeConfig, owns singleton registry
+Layer 2: ControllerRegistry (lifecycle manager)
+          ↓ delegates to AgentDB for Tier 1, creates Tier 2 directly
+Layer 1: AgentDB (infrastructure container)
+          ↓ owns database, embedder, vector backend
+          → controllers use shared infrastructure</code></pre>
+<p><strong>Layer 1 (AgentDB)</strong> should be a lazy infrastructure container — database handle, embedder, vector backend — that does NOT eagerly create domain controllers.</p>
+<p><strong>Layer 2 (ControllerRegistry)</strong> should be the sole controller factory. For AgentDB-hosted controllers, it creates them using AgentDB&#39;s infrastructure and hands them back for storage. For CLI-layer controllers, it creates and manages them directly.</p>
+<p><strong>Layer 3 (memory-bridge.ts)</strong> is the forwarding layer that reads config files, constructs <code>RuntimeConfig</code>, and owns the process-lifetime singleton registry.</p>
+<p><strong>Layer 4 (config files)</strong> is the operator-facing control plane. Every runtime value traces back to one of these files or documented defaults.</p>
+<h2 id="10-what-must-change-to-realize-this-vision">10. What Must Change to Realize This Vision</h2>
+<p>The gap is not in the design — it&#39;s in the wiring. Three specific changes complete the circuit:</p>
+<ol>
+<li><p><strong>AgentDB becomes lazy</strong>: Move controller construction from <code>AgentDB.initialize()</code> to <code>AgentDB.getController()</code> (lazy-init on first access). Infrastructure (db, embedder, vectorBackend) stays eager.</p>
+</li>
+<li><p><strong>Registry delegates, never duplicates</strong>: Every <code>AgentDBControllerName</code> case in <code>createController()</code> calls <code>this.agentdb.getController()</code>. The registry passes config (including singletons) through <code>AgentDBConfig</code> at construction time, not after.</p>
+</li>
+<li><p><strong>Config flows through one path</strong>: <code>memory-bridge.ts</code> reads config files → constructs <code>RuntimeConfig</code> → passes dimension/model/HNSW params to both <code>ControllerRegistry.initialize()</code> AND <code>new AgentDB({ dimension, embeddingModel, ... })</code>. Both layers resolve the same values because they receive them from the same source.</p>
+</li>
+</ol>
+<h2 id="status-update-2026-04-21">Status Update 2026-04-21</h2>
+<ul>
+<li>Old: Analysis (informational). New: Closed (informational, kept for history).</li>
+<li>This ADR was explicit scoped as synthesis, not a work item — the three &quot;correct solutions&quot; (Parts A/B/C in §5) were absorbed by later ADRs that actually shipped code.</li>
+<li>Part B (&quot;registry delegates to AgentDB&quot;) and the Layer 2 vision were superseded by <strong>ADR-0089</strong> (controller intercept pattern permanent — 49 <code>getOrCreate</code> sites in <code>forks/ruflo/v3/@claude-flow/memory/src/controller-registry.ts</code>, 16 in <code>forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts</code>). Behavioural unity is achieved without source deletion.</li>
+<li>Part C (single config path) landed via <code>cc38e17 feat: ADR-0066 P0 — wire getEmbeddingConfig() across all embedding consumers</code> in <code>forks/agentic-flow</code>.</li>
+<li>Part A (singleton injection into <code>AgentDB.initialize()</code>) was progressively completed across ADR-0090 B5 waves (fork commits <code>8238837</code>, <code>7a977f1</code>, <code>b14a664</code>, <code>b340e90</code>, <code>d7f613a</code>, <code>794ad50</code>) that added missing constructor DDL/singleton wiring for CausalMemoryGraph, ReflexionMemory, SkillLibrary, ExplainableRecall, NightlyLearner, and sonaTrajectory.</li>
+<li>Rationale: ADR-0067 remains useful as the authoritative narrative for <em>why</em> the wiring looked the way it did in 2026-04. Keep as a historical reference. No further implementation tracked here — follow ADR-0089 and ADR-0093 for live work.</li>
+<li>Remaining work: none scoped to this ADR. Any residual lazy-AgentDB refactor (§10 item 1) would be a new ADR, not a resumption of this one.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

@@ -1,8 +1,8 @@
 {
-  "timestamp": "2026-04-29T09:10:04.635Z",
+  "timestamp": "2026-05-14T15:11:53.821Z",
   "patternsConsolidated": 0,
   "memoryCleaned": 1,
   "duplicatesRemoved": 0,
-  "hnswRebuilt": 2,
+  "hnswRebuilt": 6,
   "routerConsolidated": false
 }

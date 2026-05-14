@@ -15,6 +15,8 @@ CLAUDE.local.md
 .claude-flow/daemon.pid
 .claude-flow/**/*.log
 .claude-flow/**/*.tmp
+# Federation runtime node keys — bulk runtime state, not config
+.claude-flow/federation/
 
 # Environment variables
 .env
@@ -27,6 +29,9 @@ node_modules/
 
 # Swarm runtime databases
 .swarm/
+
+# Hive-mind runtime session state (prompt logs, session scratch)
+.hive-mind/
 
 # npm packaging artifacts
 npm/dist/

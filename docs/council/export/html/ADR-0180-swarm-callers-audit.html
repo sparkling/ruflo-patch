@@ -1,0 +1,698 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0180-swarm-callers-audit</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="adr-0180-swarm-session-caller-catalog-audit">ADR-0180 Swarm Session: Caller Catalog Audit</h1>
+<p><strong>Date:</strong> 2026-05-13
+<strong>Team:</strong> <code>adr-0180-callers</code>
+<strong>Coordinator:</strong> team-lead (Claude Code)
+<strong>Agents:</strong> 4 (mcp-surface-auditor, cli-command-auditor, hooks-daemons-auditor, inter-controller-auditor)
+<strong>Outcome:</strong> ADR-0180 Architecture §Caller surfaces + §Migration concerns + Open follow-ups #7-#14 updated.</p>
+<h2 id="purpose">Purpose</h2>
+<p>The original ADR-0180 framing said the archivist &quot;sits above MCP tool dispatch.&quot; A reviewer asked: <em>do components other than MCP need to use the archivist?</em> This swarm enumerated every in-process consumer of memory/substrate writes to answer concretely.</p>
+<h2 id="scope">Scope</h2>
+<p>Four parallel audits:</p>
+<ol>
+<li><strong>MCP surface auditor</strong> — every MCP tool that mutates substrate, grouped by surface.</li>
+<li><strong>CLI command auditor</strong> — every CLI command that mutates substrate directly (not via MCP).</li>
+<li><strong>Hooks + daemons auditor</strong> — lifecycle hooks and daemon/background workers that mutate substrate.</li>
+<li><strong>Inter-controller writes auditor</strong> — re-entrancy patterns where one controller writes to another.</li>
+</ol>
+<p>Each agent received a self-contained prompt (no prior conversation context), tight scope, predefined report format, and a single-attempt discipline (no retry loops).</p>
+<h2 id="headline-finding">Headline finding</h2>
+<p>The archivist surface is <strong>~200+ call sites across 5 caller surfaces</strong>, an order of magnitude beyond the &quot;13 mutation paths&quot; estimate earlier drafts of ADR-0180 used. The &quot;above MCP-dispatch boundary&quot; framing in the original ADR significantly understated the migration scope.</p>
+<h2 id="findings-by-agent">Findings by agent</h2>
+<h3 id="mcp-surface-auditor-mcp-surface-auditor">MCP surface auditor (mcp-surface-auditor)</h3>
+<p><strong>Total mutating MCP tools: ~110 across 24 surfaces in the published cli surface, plus ~15 in the standalone agentdb MCP server.</strong></p>
+<p>Surfaces by mutating-tool count:</p>
+<ul>
+<li>memory_*: 4</li>
+<li>agentdb_* (cli): ~20</li>
+<li>agentdb_* (standalone server): ~15 (separate entrypoint)</li>
+<li>hive-mind_*: 6</li>
+<li>hooks_*: ~18</li>
+<li>autopilot_*: 6</li>
+<li>claims_*: 8</li>
+<li>task_*: 5</li>
+<li>agent_*: 4</li>
+<li>swarm_*: 2</li>
+<li>session_*: 3</li>
+<li>coordination_*: 5</li>
+<li>workflow_*: 8</li>
+<li>daa_*: 6</li>
+<li>wasm_*: 6</li>
+<li>neural_*: 3</li>
+<li>github_*: 3</li>
+<li>embeddings_*: 4</li>
+<li>performance_*: 4</li>
+<li>system_*: 1</li>
+<li>config_*: 3</li>
+<li>progress_*: 1</li>
+<li>ruvllm_*: 6</li>
+<li>browser_*: 4</li>
+<li>aidefence_*: 5</li>
+</ul>
+<p><strong>Notable findings:</strong></p>
+<ol>
+<li><p><strong>No existing wrapper above the surface.</strong> The ADR&#39;s reference to <code>bridgeStoreEntry (memory-bridge.ts:518)</code> is stale — those functions were deleted under ADR-0085. Closest existing chokepoint is <code>routeMemoryOp</code> in <code>cli/src/memory/memory-router.ts:991</code>, covering ~30% of writes. Half the <code>agentdb_*</code> handlers bypass it.</p>
+</li>
+<li><p><strong>Three parallel store-of-stores patterns:</strong></p>
+<ul>
+<li>SQLite via <code>routeMemoryOp</code> (~30%): memory_*, half of agentdb_*, parts of hooks_*/daa_*/embeddings_*.</li>
+<li>File-system JSON via <code>writeFileSync(getXxxPath(), JSON.stringify(...))</code>: claims/tasks/agents/swarm/coordination/workflow/neural/github/perf/system/config/progress/ruvllm/daa/wasm. Uniform shape, no shared write primitive.</li>
+<li>File-system + lock variants: hive-mind WAL stack, workflow pid lock, wasm pid lock, swarm tmp+rename.</li>
+</ul>
+</li>
+<li><p><strong><code>withHiveStoreLock</code> + <code>saveHiveState</code> (hive-mind-tools.ts:1173)</strong> is the most mature in-tree precedent — ordered cross-process locking + tmp+fsync+rename + cache-after-rename invariant (ADR-0095). Recommended as the archivist&#39;s reference substrate primitive.</p>
+</li>
+<li><p><strong>Cross-surface side-writes</strong> that the archivist must serialize correctly:</p>
+<ul>
+<li><code>memory_store</code> writes <code>memory_entries</code> AND triggers <code>memoryGraph.addNode</code> (a second substrate).</li>
+<li><code>hive-mind_spawn</code> writes BOTH <code>hive-state.json</code> AND <code>agents.json</code> non-atomically.</li>
+<li><code>agentdb_pattern-store</code> writes <code>reasoning_patterns</code> AND falls through to <code>memory_entries</code> on failure — the ADR-0179 amplification pattern in miniature.</li>
+<li><code>agentdb_experience_record</code> writes FK-coupled <code>learning_sessions</code> AND <code>learning_experiences</code>; orphan sessions possible on partial failure.</li>
+<li><code>agentdb_semantic_add_route</code> writes both in-memory Map AND <code>.claude-flow/semantic-routes.json</code> with explicit fatal-throw on persist failure (hand-rolled correct shape).</li>
+<li><code>agentdb_session-end</code> cascades into NightlyLearner consolidation across <code>skills/causal_edges/reasoning_patterns</code>.</li>
+</ul>
+</li>
+<li><p><strong>Standalone agentdb MCP server</strong> (<code>forks/agentdb/src/mcp/agentdb-mcp-server.ts</code>) is a separate entrypoint with 33 tools (~15 mutating). Either covered by archivist contract OR retired pre-archivist.</p>
+</li>
+<li><p><strong>Tools that mutate caches on read paths</strong> (memory_search, agentdb_embed, agentdb_filtered_search) classified as READ, not MUTATING — handled by <code>ReadContext</code> channel.</p>
+</li>
+</ol>
+<h3 id="cli-command-auditor-cli-command-auditor">CLI command auditor (cli-command-auditor)</h3>
+<p><strong>Direct-write commands (not MCP-mediated, need archivist routing):</strong></p>
+<p><code>ruflo memory</code> family (<code>cli/src/commands/memory.ts</code>):</p>
+<ul>
+<li><code>ruflo memory store</code> (:73, routeMemoryOp &#39;store&#39; :120)</li>
+<li><code>ruflo memory delete</code> (:550, routeMemoryOp &#39;delete&#39; :576)</li>
+<li><code>ruflo memory init</code> (:1347) — <code>fs.unlinkSync</code> of RVF canonical siblings + sidecars (:1453-1469) + <code>resetRouter()</code></li>
+<li><code>ruflo memory migrate</code> (:1864) — paginates list + re-stores each entry; <code>--from-sqlite</code> calls <code>RvfMigrator.fromSqlite()</code></li>
+</ul>
+<p><code>ruflo embeddings cache clear</code> (embeddings.ts:1386) — routeMemoryOp &#39;clearNamespace&#39; + fs.unlinkSync on cache db.</p>
+<p><code>ruflo hooks notify</code> (hooks.ts:5202) — direct routeMemoryOp &#39;store&#39; into &#39;notifications&#39; namespace; <strong>silently swallows failures</strong> (ADR-0082 violation candidate).</p>
+<p><code>ruflo performance benchmark</code> (performance.ts:244) — writes 20 entries to &#39;benchmark&#39; namespace, never cleans up (substrate pollution).</p>
+<p><code>@claude-flow/cli-core/commands/memory.ts</code> — SECOND CLI surface via <code>JsonMemoryBackend</code> (memory/json-backend.js). Plugin scripts depend on it. Bypasses the main router entirely.</p>
+<p><code>agentdb</code> CLI (<code>forks/agentdb/src/cli/agentdb-cli.ts</code> + <code>commands/</code>):</p>
+<ul>
+<li><code>agentdb init</code> (commands/init.ts:115) — <code>db.exec(schema)</code> + writes to <code>config_settings</code></li>
+<li><code>agentdb migrate</code> (commands/migrate.ts:191) — batched insert.run per row across tables</li>
+<li><code>agentdb migrate --from sqlite --to pglite</code> (commands/migrate-sqlite-to-pglite.ts:317) — raw INSERT per row into PGLite</li>
+<li><code>agentdb causal add-edge</code> (agentdb-cli.ts:230) — controller call</li>
+<li><code>agentdb causal experiment create</code> (:260) — BOTH raw INSERT INTO episodes AND <code>causalGraph.createExperiment</code> AND <code>db.save()</code> (triple-write inconsistency)</li>
+<li><code>agentdb learner run</code> (:2227), <code>agentdb learner prune</code> (:2234)</li>
+<li><code>agentdb reflexion store/prune</code> (:2247/2319)</li>
+<li><code>agentdb skill create/consolidate/prune</code> (:2331/2342/2349)</li>
+<li><code>agentdb sync push/pull/start-server</code> (:2371/2420/2451) — QUIC sync mutates substrate on both peers</li>
+</ul>
+<p><strong>Mixed-mode commands</strong> (raw SQL + controller call + manual db.save) — <code>agentdb causal experiment create</code> is the worst offender. Exactly the inconsistency the archivist is meant to fix.</p>
+<p><strong>Notable findings:</strong></p>
+<ol>
+<li>Two divergent CLI memory backends (cli&#39;s router vs cli-core&#39;s JsonMemoryBackend) — separate audit-chain implications.</li>
+<li><code>hive-mind spawn</code> writes via the MCP <code>hive-mind_memory action:set</code> tool with an explicit single-writer policy (&quot;the MCP tool&#39;s <code>set</code> action is the only legal write site&quot;). Precedent the archivist generalizes.</li>
+<li><code>memory init --force</code> destroys RVF files via <code>fs.unlinkSync</code> — below substrate boundary. Either out-of-band admin op or archivist <code>destroyStore</code> operation.</li>
+<li>agentdb CLI is the largest body of direct-controller / raw-SQL work — every controller method needs a wrapper.</li>
+</ol>
+<h3 id="hooks--daemons-auditor-hooks-daemons-auditor">Hooks + daemons auditor (hooks-daemons-auditor)</h3>
+<p><strong>Hot-path hook writers:</strong></p>
+<ul>
+<li><code>post-edit</code> → <code>intelligence.recordEdit(file)</code> → <strong><code>fs.appendFileSync</code> to <code>.claude-flow/data/pending-insights.jsonl</code></strong> (intelligence.cjs:662-671). <strong>HOT</strong> — fires on every Edit/Write/MultiEdit. Current budget: &lt;2ms.</li>
+<li><code>pre-task</code> → <code>session.metric(&#39;tasks&#39;)</code> + <code>router.routeTask()</code> (read-only routing) — <strong>HOT</strong> (every Agent invocation).</li>
+</ul>
+<p><strong>Moderate-frequency hooks:</strong></p>
+<ul>
+<li><code>post-task</code> → <code>intelligence.feedback(success)</code> → boost/decay confidence, <strong>rewrites <code>ranked-context.json</code> and <code>graph-state.json</code></strong> (intelligence.cjs:677-711). <strong>MODERATE</strong> (1/task).</li>
+</ul>
+<p><strong>Cold but heavy:</strong></p>
+<ul>
+<li><code>session-restore</code> → <code>intelligence.init()</code> → may rewrite legacy <code>auto-memory-store.json</code> sidecar (intelligence.cjs:467-471). <strong>COLD</strong> (1/session).</li>
+<li><code>session-end</code> → <code>intelligence.consolidate()</code> → <strong>inserts new entries, rebuilds edges + PageRank</strong>, writes <code>graph-state.json</code>/<code>ranked-context.json</code>/<code>intelligence-snapshot.json</code>/<code>consolidation.json</code>, evicts old entries (intelligence.cjs:717-870). <strong>COLD</strong> but heavy.</li>
+</ul>
+<p>The emitted handler <code>~/.claude/helpers/hook-handler.cjs</code> (generated by <code>cli/src/init/helpers-generator.ts:440-578</code>) dispatches to <code>intelligence.cjs</code> and <code>session</code> helpers.</p>
+<p><code>hooks/src/reasoningbank/index.ts:1095-1149</code> exposes <code>onPostTask</code>/<code>onSessionEnd</code> calling <code>AutoMemoryBridge.recordInsight()</code> + <code>syncToAutoMemory()</code> + <code>curateIndex()</code> (write MEMORY.md index + topic files).</p>
+<p><strong>Daemons:</strong></p>
+<ul>
+<li><strong>worker-daemon (out-of-process <code>ruflo daemon start</code>)</strong> — <code>cli/src/services/worker-daemon.ts</code>:<ul>
+<li>Queue poll: <code>setInterval</code> ~250ms (line 883) — HOT in frequency but no writes per tick.</li>
+<li>Scheduled workers: <code>map</code> 15min, <code>audit</code> 30min, <code>optimize</code> 60min, <code>consolidate</code> 10min, <code>testgaps</code> 60min, <code>benchmark</code> 2h (disabled). All write to <code>.claude-flow/metrics/{type}.json</code>. Aggregate ~5-6 substrate writes/hour.</li>
+</ul>
+</li>
+<li><strong>v3-package in-process daemons</strong> (<code>hooks/src/daemons/index.ts</code>):<ul>
+<li>MetricsDaemon (30s) — in-memory only.</li>
+<li>SwarmMonitorDaemon (3s) — in-memory only.</li>
+<li>HooksLearningDaemon (60s) — calls <code>reasoningBank.consolidate()</code>. <strong>MODERATE</strong> if active. <strong>Silently no-ops</strong> if reasoningbank isn&#39;t loaded (feedback-no-fallbacks violation).</li>
+</ul>
+</li>
+<li><strong>ReasoningBank backing store</strong> (hooks/src/reasoningbank/index.ts:792-841): <code>storeInAgentDB</code>/<code>updateInStorage</code>/<code>deleteFromStorage</code> — namespaces <code>patterns:short_term</code> and <code>patterns:long_term</code>. Triggered by <code>recordOutcome</code>/<code>storePattern</code>/<code>consolidate</code>. <strong>MODERATE</strong>.</li>
+<li><strong>AutoMemoryBridge periodic sync</strong> (memory/src/auto-memory-bridge.ts): 60s <code>setInterval</code> (line 745). Writes backend + topic markdown + MEMORY.md index. <strong>MODERATE</strong>.</li>
+<li><strong>MemoryConsolidation controller</strong>: invoked externally; heavy multi-table writes per invocation.</li>
+</ul>
+<p><strong>Notable findings:</strong></p>
+<ol>
+<li><strong>Two parallel consolidation systems write overlapping state</strong>: in-process <code>intelligence.cjs:consolidate()</code> (session-end hook) vs worker-daemon&#39;s <code>runConsolidateWorker</code>. Uncoordinated.</li>
+<li><code>intelligence.cjs</code> still writes the deprecated <code>auto-memory-store.json</code> sidecar on first session of a fresh project despite the file header claiming the sidecar is eliminated.</li>
+<li><code>worker-daemon.crash.log</code> and <code>pids/*</code> are operational, not substrate — excluded from archivist scope.</li>
+<li>No daemon writes embeddings autonomously; all embed/vector writes flow through explicit controllers via MCP or hook handlers.</li>
+</ol>
+<h3 id="inter-controller-writes-auditor-inter-controller-auditor">Inter-controller writes auditor (inter-controller-auditor)</h3>
+<p><strong>Re-entrancy patterns:</strong></p>
+<ol>
+<li><strong><code>NightlyLearner.run()</code></strong> (NightlyLearner.ts:204-310) — orchestrates writes across Causal, Reflexion, SkillLibrary:<ul>
+<li><code>consolidateEpisodes</code> (:204-310): reads <code>episodes</code>, writes <code>causal_edges</code> via <code>causalGraph.addCausalEdge</code> (:293).</li>
+<li><code>discoverCausalEdges</code> (:411): reads episodes, writes <code>causal_edges</code>.</li>
+<li><code>pruneEdges</code> (:576): direct <code>DELETE FROM causal_edges</code> (bypasses CausalMemoryGraph).</li>
+<li><code>completeExperiments</code> (:501): updates <code>causal_experiments</code> via <code>calculateUplift</code> (CausalMemoryGraph.ts:355).</li>
+</ul>
+</li>
+<li><strong><code>MemoryConsolidation.createSemanticMemory</code></strong> (MemoryConsolidation.ts:347-381) — cascade: store→markConsolidated (UPDATE rows :427-433)→applyForgettingCurve (DELETE + vectorBackend.remove :447-452). Multi-controller pass.</li>
+<li><strong><code>SkillLibrary.consolidateEpisodesIntoSkills</code></strong> (SkillLibrary.ts:462-585) — reads <code>episodes</code> (Reflexion-owned), writes <code>skills</code> (:112), writes <code>skill_embeddings</code> (:370), writes <code>vectorBackend.insert(&#39;skill:${id}&#39;)</code> (:144). Single call fans out to 3 substrates.</li>
+<li><strong><code>SyncCoordinator.applyChanges</code></strong> (SyncCoordinator.ts:509-650) — INSERT OR REPLACE into <code>episodes</code>, <code>skills</code>, <code>skill_edges</code>, <code>sync_state</code> (FOUR tables in one method). Bulk multi-store write.</li>
+</ol>
+<p><strong>Read-then-write (cross-substrate within one controller, NOT re-entrancy):</strong></p>
+<ul>
+<li><code>ReflexionMemory.recordEpisode</code> (ReflexionMemory.ts:173): INSERT episode + <code>vectorBackend.insert</code> (:204) + multi-call <code>graphBackend.createRelationship</code> (:913/:937/:953). Single intent = 1 SQL + 1 vector + 3 graph writes.</li>
+<li><code>HierarchicalMemory.store</code> (:265): INSERT row + <code>hmem_vec</code> row (:300) + <code>vectorBackend.insert</code> (:287).</li>
+<li><code>CausalMemoryGraph.addCausalEdge</code> (:204-232): INSERT <code>causal_edges</code> + <code>vectorBackend.insert(&#39;causal-edge:...&#39;)</code>.</li>
+</ul>
+<p><strong>Re-entrancy implications for the Archivist:</strong></p>
+<ol>
+<li><strong>Nested MutationContext required.</strong> Multi-controller orchestrators need a parent <code>auditId</code> with child entries — otherwise pruneEdges + experiment completion + consolidation look like independent top-level writes that share a timestamp.</li>
+<li><strong>Same-controller multi-substrate ≠ re-entrancy.</strong> ReflexionMemory.recordEpisode writing SQL+vector+graph is one atomic intent, one audit entry covering N substrate touches.</li>
+<li><strong>Bulk-import paths bypass per-row hooks.</strong> SyncCoordinator.applyChanges writes hundreds of rows. Archivist needs a <code>bulk</code> mode emitting one summary audit entry + diff manifest.</li>
+<li><strong>Direct SQL bypasses sibling controllers.</strong> NightlyLearner.pruneEdges issues raw <code>DELETE FROM causal_edges</code> instead of CausalMemoryGraph methods. Archivist contract must require all writes through owning controllers or document the bypass.</li>
+<li><strong>Promotion is synchronous re-entry, not async event.</strong> MemoryConsolidation.createSemanticMemory calls hierarchicalMemory.store(...) inline during its own write. <code>MutationContext</code> needs a <code>child(reason)</code> method.</li>
+</ol>
+<h2 id="synthesis-decisions-integrated-into-adr-0180">Synthesis decisions (integrated into ADR-0180)</h2>
+<p>The audit drove ten ADR changes:</p>
+<ol>
+<li><strong>§Archivist placement</strong> reframed: &quot;sits between any in-process caller and substrate&quot;, not just MCP dispatch.</li>
+<li><strong>§Caller surfaces</strong> added: enumerates all 5 caller types with concrete counts.</li>
+<li><strong>§Re-entrancy</strong> added: <code>MutationContext.child(reason)</code> for nested writes; same-controller multi-substrate explicitly NOT re-entrancy.</li>
+<li><strong>§Bulk-write mode</strong> added: <code>MutationContext.bulk(intent, payload)</code> for sync/migrate paths with a summary audit entry + diff manifest.</li>
+<li><strong>§Performance and hot paths</strong> added: fast-path opt-in for <code>post-edit</code>/<code>pre-task</code> (in-memory ring buffer, batched fsync ≤100ms, guard skipped, async post-write).</li>
+<li><strong>§Migration concerns</strong> rewritten: ~200+ call sites; revised surface-by-surface migration strategy (Phases 2-10).</li>
+<li><strong>Pros and Cons §chosen option</strong> &quot;Bad&quot; bullet updated: &quot;200+ call sites across 5 caller surfaces&quot; replaces &quot;13 paths.&quot;</li>
+<li><strong>Open follow-up #7</strong> rewritten: replaces parallel migration with phased strategy.</li>
+<li><strong>Open follow-ups #8-#14</strong> added: standalone agentdb MCP server disposition; cli-core JsonMemoryBackend disposition; three parallel store-of-stores convergence; two parallel consolidation systems overlap; re-entrancy + bulk-mode load testing; hot-path concrete budget; pre-existing best-effort failures unrelated to archivist.</li>
+<li><strong><code>withHiveStoreLock</code> + <code>saveHiveState</code></strong> identified as the reference substrate primitive worth lifting.</li>
+</ol>
+<h2 id="process-notes">Process notes</h2>
+<ul>
+<li><strong>Team:</strong> <code>adr-0180-callers</code> created via TeamCreate; 4 agents spawned in parallel via Agent tool with <code>team_name</code> + <code>name</code> + <code>run_in_background: true</code>.</li>
+<li><strong>Discipline:</strong> each agent prompted with a self-contained brief, single-attempt rule, no Monitor, no retries on tool failures. Per <code>feedback-single-arm-experiment-prompt-discipline.md</code>.</li>
+<li><strong>Reporting:</strong> agents used SendMessage to deliver findings to team-lead; messages auto-rendered to user.</li>
+<li><strong>Tasks:</strong> 5-task list (1 per agent + 1 synthesis) tracked via TaskCreate/TaskUpdate.</li>
+<li><strong>Outcome:</strong> all 4 agents reported within ~25 minutes; synthesis + ADR update + HTML re-export completed by team-lead.</li>
+<li><strong>Cleanup:</strong> agents shut down via SendMessage <code>shutdown_request</code>; team cleaned via TeamDelete.</li>
+</ul>
+<h2 id="related">Related</h2>
+<ul>
+<li><a href="../adr/ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.html">ADR-0180</a> — the decision this audit informs</li>
+<li><a href="ADR-0179-council-r1-bridge-deletion.html">ADR-0179 council r1</a>, <a href="ADR-0179-council-r2-axis-architecture.html">r2</a>, <a href="ADR-0179-council-r3-bridge-coordination.html">r3</a> — the deliberation that motivated ADR-0180</li>
+<li>An earlier ADR-0180 research swarm (511b7d3 verification, type-enforcement substrate-handle pattern, replay determinism, read-side metadata channel, split/governance recommendation) ran in the same session but was not separately archived — its findings are integrated into ADR-0180&#39;s Architecture and Open follow-ups #4-#6 directly.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

@@ -1,0 +1,857 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0179-council-r1-bridge-deletion</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="adr-0179-council--round-1-transcript">ADR-0179 Council — Round 1 Transcript</h1>
+<p><strong>Date</strong>: 2026-05-13
+<strong>Team</strong>: <code>adr-0179-council</code> (<code>~/.claude/teams/adr-0179-council/config.json</code>)
+<strong>Topology</strong>: hierarchical-mesh, 8 agents, all spawned in one wave (per <code>feedback-council-queen-da-alongside-experts.md</code>)
+<strong>Comms</strong>: SendMessage on the bound team (per <code>feedback-agent-dialectic-via-sendmessage.md</code>) — no file-based handoff
+<strong>Related ADR</strong>: [[ADR-0179]] (proposed) — Restore Controller Instrumentation Lost in ADR-0085 Bridge Deletion
+<strong>Related Round-2</strong>: [[ADR-0179-council-r2-axis-architecture]] — 8-expert deliberation on whether the underlying axis architecture (which led to the bridge deletion) should itself be revisited</p>
+<h2 id="question-deliberated">Question deliberated</h2>
+<p>Was ADR-0085&#39;s deletion of <code>memory-bridge.ts</code> correct? Three options:</p>
+<ul>
+<li><strong>Option A</strong>: ADR-0085&#39;s deletion was correct, current state is fine, drop ADR-0179. Live with the regression.</li>
+<li><strong>Option B</strong>: ADR-0085&#39;s structural deletion was correct, but the audit gap is real, ADR-0179&#39;s call-site restoration is the right discharge.</li>
+<li><strong>Option C</strong>: Restore <code>memory-bridge.ts</code> as a module. Walk back ADR-0084 controller-direct (or readd bridge as parallel path). Possibly reverse ADR-0086 / ADR-0112 axis independence.</li>
+</ul>
+<h2 id="participants">Participants</h2>
+<table>
+<thead>
+<tr>
+<th><code>name:</code> slug</th>
+<th><code>subagent_type</code></th>
+<th>Role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>queen-architect</code></td>
+<td><code>system-architect</code></td>
+<td>Synthesis, no advocacy</td>
+</tr>
+<tr>
+<td><code>devils-advocate</code></td>
+<td><code>reviewer</code></td>
+<td>Pure opposition to all 3 options</td>
+</tr>
+<tr>
+<td><code>bridge-defender</code></td>
+<td><code>researcher</code></td>
+<td>Pro-restoration (Option C)</td>
+</tr>
+<tr>
+<td><code>status-quo-defender</code></td>
+<td><code>adr-architect</code></td>
+<td>Pro-current architecture</td>
+</tr>
+<tr>
+<td><code>perf-judge</code></td>
+<td><code>performance-engineer</code></td>
+<td>Perf-axis verdict</td>
+</tr>
+<tr>
+<td><code>security-judge</code></td>
+<td><code>security-architect</code></td>
+<td>MutationGuard/AttestationLog axis</td>
+</tr>
+<tr>
+<td><code>memory-judge</code></td>
+<td><code>memory-specialist</code></td>
+<td>Axis-placement correctness</td>
+</tr>
+<tr>
+<td><code>integration-judge</code></td>
+<td><code>v3-integration-architect</code></td>
+<td>Upstream-sync cost</td>
+</tr>
+</tbody></table>
+<h2 id="briefing-supplied-to-all-agents">Briefing supplied to all agents</h2>
+<ul>
+<li><strong>ADR-0053 (upstream, 2026-02-25, Implemented in v3.1.0-alpha.51)</strong>: Created <code>memory-bridge.ts</code> as Phase 1 Foundation to solve the &quot;dual memory system&quot; — AgentDB v3 shipped 28 controllers (ReasoningBank, MutationGuard, AttestationLog, TieredCache, ExplainableRecall, SkillLibrary, etc.) but the CLI runtime instantiated none of them and fell through to raw sql.js in memory-initializer.js. Bridge framed PERMANENT Foundation.</li>
+<li><strong>ADR-0084 Phase 4 (fork, 2026-04-12)</strong>: Moved router to controller-direct access via <code>getController()</code>.</li>
+<li><strong>ADR-0086 (fork, 2026-04-14)</strong>: Split storage axes. RVF for <code>memory_*</code>, AgentDB SQLite for <code>agentdb_*</code>. Deleted <code>memory-initializer.ts</code>.</li>
+<li><strong>ADR-0112 (fork, 2026-05-01)</strong>: Independent stores — no MCP tool spans both. Cross-store coordination forbidden.</li>
+<li><strong>ADR-0085 (fork, 2026-04-13)</strong>: Deleted <code>memory-bridge.ts</code> (<del>3,650 lines, 64 exports). 8-agent hive audit found 54/64 exports had zero external callers. Extracted <code>getRegistry()</code> + 8 helpers (</del>226 lines) into <code>memory-router.ts</code>. Structural verdict — did NOT body-diff each function for behaviors-inside.</li>
+</ul>
+<h3 id="what-the-2026-05-13-audit-discovered">What the 2026-05-13 audit discovered</h3>
+<p>6 features lost inside the deleted functions:</p>
+<ol>
+<li><strong>MutationGuard pre-write policy gate</strong> — Upstream <code>bridgeStoreEntry</code> called <code>guardValidate(...)</code> before every write; fork&#39;s <code>routeMemoryOp &#39;store&#39;</code> has none.</li>
+<li><strong>TieredCache write-through</strong> — Upstream populated read-side cache after every write; fork skips.</li>
+<li><strong>AttestationLog audit trail</strong> — Upstream wrote <code>logAttestation(...)</code> after every successful write; fork has zero call sites (yet <code>agentdb_health</code> still advertises the count, making the telemetry surface structurally lying).</li>
+<li><strong>Hybrid BM25 + semantic fusion as default</strong> — Upstream fused with <code>0.7 × semantic + 0.3 × BM25</code> on every search; fork does vector OR BM25 as alternatives, never both.</li>
+<li><strong>ExplainableRecall provenance strings</strong> — Upstream returned <code>semantic:0.872+bm25:0.310</code> style provenance per result; fork&#39;s field is unset.</li>
+<li><strong>SkillLibrary auto-promotion</strong> — Upstream <code>bridgeRecordFeedback</code> called <code>skills.promote(pattern, quality)</code> for <code>success &amp;&amp; quality ≥ 0.9 &amp;&amp; patterns.length &gt; 0</code>; fork&#39;s <code>routeFeedbackOp &#39;record&#39;</code> skips it.</li>
+</ol>
+<p>47 controllers registered, 17 with zero callers from <code>cli/src</code>. 9 dead exports; <strong>4 direct regressions against ADR-0053-Resolved issues</strong> (#1220 TieredCache, #1216 ExplainableRecall, Phase 5 MutationGuard, Phase 5 AttestationLog).</p>
+<hr>
+<h2 id="queen-architect--opening-framing">QUEEN ARCHITECT — Opening framing</h2>
+<h3 id="load-bearing-axes-the-council-must-argue">Load-bearing axes the council must argue</h3>
+<ul>
+<li><strong>Axis 1: Structural vs behavioral correctness of deletion</strong> — ADR-0085&#39;s audit confirmed 54/64 exports had zero external callers (structural sound). But &quot;no caller&quot; ≠ &quot;no behavior&quot;; functions had side effects (cache write-through, policy gates, audit writes) invoked transitively.</li>
+<li><strong>Axis 2: ADR-0053&#39;s Resolved status — were the issues actually fixed, or was Resolution a fiction once the bridge was removed?</strong> — 4 named issues are direct regressions. Process failure independent of which option we pick.</li>
+<li><strong>Axis 3: Restoration locus — module-level vs call-site-level</strong> — A bridge module (Option C) restores both behaviors AND the architectural shape ADR-0084 explicitly rejected. Call-site restoration (Option B / ADR-0179) restores behaviors without resurrecting the parallel path.</li>
+<li><strong>Axis 4: Independence of ADR-0086/0112 from the bridge question</strong> — RVF/SQLite axis separation and cross-store-forbidden are orthogonal to the 6 lost features. None of the 6 features required cross-store transactions.</li>
+<li><strong>Axis 5: Controller-coverage as an invariant, not a one-shot fix</strong> — 17 registered-but-uncalled controllers is a symptom of missing lint. Whatever option wins, the absence of a &quot;registered ⟹ called-or-explicitly-internal&quot; check is the actual root cause.</li>
+<li><strong>Axis 6: Cost-of-reversal asymmetry</strong> — Option C reintroduces ~3,650 LoC and the parallel-path failure mode ADR-0084 fixed. Option B adds ~6 call sites + lint. Option A ships a known regression against shipped-Resolved upstream issues.</li>
+</ul>
+<h3 id="anticipated-consensus">Anticipated consensus</h3>
+<ul>
+<li>The 2026-05-13 audit finding is correct and load-bearing: 6 features were lost, not 0.</li>
+<li>ADR-0085&#39;s structural verdict (54/64 exports unused) was sound <em>as a structural claim</em>; the failure was methodological — export-graph audit cannot detect behavioral side effects.</li>
+<li>ADR-0053&#39;s &quot;Resolved&quot; markings on #1220 / #1216 / Phase 5 controllers are now factually incorrect and must be reopened or re-annotated regardless of A/B/C.</li>
+<li>ADR-0086 (RVF vs SQLite axis separation) is independently sound and should NOT be reversed.</li>
+<li>A controller-coverage lint is needed regardless of which option wins.</li>
+</ul>
+<h3 id="tentative-lean">Tentative lean</h3>
+<p><strong>Option B</strong>, with the caveat that ADR-0179 must include the controller-coverage lint as a hard CI gate, not advisory; and ADR-0053&#39;s Resolved markings must be re-audited and re-annotated. <strong>Confidence: 62.</strong></p>
+<p>Justification: the 6 lost features are independent decorators on existing router operations, not a coherent module — call-site restoration is the minimum-blast-radius discharge that doesn&#39;t resurrect the parallel-path failure mode ADR-0084 correctly diagnosed.</p>
+<hr>
+<h2 id="devils-advocate--trilateral-challenge">DEVIL&#39;S ADVOCATE — Trilateral challenge</h2>
+<h3 id="challenge-to-option-a-deletion-was-correct-do-nothing">Challenge to Option A (&quot;deletion was correct, do nothing&quot;)</h3>
+<ul>
+<li><strong>Strongest argument FOR A that defenders won&#39;t make:</strong> 54/64 zero-caller exports is the smoking gun — the bridge was a museum, not a runtime. &quot;Regression&quot; requires a baseline of working behavior; if MutationGuard&#39;s pre-write gate fired in production and a fork user noticed when it stopped, name the bug report. There isn&#39;t one. <strong>You cannot regress from a feature nobody invoked.</strong></li>
+<li><strong>Strongest argument AGAINST A:</strong> &quot;Nobody noticed&quot; is exactly what you&#39;d expect from silently-deleted audit, attestation, and provenance code. Those features fail by being absent, not by throwing. AttestationLog regression doesn&#39;t page anyone — it just leaves you with no audit trail when compliance asks six months later.</li>
+<li><strong>What advocates of A are HIDING:</strong> The four ADR-0053 regressions (TieredCache, ExplainableRecall, MutationGuard, AttestationLog) were inside the <em>10 called</em> functions — embedded in helpers that DID have callers. The &quot;54/64&quot; headline is misleading.</li>
+<li><strong>One unambiguous data point that sinks A:</strong> A single ADR-0053-cited issue (#1220, #1216, or either Phase 5 issue) where the feature was demonstrably exercised by a CLI path that still exists today and is now silently degraded.</li>
+</ul>
+<h3 id="challenge-to-option-b-adr-0179-restoration-is-the-right-discharge">Challenge to Option B (&quot;ADR-0179 restoration is the right discharge&quot;)</h3>
+<ul>
+<li><strong>Strongest argument FOR B that defenders won&#39;t make:</strong> B is the only option that forces the 34-row behavioral diff that ADR-0085 skipped. The audit debt is real and only B discharges it. A buries it; C buries it under a 3,650-line restoration nobody will re-read.</li>
+<li><strong>Strongest argument AGAINST B:</strong> B is the &quot;have your cake and eat it&quot; option. ADR-0085 was wrong → restore the features. ADR-0085 was right → keep the deletion. The 34-row diff and explicit call sites are a <em>consolation prize</em> designed so neither bridge-defender nor status-quo-defender loses. That&#39;s diplomacy, not architecture. The controller-coverage lint also re-introduces the same coupling ADR-0112 forbade — Hybrid BM25+semantic fusion <em>by definition</em> spans the vector axis and the keyword axis.</li>
+<li><strong>What advocates of B are hand-waving:</strong> <em>Where</em> the explicit call sites go. The deleted bridge had a coherent layering (ControllerRegistry → HybridBackend → controllers). B sprinkles 6 features across the router as ad-hoc call sites. That&#39;s not &quot;restoring features without restoring the bridge&quot; — that&#39;s reinventing the bridge as scattered router code, which is strictly worse than either A or C.</li>
+<li><strong>One unambiguous data point that sinks B:</strong> Show the proposed router diff for Hybrid BM25+semantic fusion. If it requires the router to coordinate a write across the RVF axis AND the AgentDB SQLite axis in a single MCP tool, ADR-0112 is violated and B is incoherent.</li>
+</ul>
+<h3 id="challenge-to-option-c-restore-the-bridge-undo-related-adrs">Challenge to Option C (&quot;restore the bridge, undo related ADRs&quot;)</h3>
+<ul>
+<li><strong>Strongest argument FOR C that defenders won&#39;t make:</strong> The fork made three independent architectural decisions (ADR-0084 controller-direct, ADR-0086 axis split, ADR-0112 independent stores) and <em>each</em> was justified locally. But the <em>composition</em> of all three is what produced the 6-feature loss, and no single ADR owns that composition. Only C admits the composition is broken.</li>
+<li><strong>Strongest argument AGAINST C:</strong> Restoring 3,650 lines and walking back three downstream ADRs to fix 6 features (4 of which may not have working callers in current fork) is the textbook definition of &quot;over-correction in response to embarrassment.&quot; The ADR-0086 axis split was driven by RVF-primary — that&#39;s load-bearing infrastructure, not a stylistic choice.</li>
+<li><strong>What advocates of C are romanticizing:</strong> The bridge as it <em>was</em> vs the bridge as it <em>would have to be</em> post-ADR-0086/0112. You cannot restore <code>memory-bridge.ts</code> as-of-deletion onto current trunk. C&#39;s &quot;restoration&quot; is actually &quot;rewrite a new bridge that pretends ADR-0086 didn&#39;t happen.&quot; That&#39;s a much larger surgery than C&#39;s defenders are admitting.</li>
+<li><strong>One unambiguous data point that sinks C:</strong> Demonstrate that any of the 6 lost features <em>requires</em> a bridge module rather than 6 explicit router call sites + a coverage lint.</li>
+</ul>
+<h3 id="the-question-nobody-will-want-to-answer">The question NOBODY will want to answer</h3>
+<p><strong>Why did ADR-0085&#39;s hive audit ship with zero body-diff of the 10 <em>called</em> functions, and what process change prevents the next deletion from doing the same?</strong> The council is litigating the symptom. The process that approved a 3,650-line deletion without behavioral diff is the actual defect, and it will fire again — on the next &quot;obviously dead&quot; module — regardless of which option wins.</p>
+<h3 id="own-lean">Own lean</h3>
+<p>Pure opposition by role. One observation for the queen: <strong>B is the option that resolves itself by producing evidence</strong>. A and C resolve by vote. Prefer the option that produces evidence.</p>
+<hr>
+<h2 id="bridge-defender--case-for-restoration">BRIDGE DEFENDER — Case for restoration</h2>
+<h3 id="position">Position</h3>
+<ul>
+<li><strong>Primary: C (confidence 72)</strong> — restore <code>memory-bridge.ts</code> as the concentrated controller-integration surface.</li>
+<li><strong>Secondary acceptable fallback: B+</strong> — accept ADR-0179 call-site restoration only if it ships with (a) a single <code>controller-integration/</code> module that physically co-locates the 6 call sites, (b) the audit table promoted to a runtime registry contract, and (c) a CI lint that fails when a controller is registered with zero callers.</li>
+</ul>
+<h3 id="five-strongest-arguments">Five strongest arguments</h3>
+<ol>
+<li><strong>The audit is empirical proof that scattered integration loses features.</strong> Six ADR-0053 mission deliverables silently regressed between 2026-02-25 and 2026-05-13. That is the predicted failure mode of dispersing a cohesive integration responsibility. The bridge existed precisely so &quot;is controller X wired?&quot; was answerable by reading one file.</li>
+<li><strong>64 exports was cohesion, not bloat.</strong> The bridge was the <em>intended</em> integration point for 28 controllers; the CLI hadn&#39;t finished wiring its surface area yet. Deleting the bridge because callers hadn&#39;t arrived is like deleting an API because no client has shipped. The 17 currently-zero-caller controllers prove the wiring debt didn&#39;t vanish, it lost its home.</li>
+<li><strong>GoF Bridge + cross-package bridge is the right pattern for this seam.</strong> AgentDB ships an abstraction; the CLI is the implementation hierarchy. ADR-0084 Phase 4 optimized for one hop of indirection at the cost of the abstraction that made the system auditable.</li>
+<li><strong>ADR-0179 institutionalizes the same audit gap.</strong> An audit table is a <em>document</em>. Documents drift. The bridge was <em>code</em>; its exports were the audit table, mechanically.</li>
+<li><strong>The fork is in arrears against its own foundational ADR.</strong> ADR-0053 was framed &quot;Phase 1 Foundation&quot; and &quot;PERMANENT.&quot; Issues #1207-#1227 were marked Resolved on the basis of <code>bridgeGetController(&#39;X&#39;)</code>.</li>
+</ol>
+<h3 id="honest-weak-spot">Honest weak spot</h3>
+<p>I&#39;m reasoning from a briefing, not from the deleted code. If the bridge was 80% router-that-shouldn&#39;t-have-been-there and 20% actual integration, then ADR-0085 correctly extracted the router and the remaining 20% is small enough that call-site restoration is genuinely fine. <strong>My case rests on the bridge having been load-bearing at deletion; if it was mostly dead scaffolding around a small integration core, Option B is the right answer.</strong></p>
+<hr>
+<h2 id="status-quo-defender--case-for-current-architecture">STATUS-QUO DEFENDER — Case for current architecture</h2>
+<h3 id="position-1">Position</h3>
+<ul>
+<li><strong>Primary: B (confidence 78)</strong></li>
+<li>Acceptable secondary: A as a fallback if the audit shows the 6 features can be reconstructed organically. <strong>C is unacceptable.</strong></li>
+</ul>
+<h3 id="why-adr-0085-was-correct-and-remains-correct">Why ADR-0085 was correct and remains correct</h3>
+<ol>
+<li><strong>The bridge encoded a now-forbidden mental model.</strong> ADR-0053 was written when the system was <em>one</em> memory plane with controllers as an implementation detail. ADR-0086 split that plane into two stores; ADR-0112 forbade cross-store coordination as a design rule. A bridge module whose entire purpose is to be the single orchestrator spanning both stores is, post-0086/0112, a category error.</li>
+<li><code>agentdb-orchestration.ts</code> literally re-implemented 15 bridge functions with file:line citations — the codebase telling us one of the two layers had forked and was diverging.</li>
+<li><strong>The dead-export evidence was overwhelming and pre-deletion-verified.</strong> 54/64 exports had zero external callers.</li>
+<li><strong>Controller-direct (ADR-0084 Phase 4) had already won on the CLI side.</strong> Once <code>getController()</code> was the canonical path, the bridge&#39;s value disappeared.</li>
+<li><strong>Net production LoC: -3,588 against a +226 router extraction.</strong> That ratio (~16:1) is only achievable when the deleted code was genuinely redundant.</li>
+</ol>
+<h3 id="where-ill-concede-ground">Where I&#39;ll concede ground</h3>
+<ul>
+<li>The 6 lost behaviours ARE real losses. MutationGuard and AttestationLog in particular are correctness/audit features, not nice-to-haves.</li>
+<li>The audit-gap critique — that ADR-0085&#39;s review counted <em>call edges</em> but not <em>behavioural surface</em> — is fair.</li>
+<li>ADR-0179&#39;s restoration phases are reasonable. This is the right discharge.</li>
+</ul>
+<h3 id="honest-weak-spot-1">Honest weak spot</h3>
+<p>My case leans on ADR-0085&#39;s review having been <em>structurally</em> sound while conceding it was <em>behaviourally</em> incomplete. If the audit-gap critique generalises — if there are more than 6 lost behaviours — the &quot;deletion was right on structure&quot; defence weakens with every additional discovery. If a second audit pass surfaces 6+ more lost behaviours, B starts looking like denial and C starts looking like prudence.</p>
+<hr>
+<h2 id="performance-judge--perf-axis-verdict">PERFORMANCE JUDGE — Perf-axis verdict</h2>
+<h3 id="per-option-signature">Per-option signature</h3>
+<ul>
+<li><strong>Option A</strong>: RVF append-only WAL + atomic compact. p50 sub-ms for small payloads. Zero pre-write gate cost. Phase C.3 wins fully realized. <strong>Net: cheapest on every perf axis.</strong></li>
+<li><strong>Option B</strong>: +3 synchronous controller hops per write (MutationGuard, TieredCache, AttestationLog). +0.5-2ms p50, +5-15% p99 tail. Hybrid BM25+semantic adds O(n) IDF traversal — read p50 goes from ~1ms to ~10-30ms (<strong>10-30× regression</strong>). <strong>Risk</strong>: if hooks pull via <code>getRegistry()</code>, memory_* routes re-acquire registry bootstrap; +15-25% of original +30% store-p50 regression returns. Phase C.3 forfeit unless lite-registry is engineered.</li>
+<li><strong>Option C</strong>: Same as B plus bridge dispatch (~50-200µs). If C undoes RVF: catastrophic, back to sql.js cosine-on-JSON (150-12,500× per ADR-0086&#39;s own measurement). <strong>Net: worst on every axis.</strong></li>
+</ul>
+<h3 id="ranking-purely-on-perf">Ranking purely on perf</h3>
+<ol>
+<li><strong>A</strong> — strictly cheapest on every axis. The floor.</li>
+<li><strong>B</strong> — recoverable IF hybrid is opt-in (<code>hybrid: true</code> flag, default off) AND 3 write-side controllers are lazily constructed without forcing registry bootstrap.</li>
+<li><strong>C</strong> — strictly dominated.</li>
+</ol>
+<h3 id="hard-rules-for-any-wire-decision-in-b">Hard rules for any WIRE decision in B</h3>
+<ul>
+<li>Hybrid BM25+semantic must be <strong>opt-in per-query</strong>, not default-on.</li>
+<li>MutationGuard must have <strong>O(1) empty-rules fast path</strong>.</li>
+<li>AttestationLog must NOT contend with main RVF WAL.</li>
+<li>No new call site may force <code>ensureRegistry()</code> on memory_* axis.</li>
+</ul>
+<hr>
+<h2 id="security-judge--security-axis-verdict">SECURITY JUDGE — Security-axis verdict</h2>
+<h3 id="current-security-posture-option-a--do-nothing">Current security posture (Option A — do nothing)</h3>
+<ul>
+<li>MutationGuard: structurally dead. Every store/search/batch/remove/save/load bypasses the gate.</li>
+<li>AttestationLog: structurally dead <strong>with a worse failure mode</strong> — <code>agentdb_health</code> advertises an attestation count that is <em>always zero by construction</em>. An operator reading &quot;0 attestations&quot; today cannot distinguish &quot;system quiet&quot; from &quot;audit subsystem unwired.&quot; <strong>Lying telemetry surface.</strong></li>
+<li>ADR-0060 compliance: zero.</li>
+<li>Overall posture rating (1-10, where 10 = ADR-0053 design intent): <strong>2</strong>.</li>
+</ul>
+<h3 id="option-b-posture">Option B posture</h3>
+<ul>
+<li>MutationGuard wired as router pre-hook: <strong>8</strong>. Validates store/batch/remove/save/load at the single chokepoint.</li>
+<li>AttestationLog wired as router post-hook: <strong>8</strong>. <code>agentdb_health</code> count becomes truthful.</li>
+<li><strong>Failure semantics: MUST fail loudly.</strong> Feature-check at boot (is the controller wired?), fail-loud at every invocation thereafter. Not &quot;feature-checked per call so missing guard is silently OK.&quot;</li>
+</ul>
+<h3 id="option-c-posture">Option C posture</h3>
+<ul>
+<li>Posture rating: <strong>9</strong> at the bridge layer. But restoring with the wrong architecture re-introduces 54-of-64 dead exports — a 1:30 attack-surface ratio for a 2-feature security gain.</li>
+</ul>
+<h3 id="ranking">Ranking</h3>
+<ol>
+<li><strong>B</strong> — restores ADR-0060 compliance at router chokepoint without re-introducing the bridge&#39;s cross-store coupling.</li>
+<li><strong>C</strong> — same security posture but ships architectural debt.</li>
+<li><strong>A</strong> — forensic black hole, lying <code>agentdb_health</code> count, unenforceable policy layer.</li>
+</ol>
+<h3 id="non-obvious-regression">Non-obvious regression</h3>
+<p><strong><code>agentdb_health</code> reports attestation count = 0 today; an operator reads this as &quot;low activity&quot; rather than &quot;audit subsystem unwired.&quot;</strong> This is worse than not exposing the field — it converts an absent feature into false reassurance. The lying-telemetry problem alone justifies B over A.</p>
+<hr>
+<h2 id="memory-architecture-judge--storage-axis-verdict">MEMORY ARCHITECTURE JUDGE — Storage-axis verdict</h2>
+<h3 id="per-feature-axis-assignment">Per-feature axis assignment</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Correct axis</th>
+<th>Current ADR-0179 placement</th>
+<th>Misplaced?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>MutationGuard pre-write gate</td>
+<td><strong>Both axes</strong> (axis-neutral middleware)</td>
+<td>memory_* router</td>
+<td>YES — must be dual-axis</td>
+</tr>
+<tr>
+<td>TieredCache write-through</td>
+<td>memory_* primary</td>
+<td>memory_* router</td>
+<td>Partially correct</td>
+</tr>
+<tr>
+<td>AttestationLog audit</td>
+<td><strong>Both axes</strong></td>
+<td>memory_* router</td>
+<td>YES — must be dual-axis</td>
+</tr>
+<tr>
+<td>Hybrid BM25+semantic fusion</td>
+<td>memory_* search only</td>
+<td>memory_* router</td>
+<td>Mostly correct</td>
+</tr>
+<tr>
+<td>ExplainableRecall provenance</td>
+<td><em><em>agentdb_</em> primary</em>*</td>
+<td>memory_* router</td>
+<td>YES — misplaced</td>
+</tr>
+<tr>
+<td>SkillLibrary auto-promotion</td>
+<td>agentdb_* (correct)</td>
+<td>agentdb_* feedback route</td>
+<td>Correctly placed</td>
+</tr>
+</tbody></table>
+<h3 id="ranking-1">Ranking</h3>
+<ol>
+<li><strong>B-amended</strong> — split into B-mem and B-db, shared write-middleware module (<code>src/memory/middleware/</code>) for MutationGuard + AttestationLog, axis-specific read-path features.</li>
+<li><strong>B-as-written</strong> — better than A but ExplainableRecall on memory_* is structurally wrong; Guard/Attest skipping agentdb_* leaves real audit hole.</li>
+<li><strong>A</strong> — regressions are real; not a stable resting point.</li>
+<li><strong>C — off the ranking.</strong> Direct ADR-0086 violation.</li>
+</ol>
+<h3 id="the-deepest-architectural-question">The deepest architectural question</h3>
+<p><strong>Is the bridge concept axis-shaped or NOT axis-shaped?</strong> NOT axis-shaped. The original bridge bundled three distinct concerns: (1) write-path middleware (axis-neutral); (2) read-path enhancement (axis-specific); (3) controller lifecycle (correctly killed by ADR-0086). The bridge&#39;s failure was conflating these. ADR-0179&#39;s failure mirror is putting (1) and (2) on one axis as if they were the same kind of thing.</p>
+<hr>
+<h2 id="integration-judge--upstream-sync--fork-divergence-verdict">INTEGRATION JUDGE — Upstream-sync &amp; fork-divergence verdict</h2>
+<h3 id="per-option-upstream-sync-cost">Per-option upstream-sync cost</h3>
+<ul>
+<li><strong>A</strong>: Upstream changes never reach fork via bridge.ts (deleted). Each weekly sync produces <code>deleted by us</code> conflict. Drift over 6mo: 2-4 more silent regressions; 12mo: capability surface visibly trails upstream.</li>
+<li><strong>B</strong>: Body-diff per sync is the corrective. Drift over 6mo: stable if body-diff cadence established.</li>
+<li><strong>C</strong>: Worst. Re-import 2,370-line bridge, then re-fork to honor ADR-0084/0086/0112. 6mo: re-fork begins immediately. 12mo: bridge.ts is most divergent file in the fork <em>again</em>.</li>
+</ul>
+<h3 id="the-fork-owned-agentdb-complication">The &quot;fork-owned agentdb&quot; complication</h3>
+<p>Pre-0161, agentdb was vendored. Now it&#39;s its own fork. <strong>Both</strong> consumer and provider of the bridge are fork-owned. The original ADR-0053 framing solved cross-package indirection when one side was vendored. Now that both sides are fork-owned, the indirection has no remaining value. <strong>This decisively weakens the case for C.</strong></p>
+<h3 id="body-diff-methodology-heuristic">Body-diff methodology heuristic</h3>
+<p>For files where <code>exports/LoC &lt; 0.05</code>, body-diff is mandatory before deletion. Bridge.ts was 34/2370 ≈ 0.014 — well below threshold.</p>
+<h3 id="ranking-2">Ranking</h3>
+<ol>
+<li><strong>B</strong> — restores feature parity without re-coupling to upstream&#39;s pre-split, pre-direct architecture.</li>
+<li><strong>A</strong> — cheapest weekly sync cost; compounds divergence-of-capability.</li>
+<li><strong>C</strong> — worst on every integration axis.</li>
+</ol>
+<hr>
+<h2 id="council-verdict-synthesis">Council verdict (synthesis)</h2>
+<h3 id="tally">Tally</h3>
+<table>
+<thead>
+<tr>
+<th>Expert</th>
+<th>Primary</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>queen-architect</td>
+<td><strong>B</strong> (62%)</td>
+<td>Tentative; willing to escalate to &quot;B+&quot; if recurrence risk surfaces</td>
+</tr>
+<tr>
+<td>devils-advocate</td>
+<td><strong>none</strong> (pure opposition)</td>
+<td>But explicitly: &quot;Prefer the option that produces evidence&quot; → B</td>
+</tr>
+<tr>
+<td>bridge-defender</td>
+<td><strong>C</strong> (72%)</td>
+<td>Concedes to B+ if call sites are physically co-located + lint generalizes</td>
+</tr>
+<tr>
+<td>status-quo-defender</td>
+<td><strong>B</strong> (78%)</td>
+<td>A as last-resort fallback; C is &quot;unacceptable&quot;</td>
+</tr>
+<tr>
+<td>perf-judge</td>
+<td><strong>A</strong> on pure perf grounds</td>
+<td>But &quot;B is recoverable&quot; if hybrid is opt-in + no eager-init leakage</td>
+</tr>
+<tr>
+<td>security-judge</td>
+<td><strong>B</strong> (decisive)</td>
+<td>C is second; A is non-compliant with ADR-0060</td>
+</tr>
+<tr>
+<td>memory-judge</td>
+<td><strong>B-amended</strong></td>
+<td>Axis re-placement mandatory; C &quot;off the ranking&quot; — violates 0086/0112</td>
+</tr>
+<tr>
+<td>integration-judge</td>
+<td><strong>B</strong></td>
+<td>A second; C &quot;worst on every integration axis&quot;</td>
+</tr>
+</tbody></table>
+<p><strong>Final tally: 6 B / 1 C / 1 A-with-B-acceptable.</strong></p>
+<h3 id="mandatory-amendments-to-adr-0179-b-amended">Mandatory amendments to ADR-0179 (&quot;B-amended&quot;)</h3>
+<ol>
+<li><strong>Axis re-placement</strong> — MutationGuard + AttestationLog go on <em>both</em> router axes via shared write-middleware (<code>src/memory/middleware/</code>), not just memory_*. ExplainableRecall moves to agentdb_*.</li>
+<li><strong>Performance guardrails</strong> — Hybrid BM25+semantic opt-in not default; MutationGuard O(1) empty-rules fast path; AttestationLog separate I/O; no registry leakage on memory_* axis; lazy per-controller construction.</li>
+<li><strong>Failure semantics + chokepoint coverage</strong> — Fail-loud not feature-checked-per-call; audit of controller-direct mutation sites under ADR-0084 Phase 4; read-side guard policy explicit.</li>
+<li><strong>Body-diff methodology generalization</strong> — <code>exports/LoC &lt; 0.05</code> triggers body-diff before deletion. Permanent precedent.</li>
+<li><strong>Reopen ADR-0053 Resolved markings</strong> — Issues #1220, #1216, Phase 5 controllers must be re-audited and re-annotated.</li>
+</ol>
+<h3 id="final-recommendation">Final recommendation</h3>
+<p>Adopt <strong>B-amended</strong>. The bridge stays deleted. ADR-0084/0086/0112 stay in place. The 6-feature debt gets discharged correctly — not by recreating the bridge, not by pretending the gap doesn&#39;t exist.</p>
+<hr>
+<h2 id="provenance">Provenance</h2>
+<ul>
+<li>Round 1 ran 2026-05-13 ~11:10–11:14 (4 minutes wall-clock from spawn to last idle).</li>
+<li>Cost: zero per <code>feedback-no-api-keys.md</code> — agents shell out to local <code>claude</code> CLI via subscription.</li>
+<li>8 agents spawned in one <code>Agent</code> tool wave (single message) per <code>feedback-council-queen-da-alongside-experts.md</code>.</li>
+<li>Round 1 outputs delivered via SendMessage on team <code>adr-0179-council</code>, per <code>feedback-agent-dialectic-via-sendmessage.md</code>.</li>
+<li>Followed by [[ADR-0179-council-r2-axis-architecture]] which deliberated whether the underlying axis architecture (which ADR-0179&#39;s restoration assumes) is itself correct.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

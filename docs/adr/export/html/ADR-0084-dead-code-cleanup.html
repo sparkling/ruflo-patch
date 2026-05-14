@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0084-dead-code-cleanup</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="adr-0084-dead-code-cleanup--sqljs-ghost-references--bridge-caller-migration">ADR-0084: Dead Code Cleanup — sql.js Ghost References + Bridge Caller Migration</h1>
+<ul>
+<li><strong>Status</strong>: <strong>Implemented (2026-05-03)</strong> — Phase 4 single controller complete; Phase 5 by ADR-0083.</li>
+<li><strong>Date</strong>: 2026-04-12</li>
+<li><strong>Deciders</strong>: Henrik Pettersen</li>
+<li><strong>Methodology</strong>: 8-agent hive (storage architect, CJS analyst, performance engineer, merge-conflict strategist, user-impact analyst, 2 devil&#39;s advocates, queen synthesis)</li>
+<li><strong>Depends on</strong>: ADR-0083 (Phase 5 single data flow path)</li>
+<li><strong>Supersedes</strong>: None</li>
+</ul>
+<h2 id="context">Context</h2>
+<h3 id="post-phase-5-state">Post-Phase 5 state</h3>
+<p>ADR-0083 Phase 5 centralized all memory operations through <code>memory-router.ts</code> and
+deleted 3 bridge/shim files (~825 lines). A hive council of ruflo experts audited the
+post-Phase 5 codebase and found:</p>
+<ol>
+<li><strong>sql.js is structurally dead</strong> — not in package.json, zero imports — but 21 files
+still contain stale string references (user-facing output, comments, descriptions)</li>
+<li><strong>4 dead <code>.save()</code> guards</strong> in memory-bridge.ts that test for sql.js&#39;s <code>.save()</code> method,
+which always evaluates false with better-sqlite3</li>
+<li><strong>memory-bridge.ts is still required</strong> — 45+ direct callers, 5 router fallback paths</li>
+<li><strong>agentdb-orchestration.ts shadows memory-bridge.ts</strong> — 15 functions explicitly labeled
+&quot;Replicates: memory-bridge.ts&quot;</li>
+<li><strong>User-facing output is misleading</strong> — <code>backend: &#39;sql.js + HNSW&#39;</code> shown to users when
+the actual backend is better-sqlite3</li>
+</ol>
+<h3 id="hive-findings-what-is-truly-needed">Hive findings: what is truly needed</h3>
+<table>
+<thead>
+<tr>
+<th>Component</th>
+<th>Verdict</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>SQLite (better-sqlite3)</strong></td>
+<td>KEEP</td>
+<td>Primary store; 2600-line initializer + ControllerRegistry depend on it</td>
+</tr>
+<tr>
+<td><strong>sql.js</strong></td>
+<td>ALREADY REMOVED</td>
+<td>Not in deps, not imported; only stale strings remain</td>
+</tr>
+<tr>
+<td><strong>RVF</strong></td>
+<td>KEEP</td>
+<td>Clean role post-Phase 5: hook import writes, bridge search reads</td>
+</tr>
+<tr>
+<td><strong>JSON sidecar</strong></td>
+<td>KEEP</td>
+<td>Hard CJS boundary; intelligence.cjs cannot use SQLite or RVF</td>
+</tr>
+<tr>
+<td><strong>Dual-write (SQLite + JSON)</strong></td>
+<td>KEEP</td>
+<td>Necessary while intelligence.cjs is CJS</td>
+</tr>
+<tr>
+<td><strong>memory-bridge.ts</strong></td>
+<td>KEEP (defer removal)</td>
+<td>45+ callers; router falls back to it for 5 controller ops</td>
+</tr>
+</tbody></table>
+<h3 id="why-sqljs-references-persist">Why sql.js references persist</h3>
+<p>sql.js was the original SQLite implementation (WASM-based). ADR-0080 Phase 4 migrated to
+better-sqlite3 via open-database.ts. ADR-0083 Phase 5 deleted open-database.ts entirely.
+But neither ADR cleaned up string literals, comments, or user-facing output that still
+say &quot;sql.js&quot;.</p>
+<h3 id="specific-dead-code-inventory">Specific dead code inventory</h3>
+<p><strong>Dead <code>.save()</code> guards in memory-bridge.ts</strong> (4 sites):
+These check <code>typeof ctx.db.save === &#39;function&#39;</code> — a method that exists on sql.js&#39;s
+<code>Database</code> but not on better-sqlite3&#39;s. With sql.js removed, these always evaluate false.</p>
+<p><strong>Stale &quot;sql.js&quot; strings</strong> (21 files):</p>
+<ul>
+<li><code>memory-tools.ts</code> — <code>backend: &#39;sql.js + HNSW&#39;</code> in 6 tool responses</li>
+<li><code>guidance-tools.ts</code> — tool descriptions mentioning sql.js</li>
+<li><code>migration-legacy.ts</code> — user-visible log messages</li>
+<li><code>memory-bridge.ts</code> — comments referencing sql.js flush, WASM db</li>
+<li>Various other files — ADR-era comments</li>
+</ul>
+<p><strong>agentdb-orchestration.ts shadow functions</strong> (15):
+Each function header says <code>// Replicates: memory-bridge.ts bridgeXxx (lines N-M)</code>.
+These are not dead code — they are actively used — but they are a parallel path that
+duplicates memory-bridge logic through the router, creating maintenance burden.</p>
+<h2 id="decision">Decision</h2>
+<h3 id="phase-1-immediate-cleanup-zero-risk">Phase 1: Immediate cleanup (zero risk)</h3>
+<p>Remove dead code and fix misleading output. No behavioral changes.</p>
+<ol>
+<li><p><strong>Remove 4 dead <code>.save()</code> guards</strong> in memory-bridge.ts</p>
+<ul>
+<li>These are <code>if (typeof ctx.db.save === &#39;function&#39;) ctx.db.save()</code> blocks</li>
+<li>Always false with better-sqlite3; removing them has zero runtime effect</li>
+</ul>
+</li>
+<li><p><strong>Update all &quot;sql.js&quot; strings</strong> to &quot;better-sqlite3&quot; or &quot;SQLite&quot;</p>
+<ul>
+<li><code>backend: &#39;sql.js + HNSW&#39;</code> → <code>backend: &#39;SQLite + HNSW&#39;</code> in memory-tools.ts</li>
+<li>Tool descriptions in guidance-tools.ts</li>
+<li>Log messages in migration-legacy.ts</li>
+<li>Comments in memory-bridge.ts and other files</li>
+</ul>
+</li>
+<li><p><strong>Update user-facing diagnostics</strong></p>
+<ul>
+<li><code>doctor</code> command output</li>
+<li><code>memory stats</code> output</li>
+<li>MCP tool descriptions that mention sql.js</li>
+</ul>
+</li>
+</ol>
+<h3 id="phase-2-bridge-caller-migration-medium-term-adr-0083-wave-3-scope">Phase 2: Bridge caller migration (medium-term, ADR-0083 Wave 3 scope)</h3>
+<p>Migrate remaining direct memory-bridge.ts callers to memory-router.ts.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Call sites</th>
+<th>Risk</th>
+<th>Upstream commits (6 weeks)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>worker-daemon.ts</code></td>
+<td>6</td>
+<td>MEDIUM</td>
+<td>—</td>
+</tr>
+<tr>
+<td><code>hooks-tools.ts</code></td>
+<td>20+</td>
+<td>HIGH</td>
+<td>20</td>
+</tr>
+</tbody></table>
+<p>This requires adding bridge-equivalent methods to memory-router.ts:</p>
+<ul>
+<li><code>bridgeStorePattern</code> → <code>routeMemoryOp</code> (may need pattern metadata support)</li>
+<li><code>bridgeRecordFeedback</code> → new router method</li>
+<li><code>bridgeSessionStart/End</code> → new router method</li>
+<li><code>bridgeSelfLearningSearch</code> → new router method</li>
+<li><code>bridgeConsolidate</code> → new router method</li>
+</ul>
+<p>Once all external callers route through memory-router.ts, the router&#39;s 5 bridge
+fallback paths become the only remaining dependency on memory-bridge.ts.</p>
+<h3 id="phase-3-deferred-evaluation">Phase 3: Deferred evaluation</h3>
+<ul>
+<li><strong>agentdb-orchestration.ts consolidation</strong>: Evaluate whether the 15 shadow functions
+should be merged back into memory-bridge or replaced by router methods</li>
+<li><strong>intelligence.cjs ESM migration</strong>: Evaluate whether the CJS hook runner contract
+allows ESM (depends on Claude Code hook runner constraints)</li>
+<li><strong>memory-bridge.ts removal</strong>: Only possible after Phases 2 and 3 complete</li>
+</ul>
+<h2 id="implementation-notes">Implementation Notes</h2>
+<h3 id="phase-1-file-inventory">Phase 1 file inventory</h3>
+<p>Files requiring &quot;sql.js&quot; string updates (from hive audit):</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Type of reference</th>
+<th>Change needed</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>memory-tools.ts</code></td>
+<td><code>backend: &#39;sql.js + HNSW&#39;</code> in 6 tool responses</td>
+<td>→ <code>&#39;SQLite + HNSW&#39;</code></td>
+</tr>
+<tr>
+<td><code>guidance-tools.ts</code></td>
+<td>Tool descriptions</td>
+<td>Update descriptions</td>
+</tr>
+<tr>
+<td><code>migration-legacy.ts</code></td>
+<td>Log messages</td>
+<td>Update messages</td>
+</tr>
+<tr>
+<td><code>memory-bridge.ts</code></td>
+<td>4 <code>.save()</code> guards + comments</td>
+<td>Remove guards, update comments</td>
+</tr>
+<tr>
+<td>~17 other files</td>
+<td>Comments only</td>
+<td>Update or remove</td>
+</tr>
+</tbody></table>
+<h3 id="phase-1-estimated-effort">Phase 1 estimated effort</h3>
+<ul>
+<li>21 files to update</li>
+<li>~50 lines of dead code to remove</li>
+<li>~30 string literal changes</li>
+<li>Zero behavioral impact</li>
+<li>30 minutes estimated</li>
+</ul>
+<h2 id="tasks-path-to-a-single-controller">Tasks: Path to a Single Controller</h2>
+<h3 id="phase-1-dead-code-cleanup-immediate">Phase 1: Dead code cleanup (immediate)</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <strong>T1.1</strong> Remove 4 dead <code>.save()</code> guards in <code>memory-bridge.ts</code></li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T1.2</strong> Update <code>memory-tools.ts</code> — change 6 <code>&#39;sql.js + HNSW&#39;</code> → <code>&#39;SQLite + HNSW&#39;</code></li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T1.3</strong> Update <code>guidance-tools.ts</code> — fix tool descriptions mentioning sql.js</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T1.4</strong> Update <code>migration-legacy.ts</code> — fix user-visible log messages</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T1.5</strong> Sweep remaining ~17 files for stale sql.js comments (15 files cleaned; 2 historical comments in memory-initializer.ts were left intentionally but are now moot — file deleted by ADR-0086 Phase 3)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T1.6</strong> Unit tests: verify all 1738 still pass after string changes</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T1.7</strong> Acceptance: verify <code>backend:</code> output no longer says sql.js (acceptance-adr0084-checks.sh created + wired)</li>
+</ul>
+<h3 id="phase-2-router-methods-for-bridge-only-functions">Phase 2: Router methods for bridge-only functions</h3>
+<p>Add missing methods to <code>memory-router.ts</code> so all callers can use the router:</p>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.1</strong> Add <code>routePatternOp()</code> — wraps <code>bridgeStorePattern</code> / <code>bridgeSearchPatterns</code></li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.2</strong> Add <code>routeFeedbackOp()</code> — wraps <code>bridgeRecordFeedback</code></li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.3</strong> Add <code>routeSessionOp()</code> — wraps <code>bridgeSessionStart</code> / <code>bridgeSessionEnd</code></li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.4</strong> Add <code>routeLearningOp()</code> — wraps <code>bridgeSelfLearningSearch</code> / <code>bridgeConsolidate</code></li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.5</strong> Add <code>routeReflexionOp()</code> — uses reflexion controller directly (no bridge functions exist)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.6</strong> Add <code>routeCausalOp()</code> — wraps <code>bridgeRecordCausalEdge</code> / <code>bridgeCausalRecall</code></li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.7</strong> Unit tests for each new router method (London School TDD — 18 groups, 52 tests)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T2.8</strong> Integration tests: verify router file exports all 6 methods + types + bridge cache</li>
+</ul>
+<h3 id="phase-3-migrate-callers-to-router-wave-3-scope">Phase 3: Migrate callers to router (Wave 3 scope)</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <strong>T3.1</strong> Migrate <code>worker-daemon.ts</code> — 7 bridge call sites → router (6 migrated, 1 shutdownBridge retained as lifecycle op)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T3.2</strong> Migrate <code>hooks-tools.ts</code> — 18 bridge call sites → router (8 getController, 2 feedback, 2 session, 1 causal, 2 pattern, 3 solver/route via controller-direct)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T3.3</strong> Merge or remove <code>agentdb-orchestration.ts</code> 17 shadow functions (7 router-direct, 10 controller-direct; 27% line reduction 801→585)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T3.4</strong> Remove router&#39;s 5 bridge fallback paths (getController, hasController, listControllerInfo, waitForDeferred, healthCheck)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T3.5</strong> Unit + integration + acceptance tests (46 unit/integration tests + 4 acceptance checks; 1836 total tests pass)</li>
+</ul>
+<h3 id="phase-4-single-controller-bridge-removal-from-route-layer">Phase 4: Single controller (bridge removal from route layer)</h3>
+<ul>
+<li><input checked="" disabled="" type="checkbox"> <strong>T4.1</strong> Verify zero external imports of <code>memory-bridge.ts</code> — hooks-tools, worker-daemon, agentdb-orchestration all clean; memory-initializer retains bridge as internal detail (all 11 calls are &quot;try AgentDB first, fallback exists&quot; patterns)
+(Note: memory-initializer.ts subsequently DELETED by ADR-0086 Phase 3 — bridge internal detail is now fully gone.)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T4.2</strong> Inline 9 bridge function calls in router&#39;s 5 route methods → controller-direct via <code>getController()</code>. Added <code>generateId()</code>, <code>getCallableMethod()</code>, <code>shutdownRouter()</code>. Removed <code>loadBridge()</code> and <code>_bridgeMod</code> from router.</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T4.2b</strong> Worker-daemon: <code>shutdownBridge</code> → <code>shutdownRouter</code> from memory-router (zero bridge imports)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T4.3</strong> Bridge retained as internal memory-subsystem detail (memory-initializer uses it for registry bootstrap). All external consumers migrated. Route methods are fully controller-direct.
+(Note: memory-initializer.ts subsequently DELETED by ADR-0086 Phase 3 — bridge is no longer used for registry bootstrap.)</li>
+<li><input checked="" disabled="" type="checkbox"> <strong>T4.4</strong> Unit + integration + acceptance tests: 64 unit/integration tests (Phase 4 file) + 4 acceptance checks (ADR-0084-9 through ADR-0084-12) + updated Phase 2/3 checks for Phase 4 state</li>
+</ul>
+<h3 id="completion-criteria">Completion criteria</h3>
+<ul>
+<li>All memory operations route through <code>memory-router.ts</code> exclusively</li>
+<li><code>memory-bridge.ts</code> deleted or reduced to internal router implementation detail</li>
+<li>Zero direct bridge imports outside of <code>memory-router.ts</code></li>
+<li>All user-facing output says &quot;SQLite&quot; not &quot;sql.js&quot;</li>
+<li>No shadow/duplicate function paths (agentdb-orchestration consolidated)</li>
+</ul>
+<h2 id="relationship-to-adr-0075-ideal-end-state">Relationship to ADR-0075 Ideal End State</h2>
+<p>ADR-0075 defined 5 unified layers as the ideal architecture. This ADR addresses
+<strong>Layer 2 (Single Controller Registry)</strong> and completes <strong>Layer 5 (Single Data Flow)</strong>:</p>
+<table>
+<thead>
+<tr>
+<th>ADR-0075 Layer</th>
+<th>Status before ADR-0084</th>
+<th>ADR-0084 contribution</th>
+<th>Remaining gap</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>L1: Single Storage</strong></td>
+<td>SQLite primary, RVF sidecar</td>
+<td>Not addressed</td>
+<td>Replace SQLite with RVF+HNSW as sole backend (future ADR-0085, ~2600 lines in memory-initializer)</td>
+</tr>
+<tr>
+<td>(Correction: Layer 1 was addressed by ADR-0086 (not ADR-0085). memory-initializer.ts was subsequently DELETED by ADR-0086 Phase 3.)</td>
+<td></td>
+<td></td>
+<td></td>
+</tr>
+<tr>
+<td><strong>L2: Single Controller Registry</strong></td>
+<td>Router exists but 45+ callers bypass it via memory-bridge</td>
+<td><strong>Phases 2-4 close this</strong> — migrate all callers, remove bridge</td>
+<td>None after Phase 4</td>
+</tr>
+<tr>
+<td><strong>L3: Single Embedding Pipeline</strong></td>
+<td>Done (ADR-0076 Phase 2)</td>
+<td>Not needed</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>L4: Single Config Resolution</strong></td>
+<td>Done (ADR-0076 Phase 1)</td>
+<td>Not needed</td>
+<td>None</td>
+</tr>
+<tr>
+<td><strong>L5: Single Data Flow</strong></td>
+<td>Mostly done (ADR-0083), but bridge fallbacks remain</td>
+<td><strong>Phase 4 finishes this</strong> — remove 5 router→bridge fallback paths</td>
+<td>None after Phase 4</td>
+</tr>
+</tbody></table>
+<h3 id="what-adr-0084-does-not-do">What ADR-0084 does NOT do</h3>
+<ul>
+<li><strong>Layer 1 (Storage)</strong>: SQLite remains the primary store. ADR-0075&#39;s ideal state says
+<code>NativeStorage (RVF + HNSW)</code> as sole backend — that requires rewriting the 2600-line
+<code>memory-initializer.ts</code> storage layer. Separate ADR scope.
+(Correction: Layer 1 completed by ADR-0086 (2026-04-13). memory-initializer.ts DELETED in ADR-0086 Phase 3.)</li>
+<li><strong>JSON sidecar elimination</strong>: The CJS constraint (intelligence.cjs cannot import
+TypeScript/ESM/native addons) means the JSON sidecar persists. ADR-0075&#39;s ideal
+implicitly assumes intelligence.cjs doesn&#39;t exist or is ESM — we&#39;re not there.</li>
+<li><strong>AgentDBService deletion</strong>: ADR-0075 says &quot;AgentDB becomes a library, not a
+self-contained app.&quot; That&#39;s upstream structural work beyond fork patching scope.</li>
+</ul>
+<h3 id="architecture-after-adr-0084-completion">Architecture after ADR-0084 completion</h3>
+<pre><code class="hljs">ALL callers ──→ memory-router.ts ──→ getController() ──→ controller-intercept (sole registry)
+                    │
+                    ├── routeMemoryOp()       → storeEntry() → SQLite
+                    ├── routeEmbeddingOp()    → EmbeddingPipeline → HNSW
+                    ├── routePatternOp()      → pattern controllers
+                    ├── routeFeedbackOp()     → learning controllers
+                    ├── routeSessionOp()      → session lifecycle
+                    └── writeJsonSidecar()    → auto-memory-store.json (CJS contract)
+
+memory-bridge.ts: DELETED (or inlined as private router detail)
+hooks-tools.ts:   migrated to router (20+ sites)
+worker-daemon.ts: migrated to router (6 sites)</code></pre>
+<p>Two of five ADR-0075 layers fully resolved. Three layers already done from prior ADRs.
+(Correction: Layer 1 gap closed by ADR-0086. All 5 layers now resolved.)</p>
+<h2 id="consequences">Consequences</h2>
+<ul>
+<li>Users see accurate backend information (&quot;SQLite + HNSW&quot; not &quot;sql.js + HNSW&quot;)</li>
+<li>50 lines of dead <code>.save()</code> code removed</li>
+<li>Clearer codebase — no false signals about sql.js being in use</li>
+<li>Phase 2-4 migration collapses dual controller path into single router</li>
+<li>After completion: Layers 2-5 of ADR-0075 ideal state fully achieved</li>
+<li>Layer 1 gap (storage backend consolidation) subsequently closed by ADR-0086</li>
+<li>No runtime behavioral changes in Phase 1</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

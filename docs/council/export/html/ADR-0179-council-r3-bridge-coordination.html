@@ -1,0 +1,1217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0179-council-r3-bridge-coordination</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="adr-0179-council--round-3-transcript">ADR-0179 Council — Round 3 Transcript</h1>
+<p><strong>Date</strong>: 2026-05-13
+<strong>Team</strong>: <code>adr-0179-council</code> (same 8 agents from rounds 1 + 2, re-contextualised via SendMessage)
+<strong>Topology</strong>: hierarchical-mesh (continued)
+<strong>Comms</strong>: SendMessage on bound team — no file-based handoff
+<strong>Related ADRs</strong>: [[ADR-0179]] (this council&#39;s primary subject), [[ADR-0177]] (RVF-vision pivot direction the round resolves against), [[ADR-0086]]/[[ADR-0112]]/[[ADR-0085]] (exploration inputs being synthesized)
+<strong>Predecessor rounds</strong>: [[ADR-0179-council-r1-bridge-deletion]], [[ADR-0179-council-r2-axis-architecture]]</p>
+<h2 id="question-deliberated">Question deliberated</h2>
+<p>Three open questions from round 2&#39;s &quot;Option Z&quot; verdict + a major framing correction discovered mid-session:</p>
+<p><strong>Framing correction (mid-session)</strong>: Earlier rounds claimed upstream has ONE MCP surface (<code>memory_*</code>). This was wrong. Verified via <code>ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts</code> HEAD ef73a1616 — upstream has 18 <code>agentdb_*</code> MCP tools too. The actual divergence is at the <strong>substrate layer</strong> (upstream: 1 file <code>.swarm/memory.db</code>; fork: 2 files <code>.rvf</code> + <code>.db</code>) and the <strong>coordination rule</strong> (upstream: allowed via bridge; fork: forbidden per ADR-0112). Option Z is therefore a substrate collapse + ADR-0112 revert, NOT a surface collapse.</p>
+<p><strong>User reframe (mid-session)</strong>: <em>&quot;These discussions are for determining the direction. We have contradicting ADRs. Once we have found the answer, we can clean it up. See the old ADRs as exploration, and inputs to our decision.&quot;</em> Experts should argue for forward decisions informed by what exploration revealed, not as &quot;walking back errors.&quot;</p>
+<h3 id="the-three-round-3-questions">The three round-3 questions</h3>
+<ol>
+<li><strong>Body-diff <code>bridgeStoreEntry()</code>, <code>bridgeStorePattern()</code>, <code>bridgeHierarchicalStore()</code>, <code>bridgeRecordFeedback()</code></strong> in upstream <code>memory-bridge.ts</code> HEAD ef73a1616. What write-ordering / referential-integrity / coordination is actually happening? What does ADR-0177 need to preserve?</li>
+<li><strong>Fork&#39;s intermediate state during ADR-0177 migration.</strong> Can data exist in both RVF and SQLite simultaneously during the transition? What&#39;s the consistency model?</li>
+<li><strong>Round 1&#39;s 6 lost features</strong> — bridge-shaped chokepoint or per-handler shared middleware? Which is the right placement now that we know upstream&#39;s pattern is single-bridge and ADR-0177 proposes substrate collapse?</li>
+</ol>
+<h2 id="participants-same-8-as-rounds-12">Participants (same 8 as rounds 1+2)</h2>
+<table>
+<thead>
+<tr>
+<th><code>name:</code> slug</th>
+<th><code>subagent_type</code></th>
+<th>Round-3 role</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>queen-architect</code></td>
+<td><code>system-architect</code></td>
+<td>Meta-framing, no advocacy</td>
+</tr>
+<tr>
+<td><code>devils-advocate</code></td>
+<td><code>reviewer</code></td>
+<td>Pure opposition to all 3 question framings</td>
+</tr>
+<tr>
+<td><code>bridge-defender</code></td>
+<td><code>researcher</code></td>
+<td><strong>Bridge coordination advocate</strong> (extends round-1 bridge bias)</td>
+</tr>
+<tr>
+<td><code>status-quo-defender</code></td>
+<td><code>adr-architect</code></td>
+<td><strong>Handler-middleware advocate</strong> (extends round-1 status-quo bias)</td>
+</tr>
+<tr>
+<td><code>perf-judge</code></td>
+<td><code>performance-engineer</code></td>
+<td>Perf-axis judgment</td>
+</tr>
+<tr>
+<td><code>security-judge</code></td>
+<td><code>security-architect</code></td>
+<td>Audit chokepoint judgment</td>
+</tr>
+<tr>
+<td><code>memory-judge</code></td>
+<td><code>memory-specialist</code></td>
+<td>Substrate migration + middleware placement</td>
+</tr>
+<tr>
+<td><code>integration-judge</code></td>
+<td><code>v3-integration-architect</code></td>
+<td>Upstream-sync delta analysis</td>
+</tr>
+</tbody></table>
+<hr>
+<h2 id="queen-architect--round-3-framing">QUEEN ARCHITECT — Round 3 framing</h2>
+<h3 id="load-bearing-axes-the-council-must-argue">Load-bearing axes the council must argue</h3>
+<ul>
+<li><strong>Axis 1: The bridge&#39;s body IS the spec.</strong> Whatever invariants the upstream bridge enforces today — write-ordering, referential integrity, idempotency, error rollback — are the <em>de facto</em> contract every caller relies on. ADR-0177 cannot honestly preserve &quot;upstream behavior&quot; without enumerating them. Body-diff is the prerequisite; Q2 and Q3 depend on it.</li>
+<li><strong>Axis 2: Coordination invariants live somewhere on {caller, tool-handler, bridge, substrate}.</strong> Upstream&#39;s choice is bridge-level. Fork&#39;s ADR-0112 choice is substrate-level (and forbids the bridge from doing it). The 6 lost features are decorators that need <em>some</em> placement.</li>
+<li><strong>Axis 3: Single-substrate doesn&#39;t imply single-table-set.</strong> ADR-0177 collapses substrate (one file, RvfBackend) but the 10+ controllers still each have schemas. A single substrate can still host many controllers as separate logical stores. The bridge&#39;s coordination job survives substrate collapse — coordination is a logical concern.</li>
+<li><strong>Axis 4: Migration windows are first-class hazards.</strong> Trunk-only + 4-fork cascade means transitions ship in waves, not feature-flagged. Is mixed-mode a <em>transient hazard to engineer against</em> or a <em>forbidden state</em>?</li>
+<li><strong>Axis 5: Bridge as chokepoint vs middleware as composition.</strong> Bridge gives one chokepoint, easy to audit, matches upstream shape, but couples 6 unrelated concerns. Middleware gives compositional clarity but distributes the audit surface. The 6 features divide cleanly: MutationGuard + AttestationLog are <em>security/audit</em> (want chokepoint); TieredCache + hybrid-BM25 are <em>performance/quality</em> (want composition); ExplainableRecall + SkillLibrary-promote are <em>application semantics</em>.</li>
+</ul>
+<h3 id="tentative-lean">Tentative lean</h3>
+<p><strong>Hybrid placement</strong>: chokepoint for security/audit (MutationGuard + AttestationLog at bridge body), middleware for performance/quality (TieredCache + BM25 fusion as composable decorators), bridge-call for application semantics (ExplainableRecall + SkillLibrary-promote). Confidence 56.</p>
+<p>This converges round-1&#39;s &quot;Option B+&quot; with round-2&#39;s Option Z: <strong>a thin bridge module hosting the security/audit chokepoint + 3 application-semantic calls, with composable middleware around it for the 3 performance/quality concerns.</strong></p>
+<hr>
+<h2 id="devils-advocate--round-3-challenge">DEVIL&#39;S ADVOCATE — Round 3 challenge</h2>
+<h3 id="pre-flight-the-unnamed-assumption">Pre-flight: the unnamed assumption</h3>
+<p>The council has run two rounds without naming the actual ADR arc:</p>
+<ul>
+<li><strong>ADR-0053</strong> (upstream, 2026-02): bridge IS the coordination layer.</li>
+<li><strong>ADR-0084</strong> (fork, 2026-04): controller-direct. Bridge bypassed. First step away.</li>
+<li><strong>ADR-0086</strong> (fork, 2026-04): RVF for memory_*, SQLite for agentdb_*. Substrate split. Second step.</li>
+<li><strong>ADR-0112</strong> (fork, 2026-05): &quot;no MCP tool spans both stores.&quot; Coordination <em>forbidden</em>. Third step.</li>
+<li><strong>ADR-0085</strong> (fork, 2026-04): delete bridge. Coordination machinery itself gone. Fourth step.</li>
+<li><strong>ADR-0179</strong> (fork, proposed): restore 6 features as router call sites. Fifth step — admit some coordination needs to come back, but refuse to call it a bridge.</li>
+<li><strong>ADR-0177</strong> (fork, proposed): substrate collapse + ADR-0112 revert. Sixth step — admit the substrate split was load-bearing for forbidding coordination, and undo it.</li>
+</ul>
+<p>The bridge wasn&#39;t deleted because it didn&#39;t coordinate. <strong>It was deleted because the fork already decided — across three prior ADRs — that coordination wasn&#39;t going to happen anyway.</strong></p>
+<h3 id="challenges-to-each-question">Challenges to each question</h3>
+<p><strong>Q1 (body-diff):</strong></p>
+<ul>
+<li><em>Steelman: bridge IS coordinating today.</em> Eight discrete coordination steps in <code>bridgeStoreEntry</code>. Three separate fanout paths in <code>bridgeRecordFeedback</code>. ADR-0177 has to preserve all of these or ships a referential-integrity regression.</li>
+<li><em>Steelman: bridge is a myth.</em> Run the actual grep. Most bridge functions are <code>controllerRegistry.getController(...).store(...)</code> followed by another write with <em>no transaction</em>. The &quot;coordination&quot; is <em>naming</em>, not <em>semantics</em>.</li>
+<li><em>Killer data point:</em> Grep for transactional primitives (<code>BEGIN</code>, <code>COMMIT</code>, <code>lock</code>) inside the four named bridge functions. If primitives = 0 (DA&#39;s prediction), &quot;the bridge coordinates&quot; is a vibe.</li>
+</ul>
+<p><strong>Q2 (migration window):</strong></p>
+<ul>
+<li><em>Steelman: window is real and dangerous.</em> For some non-trivial period, controllers are repointed one-by-one. Same logical entry can exist in both stores with diverging metadata. ADR-0177 needs explicit dual-write or shadow-read.</li>
+<li><em>Steelman: window is rationalised theatre.</em> Storage migrations are routine. Dual-write → shadow-read → cutover → cleanup is well-known. If ADR-0177 commits to schedule + feature flag, the window is bounded.</li>
+<li><em>Steelman: window IS rationalisation, AND that&#39;s fine.</em> Every architectural pivot has a transitional state. Status quo (X) is <em>also</em> a half-migrated state, frozen indefinitely.</li>
+</ul>
+<p><strong>Q3 (placement):</strong></p>
+<ul>
+<li><em>Steelman: middleware is strictly better.</em> A function is small, testable, typed. A bridge is a module with state. ADR-0084 deleted the bridge specifically because the controller-direct pattern made lifecycle ambiguous.</li>
+<li><em>Steelman: middleware recreates the parallel-path problem.</em> Middleware that&#39;s &quot;shared&quot; but invoked at each call site means every call site has to remember. Upstream&#39;s bridge guarantees invocation by being the only path.</li>
+<li><em>Steelman: the choice is a red herring.</em> A &quot;bridge module&quot; and a &quot;shared middleware module&quot; are the same shape in different language. The interesting question is <em>enforcement</em> (lint, types, runtime instrumentation).</li>
+</ul>
+<h3 id="the-question-nobody-will-want-to-answer">The question nobody will want to answer</h3>
+<p><strong>&quot;Coordination&quot; was ADR-0053&#39;s central promise. ADR-0084, 0086, 0112, and 0085 each took one step away from it. ADR-0177 and ADR-0179 are taking steps back. Is the fork <em>prepared to commit</em>, in writing, that coordination is again a goal — or is it going to keep introducing coordination one feature at a time while maintaining the rhetorical position that it isn&#39;t?</strong></p>
+<hr>
+<h2 id="bridge-coordination-advocate--round-3-case-for-bridge-level-coordination">BRIDGE COORDINATION ADVOCATE — Round 3 case for bridge-level coordination</h2>
+<h3 id="position">Position</h3>
+<p><strong>Restore the bridge as the coordination layer for ADR-0177</strong>, with migration-period dual-substrate routing owned by the bridge. Body-diff confirms round-1 case empirically: this was not a 3,650-line scaffold; the 6 lost features map directly to bridge code blocks.</p>
+<h3 id="what-bridgestoreentry-actually-does-lines-518-619">What <code>bridgeStoreEntry()</code> actually does (lines 518-619)</h3>
+<p>Eight discrete coordination steps in one place:</p>
+<ol>
+<li><code>getRegistry(options.dbPath)</code> (line 537)</li>
+<li><code>guardValidate(registry, &#39;store&#39;, ...)</code> — MutationGuard pre-write gate (line 549). Rejects writes that fail policy.</li>
+<li>Embedder dispatch via <code>ctx.agentdb.embedder</code> (lines 559-572) — generates vector inline</li>
+<li>SQL write to <code>memory_entries</code> with full metadata column set (lines 576-596)</li>
+<li><code>cacheSet(registry, cacheKey, ...)</code> — TieredCache write-through (line 602)</li>
+<li><code>logAttestation(registry, &#39;store&#39;, id, ...)</code> — AttestationLog audit (line 605)</li>
+<li>Returns typed result signaling which gates fired: <code>guarded: true, cached: true, attested: true</code></li>
+</ol>
+<h3 id="bridgestorepattern-lines-1331-1387"><code>bridgeStorePattern()</code> (lines 1331-1387)</h3>
+<p>Two-tier dispatch with graceful degradation: try <code>reasoningBank.store(...)</code> first, fallback to <code>bridgeStoreEntry</code> with <code>namespace: &#39;pattern&#39;</code> + HNSW index addition via dynamic import. Returns <code>controller: &#39;reasoningBank&#39; | &#39;bridge-fallback&#39;</code>.</p>
+<h3 id="bridgerecordfeedback-lines-1446-1528"><code>bridgeRecordFeedback()</code> (lines 1446-1528)</h3>
+<p><strong>Multi-controller fan-out with skill auto-promotion:</strong></p>
+<ol>
+<li>Records to <code>learningSystem</code> if available</li>
+<li>Records to <code>reasoningBank</code> for pattern reinforcement</li>
+<li><strong>Promotes high-quality patterns to SkillLibrary</strong> when <code>success &amp;&amp; quality &gt;= 0.9</code> (lines 1501-1509) — the SkillLibrary auto-promotion round-1 audit identified as lost</li>
+<li>Always also stores as memory entry for retrieval</li>
+<li>Returns <code>controller: &#39;learningSystem+reasoningBank+skills+bridge-store&#39;</code></li>
+</ol>
+<h3 id="bridgehierarchicalstore-lines-2100-2121"><code>bridgeHierarchicalStore()</code> (lines 2100-2121)</h3>
+<p>Adapter-pattern dispatch between real and stub backends via duck-typing. Without this layer, every hierarchical-write caller has to know about the API divergence.</p>
+<h3 id="bridgesearchentries-lines-626-750"><code>bridgeSearchEntries()</code> (lines 626-750)</h3>
+<p><strong>Hybrid BM25 + semantic fusion with reciprocal rank weighting:</strong></p>
+<ul>
+<li>Computes <code>termDocFreqs</code> and <code>avgDocLength</code> over corpus</li>
+<li>For each row, computes both <code>semanticScore</code> (cosine) AND <code>bm25ScoreVal</code></li>
+<li>Fuses: <code>0.7 * semanticScore + 0.3 * bm25ScoreVal</code> when both available</li>
+<li>Attaches <strong>ExplainableRecall provenance</strong> per result: <code>semantic:0.842+bm25:0.341</code></li>
+<li>Returns <code>searchMethod: &#39;hybrid-bm25-semantic&#39; | &#39;bm25-only&#39;</code></li>
+</ul>
+<p>130-line function with specific weight tuning and per-result provenance. ADR-0179&#39;s &quot;restore as call site&quot; cannot reproduce this without re-introducing 100+ lines per write/search handler, OR extracting a shared helper — which is the bridge under a different name.</p>
+<h3 id="migration-window-argument">Migration window argument</h3>
+<p><strong>The bridge is the only natural place to own dual-substrate routing.</strong> ADR-0177&#39;s substrate unification needs to: direct writes to new path, read from both with precedence, track migration state, eventually flip the switch. This has the same shape as <code>bridgeStorePattern</code>&#39;s two-tier fallback today. Extending it to substrate-availability is a one-axis change.</p>
+<h3 id="bridge-loc-defense">Bridge LoC defense</h3>
+<p>Read what 2,370 lines actually do:</p>
+<ul>
+<li>Lines 1-500: helpers (<code>getRegistry</code>, <code>guardValidate</code>, <code>cacheSet</code>, BM25 math). Genuine plumbing.</li>
+<li>Lines 518-1240: core CRUD entry points. Each function does work.</li>
+<li>Lines 1245-2050: controller-specific entry points. Each one duck-types between real and stub.</li>
+<li>Lines 2100-2370: hierarchical/consolidate/batch/synthesize/semantic-route adapters.</li>
+</ul>
+<p><strong>There is no dead scaffolding on a read.</strong> The &quot;54/64 zero callers&quot; framing may have been counting <em>intended</em> callers as <em>dead</em> — that&#39;s the audit-methodology gap that produced the regression.</p>
+<h3 id="honest-weak-spot">Honest weak spot</h3>
+<p>Reading upstream HEAD <code>ef73a1616</code>, not fork bridge at HEAD~deletion. If fork bridge had drifted significantly before deletion, the deletion might have caught real dead weight. But the <em>upstream</em> bridge looks like working coordination, not dead scaffolding.</p>
+<hr>
+<h2 id="handler-level-middleware-advocate--round-3-case-for-non-bridge-middleware">HANDLER-LEVEL MIDDLEWARE ADVOCATE — Round 3 case for non-bridge middleware</h2>
+<h3 id="position-1">Position</h3>
+<ul>
+<li>Primary: ADR-0179 R1&#39;s <code>src/memory/middleware/</code> per-handler composition (confidence 82)</li>
+<li>Reject: bridge module resurrection (confidence 90)</li>
+<li>Reject: extended dual-substrate operating mode (confidence 85)</li>
+</ul>
+<h3 id="what-the-upstream-bridge-is-actually-doing">What the upstream bridge is actually doing</h3>
+<p>Read 2 of 36 exports in detail. Structural breakdown of <code>bridgeStoreEntry</code> (101 lines):</p>
+<table>
+<thead>
+<tr>
+<th>Lines</th>
+<th>What it does</th>
+<th>Coordination value</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>537-541</td>
+<td><code>getRegistry()</code> + <code>getDb()</code> + null-guards</td>
+<td>Zero. ADR-0084 Phase 4 eliminated this — handler calls <code>getController()</code> directly.</td>
+</tr>
+<tr>
+<td>549-552</td>
+<td><code>await guardValidate(registry, &#39;store&#39;, ...)</code></td>
+<td><strong>The middleware call.</strong> <code>guardValidate</code> is an external exported helper. Bridge is just a <em>caller</em>.</td>
+</tr>
+<tr>
+<td>559-573</td>
+<td>Embedder lookup + <code>embedder.embed(value)</code></td>
+<td>Zero. Direct AgentDB embedder call — handler can do this.</td>
+</tr>
+<tr>
+<td>575-596</td>
+<td>Raw <code>ctx.db.prepare(insertSql).run(...)</code> against <code>memory_entries</code></td>
+<td><strong>Negative value.</strong> Bridge is doing the controller&#39;s job. The bridge is <em>bypassing</em> the controller it just looked up via the registry, then writing raw SQL. That&#39;s the parallel call graph problem.</td>
+</tr>
+<tr>
+<td>598-602</td>
+<td><code>await cacheSet(registry, cacheKey, ...)</code></td>
+<td>Middleware call. Helper is external.</td>
+</tr>
+<tr>
+<td>604-605</td>
+<td><code>await logAttestation(...)</code></td>
+<td>Middleware call. Same pattern.</td>
+</tr>
+<tr>
+<td>607-615</td>
+<td>Return shaping</td>
+<td>Zero.</td>
+</tr>
+</tbody></table>
+<p><strong>The bridge is doing four things at once, and only one is &quot;coordination&quot;:</strong></p>
+<ol>
+<li>Registry indirection (~30%, ADR-0084 already eliminated)</li>
+<li>Direct SQLite SQL (~40%, this is the controller&#39;s job)</li>
+<li>Middleware composition (~10%, three lines)</li>
+<li>Result shaping (~20%, trivial)</li>
+</ol>
+<p><code>bridgeSearchEntries</code> is even worse — 124 lines of direct <code>SELECT ... FROM memory_entries</code> followed by inline BM25 + cosine scoring. This is a <em>query implementation</em>, not an abstraction.</p>
+<p><strong>The cargo-cult diagnosis is correct.</strong> Most of the upstream bridge is post-ADR-0084 dead weight.</p>
+<h3 id="concrete-shape--directory-structure">Concrete shape — directory structure</h3>
+<pre><code class="hljs">src/memory/middleware/
+  index.ts                 // barrel
+  guard.ts                 // guardWrite(registry, op, ctx) — MutationGuard
+  cache.ts                 // tieredCacheWrite/Read — TieredCache
+  attest.ts                // attestWrite — AttestationLog
+  bm25.ts                  // hybridScore — BM25 + cosine fusion
+  provenance.ts            // explainRecall — ExplainableRecall string
+  skill-promote.ts         // maybePromoteSkill — SkillLibrary auto-promotion</code></pre>
+<p>Each MCP tool handler imports the subset it needs:</p>
+<pre><code class="hljs language-typescript"><span class="hljs-keyword">import</span> { getController } <span class="hljs-keyword">from</span> <span class="hljs-string">&#x27;../controllers/registry.ts&#x27;</span>;
+<span class="hljs-keyword">import</span> { guardWrite, tieredCacheWrite, attestWrite } <span class="hljs-keyword">from</span> <span class="hljs-string">&#x27;../memory/middleware/index.ts&#x27;</span>;
+
+<span class="hljs-keyword">export</span> <span class="hljs-keyword">async</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">handleMemoryStore</span>(<span class="hljs-params">args</span>) {
+  <span class="hljs-keyword">const</span> controller = <span class="hljs-title function_">getController</span>(<span class="hljs-string">&#x27;memory&#x27;</span>);                    <span class="hljs-comment">// ADR-0084 Phase 4 path</span>
+  <span class="hljs-keyword">const</span> guard = <span class="hljs-keyword">await</span> <span class="hljs-title function_">guardWrite</span>(controller, <span class="hljs-string">&#x27;store&#x27;</span>, args);
+  <span class="hljs-keyword">if</span> (!guard.<span class="hljs-property">allowed</span>) <span class="hljs-keyword">return</span> { <span class="hljs-attr">error</span>: guard.<span class="hljs-property">reason</span> };
+
+  <span class="hljs-keyword">const</span> result = <span class="hljs-keyword">await</span> controller.<span class="hljs-title function_">store</span>(args);                   <span class="hljs-comment">// controller owns storage</span>
+  <span class="hljs-keyword">await</span> <span class="hljs-title function_">tieredCacheWrite</span>(controller, args.<span class="hljs-property">key</span>, args.<span class="hljs-property">value</span>);
+  <span class="hljs-keyword">await</span> <span class="hljs-title function_">attestWrite</span>(controller, <span class="hljs-string">&#x27;store&#x27;</span>, result.<span class="hljs-property">id</span>, args);
+  <span class="hljs-keyword">return</span> result;
+}</code></pre>
+<h3 id="type-level-enforcement-the-answer-to-middleware-can-be-bypassed">Type-level enforcement (the answer to &quot;middleware can be bypassed&quot;)</h3>
+<p>Define <code>MemoryWrite&lt;T&gt;</code> and <code>MemoryRead&lt;T&gt;</code> as <strong>branded types</strong> constructible only by passing through middleware:</p>
+<pre><code class="hljs language-typescript"><span class="hljs-keyword">type</span> <span class="hljs-title class_">GuardedWrite</span> = { <span class="hljs-attr">__guarded</span>: <span class="hljs-literal">true</span>; ... };</code></pre>
+<p>Controllers&#39; <code>store()</code> / <code>update()</code> / <code>delete()</code> signatures require <code>GuardedWrite</code>-branded inputs. <strong>Compiler refuses any handler that calls <code>controller.store(rawArgs)</code> without going through <code>guardWrite()</code> first.</strong> CI lint as backup.</p>
+<p><strong>This gives compile-time enforcement without a runtime god-module.</strong> Better than the bridge gave us — the bridge could be bypassed and was bypassed in practice.</p>
+<h3 id="why-this-beats-bridge-restoration">Why this beats bridge-restoration</h3>
+<table>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Bridge (Option C)</th>
+<th>Per-handler middleware (R1)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>ADR-0084 compliance</td>
+<td>Violates — parallel call graph</td>
+<td>Preserves — direct <code>getController()</code></td>
+</tr>
+<tr>
+<td>ADR-0112 compliance</td>
+<td>Violates — bridge is cross-store coordinator</td>
+<td>Preserves — middleware is per-axis composition</td>
+</tr>
+<tr>
+<td>Dead-code load</td>
+<td>Brings back 13 known-dead exports as collateral</td>
+<td>Zero dead code</td>
+</tr>
+<tr>
+<td>Migration steps</td>
+<td>Two cascades (restore then remove)</td>
+<td>One cascade</td>
+</tr>
+<tr>
+<td>LoC budget</td>
+<td>~3,650 LoC restored</td>
+<td>~400-600 LoC across 6 middleware files</td>
+</tr>
+<tr>
+<td>Auditability</td>
+<td>One mega-module, hard to diff against feature gaps</td>
+<td>Six files, one-feature-each, trivial</td>
+</tr>
+<tr>
+<td>Future feature add</td>
+<td>Add to bridge — god-module grows</td>
+<td>Add a middleware file — composable</td>
+</tr>
+<tr>
+<td>Lint enforcement</td>
+<td>Hard</td>
+<td>Easy (<code>no-import-from-memory-bridge</code>)</td>
+</tr>
+</tbody></table>
+<h3 id="honest-weak-spot-1">Honest weak spot</h3>
+<p>Read 2 of 36 exports in detail. The &quot;97% cargo-cult / 3% real coordination&quot; ratio extrapolates from <code>bridgeStoreEntry</code> and <code>bridgeSearchEntries</code>. If deletion-recovery functions (<code>bridgeDeleteHierarchical</code>, etc.) are structurally different — genuinely cross-axis cascade-deletion engines that can&#39;t decompose — the read undercounts. Honest frame: per-handler middleware correct for 5 of 6 R1 features; 6th may need a small <code>cascade-delete.ts</code> helper. None of that justifies restoring 2,370 lines.</p>
+<hr>
+<h2 id="performance-judge--round-3-perf-axis-verdict">PERFORMANCE JUDGE — Round 3 perf-axis verdict</h2>
+<h3 id="per-bridge-function-coordination-overhead">Per-bridge-function coordination overhead</h3>
+<table>
+<thead>
+<tr>
+<th>Function</th>
+<th>Coordination wall (warm)</th>
+<th>Async-hop count</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>bridgeStoreEntry</code></td>
+<td>0.11-0.85ms</td>
+<td>3 hops</td>
+</tr>
+<tr>
+<td><code>bridgeStorePattern</code> (fast)</td>
+<td>0.02-0.1ms</td>
+<td>1 hop</td>
+</tr>
+<tr>
+<td><code>bridgeStorePattern</code> (fallback)</td>
+<td>~0.85ms + dyn import</td>
+<td>4 hops + import</td>
+</tr>
+<tr>
+<td><code>bridgeRecordFeedback</code></td>
+<td>0.5-2ms (fanout)</td>
+<td>4-8 hops</td>
+</tr>
+<tr>
+<td><code>bridgeHierarchicalStore</code></td>
+<td>0.02-0.05ms</td>
+<td>1 hop</td>
+</tr>
+</tbody></table>
+<p><strong>Critical observation:</strong> every coordination step is <code>await</code>-wrapped. Async-microtask hop is 5-50µs per await on V8. That&#39;s 3 forced microtasks per <code>bridgeStoreEntry</code> = ~15-150µs of pure scheduler overhead, paid even when controllers are no-ops. On write-heavy hot loop (1000 stores/sec) = 15-150ms/sec of pure async wrapping.</p>
+<h3 id="bridgerecordfeedback--the-surprise-finding"><code>bridgeRecordFeedback</code> — the SURPRISE finding</h3>
+<p>Multi-controller fan-out:</p>
+<ul>
+<li><code>learningSystem.recordFeedback</code> OR <code>.record</code></li>
+<li><code>reasoningBank.recordOutcome</code> OR <code>.record</code></li>
+<li><code>skills.promote</code> in a LOOP over patterns</li>
+<li><strong>ALWAYS calls <code>bridgeStoreEntry</code> at line 1512</strong> — full coordination stack runs even when learningSystem+reasoningBank handle the feedback</li>
+</ul>
+<p><strong>Storage amplification factor: ~3-4× per feedback event.</strong> No dedup; it&#39;s fanout-by-design. This is invisible to the API but very visible in disk usage and write throughput under load.</p>
+<h3 id="migration-window-perf">Migration window perf</h3>
+<p><strong>Regime A (try-RVF-then-fall-back-to-SQLite):</strong></p>
+<ul>
+<li>Hit on first: 1 read cost</li>
+<li>Miss + hit on second: 2 read costs</li>
+<li>Steady-state cost ≈ <code>1 + (miss_rate × 1)</code></li>
+<li>Bounded by migration completion</li>
+</ul>
+<p><strong>Regime B (always-check-both):</strong></p>
+<ul>
+<li>Permanent 2× read tax until code removes secondary check</li>
+<li><strong>Continuous tax — the failure mode of every uncompleted migration in history.</strong></li>
+</ul>
+<p><strong>Recommended bound: migration must complete within 7 days of starting; otherwise 1.5× read tax compounds into a regression developers notice as &quot;memory got slower.&quot;</strong></p>
+<h3 id="bridge-vs-handler-middleware-perf">Bridge vs handler-middleware perf</h3>
+<p>Both essentially the same speed at the MCP boundary:</p>
+<ul>
+<li><strong>JIT inlining:</strong> handler-middleware marginally faster (saves ~50-200ns per inlined helper call). Below measurement floor of MCP roundtrip.</li>
+<li><strong>Centralisation amortisation:</strong> bridge wins on registry-lookup caching IF middleware is naïve. With shared context, evaporates.</li>
+<li><strong>Function-call indirection:</strong> ~1-5ns per call. Negligible.</li>
+<li><strong>Specialisation:</strong> bridge has to add parameters for skip-cache; middleware omits the cache layer entirely.</li>
+</ul>
+<p><strong>Decision is in the noise. Don&#39;t pick on perf.</strong></p>
+<h3 id="ranking-purely-on-perf">Ranking purely on perf</h3>
+<ul>
+<li>1st: handler-middleware with shared context (~5-15% hot-path win, below MCP floor)</li>
+<li>2nd: bridge with prepared-statement cache (close behind once warm)</li>
+<li>3rd: handler-middleware with per-middleware registry lookup (naïve composition trap)</li>
+</ul>
+<h3 id="hidden-perf-trap-in-each">Hidden perf trap in each</h3>
+<ul>
+<li><strong>Bridge</strong>: <code>bridgeStorePattern → bridgeStoreEntry</code> recursive call; always-on <code>bridgeStoreEntry</code> at end of <code>bridgeRecordFeedback</code>. <strong>3-4× write amplification on feedback events that the API doesn&#39;t surface.</strong></li>
+<li><strong>Middleware</strong>: if any handler forgets to apply guard, bypassed silently. Bridge enforces by construction. Perf wins evaporate if you need runtime check.</li>
+<li><strong>Migration window</strong>: Regime B &quot;temporary&quot; never being removed. Permanent 2× read tax.</li>
+</ul>
+<hr>
+<h2 id="security-judge--round-3-verdict-on-bridge-as-audit-chokepoint">SECURITY JUDGE — Round 3 verdict on bridge as audit chokepoint</h2>
+<h3 id="read-the-actual-bridge-body--the-team-leads-premise-is-partly-wrong">Read the actual bridge body — the team-lead&#39;s premise is partly wrong</h3>
+<p>Concrete callsite map from 2,370-line bridge:</p>
+<p><strong>Genuinely guard-and-attest (5 functions):</strong></p>
+<ul>
+<li><code>bridgeStoreEntry</code> (line 518) — <code>guardValidate(&#39;store&#39;, ...)</code> + <code>logAttestation(&#39;store&#39;, ...)</code></li>
+<li><code>bridgeDeleteEntry</code> (line 946) — guard + cache invalidate + attest</li>
+<li><code>bridgeDeleteHierarchical</code> (line 1595) — guard + 4 distinct <code>logAttestation</code> callsites per tier</li>
+<li><code>bridgeDeleteCausalEdge</code> (line 1699) — guard + 3 attestation callsites</li>
+<li><code>bridgeDeleteCausalNode</code> (line 1786) — guard + 2 attestation callsites</li>
+</ul>
+<p><strong>Funnel-through (guarded only because they internally call <code>bridgeStoreEntry</code>):</strong></p>
+<ul>
+<li><code>bridgeStorePattern</code> — fast path (reasoningBank.store) BYPASSES MutationGuard</li>
+<li><code>bridgeRecordFeedback</code> — three controller mutations BEFORE the guarded bridge call. Guard doesn&#39;t cover them.</li>
+</ul>
+<p><strong>Unguarded and unattested entirely (8+ functions):</strong></p>
+<ul>
+<li><code>bridgeHierarchicalStore</code> — direct <code>hm.store(...)</code>. No guard. No attest.</li>
+<li><code>bridgeBatchOperation</code> — direct batch ops. No guard.</li>
+<li><code>bridgeConsolidate</code> — direct <code>mc.consolidate()</code>. No guard.</li>
+<li><code>bridgeRecordCausalEdge</code> — direct <code>causalGraph.addEdge(...)</code>. No guard. (Asymmetric — DELETE is guarded.)</li>
+<li><code>bridgeSessionStart</code> / <code>End</code> / <code>bridgeRouteTask</code> — session lifecycle. No guard.</li>
+<li><code>bridgeAddToHNSW</code> — direct index write. No guard.</li>
+</ul>
+<h3 id="what-this-means">What this means</h3>
+<p><strong>The bridge is not a uniform audit chokepoint. It is a per-function audit pattern that was applied inconsistently — the kv store/delete path was the model, hierarchical store/causal-edge create/batch ops were never retrofitted.</strong></p>
+<p>When the briefing says &quot;this IS the chokepoint upstream meant,&quot; the honest read is: <strong>upstream meant for it to be the chokepoint, started the work, and shipped it half-done.</strong> Restoring the bridge as-is restores the half-done version. 5 functions guarded, 8 unguarded.</p>
+<h3 id="migration-window-audit">Migration-window audit</h3>
+<p>Three reconciliation problems:</p>
+<ol>
+<li><strong>Attestation chain continuity.</strong> ADR-0053&#39;s structural hashes form a chain. During migration, chain has structural cut at the cutover. Need explicit migration-attestation record anchoring new chain&#39;s genesis to old chain&#39;s terminus.</li>
+<li><strong>Dual-write blind window.</strong> Either duplicate-counting bias OR silent miss with no failed-lookup attestation. Operator can&#39;t distinguish &quot;data doesn&#39;t exist&quot; from &quot;data hasn&#39;t migrated.&quot;</li>
+<li><strong>Audit log itself moving.</strong> If <code>mutation_attestations</code> SQLite table is part of what&#39;s being moved, then the audit substrate itself migrates. Need audit-of-the-audit-migration.</li>
+</ol>
+<h3 id="bridge-vs-handler-middleware-as-audit-chokepoint">Bridge vs handler-middleware as audit chokepoint</h3>
+<p><strong>Handler-middleware imported uniformly is more auditable AND less bypassable.</strong></p>
+<ul>
+<li><strong>Bridge-as-chokepoint</strong>: moderate auditability, HIGH bypassability. ADR-0084 controller-direct works whether bridge is restored or not. Any caller reaching around the bridge gets neither guard nor attest.</li>
+<li><strong>Handler-middleware via <code>guardedHandler&lt;T&gt;</code> HOF</strong>: high auditability (one grep against tool registry), moderate bypassability. Type-level enforcement: TypeScript can refuse to register a mutation handler that isn&#39;t wrapped.</li>
+</ul>
+<p><strong>Bridge-functions are runtime conventions; handler-middleware is type-level enforcement.</strong></p>
+<h3 id="recommendation">Recommendation</h3>
+<p><strong>Type-enforced HOF middleware</strong>, not bridge restoration. The bridge would re-import upstream&#39;s half-done pattern (5/13 guarded; 8 unguarded). Type-enforced HOF can refuse to register an unguarded mutation handler.</p>
+<h3 id="non-obvious-security-regression">Non-obvious security regression</h3>
+<p><strong>Restoring the bridge in its upstream form re-imports upstream&#39;s audit gaps along with upstream&#39;s audit guards.</strong> The bridge as-it-exists has <code>bridgeHierarchicalStore</code> unguarded, <code>bridgeBatchOperation</code> unguarded, <code>bridgeRecordCausalEdge</code> unguarded — those are <em>write</em> operations on more state-sensitive controllers than the kv store path. Restoring the bridge gives the operator a <em>visible</em> audit surface that has invisible holes. That&#39;s structurally worse than no bridge plus a known hole, because the bridge&#39;s existence creates the impression of completeness.</p>
+<p><strong>The half-finished chokepoint is the most dangerous chokepoint.</strong></p>
+<hr>
+<h2 id="memory-architecture-judge--round-3-verdict">MEMORY ARCHITECTURE JUDGE — Round 3 verdict</h2>
+<h3 id="what-invariants-does-the-upstream-bridge-maintain">What invariants does the upstream bridge maintain?</h3>
+<p><strong>The bridge does NOT coordinate cross-table writes itself. It delegates to controllers when present and falls back to a single denormalised table when they aren&#39;t.</strong></p>
+<ul>
+<li><code>memory_entries</code> is the bridge&#39;s only direct SQL surface. No <code>INSERT INTO episode_embeddings</code>, no <code>JOIN</code>, no explicit <code>BEGIN/COMMIT/ROLLBACK</code>, no <code>FOREIGN KEY</code>.</li>
+<li>Cross-table integrity is owned by the controllers. Hierarchical-delete path comments: <em>&quot;<a href="mailto:agentdb@3.0.0-alpha.13">agentdb@3.0.0-alpha.13</a>+: <code>ReflexionMemory.deleteEpisode</code> propagates through graph adapter / generic graph backend / vector backend AND purges SQL episodes + episode_embeddings rows. Single call, durably consistent.&quot;</em></li>
+<li>The bridge&#39;s fallback when controllers absent is <strong>degraded, not equivalent.</strong> Causal-node cascade fallback does two separate <code>UPDATE memory_entries SET status=&#39;deleted&#39;</code> statements with no transaction wrapper.</li>
+<li>Middleware IS centralised in the bridge. <code>guardValidate</code> (line 426) and <code>logAttestation</code> (line 448) are bridge-local helpers called from every store/delete path.</li>
+<li><code>TieredCache</code> is bridge-managed.</li>
+<li><code>BM25 + semantic fusion</code> is bridge-local code, not a controller.</li>
+</ul>
+<h3 id="what-the-bridge-preserves">What the bridge &quot;preserves&quot;</h3>
+<p>Not multi-table referential integrity (delegated). What it preserves:</p>
+<ol>
+<li>A <strong>single chokepoint</strong> where Guard + Attest + Cache wrap every memory op.</li>
+<li>A <strong>controller-lookup-then-fallback-to-denormalised-SQL</strong> dispatch pattern.</li>
+<li><strong>Bridge-local search algorithms</strong> (BM25 fusion) that don&#39;t belong to any one substrate.</li>
+</ol>
+<h3 id="the-migration-window--same-logical-entry-in-both-stores">The migration window — same logical entry in BOTH stores</h3>
+<p><strong>Yes. During the controller re-pointing window, the same logical entry CAN exist in both stores. That&#39;s the whole point of &quot;fallback to relational metadata when explicitly needed&quot; — the target state is itself hybrid, and the transition is even more so.</strong></p>
+<h3 id="what-re-point-controllers-to-rvfbackend-actually-means">What &quot;re-point controllers to RvfBackend&quot; actually means</h3>
+<p>10+ AgentDB controllers have <strong>relational schemas</strong>:</p>
+<ul>
+<li><code>reflexionMemory</code> owns <code>episodes</code> + <code>episode_embeddings</code> (FK)</li>
+<li><code>causalGraph</code> owns nodes + edges (Cypher backend via GraphDatabaseAdapter)</li>
+<li><code>skillLibrary</code> owns skills + promotion-history aggregates</li>
+</ul>
+<p>Each has its own <code>BEGIN/COMMIT</code> boundaries.</p>
+<p><strong>You cannot straightforwardly re-point these to RvfBackend, because RVF is K/V + vector.</strong> No <code>JOIN</code>, no <code>WHERE table_x.fk = table_y.id</code>, no transactional multi-row mutation. Three options:</p>
+<p><strong>A) Denormalise into RVF.</strong> Collapse each controller&#39;s relations into one K/V record per logical entity. Loses query-by-FK.</p>
+<p><strong>B) RVF for the vector half, SQLite retained for the relational half.</strong> This is what ADR-0177&#39;s &quot;SQLite retained ONLY as fallback for relational metadata when explicitly needed&quot; actually means. <strong>It&#39;s not a fallback — it&#39;s a permanent dual-substrate operating mode dressed up as a fallback.</strong></p>
+<p><strong>C) Replace controllers&#39; implementations entirely.</strong> Rewrite as RVF-native modules. Multi-quarter effort.</p>
+<p>ADR-0177 most plausibly means <strong>B</strong> with possibly <strong>A</strong> for some controllers.</p>
+<h3 id="concrete-consistency-model-proposal">Concrete consistency model proposal</h3>
+<p><strong>Per logical entity, one substrate is the System of Record (SoR); the other is a materialised view (MV) of a subset of fields.</strong></p>
+<ul>
+<li>Pure K/V + vector entries (memory_*): <strong>SoR = RVF.</strong> No MV.</li>
+<li>Relational-controller entries (Reflexion episodes etc): <strong>SoR = SQLite for relational structure; RVF holds MV of vector field only.</strong></li>
+<li>Write ordering: <strong>SoR-first, MV-after.</strong> SQLite txn commits first, then RVF write.</li>
+<li><strong>No two-phase commit.</strong></li>
+<li><strong>Reconciliation:</strong> periodic sweeper job verifies SoR backing exists, evicts orphans.</li>
+</ul>
+<h3 id="round-1-verdict-revision">Round-1 verdict revision</h3>
+<p><strong>The per-axis dual-middleware design is over-engineered relative to what upstream demonstrates works.</strong> Upstream has:</p>
+<ul>
+<li>One bridge file (2,370 lines)</li>
+<li>Guard + Attest called from every store/delete entry point, uniformly, via two bridge-local helper functions</li>
+<li>One registry lookup pattern — substrate-agnostic</li>
+<li>TieredCache and BM25 fusion live in the bridge file</li>
+</ul>
+<p>This is exactly the &quot;single chokepoint with axis-neutral middleware&quot; that ADR-0177 collapses toward. Round-1&#39;s &quot;per-axis shared middleware imported by both routers&quot; was right <em>in spirit</em> (substrate-neutral) but <em>wrong in shape</em>. <strong>The correct shape is one router (or bridge-equivalent), middleware applied once, controllers dispatched by capability lookup.</strong></p>
+<h3 id="final-ranking">Final ranking</h3>
+<ol>
+<li><strong>Substrate-collapse-as-actually-defined</strong> (option B): RVF for vector/KV, SQLite for relational, one bridge as router.</li>
+<li>Status quo dual-axis (X).</li>
+<li>Full RVF rewrite (option C).</li>
+</ol>
+<h3 id="what-adr-0177-needs-to-sharpen">What ADR-0177 needs to sharpen</h3>
+<ul>
+<li>Honest acknowledgment that operationally RVF + SQLite forever (not &quot;RVF only&quot;).</li>
+<li>Per-controller SoR assignment table.</li>
+<li>Attestation handling: keep dedicated <code>attestation.db</code>, fold, or move?</li>
+<li>Sweeper job spec.</li>
+<li>Bridge-or-router naming.</li>
+</ul>
+<hr>
+<h2 id="integration-judge--round-3-verdict-on-upstream-sync">INTEGRATION JUDGE — Round 3 verdict on upstream-sync</h2>
+<h3 id="pre-adr-0177-state-baseline-2026-05-13">Pre-ADR-0177 state (baseline 2026-05-13)</h3>
+<ul>
+<li><code>memory-bridge.ts</code>: <strong>deleted in fork</strong> (~2,370 lines on upstream). Delta: +2,370 LoC.</li>
+<li><code>memory-initializer.ts</code>: <strong>deleted in fork</strong> (~3,000 lines upstream). Delta: +3,000 LoC.</li>
+<li>Substrate: ~1,500-2,500 LoC fork-only.</li>
+<li>MCP surface: ~500-1,000 LoC fork-only behavioral divergence.</li>
+</ul>
+<p><strong>Total fork-vs-upstream delta: ~7,000-9,000 LoC of structural divergence. Most of it deletion-shaped — invisible to fork reviewers, monotonically growing.</strong></p>
+<h3 id="adr-0177-transition-months-1-3">ADR-0177 transition months 1-3</h3>
+<ul>
+<li>Month 1: re-import bridge.ts scaffolding (~1,800 LoC restored). Substrate collapse begins.</li>
+<li>Month 2: handler middleware retired; coordination moved into bridge. Delta drops 2,370 → 600 LoC.</li>
+<li>Month 3: substrate convergence. SQLite remains for 5 PERMANENT_SQLITE_CARVE_OUT controllers.</li>
+</ul>
+<p><strong>Month 3 delta: ~1,400-2,000 LoC, all additive divergence (visible, mergeable). Net: ~5,000 LoC retired over 3 months.</strong></p>
+<h3 id="weekly-sync-cost-during-transition">Weekly sync cost during transition</h3>
+<ul>
+<li>Weeks 1-4: ~3-4 hours/week (high, structural conflicts)</li>
+<li>Weeks 5-8: ~1-2 hours/week (medium, interpretive conflicts)</li>
+<li>Weeks 9-12: ~30 min/week (low, line-by-line)</li>
+</ul>
+<h3 id="q3--bridge-shape-vs-middleware-shape-inbound-merge-cost">Q3 — bridge shape vs middleware shape: inbound merge cost</h3>
+<table>
+<thead>
+<tr>
+<th>Inbound change</th>
+<th>Bridge merge cost</th>
+<th>Middleware merge cost</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Upstream adds new controller</td>
+<td>~5-10 LoC bridge dispatch</td>
+<td>~5-10 LoC per handler middleware install ×30 handlers</td>
+</tr>
+<tr>
+<td>Upstream changes MutationGuard</td>
+<td>1:1 function edit, merges cleanly</td>
+<td>Re-port into ~33 handler stacks; non-mechanical</td>
+</tr>
+<tr>
+<td>Upstream changes hybrid retrieval</td>
+<td>Function-level merge</td>
+<td><strong>Cannot be ported</strong> without reintroducing a coordinator above handlers</td>
+</tr>
+<tr>
+<td>Upstream adds new bridge invariant</td>
+<td>New function, merges</td>
+<td>No fork home; design discussion per concern</td>
+</tr>
+</tbody></table>
+<h3 id="the-structural-homology-argument">The structural-homology argument</h3>
+<p>Upstream&#39;s bridge encodes a particular <em>shape</em> of cross-cutting concerns. By restoring the bridge, the fork inherits:</p>
+<ol>
+<li>Mergeable diffs (line-level alignment).</li>
+<li><strong>A vocabulary</strong>: fork-side reviewers can map upstream bridge changes to fork bridge changes by name.</li>
+</ol>
+<p>The vocabulary cost is invisible in LoC but compounds. Round-1 evidence: the 6 missed features were missed precisely because they crossed a vocabulary boundary.</p>
+<h3 id="final-ranking-round-3">Final ranking (round 3)</h3>
+<ol>
+<li><strong>Restored bridge + Option Z + ADR-0112 revert</strong> — re-converges fork to upstream&#39;s coordination shape AND substrate shape. Lowest steady-state sync cost. Highest one-time migration cost (paid back month ~6).</li>
+<li><strong>Handler-middleware + Option Z</strong> — converges substrate and surface but keeps coordination shape divergent. Saves migration cost short-term; pays sustained translation tax indefinitely.</li>
+<li><strong>Status quo</strong> — highest sustained divergence; coordination-invariant gap widens monotonically.</li>
+</ol>
+<p><strong>Bridge restoration is less divergent from upstream&#39;s evolving code than handler-middleware</strong>, both initially (structural homology) and asymptotically (line-level mergeability).</p>
+<hr>
+<h2 id="mid-round-framing-update-2026-05-13-1430-post-initial-responses">Mid-round framing update (2026-05-13 ~14:30, post-initial-responses)</h2>
+<p>User reframe interjected: <em>&quot;These discussions are for determining the direction. We have contradicting ADRs. Once we have found the answer, we can clean it up. See the old ADRs as exploration, and inputs to our decision.&quot;</em></p>
+<p>Effect: removed the &quot;council won&#39;t admit walking back ADRs&quot; anxiety the DA flagged. Experts were instructed to argue from <strong>what the exploration taught us</strong> as forward-design inputs, not defend prior ADRs as binding constraints. The 6 remaining in-flight experts were forwarded the reframe and produced <strong>reframed positions</strong> below. Bridge-defender and status-quo-defender both produced sharper forward-design arguments under the new framing; perf-judge / security-judge / memory-judge / integration-judge each refined or revised round-2/round-3 positions.</p>
+<h3 id="reframed-expert-positions-final-round-3-statements">Reframed expert positions (final round-3 statements)</h3>
+<h4 id="status-quo-defender-reframed--lessons-applied-handler-middleware">Status-quo-defender (reframed) — &quot;lessons-applied&quot; handler-middleware</h4>
+<blockquote>
+<p><em>&quot;I&#39;m not defending ADR-0084/0085/0112 as binding commitments. I&#39;m treating them as exploration that produced three useful findings, then arguing forward from those findings.&quot;</em></p>
+</blockquote>
+<p>Position: <strong>per-handler <code>src/memory/middleware/</code> composition</strong> as forward shape (confidence 82). Concedes a small <code>cascade-delete.ts</code> exception if body-diff reveals genuinely cross-axis cascade logic in the deletion-recovery functions. Branded types + lint as enforcement: <code>GuardedWrite&lt;T&gt;</code> produced only by <code>guardWrite()</code>; controllers&#39; signatures require it. Compiler-enforced; lint as backup. <strong>The drift critique is real; the answer is compile-time enforcement, not a runtime god-module.</strong></p>
+<h4 id="bridge-defender-reframed--the-forward-decision-concentrates-the-cross-cutting-concerns">Bridge-defender (reframed) — &quot;the forward decision concentrates the cross-cutting concerns&quot;</h4>
+<blockquote>
+<p><em>&quot;This is not &#39;restore the deleted bridge.&#39; It is &#39;given the exploration, the right architecture going forward concentrates the six cross-cutting concerns at the seam between MCP handlers and ControllerRegistry.&#39;&quot;</em></p>
+</blockquote>
+<p>Position: <strong>new <code>forks/ruflo/src/memory/controller-bridge.ts</code></strong> (NOT git-restore of the deleted file). Typed per-controller surface (no generic <code>getController(name)</code> exports). Substrate migration owned by bridge via strangler-fig pattern. Bridge owns the routing during transition; functions shrink as migration completes; public surface unchanged. <strong>The bridge isn&#39;t axis-shaped; it&#39;s a dispatcher with middleware. Round-2&#39;s axis distinction disappears under the bridge frame.</strong></p>
+<h4 id="perf-judge-reframed--forward-perf-targets-not-preserve-phase-c3">Perf-judge (reframed) — &quot;forward perf targets, not preserve-Phase-C.3&quot;</h4>
+<blockquote>
+<p><em>&quot;Treat Phase C.3&#39;s +30% store p50 regression as measurement-based exploration; ADR-0086&#39;s 150-12,500× claim as unmeasured aspiration. We&#39;ve learned which kind of evidence is load-bearing.&quot;</em></p>
+</blockquote>
+<p>Position: <strong>handler-middleware with shared registry context</strong> + lazy-per-tool factory + explicit composition for fanout. Slight cold-start advantage on partial-tool sessions (~5-15ms). <strong>&quot;The router-shim form of F-Middleware IS F-Bridge with worse vocabulary.&quot;</strong> Decision not perf-decisive. Forward target: ≤30ms warm write p50, ≤5ms warm read p50, ≤5% coordination overhead, ≤1.2× storage amplification, ≤4 async hops per call. Both shapes hit it equally if coded with shared context.</p>
+<h4 id="security-judge-reframed--p1p3-placement-model">Security-judge (reframed) — P1+P3 placement model</h4>
+<blockquote>
+<p><em>&quot;The forward question is: where in the forward architecture does an audit chokepoint make bypass impossible by construction?&quot;</em></p>
+</blockquote>
+<p>Position: <strong>P1 (MCP-tool-registration boundary)</strong> + <strong>P3 (controller-method <code>MutationContext</code> backstop)</strong>. Type-enforced <code>registerMutationHandler&lt;TArgs, TResult&gt;</code> factory; the registry&#39;s <code>register</code> method only accepts <code>MCPToolDefinition</code> produced by the factory. Controllers&#39; write methods require a <code>MutationContext</code> argument; throw fatal on absence. <strong>The non-obvious threat-model property</strong>: type-enforced placement defends against future-maintainer attacks of omission — the exact failure mode that produced upstream&#39;s half-finished chokepoint (5/13 guarded). The bridge is a runtime convention with known incomplete coverage; P1+P3 is a type-level invariant.</p>
+<h4 id="memory-judge-reframed--upstream-pattern-as-forward-decision">Memory-judge (reframed) — upstream pattern as forward decision</h4>
+<blockquote>
+<p><em>&quot;The bridge isn&#39;t the god-object I thought ADR-0085 was killing — it&#39;s a thin dispatch+middleware layer that delegates substrate-specific work to the controllers themselves.&quot;</em></p>
+</blockquote>
+<p>Position: <strong>Adopt the upstream pattern: restore the bridge, host controllers on their natural substrate (mostly SQLite via AgentDB, some on RVF), apply middleware at the bridge, keep both MCP surfaces.</strong> Revised round-3 SoR/MV proposal as over-engineering: upstream doesn&#39;t do it; controllers own their substrate; no duplication, no sweeper, no orphans. <strong>&quot;The axis distinction disappears because the bridge isn&#39;t axis-shaped — it&#39;s a dispatcher with middleware. Round 2 was answering the wrong question because the X frame was still smuggled in.&quot;</strong></p>
+<h4 id="integration-judge-reframed--coordination--substrate--surface">Integration-judge (reframed) — coordination &gt; substrate &gt; surface</h4>
+<blockquote>
+<p><em>&quot;Round 2 had the axes right but the weights wrong. Round 4&#39;s weights: coordination &gt; substrate &gt; surface.&quot;</em></p>
+</blockquote>
+<p>Position: <strong>F-Bridge</strong> (full bridge restoration + RVF substrate + bifurcated surface + cross-surface coordination allowed). Three lessons applied:</p>
+<ol>
+<li>Substrate divergence loses load-bearing capabilities (witness chains) → RVF-primary.</li>
+<li>Removing coordination chokepoints loses cross-controller invariants silently → restore bridge-shaped coordinator.</li>
+<li>Parallel surface evolution isn&#39;t divergence → keep bifurcation; drop ADR-0112&#39;s coordination ban.</li>
+</ol>
+<p>F-Middleware is dominated on every forward-cost axis except initial migration. F-PartialBridge is the phased-migration hedge if F-Bridge&#39;s ~3-month migration cost is binding. <strong>F-Middleware with a router shim <em>is</em> F-Bridge with worse vocabulary.</strong></p>
+<hr>
+<h2 id="council-verdict-synthesis-post-reframe">Council verdict (synthesis, post-reframe)</h2>
+<h3 id="tally-round-3-reframed">Tally (round 3, reframed)</h3>
+<table>
+<thead>
+<tr>
+<th>Expert</th>
+<th>Reframed forward verdict</th>
+<th>Naming</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>queen-architect</td>
+<td>Hybrid placement: chokepoint for sec/audit, middleware for perf/quality</td>
+<td>bridge or middleware</td>
+</tr>
+<tr>
+<td>devils-advocate</td>
+<td>Pure opposition by role</td>
+<td>—</td>
+</tr>
+<tr>
+<td>bridge-defender</td>
+<td><strong>Thin <code>controller-bridge.ts</code></strong> (~800-1200 LoC, NOT git-restoration)</td>
+<td>bridge</td>
+</tr>
+<tr>
+<td>status-quo-defender</td>
+<td><strong><code>src/memory/middleware/</code></strong> (~400-600 LoC) + branded types</td>
+<td>middleware</td>
+</tr>
+<tr>
+<td>perf-judge</td>
+<td>Slight middleware lead on partial-tool sessions; &quot;router shim is bridge with worse naming&quot;</td>
+<td>middleware-slightly</td>
+</tr>
+<tr>
+<td>security-judge</td>
+<td><strong>P1+P3: typed HOF + controller MutationContext backstop</strong></td>
+<td>middleware-shaped</td>
+</tr>
+<tr>
+<td>memory-judge</td>
+<td><strong>Upstream pattern</strong>: thin dispatch + middleware in one module; controllers own txns</td>
+<td>bridge</td>
+</tr>
+<tr>
+<td>integration-judge</td>
+<td><strong>F-Bridge</strong>: minimum forward divergence; coordination &gt; substrate &gt; surface</td>
+<td>bridge</td>
+</tr>
+</tbody></table>
+<p><strong>Reframed raw vote: 3 bridge / 3 middleware-shaped / 1 hybrid / 1 opposition</strong> (was 4/2/1/1 before reframe).</p>
+<h3 id="substantive-convergence-post-reframe--strengthened">Substantive convergence (post-reframe — strengthened)</h3>
+<p><strong>All 7 voting members agree on</strong>:</p>
+<ol>
+<li>One thin coordinator (~500-1000 LoC) at the MCP-tool-dispatch boundary.</li>
+<li>Cross-cutting middleware applied uniformly at that coordinator: MutationGuard / AttestationLog / TieredCache / BM25 fusion / ExplainableRecall provenance / SkillLibrary auto-promotion (with dedup).</li>
+<li>Type-level enforcement via branded types + <code>MutationContext</code> argument requirement. Closes upstream&#39;s half-finished-chokepoint gap (5 of 13 → 13 of 13 mutation paths guarded).</li>
+<li>Substrate: RVF-primary with documented PERMANENT_SQLITE carve-outs. <strong>Hybrid forever, not transitional.</strong> Per-controller SoR.</li>
+<li>Both MCP surfaces preserved (<code>memory_*</code> + <code>agentdb_*</code>). Parallel evolution with upstream.</li>
+<li>Controllers own their internal multi-table transactions. The coordinator dispatches; controllers own FK consistency.</li>
+<li>ADR-0112 retired — drop the no-cross-surface-coordination rule.</li>
+<li>Lazy-per-tool init.</li>
+<li>Single audit chain above the substrate split; substrate is a record-property, not identity.</li>
+<li>+36% wrapper fix lands at the coordinator as a single insertion point.</li>
+</ol>
+<p><strong>The residual disagreement</strong>:</p>
+<ul>
+<li><strong>&quot;Bridge&quot; camp</strong> (bridge-defender, memory-judge, integration-judge) wants line-level structural homology with upstream&#39;s <code>memory-bridge.ts</code> for merge alignment.</li>
+<li><strong>&quot;Middleware&quot; camp</strong> (status-quo-defender, security-judge, perf-judge weakly) wants type-level enforcement explicit in the file structure (<code>src/memory/middleware/</code> + branded <code>GuardedWrite&lt;T&gt;</code> types).</li>
+</ul>
+<p><strong>These are not architecturally different objects.</strong> A &quot;thin bridge module that applies typed middleware via HOF&quot; and &quot;a middleware module that registers handlers via a typed factory&quot; are the same shape. The naming dispute is the residual disagreement; the engineering decision is settled.</p>
+<h3 id="three-round-3-bombshells">Three round-3 bombshells</h3>
+<ol>
+<li><p><strong>Security-judge</strong>: upstream&#39;s bridge guards 5 of 13 mutation paths. Restoring it imports the gap (8 unguarded paths). The half-finished chokepoint is the most dangerous chokepoint.</p>
+</li>
+<li><p><strong>Memory-judge</strong>: ADR-0177&#39;s &quot;RVF-only&quot; is operationally impossible. Realistic target = RVF + SQLite hybrid permanent operating mode. Per-controller SoR assignment + sweeper for orphan eviction.</p>
+</li>
+<li><p><strong>Perf-judge</strong>: <code>bridgeRecordFeedback</code> has 3-4× silent storage amplification via uncoordinated fanout. Invisible in API.</p>
+</li>
+</ol>
+<h3 id="final-synthesized-direction">Final synthesized direction</h3>
+<p>Given substantive convergence + bombshells:</p>
+<ol>
+<li><p><strong>Substrate</strong>: ADR-0177 with operational honesty. <strong>RVF for vectors/KV, SQLite for relational neural-controller schemas.</strong> Per-controller SoR assignment. SoR-authoritative, MV-best-effort + orphan sweeper.</p>
+</li>
+<li><p><strong>Coordination layer</strong>: A <strong>thin router module</strong> (~500 LoC, not 2,370):</p>
+<ul>
+<li>MutationGuard via HOF + branded types (security-judge): all 13+ mutation paths guarded, not 5 of 13. Closes upstream&#39;s half-finished gap.</li>
+<li>AttestationLog: separate <code>attestation.db</code> retained per upstream.</li>
+<li>TieredCache + BM25 fusion + ExplainableRecall provenance + SkillLibrary promotion (with dedup): applied uniformly at the router.</li>
+</ul>
+</li>
+<li><p><strong>Not a god-module.</strong> ~500 LoC vs 2,370 because we drop: registry indirection (ADR-0084 resolves at handler), direct SQL writes (controllers own writes), HNSW-singleton dynamic imports, 60+ unused exports.</p>
+</li>
+<li><p><strong>Migration window</strong>: Regime A (try-RVF-then-fall-back, bounded), 7-day deadline, sweeper for orphans, anchor-attestation bridging old chain to new.</p>
+</li>
+<li><p><strong>Naming</strong>: call it &quot;router&quot; not &quot;bridge&quot; if ADR-0085&#39;s structural verdict should stay coherent, OR call it &quot;bridge&quot; and amend ADR-0085 to say &quot;deleted the 1990s shape; restored the 2020s shape.&quot; Either is honest.</p>
+</li>
+</ol>
+<hr>
+<h2 id="provenance">Provenance</h2>
+<ul>
+<li>Round 3 ran 2026-05-13 <del>14:25–14:31 (</del>6 minutes wall-clock from dispatch to last idle).</li>
+<li>Cost: zero per <code>feedback-no-api-keys.md</code>.</li>
+<li>Same 8-agent team as rounds 1+2; recontextualized via SendMessage with role reframings:<ul>
+<li><code>bridge-defender</code> → BRIDGE COORDINATION ADVOCATE</li>
+<li><code>status-quo-defender</code> → HANDLER-LEVEL MIDDLEWARE ADVOCATE</li>
+</ul>
+</li>
+<li>Comms via SendMessage on team <code>adr-0179-council</code>.</li>
+<li>Mid-session framing correction (upstream has BOTH MCP surfaces, not one) absorbed by all experts.</li>
+<li>User framing reframe (&quot;ADRs as exploration inputs, not commitments&quot;) forwarded to 6 in-flight experts mid-round.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

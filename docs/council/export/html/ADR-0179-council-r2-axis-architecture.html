@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0179-council-r2-axis-architecture</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="adr-0179-council--round-2-transcript">ADR-0179 Council — Round 2 Transcript</h1>
+<p><strong>Date</strong>: 2026-05-13
+<strong>Team</strong>: <code>adr-0179-council</code> (same 8 agents as round 1, recontextualized via SendMessage)
+<strong>Topology</strong>: hierarchical-mesh (continued from round 1)
+<strong>Comms</strong>: SendMessage on bound team — no file-based handoff
+<strong>Related ADRs</strong>: [[ADR-0179]] (round 1 outcome) — will likely spawn ADR-0180 from this round&#39;s verdict
+<strong>Predecessor</strong>: [[ADR-0179-council-r1-bridge-deletion]] — round 1 on the bridge deletion itself</p>
+<h2 id="question-deliberated">Question deliberated</h2>
+<p>Should the fork keep its <strong>dual-axis</strong> storage architecture (<code>memory_*</code> writes RVF, <code>agentdb_*</code> writes AgentDB SQLite — ADR-0086/0112), or revert to a <strong>single-axis</strong> model like upstream (one MCP surface, one storage file, with any hybrid sub-backends invisible to the caller)?</p>
+<p><strong>User constraint</strong>: &quot;Discount any work we have done so far with postgres.&quot; ADR-0170 / pglite substrate work is off the table. Pure RVF-vs-SQLite axis question.</p>
+<h3 id="three-options">Three options</h3>
+<ul>
+<li><strong>Option X (status quo, dual axis)</strong>: keep ADR-0086/0112. Two MCP surfaces (<code>memory_*</code>, <code>agentdb_*</code>), two files (<code>.rvf</code> + <code>.swarm/memory.db</code>), two failure modes.</li>
+<li><strong>Option Y (collapse to single axis, upstream-style)</strong>: one MCP surface (<code>memory_*</code>). One storage file. HybridBackend (or AgentDB&#39;s own hybrid internals) hidden behind the single surface. agentdb_* tools removed or merged. Revert ADR-0086 + ADR-0112.</li>
+<li><strong>Option Z (single user surface, dual substrate internal)</strong>: one MCP surface, internally route by query type. Keep RVF for vectors, keep AgentDB SQLite for relational, but never expose the choice to the caller. Revert ADR-0112; keep most of ADR-0086.</li>
+</ul>
+<h2 id="upstream-research-supplied-to-all-agents-as-ground-truth">Upstream research (supplied to all agents as ground truth)</h2>
+<ol>
+<li><strong>ADR-006 (Unified Memory Service, 2026-01-03)</strong> — One MemoryService, three pluggable backends: <code>sqlite | agentdb | hybrid</code>. Hybrid was default. ONE CLI API surface (<code>memory_*</code>), pluggable internals.</li>
+<li><strong>ADR-009 (Hybrid Memory Backend Default)</strong> — HybridBackend routes by query type: key-value → SQLite, semantic → AgentDB (HNSW), structured → SQLite. All in <code>.swarm/memory.db</code>. ONE file, internally dual-substrate.</li>
+<li><strong>Actual upstream CLI runtime</strong> — <code>memory-initializer.ts</code> bypasses HybridBackend entirely. Raw sql.js writes everything to <code>.swarm/memory.db</code> with HNSW metadata tables.</li>
+<li><strong>AgentDB v3 itself is internally hybrid</strong> — SQLite for metadata + native vector indexes for HNSW.</li>
+</ol>
+<h3 id="the-forks-compromised-story-load-bearing-for-round-2">The fork&#39;s compromised story (load-bearing for round 2)</h3>
+<ul>
+<li><strong>ADR-0086 (2026-04-14)</strong> was titled <strong>&quot;Layer 1 — Single Storage Abstraction (RVF-First).&quot;</strong> Its stated GOAL was to eliminate the dual backend. It explicitly accepted <strong>Debt 15 &quot;ControllerRegistry dual-backend&quot;</strong> as the ONE trade-off it could not close, because the 10+ neural controllers (Reflexion, SkillLibrary, CausalGraph, LearningSystem, etc.) need relational schemas that don&#39;t fit RVF&#39;s K/V model.</li>
+<li><strong>ADR-0112 (2026-05-01)</strong> then took that <em>failed unification</em> and reframed it as deliberate architecture: &quot;two independent stores, feature-aligned.&quot; Workload-differentiation language.</li>
+<li><strong>The &quot;150x-12,500× speedup&quot; claim from ADR-0086</strong> is RVF native NAPI HNSW vs upstream&#39;s <em>sql.js cosine on rehydrated JSON embeddings</em>. It is NOT RVF vs AgentDB&#39;s own native HNSW. The honest comparator is plausibly <strong>2-5×</strong>, not 150-12,500×.</li>
+</ul>
+<hr>
+<h2 id="queen-architect--opening-framing-round-2">QUEEN ARCHITECT — Opening framing (round 2)</h2>
+<h3 id="load-bearing-axes">Load-bearing axes</h3>
+<ul>
+<li><strong>Axis 1: User-surface count is a contract, not an implementation detail.</strong> Once <code>memory_*</code> and <code>agentdb_*</code> are both first-class MCP tool families, callers (skills, agents, third-party plugins) hard-code the choice. Reverting to a single surface later is a breaking change.</li>
+<li><strong>Axis 2: ADR-0086&#39;s stated goal vs its delivered outcome.</strong> ADR-0086 was titled &quot;Single Storage Abstraction&quot; and <em>failed</em> to unify — Debt 15 was the unclosed trade-off. ADR-0112 then re-narrated that failure as deliberate. These are different architectures wearing the same code.</li>
+<li><strong>Axis 3: Where does the hybrid routing decision live?</strong> Three placements: (a) at the <strong>caller</strong> (Option X — caller picks <code>memory_*</code> or <code>agentdb_*</code>), (b) at the <strong>router</strong> (Option Z — caller hits <code>memory_*</code>, router dispatches by query shape), (c) at the <strong>substrate</strong> (Option Y — caller hits <code>memory_*</code>, AgentDB&#39;s internal SQLite+HNSW handles it).</li>
+<li><strong>Axis 4: The 150x-12,500x perf claim does not survive scrutiny in the relevant comparison.</strong> RVF native NAPI HNSW vs sql.js-cosine-on-JSON is real but irrelevant — that&#39;s the upstream-CLI baseline, not the upstream-HybridBackend baseline.</li>
+<li><strong>Axis 5: Independence as a feature vs as a cost.</strong> ADR-0112 frames &quot;no cross-store transactions, no shared consistency&quot; as a <em>feature</em>. Equally, it is a <em>cost</em> (any future feature wanting K/V + vector + relational coherence cannot be built at all).</li>
+<li><strong>Axis 6: 10+ neural controllers and the relational-schema floor.</strong> Even Option Y/Z must accommodate Reflexion, SkillLibrary, CausalGraph, LearningSystem. RVF&#39;s K/V model cannot host them. Pure &quot;everything in RVF&quot; is off the table.</li>
+<li><strong>Axis 7: Migration cost asymmetry.</strong> Option X is free. Option Z is medium. Option Y is high.</li>
+</ul>
+<h3 id="tentative-lean">Tentative lean</h3>
+<p><strong>Option Z</strong> (single user surface, dual substrate internal): one <code>memory_*</code> MCP surface, internal router dispatches by query shape, RVF retained as vector substrate, AgentDB SQLite retained as relational substrate. <strong>Confidence: 58.</strong></p>
+<p>Justification: Option Z preserves every perf gain ADR-0086 actually delivered (RVF on vector hot path), absorbs the 10+ controllers as ADR-0086&#39;s Debt 15 always required, restores upstream&#39;s single-surface design intent (ADR-006/009), eliminates the dual-surface caller tax, and creates the routing seam the round-1 features need to be restored coherently. <strong>It is also the option ADR-0086 was <em>trying</em> to deliver before Debt 15 derailed it.</strong></p>
+<hr>
+<h2 id="devils-advocate--trilateral-challenge-round-2">DEVIL&#39;S ADVOCATE — Trilateral challenge (round 2)</h2>
+<h3 id="pre-flight-four-ambient-claims-the-council-wont-examine">Pre-flight: four ambient claims the council won&#39;t examine</h3>
+<ol>
+<li><strong>The 150-12,500× speedup.</strong> Measured RVF-HNSW vs sql.js JSON rehydrate + JS cosine. <strong>Wrong baseline.</strong> AgentDB ships its own HNSW; honest baseline is RVF-HNSW vs AgentDB-HNSW. Nobody on this council has run that benchmark.</li>
+<li><strong>ADR-0086&#39;s stated goal was unification.</strong> Re-read the title: &quot;Layer 1 — Single Storage Abstraction (RVF-First).&quot; Decision text wanted ONE backend. It produced TWO. Debt-15 is the receipt that unification was <em>attempted and not delivered</em>. ADR-0112 then relabelled the residue as &quot;feature-aligned independent stores.&quot; <strong>By definition, retroactive rationalisation of a forced compromise.</strong></li>
+<li><strong>&quot;Upstream is single-axis&quot; is half-true.</strong> Upstream&#39;s <em>design</em> is single-surface hybrid. Upstream&#39;s <em>runtime</em> bypasses all of that and writes raw sql.js. &quot;Single-axis like upstream&quot; actually means &quot;single-axis like upstream&#39;s runtime shortcut,&quot; which is the <em>least</em> designed of the three states.</li>
+<li><strong>AgentDB is already internally hybrid.</strong> SQLite + vector indexes inside one process, one file. <strong>Z is <em>describing AgentDB</em>.</strong> Only honest question for Z: does the fork&#39;s RVF buy anything over AgentDB&#39;s own vector layer that justifies maintaining a second substrate?</li>
+</ol>
+<h3 id="challenge-to-x-status-quo-dual-axis">Challenge to X (&quot;status quo dual-axis&quot;)</h3>
+<ul>
+<li><strong>Strongest argument FOR X defenders won&#39;t make:</strong> The dual-axis exists because RVF and AgentDB have <em>different durability and recovery semantics</em>, not because of speed. Defenders won&#39;t say this out loud because it admits the axis split was about <em>recovery</em>, not the 150-12,500× speedup story.</li>
+<li><strong>Strongest argument AGAINST X:</strong> ADR-0086 set itself a unification goal in its title and failed. The fork is shipping a hidden tradeoff labelled as an architectural choice. Every cross-axis feature becomes either impossible (ADR-0112 forbids it) or smuggled through the router as ad-hoc coordination. X is paying interest on the failed unification every time someone tries to add a feature that spans both stores.</li>
+<li><strong>One unambiguous data point that sinks X:</strong> RVF-HNSW vs AgentDB-HNSW on the same corpus, same query mix, ≤2× difference. If RVF is not order-of-magnitude faster, the dual-substrate cost is unjustified.</li>
+</ul>
+<h3 id="challenge-to-y-single-axis-like-upstream">Challenge to Y (&quot;single-axis like upstream&quot;)</h3>
+<ul>
+<li><strong>Strongest argument FOR Y defenders won&#39;t make:</strong> Y is the only option that lets the fork rejoin upstream&#39;s ADR-006/009 surface. Y buys <em>back</em> convergence.</li>
+<li><strong>Strongest argument AGAINST Y:</strong> &quot;Single-axis like upstream&quot; is actually &quot;single-axis like upstream&#39;s <em>runtime shortcut</em> — raw sql.js bypassing the hybrid backend upstream <em>designed</em>.&quot; Y is the option where the fork copies upstream&#39;s <em>undesigned</em> runtime state.</li>
+<li><strong>One unambiguous data point that sinks Y:</strong> If Y means &quot;the runtime,&quot; the fork is regressing. If Y means &quot;the design,&quot; then Y is actually Z — and should be called Z.</li>
+</ul>
+<h3 id="challenge-to-z-single-mcp-surface-dual-substrate-routed-internally">Challenge to Z (&quot;single MCP surface, dual substrate routed internally&quot;)</h3>
+<ul>
+<li><strong>Strongest argument FOR Z defenders won&#39;t make:</strong> Z is what AgentDB <em>already is</em>. Admitting &quot;AgentDB already does Z&quot; is admitting RVF is the redundant layer.</li>
+<li><strong>Strongest argument AGAINST Z:</strong> The maintenance burden of &quot;two stores&quot; does not vanish when you hide it; it migrates into the routing layer and gets <em>worse</em> because now it is invisible to callers but still requires invariants nobody can see and nobody will test. Z is rebuilding the conditions for the same class of error (the bridge deletion).</li>
+<li><strong>One unambiguous data point that sinks Z:</strong> A specific MCP tool whose semantics require <em>atomic</em> writes to both substrates. If even one tool needs that, Z either ships a distributed-transaction layer (which it won&#39;t) or accepts partial-failure modes the API doesn&#39;t expose.</li>
+</ul>
+<h3 id="the-question-nobody-will-want-to-answer">The question NOBODY will want to answer</h3>
+<p><strong>Is ADR-0086 + ADR-0112 an architectural insight, or is it the retroactive rationalisation of a unification attempt that failed at Debt-15?</strong> Until somebody names the ADR-0086 unification failure honestly, the axis question cannot be decided — every option will be evaluated against a phantom baseline. <strong>Sub-question: who is going to run the RVF-HNSW vs AgentDB-HNSW benchmark <em>before</em> the vote, not after?</strong></p>
+<h3 id="own-lean">Own lean</h3>
+<p>Pure opposition. <strong>The cheapest next move is not picking an option</strong> — it is (a) running RVF-HNSW vs AgentDB-HNSW on a real corpus, and (b) amending ADR-0086&#39;s Status section to say plainly whether Debt-15 was a partial-success or a unification-failure.</p>
+<hr>
+<h2 id="single-axis-advocate-formerly-bridge-defender--case-for-unification">SINGLE-AXIS ADVOCATE (formerly bridge-defender) — Case for unification</h2>
+<h3 id="position">Position</h3>
+<ul>
+<li><strong>Primary: Z (confidence 70)</strong> — one MCP surface, dual substrate internal. Revert ADR-0112, keep most of ADR-0086.</li>
+<li>Secondary acceptable fallback: <strong>Y (confidence 55 if forced)</strong>.</li>
+<li><strong>X is not acceptable.</strong> Dual-axis is failed unification rebranded as deliberate architecture.</li>
+</ul>
+<h3 id="five-strongest-arguments">Five strongest arguments</h3>
+<ol>
+<li><strong>The fork already tried single-axis and the ADR record proves it.</strong> ADR-0086 was titled &quot;Single Storage Abstraction (RVF-First).&quot; ADR-0112 walked in three months later and reframed the uncloseable debt as &quot;two independent stores, feature-aligned.&quot; That is renaming a known incomplete unification as a finished feature.</li>
+<li><strong>Upstream is the working counterfactual.</strong> Both ADR-006/009&#39;s HybridBackend and the raw-sql.js runtime work in production. &quot;Dual-axis is necessary because the workloads differ&quot; has to argue against a working upstream that doesn&#39;t believe that.</li>
+<li><strong>The speedup claim is benchmark theatre.</strong> 150-12,500× is RVF vs sql.js doing cosine over rehydrated JSON. The honest comparison is RVF vs AgentDB&#39;s <em>own</em> HNSW, and that&#39;s 2-5× at most.</li>
+<li><strong>Two stores is two of everything, forever.</strong> Two backup paths. Two corruption recovery procedures. Two failure modes. Two namespaces. Two ADRs to enforce against drift.</li>
+<li><strong>The user-facing story is unsellable.</strong> A user installing the package and reading the docs sees <code>memory_store</code> and <code>agentdb_hierarchical_store</code> and asks: &quot;which do I use?&quot; That answer is an implementation detail leaking through the public surface.</li>
+</ol>
+<h3 id="honest-weak-spot">Honest weak spot</h3>
+<p>If <code>agentdb_causal_*</code> does graph-shaped queries that are <em>semantically</em> distinct from &quot;remember this fact,&quot; not just substrate-distinct — then the namespace split is carrying real semantic information and Z&#39;s &quot;hide it all behind one surface&quot; loses that. <strong>My answer (sub-namespacing within the unified surface) is plausible but I haven&#39;t designed it.</strong></p>
+<hr>
+<h2 id="dual-axis-defender-formerly-status-quo-defender--case-for-status-quo">DUAL-AXIS DEFENDER (formerly status-quo-defender) — Case for status quo</h2>
+<h3 id="position-1">Position</h3>
+<ul>
+<li><strong>Primary: X (confidence 62)</strong></li>
+<li>Acceptable secondary: <strong>Z</strong> (confidence I&#39;d accept this without protest: 30)</li>
+<li><strong>Y unacceptable</strong> (confidence in rejection: 88)</li>
+</ul>
+<p><strong>Honest admission</strong>: The gap between X and Z is narrower than my role-incentive suggests. <strong>If we were greenfield I would probably advocate Z.</strong> I hold X primarily on migration-cost and contract-stability grounds.</p>
+<h3 id="engaging-the-inconvenient-facts-no-dodging">Engaging the inconvenient facts (no dodging)</h3>
+<ul>
+<li><strong>&quot;ADR-0086 was titled &#39;Single Storage Abstraction (RVF-First)&#39; — dual-axis is failed unification&quot;</strong>: <strong>Conceded ground.</strong> &quot;The original goal wasn&#39;t met&quot; is not the same as &quot;the resulting architecture is wrong.&quot; A lot of good architectures are residue of failed unifications. ADR-0086&#39;s title is wrong relative to its outcome; ADR-0112 should have explicitly retired the unification goal rather than dressing the failure as virtue.</li>
+<li><strong>&quot;The 150-12,500× speedup baseline is dishonest&quot;</strong>: <strong>Conceded fully.</strong> Real delta is 2-5×, probably workload-dependent. <strong>Anyone citing 150× in a 2026-05 decision document is misrepresenting the comparison.</strong></li>
+<li><strong>&quot;Workload differentiation is post-hoc&quot;</strong>: <strong>Partly true.</strong> Split exists because we couldn&#39;t migrate the controllers, then we noticed the workloads differ. Reverse causality matters.</li>
+<li><strong>&quot;MutationGuard and AttestationLog are cross-cutting&quot;</strong>: <strong>Strongest critique.</strong> The features apply regardless of substrate. Same <em>intent</em>, different <em>mechanism</em>. I&#39;ll concede this is the strongest argument for Z over X.</li>
+</ul>
+<h3 id="is-z-strictly-better-than-x">Is Z strictly better than X?</h3>
+<p>Honestly assessing: Z beats X on three axes (cognitive load, cross-cutting features, upstream-sync drift). X beats Z on three (migration cost, contract stability, explicit semantics). One is a wash. <strong>My honest read is that Z is mildly better on architectural merits and X is mildly better on migration realism.</strong></p>
+<h3 id="honest-weak-spot-1">Honest weak spot</h3>
+<p><strong>My case for X is ~60% migration-cost realism and ~40% genuine merit.</strong> A purely-merit case would put Z and X roughly tied with Z slightly ahead. If the council weights &quot;carve nature at the joints&quot; heavily over &quot;respect sunk migration cost,&quot; they should pick Z.</p>
+<hr>
+<h2 id="performance-judge--perf-axis-verdict-round-2">PERFORMANCE JUDGE — Perf-axis verdict (round 2)</h2>
+<h3 id="per-option-signature">Per-option signature</h3>
+<ul>
+<li><strong>Option X (dual-axis)</strong>: RVF p50 ~0.3-0.8ms (vectors); SQLite p50 ~0.5-1.5ms (relational). Phase C.3 wins fully retained. Two-file cold start ~8-25ms.</li>
+<li><strong>Option Y (single-axis upstream-style)</strong>: All writes through AgentDB router. p50 ~0.5-1.5ms (<strong>1.5-3× slower than RVF direct</strong>). <strong>Phase C.3 FORFEITED</strong> unless internally re-architected (the +30% store p50 / +21% wall regression returns).</li>
+<li><strong>Option Z (single surface, dual substrate)</strong>: ~99% of X&#39;s perf with cleaner external surface. Dispatch branch ~10-50µs (below MCP roundtrip noise). Phase C.3 PRESERVABLE if router predicate runs before registry init.</li>
+</ul>
+<h3 id="rvf-vs-agentdb-internal-hnsw-the-load-bearing-question">RVF vs AgentDB-internal-HNSW (the load-bearing question)</h3>
+<ul>
+<li>Index quality: identical recall (both HNSW).</li>
+<li>Insertion: gap <strong>1.5-3×</strong>.</li>
+<li>k-NN search no JOIN: gap <strong>1.5-3×</strong>.</li>
+<li>k-NN with metadata JOIN: gap <strong>2-5×</strong>.</li>
+<li>Cold open: <strong>slight win for SQLite</strong>.</li>
+</ul>
+<p><strong>Verdict: 2-3× typical, 5× worst-case for JOIN-heavy reads.</strong> Meaningful for high-throughput agent hot loops; below human perception for casual use. <strong>Dual-axis is justified by perf alone for high-throughput agent workloads, NOT for casual interactive use.</strong></p>
+<h3 id="the-150-12500-claim--defend-or-debunk">The 150-12,500× claim — defend or debunk</h3>
+<p><strong>Debunked as currently framed.</strong> That comparison is RVF native NAPI HNSW vs sql.js WASM cosine-over-JSON.parse&#39;d-embeddings. <strong>The honest claim is: &quot;RVF is 150-12,500× faster than the upstream&#39;s sql.js-based vector search.&quot;</strong> True. Justifies escaping sql.js. Does NOT justify dual-axis vs single-axis when single-axis runs on AgentDB&#39;s native HNSW. Real gap there: 2-3×.</p>
+<h3 id="ranking-purely-on-perf">Ranking purely on perf</h3>
+<ol>
+<li><strong>X</strong> — strictly best on hot-path latency, fully retains Phase C.3.</li>
+<li><strong>Z</strong> — within 1% of X on perf, cleaner external surface.</li>
+<li><strong>Y</strong> — loses 1.5-3× on hot path AND forfeits Phase C.3.</li>
+</ol>
+<h3 id="hidden-perf-trap-in-each-option">Hidden perf trap in each option</h3>
+<ul>
+<li>A: none (perf floor).</li>
+<li>Y: Phase C.3 forfeiture is <strong>silent</strong> — microbenchmarks look fine, cold-start regression shows up only weeks later in user telemetry.</li>
+<li>Z: router predicate must be predicate-cheap (string check, not controller lookup).</li>
+</ul>
+<hr>
+<h2 id="security-judge--security-axis-verdict-round-2">SECURITY JUDGE — Security-axis verdict (round 2)</h2>
+<h3 id="framing--round-1-insight-that-drives-round-2">Framing — round-1 insight that drives round 2</h3>
+<p>MutationGuard and AttestationLog are <strong>cross-cutting write-middleware</strong>, not axis-specific data. They validate <em>what is being written</em> and <em>who is writing it</em>; they don&#39;t care whether the substrate is RVF or SQLite. <strong>Security features that don&#39;t carve at the axis joints punish any architecture that puts joints between them and the data plane.</strong></p>
+<h3 id="per-option-posture">Per-option posture</h3>
+<ul>
+<li><strong>Option X</strong>: TWO chokepoints. TWO audit streams. Cross-axis correlation requires manual reconstruction. Posture rating: <strong>5/10</strong>.</li>
+<li><strong>Option Y</strong>: ONE chokepoint. ONE audit chain. No cross-axis correlation problem. Posture: <strong>8/10</strong>.</li>
+<li><strong>Option Z</strong>: ONE chokepoint at MCP-router layer (above substrate split). Audit records logical intent, not substrate accident. <strong>The audit boundary is <em>above</em> the routing decision.</strong> Posture: <strong>9/10</strong>.</li>
+</ul>
+<h3 id="why-z-is-best-of-both">Why Z is best-of-both</h3>
+<p>Single-chokepoint property of Y while preserving substrate-purity benefit of X. <strong>From the auditor&#39;s perspective there is one store; from the runtime&#39;s perspective there are two.</strong> Hiding the dual substrate from the caller doesn&#39;t hurt security — it <em>helps</em> security, because the caller can&#39;t bypass the guard by targeting a substrate directly.</p>
+<h3 id="ranking">Ranking</h3>
+<ol>
+<li><strong>Z</strong> (9/10) — best of both worlds.</li>
+<li><strong>Y</strong> (8/10) — strong single-chokepoint; pure architectural cost.</li>
+<li><strong>X</strong> (5/10) — defensible but pays permanent two-chokepoint tax with cross-axis blind spot.</li>
+</ol>
+<h3 id="non-obvious-regression">Non-obvious regression</h3>
+<p><strong>ADR-0112&#39;s &quot;no MCP tool spans both stores&quot; is, from a security perspective, &quot;no MCP tool can audit both stores in one call.&quot;</strong> The standard operator workflow (&quot;query the audit log for everything this agent_id did between T1 and T2&quot;) cannot exist as a single MCP call under X. <strong>The cost of X is paid not at write time but at incident time, when paying it is most expensive.</strong></p>
+<hr>
+<h2 id="memory-architecture-judge--verdict-on-xyz">MEMORY ARCHITECTURE JUDGE — Verdict on X/Y/Z</h2>
+<h3 id="workload-signature-per-substrate">Workload signature per substrate</h3>
+<ul>
+<li><strong>RVF excels at</strong>: Append-only writes of (id, vector, small-blob-value); ANN search; single-writer regimes with WAL + atomic compact; embedding-payload-dominant memory.</li>
+<li><strong>SQLite excels at</strong>: Relational schemas with FKs, joins, multi-column indexes, range scans, GROUP BY; ACID multi-row transactions; mutation-heavy with UPDATE semantics.</li>
+</ul>
+<p><strong>Is the difference fundamental or parameterized?</strong> <strong>Fundamental.</strong> A neural controller asking &quot;give me all reflexion entries for session S where verdict=&#39;loss&#39; joined to their causal-edges&quot; is not a parameterized-cost variant of &quot;ANN search a 768-dim vector.&quot;</p>
+<h3 id="feature-topology-audit">Feature topology audit</h3>
+<table>
+<thead>
+<tr>
+<th>Feature</th>
+<th>Axis-natural?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>memory_store / memory_retrieve / memory_search (K/V/ANN)</td>
+<td>RVF-natural</td>
+</tr>
+<tr>
+<td>memory_search (BM25 fusion)</td>
+<td><strong>Cross-cutting</strong></td>
+</tr>
+<tr>
+<td>ReasoningBank verdicts, Reflexion entries, CausalGraph edges, SkillLibrary, LearningSystem</td>
+<td>SQLite-natural</td>
+</tr>
+<tr>
+<td>HierarchicalMemory</td>
+<td><strong>Cross-cutting</strong></td>
+</tr>
+<tr>
+<td>MutationGuard, AttestationLog</td>
+<td><strong>Cross-cutting</strong></td>
+</tr>
+<tr>
+<td>TieredCache</td>
+<td>Mostly RVF, partially SQLite</td>
+</tr>
+<tr>
+<td>ExplainableRecall provenance</td>
+<td>SQLite-natural</td>
+</tr>
+<tr>
+<td>StreamingEmbeddingService</td>
+<td>RVF-natural</td>
+</tr>
+</tbody></table>
+<p><strong>Tally: ~6 RVF-natural, ~6 SQLite-natural, ~3-4 cross-cutting.</strong> The split IS carving at a real joint for ~80% of features. <strong>But the user-visible MCP surface does not have to mirror the substrate split.</strong> Carving internally is correct; carving in the tool namespace is a separate decision.</p>
+<h3 id="maintenance-burden--real">Maintenance burden — real</h3>
+<p>ADR-0086 (split), 0090 (data loss), 0112 (reframing), 0154 (RVF unification target), 0161 (agentdb migration), 0164 (vectorless META_SEG), 0166 (axis-separation amendment), 0178/0179 (restoration audit), plus six fork-only controllers needing restoration. <strong>9+ ADRs and ~6 fork-only controllers worth of architectural churn</strong> trace directly to the dual-substrate reality.</p>
+<h3 id="was-adr-00860112-forced-or-chosen">Was ADR-0086+0112 forced or chosen?</h3>
+<ul>
+<li><strong>Forced at the substrate level</strong>: Yes. Neural controllers&#39; relational schemas force SQLite.</li>
+<li><strong>Chosen at the surface level</strong>: Yes. ADR-0112 took the forced substrate duality and <em>promoted it</em> to a user-facing axis split. The alternative — single MCP surface, dual internal substrate, hidden router — was always available. <strong>ADR-0112 didn&#39;t seriously evaluate it; it reframed Debt 15 as deliberate.</strong></li>
+</ul>
+<h3 id="the-deepest-architectural-question">The deepest architectural question</h3>
+<p><strong>Is the substrate split the same decision as the surface split?</strong> <strong>No.</strong> Substrate split is forced and correct. Surface split was a separate, optional choice that ADR-0112 made to &quot;make the forced split feel deliberate.&quot; <strong>The right architecture is dual substrate + single surface (Z).</strong></p>
+<h3 id="ranking-1">Ranking</h3>
+<ol>
+<li><strong>Z</strong> (single MCP surface, dual internal substrate)</li>
+<li><strong>X</strong> (status quo)</li>
+<li><strong>Y</strong> (collapse to upstream-style)</li>
+</ol>
+<hr>
+<h2 id="integration-judge--verdict-on-xyz">INTEGRATION JUDGE — Verdict on X/Y/Z</h2>
+<h3 id="per-option-sync-cost">Per-option sync cost</h3>
+<ul>
+<li><strong>X</strong>: Two MCP surfaces, one of which (<code>agentdb_*</code>) has no upstream analog. Every upstream MCP change requires a fork judgment call. Sustained interpretation tax: 4-8 hours/month.</li>
+<li><strong>Y</strong>: One MCP surface, matches upstream. One substrate router that <em>doesn&#39;t</em> match upstream&#39;s. Symbolic alignment at substrate layer; Debt 15 resurfaces.</li>
+<li><strong>Z</strong>: One MCP surface (matches upstream), one router with axis-aware dispatch. Sync clean at surface, fork burden localized to substrate implementations where we already own both ends.</li>
+</ul>
+<h3 id="the-fork-owned-agentdb-complication">The fork-owned agentdb complication</h3>
+<p>Post-0161, both consumer and provider of any MCP→storage call are fork-owned. The original ADR-0053 framing solved cross-package indirection when one side was vendored. <strong>Now that both sides are fork-owned, the indirection has no remaining value.</strong> Decisively shifts cost-benefit toward Y or Z.</p>
+<h3 id="alignment-value">Alignment value</h3>
+<p><strong>Alignment at the substrate layer = symbolic</strong> (Y is wrong about this). <strong>Alignment at the MCP surface layer = real</strong> (X is wrong about this). <strong>Z is the only option that gets both right.</strong></p>
+<h3 id="mcp-surface-migration-cost">MCP surface migration cost</h3>
+<ul>
+<li>Agent prompts: rewrites across the corpus, mechanical but broad.</li>
+<li>Skills: shims via aliases (<code>agentdb_*</code> → unified handlers) reduce cost to near-zero for 1-2 versions.</li>
+<li>Documentation: find-and-replace risk; high false-positive rate.</li>
+<li>External user scripts: aliasing protects them.</li>
+</ul>
+<p><strong>Z with compatibility-alias layer reduces migration cost to near-zero. Y with aliasing is functionally equivalent to Z. The aliasing question is what actually distinguishes Y from Z in practice.</strong></p>
+<h3 id="effect-on-the-4-adr-0053-regressions">Effect on the 4 ADR-0053 regressions</h3>
+<ul>
+<li><strong>MutationGuard / AttestationLog</strong>: Easier under Y or Z (single chokepoint vs asymmetric two-chokepoint enforcement).</li>
+<li><strong>TieredCache</strong>: Easier under Z specifically (single router = natural cache layer).</li>
+<li><strong>Hybrid retrieval (BM25+semantic)</strong>: Genuinely easier under Z (matches HybridBackend&#39;s split exactly).</li>
+<li><strong>ExplainableRecall + SkillLibrary auto-promotion</strong>: Both want unified view of what was retrieved and from where.</li>
+</ul>
+<p><strong>Net: 4 of 6 regressions are <em>easier</em> to restore under Z, 2 are <em>equally easy</em> under Y and Z. None are easier under X.</strong></p>
+<h3 id="ranking-2">Ranking</h3>
+<ol>
+<li><strong>Z</strong> (single surface, dual substrate)</li>
+<li><strong>Y</strong> (collapse to single-axis)</li>
+<li><strong>X</strong> (keep dual-axis)</li>
+</ol>
+<hr>
+<h2 id="council-verdict-synthesis">Council verdict (synthesis)</h2>
+<h3 id="tally-round-2">Tally (round 2)</h3>
+<table>
+<thead>
+<tr>
+<th>Expert</th>
+<th>Primary</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>queen-architect</td>
+<td><strong>Z</strong> (58%)</td>
+<td>&quot;Finishes what ADR-0086 was trying to deliver before Debt 15 derailed it&quot;</td>
+</tr>
+<tr>
+<td>devils-advocate</td>
+<td><strong>none</strong> (opposition)</td>
+<td>Pre-flight: benchmark + ADR-0086 honesty needed first</td>
+</tr>
+<tr>
+<td>bridge-defender (now single-axis advocate)</td>
+<td><strong>Z</strong> (70%)</td>
+<td>Single MCP surface with dual substrate; Y is fallback</td>
+</tr>
+<tr>
+<td>status-quo-defender</td>
+<td><strong>X</strong> (62%)</td>
+<td>Concedes: case is ~60% migration-realism, ~40% merit; &quot;if greenfield, Z is probably right&quot;</td>
+</tr>
+<tr>
+<td>perf-judge</td>
+<td><strong>X</strong> &gt; <strong>Z</strong> &gt; <strong>Y</strong></td>
+<td>Z is &quot;within 1% of X&quot; perf-wise; 150-12,500× debunked, real gap 2-3×</td>
+</tr>
+<tr>
+<td>security-judge</td>
+<td><strong>Z (9/10)</strong> &gt; Y (8/10) &gt; X (5/10)</td>
+<td>&quot;Cost of X is paid not at write time but at incident time&quot;</td>
+</tr>
+<tr>
+<td>memory-judge</td>
+<td><strong>Z</strong> &gt; X &gt; Y</td>
+<td>&quot;Substrate split is real (kills Y); surface split is cosmetic (favors Z over X)&quot;</td>
+</tr>
+<tr>
+<td>integration-judge</td>
+<td><strong>Z</strong> &gt; Y &gt; X</td>
+<td>Final ranking unambiguous</td>
+</tr>
+</tbody></table>
+<p><strong>Final tally: 6 of 8 endorse Z, 2 X (perf-judge with Z as &quot;within 1%&quot;, status-quo-defender with concessions), 0 Y, 1 abstain (DA).</strong></p>
+<p>Even the dissent is soft: perf-judge essentially endorses Z, status-quo-defender admits 60% migration-realism / 40% merit, says greenfield = Z.</p>
+<h3 id="universal-consensus-points">Universal consensus points</h3>
+<ol>
+<li><strong>The 150-12,500× speedup claim is dishonest</strong> (debunked by perf-judge, memory-judge, DA; conceded by status-quo-defender). Real gap is 2-3× at most.</li>
+<li><strong>ADR-0086&#39;s title was &quot;Single Storage Abstraction (RVF-First)&quot;</strong> — its STATED GOAL was unification. Debt 15 was the unclosed boundary.</li>
+<li><strong>ADR-0112 reframed Debt 15 as deliberate architecture</strong> — &quot;rhetorical engineering on top of forced compromise&quot; per multiple experts.</li>
+<li><strong>Substrate split is REAL</strong> (workload bimodality, ~6 RVF-natural / ~6 SQLite-natural / 3-4 cross-cutting).</li>
+<li><strong>Surface split is OPTIONAL and over-extended in ADR-0112.</strong></li>
+<li><strong>Z = &quot;dual substrate + single surface&quot; is the synthesis the fork should have arrived at originally.</strong></li>
+</ol>
+<h3 id="risks-the-council-flagged-for-z">Risks the council flagged for Z</h3>
+<ol>
+<li><strong>Router must stay thin</strong> — predicate dispatch is microseconds; controller-graph traversal is the Phase C.3 trap reborn. Phase C.3 wins must be preserved.</li>
+<li><strong>Compatibility aliases are load-bearing for migration</strong> — <code>agentdb_*</code> tools must remain registered as aliases over the unified surface for at least one release cycle.</li>
+<li><strong>Cross-store referential integrity</strong> — lazy resolution OK; two-phase commit not OK.</li>
+<li><strong>Router invariant</strong> — below the audit boundary, no side-effects except the substrate write itself.</li>
+<li><strong>DA&#39;s pre-flight gate</strong> — run the honest RVF-vs-AgentDB-HNSW benchmark before committing to Z.</li>
+</ol>
+<h3 id="final-recommendation">Final recommendation</h3>
+<p>Adopt <strong>Z</strong> as the architectural direction. Treat ADR-0086&#39;s substrate-purity decision as accepted-and-preserved; treat ADR-0112&#39;s surface-split decision as superseded.</p>
+<p>Concretely:</p>
+<ol>
+<li><strong>Run the benchmark first</strong> (per DA): RVF NAPI HNSW vs AgentDB&#39;s native HNSW on actual fork workload.</li>
+<li><strong>Draft ADR-0180 (proposed)</strong>: &quot;Single MCP Surface, Dual Substrate Internal — Reverting ADR-0112&#39;s surface split while preserving ADR-0086&#39;s substrate purity.&quot;</li>
+<li><strong>Sequence with ADR-0179</strong>: round-1 ADR-0179 becomes phase-0 of ADR-0180. The router that ADR-0180 builds is the natural home for MutationGuard + AttestationLog + hybrid BM25 + ExplainableRecall + SkillLibrary.</li>
+<li><strong>Compatibility aliases</strong>: <code>agentdb_*</code> tools as soft-deprecated aliases for 1-2 release cycles.</li>
+<li><strong>Amend ADR-0086 Status section</strong>: acknowledge Debt 15 was a partial unification failure rather than an accepted-and-stable trade-off.</li>
+</ol>
+<hr>
+<h2 id="provenance">Provenance</h2>
+<ul>
+<li>Round 2 ran 2026-05-13 <del>11:24–11:28 (</del>4 minutes wall-clock from dispatch to last idle).</li>
+<li>Cost: zero per <code>feedback-no-api-keys.md</code>.</li>
+<li>Same 8-agent team as [[ADR-0179-council-r1-bridge-deletion]]; recontextualized via SendMessage with role re-framings:<ul>
+<li><code>bridge-defender</code> → SINGLE-AXIS ADVOCATE</li>
+<li><code>status-quo-defender</code> → DUAL-AXIS DEFENDER</li>
+<li>All others: unchanged role, new question.</li>
+</ul>
+</li>
+<li>Comms via SendMessage on team <code>adr-0179-council</code>, per <code>feedback-agent-dialectic-via-sendmessage.md</code>.</li>
+<li>Upstream research (ADR-006/009, upstream CLI runtime, AgentDB internals) compiled by orchestrator before dispatch.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

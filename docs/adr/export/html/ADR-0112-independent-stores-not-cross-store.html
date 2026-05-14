@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0112-independent-stores-not-cross-store</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1 id="adr-0112-independent-stores-by-feature-surface-not-cross-store">ADR-0112: Independent stores by feature surface (not &quot;cross-store&quot;)</h1>
+<ul>
+<li><strong>Status</strong>: <strong>Implemented</strong> 2026-04-30. All 7 §Done criteria items closed. Phases 1–6 complete. Phase 1 (quick wins) flipped 9/9 named failures green via the <code>_e2e_isolate</code> project-root anchor + <code>routePatternOp</code> silent-fallback removal. Phase 2 closed 5/5 tracks (RVF + AgentDB-backend + controller-registry + memory-router + MCP handlers). Phase 3 added 22 unit-level fail-loud invariant tests + 8 acceptance tests (4 partition-holds + 4 AgentDB read-tool round-trip). Phase 4 lint script wired into <code>npm run preflight</code> cascade (zero unannotated SF1/SF3/SF4/SF6 violations across 7 partition-relevant fork files; 32 legitimate sites annotated as design patterns). Phase 5 ADR-0086 §Debt 15 cross-references ADR-0112. Phase 6 acceptance verified: 540/553 baseline → 560/560 (8 new tests + 9 named tests now passing; 0 regressions).</li>
+<li><strong>Date</strong>: 2026-04-30</li>
+<li><strong>Deciders</strong>: Henrik Pettersen</li>
+<li><strong>Methodology</strong>: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review</li>
+<li><strong>Depends on</strong>: ADR-0073 (RVF storage upgrade), ADR-0080 (storage consolidation verdict), ADR-0086 (Layer 1 single storage abstraction — Debt 15 ACCEPTED TRADE-OFF), ADR-0082 (test integrity, no fallbacks), ADR-0090 (acceptance suite coverage audit)</li>
+<li><strong>Closes</strong>: terminology drift surfaced during ADR-0111 W1.8 problem-collection pass</li>
+</ul>
+<h2 id="context">Context</h2>
+<p>During the ADR-0111 W4 prep <code>npm run test:acceptance</code> smoke (2026-04-30), 9 acceptance failures surfaced: 8 <code>adr0090-b5-*</code> controller-roundtrip failures (<code>.swarm/memory.db not created after successful store call — silent in-memory fallback, ADR-0082</code>) and 1 <code>t3-2-concurrent</code> failure (<code>no .rvf file written by any of 6 concurrent stores</code>).</p>
+<p>A natural reading of the failure cluster — both stores failing silently — was that the project has a <strong>dual-store coordination invariant</strong> that&#39;s broken: writes to one of <code>.swarm/memory.rvf</code> or <code>.swarm/memory.db</code> should imply writes to the other; W1.5/W1.6/W1.7&#39;s fail-loud cleanup work introduced asymmetric breakage.</p>
+<p>This framing <strong>was wrong</strong>. There is no dual-store coordination contract. The 8-agent audit swarm and a re-read of ADR-0086 §Accepted Trade-offs Debt 15 confirms:</p>
+<blockquote>
+<p><strong>Debt 15: ControllerRegistry dual-backend</strong> — ACCEPTED TRADE-OFF.
+<code>memory-router.ts</code> bootstraps <code>ControllerRegistry</code> with its own SQLite configuration via agentdb. This is a separate domain concern for neural/learning controllers.
+Unifying with RvfBackend would require rewriting controller persistence — high effort, low value for the CRUD memory path.</p>
+</blockquote>
+<p>The two stores are <strong>two independent stores serving different feature surfaces</strong>. The &quot;cross-store&quot; framing is a misnomer. This ADR codifies the correct framing so future audits, test design, and silent-fallthrough work don&#39;t drift back into expecting coordination that was explicitly declined in 2026-04-13.</p>
+<h2 id="glossary">Glossary</h2>
+<ul>
+<li><strong>Feature surface</strong>: a coherent set of MCP tools, hooks, or runtime paths that share a single persistence target. Examples: structural memory (RVF, accessed via <code>mcp__ruflo__memory_*</code> tools); Reflexion neural-controller (AgentDB SQLite, accessed via <code>mcp__ruflo__agentdb_reflexion_*</code> tools). One feature surface = one persistence target.</li>
+<li><strong>Store</strong> (in this ADR): a durable on-disk persistence target, owned and accessed by a single feature surface. Currently two: <code>.swarm/memory.rvf</code> (RVF) and <code>.swarm/memory.db</code> (AgentDB SQLite). Distinct from in-memory caches that mirror the store.</li>
+<li><strong>Partition</strong>: the property that each store is accessed by one and only one feature surface; no MCP tool reads or writes both. Verified by tests in W1.8 item #26.</li>
+<li><strong>Per-store fail-loud contract</strong>: each store independently satisfies ADR-0082 (no silent fallbacks) for both read and write paths at the method level (not just init time). See §Required follow-up work.</li>
+<li><strong>Cross-store coordination</strong>: the ABSENCE of any contract requiring writes to one store imply writes to the other. ADR-0086 §Debt 15 + this ADR explicitly reject cross-store coordination.</li>
+</ul>
+<h2 id="the-two-stores">The two stores</h2>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Store</th>
+<th>Owner</th>
+<th>Purpose</th>
+<th>Schema shape</th>
+<th>Native?</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>.swarm/memory.rvf</code></td>
+<td>RvfBackend</td>
+<td><code>@claude-flow/memory</code> (fork)</td>
+<td>Structural memory — key-value entries with embeddings; the broader memory subsystem; HNSW vector search via NAPI</td>
+<td>Key-value with binary header + WAL + atomic compact + meta sidecar</td>
+<td>Yes (<code>@ruvector/rvf-node</code> NAPI)</td>
+</tr>
+<tr>
+<td><code>.swarm/memory.db</code></td>
+<td>AgentDB SQLite</td>
+<td><code>agentdb</code> (external package, <code>agentdb@3.0.0-alpha.10-patch.348</code>)</td>
+<td>Neural-controller persistence — Reflexion (<code>episodes</code>), SkillLibrary (<code>skills</code>), ReasoningBank (<code>reasoning_patterns</code>), CausalGraph (<code>causal_edges</code>), LearningSystem (<code>experiences</code>), HierarchicalMemory (<code>hierarchical_memory</code>), ConsolidationLog, ExplainableRecall, NightlyLearner, and ~10 more controllers</td>
+<td>Multi-table relational with FKs, per-controller migrations</td>
+<td>better-sqlite3 (Node native binding)</td>
+</tr>
+</tbody></table>
+<p>Each store is <strong>fully owned by its feature surface</strong>:</p>
+<ul>
+<li>A user calling <code>mcp__ruflo__memory_store</code> writes to <code>.swarm/memory.rvf</code> only. AgentDB SQLite is irrelevant.</li>
+<li>A user calling <code>mcp__ruflo__agentdb_reflexion_store</code> writes to <code>.swarm/memory.db</code> only. RVF is irrelevant.</li>
+</ul>
+<h2 id="why-we-have-two-stores-and-why-not-one">Why we have two stores (and why not one)</h2>
+<p><strong>Two genuinely different workloads, each requiring different storage primitives.</strong> The design isn&#39;t a workaround or a historical artifact — it&#39;s the correct architecture for the use cases:</p>
+<h3 id="workload-1--structural-memory-hot-path-rvf">Workload 1 — Structural memory (hot path, RVF)</h3>
+<p>Use case: &quot;store this entry; semantic-search across millions of entries; return top-k matches in sub-millisecond.&quot;</p>
+<ul>
+<li><strong>Native NAPI HNSW vector index</strong> via <code>@ruvector/rvf-node</code> — no SQL overhead, no JSON parse-per-query, binary format, zero serialization on hot reads</li>
+<li><strong>Append-only WAL + atomic compact</strong> — crash-safe writes without SQL transaction overhead</li>
+<li><strong>Embedding-aligned storage</strong> — vectors live next to their entries; no JOIN cost</li>
+<li><strong>Performance</strong>: ADR-0086 cites 150×–12,500× search speedup vs brute-force; this is the whole point of RVF</li>
+</ul>
+<h3 id="workload-2--neural-controller-relational-data-cold-path-agentdb-sqlite">Workload 2 — Neural-controller relational data (cold path, AgentDB SQLite)</h3>
+<p>Use case: &quot;Reflexion remembers episodes with steps + outcomes; SkillLibrary tracks skills with code blocks + feature vectors; CausalGraph stores causal edges with weights + confidence.&quot; 10+ controllers, each with their own table set.</p>
+<ul>
+<li><strong>Rich relational schemas</strong> — multi-column tables with foreign keys, secondary indexes, per-controller migrations</li>
+<li><strong>Proven SQL query engine</strong> (better-sqlite3 native binding) — handles JOINs, aggregations, complex filtering that key-value can&#39;t express</li>
+<li><strong>Schema flexibility</strong> — new controllers add new tables without disrupting existing ones</li>
+<li><strong>Sync semantics</strong> — better-sqlite3 is synchronous by design, fits Node&#39;s event loop without async overhead for hot path</li>
+</ul>
+<h3 id="why-unifying-would-catastrophically-regress">Why unifying would catastrophically regress</h3>
+<ul>
+<li><strong>RVF-only</strong> would mean storing relational neural-controller data as JSON blobs in a key-value store. Lose JOINs, lose schema-versioned migrations, lose per-controller indexes. Every Reflexion <code>episodes</code> query becomes a full scan with JS-side filtering.</li>
+<li><strong>SQLite-only</strong> would mean putting structural memory&#39;s HNSW into SQLite. Lose native NAPI vector search. Fall back to brute-force or sql-extension HNSW (10–100× slower). ADR-0073&#39;s RVF storage upgrade was specifically about getting AWAY from this.</li>
+</ul>
+<h3 id="confirming-but-not-load-bearing-factors-adr-0086-debt-15-reasoning">Confirming-but-not-load-bearing factors (ADR-0086 §Debt 15 reasoning)</h3>
+<ul>
+<li><strong>Ownership boundary.</strong> RVF is fork-architectural — we wrote it (ADR-0073). AgentDB is an external upstream package — we consume it. Modifying AgentDB&#39;s internals to use RVF as its persistence layer would mean forking upstream packages just to change their internals (out of fork stance per <code>feedback-no-value-judgements-on-features.md</code> + general fork model).</li>
+<li><strong>Effort vs value.</strong> Per ADR-0086 §Debt 15 — &quot;high effort, low value for the CRUD memory path.&quot; The CRUD path doesn&#39;t need neural-controller features; the neural-controller path doesn&#39;t need RVF&#39;s HNSW.</li>
+<li><strong>Independence is a feature.</strong> RVF can crash without affecting AgentDB controllers; AgentDB can fail to load a controller without affecting RVF stores. Independent failure modes are cheaper to reason about than coupled ones.</li>
+</ul>
+<p>The performance + workload-differentiation reasoning is the <strong>primary</strong> justification. Ownership boundary and effort/value were the considerations that closed the original ADR-0086 §Debt 15 decision; they&#39;re confirming, not load-bearing.</p>
+<h2 id="soundness-and-completeness">Soundness and completeness</h2>
+<h3 id="sound-does-the-architecture-work-correctly-for-its-purpose">Sound (does the architecture work correctly for its purpose)?</h3>
+<p><strong>Yes.</strong> Per the workload analysis above:</p>
+<ul>
+<li>RVF correctly handles structural-memory CRUD + vector search at NAPI speed</li>
+<li>AgentDB SQLite correctly handles neural-controller relational schemas with full SQL query power</li>
+<li>Each store&#39;s failure is contained — neither can corrupt the other</li>
+<li>ADR-0086 acceptance tests (<code>adr0086-*</code>) + ADR-0090 controller-roundtrip tests (<code>adr0090-b5-*</code>) + ADR-0079 RVF concurrency tests (<code>t3-*</code>) verify both stores work under their target workloads</li>
+<li>The 2026-04-30 acceptance smoke (540/553 passed) confirms each store&#39;s happy path is sound</li>
+</ul>
+<p>The 9 failing tests are <strong>silent-fallthrough bugs WITHIN each store</strong> (per the W1.8 audit), not architectural soundness bugs. The two-store partition is doing its job; the per-store implementation has the gaps.</p>
+<h3 id="complete-does-it-cover-the-use-cases-without-gaps">Complete (does it cover the use cases without gaps)?</h3>
+<p><strong>Yes for current workloads.</strong> Every actual ruflo workload maps cleanly to one store:</p>
+<ul>
+<li><code>mcp__ruflo__memory_*</code> tools → RVF</li>
+<li><code>mcp__ruflo__agentdb_*</code> tools → AgentDB SQLite</li>
+<li>Hooks (intelligence/sona/learning) → AgentDB SQLite (via controllers)</li>
+<li>Test inventory (ADR-0086, ADR-0090, ADR-0079) — every test asserts behavior in exactly one store</li>
+</ul>
+<p><strong>Edge cases worth flagging (real but not blocking):</strong></p>
+<ol>
+<li><strong>No cross-store transactions.</strong> If a future feature needed atomic writes spanning both stores (e.g., &quot;store entry in RVF + reference in AgentDB controller&quot;), there&#39;s no transaction primitive. Mitigation: by ADR-0112 §Decision, no tool spans both. If a future use case requires it, that&#39;s a NEW design decision (would need to extend or supersede this ADR).</li>
+<li><strong>Operational doubling.</strong> Two stores = two backup paths, two restore paths, two monitoring surfaces. Real ops cost. Mitigation: wrap with tooling (a <code>ruflo memory backup</code> command can handle both internally; not yet built).</li>
+<li><strong>HNSW redundancy.</strong> AgentDB has its own HNSW (via better-sqlite3 + hnswlib); RVF has its own HNSW (native NAPI). If a developer accidentally ingests the same vectors into both, duplicate indexes drift independently. Mitigation: tools partition cleanly — no tool uses both HNSWs for the same data. Code-review gate prevents accidental dual-ingest.</li>
+<li><strong>Scale ceilings differ.</strong> RVF: native HNSW max element count (configurable, default 100k). AgentDB SQLite: better-sqlite3 practical limits ~10s of GB. Neither approaches a blocker for typical ruflo workloads, but if a future workload exceeds either, that&#39;s a per-store scale decision.</li>
+</ol>
+<h3 id="verdict">Verdict</h3>
+<p><strong>Sound and complete for the current workloads ruflo handles.</strong> The two-store design is the right architecture, not a compromise. The bugs we&#39;re fixing in W1.8 are implementation gaps within each store; they don&#39;t reflect on the two-store partition itself.</p>
+<p>The four edge cases above are flagged for awareness; none are current blockers; if any becomes one, it triggers a new ADR (not this one&#39;s reversal).</p>
+<h2 id="why-cross-store-was-the-wrong-framing">Why &quot;cross-store&quot; was the wrong framing</h2>
+<p>The 8-agent audit during ADR-0111 W1.8 problem-collection (2026-04-30) momentarily treated the b5 failures + t3-2 failure as evidence of a &quot;broken cross-store invariant.&quot; Slice 6 of the audit explicitly debunked this:</p>
+<blockquote>
+<p>RVF path triggers AgentDB index update? <strong>NO</strong>. <code>RvfBackend.store</code> writes to <code>.rvf</code> + WAL + native HNSW. It NEVER touches <code>.swarm/memory.db</code>.
+AgentDB store triggers RVF write? <strong>NO</strong>. Each agentdb controller opens its own better-sqlite3 handle to <code>.swarm/memory.db</code>. RvfBackend is invisible to them.
+Verdict: independent paths — by design.</p>
+</blockquote>
+<p>The b5 failures were <strong>per-store silent-fallthrough inside AgentDB&#39;s controller path</strong> (controllers&#39; <code>.store()</code> resolves successfully but writes only to in-memory cache when controller construction is partially broken — masked by <code>controller-registry.ts:1521</code> <code>?? null</code>).</p>
+<p>The t3-2 failure was <strong>per-store silent-fallthrough inside RVF&#39;s WAL/persist coordination</strong> (or, per slice 2, a project-root resolution drift in <code>_e2e_isolate</code> test harness — a test-infrastructure bug, not a runtime persistence bug).</p>
+<p>Neither is a coordination failure between the two stores. The fixes are per-store, not cross-store.</p>
+<h2 id="decision">Decision</h2>
+<p><strong>Drop the &quot;cross-store&quot; / &quot;dual-store invariant&quot; framing across the codebase, ADRs, and test harness.</strong> Replace with <strong>&quot;two independent stores, feature-aligned&quot;</strong>:</p>
+<ul>
+<li>A given MCP tool writes to exactly one store. The store is determined by the tool&#39;s feature domain.</li>
+<li>Each store has its own fail-loud contract per ADR-0082. There is no &quot;writes must succeed in both&quot; invariant.</li>
+<li>Acceptance tests assert per-store behavior. Test names should make the target store unambiguous (e.g., <code>b5_reflexion_writes_to_memory_db</code> vs <code>t3_2_concurrent_writes_to_memory_rvf</code>).</li>
+</ul>
+<p>ADR-0086 §Debt 15 is <strong>REAFFIRMED</strong> (not reversed). The dual-backend trade-off remains accepted: we will not unify storage; we will not rewrite AgentDB&#39;s controller persistence; we will not push neural-controller schemas onto RVF.</p>
+<h2 id="consequences">Consequences</h2>
+<h3 id="positive">Positive</h3>
+<ul>
+<li>Future audits don&#39;t waste time hunting a coordination invariant that doesn&#39;t exist.</li>
+<li>Test design is clearer: each test asserts one store; no &quot;verify both&quot; superset checks.</li>
+<li>Silent-fallthrough fixes can proceed per-store independently. Slices 1–8 of the W1.8 audit produce per-store findings; this ADR confirms they don&#39;t need cross-coupling.</li>
+<li>ADR-0086 §Debt 15 accepted trade-off has explicit cross-reference.</li>
+</ul>
+<h3 id="negative">Negative</h3>
+<ul>
+<li>Users debugging a tool&#39;s persistence must know which store it targets. Mitigation: per-tool documentation in MCP tool descriptions + acceptance test names that surface the target store.</li>
+<li>Loss of an attractive &quot;single source of truth&quot; mental model. Accepted: the actual architecture has two sources of truth for two feature surfaces, and that&#39;s fine.</li>
+</ul>
+<h3 id="neutral">Neutral</h3>
+<ul>
+<li>No code changes from this ADR alone. It&#39;s terminology + reaffirmation.</li>
+<li>No new test infrastructure. Existing acceptance tests already target a single store each (<code>adr0090-b5-*</code> → <code>.swarm/memory.db</code>; <code>t3-2-concurrent</code> → <code>.swarm/memory.rvf</code>); they were never coordinated checks.</li>
+</ul>
+<h2 id="required-follow-up-work">Required follow-up work</h2>
+<p>The &quot;two independent stores&quot; framing is correct architecturally but <strong>becomes meaningful only when each store has its own fail-loud contract</strong>. ADR-0082 establishes the no-silent-fallbacks policy in the abstract; ADR-0090 added acceptance tests that detect silent-fallback violations; ADR-0111 W1.8 collected the fix work. This ADR MANDATES that the fix work happens — the per-store framing is incoherent without it.</p>
+<h3 id="mandate-binding-on-adr-0111-w18-program">Mandate (binding on ADR-0111 W1.8 program)</h3>
+<ol>
+<li><p><strong>Each store MUST satisfy ADR-0082&#39;s no-silent-fallback contract independently — for BOTH read and write paths.</strong></p>
+<p><strong>Write path</strong> (store / update / delete / persist):</p>
+<ul>
+<li>RVF: no silent in-memory degradation; persistence failures propagate as fatal errors. The write MUST reach disk before success is returned.</li>
+<li>AgentDB SQLite: no silent in-memory degradation; controller construction failures propagate as fatal errors; controller <code>.store()</code> calls that don&#39;t reach disk MUST throw, not return success.</li>
+</ul>
+<p><strong>Read path</strong> (get / query / search / count / list):</p>
+<ul>
+<li>Cache hits returning OK only when the cache is authoritative (e.g., write-through cache that&#39;s guaranteed-coherent with the store). </li>
+<li>Cache misses MUST consult the underlying store — not silently return <code>null</code> / empty / stale.</li>
+<li>A read that returns &quot;no results&quot; when the data IS in the store but the query path silently bypassed it is the same antipattern as a write that reports success without writing.</li>
+<li>Conditional <code>if (this.&lt;backend&gt;)</code> bypass on reads is forbidden — same rule as writes.</li>
+<li><code>count()</code> / <code>listNamespaces()</code> / <code>getStats()</code> etc. MUST reflect store state, not in-memory cache that may diverge from the store.</li>
+</ul>
+<p><strong>Both contracts apply at the method level</strong>, not just at init time (W1.5/W1.6 closed init-time; W1.8 closes method-time, both read and write).</p>
+</li>
+<li><p><strong>The 9 failing acceptance tests MUST flip green</strong> (or convert to honest hard-fail with a tracked port-required action — not skip_accepted) as part of W1.8 execution:</p>
+<ul>
+<li><code>t3-2-concurrent</code> (RVF store)</li>
+<li><code>adr0090-b5-reflexion</code>, <code>-skillLibrary</code>, <code>-reasoningBank</code>, <code>-causalRecall</code>, <code>-learningSystem</code>, <code>-hierarchicalMemory</code>, <code>-nightlyLearner</code>, <code>-explainableRecall</code> (AgentDB SQLite store)</li>
+<li>Failure of any of these in post-W1.8 acceptance is a release blocker, not a soak window.</li>
+</ul>
+</li>
+<li><p><strong>New silent-fallthrough sites in either store MUST be caught proactively, not reactively.</strong> ADR-0111 W1.8 item #22 (static-analysis enforcement) + #24 (unit-level fail-loud invariant tests) implement the proactive detection. Acceptance tests catch the symptom; lint + unit tests catch the cause at write time. Both are required.</p>
+</li>
+<li><p><strong>No new &quot;best-effort&quot; / &quot;graceful degradation&quot; / &quot;in-memory fallback&quot; code paths</strong> in either store&#39;s persistence path. Per memory <code>feedback-no-fallbacks.md</code> + <code>feedback-best-effort-must-rethrow-fatals.md</code>. Existing such paths must be removed (audit slices 1–8 of W1.8 enumerate them).</p>
+</li>
+<li><p><strong>No coordination contract.</strong> A write succeeding in one store does NOT imply or require a write in the other. Tests asserting &quot;both stores must contain X after operation Y&quot; are wrong by construction — Y targets exactly one store.</p>
+</li>
+</ol>
+<h3 id="done-criteria-for-adr-0112">Done criteria for ADR-0112</h3>
+<p>ADR-0112 closes (moves from <code>Accepted</code> to <code>Implemented</code>) when:</p>
+<ul>
+<li>✅ ADR-0111 W1.8 items #17–#27 all closed (item #26 + #27 DONE 2026-04-30 in <code>02f03cc</code>; #17–#25 closed via Phase 2 tracks: RVF <code>ffa9de5f8</code>, AgentDB-backend <code>a3be0c1af</code>, controller-registry <code>fd9c4a1db</code>, memory-router <code>276ee7b55</code>, MCP handlers <code>fac6a01ac</code>)</li>
+<li>✅ Per-store fail-loud contract verified by:<ul>
+<li>✅ All 9 named acceptance tests passing (Phase 1, fix in <code>19768f711</code> + <code>ac61112</code> 2026-04-30; smoke 540/553 → 552/553)</li>
+<li>✅ Unit-level fail-loud invariant tests asserting public methods of <code>RvfBackend</code> and <code>AgentDBBackend</code> throw on uninitialized state — <code>tests/unit/adr0112-fail-loud-invariants.test.mjs</code> (commit <code>c4ef272</code>); 22 cases covering 9 RvfBackend methods + 9 AgentDBBackend methods + 4 contract probes; ControllerRegistry&#39;s <code>ControllerInitError</code> propagation exercised via integration (memory-router catches discriminate per memory-router track <code>276ee7b55</code>)</li>
+<li>✅ Static-analysis lint rule (W1.8 item #22) reports zero unannotated SF1/SF3/SF4/SF6 in scope — <code>scripts/lint-fail-loud.mjs</code> (commit <code>f47efb9</code>); 32 baseline violations annotated as legitimate design patterns in fork commit <code>7f64d3ee4</code>; wired into <code>npm run preflight</code> cascade so new silent-fallthroughs fail before they reach acceptance</li>
+</ul>
+</li>
+<li>✅ <strong>Partition-holds tests</strong> (W1.8 item #26) verify the no-coordination contract for BOTH reads and writes (DONE 2026-04-30 in <code>02f03cc</code>; <code>acceptance-adr0112-checks.sh</code> lines 26.1–26.4):<ul>
+<li><strong>Writes</strong>: <code>cli memory store</code> does NOT leak user data into <code>.swarm/memory.db</code>; <code>agentdb_*_store</code> does NOT leak data into <code>.swarm/memory.rvf</code> family (<code>.rvf</code> + <code>.rvf.meta</code> + <code>.rvf.wal</code>)</li>
+<li><strong>Reads</strong>: <code>cli memory search</code> does NOT cause user data to land in <code>.swarm/memory.db</code>; <code>agentdb_*_retrieve</code> does NOT cause user data to land in <code>.swarm/memory.rvf</code> family</li>
+<li>Locks in this ADR&#39;s mandate so accidental cross-reads or cross-writes are caught immediately</li>
+<li><strong>Note on init coupling vs data coupling</strong>: both stores eagerly initialize their files at module load (RvfBackend writes a header byte; AgentDB creates an empty schema). This is init-coupling, not data-coupling. The partition tests detect USER DATA crossing the store boundary via marker-substring scan, not file existence. Init-coupling lazy-init is a separate, lower-priority concern.</li>
+</ul>
+</li>
+<li>✅ <strong>AgentDB MCP read-tool round-trip tests</strong> (W1.8 item #27): store via <code>agentdb_*_store</code> → read via <code>agentdb_*_recall</code> / <code>_search</code> / <code>_retrieve</code> → assert returned data matches stored (DONE 2026-04-30 in <code>02f03cc</code>; <code>acceptance-adr0112-checks.sh</code> lines 27.1–27.4 cover reflexion, pattern, skill, hierarchical). Closes the gap where existing b5-* tests bypass read tools by SELECTing sqlite3 directly.</li>
+<li>✅ ADR-0086 §Debt 15 cross-references ADR-0112 (terminology anchor) — DONE 2026-04-30 in <code>02f03cc</code>; Debt 15 entry now reads &quot;ADR-0112 REAFFIRMS this trade-off&quot;</li>
+<li>✅ Code comments / commit messages preserve the design history (W1.8 item #20) — Phase 1 commits (<code>19768f711</code>, <code>ac61112</code>) and Phase 3 commit (<code>02f03cc</code>) all narrate the design decision and reference ADR-0112 §Decision</li>
+</ul>
+<p>Until these are satisfied, ADR-0112 stays <code>Accepted</code> (decision made, work pending) — it does NOT advance to <code>Implemented</code> on the basis of the terminology cleanup alone.</p>
+<p><strong>Status flip 2026-04-30</strong>: all 7 items satisfied; ADR-0112 advances from <code>Accepted (work in progress)</code> to <code>Implemented</code>. The lint guardrail in <code>npm run preflight</code> is now the durable invariant that prevents regression — any new silent-fallthrough site in the 7 partition-relevant fork files fails the cascade before it can reach acceptance.</p>
+<h2 id="implementation-plan">Implementation plan</h2>
+<p>The 27-item ADR-0111 W1.8 problem list (items #17–#27) is the canonical work tracker. This plan organizes those items into 6 phases by dependency. Phases run in sequence with parallelism within phases where items are independent.</p>
+<h3 id="phase-1--quick-wins-target-smoke-540553--549553">Phase 1 — Quick wins (target: smoke 540/553 → ≥549/553)</h3>
+<p>Two single-site fixes likely close 2 of 9 failures cheaply, plus an investigation for the other 7. Sub-tasks within item #17.</p>
+<ol>
+<li><strong><code>_e2e_isolate</code> project-root anchor</strong> (<code>lib/acceptance-e2e-checks.sh</code>): one-line <code>touch &quot;$iso_dir/.ruflo-project&quot;</code> to anchor <code>findProjectRoot()</code> inside iso. Likely flips <code>t3-2-concurrent</code> green per slice 2&#39;s analysis.</li>
+<li><strong><code>routePatternOp</code> line 1419 silent-fallback</strong> (<code>memory-router.ts</code>): remove the silent fallback writing to wrong table when reasoningBank lacks a method. Likely flips <code>adr0090-b5-reasoningBank</code> green per slice 6.</li>
+<li><strong>Investigation for the other 7 b5 tests</strong>: per slice 6, masking lives inside the <code>agentdb</code> package itself — controllers&#39; <code>.store()</code> resolves successfully but writes to in-memory only when controller construction is partially broken. Need to verify whether the actual fix is (a) <code>controller-registry.ts:1521</code> <code>?? null</code> strict-mode throw, (b) AgentDB package version-mismatch, or (c) something else.</li>
+</ol>
+<h3 id="phase-2--per-store-fail-loud-cleanup-the-audit-findings">Phase 2 — Per-store fail-loud cleanup (the audit findings)</h3>
+<p>Independent tracks; can run in parallel. Each track is a sub-set of item #17.</p>
+<ul>
+<li><strong>RVF track</strong> (slices 2, 8): add <code>RvfNotInitializedError</code> class + 9 init guards on public methods; fix 4 silent-fallthrough sites (<code>compactWal()</code> line 1800 <code>persisting</code>-guard, <code>persistToDiskInner()</code> line 2178 same, <code>autoPersistInterval</code> line 297 catch (discriminate per <code>feedback-best-effort-must-rethrow-fatals</code>), <code>mergePeerStateBeforePersist</code> lines 2161-2164 catch).</li>
+<li><strong>AgentDB-backend track</strong> (slice 1): add <code>requireAgentDB(method)</code> private helper; apply to 9 public methods (read + write); remove 6 dead <code>if (!this.agentdb)</code> branches + 6 <code>if (this.agentdb)</code> conditionals; re-throw in 5 private DB methods; reorder write paths (DB-first, cache-on-success); real <code>healthCheck()</code> via <code>SELECT 1</code> probe. <strong>Item #25</strong> (available-flag dead-branch cleanup) is a sub-task here.</li>
+<li><strong>Controller-registry track</strong> (slice 3): scrub remaining 27 silent-fallback sites with W1.5&#39;s <code>ControllerInitError</code> pattern; <strong>special-case 3 Level-0 mandatory controllers</strong> (<code>resourceTracker</code>, <code>rateLimiter</code>, <code>telemetryManager</code>) to throw unconditionally on missing-symbol; replace 7 <code>?? null</code> at lines 1521-1531 with strict-mode throw; decide stub fate (<code>createTieredMemoryStub</code>, <code>createConsolidationStub</code>).</li>
+<li><strong>Memory-router track</strong> (slice 4): add <code>DimensionMismatchError</code> to discrimination at lines 526, 562, 669, 698, 717; add <code>RvfCorruptError</code> to 526, 562, 717 (parity with 698); surface unnamed schema-mismatch errors with original <code>cause</code>; discriminate <code>ControllerInitError</code> at op-layer.</li>
+<li><strong>MCP handler track</strong> (slice 5): fix 4 silent-fallthrough sites (<code>agentdb_semantic_add_route</code> / <code>_remove_route</code>, <code>hooks_intelligence_pattern-store</code>, <code>memory_store</code> scope/graph enrichment); add response verification fields per the <code>agentdb_sona_trajectory_store</code> count-after pattern to all 8 b5 handlers.</li>
+</ul>
+<h3 id="phase-3--test-surface">Phase 3 — Test surface</h3>
+<p>Per slice 8&#39;s recommendation: write tests FIRST (they fail against current code → prove bugs exist), THEN apply Phase 2 fixes, THEN tests pass. In practice: Phase 3 starts in parallel with Phase 2 — for each Phase 2 item, write the test first, watch it fail, apply fix, watch it pass.</p>
+<ul>
+<li><strong>Item #24</strong> — unit-level fail-loud invariant tests for AgentDBBackend (~25 cases parameterised over public methods)</li>
+<li>Same shape for RvfBackend (depends on Phase 2&#39;s <code>RvfNotInitializedError</code> class)</li>
+<li>Same shape for ControllerRegistry (<code>ControllerInitError</code> propagation)</li>
+<li>New file <code>cli/__tests__/memory-router.test.ts</code> for <code>AgentDBInitError</code> re-throw paths</li>
+<li>Codemod test for error-class-name preservation through scope rename</li>
+<li><strong>Item #26</strong> — partition-holds acceptance tests (4 cases: 2 write + 2 read; verify operations don&#39;t touch the wrong store)</li>
+<li><strong>Item #27</strong> — AgentDB MCP read-tool round-trip tests (store via <code>agentdb_*_store</code>, read via <code>agentdb_*_recall</code> / <code>_search</code> / <code>_query</code> / <code>_predict</code>, assert match — closes the gap where existing b5 tests bypass read tools by SELECTing sqlite3 directly)</li>
+</ul>
+<h3 id="phase-4--static-analysis-enforcement-item-22">Phase 4 — Static-analysis enforcement (item #22)</h3>
+<p>Implement <code>scripts/lint-fail-loud.mjs</code> with rules SF1–SF7 (slice 7 design):</p>
+<ol>
+<li>Implement scanner (<del>250 LOC) + tests (</del>100 LOC)</li>
+<li>Bootstrap pass: ~150–200 hits project-wide</li>
+<li>Triage: ~70% legitimate (annotate with <code>// silent-fallthrough-OK: &lt;reason&gt;</code>), ~20% real fixes (already covered by Phase 2), ~10% ambiguous</li>
+<li>Wire into <code>npm run preflight</code> cascade</li>
+<li>Once green, lint becomes permanent guardrail — new silent-fallthroughs require explicit annotation</li>
+</ol>
+<h3 id="phase-5--adr-amendments-depends-on-phase-23-outcomes">Phase 5 — ADR amendments (depends on Phase 2/3 outcomes)</h3>
+<ul>
+<li><strong>Item #18</strong> — ADR-0086 amendment: W1.8 method-level invariant in §Accepted Trade-offs / §Architectural Direction</li>
+<li><strong>Item #23</strong> — ADR-0082 amendment: codify detection mechanism (lint rule + unit invariants + audit cadence)</li>
+<li><strong>Item #21</strong> — ADR-0090 amendment (conditional): if Phase 3 reveals test-inventory gaps</li>
+<li>ADR-0086 §Debt 15 cross-reference to ADR-0112 (terminology anchor per ADR-0112 §Done criteria)</li>
+<li><strong>Item #20</strong> — design-history preservation in W1.8 commits + code comments (ongoing, not a gate)</li>
+</ul>
+<h3 id="phase-6--verification-gate-item-19">Phase 6 — Verification gate (item #19)</h3>
+<ul>
+<li>Re-run <code>npm run test:acceptance</code> from <code>ruflo-patch/</code></li>
+<li><strong>Required</strong>: 540/553 → ≥549/553 (the 9 currently-failing tests pass; net gain by integration of items #26 and #27 may be higher)</li>
+<li>No new regressions</li>
+<li>Lint reports zero unannotated SF1/SF3/SF4/SF6 in scope</li>
+<li>Unit tests all green</li>
+<li>Partition-holds tests (item #26) pass</li>
+<li>AgentDB MCP read-tool round-trip tests (item #27) pass</li>
+</ul>
+<p><strong>Performance regression gate</strong>: the Phase 2 fail-loud guards add an <code>if (!this.&lt;backend&gt;) throw</code> check at the top of every public method. The <code>requireAgentDB(method)</code> helper + real <code>healthCheck()</code> SQL probe could in worst-case add latency to every <code>store/get/query</code> call. Phase 6 also asserts:</p>
+<ul>
+<li><strong>No &gt;10% regression</strong> on <code>t3-1-bulk-corpus</code> (current baseline ~16s for 1000 inserts)</li>
+<li><strong>No &gt;10% regression</strong> on <code>e2e-search-semantic-quality</code> (current baseline ~5s for store + search)</li>
+<li><strong>No &gt;10% regression</strong> on <code>adr0090-b3-*</code> worker-metric round-trip tests (latency-sensitive surface)</li>
+</ul>
+<p>If any of these regresses past 10%, Phase 6 fails and the regression must be diagnosed before ADR-0112 closes. Likely causes if regressed: real <code>healthCheck()</code> adds SQL round-trip on every method call (mitigation: cache the healthcheck result with a 1s TTL); <code>requireAgentDB</code> is hot-path (mitigation: inline the check, avoid function-call overhead); reordered write path adds an extra await (mitigation: ensure the AgentDB write was synchronous before).</p>
+<p>When all gates pass (test count + lint + unit + partition + read-roundtrip + perf), <strong>ADR-0112 closes</strong> (<code>Accepted (work pending) → Implemented</code>).</p>
+<h3 id="sequencing">Sequencing</h3>
+<ul>
+<li><strong>Phase 1 first</strong> — quick wins flip 2-3 of 9 failures and validate the larger fix shape works</li>
+<li><strong>Phases 2 + 3 in parallel</strong> — TDD-first per Phase 3&#39;s recommendation; Phase 2&#39;s per-store tracks are independent</li>
+<li><strong>Phase 4 after Phase 2 baseline</strong> — lint can run once core silent-fallthroughs are removed; bootstrap annotation pass uses Phase 2&#39;s findings</li>
+<li><strong>Phase 5 throughout</strong> — ADR amendments land as their corresponding code changes commit (not all at once)</li>
+<li><strong>Phase 6 last</strong> — single verification run after all items closed</li>
+</ul>
+<h3 id="rollback-procedure">Rollback procedure</h3>
+<p>Phase 2 changes core persistence paths in <code>agentdb-backend.ts</code>, <code>rvf-backend.ts</code>, <code>controller-registry.ts</code>, <code>memory-router.ts</code>, and MCP handlers. If post-Phase 2 acceptance regresses unexpectedly (perf regression, deadlock, init-time hang, broader failure than the targeted 9 tests), the revert procedure is <strong>per-track</strong>, not whole-program:</p>
+<ul>
+<li><strong>Per-track tags</strong>: each Phase 2 track lands as its own commit (or commit cluster) with a <code>pre-w1.8-&lt;track&gt;</code> tag on <code>forks/ruflo</code> <code>main</code> (fork work is trunk-based per memory <code>feedback-trunk-only-fork-development</code>; the originally-planned <code>merge/upstream-2026-04-29</code> working branch was abandoned 2026-04-30 and the commits FF&#39;d onto <code>main</code>). Tracks: <code>rvf</code>, <code>agentdb-backend</code>, <code>controller-registry</code>, <code>memory-router</code>, <code>mcp-handlers</code>. Total 5 tags.</li>
+<li><strong>Per-track revert</strong>: <code>git revert &lt;track-commit-range&gt;</code> reverts that track only. Other tracks&#39; changes preserved. Useful when a single track regresses but others are fine.</li>
+<li><strong>Smoke gate after each track lands</strong>: <code>npm run test:acceptance</code> against the post-track state. If smoke regresses by more than the expected 0-3 failures (the 9 we expect to flip green minus any broken, plus any genuinely new), halt and revert that track before merging the next.</li>
+<li><strong>Whole-Phase-2 revert path</strong>: if multiple tracks combine to regress (e.g., interaction effect), revert all 5 tracks via <code>git reset --hard pre-w1.8-baseline</code> on <code>main</code>. This is the nuclear option; coordinate with whoever&#39;s holding the fork checkout.</li>
+<li><strong>Phase 1 quick wins are NOT in the per-track scope</strong> — they&#39;re single-site fixes with minimal blast radius. If they regress, single-commit revert suffices.</li>
+<li><strong>Phase 3 tests can stay green during a revert</strong> — they&#39;re new test files, independent of Phase 2 source changes (some tests will go from green to red without the fix; that&#39;s expected and acceptable for a revert).</li>
+<li><strong>Phase 4 lint annotations DO need coordination on revert</strong> — if Phase 2 reverts, Phase 4&#39;s bootstrap annotation pass that marked sites as &quot;now fail-loud, no annotation needed&quot; becomes stale; would need a Phase 4 follow-up annotation pass.</li>
+</ul>
+<h3 id="implementation-notes-orthogonal">Implementation notes (orthogonal)</h3>
+<ul>
+<li>ADR-0090 acceptance tests already partition by store. No test-harness changes required for the partition; new tests added per items #26 and #27 should also partition by store.</li>
+<li>Future ADR amendments referencing storage architecture should cite ADR-0112 alongside ADR-0086 §Debt 15 to anchor the framing.</li>
+<li>Any future architectural decision that proposes coupling RVF and AgentDB SQLite (e.g., synchronous mirror writes, cross-store transactions) MUST explicitly reverse this ADR and ADR-0086 §Debt 15 — not silently introduce coupling.</li>
+</ul>
+<h2 id="cross-references">Cross-references</h2>
+<ul>
+<li>ADR-0073 — RVF storage upgrade (RvfBackend introduction)</li>
+<li>ADR-0080 — Storage consolidation verdict (single CRUD path through router → RvfBackend)</li>
+<li>ADR-0086 §Debt 15 — ControllerRegistry dual-backend ACCEPTED TRADE-OFF (the original decision this ADR reaffirms)</li>
+<li>ADR-0082 — Test integrity, no fallbacks (per-store fail-loud contract)</li>
+<li>ADR-0090 — Acceptance suite coverage audit (the test inventory partitioned by store)</li>
+<li>ADR-0111 — Upstream merge program (W1.8 silent-fallthrough audit that surfaced the terminology drift)</li>
+<li>Memory <code>project-rvf-primary.md</code> — RVF primary, sqlite fallback only (applies to the RVF store; orthogonal to AgentDB SQLite which is its own primary)</li>
+<li>Memory <code>feedback-no-value-judgements-on-features.md</code> — wire all features; preserves AgentDB controllers as-is</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

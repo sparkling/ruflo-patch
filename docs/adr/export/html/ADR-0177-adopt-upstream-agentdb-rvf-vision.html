@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0177-adopt-upstream-agentdb-rvf-vision</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <hr>
+<h2 id="status-proposeddate-2026-05-12tags-substrate-rvf-agentdb-axis-substrate-vision-alignment-supersedes-divergent-direction-cognitive-containersupersedes-adr-0170-adr-0174-adr-0175depends-on-adr-0068-adr-0073-adr-0086-adr-0102implements-references-upstream-ruvnetagentdbreadme-ruvnetagentdbadr-002-ruvnetagentdbadr-003-ruvnetagentdbadr-004-ruvnetagentdbadr-005-ruvnetagentdbadr-006-ruvnetagentdbadr-007-ruvnetagentdbadr-008-ruvnetagentdbadr-009-ruvnetagentdbadr-010-ruvnetruvectoradr-029">status: proposed
+date: 2026-05-12
+tags: [substrate, rvf, agentdb, axis-substrate, vision-alignment, supersedes-divergent-direction, cognitive-container]
+supersedes: [ADR-0170, ADR-0174, ADR-0175]
+depends-on: [ADR-0068, ADR-0073, ADR-0086, ADR-0102]
+implements: []
+references-upstream: [ruvnet/agentdb:README, ruvnet/agentdb:ADR-002, ruvnet/agentdb:ADR-003, ruvnet/agentdb:ADR-004, ruvnet/agentdb:ADR-005, ruvnet/agentdb:ADR-006, ruvnet/agentdb:ADR-007, ruvnet/agentdb:ADR-008, ruvnet/agentdb:ADR-009, ruvnet/agentdb:ADR-010, ruvnet/RuVector:ADR-029]</h2>
+<h1 id="adopt-upstream-agentdbs-rvf-first-single-file-cognitive-container-vision-supersedes-the-divergent-postgres-path">Adopt upstream agentdb&#39;s RVF-first single-file Cognitive Container vision (supersedes the divergent postgres path)</h1>
+<h2 id="context-and-problem-statement">Context and Problem Statement</h2>
+<blockquote>
+<p><strong>Stance (load-bearing):</strong> The fork is <strong>redoing agentdb from upstream</strong>, not building a separate agentdb. ADR-0177 anchors the fork&#39;s substrate to whatever <code>ruvnet/agentdb</code> HEAD ships and applies a small, named delta on top. The 2026-05-12 audit of upstream <code>ruvnet/agentdb</code> (HEAD <code>a478ab3</code>) is the canonical &quot;what does agentdb use now&quot; reference for both upstream and fork-revert-target. Anywhere this ADR talks about substrate, it means upstream&#39;s substrate; the fork inherits it.</p>
+</blockquote>
+<p>The fork has accumulated three substrate ADRs (ADR-0170, ADR-0174, ADR-0175) that collectively commit the fork to a <strong>postgres-server + <code>ruvector-postgres</code> extension</strong> substrate for both <code>agentdb_*</code> (controller state) and <code>memory_*</code> (memory entries), retiring RVF for the memory axis and introducing a third <code>graph_*</code> axis backed by <code>ruvector-graph</code> (redb or RVF-backed). These ADRs were reasoned under a &quot;fork-freedom&quot; posture — adopting features upstream&#39;s compat envelope keeps blocked.</p>
+<p>The 2026-05-12 audit of upstream <code>ruvnet/agentdb</code>&#39;s README + <code>docs/adrs/</code> revealed that <strong>upstream&#39;s documented vision is the opposite direction</strong>:</p>
+<p><strong>Upstream README</strong> (<code>ruvnet/agentdb/README.md:15-19</code>):</p>
+<blockquote>
+<p><em>&quot;Vector memory that gets smarter every time your agent uses it.&quot;</em>
+<em>&quot;A single-file cognitive container — vectors, indexes, learning state, and a cryptographic audit trail in one <code>.rvf</code>.&quot;</em></p>
+</blockquote>
+<p><strong>Upstream ADR-006</strong> (<code>ruvnet/agentdb/docs/adrs/ADR-006-unified-self-learning-rvf-integration.md:201-242</code>) is explicit:</p>
+<blockquote>
+<p><em>&quot;Storage Backend: @ruvector (NOT pgvector)&quot;</em></p>
+<p><em>&quot;All vector persistence in the RVF stack uses the <strong>@ruvector</strong> ecosystem exclusively. The system MUST NOT use <code>pgvector</code> for any vector storage, indexing, or search operations.&quot;</em></p>
+<p><em>&quot;PostgreSQL persistence: When relational persistence is required (e.g., metadata, session state, audit logs), the system uses <code>@ruvector/rvf</code> file-based stores or future <code>@ruvector</code> PostgreSQL extensions — never <code>pgvector</code>. Vector data remains in the <code>.rvf</code> binary format; PostgreSQL serves only as a coordination/metadata layer when needed.&quot;</em></p>
+<p><em>&quot;Any future PostgreSQL integration MUST use @ruvector&#39;s native extension that reads/writes <code>.rvf</code> segments directly, preserving witness chains, lineage tracking, and segment signing. Falling back to pgvector would break the tamper-evident audit trail and lose RVF-specific capabilities (kernel embedding, eBPF programs, quantization profiles, adaptive ef_search via solver).&quot;</em></p>
+</blockquote>
+<p><code>ruvector-postgres</code> (the extension our ADR-0174 Phase A.6 + ADR-0175 commit to) does <strong>not</strong> read/write <code>.rvf</code> segments — it uses postgres-native varlena heap storage. Confirmed by:</p>
+<ul>
+<li>ADR-0029 RVF canonical-format migration table omits <code>ruvector-postgres</code></li>
+<li><code>crates/ruvector-postgres/docs/ARCHITECTURE.md</code> describes varlena + TOAST + <code>ruhnsw</code> extension index (not RVF segment IO)</li>
+<li>The &quot;RVF ↔ ruvector-postgres relationship&quot; research record in ADR-0174 catalogues the parallel-substrate split</li>
+</ul>
+<p><strong>Therefore the fork&#39;s current substrate direction violates upstream ADR-006&#39;s mandate.</strong> The &quot;future @ruvector PostgreSQL extension&quot; ADR-006 envisions does not yet exist; <code>ruvector-postgres</code> is not it.</p>
+<p>Upstream <strong>ADR-007</strong> (<code>ruvnet/agentdb/docs/adrs/ADR-007-ruvector-full-capability-integration.md</code>) lays out the actual upstream agentdb roadmap — a <strong>5-phase, 16-week plan</strong> to reach <strong>~95% @ruvector capability coverage</strong> with RVF as the canonical substrate:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Weeks</th>
+<th>Goal</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Phase 1 — Critical Path</td>
+<td>1-3</td>
+<td>Native optimizers (AdamW, InfoNCE), full SIMD surface, WASM verification, RVF compression profiles, <strong>Graph Transactions + Cypher via <code>querySync</code></strong> (HIGH priority), router persistence, SONA context enrichment, batch operations, tensor compression, read-only access + filter expressions</td>
+</tr>
+<tr>
+<td>Phase 2 — Kernel Runtimes + Import/Export</td>
+<td>4-6</td>
+<td>Kernel + eBPF embedding APIs, model import/export (SafeTensors/HF/JSON), WASM in-memory store, ReasoningBank integration, RLM controller for RAG</td>
+</tr>
+<tr>
+<td>Phase 3 — Advanced Features</td>
+<td>7-10</td>
+<td>(detail)</td>
+</tr>
+<tr>
+<td>Phase 4 — Streaming + Graph Events</td>
+<td>11-13</td>
+<td>Streaming token generation, streaming graph queries + subscriptions, hyperbolic attention</td>
+</tr>
+<tr>
+<td>Phase 5 — Full Ecosystem</td>
+<td>14-16</td>
+<td>RuvLLM engine integration, model management, WASM memory management</td>
+</tr>
+</tbody></table>
+<p>ADR-007 success metrics target ~95% capability coverage, ACID + Cypher graph consistency, browser vector DB via WASM, full RAG via RLM, kernel embedding making RVF an &quot;active compute container&quot;.</p>
+<p><strong>User directive (2026-05-12, this session):</strong> &quot;Implement the agentdb readme vision (ignoring what we have done so far, its incorrect).&quot;</p>
+<p><strong>Question this ADR settles:</strong> Pivot the fork&#39;s substrate direction back to upstream&#39;s documented RVF-first vision; supersede the divergent ADR-0170 + ADR-0174 + ADR-0175.</p>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<ul>
+<li><strong>Upstream alignment.</strong> Upstream agentdb&#39;s README + ADRs are the documented vision; the user&#39;s directive is to follow it. Adopt the single-file <code>.rvf</code> Cognitive Container model.</li>
+<li><strong>ADR-006&#39;s explicit no-pgvector mandate</strong> carries over to fork. Any postgres-as-vector-store (pgvector OR ruvector-postgres extension) breaks the witness chain + lineage + segment signing the RVF stack provides.</li>
+<li><strong><code>feedback-no-value-judgements-on-features</code>.</strong> Default to WIRE; ship the upstream surface. Upstream ships a 95%-coverage roadmap targeting RVF — ship that.</li>
+<li><strong><code>feedback-no-fallbacks</code>.</strong> Per-axis single substrate, fail-loud. Apply consistently: RVF is single-substrate for memory_* and agentdb_*. No dual-mode.</li>
+<li><strong>Witness chain + audit trail preservation.</strong> WITNESS_SEG + ML-DSA-65 PQ signatures + lineage tracking via fileId/parentId/derive are RVF-native capabilities upstream ADR-006 calls out as load-bearing.</li>
+<li><strong><code>project-rvf-primary</code> memory&#39;s original framing.</strong> RVF was primary for memory_* per ADR-0073 + ADR-0086. This ADR returns to that original framing, retiring ADR-0175&#39;s reversal.</li>
+<li><strong>Skill/USERGUIDE/MCP surface alignment.</strong> Upstream&#39;s docs (USERGUIDE 1934-2050 &quot;RuVector PostgreSQL Bridge&quot; / 3054-3180 &quot;RVF Storage&quot; / 5332-5644 &quot;RuVector&quot;) describe RVF-based substrate. Skills like <code>/adr-index</code> write to <code>agentdb_hierarchical_store</code> expecting RVF-backed persistence. Fork&#39;s divergent postgres path makes the docs internally inconsistent.</li>
+</ul>
+<h2 id="considered-options">Considered Options</h2>
+<ul>
+<li><strong>Option A</strong> — Stay the course: keep ADR-0170 + ADR-0174 + ADR-0175 (postgres + ruvector-postgres + retire RVF for memory_*). <strong>Rejected per user directive.</strong></li>
+<li><strong>Option B</strong> — Adopt upstream&#39;s RVF-first vision; supersede the three divergent ADRs; follow upstream ADR-007&#39;s 5-phase plan. <strong>Chosen.</strong></li>
+<li><strong>Option C</strong> — Hybrid: RVF for memory_*; postgres for agentdb_*; no graph_* axis. Rejected because it preserves the pgvector / postgres-as-vector-store contradiction with ADR-006 for the agentdb_* path.</li>
+<li><strong>Option D</strong> — Implement the &quot;future @ruvector PostgreSQL extension that reads/writes <code>.rvf</code> segments directly&quot; that ADR-006 imagines. Rejected because that extension doesn&#39;t exist; building it is a multi-month research project; outside fork scope.</li>
+</ul>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<p>Chosen option: <strong>Option B — adopt upstream&#39;s RVF-first single-file Cognitive Container vision.</strong></p>
+<h3 id="substrate-decisions-fork-wide">Substrate decisions (fork-wide)</h3>
+<table>
+<thead>
+<tr>
+<th>Axis</th>
+<th>Old substrate (ADR-0170/0174/0175)</th>
+<th>New substrate (this ADR)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>memory_*</code></td>
+<td>ruvector-postgres extension via <code>pg.Pool</code> (per ADR-0175)</td>
+<td><strong><code>@ruvector/rvf</code> stack → <code>.rvf</code> single file</strong> per upstream ADR-006 + fork ADR-0073 + ADR-0086 (returns to original framing)</td>
+</tr>
+<tr>
+<td><code>agentdb_*</code></td>
+<td>postgres + ruvector-postgres extension (per ADR-0170 + ADR-0174 Phase A.6)</td>
+<td><strong><code>@ruvector/rvf</code> stack → <code>.rvf</code> single file</strong>; controllers consume RvfBackend; SQLite/sql.js retained ONLY as fallback for relational metadata when explicitly needed (per upstream ADR-006&#39;s &quot;metadata only&quot; pattern)</td>
+</tr>
+<tr>
+<td><code>graph_*</code> (ADR-0174&#39;s third axis)</td>
+<td><code>ruvector-graph</code> crate (redb or RVF-backed)</td>
+<td><strong>Folded back into RVF.</strong> Graph data persists as RVF segments via the <code>@ruvector/graph-node</code> integration (when graph-mode is enabled per upstream <code>agentdb/db-unified.ts</code>). The three-axis framing collapses to upstream&#39;s two-mode framing: graph mode (graph-node + RVF) vs sqlite-legacy fallback.</td>
+</tr>
+</tbody></table>
+<h3 id="supersession-of-adr-0170--adr-0174--adr-0175">Supersession of ADR-0170 + ADR-0174 + ADR-0175</h3>
+<p>This ADR <strong>supersedes</strong> all three:</p>
+<ul>
+<li><strong>ADR-0170 (PostgreSQL primary for agentdb_*)</strong> — Status flips to <code>superseded by ADR-0177</code>. The entire Phase B controller-port-to-postgres work is reverted. Controllers go back to RvfBackend consumption.</li>
+<li><em><em>ADR-0174 (graph_</em> axis + Phase A.5 Cypher executor + Phase A.6 ruvector-postgres swap)</em>* — Status flips to <code>superseded by ADR-0177</code>. <strong>Two pieces survive contextually:</strong><ul>
+<li>The <strong>narrow Cypher executor patch (ADR-0174 Phase A.5)</strong> stays as a valuable contribution but <strong>lands in a different substrate context</strong>: it patches <code>@ruvector/graph-node</code>&#39;s Cypher executor (the <code>executor/mod.rs:129</code> placeholder), which is upstream&#39;s chosen graph engine per the README + ADR-007 Phase 1 #6 (&quot;Add Cypher query support via querySync&quot;). The patch directly implements upstream&#39;s stated need. Re-scope: the patch is now an <strong>upstream-PR-first</strong> investment, not a fork-divergence patch.</li>
+<li>The <strong>graph-shaped data scope</strong> (causal edges, skill edges, hierarchical parent/child, ADR/ODR deps as typed relations) stays — but persists via <code>@ruvector/graph-node</code> writing to RVF segments (when graph-node is configured for RVF-backed persistence; otherwise to its native redb).</li>
+<li>ADR-0174 Phase A.6 (ruvector-postgres extension swap for agentdb_*) is <strong>fully retired</strong>.</li>
+</ul>
+</li>
+<li><strong>ADR-0175 (mandate ruvector-postgres for memory_*)</strong> — Status flips to <code>superseded by ADR-0177</code>. Memory_* returns to RVF; the <code>PostgresMemoryBackend</code> module proposed in ADR-0175 is not built; the configurable embeddings story (Phase 2 of ADR-0175) is preserved as independent fork work, decoupled from substrate.</li>
+</ul>
+<h3 id="adoption-of-upstream-adr-007s-5-phase-plan">Adoption of upstream ADR-007&#39;s 5-phase plan</h3>
+<p>Fork follows upstream ADR-007&#39;s 5-phase capability-integration roadmap, with each phase implemented atop the RVF substrate. Phases re-scoped for fork&#39;s release cadence (single-bundle releases rather than 3-week sprints):</p>
+<p><strong>Phase 1 — Critical Path (adapted):</strong></p>
+<ul>
+<li>✅ Use <code>@ruvector/rvf</code> + <code>@ruvector/rvf-node</code> as substrate (already wired; live evidence on this machine — <code>.swarm/memory.rvf</code> 59KB writes)</li>
+<li>✅ Wire <code>SonaLearningBackend</code> + <code>SemanticQueryRouter</code> + <code>RvfSolver</code> into <code>RvfBackend.searchAsync/insertAsync</code> per upstream ADR-006</li>
+<li>✅ Native optimizers (<code>AdamWOptimizer</code>, <code>InfoNceLoss</code>) in <code>ContrastiveTrainer</code></li>
+<li>✅ Native EWC++ in self-learning paths</li>
+<li>✅ Full SIMD surface in <code>NativeAccelerator</code> (3/16 → 16/16 ops)</li>
+<li>✅ WASM verification APIs (<code>rvf_witness_verify</code>, <code>rvf_witness_count</code>)</li>
+<li>✅ RVF compression profiles (Scalar / Product / Binary / Half — 4-32× memory reduction)</li>
+<li>✅ <strong>Graph Transactions + Cypher via <code>querySync</code></strong> — this is where the ADR-0174 Phase A.5 narrow Cypher executor patch lands. PR target: upstream <code>ruvnet/RuVector</code>.</li>
+<li>✅ Router persistence (<code>@ruvector/router save/load</code>)</li>
+<li>✅ SONA context enrichment</li>
+<li>✅ Batch operations (10-100× bulk insert)</li>
+<li>✅ Tensor compression</li>
+<li>✅ Read-only access + filter expressions</li>
+</ul>
+<p><strong>Phase 2 — Kernel Runtimes + Import/Export:</strong></p>
+<ul>
+<li>✅ Kernel + eBPF embedding APIs (RVF as &quot;active compute container&quot;)</li>
+<li>✅ Model import/export pipeline (SafeTensors, HF, JSON, Binary)</li>
+<li>✅ WASM in-memory store (full vector DB in browsers without N-API)</li>
+<li>✅ ReasoningBank integration (replace TS pattern storage with <code>@ruvector/ruvllm.ReasoningBank</code>)</li>
+<li>✅ RLM controller for RAG (multi-hop with sub-query decomposition)</li>
+</ul>
+<p><strong>Phase 3 — Advanced Features</strong> (per upstream ADR-007).</p>
+<p><strong>Phase 4 — Streaming + Graph Events:</strong></p>
+<ul>
+<li>✅ Streaming token generation</li>
+<li>✅ Streaming graph queries + subscriptions (<code>QueryResultStream</code>, <code>HyperedgeStream</code>, <code>NodeStream</code>)</li>
+<li>✅ Stream processing for long sequences</li>
+<li>✅ Hyperbolic attention (<code>DualSpaceAttention</code>)</li>
+</ul>
+<p><strong>Phase 5 — Full Ecosystem:</strong></p>
+<ul>
+<li>✅ <code>RuvLLM</code> engine integration (<code>NativeRuvLLM.RuvLLMEngine</code>)</li>
+<li>✅ Model management (<code>ModelDownloader</code>, <code>MODEL_ALIASES</code>)</li>
+<li>✅ WASM memory management (<code>rvf_alloc</code> / <code>rvf_free</code>)</li>
+</ul>
+<h3 id="upstream-current-baseline--fork-deltas">Upstream-current baseline + fork deltas</h3>
+<p>The fork is <strong>redoing agentdb from upstream</strong>, not building a different agentdb. ADR-0177 anchors the fork&#39;s substrate to whatever <code>ruvnet/agentdb</code> HEAD ships at the time of revert — currently <code>a478ab3</code> (2026-05-12) — and lists the specific deltas the fork applies on top.</p>
+<p><strong>Upstream&#39;s current storage (source-traced 2026-05-12, verified against <code>a478ab3</code>):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>What upstream uses today</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Primary substrate</td>
+<td><strong>RVF</strong> — <code>src/backends/factory.ts:166</code> returns <code>RvfBackend</code> (749 LoC, <code>@ruvector/rvf</code> → <code>@ruvector/rvf-node</code> NAPI → <code>rvf-runtime</code> Rust → <code>.rvf</code> files)</td>
+</tr>
+<tr>
+<td>HNSW similarity</td>
+<td>Built into RVF segments (progressive Layer A/B/C HNSW)</td>
+</tr>
+<tr>
+<td>Graph storage (when graph mode)</td>
+<td><code>@ruvector/graph-node</code> NAPI → <code>ruvector-graph</code> Rust → <strong>redb</strong> + bincode → <code>.graph</code> files</td>
+</tr>
+<tr>
+<td>Restricted-host fallback</td>
+<td><code>database-provider.ts</code> cascade: <code>RVF → better-sqlite3 → sql.js → JSON</code>. <code>sql.js</code> is a HARD dep (every install pulls it).</td>
+</tr>
+<tr>
+<td>Self-learning loop</td>
+<td><strong>Built but ORPHANED.</strong> <code>SelfLearningRvfBackend</code> (487 LoC, composes all 6 ADR-005 components correctly per ADR-006). <code>factory.ts:166</code> returns bare <code>RvfBackend</code>, not the wrapper. README&#39;s +36% claim cannot be delivered in default deployment.</td>
+</tr>
+<tr>
+<td>Cypher</td>
+<td>Hollow — <code>@ruvector/graph-node</code> NAPI <code>query()</code> does label-only <code>Match</code>, <code>Statement::Delete</code> falls through <code>_ =&gt; {}</code>, <code>Statement::Return</code> no-op</td>
+</tr>
+<tr>
+<td>postgres / pgvector / ruvector-postgres</td>
+<td><strong>Zero</strong> matches in <code>src/</code> (per ADR-006 audit) — no-pgvector mandate enforced</td>
+</tr>
+</tbody></table>
+<p><strong>Fork&#39;s deltas on top of that baseline (what the Phases below actually do):</strong></p>
+<table>
+<thead>
+<tr>
+<th>Delta</th>
+<th>What changes vs upstream</th>
+<th>Phase</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>Keep RVF as primary substrate</strong></td>
+<td>No change — already what upstream does</td>
+<td>Phase 1 (revert fork&#39;s divergent ADR-0170/0174/0175 changes back to upstream&#39;s state)</td>
+</tr>
+<tr>
+<td><strong>Keep <code>@ruvector/graph-node</code> for graph data</strong></td>
+<td>No change — upstream&#39;s graph mode is correct</td>
+<td>Phase 1 (reverse Phase D resolution-J&#39;s <code>enableGraph</code> retirement)</td>
+</tr>
+<tr>
+<td><del><strong>Drop the sql.js / better-sqlite3 / hnswlib-node fallback cascade</strong></del> <strong>[Reversed 2026-05-12 by Amendment 2 — fork preserves upstream&#39;s cascade wholesale; no removal.]</strong></td>
+<td><del>Fork-only change. Upstream serves restricted-host populations via the cascade; fork doesn&#39;t have that user base. Per <code>feedback-no-fallbacks</code>.</del></td>
+<td><del>Phase 1.5</del> retired</td>
+</tr>
+<tr>
+<td><strong>Wire embedding model + dimension through ruflo config chain</strong></td>
+<td>Fork-only change. Upstream reads model/dim from constructor options at the call site; fork canonicalizes via <code>ruflo init</code> per ADR-0068 + ADR-0102.</td>
+<td>Phase 1.6</td>
+</tr>
+<tr>
+<td><strong>Fix the orphaned wrapper</strong> — change factory.ts:166 to return <code>SelfLearningRvfBackend</code> instead of bare <code>RvfBackend</code></td>
+<td><strong>✅ Landed 2026-05-12</strong> in <code>forks/agentdb/main</code> commit <code>511b7d3</code>. Three-line diff: type import for <code>SelfLearningConfig</code>, factory body swap to <code>SelfLearningRvfBackend.create()</code>, comment update citing ADR-006 + ADR-0177 Phase 2. Plan to PR back upstream (Phase 7).</td>
+<td>Phase 2 ✅</td>
+</tr>
+<tr>
+<td><strong>Patch the hollow Cypher executor</strong></td>
+<td><code>forks/ruvector/crates/ruvector-graph/src/executor/mod.rs:129</code> — narrow scope (~1KLoC Rust). Aligns with upstream ADR-007 Phase 1 item #6 (&quot;Add Cypher query support via querySync&quot;). Plan to PR back upstream.</td>
+<td>Phase 3</td>
+</tr>
+<tr>
+<td><strong>Track upstream ADR-007 Phases 2-5 capabilities</strong></td>
+<td>Upstream&#39;s roadmap — fork picks up whatever&#39;s done upstream + invests where useful.</td>
+<td>Phases 4-5</td>
+</tr>
+<tr>
+<td><strong>Retire <code>ruvector-bridge.ts</code> plugin</strong></td>
+<td>Fork-only — that plugin (pgvector via <code>pg.Pool</code>) was a fork addition that violates ADR-006&#39;s no-pgvector mandate.</td>
+<td>Phase 6</td>
+</tr>
+<tr>
+<td><strong>Send orphan-fix PR back to upstream</strong></td>
+<td>Fork → upstream contribution; closes the orphan for upstream users too.</td>
+<td>Phase 7</td>
+</tr>
+<tr>
+<td><strong>File ADR-009 clarification with upstream</strong></td>
+<td>Fork → upstream issue; placeholder file (&quot;i weds&quot;) needs upstream answer.</td>
+<td>Phase 8</td>
+</tr>
+</tbody></table>
+<p><strong>Net read:</strong> the fork&#39;s <code>@sparkleideas/agentdb</code> runs <strong>the same RVF substrate as <code>npm i agentdb</code></strong> from upstream, plus the orphan fix (delivers the +36% self-learning claim upstream advertises but doesn&#39;t engage), minus the restricted-host fallback baggage (per no-fallbacks), with embedding params canonical-sourced from <code>ruflo init</code> (per the config chain). We&#39;re not building a different agentdb. We&#39;re shipping the agentdb upstream describes in its README, with three targeted fixes upstream&#39;s compat envelope blocks them from making.</p>
+<h3 id="what-this-means-concretely-for-forks">What this means concretely for forks</h3>
+<table>
+<thead>
+<tr>
+<th>Fork file</th>
+<th>Old direction</th>
+<th>New direction</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>forks/ruflo/v3/@claude-flow/plugins/src/integrations/ruvector/ruvector-bridge.ts:1840</code></td>
+<td><code>CREATE EXTENSION vector</code> (pgvector) → ADR-0174 Phase A.6 would swap to <code>CREATE EXTENSION ruvector</code></td>
+<td><strong>Retire the bridge plugin&#39;s pg-based substrate path entirely.</strong> ruvector-bridge.ts becomes either (a) deprecated entirely if its 8 MCP tools (<code>ruvector_search</code>/<code>_insert</code>/etc.) have no dependencies, or (b) re-pointed at <code>@ruvector/rvf</code> rather than <code>pg.Pool</code>.</td>
+</tr>
+<tr>
+<td><code>forks/agentdb/src/backends/postgres/PostgresBackend.ts</code></td>
+<td>ADR-0170 Phase A-D primary substrate</td>
+<td><strong>Retired.</strong> Controllers consume <code>RvfBackend</code> per ADR-0086 instead. Code stays in tree as a museum piece + reference for the &quot;future @ruvector PG extension&quot; if that ever materializes.</td>
+</tr>
+<tr>
+<td><code>forks/agentdb/src/backends/rvf/RvfBackend.ts</code></td>
+<td>Existing — was being deprioritized under ADR-0170 Phase D</td>
+<td><strong>Restored as primary.</strong> All 9 controllers (ReflexionMemory, SkillLibrary, ReasoningBank, CausalMemoryGraph, HierarchicalMemory, MemoryConsolidation, NightlyLearner, LearningSystem, ExplainableRecall) consume it.</td>
+</tr>
+<tr>
+<td><code>forks/agentdb/src/core/AgentDB.ts:127, :397-410</code></td>
+<td><code>enableGraph: true</code> throws (Phase D resolution-J retirement)</td>
+<td><strong>Re-enable graph mode.</strong> <code>@ruvector/graph-node</code> is reinstated as graph-axis substrate (via the <code>db-unified.ts</code> graph-mode path upstream uses). The Phase D <code>enableGraph</code> retirement is reverted.</td>
+</tr>
+<tr>
+<td><code>forks/ruvector/crates/ruvector-graph/src/executor/mod.rs:129</code></td>
+<td>ADR-0174 Phase A.5 patch lands here (narrow Cypher executor)</td>
+<td><strong>Same — patch lands here.</strong> But now framed as upstream-PR-first contribution per upstream ADR-007 Phase 1 #6, not as fork divergence.</td>
+</tr>
+<tr>
+<td><code>forks/ruflo/v3/@claude-flow/memory/src/database-provider.ts</code></td>
+<td>ADR-0175 would remove the &#39;rvf&#39; → &#39;better-sqlite3&#39; → &#39;sql.js&#39; → &#39;json&#39; cascade for memory_*</td>
+<td><strong>Cascade preserved.</strong> RVF wins (as in upstream main today). Better-sqlite3 / sql.js / json remain as fallbacks for environments without <code>@ruvector/rvf</code> available.</td>
+</tr>
+<tr>
+<td><code>forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts</code> (49 tools)</td>
+<td>Tools&#39; handlers re-routed to postgres backends per ADR-0170 Phase B</td>
+<td><strong>Tools&#39; handlers route to RVF-backed controllers</strong> per upstream ADR-006. Handler implementations re-point to the RvfBackend consumer pattern.</td>
+</tr>
+</tbody></table>
+<h3 id="what-about-the-mcp-namespace-alignment-work-adr-0176">What about the MCP namespace alignment work (ADR-0176)?</h3>
+<p>ADR-0176 (reconcile <code>/adr-index</code> MCP tool naming) <strong>stays valid and independent</strong>. The tool-name fix (rename <code>_store</code> underscore → <code>-store</code> dash, etc.) is below the substrate layer — it&#39;s purely about MCP tool registration names. Whatever substrate the handlers route to (postgres under the old direction; RVF under this ADR), the tool names need to match the skill manifest. ADR-0176 lands regardless.</p>
+<h3 id="self-learning-loop-integration-per-upstream-adr-006">Self-learning loop integration (per upstream ADR-006)</h3>
+<p>The six self-learning components upstream ADR-005 created remain standalone in fork today. This ADR mandates wiring them into <code>RvfBackend.searchAsync</code> / <code>insertAsync</code> per upstream ADR-006:</p>
+<pre><code class="hljs">search()
+  → SemanticQueryRouter.route(query)             [intent-based routing via HNSW]
+  → RvfSolver.adaptiveSearch(query, route)       [Thompson Sampling ef_search + safety + cost]
+  → SonaLearningBackend.recordTrajectory(...)    [trajectory capture for learning loop]
+  → ContrastiveTrainer.update(...)               [hard negative mining + curriculum]
+  → AdaptiveIndexTuner.observe(...)              [index health + tier compression decisions]
+  → FederatedSessionManager.aggregate(...)       [cross-session LoRA aggregation]
+  → return ranked results
+
+insertAsync()
+  → embed
+  → AdaptiveIndexTuner.tierDecide(...)
+  → RvfBackend.store(...)
+  → WITNESS_SEG audit (rvf-crypto witness chain)</code></pre>
+<p>This is what makes &quot;search smarter over time&quot; — the +36% lift the README claims.</p>
+<h3 id="out-of-scope">Out of scope</h3>
+<ul>
+<li>Building the &quot;@ruvector PostgreSQL extension that reads/writes <code>.rvf</code> segments directly&quot; upstream ADR-006 envisions. That&#39;s a multi-month upstream research project; we wait.</li>
+<li>Retaining <code>pgvector</code> or <code>ruvector-postgres</code> in any role for vector storage. Both retired from the fork&#39;s substrate per upstream ADR-006&#39;s mandate. (The 8 <code>ruvector_*</code> MCP tools in <code>ruvector-bridge.ts</code> plugin either retire entirely or re-point at RVF — see Open Follow-up #1.)</li>
+<li>Multi-machine deployment story for <code>memory_*</code> and <code>agentdb_*</code>. Upstream&#39;s vision is single-file + COW branching + RAFT federation (for graph-node). Distributed mode is downstream of Phase 4-5 and not in scope for the initial supersession.</li>
+<li><code>memory_*</code> schema migration from existing data. Each user re-imports or rebuilds; this matches upstream&#39;s <code>.rvf</code> migration story (<code>RvfMigrator</code> per upstream <code>agentdb</code> package).</li>
+</ul>
+<h3 id="consequences">Consequences</h3>
+<ul>
+<li>Good, because fork&#39;s substrate direction realigns with upstream&#39;s documented vision per <code>feedback-no-value-judgements-on-features</code> and <code>feedback-upstream-means-upstream</code>.</li>
+<li>Good, because RVF single-file Cognitive Container preserves the witness chain (WITNESS_SEG + ML-DSA-65 PQ signatures), lineage tracking (fileId/parentId/derive), and per-segment integrity that ADR-006 names as load-bearing.</li>
+<li>Good, because the self-learning loop (Thompson Sampling bandit, +36% feedback gain) becomes possible — RvfSolver + SonaLearningBackend + AdaptiveIndexTuner integrate cleanly with RvfBackend per upstream ADR-006.</li>
+<li>Good, because the fork can adopt upstream ADR-007&#39;s 5-phase capability roadmap directly — no design translation needed; upstream&#39;s plan IS our plan.</li>
+<li>Good, because deployment matrix simplifies dramatically. No postgres-server. No Docker image dependency. No <code>RUFLO_POSTGRES_URL</code> env requirement. Single <code>.rvf</code> file per project. Same UX everywhere (Node, browser, WASM, edge, offline).</li>
+<li>Good, because the ADR-0174 Phase A.5 narrow Cypher executor patch is preserved as upstream-PR-first work — high relationship value, fork patch only if PR doesn&#39;t land.</li>
+<li>Good, because the ADR-0176 MCP tool-naming fix stays in scope (substrate-orthogonal).</li>
+<li>Bad, because reverses substantial prior fork work. ADR-0170 + ADR-0174 + ADR-0175 represent multiple weeks of design and implementation thinking. Mitigation: the design work isn&#39;t wasted — much of it (Cypher executor patch, MCP naming reconciliation, the per-controller analysis, the cypher-verification council research record) carries over and informs the new direction.</li>
+<li>Bad, because the postgres-multi-process-correctness argument (one of ADR-0175&#39;s drivers) loses its substrate solution. RVF&#39;s <code>memory.rvf.lock</code> file-locking remains the multi-process coordination mechanism. Mitigation: upstream&#39;s lock pattern is real and works; the in-fork concurrency issues that motivated ADR-0175&#39;s postgres bid were misframed — the actual fix is lock-file-correctness, not substrate swap.</li>
+<li>Bad, because hyperbolic distance, in-postgres BM25+RRF, in-DB local embeddings (the ruvector-postgres-only surfaces ADR-0174 Phase A.6 promised) retire. Mitigation: most of those surfaces have RVF-native equivalents (per upstream ADR-007 Phase 1+2): hyperbolic via <code>DualSpaceAttention</code>, hybrid via <code>RvfSolver</code> adaptive scoring, embeddings via <code>@ruvector/router</code> + ONNX in-process.</li>
+<li>Bad, because the multi-month commitment to upstream ADR-007&#39;s roadmap is significant. Fork either tracks upstream&#39;s pace (subject to upstream&#39;s stalled-cadence pattern documented for PR #1569 / #387) or builds independently. Mitigation: fork-freedom is preserved — we can implement ADR-007 phases ahead of upstream where useful, and upstream&#39;s stalled cadence (PRs sitting 17-33 days untouched is the baseline) means fork-side velocity has room to be faster.</li>
+<li>Bad, because <code>feedback-data-loss-zero-tolerance</code> becomes more load-bearing — RVF&#39;s file-locking + lineage + witness chain must be hardened to handle the multi-process scenarios postgres&#39; MVCC would have absorbed. Mitigation: ADR-007 Phase 1 includes &quot;Read-only access + filter expressions&quot; via <code>openReadonly</code> for concurrent reader patterns; the lock-file write path stays as-is; CI gates for concurrent-write correctness move to acceptance suite (per the <code>feedback-data-loss-zero-tolerance</code> memory&#39;s &quot;100% or not fixed&quot; rule).</li>
+<li><strong>[Reversed 2026-05-12 by Amendment 2 — Phase 1.5 retired; no fallback elimination, no dep promotion. Bullet preserved for traceability.]</strong> Good, because Phase 1.5 (dependency hygiene) eliminates three fallback substrates — <code>sql.js</code> (hard dep → removed), <code>better-sqlite3</code> (optional → removed), <code>hnswlib-node</code> (optional → removed) — and promotes the three load-bearing primaries — <code>@ruvector/rvf</code> (optional → hard), <code>@ruvector/rvf-node</code> (optional → hard), <code>@xenova/transformers</code> (optional → hard) — so the package install matrix matches the &quot;RVF or throw&quot; semantics rather than the upstream &quot;RVF with three layers of silent degradation&quot; matrix.</li>
+<li>Good, because embedding pipeline is committed in fork: local ONNX models via <code>@xenova/transformers</code>. Model + dimension live in the ruflo config chain (per ADR-0068 + ADR-0102), written by <code>ruflo init</code> at project creation; default = <code>Xenova/all-mpnet-base-v2</code> 768d with HNSW <code>m=23/efC=100/efS=50</code> per memory <code>reference-embedding-model</code>. No env vars and no per-call config — single source of truth at the project boundary. Embeddings never leave the process; no paid API path is default per <code>feedback-no-api-keys</code>. The embedder is a hard dep, not a fallback — agentdb without an embedder cannot produce vectors to persist in RVF.</li>
+<li><strong>[Reversed 2026-05-12 by Amendment 2 — Phase 1.5 retired; native NAPI is not mandatory; sql.js WASM fallback row stays available. Bullet preserved for traceability.]</strong> Bad, because Phase 1.5 makes fork&#39;s <code>@sparkleideas/agentdb</code> install footprint mandate native NAPI on Node (<code>@ruvector/rvf-node</code>) and the ONNX runtime (<code>@xenova/transformers</code>). Restricted hosts that previously got the sql.js WASM fallback row are no longer supported by fork. Mitigation: this matches <code>feedback-no-fallbacks</code> discipline + the fork&#39;s bundle-release deployment posture; restricted hosts are upstream&#39;s user base, not the fork&#39;s.</li>
+</ul>
+<h3 id="confirmation">Confirmation</h3>
+<blockquote>
+<p><strong>Phase confidence calibrated by the 9-agent audit (2026-05-12).</strong> Upstream-baseline % below names how much of each phase upstream agentdb already ships; fork-effort % names what the fork has to add. Lower fork-effort = lower risk + faster delivery.</p>
+</blockquote>
+<ol>
+<li><p><strong>Phase 0 — Supersession declarations.</strong> ADR-0170, ADR-0174, ADR-0175 status fields update to <code>superseded by ADR-0177</code>. This ADR&#39;s status moves from <code>proposed</code> to <code>accepted</code> when all three supersedence updates land in the docs/adr/ tree. <em>Upstream baseline: n/a. Fork effort: trivial doc edits.</em></p>
+</li>
+<li><p><strong>Phase 1 — Substrate revert in fork.</strong> <code>forks/agentdb/src/core/AgentDB.ts</code> reverses Phase D resolution-J: <code>enableGraph: true</code> no longer throws; <code>@ruvector/graph-node</code> is reinstated. Controllers&#39; <code>if (this.graphBackend &amp;&amp; &#39;&lt;method&gt;&#39; in this.graphBackend)</code> dual-mode pattern is restored (per upstream <code>db-unified.ts</code> graph-vs-sqlite-legacy mode selection — but see Phase 1.5 below for fork&#39;s no-fallback tightening). <code>PostgresBackend.ts</code> becomes museum code — not deleted (preserved for reference + future @ruvector PG extension hook), but no controller initialization touches it. <em>Upstream baseline: 100% (RvfBackend at 749 LoC, factory wiring, async adapter, advanced features — per ADR-003 audit at 80%, all infra exists). Fork effort: revert the Phase D + Phase A.6 + ADR-0175 changes — substantive but mechanical.</em></p>
+</li>
+<li><p><strong>Phase 1.5 — Dependency hygiene under <code>feedback-no-fallbacks</code>.</strong> <strong>[Reversed 2026-05-12 by Amendment 2 — fork preserves upstream&#39;s dependency posture wholesale. No removal of <code>sql.js</code> / <code>hnswlib-node</code>, no promotion of <code>better-sqlite3</code> to hard dep, no cascade collapse, no fail-fast at boot. See §&quot;Amendment 2 (2026-05-12): dependency-hygiene reversal&quot; below for the current decision. The original Phase 1.5 text and Amendment 1 below are preserved for traceability; both are superseded.]</strong> Upstream agentdb ships sql.js as a HARD dependency (<code>package.json:&quot;dependencies&quot;</code>) and <code>better-sqlite3</code> + <code>hnswlib-node</code> as optional fallback substrates. Per the README&#39;s own build-targets table (L260) sql.js is named only as &quot;Node WASM fallback — Restricted hosts that can&#39;t run NAPI&quot; — i.e., it exists exclusively to serve the unhappy path. Under fork&#39;s no-fallbacks discipline (per <code>feedback-no-fallbacks</code>, ADR-0170, ADR-0174, ADR-0175 conventions): <strong>fork-patch <code>forks/agentdb/package.json</code></strong> to:</p>
+<ul>
+<li><strong>Remove</strong> <code>sql.js</code> (hard dep → eliminated) — fallback substrate, no longer needed under &quot;RVF or throw&quot; posture</li>
+<li><strong>Remove</strong> <code>better-sqlite3</code> from <code>optionalDependencies</code> — native SQLite fallback, same retirement rationale</li>
+<li><strong>Remove</strong> <code>hnswlib-node</code> from <code>optionalDependencies</code> — non-ruvector HNSW fallback in factory.ts auto-cascade</li>
+<li><strong>Promote</strong> <code>@ruvector/rvf</code> from <code>optionalDependencies</code> → <code>dependencies</code> — the actual primary substrate; not a fallback, the foundation</li>
+<li><strong>Promote</strong> <code>@ruvector/rvf-node</code> from <code>optionalDependencies</code> → <code>dependencies</code> — the NAPI binding that delivers the substrate; required on Node native target</li>
+<li><strong>Promote</strong> <code>@xenova/transformers</code> from <code>optionalDependencies</code> → <code>dependencies</code> — <strong>the embedding pipeline</strong>, not a fallback. agentdb persists vectors; vectors come from somewhere; Xenova ONNX models generate them locally. Fork commits to local ONNX embedding generation per <code>feedback-no-api-keys</code> (zero paid API by default). Xenova is the embedder; its absence breaks the substrate, so it cannot be optional. <strong>The exact model + dimension are NOT set by env var or per-call config</strong> — they flow through the ruflo config chain (per ADR-0068 + ADR-0102) and are written by <code>ruflo init</code> into the project&#39;s <code>.claude-flow/config.json</code> (or equivalent). Default per fork memory <code>reference-embedding-model</code>: model = <code>Xenova/all-mpnet-base-v2</code>, dimension = 768, HNSW = <code>m=23 / efConstruction=100 / efSearch=50</code>. Init template sets these keys at project creation per <code>project-config-gaps.md</code> (&quot;All 11 dead keys wired; init template generates all keys&quot;). Phase 5 init validation per <code>project-phase5-testing.md</code> confirms every default round-trips through the config chain. Model names always full-qualified (<code>Xenova/...</code>) per <code>feedback-full-model-names.md</code> — no bare names, no runtime prefix prepending.</li>
+<li><strong>Keep optional</strong>: <code>@ruvector/rvf-wasm</code> (browser/edge target needs it but Node native path doesn&#39;t); <code>@ruvector/{attention, gnn, graph-node, router, ruvllm, sona, graph-transformer}</code> (capability surfaces, not substrate); <code>argon2</code> / <code>chalk</code> / <code>commander</code> / <code>inquirer</code> (security + CLI, not substrate)</li>
+<li><strong><code>database-provider.ts</code> cascade collapses</strong>: the upstream 4-tier auto-selection (<code>&#39;rvf&#39; | &#39;better-sqlite3&#39; | &#39;sql.js&#39; | &#39;json&#39;</code>) becomes &quot;RVF or throw <code>MemoryBackendInitError</code>&quot;. Single substrate per axis, loud failure at boot. Matches ADR-0170&#39;s discipline for SQLite retirement, ADR-0174&#39;s discipline for graphAdapter availability, ADR-0175&#39;s discipline for postgres availability — applied uniformly. <em>Upstream baseline: 0% (upstream maintains the fallback chain for its install matrix). Fork effort: ~50 LoC package.json + ~30 LoC <code>database-provider.ts</code> collapse + integration-test concurrency hardening to ensure RVF lock-file coordination handles multi-process correctly per <code>feedback-data-loss-zero-tolerance</code>. The collapse delivers the &quot;single-file <code>.rvf</code> Cognitive Container&quot; framing the README headline promises — the framing upstream&#39;s own install matrix dilutes.</em></li>
+</ul>
+</li>
+<li><p><strong>Phase 1.6 — Wire embedding config chain through <code>ruflo init</code>.</strong> <strong>[✅ All sub-steps a-g + cross-fork refactor complete 2026-05-12.</strong></p>
+<p> <strong>Implementation commits:</strong></p>
+<ul>
+<li>(a)/(b)/(g) on <code>forks/ruflo/main</code> <code>c4b36ca57</code> (21/21 tests)</li>
+<li>(c)/(d)/(e) on <code>forks/agentdb/main</code> <code>5242679</code> (27/27 new tests, 120 baseline preserved)</li>
+<li>(f) on <code>ruflo-patch/main</code> <code>4656787</code> + <code>2ca30ab</code> (asserts both <code>config.json</code> nested and <code>embeddings.json</code> top-level shapes across default + 2 alt-model flag invocations; bash -n + ADR-0097 lint clean)</li>
+</ul>
+<p> <strong>Cross-fork refactor (extracts the 143-LoC duplicated accessor into a shared package, breaks the circular dep memory → agentdb → memory):</strong></p>
+<ul>
+<li>New package <code>@claude-flow/config-chain</code> at <code>forks/ruflo/v3/@claude-flow/config-chain/</code> (auto-renamed to <code>@sparkleideas/config-chain</code> by codemod Pass 1). Picked up by existing <code>v3/pnpm-workspace.yaml</code> glob; zero workspace edits needed. Leaf dep — no workspace deps; runtime deps zero, devDeps <code>@types/node</code> + <code>vitest</code> only.</li>
+<li>Public surface: types <code>ConfigChain</code> / <code>EmbeddingChainConfig</code>, errors <code>ConfigChainValidationError</code> / <code>EmbeddingDimensionMismatchError</code>, accessors <code>getConfig</code> / <code>getEmbeddingConfig</code> / <code>resetConfig</code> / <code>isConfigOnDisk</code>, validation <code>validateBoot(chain?)</code>.</li>
+<li><code>forks/ruflo/main</code> <code>2bbb158e8</code> (introduce shared package; 14/14 standalone tests) + <code>93ae47a26</code> (route <code>@claude-flow/memory</code> through shared package, drop the buggy dynamic <code>require(&#39;@claude-flow/agentdb&#39;)</code>)</li>
+<li><code>forks/agentdb/main</code> <code>97fb022c9</code> (route agentdb through shared package; 249-LoC accessor → 31-LoC re-export stub preserving every in-fork import path + <code>src/index.ts</code> external surface)</li>
+</ul>
+<p> <strong>Independent verification (refactor-verifier, task #21):</strong></p>
+<ul>
+<li>VERDICT: GREEN</li>
+<li>Shared package: 14/14 pass (106ms)</li>
+<li>agentdb Phase 1.6 sweep: 27/27 pass (559ms)</li>
+<li>agentdb full regression: 674 pass / 90 fail post-refactor — IDENTICAL to 674 pass / 90 fail pre-refactor baseline. Zero new failures. All 90 are pre-existing in auth/crypto, attention, controllers, sparsification, CausalMemoryGraph — none reference config-chain.</li>
+<li>Memory typecheck (tsc --noEmit): exit 0 with shared package symlinked</li>
+<li>Circular-dep audit: clean — no <code>require(&#39;@claude-flow/agentdb&#39;)</code> in memory; no <code>from &#39;@claude-flow/memory&#39;</code> in agentdb; shared package has zero workspace imports</li>
+<li>Functional parity: 14 it() titles in shared package are verbatim ports from agentdb&#39;s original tests/unit/config-chain.test.ts</li>
+</ul>
+<p> <strong>Callsite retired in favor of a workspace-resident shared package — NOT a name-correctness bug fix.</strong> Earlier drafts of this ADR characterized the dynamic <code>require(&#39;@claude-flow/agentdb&#39;)</code> at <code>memory/src/resolve-config.ts:134</code> as a name-correctness bug; that framing was wrong. The require call was an instance of the deliberate optional-imports pattern documented in <code>forks/ruflo/v3/@claude-flow/cli/types/optional-modules.d.ts</code>:</p>
+<blockquote>
+<p><em>&quot;Ambient declarations for OPTIONAL dependencies that tsc cannot resolve in the workspace. Each declared module is opaque (typed <code>any</code>) — these declarations exist only to satisfy tsc&#39;s module-resolution pass for our dynamic <code>await import(&#39;...&#39;)</code> and <code>import type {...}</code> sites. Runtime behavior is unchanged: imports still fail at runtime if the package is missing, and the existing try/catch guards at the call sites handle it ... workspace pins <code>-patch.NNN</code> external versions that aren&#39;t on Verdaccio, so <code>pnpm install</code> cannot fetch them.&quot;</em></p>
+</blockquote>
+<p> Verified via runtime resolution test (2026-05-12): both <code>import(&#39;@claude-flow/agentdb&#39;)</code> AND <code>import(&#39;agentdb&#39;)</code> fail with <code>ERR_MODULE_NOT_FOUND</code> in the dev workspace — neither resolves. The codemod&#39;s Pass 1 (<code>@claude-flow/* → @sparkleideas/*</code>) rewrites the scoped form to a valid post-publish name; the unscoped rule at <code>scripts/codemod.mjs:41</code> rewrites the bare form. Both produce working production code. Both fail in dev. Both are valid forms of the documented pattern.</p>
+<p> What the refactor actually did: replaced one callsite of the optional-imports pattern (dynamic <code>require(&#39;@claude-flow/agentdb&#39;)</code> + try/catch guard) with a <strong>static import</strong> of the new <code>@claude-flow/config-chain</code> workspace package. Static import works because the new package IS a workspace member (under <code>v3/@claude-flow/</code> glob in <code>pnpm-workspace.yaml</code>), so pnpm symlinks resolve in dev and codemod rewrites for production — no optional-imports dance needed.</p>
+<p> <strong>The 5 other <code>@claude-flow/agentdb</code> dynamic-import callsites in the workspace are unchanged and remain correct as-is.</strong> They target the standalone <code>agentdb</code> fork which isn&#39;t a v3 workspace member, so the optional-imports pattern (ambient <code>.d.ts</code> declaration + dynamic import + try/catch) is the right shape for them.</p>
+<p> <strong>One real anti-pattern that survived (separate concern):</strong> several optional-import callsites use <code>.catch(() =&gt; null)</code> to swallow <code>ModuleNotFoundError</code>, then fall back to default behavior. Per <code>feedback-best-effort-must-rethrow-fatals.md</code>, this conflates &quot;package legitimately not installed&quot; with &quot;package present but broken on load&quot; — fatal errors get masked. The refactor doesn&#39;t address this; deferred as separate cleanup.</p>
+<p> <strong>Three open questions deferred to first <code>npm run release</code>:</strong> (1) <code>scripts/fork-version.mjs</code> auto-discovery of the new sub-package (glob vs hard-coded list); (2) Verdaccio bootstrap of <code>@sparkleideas/config-chain</code> first publish; (3) any pipeline gates that don&#39;t yet know about the package.]** <strong>[Clarification 2026-05-12 per implementation finding — REVISED:</strong> <code>ruflo init</code> writes <strong>two separate files</strong> via two code paths: (1) <code>.claude-flow/config.json</code> with <strong>nested</strong> <code>embedding.{provider,model,dimension,allowPaidProvider}</code> + <code>index.hnsw.{m,efConstruction,efSearch}</code>, written by <code>cli/src/init/config-template.ts</code> — provider hardcoded to <code>&quot;onnx&quot;</code>; (2) <code>.claude-flow/embeddings.json</code> with <strong>top-level</strong> <code>model</code>, <code>dimension</code>, <code>provider</code>, <code>hnsw.{M, efConstruction, efSearch}</code>, written by <code>executor.ts:1399-1476</code> — provider written as <code>&quot;transformers.js&quot;</code> and normalized to <code>&quot;onnx&quot;</code> inside agentdb&#39;s accessor (<code>config-chain.ts:170</code>). The agentdb accessor reads embeddings.json (primary) and falls back to config.json&#39;s nested shape. Both files coexist by accident of two different init code paths writing the same data in different shapes. The Phase 1.6 (f) acceptance test asserts BOTH files for completeness. <strong>Cleanup follow-up:</strong> consolidate the two write paths into one canonical write target (Open Follow-up below). References to <code>config.json</code> in the sub-steps below should be read as &quot;the embedding config&quot; generically.]** The Phase 1.5 commitment to &quot;model + dimension live in the ruflo config chain, not env vars&quot; requires concrete plumbing:</p>
+<ul>
+<li><strong>(a) Init template generation.</strong> Add to <code>forks/ruflo/v3/@claude-flow/cli/src/init/templates/config-template.ts</code> (or the equivalent init-template source per ADR-0068&#39;s pipeline) the embedding/index keys with defaults:<pre><code class="hljs">embedding: { provider: &quot;onnx&quot;, model: &quot;Xenova/all-mpnet-base-v2&quot;, dimension: 768, allowPaidProvider: false },
+index:     { hnsw: { m: 23, efConstruction: 100, efSearch: 50 } }</code></pre>
+Per memory <code>project-config-gaps.md</code>, &quot;init template generates all keys&quot; — these become the 12th+ keys (no longer dead).</li>
+<li><strong>(b) <code>ruflo init --embedding-model &lt;name&gt;</code> flag.</strong> Extend <code>cli/src/commands/init.ts</code> to accept a model override at init time. Validate against the known-dim lookup table from <code>memory-initializer.ts</code>; reject unknown models with a typed error; set the matching <code>embedding.dimension</code> automatically. Default = <code>Xenova/all-mpnet-base-v2</code> if flag absent.</li>
+<li><strong>(c) Config-chain reader in agentdb backends.</strong> Add to <code>forks/agentdb/src/backends/rvf/RvfBackend.ts</code> (and <code>SelfLearningRvfBackend.ts</code>) a config-resolution step at construction: read <code>embedding.dimension</code> from the project&#39;s <code>.claude-flow/config.json</code> via the canonical config-chain accessor (per ADR-0068&#39;s <code>getConfig()</code>-shaped API). Pass dimension to <code>RvfDatabase.create({ dimension: ..., ... })</code> at table-create time. Per ADR-0175&#39;s retained dimension-lock pattern, the table-create dimension is locked for the life of the RVF segment.</li>
+<li><strong>(d) Config-chain reader in embedding service.</strong> Add to <code>forks/agentdb/src/controllers/EmbeddingService.ts</code> (and <code>EnhancedEmbeddingService.ts</code>) the same config-chain read: resolve <code>embedding.model</code> + <code>embedding.provider</code>; instantiate <code>@xenova/transformers</code> pipeline with the configured model; verify model output dim matches <code>embedding.dimension</code> from config (throw typed <code>EmbeddingDimensionMismatchError</code> if not — same loud-failure discipline as ADR-0175&#39;s mismatch case, retained).</li>
+<li><strong>(e) Boot-time validation.</strong> Add to <code>forks/agentdb/src/core/AgentDB.ts:initialize()</code> an early-exit check: if <code>embedding.model</code> is not set in config, OR if <code>embedding.allowPaidProvider = false</code> and <code>embedding.provider != &#39;onnx&#39;</code>, throw a typed <code>ConfigChainValidationError</code> pointing at <code>ruflo init</code> as the fix. Matches the no-API-keys discipline + the config-chain canonical-source rule.</li>
+<li><strong>(f) Phase 5 init validation per <code>project-phase5-testing.md</code>.</strong> Add acceptance test in <code>tests/acceptance/</code> (or wherever fork tracks Phase 5 checks) that:<ul>
+<li>Runs <code>ruflo init</code> in a temp directory</li>
+<li>Reads the generated <code>.claude-flow/config.json</code></li>
+<li>Asserts the 7 keys above are present with the exact default values</li>
+<li>Instantiates an <code>AgentDB</code> against that config</li>
+<li>Stores + retrieves a memory entry to verify the dimension round-trips</li>
+<li>Drops and re-runs with <code>ruflo init --embedding-model Xenova/bge-base-en-v1.5</code> (768d) — verifies the alternative model + matching dimension lands in config AND in the RvfBackend</li>
+<li>Drops and re-runs with <code>ruflo init --embedding-model Xenova/all-MiniLM-L6-v2</code> (384d) — verifies the dimension auto-adjusts to 384 and a new RVF segment is created at that dim</li>
+</ul>
+</li>
+<li><strong>(g) <code>feedback-full-model-names</code> enforcement.</strong> Validate in the init flag parser that any user-supplied model name is full-qualified (<code>Xenova/...</code> prefix). Reject bare names; surface a typed error pointing at the memory. Per ADR-0069 / <code>feedback-full-model-names.md</code> — never bare names, never runtime prefix prepending.</li>
+</ul>
+<p><em>Upstream baseline: 0% (upstream agentdb reads model/dim from constructor options, not from a ruflo-style project-config file; upstream doesn&#39;t have a <code>ruflo init</code> template at all). Fork effort: medium — ~200-400 LoC across 4-5 files (init template, init command flag, RvfBackend constructor, EmbeddingService constructor, boot validation, acceptance test). Self-contained; doesn&#39;t depend on Phases 2-8.</em></p>
+</li>
+<li><p><strong>Phase 2 — RVF self-learning wiring (upstream ADR-006).</strong> <strong>[✅ Implemented 2026-05-12 — <code>forks/agentdb/main</code> commit <code>511b7d3</code> (one commit ahead of upstream HEAD <code>a478ab3</code>). Factory swap done; pending verification via <code>npm run release</code> acceptance + Phase 2 NDCG@10 benchmark.]</strong> <code>RvfBackend.searchAsync</code> + <code>insertAsync</code> integrate <code>SonaLearningBackend</code>, <code>SemanticQueryRouter</code>, <code>RvfSolver</code>, <code>ContrastiveTrainer</code>, <code>AdaptiveIndexTuner</code>, <code>FederatedSessionManager</code>. Acceptance: a 100-search synthetic test with <code>recordFeedback</code> calls shows quality improvement over baseline static HNSW (target: ≥10% NDCG@10 improvement as proof-of-loop; +36% is the upstream README claim but takes longer training to demonstrate). <strong>Audit reveals: <code>SelfLearningRvfBackend</code> wrapper exists at 487 LoC composing all 6 components correctly, but <code>src/backends/factory.ts:166</code> returns bare <code>RvfBackend</code> not the wrapper.</strong> The fix is a one-line factory change. <strong>Upstream-rationale audit (see Load-bearing finding #5 below):</strong> zero TODO/FIXME/disabled comments anywhere; <code>grep -rn &#39;SelfLearningRvfBackend&#39; src/</code> returns zero consumer matches; entire codebase landed in single dump commit <code>8b3388b</code>; ADR-006 line 480 specifies <code>learning?: boolean (default: true)</code>; ADR-006 status still &quot;Proposed&quot; since 2026-02-17. The orphan isn&#39;t a designed opt-in — it&#39;s an unfinished governance handoff waiting on ADR-006 acceptance. Fork&#39;s factory-flip executes ADR-006&#39;s own mandate. <em>Upstream baseline: ~70% (wrapper built, factory orphans it). Fork effort: tiny — change factory default + add the 3 missing SoTA enhancements (DPO loss, NV-Retriever false-negative filter, SCAFFOLD/K-Merge) if Phase 2 acceptance requires them, otherwise defer.</em></p>
+</li>
+<li><p><strong>Phase 3 — Upstream ADR-007 Phase 1 capabilities</strong> (native optimizers, full SIMD, WASM verification, RVF compression profiles, Cypher querySync, router persistence, batch ops). The Cypher patch (was ADR-0174 Phase A.5) lands here as upstream PR. <em>Upstream baseline: 95% per audit — Phase 1 is essentially shipped. Fork effort: light cleanup + the Cypher executor patch (~1KLoC Rust, upstream-PR-first per ADR-007 Phase 1 item #6).</em></p>
+</li>
+<li><p><strong>Phase 4 — Upstream ADR-007 Phase 2</strong> (kernel/eBPF embedding, model import/export, WASM in-memory store, ReasoningBank, RLM RAG). <em>Upstream baseline: ~35% per audit — kernel/eBPF + ReasoningBank + WasmStoreBridge stubs exist; SafeTensors / RlmController / LoraAdapter / CurriculumScheduler missing. Fork effort: substantial — building the missing pieces or accepting Phase 4 stops short of the full surface.</em></p>
+</li>
+<li><p><strong>Phase 5 — Upstream ADR-007 Phases 3-5</strong> (streaming graph events, hyperbolic attention, RuvLLM engine, model management, WASM memory management). <em>Upstream baseline: 15% / 5% / 25% (Phases 3 / 4 / 5 audited individually). Fork effort: highest — Phase 4 streaming surface is nearly absent upstream (5%); fork either invests heavily or ADR-007 Phase 5&#39;s 95%-coverage target stays aspirational.</em></p>
+</li>
+<li><p><strong>Phase 6 — <code>ruvector-bridge.ts</code> plugin retirement decision.</strong> The 8 <code>ruvector_*</code> MCP tools (<code>ruvector_search</code>/<code>_insert</code>/<code>_update</code>/<code>_delete</code>/<code>_create_index</code>/<code>_index_stats</code>/<code>_batch_search</code>/<code>_health</code>) either retire entirely (no fork callers) or re-point at <code>@ruvector/rvf</code> (decoupling from <code>pg.Pool</code>). Decide based on consumer audit. <em>Upstream baseline: n/a (this is fork plugin, not upstream agentdb). Fork effort: small.</em></p>
+</li>
+<li><p><strong>NEW Phase 7 — Patch upstream&#39;s orphaned-wrapper bug back via PR.</strong> <em><em>[🔻 Retired 2026-05-12 per <code>feedback-no-upstream-donate-backs.md</code>. Fork improvements stay fork-only; no PRs to ruvnet/</em> repos. The factory fix from Phase 2 (fork commit <code>511b7d3</code>) remains in fork-only state. Original text preserved below for traceability.]</em>* <strong>[Phase 2 ✅ landed in fork commit <code>511b7d3</code> on 2026-05-12; Phase 7 PR pending fork-side <code>npm run release</code> acceptance verification.]</strong> Once Phase 2&#39;s factory fix is verified working in fork, propose the same one-line change to <code>ruvnet/agentdb/src/backends/factory.ts:166</code>. <strong>PR rationale to cite directly (per the upstream-rationale audit in Load-bearing finding #5):</strong> ADR-006 line 480 specifies <code>learning?: boolean (default: true)</code>; ADR-006&#39;s &quot;Negative&quot; + &quot;Risks&quot; sections enumerate construction costs and pre-mitigate them (&quot;learning is additive, never degrades below baseline RvfBackend performance&quot;); the one-line factory change is the literal implementation of ADR-006&#39;s stated default. Likely path-of-least-resistance: pair the PR with an ADR-006 status flip from &quot;Proposed&quot; to &quot;Accepted&quot; — the wiring change is the missing implementation step that gates acceptance. Coordinate with the Cypher executor PR (Phase 3) for maximum maintainer-relationship value. <em>Upstream baseline: 0% (orphan exists). Fork effort: trivial PR + advocacy.</em></p>
+</li>
+<li><p><strong>NEW Phase 8 — ADR-009 (Causal Atlas) clarification request to upstream.</strong> <em><em>[🔻 Retired 2026-05-12 per <code>feedback-no-upstream-donate-backs.md</code>. No issues/PRs to ruvnet/</em> repos. Fork treats the pre-existing <code>CausalMemoryGraph.ts</code> + <code>CausalRecall.ts</code> + <code>plugins/agentdb-causal/</code> as the de facto causal substrate regardless of upstream&#39;s placeholder file state. Original text preserved below for traceability.]</em>* The 6-byte placeholder file is either a missing-content bug or a real-but-not-yet-written design. File an issue or PR upstream asking which. Until clarified, fork treats the pre-existing <code>CausalMemoryGraph.ts</code> + <code>CausalRecall.ts</code> + <code>plugins/agentdb-causal/</code> as the de facto causal substrate (no design lineage required since none exists). <em>Upstream baseline: 0% (file is a stub). Fork effort: open one upstream issue.</em></p>
+</li>
+</ol>
+<h2 id="pros-and-cons-of-the-options">Pros and Cons of the Options</h2>
+<h3 id="option-a--stay-with-adr-0170--0174--0175-postgres--ruvector-postgres--retire-rvf">Option A — stay with ADR-0170 + 0174 + 0175 (postgres + ruvector-postgres + retire RVF)</h3>
+<ul>
+<li>Good, because preserves prior fork work and the operational unification ADR-0174 + ADR-0175 promised.</li>
+<li>Good, because the 143-function ruvector-postgres SQL surface (when actually used at Phase 5+) is genuinely richer than RVF&#39;s equivalents.</li>
+<li>Bad, because contradicts upstream ADR-006&#39;s explicit no-pgvector / RVF-only mandate.</li>
+<li>Bad, because user explicitly directed this ADR (&quot;ignoring what we have done so far, its incorrect&quot;).</li>
+<li>Bad, because diverges from upstream&#39;s documented vision — fork-freedom posture has limits when upstream has clearly stated its direction.</li>
+</ul>
+<h3 id="option-b--adopt-upstreams-rvf-first-vision-chosen">Option B — adopt upstream&#39;s RVF-first vision (chosen)</h3>
+<ul>
+<li>Good, because aligns with upstream&#39;s clearly documented direction (README + ADR-006 + ADR-007).</li>
+<li>Good, because preserves witness chain + lineage + segment signing capabilities.</li>
+<li>Good, because eliminates postgres install matrix burden (no Docker image, no env var, no CREATE EXTENSION, no schema management).</li>
+<li>Good, because the self-learning loop becomes implementable.</li>
+<li>Good, because upstream ADR-007&#39;s 5-phase plan provides a ready roadmap.</li>
+<li>Bad, because reverses ADR-0170 + ADR-0174 + ADR-0175. Prior work has to be re-scoped.</li>
+<li>Bad, because loses the postgres MVCC concurrency story for multi-process scenarios. RVF lock-file coordination becomes the multi-process correctness path.</li>
+<li>Bad, because ruvector-postgres-only SQL surfaces (hyperbolic, GNN-in-SQL, hybrid BM25+RRF, in-DB fastembed) are not available — but most have RVF-stack equivalents via @ruvector adjacent crates.</li>
+</ul>
+<h3 id="option-c--hybrid-rvf-for-memory_-postgres-for-agentdb_">Option C — hybrid (RVF for memory_*; postgres for agentdb_*)</h3>
+<ul>
+<li>Good, because partial alignment with upstream&#39;s RVF vision.</li>
+<li>Bad, because contradicts ADR-006&#39;s mandate for the agentdb_* path (vectors in postgres heap, not <code>.rvf</code> segments).</li>
+<li>Bad, because operationally worse than either pure option — two substrates means two backup stories, two failure modes, two install paths.</li>
+</ul>
+<h3 id="option-d--wait-for-the-ruvector-pg-extension-that-readswrites-rvf-segments-adr-006-envisions">Option D — wait for the &quot;@ruvector PG extension that reads/writes .rvf segments&quot; ADR-006 envisions</h3>
+<ul>
+<li>Good, because in theory satisfies both postgres operability and RVF semantics.</li>
+<li>Bad, because this extension doesn&#39;t exist. ADR-006 names it as future work; no upstream PR proposes it; building it is a multi-month research project well outside fork&#39;s bundle-release scope.</li>
+</ul>
+<h2 id="more-information">More Information</h2>
+<h3 id="relationship-to-adr-0068-unified-config-chain">Relationship to ADR-0068 (Unified config chain)</h3>
+<p>ADR-0068 (Implemented 2026-04-05) establishes the ruflo config chain — single source of truth for project-scoped settings written by <code>ruflo init</code> and read by every downstream consumer. This ADR&#39;s Phase 1.5 + Open Follow-up #10 make the embedding model + dimension + HNSW params first-class config-chain keys (per ADR-0102&#39;s unified embedding/index profile). No env-var override path for those keys — config chain is canonical.</p>
+<h3 id="relationship-to-adr-0102-unified-embeddingindex-config">Relationship to ADR-0102 (Unified embedding/index config)</h3>
+<p>ADR-0102 defines the unified <code>embedding.*</code> + <code>index.hnsw.*</code> config-chain profile. This ADR commits the fork&#39;s RVF substrate to consume those config keys (model, dimension, m, efConstruction, efSearch) at table-create / segment-create time. The dimension lock at RVF segment creation (per ADR-0175&#39;s retained pattern) reads from <code>embedding.dimension</code> in the config chain. Model switches require <code>ruflo init --embedding-model &lt;name&gt;</code> and a corpus rebuild — out of scope for runtime reconfiguration.</p>
+<h3 id="relationship-to-adr-0073-rvf-storage-backend-upgrade--restored-to-primary">Relationship to ADR-0073 (RVF Storage Backend Upgrade) — restored to primary</h3>
+<p>ADR-0073 established RVF as the canonical memory_* substrate and shipped Phases 1-3 (WAL write path, Rust HNSW, native activation). ADR-0175 retired this for memory_*. <strong>This ADR restores ADR-0073&#39;s primacy.</strong> All ADR-0073 implementation work is now load-bearing for all axes (memory_*, agentdb_*, and the graph data within those axes), not just memory_*.</p>
+<h3 id="relationship-to-adr-0086-layer-1-storage-abstraction--restored-to-primary">Relationship to ADR-0086 (Layer 1 Storage Abstraction) — restored to primary</h3>
+<p>ADR-0086 defines the <code>IStorageContract</code> interface that <code>RvfBackend</code> implements. This ADR makes <code>RvfBackend</code> the <strong>sole production implementer</strong> for <code>agentdb_*</code> controllers (<code>SQLiteBackend</code>, <code>SqlJsBackend</code> retained as fallbacks for environments without <code>@ruvector/rvf</code>; <code>PostgresBackend</code> retained as museum code).</p>
+<h3 id="relationship-to-adr-0166-axis-separation-framing">Relationship to ADR-0166 (axis-separation framing)</h3>
+<p>ADR-0166&#39;s framing — pick substrates for the shape of the data, not for cross-axis unification — was applied to two axes (memory_* + agentdb_*). ADR-0174 extended to three axes (graph_*). <strong>This ADR collapses back to two axes</strong> following upstream&#39;s framing: <code>memory_*</code> (memory entries) and <code>agentdb_*</code> (controller state). Graph data persists within <code>agentdb_*</code> via the <code>@ruvector/graph-node</code> integration (graph-mode of upstream <code>db-unified.ts</code>). There is no separate <code>graph_*</code> axis.</p>
+<h3 id="relationship-to-adr-0170-postgresql-primary-for-agentdb_">Relationship to ADR-0170 (PostgreSQL primary for <code>agentdb_*</code>)</h3>
+<p><strong>Superseded.</strong> Status flips to <code>superseded by ADR-0177</code>. Phase B controller-port-to-postgres work is reverted. The pglite-default vs postgres-server tension surfaced in ADR-0175 Open Follow-up #1 becomes moot — no postgres substrate at all in fork.</p>
+<h3 id="relationship-to-adr-0174-graph_-axis-introduction">Relationship to ADR-0174 (graph_* axis introduction)</h3>
+<p><strong>Superseded</strong> with two pieces salvaged:</p>
+<ul>
+<li><strong>ADR-0174 Phase A.5 narrow Cypher executor patch survives</strong> — re-scoped as upstream-PR-first contribution targeting <code>ruvnet/RuVector</code>. Aligns with upstream ADR-007 Phase 1 item #6 (&quot;Add Cypher query support via <code>querySync</code>&quot;). Same code; different framing (upstream-aligned, not fork-divergent).</li>
+<li><strong>ADR-0174&#39;s graph-shaped data scope</strong> (causal edges, skill edges, hierarchical relations, ADR/ODR deps as typed relations) carries forward, but persists via <code>@ruvector/graph-node</code> writing to RVF segments (or its native redb), within the existing memory_* + agentdb_* axes rather than a third graph_* axis.</li>
+</ul>
+<p>ADR-0174&#39;s Phase A.6 (ruvector-postgres extension swap for agentdb_*) is <strong>fully retired</strong>.</p>
+<h3 id="relationship-to-adr-0175-mandate-ruvector-postgres-for-memory_">Relationship to ADR-0175 (mandate ruvector-postgres for memory_*)</h3>
+<p><strong>Superseded.</strong> Memory_* returns to RVF. The <code>PostgresMemoryBackend</code> module is not built. The configurable embeddings story (OpenAI/ONNX with <code>embedding.allowPaidProvider</code> gating) survives as substrate-independent work — applies to the RVF substrate&#39;s embedding generation path equally well.</p>
+<h3 id="relationship-to-adr-0176-reconcile-adr-index-mcp-tool-naming--independent">Relationship to ADR-0176 (reconcile <code>/adr-index</code> MCP tool naming) — independent</h3>
+<p>ADR-0176 fixes MCP tool names so the skill&#39;s <code>allowed-tools</code> declarations match the registered tools. The fix is substrate-orthogonal — handlers route to whatever substrate the ADR-stack picks. ADR-0176 lands regardless of this ADR&#39;s adoption.</p>
+<h3 id="upstream-sources-consulted-verified-2026-05-12-against-live-github">Upstream sources consulted (verified 2026-05-12 against live GitHub)</h3>
+<table>
+<thead>
+<tr>
+<th>Source</th>
+<th>Path / SHA</th>
+<th>Stance</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Upstream README</td>
+<td><code>ruvnet/agentdb/README.md</code></td>
+<td>&quot;Single-file cognitive container — vectors, indexes, learning state, and a cryptographic audit trail in one <code>.rvf</code>.&quot;</td>
+</tr>
+<tr>
+<td>Upstream ADR-002</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-002-ruvector-wasm-integration.md</code></td>
+<td>RuVector WASM complete integration (curriculum + negative mining + contrastive + FastGRNN + hyperbolic + dual-space + tensor compression + temporal hyperedges)</td>
+</tr>
+<tr>
+<td>Upstream ADR-003</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-003-rvf-native-format-integration.md</code></td>
+<td>RVF as v3 format; replace v2&#39;s proprietary binary + <code>.meta.json</code> sidecar</td>
+</tr>
+<tr>
+<td>Upstream ADR-004</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-004-agi-capabilities-integration.md</code></td>
+<td>AGI capabilities (4 N-API methods, AgentDBSolver wrapper, 5 CLI subcommands, witness/freeze/index-stats surfaces)</td>
+</tr>
+<tr>
+<td>Upstream ADR-005</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-005-self-learning-pipeline-integration.md</code></td>
+<td>Created 6 self-learning components (SonaLearningBackend, AdaptiveIndexTuner, ContrastiveTrainer, SemanticQueryRouter, FederatedSessionManager, RvfSolver) — standalone, awaiting unification</td>
+</tr>
+<tr>
+<td>Upstream ADR-006</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-006-unified-self-learning-rvf-integration.md</code></td>
+<td>Wire the 6 components into RvfBackend; <strong>explicit no-pgvector mandate</strong></td>
+</tr>
+<tr>
+<td>Upstream ADR-007</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-007-ruvector-full-capability-integration.md</code></td>
+<td>5-phase plan: 30% → 95% @ruvector capability coverage</td>
+</tr>
+<tr>
+<td>Upstream ADR-008</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-008-chat-ui-rvf-kernel-embedding.md</code></td>
+<td>Proposed <code>@agentdb/chat</code> package — SvelteKit + RVF kernel embedding</td>
+</tr>
+<tr>
+<td>Upstream ADR-009</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-009-causal-atlas-rvf-runtime.md</code></td>
+<td><strong>6-byte placeholder file</strong> (&quot;i weds&quot;) — no design content; see implementation audit below</td>
+</tr>
+<tr>
+<td>Upstream ADR-010</td>
+<td><code>ruvnet/agentdb/docs/adrs/ADR-010-rvf-solver-v014-deep-integration.md</code></td>
+<td>Three-loop adaptive solver deep integration</td>
+</tr>
+<tr>
+<td>RuVector ADR-029</td>
+<td><code>ruvnet/RuVector/docs/adr/ADR-029-rvf-canonical-format.md</code></td>
+<td>RVF canonical format; <code>ruvector-postgres</code> conspicuously absent from migration table</td>
+</tr>
+<tr>
+<td>Live agentdb HEAD</td>
+<td><code>a478ab3</code> (2026-05-12)</td>
+<td>Verified</td>
+</tr>
+</tbody></table>
+<h3 id="implementation-status-of-upstream-agentdb-adrs-9-agent-parallel-audit-2026-05-12">Implementation status of upstream agentdb ADRs (9-agent parallel audit, 2026-05-12)</h3>
+<p>A 9-agent audit swarm (<code>agentdb-adr-audit</code> team) source-read each ADR against <code>ruvnet/agentdb/src/</code> to determine how much of the documented design is actually shipping. Each agent ran in parallel, classified per-artifact (Not Implemented / Stub / Partial / Mostly / Full), and produced a weighted overall percent.</p>
+<table>
+<thead>
+<tr>
+<th>ADR</th>
+<th>Title</th>
+<th>Declared status</th>
+<th>Audit %</th>
+<th>Confidence</th>
+<th>Key finding</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>ADR-002</strong></td>
+<td>RuVector WASM Complete Integration</td>
+<td>Partially Implemented</td>
+<td><strong>~22%</strong></td>
+<td>high</td>
+<td>CLI scaffolding ships (<code>learn</code>/<code>route</code>/<code>hyperbolic</code>), but compute paths are JS simulations (<code>simulateTraining</code>, <code>simulateFastGRNN</code>, &quot;Simplified InfoNCE loss simulation&quot;). 8 of the ADR&#39;s &quot;New Files&quot; don&#39;t exist (<code>CurriculumLearner</code>, <code>NegativeMiner</code>, <code>ContrastiveLearner</code>, <code>FastGRNNRouter</code>, <code>HyperbolicSpace</code>, <code>DualSpaceSearcher</code>, <code>AdaptiveTensorStore</code>, <code>TemporalHyperedgeStore</code>). Phase 1, 2.2, 3.1, 3.2 checkmarks in the ADR overstate reality.</td>
+</tr>
+<tr>
+<td><strong>ADR-003</strong></td>
+<td>RVF Format Integration for AgentDB</td>
+<td>Proposed</td>
+<td><strong>~80%</strong></td>
+<td>high</td>
+<td>Core <code>RvfBackend</code> (749 LoC), factory wiring with auto-fallback, async adapter, and advanced features (progressive indexing, solver, native accelerator, SIMD, self-learning) all ship — exceeding the ADR&#39;s sketches. Gaps: <code>init --backend rvf</code> wizard (Phase 4: 0%); 7 <code>agentdb_rvf_*</code> MCP tools (Phase 6: 0%); doctor RVF checks (Phase 10: 0%); full <code>RvfMigrator</code> with detect / .bak / dry-run streaming (Phase 3: partial). Status field is stale — should be &quot;Accepted (Substantially Implemented)&quot;.</td>
+</tr>
+<tr>
+<td><strong>ADR-004</strong></td>
+<td>AGI Capabilities Integration</td>
+<td>Accepted</td>
+<td><strong>~90%</strong></td>
+<td>high</td>
+<td>All 4 AGI N-API methods (<code>metric</code>, <code>indexStats</code>, <code>verifyWitness</code>, <code>freeze</code>), the <code>AgentDBSolver</code> wrapper (with deeper integration into <code>SelfLearningRvfBackend</code> and <code>AdaptiveIndexTuner</code> beyond ADR scope), type definitions, all 5 CLI subcommands, and the export surface are present and wired. Only gap: Phase 5 — <code>detector.ts</code> was never extended with a <code>checkRvf()</code> returning <code>RvfAvailability { solver: boolean }</code>; availability is checked ad-hoc via <code>AgentDBSolver.isAvailable()</code> instead.</td>
+</tr>
+<tr>
+<td><strong>ADR-005</strong></td>
+<td>Self-Learning Pipeline Integration</td>
+<td>Accepted</td>
+<td><strong>100%</strong></td>
+<td>high</td>
+<td>All 6 ADR-005 artifacts exist as substantial implementations in <code>src/backends/rvf/</code> totaling ~2,841 LoC with real algorithmic content: analytical gradients (ContrastiveTrainer:233-238), HNSW routing (SemanticQueryRouter), Matryoshka compression (AdaptiveIndexTuner:123), federated aggregation (FederatedSessionManager:190), three-loop solver (RvfSolver:189-190), EWC++ trajectory lifecycle (SonaLearningBackend). ADR-005&#39;s stated scope is CREATION; wiring is ADR-006&#39;s scope.</td>
+</tr>
+<tr>
+<td><strong>ADR-006</strong></td>
+<td>Unified Self-Learning RVF Integration</td>
+<td>Proposed</td>
+<td><strong>~70%</strong></td>
+<td>high</td>
+<td><strong>Critical finding:</strong> <code>SelfLearningRvfBackend</code> wrapper (487 LoC) exists and correctly composes all 6 ADR-005 components on search/insert per the ADR&#39;s &quot;wraps RvfBackend&quot; decision. BUT the production factory at <code>src/backends/factory.ts:166</code> returns a bare <code>RvfBackend</code>, NOT the wrapper. <strong>The self-learning loop is shipped but orphaned.</strong> <code>SelfLearningRvfBackend</code> has zero consumers outside tests. The README&#39;s +36%-feedback-gain claim cannot be delivered in default agentdb usage today. Also: 3 ADR-006 SoTA enhancements (DPO loss, NV-Retriever false-negative filter, SCAFFOLD/K-Merge federation) are absent. <strong>No-pgvector mandate verified upheld in code</strong> — zero matches for <code>pgvector</code> / <code>pg.Pool</code> / <code>from &#39;pg&#39;</code> / <code>pg-pool</code> / <code>pg-promise</code> / <code>@ruvector/postgres</code> in <code>src/</code>.</td>
+</tr>
+<tr>
+<td><strong>ADR-007</strong></td>
+<td>@ruvector Full Capability Integration</td>
+<td>Phase 1 Complete (Phases 2-5 Proposed)</td>
+<td><strong>~45%</strong></td>
+<td>high</td>
+<td>Per-phase: Phase 1: <strong>95%</strong> (native AdamW/InfoNCE, EwcManager, full SIMD surface, WASM verifiers, compression profiles, Cypher+transactions via GraphDatabaseAdapter, router persist, SONA context, batch insert, TensorCompress, FilterBuilder — essentially shipped). Phase 2: <strong>35%</strong> (kernel/eBPF wired, ReasoningBank present, FederatedSessionManager exists; missing: SafeTensors/ModelExporter/RlmController/queryStream/LoraAdapter/CurriculumScheduler). Phase 3: <strong>15%</strong> (GraphRoPeAttention, hyperbolic CLI, differentiableSearch; missing: TrainingPipeline/TrainingFactory/segment-signing/temporal-hyperedges/dataset-exporter). Phase 4: <strong>5%</strong> (only <code>benchmarkAttention</code> as JS fallback; missing: all streaming primitives). Phase 5: <strong>25%</strong> (RuvLLMEngine lazy-loaded; missing: ModelDownloader/MODEL_ALIASES/rvf_alloc/rvf_free). Overall ~45% — about halfway from 30% baseline to 95% target.</td>
+</tr>
+<tr>
+<td><strong>ADR-008</strong></td>
+<td>@agentdb/chat — Self-Contained RVF Chat UI</td>
+<td>Proposed (Revision 4)</td>
+<td><strong>0%</strong></td>
+<td>high</td>
+<td>None of the proposed <code>@agentdb/chat</code> package artifacts exist. No <code>packages/agentdb-chat/</code>, no <code>ChatPersistence</code>/<code>ChatInference</code>/<code>ChatServer</code>/<code>KernelBuilder</code> modules, no CLI bin, no SvelteKit chat-ui fork, no <code>ruvbot</code> dependency. <strong>The README&#39;s <code>@agentdb/chat serve</code> claim is misattributed</strong> — that line (README:223) is the opener for the &quot;Learning + Routing (11 tools)&quot; details table; <code>@agentdb/chat</code> appears nowhere in the README. Only prerequisite that IS live: <code>RvfBackend.embedKernel()</code> / <code>extractKernel()</code> at <code>src/backends/rvf/RvfBackend.ts:672, 692</code>.</td>
+</tr>
+<tr>
+<td><strong>ADR-009</strong></td>
+<td>Causal Atlas RVF Runtime</td>
+<td>(no Status field)</td>
+<td><strong>0%</strong></td>
+<td>high</td>
+<td><strong>The file is a 6-byte placeholder</strong> containing the literal text &quot;i weds&quot;. No frontmatter, no Status, no Date, no Decision, no enumerated artifacts. The pre-existing causal stack (<code>CausalMemoryGraph.ts</code> 875 LoC, <code>CausalRecall.ts</code> 505 LoC, <code>plugins/agentdb-causal/</code>) was imported in the same single commit (<code>8b3388b</code>) as the ADR-009 stub and cannot derive from a design that doesn&#39;t exist — it&#39;s unrelated prior work, not ADR-009 implementation. <strong>The README/ADR ecosystem includes literal placeholder files that look like design docs but contain no design.</strong></td>
+</tr>
+<tr>
+<td><strong>ADR-010</strong></td>
+<td>@ruvector/rvf-solver v0.1.6 Deep Integration</td>
+<td>Proposed</td>
+<td><strong>~70%</strong></td>
+<td>high</td>
+<td>Phases 1, 2, 4 substantially complete: v0.1.6 type expansion (<code>SolverSkipMode</code>/<code>SolverSkipModeStats</code>/<code>SolverCompiledConfig</code>), <code>SolverCycleMetrics</code> v0.1.6 fields (<code>noiseAccuracy</code>/<code>violations</code>/<code>patternsLearned</code>), <code>SolverModeResult</code> v0.1.6 fields (5 new), snake→camel mappers, <code>runAcceptanceCheck</code> with <code>dimensionsImproved</code>/<code>zeroViolations</code> regression detection, and Phase 5 test coverage. <strong>Phase 3 entirely absent</strong> — the 4 MCP solver tools (<code>solver_train</code>/<code>solver_acceptance</code>/<code>solver_policy</code>/<code>solver_witness</code>, ~145 LoC) are not in <code>agentdb-mcp-server.ts</code>. Minor gaps: no <code>emitEvent(&#39;solver:violation&#39;)</code>; three loops run inside the WASM solver rather than orchestrated per-query in <code>searchAsync</code>.</td>
+</tr>
+</tbody></table>
+<p><strong>Aggregate</strong> (mean across the 8 non-stub ADRs, excluding ADR-009 placeholder): <strong>~60%</strong> implemented. Range 0%–100%. Median ~70%.</p>
+<h3 id="load-bearing-findings-for-the-forks-path-forward">Load-bearing findings for the fork&#39;s path forward</h3>
+<ol>
+<li><p><strong>ADR-005 + ADR-006 give the fork an unusually cheap win.</strong> All 6 self-learning components exist (100% per ADR-005). The wrapper that composes them exists (70% per ADR-006). The only missing wiring is a one-line change at <code>src/backends/factory.ts:166</code> — return <code>SelfLearningRvfBackend</code> instead of bare <code>RvfBackend</code>. Fork can deliver the README&#39;s &quot;+36% from feedback alone&quot; claim that upstream&#39;s own deployment doesn&#39;t.</p>
+</li>
+<li><p><strong>ADR-007&#39;s 95% target is ~50pp away.</strong> Phase 1 is nearly complete (95%), but Phases 2-5 are scattered (35%, 15%, 5%, 25%). The 16-week roadmap is realistic only with sustained focus; in practice it accumulates faster on high-value primitives (kernel embedding, ReasoningBank, RuvLLM routing) than on the long-tail surfaces (streaming graph events, model lifecycle, derivation chain).</p>
+</li>
+<li><p><strong>The no-pgvector mandate IS enforced in code, not just documentation.</strong> ADR-006 audit verified zero matches for <code>pgvector</code> / <code>pg.Pool</code> / <code>from &#39;pg&#39;</code> / <code>pg-pool</code> / <code>pg-promise</code> / <code>@ruvector/postgres</code> across <code>src/</code>. Only mentions are in comparison docs naming pgvector as competitor. This is a hard architectural commitment, not a soft preference.</p>
+</li>
+<li><p><strong>ADR-009 being a 6-byte stub file is a real signal about upstream documentation reliability.</strong> When ADR-009 / ADR-008&#39;s README claim / ADR-002&#39;s &quot;Completed&quot; checkmarks fail under audit, the fork can&#39;t take upstream&#39;s design-doc surface at face value — must source-read every claim. This calibrates the trust model for tracking upstream over time.</p>
+</li>
+<li><p><strong>ADR-006&#39;s orphaned wrapper is an unfinished governance handoff, not a designed-and-justified opt-in.</strong> <strong>[Refined 2026-05-12 with upstream source audit.]</strong> Source-reading <code>ruvnet/agentdb</code> for upstream rationale on why <code>SelfLearningRvfBackend</code> isn&#39;t wired into <code>factory.ts:166</code>:</p>
+<table>
+<thead>
+<tr>
+<th>Search</th>
+<th>Result</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>factory.ts</code> references to <code>SelfLearningRvfBackend</code> / <code>SelfLearningConfig</code></td>
+<td><strong>Zero.</strong> No TODO, FIXME, &quot;disabled&quot;, &quot;opt-in&quot;, &quot;future&quot;, or env-var-gating comment near the return statement.</td>
+</tr>
+<tr>
+<td><code>grep -rn &#39;SelfLearningRvfBackend&#39; src/</code> excluding the file itself</td>
+<td><strong>Zero matches anywhere</strong> — not in factory, not in tests, not in <code>index.ts</code> public exports, not in CLI. Built but never even surfaced as a public API.</td>
+</tr>
+<tr>
+<td><code>git log src/backends/factory.ts</code></td>
+<td>Single commit <code>8b3388b &quot;init: agentdb package source + marketing UI&quot;</code>. Entire agentdb codebase landed as one initial dump. No subsequent commit refines the factory&#39;s return choice — no commit narrative explains the orphan.</td>
+</tr>
+<tr>
+<td><code>SelfLearningRvfBackend.ts</code> header docstring</td>
+<td>Plain class description, no &quot;not yet default&quot; caveat.</td>
+</tr>
+<tr>
+<td>ADR-006 <code>SelfLearningConfig</code> definition (line ~480 of the ADR)</td>
+<td><strong>&quot;Enable/disable self-learning (default: true)&quot;</strong> — the ADR explicitly designs the wrapper to be default-on. Factory.ts contradicts the ADR&#39;s own design.</td>
+</tr>
+<tr>
+<td>ADR-006 status field</td>
+<td><strong>&quot;Proposed&quot;</strong> since 2026-02-17. Not Accepted.</td>
+</tr>
+<tr>
+<td>ADR-006 &quot;Negative&quot; + &quot;Risks&quot; sections</td>
+<td>Enumerate construction costs (~0.7ms latency, async factory + WASM load, memory growth, learning instability, cold start) and <strong>pre-mitigate them</strong> via &quot;conservative defaults — learning is additive, never degrades below baseline RvfBackend performance.&quot; Not framed as reasons to orphan; framed as costs the ADR accepts.</td>
+</tr>
+</tbody></table>
+<p> <strong>Plausible read:</strong> ADR-005 (which CREATED the 6 components) is Accepted. ADR-006 (which WIRES them into RvfBackend via the wrapper) is Proposed. The wrapper code per ADR-006&#39;s design landed in the dump commit alongside everything else. The factory.ts change that would deliver ADR-006&#39;s &quot;default: true&quot; mandate — a one-line return-flip — was never made, presumably because ADR-006 hasn&#39;t been accepted yet. Three months elapsed (2026-02-17 → 2026-05-12) without the status flip. There is no upstream PR proposing the factory change.</p>
+<p> <strong>Implication for fork Phase 2 + Phase 7:</strong> the one-line factory fix isn&#39;t crossing a contested or considered opt-in decision — it&#39;s executing ADR-006&#39;s own specified default. Phase 7&#39;s upstream PR can cite ADR-006&#39;s <code>learning?: boolean (default: true)</code> clause directly. Hard to argue against a project&#39;s own ADR. The &quot;compat envelope blocks upstream from making the change&quot; framing (used in the original version of this finding) was speculation; the evidence-based read is simpler: ADR-006 hasn&#39;t been accepted, so nobody&#39;s pulled the lever.</p>
+<p> <strong>Prior framing (preserved for traceability):</strong> <em>&quot;ADR-006&#39;s orphaned wrapper is the kind of bug that won&#39;t surface in upstream because nobody&#39;s deploying production agents on <code>npm i agentdb</code>. Fork&#39;s bundle-release posture would surface this immediately — and the fix is trivial. This is exactly the value upstream&#39;s compat envelope blocks: upstream can&#39;t flip the factory default to <code>SelfLearningRvfBackend</code> without breaking the dual-mode-fallback semantics their existing users depend on. Fork can.&quot;</em> — superseded by the evidence-based finding above. The &quot;compat envelope&quot; claim wasn&#39;t backed by any specific dual-mode-fallback semantic that would actually break; it was a guess at upstream&#39;s reasoning, not a finding.</p>
+</li>
+</ol>
+<h3 id="memory-entries-this-adr-would-touch">Memory entries this ADR would touch</h3>
+<ul>
+<li><code>project-rvf-primary.md</code> — return to its original framing: &quot;RVF is primary for memory_*&quot;. Expand: &quot;and for agentdb_* per ADR-0177; postgres is retired from substrate role across the fork.&quot;</li>
+<li>Retire ADR-0175&#39;s pending <code>reference-memory-backend-postgres.md</code> memory entry (was Phase 5 of ADR-0175; never created).</li>
+<li>New entry <code>reference-rvf-cognitive-container-vision.md</code> — document the substrate alignment + upstream sources + the Phase 0-6 confirmation list for future reference.</li>
+</ul>
+<h3 id="amendment-1-2026-05-12-phase-15-cascade-conflation-correction--superseded">Amendment 1 (2026-05-12): Phase 1.5 cascade conflation correction — SUPERSEDED</h3>
+<p><strong>[Superseded 2026-05-12 by Amendment 2 (dependency-hygiene reversal). The cascade-conflation analysis in this amendment is still accurate as a description of upstream&#39;s storage layering — but the decision to ACT on it (collapse cascades, retire sql.js / hnswlib-node, promote better-sqlite3) is reversed. The fork preserves upstream&#39;s dependency posture and fallback semantics wholesale. Preserved below for traceability.]</strong></p>
+<p><strong>Bug being fixed.</strong> The Phase 1.5 list item in Confirmation treats <code>sql.js</code> + <code>better-sqlite3</code> + <code>hnswlib-node</code> as a single &quot;fallback cascade&quot; to retire wholesale under &quot;RVF or throw&quot;. Source-reading <code>forks/agentdb/src/core/AgentDB.ts</code> after the 2026-05-12 reset (now at upstream HEAD <code>a478ab3</code>) shows that framing collapsed three distinct cascades covering three different storage concerns, only one of which RVF actually replaces.</p>
+<p><strong>The three cascades, separately:</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Cascade</th>
+<th>Location</th>
+<th>What it stores</th>
+<th>What RVF replaces</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>A</td>
+<td><strong>Relational</strong></td>
+<td><code>forks/agentdb/src/core/AgentDB.ts:98-115</code> (<code>initializeDatabase</code>)</td>
+<td>SQL tables defined in <code>src/schemas/schema.sql</code>: <code>episodes</code>, <code>skills</code>, <code>facts</code>, <code>events</code>, <code>notes</code>, <code>exp_nodes</code>, <code>exp_edges</code>, <code>causal_edges</code>, <code>skill_links</code>, <code>consolidated_memories</code>, etc. Includes all &quot;graph&quot;-shaped data, stored as join tables.</td>
+<td><strong>Nothing.</strong> RVF is not a SQL store. Every controller (ReflexionMemory, SkillLibrary, CausalMemoryGraph, …) calls <code>this.db.prepare(SQL)</code>. Removing SQLite breaks <code>loadSchemas()</code> and every controller.</td>
+</tr>
+<tr>
+<td>B</td>
+<td><strong>Vector</strong></td>
+<td><code>forks/agentdb/src/backends/factory.ts</code> (<code>createBackend(&#39;auto&#39; | &#39;ruvector&#39; | &#39;hnswlib&#39;)</code>)</td>
+<td>Vector embeddings for similarity search (HNSW index + dense vectors)</td>
+<td><strong>Everything in this cascade.</strong> RVF is exactly the right substrate; <code>hnswlib-node</code> retires.</td>
+</tr>
+<tr>
+<td>C</td>
+<td><strong>Ruflo memory</strong></td>
+<td><code>forks/ruflo/v3/@claude-flow/memory/src/database-provider.ts</code> (4-tier: <code>&#39;rvf&#39; | &#39;better-sqlite3&#39; | &#39;sql.js&#39; | &#39;json&#39;</code>)</td>
+<td>Memory entries with embeddings for the <code>memory_*</code> axis (separate from agentdb&#39;s controllers)</td>
+<td><strong>Everything in this cascade.</strong> RVF is the canonical <code>memory_*</code> substrate per restored ADR-0073 framing.</td>
+</tr>
+</tbody></table>
+<p>Original Phase 1.5 wrote package.json deltas for cascade A as if RVF replaces SQLite there. It does not. The &quot;single-file Cognitive Container&quot; framing applies to cascade B (vectors) and cascade C (memory_*), not to cascade A (relational + graph-as-tables).</p>
+<p><strong>Corrected package.json deltas for <code>forks/agentdb/package.json</code>:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Package</th>
+<th>Upstream state</th>
+<th>Corrected fork state</th>
+<th>Cascade</th>
+<th>Rationale</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>better-sqlite3</code></td>
+<td>optionalDependencies</td>
+<td><strong><code>dependencies</code> (hard)</strong></td>
+<td>A</td>
+<td>Primary relational engine. <code>AgentDB.initializeDatabase()</code> opens this first; every controller depends on it. Promoting to hard dep matches reality + <code>feedback-no-fallbacks</code> (no silent degradation to sql.js).</td>
+</tr>
+<tr>
+<td><code>sql.js</code></td>
+<td>dependencies (hard)</td>
+<td><strong>removed</strong></td>
+<td>A</td>
+<td>WASM fallback for restricted hosts. Fork&#39;s user base has native NAPI (per <code>user_machine.md</code>). Drop.</td>
+</tr>
+<tr>
+<td><code>@ruvector/rvf</code></td>
+<td>optionalDependencies</td>
+<td><strong><code>dependencies</code> (hard)</strong></td>
+<td>B + C</td>
+<td>Primary vector substrate + canonical <code>memory_*</code> substrate.</td>
+</tr>
+<tr>
+<td><code>@ruvector/rvf-node</code></td>
+<td>optionalDependencies</td>
+<td><strong><code>dependencies</code> (hard)</strong></td>
+<td>B + C</td>
+<td>NAPI binding; required for RVF on Node native target.</td>
+</tr>
+<tr>
+<td><code>hnswlib-node</code></td>
+<td>optionalDependencies</td>
+<td><strong>removed</strong></td>
+<td>B</td>
+<td>Non-ruvector HNSW fallback in factory.ts auto-cascade. Retire.</td>
+</tr>
+<tr>
+<td><code>@xenova/transformers</code></td>
+<td>optionalDependencies</td>
+<td><strong><code>dependencies</code> (hard)</strong></td>
+<td>B + C</td>
+<td>Local ONNX embedding pipeline. Vectors come from somewhere; this is where. Per <code>feedback-no-api-keys</code>.</td>
+</tr>
+<tr>
+<td><code>@ruvector/rvf-wasm</code></td>
+<td>optionalDependencies</td>
+<td><strong>unchanged</strong> (optional)</td>
+<td>B + C</td>
+<td>Browser/edge target only; Node native path doesn&#39;t need it.</td>
+</tr>
+<tr>
+<td><code>@ruvector/{attention,gnn,graph-node,router,ruvllm,sona,graph-transformer}</code></td>
+<td>optionalDependencies</td>
+<td><strong>unchanged</strong> (optional)</td>
+<td>—</td>
+<td>Capability surfaces, not substrate. Phase 2-5 work decides which become hard.</td>
+</tr>
+</tbody></table>
+<p><strong>Corrected cascade behaviour:</strong></p>
+<ul>
+<li><strong>Cascade A (relational, in <code>AgentDB.initializeDatabase</code>):</strong> simplify the upstream try/catch fallback (lines 104-115) to open <code>better-sqlite3</code> directly. If the native binding is missing, throw a typed <code>RelationalBackendInitError</code> naming the install requirement. The <code>forceWasm</code> config option becomes a no-op (or a typed error). No silent fallthrough to sql.js — the cascade collapses to a single substrate.</li>
+<li><strong>Cascade B (vector, in <code>createBackend</code>):</strong> default <code>vectorBackend</code> from <code>&#39;auto&#39;</code> to <code>&#39;rvf&#39;</code> explicitly. Drop the <code>&#39;hnswlib&#39;</code> branch. If <code>@ruvector/rvf-node</code> NAPI binding is unavailable, throw a typed <code>RvfBackendInitError</code>. (This matches the existing Op A pattern in pattern intelligence: <em>&quot;vectorBackend &#39;auto&#39; → &#39;rvf&#39;&quot;</em>.)</li>
+<li><strong>Cascade C (ruflo memory, in <code>database-provider.ts</code>):</strong> collapse the 4-tier <code>&#39;rvf&#39; \| &#39;better-sqlite3&#39; \| &#39;sql.js&#39; \| &#39;json&#39;</code> to <strong>RVF or throw <code>MemoryBackendInitError</code></strong>. This is the cascade the original Phase 1.5 language actually described correctly; the bug was attaching its package.json deltas to agentdb instead of ruflo. The deltas land in <code>forks/ruflo/v3/@claude-flow/memory/package.json</code>, not <code>forks/agentdb/package.json</code>. Affected ruflo-memory-package deps (if pinned independently): drop <code>sql.js</code>, drop the <code>json</code> backend code path, drop <code>better-sqlite3</code> if it&#39;s a memory-package-local dep (verify at Phase 1.5 land time).</li>
+</ul>
+<p><strong>What this means concretely for ADR-0177&#39;s headline framing.</strong> The &quot;single-file <code>.rvf</code> Cognitive Container&quot; framing of upstream&#39;s README applies to <em><em>vectors and memory_</em> entries</em>*, not to all of agentdb. AgentDB-as-shipped is a hybrid: SQLite for relational + graph-as-tables, RVF for vectors. That hybrid is correct as-shipped and the fork should preserve it. The orphaned <code>UnifiedDatabase</code> / <code>db-unified.ts</code> path would change this picture (graph engine for graph data, no SQLite for relational at all) — but that is a controller port project (rewrite every <code>db.prepare(SQL)</code> call to graph-native API + design a graph schema), not a Phase 1.5 dependency-hygiene change. It&#39;s deferred to a later ADR scope.</p>
+<p><strong>Knock-on changes elsewhere in this ADR:</strong></p>
+<ul>
+<li>The &quot;Drop the sql.js / better-sqlite3 / hnswlib-node fallback cascade&quot; row in the deltas table (Decision Outcome → Upstream-current baseline + fork deltas) overstates the change. Corrected: <strong>drop sql.js + hnswlib-node + retire ruflo-memory 4-tier; promote better-sqlite3 to hard dep</strong>.</li>
+<li>The Consequence bullet at line 231 (Phase 1.5 eliminates three fallback substrates) is wrong about <code>better-sqlite3</code>. Corrected: Phase 1.5 eliminates <strong>two</strong> fallback substrates (<code>sql.js</code>, <code>hnswlib-node</code>) and <strong>promotes three primaries</strong> (<code>@ruvector/rvf</code>, <code>@ruvector/rvf-node</code>, <code>@xenova/transformers</code>) <strong>plus promotes <code>better-sqlite3</code> from optional to hard</strong> (was already de-facto primary in upstream&#39;s <code>AgentDB.initializeDatabase</code>).</li>
+<li>The Consequence bullet at line 233 (restricted hosts no longer supported) holds — restricted hosts that previously got sql.js are out of fork scope. The framing of &quot;native NAPI required&quot; gets one more dep (better-sqlite3 native build), not just RVF + ONNX.</li>
+<li>Open Follow-up #11 acceptance test list updates accordingly (see correction below in §&quot;Open follow-ups&quot;).</li>
+</ul>
+<h3 id="amendment-2-2026-05-12-dependency-hygiene-reversal--fork-preserves-upstreams-fallback-posture">Amendment 2 (2026-05-12): Dependency-hygiene reversal — fork preserves upstream&#39;s fallback posture</h3>
+<p><strong>Decision being reversed.</strong> Phase 1.5 (Confirmation list) + Amendment 1 (cascade-conflation correction) together specified that the fork would (a) remove <code>sql.js</code> and <code>hnswlib-node</code> from <code>forks/agentdb/package.json</code>, (b) promote <code>better-sqlite3</code> from optional to hard dep, (c) collapse the cascades in <code>AgentDB.initializeDatabase</code>, <code>createBackend(&#39;auto&#39;)</code>, and <code>forks/ruflo/v3/@claude-flow/memory/src/database-provider.ts</code> to single-substrate-or-throw, and (d) add typed <code>*BackendInitError</code> boot failures (<code>RelationalBackendInitError</code>, <code>RvfBackendInitError</code>, <code>MemoryBackendInitError</code>) for missing primaries. This is reversed.</p>
+<p><strong>New decision (canonical from 2026-05-12 onward).</strong> The fork preserves upstream agentdb&#39;s dependency posture and fallback cascade semantics <strong>wholesale</strong>. Specifically:</p>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>sql.js</code> in <code>forks/agentdb/package.json</code></td>
+<td><strong>Keep</strong> as upstream-shipped HARD dependency. No removal.</td>
+</tr>
+<tr>
+<td><code>hnswlib-node</code> in <code>forks/agentdb/package.json</code></td>
+<td><strong>Keep</strong> as upstream-shipped optionalDependency. No removal.</td>
+</tr>
+<tr>
+<td><code>better-sqlite3</code> in <code>forks/agentdb/package.json</code></td>
+<td><strong>Keep</strong> as upstream-shipped optionalDependency. No promotion to hard.</td>
+</tr>
+<tr>
+<td><code>@ruvector/rvf</code> + <code>@ruvector/rvf-node</code></td>
+<td><strong>Keep</strong> as upstream-shipped optionalDependencies. No promotion.</td>
+</tr>
+<tr>
+<td><code>@xenova/transformers</code></td>
+<td><strong>Keep</strong> as upstream-shipped optionalDependency. No promotion. (Phase 1.6&#39;s embedding-config-chain wiring continues, but does NOT require dep promotion — the model + dimension keys flow through ruflo config regardless of @xenova&#39;s optional/hard status. If @xenova is unavailable at runtime, embedding initialization fails loudly via the existing upstream error path, which is acceptable under the reversal — no new fail-fast scaffolding.)</td>
+</tr>
+<tr>
+<td><code>AgentDB.initializeDatabase()</code> try/catch fallback (better-sqlite3 → sql.js)</td>
+<td><strong>Keep</strong> as-shipped. No simplification. No typed <code>RelationalBackendInitError</code>.</td>
+</tr>
+<tr>
+<td><code>createBackend(&#39;auto&#39;)</code> cascade (ruvector → hnswlib-node)</td>
+<td><strong>Keep</strong> as-shipped. No default flip to <code>&#39;rvf&#39;</code>. No drop of <code>&#39;hnswlib&#39;</code> branch.</td>
+</tr>
+<tr>
+<td><code>database-provider.ts</code> 4-tier (<code>&#39;rvf&#39; | &#39;better-sqlite3&#39; | &#39;sql.js&#39; | &#39;json&#39;</code>) in ruflo memory package</td>
+<td><strong>Keep</strong> as-shipped. No collapse. No <code>MemoryBackendInitError</code>.</td>
+</tr>
+<tr>
+<td>Restricted-host install matrix</td>
+<td><strong>Preserved.</strong> Hosts without native NAPI continue to receive the sql.js WASM fallback row. Fork matches upstream&#39;s install matrix exactly.</td>
+</tr>
+</tbody></table>
+<p><strong>User directive (2026-05-12, this session):</strong> <em>&quot;I am reversing the decision to remove sql.js and to fail fast. Keep it like it is in the upstream.&quot;</em> The reversal applies across all three cascades that Amendment 1 enumerated (relational / vector / ruflo-memory).</p>
+<p><strong>Why this reverses prior reasoning.</strong></p>
+<ul>
+<li>The <code>feedback-no-fallbacks</code> memory is <strong>scoped narrower</strong> by this reversal. It still applies to (a) NEW fork-introduced fallback paths and (b) silent-catch wrappers that mask data-integrity errors per ADR-0085. It does NOT apply to upstream-shipped fallback cascades that the fork inherits. The fork does not introduce new fallbacks; it lives with the ones upstream chose.</li>
+<li>The &quot;single-file Cognitive Container&quot; headline from upstream&#39;s README remains aspirational for <code>@sparkleideas/agentdb</code> exactly as it is for <code>npm i agentdb</code>. The fork&#39;s bundle ships the same install matrix shape — RVF when available, SQLite/sql.js otherwise — and does not advertise stricter semantics than upstream delivers.</li>
+<li>The cascade-conflation analysis in Amendment 1 remains accurate as a description of how upstream&#39;s storage layering works (three cascades, three different concerns, RVF only replaces one). That analysis is preserved for future readers but is no longer load-bearing for any package.json change.</li>
+</ul>
+<p><strong>What this means concretely for ADR-0177&#39;s remaining phases.</strong></p>
+<ul>
+<li><strong>Phase 1 (substrate revert in fork)</strong> is unchanged. The Phase D / Phase A.6 / ADR-0175 revert work still lands — that&#39;s about postgres + ruvector-postgres retirement, separate from the fallback-cascade question. (Already complete in practice via the 2026-05-12 fork reset to upstream HEAD <code>a478ab3</code>.)</li>
+<li><strong>Phase 1.5 (dependency hygiene)</strong> is <strong>retired in full.</strong> No package.json changes. No cascade collapses. No new typed errors. The phase number is preserved in the Confirmation list as a marker; its content is reversed by this amendment.</li>
+<li><strong>Phase 1.6 (embedding config chain through <code>ruflo init</code>)</strong> survives but its dep-promotion clause is severed. The init template still writes <code>embedding.model</code>, <code>embedding.dimension</code>, <code>embedding.provider</code>, and <code>index.hnsw.*</code> per ADR-0068 + ADR-0102. <code>@xenova/transformers</code> remains optionalDep per upstream — the config chain drives WHICH model is requested, not whether @xenova is installable. Boot-time validation per Phase 1.6 (e) is unchanged (typed <code>ConfigChainValidationError</code> when config keys are missing); it does NOT validate @xenova availability, since that&#39;s an upstream-managed concern.</li>
+<li><strong>Phases 2–8</strong> (self-learning factory fix, Cypher executor patch, ADR-007 Phases 2-5 tracking, ruvector-bridge retirement, orphan-fix PR back upstream, ADR-009 placeholder question) are unchanged. They never depended on Phase 1.5.</li>
+</ul>
+<p><strong>Status of prior ADR-0177 locations referencing the reversed scope</strong> (preserved for traceability, no longer load-bearing):</p>
+<ul>
+<li>Decision Drivers line 64 — <code>feedback-no-fallbacks</code> bullet&#39;s &quot;Apply consistently: RVF is single-substrate&quot; framing is narrowed to apply only to NEW fallbacks, not upstream-shipped ones.</li>
+<li>Decision Outcome → &quot;Upstream-current baseline + fork deltas&quot; table row &quot;Drop the sql.js / better-sqlite3 / hnswlib-node fallback cascade&quot; (line 160) — <strong>reversed; row&#39;s content no longer applies.</strong> Fork ships upstream&#39;s cascade unchanged.</li>
+<li>Decision Outcome → &quot;Net read&quot; paragraph (line 169) — &quot;minus the restricted-host fallback baggage&quot; framing is reversed; the fork inherits upstream&#39;s restricted-host coverage.</li>
+<li>Consequences bullet line 231 (Phase 1.5 hygiene benefits) — <strong>reversed; bullet no longer holds.</strong></li>
+<li>Consequences bullet line 233 (Phase 1.5 makes native NAPI mandatory) — <strong>reversed; bullet no longer holds.</strong> Native NAPI is preferred but not mandatory; sql.js WASM path stays available.</li>
+<li>&quot;Relationship to ADR-0068&quot; (line 318) — narrows to Phase 1.6 only; Phase 1.5 no longer contributes to the config-chain commitment.</li>
+<li>Open Follow-up #11 — rewritten below as an upstream-parity guard (no-removal-of-fallbacks guard, not a no-fallbacks guard).</li>
+</ul>
+<p><strong>Net effect.</strong> Fork&#39;s <code>@sparkleideas/agentdb</code> package.json after the 2026-05-12 reset matches upstream <code>ruvnet/agentdb</code> HEAD <code>a478ab3</code> exactly on every dependency entry. Future upstream syncs to package.json land cleanly; no fork-side rebase pain on dependency posture.</p>
+<h3 id="open-follow-ups-before-phase-1">Open follow-ups before Phase 1</h3>
+<ol>
+<li><p><strong><code>ruvector-bridge.ts</code> plugin disposition.</strong> The 8 <code>ruvector_*</code> MCP tools in <code>forks/ruflo/v3/@claude-flow/plugins/src/integrations/ruvector/ruvector-bridge.ts</code> connect via <code>pg.Pool</code> to pgvector. Decide: (a) retire entirely if no fork callers depend on them, (b) re-point at <code>@ruvector/rvf</code> (keeping the MCP tool names stable per ADR-0174&#39;s skill-manifest-stability driver), or (c) preserve as a separate &quot;external pgvector store&quot; surface for users explicitly wanting it. Audit consumer count; lean (a) or (b).</p>
+</li>
+<li><p><strong><del><code>PostgresBackend.ts</code> retention.</del></strong> <strong>[✅ Resolved 2026-05-13: museum.]</strong> Restored from archive HEAD with explicit <code>@deprecated</code> headers calling out (a) ADR-0170 retirement, (b) no <code>factory.ts</code>/<code>controller-registry</code>/CLI wiring, (c) <code>pg</code> + <code>@electric-sql/pglite</code> not in package.json (dynamic imports throw at <code>initialize()</code> with install instructions), (d) &quot;DO NOT wire back without a new ADR&quot;. <code>migrate-sqlite-to-pglite.ts</code> restored alongside as reference material. Both files are orphan code — zero compile impact, zero runtime impact unless deliberately wired. Preserves the future @ruvector PG extension hook (Open Follow-up #5) without re-archaeology.</p>
+</li>
+<li><p><strong>Concurrency hardening of <code>RvfBackend</code>.</strong> The motivation for postgres&#39; MVCC was multi-process write coordination. RVF&#39;s <code>memory.rvf.lock</code> file-locking handles this; verify it under acceptance-test concurrency loads (per <code>feedback-data-loss-zero-tolerance</code> — 100% pass rate required, not 99.9%). If <code>memory.rvf.lock</code> has bugs, those become Phase 1 hardening work, not substrate-change work.</p>
+</li>
+<li><p><strong>Self-learning loop acceptance baseline.</strong> Define the +X% NDCG@10 target for Phase 2 verification. Upstream README claims +36% from feedback alone; pick a realistic intermediate target for the initial fork integration (e.g., +10% as proof-of-loop), with full claim verification deferred to a longer-running benchmark.</p>
+</li>
+<li><p><strong>ADR-006&#39;s &quot;future @ruvector PG extension&quot; hook.</strong> Decide whether fork should monitor upstream for any RVF-aware postgres extension that would let agentdb_* relational state live in postgres while vectors stay in RVF. If such an extension ever ships upstream, fork can opt in without abandoning the RVF substrate decision.</p>
+</li>
+<li><p><strong>Skill manifest re-audit.</strong> Per ADR-0176, the <code>/adr-index</code> skill assumes specific MCP tool names. The substrate change in this ADR is below the MCP boundary, so tool names don&#39;t change. But verify: every skill in <code>forks/ruflo/plugins/</code> that declares <code>agentdb_*</code> or <code>memory_*</code> tools still works after substrate revert. CI guard from ADR-0176 follow-up #2 covers this.</p>
+</li>
+<li><p><strong>Existing <code>.swarm/memory.rvf</code> + <code>.swarm/memory.graph</code> + <code>.swarm/memory.db</code> files on user machines.</strong> These exist on developers&#39; machines (verified on this machine 2026-05-12). RVF format is forward-compatible with itself; users keep their <code>.rvf</code> files. <code>.db</code> (sql.js) and <code>.graph</code> (graph-node redb) files become legacy — users either migrate (via <code>RvfMigrator</code>) or rebuild.</p>
+</li>
+<li><p><strong>Upstream PR coordination for Phase 3&#39;s Cypher executor patch.</strong> Submit to <code>ruvnet/RuVector</code> targeting <code>main</code>. Cite upstream ADR-007 Phase 1 item #6 as motivation. Aligns this ADR&#39;s Phase 3 work with upstream&#39;s documented Phase 1. If upstream merges, fork retires the patch; if upstream sits stalled (PR #1569 and #387 cadence baseline = 17-33 days untouched), fork carries the patch as a value-add — but unlike under ADR-0174 framing, the patch is now upstream-direction-aligned, not divergent.</p>
+</li>
+<li><p><strong>Federation + RAFT distributed mode (scaffolding restored 2026-05-13; activation deferred).</strong> Upstream ADR-007 Phase 5 includes distributed deployment. Single-node-first stance unchanged: no boot-time wiring, no controller-registry registration, no advertised MCP surface. <strong>However</strong>, per <code>feedback-no-value-judgements-on-features.md</code> (default-to-WIRE; ship the surface, let the user judge usage), the four scaffolding classes removed by the 2026-05-12 reset have been restored from snapshot <code>bd760f2</code> so the future-wiring path stays open without re-archaeology:</p>
+<ul>
+<li><code>src/controllers/QUICConnection.ts</code> (0-RTT, BBR, migration)</li>
+<li><code>src/controllers/QUICConnectionPool.ts</code> (pool of QUICConnection)</li>
+<li><code>src/controllers/QUICStreamManager.ts</code> (stream multiplexing over QUICConnection)</li>
+<li><code>src/consensus/RaftConsensus.ts</code> (leader election, log replication, BFT)</li>
+</ul>
+<p>Each carries its original <code>// TODO: ADR required before activation</code> marker. Zero in-tree consumers; zero compile impact (self-contained except QUICConnectionPool/StreamManager → QUICConnection internal-only). Pre-existing <code>QUICClient.ts</code> + <code>QUICServer.ts</code> remain stub-shaped and continue to not import these classes. Activation (wire to controller-registry, expose MCP tools, define cluster bootstrap) requires a future ADR.</p>
+</li>
+<li><p><strong>Embedding model + dimension commitment via the ruflo config chain.</strong> Phase 1.5 promotes <code>@xenova/transformers</code> to hard dep. The exact model + dimension + HNSW parameters live in the <strong>ruflo config chain</strong> (per ADR-0068 unified config chain + ADR-0102 unified embedding/index config) — <strong>not</strong> in env vars and <strong>not</strong> in per-call config. The flow:</p>
+<ul>
+<li><code>ruflo init</code> runs at project creation and writes the embedding + index keys into <code>.claude-flow/config.json</code> (or the equivalent project-scoped config file). Per memory <code>project-config-gaps.md</code>: &quot;init template generates all keys; sarsa bug fixed; all 11 dead keys wired&quot;.</li>
+<li><strong>Default keys</strong> (written by init unless explicitly overridden):<ul>
+<li><code>embedding.model = &quot;Xenova/all-mpnet-base-v2&quot;</code> (full-qualified name per <code>feedback-full-model-names.md</code> — never bare, never runtime-prepended; ADR-0069 / <code>reference-embedding-model</code>)</li>
+<li><code>embedding.dimension = 768</code></li>
+<li><code>embedding.provider = &quot;onnx&quot;</code> (local; paid provider requires <code>embedding.allowPaidProvider = true</code> per <code>feedback-no-api-keys</code>)</li>
+<li><code>index.hnsw.m = 23</code></li>
+<li><code>index.hnsw.efConstruction = 100</code></li>
+<li><code>index.hnsw.efSearch = 50</code></li>
+</ul>
+</li>
+<li>All consumers (agentdb controllers, RvfBackend, MCP tools, <code>/adr-index</code>, <code>/odr-index</code>) read from this config chain. Single source of truth.</li>
+<li><strong>Phase 5 init validation</strong> (per memory <code>project-phase5-testing.md</code>) — acceptance check confirms every default round-trips through the config chain from <code>ruflo init</code> write through to controller read.</li>
+<li>Switching the model later requires <code>ruflo init --force</code> (or equivalent) to rewrite config + re-embed all stored vectors + re-create RVF segments. Out of scope for an ADR-0177 commit; document the migration shape in a separate ADR if/when the default changes.</li>
+<li>Alternative models considered (callable via <code>ruflo init --embedding-model &lt;name&gt;</code> flag): <code>Xenova/all-MiniLM-L6-v2</code> (384d, smaller / faster / less recall), <code>Xenova/all-MiniLM-L12-v2</code> (384d), <code>Xenova/bge-base-en-v1.5</code> (768d), <code>Xenova/gte-base</code> (768d). Known-dim lookup table referenced in <code>memory-initializer.ts</code> matches <code>reference-embedding-model.md</code>.</li>
+<li><strong>NO env-var override path</strong> for model or dimension. Per the no-fallbacks discipline + config-chain single-source-of-truth principle, env vars that silently shadow project config are exactly the kind of out-of-band reconfiguration the config chain replaces. If a user needs a different model, they re-run <code>ruflo init --embedding-model &lt;name&gt;</code> and accept the corpus-rebuild cost.</li>
+</ul>
+</li>
+<li><p><strong>Upstream-parity CI guard for dependency posture.</strong> <strong>[Rewritten 2026-05-12 per Amendment 2 — replaces the prior &quot;no-fallback CI guard&quot; which is reversed.]</strong> Add an acceptance test that asserts the fork&#39;s <code>forks/agentdb/package.json</code> matches upstream <code>ruvnet/agentdb</code> HEAD on the storage-cascade dependency entries:</p>
+<p><strong>Resolvability (matches upstream install matrix):</strong></p>
+<ul>
+<li><code>require.resolve(&#39;sql.js&#39;)</code> <strong>succeeds</strong> (upstream hard dep — preserved)</li>
+<li><code>require.resolve(&#39;better-sqlite3&#39;)</code> succeeds when native build toolchain available (upstream optionalDep — preserved)</li>
+<li><code>require.resolve(&#39;hnswlib-node&#39;)</code> succeeds when build available (upstream optionalDep — preserved)</li>
+<li><code>require.resolve(&#39;@ruvector/rvf&#39;)</code> succeeds when ruvector binding available (upstream optionalDep — preserved)</li>
+<li><code>require.resolve(&#39;@ruvector/rvf-node&#39;)</code> succeeds when native NAPI binding available (upstream optionalDep — preserved)</li>
+<li><code>require.resolve(&#39;@xenova/transformers&#39;)</code> succeeds when ONNX runtime available (upstream optionalDep — preserved)</li>
+</ul>
+<p><strong>Cascade behaviour (matches upstream fallback semantics):</strong></p>
+<ul>
+<li><code>AgentDB.initializeDatabase()</code> opens <code>better-sqlite3</code> when available; falls back to <code>sql.js</code> WASM otherwise; no typed <code>RelationalBackendInitError</code> thrown (matches upstream try/catch at AgentDB.ts:104-115)</li>
+<li><code>createBackend(&#39;auto&#39;)</code> selects RuVector when <code>@ruvector/rvf-node</code> is installed; falls back to <code>hnswlib-node</code> otherwise; no typed <code>RvfBackendInitError</code> thrown when fallbacks succeed</li>
+<li><code>database-provider.ts</code> in <code>forks/ruflo/v3/@claude-flow/memory/</code> retains the 4-tier <code>&#39;rvf&#39; \| &#39;better-sqlite3&#39; \| &#39;sql.js&#39; \| &#39;json&#39;</code> selection; no <code>MemoryBackendInitError</code> for missing RVF when downstream tiers succeed</li>
+</ul>
+<p><strong>Drift-detection (per-package version + dependencyType parity):</strong></p>
+<ul>
+<li>For each key in upstream&#39;s <code>dependencies</code> + <code>optionalDependencies</code>, fork&#39;s same-key entry must have the SAME dependency-type bucket. Detects accidental drift if a future fork-side change demotes/promotes a dep relative to upstream.</li>
+</ul>
+<p>Prevents regression where a future fork-side decision re-introduces the dep-removal or fail-fast pattern without an ADR update. Matches the discipline pattern from ADR-0176 follow-up #2 (skill-manifest ↔ MCP-registry guard) — same shape (CI gate on artifact parity), different target (package.json instead of MCP tool registry).</p>
+</li>
+<li><p><strong>Consolidate the dual <code>config.json</code> + <code>embeddings.json</code> write paths.</strong> <strong>[Added 2026-05-12 per Phase 1.6 implementation finding.]</strong> <code>ruflo init</code> currently writes the embedding config to <strong>two files in two shapes</strong> via two code paths:</p>
+<ul>
+<li><code>cli/src/init/config-template.ts</code> writes <code>.claude-flow/config.json</code> with nested <code>embedding.{provider,model,dimension,allowPaidProvider}</code> + <code>index.hnsw.{m,efConstruction,efSearch}</code>. Provider hardcoded <code>&quot;onnx&quot;</code>. (Sibling commit <code>c4b36ca57</code>.)</li>
+<li><code>cli/src/init/executor.ts:1399-1476</code> writes <code>.claude-flow/embeddings.json</code> with top-level <code>model</code>, <code>dimension</code>, <code>provider: &quot;transformers.js&quot;</code>, <code>hnsw.{M, efConstruction, efSearch}</code>. Pre-existing legacy code path.</li>
+</ul>
+<p>Both files are read by the agentdb accessor (<code>forks/agentdb/src/core/config-chain.ts</code>); <code>embeddings.json</code> is primary, <code>config.json</code> is fallback. The Phase 1.6 (f) acceptance test asserts both files for completeness.</p>
+<p><strong>Decision needed:</strong></p>
+<p>a) <strong>Keep both files</strong> (current state). Accept the redundancy; document it as deliberate dual-write for resilience. CI guard asserts both stay in sync.</p>
+<p>b) <strong>Consolidate to <code>embeddings.json</code> only</strong> — retire the new <code>config-template.ts</code> keys, remove <code>config.json</code> nested-shape support from the accessor. Simplest target shape; matches the agentdb accessor&#39;s primary path. Requires updating cli-init-template&#39;s sibling tests (the integration tests assert <code>config.json</code> nested shape).</p>
+<p>c) <strong>Consolidate to <code>config.json</code> only</strong> — retire the legacy <code>executor.ts:1399-1476</code> <code>embeddings.json</code> write, switch accessor to read config.json&#39;s nested shape as primary. Matches the new init template&#39;s contract; aligns with ADR-0068&#39;s &quot;ruflo config chain&quot; framing where <code>config.json</code> is the canonical project-scoped file.</p>
+<p>Lean: (c) — config.json&#39;s nested shape is the design ADR-0068 anticipated, and the new init template plus its tests already commit to that shape. <code>embeddings.json</code> retirement frees the filename for a different concern (e.g., learned embedding model state per ADR-007 Phase 1&#39;s router-persist pattern). Out of scope for Phase 1.6; revisit in a dedicated follow-up ADR or scoped cleanup pass.</p>
+</li>
+<li><p><strong>ADR-060 proof-gated mutation layer (scaffolding restored 2026-05-13; activation deferred).</strong> <strong>[Added 2026-05-13 to correct an earlier mis-categorization.]</strong> The 2026-05-12 reset removed <code>src/security/MutationGuard.ts</code>, <code>src/security/AttestationLog.ts</code>, <code>src/security/index.ts</code> (barrel), and <code>src/backends/ruvector/GuardedVectorBackend.ts</code>. The original survey wrongly grouped these with the distributed-mode (QUIC/Raft) deferral; they are in fact ADR-060 single-node proof-gating with zero references to Raft / QUIC / consensus / cluster anywhere in the source. Real dependencies are <code>./validation.js</code> + <code>./input-validation.js</code> (both already in main) + optional WASM via <code>@ruvnet/ruvector-verified-wasm</code>.</p>
+<p>The fork&#39;s only post-<code>bd760f2</code> change to these files was commit <code>06aaf9e</code> (&quot;port AttestationLog to postgres&quot;) — exactly the postgres dialect work this ADR retires. Restoring from snapshot <code>bd760f2</code> (sqlite-shaped originals) is therefore directly substrate-compatible; archive HEAD versions would not compile after the postgres deletion.</p>
+<p>Per <code>feedback-no-value-judgements-on-features.md</code> (default-to-WIRE), the four files have been restored to preserve the proof-gated-mutation surface as future-wiring optionality. Single-node-multi-agent isolation (per-write <code>agentId</code> / <code>namespace</code> / <code>scope</code> attestation) is exactly the kind of capability the fork already cares about. Activation (have <code>factory.ts:createGuardedBackend()</code> return <code>GuardedVectorBackend</code> instead of bare <code>RvfBackend</code>; expose attestation MCP tools) requires a future ADR.</p>
+</li>
+</ol>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>
