@@ -64,12 +64,12 @@ No new architecture — ADR-0180 §Architecture stands. This ADR specifies the *
 
 * **`initialize(config)` feeding.** Each host process (cli, `ruflo daemon`, hook-handler) constructs its substrate backends + `projectRoot` and passes them via `ArchivistInitConfig` (the type surface F4-2 Phase C built). The archivist's lazy-per-tool init then has real backends to register.
 * **Handler un-stubbing order.** Un-stub in dependency order: handlers needing only `ctx.substrate.withWrite` (FS-JSON family) first; handlers needing read-optimized `query`/`vectorSearch` next; handlers needing cli-process backend handles last (after `initialize(config)` is fed). The ~88 stubs are grouped by this order, not by surface name.
-* **Call-site delegation (F4-3).** Per surface, replace the cli MCP tool handler body / CLI command body / hook body with `archivist.dispatch(toolName, payload)` (or `dispatchRead`). The original path is deleted only once the delegation is release-verified — never both live at once.
+* **Call-site delegation (F4-3).** Per surface, replace the cli MCP tool handler body / CLI command body / hook body with `archivist.dispatch(toolName, payload)` (or `dispatchRead`). The original path is deleted only once the delegation is release-verified — never both live at once. **Prerequisite: the typed `dispatch` overload.** Today `dispatch(toolName: string, payload: unknown)` is `unknown`-typed at the call site (ADR-0180 Open Follow-up #26) — a typo'd tool name or mismatched payload is a runtime throw, not a `tsc` error. Before this phase wires ~110 literal-tool-name call sites, land a `ToolPayloadMap` interface keying every registered tool to its payload type plus `dispatch<K extends keyof ToolPayloadMap>(tool: K, payload: ToolPayloadMap[K])` / `dispatchRead` overloads, so every call site this phase creates is compile-time-checked on both tool name and payload shape.
 * **ADR-0112 enforcement-code retirement.** Once `initialize(config)` is fed everywhere and handlers are invoked only post-`initialize()`, `RvfNotInitializedError` + `requireAgentDB()` are dead — the archivist's init-completion guarantee replaces them. Delete the classes + guards; the drift guard (ADR-0180 Gate 4) prevents reappearance.
 
 ## Execution Plan
 
-Sequential phases; phase N+1 cannot start until phase N passes `npm run release`. Each phase runs as a `/swarm-advanced` team per the ADR-0180 Execution Plan pattern (queen + workers, per-phase council report in `docs/council/ADR-0181-phase-<N>-report.md`).
+Sequential phases; phase N+1 cannot start until phase N passes `npm run release`. Each phase runs as a `/swarm-advanced` swarm — up to 25 concurrent agents, queen-led, with a per-phase council report in `docs/council/ADR-0181-phase-<N>-report.md`. The swarm mechanics, concurrency budget, and per-phase team composition are specified in §Multi-Agent Execution Plan below.
 
 | Phase | Surface | Exit gate |
 |---|---|---|
@@ -77,15 +77,64 @@ Sequential phases; phase N+1 cannot start until phase N passes `npm run release`
 | **2** | **FS-JSON handler un-stub.** Un-stub the handler bodies that need only `ctx.substrate.withWrite` (the FS-JSON family — claims/tasks/agents/swarm/coordination/workflow/neural/github/performance/system/config/progress/ruvllm/daa/wasm/browser/autopilot/hive-mind). | `npm run release` passes; zero `pending` stubs in the FS-JSON handler set. |
 | **3** | **Read-optimized handler un-stub.** Un-stub handlers needing `query`/`vectorSearch` (memory_* reads, agentdb_* ranked reads) now that Phase 1 fed the read substrates. | `npm run release` passes; zero `pending` stubs in the read-handler set; provenance flag works end-to-end. |
 | **4** | **cli-process-backend handler un-stub.** Close the `TODO(F4-3-callsite)` gaps — un-stub handlers needing router/bandit, reflexion re-embedding, ReasoningBank patterns handles (route, pattern-search, reflexion-retrieve, skill-search, the daemons). | `npm run release` passes; zero `pending` stubs anywhere in `handlers/**`. |
-| **5** | **F4-3 cli delegation.** Per surface, replace cli MCP tool handler bodies + CLI command bodies + hook/daemon bodies with `archivist.dispatch()` / `dispatchRead()`. Delete each original path once its delegation is release-verified. | `npm run release` passes; every MCP tool + CLI write command + hook + daemon routes through the archivist; audit-chain count equals mutation count. |
+| **5** | **F4-3 cli delegation.** First land the **typed `dispatch` overload** — a `ToolPayloadMap` interface keying every registered tool name to its payload type, plus `dispatch<K extends keyof ToolPayloadMap>(tool: K, payload: ToolPayloadMap[K])` / `dispatchRead` overloads (closes ADR-0180 Open Follow-up #26 — `dispatch` is `unknown`-typed at the call site today). Then per surface, replace cli MCP tool handler bodies + CLI command bodies + hook/daemon bodies with `archivist.dispatch()` / `dispatchRead()`. Delete each original path once its delegation is release-verified. | `npm run release` passes; every MCP tool + CLI write command + hook + daemon routes through the archivist; audit-chain count equals mutation count; **`dispatch` / `dispatchRead` expose the `ToolPayloadMap` overloads and every Phase 5 call site uses a literal tool name — `tsc --noEmit` rejects an unregistered tool name or a payload that mismatches its handler's `T`.** |
 | **6** | **ADR-0112 enforcement-code retirement.** Delete `RvfNotInitializedError` + `requireAgentDB()` + the `controller-registry.ts` "Phase 2" markers from `@claude-flow/memory`; the init-completion guarantee replaces them. | `npm run release` passes; `grep -RE 'RvfNotInitializedError|requireAgentDB\(' forks/ruflo/v3/@claude-flow/memory` returns zero; ADR-0180 Gate 4 drift guard extended to cover the ruflo memory tree. |
 | **7** | **Full-system verification.** Audit-chain replay test (ADR-0180 §Confirmation) against the fully-activated system; the W1–W5 + W3-contended bench suite run against real archivist code paths (the bench baselines were captured against scaffolding). | `npm run release` passes; replay equality holds; bench numbers within their ADR-0180 regression bands. |
+
+## Multi-Agent Execution Plan
+
+Each phase of the Execution Plan above runs as a `/swarm-advanced` swarm — up to **25 concurrent agents**, topology established by ruflo MCP and execution carried by the Claude Code Agent tool. This section specifies the swarm mechanics; it changes none of the phase boundaries or exit gates above.
+
+### Concurrency ceiling
+
+* **Hard ceiling: 25 concurrent agents per phase** — queen + Devil's Advocate + workers + verifiers, all counted. The ceiling is per-phase: a phase tears its swarm down (`TeamDelete`) before the next begins, so no two phases' agents are ever live together.
+* This raises the standing `CLAUDE.md` project ceiling (15 agents) for the duration of this program; it reverts to 15 when ADR-0181 closes.
+* A phase need not saturate the budget — the per-phase composition table sizes each phase to its real parallel surface. Phase 2 (FS-JSON un-stub, ~18 store families) and Phase 5 (cli delegation, ~110 call sites) are the budget-saturating phases; the rest run leaner.
+
+### Topology and strategy (per `/swarm-advanced`)
+
+* **Topology: hierarchical-mesh.** A queen coordinates — hierarchical command for phase gating and the `npm run release` exit gate — while workers form a mesh among themselves for dialectic. Verification-heavy phases (3, 7) lean toward star: the queen centralizes the replay / bench verdict. `swarm_init({ topology: "hierarchical", maxAgents: 25, strategy: <per phase> })` establishes this.
+* **Strategy per phase:** `parallel` for the un-stub phases (2, 3, 4 — independent handler files, no inter-worker dependency); `specialized` for Phase 1 (three distinct host processes) and Phase 5 (per-surface delegation, each surface a specialist); `adaptive` for Phase 7 (verification work re-plans on a failed replay or out-of-band bench number).
+
+### Spawn protocol
+
+Per `feedback-council-queen-da-alongside-experts`, `feedback-always-use-agent-teams`, and `feedback-agent-dialectic-via-sendmessage`:
+
+1. **`swarm_init`** (ruflo MCP) — establish topology, `maxAgents: 25`, the phase strategy, and the phase memory namespace `adr-0181/phase-<N>`.
+2. **`TeamCreate`** `adr-0181-phase-<N>`.
+3. **Spawn the whole wave in one message** — queen + Devil's Advocate + every worker + every verifier, each with `team_name: "adr-0181-phase-<N>"`, a unique `name`, and `run_in_background: true`. No sequential rounds: experts, DA, and queen are live together from t0.
+4. **Workers execute single-attempt** (`feedback-single-arm-experiment-prompt-discipline`) — one pass at their slice, no retry loops. On completion each `SendMessage`s the queen *and* `TaskUpdate`s its own task to `completed` — closing the worker-contract gap the ADR-0180 Phase 10 report flagged (workers must claim and close their `TaskUpdate` entry, not only `SendMessage`).
+5. **Inter-agent dialectic via `SendMessage`** — workers and the DA engage by `name` on specific claims; never `/tmp` shared dirs, never file-based handoff.
+6. **Queen** waits for all workers, runs the phase's `npm run release` exit gate, and authors `docs/council/ADR-0181-phase-<N>-report.md`.
+7. **`TeamDelete`** once the queen and all workers acknowledge shutdown.
+
+### Coordination substrate
+
+* **Memory namespace** `adr-0181/phase-<N>` (ruflo MCP `memory_store` / `memory_search`) — workers publish their handler-file inventory, stub→live diffs, and blocked-on-backend findings; the queen reads it to assemble the council report. Cross-phase carry-forwards — e.g. the `TODO(F4-3-callsite)` set Phase 1 surfaces for Phase 4 — persist at `adr-0181/carry-forward`.
+* **Monitoring & fault tolerance** — the queen runs `swarm_monitor` / `swarm_status` for liveness. A worker silent past a heartbeat is re-spawned once (swarm-advanced auto-recovery); a second failure escalates to Halt.
+* **Halt protocol** (inherited from ADR-0180 §Execution Plan) — any worker may raise `ADR-0181-Halt:<reason>` on a retroactive flaw in an earlier phase; the release pipeline blocks until a paired `ADR-0181-Amendment: phase-<N>` commit lands amending the prior phase.
+
+### Per-phase team composition
+
+All totals ≤ 25. Worker counts track the phase's parallel surface; verifiers cover the phase's exit gate.
+
+| Phase | Topology / strategy | Queen | DA | Workers | Verifiers | Total |
+|---|---|---|---|---|---|---|
+| **1** initialize(config) feeding | hierarchical / specialized | 1 | 1 | 3 — cli, daemon, hook-handler wiring | 2 — init-completion, `ArchivistInitConfig`-shape | 7 |
+| **2** FS-JSON handler un-stub | hierarchical-mesh / parallel | 1 | 1 | 18 — one per FS-JSON store family | 5 — 2 invariant-authors, charter-check, stub-count, release-gate | 25 |
+| **3** Read-optimized handler un-stub | star / parallel | 1 | 1 | 8 — memory_* reads + agentdb_* ranked reads, grouped | 3 — provenance-flag e2e, query/vectorSearch routing, stub-count | 13 |
+| **4** cli-process-backend handler un-stub | hierarchical-mesh / parallel | 1 | 1 | 6 — route, pattern-search, reflexion-retrieve, skill-search, daemon handlers ×2 | 2 — capability-handle wiring, stub-count | 10 |
+| **5** F4-3 cli delegation | hierarchical-mesh / specialized | 1 | 1 | 19 — 1 typed-overload (`ToolPayloadMap`; the 18 delegation workers gate their start on its `SendMessage`), 18 per-surface delegation | 4 — audit-chain count, `tsc` overload check, original-path-deletion, multi-process audit | 25 |
+| **6** ADR-0112 enforcement-code retirement | hierarchical / specialized | 1 | 1 | 4 — `RvfNotInitializedError` deletion, `requireAgentDB()` deletion, `controller-registry.ts` markers, Gate-4 drift-guard extension | 2 — zero-grep, init-completion-guarantee | 8 |
+| **7** Full-system verification | star / adaptive | 1 | 1 | 6 — replay-harness, W1–W5 bench, W3-contended bench, bench re-baseline, replay-equality, regression-band check | 2 — release-gate, council-report cross-check | 10 |
+
+Each phase's queen spawns in the same wave as its workers and DA (not after — `feedback-council-queen-da-alongside-experts`) and is the sole agent that runs the `npm run release` exit gate and authors the council report.
 
 ## Open follow-ups
 
 1. **Bench re-baselining.** ADR-0180's `bench/baseline.json` was captured against the scaffold (placeholder numbers). Phase 7 must re-capture against the activated system — the regression bands only become meaningful once the handlers do real work.
 
-2. **The ADR-0180 deferred follow-ups inherited here.** ADR-0180's Open Follow-ups #8 (standalone agentdb-mcp-server — ~25 tools with no Phase 6 handler counterpart, "F8-1..F8-25"), #19 (replay test harness wiring), and the F7-class process notes carry forward into this ADR's phases — they are activation concerns, not architecture concerns.
+2. **The ADR-0180 deferred follow-ups inherited here.** ADR-0180's Open Follow-ups #8 (standalone agentdb-mcp-server — 33 tools, ~15 mutating, with no handler counterpart in this ADR's Phase 2–4 un-stub set), #19 (replay test harness wiring), and the F7-class process notes carry forward into this ADR's phases — they are activation concerns, not architecture concerns.
 
 3. **cli-core JsonMemoryBackend stays a non-archivist surface.** Per ADR-0180 Open Follow-up #9 (documented, accepted). No phase here routes cli-core through the archivist; if that ever changes it reopens #9, not this ADR.
 
