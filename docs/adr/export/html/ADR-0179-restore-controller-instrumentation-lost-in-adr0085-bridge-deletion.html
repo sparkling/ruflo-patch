@@ -1,0 +1,1341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0179-restore-controller-instrumentation-lost-in-adr0085-bridge-deletion</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <hr>
+<h2 id="status-proposeddate-2026-05-13tags-memory-controllers-instrumentation-audit-gap-post-mortemsupersedes-depends-on-adr-0053-adr-0085-adr-0084-adr-0086-adr-0112-adr-0102-adr-0177-adr-0178implements-">status: proposed
+date: 2026-05-13
+tags: [memory, controllers, instrumentation, audit-gap, post-mortem]
+supersedes: []
+depends-on: [ADR-0053, ADR-0085, ADR-0084, ADR-0086, ADR-0112, ADR-0102, ADR-0177, ADR-0178]
+implements: []</h2>
+<h1 id="restore-controller-instrumentation-lost-in-adr-0085-bridge-deletion">Restore Controller Instrumentation Lost in ADR-0085 Bridge Deletion</h1>
+<h2 id="context-and-problem-statement">Context and Problem Statement</h2>
+<h3 id="why-the-bridge-existed-in-the-first-place-adr-0053-2026-02-25">Why the bridge existed in the first place (ADR-0053, 2026-02-25)</h3>
+<p>The bridge was not scaffolding or a temporary integration. ADR-0053 (AgentDB v3
+Controller Activation &amp; Runtime Wiring, 2026-02-25, <strong>Implemented</strong>) created
+<code>memory-bridge.ts</code> as the permanent <strong>Phase 1 Core Foundation</strong> for a 6-phase
+controller-activation programme. The problem it was solving:</p>
+<blockquote>
+<p>AgentDB v3 ships a rich controller ecosystem — 28 controllers covering
+self-learning, causal reasoning, episodic replay, explainable recall,
+proof-gated mutations, graph intelligence, skill promotion, and multi-armed
+bandit optimization — but the CLI runtime (<code>@claude-flow/cli</code>) instantiates
+none of them. The result is that powerful capabilities are available as dead
+exports while the runtime falls back to generic memory operations via
+<code>memory-initializer.js</code>.</p>
+</blockquote>
+<p>ADR-0053 §Decision routed CLI memory ops through <code>ControllerRegistry → HybridBackend → AgentDB v3 controllers</code> instead of raw sql.js, eliminating the
+&quot;dual memory system&quot; (issues #1207–#1227, one issue per stranded controller).
+The bridge is named in two load-bearing senses simultaneously:</p>
+<ol>
+<li><strong>GoF Bridge pattern</strong> — decouples the CLI&#39;s memory abstraction from
+AgentDB&#39;s controller implementations so they can vary independently.</li>
+<li><strong>Cross-package literal bridge</strong> — physically connects <code>@claude-flow/cli</code>
+and <code>@claude-flow/memory</code> (which wraps <code>agentdb</code>) across the package boundary
+without forcing tight coupling.</li>
+</ol>
+<p><strong>The bridge was framed as permanent Phase 1 Foundation, not scaffolding.</strong>
+ADR-0053&#39;s six phases enumerate features added <em>inside</em> the bridge, not stages
+on a path to removing it. The completed marker reads <code>## Completed: Foundation Bridge (Phase 1 Core)</code>.</p>
+<p>The six behaviours this ADR (ADR-0179) catalogues as lost are the <strong>literal
+deliverables</strong> that ADR-0053 §Phase 2–5 listed by name as the bridge&#39;s mission:</p>
+<table>
+<thead>
+<tr>
+<th>ADR-0053 Phase</th>
+<th>Bridge mission</th>
+<th>Behaviour now lost (per ADR-0179)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Phase 2</td>
+<td>&quot;HybridSearch (BM25) — Replace hand-rolled <code>String.includes()</code> fallback with reciprocal rank fusion&quot;</td>
+<td>(4) Hybrid BM25 + semantic fusion as default</td>
+</tr>
+<tr>
+<td>Phase 2</td>
+<td>&quot;recordFeedback callers — Add feedback recording to <code>post-task</code> hook on task success/failure&quot;</td>
+<td>(6) SkillLibrary auto-promotion on feedback</td>
+</tr>
+<tr>
+<td>Phase 4</td>
+<td>&quot;TieredCacheManager — Wire 5-tier compression config into HybridBackend init&quot;</td>
+<td>(2) TieredCache write-through</td>
+</tr>
+<tr>
+<td>Phase 4</td>
+<td>&quot;ExplainableRecall — Wire Merkle provenance certificates into search result metadata&quot;</td>
+<td>(5) ExplainableRecall provenance strings</td>
+</tr>
+<tr>
+<td>Phase 4</td>
+<td>&quot;SkillLibrary — Instantiate Voyager-pattern skill promotion from high-reward trajectories&quot;</td>
+<td>(6) SkillLibrary auto-promotion (same line item)</td>
+</tr>
+<tr>
+<td>Phase 5</td>
+<td>&quot;MutationGuard — Route all CLI memory mutations through guard&quot;</td>
+<td>(1) MutationGuard pre-write policy gate</td>
+</tr>
+<tr>
+<td>Phase 5</td>
+<td>&quot;AttestationLog — Expose attestation chain in <code>session-start</code> health checks&quot;</td>
+<td>(3) AttestationLog audit write</td>
+</tr>
+</tbody></table>
+<p>ADR-0085&#39;s deletion was structurally sound but unintentionally <strong>shed the entire
+ADR-0053 mission deliverable list</strong>. Every behaviour catalogued below was
+deliberately wired by ADR-0053 (issues #1216, #1215, #1219, #1220, plus the
+proof-gated #1207–#1227 chain) and is therefore not edge-case instrumentation —
+it is the primary deliverable of a previous accepted ADR.</p>
+<h3 id="why-adr-0085s-audit-missed-this">Why ADR-0085&#39;s audit missed this</h3>
+<p>Between ADR-0053 (2026-02-25) and ADR-0085 (2026-04-13) — roughly 7 weeks —
+three architectural moves changed the bridge&#39;s status from &quot;permanent foundation&quot;
+to &quot;redundant indirection&quot;:</p>
+<ol>
+<li><strong>ADR-0086 storage axis split.</strong> RVF became primary for <code>memory_*</code>;
+AgentDB SQLite became the secondary axis for <code>agentdb_*</code>. The bridge&#39;s
+&quot;one integration point for all memory ops&quot; mission disintegrated — there
+was no longer a single substrate to integrate against.</li>
+<li><strong>ADR-0084 Phase 4 controller-direct access.</strong> The router learned to call
+<code>getController(&#39;reasoningBank&#39;)</code> directly. The bridge&#39;s controller-access
+functions (<code>bridgeGetController</code>, <code>bridgeHasController</code>, <code>bridgeListControllers</code>)
+became redundant indirection.</li>
+<li><strong>ADR-0112 axis independence.</strong> &quot;Two independent stores, no tool spans both&quot;
+made the bridge&#39;s &quot;single orchestrator for both stores&quot; mental model not just
+redundant but architecturally wrong.</li>
+</ol>
+<p><code>agentdb-orchestration.ts</code> then materialised with 15 functions literally
+commented <code>// Replicates: memory-bridge.ts bridgeXxx</code>, surfacing the redundancy
+as a duplication-burden audit-trigger.</p>
+<p>ADR-0085&#39;s 8-agent hive asked &quot;is the bridge worth keeping as a module?&quot; and
+correctly answered &quot;no.&quot; But the hive&#39;s specialists — &quot;registry bootstrap
+expert&quot;, &quot;dead code analyst&quot;, &quot;merge conflict analyst&quot; — were structurally
+optimised for that question. <strong>No specialist asked &quot;what features lived
+<em>inside</em> the functions we are deleting?&quot;</strong> ADR-0053&#39;s mission deliverables were
+not on the audit&#39;s checklist because nobody re-read ADR-0053 during the
+deletion. The hive saw bridge surface area; it did not see ADR-0053 inheritance.</p>
+<h3 id="quantified-regression-against-adr-0053">Quantified regression against ADR-0053</h3>
+<p>The <code>ControllerRegistry</code> type definition currently enumerates <strong>47 named controller
+slots</strong>. Across the whole <code>forks/ruflo/v3/@claude-flow/cli/src</code> tree,
+<code>getController(&#39;&lt;name&gt;&#39;)</code> (or <code>registry.get(&#39;&lt;name&gt;&#39;)</code>) is called on <strong>30</strong>
+of them. <strong>17 controllers are instantiated by the registry but never accessed by
+any user-facing code path</strong> — the literal &quot;instantiated-but-not-wired&quot; pattern
+ADR-0053 was created to eliminate.</p>
+<p>Of those 17, eight are legitimate internal composition (attention sub-modules
+folded inside <code>attentionService</code>; vector-backend primitives consumed by HNSW).
+That leaves <strong>nine controllers as genuine dead exports</strong>, four of which are direct
+regressions against ADR-0053&#39;s resolved issues:</p>
+<table>
+<thead>
+<tr>
+<th>Controller</th>
+<th>ADR-0053 issue</th>
+<th>ADR-0053 resolution</th>
+<th>Fork-now status</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>tieredCache</code></td>
+<td>Phase 4 #1220</td>
+<td>Resolved (wired via <code>HybridBackend</code> init)</td>
+<td>Factory exists; zero user-facing callers — <strong>regressed</strong></td>
+</tr>
+<tr>
+<td><code>explainableRecall</code></td>
+<td>Phase 4 #1216</td>
+<td>Resolved (<code>bridgeGetController(&#39;explainableRecall&#39;)</code>)</td>
+<td>Factory exists; zero callers — <strong>regressed</strong></td>
+</tr>
+<tr>
+<td><code>mutationGuard</code></td>
+<td>Phase 5</td>
+<td>Activated inside AgentDB, &quot;route all CLI mutations through guard&quot;</td>
+<td>Factory exists; only the factory method&#39;s own delegation call — zero user-facing callers — <strong>regressed</strong></td>
+</tr>
+<tr>
+<td><code>attestationLog</code></td>
+<td>Phase 5</td>
+<td>Activated, &quot;expose attestation chain in <code>session-start</code> health checks&quot;</td>
+<td>Factory exists; zero callers — <strong>regressed</strong></td>
+</tr>
+</tbody></table>
+<p>The remaining five dead exports (<code>auditLogger</code>, <code>circuitBreaker</code> — name-drifted
+from the called <code>circuitBreakerController</code>, <code>indexHealthMonitor</code>, <code>rvfOptimizer</code>,
+<code>federatedLearningManager</code> — already slated for removal per
+<code>project-deprecated-controllers.md</code>) are not ADR-0053 regressions but
+demonstrate that the post-ADR-0085 architecture has no mechanism to prevent the
+exact ADR-0053 failure mode from accumulating: new controllers can be added to
+the registry without any corresponding caller, and nothing surfaces the gap.</p>
+<p>ADR-0053&#39;s resolutions that <strong>did</strong> survive — <code>reasoningBank</code>, <code>reflexion</code>,
+<code>causalGraph</code>, <code>skills</code>, <code>learningSystem</code>, <code>memoryGraph</code>, <code>agentMemoryScope</code>,
+<code>nightlyLearner</code>, <code>sonaTrajectory</code>, <code>solverBandit</code>, <code>semanticRouter</code> — are all
+reachable via <code>getController()</code> in the fork. So ADR-0085&#39;s deletion did not
+reintroduce the entire ADR-0053 problem; it reintroduced a specific quadrant:
+<strong>the policy / audit / cache / explainability controllers</strong> — which is exactly
+the cluster ADR-0179 § (1)–(5) catalogues as lost behaviours.</p>
+<p>This makes the regression structurally identical to the original ADR-0053
+problem statement, just narrower:</p>
+<blockquote>
+<p>Powerful capabilities are available as dead exports while the runtime falls
+back to generic memory operations.</p>
+</blockquote>
+<p>Four ADR-0053-resolved capabilities are dead exports again. ADR-0179 is the
+re-resolution.</p>
+<h3 id="what-adr-0179-corrects">What ADR-0179 corrects</h3>
+<p>A 2026-05-13 conversational audit walked the 34 exports of upstream&#39;s current
+<code>memory-bridge.ts</code> (commit <code>ef73a1616</code>, post-ADR-0115) against the fork&#39;s
+post-deletion state. Findings:</p>
+<h3 id="original-deletion-impact-adr-0085-audit">Original deletion impact (ADR-0085 audit)</h3>
+<p>ADR-0085 (2026-04-13) deleted <del>3,650 lines after an 8-agent hive audit concluded
+that 54 of 64 bridge exports had zero external callers and the remaining 10 were
+single-caller wrappers around redundant fallback paths. The deletion extracted
+<code>getRegistry()</code> + 8 helpers (</del>226 lines) into <code>memory-router.ts</code> as
+<code>initControllerRegistry()</code>. Net production LoC eliminated: ~3,588.</p>
+<p><strong>The structural argument was sound on its own terms.</strong> ADR-0086 + ADR-0084 Phase 4</p>
+<ul>
+<li>ADR-0112 had made the bridge redundant indirection; <code>agentdb-orchestration.ts</code>
+was already replicating 15 of its functions with comments saying <code>// Replicates: memory-bridge.ts bridgeXxx (lines N-M)</code>. Deleting an unreachable module that
+duplicates logic in a sibling file is correct.</li>
+</ul>
+<p><strong>But the audit was structurally complete and behaviourally incomplete.</strong> The hive
+asked &quot;is this module worth keeping?&quot; — counting callers and dead exports. It did
+not ask &quot;what behaviour does each function implement, what ADR-0053 deliverable
+does it carry, and is that deliverable preserved in the fork?&quot; The hive&#39;s
+specialists (&quot;registry bootstrap expert&quot;, &quot;dead-code analyst&quot;, &quot;merge-conflict
+analyst&quot;) were optimised for the structural question; ADR-0053 was not on their
+reading list. As a result the deletion shed ADR-0053&#39;s mission deliverables along
+with the obsolete plumbing.</p>
+<p>A 2026-05-13 audit walked the 34 functions in upstream&#39;s current <code>memory-bridge.ts</code>
+(commit <code>ef73a1616</code>, post-ADR-0115) against the fork&#39;s post-deletion state and
+found:</p>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Count</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Fully preserved as router method or <code>agentdb_*</code> MCP tool</td>
+<td>28</td>
+<td>List CRUD, HNSW ops, controller access helpers, pattern/feedback/session/causal/hierarchical/batch routes</td>
+</tr>
+<tr>
+<td>Partially preserved — function migrated but specific behaviors dropped inside</td>
+<td>3</td>
+<td><code>bridgeStoreEntry</code>, <code>bridgeSearchEntries</code>, <code>bridgeRecordFeedback</code></td>
+</tr>
+<tr>
+<td>Audited (no behavioral diff against migrated <code>agentdb_*</code> tools)</td>
+<td>—</td>
+<td>Per-tool drift is uncharacterized; same audit-gap shape as above, scope unverified</td>
+</tr>
+</tbody></table>
+<p>The 3 partially-preserved functions account for <strong>6 distinct dropped behaviors</strong>:</p>
+<ol>
+<li><p><strong>MutationGuard pre-write policy gate.</strong> Upstream&#39;s <code>bridgeStoreEntry</code> calls
+<code>guardValidate(registry, &#39;store&#39;, { key, namespace, size })</code> before any write. The
+gate can reject writes that fail policy (namespace size limits, key allow-lists,
+rate limits). Fork&#39;s <code>routeMemoryOp &#39;store&#39;</code> (<code>memory-router.ts:1000-1092</code>) has
+no gate.</p>
+</li>
+<li><p><strong>TieredCache write-through.</strong> Upstream calls <code>cacheSet(registry, cacheKey, entry)</code> after every successful write, populating a read-side cache keyed by
+<code>entry:{namespace}:{key}</code>. Fork&#39;s store path skips the cache; reads always hit
+storage. The controller is registered in <code>controller-registry.ts</code> but no caller
+invokes its <code>set</code> method on the memory axis.</p>
+</li>
+<li><p><strong>AttestationLog audit write.</strong> Upstream calls <code>logAttestation(registry, &#39;store&#39;, id, { key, namespace, hasEmbedding })</code> after every successful write, producing
+a structured audit trail. Fork&#39;s <code>agentdb_health</code> tool description (<code>agentdb-tools.ts:6,167</code>)
+still claims an attestation count is available, but <code>AttestationLog.log()</code> has
+zero call sites — the count is structurally always zero.</p>
+</li>
+<li><p><strong>Hybrid BM25 + semantic search fusion (default).</strong> Upstream&#39;s <code>bridgeSearchEntries</code>
+(<code>memory-bridge.ts:626-750</code>) runs BM25 keyword scoring <strong>and</strong> cosine similarity
+on every search, then fuses via <code>0.7 × semantic + 0.3 × BM25</code>. Fork&#39;s <code>routeMemoryOp &#39;search&#39;</code> does vector search <strong>or</strong> BM25 as alternatives — BM25 only fires when the
+embedder is in <code>hash-fallback</code> mode (<code>memory-router.ts:1130-1185</code>). Real-embedder
+searches lose the BM25 lexical signal entirely.</p>
+</li>
+<li><p><strong>ExplainableRecall provenance strings.</strong> Upstream&#39;s search results carry a
+<code>provenance</code> field per result (e.g., <code>semantic:0.872+bm25:0.310</code>) showing the
+per-component scoring breakdown. The <code>explainableRecall</code> controller is registered
+in the fork&#39;s registry but no router method populates the field. Result objects
+from <code>routeMemoryOp &#39;search&#39;</code> have no provenance.</p>
+</li>
+<li><p><strong>SkillLibrary auto-promotion on feedback.</strong> Upstream&#39;s <code>bridgeRecordFeedback</code>
+(<code>memory-bridge.ts:1500-1509</code>) calls <code>skills.promote(pattern, quality)</code> for every
+pattern when <code>options.success &amp;&amp; options.quality &gt;= 0.9 &amp;&amp; options.patterns?.length</code>.
+Fork&#39;s <code>routeFeedbackOp &#39;record&#39;</code> (<code>memory-router.ts:1743-1810</code>) writes to
+<code>learningSystem</code> and <code>reasoningBank</code> but never calls <code>skills.promote()</code>.</p>
+</li>
+</ol>
+<p>None of these losses produced test regressions because none had dedicated assertions
+in the fork&#39;s test suite. The deletion&#39;s &quot;no caller&quot; filter caught structural
+redundancy correctly but blinded the audit to behaviors that lived inside retained
+functions.</p>
+<p>This is precisely the failure mode <code>feedback-no-value-judgements-on-features.md</code>
+warns against:</p>
+<blockquote>
+<p>Default to WIRE for any &quot;wire vs don&#39;t wire&quot; decision. NEVER gate on &quot;trust model
+doesn&#39;t justify it&quot; / &quot;scale doesn&#39;t demand it&quot; / &quot;redundant&quot; / &quot;edge case.&quot;
+Annotate trade-offs in code comments; ship the full surface; let user judge usage.</p>
+</blockquote>
+<p>Six features got de-facto unwired without an explicit &quot;drop&quot; decision being recorded.</p>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<ul>
+<li><strong>ADR-0053 inheritance debt</strong> — the six dropped behaviours are not edge-case
+instrumentation but <strong>named mission deliverables of an accepted ADR</strong>.
+ADR-0053 §Phase 2 explicitly listed BM25 hybrid search + recordFeedback /
+SkillLibrary promotion; §Phase 4 listed TieredCache + ExplainableRecall +
+SkillLibrary; §Phase 5 listed MutationGuard + AttestationLog. Until ADR-0053
+is explicitly superseded (it is not) or its deliverables explicitly
+re-decided (they were not — they were lost by structural collateral), the
+fork is in arrears against its own previously-accepted decision.</li>
+<li><strong>Audit completeness debt</strong> — ADR-0085&#39;s structural verdict was correct; its
+behavioural verdict was assumed-not-verified. The audit methodology that
+produced the gap is still in place; until we replace it with a body-diff
+approach, the same failure mode is available to recur.</li>
+<li><strong><code>feedback-no-value-judgements-on-features.md</code></strong> — six features dropped
+silently; principle says default-WIRE unless an explicit architectural reason
+(e.g. ADR-0112 cross-store) justifies the drop. None of the six has such a
+reason.</li>
+<li><strong>ADR-0112 axis separation</strong> — the bridge attempted to orchestrate cross-store
+semantics (write to SQLite + cache + attest as a single operation). The fork&#39;s
+axis separation forbids cross-store coordination. Some lost behaviors may be
+legitimately dropped under ADR-0112; others belong on a single axis and were
+unrelated to cross-store coupling.</li>
+<li><strong>Memory-axis is fast/lean by design (ADR-0170 Phase C.3)</strong> — pre/post hooks added
+to <code>routeMemoryOp &#39;store&#39;</code> must not regress the storage-only init split that
+C.3 achieved. Each restored controller must be feature-checked + async-deferred so
+it pays zero cost when absent.</li>
+<li><strong>No silent fallbacks (<code>feedback-no-fallbacks.md</code>, ADR-0082)</strong> — restored hooks
+that fail must surface, not swallow. Upstream&#39;s <code>try { logAttestation(); } catch { /* skip */ }</code> pattern is <strong>not</strong> the contract we adopt.</li>
+</ul>
+<h2 id="considered-options">Considered Options</h2>
+<ul>
+<li><p><strong>Option A — Restore the 6 named behaviors as explicit call sites in router methods.</strong>
+Add MutationGuard pre-hook, TieredCache write-through, AttestationLog audit to
+<code>routeMemoryOp &#39;store&#39;</code>. Add hybrid BM25-semantic fusion + ExplainableRecall
+provenance to <code>routeMemoryOp &#39;search&#39;</code>. Add SkillLibrary promotion to
+<code>routeFeedbackOp &#39;record&#39;</code>. Skip a full body-diff of the other 28 functions until
+evidence of additional drift emerges.</p>
+</li>
+<li><p><strong>Option B — Full 34-function behavioral diff, then per-behavior wire/drop decision.</strong>
+Body-diff every export against its fork equivalent (router method or <code>agentdb_*</code>
+MCP tool). For each behavior identified, apply <code>feedback-no-value-judgements-on-features</code>:
+default WIRE unless an explicit architectural reason justifies the drop. Produce a
+34-row table as ADR appendix.</p>
+</li>
+<li><p><strong>Option C — Accept the loss; document in code comments only.</strong>
+Mark the 6 behaviors as accepted-drops in code comments at the relevant router-method
+sites. Do not restore anything. Rationale: zero callers were depending on these in
+the fork&#39;s test suite, so the loss was costless. Add comment markers so future
+upstream-sync agents don&#39;t re-introduce the dropped behaviors.</p>
+</li>
+<li><p><strong>Option D — Selective restore (security/audit only).</strong>
+Restore MutationGuard + AttestationLog (the two with security/governance semantics)
+but accept the loss of TieredCache + hybrid-search + provenance + skill-promotion
+(performance/UX features that have working substitutes — QueryOptimizer cache,
+vector search, idempotency, manual skill registration).</p>
+</li>
+</ul>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<p>Chosen option: <strong>&quot;Option B&quot;</strong>, because the audit-gap is the actual problem and the
+restoration of the 6 named behaviors is downstream of fixing the audit. Without the
+behavioral diff, we cannot confidently say &quot;these 6 are the only losses&quot; — the same
+methodology gap that missed them is still in place for the 28 functions we labelled
+&quot;fully preserved&quot; without inspecting their bodies. The body-diff produces a durable
+artifact (the 34-row table) that future ADRs can reference, and per-behavior
+wire/drop decisions create the explicit record that <code>feedback-no-value-judgements-on-features.md</code>
+requires.</p>
+<p>Option A skips the audit and assumes the 28 &quot;preserved&quot; functions really are
+preserved — repeating ADR-0085&#39;s structural-only methodology. Option C contradicts
+the WIRE-by-default principle (the user has not judged usage; the deletion judged
+for them). Option D is internally inconsistent: TieredCache and SkillLibrary
+auto-promotion are not less load-bearing than AttestationLog, just less obviously
+security-themed.</p>
+<h3 id="supersession-scope">Supersession scope</h3>
+<p>This ADR does <strong>not</strong> supersede ADR-0085. ADR-0085&#39;s structural decision (delete
+<code>memory-bridge.ts</code>, extract <code>getRegistry()</code> into the router, eliminate the redundant
+hop) stands. This ADR remediates an audit-completeness gap inside ADR-0085&#39;s
+methodology — the structural verdict was right; the behavioral verdict was
+incomplete. ADR-0085&#39;s <code>## Consequences</code> section is amended in spirit (not
+re-written) to acknowledge that the 6 behaviors above were dropped without explicit
+decision.</p>
+<h3 id="consequences">Consequences</h3>
+<ul>
+<li>Good, because the 6 named dropped behaviors get an explicit wire/drop decision
+rather than continuing as silent gaps. Restores <code>feedback-no-value-judgements-on-features.md</code>
+compliance for the bridge-deletion blast radius.</li>
+<li>Good, because the 34-row behavioral-diff table becomes a durable artifact for
+future upstream-sync agents — they can check whether a new upstream commit to
+bridge-replacement code introduces new behaviors we need to consider, rather than
+re-running ad-hoc audits.</li>
+<li>Good, because re-wiring the policy/audit/cache hooks closes regressions vs upstream
+for any consumer that <em>was</em> relying on those behaviours but didn&#39;t have a test
+asserting them. Future upstream donate-back is unnecessary (we don&#39;t donate per
+<code>feedback-no-upstream-donate-backs.md</code>), so the regression-debt is fork-local.</li>
+<li>Good, because ADR-0053&#39;s &quot;dual memory system&quot; problem statement is once again
+honoured — the 28 AgentDB controllers ADR-0053 originally wired are once again
+reachable through fork-local code paths instead of being instantiated-but-unused.
+ADR-0053&#39;s six-phase mission completes via this ADR rather than lapsing
+silently.</li>
+<li>Good, because making restoration call-site-explicit (rather than bridge-shaped)
+preserves ADR-0084 Phase 4&#39;s controller-direct design and ADR-0170 Phase C.3&#39;s
+storage-only-init split. Hooks are feature-checked + deferred per controller —
+zero cost when the controller is absent.</li>
+<li>Bad, because the body-diff for 34 functions is real work. Estimate: 1–2 days for
+a 4-agent hive (one per cluster: memory CRUD, embedding/HNSW, controller-touching,
+hierarchical/causal/batch). Restoration of the 6 confirmed behaviors plus any
+additional drift discovered adds another 1–3 days of careful call-site work +
+test coverage.</li>
+<li>Bad, because some restored behaviors (TieredCache write-through, hybrid-search
+fusion) interact with QueryOptimizer (ADR-0043 B6) and BM25 lexical fallback —
+re-wiring requires deciding the interaction rules. E.g., does the post-store
+TieredCache write supersede QueryOptimizer&#39;s search cache, or do they coexist?</li>
+<li>Bad, because restoring hybrid BM25-semantic as the default changes the shape of
+search-result scores — existing callers tuned to pure-vector cosine thresholds
+(0.3 default in <code>memory_search</code>) may see different result sets. Migration plan
+needs a feature flag or new threshold guidance.</li>
+<li>Neutral, because ADR-0085&#39;s structural decision is unaffected — we are not
+re-introducing a <code>memory-bridge.ts</code> module, just re-introducing the call sites
+for instrumentation features inside the existing router methods.</li>
+<li>Neutral, because the audit is bounded: the 34 functions are upstream&#39;s surface
+area as of commit <code>ef73a1616</code> (post-ADR-0115 rename). Future upstream additions
+are out of scope and would trigger a separate audit cycle.</li>
+</ul>
+<h3 id="confirmation">Confirmation</h3>
+<p>Three confirmation surfaces:</p>
+<ol>
+<li><strong>The 34-row behavioral-diff table</strong> lives as ADR-0179 appendix (this file&#39;s
+<code>## More Information</code> section after Phase 1 completes). Each row: bridge function
+name, upstream body summary, fork equivalent location, behaviors-preserved list,
+behaviors-lost list, per-behavior decision (<code>WIRE</code> / <code>DROP-ADR-NNNN</code> /
+<code>DROP-explicit-reason</code>).</li>
+<li><strong>Acceptance tests</strong> — one per restored behavior. Specifically:<ul>
+<li><code>adr0179-mutationguard-blocks-oversized-write</code> — asserts MutationGuard rejects
+a write with <code>size &gt; policy_limit</code> and the rejection surfaces in
+<code>routeMemoryOp &#39;store&#39;</code> return.</li>
+<li><code>adr0179-tieredcache-roundtrip</code> — asserts a fresh <code>memory_store</code> write is
+readable via TieredCache before storage is touched on the subsequent
+<code>memory_retrieve</code>.</li>
+<li><code>adr0179-attestationlog-records-store</code> — asserts <code>AttestationLog</code> has one row
+per successful <code>memory_store</code> call.</li>
+<li><code>adr0179-hybrid-bm25-semantic-fusion</code> — asserts that two queries semantically
+close but lexically distant produce different rank orders than pure-cosine.</li>
+<li><code>adr0179-explainable-recall-provenance</code> — asserts every search result has
+non-empty <code>provenance</code> field of shape <code>semantic:N.NNN+bm25:N.NNN</code>.</li>
+<li><code>adr0179-skill-auto-promotion</code> — asserts <code>routeFeedbackOp &#39;record&#39;</code> with
+<code>success=true, quality=0.95, patterns=[&#39;p1&#39;]</code> causes <code>skills.has(&#39;p1&#39;)</code> to
+return true.</li>
+</ul>
+</li>
+<li><strong>Lint rule</strong> (ADR-0085 §Confirmation–style): grep gate that detects future
+regressions — <code>grep &quot;// ADR-0179: must call &lt;controller&gt;&quot; memory-router.ts</code>
+marks the load-bearing call sites; PR-level review flags any deletion.</li>
+<li><strong>Controller-coverage acceptance check</strong> — <code>adr0179-controller-coverage</code>: for
+each controller registered in <code>controller-registry.ts</code>&#39;s 47-slot enum,
+assert one of three states:
+(a) at least one <code>getController(&#39;&lt;name&gt;&#39;)</code> call site exists in
+<code>forks/ruflo/v3/@claude-flow/cli/src</code>, OR
+(b) the controller is on an explicit allow-list of internal-composition
+primitives (the 8 attention/backend sub-modules), OR
+(c) the controller has an explicit <code>// DEAD-EXPORT-PER-ADR-NNNN: &lt;reason&gt;</code>
+comment at its factory-method site.
+Anything else fails the check. This converts ADR-0053&#39;s manual-vigilance
+requirement into a structural enforcement that survives future audits, so a
+future &quot;the bridge equivalent has accumulated 17 dead exports&quot; finding
+cannot happen silently again.</li>
+</ol>
+<h2 id="more-information">More Information</h2>
+<h3 id="related-adrs">Related ADRs</h3>
+<ul>
+<li><strong>[[ADR-0053]]</strong> — agentdb-v3-controller-activation (2026-02-25, <strong>Implemented</strong>).
+The <em>upstream</em> ADR that created <code>memory-bridge.ts</code> as Phase 1 Core Foundation
+and explicitly listed the six lost behaviours as Phase 2/4/5 deliverables.
+Authored by RuvNet &amp; Claude Flow Team; status <strong>Implemented</strong>, published in
+<code>v3.1.0-alpha.51</code>. This ADR (ADR-0179) is the fork-side discharge of ADR-0053&#39;s
+obligations that ADR-0085 inadvertently lapsed. Per
+<code>feedback-upstream-means-upstream.md</code>, this is a genuine upstream-origin ADR,
+not a fork artefact — it lives at <code>ruvnet/ruflo:v3/implementation/adrs/ADR-053-agentdb-v3-controller-activation.md</code>.</li>
+<li><strong>[[ADR-0085]]</strong> — bridge-deletion-ideal-state-gaps (2026-04-13). Triggering ADR.
+The 8-agent hive structural verdict was correct; this ADR remediates the
+behavioural-completeness gap inside its methodology and discharges the
+ADR-0053 inheritance debt the deletion accidentally created.</li>
+<li><strong>[[ADR-0084]]</strong> — dead-code-cleanup (2026-04-12). Phase 4 controller-direct migration
+that made bridge deletion possible; the restored call sites must use <code>getController()</code>
+per Phase 4 conventions, not re-introduce bridge-shaped indirection.</li>
+<li><strong>[[ADR-0086]]</strong> — layer1-storage-abstraction (2026-04-14). Deleted <code>memory-initializer.ts</code>
+on top of ADR-0085&#39;s bridge deletion; same structural-not-behavioral audit
+methodology applies — this ADR&#39;s Phase 1 body-diff covers initializer too.</li>
+<li><strong>[[ADR-0112]]</strong> — independent-stores-not-cross-store (2026-05-01). Architectural
+reason some bridge behaviors <em>should</em> stay dropped — any restored hook that would
+coordinate writes across both RVF and AgentDB SQLite is rejected under ADR-0112.</li>
+<li><strong>[[ADR-0102]]</strong> — unified-embedding-index-config. Establishes the single config
+chain (<code>embeddings.json</code> + <code>@claude-flow/config-chain</code>) that replaces the bridge&#39;s
+hardcoded embedder choice. Restored search behaviors must honor this chain.</li>
+<li><strong>[[ADR-0177]]</strong> — config-chain-refactor (Phase 1.6). Extraction of
+<code>getEmbeddingConfig()</code> to a shared accessor across memory and agentdb axes.
+Restored hybrid-search fusion must read its weights and thresholds via this
+accessor, not hardcoded <code>0.7 / 0.3</code>.</li>
+<li><strong>[[ADR-0178]]</strong> — restore-hierarchical-memory-implement-query (2026-05-13). Same
+remediation shape: a deletion was structurally right, behavioral completeness was
+assumed but not verified, restoration is a call-site addition against a stable
+architecture. ADR-0179 follows the same playbook.</li>
+</ul>
+<h3 id="council-transcripts">Council transcripts</h3>
+<p>Two dialectical council rounds (8 experts each, hierarchical-mesh topology, SendMessage dialectic) deliberated this ADR&#39;s decision space. Both are recorded verbatim with per-expert position papers:</p>
+<ul>
+<li><p><strong>[[ADR-0179-council-r1-bridge-deletion]]</strong> — 2026-05-13. Question: was ADR-0085&#39;s deletion correct, should we live with the regression (A), restore via call sites (B), or restore the bridge module (C)? <strong>Verdict: 6 B / 1 C / 1 A-with-B-acceptable.</strong> Mandatory amendments to ADR-0179 surfaced: axis re-placement, performance guardrails, fail-loud semantics, body-diff methodology, ADR-0053 re-audit. Drives the current ADR&#39;s scope.</p>
+</li>
+<li><p><strong>[[ADR-0179-council-r2-axis-architecture]]</strong> — 2026-05-13. Question: should the fork keep its dual-axis storage (X, status quo ADR-0086/0112), collapse to single-axis upstream-style (Y), or adopt single-MCP-surface-with-dual-substrate-internal (Z)? <strong>Verdict: 6 of 8 endorse Z.</strong> Universal consensus that the &quot;150-12,500× speedup&quot; claim is dishonest (real gap 2-3×); that ADR-0086 was a unification attempt that failed at Debt 15; that ADR-0112 reframed that failure as deliberate architecture. Round 2 likely spawns ADR-0180 to revert ADR-0112&#39;s surface split while preserving ADR-0086&#39;s substrate purity. Round 2&#39;s verdict materially affects how ADR-0179&#39;s restoration call sites should be placed — the council recommends sequencing ADR-0179 as phase-0 of ADR-0180 so the restored features land on the unified surface rather than being re-placed when the axis collapses.</p>
+</li>
+</ul>
+<h3 id="related-memories">Related memories</h3>
+<ul>
+<li><code>feedback-no-value-judgements-on-features.md</code> — default-WIRE principle. The six
+dropped behaviors should each have triggered an explicit WIRE-vs-DROP decision at
+ADR-0085 deletion time; this ADR makes those decisions retroactively.</li>
+<li><code>feedback-no-fallbacks.md</code> — restored hooks must surface failures loudly, not
+silently <code>try { ... } catch {}</code>. Upstream&#39;s bridge swallowed AttestationLog errors;
+the restored call site does not.</li>
+<li><code>feedback-data-loss-zero-tolerance.md</code> — MutationGuard&#39;s rejection semantics need
+zero-tolerance handling: a rejected write must NOT silently fall through to a
+stored-without-policy state.</li>
+<li><code>project-fork-only-controllers.md</code> — catalog of restored controllers post-ADR-0178.
+Some of the controllers this ADR restores call sites for (e.g., <code>attestationLog</code>,
+<code>tieredCache</code>) overlap with that catalog — coordinate with that memory&#39;s
+upstream-sync guidance.</li>
+</ul>
+<h3 id="behavioral-diff-table-phase-1-deliverable-to-be-filled">Behavioral-diff table (Phase 1 deliverable, to be filled)</h3>
+<p>Phase 1 of this ADR produces the 34-row table. Until Phase 1 completes, the six
+named behaviors above are the <strong>known minimum</strong> scope; the table will either
+confirm &quot;no additional drift in the other 28 functions&quot; or extend the restoration
+scope.</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Bridge function</th>
+<th>Upstream behavior summary</th>
+<th>Fork equivalent</th>
+<th>Preserved</th>
+<th>Lost</th>
+<th>Decision</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>bridgeStoreEntry</code></td>
+<td>RVF write + MutationGuard + TieredCache + AttestationLog</td>
+<td><code>routeMemoryOp &#39;store&#39;</code></td>
+<td>RVF write (via RVF backend)</td>
+<td>Guard, cache, attest</td>
+<td><strong>WIRE</strong> all 3</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>bridgeSearchEntries</code></td>
+<td>Hybrid BM25+semantic + ExplainableRecall provenance</td>
+<td><code>routeMemoryOp &#39;search&#39;</code></td>
+<td>Vector search; BM25 as hash-fallback alternative</td>
+<td>Hybrid fusion as default; per-result provenance</td>
+<td><strong>WIRE</strong> both</td>
+</tr>
+<tr>
+<td>3-33</td>
+<td>…</td>
+<td>(Phase 1 hive output)</td>
+<td>…</td>
+<td>…</td>
+<td>…</td>
+<td>…</td>
+</tr>
+<tr>
+<td>34</td>
+<td><code>bridgeGetAllEmbeddings</code></td>
+<td>(Phase 1 hive output)</td>
+<td><code>routerGetAllEmbeddings</code></td>
+<td>…</td>
+<td>…</td>
+<td>…</td>
+</tr>
+</tbody></table>
+<h3 id="implementation-phases">Implementation phases</h3>
+<ol>
+<li><strong>Phase 1 — Behavioral diff (4-agent hive).</strong> Produce the 34-row table. Cluster
+agents by function family: memory CRUD (1-5), embedding/HNSW (6-10), controller
+helpers (11-16), pattern/feedback (17-19), causal/hierarchical/session (20-30),
+batch/synthesize/embeddings (31-34). Deliverable: the table above, filled.</li>
+<li><strong>Phase 2 — Per-behavior wire/drop decisions.</strong> For each lost behavior, decide
+WIRE (default) or DROP (with explicit architectural reason — typically ADR-0112
+cross-store concern or ADR-0170 init-cost concern). Decisions recorded in the
+table.</li>
+<li><strong>Phase 3 — Restoration call sites.</strong> Implement WIRE decisions as call sites in
+the appropriate router method or MCP tool handler. All restorations:<ul>
+<li>Use <code>getController()</code> per ADR-0084 Phase 4 (no bridge-shaped indirection)</li>
+<li>Are feature-checked (no error when controller is absent)</li>
+<li>Surface failures loudly per <code>feedback-no-fallbacks.md</code> (no silent try/catch)</li>
+<li>Honor ADR-0170 Phase C.3 (controller-touching hooks call <code>ensureRegistry()</code>,
+storage-only paths do not)</li>
+</ul>
+</li>
+<li><strong>Phase 4 — Acceptance tests.</strong> Six confirmed-behavior tests above, plus one per
+additional WIRE decision from the table.</li>
+<li><strong>Phase 5 — Lint gate.</strong> Grep-based check (acceptance-test shape) that the
+load-bearing call sites still exist in the router. Prevents future deletions
+from re-creating the gap.</li>
+</ol>
+<h2 id="execution-plan">Execution Plan</h2>
+<h3 id="topology">Topology</h3>
+<p>Hierarchical-mesh per <code>CLAUDE.md</code> project config: 1 queen architect at the apex,
+1 devil&#39;s advocate in dialectic with the queen, 13 specialist experts distributed
+across five functional clusters. Maximum 15 agents — the project cap.</p>
+<p>Per <code>feedback-council-queen-da-alongside-experts.md</code>, queen + devil&#39;s advocate
+spawn <strong>alongside</strong> experts in a single wave, not sequentially after. Per
+<code>feedback-agent-dialectic-via-sendmessage.md</code>, all inter-agent comms use
+<code>SendMessage</code> to the bound team — no file-based handoff (<code>/tmp/&lt;hive-id&gt;/</code> dirs,
+shared JSON state files, etc. are forbidden).</p>
+<p>The swarm is invoked via the <code>claude-flow-swarm</code> skill, which initialises the
+ruflo MCP coordination layer per <code>reference-ruflo-mcp-swarms.md</code> (ruflo
+orchestrates; Claude Code Agent tool executes).</p>
+<h3 id="initialisation-sequence">Initialisation sequence</h3>
+<pre><code class="hljs language-bash"><span class="hljs-comment"># 1. Bootstrap topology + team binding via ruflo MCP</span>
+mcp__claude-flow__swarm_init        topology=hierarchical-mesh maxAgents=15
+mcp__claude-flow__hive-mind_init    team_name=adr-0179-restore queen=system-architect
+
+<span class="hljs-comment"># 2. Single-message wave of 15 Agent-tool spawns (per CLAUDE.md &quot;ALL agents in ONE message&quot;)</span>
+<span class="hljs-comment">#    Every spawn carries: team_name=adr-0179-restore + unique name + run_in_background=true</span></code></pre>
+<h3 id="agent-roster-15-total">Agent roster (15 total)</h3>
+<p><strong>Leadership pair — spawned alongside experts, active across all 5 phases:</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th><code>subagent_type</code></th>
+<th>Mandate</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td>Queen architect</td>
+<td><code>system-architect</code></td>
+<td>Owns 34-row diff table integrity. Arbitrates WIRE/DROP deadlocks. Enforces ADR-0084 Phase 4 (controller-direct, no bridge-shape) and ADR-0170 Phase C.3 (no init-cost regression on memory_* axis). Merges per-expert outputs into the ADR appendix.</td>
+</tr>
+<tr>
+<td>2</td>
+<td>Devil&#39;s advocate</td>
+<td><code>reviewer</code></td>
+<td>Challenges every WIRE decision (&quot;is this behaviour actually used? does upstream-DROP have an architectural reason we missed? is the restoration call site bridge-flavoured?&quot;). Forces explicit defence per <code>feedback-no-value-judgements-on-features.md</code> — the burden is on whoever proposes DROP.</td>
+</tr>
+</tbody></table>
+<p><strong>Phase 1 — Behavioural diff cluster (5 experts, parallel work):</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th><code>subagent_type</code></th>
+<th>Cluster scope (upstream <code>memory-bridge.ts</code> exports)</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>3</td>
+<td>Memory-CRUD body-diff expert</td>
+<td><code>code-analyzer</code></td>
+<td><code>bridgeStoreEntry</code>, <code>bridgeSearchEntries</code>, <code>bridgeListEntries</code>, <code>bridgeGetEntry</code>, <code>bridgeDeleteEntry</code> (5 funcs)</td>
+</tr>
+<tr>
+<td>4</td>
+<td>Embedding/HNSW body-diff expert</td>
+<td><code>code-analyzer</code></td>
+<td><code>bridgeGenerateEmbedding</code>, <code>bridgeLoadEmbeddingModel</code>, <code>bridgeGetHNSWStatus</code>, <code>bridgeSearchHNSW</code>, <code>bridgeAddToHNSW</code>, <code>bridgeGetAllEmbeddings</code> (6 funcs)</td>
+</tr>
+<tr>
+<td>5</td>
+<td>Controller-helper body-diff expert</td>
+<td><code>code-analyzer</code></td>
+<td><code>bridgeGetController</code>, <code>bridgeHasController</code>, <code>bridgeListControllers</code>, <code>isBridgeAvailable</code>, <code>getControllerRegistry</code>, <code>shutdownBridge</code> (6 funcs)</td>
+</tr>
+<tr>
+<td>6</td>
+<td>Pattern/feedback/session body-diff expert</td>
+<td><code>code-analyzer</code></td>
+<td><code>bridgeStorePattern</code>, <code>bridgeSearchPatterns</code>, <code>bridgeRecordFeedback</code>, <code>bridgeSessionStart</code>, <code>bridgeSessionEnd</code>, <code>bridgeRouteTask</code> (6 funcs)</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Causal/hierarchical/batch body-diff expert</td>
+<td><code>code-analyzer</code></td>
+<td><code>bridgeRecordCausalEdge</code>, <code>bridgeDeleteCausalEdge</code>, <code>bridgeDeleteCausalNode</code>, <code>bridgeDeleteHierarchical</code>, <code>bridgeHealthCheck</code>, <code>bridgeHierarchicalStore</code>, <code>bridgeHierarchicalRecall</code>, <code>bridgeConsolidate</code>, <code>bridgeBatchOperation</code>, <code>bridgeContextSynthesize</code>, <code>bridgeSemanticRoute</code> (11 funcs)</td>
+</tr>
+</tbody></table>
+<p>Each expert produces their cluster&#39;s rows of the 34-row table and posts them via
+SendMessage to <code>name=queen-architect</code>. Queen merges into the canonical appendix
+inside this ADR.</p>
+<p><strong>Phase 2 — Wire/drop deliberators (3 specialists, active after Phase 1 settles):</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th><code>subagent_type</code></th>
+<th>Mandate</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>8</td>
+<td>Cross-store axis specialist</td>
+<td><code>adr-architect</code></td>
+<td>For each lost behaviour, check whether restoration would coordinate writes across both RVF and AgentDB SQLite. Yes → <code>DROP-per-ADR-0112</code> with citation. No → defer to default-WIRE.</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Default-WIRE advocate</td>
+<td><code>researcher</code></td>
+<td>Applies <code>feedback-no-value-judgements-on-features.md</code>: every behaviour is WIRE unless an explicit architectural reason (cited ADR) justifies DROP. Pushes back on every &quot;scale doesn&#39;t demand it&quot; / &quot;trust model doesn&#39;t justify it&quot; framing.</td>
+</tr>
+<tr>
+<td>10</td>
+<td>Performance/init-cost specialist</td>
+<td><code>performance-engineer</code></td>
+<td>For each WIRE decision, audit ADR-0170 Phase C.3 regression risk. Controllers requiring registry init must call <code>ensureRegistry()</code> only when the route is hit. Produces per-WIRE init-cost budget annotation against the +30% / +21% baseline that triggered Phase C.3.</td>
+</tr>
+</tbody></table>
+<p><strong>Phase 3 — Restoration implementers (3 coders, active after Phase 2 decisions
+land):</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th><code>subagent_type</code></th>
+<th>Behaviours restored</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>11</td>
+<td>Security/audit hooks implementer</td>
+<td><code>security-architect</code></td>
+<td>MutationGuard pre-store hook in <code>routeMemoryOp &#39;store&#39;</code>; AttestationLog post-store hook. Per <code>feedback-no-fallbacks.md</code> + <code>feedback-data-loss-zero-tolerance.md</code> — no silent try/catch; rejected writes surface loudly.</td>
+</tr>
+<tr>
+<td>12</td>
+<td>Performance hooks implementer</td>
+<td><code>performance-engineer</code></td>
+<td>TieredCache write-through in <code>routeMemoryOp &#39;store&#39;</code>; hybrid BM25 + semantic fusion as <strong>default</strong> in <code>routeMemoryOp &#39;search&#39;</code>; ExplainableRecall provenance strings on every result. Fusion weights resolved via <code>@claude-flow/config-chain.getEmbeddingConfig()</code> per ADR-0177 — never hardcoded.</td>
+</tr>
+<tr>
+<td>13</td>
+<td>Learning hooks implementer</td>
+<td><code>coder</code></td>
+<td>SkillLibrary auto-promotion in <code>routeFeedbackOp &#39;record&#39;</code> for <code>success &amp;&amp; quality ≥ 0.9 &amp;&amp; patterns.length &gt; 0</code>. Plus any additional Phase-2 WIRE decisions in the feedback/learning domain.</td>
+</tr>
+</tbody></table>
+<p><strong>Phase 4 — Test author (1 specialist):</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th><code>subagent_type</code></th>
+<th>Deliverable</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>14</td>
+<td>TDD acceptance specialist</td>
+<td><code>tester</code></td>
+<td>The six named acceptance tests in <code>### Confirmation</code> above, plus one test per additional Phase-2 WIRE decision. Verification cycle is <code>npm run test:unit</code> + <code>npm run release</code> per CLAUDE.md &quot;TWO COMMANDS&quot; rule — no piecemeal acceptance scripts (per memory <code>feedback-all-test-levels.md</code>).</td>
+</tr>
+</tbody></table>
+<p><strong>Phase 5 — Verification + lint gate (1 specialist):</strong></p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Role</th>
+<th><code>subagent_type</code></th>
+<th>Deliverable</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>15</td>
+<td>Production validator</td>
+<td><code>production-validator</code></td>
+<td>Grep-based lint gate (load-bearing call sites must remain present); end-to-end <code>npm run release</code> run; sign-off that every row in the 34-row table has a non-<code>?</code> Decision column and every WIRE decision has a passing acceptance test. Flips ADR-0179 <code>status: proposed</code> → <code>status: accepted</code> once green.</td>
+</tr>
+</tbody></table>
+<h3 id="dialectic-mechanics">Dialectic mechanics</h3>
+<p>Per <code>feedback-hive-discussion-mechanics.md</code>:</p>
+<ul>
+<li>Every expert turn engages <strong>by name</strong> with a specific claim from a prior turn
+(e.g., &quot;Memory-CRUD expert → Embedding expert: I disagree with your WIRE verdict
+on <code>bridgeGenerateEmbedding</code> because the fork&#39;s <code>embedding-adapter</code> already
+covers the upstream behaviour at <code>embedding-adapter.ts:50-55</code> — what specifically
+is missing?&quot;).</li>
+<li>Refinements emerge from conversation, not from parallel independent verdicts.</li>
+<li>Devil&#39;s advocate is active throughout: Phase 1 (&quot;is this body-diff
+comprehensive?&quot;), Phase 2 (&quot;is this DROP reason load-bearing?&quot;), Phase 3 (&quot;is
+this call site bridge-shaped?&quot;), Phase 4 (&quot;does this test actually fail before
+the fix?&quot;), Phase 5 (&quot;is the lint gate detectable from CI?&quot;).</li>
+<li>Queen synthesizes the dialectic into the ADR appendix in-place via <code>Edit</code>.</li>
+</ul>
+<h3 id="hand-off-surface">Hand-off surface</h3>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Output namespace (<code>memory_store</code>)</th>
+<th>Key shape</th>
+<th>Consumer</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>1</td>
+<td><code>adr-0179-diff</code></td>
+<td><code>bridge-&lt;func-name&gt;</code></td>
+<td>Phase 2 deliberators (semantic-searchable inputs)</td>
+</tr>
+<tr>
+<td>2</td>
+<td><code>adr-0179-decisions</code></td>
+<td><code>&lt;behaviour-name&gt;</code> → <code>WIRE</code> | <code>DROP-&lt;adr-citation&gt;</code></td>
+<td>Phase 3 implementers (precise WIRE list)</td>
+</tr>
+<tr>
+<td>3</td>
+<td>git commits to <code>forks/ruflo</code> main on <code>sparkling</code> per memory <code>reference-fork-workflow.md</code>; no <code>Co-Authored-By</code> trailer (fork rule per <code>feedback-fork-commit-attribution.md</code>)</td>
+<td>—</td>
+<td>Phase 4 tester</td>
+</tr>
+<tr>
+<td>4</td>
+<td>tests/ acceptance scripts checked into <code>ruflo-patch</code> (this repo, not fork)</td>
+<td><code>adr0179-&lt;behaviour&gt;.test.mjs</code></td>
+<td>Phase 5 validator</td>
+</tr>
+<tr>
+<td>5</td>
+<td>This ADR file: <code>status:</code> flip + 34-row table populated; ADR-0179 acceptance entry added to ADR-0094 living tracker</td>
+<td>—</td>
+<td>User</td>
+</tr>
+</tbody></table>
+<h3 id="abort-criteria">Abort criteria</h3>
+<p>The swarm self-aborts and escalates to user if any of the following:</p>
+<ul>
+<li><strong>Phase 1 scope explosion</strong>: more than 5 of the 28 functions I labelled &quot;fully
+preserved&quot; reveal additional lost behaviours. Indicates the conversational audit
+materially understated scope — user decides whether to expand the ADR or pause.</li>
+<li><strong>Phase 2 deadlock</strong>: deliberators cannot reach consensus on a WIRE/DROP after
+3 dialectic rounds. Indicates an architectural ambiguity needing user input,
+not more agent rounds.</li>
+<li><strong>Phase 3 init-cost regression</strong>: restoration introduces &gt; 5% wall-time
+regression on <code>npm run test:unit</code>. Indicates an ADR-0170 Phase C.3 violation;
+must redesign the hook before continuing.</li>
+<li><strong>Phase 4 test author cannot reproduce</strong>: any of the six named behaviours
+cannot be exercised via a deterministic test. Indicates either the behaviour
+is harder to trigger than the body-diff suggested, or the restoration call
+site is wrong — back to Phase 3.</li>
+</ul>
+<h3 id="out-of-scope-deliberate">Out of scope (deliberate)</h3>
+<ul>
+<li><strong>Donate-back to upstream <code>ruvnet/ruflo</code></strong>: forbidden per
+<code>feedback-no-upstream-donate-backs.md</code>. The restored call sites stay fork-only.</li>
+<li><strong>Re-introducing <code>memory-bridge.ts</code> as a module</strong>: forbidden — ADR-0085&#39;s
+structural decision stands. Restoration is <strong>call-site additions inside
+existing router methods</strong>, not a module restoration.</li>
+<li><strong>Behavioural audit of <code>agentdb-orchestration.ts</code> shadow functions</strong>: ADR-0084
+flagged these as ADR-0085&#39;s deferred Phase 3. Tangentially relevant but a
+separate cleanup; if drift is found there during Phase 1, file as a follow-up
+issue, do not absorb into ADR-0179.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>
