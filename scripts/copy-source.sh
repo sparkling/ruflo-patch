@@ -166,6 +166,7 @@ copy_source() {
     "${TEMP_DIR}/v3/@claude-flow/guidance" \
     "${TEMP_DIR}/v3/@claude-flow/plugins" \
     "${TEMP_DIR}/v3/@claude-flow/shared" \
+    "${TEMP_DIR}/v3/@claude-flow/config-chain" \
     ; do
     if [[ -d "$pkg_dir/dist" && -d "$pkg_dir/src" ]]; then
       local newest_src newest_dist
