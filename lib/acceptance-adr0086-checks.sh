@@ -659,10 +659,12 @@ check_adr0086_debt15_sqlite_path() {
   local pg_cluster="$iso/.swarm/memory.pglite"
 
   if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-    # Trigger controller registry init — agentdb_health forces full init
-    # per commands/daemon.ts and acceptance-controller-checks.sh pattern
-    local cli; cli=$(_cli_cmd)
-    _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "" 30
+    # ADR-0177: pglite substrate retired (RVF-first). PostgresBackend is a
+    # museum piece — PG_VERSION will not be created. skip_accepted.
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="Debt 15: SKIP_ACCEPTED: pglite substrate retired by ADR-0177 (RVF-first); PostgresBackend not wired"
+    rm -rf "$iso" 2>/dev/null
+    return
   fi
 
   if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then

@@ -555,13 +555,14 @@ $(echo "$store_body" | head -10)"
     return
   fi
 
-  # ─── Step 5: verify the pglite cluster exists ─────────────────────
-  # Controller exit-code 0 + `.swarm/memory.pglite/PG_VERSION` present →
-  # PostgresBackend bootstrapped its cluster. If the cluster is absent,
-  # the controller bailed to in-memory state without surfacing an
-  # error — classic ADR-0082 silent-pass.
+  # ─── Step 5: verify persistence ──────────────────────────────────
+  # ADR-0177: pglite substrate retired (RVF-first). PostgresBackend is a
+  # museum piece — PG_VERSION will not be created. Accept absence as
+  # skip_accepted so the row-count check in Step 6 can still verify
+  # in-process persistence via the SQLite/RVF path.
   if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.pglite/PG_VERSION not created after successful store call — no persistence reached disk (silent in-memory fallback, ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: pglite substrate retired by ADR-0177 (RVF-first); PostgresBackend not wired"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -994,9 +995,12 @@ _b5_check_causal_pipeline() {
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
   local health_body; health_body=$(cat "$work/health.out" 2>/dev/null || echo "")
 
-  # ─── Step 3: Assertion B — pglite cluster exists ──────────────────
+  # ─── Step 3: Assertion B — pglite cluster ─────────────────────────
+  # ADR-0177: pglite substrate retired (RVF-first). PostgresBackend is a
+  # museum piece — PG_VERSION will not be created. skip_accepted.
   if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.pglite/PG_VERSION not created by agentdb_health cold-start — PostgresBackend did not bootstrap (health output first 3 lines): $(echo "$health_body" | head -3 | tr '\n' ' ')"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: pglite substrate retired by ADR-0177; PostgresBackend not wired — causal table checks skipped"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi

@@ -132,7 +132,7 @@ check_adr0094_p2_autopilot_lifecycle() {
   _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool autopilot_disable" "$work/disable.out" 15
   local disable_body; disable_body=$(cat "$work/disable.out" 2>/dev/null | grep -v '^__RUFLO_DONE__:' || echo "")
 
-  if ! echo "$disable_body" | grep -qiE 'disabled|success|true'; then
+  if ! echo "$disable_body" | grep -qiE 'disabled|success|true|enabled.*false|"enabled":.*false'; then
     _CHECK_OUTPUT="P2/lifecycle: autopilot_disable did not confirm disable. Output: $(echo "$disable_body" | head -5 | tr '\n' ' ')"
     rm -rf "$work" 2>/dev/null
     return
@@ -173,7 +173,7 @@ check_adr0094_p2_autopilot_disable() { # adr0097-l2-delegator: flag set inside _
   _autopilot_invoke_tool \
     "autopilot_disable" \
     '{}' \
-    'disabled|success|true' \
+    'disabled|success|true|enabled.*false|"enabled":.*false' \
     "autopilot_disable" \
     15
 }

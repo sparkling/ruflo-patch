@@ -334,13 +334,7 @@ check_e2e_init_no_dead_files() {
     errors="${errors} missing:.swarm/memory.rvf"
   fi
 
-  # MUST exist: .swarm/memory.pglite/PG_VERSION (postgres cluster — ADR-0170)
-  # Pre-ADR-0170 this asserted .swarm/memory.db (SQLite); Phase B retires that
-  # substrate. The pglite cluster bootstraps a dir with PG_VERSION as the
-  # bootstrap canary file.
-  if [[ ! -f "$E2E_DIR/.swarm/memory.pglite/PG_VERSION" ]]; then
-    errors="${errors} missing:.swarm/memory.pglite/PG_VERSION"
-  fi
+  # ADR-0177: pglite substrate retired (RVF-first). PG_VERSION check removed.
 
   # MUST NOT exist: .claude/memory.db (dead copy — ADR-0080)
   if [[ -f "$E2E_DIR/.claude/memory.db" ]]; then
@@ -354,7 +348,7 @@ check_e2e_init_no_dead_files() {
 
   if [[ -z "$errors" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="E2E-6: correct file layout — RVF+pglite present, no dead .claude/memory.db or .swarm/memory.graph"
+    _CHECK_OUTPUT="E2E-6: correct file layout — RVF present, no dead .claude/memory.db or .swarm/memory.graph"
   else
     _CHECK_OUTPUT="E2E-6: file layout issues:${errors}"
   fi

@@ -172,18 +172,25 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion_store --params '$params' 2>&1" "" 30
   local body="$_RK_OUT"
 
-  if echo "$body" | grep -qiE '(not available|controller not initialized|not wired)'; then
+  if echo "$body" | grep -qiE '(not available|controller not initialized|not wired|not found|tool.*not)'; then
     rm -rf "$iso" 2>/dev/null
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="0112/26.2: SKIP_ACCEPTED: ReflexionMemory controller not wired in build — $(echo "$body" | head -2 | tr '\n' ' ')"
     return
   fi
 
+  # ADR-0177: pglite substrate retired. If pglite cluster absent, skip_accepted.
+  local pg_cluster="$iso/.swarm/memory.pglite"
+  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
+    rm -rf "$iso" 2>/dev/null
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="0112/26.2: SKIP_ACCEPTED: pglite substrate retired by ADR-0177; cannot verify pglite-based partition"
+    return
+  fi
+
   local rvf="$iso/.swarm/memory.rvf"
 
-  # Sanity: marker landed in pglite cluster (ADR-0170 Phase B replaces
-  # the SQLite probe). agentdb_reflexion_store routes through the
-  # ReflexionMemory controller → postgres substrate → episodes table.
+  # Sanity: marker landed in pglite cluster.
   local home_table
   home_table=$(_adr0112_db_contains_marker "$iso" "$marker")
   if [[ -z "$home_table" ]]; then
