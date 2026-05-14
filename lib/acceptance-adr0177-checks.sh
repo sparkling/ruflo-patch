@@ -74,6 +74,10 @@ _adr0177_stored_dim() {
   local rvf=""
   for cand in "${dir}/.claude-flow/memory.rvf" "${dir}/.swarm/memory.rvf"; do
     if [[ -s "$cand" ]]; then rvf="$cand"; break; fi
+    # Pure-TS RvfBackend writes to memory.rvf.meta before the first WAL
+    # compaction. getStoredDimension() checks .meta first when given the
+    # base path — so pass the base path (without .meta) to the probe.
+    if [[ -s "${cand}.meta" ]]; then rvf="$cand"; break; fi
   done
   [[ -z "$rvf" ]] && { echo ""; return; }
 

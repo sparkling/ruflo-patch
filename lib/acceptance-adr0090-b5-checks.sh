@@ -1613,7 +1613,7 @@ check_adr0090_b5_semanticRouter() {
 
   # 4. Probe via agentdb_semantic_route.
   local probe_out="$work/probe.out"
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_semantic_route --params '{\"input\":\"JWT authentication with refresh token rotation\"}' 2>&1" "$probe_out" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_semantic-route --params '{\"input\":\"JWT authentication with refresh token rotation\"}' 2>&1" "$probe_out" 30
   local probe_exit="${_RK_EXIT:-1}"
   local probe_body; probe_body=$(cat "$probe_out" 2>/dev/null || echo "")
 
