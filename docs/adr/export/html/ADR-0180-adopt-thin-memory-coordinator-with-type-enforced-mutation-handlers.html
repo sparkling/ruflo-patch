@@ -509,6 +509,121 @@ implements: []</h2>
 <li><a href="../council/ADR-0179-council-r3-bridge-coordination.html">docs/council/ADR-0179-council-r3-bridge-coordination.md</a> — Round 3 transcript where the type-enforcement vs runtime-convention distinction was settled.</li>
 <li><a href="../council/ADR-0180-swarm-callers-audit.html">docs/council/ADR-0180-swarm-callers-audit.md</a> — 4-agent swarm session enumerating all ~200+ in-process callers (MCP, CLI, hooks, daemons, inter-controller writes) that must route through the archivist. Drove §Caller surfaces, §Re-entrancy, §Bulk-write mode, §Performance and hot paths, and the revised §Migration concerns.</li>
 </ul>
+<h2 id="execution-plan">Execution Plan</h2>
+<p>§Migration concerns establishes the 10 phases in dependency order. The Execution Plan adds the <em>how</em>: each phase is executed via <code>/swarm-advanced</code> (per <code>swarm-advanced</code> skill) with a per-phase team — a phase queen coordinates worker agents that run in parallel where the phase&#39;s work decomposes cleanly. Phases stay sequential — Phase N+1 cannot start until Phase N&#39;s release-pipeline gate (<code>npm run release</code>) passes. Within a phase, workers run in parallel via the Agent tool with <code>run_in_background: true</code> and <code>team_name: &quot;adr-0180-phase-N&quot;</code>; results flow to the queen via SendMessage per <code>feedback-agent-dialectic-via-sendmessage</code>.</p>
+<p><strong>Universal pattern per phase:</strong></p>
+<ol>
+<li><strong>TeamCreate</strong> <code>adr-0180-phase-N</code> with phase description.</li>
+<li><strong>Spawn</strong> workers + 1 queen in a single message (all <code>run_in_background: true</code>, all bound to the team). Per <code>feedback-council-queen-da-alongside-experts</code>, queen spawns alongside workers, not after.</li>
+<li><strong>Workers</strong> execute their slice — single attempt, no retry loops (per <code>feedback-single-arm-experiment-prompt-discipline</code>); each worker SendMessages the queen when done.</li>
+<li><strong>Queen</strong> waits for all workers, runs the phase&#39;s acceptance test (<code>npm run release</code> preflight + acceptance for that surface), produces a phase report.</li>
+<li><strong>TeamDelete</strong> after all workers and queen acknowledge shutdown.</li>
+<li><strong>Halt protocol.</strong> Any worker may invoke <code>ADR-0180-Halt:&lt;reason&gt;</code> if it surfaces a retroactive flaw in earlier scaffolding; the release pipeline blocks until a paired <code>ADR-0180-Amendment: phase-N</code> commit lands amending the prior phase&#39;s bullet.</li>
+</ol>
+<p><strong>Per-phase team composition:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Surface</th>
+<th>Topology</th>
+<th>Workers</th>
+<th>Queen</th>
+<th>Parallelism</th>
+<th>Phase exit gate</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>2</td>
+<td>Scaffolding (no callers wired)</td>
+<td>mesh</td>
+<td>bench-harness-builder (analyst); audit-writer-builder (coder); type-machinery-builder (coder); testing-surface-builder (coder); module-charter-author (api-docs); charter-gate-implementer (coder); single-fd-invariant-builder (coder)</td>
+<td>sparc-orchestrator</td>
+<td>7 + 1</td>
+<td><code>npm run release</code> preflight passes; <code>bench/baseline.json</code> committed; <code>scripts/check-archivist-charter.sh</code> exits 0</td>
+</tr>
+<tr>
+<td>3</td>
+<td><code>memory_*</code> (4 mutating tools)</td>
+<td>star</td>
+<td>memory-store-migrator, memory-search-migrator, memory-retrieve-migrator, memory-bridge-status-migrator (4× backend-dev); plus 4× provenance-rollout-worker (1 per ranked-read tool: search/retrieve/list/search_unified — ~210 LoC total); invariants-author for the 4 surfaces (backend-dev)</td>
+<td>task-orchestrator</td>
+<td>9 + 1</td>
+<td>Tier 1 replay (<code>memory_*</code>) passes; provenance flag works on all 5 ranked-read tools; mutation invariants on each handler</td>
+</tr>
+<tr>
+<td>4</td>
+<td><code>hive-mind_*</code> (6 tools)</td>
+<td>hierarchical</td>
+<td>pre-Phase-4 maintenance commits land FIRST as a 2-agent sub-team (agents-json-fixer + consensus-lock-fixer, both backend-dev); then substrate-primitive-extractor (coder, lifts <code>withHiveStoreLock</code>/<code>saveHiveState</code> → <code>makeFsJsonSubstrate</code>); 6× hive-mind-tool-migrator (spawn/status/memory/consensus/shutdown/broadcast); agents-json-second-consumer (validates substrate-genericity)</td>
+<td>task-orchestrator</td>
+<td>10 + 1</td>
+<td><code>scripts/ruflo-publish.sh</code> confirms maintenance commits on <code>forks/ruflo/v3 main</code>; Tier 1 replay; Phase 4 surprises a/b/c resolved</td>
+</tr>
+<tr>
+<td>5</td>
+<td>FS-JSON group (~17 stores)</td>
+<td>mesh</td>
+<td>one fs-json-store-migrator (backend-dev) per store; cap at 15 in the first wave (claims, tasks, agents, swarm, coordination, workflow, neural, github, performance, system, config, progress, ruvllm, daa, wasm); browser + autopilot queued for a second 2-agent wave</td>
+<td>task-orchestrator</td>
+<td>15 + 2 (queued) + 1</td>
+<td>Phase 5 contention-threshold gate (<code>lockWaits.length &lt;= 1.5 * mutationCount</code>); all 17 stores route through <code>ctx.substrate.withWrite</code></td>
+</tr>
+<tr>
+<td>6</td>
+<td><code>agentdb_*</code> (~20 tools) + ADR-0112 cleanup</td>
+<td>hierarchical</td>
+<td>8× agentdb-tool-migrator (filtered_search/pattern_search/reflexion_retrieve/skill_search/causal_recall/hierarchical_recall/neural_patterns/semantic_route — covers the 8 ranked-read tools + provenance); 4× agentdb-mutator-migrator (route/store/embed/feedback covering the mutating side); adr0112-marker-cleanup (analyst); adr0112-requireAgentDB-cleanup (analyst); rvf-error-retirement-prep (analyst)</td>
+<td>sparc-orchestrator</td>
+<td>15 + 1</td>
+<td><code>grep -RE &#39;ADR-0112 Phase 2|requireAgentDB(&#39; forks/agentdb/src/</code> returns zero; Tier 1 replay for agentdb; provenance rollout ~315 LoC</td>
+</tr>
+<tr>
+<td>7</td>
+<td>Hooks + daemons</td>
+<td>star</td>
+<td>post-edit-migrator (hotPath:true, backend-dev); pre-task-migrator (hotPath); post-task-migrator; session-end-migrator (includes consolidation-nudge wiring + recovery-scan bounds per #11); 6× daemon-worker-migrator (one per scheduled worker — consolidation, auto-memory, hooks-learning, sync, autopilot, ranked-context); fail-loud-fixer (analyst, #14 sites); hot-path-bench-validator (tester, W3 + W3-contended real-pipeline fixture)</td>
+<td>task-orchestrator</td>
+<td>12 + 1</td>
+<td>W3 microbench (single-process) passes; W3-contended real-pipeline (cli + daemon + Edit storm) passes; consolidation-nudge acceptance test passes; recovery-scan cap test passes</td>
+</tr>
+<tr>
+<td>8</td>
+<td>(a1) Lift archivist into <code>@sparkleideas/agentdb</code> + cli-core decision</td>
+<td>hierarchical</td>
+<td>archivist-source-mover (coder, relocates archivist to <code>forks/agentdb/src/archivist/**</code>); package-exports-updater (coder, adds <code>@sparkleideas/agentdb/archivist</code> to exports); cli-import-rewriter (coder, points cli at agentdb-hosted archivist); standalone-server-handler-binder (backend-dev, registers handlers); cli-core-jsonmemory-decider (analyst, picks per #9 disposition)</td>
+<td>sparc-orchestrator</td>
+<td>5 + 1</td>
+<td>archivist resolvable from both cli and agentdb-mcp-server; both surfaces share one archivist instance; Tier 1 replay across both passes; cli-core decision documented</td>
+</tr>
+<tr>
+<td>9</td>
+<td>Inter-controller orchestrators</td>
+<td>star</td>
+<td>scenario-a-runner (NightlyLearner re-entrancy depth ≤3, tester); scenario-b-runner (SyncCoordinator bulk mode, tester); scenario-c-runner (MemoryConsolidation cascade, tester); NightlyLearner-migrator (coder); MemoryConsolidation-migrator (coder); SkillLibrary-migrator (coder); SyncCoordinator-migrator (coder); reference-impl-decider (analyst, #25 triggers)</td>
+<td>task-orchestrator</td>
+<td>8 + 1</td>
+<td>Phase 9 load scenarios A/B/C pass; audit-tree depth ≤3 invariant; bulk-manifest equality; #25 triggers re-evaluated</td>
+</tr>
+<tr>
+<td>10</td>
+<td>ADR-0112 retirement</td>
+<td>mesh</td>
+<td>rvf-error-retirement (coder, deletes <code>RvfNotInitializedError</code>); drift-guard-verifier (tester, confirms preflight scans return zero); adr0112-status-flipper (api-docs, marks ADR-0112 superseded + appends <code>superseded-by: ADR-0180</code> per ADR convention); marker-cleanup-final-sweep (analyst)</td>
+<td>task-orchestrator</td>
+<td>4 + 1</td>
+<td>Zero matches for ADR-0112 patterns; ADR-0112 status = <code>superseded by ADR-0180</code>; release succeeds</td>
+</tr>
+</tbody></table>
+<p><strong>Cross-phase coordination:</strong></p>
+<ul>
+<li><strong>Phase queen reports</strong> land in <code>docs/council/ADR-0180-phase-&lt;N&gt;-report.md</code> after the phase completes — a phase audit trail similar to the <code>ADR-0180-swarm-callers-audit.md</code> precedent. Reports document worker outputs, acceptance-test results, and any <code>ADR-0180-Halt:</code> commits that fired during the phase.</li>
+<li><strong>The §22 <code>withTestContext</code> Phase 2 ordering gate</strong> (§Migration concerns) is enforced in Phase 2 by the testing-surface-builder + queen verifying all four <code>TestResult</code> views are exercised before Phase 3 spawns.</li>
+<li><strong>The §Provenance rollout scope</strong> is split across phases 3 (memory_*), 4 (hive-mind_*), and 6 (agentdb_*) — each phase&#39;s queen verifies its share against the spot-counted ~45-50 LoC per tool budget; the total drift gate (&gt;10% per §Measurement-date anchoring) fires if the per-phase numbers exceed estimate.</li>
+</ul>
+<p><strong>Up to 15 agents per phase</strong> — the table above shows where the parallelism actually fits. Phases 5 and 6 hit the 15-agent ceiling; phases 2, 7 sit at 7-12; phases 3, 4, 8, 9, 10 sit at 4-10. Single-agent phases were ruled out — every phase has at least 4 workers + 1 queen because the queen-alongside-workers pattern (per <code>feedback-council-queen-da-alongside-experts</code>) requires concurrent spawn.</p>
+<p><strong>Pre-Phase-2 prerequisite (no swarm needed).</strong> The <code>scripts/ruflo-publish.sh</code> pipeline gains the <code>ADR-0180-Halt:</code>/<code>ADR-0180-Amendment:</code> trailer scan + the charter conformance hook before Phase 2 spawns. This is a one-shot scripting task (sole-committer ruflo-patch repo), not a swarm phase. Without it, the halt protocol doesn&#39;t bite.</p>
+<p><strong>Phase 0 (audit gates, prior to execution).</strong> This ADR&#39;s acceptance status flip (<code>proposed</code> → <code>accepted</code>) is itself the Phase 0 gate — until accepted, no implementation phase runs. The two audit passes (Pass 1 + Pass 2) documented in this document are the artifacts of Phase 0; a third pass after the Execution Plan landing is optional but recommended before accepting.</p>
 <h2 id="open-follow-ups">Open follow-ups</h2>
 <ol>
 <li><p><strong>Naming.</strong> <code>Archivist</code> (class) + <code>Store</code> (per-substrate handler) is the chosen vocabulary. Rejected during deliberation: <code>Bridge</code> (upstream baggage), <code>Middleware</code> (too generic), <code>Coordinator</code> (abstract — understates what the type system enforces), <code>Store</code> for the central role (collides with the per-substrate stores below; too overloaded). The thematic family is available downstream if useful: <code>Archive</code> (substrate as a whole), <code>Acquisition</code> (a write), <code>Reference</code> (a read), <code>Provenance</code> (source metadata).</p>

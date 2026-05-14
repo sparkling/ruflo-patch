@@ -1805,6 +1805,7 @@ flowchart TB
 </details>
 
 <p>Each phase ships independently and is acceptance-testable. An ESLint counter tracks unmigrated mutation sites — count trends down per phase. ADR amendment required if the <code>MODULE.md</code> charter needs expansion mid-migration; no LoC ceiling (see §Governance).</p>
+<p><strong>Execution Plan.</strong> Each phase runs via <code>/swarm-advanced</code> with a per-phase team — a queen + 4-15 parallel workers under <code>team_name: &quot;adr-0180-phase-N&quot;</code>. Phases stay sequential (Phase N+1 cannot start until Phase N&#39;s <code>npm run release</code> gate passes); within a phase, workers run in parallel via the Agent tool with <code>run_in_background: true</code>. Worker outputs flow to the queen via SendMessage; queen runs the phase&#39;s acceptance test and produces a phase report at <code>docs/council/ADR-0180-phase-&lt;N&gt;-report.md</code>. Full per-phase team composition + parallelism ceilings (Phases 5 + 6 hit 15-agent cap) are in ADR-0180 §Execution Plan. Pre-Phase-2 prerequisite (<code>scripts/ruflo-publish.sh</code> gains the <code>ADR-0180-Halt:</code> trailer scan + charter conformance hook) is a one-shot scripting task on ruflo-patch, not a swarm phase.</p>
 <h3 id="measurement-date-anchoring">Measurement-date anchoring</h3>
 <p>Every quantitative claim in this document and ADR-0180 is anchored to two audit dates: the <strong>2026-05-13 wire-up audit</strong> (call-site counts, LoC, test-file inventories) and the <strong>2026-05-14 provenance audit</strong> (15 ranked-read tools, ~665 LoC). Anchors are load-bearing — a phase opening against a stale anchor is operating on numbers that may no longer reflect the codebase.</p>
 <table>
@@ -1927,7 +1928,7 @@ flowchart TB
 <li><strong>Not a fat per-call wrapper.</strong> Both reads and writes route through, but reads don&#39;t accumulate audit entries — trivial reads are ~5-line passthroughs.</li>
 <li><strong>Not an MCP-surface consolidation.</strong> <code>memory_*</code> and <code>agentdb_*</code> both stay. Archivist is invisible to clients.</li>
 <li><strong>Not a recovery tool.</strong> Audit-chain replay is <strong>verification</strong>, not recovery. Counter increments, autoincrement IDs, and downstream auto-promotion triggers cannot be cleanly inverted; the archivist surfaces partial-state failures via operator-visible alarm rather than auto-compensating.</li>
-<li><strong>Not retroactive.</strong> Existing stores continue to work. We migrate them surface-by-surface across 9 phases. Each phase ships independently.</li>
+<li><strong>Not retroactive.</strong> Existing stores continue to work. We migrate them surface-by-surface across 10 phases (Phase 2 scaffolding through Phase 10 ADR-0112 retirement). Each phase ships independently.</li>
 </ul>
 <h2 id="references">References</h2>
 <h3 id="adrs">ADRs</h3>

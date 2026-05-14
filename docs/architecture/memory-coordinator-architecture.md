@@ -1416,6 +1416,8 @@ flowchart TB
 
 Each phase ships independently and is acceptance-testable. An ESLint counter tracks unmigrated mutation sites — count trends down per phase. ADR amendment required if the `MODULE.md` charter needs expansion mid-migration; no LoC ceiling (see §Governance).
 
+**Execution Plan.** Each phase runs via `/swarm-advanced` with a per-phase team — a queen + 4-15 parallel workers under `team_name: "adr-0180-phase-N"`. Phases stay sequential (Phase N+1 cannot start until Phase N's `npm run release` gate passes); within a phase, workers run in parallel via the Agent tool with `run_in_background: true`. Worker outputs flow to the queen via SendMessage; queen runs the phase's acceptance test and produces a phase report at `docs/council/ADR-0180-phase-<N>-report.md`. Full per-phase team composition + parallelism ceilings (Phases 5 + 6 hit 15-agent cap) are in ADR-0180 §Execution Plan. Pre-Phase-2 prerequisite (`scripts/ruflo-publish.sh` gains the `ADR-0180-Halt:` trailer scan + charter conformance hook) is a one-shot scripting task on ruflo-patch, not a swarm phase.
+
 ### Measurement-date anchoring
 
 Every quantitative claim in this document and ADR-0180 is anchored to two audit dates: the **2026-05-13 wire-up audit** (call-site counts, LoC, test-file inventories) and the **2026-05-14 provenance audit** (15 ranked-read tools, ~665 LoC). Anchors are load-bearing — a phase opening against a stale anchor is operating on numbers that may no longer reflect the codebase.
@@ -1492,7 +1494,7 @@ Per Q10 catalog, ~40 doc references across 5 surfaces will need updates as each 
 - **Not a fat per-call wrapper.** Both reads and writes route through, but reads don't accumulate audit entries — trivial reads are ~5-line passthroughs.
 - **Not an MCP-surface consolidation.** `memory_*` and `agentdb_*` both stay. Archivist is invisible to clients.
 - **Not a recovery tool.** Audit-chain replay is **verification**, not recovery. Counter increments, autoincrement IDs, and downstream auto-promotion triggers cannot be cleanly inverted; the archivist surfaces partial-state failures via operator-visible alarm rather than auto-compensating.
-- **Not retroactive.** Existing stores continue to work. We migrate them surface-by-surface across 9 phases. Each phase ships independently.
+- **Not retroactive.** Existing stores continue to work. We migrate them surface-by-surface across 10 phases (Phase 2 scaffolding through Phase 10 ADR-0112 retirement). Each phase ships independently.
 
 ## References
 
