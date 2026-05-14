@@ -68,10 +68,6 @@ export const WONT_PUBLISH = new Map([
   // upstream stabilizes the build.
   ['cuda-wasm', 'wasm-pack build often fails — removed from LEVELS by prior decision'],
 
-  // forks/ruflo/v3/@claude-flow/config-chain — internal substrate module
-  // shared by memory + agentdb. Bundled into consuming packages; not
-  // published as a standalone dep (ADR-0177 Phase 1.6).
-  ['@sparkleideas/config-chain', 'internal substrate support package — bundled into memory/agentdb consumers'],
 ]);
 
 // Pattern-based skips: any @sparkleideas/* mapped name matching one of

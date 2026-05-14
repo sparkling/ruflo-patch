@@ -22,6 +22,7 @@
         "@sparkleideas/ruvector-rvagent-wasm",
         "@sparkleideas/ruvector-ruvllm-wasm",
         "@sparkleideas/ruvector-learning-wasm",
+        "@sparkleideas/config-chain",
         "@sparkleideas/agentdb",
         "@sparkleideas/agentic-flow",
         "@sparkleideas/agentic-jujutsu",
