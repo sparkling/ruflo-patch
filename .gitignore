@@ -7,16 +7,26 @@ config/.publish-timing.json
 .codex/
 CLAUDE.local.md
 
-# Claude Flow runtime (keep config, ignore bulk)
-.claude-flow/data/graph-state.json
+# Claude Flow runtime — keep config (config.json/.yaml, embeddings.json,
+# CAPABILITIES.md, .gitignore, plugins/); ignore all bulk runtime state +
+# daemon-generated artifacts. These churn every session and are machine-local.
 .claude-flow/logs/
 .claude-flow/sessions/
 .claude-flow/neural/
 .claude-flow/daemon.pid
+.claude-flow/daemon-state.json
+.claude-flow/cjs-intelligence-signals.json
+.claude-flow/agents.json
+.claude-flow/agents/
+.claude-flow/data/
+.claude-flow/metrics/
+.claude-flow/hive-mind/
+.claude-flow/swarm/
+.claude-flow/security/
+.claude-flow/terminals/
+.claude-flow/federation/
 .claude-flow/**/*.log
 .claude-flow/**/*.tmp
-# Federation runtime node keys — bulk runtime state, not config
-.claude-flow/federation/
 
 # Environment variables
 .env
