@@ -134,10 +134,10 @@ describe('ADR-0090 Tier A1: static source — pglite substrate (ADR-0170 Phase B
       'must NOT check SQLite magic header (substrate retired)');
   });
 
-  it('invokes agentdb_reflexion_store via MCP with the marker task', () => {
+  it('invokes agentdb_reflexion-store via MCP with the marker task', () => {
     const fn = extractFn(source, 'check_adr0086_debt15_sqlite_path');
-    assert.match(fn, /agentdb_reflexion_store/,
-      'function must call the agentdb_reflexion_store MCP tool');
+    assert.match(fn, /agentdb_reflexion-store/,
+      'function must call the agentdb_reflexion-store MCP tool (hyphenated — the registered name)');
     assert.match(fn, /acceptance test reflexion adr0090/,
       'function must use the ADR-0090 A1 marker task string');
   });

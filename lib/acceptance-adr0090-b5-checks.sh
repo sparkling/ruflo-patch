@@ -297,15 +297,12 @@ try {
 #   - Isolates the project dir via _e2e_isolate
 #   - Cleans iso + work dirs on every exit path
 #
-# ADR-0170 update (2026-05-12): pglite-aware row counting replaces the
-# sqlite3 CLI probe. Each iso runs the controller's MCP store call, then
-# this helper opens the iso's `.swarm/memory.pglite/` cluster via a tiny
-# Node ESM oneliner and counts rows matching the marker. The Node probe
-# uses `await import('@electric-sql/pglite')` from the iso dir so the
-# resolved pglite package is the one the agentdb controller wrote into.
-#
-# No skip_accepted branches remain — sqlite3 is no longer a dependency,
-# and there is no pglite-vs-sqlite substrate ambiguity to gate on.
+# ADR-0177 update: pglite substrate retired (RVF-first). The agentdb_*
+# axis now persists to `.swarm/memory.db` (SQLite) — see
+# project-rvf-primary. Steps 5-9 probe that file via the sqlite3 CLI:
+# table existence, marker row count, stored-field assertion, and a
+# restart-persistence proof. The earlier ADR-0170 pglite-aware probe is
+# gone with the substrate it targeted.
 _b5_check_controller_roundtrip() {
   local controller="$1"
   local mcp_tool="$2"
@@ -556,21 +553,25 @@ $(echo "$store_body" | head -10)"
   fi
 
   # ─── Step 5: verify persistence ──────────────────────────────────
-  # ADR-0177: pglite substrate retired (RVF-first). PostgresBackend is a
-  # museum piece — PG_VERSION will not be created. Accept absence as
-  # skip_accepted so the row-count check in Step 6 can still verify
-  # in-process persistence via the SQLite/RVF path.
-  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: pglite substrate retired by ADR-0177 (RVF-first); PostgresBackend not wired"
+  # ADR-0177: pglite substrate retired (RVF-first). The agentdb_* axis
+  # now persists to `.swarm/memory.db` (SQLite) — see project-rvf-primary
+  # ("SQLite primary for agentdb_*"). Probe that file with the sqlite3
+  # CLI; the pglite cluster + PG_VERSION are gone by design.
+  local db_path="$iso/.swarm/memory.db"
+  # Single-quote escape for SQL string literals (markers are quote-free
+  # in practice, but escape defensively).
+  local _mv_esc="${marker_value//\'/\'\'}"
+
+  if [[ ! -f "$db_path" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: store call succeeded but .swarm/memory.db was never created — controller silently bailed to in-memory state (ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
 
   local has_table
-  has_table=$(_pglite_table_exists "$iso" "$pg_table")
-  if [[ "$has_table" != "1" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: store call succeeded but table '$pg_table' does not exist in pglite cluster — controller silently bailed to in-memory state (ADR-0082). Existing tables: $(_pglite_table_list "$iso")"
+  has_table=$(sqlite3 "$db_path" "SELECT name FROM sqlite_master WHERE type='table' AND name='${pg_table}';" 2>/dev/null)
+  if [[ "$has_table" != "$pg_table" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: store call succeeded but table '$pg_table' does not exist in .swarm/memory.db — controller silently bailed to in-memory state (ADR-0082). Existing tables: $(sqlite3 "$db_path" '.tables' 2>/dev/null | tr -s ' \n' ' ' | cut -c1-200)"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -580,10 +581,11 @@ $(echo "$store_body" | head -10)"
   # controller might append (timestamps, etc.). If count is 0 we FAIL
   # — the exit-0 + table-exists combination promised persistence.
   local count_after_store
-  count_after_store=$(_pglite_count_rows "$iso" "$pg_table" "$marker_col" "$marker_value")
+  count_after_store=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM \"${pg_table}\" WHERE \"${marker_col}\" LIKE '${_mv_esc}%';" 2>/dev/null)
+  count_after_store="${count_after_store:-0}"
 
   if [[ "$count_after_store" -lt 1 ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: store succeeded via MCP but 0 rows in $pg_table WHERE $marker_col LIKE '${marker_value}%' (pglite probe count=$count_after_store) — controller wrote to in-memory state, not pglite (ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
+    _CHECK_OUTPUT="B5/${controller}: FAIL: store succeeded via MCP but 0 rows in $pg_table WHERE $marker_col LIKE '${marker_value}%' (sqlite probe count=$count_after_store) — controller wrote to in-memory state, not .swarm/memory.db (ADR-0082). Store output: $(echo "$store_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -594,7 +596,7 @@ $(echo "$store_body" | head -10)"
   # where a tool claims to write to `task` but actually writes to
   # `name` or similar.
   local stored_val
-  stored_val=$(_pglite_first_value "$iso" "$pg_table" "$marker_col" "$marker_value")
+  stored_val=$(sqlite3 "$db_path" "SELECT \"${marker_col}\" FROM \"${pg_table}\" WHERE \"${marker_col}\" LIKE '${_mv_esc}%' ORDER BY rowid DESC LIMIT 1;" 2>/dev/null)
   if [[ "$stored_val" != "${marker_value}"* ]]; then
     _CHECK_OUTPUT="B5/${controller}: FAIL: row present but $marker_col='$stored_val' does not start with marker '$marker_value' — wrong column wired?"
     rm -rf "$work" "$iso" 2>/dev/null
@@ -609,10 +611,11 @@ $(echo "$store_body" | head -10)"
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/restart.out" 30
 
   local count_after_restart
-  count_after_restart=$(_pglite_count_rows "$iso" "$pg_table" "$marker_col" "$marker_value")
+  count_after_restart=$(sqlite3 "$db_path" "SELECT COUNT(*) FROM \"${pg_table}\" WHERE \"${marker_col}\" LIKE '${_mv_esc}%';" 2>/dev/null)
+  count_after_restart="${count_after_restart:-0}"
 
   if [[ "$count_after_restart" -lt "$count_after_store" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: row count dropped across CLI restart (store=$count_after_store, restart=$count_after_restart) — in-memory fallback, pglite WAL not flushed"
+    _CHECK_OUTPUT="B5/${controller}: FAIL: row count dropped across CLI restart (store=$count_after_store, restart=$count_after_restart) — in-memory fallback, SQLite WAL not flushed"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -647,7 +650,7 @@ check_adr0090_b5_reflexion() { # adr0097-l2-delegator: flag set inside _b5_check
   local marker="b5-reflexion-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "reflexion" \
-    "agentdb_reflexion_store" \
+    "agentdb_reflexion-store" \
     "{\"session_id\":\"$marker\",\"task\":\"$marker task\",\"reward\":0.9,\"success\":true}" \
     "episodes" \
     "task" \
@@ -684,7 +687,7 @@ check_adr0090_b5_reasoningBank() { # adr0097-l2-delegator: flag set inside _b5_c
   local marker="b5-rbank-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "reasoningBank" \
-    "agentdb_pattern_store" \
+    "agentdb_pattern-store" \
     "{\"pattern\":\"$marker approach\",\"type\":\"b5-task-routing\",\"confidence\":0.85}" \
     "reasoning_patterns" \
     "approach" \
@@ -858,19 +861,32 @@ try {
   # The current build's real write path. memory list --format json
   # emits a JSON array of entries; we grep for our marker across the
   # full output (keys, values, and metadata are all serialized).
+  #
+  # Retry up to 3× with a 1s settle between attempts: under the parallel
+  # acceptance wave the fresh `memory list` reader process can open the
+  # RVF segment before the writer's WAL compaction is visible on disk —
+  # a single read then races the settle and reports a false silent-pass.
+  # This does NOT weaken the assertion: a genuinely-lost edge is absent
+  # from all 3 reads and still fails the check.
   local rvf_list_out="$work/rvf-list.out"
-  _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace causal-edges --format json --limit 50 2>&1" "$rvf_list_out" 20
-  local rvf_body; rvf_body=$(cat "$rvf_list_out" 2>/dev/null || echo "")
+  local rvf_body=""
   local rvf_hit="false"
   local rvf_hint=""
-  if echo "$rvf_body" | grep -qF "$marker"; then
-    rvf_hit="true"
-    # Count matching entries (loose count — each entry object starts with `"key":`).
-    local rvf_count
-    rvf_count=$(echo "$rvf_body" | grep -cF "$marker")
-    rvf_count="${rvf_count:-0}"
-    rvf_hint="RVF causal-edges namespace contains marker (grep=$rvf_count lines)"
-  fi
+  local _rvf_attempt
+  for _rvf_attempt in 1 2 3; do
+    _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory list --namespace causal-edges --format json --limit 50 2>&1" "$rvf_list_out" 20
+    rvf_body=$(cat "$rvf_list_out" 2>/dev/null || echo "")
+    if echo "$rvf_body" | grep -qF "$marker"; then
+      rvf_hit="true"
+      # Count matching entries (loose count — each entry object starts with `"key":`).
+      local rvf_count
+      rvf_count=$(echo "$rvf_body" | grep -cF "$marker")
+      rvf_count="${rvf_count:-0}"
+      rvf_hint="RVF causal-edges namespace contains marker (grep=$rvf_count lines, attempt=$_rvf_attempt)"
+      break
+    fi
+    [[ "$_rvf_attempt" -lt 3 ]] && sleep 1
+  done
 
   # ─── Step 6: decide outcome ─────────────────────────────────────────
   # PASS if either terminal state confirmed. FAIL if neither — the tool
@@ -1120,9 +1136,8 @@ _b5_seeded_probe() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "/tmp/b5-seed-${controller}-work-XXXXX")
-  local pg_cluster="$iso/.swarm/memory.pglite"
-  # ADR-0170: $sqlite_table named for historical reasons; under Phase B
-  # this is the pglite table name (identical schema-level identifier).
+  # ADR-0177: pglite substrate retired (RVF-first). The agentdb_* axis
+  # persists to .swarm/memory.db (SQLite) — see project-rvf-primary.
   local pg_table="$sqlite_table"
 
   # Cold-start health hydrates the registry.
@@ -1145,31 +1160,24 @@ _b5_seeded_probe() {
   # Non-trivial after seed -> PASS.
   if echo "$probe_body" | grep -qE "$pass_regex"; then
     if [[ -n "$pg_table" ]]; then
-      if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but .swarm/memory.pglite/PG_VERSION missing — in-memory fallback (ADR-0082). Probe: $(echo "$probe_body" | head -3 | tr '\n' ' ')"
+      # ADR-0177: verify persistence in .swarm/memory.db (SQLite) — the
+      # pglite cluster is retired. Probe with the sqlite3 CLI.
+      local seed_db="$iso/.swarm/memory.db"
+      if [[ ! -f "$seed_db" ]]; then
+        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but .swarm/memory.db missing — in-memory fallback (ADR-0082). Probe: $(echo "$probe_body" | head -3 | tr '\n' ' ')"
         rm -rf "$work" "$iso" 2>/dev/null
         return
       fi
       local has_table
-      has_table=$(_pglite_table_exists "$iso" "$pg_table")
-      if [[ "$has_table" != "1" ]]; then
-        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but table '$pg_table' absent in pglite cluster (ADR-0082). Tables: $(_pglite_table_list "$iso")"
+      has_table=$(sqlite3 "$seed_db" "SELECT name FROM sqlite_master WHERE type='table' AND name='${pg_table}';" 2>/dev/null)
+      if [[ "$has_table" != "$pg_table" ]]; then
+        _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but table '$pg_table' absent in .swarm/memory.db (ADR-0082). Tables: $(sqlite3 "$seed_db" '.tables' 2>/dev/null | tr -s ' \n' ' ' | cut -c1-200)"
         rm -rf "$work" "$iso" 2>/dev/null
         return
       fi
-      # Total row count (any marker, used for "has at least one INSERT")
-      # ADR-0170 Phase C.1: pgvector extension required.
+      # Total row count — "has at least one INSERT".
       local row_count
-      row_count=$(cd "$iso" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${pg_table}\"\`);
-  process.stdout.write(String(r.rows[0]?.c ?? 0));
-} catch (e) { process.exit(2); } finally { await db.close(); }
-" 2>/dev/null)
+      row_count=$(sqlite3 "$seed_db" "SELECT COUNT(*) FROM \"${pg_table}\";" 2>/dev/null)
       row_count=$(echo "$row_count" | tr -dc '0-9'); row_count="${row_count:-0}"
       if [[ "$row_count" -lt 1 ]]; then
         _CHECK_OUTPUT="B5/${controller}: FAIL: pass_regex matched but $pg_table has 0 rows (ADR-0082). Probe: $(echo "$probe_body" | head -5 | tr '\n' ' ')"
@@ -1264,24 +1272,18 @@ _b5_seed_semantic_router() {
 _b5_seed_consolidation() {
   local iso="$1" cli="$2" work="$3"
   for i in 1 2 3 4 5 6 7 8; do
-    _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_hierarchical_store --params '{\"key\":\"b5-consol-seed-'${i}'\",\"value\":\"Episodic memory '${i}' with sufficient content for consolidation\",\"tier\":\"episodic\"}' 2>&1" "$work/seed-hmem-${i}.out" 20
+    _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_hierarchical-store --params '{\"key\":\"b5-consol-seed-'${i}'\",\"value\":\"Episodic memory '${i}' with sufficient content for consolidation\",\"tier\":\"episodic\"}' 2>&1" "$work/seed-hmem-${i}.out" 20
   done
-  # ADR-0170 Phase B: bump importance/access_count via pglite (replaces
-  # the sqlite3 UPDATE). Test-only shortcut that nudges the threshold
-  # values getConsolidationCandidates() expects — would otherwise need
-  # repeated access patterns to reach organically.
-  # ADR-0170 Phase C.1: hierarchical_memory has an embedding vector(768) column;
-  # probe must load pgvector extension.
-  if [[ -f "$iso/.swarm/memory.pglite/PG_VERSION" ]]; then
-    (cd "$iso" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  await db.query(\"UPDATE hierarchical_memory SET importance = 0.8, access_count = 5 WHERE tier = 'episodic'\");
-} catch (e) { /* table may not exist if HM not wired */ } finally { await db.close(); }
-" 2>/dev/null) || true
+  # The seeded entries land at agentdb_hierarchical-store's defaults
+  # (importance 0.5, access_count 0) — below getConsolidationCandidates()'s
+  # `importance >= 0.6 AND access_count >= 3` filter (MemoryConsolidation.ts).
+  # Bump them so the consolidator has real candidates; without this nudge
+  # the entries would have to reach the threshold through organic repeated
+  # access. ADR-0177 retired pglite — the agentdb_* axis persists to
+  # .swarm/memory.db (SQLite); update there.
+  local _consol_db="$iso/.swarm/memory.db"
+  if [[ -f "$_consol_db" ]]; then
+    sqlite3 "$_consol_db" "UPDATE hierarchical_memory SET importance = 0.8, access_count = 5 WHERE tier = 'episodic';" 2>/dev/null || true
   fi
 }
 
@@ -1364,7 +1366,7 @@ check_adr0090_b5_hierarchicalMemory() { # adr0097-l2-delegator: flag set inside 
   local marker="b5-hmem-$$-$(date +%s)"
   _b5_check_controller_roundtrip \
     "hierarchicalMemory" \
-    "agentdb_hierarchical_store" \
+    "agentdb_hierarchical-store" \
     "{\"key\":\"$marker key\",\"value\":\"$marker value\",\"tier\":\"working\",\"importance\":0.5}" \
     "hierarchical_memory" \
     "content" \

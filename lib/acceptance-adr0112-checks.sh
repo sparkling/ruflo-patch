@@ -169,7 +169,7 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
   local marker="adr0112-26-2-$$-$(date +%s)"
   local params="{\"session_id\":\"$marker\",\"task\":\"$marker partition probe\",\"reward\":0.5,\"success\":true}"
 
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion_store --params '$params' 2>&1" "" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion-store --params '$params' 2>&1" "" 30
   local body="$_RK_OUT"
 
   if echo "$body" | grep -qiE '(not available|controller not initialized|not wired|not found|tool.*not)'; then
@@ -284,7 +284,7 @@ check_adr0112_partition_agentdb_retrieve_does_not_query_rvf() { # adr0097-l2-del
   local store_params="{\"session_id\":\"$marker\",\"task\":\"$marker retrieve probe\",\"reward\":0.7,\"success\":true}"
 
   # Step 1: seed AgentDB
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion_store --params '$store_params' 2>&1" "" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion-store --params '$store_params' 2>&1" "" 30
   local body="$_RK_OUT"
   if echo "$body" | grep -qiE '(not available|controller not initialized|not wired)'; then
     rm -rf "$iso" 2>/dev/null
@@ -302,9 +302,9 @@ check_adr0112_partition_agentdb_retrieve_does_not_query_rvf() { # adr0097-l2-del
     return
   fi
 
-  # Step 2: run agentdb_reflexion_retrieve
+  # Step 2: run agentdb_reflexion-retrieve
   local retrieve_params="{\"task\":\"$marker retrieve probe\",\"k\":5}"
-  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion_retrieve --params '$retrieve_params' 2>&1" "" 30
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_reflexion-retrieve --params '$retrieve_params' 2>&1" "" 30
 
   # Step 3: assert .rvf has no bytes matching the marker (retrieve must
   # not have written its query into RVF for "logging" or similar)
@@ -389,8 +389,13 @@ _adr0112_roundtrip() {
     return
   fi
 
-  # Step 3: assert the marker came back through the read tool
-  if echo "$read_body" | grep -qF "$marker"; then
+  # Step 3: assert the marker came back through the read tool.
+  # Grep ONLY the JSON after the `Result:` sentinel. `mcp exec` echoes a
+  # `Parameters: {...}` line that contains the marker (it's in the query
+  # params), so grepping the whole output would false-pass on the command
+  # echo regardless of what the read tool actually returned.
+  local read_result; read_result=$(echo "$read_body" | awk '/^Result:/{f=1;next}f')
+  if echo "$read_result" | grep -qF "$marker"; then
     rm -rf "$iso" 2>/dev/null
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="0112/27 ${label}: PASS: ${store_tool}→${read_tool} round-trip returned marker '$marker'"
@@ -408,9 +413,9 @@ check_adr0112_roundtrip_reflexion() { # adr0097-l2-delegator
   local marker="adr0112-rt-refl-$$-$(date +%s)"
   _adr0112_roundtrip \
     "reflexion" \
-    "agentdb_reflexion_store" \
+    "agentdb_reflexion-store" \
     "{\"session_id\":\"$marker\",\"task\":\"$marker round-trip task\",\"reward\":0.8,\"success\":true}" \
-    "agentdb_reflexion_retrieve" \
+    "agentdb_reflexion-retrieve" \
     "{\"task\":\"$marker round-trip task\",\"k\":5}" \
     "$marker"
 }
@@ -422,9 +427,9 @@ check_adr0112_roundtrip_pattern() { # adr0097-l2-delegator
   local marker="adr0112-rt-pat-$$-$(date +%s)"
   _adr0112_roundtrip \
     "pattern" \
-    "agentdb_pattern_store" \
+    "agentdb_pattern-store" \
     "{\"pattern\":\"$marker round-trip approach\",\"type\":\"adr0112-test\",\"confidence\":0.9}" \
-    "agentdb_pattern_search" \
+    "agentdb_pattern-search" \
     "{\"query\":\"$marker round-trip approach\",\"topK\":5}" \
     "$marker"
 }
@@ -448,11 +453,16 @@ check_adr0112_roundtrip_skill() { # adr0097-l2-delegator
 # ────────────────────────────────────────────────────────────────────
 check_adr0112_roundtrip_hierarchical() { # adr0097-l2-delegator
   local marker="adr0112-rt-hmem-$$-$(date +%s)"
+  # agentdb_hierarchical-store requires `key`; the marker text must land in
+  # `value` (→ the hierarchical_memory.content column) so the recall result
+  # surfaces it. Passing {content,tier} (no key) makes the store fail with
+  # "key is required" — the hierarchical_memory table stays empty and recall
+  # returns []. Matches the {key,value,tier} contract the B5 + adr0178 checks use.
   _adr0112_roundtrip \
     "hierarchical" \
-    "agentdb_hierarchical_store" \
-    "{\"content\":\"$marker hierarchical content\",\"tier\":\"working\"}" \
-    "agentdb_hierarchical_recall" \
+    "agentdb_hierarchical-store" \
+    "{\"key\":\"$marker-hkey\",\"value\":\"$marker hierarchical content\",\"tier\":\"working\"}" \
+    "agentdb_hierarchical-recall" \
     "{\"query\":\"$marker hierarchical\",\"topK\":5}" \
     "$marker"
 }

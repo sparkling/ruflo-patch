@@ -78,13 +78,13 @@ const RUNNER_FILE = resolve(ROOT, 'scripts', 'test-acceptance.sh');
 // available") so the static delegate-to-shared-helper + behavioral not-available/unknown-tool
 // tests don't apply. Each migrated check's own paired tests live in its W2 commit.
 const CHECKS = [
-  { controller: 'reflexion',           fn: 'check_adr0090_b5_reflexion',           tool: 'agentdb_reflexion_store',    table: 'episodes',            markerCol: 'task' },
+  { controller: 'reflexion',           fn: 'check_adr0090_b5_reflexion',           tool: 'agentdb_reflexion-store',    table: 'episodes',            markerCol: 'task' },
   { controller: 'skillLibrary',        fn: 'check_adr0090_b5_skillLibrary',        tool: 'agentdb_skill_create',       table: 'skills',              markerCol: 'name' },
-  { controller: 'reasoningBank',       fn: 'check_adr0090_b5_reasoningBank',       tool: 'agentdb_pattern_store',      table: 'reasoning_patterns',  markerCol: 'approach' },
+  { controller: 'reasoningBank',       fn: 'check_adr0090_b5_reasoningBank',       tool: 'agentdb_pattern-store',      table: 'reasoning_patterns',  markerCol: 'approach' },
   { controller: 'causalGraph',         fn: 'check_adr0090_b5_causalGraph',         tool: 'agentdb_causal-edge',        table: 'causal_edges',        markerCol: 'relation', migrated: 'seeded-probe' },
   { controller: 'causalRecall',        fn: 'check_adr0090_b5_causalRecall',        tool: 'agentdb_causal_recall',      table: 'recall_certificates', markerCol: 'goal',     migrated: 'causal-pipeline' },
   { controller: 'learningSystem',      fn: 'check_adr0090_b5_learningSystem',      tool: 'agentdb_experience_record',  table: 'learning_experiences', markerCol: 'action' },
-  { controller: 'hierarchicalMemory',  fn: 'check_adr0090_b5_hierarchicalMemory',  tool: 'agentdb_hierarchical_store', table: 'hierarchical_memory', markerCol: 'content' },
+  { controller: 'hierarchicalMemory',  fn: 'check_adr0090_b5_hierarchicalMemory',  tool: 'agentdb_hierarchical-store', table: 'hierarchical_memory', markerCol: 'content' },
   { controller: 'memoryConsolidation', fn: 'check_adr0090_b5_memoryConsolidation', tool: 'agentdb_consolidate',        table: 'consolidation_log',   markerCol: 'timestamp', migrated: 'seeded-probe' },
   { controller: 'attentionService',    fn: 'check_adr0090_b5_attentionService',    tool: 'agentdb_attention_metrics',  table: 'attention_metrics',   markerCol: 'sample',    migrated: 'seeded-probe' },
   { controller: 'gnnService',          fn: 'check_adr0090_b5_gnnService',          tool: 'agentdb_neural_patterns',    table: null,                  markerCol: 'pattern', inMemoryOnly: true },
@@ -104,7 +104,7 @@ const CHECKS = [
 //
 // scenariosByTool shape:
 // {
-//   "agentdb_reflexion_store": {
+//   "agentdb_reflexion-store": {
 //     exit: 0,
 //     stdoutBody: "Result: ...",           // what to print
 //     // If provided, the stub ALSO opens the target sqlite DB and
@@ -537,7 +537,7 @@ describe('ADR-0090 B5 happy path — reachable PASS when controller actually wri
     try {
       const scenarios = {
         agentdb_health: { exit: 0, stdoutBody: '{"available":true}', createEmptyDb: true },
-        agentdb_reflexion_store: {
+        'agentdb_reflexion-store': {
           exit: 0,
           stdoutBody: '{"success":true}',
           sqliteTable: 'episodes',
@@ -578,7 +578,7 @@ describe('ADR-0090 B5 happy path — reachable PASS when controller actually wri
 
 describe('ADR-0090 B5 three-way bucket — "NOT NULL constraint" → skip_accepted', () => {
   it('maps SQLite NOT NULL constraint failures to skip_accepted (controller SQL bug)', () => {
-    // Live probe: agentdb_pattern_store returns
+    // Live probe: agentdb_pattern-store returns
     // "NOT NULL constraint failed: reasoning_patterns.task_type"
     // — controller is wired but upstream MCP plumbing does not
     // surface task_type. skip_accepted so the bug is trackable,
@@ -588,7 +588,7 @@ describe('ADR-0090 B5 three-way bucket — "NOT NULL constraint" → skip_accept
     try {
       const scenarios = {
         agentdb_health: { exit: 0, stdoutBody: 'OK', createEmptyDb: true },
-        agentdb_pattern_store: {
+        'agentdb_pattern-store': {
           exit: 1,
           stdoutBody: JSON.stringify({
             success: false,
@@ -724,7 +724,7 @@ describe('ADR-0090 B5 three-way bucket — "Wrong API use" → skip_accepted', (
     try {
       const scenarios = {
         agentdb_health: { exit: 0, stdoutBody: 'OK', createEmptyDb: true },
-        agentdb_reflexion_store: {
+        'agentdb_reflexion-store': {
           exit: 1,
           stdoutBody: JSON.stringify({
             success: false,
@@ -757,7 +757,7 @@ describe('ADR-0090 B5 three-way bucket — silent success without rows → FAIL'
     try {
       const scenarios = {
         agentdb_health: { exit: 0, stdoutBody: 'OK', createEmptyDb: true },
-        agentdb_reflexion_store: {
+        'agentdb_reflexion-store': {
           exit: 0,
           stdoutBody: '{"success": true}',
           // Create the episodes table but do NOT insert the marker row.
@@ -787,7 +787,7 @@ describe('ADR-0090 B5 three-way bucket — target-table missing after success �
     try {
       const scenarios = {
         agentdb_health: { exit: 0, stdoutBody: 'OK', createEmptyDb: true },
-        agentdb_reflexion_store: {
+        'agentdb_reflexion-store': {
           exit: 0,
           stdoutBody: '{"success": true}',
           // Do NOT create the target table (episodes); only the empty
@@ -827,7 +827,7 @@ describe('ADR-0090 B5 three-way bucket — sqlite3 binary missing → skip_accep
       // approach: alias `command` in the driver script inline.
       const cliStub = writeCliStub(stubDir, {
         agentdb_health: { exit: 0, stdoutBody: 'OK' },
-        agentdb_reflexion_store: { exit: 0, stdoutBody: '{"success":true}' },
+        'agentdb_reflexion-store': { exit: 0, stdoutBody: '{"success":true}' },
       });
       const e2eDir = join(fx.tempDir, 'e2e');
       mkdirSync(e2eDir, { recursive: true });
@@ -889,12 +889,12 @@ describe('ADR-0090 B5: stub CLI self-test', () => {
     const tempDir = mkdtempSync(join(tmpdir(), 'b5-stub-selftest-'));
     try {
       const scenarios = {
-        agentdb_reflexion_store: { exit: 7, stdoutBody: '{"hello":"world"}' },
+        'agentdb_reflexion-store': { exit: 7, stdoutBody: '{"hello":"world"}' },
       };
       const cliStub = writeCliStub(tempDir, scenarios);
       const result = spawnSync(
         'bash',
-        [cliStub, 'mcp', 'exec', '--tool', 'agentdb_reflexion_store', '--params', '{}'],
+        [cliStub, 'mcp', 'exec', '--tool', 'agentdb_reflexion-store', '--params', '{}'],
         { encoding: 'utf8', timeout: 5000 },
       );
       assert.equal(result.status, 7,
@@ -911,7 +911,7 @@ describe('ADR-0090 B5: stub CLI self-test', () => {
       const isoDir = join(tempDir, 'iso');
       mkdirSync(join(isoDir, '.swarm'), { recursive: true });
       const scenarios = {
-        agentdb_reflexion_store: {
+        'agentdb_reflexion-store': {
           exit: 0,
           stdoutBody: '{"success":true}',
           sqliteTable: 'episodes',
@@ -925,7 +925,7 @@ describe('ADR-0090 B5: stub CLI self-test', () => {
       // under the expected path.
       const result = spawnSync(
         'bash',
-        ['-c', `cd "${isoDir}" && "${cliStub}" mcp exec --tool agentdb_reflexion_store --params '{}'`],
+        ['-c', `cd "${isoDir}" && "${cliStub}" mcp exec --tool agentdb_reflexion-store --params '{}'`],
         { encoding: 'utf8', timeout: 5000 },
       );
       assert.equal(result.status, 0,

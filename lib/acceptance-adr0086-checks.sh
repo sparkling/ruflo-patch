@@ -732,7 +732,7 @@ check_adr0086_debt15_sqlite_path() {
   local marker_task="acceptance test reflexion adr0090 a1"
   local marker_session="adr0090-a1-debt15-$(date +%s)-$$"
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
-    --tool agentdb_reflexion_store \
+    --tool agentdb_reflexion-store \
     --params '{\"session_id\":\"$marker_session\",\"task\":\"$marker_task\",\"reward\":0.9,\"success\":true}' 2>&1" "" 30
   local store_out="${_RK_OUT:-}"
 

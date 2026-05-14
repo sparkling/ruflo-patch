@@ -487,14 +487,14 @@ _p13_agentdb_v1_reflexion_retrieve_body() {
   # Seed: store the sentinel via the postgres-substrate-aware tool.
   # Same `.` regex pattern as the skill_search rewrite above; propagate
   # the harness diagnostic on any non-success (empty body / panic / etc.).
-  _mcp_invoke_tool "agentdb_reflexion_store" \
+  _mcp_invoke_tool "agentdb_reflexion-store" \
     '{"session_id":"p13-2-session","task":"p13-2 reflexion sentinel: migration-survived","reward":0.9,"success":true}' \
     '.' "P13.2/agentdb_v1_reflexion_retrieve" 30
   if [[ "${_CHECK_PASSED:-}" != "true" ]]; then
     E2E_DIR="$_saved"; return
   fi
 
-  _mcp_invoke_tool "agentdb_reflexion_retrieve" \
+  _mcp_invoke_tool "agentdb_reflexion-retrieve" \
     '{"task":"p13-2 reflexion sentinel"}' \
     '.' "P13.2/agentdb_v1_reflexion_retrieve" 30 --ro
   _p13_expect_readable "P13.2/agentdb_v1_reflexion_retrieve" \
