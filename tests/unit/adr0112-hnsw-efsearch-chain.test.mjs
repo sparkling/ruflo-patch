@@ -119,13 +119,17 @@ describe('ADR-0112 hnswEfSearch — resolve-config file-set overrides', () => {
     );
   });
 
-  it('drops hnsw overrides when ADR-0069 384→768 safety gate fires', () => {
-    // The gate must reset all three HNSW overrides — geometry tied to 384 must
-    // not leak into the rewritten 768-dim index.
+  it('drops hnsw overrides when the 384→768 safety gate fires', () => {
+    // ADR-0177 Phase 1.6 (b) made the gate model-aware: it fires only when
+    // dimension===384 AND the model is not a known 384-dim model (MiniLM).
+    // When it does fire, it must still reset all three HNSW overrides —
+    // geometry tied to 384 must not leak into the rewritten 768-dim index.
+    // The regex tolerates both the legacy `=== 384)` form and the
+    // model-aware `=== 384 && ...)` form.
     const gateBlock = resolveSrc.match(
-      /if\s*\(\s*dimension\s*===\s*384\s*\)\s*\{[\s\S]*?\}/,
+      /if\s*\(\s*dimension\s*===\s*384\b[\s\S]*?\)\s*\{[\s\S]*?\}/,
     );
-    assert.ok(gateBlock, 'resolve-config.ts must contain `if (dimension === 384) { ... }` gate');
+    assert.ok(gateBlock, 'resolve-config.ts must contain the `if (dimension === 384 ...) { ... }` gate');
     const body = gateBlock[0];
     assert.match(body, /dimension\s*=\s*768/,        'gate must rewrite dimension to 768');
     assert.match(body, /hnswMOverride\s*=\s*undefined/,            'gate must drop hnswMOverride');

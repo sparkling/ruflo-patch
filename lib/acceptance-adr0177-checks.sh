@@ -61,49 +61,62 @@ _adr0177_run_init() {
     120
 }
 
-# Read the RvfBackend's stored dimension from `dir`'s .claude-flow/memory.rvf
-# segment. Uses the published @sparkleideas/memory package (RvfBackend.
-# getStoredDimension) so the header parsing stays honest to upstream. Returns
-# integer dim or "" on failure. Also resolves .swarm/memory.rvf as a fallback
-# since some configs land the segment under .swarm/.
+# Read the RvfBackend's stored vector dimension from `dir`'s RVF segment.
+# Uses the published @sparkleideas/memory package so it stays honest to
+# upstream. Returns integer dim or "" on failure.
+#
+# Two robustness concerns this handles:
+#  1. Storage path: `init` creates .claude-flow/memory.rvf (often a 290-byte
+#     empty RootHeader stub), while the CLI/MCP runtime writes the actual
+#     vectors to .swarm/memory.rvf. Probe BOTH and return the first that
+#     yields a non-zero dim — don't break on the first file that merely
+#     has bytes.
+#  2. RVF format: getStoredDimension() only parses the pure-TS `RVF\0`
+#     header. Real files are the native `RVFROOT\0` format (ADR-0167) which
+#     it can't decode and returns 0 for. Fall back to enumerateEmbeddings()
+#     — once backend.initialize() loads the entries, the first entry's
+#     embedding.length is the true stored dimension.
 _adr0177_stored_dim() {
   local dir="$1"
-  # Resolve which segment exists. Both paths are produced by different init
-  # variants and the storage resolver may pick either; prefer whichever has
-  # bytes.
-  local rvf=""
-  for cand in "${dir}/.claude-flow/memory.rvf" "${dir}/.swarm/memory.rvf"; do
-    if [[ -s "$cand" ]]; then rvf="$cand"; break; fi
-    # Pure-TS RvfBackend writes to memory.rvf.meta before the first WAL
-    # compaction. getStoredDimension() checks .meta first when given the
-    # base path — so pass the base path (without .meta) to the probe.
-    if [[ -s "${cand}.meta" ]]; then rvf="$cand"; break; fi
-  done
-  [[ -z "$rvf" ]] && { echo ""; return; }
 
-  # The probe script must live inside $dir so node module resolution walks up
-  # to $dir/node_modules. ${TEMP_DIR}/node_modules is symlinked into init'd
-  # projects by harness layout — but for fresh mktemp dirs we instead point
-  # NODE_PATH at TEMP_DIR/node_modules so @sparkleideas/memory resolves.
-  local probe="${dir}/.adr0177-probe.mjs"
+  # Place the probe in TEMP_DIR so ESM resolution walks up to
+  # TEMP_DIR/node_modules. NODE_PATH is ignored by Node.js v18+ ESM loader;
+  # running from within the dir that has node_modules is the correct approach.
+  local probe="${TEMP_DIR}/.adr0177-probe-$$.mjs"
   cat > "$probe" << 'PROBE_SCRIPT'
 import { RvfBackend } from '@sparkleideas/memory';
 const rvfPath = process.argv[2];
-// The dim arg is ignored by getStoredDimension — it reads the on-disk header.
 const backend = new RvfBackend({ databasePath: rvfPath, dimensions: 768, autoPersistInterval: 0 });
 try {
   await backend.initialize();
-  const dim = await backend.getStoredDimension();
+  let dim = await backend.getStoredDimension();
+  if (!dim) {
+    // Native RVFROOT\0 format — getStoredDimension can't parse it. The true
+    // dimension is the length of any stored vector.
+    const emb = await backend.enumerateEmbeddings({ limit: 1 });
+    if (emb.length > 0) dim = emb[0].embedding.length;
+  }
   console.log('DIM:' + dim);
   await backend.shutdown();
 } catch (e) {
   console.log('ERR:' + e.message);
 }
 PROBE_SCRIPT
-  local out
-  out=$(NODE_PATH="${TEMP_DIR}/node_modules" node "$probe" "$rvf" 2>&1) || true
+
+  local rvf out result=""
+  for rvf in "${dir}/.claude-flow/memory.rvf" "${dir}/.swarm/memory.rvf"; do
+    # Probe if the segment OR its .meta sidecar has bytes.
+    [[ -s "$rvf" || -s "${rvf}.meta" ]] || continue
+    out=$(cd "${TEMP_DIR}" && node "$probe" "$rvf" 2>&1) || true
+    result=$(echo "$out" | grep -E '^DIM:[0-9]+' | head -1 | sed 's/^DIM://')
+    if [[ -n "$result" && "$result" != "0" ]]; then
+      rm -f "$probe"
+      echo "$result"
+      return
+    fi
+  done
   rm -f "$probe"
-  echo "$out" | grep -E '^DIM:[0-9]+' | head -1 | sed 's/^DIM://'
+  echo "${result:-}"
 }
 
 # ── (1) default init: 7 keys + 768-dim round-trip ───────────────────────────
@@ -294,12 +307,23 @@ check_adr0177_flag_bge_768() {
   fi
 
   # Drive a store so the RvfBackend writes its segment with the configured dim.
+  # `memory store` loads the embedding model + runs inference + persists the WAL.
+  # bge is a non-default model, so it is cold (not kept warm by the ~570 other
+  # checks in the parallel wave the way the mpnet default is) — 30s is too tight
+  # under that contention and a killed store leaves no embedding, surfacing as a
+  # misleading dim=0. 75s keeps the check inside the 180s per-check watchdog.
+  # (`memory init --force` does no model work, so it stays at 30s.)
   _run_and_kill \
     "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' '${CLI_BIN}' memory init --force" \
     "" 30
   _run_and_kill \
     "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' '${CLI_BIN}' memory store --key 'adr0177-bge' --value 'bge probe' --namespace adr0177" \
-    "" 30
+    "" 75
+  local store_out="$_RK_OUT"
+  if ! echo "$store_out" | grep -qi 'stored\|success\|adr0177-bge'; then
+    _CHECK_OUTPUT="flag-bge: memory store failed/killed before persisting: $(echo "$store_out" | tail -3 | tr '\n' ' ')"
+    return
+  fi
 
   local stored_dim; stored_dim=$(_adr0177_stored_dim "$dir")
   if [[ "$stored_dim" != "768" ]]; then
@@ -359,12 +383,23 @@ check_adr0177_flag_minilm_384() {
   fi
 
   # Drive a store so the RvfBackend writes a fresh segment at 384.
+  # `memory store` loads the embedding model + runs inference + persists the WAL.
+  # MiniLM is a non-default model, so it is cold (not kept warm by the ~570 other
+  # checks in the parallel wave the way the mpnet default is) — 30s is too tight
+  # under that contention and a killed store leaves no embedding, surfacing as a
+  # misleading dim=0. 75s keeps the check inside the 180s per-check watchdog.
+  # (`memory init --force` does no model work, so it stays at 30s.)
   _run_and_kill \
     "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' '${CLI_BIN}' memory init --force" \
     "" 30
   _run_and_kill \
     "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' '${CLI_BIN}' memory store --key 'adr0177-mini' --value 'minilm probe' --namespace adr0177" \
-    "" 30
+    "" 75
+  local store_out="$_RK_OUT"
+  if ! echo "$store_out" | grep -qi 'stored\|success\|adr0177-mini'; then
+    _CHECK_OUTPUT="flag-minilm: memory store failed/killed before persisting: $(echo "$store_out" | tail -3 | tr '\n' ' ')"
+    return
+  fi
 
   local stored_dim; stored_dim=$(_adr0177_stored_dim "$dir")
   if [[ "$stored_dim" != "384" ]]; then

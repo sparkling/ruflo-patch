@@ -424,25 +424,38 @@ check_phase4_router_no_loadbridge_in_routes() {
     return
   fi
 
-  # Check each route method for loadBridge usage
+  # Check each route method for loadBridge usage.
   local methods=("routePatternOp" "routeFeedbackOp" "routeSessionOp" "routeLearningOp" "routeCausalOp")
   local bridge_methods=""
   local controller_count=0
 
   for method in "${methods[@]}"; do
-    # Extract the method body: from the method name to the next export/async function
+    # Extract the precise function body: from the `export async function
+    # <method>(` definition line to the next top-level `export ` line.
+    #
+    # The old `sed -n "/${method}/,/^export.../p"` pattern was flaky — the
+    # method name also appears in JSDoc comments far above the definition,
+    # so the range opened on a comment and re-opened on every later mention,
+    # producing a non-deterministic multi-function blob (counts drifted
+    # 4→3→2 across builds). Anchoring on `^export async function <method>(`
+    # extracts exactly one function body, deterministically.
     local body
-    body=$(sed -n "/${method}/,/^async function\|^export\|^function/p" "$router_js" 2>/dev/null || true)
+    body=$(awk -v m="$method" '
+      $0 ~ ("^export (async )?function " m "\\(") { cap=1; print; next }
+      cap && /^export / { exit }
+      cap { print }
+    ' "$router_js" 2>/dev/null || true)
     if [[ -z "$body" ]]; then
-      # Try alternate pattern for compiled JS (may use different structure)
-      body=$(grep -A 50 "$method" "$router_js" 2>/dev/null | head -50 || true)
+      # Fallback for an unexpected compiled shape: 80-line window after the
+      # first definition-like occurrence (still anchored on `function`).
+      body=$(grep -A 80 "function ${method}" "$router_js" 2>/dev/null | head -80 || true)
     fi
 
     if echo "$body" | grep -q 'loadBridge'; then
       bridge_methods="${bridge_methods}${method}, "
     fi
     if echo "$body" | grep -q 'getController'; then
-      ((controller_count++))
+      controller_count=$((controller_count + 1))
     fi
   done
 

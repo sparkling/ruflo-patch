@@ -241,7 +241,7 @@ describe('Phase 1: resolveConfig defaults are correct', () => {
     );
   });
 
-  it('default dimension is 768 (never 384)', () => {
+  it('default dimension is 768; 384 only via the model-aware gate', () => {
     if (!existsSync(resolveConfigPath)) return;
     const src = readFileSync(resolveConfigPath, 'utf-8');
     // Check that 768 appears as a default
@@ -249,8 +249,11 @@ describe('Phase 1: resolveConfig defaults are correct', () => {
       src.includes('768'),
       'default dimension must be 768',
     );
-    // 384 may appear as a guard (e.g. `!== 384` to reject old defaults) but
-    // must NOT appear as a fallback/default assignment
+    // 384 must NEVER be a fallback/default *assignment*. ADR-0177 Phase 1.6 (b)
+    // added explicit MiniLM support, so 384 legitimately appears in:
+    //   - comparison guards (=== 384 / !== 384 / != 384)
+    //   - the KNOWN_384_MODELS known-models lookup (set name + membership test)
+    //   - error messages / string literals
     const lines = src.split('\n');
     for (const line of lines) {
       if (line.includes('384') && !line.trim().startsWith('//') && !line.trim().startsWith('*')) {
@@ -258,7 +261,10 @@ describe('Phase 1: resolveConfig defaults are correct', () => {
         const isGuard = line.includes('!== 384') || line.includes('=== 384') || line.includes('!= 384');
         const isStringOrError = line.includes("'384'") || line.includes('"384"')
             || line.includes('Error') || line.includes('throw');
-        if (!isGuard && !isStringOrError) {
+        // ADR-0177 Phase 1.6 (b): KNOWN_384_MODELS is a known-models table, not a
+        // dimension default — MiniLM models resolve to 384 through it legitimately.
+        const isKnownModelsLookup = line.includes('KNOWN_384_MODELS');
+        if (!isGuard && !isStringOrError && !isKnownModelsLookup) {
           assert.fail(`Line uses 384 as a default value: ${line.trim()}`);
         }
       }

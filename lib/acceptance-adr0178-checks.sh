@@ -71,27 +71,32 @@ _adr0178_query_count() {
 
   # Defensive: upstream may wrap in {content:[{type:"text",text:"..."}]}.
   # If so, descend before counting (mirrors _expect_mcp_body's unwrap).
+  # The parse logic lives inside an IIFE — Node.js v24's `node -e` rejects
+  # top-level `return` as a syntax error, and the early-exit branches need
+  # `return` to short-circuit.
   local count
   count=$(node -e '
-    let raw = require("fs").readFileSync(0, "utf8");
-    try {
-      let j = JSON.parse(raw);
-      if (j && Array.isArray(j.content) && j.content[0] && typeof j.content[0].text === "string") {
-        j = JSON.parse(j.content[0].text);
+    (() => {
+      let raw = require("fs").readFileSync(0, "utf8");
+      try {
+        let j = JSON.parse(raw);
+        if (j && Array.isArray(j.content) && j.content[0] && typeof j.content[0].text === "string") {
+          j = JSON.parse(j.content[0].text);
+        }
+        if (j && j.error && (!j.results || j.results.length === 0)) {
+          process.stdout.write("ERR:" + String(j.error).slice(0, 200));
+          return;
+        }
+        const r = (j && Array.isArray(j.results)) ? j.results : null;
+        if (r === null) {
+          process.stdout.write("ERR_NO_RESULTS_ARRAY");
+          return;
+        }
+        process.stdout.write(String(r.length));
+      } catch (e) {
+        process.stdout.write("ERR_NO_JSON:" + String(e.message).slice(0, 100));
       }
-      if (j && j.error && (!j.results || j.results.length === 0)) {
-        process.stdout.write("ERR:" + String(j.error).slice(0, 200));
-        return;
-      }
-      const r = (j && Array.isArray(j.results)) ? j.results : null;
-      if (r === null) {
-        process.stdout.write("ERR_NO_RESULTS_ARRAY");
-        return;
-      }
-      process.stdout.write(String(r.length));
-    } catch (e) {
-      process.stdout.write("ERR_NO_JSON:" + String(e.message).slice(0, 100));
-    }
+    })();
   ' <<<"$body" 2>/dev/null || echo "ERR_NODE_FAILED")
   echo "$count"
 }
