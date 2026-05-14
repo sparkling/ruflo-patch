@@ -1,11 +1,23 @@
 # ADR-0112: Independent stores by feature surface (not "cross-store")
 
-- **Status**: **Implemented** 2026-04-30. All 7 §Done criteria items closed. Phases 1–6 complete. Phase 1 (quick wins) flipped 9/9 named failures green via the `_e2e_isolate` project-root anchor + `routePatternOp` silent-fallback removal. Phase 2 closed 5/5 tracks (RVF + AgentDB-backend + controller-registry + memory-router + MCP handlers). Phase 3 added 22 unit-level fail-loud invariant tests + 8 acceptance tests (4 partition-holds + 4 AgentDB read-tool round-trip). Phase 4 lint script wired into `npm run preflight` cascade (zero unannotated SF1/SF3/SF4/SF6 violations across 7 partition-relevant fork files; 32 legitimate sites annotated as design patterns). Phase 5 ADR-0086 §Debt 15 cross-references ADR-0112. Phase 6 acceptance verified: 540/553 baseline → 560/560 (8 new tests + 9 named tests now passing; 0 regressions).
+- **Status**: **Superseded by ADR-0180** (2026-05-14). Originally Implemented 2026-04-30. All 7 §Done criteria items closed. Phases 1–6 complete. Phase 1 (quick wins) flipped 9/9 named failures green via the `_e2e_isolate` project-root anchor + `routePatternOp` silent-fallback removal. Phase 2 closed 5/5 tracks (RVF + AgentDB-backend + controller-registry + memory-router + MCP handlers). Phase 3 added 22 unit-level fail-loud invariant tests + 8 acceptance tests (4 partition-holds + 4 AgentDB read-tool round-trip). Phase 4 lint script wired into `npm run preflight` cascade (zero unannotated SF1/SF3/SF4/SF6 violations across 7 partition-relevant fork files; 32 legitimate sites annotated as design patterns). Phase 5 ADR-0086 §Debt 15 cross-references ADR-0112. Phase 6 acceptance verified: 540/553 baseline → 560/560 (8 new tests + 9 named tests now passing; 0 regressions).
 - **Date**: 2026-04-30
 - **Deciders**: Henrik Pettersen
 - **Methodology**: 8-agent silent-fallthrough audit swarm (slices 1–8) + ADR-0086 §Debt 15 review
 - **Depends on**: ADR-0073 (RVF storage upgrade), ADR-0080 (storage consolidation verdict), ADR-0086 (Layer 1 single storage abstraction — Debt 15 ACCEPTED TRADE-OFF), ADR-0082 (test integrity, no fallbacks), ADR-0090 (acceptance suite coverage audit)
+- **Superseded by**: ADR-0180 (Memory Archivist — type-enforced coordination layer above MCP dispatch)
 - **Closes**: terminology drift surfaced during ADR-0111 W1.8 problem-collection pass
+
+## Superseded by ADR-0180 (2026-05-14)
+
+ADR-0112's "no coordinator above stores" rule is **retired**. Its motivating concern —
+write amplification at the substrate layer — was structural: the upstream bridge sat
+BELOW MCP dispatch and fanned out to four downstream writers. ADR-0180 addresses the
+same concern by placing the archivist ABOVE MCP dispatch, orchestrating per-store writes
+serially with audit between steps. The amplification cannot recur because the archivist
+is not at substrate. ADR-0112's independent-stores discipline is preserved WITHIN the
+archivist's per-store handlers; what changes is that a type-enforced coordination layer
+now exists above them. See ADR-0180 §Decision Outcome + §Pros and Cons.
 
 ## Context
 

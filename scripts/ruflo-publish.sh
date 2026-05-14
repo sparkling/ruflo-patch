@@ -55,6 +55,107 @@ source "${PROJECT_DIR}/lib/pipeline-helpers.sh"
 : "${RUFLO_NOTIFY_EMAIL:=}"
 
 # ---------------------------------------------------------------------------
+# run_adr0180_gates — ADR-0180 Phase 0 prerequisite gates (per ADR-0180
+# §Pre-Phase-2 prerequisite, Pass 3 Finding G expansion):
+#
+#   1. Halt/Amendment trailer scan — blocks if an `ADR-0180-Halt:` commit
+#      sits between the last release tag and HEAD without a paired
+#      `ADR-0180-Amendment: phase-N` resolution commit in the same range.
+#
+#   2. Charter conformance hook — invokes scripts/check-archivist-charter.sh
+#      if the archivist module exists (forks/agentdb/src/archivist/MODULE.md).
+#      Pre-Phase-2 (archivist not yet scaffolded) the check is a no-op.
+#
+#   3. Pre-Phase-4 maintenance-commit gate — once Phase 4 work has begun
+#      (sentinel: forks/agentdb/src/archivist/handlers/hive-mind/ exists),
+#      requires the two `fix(hive-mind): wrap … (pre-Phase 4)` commits to
+#      be present on forks/ruflo/v3 main per ADR-0180 §Migration concerns
+#      Phase 4 paragraph. Pre-Phase-4 the check is a no-op.
+# ---------------------------------------------------------------------------
+
+run_adr0180_gates() {
+  local _gate_start; _gate_start=$(_ns)
+  log "Running ADR-0180 Phase 0 gates"
+
+  # Gate 1: Halt/Amendment trailer scan
+  # Search commits between last fork tag and HEAD on ruflo-patch for unresolved Halt trailers.
+  # A "trailer" is a line that starts with "ADR-0180-Halt:" — distinct from prose mentions
+  # of the convention in commit body text. We post-process git log output to enforce
+  # line-start anchoring (which --grep alone doesn't provide).
+  local last_tag
+  last_tag=$(git -C "${PROJECT_DIR:-.}" describe --tags --abbrev=0 2>/dev/null || echo "")
+  local halt_range="HEAD"
+  [[ -n "$last_tag" ]] && halt_range="${last_tag}..HEAD"
+  local halt_candidates
+  halt_candidates=$(git -C "${PROJECT_DIR:-.}" log "$halt_range" --grep='ADR-0180-Halt:' --format='%H' 2>/dev/null || echo "")
+  if [[ -n "$halt_candidates" ]]; then
+    local unresolved=0
+    while IFS= read -r halt_sha; do
+      [[ -z "$halt_sha" ]] && continue
+      # Verify the trailer appears at line-start in the commit body (not just substring)
+      if ! git -C "${PROJECT_DIR:-.}" log -1 "$halt_sha" --format='%B' | grep -qE '^ADR-0180-Halt:'; then
+        continue  # prose mention only, not a real trailer
+      fi
+      # Real trailer — look for paired Amendment commit in the range halt..HEAD
+      local amendment_found
+      amendment_found=$(git -C "${PROJECT_DIR:-.}" log "${halt_sha}..HEAD" --grep='^ADR-0180-Amendment:' --extended-regexp --format='%H' 2>/dev/null | head -1 || echo "")
+      if [[ -z "$amendment_found" ]]; then
+        local halt_subj
+        halt_subj=$(git -C "${PROJECT_DIR:-.}" log -1 "$halt_sha" --format='%s')
+        log_error "Unresolved ADR-0180-Halt: ${halt_sha} ${halt_subj}"
+        unresolved=$((unresolved + 1))
+      fi
+    done <<< "$halt_candidates"
+    if [[ "$unresolved" -gt 0 ]]; then
+      log_error "ADR-0180 gate 1 FAILED: ${unresolved} unresolved Halt trailer(s). Release blocked until matching ADR-0180-Amendment commit(s) land."
+      return 1
+    fi
+  fi
+
+  # Gate 2: Charter conformance — only if archivist module exists
+  local archivist_dir="/Users/henrik/source/forks/agentdb/src/archivist"
+  if [[ -f "${archivist_dir}/MODULE.md" ]]; then
+    if [[ -x "${SCRIPT_DIR}/check-archivist-charter.sh" ]]; then
+      if ! "${SCRIPT_DIR}/check-archivist-charter.sh"; then
+        log_error "ADR-0180 gate 2 FAILED: charter conformance check exited non-zero. Each source file under forks/agentdb/src/archivist/** must carry a '// charter: <responsibility>' header tag matching a responsibility in MODULE.md."
+        return 1
+      fi
+    else
+      log_error "ADR-0180 gate 2 FAILED: forks/agentdb/src/archivist/MODULE.md exists but scripts/check-archivist-charter.sh missing or non-executable."
+      return 1
+    fi
+  fi
+
+  # Gate 3: Pre-Phase-4 maintenance-commit gate — only if Phase 4 surface in flight
+  if [[ -d "${archivist_dir}/handlers/hive-mind" ]]; then
+    local ruflo_v3_dir="/Users/henrik/source/forks/ruflo/v3"
+    local maint_agents_json
+    maint_agents_json=$(git -C "${ruflo_v3_dir}" log main --grep='fix(hive-mind): wrap agents.json writes in withHiveStoreLock (pre-Phase 4)' --format='%H' 2>/dev/null | head -1 || echo "")
+    local maint_consensus
+    maint_consensus=$(git -C "${ruflo_v3_dir}" log main --grep='fix(hive-mind): wrap consensus propose/vote in withHiveStoreLock (pre-Phase 4)' --format='%H' 2>/dev/null | head -1 || echo "")
+    if [[ -z "$maint_agents_json" ]] || [[ -z "$maint_consensus" ]]; then
+      log_error "ADR-0180 gate 3 FAILED: Phase 4 archivist surface is active but pre-Phase-4 maintenance commits are absent from forks/ruflo/v3 main. Required: agents.json wrap + consensus propose/vote wrap commits with the canonical subjects per ADR-0180 §Migration concerns Phase 4."
+      return 1
+    fi
+  fi
+
+  # Gate 4: ADR-0112 retirement drift guard (per ADR-0180 Phase 10)
+  # Once Phase 10 retires the ADR-0112 patterns, they must not reappear.
+  local adr0112_drift
+  adr0112_drift=$(grep -rlE 'RvfNotInitializedError|MemoryNotInitializedError|requireAgentDB\(|ADR-0112 Phase 2' \
+    /Users/henrik/source/forks/agentdb/src/ 2>/dev/null \
+    | grep -vE 'ADR-0112-AUDIT\.md|MODULE\.md|archivist/index\.ts' || echo "")
+  if [[ -n "$adr0112_drift" ]]; then
+    log_error "ADR-0180 gate 4 FAILED: retired ADR-0112 pattern reappeared in: $adr0112_drift"
+    return 1
+  fi
+
+  local _gate_ms; _gate_ms=$(_elapsed_ms "$_gate_start" "$(_ns)")
+  log "  Phase 'adr0180-gates' completed in ${_gate_ms}ms (all 4 gates passed)"
+  PHASE_TIMINGS="${PHASE_TIMINGS} adr0180-gates:${_gate_ms}"
+}
+
+# ---------------------------------------------------------------------------
 # check_merged_prs — detect new commits on fork origin/main
 # ---------------------------------------------------------------------------
 
@@ -277,6 +378,12 @@ main() {
 
   # Load previous state
   load_state
+
+  # ADR-0180 Phase 0 gates (Halt trailer scan + charter conformance + pre-Phase-4 maintenance)
+  if ! run_adr0180_gates; then
+    log_error "ADR-0180 Phase 0 gates failed — release blocked"
+    return 1
+  fi
 
   # Check for new merges to fork main branches
   local has_merges=false
