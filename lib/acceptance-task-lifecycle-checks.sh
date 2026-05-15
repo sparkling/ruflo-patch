@@ -74,6 +74,11 @@ $(echo "$body" | head -10)"
 # ════════════════════════════════════════════════════════════════════
 _task_create_and_capture() {
   local label="$1"
+  # Clear any stale failure sentinel from a prior check in this same process
+  # ($$ is shared across all checks running under the same test-acceptance.sh
+  # invocation). Without this reset, a later check that succeeds would have
+  # _task_create_capture_propagate falsely trip on the prior failure file.
+  rm -f "/tmp/.task-helper-failure-${$}-${label:-noop}" 2>/dev/null
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp /tmp/task-mk-XXXXX)
   local params='{"type":"test","description":"adr0094 '"$label"' probe"}'
@@ -88,6 +93,9 @@ _task_create_and_capture() {
   if echo "$body" | grep -qiE 'tool.+not (found|registered)|unknown tool|no such tool|method .* not found|invalid tool|tool .* not found in registry'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="SKIP_ACCEPTED: P3-task/${label}: task_create not in build — $(echo "$body" | head -3 | tr '\n' ' ')"
+    # Sentinel file format: first line = _CHECK_PASSED value, rest = _CHECK_OUTPUT.
+    # Caller's _task_create_capture_propagate restores both globals.
+    printf 'skip_accepted\n%s' "$_CHECK_OUTPUT" > "/tmp/.task-helper-failure-${$}-${label:-noop}"
     return 1
   fi
 
@@ -97,10 +105,33 @@ _task_create_and_capture() {
   if [[ -z "$tid" ]]; then
     _CHECK_PASSED="false"
     _CHECK_OUTPUT="P3-task/${label}: task_create did not return a taskId. Output: $(echo "$body" | head -10)"
+    # Write the failure to a sentinel file so the caller (running this in a
+    # `$(...)` subshell to capture the taskId echo) can detect the failure
+    # despite bash's subshell-variable-scope semantics dropping _CHECK_PASSED
+    # / _CHECK_OUTPUT assignments. Caller reads + propagates after the
+    # subshell returns.
+    printf 'false\n%s' "$_CHECK_OUTPUT" > "/tmp/.task-helper-failure-${$}-${label:-noop}"
     return 1
   fi
 
   echo "$tid"
+  return 0
+}
+
+# Propagate the failure captured by `_task_create_and_capture` to the
+# caller's _CHECK_PASSED / _CHECK_OUTPUT (which the subshell can't reach
+# directly). Caller passes the same label it gave to the helper so this
+# locates the right sentinel. Returns 0 if no failure was recorded;
+# 1 otherwise.
+_task_create_capture_propagate() {
+  local label="$1"
+  local sentinel="/tmp/.task-helper-failure-${$}-${label:-noop}"
+  if [[ -f "$sentinel" ]]; then
+    _CHECK_PASSED="$(head -1 "$sentinel")"
+    _CHECK_OUTPUT="$(tail -n +2 "$sentinel" 2>/dev/null)"
+    rm -f "$sentinel"
+    return 1
+  fi
   return 0
 }
 
@@ -187,7 +218,7 @@ check_adr0094_p3_task_create() {
 check_adr0094_p3_task_assign() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
-  local tid; tid=$(_task_create_and_capture "task_assign") || return
+  local tid; tid=$(_task_create_and_capture "task_assign"); _task_create_capture_propagate "task_assign" || return
   # task_assign schema uses agentIds (array), not agentId
   _task_invoke_tool \
     "task_assign" \
@@ -200,7 +231,7 @@ check_adr0094_p3_task_assign() {
 check_adr0094_p3_task_update() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
-  local tid; tid=$(_task_create_and_capture "task_update") || return
+  local tid; tid=$(_task_create_and_capture "task_update"); _task_create_capture_propagate "task_update" || return
   _task_invoke_tool \
     "task_update" \
     "{\"taskId\":\"$tid\",\"status\":\"in_progress\"}" \
@@ -212,7 +243,7 @@ check_adr0094_p3_task_update() {
 check_adr0094_p3_task_cancel() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
-  local tid; tid=$(_task_create_and_capture "task_cancel") || return
+  local tid; tid=$(_task_create_and_capture "task_cancel"); _task_create_capture_propagate "task_cancel" || return
   _task_invoke_tool \
     "task_cancel" \
     "{\"taskId\":\"$tid\"}" \
@@ -224,7 +255,7 @@ check_adr0094_p3_task_cancel() {
 check_adr0094_p3_task_complete() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
-  local tid; tid=$(_task_create_and_capture "task_complete") || return
+  local tid; tid=$(_task_create_and_capture "task_complete"); _task_create_capture_propagate "task_complete" || return
   _task_invoke_tool \
     "task_complete" \
     "{\"taskId\":\"$tid\"}" \
@@ -245,7 +276,7 @@ check_adr0094_p3_task_list() {
 check_adr0094_p3_task_status() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
-  local tid; tid=$(_task_create_and_capture "task_status") || return
+  local tid; tid=$(_task_create_and_capture "task_status"); _task_create_capture_propagate "task_status" || return
   _task_invoke_tool \
     "task_status" \
     "{\"taskId\":\"$tid\"}" \
