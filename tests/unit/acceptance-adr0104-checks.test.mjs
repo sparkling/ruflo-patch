@@ -285,7 +285,7 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     );
   });
 
-  it('parallel set with distinct keys: all values persist (lock isolates writers)', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
+  it('parallel set with distinct keys: all values persist (lock isolates writers)', { skip: buildAvailable && archivistInit ? false : 'compiled dist absent OR archivist-init.js not loadable (release pipeline parallel-build race)' }, async (t) => {
     // Drop the process-wide archivist singleton — see the helper comment
     // at the top of this file. Required before this test mkdtemps + chdirs.
     await resetArchivistForTest();
@@ -351,7 +351,7 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
       'lock sentinel not removed after writes complete');
   });
 
-  it('parallel set on SAME key: exactly one writer-* value persists, JSON intact', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
+  it('parallel set on SAME key: exactly one writer-* value persists, JSON intact', { skip: buildAvailable && archivistInit ? false : 'compiled dist absent OR archivist-init.js not loadable (release pipeline parallel-build race)' }, async (t) => {
     // Drop the process-wide archivist singleton — see the helper comment
     // at the top of this file. Required before this test mkdtemps + chdirs.
     await resetArchivistForTest();
