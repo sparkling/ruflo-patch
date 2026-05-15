@@ -1,10 +1,13 @@
 # ADR-0181 Handover — what's done, what's pending, where everything is
 
-**As of:** 2026-05-15 (Phase 8 swarm + heavy-test skip — handover snapshot)
-**Latest published build:** cli `3.7.0-alpha.10-patch.125` / `@sparkleideas/ruflo@3.1.0-alpha.14-patch.117` on Verdaccio (localhost:4873)
-**Latest release log:** `logs/adr0181-phase8-r1.log` (658/678 pass, 0 fail, 20 skip_accepted)
+**As of:** 2026-05-15 (Phase 7 landing — handover snapshot)
+**Latest published build:** cli `3.7.0-alpha.10-patch.128` / `@sparkleideas/ruflo` matching patch on Verdaccio (localhost:4873)
+**Latest release log:** `logs/adr0181-phase7-r3.log` (656/678 pass, 0 fail, 22 skip_accepted)
 
 **Recent session deltas (newest first):**
+
+- **Phase 7 — controller-persistence landing** (this loop, 7 commits across forks/agentdb + forks/ruflo): wired the 4 deferred agentdb handlers (`reflexion-store`, `skill-create`, `hierarchical-store`, `sona-trajectory-store`) by collapsing the two-database split-brain. Council found cli writes to `<root>/.swarm/memory.db` (AgentDB-owned, schemas via `loadSchemas()`); archivist reads were querying `<root>/.claude-flow/archivist.db` (separate empty DB). Fix: substrate-registry roster move (3 storeIds RVF→SQLite carve-out), recall axis-flip + SQL port (importance-rank, no MATCH because `hierarchical_memory` schema has no embedding column), `ensureSqliteWired` handle-share (looks up cli's existing `ControllerRegistry.getAgentDB().database` — single handle, forces lazy registry init that creates memory.db). Took 3 release rounds: r1 path-repoint regressed (6 fails — startup-ordering); r2 handle-share fixed 5 (1 fail — read-side gate missed); r3 read-side gate flip closed the last one (0 fails). Net: **6 probes flipped skip_accepted → PASS** (adr0112-27-1/3/4, adr0178-hquery-e2e, p13-agentdb-reflexion, p13-agentdb-skill). Sona deferred per Phase 7 plan — service is in-memory by design, needs separate ADR for persistence + read-handler.
+  - **8 heavy-skip drift** (passed → skip_accepted): p4-br-interaction/navigation/snapshot, p7-fo-neural, p8-inv1-memory, t1-2-learning, t3-1-bulk-corpus, t3-4-reasoningbank — these are exactly the documented `_HEAVY_CHECK_IDS` list. Pre-Phase-7 baseline (phase8-r1.log) somehow ran them; r3 properly skips them per intent. Behavior is correct now; baseline was over-counted. Worth a separate look at WHY the heavy-skip didn't fire in baseline.
 
 - **Phase 8 — heavy-test skip** (`d8c26f0` on ruflo-patch): 9 reliably-passing slow tests skipped by default, saving ~3 min of acceptance wall time per release. List in `lib/acceptance-harness.sh _HEAVY_CHECK_IDS`. Opt back into the full corpus with `ACCEPTANCE_HEAVY=1 npm run release`. CLAUDE.md "TWO COMMANDS" → "THREE COMMANDS" — promotes `bash scripts/test-acceptance-fast.sh --group <group>` to a first-class targeted-iteration command (returns 30-90s; reads latest published packages without rebuilding source).
 - **Phase 8 — 5-agent swarm** completed all assigned scopes:
@@ -26,11 +29,12 @@
 | **4** | ✅ done (earlier session) | substrate wiring + 8 `agentdb_*` reads + W1 adapter |
 | **5** | ✅ done | 100+ cli mcp-tool flips through `archivist.dispatch` (commit `forks/ruflo` `272f07928`) |
 | **5 release-acceptance** | ✅ landed earlier loop | dropped from 86 → 0 explicit failures across r6→r22 (21 release cycles) |
-| **6 wire-up** | ⏸ partial (3 of 7 stubs) | 3 wired (pattern-store, feedback, experience-record); 4 deferred until controller persistence lands |
+| **6 wire-up** | ✅ done (6 of 7 stubs) | 3 wired earlier (pattern-store, feedback, experience-record); 3 more wired in Phase 7 (reflexion-store, skill-create, hierarchical-store); Sona deferred (in-memory by design — needs separate ADR for SQLite persistence + sibling read handler) |
 | **6 named (ADR-0112 retirement)** | ⏸ audit only | full catalog completed; CAN_REMOVE bucket empty; defer to ADR-0180 §Phase 10 |
-| **7** | ❌ NOT STARTED | full-system verification |
+| **7 controller persistence** | ✅ done | substrate split-brain collapsed; cli + archivist now share `.swarm/memory.db` via ControllerRegistry handle-share. 6 deferred probes flipped skip_accepted → PASS |
+| **7 full-system verification** | ✅ done | r3 acceptance: 656/678 pass, 0 fail, 22 skip_accepted on patch.128 |
 
-**Strict exit criterion is met** (`acceptance passes, libraries published, everything committed`): 658/678 pass, 0 fail, 20 skip_accepted on patch.125. Phase 6 wire-up is partial; named-Phase-6 (ADR-0112 retirement) is audit-only with empty CAN_REMOVE; Phase 7 not started.
+**Strict exit criterion is met** (`acceptance passes, libraries published, everything committed`): 656/678 pass, 0 fail, 22 skip_accepted on patch.128. Phase 6/7 wire-up complete (Sona deferred to follow-up ADR per design); named-Phase-6 (ADR-0112 retirement) still audit-only with empty CAN_REMOVE.
 
 ## What landed during this loop (commit-trail summary)
 
@@ -70,7 +74,23 @@ All commits pushed to `sparkling main` on each fork.
 - `973e39f` — `MemoryRvfAdapter` surfaces content + tags from metadata
 - `1733196` — `memory_store` uses real embedding via `EmbeddingScorer` capability
 
-### forks/agentdb — this session (Phase 6/7/8)
+### forks/ruflo (cli) — this session (Phase 7 r1/r2/r3)
+
+- `b030f39a1` — fix(archivist): repoint ensureSqliteWired to .swarm/memory.db (ADR-0181 Phase 7 r1) — initial path-repoint approach. Regressed in r1 acceptance due to startup-ordering bug (memory.db doesn't exist when ensureSqliteWired runs on first dispatch).
+- `2500bc283` — fix(cli/agentdb-tools): trigger ensureSqliteWired on 3 newly-carve-out write storeIds (L516/L1103/L1733)
+- `7d36d6f77` — fix(archivist-init): handle-share over path-repoint to defeat startup-ordering bug (ADR-0181 Phase 7 r2). New export `getControllerRegistryAgentDb()` in memory-router.ts; `ensureSqliteWired` now looks up cli's existing AgentDB instance handle, forcing lazy registry init (which calls `loadSchemas()` — creates memory.db). Eliminates the path-repoint race. Resolved 5 of 6 r1 failures.
+- `7a5fa0913` — fix(cli/agentdb-tools): gate hierarchical-recall behind ensureSqliteWired (ADR-0181 Phase 7 r3). Off-by-one fix: cli's recall-side wrapper at L559 still called `ensureRvfWired()` from the pre-Phase-7 era. Switched to `ensureSqliteWired()` matching the post-Phase-7 SQLite carve-out classification. Closed the last failure.
+
+### forks/agentdb — this session (Phase 7)
+
+- `bf35a29` — fix(archivist): route reflexion/skill/hierarchical writes to SQLite carve-out (substrate-registry roster move; Hierarchical RVF→SQLite, Reflexion+Skill added to SQLITE_CARVE_OUT_STORE_IDS)
+- `4e50b4b` — feat(archivist): port hierarchical-recall to SQL over hierarchical_memory (axis-flip from `vectorSearch` to `ctx.substrate.query` — `SELECT ... ORDER BY importance DESC LIMIT topK`. Importance is canonical rank since hierarchical_memory has no embedding column. hmem_vec MATCH branch is future ADR scope; investigation showed even with sqlite-vec loaded, controller's own recall path doesn't use MATCH).
+- `7daa527` — docs(archivist): refresh Phase 7 doc-comments on agentdb_*_store handlers (deleted 4 stale "Fallback path: substrate.withWrite RVF" doc-comments; bodies always threw fail-loud — only headers contradicted code)
+- `10ee2e8` — feat(archivist): export reflexion/skill/hierarchical store handlers (3 barrel uncomments; Sona stays commented)
+- `e46148f` — bundled with chore: bump (hygiene desync — agentdb-impl edited recall.ts header during release-time; pickup via `git add -A` swept it into the auto-bump commit)
+- `e36e871` — docs(archivist): reframe Sona barrel comment as permanently-cli-only (DA Refinement B: matches handover Section J's permanently-cli-only bucket alongside hooks/* and session_*)
+
+### forks/agentdb — earlier this session (Phase 6/7/8)
 
 - `fc6b577` — Phase 6 wire-up: 7 narrow writer capability surfaces + factories + 7 handler body ports + barrel re-exports
 - `c9ae543` — fix missing `});` brace in feedback.ts handler
@@ -154,25 +174,27 @@ All commits pushed to `sparkling main` on each fork.
 
 ### B. Stub handler bodies — Phase 6/7/8 wire-up state
 
-**Current state (2026-05-15 Phase 8):**
+**Current state (2026-05-15 Phase 7 r3 — see Phase 7 root-cause-resolved write-up below the table):**
 
 | Family | File | State | Tools status |
 |---|---|---|---|
 | agentdb | `pattern-store.ts` | ✅ WIRED + invariants | adr0112-27-2 PASS; adr0090-b5-reasoningBank skip (4d Wrong-API-use pattern) |
 | agentdb | `feedback.ts` | ✅ WIRED + invariants | no acceptance probe |
 | agentdb | `experience-record.ts` | ✅ WIRED + invariants | adr0090-b5-learningSystem skip (controller stub pattern) |
-| agentdb | `reflexion-store.ts` | ⏸ BODY-READY, UN-EXPORTED | blocks adr0112-27-1, p13-agentdb-reflexion (Phase 7 controller persistence) |
-| agentdb | `skill-create.ts` | ⏸ BODY-READY, UN-EXPORTED | blocks adr0112-27-3, p13-agentdb-skill (Phase 7) |
-| agentdb | `hierarchical-store.ts` | ⏸ BODY-READY, UN-EXPORTED | blocks adr0112-27-4, adr0178-hquery-e2e (Phase 7) |
-| agentdb | `sona-trajectory-store.ts` | ⏸ BODY-READY, UN-EXPORTED | blocks adr0090-b5-sonaTrajectory (Phase 7) |
+| agentdb | `reflexion-store.ts` | ✅ WIRED (Phase 7 r2/r3) | adr0112-27-1 PASS; p13-agentdb-reflexion PASS |
+| agentdb | `skill-create.ts` | ✅ WIRED (Phase 7 r2/r3) | adr0112-27-3 PASS; p13-agentdb-skill PASS |
+| agentdb | `hierarchical-store.ts` | ✅ WIRED (Phase 7 r2/r3) | adr0112-27-4 PASS; adr0178-hquery-e2e PASS |
+| agentdb | `sona-trajectory-store.ts` | ❌ PERMANENTLY-CLI-ONLY (deferred to follow-up ADR) | adr0090-b5-sonaTrajectory stays skip_accepted. SonaTrajectoryService is in-memory by design (Map<string, StoredTrajectory[]>); needs separate ADR for SQLite persistence + sibling read handler for `'stats'` action |
 | daemons | `map.ts`, `testgaps.ts`, `audit.ts` | ✅ WIRED (Phase 8) | (daemon-scheduled, no probe) |
 | hive-mind | `status.ts` | ✅ WIRED (Phase 8 read handler) | cli `hive-mind_status` doesn't dispatch through archivist yet (hive-mind-tools.ts:1761 deferral); body is governance-shape coverage |
 | hive-mind | `consensus.ts` | ❌ DEFERRED (Phase 8 stub-porter skipped) | 1000+ line strategy fan-out; needs per-strategy split first per cli's own deferral comment |
 | github | `workflow.ts` | ✅ WIRED (Phase 8) | no acceptance probe today; cli owns gh subprocess; handler is audit-anchor only |
 
-**Why 4 agentdb handlers are body-ready-but-un-exported (Phase 7 controller persistence dependency):** Narrow writer capability + adapter wiring is complete (see `forks/ruflo/v3/@claude-flow/cli/src/memory/archivist-init.ts` `makeCli{ReflexionStore,SkillLibrary,HierarchicalMemory,SonaTrajectory}Writer`). Handlers throw `controller not available` fail-loud when `getController()` returns null, which the harness skip-accepts. **A stub-vs-real detector exists** (commit forks/ruflo `5056063`) that probes for real-controller marker methods (`getStats`/`promote`/`retrieveRelevant`/`getCacheStats`/`searchSkills`/`getEngineType`) and returns null for stubs. **But the test-env controllers PASS the detector** — they expose those marker methods. They just don't persist writes to the SQLite tables that the corresponding read tools query. So registering the handlers turns 6 round-trip probes from `skip_accepted` into FAIL. Until Phase 7 fixes the underlying controller persistence path, keeping the 4 exports commented out routes dispatch to `tool not registered` which the harness skip-accepts.
+**Phase 7 root cause (resolved):** The handover snapshot before Phase 7 said "test-env controllers PASS the detector but don't persist writes". The actual root cause was deeper: cli's controllers persist to `<root>/.swarm/memory.db` (AgentDB-owned via `loadSchemas()`), but archivist's `ensureSqliteWired` was opening `<root>/.claude-flow/archivist.db` — a separate empty file. Two-database split-brain: writes landed in one file, reads queried another. **Fix shipped in 3 release rounds:**
 
-**Re-enable pattern (Phase 7):** uncomment the corresponding line in `forks/agentdb/src/archivist/handlers/agentdb/index.ts`. No code changes needed in the handler files. The detector pattern in cli adapters stays in place for the day stubs CAN be distinguished — but the immediate need is fixing controller persistence, not detector tightening.
+- **r1 (path-repoint, regressed)**: cli-impl repointed `ensureSqliteWired` from `archivist.db` to `.swarm/memory.db`. Substrate now pointed at the right file. But `existsSync` guard fired on first dispatch because the file hadn't been created yet — AgentDB's `loadSchemas()` runs lazily on controller-registry init, which is gated on first cli call to `getController()`. Result: 6 acceptance failures with explicit "memory.db does not exist" error.
+- **r2 (handle-share)**: cli-impl added `getControllerRegistryAgentDb()` accessor in memory-router.ts that calls `ensureRegistry()` then exposes `getAgentDB().database`. `ensureSqliteWired` now does the lookup instead of opening a new handle. The lookup forces lazy registry init (creates memory.db) and returns the live shared handle in one step. Single SQLite file, single handle, no startup race. Resolved 5 of 6 r1 failures.
+- **r3 (recall-side gate flip)**: cli's `agentdb_hierarchical-recall` wrapper at agentdb-tools.ts:559 still called `ensureRvfWired()` from the pre-Phase-7 era. After axis-flip from RVF→SQLite carve-out, the recall handler reads from SQLite (`SELECT FROM hierarchical_memory`), so it needs `ensureSqliteWired()`. One-line gate flip closed the last failure.
 
 ### C. memory_store handler — full ADR-0181 §C semantics LANDED (Phase 8)
 - ✅ RVF write via `handle.rvf.insertAsync` with real embedding (via `EmbeddingScorer` capability)
@@ -236,8 +258,8 @@ Layout: `forks/agentdb/src/archivist/invariants/<surface>/<handler>.ts` per hand
 
 **Still pending:** ~94 of 100+ handlers on `[]`. Other broader barrels (agents/spawn, autopilot/enable, swarm/init, claims/*, coordination/*, daa/*, neural/*, performance/*, etc.) are unaddressed.
 
-### I. SQLite carve-out
-5 `PERMANENT_SQLITE_CARVE_OUT` controllers per ADR-0166 (reflexion, skills, etc). `ensureSqliteWired()` exists in `archivist-init.ts` but **no dispatched cli call site triggers it today** — every storeId today classifies to FS-JSON or RVF. SQLite substrate wiring is dead code on the dispatch hot path.
+### I. SQLite carve-out — ACTIVE on dispatch hot path (Phase 7)
+5 `PERMANENT_SQLITE_CARVE_OUT` controllers per ADR-0166 (reflexion, skills, etc). Phase 7 added 3 more storeIds to `SQLITE_CARVE_OUT_STORE_IDS` (`agentdb_reflexion_store`, `agentdb_skill_create`, `agentdb_hierarchical_store`) and wired the dispatch hot path through `ensureSqliteWired()`. The wiring uses **handle-share** (cli-impl r2): `getControllerRegistryAgentDb()` in memory-router.ts looks up the existing `ControllerRegistry.getAgentDB().database` handle (forces lazy registry init that creates `.swarm/memory.db` + runs `loadSchemas()`) and passes the live shared handle to `archivist.setSqliteDb()`. One file, one handle, no cross-handle BEGIN IMMEDIATE serialization risk. The substrate's `withWrite` envelope and the cli-side capability writers both hit the same handle on the same file.
 
 ### J. Phase 5 "permanently cli-only" surfaces (intentional, not bugs)
 Worth knowing — these will NEVER flip:
@@ -245,12 +267,15 @@ Worth knowing — these will NEVER flip:
 - `hooks/*` — 29 tools stay cli-authoritative per ADR-0180 §160. The Phase 8 alias mechanism (CF#3) lets archivist *also* register them under canonical names without forcing a cli flip.
 - `session_*` — no archivist counterpart by design (cli-local FS-JSON blob)
 - `agent_pool` status, `agent_execute` — pre-LLM busy reservation needs handler-level wiring (DA carry-forward #9; deferred)
+- `agentdb_sona_trajectory_store` (Phase 7) — `SonaTrajectoryService` is in-memory by design (`Map<string, StoredTrajectory[]>` per services/SonaTrajectoryService.ts:73-77); needs separate ADR for SQLite persistence + sibling read handler for `'stats'` action. Not a wiring problem; a behavioral capability gap.
 
-### K. Phase 8 discoveries — clean follow-ups
+### K. Phase 7/8 discoveries — clean follow-ups
 
 - **`v3/mcp/tools/` is a dead tree** (14 files + .js/.d.ts artifacts in `forks/ruflo`). Not in any tsconfig include, not in `copy-source.sh`, no external imports. Documented in commit `171830418`. Safe single-commit removal in a follow-up.
 - **Hooks namespace has 3 conventions, not 2** — cli plural-hyphenated, archivist singular-underscored, AND agentic-flow singular-underscored. Phase 8 alias mechanism (CF#3) sidesteps the rename problem entirely; no ecosystem needs to break.
-- **Multi-agent fork commit interleaving on `main`** is fragile (Phase 8 had 2 near-collisions on `forks/agentdb`). Recommendation: future swarms should `git stash --keep-index` or use `git add ... && git commit ...` atomic invocations, OR each agent commits before another touches the index.
+- **Multi-agent fork commit interleaving on `main`** is fragile (Phase 8 had 2 near-collisions on `forks/agentdb`; Phase 7 had one — agentdb-impl's mid-release header edit got bundled into auto-bump commit `e46148f`). Recommendation: future swarms should `git stash --keep-index` or use `git add ... && git commit ...` atomic invocations, OR each agent commits before another touches the index, OR the queen explicitly serializes commit windows.
+- **8 heavy-skip drift** between phase8-r1 baseline (passed) and Phase 7 r3 (skip_accepted): `p4-br-interaction/navigation/snapshot, p7-fo-neural, p8-inv1-memory, t1-2-learning, t3-1-bulk-corpus, t3-4-reasoningbank` — exactly the documented `_HEAVY_CHECK_IDS` list. The heavy-skip logic is firing correctly in r3 but apparently didn't fire in baseline. Worth investigating WHY — maybe `ACCEPTANCE_HEAVY=1` was leaked into baseline env, or the `_HEAVY_CHECK_IDS` array was edited mid-session. Either way, baseline (658) was over-counted; Phase 7 (656) is the honest number.
+- **hierarchical_memory has no embedding column** (Phase 7 surprise). Schema: `id, tier, content, importance, access_count, created_at, last_accessed_at, last_rehearsed_at, consolidated_at, tags, context, metadata`. The cli's `HierarchicalMemory.recall()` uses `vectorBackend.search` (RVF/HNSW in-memory) with manualSearch fallback over decoded embeddings — but those decoded embeddings come from VectorBackend, not from the SQL table. Archivist's `agentdb_hierarchical_recall` SQL port uses `ORDER BY importance DESC LIMIT topK` — honest about the schema's actual rank signal. The `hmem_vec` virtual-table mirror (sqlite-vec, ADR-0166 Phase 3 Option F) IS populated by writes when the extension is loaded, but: (a) the extension isn't loaded in production today; (b) even when loaded, the controller's own recall path doesn't query it. Future ADR could add a sibling read storeId that does `vec_search` on `hmem_vec`, but that's enhancement-class work.
 
 ## Quick-start for new session
 
