@@ -178,8 +178,11 @@ check_adr0108_round_robin_distribution() {
 
   # Inspect the agent store for the per-worker agentType — the round-robin
   # contract is structural, not just a CLI render. State path mirrors the
-  # MCP handler's `loadAgentStore` (`.claude-flow/agents.json`).
-  local agents_file="$iso/.claude-flow/agents.json"
+  # MCP handler's `loadAgentStore` — ADR-0181 Phase 5 aligned this to the
+  # nested `.claude-flow/agents/store.json` path (FS_JSON_PATH_OVERRIDES
+  # for `hive-mind_agents`); the flat `agents.json` was the pre-Phase-5
+  # convention.
+  local agents_file="$iso/.claude-flow/agents/store.json"
   if [[ ! -f "$agents_file" ]]; then
     _CHECK_OUTPUT="ADR-0108 AC#3: agents.json missing after spawn (expected at $agents_file)"
     rm -rf "$iso" 2>/dev/null
