@@ -60,6 +60,24 @@ const PARSER_DIST = pickDistFile('parser.js');
 const HIVE_TOOLS_DIST = pickDistFile(join('mcp-tools', 'hive-mind-tools.js'));
 const HIVE_CMD_DIST = pickDistFile(join('commands', 'hive-mind.js'));
 const MCP_GEN_DIST = pickDistFile(join('init', 'mcp-generator.js'));
+const ARCHIVIST_INIT_DIST = pickDistFile(join('memory', 'archivist-init.js'));
+
+// `getProcessArchivist()` is a process-wide singleton: the FIRST call pins
+// `projectRoot` (via `findProjectRoot()`) for the lifetime of the process.
+// Tests below `chdir` into a fresh tmpdir each — without resetting the
+// singleton, the second test's dispatched writes land under the FIRST test's
+// pinned root while the test reads from the second tmp's `state.json` (which
+// only has the cli's init-side flat write, no race-* entries). The fork
+// exports `__resetProcessArchivistForTests()` for exactly this case.
+//
+// Critical: import WITHOUT a cache-bust — the singleton state lives in the
+// module instance that `hive-mind-tools.js` static-imports. A cache-busted
+// import would reset a DIFFERENT module instance and leave the original
+// singleton (the one the handlers actually use) untouched.
+async function resetArchivistForTest() {
+  const archivistInit = await import(ARCHIVIST_INIT_DIST);
+  await archivistInit.__resetProcessArchivistForTests();
+}
 
 const buildAvailableForBehavioral = existsSync(PARSER_DIST) || existsSync(HIVE_TOOLS_DIST);
 
@@ -218,6 +236,12 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-lock-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
 
+    // Drop the process-wide archivist singleton so its `projectRoot` re-pins
+    // to the new tmpdir below. Without this, a prior test's pinned root would
+    // route dispatched writes to the wrong tree (see header doc on
+    // ARCHIVIST_INIT_DIST).
+    await resetArchivistForTest();
+
     // Patch the types module's findProjectRoot. We do this by writing a small
     // ESM wrapper that re-exports the dist module after monkey-patching the
     // shared types import — easier to just chdir + pin findProjectRoot via a
@@ -278,6 +302,10 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
   it('parallel set on SAME key: exactly one writer-* value persists, JSON intact', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-samekey-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
+    // Re-pin the archivist singleton's `projectRoot` to this tmpdir — without
+    // the reset, the prior distinct-keys test's tmp stays pinned and our
+    // dispatched writes go there instead of `tmp` below.
+    await resetArchivistForTest();
     process.chdir(tmp);
     writeFileSync(join(tmp, 'package.json'), '{"name":"adr0104-samekey-test"}');
 
