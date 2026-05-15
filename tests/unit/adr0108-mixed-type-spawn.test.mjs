@@ -225,7 +225,7 @@ describe('ADR-0108 §Test plan — MCP handler round-robin', () => {
     }
   }
 
-  it('round-robins agentTypes across count (N=3, 3 types → distinct)', { skip: SKIP_REASON_PHASE6_INIT }, async () => {
+  it('round-robins agentTypes across count (N=3, 3 types → distinct)', { skip: SKIP_REASON }, async () => {
     await setup();
     try {
       const spawnTool = mcpTools.find(t => t.name === 'hive-mind_spawn');
@@ -242,7 +242,7 @@ describe('ADR-0108 §Test plan — MCP handler round-robin', () => {
     }
   });
 
-  it('round-robin wraps with modulo (N=6, 3 types → 2× each)', { skip: SKIP_REASON_PHASE6_INIT }, async () => {
+  it('round-robin wraps with modulo (N=6, 3 types → 2× each)', { skip: SKIP_REASON }, async () => {
     await setup();
     try {
       const spawnTool = mcpTools.find(t => t.name === 'hive-mind_spawn');
@@ -307,7 +307,7 @@ describe('ADR-0108 §Test plan — MCP handler round-robin', () => {
     }
   });
 
-  it('preserves degenerate single-element case as N identical workers', { skip: SKIP_REASON_PHASE6_INIT }, async () => {
+  it('preserves degenerate single-element case as N identical workers', { skip: SKIP_REASON }, async () => {
     await setup();
     try {
       const spawnTool = mcpTools.find(t => t.name === 'hive-mind_spawn');
@@ -323,7 +323,7 @@ describe('ADR-0108 §Test plan — MCP handler round-robin', () => {
     }
   });
 
-  it('scalar agentType still works (back-compat with pre-T13 callers)', { skip: SKIP_REASON_PHASE6_INIT }, async () => {
+  it('scalar agentType still works (back-compat with pre-T13 callers)', { skip: SKIP_REASON }, async () => {
     await setup();
     try {
       const spawnTool = mcpTools.find(t => t.name === 'hive-mind_spawn');
