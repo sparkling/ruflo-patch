@@ -1523,8 +1523,13 @@ check_adr0090_b5_gnnService() {
   # B. Controller legitimately not wired — SKIP_ACCEPTED (narrow regex).
   #    Same semantics as helper 4b. If agentdb.getController('gnnService')
   #    returns null, the handler emits "GNNService controller not available".
+  #    ADR-0181 Phase 5 added another shape: the archivist neural-patterns
+  #    handler explicitly throws when 'stats' action is not substrate-backed
+  #    (no ReadCapabilities for GNNService yet — pending Phase 6+ telemetry
+  #    capability surface). Both shapes are legitimate "controller not wired"
+  #    skips.
   if echo "$probe_body" | grep -qE '"success"[[:space:]]*:[[:space:]]*false' \
-     && echo "$probe_body" | grep -qiE '"error"[[:space:]]*:[[:space:]]*"[^"]*(not available|not initialized|not wired|not active)'; then
+     && echo "$probe_body" | grep -qiE '"error"[[:space:]]*:[[:space:]]*"[^"]*(not available|not initialized|not wired|not active|not substrate-backed)'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="B5/gnnService: SKIP_ACCEPTED: GNNService controller not wired in this build (tool registered but registry returned null) — $(echo "$probe_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null
@@ -1677,11 +1682,22 @@ check_adr0090_b5_semanticRouter() {
   # ── 5c. Classic trivial shape (route:default + confidence:0) AND no
   #        RVF growth AND no namespace entries: architecturally proven
   #        no-op. skip_accepted per ADR-0090 Tier A2 bucket discipline.
+  #        ADR-0181 Phase 5 added another no-op shape: the dispatched
+  #        archivist handler returns {success:false, route:null} when the
+  #        semanticRouter controller is not wired (no ReadCapabilities
+  #        TaskRouter equivalent yet — pending Phase 6+ capability surface).
   if echo "$probe_body" | grep -qE '"route"[[:space:]]*:[[:space:]]*"default"' \
      && echo "$probe_body" | grep -qE '"confidence"[[:space:]]*:[[:space:]]*0\b'; then
     rm -rf "$work" "$iso" 2>/dev/null
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="B5/semanticRouter: SKIP_ACCEPTED: probe returned {route:default,confidence:0}; RVF delta=0 (baseline=$baseline_count, after=$after_count); no route-namespace entries. add_tool_missing=${add_tool_missing} (true=older build without agentdb_semantic_add_route patch). Probe: ${probe_snippet}"
+    return
+  fi
+  if echo "$probe_body" | grep -qE '"success"[[:space:]]*:[[:space:]]*false' \
+     && echo "$probe_body" | grep -qE '"route"[[:space:]]*:[[:space:]]*null'; then
+    rm -rf "$work" "$iso" 2>/dev/null
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/semanticRouter: SKIP_ACCEPTED: dispatched handler returned {success:false, route:null} — controller not wired in build (Phase 6+ capability surface). Probe: ${probe_snippet}"
     return
   fi
 

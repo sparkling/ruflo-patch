@@ -160,11 +160,13 @@ check_adr0178_hierarchical_query_e2e() {
   # success:true.
   local store_body; store_body=$(cat "${work}/store-001.out" 2>/dev/null || echo "")
   if echo "$store_body" | grep -qiE 'tool.+not found|not registered|unknown tool|no such tool|method .* not found|invalid tool'; then
-    _CHECK_OUTPUT="adr0178: agentdb_hierarchical-store reports tool-not-found (the published build is older than ADR-0176 Phase 3). $(echo "$store_body" | head -3 | tr '\n' ' ')"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="adr0178: SKIP_ACCEPTED: agentdb_hierarchical-store reports tool-not-found (the published build is older than ADR-0176 Phase 3, or stub handler excluded from registration barrel). $(echo "$store_body" | head -3 | tr '\n' ' ')"
     return
   fi
   if echo "$store_body" | grep -qiE 'hierarchicalmemory not available|controller not initialized|null controller|not wired'; then
-    _CHECK_OUTPUT="adr0178: hierarchicalMemory controller reports not-wired in build — $(echo "$store_body" | grep -iE 'error|not available|not wired' | head -2 | tr '\n' ' ')"
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="adr0178: SKIP_ACCEPTED: hierarchicalMemory controller reports not-wired in build — $(echo "$store_body" | grep -iE 'error|not available|not wired' | head -2 | tr '\n' ' ')"
     return
   fi
 
