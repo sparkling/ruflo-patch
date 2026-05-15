@@ -203,7 +203,10 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     const memHandlerEnd = src.indexOf("Unknown action", memHandlerStart);
     assert.ok(memHandlerEnd > 0, 'hive-mind_memory handler unknown-action tail not found');
     const handler = src.slice(memHandlerStart, memHandlerEnd);
-    const dispatchUses = (handler.match(/dispatch\(['"]hive-mind_memory['"]/g) || []).length;
+    // Tolerate whitespace/newlines between `dispatch(` and the tool name
+    // — one of the four sites (the list-action one) wraps the string literal
+    // onto its own line.
+    const dispatchUses = (handler.match(/dispatch\(\s*['"]hive-mind_memory['"]/g) || []).length;
     assert.ok(
       dispatchUses >= 4,
       `expected ≥4 dispatch('hive-mind_memory', ...) invocations covering get/list/set/delete in memory handler, found ${dispatchUses}`,
