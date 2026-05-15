@@ -133,11 +133,25 @@ describe('ADR-0083 Wave 1: daa-tools.ts import migration', () => {
     );
   });
 
-  it('daa-tools.ts routes memory operations through memory-router', () => {
+  it('daa-tools.ts routes memory operations through the archivist (Phase 5 supersedes memory-router)', () => {
+    // ADR-0181 Phase 5 (F4-3): the prior `routeMemoryOp` tail-calls into
+    // `memory-router.js` were removed when daa_* mutating tools migrated to
+    // `getProcessArchivist().dispatch(...)`. The archivist's substrate now
+    // owns the FS-JSON / RVF write envelope (`substrate.withWrite`) directly
+    // — re-routing through the cli's memory-router would re-introduce the
+    // silent try/catch fallback (`try { routeMemoryOp(...) } catch {}`) that
+    // `feedback-no-fallbacks` forbids. Asserting dispatch is the post-Phase-5
+    // equivalent of the pre-Phase-5 memory-router-dynamic-import invariant.
     const src = readSource(FILE);
+    assert.match(
+      src,
+      /from\s+['"]\.\.\/memory\/archivist-init(?:\.js)?['"]/,
+      'daa-tools.ts must import getProcessArchivist from ../memory/archivist-init',
+    );
+    const dispatchUses = (src.match(/getProcessArchivist\(\)\)\.dispatch\(/g) || []).length;
     assert.ok(
-      hasDynamicImport(src, 'memory-router'),
-      'daa-tools.ts must dynamically import from memory-router.js',
+      dispatchUses >= 1,
+      `daa-tools.ts must dispatch through archivist for mutating memory ops; found ${dispatchUses}`,
     );
   });
 });

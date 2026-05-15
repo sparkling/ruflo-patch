@@ -183,14 +183,31 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     assert.match(src, /renameSync/, 'saveHiveState must use atomic rename (tmp + rename)');
   });
 
-  it('handler routes set/delete through withHiveStoreLock; get/list bypass it', () => {
+  it('handler routes ALL FOUR actions through archivist dispatch (Phase 5 substrate owns the lock)', () => {
+    // ADR-0181 Phase 5 (F4-3): the cli's `withHiveStoreLock` wrapper collapsed
+    // when the archivist handler at
+    // `forks/agentdb/src/archivist/handlers/hive-mind/memory.ts` took over the
+    // `substrate.withWrite` envelope. The cli handler now MUST dispatch all
+    // four actions (get/list/set/delete) through `getProcessArchivist().dispatch(
+    // 'hive-mind_memory', ...)` — get/list dispatch BEFORE the local read so
+    // lazy eviction in the handler is observable; set/delete dispatch the
+    // mutation. Asserting on the dispatch shape is the post-Phase-5
+    // equivalent of the pre-Phase-5 lock-count invariant.
     const src = readFileSync(HIVE_TOOLS_SRC, 'utf8');
     const memHandlerStart = src.indexOf("name: 'hive-mind_memory'");
     assert.ok(memHandlerStart > 0, 'hive-mind_memory tool not found');
-    const memHandlerEnd = src.indexOf('},', src.indexOf('handler:', memHandlerStart) + 100);
+    // The handler is a deeply nested arrow; bracket the section between the
+    // `name:` field and the next tool entry (or end of array). Use the
+    // closing `},` that follows the trailing `return { action, error:
+    // 'Unknown action' };` line.
+    const memHandlerEnd = src.indexOf("Unknown action", memHandlerStart);
+    assert.ok(memHandlerEnd > 0, 'hive-mind_memory handler unknown-action tail not found');
     const handler = src.slice(memHandlerStart, memHandlerEnd);
-    const lockUses = (handler.match(/withHiveStoreLock/g) || []).length;
-    assert.ok(lockUses >= 2, `expected ≥2 withHiveStoreLock invocations in memory handler, found ${lockUses}`);
+    const dispatchUses = (handler.match(/dispatch\(['"]hive-mind_memory['"]/g) || []).length;
+    assert.ok(
+      dispatchUses >= 4,
+      `expected ≥4 dispatch('hive-mind_memory', ...) invocations covering get/list/set/delete in memory handler, found ${dispatchUses}`,
+    );
   });
 
   it('parallel set with distinct keys: all values persist (lock isolates writers)', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
