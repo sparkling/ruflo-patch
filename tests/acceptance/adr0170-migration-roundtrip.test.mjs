@@ -72,11 +72,32 @@ function sqlite3Available() {
   return r.status === 0;
 }
 
+// ADR-0177 retired the pglite substrate. If the installed @sparkleideas/agentdb
+// build no longer exposes `--to pglite`, this whole suite is invalid — running
+// the migrate command would hang in unsupported-target-handling forever (the
+// orphaned 99.7% CPU process that thrashed the box on 2026-05-15). Probe it
+// once, with a bounded timeout, and SKIP_ACCEPTED if missing.
+function pgliteTargetSupported() {
+  const r = spawnSync('npx', ['-y', '@sparkleideas/agentdb@latest', 'migrate', '--help'], {
+    stdio: 'pipe',
+    encoding: 'utf-8',
+    timeout: 30_000,
+    killSignal: 'SIGKILL',
+  });
+  // The probe itself failing (timeout, missing binary, etc.) also signals
+  // "skip the suite" — the migrate command is unreachable for THIS run.
+  if (r.status !== 0 && r.signal !== null) return false;
+  const help = (r.stdout ?? '') + (r.stderr ?? '');
+  return /--to\b[^\n]*pglite|pglite\b[^\n]*--to|--to\s+<[^>]*pglite/i.test(help);
+}
+
 const SKIP_REASON = !verdaccioUp()
   ? `SKIP_ACCEPTED: Verdaccio not reachable at ${VERDACCIO_PING} — ` +
     `acceptance tests run only when the local registry is up. Start Verdaccio (or set RUFLO_REGISTRY) and re-run.`
   : !sqlite3Available()
   ? `SKIP_ACCEPTED: sqlite3 CLI binary unavailable — required to build the legacy source fixture. Install sqlite3 and re-run.`
+  : !pgliteTargetSupported()
+  ? `SKIP_ACCEPTED: @sparkleideas/agentdb 'migrate --to pglite' target not supported in this build (pglite substrate retired by ADR-0177). The ADR-0170 migration contract test is invalid against a pglite-less agentdb; remove this suite (or revive pglite) to re-enable.`
   : null;
 
 // Resolve the agentdb CLI binary. Per CLAUDE.md reference-cli-cmd-helper,
@@ -85,22 +106,44 @@ const SKIP_REASON = !verdaccioUp()
 // cache lookup once and that's fine.
 const AGENTDB_CMD = ['npx', '-y', '@sparkleideas/agentdb@latest'];
 
+// Per-invocation hard cap. The migrate command should complete in seconds on
+// the small fixtures this suite builds; a 120s ceiling is generous AND finite.
+// Without `timeout`, a hung migrate (e.g. an unsupported `--to <target>` after
+// a substrate retirement) spins at 99.7% CPU until killed by hand. SIGKILL
+// rather than SIGTERM so a child that ignores SIGTERM cannot keep running.
+const AGENTDB_RUN_TIMEOUT_MS = 120_000;
+
 function runAgentdb(args, opts = {}) {
   const logFile = join(LOG_DIR, `${(opts.tag ?? 'cmd')}-${Date.now()}.log`);
   const r = spawnSync(AGENTDB_CMD[0], [...AGENTDB_CMD.slice(1), ...args], {
     stdio: 'pipe',
     encoding: 'utf-8',
     env: { ...process.env, AGENTDB_TELEMETRY_DISABLED: '1' },
+    timeout: opts.timeoutMs ?? AGENTDB_RUN_TIMEOUT_MS,
+    killSignal: 'SIGKILL',
   });
   writeFileSync(logFile, [
     `# ARGS: ${args.join(' ')}`,
     `# STATUS: ${r.status}`,
     `# SIGNAL: ${r.signal ?? ''}`,
+    `# TIMEOUT_MS: ${opts.timeoutMs ?? AGENTDB_RUN_TIMEOUT_MS}`,
     '# STDOUT:',
     r.stdout ?? '',
     '# STDERR:',
     r.stderr ?? '',
   ].join('\n'), 'utf-8');
+  // Fail loud on timeout — a SIGKILL with `signal` set means the test would
+  // have hung. Surface it so the assertion error message points at the right
+  // root cause rather than a downstream assertion comparing undefined exit
+  // codes (`feedback-no-fallbacks`).
+  if (r.signal === 'SIGKILL' && r.status === null) {
+    throw new Error(
+      `agentdb migrate timed out after ${opts.timeoutMs ?? AGENTDB_RUN_TIMEOUT_MS}ms ` +
+      `(args: ${args.join(' ')}). Log: ${logFile}\n` +
+      `Likely cause: target substrate retired (ADR-0177) and the build no longer ` +
+      `handles --to <retired-target> cleanly. Update SKIP_REASON probe to catch it earlier.`,
+    );
+  }
   return { ...r, logFile };
 }
 

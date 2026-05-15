@@ -149,6 +149,22 @@ cleanup() {
     done
     wait 2>/dev/null || true
   fi
+  # Defensive grandchild sweep: kill ALL descendants of this script. The
+  # bash job-tracking above only catches `&`-backgrounded jobs WE spawned,
+  # not the deep grandchildren that the node --test runner forks (e.g.
+  # `npx -y @sparkleideas/agentdb@latest migrate` from an acceptance test's
+  # spawnSync). Without this sweep, a hung migrate orphan from a failed
+  # acceptance test keeps running at 99.7% CPU forever (the 2026-05-15
+  # ADR-0181 Phase 4 thrash). `pkill -P "$$"` finds direct children;
+  # iterate until none remain to catch transitive descendants. Bounded
+  # by N iterations so a fork-bomb scenario doesn't loop infinitely.
+  for _sweep in 1 2 3 4 5; do
+    local descendants
+    descendants=$(pgrep -P "$$" 2>/dev/null) || true
+    [[ -z "$descendants" ]] && break
+    pkill -KILL -P "$$" 2>/dev/null || true
+    sleep 0.1
+  done
   kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
   [[ -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]] && rm -rf "$ACCEPT_TEMP"
   [[ -n "${PARALLEL_DIR:-}" && -d "${PARALLEL_DIR:-}" ]] && rm -rf "$PARALLEL_DIR"
