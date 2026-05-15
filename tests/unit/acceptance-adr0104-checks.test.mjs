@@ -93,8 +93,33 @@ const ARCHIVIST_INIT_DIST = HIVE_TOOLS_DIST.replace(
 // module instance that `hive-mind-tools.js` static-imports. A cache-busted
 // import would reset a DIFFERENT module instance and leave the original
 // singleton (the one the handlers actually use) untouched.
+//
+// EAGER top-level await: the release pipeline runs test-ci IN PARALLEL with
+// build, which can wipe/rebuild the dist tree mid-test. A per-test dynamic
+// import of archivist-init.js races with that wipe and intermittently
+// reports ERR_MODULE_NOT_FOUND (observed in r1-r3 of this fix). Loading
+// the module HERE — at file load — locks the ESM cache. Subsequent calls
+// through `archivistInit` use the cached reference; the underlying file
+// can disappear without affecting us. If load fails, the whole test file
+// fails — the failure mode is at least visible in one place.
+//
+// `existsSync` guard catches the case where the dist file isn't present at
+// file load (the parallel-write tests skip themselves via `buildAvailable`,
+// but the eager import would still try to resolve). Skip the import when
+// the file isn't there — the dependent tests will skip via their own gate.
+import { existsSync as _existsSync } from 'node:fs';
+const archivistInit = _existsSync(ARCHIVIST_INIT_DIST)
+  ? await import(ARCHIVIST_INIT_DIST)
+  : null;
+
 async function resetArchivistForTest() {
-  const archivistInit = await import(ARCHIVIST_INIT_DIST);
+  if (!archivistInit) {
+    throw new Error(
+      `archivist-init dist not loadable at ${ARCHIVIST_INIT_DIST} — ` +
+      `parallel-write tests cannot reset the process-wide singleton. ` +
+      `This is a build-pipeline issue (test-ci ran while the dist was being rebuilt).`,
+    );
+  }
   await archivistInit.__resetProcessArchivistForTests();
 }
 
