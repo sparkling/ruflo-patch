@@ -214,7 +214,7 @@ describe('ADR-0108 §Test plan — MCP handler round-robin', () => {
     if (existsSync(archInitDist)) {
       const archMod = await import(archInitDist);
       if (typeof archMod.__resetProcessArchivistForTests === 'function') {
-        archMod.__resetProcessArchivistForTests();
+        await archMod.__resetProcessArchivistForTests();
       }
     }
     sandbox = mkdtempSync(join(tmpdir(), 'adr0108-t13-'));
