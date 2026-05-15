@@ -205,6 +205,18 @@ describe('ADR-0108 §Test plan — MCP handler round-robin', () => {
       const mod = await import(MCP_DIST);
       mcpTools = mod.hiveMindTools;
     }
+    // ADR-0181 Phase 6: drop the per-process archivist singleton so the
+    // upcoming hive-mind_init dispatch re-pins to the fresh sandbox's
+    // findProjectRoot. Without this, tests after the first see archivist
+    // writes land in the FIRST sandbox while cli reads come from the
+    // current sandbox (singleton vs cwd divergence).
+    const archInitDist = MCP_DIST.replace(/mcp-tools\/hive-mind-tools\.js$/, 'memory/archivist-init.js');
+    if (existsSync(archInitDist)) {
+      const archMod = await import(archInitDist);
+      if (typeof archMod.__resetProcessArchivistForTests === 'function') {
+        archMod.__resetProcessArchivistForTests();
+      }
+    }
     sandbox = mkdtempSync(join(tmpdir(), 'adr0108-t13-'));
     originalCwd = process.cwd();
     process.chdir(sandbox);
