@@ -62,7 +62,7 @@ Chosen: **phased runtime activation**, executed as a distinct ADR-0181 Execution
 
 No new architecture — ADR-0180 §Architecture stands. This ADR specifies the *activation mechanics*:
 
-* **`initialize(config)` feeding.** Each host process (cli, `ruflo daemon`, hook-handler) constructs its substrate backends + `projectRoot` and passes them via `ArchivistInitConfig` (the type surface F4-2 Phase C built). The archivist's lazy-per-tool init then has real backends to register.
+* **`initialize(config)` feeding.** Each host process (cli, `ruflo daemon`, hook-handler) constructs a per-process `Archivist` and feeds it an `ArchivistInitConfig` (the type surface F4-2 Phase C built). _Amended ([§Amendments](#amendments), 2026-05-15): Phase 1's config is **`projectRoot`-only** across all three processes — none currently hold a reusable RVF/SQLite backend, and their handlers classify as FS-JSON, which `getSubstrate()` lazily mints from `projectRoot`. Real RVF/SQLite backend wiring is deferred to the phase that un-stubs the handlers dispatching through those substrate families._
 * **Handler un-stubbing order.** Un-stub in dependency order: handlers needing only `ctx.substrate.withWrite` (FS-JSON family) first; handlers needing read-optimized `query`/`vectorSearch` next; handlers needing cli-process backend handles last (after `initialize(config)` is fed). The ~88 stubs are grouped by this order, not by surface name.
 * **Call-site delegation (F4-3).** Per surface, replace the cli MCP tool handler body / CLI command body / hook body with `archivist.dispatch(toolName, payload)` (or `dispatchRead`). The original path is deleted only once the delegation is release-verified — never both live at once. **Prerequisite: the typed `dispatch` overload.** Today `dispatch(toolName: string, payload: unknown)` is `unknown`-typed at the call site (ADR-0180 Open Follow-up #26) — a typo'd tool name or mismatched payload is a runtime throw, not a `tsc` error. Before this phase wires ~110 literal-tool-name call sites, land a `ToolPayloadMap` interface keying every registered tool to its payload type plus `dispatch<K extends keyof ToolPayloadMap>(tool: K, payload: ToolPayloadMap[K])` / `dispatchRead` overloads, so every call site this phase creates is compile-time-checked on both tool name and payload shape.
 * **ADR-0112 enforcement-code retirement.** Once `initialize(config)` is fed everywhere and handlers are invoked only post-`initialize()`, `RvfNotInitializedError` + `requireAgentDB()` are dead — the archivist's init-completion guarantee replaces them. Delete the classes + guards; the drift guard (ADR-0180 Gate 4) prevents reappearance.
@@ -73,7 +73,7 @@ Sequential phases; phase N+1 cannot start until phase N passes `npm run release`
 
 | Phase | Surface | Exit gate |
 |---|---|---|
-| **1** | **`initialize(config)` feeding.** cli + daemon + hook-handler each construct real backends + `projectRoot` and pass `ArchivistInitConfig`. | `npm run release` passes; `Archivist.initialize()` builds a non-empty substrate registry from a real config in each host process. |
+| **1** | **`initialize(config)` feeding.** cli + daemon + hook-handler each construct a per-process `Archivist` and feed it an `ArchivistInitConfig`. _Amended ([§Amendments](#amendments), 2026-05-15): the config is `projectRoot`-only._ | `npm run release` passes; `Archivist.initialize()` completes from a real (`projectRoot`-bearing) config in each host process — _init-completion_, not registry non-emptiness (`initialize()` eagerly builds only the substrate families the config supplies; FS-JSON is lazy-minted). |
 | **2** | **FS-JSON handler un-stub.** Un-stub the handler bodies that need only `ctx.substrate.withWrite` (the FS-JSON family — claims/tasks/agents/swarm/coordination/workflow/neural/github/performance/system/config/progress/ruvllm/daa/wasm/browser/autopilot/hive-mind). | `npm run release` passes; zero `pending` stubs in the FS-JSON handler set. |
 | **3** | **Read-optimized handler un-stub.** Un-stub handlers needing `query`/`vectorSearch` (memory_* reads, agentdb_* ranked reads) now that Phase 1 fed the read substrates. | `npm run release` passes; zero `pending` stubs in the read-handler set; provenance flag works end-to-end. |
 | **4** | **cli-process-backend handler un-stub.** Close the `TODO(F4-3-callsite)` gaps — un-stub handlers needing router/bandit, reflexion re-embedding, ReasoningBank patterns handles (route, pattern-search, reflexion-retrieve, skill-search, the daemons). | `npm run release` passes; zero `pending` stubs anywhere in `handlers/**`. |
@@ -141,6 +141,22 @@ Each phase's queen spawns in the same wave as its workers and DA (not after — 
 4. **Multi-process audit composition under real load.** ADR-0180 §15 + Open Follow-up #15 specified the shared append-only audit log + advisory locking; Phase 5 (cli delegation) is the first time cli + daemon + hook processes all dispatch concurrently for real. If the §15 single-fd-per-process invariant or the lock-contention budget breaks under genuine multi-process load, it surfaces here.
 
 5. **`npm run release` cold-start cost.** Seven phases each gated on a full release run is a real wall-clock cost. If it proves prohibitive, the fallback is `npm run test:unit` for intra-phase iteration with `npm run release` only at phase exit — but the phase-exit gate is non-negotiable per `feedback-all-test-levels`.
+
+## Amendments
+
+### Amendment: Phase 1 (2026-05-15)
+
+ADR-0181's original Phase 1 text — "construct real backends + `projectRoot`" and an exit gate of "builds a **non-empty** substrate registry" — assumed each host process holds a reusable RVF/SQLite backend that `initialize()` could register eagerly. Phase 1's recon proved otherwise:
+
+* **No host process holds a reusable backend.** The cli's only RVF handle is `@claude-flow/memory`'s `RvfBackend` (`implements IMemoryBackend`) — a nominally-incompatible class, in a different package, from the agentdb `RvfBackend` (`implements VectorBackendAsync`) that `ArchivistInitConfig.rvfBackend` is typed against. Passing it needs an `as unknown as` cast-lie; constructing a fresh one is a double-open on the same `.rvf` file. The `ruflo daemon` and hook-handler hold no memory backend at all.
+* **Their handlers are FS-JSON.** Every storeId the three processes dispatch today classifies as FS-JSON, which `getSubstrate()` lazily mints from `projectRoot` alone — needing no `rvfBackend` / `sqliteDb`.
+
+**Amended text:**
+
+* **§Architecture / Phase 1 surface** — each host process feeds a **`projectRoot`-only** `ArchivistInitConfig`. Real RVF/SQLite backend wiring (and the `taskRouter` / `embeddingScorer` / `patternReader` capability factories) is deferred to the phase that un-stubs the handlers that dispatch through those substrate families — the `TODO(F4-3-callsite)` work, Phase 4/5.
+* **Phase 1 exit gate** — "non-empty substrate registry" → **init-completion**. `initialize()` eagerly builds only the substrate families whose backend the config supplies (RVF, SQLite); FS-JSON is lazy-minted on first `getSubstrate()`. A `projectRoot`-only config therefore *legitimately* leaves the eager registry empty. The invariant that holds: `initialize()` completes from a real `projectRoot`-bearing config, is idempotent, and the lazy FS-JSON path resolves through that `projectRoot` — while RVF / SQLite-carve-out stores fail loud (no silent no-op substrate). Verified by `forks/agentdb/test/archivist/init-config-feeding.test.ts`.
+
+The architecture (ADR-0180) is not reopened — this amendment narrows Phase 1's *config shape* to what the host processes can honestly supply today; the deferred backend wiring lands intact in a later phase. Council record: [docs/council/ADR-0181-phase-1-report.md](../council/ADR-0181-phase-1-report.md).
 
 ## More Information
 
