@@ -82,11 +82,23 @@ _adr0177_stored_dim() {
   # Place the probe in TEMP_DIR so ESM resolution walks up to
   # TEMP_DIR/node_modules. NODE_PATH is ignored by Node.js v18+ ESM loader;
   # running from within the dir that has node_modules is the correct approach.
+  #
+  # The probe takes the project's expected dim as argv[3] (read by bash from
+  # the project's embeddings.json, see below). RvfBackend's native binding
+  # (`openOrCreate`) refuses to open an existing on-disk segment when the
+  # caller-requested `dimension` doesn't match the file's; the resulting
+  # initialize() throw left the bash side seeing dim=unknown when init had
+  # flipped to a non-768 model. Sourcing the expected dim from the project's
+  # own embeddings.json keeps the probe honest — if init wrote 384 but the
+  # segment was actually created at 768 (the regression this check is meant
+  # to catch), enumerateEmbeddings will still surface the on-disk dim and
+  # the assertion will catch the mismatch downstream.
   local probe="${TEMP_DIR}/.adr0177-probe-$$.mjs"
   cat > "$probe" << 'PROBE_SCRIPT'
 import { RvfBackend } from '@sparkleideas/memory';
 const rvfPath = process.argv[2];
-const backend = new RvfBackend({ databasePath: rvfPath, dimensions: 768, autoPersistInterval: 0 });
+const expectedDim = parseInt(process.argv[3] || '768', 10);
+const backend = new RvfBackend({ databasePath: rvfPath, dimensions: expectedDim, autoPersistInterval: 0 });
 try {
   await backend.initialize();
   let dim = await backend.getStoredDimension();
@@ -103,11 +115,21 @@ try {
 }
 PROBE_SCRIPT
 
+  # Read the project's expected dim from embeddings.json (written by init).
+  # Falls back to 768 (mpnet default) when the file is absent/unparseable.
+  local expected_dim="768"
+  local emb_json="${dir}/.claude-flow/embeddings.json"
+  if [[ -s "$emb_json" ]]; then
+    local read_dim
+    read_dim=$(node -e "try{const e=JSON.parse(require('fs').readFileSync('${emb_json}','utf-8'));console.log(e.dimension||768)}catch(_){console.log(768)}" 2>/dev/null)
+    [[ -n "$read_dim" && "$read_dim" =~ ^[0-9]+$ ]] && expected_dim="$read_dim"
+  fi
+
   local rvf out result=""
   for rvf in "${dir}/.claude-flow/memory.rvf" "${dir}/.swarm/memory.rvf"; do
     # Probe if the segment OR its .meta sidecar has bytes.
     [[ -s "$rvf" || -s "${rvf}.meta" ]] || continue
-    out=$(cd "${TEMP_DIR}" && node "$probe" "$rvf" 2>&1) || true
+    out=$(cd "${TEMP_DIR}" && node "$probe" "$rvf" "$expected_dim" 2>&1) || true
     result=$(echo "$out" | grep -E '^DIM:[0-9]+' | head -1 | sed 's/^DIM://')
     if [[ -n "$result" && "$result" != "0" ]]; then
       rm -f "$probe"
