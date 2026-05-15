@@ -17,7 +17,7 @@
 // They are skipped (with a clear reason) if the build is absent — keeps the
 // suite green on a fresh checkout that hasn't run the pipeline.
 
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach } from 'node:test';
 import { strict as assert } from 'node:assert';
 import {
   existsSync,
@@ -60,15 +60,34 @@ const PARSER_DIST = pickDistFile('parser.js');
 const HIVE_TOOLS_DIST = pickDistFile(join('mcp-tools', 'hive-mind-tools.js'));
 const HIVE_CMD_DIST = pickDistFile(join('commands', 'hive-mind.js'));
 const MCP_GEN_DIST = pickDistFile(join('init', 'mcp-generator.js'));
-const ARCHIVIST_INIT_DIST = pickDistFile(join('memory', 'archivist-init.js'));
+// Derive from HIVE_TOOLS_DIST so we land on the SAME tree (codemod or fork)
+// the cli's hive-mind-tools.js was loaded from. The release pipeline runs
+// test-ci IN PARALLEL with build, which wipes/rebuilds the codemod tree
+// (`/tmp/ruflo-build/...`) under us — `pickDistFile` captured at module load
+// could resolve to a path that gets wiped before the dynamic import runs.
+// HIVE_TOOLS_DIST is statically imported by other tests, so its resolution
+// is locked in by ESM caching; deriving the sibling archivist-init.js path
+// from it side-steps the race.
+const ARCHIVIST_INIT_DIST = HIVE_TOOLS_DIST.replace(
+  /[/\\]mcp-tools[/\\]hive-mind-tools\.js$/,
+  '/memory/archivist-init.js',
+);
 
 // `getProcessArchivist()` is a process-wide singleton: the FIRST call pins
 // `projectRoot` (via `findProjectRoot()`) for the lifetime of the process.
 // Tests below `chdir` into a fresh tmpdir each — without resetting the
-// singleton, the second test's dispatched writes land under the FIRST test's
-// pinned root while the test reads from the second tmp's `state.json` (which
-// only has the cli's init-side flat write, no race-* entries). The fork
-// exports `__resetProcessArchivistForTests()` for exactly this case.
+// singleton, a later test's dispatched writes land under an earlier test's
+// pinned root while the later test reads from its own tmp's `state.json`
+// (which only has the cli's init-side flat write, no entries from the
+// dispatched mutations). The fork exports `__resetProcessArchivistForTests()`
+// for exactly this case (see archivist-init.ts:1271-1286 doc-block).
+//
+// FIXME(production daemon): the doc-block claim that "the cli's mcp-server /
+// daemon / hooks never shift cwd within a single process" is unverified — if a
+// long-lived daemon ever serves multiple projects in one process, the same
+// split-brain (cli reads cwd-based, archivist reads frozen-pinned) would
+// silently corrupt user data. No production test covers this. Out of scope
+// for the test fix here, but worth following up.
 //
 // Critical: import WITHOUT a cache-bust — the singleton state lives in the
 // module instance that `hive-mind-tools.js` static-imports. A cache-busted
@@ -194,6 +213,17 @@ describe('ADR-0104 §1 — parser hoists --non-interactive to globalOptions', ()
 // ── 3. Behavioral: §5 withHiveStoreLock under contention ────────────────
 
 describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
+  // Drop the process-wide archivist singleton before EVERY test in this
+  // block. Each behavioral test below mkdtemps + chdirs into a fresh tmp;
+  // without the reset, the singleton stays pinned to whichever test ran
+  // first and dispatched writes silently land in the wrong tree. Wiring this
+  // at the describe level (not on the two specific tests that needed it
+  // 2026-05-15) means future tests added here inherit the isolation
+  // automatically — no silent re-arming of the trap.
+  beforeEach(async () => {
+    await resetArchivistForTest();
+  });
+
   it('hive-mind-tools.ts has withHiveStoreLock + atomic save', () => {
     const src = readFileSync(HIVE_TOOLS_SRC, 'utf8');
     assert.match(src, /function\s+withHiveStoreLock/);
@@ -235,12 +265,6 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
     // Mock findProjectRoot so the hive state lands in a temp dir per test.
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-lock-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
-
-    // Drop the process-wide archivist singleton so its `projectRoot` re-pins
-    // to the new tmpdir below. Without this, a prior test's pinned root would
-    // route dispatched writes to the wrong tree (see header doc on
-    // ARCHIVIST_INIT_DIST).
-    await resetArchivistForTest();
 
     // Patch the types module's findProjectRoot. We do this by writing a small
     // ESM wrapper that re-exports the dist module after monkey-patching the
@@ -302,10 +326,6 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
   it('parallel set on SAME key: exactly one writer-* value persists, JSON intact', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-samekey-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
-    // Re-pin the archivist singleton's `projectRoot` to this tmpdir — without
-    // the reset, the prior distinct-keys test's tmp stays pinned and our
-    // dispatched writes go there instead of `tmp` below.
-    await resetArchivistForTest();
     process.chdir(tmp);
     writeFileSync(join(tmp, 'package.json'), '{"name":"adr0104-samekey-test"}');
 
