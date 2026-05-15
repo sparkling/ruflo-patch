@@ -17,7 +17,7 @@
 // They are skipped (with a clear reason) if the build is absent — keeps the
 // suite green on a fresh checkout that hasn't run the pipeline.
 
-import { describe, it, beforeEach } from 'node:test';
+import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import {
   existsSync,
@@ -213,16 +213,15 @@ describe('ADR-0104 §1 — parser hoists --non-interactive to globalOptions', ()
 // ── 3. Behavioral: §5 withHiveStoreLock under contention ────────────────
 
 describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
-  // Drop the process-wide archivist singleton before EVERY test in this
-  // block. Each behavioral test below mkdtemps + chdirs into a fresh tmp;
-  // without the reset, the singleton stays pinned to whichever test ran
-  // first and dispatched writes silently land in the wrong tree. Wiring this
-  // at the describe level (not on the two specific tests that needed it
-  // 2026-05-15) means future tests added here inherit the isolation
-  // automatically — no silent re-arming of the trap.
-  beforeEach(async () => {
-    await resetArchivistForTest();
-  });
+  // NOTE: a `beforeEach(resetArchivistForTest)` was tried 2026-05-15 but
+  // failed in the release pipeline because test-ci runs IN PARALLEL with
+  // build (which can wipe/rebuild both the codemod and fork dist trees
+  // mid-test). The dynamic import of archivist-init.js inside the reset
+  // helper races with that build wipe — failing tests that don't even
+  // touch the singleton (e.g. the source-grep tests below). Inline reset
+  // ONLY at the start of the two parallel-write tests that actually need
+  // it. If you add a third behavioral test here that mkdtemps + dispatches,
+  // call `await resetArchivistForTest()` at its start (before chdir).
 
   it('hive-mind-tools.ts has withHiveStoreLock + atomic save', () => {
     const src = readFileSync(HIVE_TOOLS_SRC, 'utf8');
@@ -262,6 +261,10 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
   });
 
   it('parallel set with distinct keys: all values persist (lock isolates writers)', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
+    // Drop the process-wide archivist singleton — see the helper comment
+    // at the top of this file. Required before this test mkdtemps + chdirs.
+    await resetArchivistForTest();
+
     // Mock findProjectRoot so the hive state lands in a temp dir per test.
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-lock-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
@@ -324,6 +327,10 @@ describe('ADR-0104 §5 — hive-mind_memory under concurrent writers', () => {
   });
 
   it('parallel set on SAME key: exactly one writer-* value persists, JSON intact', { skip: buildAvailable ? false : 'compiled dist absent' }, async (t) => {
+    // Drop the process-wide archivist singleton — see the helper comment
+    // at the top of this file. Required before this test mkdtemps + chdirs.
+    await resetArchivistForTest();
+
     const tmp = mkdtempSync(join(tmpdir(), 'adr0104-samekey-'));
     t.after(() => rmSync(tmp, { recursive: true, force: true }));
     process.chdir(tmp);
