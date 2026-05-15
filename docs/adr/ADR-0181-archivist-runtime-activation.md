@@ -144,6 +144,23 @@ Each phase's queen spawns in the same wave as its workers and DA (not after — 
 
 ## Amendments
 
+### Amendment: Phase 3 (2026-05-15)
+
+ADR-0181's original Phase 3 text — *"Un-stub handlers needing `query`/`vectorSearch` (memory_* reads, agentdb_* ranked reads) now that Phase 1 fed the read substrates"* — assumed Phase 1 fed real RVF + SQLite backends. The Phase 1 Amendment landed `projectRoot`-only configs across all three host processes, deliberately deferring the RVF/SQLite backend wiring. The Phase 3 recon (`adr-0181/phase-3` memory namespace) accordingly confirmed:
+
+* **The 5 `memory_*` read handlers** (`retrieve.ts`, `bridge-status.ts`, `list.ts`, `search.ts`, `search-unified.ts`) are FS-JSON-backed `read`/`query` — fully unblocked by Phase 1's `projectRoot`-only config.
+* **The 8 `agentdb_*` read handlers** (`causal-recall`, `embed`, `hierarchical-recall`, `neural-patterns`, `pattern-search`, `reflexion-retrieve`, `semantic-route`, `skill-search`) need:
+  - **RVF `vectorSearch`** — requires the cli to feed an agentdb-typed `RvfBackend`. Per the Phase 1 Amendment, this needs a **typed adapter** from `@claude-flow/memory`'s `RvfBackend` (`IMemoryBackend`-shaped) to agentdb's `RvfBackend` (`VectorBackendAsync`-shaped), or a new agentdb-owned `.rvf` path. Net-new code.
+  - **SQLite carve-out `query`** (ADR-0166) — requires the cli to feed a `better-sqlite3` `Database` for the 5 `PERMANENT_SQLITE_CARVE_OUT` controllers.
+  - **F4-3-callsite cli-process backends** (`taskRouter`, `embeddingScorer`, `patternReader`) — for `route`, `pattern-search`, `skill-search`, and `reflexion-retrieve`.
+
+**Amended text:**
+
+* **Phase 3 (this phase)** narrows to the **5 `memory_*` FS-JSON read handlers** + the `includeProvenance` e2e wiring (cli `inputSchema` → archivist `ReadContext` → handler `RankedResult` return shape). Exit gate: `npm run release` passes; zero `pending` stubs in the `handlers/memory/**` read set; `includeProvenance: true` round-trips end-to-end on a memory read.
+* **Phase 4** expands to combine the substrate-wiring prerequisites with the un-stubs they unblock: build the cli `RvfBackend` adapter (or commit to an agentdb-owned `.rvf` path), feed `rvfBackend` + `sqliteDb` into the cli's `ArchivistInitConfig`, wire the `taskRouter` / `embeddingScorer` / `patternReader` factories (closes the `TODO(F4-3-callsite)` set), and un-stub the 8 `agentdb_*` read handlers + the F4-3-callsite handler bodies in one coherent step.
+
+This Amendment narrows Phase 3 to what's actually unblocked today; Phase 4 inherits the substrate-wiring work the Phase 1 Amendment deferred. The architecture (ADR-0180) is not reopened. Council record: [docs/council/ADR-0181-phase-3-report.md](../council/ADR-0181-phase-3-report.md) (to be authored at phase close).
+
 ### Amendment: Phase 1 (2026-05-15)
 
 ADR-0181's original Phase 1 text — "construct real backends + `projectRoot`" and an exit gate of "builds a **non-empty** substrate registry" — assumed each host process holds a reusable RVF/SQLite backend that `initialize()` could register eagerly. Phase 1's recon proved otherwise:
