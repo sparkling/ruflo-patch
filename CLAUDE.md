@@ -54,18 +54,19 @@ ruflo-patch builds **upstream HEAD** of 3 repos (`ruflo`, `agentic-flow`, `ruv-F
 - **HNSW**: Enabled
 - **Neural**: Enabled
 
-## Build & Test — TWO COMMANDS, NOTHING ELSE
+## Build & Test — THREE COMMANDS, NOTHING ELSE
 
 > **READ THIS FIRST. EVERY TIME.** Before reaching for any "fast iteration"
 > shortcut, scroll back here. The user has watched this rule get broken in
-> session after session. There are exactly two commands. Pick one. Run it.
+> session after session. There are exactly three commands. Pick one. Run it.
 > Don't propose alternatives.
 
-### The only two commands
+### The only three commands
 
 | What you want | The command. The ONLY command. |
 |---------------|--------------------------------|
 | Run tests without publishing | `npm run test:unit` |
+| Run acceptance for ONE group only (no rebuild) | `bash scripts/test-acceptance-fast.sh --group <group>` |
 | Test + publish + acceptance + commit fork bumps | `npm run release` |
 
 Decision tree:
@@ -76,11 +77,36 @@ User says: test / deploy / verify / ship / publish / run the tests / check it wo
   ├── Just unit + integration, no publish needed?
   │     → npm run test:unit
   │
-  └── Anything else (verify a fix, full check, deploy, acceptance)
+  ├── Iterating on ONE acceptance group (e.g. just p3 / adr0177)?
+  │   Verdaccio has the latest packages from a prior release?
+  │     → bash scripts/test-acceptance-fast.sh --group <group>
+  │       Groups: p3, p4, p5, p8, p9, p10, p12, p14, p15, p16, p17,
+  │               adr0059, adr0085, adr0090-b5 (or "b5"), adr0104,
+  │               adr0177, adr0178, e2e-storage, all
+  │     Returns in ~30-90s. Does NOT rebuild source — call `npm run release`
+  │     first if your source changed.
+  │
+  └── Anything else (verify a fix end-to-end, full check, publish, deploy)
         → npm run release      (add `-- --force` if no merged PRs detected and you want to republish)
 ```
 
 That's it. Stop.
+
+### Heavy-test opt-out (default acceptance)
+
+The default `npm run release` acceptance run SKIPS 9 heavy passing tests
+(~3 minutes of wall time, including 75s of Playwright browser-navigation).
+List + opt-back-in env-var live in `lib/acceptance-harness.sh`
+(`_HEAVY_CHECK_IDS`). To run the full corpus:
+
+```bash
+ACCEPTANCE_HEAVY=1 npm run release
+```
+
+Use this before merging anything that touches Playwright / browser
+automation, ReasoningBank ranking, neural directory scanning, or memory
+consolidation. The skipped tests show up as `skip_accepted` with a
+`HEAVY_SKIP` diagnostic.
 
 ### FORBIDDEN — DO NOT RUN THESE FOR TEST/DEPLOY
 
@@ -106,14 +132,13 @@ a workaround by hand. Script chain: `scripts/ruflo-publish.sh` →
 `scripts/fork-version.mjs` → `scripts/copy-source.sh` → `scripts/codemod.mjs`
 → build → publish → acceptance.
 
-### Two narrow exceptions (NOT general escape hatches)
+### One narrow exception (NOT a general escape hatch)
 
 | Command | When and ONLY when |
 |---------|---------------------|
 | `npm run test:acceptance:ruvector` | User EXPLICITLY asks for the ruvector-heavy tier (P4 WASM + P5 RuVLLM, 20 checks). OOMs the host in the parallel wave; sequential, post-parallel, opt-in. |
-| `bash scripts/test-acceptance-fast.sh <check>` | Debugging the bash check code itself. Requires Verdaccio up + packages already published from a prior `release`. Doesn't rebuild source. |
 
-Neither is a substitute for `release` when verifying a fork-source patch.
+Not a substitute for `release` when verifying a fork-source patch.
 
 ### Pre-flight before `npm run release`
 
@@ -121,9 +146,15 @@ Neither is a substitute for `release` when verifying a fork-source patch.
 2. Verdaccio up — `curl -sf http://localhost:4873/-/ping`
 3. Then: `npm run release` — and don't touch anything until it finishes.
 
-### Why this rule
+### Pre-flight before `bash scripts/test-acceptance-fast.sh`
 
-Every workaround desyncs something. `npm run build` skips fork-version commits. `bash scripts/test-acceptance-fast.sh` runs against stale published packages. Hand-edited `dist/` gets clobbered on next install. `npm run test:acceptance` cascades through release anyway, so calling it directly just creates confusion when it fails. `release` is the only path that:
+1. A prior `npm run release` must have published the source you want to test (the fast runner uses `@sparkleideas/cli@latest` from Verdaccio).
+2. Verdaccio up — `curl -sf http://localhost:4873/-/ping`
+3. Use `--group <group>` to target one acceptance group only.
+
+### Why these rules
+
+Every workaround desyncs something. `npm run build` skips fork-version commits. Hand-edited `dist/` gets clobbered on next install. `npm run test:acceptance` cascades through release anyway, so calling it directly just creates confusion when it fails. `bash scripts/test-acceptance-fast.sh` is FAST but reads stale published packages — only use it after a prior `release` and only when iterating on the ACCEPTANCE harness or a specific check. `release` is the only path that:
 
 - Holds the flock (no overlapping pipeline runs)
 - Bumps fork versions, commits to `main`, tags, pushes to `sparkling`

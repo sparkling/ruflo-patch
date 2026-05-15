@@ -173,8 +173,49 @@ run_check() {
 PARALLEL_DIR=""
 BG_PIDS=()
 
+# ── Heavy-test opt-out ──────────────────────────────────────────────────────
+# Tests in this set take >10s each AND are reliably passing. They're skipped
+# by default in the normal acceptance run. Opt back IN with:
+#   ACCEPTANCE_HEAVY=1 npm run release
+#   ACCEPTANCE_HEAVY=1 bash scripts/test-acceptance.sh
+# Or invoke targeted via test-acceptance-fast.sh <group>.
+#
+# Profile (logs/adr0181-phase8-r1.log slowest passes):
+#   p4-br-navigation              ~75s   (Playwright browser navigation)
+#   p4-br-interaction             ~26s   (Playwright)
+#   p4-br-snapshot                ~17s   (Playwright)
+#   t3-1-bulk-corpus              ~17s   (ReasoningBank bulk ranking)
+#   t1-2-learning                 ~10s   (Learning feedback)
+#   t3-4-reasoningbank            ~11s   (ReasoningBank cycle)
+#   p7-fo-neural                  ~11s   (Neural dir scan)
+#   p8-inv1-memory                ~11s   (memory store→search invariant)
+#   adr0090-b5-memoryConsolidation ~10s  (B5 consolidation; already skip_accepted)
+#
+# Total saved per release: ~3 minutes of acceptance wall time (from ~5.5min → ~2.5min).
+declare -A _HEAVY_CHECK_IDS=(
+  [p4-br-navigation]=1
+  [p4-br-interaction]=1
+  [p4-br-snapshot]=1
+  [t3-1-bulk-corpus]=1
+  [t1-2-learning]=1
+  [t3-4-reasoningbank]=1
+  [p7-fo-neural]=1
+  [p8-inv1-memory]=1
+  [adr0090-b5-memoryConsolidation]=1
+)
+
 run_check_bg() {
   local id="$1" name="$2" fn="$3" group="$4"
+  # Heavy-test opt-out: if the check is heavy AND the user hasn't set
+  # ACCEPTANCE_HEAVY=1, write a skip_accepted verdict and return immediately
+  # without running the check function. Keeps the test inventory complete
+  # (so collect_parallel finds the result file) but trades coverage for speed.
+  if [[ "${ACCEPTANCE_HEAVY:-0}" != "1" ]] && [[ -n "${_HEAVY_CHECK_IDS[$id]:-}" ]]; then
+    if [[ -n "${PARALLEL_DIR}" ]]; then
+      echo "skip_accepted|0|HEAVY_SKIP: ${id} skipped — opt in with ACCEPTANCE_HEAVY=1 (saves ~3min wall time)" > "${PARALLEL_DIR}/${id}"
+    fi
+    return 0
+  fi
   if [[ "${RUFLO_SERIAL:-0}" == "1" ]]; then
     # Serial diagnosis mode: run inline, log start so a watchdog can identify
     # the currently-running check from log tail. No backgrounding.
