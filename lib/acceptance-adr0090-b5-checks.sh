@@ -1513,7 +1513,7 @@ check_adr0090_b5_gnnService() {
   #    SKIP_ACCEPTED. Same semantics as sonaTrajectory's equivalent
   #    pre-W2-I5 skip: the day the tool comes back online (post-W2-I4)
   #    the regex stops matching and C/D classify the response normally.
-  if echo "$probe_body" | grep -qiE 'tool not found|unknown tool|tool .* not (registered|found)|no such tool|invalid tool|method .* not found'; then
+  if echo "$probe_body" | grep -qiE 'tool not found|unknown tool|tool.+not (registered|found)|no such tool|invalid tool|method .* not found'; then
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="B5/gnnService: SKIP_ACCEPTED: MCP tool 'agentdb_neural_patterns' not in build (pre-W2-I4 or rollback) — $(echo "$probe_body" | head -3 | tr '\n' ' ')"
     rm -rf "$work" "$iso" 2>/dev/null

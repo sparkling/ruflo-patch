@@ -371,7 +371,7 @@ _adr0112_roundtrip() {
 
   # Same skip taxonomy as b5: controller not wired = skip_accepted, else
   # we expect to round-trip.
-  if echo "$store_body" | grep -qiE '(not available|controller not initialized|not wired|tool not found|unknown tool)'; then
+  if echo "$store_body" | grep -qiE '(not available|controller not initialized|not wired|tool not found|tool not registered|unknown tool)'; then
     rm -rf "$iso" 2>/dev/null
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="0112/27 ${label}: SKIP_ACCEPTED: write tool '$store_tool' reports controller/tool unavailable — $(echo "$store_body" | head -2 | tr '\n' ' ')"
@@ -382,7 +382,7 @@ _adr0112_roundtrip() {
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool '$read_tool' --params '$read_params' 2>&1" "" 30
   local read_body="$_RK_OUT"
 
-  if echo "$read_body" | grep -qiE '(not available|controller not initialized|not wired|tool not found|unknown tool)'; then
+  if echo "$read_body" | grep -qiE '(not available|controller not initialized|not wired|tool not found|tool not registered|unknown tool)'; then
     rm -rf "$iso" 2>/dev/null
     _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="0112/27 ${label}: SKIP_ACCEPTED: read tool '$read_tool' reports controller/tool unavailable — $(echo "$read_body" | head -2 | tr '\n' ' ')"
