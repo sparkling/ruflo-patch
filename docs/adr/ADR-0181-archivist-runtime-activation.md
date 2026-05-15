@@ -144,6 +144,34 @@ Each phase's queen spawns in the same wave as its workers and DA (not after — 
 
 ## Amendments
 
+### Amendment: Phase 4 (2026-05-15)
+
+The Phase 3 Amendment expanded Phase 4's scope to absorb the substrate-wiring prerequisites and the 8 `agentdb_*` reads it deferred. The Phase 4 recon (memory namespace `adr-0181/phase-4`, key `recon-map-and-rulings`) added concrete rulings:
+
+* **Option A — typed `RvfBackend` adapter (team-lead ruling).** The cli's existing RVF handle is `@claude-flow/memory`'s `RvfBackend` (`IMemoryBackend`-shaped); agentdb's `ArchivistInitConfig.rvfBackend` is typed against agentdb's `RvfBackend` (`VectorBackendAsync`-shaped) — nominally-incompatible classes (see Phase 1 Amendment). Two choices:
+  - **A: typed adapter** at `forks/agentdb/src/adapters/memory-rvf-adapter.ts` (~250-350 LoC + tests) that wraps `@claude-flow/memory`'s `RvfBackend` as agentdb's `VectorBackendAsync`. Method mappings per recon §A3 (`insertAsync` ↔ `store` decompose, `insertBatchAsync` ↔ `bulkInsert`, `searchAsync` ↔ `search` reshape, `removeAsync` ↔ `delete`, `getStatsAsync` ↔ `getStats` downcast, `flush()` no-op, `close()` ↔ `shutdown`).
+  - **B: separate `.rvf` path** — cli constructs a fresh agentdb-shaped `RvfBackend` on `<projectRoot>/.claude-flow/archivist/agentdb.rvf`, distinct from memory-router's `<projectRoot>/.claude-flow/memory.rvf`. ~50-80 LoC.
+  
+  **Ruling: Option A.** Option B silently splits storage (two HNSW indices, two vector spaces), violating `feedback-data-loss-zero-tolerance` and the unified-vector-store mandate of ADR-0180/0166. Option A's 250-350 LoC is amortized infrastructure cost; it also collapses Phase 3's `memory_search_index` FS-JSON indirection (deleted as part of Phase 4).
+
+* **SQLite handle.** Default to a **fresh `better-sqlite3.Database`** on `<projectRoot>/.claude-flow/archivist.db` (SQLite is cross-process-safe via its file lock — daemon's existing per-process handle from Phase 1 worker-daemon.ts coexists fine). Investigate `IDatabaseConnection` unwrap as a secondary preference if the abstraction exposes the underlying handle cleanly.
+
+* **`autopilot/learn.ts`** (Phase 2 escape-hatch carry-forward) — investigate during the phase. If Phase 4's substrates unblock it, claim it; else it stays a carry-forward to Phase 5+. Same posture for `github/<>`, `hive-mind/consensus`, `hive-mind/status` (recon §D10 predicts they stay firm carry-forwards — out of substrate scope).
+
+* **Phase 4 scope (final):**
+  1. cli `RvfBackend` adapter (Option A, with unit tests).
+  2. Wire `rvfBackend` (via adapter), `sqliteDb`, and `taskRouterFactory` / `embeddingScorerFactory` / `patternReaderFactory` into the cli's `ArchivistInitConfig` (`archivist-init.ts`). Extend `worker-daemon.ts`'s config too if the daemon dispatches through any of these substrates.
+  3. Un-stub the 8 `agentdb_*` read handlers: `causal-recall`, `embed`, `hierarchical-recall`, `neural-patterns`, `pattern-search`, `reflexion-retrieve`, `semantic-route`, `skill-search` (per-substrate breakdown in recon §C8).
+  4. Un-stub the F4-3-callsite mutation handler `route` (taskRouter + embeddingScorer).
+  5. Delete `memory_search_index` FS-JSON storeId + the indirection (Phase 3 carry-forward collapse).
+  6. Per-handler unit tests under `forks/agentdb/test/archivist/handlers/<family>/<handler>.test.ts`.
+
+* **Daemon handlers** (`daemon_runConsolidate`, `daemon_autoMemoryBridge`) — **out of Phase 4 scope** (not yet under `archivist/handlers/daemon/`).
+
+* **Exit gate:** `npm run release` passes; zero `pending` stubs in `handlers/agentdb/**` + `handlers/memory/**` reads + the F4-3-callsite mutations; `Archivist.initialize()` builds a substrate registry with RVF + SQLite-carve-out registered (not just `projectRoot`); a fresh dispatch through the cli's archivist instance returns real provenance from RVF / SQLite for at least one handler per substrate family.
+
+Council record: [docs/council/ADR-0181-phase-4-report.md](../council/ADR-0181-phase-4-report.md) (to be authored at phase close).
+
 ### Amendment: Phase 3 (2026-05-15)
 
 ADR-0181's original Phase 3 text — *"Un-stub handlers needing `query`/`vectorSearch` (memory_* reads, agentdb_* ranked reads) now that Phase 1 fed the read substrates"* — assumed Phase 1 fed real RVF + SQLite backends. The Phase 1 Amendment landed `projectRoot`-only configs across all three host processes, deliberately deferring the RVF/SQLite backend wiring. The Phase 3 recon (`adr-0181/phase-3` memory namespace) accordingly confirmed:
