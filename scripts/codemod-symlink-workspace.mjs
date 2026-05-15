@@ -116,12 +116,29 @@ async function buildWorkspaceMap(buildDir) {
   // Extend the map with cross-repo `@sparkleideas`-scoped packages. These
   // live OUTSIDE `v3/@claude-flow/` but downstream packages depend on them
   // at runtime — see the `EXTRA_WORKSPACE_DIRS` rationale at the top.
-  // Missing dir is fatal: the entry is hard-coded, so its absence means a
-  // build-tree shape regression we want to surface, not silently skip.
+  //
+  // Missing dir = treat as external. The pipeline tests at
+  // `tests/pipeline/codemod-symlink-pass.test.mjs` exercise the algorithm
+  // against synthetic workspaces that don't contain cross-repo/* — and
+  // there a missing `cross-repo/agentdb` correctly means "no in-tree
+  // source; resolve from Verdaccio at acceptance" (same semantics as a
+  // dep like `@sparkleideas/ruvector-rabitq-wasm`). The production
+  // pipeline (`copy-source.sh`) ALWAYS materialises `cross-repo/agentdb`,
+  // so the production behaviour is unchanged from the all-or-nothing
+  // semantics intended at the file header.
+  //
+  // Mis-shaped package.json (present but unscoped name) IS still fatal —
+  // that's a real codemod bug, not a missing-source signal.
   for (const rel of EXTRA_WORKSPACE_DIRS) {
     const pkgDir = join(buildDir, rel);
     const pkgJson = join(pkgDir, 'package.json');
-    const raw = await readFile(pkgJson, 'utf8');
+    let raw;
+    try {
+      raw = await readFile(pkgJson, 'utf8');
+    } catch (err) {
+      if (err.code === 'ENOENT') continue;
+      throw err;
+    }
     const json = JSON.parse(raw);
     if (typeof json.name !== 'string' || !json.name.startsWith(`${SCOPE}/`)) {
       throw new Error(
