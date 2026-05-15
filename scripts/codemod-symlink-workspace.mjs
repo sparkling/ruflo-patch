@@ -53,6 +53,22 @@ import { readdir, readFile, mkdir, symlink, lstat, unlink, stat } from 'node:fs/
 import { join, relative } from 'node:path';
 
 const WORKSPACE_SUBDIR = 'v3/@claude-flow';
+// Cross-repo subdirs whose post-codemod `package.json` `name:` field is also
+// in the `@sparkleideas` scope and that downstream packages depend on at
+// runtime (so test-ci needs to resolve them too — not just acceptance).
+// Each entry is a relative dir under `<buildDir>/`. ADR-0181 Phase 5
+// surfaced the gap: Phase 5 flipped cli mcp-tool handlers to dispatch
+// through `getProcessArchivist()`, whose first call awaits a dynamic
+// `import('@sparkleideas/agentdb/archivist')`. The dist resolves that bare
+// specifier via the cli's `node_modules/@sparkleideas/agentdb` — and
+// before this pass, that link did not exist (the prior "v3/@claude-flow
+// only" scan classified agentdb as "external" and left it for Verdaccio).
+// At unit-test time the cli dist is loaded BEFORE publish-verdaccio runs,
+// so the dynamic import threw ERR_MODULE_NOT_FOUND inside the spawn
+// handler. Adding `cross-repo/agentdb` here makes the symlink pass
+// produce `node_modules/@sparkleideas/agentdb` -> `cross-repo/agentdb`
+// in every dependent's tree.
+const EXTRA_WORKSPACE_DIRS = ['cross-repo/agentdb'];
 const SCOPE = '@sparkleideas';
 const DEP_FIELDS = ['dependencies', 'optionalDependencies', 'peerDependencies'];
 
@@ -94,6 +110,26 @@ async function buildWorkspaceMap(buildDir) {
       throw new Error(`Invalid package.json at ${pkgJson}: ${err.message}`);
     }
     if (typeof json.name !== 'string' || !json.name.startsWith(`${SCOPE}/`)) continue;
+    map.set(json.name, pkgDir);
+  }
+
+  // Extend the map with cross-repo `@sparkleideas`-scoped packages. These
+  // live OUTSIDE `v3/@claude-flow/` but downstream packages depend on them
+  // at runtime — see the `EXTRA_WORKSPACE_DIRS` rationale at the top.
+  // Missing dir is fatal: the entry is hard-coded, so its absence means a
+  // build-tree shape regression we want to surface, not silently skip.
+  for (const rel of EXTRA_WORKSPACE_DIRS) {
+    const pkgDir = join(buildDir, rel);
+    const pkgJson = join(pkgDir, 'package.json');
+    const raw = await readFile(pkgJson, 'utf8');
+    const json = JSON.parse(raw);
+    if (typeof json.name !== 'string' || !json.name.startsWith(`${SCOPE}/`)) {
+      throw new Error(
+        `EXTRA_WORKSPACE_DIRS entry '${rel}' has unscoped name ` +
+        `${JSON.stringify(json.name)} — expected ${SCOPE}/*. ` +
+        `Either codemod did not run or the entry is misconfigured.`,
+      );
+    }
     map.set(json.name, pkgDir);
   }
 
