@@ -26,7 +26,16 @@ _e2e_isolate() {
   cp -r "$E2E_DIR/.claude-flow" "$iso_dir/.claude-flow" 2>/dev/null || true
   cp -r "$E2E_DIR/.swarm" "$iso_dir/.swarm" 2>/dev/null || true
   cp "$E2E_DIR/package.json" "$iso_dir/" 2>/dev/null || true
-  ln -sf "$E2E_DIR/node_modules" "$iso_dir/node_modules" 2>/dev/null || true
+  # ADR-0182 L10: fail loud on dangling symlink target — a crashed prior release
+  # may leave $E2E_DIR/node_modules pointing into deleted space; running the
+  # check against an empty iso/node_modules produces false-pass results.
+  # [[ -d ]] follows symlinks and returns false for dangling/missing targets,
+  # subsuming the realpath -e guard portably (BSD realpath on macOS lacks -e).
+  if [[ ! -d "$E2E_DIR/node_modules" ]]; then
+    echo "[L10][error] _e2e_isolate: $E2E_DIR/node_modules does not exist or is a dangling reference (\$E2E_DIR=$E2E_DIR)" >&2
+    return 1
+  fi
+  ln -sf "$E2E_DIR/node_modules" "$iso_dir/node_modules"
   # Remove any stale RVF/WAL/lock from the copy so we start clean
   rm -f "$iso_dir/.claude-flow/memory.rvf"* "$iso_dir/.swarm/memory.rvf"* 2>/dev/null
   rm -f "$iso_dir/.swarm/memory.db"* 2>/dev/null
