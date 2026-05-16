@@ -244,51 +244,26 @@ _disable_spotlight_indexing
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 
-# Phase: Shared wrapper-solo install. Two paths:
-#
-# (A) ADR-0182 L1 (opt-in via RUFLO_SHARED_WRAPPER_INSTALL=1):
-#     Add @sparkleideas/ruflo to the EXISTING $ACCEPT_TEMP install (which
-#     already has @sparkleideas/cli) and re-point WRAPPER_SOLO_TEMP at
-#     $ACCEPT_TEMP. Skips the dedicated wrapper-solo install dir entirely.
-#     Saves ~70s background install + ~1.7 GB / ~59k file events per
-#     release. The 3 wrapper checks (adr0142-bin-path, adr0142-mcp-jsonrpc,
-#     adr0143-init-mcp) already read WRAPPER_SOLO_TEMP conditionally —
-#     they pick up the repointed path automatically.
-#
-# (B) Default (RUFLO_SHARED_WRAPPER_INSTALL unset): start a dedicated
-#     wrapper-solo install in BACKGROUND, join before parallel wave. By
-#     the time setup phases finish (~78s), the wrapper install (~70s) is
-#     done — no additional sequential time.
-WRAPPER_SOLO_TEMP=""
+# Phase: Shared wrapper-solo install (started in BACKGROUND, joined
+# before parallel wave). Three wrapper-install checks each previously
+# did `npm install @sparkleideas/ruflo --cache=<isolated>` (~82-93s
+# wall, the post-browser-refactor long pole). The --cache=<isolated>
+# defeats npm cache reuse, hence slow. Strategy: build one shared
+# install in background, join before parallel wave. By the time setup
+# phases finish (~78s), the wrapper install (~70s) is already done —
+# no additional sequential time.
+WRAPPER_SOLO_TEMP=$(mktemp -d /tmp/ruflo-wrapper-solo-XXXXX)
+export WRAPPER_SOLO_TEMP
 WRAPPER_SOLO_PID=""
-if [[ "${RUFLO_SHARED_WRAPPER_INSTALL:-}" == "1" ]]; then
-  log "[L1] RUFLO_SHARED_WRAPPER_INSTALL=1 — installing @sparkleideas/ruflo into \$ACCEPT_TEMP"
-  if (cd "$ACCEPT_TEMP" \
-        && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
-             --no-audit --no-fund --prefer-offline 2>&1 \
-             > "$ACCEPT_TEMP/wrapper-shared-install.log") \
-     && [[ -d "$ACCEPT_TEMP/node_modules/@sparkleideas/ruflo" ]]; then
-    WRAPPER_SOLO_TEMP="$ACCEPT_TEMP"
-    export WRAPPER_SOLO_TEMP
-    log "[L1] WRAPPER_SOLO_TEMP=\$ACCEPT_TEMP — skipping dedicated wrapper-solo install (~70s + 1.7 GB saved)"
-  else
-    log "[L1][warn] @sparkleideas/ruflo install into \$ACCEPT_TEMP failed — falling back to dedicated wrapper-solo"
-  fi
-fi
-# Fallback (also the default path when RUFLO_SHARED_WRAPPER_INSTALL unset)
-if [[ -z "${WRAPPER_SOLO_TEMP:-}" ]]; then
-  WRAPPER_SOLO_TEMP=$(mktemp -d /tmp/ruflo-wrapper-solo-XXXXX)
-  export WRAPPER_SOLO_TEMP
-  (
-    cd "$WRAPPER_SOLO_TEMP" \
-      && echo '{"name":"wrapper-solo-test","version":"1.0.0","private":true}' > package.json \
-      && echo "registry=${REGISTRY}" > .npmrc \
-      && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
-         --cache "$WRAPPER_SOLO_TEMP/.npm-cache" \
-         --no-audit --no-fund --prefer-offline 2>&1 > "$WRAPPER_SOLO_TEMP/install.log"
-  ) &
-  WRAPPER_SOLO_PID=$!
-fi
+(
+  cd "$WRAPPER_SOLO_TEMP" \
+    && echo '{"name":"wrapper-solo-test","version":"1.0.0","private":true}' > package.json \
+    && echo "registry=${REGISTRY}" > .npmrc \
+    && npm install @sparkleideas/ruflo --registry "$REGISTRY" \
+       --cache "$WRAPPER_SOLO_TEMP/.npm-cache" \
+       --no-audit --no-fund --prefer-offline 2>&1 > "$WRAPPER_SOLO_TEMP/install.log"
+) &
+WRAPPER_SOLO_PID=$!
 
 # Phase: Structural checks (validate harness, not tests)
 _p=$(_ns)
