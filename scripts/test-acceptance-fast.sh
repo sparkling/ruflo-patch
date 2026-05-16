@@ -28,21 +28,8 @@ done
 if [[ -z "$ACCEPT_TEMP" ]]; then
   ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-fast-XXXXX)
   echo "[fast] Installing packages to $ACCEPT_TEMP (~15s)..."
-  # Cache restore mirrors test-acceptance.sh — populated by prior `npm run
-  # release`. `cp -c` (APFS clonefile) is ~6s; rsync fallback for non-APFS.
-  _RUFLO_CACHE_DIR="${HOME}/.cache/ruflo-test-deps"
-  _RUFLO_CACHE_SCHEMA="v1"
-  if [[ -d "${_RUFLO_CACHE_DIR}/node_modules" \
-        && "$(cat "${_RUFLO_CACHE_DIR}/.cache-version" 2>/dev/null)" == "${_RUFLO_CACHE_SCHEMA}" \
-        && -z "${RUFLO_TEST_DEPS_REBUILD:-}" ]]; then
-    if cp -c -R "${_RUFLO_CACHE_DIR}/node_modules" "${ACCEPT_TEMP}/node_modules" 2>/dev/null \
-       || rsync -a --delete "${_RUFLO_CACHE_DIR}/node_modules/" "${ACCEPT_TEMP}/node_modules/" 2>/dev/null; then
-      echo "[fast] cache restore ok"
-    else
-      echo "[fast] cache restore failed; clean install"
-      rm -rf "${ACCEPT_TEMP}/node_modules" 2>/dev/null || true
-    fi
-  fi
+  # node_modules cache (commit 436c76a) was reverted — Verdaccio is local
+  # with --prefer-offline so a fresh install is already fast (~15s here).
   (cd "$ACCEPT_TEMP" \
     && echo '{"name":"fast-test","version":"1.0.0","private":true}' > package.json \
     && echo "registry=${REGISTRY}" > .npmrc \
