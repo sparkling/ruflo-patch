@@ -90,14 +90,14 @@ copy_source() {
   local rsync_status_dir
   rsync_status_dir=$(mktemp -d /tmp/ruflo-rsync-XXXXX)
 
-  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P .build-manifest.json' --filter='P .wasm-cache.json' --filter='P .last-verified.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P .wasm-cache.json' --filter='P .last-verified.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
     && touch "${rsync_status_dir}/ruflo" &
   local pid_ruflo=$!
   # ADR-0150: narrow .node exclude — keep darwin-arm64 (the only arch we build)
   # so it ships through to the publish package. Other arches ship via per-arch
   # optional-dep packages from upstream public npm or are absent (bug we accept
   # for now per ADR-0150 §"Cross-platform shipping" risk note).
-  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P wasm/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' \
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P wasm/' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' \
     --exclude=node_modules --exclude=.git \
     --exclude='packages/agentic-jujutsu/*.linux-*.node' \
     --exclude='packages/agentic-jujutsu/*.win32-*.node' \
@@ -117,14 +117,14 @@ copy_source() {
     "${FORK_DIR_AGENTIC}/" "${TEMP_DIR}/cross-repo/agentic-flow/" \
     && touch "${rsync_status_dir}/agentic" &
   local pid_agentic=$!
-  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" \
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" \
     && touch "${rsync_status_dir}/fann" &
   local pid_fann=$!
-  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" \
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" \
     && touch "${rsync_status_dir}/ruvector" &
   local pid_ruvector=$!
   # ADR-0161: agentdb 5th fork
-  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTDB}/" "${TEMP_DIR}/cross-repo/agentdb/" \
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_AGENTDB}/" "${TEMP_DIR}/cross-repo/agentdb/" \
     && touch "${rsync_status_dir}/agentdb" &
   local pid_agentdb=$!
   wait $pid_ruflo $pid_agentic $pid_fann $pid_ruvector $pid_agentdb
