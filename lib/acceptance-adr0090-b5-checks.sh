@@ -1343,7 +1343,7 @@ check_adr0090_b5_causalRecall() { # adr0097-l2-delegator: flag set inside _b5_ch
   local marker="b5-crecall-$$-$(date +%s)"
   _b5_check_causal_pipeline \
     "causalRecall" \
-    "agentdb_causal_recall" \
+    "agentdb_causal-recall" \
     "{\"query\":\"$marker query\",\"topK\":3}" \
     30
 }
@@ -1962,7 +1962,7 @@ check_adr0090_b5_explainableRecall() { # adr0097-l2-delegator: flag set inside _
   local marker="b5-xrec-$$-$(date +%s)"
   _b5_check_causal_pipeline \
     "explainableRecall" \
-    "agentdb_causal_recall" \
+    "agentdb_causal-recall" \
     "{\"query\":\"$marker xrec query\",\"topK\":1,\"explain\":true}" \
     30
 }
