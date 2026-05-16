@@ -5,15 +5,20 @@
 #   ruflo init  →  .claude-flow/config.json  →  AgentDB / RvfBackend
 #
 # Two scenarios:
-#   (1) Default init writes embedding.* + index.hnsw.* with canonical values
-#       (768-dim mpnet) and AgentDB round-trips an embedding at that dimension.
+#   (1) Default (768-dim mpnet): config-reader + AgentDB round-trip both
+#       exercised against a clone-from-golden iso (ADR-0182 L13(b)). The
+#       writer-layer assertion (init emits correct config) lives in the
+#       fork's __tests__/embedding-models.test.ts (L13(a)).
 #   (2) `ruflo init --embedding-model Xenova/all-MiniLM-L6-v2` auto-adjusts
 #       dimension to 384 in config AND a fresh RVF segment is created at 384.
+#       Kept as a real per-check init because MiniLM model bytes aren't in
+#       the harness's pre-warmed ONNX cache (mpnet only, per task #107);
+#       config-mutate would require on-demand ONNX download.
 #
-# Caller MUST set: CLI_BIN, REGISTRY, TEMP_DIR
+# Caller MUST set: CLI_BIN, REGISTRY, TEMP_DIR, E2E_DIR
 #
-# Each scenario uses its own mktemp dir; the `_run_and_kill` helper handles the
-# CLI hanging on open SQLite handles per ADR-0039 T1.
+# Scenario (1) uses _e2e_isolate; scenario (2) uses _adr0177_run_init helper
+# with _run_and_kill (the CLI hangs on open SQLite handles per ADR-0039 T1).
 #
 # Catalog naming: check_adr0177_* is L7-accepted via the adr-NNNN filename tag.
 
@@ -155,11 +160,20 @@ check_adr0177_default_config_keys() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0177-default-XXXXX")
+  # ADR-0182 L13(b): clone harness golden instead of running per-check init.
+  # The harness init at scripts/test-acceptance.sh:344 already runs with
+  # --with-embeddings --embedding-model=$RUFLO_EMBEDDING_MODEL (default
+  # Xenova/all-mpnet-base-v2) — its emitted config.json + embeddings.json
+  # have the canonical 7-key defaults this check asserts. Reading from the
+  # clone tests the same writer code path the harness init exercised, just
+  # without paying the per-check init cost again.
+  # Coverage equivalence rationale: per ADR-0182 §"Test-suite design
+  # principle" the writer is exercised by L13(a)'s pure-function unit tests
+  # (forks/ruflo/v3/@claude-flow/cli/__tests__/embedding-models.test.ts);
+  # this check now asserts only the reader-layer invariant.
+  local dir; dir=$(_e2e_isolate "0177-default-cfg")
   # shellcheck disable=SC2064
   trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
-
-  _adr0177_run_init "$dir"
 
   local cfg="${dir}/.claude-flow/config.json"
   if [[ ! -f "$cfg" ]]; then
@@ -234,13 +248,20 @@ check_adr0177_default_roundtrip() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0177-rt-XXXXX")
+  # ADR-0182 L13(b): clone harness golden (768-dim mpnet) and exercise the
+  # store→search→segment-dim round-trip in the iso. Replaces per-check init.
+  # The clone carries .claude-flow/config.json + .swarm/memory.rvf from the
+  # harness's init; subsequent memory store writes to iso/.swarm/memory.rvf
+  # via the iso's .ruflo-project marker (written by _e2e_isolate) — same as
+  # the original per-check init path semantically.
+  # Coverage: writer is L13(a)-tested; this check exercises end-to-end
+  # config-reader → AgentDB → RvfBackend → on-disk dim header.
+  local dir; dir=$(_e2e_isolate "0177-default-rt")
   # shellcheck disable=SC2064
   trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 
-  _adr0177_run_init "$dir"
   if [[ ! -f "${dir}/.claude-flow/config.json" ]]; then
-    _CHECK_OUTPUT="roundtrip-default: init failed (no config.json)"
+    _CHECK_OUTPUT="roundtrip-default: clone failed (no config.json — harness golden missing it?)"
     return
   fi
 
