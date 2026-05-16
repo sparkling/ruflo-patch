@@ -725,6 +725,75 @@ TEMP_DIR="$ACCEPT_TEMP"
 NPX_CACHE="/tmp/ruflo-accept-npxcache"
 mkdir -p "$NPX_CACHE"
 find "$NPX_CACHE/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
+
+# ADR-0182 L9: LRU-prune _cacache when total size exceeds soft cap.
+# The _npx sweep above clears alias dirs but never touches _cacache/content-v2,
+# which grows unbounded across releases (~37 GB observed pre-L9). This helper
+# enumerates content blobs by mtime ascending and rm's the oldest until the
+# total drops below RUFLO_NPX_CACHE_CAP_MB (default 5120 = 5 GB).
+#
+# Cap is SOFT (post-hoc): the cache can still grow beyond the cap mid-release.
+# Pruning happens at startup, when no other process holds the cache. Stale
+# index-v5 entries pointing at removed blobs become misses and re-fetch on
+# next npx invocation — safe, since this is a CACHE, not source-of-truth.
+_l9_lru_prune_npx_cache() {
+  local cache_root="${1:-$NPX_CACHE}"
+  local content_dir="$cache_root/_cacache/content-v2"
+  local cap_mb="${RUFLO_NPX_CACHE_CAP_MB:-5120}"
+  local cap_bytes=$(( cap_mb * 1024 * 1024 ))
+  if [[ ! -d "$content_dir" ]]; then
+    return 0
+  fi
+  # BSD du lacks -b; -sk returns kibibytes (1024 bytes).
+  local cur_kb cur_bytes
+  cur_kb=$(du -sk "$cache_root/_cacache" 2>/dev/null | awk '{print $1}')
+  if [[ -z "$cur_kb" ]]; then
+    echo "[L9] ERROR: du -sk failed on $cache_root/_cacache — skipping prune" >&2
+    return 1
+  fi
+  cur_bytes=$(( cur_kb * 1024 ))
+  if (( cur_bytes <= cap_bytes )); then
+    return 0
+  fi
+  echo "[L9] _cacache at $(( cur_bytes / 1024 / 1024 )) MB > cap ${cap_mb} MB — LRU-pruning oldest blobs"
+  # Enumerate all content blobs with mtime+size+path, sort ascending by mtime.
+  # macOS BSD stat: %m=mtime epoch, %z=size bytes, %N=path.
+  local manifest
+  manifest=$(mktemp -t l9-cacache-manifest.XXXXXX) || {
+    echo "[L9] ERROR: mktemp failed" >&2
+    return 1
+  }
+  if ! find "$content_dir" -type f -print0 2>/dev/null \
+      | xargs -0 stat -f '%m %z %N' 2>/dev/null \
+      | sort -n > "$manifest"; then
+    echo "[L9] ERROR: find|xargs stat|sort pipeline failed" >&2
+    rm -f "$manifest"
+    return 1
+  fi
+  local total_blobs deleted=0 freed=0
+  total_blobs=$(wc -l < "$manifest" | tr -d ' ')
+  local mtime size blob_path
+  while IFS= read -r line; do
+    (( cur_bytes <= cap_bytes )) && break
+    mtime=$(echo "$line" | awk '{print $1}')
+    size=$(echo "$line" | awk '{print $2}')
+    blob_path=$(echo "$line" | awk '{$1=""; $2=""; sub(/^[ \t]+/,""); print}')
+    [[ -z "$blob_path" || ! -f "$blob_path" ]] && continue
+    if rm -f "$blob_path" 2>/dev/null; then
+      # SHA prefix is the parent dir name (e.g. sha512/61/0d)
+      local sha_prefix
+      sha_prefix=$(echo "$blob_path" | awk -F'/' '{print $(NF-2)"/"$(NF-1)}')
+      echo "[L9] rm ${sha_prefix} mtime=${mtime} size=${size}B"
+      cur_bytes=$(( cur_bytes - size ))
+      freed=$(( freed + size ))
+      deleted=$(( deleted + 1 ))
+    fi
+  done < "$manifest"
+  rm -f "$manifest"
+  echo "[L9] _cacache LRU prune: ${deleted}/${total_blobs} blobs removed, freed $(( freed / 1024 / 1024 )) MB; now ~$(( cur_bytes / 1024 / 1024 )) MB"
+}
+_l9_lru_prune_npx_cache "$NPX_CACHE"
+
 export NPM_CONFIG_CACHE="$NPX_CACHE"
 
 run_timed() {
