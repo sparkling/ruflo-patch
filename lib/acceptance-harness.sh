@@ -59,42 +59,31 @@ fi
 _disable_spotlight_indexing() {
   [[ "$(uname -s 2>/dev/null)" == "Darwin" ]] || return 0
   local _marker=".metadata_never_index"
-  local _touched_spot=()
-  local _touched_tm=()
-  local _have_tmutil=0
-  command -v tmutil >/dev/null 2>&1 && _have_tmutil=1
+  local _touched=()
   local _d
+  # NOTE: tried adding `tmutil addexclusion -p` to also suppress Time Machine's
+  # backupd FSEvents subscription. Two problems: (1) `tmutil addexclusion`
+  # requires root (silently failed); (2) iterating tmutil calls across the
+  # leftover /tmp/ruflo-wrapper-solo-* dirs (137 observed) added ~22s per
+  # source-time call × 100+ unit test files that source this lib =
+  # ~37 min of overhead, which deadlocked test-ci in r5 (commit cdd831b reverted).
+  # Spotlight marker stays; FSEvents/TM exclusion needs a different angle.
   for _d in /tmp/ruflo-build \
             /tmp/ruflo-accept-* \
             /tmp/ruflo-accept-par-* \
             /tmp/ruflo-fast-* \
             /tmp/ruflo-e2e-* \
-            /tmp/ruflo-wrapper-solo-* \
             "${PARALLEL_DIR:-}" \
             "${ACCEPT_TEMP:-}" \
-            "${E2E_DIR:-}" \
-            "${WRAPPER_SOLO_TEMP:-}"; do
+            "${E2E_DIR:-}"; do
     [[ -z "$_d" ]] && continue
     [[ -d "$_d" ]] || continue
     if touch "$_d/$_marker" 2>/dev/null; then
-      _touched_spot+=("$_d")
-    fi
-    # Time Machine subscribes to FSEvents — backupd burns 100%+ CPU streaming
-    # change events for /tmp/ruflo-* even when no backup is running (or its
-    # destination is offline). `tmutil addexclusion -p <dir>` sets a sticky
-    # extended-attribute exclusion that costs nothing once set and dies when
-    # the dir is removed. Idempotent — re-applying is a no-op.
-    if (( _have_tmutil )); then
-      if tmutil isexcluded "$_d" 2>/dev/null | grep -q '^\[Included\]'; then
-        if tmutil addexclusion -p "$_d" 2>/dev/null; then
-          _touched_tm+=("$_d")
-        fi
-      fi
+      _touched+=("$_d")
     fi
   done
-  if declare -F log >/dev/null 2>&1; then
-    (( ${#_touched_spot[@]} )) && log "  Spotlight: disabled indexing in ${#_touched_spot[@]} dir(s): ${_touched_spot[*]}"
-    (( ${#_touched_tm[@]}   )) && log "  TimeMachine: added exclusion for ${#_touched_tm[@]} dir(s): ${_touched_tm[*]}"
+  if [[ ${#_touched[@]} -gt 0 ]] && declare -F log >/dev/null 2>&1; then
+    log "  Spotlight: disabled indexing in ${#_touched[@]} dir(s): ${_touched[*]}"
   fi
 }
 

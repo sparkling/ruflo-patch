@@ -273,7 +273,6 @@ fi
 # no additional sequential time.
 WRAPPER_SOLO_TEMP=$(mktemp -d /tmp/ruflo-wrapper-solo-XXXXX)
 export WRAPPER_SOLO_TEMP
-_disable_spotlight_indexing  # excludes wrapper-solo dir from Spotlight + Time Machine
 WRAPPER_SOLO_PID=""
 (
   cd "$WRAPPER_SOLO_TEMP" \
