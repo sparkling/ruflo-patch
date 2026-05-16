@@ -199,7 +199,20 @@ _record_phase "health-check" "$(_elapsed_ms "$_p" "$(_ns)")"
 _p=$(_ns)
 find "${HOME}/.npm/_npx" -path "*/@sparkleideas" -type d -exec rm -rf {} + 2>/dev/null || true
 # Remove stale acceptance temp dirs from previous runs (>1 hour old)
-find /tmp -maxdepth 1 -name "ruflo-accept-*" -type d -mmin +60 -exec rm -rf {} + 2>/dev/null || true
+# ADR-0182 L7: widen glob to cover all 7 prefix classes that orphan on
+# crash/INT/TERM — wrapper-solo, P5 init, e2e/iso snapshots, ADR-specific
+# work dirs (adr0*, t3-*-rvf-*, b2-*-work-*, p9-*-*). Age threshold +
+# rm-rf semantics unchanged from the original sweep.
+find /tmp -maxdepth 1 -type d -mmin +60 \( \
+  -name "ruflo-accept-*" \
+  -o -name "ruflo-wrapper-solo-*" \
+  -o -name "ruflo-p5-*" \
+  -o -name "iso-*" \
+  -o -name "ruflo-adr0*-*" \
+  -o -name "t3-*-rvf-*" \
+  -o -name "b2-*-work-*" \
+  -o -name "p9-*-*" \
+\) -exec rm -rf {} + 2>/dev/null || true
 _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # ADR-0048: Persistent ONNX model cache — avoids 30-60s cold download per test run.
