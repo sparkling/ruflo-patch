@@ -602,17 +602,27 @@ check_real_sqlite3_blockers() {
 # Isolated into a helper so the unit test can mock just this one call
 # via a PATH shim for `sqlite3` without re-implementing the whole check.
 _debt15_count_reflexion_rows() {
-  # ADR-0170 Phase B: pglite-aware row counter. Replaces the prior
-  # `sqlite3 ${db_file}` probe; signature kept ($1 = project dir
-  # containing .swarm/memory.pglite/) so callers don't need updating.
+  # ADR-0177 + Phase 7: pglite retired. Reflexion lands in SQLite carve-out
+  # at .swarm/memory.db's episodes table via archivist dispatch. Probe
+  # via sqlite3 CLI (signature kept; $1 = project dir).
   local proj_dir="$1"
-  if [[ ! -f "$proj_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
+  local sqlite_db="$proj_dir/.swarm/memory.db"
+  if [[ ! -f "$sqlite_db" ]]; then
     echo ""
     return 0
   fi
-  # ADR-0170 Phase C.1: pgvector extension required for tables with
-  # vector columns (e.g. episode_embeddings.embedding).
+  local has_table
+  has_table=$(sqlite3 "$sqlite_db" "SELECT name FROM sqlite_master WHERE type='table' AND name='episodes';" 2>/dev/null | tr -d '\n')
+  if [[ "$has_table" != "episodes" ]]; then
+    echo ""
+    return 0
+  fi
   local out
+  out=$(sqlite3 "$sqlite_db" "SELECT COUNT(*) FROM episodes WHERE task LIKE 'acceptance test reflexion adr0090%';" 2>/dev/null | tr -dc '0-9')
+  echo "${out:-0}"
+  return 0
+  # The legacy node oneliner that follows is unused after the SQLite
+  # rewrite — kept as a no-op in case future ADR re-introduces pglite.
   out=$(cd "$proj_dir" && node --input-type=module -e "
 const { PGlite } = await import('@electric-sql/pglite');
 const { vector } = await import('@electric-sql/pglite/vector');
@@ -656,37 +666,41 @@ check_adr0086_debt15_sqlite_path() {
     _CHECK_OUTPUT="Debt 15: failed to create iso dir"
     return
   fi
-  local pg_cluster="$iso/.swarm/memory.pglite"
+  # ADR-0177 + Phase 7: pglite substrate retired (SQLite carve-out via
+  # archivist dispatch). The controller-persistence contract is now
+  # satisfied by writes landing in `.swarm/memory.db` (SQLite). The check
+  # name retains "sqlite_path" for ledger continuity; assertions target
+  # the SQLite db directly post-Phase-7. Hydrate via agentdb_health
+  # (forces controller-registry init → AgentDB.initialize → loadSchemas
+  # → creates memory.db with carve-out tables).
+  local cli; cli=$(_cli_cmd)
+  _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "" 30
+  local sqlite_db="$iso/.swarm/memory.db"
 
-  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-    # ADR-0177: pglite substrate retired (RVF-first). PostgresBackend is a
-    # museum piece — PG_VERSION will not be created. skip_accepted.
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="Debt 15: SKIP_ACCEPTED: pglite substrate retired by ADR-0177 (RVF-first); PostgresBackend not wired"
+  if [[ ! -f "$sqlite_db" ]]; then
+    _CHECK_OUTPUT="Debt 15: .swarm/memory.db not created after agentdb_health cold-start — controller-registry handle-share regressed (ADR-0181 Phase 7 r2)"
     rm -rf "$iso" 2>/dev/null
     return
   fi
 
-  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-    _CHECK_OUTPUT="Debt 15: .swarm/memory.pglite/PG_VERSION not created — agentdb postgres substrate not reached (controller init may have silently bailed)"
-    rm -rf "$iso" 2>/dev/null
-    return
-  fi
-
-  # ─── Step 2a: pglite cluster non-empty ─────────────────────────────
-  # Verify the cluster has more than just the bootstrap canary — a real
-  # base/ subdir and pg_wal/ directory should exist after schema init.
-  if [[ ! -d "$pg_cluster/base" ]]; then
-    _CHECK_OUTPUT="Debt 15: .swarm/memory.pglite/base/ missing — pglite cluster bootstrap incomplete (PG_VERSION present but no template1/etc database files)"
+  # ─── Step 2a: SQLite db non-empty (has carve-out tables) ───────────
+  # Verify schema bootstrap ran — episodes table is the carve-out target
+  # for reflexion writes; missing means loadSchemas() didn't complete.
+  local has_episodes
+  has_episodes=$(sqlite3 "$sqlite_db" "SELECT name FROM sqlite_master WHERE type='table' AND name='episodes';" 2>/dev/null | tr -d '\n')
+  if [[ "$has_episodes" != "episodes" ]]; then
+    local table_list
+    table_list=$(sqlite3 "$sqlite_db" ".tables" 2>/dev/null | tr -s ' \n' ' ' | cut -c1-300)
+    _CHECK_OUTPUT="Debt 15: episodes table missing in .swarm/memory.db — agentdb loadSchemas() didn't complete. Existing tables: $table_list"
     rm -rf "$iso" 2>/dev/null
     return
   fi
 
   local cluster_size
-  cluster_size=$(du -sk "$pg_cluster" 2>/dev/null | awk '{print $1*1024}')
+  cluster_size=$(du -k "$sqlite_db" 2>/dev/null | awk '{print $1*1024}')
   cluster_size="${cluster_size:-0}"
-  if [[ "$cluster_size" -lt 4096 ]]; then
-    _CHECK_OUTPUT="Debt 15: pglite cluster is suspiciously small (${cluster_size} bytes — expected >4096 for any real bootstrap)"
+  if [[ "$cluster_size" -lt 1024 ]]; then
+    _CHECK_OUTPUT="Debt 15: .swarm/memory.db is suspiciously small (${cluster_size} bytes — expected >1024 for any real schema bootstrap)"
     rm -rf "$iso" 2>/dev/null
     return
   fi
@@ -723,12 +737,11 @@ check_adr0086_debt15_sqlite_path() {
 
   # ─── Step 3: Runtime controller-write proof (ADR-0090 A1) ──────────
   # Store a reflexion memory with a uniquely-marked task string. The
-  # MCP tool handler routes through getController('reflexion') which
-  # goes via ControllerRegistry → agentdb.postgresBackend → pglite
-  # `episodes` table. If ControllerRegistry silently fell back to
-  # in-memory state, this row will not reach disk and the post-query
-  # row count will be 0.
-  local cli; cli=$(_cli_cmd)
+  # MCP tool handler routes through Phase 7's archivist dispatch:
+  # agentdb_reflexion-store → ensureSqliteWired → registered handler →
+  # ReflexionMemory controller writes to .swarm/memory.db's episodes
+  # table. If ControllerRegistry silently fell back to in-memory state,
+  # this row will not reach disk and the post-query row count will be 0.
   local marker_task="acceptance test reflexion adr0090 a1"
   local marker_session="adr0090-a1-debt15-$(date +%s)-$$"
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec \
@@ -740,12 +753,12 @@ check_adr0086_debt15_sqlite_path() {
   local count_after_store
   count_after_store=$(_debt15_count_reflexion_rows "$iso")
   if [[ -z "$count_after_store" ]]; then
-    _CHECK_OUTPUT="Debt 15: episodes table does not exist in pglite cluster — reflexion controller never reached postgres substrate (silent in-memory fallback). store_out=$(echo "$store_out" | head -3 | tr '\n' ' ')"
+    _CHECK_OUTPUT="Debt 15: episodes table does not exist in .swarm/memory.db — reflexion controller never reached SQLite carve-out (silent in-memory fallback). store_out=$(echo "$store_out" | head -3 | tr '\n' ' ')"
     rm -rf "$iso" 2>/dev/null
     return
   fi
   if [[ "$count_after_store" -lt 1 ]]; then
-    _CHECK_OUTPUT="Debt 15: reflexion store succeeded via MCP but 0 rows in episodes table (marker='$marker_task') — controller wrote to in-memory state, not pglite. store_out=$(echo "$store_out" | head -3 | tr '\n' ' ')"
+    _CHECK_OUTPUT="Debt 15: reflexion store succeeded via MCP but 0 rows in episodes table (marker='$marker_task') — controller wrote to in-memory state, not .swarm/memory.db. store_out=$(echo "$store_out" | head -3 | tr '\n' ' ')"
     rm -rf "$iso" 2>/dev/null
     return
   fi
@@ -772,5 +785,5 @@ check_adr0086_debt15_sqlite_path() {
 
   rm -rf "$iso" 2>/dev/null
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="Debt 15: .swarm/memory.pglite (${cluster_size} bytes) + episodes row persisted across CLI restart (count_after_store=$count_after_store, count_after_reopen=$count_after_reopen), sqlite config still wired in memory-router.js"
+  _CHECK_OUTPUT="Debt 15: .swarm/memory.db (${cluster_size} bytes) + episodes row persisted across CLI restart (count_after_store=$count_after_store, count_after_reopen=$count_after_reopen), sqlite config still wired in memory-router.js"
 }
