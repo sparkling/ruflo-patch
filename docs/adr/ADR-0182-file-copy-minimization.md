@@ -65,6 +65,7 @@ Latest run (r11): 669/0/9, acceptance total 308s (−18.6s vs baseline). Wall-ti
 * **Option C — Move the whole pipeline onto a RAM disk (`hdiutil attach -nomount ram://`).** Eliminates SSD wear entirely for `/tmp` writes. Rejected: 36 GB host RAM is tight for a ~25 GB working set (build + accept + e2e + npx cache); RAM disk eviction breaks the persistent ONNX cache + npx cache contracts (ADR-0048, ADR-0025); the marker-style mitigation is per-process and per-release while a RAM disk is per-host and survives across user sessions.
 * **Option D — Run the pipeline in a Docker / Lima VM with its own filesystem.** Same goal as C with isolation. Rejected: doubles the trust surface (VM filesystem + macOS host filesystem still both see file events at the host layer); `napi build` cross-compilation matrix becomes brittle; out of scope as a release-time concern.
 * **Option E — Switch `/tmp` → tmpfs-style mount.** macOS doesn't ship a real tmpfs; `/tmp` is already on APFS. Rejected as not architecturally available.
+* **Option F — Replace remaining `cp` sites with `rsync` instead of `cp -cR` (L2).** Rejected. `rsync`'s strength is incremental delta-update against an existing baseline, but every remaining `cp` site in the pipeline operates on a FRESH destination (mktemp'd per release). With no baseline to diff against, `rsync` reads + writes every file in user space — same I/O profile as `cp -r`, plus per-file compare overhead. Critically, `rsync` does not support reflink / `clonefile(2)`, so it bypasses APFS's CoW semantics entirely. Concrete e2e-snapshot comparison: `cp -r` reads 58k files × ~35 KB = ~2 GB read + ~2 GB written to flash, ~6-10s wall. `cp -cR` reads 58k inodes only + writes ~3 MB inode-table updates, ~200 ms wall. `rsync` would compare 58k file sizes/mtimes against an empty dest (every file flagged "new") then read + write ~2 GB, ~5-8s wall — strictly worse than `cp -cR` and matches `cp -r` on bytes-on-flash. The intuition "rsync to avoid copying" only holds when there is a stable destination baseline to diff against; that condition does not exist at any remaining `cp` site in this pipeline. (Where rsync DOES help — `scripts/copy-source.sh`'s 5 parallel fork→`/tmp/ruflo-build` syncs — it is already in use; see ADR-0038.)
 
 ## Decision Outcome
 
@@ -166,6 +167,13 @@ L1–L4 are the load-bearing wins (~190k file-events of the ~192k total per-rele
 * Good, because full isolation.
 * Bad, because doubles trust surface for `napi build` cross-compilation matrix.
 * Bad, because host filesystem still sees mount events (does not fix `fseventsd`).
+
+### Option F — rsync everywhere instead of `cp -cR` (L2)
+
+* Good, because conceptually appealing — "incremental copy" feels like the right answer for "minimise file copying."
+* Bad, because every remaining `cp` site operates on a fresh `mktemp` destination. No baseline → no delta → rsync degrades to `cp -r` with compare overhead.
+* Bad, because rsync has no reflink / `clonefile(2)` support. On APFS it bypasses CoW entirely and writes full file bytes to flash. `cp -cR` writes only inode-table updates (~50 B/file) and defers data writes until a side mutates.
+* Bad, because the architecturally-correct rsync site is `scripts/copy-source.sh` (5 parallel fork→build delta syncs), and that's already in production via ADR-0038.
 
 ## More Information
 
