@@ -83,7 +83,7 @@ check_attention_wasm_has_binary() {
   fi
 
   local tmp_tar
-  tmp_tar=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/attn-wasm-XXXXX.tgz")
+  tmp_tar=$(mktemp /tmp/attn-wasm-XXXXX.tgz)
   curl -sf "$tarball_url" -o "$tmp_tar" 2>/dev/null || true
 
   if [[ ! -s "$tmp_tar" ]]; then
@@ -124,7 +124,7 @@ check_attention_unified_wasm_has_binary() {
   fi
 
   local tmp_tar
-  tmp_tar=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/attn-unified-wasm-XXXXX.tgz")
+  tmp_tar=$(mktemp /tmp/attn-unified-wasm-XXXXX.tgz)
   curl -sf "$tarball_url" -o "$tmp_tar" 2>/dev/null || true
 
   if [[ ! -s "$tmp_tar" ]]; then

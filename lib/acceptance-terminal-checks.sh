@@ -41,7 +41,7 @@ _terminal_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/terminal-${tool}-XXXXX")
+  local work; work=$(mktemp /tmp/terminal-${tool}-XXXXX)
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -145,7 +145,7 @@ check_adr0094_p4_terminal_close() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work_create; work_create=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/terminal-close-create-XXXXX")
+  local work_create; work_create=$(mktemp /tmp/terminal-close-create-XXXXX)
 
   # Step 1: create a fresh session and capture its id.
   local create_cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool terminal_create --params '{\"name\":\"adr0094-close\"}'"

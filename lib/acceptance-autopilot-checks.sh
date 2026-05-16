@@ -39,7 +39,7 @@ _autopilot_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/autopilot-${tool}-XXXXX")
+  local work; work=$(mktemp /tmp/autopilot-${tool}-XXXXX)
 
   # Build the command — include --params only when non-empty
   local cmd

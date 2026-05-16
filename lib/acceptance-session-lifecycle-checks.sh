@@ -40,7 +40,7 @@ _session_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/session-${tool}-XXXXX")
+  local work; work=$(mktemp /tmp/session-${tool}-XXXXX)
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -93,7 +93,7 @@ check_adr0094_p3_session_lifecycle() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/session-lifecycle-XXXXX")
+  local work; work=$(mktemp /tmp/session-lifecycle-XXXXX)
   local session_name="adr0094-lifecycle-$$"
 
   # Step 1: save
@@ -163,7 +163,7 @@ _session_seed() {
   local tag="$1"
   local cli; cli=$(_cli_cmd)
   local name="adr0094-seed-${tag}-$$-${RANDOM}"
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/session-seed-${tag}-XXXXX")
+  local work; work=$(mktemp /tmp/session-seed-${tag}-XXXXX)
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool session_save --params '{\"name\":\"$name\"}'" "$work" 15
   local body; body=$(cat "$work" 2>/dev/null || echo ""); body=$(echo "$body" | grep -v '^__RUFLO_DONE__:')
   rm -f "$work" 2>/dev/null

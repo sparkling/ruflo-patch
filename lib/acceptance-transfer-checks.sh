@@ -84,7 +84,7 @@ _transfer_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/transfer-${tool}-XXXXX")
+  local work; work=$(mktemp /tmp/transfer-${tool}-XXXXX)
 
   # Build the command — include --params only when non-empty.
   # Tools make IPFS fetches that fail gracefully into a built-in registry;

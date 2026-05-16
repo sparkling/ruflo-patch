@@ -64,7 +64,13 @@ _run_and_kill() {
 
   # Create temp file if caller did not provide one
   if [[ -z "$out_file" ]]; then
-    out_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/rk-XXXXX")
+    # Note: file create (not -d). The file auto-cleans in this helper's exit
+    # path (rm -f at end). Stays at /tmp/ — L4's reparenting target is
+    # per-check WORKDIRS that orphan on trap, not transient I/O buffers that
+    # helpers themselves clean. Reverted from L4 over-reach which broke unit
+    # tests that source acceptance-checks.sh directly (no harness, no
+    # _check_workdirs parent mkdir from entry-point scripts).
+    out_file=$(mktemp /tmp/rk-XXXXX)
     local _rk_own_file="true"
   else
     local _rk_own_file="false"
@@ -148,7 +154,13 @@ _run_and_kill_ro() {
   local cmd="$1" out_file="${2:-}" max_wait="${3:-8}"
 
   if [[ -z "$out_file" ]]; then
-    out_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/rk-XXXXX")
+    # Note: file create (not -d). The file auto-cleans in this helper's exit
+    # path (rm -f at end). Stays at /tmp/ — L4's reparenting target is
+    # per-check WORKDIRS that orphan on trap, not transient I/O buffers that
+    # helpers themselves clean. Reverted from L4 over-reach which broke unit
+    # tests that source acceptance-checks.sh directly (no harness, no
+    # _check_workdirs parent mkdir from entry-point scripts).
+    out_file=$(mktemp /tmp/rk-XXXXX)
     local _rk_own_file="true"
   else
     local _rk_own_file="false"

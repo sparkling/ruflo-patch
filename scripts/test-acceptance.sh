@@ -354,7 +354,7 @@ log "Running harness: memory init --force"
 # completion (open SQLite handles). Run command, append sentinel when done,
 # poll for sentinel or timeout.
 _harness_mem_out=""
-_harness_mem_tmpfile=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/rk-harness-XXXXX")
+_harness_mem_tmpfile=$(mktemp /tmp/rk-harness-XXXXX)
 > "$_harness_mem_tmpfile"
 ( cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init --force >> "$_harness_mem_tmpfile" 2>&1; echo "__RUFLO_DONE__" >> "$_harness_mem_tmpfile" ) &
 _harness_mem_pid=$!

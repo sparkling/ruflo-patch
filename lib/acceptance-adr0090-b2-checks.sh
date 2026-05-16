@@ -53,7 +53,7 @@ _b2_seed_via_cli() {
   local iso="$1"
   local cli; cli=$(_cli_cmd)
   local out_file
-  out_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b2-seed-cli-XXXXX")
+  out_file=$(mktemp /tmp/b2-seed-cli-XXXXX)
   # One CLI store — populates `.swarm/memory.rvf` (config default).
   ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 45 $cli memory store \
       --key 'b2-seed' --value 'seed content for B2 corruption test' \

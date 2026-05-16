@@ -22,7 +22,7 @@ check_adr0094_p6_path_traversal() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-traversal-XXXXX")
+  local work; work=$(mktemp /tmp/p6-traversal-XXXXX)
 
   _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor --config '../../../etc/passwd' 2>&1" "$work" 15
   local exit_code="${_RK_EXIT:-1}"
@@ -58,7 +58,7 @@ check_adr0094_p6_unicode_input() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-unicode-XXXXX")
+  local work; work=$(mktemp /tmp/p6-unicode-XXXXX)
 
   _run_and_kill "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key 'unicode-test-p6' --value 'unicode test value' --namespace p6-validation 2>&1" "$work" 20
   local exit_code="${_RK_EXIT:-1}"
@@ -97,7 +97,7 @@ check_adr0094_p6_empty_input() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-empty-XXXXX")
+  local work; work=$(mktemp /tmp/p6-empty-XXXXX)
 
   _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool memory_list 2>&1" "$work" 15
   local exit_code="${_RK_EXIT:-1}"
@@ -135,7 +135,7 @@ check_adr0094_p6_oversized_input() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-oversized-XXXXX")
+  local work; work=$(mktemp /tmp/p6-oversized-XXXXX)
 
   # Generate a 10KB payload (10240 chars of 'A')
   local big_value; big_value=$(printf 'A%.0s' $(seq 1 10240))

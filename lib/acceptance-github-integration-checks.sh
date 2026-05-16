@@ -65,7 +65,7 @@ _github_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/github-${tool}-XXXXX")
+  local work; work=$(mktemp /tmp/github-${tool}-XXXXX)
 
   # Build the command — include --params only when non-empty.
   # No GITHUB_TOKEN export: these tools are local stubs and do not touch the GH API.

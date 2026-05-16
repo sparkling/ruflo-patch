@@ -30,7 +30,7 @@ _p7_cli_check() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p7-cli-${label}-XXXXX")
+  local work; work=$(mktemp /tmp/p7-cli-${label}-XXXXX)
 
   local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli $subcmd 2>&1"
   _run_and_kill_ro "$cmd" "$work" "$timeout"

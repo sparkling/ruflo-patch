@@ -363,7 +363,7 @@ _p10_init_full_reinvoke_body() {
   # Run init --full (NO --force). Capture stdout+stderr and exit code.
   # Budget: 15s (ADR-0094 P10 per-check headroom ~2.5s shared with other calls;
   # init on an already-init'd dir should return fast either way).
-  local out_log; out_log=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p10-init-XXXXX.log")
+  local out_log; out_log=$(mktemp /tmp/p10-init-XXXXX.log)
   local rc=0
   (
     cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 "$cli" init --full \
