@@ -169,6 +169,10 @@ cleanup() {
   [[ -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]] && rm -rf "$ACCEPT_TEMP"
   [[ -n "${PARALLEL_DIR:-}" && -d "${PARALLEL_DIR:-}" ]] && rm -rf "$PARALLEL_DIR"
   [[ -n "${E2E_DIR:-}" && -d "${E2E_DIR:-}" ]] && rm -rf "$E2E_DIR"
+  # ADR-0182 L6: trap-cover wrapper-solo install dir
+  [[ -n "${WRAPPER_SOLO_TEMP:-}" && -d "${WRAPPER_SOLO_TEMP:-}" ]] && rm -rf "$WRAPPER_SOLO_TEMP"
+  # ADR-0182 L6: trap-cover P5 background init dir
+  [[ -n "${_P5_DIR:-}" && -d "${_P5_DIR:-}" ]] && rm -rf "$_P5_DIR"
 }
 trap cleanup EXIT
 trap 'cleanup; exit 143' INT TERM
