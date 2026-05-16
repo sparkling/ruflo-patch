@@ -250,17 +250,21 @@ check_adr0120_gossip_no_vote_rejection() {
 check_adr0120_gossip_agent_annotation() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
-  local iso; iso=$(_e2e_isolate "adr0120-gossip-agent")
+  # ADR-0182 L11: clone-from-golden. The check asserts that init produces a
+  # correctly-annotated agent file at .claude/agents/consensus/gossip-coordinator.md;
+  # `init --full` itself is incidental setup, not the SUT. The harness already ran
+  # `init --full` to build $E2E_DIR — cloning its post-init state saves one init
+  # invocation per release (~333 file writes). Per `feedback-no-fallbacks.md`,
+  # missing source file fails loud (no silent re-init fallback).
+  local iso; iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/adr0120-gossip-agent-XXXXX")
+  rmdir "$iso"
+  _acceptance_snapshot "$E2E_DIR" "$iso" || \
+    { _CHECK_OUTPUT="ADR-0120-§agent: _acceptance_snapshot from \$E2E_DIR failed"; rm -rf "$iso" 2>/dev/null; return; }
   : > "$iso/.ruflo-project"
-
-  # Init creates .claude/agents/* including the gossip-coordinator file.
-  local cli; cli=$(_cli_cmd)
-  (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 $cli init --full --force >/dev/null 2>&1) || \
-    { _CHECK_OUTPUT="ADR-0120-§agent: init --full failed"; rm -rf "$iso" 2>/dev/null; return; }
 
   local agent_file="$iso/.claude/agents/consensus/gossip-coordinator.md"
   if [[ ! -f "$agent_file" ]]; then
-    _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md missing in init'd project"
+    _CHECK_OUTPUT="ADR-0120-§agent: gossip-coordinator.md missing in golden clone (E2E_DIR=$E2E_DIR — golden init incomplete?)"
     rm -rf "$iso" 2>/dev/null
     return
   fi
@@ -392,16 +396,21 @@ check_adr0121_crdt_malformed_snapshot_throws() {
 check_adr0121_crdt_agent_annotation() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
-  local iso; iso=$(_e2e_isolate "adr0121-crdt-agent")
+  # ADR-0182 L11: clone-from-golden. The check asserts that init produces a
+  # correctly-annotated agent file at .claude/agents/consensus/crdt-synchronizer.md;
+  # `init --full` itself is incidental setup, not the SUT. The harness already ran
+  # `init --full` to build $E2E_DIR — cloning its post-init state saves one init
+  # invocation per release (~333 file writes). Per `feedback-no-fallbacks.md`,
+  # missing source file fails loud (no silent re-init fallback).
+  local iso; iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/adr0121-crdt-agent-XXXXX")
+  rmdir "$iso"
+  _acceptance_snapshot "$E2E_DIR" "$iso" || \
+    { _CHECK_OUTPUT="ADR-0121-§agent: _acceptance_snapshot from \$E2E_DIR failed"; rm -rf "$iso" 2>/dev/null; return; }
   : > "$iso/.ruflo-project"
-
-  local cli; cli=$(_cli_cmd)
-  (cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 $cli init --full --force >/dev/null 2>&1) || \
-    { _CHECK_OUTPUT="ADR-0121-§agent: init --full failed"; rm -rf "$iso" 2>/dev/null; return; }
 
   local agent_file="$iso/.claude/agents/consensus/crdt-synchronizer.md"
   if [[ ! -f "$agent_file" ]]; then
-    _CHECK_OUTPUT="ADR-0121-§agent: crdt-synchronizer.md missing in init'd project"
+    _CHECK_OUTPUT="ADR-0121-§agent: crdt-synchronizer.md missing in golden clone (E2E_DIR=$E2E_DIR — golden init incomplete?)"
     rm -rf "$iso" 2>/dev/null
     return
   fi
