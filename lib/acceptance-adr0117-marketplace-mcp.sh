@@ -37,7 +37,7 @@
 #   - forks/ruflo/v3/@claude-flow/cli/.claude/skills/**/SKILL.md
 #   - $TEMP_DIR/.mcp.json (harness init output)
 #   - /tmp/ruflo-build/.claude-plugin/* (post-codemod state)
-#   - /tmp/ruflo-mcp-tool-resolve-adr0117/ (per-check workspace)
+#   - ${ACCEPT_TEMP}/_check_workdirs/ruflo-mcp-tool-resolve-adr0117/ (per-check workspace, ADR-0182 L4)
 
 __ADR0117_FORK_DIR=""
 _adr0117_resolve_fork() {
@@ -205,7 +205,7 @@ check_adr0117_mcp_tool_resolution() {
   _CHECK_PASSED="false"
   _adr0117_resolve_fork
 
-  local test_dir="/tmp/ruflo-mcp-tool-resolve-adr0117"
+  local test_dir="${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-mcp-tool-resolve-adr0117"
   local log="${test_dir}/.log"
   rm -rf "$test_dir"
   mkdir -p "$test_dir"

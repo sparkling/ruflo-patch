@@ -335,7 +335,7 @@ _b5_check_controller_roundtrip() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-${controller}-work-XXXXX")
   local pg_cluster="$iso/.swarm/memory.pglite"
 
   # ─── Step 2: cold-start init to create schema ─────────────────────
@@ -798,7 +798,7 @@ _b5_probe_causal_edge_persistence() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-${controller}-work-XXXXX")
   local pg_cluster="$iso/.swarm/memory.pglite"
 
   # ─── Step 1: cold-start init (hydrate registry, create .swarm dir) ──
@@ -1010,7 +1010,7 @@ _b5_check_causal_pipeline() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-${controller}-work-XXXXX")
   local sqlite_db="$iso/.swarm/memory.db"
 
   # ─── Step 2: cold-start init to create schema ─────────────────────
@@ -1146,7 +1146,7 @@ _b5_seeded_probe() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d "/tmp/b5-seed-${controller}-work-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-seed-${controller}-work-XXXXX")
   # ADR-0177: pglite substrate retired (RVF-first). The agentdb_* axis
   # persists to .swarm/memory.db (SQLite) — see project-rvf-primary.
   local pg_table="$sqlite_table"
@@ -1510,7 +1510,7 @@ check_adr0090_b5_gnnService() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d "/tmp/b5-gnnService-work-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-gnnService-work-XXXXX")
 
   # Cold-start init to hydrate the controller registry.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
@@ -1603,7 +1603,7 @@ check_adr0090_b5_semanticRouter() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d "/tmp/b5-seed-semanticRouter-work-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-seed-semanticRouter-work-XXXXX")
   local rvf_file="$iso/.swarm/memory.rvf"
 
   # 1. Cold-start health hydrates the ControllerRegistry so semanticRouter
@@ -1797,7 +1797,7 @@ check_adr0090_b5_sonaTrajectory() {
     return
   fi
   local cli; cli=$(_cli_cmd "$iso")
-  local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-${controller}-work-XXXXX")
 
   # Step 0: cold-start to hydrate the controller registry (deferred
   # controllers include sonaTrajectory per ADR-0048 level 5 — health

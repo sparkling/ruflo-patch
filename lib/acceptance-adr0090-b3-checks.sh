@@ -126,7 +126,7 @@ _b3_check_worker_output_json() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d /tmp/b3-${trigger}-work-XXXXX)
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b3-${trigger}-work-XXXXX")
   local target_file="$iso/$rel_path"
 
   # ─── Step 2: pre-delete the target file ────────────────────────────

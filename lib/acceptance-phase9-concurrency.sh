@@ -138,7 +138,7 @@ _p9_claims_single_winner_body() {
   fi
 
   local issue_id="p9-claims-$$-$(date +%s)"
-  local log_dir; log_dir=$(mktemp -d /tmp/p9-claims-XXXXX)
+  local log_dir; log_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p9-claims-XXXXX")
   local N=6
 
   # Launch N parallel claims_claim — true concurrency via background PIDs.
@@ -232,7 +232,7 @@ _p9_session_no_interleave_body() {
   local sess="p9-sess-$$-$(date +%s)"
   local val_a="p9sessA$$"
   local val_b="p9sessB$$"
-  local log_dir; log_dir=$(mktemp -d /tmp/p9-session-XXXXX)
+  local log_dir; log_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p9-session-XXXXX")
 
   # Two writers, SAME name, DISTINCT values. Use the `value` field so
   # a post-save session_info can disambiguate which writer landed last.
@@ -348,7 +348,7 @@ _p9_workflow_concurrent_start_body() {
   fi
 
   local name="p9-wf-$$-$(date +%s)"
-  local log_dir; log_dir=$(mktemp -d /tmp/p9-workflow-XXXXX)
+  local log_dir; log_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p9-workflow-XXXXX")
   local N=4
 
   local pids=() i

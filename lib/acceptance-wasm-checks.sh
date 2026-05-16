@@ -63,7 +63,7 @@ _wasm_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/wasm-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/wasm-${tool}-XXXXX")
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -126,7 +126,7 @@ $(echo "$body" | head -10)"
 # Callers use: `result=$(_wasm_bootstrap_agent); _wasm_apply_bootstrap_result "$result" "$label"`.
 _wasm_bootstrap_agent() {
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/wasm-bootstrap-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/wasm-bootstrap-XXXXX")
   local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool wasm_agent_create --params '{\"instructions\":\"W2-I1 acceptance probe.\"}'"
   _run_and_kill_ro "$cmd" "$work" 20
   local body; body=$(cat "$work" 2>/dev/null || echo "")
@@ -179,7 +179,7 @@ _wasm_cleanup_agent() {
   local id="$1"
   [[ -z "$id" ]] && return 0
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/wasm-cleanup-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/wasm-cleanup-XXXXX")
   local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool wasm_agent_terminate --params '{\"agentId\":\"$id\"}'"
   _run_and_kill_ro "$cmd" "$work" 10
   rm -f "$work" 2>/dev/null
@@ -267,7 +267,7 @@ _wasm_invoke_agent_op() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/wasm-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/wasm-${tool}-XXXXX")
 
   local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool $tool --params '$params'"
   _run_and_kill_ro "$cmd" "$work" "$timeout"

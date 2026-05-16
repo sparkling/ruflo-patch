@@ -230,6 +230,9 @@ export AGENTDB_MODEL_PATH="${HOME}/.cache/agentdb-models"
 # (all worse). See ADR-0181 handover notes if reintroducing the cache.
 _p=$(_ns)
 ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
+# ADR-0182 L4: parent dir for reparented per-check workdirs (trap-covered
+# via the rm -rf "$ACCEPT_TEMP" in cleanup()).
+mkdir -p "${ACCEPT_TEMP}/_check_workdirs"
 _disable_spotlight_indexing
 (cd "$ACCEPT_TEMP" \
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
@@ -351,7 +354,7 @@ log "Running harness: memory init --force"
 # completion (open SQLite handles). Run command, append sentinel when done,
 # poll for sentinel or timeout.
 _harness_mem_out=""
-_harness_mem_tmpfile=$(mktemp /tmp/rk-harness-XXXXX)
+_harness_mem_tmpfile=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/rk-harness-XXXXX")
 > "$_harness_mem_tmpfile"
 ( cd "$ACCEPT_TEMP" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" memory init --force >> "$_harness_mem_tmpfile" 2>&1; echo "__RUFLO_DONE__" >> "$_harness_mem_tmpfile" ) &
 _harness_mem_pid=$!

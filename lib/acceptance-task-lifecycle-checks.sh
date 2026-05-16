@@ -26,7 +26,7 @@ _task_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/task-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/task-${tool}-XXXXX")
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -80,7 +80,7 @@ _task_create_and_capture() {
   # _task_create_capture_propagate falsely trip on the prior failure file.
   rm -f "/tmp/.task-helper-failure-${$}-${label:-noop}" 2>/dev/null
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/task-mk-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/task-mk-XXXXX")
   local params='{"type":"test","description":"adr0094 '"$label"' probe"}'
   local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool task_create --params '$params'"
 
@@ -143,7 +143,7 @@ check_adr0094_p3_task_lifecycle() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/task-lifecycle-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/task-lifecycle-XXXXX")
   local _lc_body=""
 
   # _lc_exec: run tool, capture body, match pattern. Returns 1 on failure.

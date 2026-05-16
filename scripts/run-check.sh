@@ -32,6 +32,8 @@ if [[ -z "$ACCEPT_TEMP" ]]; then
 fi
 
 TEMP_DIR="$ACCEPT_TEMP"
+# ADR-0182 L4: parent dir for reparented per-check workdirs.
+mkdir -p "${ACCEPT_TEMP}/_check_workdirs"
 export ACCEPT_TEMP TEMP_DIR
 PKG="@sparkleideas/cli"
 CLI_BIN=""

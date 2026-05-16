@@ -116,7 +116,7 @@ check_adr0100_scenario_a_root() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   _adr0100_resolve_paths
 
-  local s; s=$(mktemp -d /tmp/ruflo-adr0100-A-XXXX)
+  local s; s=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0100-A-XXXX")
   local log="$s/.log"; : > "$log"
 
   _adr0100_init "$s"
@@ -158,7 +158,7 @@ check_adr0100_scenario_b_one_deep() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   _adr0100_resolve_paths
 
-  local s; s=$(mktemp -d /tmp/ruflo-adr0100-B-XXXX)
+  local s; s=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0100-B-XXXX")
   local log="$s/.log"; : > "$log"
 
   _adr0100_init "$s"
@@ -191,7 +191,7 @@ check_adr0100_scenario_c_five_deep() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   _adr0100_resolve_paths
 
-  local s; s=$(mktemp -d /tmp/ruflo-adr0100-C-XXXX)
+  local s; s=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0100-C-XXXX")
   local log="$s/.log"; : > "$log"
 
   _adr0100_init "$s"
@@ -224,7 +224,7 @@ check_adr0100_scenario_d_no_markers() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   _adr0100_resolve_paths
 
-  local s; s=$(mktemp -d /tmp/ruflo-adr0100-D-XXXX)
+  local s; s=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0100-D-XXXX")
   local log="$s/.log"; : > "$log"
 
   # Workdir is a no-marker dir. We need findProjectRoot to:
@@ -317,7 +317,7 @@ check_adr0100_scenario_e_sentinel_priority() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   _adr0100_resolve_paths
 
-  local s; s=$(mktemp -d /tmp/ruflo-adr0100-E-XXXX)
+  local s; s=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0100-E-XXXX")
   local log="$s/.log"; : > "$log"
 
   # Outer: a real ruflo init.
@@ -385,7 +385,7 @@ check_adr0100_scenario_f_depth_cap() {
   _CHECK_PASSED="false"; _CHECK_OUTPUT=""
   _adr0100_resolve_paths
 
-  local s; s=$(mktemp -d /tmp/ruflo-adr0100-F-XXXX)
+  local s; s=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0100-F-XXXX")
   local log="$s/.log"; : > "$log"
 
   # Build a 40-deep tree under s (no markers anywhere).
@@ -478,7 +478,7 @@ check_adr0100_scenario_g_grep_gate() {
     return
   fi
 
-  local s; s=$(mktemp -d /tmp/ruflo-adr0100-G-XXXX)
+  local s; s=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0100-G-XXXX")
   local log="$s/.log"; : > "$log"
 
   local exit_code=0

@@ -23,7 +23,7 @@ check_adr0143_init_mcp_config() {
   # For the wrapper BINARY, symlink node_modules from shared wrapper-solo
   # install built at harness boot.
   local init_tmp
-  init_tmp=$(mktemp -d /tmp/ruflo-adr0143-init-mcp-XXXXX)
+  init_tmp=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0143-init-mcp-XXXXX")
   # shellcheck disable=SC2064
   trap "rm -rf '$init_tmp'" RETURN
 

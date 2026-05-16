@@ -32,7 +32,7 @@ check_adr0147_r6_causal_query() {
   # exists" error and an empty log_file). Rename trick: mktemp with X's at
   # end, then add the .log suffix.
   local log_file _tmp
-  _tmp=$(mktemp /tmp/adr0147-r6-acceptance-XXXXXX)
+  _tmp=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/adr0147-r6-acceptance-XXXXXX")
   log_file="${_tmp}.log"
   mv "$_tmp" "$log_file" 2>/dev/null || log_file="$_tmp"
 

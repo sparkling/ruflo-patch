@@ -155,7 +155,7 @@ check_adr0177_default_config_keys() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local dir; dir=$(mktemp -d /tmp/ruflo-adr0177-default-XXXXX)
+  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0177-default-XXXXX")
   # shellcheck disable=SC2064
   trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 
@@ -234,7 +234,7 @@ check_adr0177_default_roundtrip() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local dir; dir=$(mktemp -d /tmp/ruflo-adr0177-rt-XXXXX)
+  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0177-rt-XXXXX")
   # shellcheck disable=SC2064
   trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 
@@ -290,7 +290,7 @@ check_adr0177_flag_minilm_384() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local dir; dir=$(mktemp -d /tmp/ruflo-adr0177-minilm-XXXXX)
+  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0177-minilm-XXXXX")
   # shellcheck disable=SC2064
   trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 

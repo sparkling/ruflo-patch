@@ -55,7 +55,7 @@ check_adr0104_mcp_direct_path() {
     return
   fi
 
-  local iso; iso=$(mktemp -d /tmp/ruflo-adr0155-mcp-XXXXX)
+  local iso; iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0155-mcp-XXXXX")
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules" ]]; then
     ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
   fi

@@ -130,7 +130,7 @@ check_t3_2_rvf_concurrent_writes() {
   local cli; cli=$(_cli_cmd)
   local iso; iso=$(_e2e_isolate "t3-rvf-concurrent")
   local ns="test-rvf-concurrent-$$"
-  local log_dir; log_dir=$(mktemp -d /tmp/t3-2-rvf-XXXXX)
+  local log_dir; log_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/t3-2-rvf-XXXXX")
   local N=6
 
   # The RVF path used by `init --full` projects. Both paths may exist;

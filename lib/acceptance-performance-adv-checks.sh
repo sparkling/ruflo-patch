@@ -39,7 +39,7 @@ _perf_adv_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/perf-adv-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/perf-adv-${tool}-XXXXX")
 
   # Build the command — include --params only when non-empty
   local cmd

@@ -22,7 +22,7 @@ _browser_playwright_available() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/browser-probe-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/browser-probe-XXXXX")
 
   _run_and_kill_ro \
     "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool browser_session-list" \
@@ -72,7 +72,7 @@ _browser_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/browser-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/browser-${tool}-XXXXX")
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -154,7 +154,7 @@ check_adr0094_p4_browser_navigation() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local resp_file; resp_file=$(mktemp /tmp/browser-nav-resp-XXXXX)
+  local resp_file; resp_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/browser-nav-resp-XXXXX")
 
   # Refactored 2026-05-07: was 9 sequential `cli mcp exec` calls (each
   # spawning a fresh Playwright = ~13s × 9 = 115s wall time, the long
@@ -238,7 +238,7 @@ check_adr0094_p4_browser_interaction() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local resp_file; resp_file=$(mktemp /tmp/browser-interact-resp-XXXXX)
+  local resp_file; resp_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/browser-interact-resp-XXXXX")
 
   # Refactored 2026-05-07: was 11 sequential `cli mcp exec` calls (each
   # spawning Playwright fresh = ~3s × 11 = ~35s wall time). Now batches

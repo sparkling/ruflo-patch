@@ -251,7 +251,7 @@ check_adr0073_wal_roundtrip() {
   _CHECK_OUTPUT=""
 
   local script
-  script=$(mktemp /tmp/rvf-wal-rt-XXXXX.mjs)
+  script=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/rvf-wal-rt-XXXXX.mjs")
   cat > "$script" << 'ENDSCRIPT'
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';

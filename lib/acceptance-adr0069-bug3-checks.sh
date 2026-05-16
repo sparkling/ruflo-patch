@@ -84,7 +84,7 @@ check_adr0069_bug3_store_persist_outside_init() {
   #   (a) no ancestor .claude-flow/ → outside-project branch taken
   #   (b) per-user default routes to $scratch_home/.claude-flow/data/memory.rvf
   local store_out
-  store_out=$(mktemp /tmp/adr0069bug3-store-XXXXX)
+  store_out=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/adr0069bug3-store-XXXXX")
   _run_and_kill "cd '$scratch_cwd' && HOME='$scratch_home' NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key '$key' --value '$val' --namespace '$ns'" "$store_out" 60
   local store_exit="$_RK_EXIT"
   local store_text; store_text=$(cat "$store_out" 2>/dev/null)
@@ -120,7 +120,7 @@ check_adr0069_bug3_store_persist_outside_init() {
   # If the bug is present, this would get an empty in-memory backend and
   # return "not found" even though store_text said success.
   local retrieve_out
-  retrieve_out=$(mktemp /tmp/adr0069bug3-retr-XXXXX)
+  retrieve_out=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/adr0069bug3-retr-XXXXX")
   _run_and_kill "cd '$scratch_cwd' && HOME='$scratch_home' NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory retrieve --key '$key' --namespace '$ns'" "$retrieve_out" 60
   local retrieve_text; retrieve_text=$(cat "$retrieve_out" 2>/dev/null)
   rm -f "$retrieve_out"

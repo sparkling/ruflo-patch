@@ -43,7 +43,7 @@ _hivemind_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/hivemind-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/hivemind-${tool}-XXXXX")
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -180,7 +180,7 @@ check_adr0094_p3_hivemind_lifecycle() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d /tmp/hivemind-lifecycle-XXXXX)
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/hivemind-lifecycle-XXXXX")
   local step_pass step_out body
   local passed_steps=0
   local total_steps=8

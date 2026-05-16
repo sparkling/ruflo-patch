@@ -32,7 +32,7 @@ check_adr0142_bin_path() {
     g3_tmp="$WRAPPER_SOLO_TEMP"
     # NOTE: don't trap-rm — shared across checks
   else
-    g3_tmp=$(mktemp -d /tmp/ruflo-g3-bin-path-XXXXX)
+    g3_tmp=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-g3-bin-path-XXXXX")
     # shellcheck disable=SC2064
     trap "rm -rf '$g3_tmp'" RETURN
 
@@ -125,7 +125,7 @@ check_adr0142_mcp_jsonrpc() {
   if [[ -n "${WRAPPER_SOLO_TEMP:-}" && -d "${WRAPPER_SOLO_TEMP}/node_modules/@sparkleideas/ruflo" ]]; then
     mcp_tmp="$WRAPPER_SOLO_TEMP"
   else
-    mcp_tmp=$(mktemp -d /tmp/ruflo-g3-mcp-jsonrpc-XXXXX)
+    mcp_tmp=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-g3-mcp-jsonrpc-XXXXX")
     # shellcheck disable=SC2064
     trap "rm -rf '$mcp_tmp'" RETURN
 

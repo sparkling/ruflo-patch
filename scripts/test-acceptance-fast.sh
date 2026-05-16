@@ -37,6 +37,10 @@ if [[ -z "$ACCEPT_TEMP" ]]; then
 fi
 
 TEMP_DIR="$ACCEPT_TEMP"
+# ADR-0182 L4: parent dir for reparented per-check workdirs. Created
+# unconditionally — both paths above (fresh install, reused harness)
+# converge here.
+mkdir -p "${ACCEPT_TEMP}/_check_workdirs"
 PKG="@sparkleideas/cli"
 CLI_BIN=""
 for _c in ruflo claude-flow cli; do

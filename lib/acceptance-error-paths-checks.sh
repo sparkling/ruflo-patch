@@ -23,7 +23,7 @@ check_adr0094_p6_invalid_config() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/p6-invalid-cfg-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-invalid-cfg-XXXXX")
 
   # Inject malformed JSON
   mkdir -p "$iso/.claude-flow" 2>/dev/null
@@ -71,7 +71,7 @@ check_adr0094_p6_missing_config() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/p6-missing-cfg-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-missing-cfg-XXXXX")
 
   # Remove config
   rm -f "$iso/.claude-flow/config.json" 2>/dev/null
@@ -116,7 +116,7 @@ check_adr0094_p6_corrupted_state() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/p6-corrupt-state-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-corrupt-state-XXXXX")
 
   # Inject garbage
   mkdir -p "$iso/.swarm" 2>/dev/null
@@ -205,7 +205,7 @@ check_adr0094_p6_permission_denied() {
   chmod 000 "$iso/.swarm"
 
   # memory store writes to .swarm/memory.rvf → chmod 000 must trip EACCES.
-  local work1; work1=$(mktemp /tmp/p6-perms-store-XXXXX)
+  local work1; work1=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-perms-store-XXXXX")
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli memory store --key p6-perm-test --value 'should fail on chmod 000 swarm' --namespace p6-perms 2>&1" "$work1" 20
   local exit1="${_RK_EXIT:-1}"
   local body1; body1=$(cat "$work1" 2>/dev/null || echo "")
@@ -246,7 +246,7 @@ check_adr0094_p6_permission_denied() {
   # a graceful-degrade warning ("No config file (using defaults)") is OK.
   if [[ -d "$iso/.claude-flow" ]]; then
     chmod 000 "$iso/.claude-flow"
-    local work2; work2=$(mktemp /tmp/p6-perms-doctor-XXXXX)
+    local work2; work2=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p6-perms-doctor-XXXXX")
     _run_and_kill_ro "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli doctor 2>&1" "$work2" 20
     local exit2="${_RK_EXIT:-1}"
     local body2; body2=$(cat "$work2" 2>/dev/null || echo "")

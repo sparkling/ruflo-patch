@@ -128,8 +128,8 @@ check_adr0178_hierarchical_query_e2e() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local dir; dir=$(mktemp -d /tmp/ruflo-adr0178-hq-XXXXX)
-  local work; work=$(mktemp -d /tmp/ruflo-adr0178-work-XXXXX)
+  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0178-hq-XXXXX")
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0178-work-XXXXX")
   # shellcheck disable=SC2064
   trap "rm -rf '$dir' '$work' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 

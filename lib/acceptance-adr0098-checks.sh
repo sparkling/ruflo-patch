@@ -28,7 +28,7 @@ check_adr0098_a_generator_no_reflex_swarm() {
     _CHECK_OUTPUT="ADR-0098-A: CLI_BIN not set (caller must export it)"
     return
   fi
-  local iso; iso=$(mktemp -d /tmp/ruflo-adr0098a-XXXXX)
+  local iso; iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0098a-XXXXX")
   # Symlink node_modules so the CLI can resolve its own deps without reinstalling.
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules" ]]; then
     ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
@@ -102,7 +102,7 @@ check_adr0098_b_swarm_init_dedupe() {
     _CHECK_OUTPUT="ADR-0098-B: _cli_cmd returned empty"
     return
   fi
-  local iso; iso=$(mktemp -d /tmp/ruflo-adr0098b-XXXXX)
+  local iso; iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0098b-XXXXX")
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules" ]]; then
     ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
   fi
@@ -162,7 +162,7 @@ check_adr0098_c_swarm_init_new_flag() {
     _CHECK_OUTPUT="ADR-0098-C: _cli_cmd returned empty"
     return
   fi
-  local iso; iso=$(mktemp -d /tmp/ruflo-adr0098c-XXXXX)
+  local iso; iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0098c-XXXXX")
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules" ]]; then
     ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
   fi

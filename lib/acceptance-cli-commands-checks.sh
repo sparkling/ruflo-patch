@@ -30,7 +30,7 @@ _p7_cli_check() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/p7-cli-${label}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/p7-cli-${label}-XXXXX")
 
   local cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli $subcmd 2>&1"
   _run_and_kill_ro "$cmd" "$work" "$timeout"
@@ -218,7 +218,7 @@ check_adr0094_p7_cli_doctor_npm_no_false_fail() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local tmpdir; tmpdir=$(mktemp -d /tmp/w4-a3-doctor-XXXXX)
+  local tmpdir; tmpdir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/w4-a3-doctor-XXXXX")
 
   # Launch 4 concurrent doctor invocations (mirrors the parallel
   # acceptance pattern that originally tripped the flake).

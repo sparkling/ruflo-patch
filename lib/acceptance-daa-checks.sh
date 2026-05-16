@@ -39,7 +39,7 @@ _daa_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/daa-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/daa-${tool}-XXXXX")
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -220,7 +220,7 @@ check_adr0094_p3_daa_workflow_create() { # adr0097-l2-delegator: flag set inside
 check_adr0094_p3_daa_workflow_execute() {
   local wf_id="daa-wf-exec-check-$$"
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/daa-wf-exec-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/daa-wf-exec-XXXXX")
 
   # Step 1: create the workflow with a deterministic id
   local create_cmd="cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool daa_workflow_create --params '{\"id\":\"$wf_id\",\"name\":\"daa-wf-exec\",\"steps\":[\"s1\"]}'"

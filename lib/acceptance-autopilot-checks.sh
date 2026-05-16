@@ -39,7 +39,7 @@ _autopilot_invoke_tool() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/autopilot-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/autopilot-${tool}-XXXXX")
 
   # Build the command — include --params only when non-empty
   local cmd
@@ -89,7 +89,7 @@ check_adr0094_p2_autopilot_lifecycle() {
   _CHECK_OUTPUT=""
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d /tmp/autopilot-lifecycle-XXXXX)
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/autopilot-lifecycle-XXXXX")
 
   # ─── Step 1: enable ──────────────────────────────────────────────
   _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool autopilot_enable" "$work/enable.out" 15

@@ -83,7 +83,7 @@ check_attention_wasm_has_binary() {
   fi
 
   local tmp_tar
-  tmp_tar=$(mktemp /tmp/attn-wasm-XXXXX.tgz)
+  tmp_tar=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/attn-wasm-XXXXX.tgz")
   curl -sf "$tarball_url" -o "$tmp_tar" 2>/dev/null || true
 
   if [[ ! -s "$tmp_tar" ]]; then
@@ -124,7 +124,7 @@ check_attention_unified_wasm_has_binary() {
   fi
 
   local tmp_tar
-  tmp_tar=$(mktemp /tmp/attn-unified-wasm-XXXXX.tgz)
+  tmp_tar=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/attn-unified-wasm-XXXXX.tgz")
   curl -sf "$tarball_url" -o "$tmp_tar" 2>/dev/null || true
 
   if [[ ! -s "$tmp_tar" ]]; then
@@ -166,7 +166,7 @@ check_attention_wasm_loadable() {
 
   # Install into a temporary directory and try to load the module
   local tmp_dir
-  tmp_dir=$(mktemp -d /tmp/attn-wasm-load-XXXXX)
+  tmp_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/attn-wasm-load-XXXXX")
 
   (cd "$tmp_dir" \
     && echo '{"name":"attn-wasm-test","version":"1.0.0","private":true,"type":"module"}' > package.json \
@@ -237,7 +237,7 @@ check_attention_mechanisms_count() {
 
   # Install into a temporary directory and probe the module
   local tmp_dir
-  tmp_dir=$(mktemp -d /tmp/attn-unified-count-XXXXX)
+  tmp_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/attn-unified-count-XXXXX")
 
   (cd "$tmp_dir" \
     && echo '{"name":"attn-unified-test","version":"1.0.0","private":true,"type":"module"}' > package.json \
@@ -416,7 +416,7 @@ check_adr0069_f3_onnx_tier_active() {
       _CHECK_OUTPUT="ADR-0069 F3 §3: $af_pkg not installed and tarball URL unavailable — cannot inspect shipped dist"
       return
     fi
-    tmp_dir=$(mktemp -d /tmp/onnx-tier-XXXXX)
+    tmp_dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/onnx-tier-XXXXX")
     curl -sf "$af_tarball" -o "$tmp_dir/af.tgz" 2>/dev/null || true
     if [[ ! -s "$tmp_dir/af.tgz" ]]; then
       rm -rf "$tmp_dir"

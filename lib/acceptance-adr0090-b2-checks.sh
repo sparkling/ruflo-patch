@@ -53,7 +53,7 @@ _b2_seed_via_cli() {
   local iso="$1"
   local cli; cli=$(_cli_cmd)
   local out_file
-  out_file=$(mktemp /tmp/b2-seed-cli-XXXXX)
+  out_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b2-seed-cli-XXXXX")
   # One CLI store — populates `.swarm/memory.rvf` (config default).
   ( cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 45 $cli memory store \
       --key 'b2-seed' --value 'seed content for B2 corruption test' \
@@ -130,7 +130,7 @@ check_adr0090_b2_rvf_truncated() {
   # shellcheck disable=SC2064
   trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d /tmp/b2-trunc-work-XXXXX)
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b2-trunc-work-XXXXX")
 
   # ─── Step 1: let the CLI create natural initial state ──────────────
   local rvf_path
@@ -185,7 +185,7 @@ check_adr0090_b2_rvf_bad_magic() {
   # shellcheck disable=SC2064
   trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d /tmp/b2-magic-work-XXXXX)
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b2-magic-work-XXXXX")
 
   local rvf_path
   rvf_path=$(_b2_seed_via_cli "$iso")
@@ -241,7 +241,7 @@ check_adr0090_b2_rvf_partial_wal() {
   # shellcheck disable=SC2064
   trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d /tmp/b2-wal-work-XXXXX)
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b2-wal-work-XXXXX")
 
   # ─── Seed WAL-only state ────────────────────────────────────────────
   # This test needs entries that exist ONLY in the WAL (not compacted

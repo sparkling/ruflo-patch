@@ -66,7 +66,7 @@ check_adr0090_b1_dimension_mismatch_fatal() {
   trap "rm -rf '$iso' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp -d /tmp/b1-work-XXXXX)
+  local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b1-work-XXXXX")
 
   # ─── Step 1: build a 384-dim RVF file via real RvfBackend ──────────
   # We use the published @sparkleideas/memory package so the header

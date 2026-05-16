@@ -438,7 +438,7 @@ _expect_mcp_body() {
   fi
 
   local cli; cli=$(_cli_cmd)
-  local work; work=$(mktemp /tmp/mcp-${tool}-XXXXX)
+  local work; work=$(mktemp "${ACCEPT_TEMP:-/tmp}/_check_workdirs/mcp-${tool}-XXXXX")
 
   local cmd
   if [[ -n "$params" && "$params" != "{}" ]]; then
@@ -551,7 +551,7 @@ _with_iso_cleanup() {
     iso=$(_e2e_isolate "$check_id")
   fi
   if [[ -z "$iso" || ! -d "$iso" ]]; then
-    iso=$(mktemp -d "/tmp/iso-${check_id}-XXXXX" 2>/dev/null || true)
+    iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/iso-${check_id}-XXXXX" 2>/dev/null || true)
   fi
   if [[ -z "$iso" || ! -d "$iso" ]]; then
     _CHECK_OUTPUT="${check_id}: failed to create isolated dir"
