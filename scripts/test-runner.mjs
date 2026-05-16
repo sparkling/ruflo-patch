@@ -60,6 +60,42 @@ for (const dir of scanDirs) {
   } catch { /* skip unreadable dirs */ }
 }
 
+// Heavy-test opt-out. Mirrors ACCEPTANCE_HEAVY for unit tests.
+// These test files each take 15-50s alone (SLO probes, cleanup-trap timing,
+// fuzz, flakiness characterization, acceptance-framework meta-tests that
+// spawn real cli subprocesses). Together they dominate the ~66-83s test-ci
+// wall time. Default-skip them; opt back in with TEST_HEAVY=1.
+//
+// Methodology: grep slowest individual tests from release logs:
+//   grep '✔.*\([0-9]\{5,\}\.[0-9]\+ms\)' logs/<latest>.log | sort -k3 -rn
+// Anything >10s sustained across runs is a candidate.
+const HEAVY_TEST_FILES = new Set([
+  'adr0094-p10-idempotency.test.mjs',       // 15s — idempotency window probe
+  'adr0094-p11-fuzzing.test.mjs',           // 23s — fuzz rejection verdict
+  'adr0094-p12-error-quality.test.mjs',     // 28s — named-error verdict
+  'adr0094-p13-migration.test.mjs',         // 21s — migration verdict
+  'adr0094-p13-1-rvf-migration.test.mjs',   // ~10s — RVF migration verdict
+  'adr0094-p13-2-agentdb-migration.test.mjs', // ~10s — AgentDB migration verdict
+  'adr0094-p14-slo.test.mjs',               // 50s — self-timing SLO + throttle (also 30s)
+  'adr0094-p15-flakiness.test.mjs',         // 18s — flakiness characterization
+  'adr0094-p16-pii-inverse.test.mjs',       // 16s — PII inverse regression
+  'acceptance-cli-commands-checks.test.mjs',   // 33s — spawns real cli subprocs
+  'acceptance-hooks-lifecycle-checks.test.mjs',// 31s — spawns real cli subprocs
+  'acceptance-autopilot-checks.test.mjs',      // 25s — spawns real cli subprocs
+  'acceptance-session-lifecycle-checks.test.mjs', // ~12s — spawns real cli subprocs
+  'acceptance-workflow-checks.test.mjs',       // ~7s — spawns real cli subprocs
+  'skip-reverify.test.mjs',                 // 31s — createSidecar cleanup-trap timing
+]);
+const testHeavy = process.env.TEST_HEAVY === '1';
+if (!testHeavy) {
+  const before = allFiles.length;
+  allFiles = allFiles.filter(p => !HEAVY_TEST_FILES.has(basename(p)));
+  const skipped = before - allFiles.length;
+  if (skipped > 0) {
+    console.log(`[test-runner] HEAVY_SKIP: skipped ${skipped} heavy test file(s) — opt in with TEST_HEAVY=1`);
+  }
+}
+
 if (allFiles.length === 0) {
   console.log('No test files found.');
   process.exit(0);

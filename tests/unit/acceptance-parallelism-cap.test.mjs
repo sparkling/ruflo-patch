@@ -25,8 +25,8 @@ test('auto-detect block sets a safe RUFLO_MAX_PARALLEL default', () => {
     'must probe macOS ncpu via sysctl');
   assert.ok(/\/proc\/cpuinfo/.test(src),
     'must fall back to Linux /proc/cpuinfo');
-  assert.ok(/RUFLO_MAX_PARALLEL=\$\(\( \(_ncpu \+ 2\) \/ 3 \)\)/.test(src),
-    'default formula must be (ncpu+2)/3 (current; was ncpu/2 — see harness comment for history)');
+  assert.ok(/RUFLO_MAX_PARALLEL=\$\(\( _ncpu \/ 2 \)\)/.test(src),
+    'default formula must be ncpu/2 (restored after load=27 was diagnosed as macOS daemon churn, not over-subscription)');
   assert.ok(/RUFLO_MAX_PARALLEL < 4/.test(src),
     'must enforce a minimum of 4 to keep at least some parallelism');
   assert.ok(/export RUFLO_MAX_PARALLEL/.test(src),

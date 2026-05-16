@@ -23,12 +23,15 @@
 #     wrapper-proxy + ADR-0129 sibling regressions (2026-05-04 → 2026-05-07).
 #     Both regression conditions resolved. April baseline ran 561 checks
 #     in ~70s wall (122x effective parallelism).
-#   - ncpu/3 (= 6 on M5 Max): current. Check count grew 561 → 674 (+20%)
-#     since the cap=9 era. Release run on 2026-05-16 saw load average 27
-#     on an 18-core box with mds_stores (Spotlight indexer) at 88% CPU.
-#     Per-check fan-out is daemon + CLI + assertion shell ≈ 3 children,
-#     so 9 parallel checks × 3 = 27 effective procs (≥ ncpu = oversubscribed).
-#     ncpu/3 targets effective concurrent procs ≈ ncpu.
+#   - ncpu/3 (= 6 on M5 Max): briefly tried 2026-05-16 after load=27 spike.
+#     Diagnosis turned out to be (a) mds_stores at 88% CPU (now fixed by
+#     `.metadata_never_index` marker below) and (b) fseventsd churn from
+#     137 leftover /tmp/ruflo-wrapper-solo-* dirs (cleaned up). With those
+#     resolved, the underlying load=27 was over-attributed to fan-out. The
+#     cap=6 cost was +24s on all-checks vs cap=9.
+#   - ncpu/2 (= 9 on M5 Max): RESTORED. Spotlight + churn fixes mean cap=9
+#     is safe again. If load spikes return, first investigate macOS daemon
+#     state before dropping the cap.
 #
 # Override with RUFLO_MAX_PARALLEL=N (0 disables the cap).
 if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
@@ -39,7 +42,7 @@ if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
   else
     _ncpu=8
   fi
-  RUFLO_MAX_PARALLEL=$(( (_ncpu + 2) / 3 ))
+  RUFLO_MAX_PARALLEL=$(( _ncpu / 2 ))
   (( RUFLO_MAX_PARALLEL < 4 )) && RUFLO_MAX_PARALLEL=4
   unset _ncpu
   export RUFLO_MAX_PARALLEL
