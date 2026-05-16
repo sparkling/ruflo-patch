@@ -165,17 +165,27 @@ describe('ADR-0156 — memory init action wires --force + honest dbPath', () => 
 describe('ADR-0156 — behavioural smoke (gated on codemod build presence)', () => {
   // These behavioural tests run against the codemod'd build at /tmp/ruflo-build —
   // the same artifact the pipeline publishes. This is more meaningful than the
-  // fork's own dist (which is never updated by `npm run build`). The original
-  // fork-dist freshness gate caused spurious skips whenever fork source was
-  // edited without rebuilding locally; the codemod dist is always rebuilt by
-  // `npm run release` before publish.
+  // fork's own dist (which is never updated by `npm run build`).
   //
-  // If /tmp/ruflo-build is absent (clean CI before first build), the test fails
-  // loudly with a clear message — per feedback-no-fallbacks, skips are not
-  // acceptable for working features.
+  // test-ci runs IN PARALLEL with build (scripts/ruflo-publish.sh:428-436),
+  // so when test-ci finishes faster than build (true since TEST_HEAVY=0
+  // default in scripts/test-runner.mjs dropped test-ci from 66s → 31s),
+  // these tests can fire before build emits the dist file. We poll-wait
+  // up to 90s for the dist to appear, then fail loudly if still missing
+  // (per feedback-no-fallbacks — silent skip is not acceptable for working
+  // features). 90s budget exceeds the observed ~20s build time with comfortable
+  // margin and is well under the 120s per-test timeout.
   const distRouterPath = '/tmp/ruflo-build/v3/@claude-flow/cli/dist/src/memory/memory-router.js';
+  async function awaitDist() {
+    const deadline = Date.now() + 90_000;
+    while (Date.now() < deadline) {
+      if (existsSync(distRouterPath)) return;
+      await new Promise(r => setTimeout(r, 250));
+    }
+  }
 
   it('imported router exposes getActiveBackendPath as a callable', async () => {
+    await awaitDist();
     assert.ok(existsSync(distRouterPath),
       `codemod dist missing at ${distRouterPath} — run npm run release to build`);
     const mod = await import(distRouterPath);
@@ -190,6 +200,7 @@ describe('ADR-0156 — behavioural smoke (gated on codemod build presence)', () 
   });
 
   it('getActiveBackendPath returns null before init', async () => {
+    await awaitDist();
     assert.ok(existsSync(distRouterPath),
       `codemod dist missing at ${distRouterPath} — run npm run release to build`);
     const mod = await import(distRouterPath);
