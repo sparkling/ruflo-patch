@@ -464,6 +464,20 @@ VMANIFEST
 
   print_phase_summary
   log "Publish stage complete: ${BUILD_VERSION}"
+
+  # ADR-0182 L8: opportunistic Verdaccio storage GC.
+  # Runs ONLY after a successful publish (we're past run_publish_verdaccio +
+  # acceptance + save_state + push_fork_version_bumps at this point). GC
+  # failure does NOT fail the release — log a warning and defer cleanup.
+  if command -v node >/dev/null 2>&1; then
+    local _gc_log="${PROJECT_DIR}/logs/verdaccio-gc-$(date +%Y%m%d-%H%M%S).log"
+    mkdir -p "${PROJECT_DIR}/logs"
+    if node "${SCRIPT_DIR}/verdaccio-gc.mjs" >>"${_gc_log}" 2>&1; then
+      log "L8 verdaccio-gc complete (log: ${_gc_log})"
+    else
+      log "[L8][warn] verdaccio-gc.mjs failed — release still successful, GC deferred (log: ${_gc_log})"
+    fi
+  fi
 }
 
 main "$@"

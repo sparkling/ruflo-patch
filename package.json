@@ -26,7 +26,8 @@
     "audit:imports": "bash scripts/audit-dynamic-imports.sh",
     "systemd:install": "sudo bash scripts/install-systemd.sh",
     "setup:native": "bash scripts/install-native-deps.sh",
-    "release": "bash scripts/ruflo-publish.sh"
+    "release": "bash scripts/ruflo-publish.sh",
+    "verdaccio:gc": "node scripts/verdaccio-gc.mjs"
   },
   "config": {
     "packageMap": "config/package-map.json",
