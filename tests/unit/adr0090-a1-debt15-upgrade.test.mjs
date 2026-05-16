@@ -124,14 +124,16 @@ describe('ADR-0090 Tier A1: static source — pglite substrate (ADR-0170 Phase B
       'must NOT import better-sqlite3');
   });
 
-  it('asserts pglite cluster PG_VERSION exists (replaces SQLite magic header)', () => {
+  it('asserts .swarm/memory.db SQLite carve-out exists (post-Phase-7 substrate)', () => {
     const fn = extractFn(source, 'check_adr0086_debt15_sqlite_path');
     assert.ok(fn, 'function body must extract');
-    assert.match(fn, /memory\.pglite\/PG_VERSION/,
-      'must check for pglite cluster bootstrap canary');
+    assert.match(fn, /\.swarm\/memory\.db/,
+      'must check for SQLite carve-out (post-pglite, post-Phase-7)');
+    assert.match(fn, /name='episodes'/,
+      'must verify episodes table exists in the SQLite carve-out');
     assert.doesNotMatch(fn.split('\n').filter(l => !/^\s*#/.test(l)).join('\n'),
       /SQLite format 3/,
-      'must NOT check SQLite magic header (substrate retired)');
+      'must NOT check SQLite magic header (verifies via sqlite3 CLI instead)');
   });
 
   it('invokes agentdb_reflexion-store via MCP with the marker task', () => {
@@ -157,12 +159,12 @@ describe('ADR-0090 Tier A1: static source — pglite substrate (ADR-0170 Phase B
       'sqlite config pass-through grep must remain (legacy caller compat)');
   });
 
-  it('asserts cluster non-empty (base/ dir + size >= 4096)', () => {
+  it('asserts SQLite db non-empty (episodes table + size >= 1024)', () => {
     const fn = extractFn(source, 'check_adr0086_debt15_sqlite_path');
-    assert.match(fn, /memory\.pglite\/base/,
-      'must check that pglite cluster has bootstrapped its base/ dir');
-    assert.match(fn, /cluster_size.*4096|4096/,
-      'must check minimum cluster size (>= 4096 bytes)');
+    assert.match(fn, /name='episodes'/,
+      'must verify episodes table exists in .swarm/memory.db (post-Phase-7 carve-out)');
+    assert.match(fn, /cluster_size.*1024|1024/,
+      'must check minimum SQLite db size (>= 1024 bytes for any real schema bootstrap)');
   });
 
   it('uses $(_cli_cmd), never raw "npx --yes @sparkleideas/cli@latest"', () => {
