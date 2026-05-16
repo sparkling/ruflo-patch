@@ -233,12 +233,24 @@ if [[ -d "${_RUFLO_CACHE_DIR}/node_modules" \
     rm -rf "${ACCEPT_TEMP}/node_modules" 2>/dev/null || true
   fi
 fi
+# --ignore-scripts on cache-restored installs: the cache already contains
+# every native binding output (better-sqlite3 .node, sharp build, esbuild
+# platform binaries, onnxruntime-node prebuilds, agentdb postinstall
+# artifacts). Re-running their postinstall scripts on a warm tree triggers
+# node-gyp recompiles (observed: ~70% CPU on sqlite3/sqlite3.c during the
+# install phase) for zero benefit. On a cold cache we run scripts normally
+# so the cache gets populated. Refreshed @sparkleideas/* packages are pure
+# JS; they don't need install scripts.
+_install_extra_flags=""
+if (( _RUFLO_CACHE_RESTORED )); then
+  _install_extra_flags="--ignore-scripts"
+fi
 (cd "$ACCEPT_TEMP" \
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=${REGISTRY}" > .npmrc \
   && npm install @sparkleideas/cli @sparkleideas/ruflo @sparkleideas/agent-booster @sparkleideas/plugins @sparkleideas/memory \
      @sparkleideas/plugin-agent-federation @sparkleideas/plugin-iot-cognitum \
-     --registry "$REGISTRY" --no-audit --no-fund --prefer-offline 2>&1) || {
+     --registry "$REGISTRY" --no-audit --no-fund --prefer-offline $_install_extra_flags 2>&1) || {
   log_error "Failed to install packages from ${REGISTRY}"; exit 1
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
@@ -267,6 +279,7 @@ fi
 # no additional sequential time.
 WRAPPER_SOLO_TEMP=$(mktemp -d /tmp/ruflo-wrapper-solo-XXXXX)
 export WRAPPER_SOLO_TEMP
+_disable_spotlight_indexing  # excludes wrapper-solo dir from Spotlight + Time Machine
 WRAPPER_SOLO_PID=""
 (
   cd "$WRAPPER_SOLO_TEMP" \

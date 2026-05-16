@@ -59,24 +59,42 @@ fi
 _disable_spotlight_indexing() {
   [[ "$(uname -s 2>/dev/null)" == "Darwin" ]] || return 0
   local _marker=".metadata_never_index"
-  local _touched=()
+  local _touched_spot=()
+  local _touched_tm=()
+  local _have_tmutil=0
+  command -v tmutil >/dev/null 2>&1 && _have_tmutil=1
   local _d
   for _d in /tmp/ruflo-build \
             /tmp/ruflo-accept-* \
             /tmp/ruflo-accept-par-* \
             /tmp/ruflo-fast-* \
             /tmp/ruflo-e2e-* \
+            /tmp/ruflo-wrapper-solo-* \
             "${PARALLEL_DIR:-}" \
             "${ACCEPT_TEMP:-}" \
-            "${E2E_DIR:-}"; do
+            "${E2E_DIR:-}" \
+            "${WRAPPER_SOLO_TEMP:-}"; do
     [[ -z "$_d" ]] && continue
     [[ -d "$_d" ]] || continue
     if touch "$_d/$_marker" 2>/dev/null; then
-      _touched+=("$_d")
+      _touched_spot+=("$_d")
+    fi
+    # Time Machine subscribes to FSEvents — backupd burns 100%+ CPU streaming
+    # change events for /tmp/ruflo-* even when no backup is running (or its
+    # destination is offline). `tmutil addexclusion -p <dir>` sets a sticky
+    # extended-attribute exclusion that costs nothing once set and dies when
+    # the dir is removed. Idempotent — re-applying is a no-op.
+    if (( _have_tmutil )); then
+      if tmutil isexcluded "$_d" 2>/dev/null | grep -q '^\[Included\]'; then
+        if tmutil addexclusion -p "$_d" 2>/dev/null; then
+          _touched_tm+=("$_d")
+        fi
+      fi
     fi
   done
-  if [[ ${#_touched[@]} -gt 0 ]] && declare -F log >/dev/null 2>&1; then
-    log "  Spotlight: disabled indexing in ${#_touched[@]} dir(s): ${_touched[*]}"
+  if declare -F log >/dev/null 2>&1; then
+    (( ${#_touched_spot[@]} )) && log "  Spotlight: disabled indexing in ${#_touched_spot[@]} dir(s): ${_touched_spot[*]}"
+    (( ${#_touched_tm[@]}   )) && log "  TimeMachine: added exclusion for ${#_touched_tm[@]} dir(s): ${_touched_tm[*]}"
   fi
 }
 
