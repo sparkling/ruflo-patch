@@ -478,8 +478,16 @@ _b5_check_controller_roundtrip() {
     resp_controller=$(echo "$store_body" | grep -oE '"controller"[[:space:]]*:[[:space:]]*"[^"]+"' | head -1 | sed -E 's/.*"controller"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/')
     # Case-insensitive compare so naming drift like `ReasoningBank` vs
     # `reasoningBank` does not mask the mismatch.
+    # ADR-0181 Phase 5+: 'archivist' is the canonical envelope for cli
+    # mcp-tools that dispatch through getProcessArchivist(). It's NOT a
+    # wrong-controller-redirect; it IS the post-Phase-5 dispatch path.
+    # Exempt 'archivist' from the mismatch check so probes verify
+    # downstream behavior (table state, marker round-trip) rather than
+    # erroneously skipping on the canonical envelope.
+    local resp_lower; resp_lower=$(printf '%s' "$resp_controller" | tr '[:upper:]' '[:lower:]')
     if [[ -n "$resp_controller" ]] \
-       && [[ "$(printf '%s' "$resp_controller" | tr '[:upper:]' '[:lower:]')" != "$(printf '%s' "$controller" | tr '[:upper:]' '[:lower:]')" ]]; then
+       && [[ "$resp_lower" != "$(printf '%s' "$controller" | tr '[:upper:]' '[:lower:]')" ]] \
+       && [[ "$resp_lower" != "archivist" ]]; then
       _CHECK_PASSED="skip_accepted"
       _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: MCP tool dispatched to different controller '$resp_controller' (no dedicated store tool for '$controller' in current build; response went to the other controller's table): $(echo "$store_body" | head -3 | tr '\n' ' ')"
       rm -rf "$work" "$iso" 2>/dev/null
@@ -1003,33 +1011,36 @@ _b5_check_causal_pipeline() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "/tmp/b5-${controller}-work-XXXXX")
-  local pg_cluster="$iso/.swarm/memory.pglite"
+  local sqlite_db="$iso/.swarm/memory.db"
 
   # ─── Step 2: cold-start init to create schema ─────────────────────
-  # agentdb_health hydrates the controller registry which triggers
-  # PostgresBackend.initialize() → pglite cluster bootstrap.
+  # agentdb_health hydrates the controller registry which (per ADR-0177
+  # post-pglite-retirement) triggers AgentDB.initialize() →
+  # loadSchemas() → creates `.swarm/memory.db` with the full schema.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
   local health_body; health_body=$(cat "$work/health.out" 2>/dev/null || echo "")
 
-  # ─── Step 3: Assertion B — pglite cluster ─────────────────────────
-  # ADR-0177: pglite substrate retired (RVF-first). PostgresBackend is a
-  # museum piece — PG_VERSION will not be created. skip_accepted.
-  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: pglite substrate retired by ADR-0177; PostgresBackend not wired — causal table checks skipped"
+  # ─── Step 3: Assertion B — SQLite db ──────────────────────────────
+  # ADR-0177 + Phase 7 handle-share: agentdb's loadSchemas() runs as a
+  # side-effect of the controller-registry's first lookup. Missing
+  # memory.db means the registry didn't initialize → cli broken.
+  if [[ ! -f "$sqlite_db" ]]; then
+    _CHECK_OUTPUT="B5/${controller}: FAIL: .swarm/memory.db missing after agentdb_health cold-start — AgentDB.initialize() didn't run; controller-registry handle-share regressed (ADR-0181 Phase 7 r2)"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
 
   # ─── Step 4: Assertion C — causal_edges table exists ──────────────
-  # CausalMemoryGraph's constructor schema bootstrap (ADR-0170 Wave 1a)
-  # MUST create `causal_edges` against pglite. Missing = either the
+  # CausalMemoryGraph's constructor schema bootstrap MUST create
+  # `causal_edges` in the SQLite carve-out. Missing = either the
   # controller isn't wired, the DDL regressed, or the substrate fell
   # through to in-memory state — all ADR-0082 silent-pass shapes.
   local has_table
-  has_table=$(_pglite_table_exists "$iso" "causal_edges")
-  if [[ "$has_table" != "1" ]]; then
-    _CHECK_OUTPUT="B5/${controller}: FAIL: causal_edges table missing in pglite cluster after agentdb_health cold-start — CausalMemoryGraph DDL not reached (ADR-0170 Wave 1a regression?). Existing tables: $(_pglite_table_list "$iso")"
+  has_table=$(sqlite3 "$sqlite_db" "SELECT name FROM sqlite_master WHERE type='table' AND name='causal_edges';" 2>/dev/null | tr -d '\n')
+  if [[ "$has_table" != "causal_edges" ]]; then
+    local table_list
+    table_list=$(sqlite3 "$sqlite_db" ".tables" 2>/dev/null | tr -s ' \n' ' ' | cut -c1-300)
+    _CHECK_OUTPUT="B5/${controller}: FAIL: causal_edges table missing in .swarm/memory.db after agentdb_health cold-start — CausalMemoryGraph DDL not reached. Existing tables: $table_list"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
