@@ -1041,7 +1041,10 @@ describe('ADR-0080: no --no-download in main init embeddings path', () => {
 
   it('main init allows 120s timeout for model download', () => {
     const mainInitStart = initCmdSrc.indexOf("Handle --with-embeddings");
-    const mainBlock = initCmdSrc.slice(mainInitStart, mainInitStart + 1200);
+    // Window widened to 2000 chars after forks/ruflo 3db6ea463 replaced the
+    // npx @latest invocation with execFileSync and added an explanatory
+    // comment block — the timeout line now sits ~1400 chars in.
+    const mainBlock = initCmdSrc.slice(mainInitStart, mainInitStart + 2000);
     assert.ok(
       mainBlock.includes('120000'),
       'main init must allow 120s (120000ms) timeout for model download',
