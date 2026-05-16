@@ -204,9 +204,35 @@ _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 export AGENTDB_MODEL_PATH="${HOME}/.cache/agentdb-models"
 
 # Phase: Install packages from registry
+# Cache: ~/.cache/ruflo-test-deps/node_modules/ is restored before npm install
+# so the ~95% stable upstream tree (700+ pkgs) skips network/extract work;
+# `npm install` then refreshes only the @sparkleideas/* subtree bumped this
+# release. Measured: ~34s cold → ~11s warm (6s restore + 1s npm + 4s save).
+# Restore prefers `cp -c` (APFS clonefile, copy-on-write metadata-only copy)
+# with rsync fallback for non-APFS. Set RUFLO_TEST_DEPS_REBUILD=1 to skip
+# restore (forces clean install). Bump _RUFLO_CACHE_SCHEMA whenever the
+# install command's top-level pkg set or flag shape changes.
 _p=$(_ns)
 ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
 _disable_spotlight_indexing
+_RUFLO_CACHE_DIR="${HOME}/.cache/ruflo-test-deps"
+_RUFLO_CACHE_SCHEMA="v1"
+_RUFLO_CACHE_RESTORED=0
+_ruflo_cache_restore() {
+  cp -c -R "${_RUFLO_CACHE_DIR}/node_modules" "${ACCEPT_TEMP}/node_modules" 2>/dev/null \
+    || rsync -a --delete "${_RUFLO_CACHE_DIR}/node_modules/" "${ACCEPT_TEMP}/node_modules/" 2>/dev/null
+}
+if [[ -d "${_RUFLO_CACHE_DIR}/node_modules" \
+      && "$(cat "${_RUFLO_CACHE_DIR}/.cache-version" 2>/dev/null)" == "${_RUFLO_CACHE_SCHEMA}" \
+      && -z "${RUFLO_TEST_DEPS_REBUILD:-}" ]]; then
+  if _ruflo_cache_restore; then
+    _RUFLO_CACHE_RESTORED=1
+    log "  CACHE restore ok"
+  else
+    log "  CACHE restore failed; falling through to clean install"
+    rm -rf "${ACCEPT_TEMP}/node_modules" 2>/dev/null || true
+  fi
+fi
 (cd "$ACCEPT_TEMP" \
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=${REGISTRY}" > .npmrc \
@@ -216,6 +242,20 @@ _disable_spotlight_indexing
   log_error "Failed to install packages from ${REGISTRY}"; exit 1
 }
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
+
+# Save merged node_modules back to cache so the next release sees the
+# refreshed @sparkleideas/* tree. Runs unconditionally (covers first-run
+# population + post-install sync). rsync failure is non-fatal — degrades
+# gracefully to cache-miss on the next run.
+if [[ -d "${ACCEPT_TEMP}/node_modules" ]]; then
+  mkdir -p "${_RUFLO_CACHE_DIR}"
+  if rsync -a --delete "${ACCEPT_TEMP}/node_modules/" "${_RUFLO_CACHE_DIR}/node_modules/" 2>/dev/null; then
+    echo "${_RUFLO_CACHE_SCHEMA}" > "${_RUFLO_CACHE_DIR}/.cache-version"
+    log "  CACHE save ok (restored=${_RUFLO_CACHE_RESTORED})"
+  else
+    log "  CACHE save failed (non-fatal)"
+  fi
+fi
 
 # Phase: Shared wrapper-solo install (started in BACKGROUND, joined
 # before parallel wave). Three wrapper-install checks each previously
