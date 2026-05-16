@@ -28,6 +28,17 @@ done
 if [[ -z "$ACCEPT_TEMP" ]]; then
   ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-fast-XXXXX)
   echo "[fast] Installing packages to $ACCEPT_TEMP (~15s)..."
+  # Cache restore mirrors test-acceptance.sh — populated by prior `npm run
+  # release`. Restoring 127MB rsync is much cheaper than re-downloading.
+  _RUFLO_CACHE_DIR="${HOME}/.cache/ruflo-test-deps"
+  _RUFLO_CACHE_SCHEMA="v1"
+  if [[ -d "${_RUFLO_CACHE_DIR}/node_modules" \
+        && "$(cat "${_RUFLO_CACHE_DIR}/.cache-version" 2>/dev/null)" == "${_RUFLO_CACHE_SCHEMA}" \
+        && -z "${RUFLO_TEST_DEPS_REBUILD:-}" ]]; then
+    rsync -a --delete "${_RUFLO_CACHE_DIR}/node_modules/" "${ACCEPT_TEMP}/node_modules/" 2>/dev/null \
+      && echo "[fast] cache restore ok" \
+      || { echo "[fast] cache restore failed; clean install"; rm -rf "${ACCEPT_TEMP}/node_modules" 2>/dev/null || true; }
+  fi
   (cd "$ACCEPT_TEMP" \
     && echo '{"name":"fast-test","version":"1.0.0","private":true}' > package.json \
     && echo "registry=${REGISTRY}" > .npmrc \
@@ -138,6 +149,7 @@ done
 pass_count=0 fail_count=0 skip_count=0 total_count=0
 results_json="[]"
 PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+_disable_spotlight_indexing
 
 _fast_run() {
   local name="$1" fn="$2"

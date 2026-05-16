@@ -206,6 +206,7 @@ export AGENTDB_MODEL_PATH="${HOME}/.cache/agentdb-models"
 # Phase: Install packages from registry
 _p=$(_ns)
 ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
+_disable_spotlight_indexing
 (cd "$ACCEPT_TEMP" \
   && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
   && echo "registry=${REGISTRY}" > .npmrc \
@@ -375,6 +376,7 @@ fi
 # ════════════════════════════════════════════════════════════════════
 _p=$(_ns)
 E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
+_disable_spotlight_indexing
 cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
 # Snapshot taken before non-e2e wave — state is clean from harness init.
 # Only remove transient data that could interfere with e2e checks.
@@ -755,6 +757,7 @@ fi
 
 log "── all non-e2e checks (mega-parallel wave) ──"
 PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+_disable_spotlight_indexing
 
 # smoke
 run_check_bg "version"          "Version check"          check_version            "smoke"
@@ -2865,6 +2868,7 @@ if [[ -f "$p5_lib" ]]; then
   source "$p5_lib"
 
   PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  _disable_spotlight_indexing
 
   # Phase 5 init was started in BACKGROUND right after CLI_BIN was set
   # (~line 264). Wait for it here. By this point setup phases (~80s)
@@ -2986,6 +2990,7 @@ _record_phase "phase5-init-config" "$(_elapsed_ms "$_p5_start" "$(_ns)")"
 _adr0096_start=$(_ns)
 log "── ADR-0096: coverage catalog + skip hygiene ──"
 PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+_disable_spotlight_indexing
 
 run_check_bg "adr0096-populated"   "ADR-0096 catalog populated"        check_adr0096_catalog_populated        "adr0096"
 run_check_bg "adr0096-verify"      "ADR-0096 catalog --verify"         check_adr0096_catalog_verify           "adr0096"

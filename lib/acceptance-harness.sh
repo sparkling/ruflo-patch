@@ -17,8 +17,20 @@
 # (ADR-0059). Each check sub-shell spawns daemon + CLI + assertion children
 # (~3-4 procs/check), so unbounded fan-out crushes the runqueue on developer
 # laptops (load → 106, free RAM → 39MB on 18-core M5 Max with raw fan-out).
-# Default to half-the-cores; existing run_check_bg throttle (line ~166)
-# enforces it. Override with RUFLO_MAX_PARALLEL=N (0 disables the cap).
+#
+# History:
+#   - ncpu/2 (= 9 on M5 Max): adopted after the cap=6 reaction to the
+#     wrapper-proxy + ADR-0129 sibling regressions (2026-05-04 → 2026-05-07).
+#     Both regression conditions resolved. April baseline ran 561 checks
+#     in ~70s wall (122x effective parallelism).
+#   - ncpu/3 (= 6 on M5 Max): current. Check count grew 561 → 674 (+20%)
+#     since the cap=9 era. Release run on 2026-05-16 saw load average 27
+#     on an 18-core box with mds_stores (Spotlight indexer) at 88% CPU.
+#     Per-check fan-out is daemon + CLI + assertion shell ≈ 3 children,
+#     so 9 parallel checks × 3 = 27 effective procs (≥ ncpu = oversubscribed).
+#     ncpu/3 targets effective concurrent procs ≈ ncpu.
+#
+# Override with RUFLO_MAX_PARALLEL=N (0 disables the cap).
 if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
   if command -v sysctl >/dev/null 2>&1 && _ncpu=$(sysctl -n hw.ncpu 2>/dev/null) && [[ "$_ncpu" =~ ^[0-9]+$ ]]; then
     :
@@ -27,19 +39,49 @@ if [[ -z "${RUFLO_MAX_PARALLEL+x}" ]]; then
   else
     _ncpu=8
   fi
-  RUFLO_MAX_PARALLEL=$(( _ncpu / 2 ))
+  RUFLO_MAX_PARALLEL=$(( (_ncpu + 2) / 3 ))
   (( RUFLO_MAX_PARALLEL < 4 )) && RUFLO_MAX_PARALLEL=4
-  # Cap = ncpu/2 (= 9 on M5 Max). Was capped at 6 reactively after
-  # cap=9 + wrapper-proxy regression spiked load to 13.5 (2026-05-04).
-  # Wrapper-proxy fixed 2026-05-07 (uses pre-installed binary, not
-  # per-call npx download) AND ADR-0129 sibling B1/B2/B4 isolated via
-  # _e2e_isolate (was racing on shared $E2E_DIR). Both regression
-  # conditions resolved. April baseline ran 561 checks in ~70s wall
-  # under this cap (122x effective parallelism). Target with current
-  # 674 checks: ~120-180s wall (Agent 2 estimate from 4-agent swarm).
   unset _ncpu
   export RUFLO_MAX_PARALLEL
 fi
+
+# ══════════════════════════════════════════════════════════════════════════════
+# macOS Spotlight indexing — opt out for build/test churn dirs
+# ══════════════════════════════════════════════════════════════════════════════
+# `mds_stores` (Spotlight metadata indexer) consumed 88% CPU during the
+# 2026-05-16 release run because /tmp/ruflo-build and /tmp/ruflo-accept-*
+# directories churn heavily (install + codemod + test fan-out generate
+# thousands of file events). `mdutil -i off` only works on volume mount
+# points, not arbitrary subdirs. The supported macOS opt-out is the magic
+# marker file `.metadata_never_index`: any directory containing it (and
+# its descendants) is skipped by Spotlight. Idempotent — safe to repeat.
+# No-op on Linux.
+_disable_spotlight_indexing() {
+  [[ "$(uname -s 2>/dev/null)" == "Darwin" ]] || return 0
+  local _marker=".metadata_never_index"
+  local _touched=()
+  local _d
+  for _d in /tmp/ruflo-build \
+            /tmp/ruflo-accept-* \
+            /tmp/ruflo-accept-par-* \
+            /tmp/ruflo-fast-* \
+            /tmp/ruflo-e2e-* \
+            "${PARALLEL_DIR:-}" \
+            "${ACCEPT_TEMP:-}" \
+            "${E2E_DIR:-}"; do
+    [[ -z "$_d" ]] && continue
+    [[ -d "$_d" ]] || continue
+    if touch "$_d/$_marker" 2>/dev/null; then
+      _touched+=("$_d")
+    fi
+  done
+  if [[ ${#_touched[@]} -gt 0 ]] && declare -F log >/dev/null 2>&1; then
+    log "  Spotlight: disabled indexing in ${#_touched[@]} dir(s): ${_touched[*]}"
+  fi
+}
+
+# Call at source time to cover any dirs that already exist.
+_disable_spotlight_indexing
 
 # ══════════════════════════════════════════════════════════════════════════════
 # Result tracking
