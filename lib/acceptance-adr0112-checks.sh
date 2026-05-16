@@ -179,22 +179,25 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
     return
   fi
 
-  # ADR-0177: pglite substrate retired. If pglite cluster absent, skip_accepted.
-  local pg_cluster="$iso/.swarm/memory.pglite"
-  if [[ ! -f "$pg_cluster/PG_VERSION" ]]; then
+  # ADR-0177 + Phase 7: pglite retired; agentdb_reflexion_store writes to
+  # `.swarm/memory.db` (SQLite carve-out) via archivist dispatch. Probe
+  # verifies the marker lands in episodes table AND doesn't leak into RVF.
+  local sqlite_db="$iso/.swarm/memory.db"
+  if [[ ! -f "$sqlite_db" ]]; then
+    _CHECK_OUTPUT="0112/26.2: FAIL: .swarm/memory.db missing after agentdb_reflexion-store success — controller-registry/handle-share regressed (ADR-0181 Phase 7 r2)"
     rm -rf "$iso" 2>/dev/null
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="0112/26.2: SKIP_ACCEPTED: pglite substrate retired by ADR-0177; cannot verify pglite-based partition"
     return
   fi
 
   local rvf="$iso/.swarm/memory.rvf"
 
-  # Sanity: marker landed in pglite cluster.
-  local home_table
-  home_table=$(_adr0112_db_contains_marker "$iso" "$marker")
-  if [[ -z "$home_table" ]]; then
-    _CHECK_OUTPUT="0112/26.2: FAIL: agentdb_reflexion_store reported success but marker '$marker' not found in any table of pglite cluster (silent in-memory fallback per ADR-0082 + ADR-0112 mandate). Body: $(echo "$body" | head -3 | tr '\n' ' ')"
+  # Sanity: marker landed in SQLite episodes table (where reflexion writes
+  # per Phase 7's archivist dispatch through SQLITE_CARVE_OUT_STORE_IDS).
+  local home_count
+  home_count=$(sqlite3 "$sqlite_db" "SELECT COUNT(*) FROM episodes WHERE task LIKE '%${marker}%' OR session_id LIKE '%${marker}%';" 2>/dev/null | tr -dc '0-9')
+  home_count="${home_count:-0}"
+  if [[ "$home_count" -lt 1 ]]; then
+    _CHECK_OUTPUT="0112/26.2: FAIL: agentdb_reflexion_store reported success but marker '$marker' not found in episodes table of .swarm/memory.db (silent in-memory fallback per ADR-0082 + ADR-0112 mandate). Body: $(echo "$body" | head -3 | tr '\n' ' ')"
     rm -rf "$iso" 2>/dev/null
     return
   fi
@@ -208,7 +211,7 @@ check_adr0112_partition_agentdb_store_to_db_only() { # adr0097-l2-delegator
 
   rm -rf "$iso" 2>/dev/null
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="0112/26.2: PASS: agentdb_reflexion_store wrote marker into pglite cluster ($home_table) only; RVF contains zero bytes matching marker (per-store data partition holds)"
+  _CHECK_OUTPUT="0112/26.2: PASS: agentdb_reflexion_store wrote marker into .swarm/memory.db episodes table ($home_count row(s)); RVF contains zero bytes matching marker (per-store data partition holds)"
 }
 
 # ────────────────────────────────────────────────────────────────────
