@@ -93,6 +93,50 @@ _disable_spotlight_indexing() {
 # Call at source time to cover any dirs that already exist.
 _disable_spotlight_indexing
 
+# ── ADR-0182 L2: APFS clonefile snapshot helper ─────────────────────────────
+# Replaces full byte-copy snapshots with inode-table clones on APFS (macOS ≥26
+# / Darwin 25.4.0+), saving ~2.0 GB write_bytes per release on the e2e
+# snapshot site. clonefile(2) refuses /dev/null, so the probe must use a real
+# regular file. Each branch logs its own marker so operators can audit which
+# strategy fired.
+#
+# Strategies, in preference order:
+#   cow       — `cp -cR` (BSD clonefile, APFS only)
+#   hardlink  — `cp -al` (GNU/Linux hardlink farm, foreign FS)
+#   recursive — `cp -r`  (last-resort fallback, slowest, always correct)
+_ACCEPT_COW_PROBE_RESULT=""   # cached probe verdict: 0 = COW works, 1 = no
+_acceptance_cow_probe() {
+  local src_probe dst_probe rc
+  src_probe=$(mktemp /tmp/.cow-probe-src.XXXX) || return 1
+  dst_probe=$(mktemp -u /tmp/.cow-probe-dst.XXXX) || { rm -f "$src_probe"; return 1; }
+  echo x > "$src_probe"
+  cp -c "$src_probe" "$dst_probe" 2>/dev/null
+  rc=$?
+  rm -f "$src_probe" "$dst_probe" 2>/dev/null
+  return $rc
+}
+
+_acceptance_snapshot() {
+  local src="$1" dst="$2"
+  if [[ -z "$_ACCEPT_COW_PROBE_RESULT" ]]; then
+    if _acceptance_cow_probe; then
+      _ACCEPT_COW_PROBE_RESULT=0
+    else
+      _ACCEPT_COW_PROBE_RESULT=1
+    fi
+  fi
+  if [[ "$_ACCEPT_COW_PROBE_RESULT" == "0" ]]; then
+    echo "[L2] _acceptance_snapshot: cow ($src -> $dst)" >&2
+    cp -cR "$src" "$dst"
+  elif [[ "$(uname -s 2>/dev/null)" == "Linux" ]]; then
+    echo "[L2] _acceptance_snapshot: hardlink ($src -> $dst)" >&2
+    cp -al "$src" "$dst"
+  else
+    echo "[L2] _acceptance_snapshot: recursive ($src -> $dst)" >&2
+    cp -r "$src" "$dst"
+  fi
+}
+
 # ══════════════════════════════════════════════════════════════════════════════
 # Result tracking
 # ══════════════════════════════════════════════════════════════════════════════

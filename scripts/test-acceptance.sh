@@ -404,7 +404,14 @@ fi
 _p=$(_ns)
 E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
 _disable_spotlight_indexing
-cp -r "$ACCEPT_TEMP/." "$E2E_DIR/"
+# ADR-0182 L2: APFS clonefile snapshot — ~2 GB/release write_bytes saved on
+# this host (macOS 26 / Darwin 25.4.0). Helper probes COW once and caches,
+# falls back to Linux hardlink farm or recursive copy on foreign FS.
+# mktemp -d above created an empty $E2E_DIR; remove it so cp -cR/-al/-r
+# treats $E2E_DIR as the dest directory to create (matches prior cp -r
+# "$ACCEPT_TEMP/." "$E2E_DIR/" semantics where dest already existed).
+rmdir "$E2E_DIR"
+_acceptance_snapshot "$ACCEPT_TEMP" "$E2E_DIR"
 # Snapshot taken before non-e2e wave — state is clean from harness init.
 # Only remove transient data that could interfere with e2e checks.
 rm -rf "$E2E_DIR/.claude-flow/data" 2>/dev/null || true
