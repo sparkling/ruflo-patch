@@ -128,6 +128,70 @@ describe('ADR-0181 Item 6 — Sona persistence wiring (source-level)', () => {
     assert.match(h, /requireSonaTrajectoryWriter\(\)/, 'mutation handler does not consume the writer capability');
   });
 
+  // ── r2 (2026-05-16): split-storeId discriminator gate ────────────────────
+  // The dispatcher's getRegistration() (registration.ts:150-156) checks the
+  // mutation registry FIRST and returns it when found, so co-registering the
+  // read handler under the same storeId as the mutation handler made
+  // dispatchRead resolve the mutation entry and throw "targets a mutation
+  // handler" (empirical r1 acceptance failure). Distinct storeIds are
+  // load-bearing.
+
+  it('r2: read handler registers under DISTINCT storeId agentdb_sona_trajectory_stats', () => {
+    const h = read(`${AGENTDB_FORK}/src/archivist/handlers/agentdb/sona-trajectory-store.ts`);
+    // Mutation handler keeps the original storeId.
+    assert.match(
+      h,
+      /registerMutationHandler<AgentdbSonaTrajectoryStorePayload>\(\s*'agentdb_sona_trajectory_store'/,
+      'mutation handler must register under agentdb_sona_trajectory_store',
+    );
+    // Read handler must use the new _stats storeId.
+    assert.match(
+      h,
+      /registerReadHandler<[^>]+>\(\s*'agentdb_sona_trajectory_stats'/,
+      'read handler must register under agentdb_sona_trajectory_stats (r2 split-storeId fix)',
+    );
+    // Negative gate: the OLD shared-storeId registration would re-introduce r1.
+    assert.doesNotMatch(
+      h,
+      /registerReadHandler<[^>]+>\(\s*'agentdb_sona_trajectory_store'/,
+      'read handler must NOT register under agentdb_sona_trajectory_store — r1 regression class',
+    );
+  });
+
+  it('r2: dispatch-types.ts declares both _store and _stats storeIds', () => {
+    const dt = read(`${AGENTDB_FORK}/src/archivist/dispatch-types.ts`);
+    assert.match(dt, /agentdb_sona_trajectory_store:\s*AgentdbSonaTrajectoryStorePayload/, '_store storeId missing from ToolPayloadMap');
+    assert.match(dt, /agentdb_sona_trajectory_stats:\s*AgentdbSonaTrajectoryStorePayload/, '_stats storeId missing from ToolPayloadMap (r2)');
+  });
+
+  it('r2: cli wrapper dispatchRead uses _stats storeId, NOT _store', () => {
+    const tools = read(`${RUFLO_FORK}/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts`);
+    const sonaBlock = tools.match(/agentdb_sona_trajectory_store[\s\S]*?===== #1784/);
+    assert.ok(sonaBlock, 'sona wrapper block not parseable');
+    // BOTH dispatchRead calls in the wrapper (stats action AND post-record
+    // projection) must target the _stats storeId.
+    const dispatchReadCalls = sonaBlock[0].match(/archivist\.dispatchRead\([^)]+\)/g) ?? [];
+    for (const call of dispatchReadCalls) {
+      assert.match(
+        call,
+        /agentdb_sona_trajectory_stats/,
+        `cli dispatchRead call must target _stats storeId; got: ${call}`,
+      );
+      assert.doesNotMatch(
+        call,
+        /agentdb_sona_trajectory_store/,
+        `cli dispatchRead call must NOT target _store (mutation) storeId; got: ${call}`,
+      );
+    }
+    assert.ok(dispatchReadCalls.length >= 2, `expected at least 2 dispatchRead calls in sona wrapper, got ${dispatchReadCalls.length}`);
+    // The mutation dispatch (action='record') still uses _store.
+    assert.match(
+      sonaBlock[0],
+      /archivist\.dispatch\(\s*'agentdb_sona_trajectory_store'/,
+      'cli mutation dispatch must use _store storeId',
+    );
+  });
+
   it('handler header documents the cli adapter trace (b5-da revision a)', () => {
     const h = read(`${AGENTDB_FORK}/src/archivist/handlers/agentdb/sona-trajectory-store.ts`);
     assert.match(h, /CLI ADAPTER TRACE/, 'cli adapter trace header missing — b5-da revision a documentation');
@@ -225,15 +289,18 @@ describe('ADR-0181 Item 6 — Sona persistence wiring (source-level)', () => {
     const tools = read(`${RUFLO_FORK}/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts`);
     const sonaBlock = tools.match(/agentdb_sona_trajectory_store[\s\S]*?===== #1784/);
     assert.ok(sonaBlock, 'sona wrapper block not parseable');
+    // r2: stats targets the split _stats storeId; record targets the
+    // original _store storeId. The dedicated 'r2' assertions above have
+    // tighter coverage; this is the high-level smoke.
     assert.match(
       sonaBlock[0],
-      /if \(action === 'stats'\)[\s\S]*?dispatchRead\('agentdb_sona_trajectory_store'/,
-      'stats action does not route through dispatchRead',
+      /if \(action === 'stats'\)[\s\S]*?dispatchRead\('agentdb_sona_trajectory_stats'/,
+      'stats action does not route through dispatchRead on _stats storeId',
     );
     assert.match(
       sonaBlock[0],
       /archivist\.dispatch\('agentdb_sona_trajectory_store'/,
-      'record action does not route through dispatch',
+      'record action does not route through dispatch on _store storeId',
     );
   });
 
