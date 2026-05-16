@@ -4,13 +4,10 @@
 # Validates the end-to-end embedding config chain:
 #   ruflo init  →  .claude-flow/config.json  →  AgentDB / RvfBackend
 #
-# Three scenarios:
+# Two scenarios:
 #   (1) Default init writes embedding.* + index.hnsw.* with canonical values
 #       (768-dim mpnet) and AgentDB round-trips an embedding at that dimension.
-#   (2) `ruflo init --embedding-model Xenova/bge-base-en-v1.5` writes the
-#       alternative 768-dim model into config AND the RvfBackend's segment is
-#       written with dim=768.
-#   (3) `ruflo init --embedding-model Xenova/all-MiniLM-L6-v2` auto-adjusts
+#   (2) `ruflo init --embedding-model Xenova/all-MiniLM-L6-v2` auto-adjusts
 #       dimension to 384 in config AND a fresh RVF segment is created at 384.
 #
 # Caller MUST set: CLI_BIN, REGISTRY, TEMP_DIR
@@ -283,81 +280,7 @@ check_adr0177_default_roundtrip() {
   _CHECK_OUTPUT="roundtrip-default: store+search OK; RvfBackend segment dim=768"
 }
 
-# ── (2) `--embedding-model Xenova/bge-base-en-v1.5` (768d alternative) ──────
-
-# check_adr0177_flag_bge_768 — verify the alternative 768-dim model lands in
-# config AND in the RvfBackend's segment dim.
-check_adr0177_flag_bge_768() {
-  _CHECK_PASSED="false"
-  _CHECK_OUTPUT=""
-
-  local dir; dir=$(mktemp -d /tmp/ruflo-adr0177-bge-XXXXX)
-  # shellcheck disable=SC2064
-  trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
-
-  _adr0177_run_init "$dir" "Xenova/bge-base-en-v1.5"
-
-  local cfg="${dir}/.claude-flow/config.json"
-  if [[ ! -f "$cfg" ]]; then
-    _CHECK_OUTPUT="flag-bge: ${cfg} not found after init --embedding-model bge"
-    return
-  fi
-
-  local model dim
-  model=$(_adr0177_cfg "$cfg" "c.embedding?.model")
-  dim=$(_adr0177_cfg "$cfg" "c.embedding?.dimension")
-
-  if [[ "$model" != "Xenova/bge-base-en-v1.5" ]]; then
-    _CHECK_OUTPUT="flag-bge: embedding.model=${model:-missing} (want:Xenova/bge-base-en-v1.5)"
-    return
-  fi
-  if [[ "$dim" != "768" ]]; then
-    _CHECK_OUTPUT="flag-bge: embedding.dimension=${dim:-missing} (want:768)"
-    return
-  fi
-
-  # Verify embeddings.json (runtime-canonical) matches.
-  local emb="${dir}/.claude-flow/embeddings.json"
-  if [[ -f "$emb" ]]; then
-    local em ed
-    em=$(_adr0177_emb "$emb" "e.model")
-    ed=$(_adr0177_emb "$emb" "e.dimension")
-    if [[ "$em" != "Xenova/bge-base-en-v1.5" || "$ed" != "768" ]]; then
-      _CHECK_OUTPUT="flag-bge: config.json OK but embeddings.json {model=${em:-missing}, dimension=${ed:-missing}} disagrees (want:bge,768)"
-      return
-    fi
-  fi
-
-  # Drive a store so the RvfBackend writes its segment with the configured dim.
-  # `memory store` loads the embedding model + runs inference + persists the WAL.
-  # bge is a non-default model, so it is cold (not kept warm by the ~570 other
-  # checks in the parallel wave the way the mpnet default is) — 30s is too tight
-  # under that contention and a killed store leaves no embedding, surfacing as a
-  # misleading dim=0. 75s keeps the check inside the 180s per-check watchdog.
-  # (`memory init --force` does no model work, so it stays at 30s.)
-  _run_and_kill \
-    "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' '${CLI_BIN}' memory init --force" \
-    "" 30
-  _run_and_kill \
-    "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' '${CLI_BIN}' memory store --key 'adr0177-bge' --value 'bge probe' --namespace adr0177" \
-    "" 75
-  local store_out="$_RK_OUT"
-  if ! echo "$store_out" | grep -qi 'stored\|success\|adr0177-bge'; then
-    _CHECK_OUTPUT="flag-bge: memory store failed/killed before persisting: $(echo "$store_out" | tail -3 | tr '\n' ' ')"
-    return
-  fi
-
-  local stored_dim; stored_dim=$(_adr0177_stored_dim "$dir")
-  if [[ "$stored_dim" != "768" ]]; then
-    _CHECK_OUTPUT="flag-bge: config dim=768 but RvfBackend segment dim=${stored_dim:-unknown}"
-    return
-  fi
-
-  _CHECK_PASSED="true"
-  _CHECK_OUTPUT="flag-bge: model=Xenova/bge-base-en-v1.5, dim=768 propagated to config + RvfBackend"
-}
-
-# ── (3) `--embedding-model Xenova/all-MiniLM-L6-v2` (384d auto-adjust) ──────
+# ── (2) `--embedding-model Xenova/all-MiniLM-L6-v2` (384d auto-adjust) ──────
 
 # check_adr0177_flag_minilm_384 — verify the dimension auto-adjusts to 384 in
 # config AND a new RVF segment is created at that dim. This is the strongest

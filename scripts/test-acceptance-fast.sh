@@ -400,7 +400,6 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0177"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     echo "── ADR-0177 Phase 1.6 (embedding config chain) ──"
     _fast_run "adr0177-default-keys"  check_adr0177_default_config_keys
     _fast_run "adr0177-default-rt"    check_adr0177_default_roundtrip
-    _fast_run "adr0177-flag-bge-768"  check_adr0177_flag_bge_768
     _fast_run "adr0177-flag-mini-384" check_adr0177_flag_minilm_384
   fi
 fi

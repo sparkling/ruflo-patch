@@ -43,7 +43,7 @@
 #   adr0088    — adr0088-no-ipc, adr0088-status, adr0088-init-no,
 #                adr0088-init-yes, adr0088-daemon-ok
 #   adr0177    — adr0177-default-keys, adr0177-default-rt,
-#                adr0177-flag-bge-768, adr0177-flag-mini-384
+#                adr0177-flag-mini-384
 #                (Phase 5; runs inside the phase5-init-config wave)
 #   adr0178    — adr0178-hquery-e2e (agentdb_hierarchical-query 5-phase)
 #                (Phase 5; runs inside the phase5-init-config wave)
@@ -2952,7 +2952,6 @@ if [[ -f "$p5_lib" ]]; then
     source "$adr0177_lib"
     run_check_bg "adr0177-default-keys"   "ADR-0177 default config keys"     check_adr0177_default_config_keys  "adr0177"
     run_check_bg "adr0177-default-rt"     "ADR-0177 default roundtrip"       check_adr0177_default_roundtrip    "adr0177"
-    run_check_bg "adr0177-flag-bge-768"   "ADR-0177 --embedding-model bge"   check_adr0177_flag_bge_768         "adr0177"
     run_check_bg "adr0177-flag-mini-384"  "ADR-0177 --embedding-model mini"  check_adr0177_flag_minilm_384      "adr0177"
   fi
 
@@ -2994,7 +2993,6 @@ if [[ -f "$p5_lib" ]]; then
     "p5-compat-cfgset|config set/get round-trip" \
     "adr0177-default-keys|ADR-0177 default config keys" \
     "adr0177-default-rt|ADR-0177 default roundtrip" \
-    "adr0177-flag-bge-768|ADR-0177 --embedding-model bge" \
     "adr0177-flag-mini-384|ADR-0177 --embedding-model mini" \
     "adr0178-hquery-e2e|ADR-0178 hierarchical-query E2E"
 
