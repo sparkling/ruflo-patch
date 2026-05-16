@@ -55,7 +55,12 @@ check_adr0104_mcp_direct_path() {
     return
   fi
 
-  local iso; iso=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0155-mcp-XXXXX")
+  # ADR-0182 L4-fix: must be OUTSIDE $ACCEPT_TEMP's marker tree — init walks up
+  # looking for .ruflo-project and writes .mcp.json there. If the iso is under
+  # $ACCEPT_TEMP/_check_workdirs/, init writes to $ACCEPT_TEMP/.mcp.json (which
+  # the harness already populated) instead of $iso/.mcp.json. The L4 lever's
+  # trap-coverage benefit doesn't apply to checks that need root-isolation.
+  local iso; iso=$(mktemp -d /tmp/ruflo-adr0155-mcp-XXXXX)
   if [[ -n "$TEMP_DIR" && -d "$TEMP_DIR/node_modules" ]]; then
     ln -sf "$TEMP_DIR/node_modules" "$iso/node_modules"
   fi
