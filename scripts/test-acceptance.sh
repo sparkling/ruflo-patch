@@ -166,7 +166,28 @@ cleanup() {
     sleep 0.1
   done
   kill "$GLOBAL_TIMEOUT_PID" 2>/dev/null || true
-  [[ -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]] && rm -rf "$ACCEPT_TEMP"
+  # ADR-0182 L3: when RUFLO_PERSISTENT_ACCEPT=1, ACCEPT_TEMP lives under
+  # ${HOME}/.cache and must SURVIVE cleanup so the next release can
+  # cache-hit. Only nuke when running in the default (mktemp /tmp) mode.
+  # We scrub all volatile runtime state so the next release starts with
+  # the same shape it would see on a fresh install: node_modules +
+  # package.json + .npmrc + .release-epoch remain; everything else
+  # (per-check workdirs, init --full output, daemon sockets, RVF
+  # segments) is wiped.
+  if [[ -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+    if [[ "${RUFLO_PERSISTENT_ACCEPT:-}" == "1" ]]; then
+      rm -rf "${ACCEPT_TEMP}/_check_workdirs" \
+             "${ACCEPT_TEMP}/.claude" \
+             "${ACCEPT_TEMP}/.claude-flow" \
+             "${ACCEPT_TEMP}/.swarm" \
+             "${ACCEPT_TEMP}/.ruflo" \
+             "${ACCEPT_TEMP}/coordination" \
+             "${ACCEPT_TEMP}/memory" \
+             2>/dev/null || true
+    else
+      rm -rf "$ACCEPT_TEMP"
+    fi
+  fi
   [[ -n "${PARALLEL_DIR:-}" && -d "${PARALLEL_DIR:-}" ]] && rm -rf "$PARALLEL_DIR"
   [[ -n "${E2E_DIR:-}" && -d "${E2E_DIR:-}" ]] && rm -rf "$E2E_DIR"
   # ADR-0182 L6: trap-cover wrapper-solo install dir
@@ -229,19 +250,54 @@ export AGENTDB_MODEL_PATH="${HOME}/.cache/agentdb-models"
 # Measured across r3/r6/r8 vs baseline r2: 26.4s → 33.6s / 45.6s / 36s
 # (all worse). See ADR-0181 handover notes if reintroducing the cache.
 _p=$(_ns)
-ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
+# ADR-0182 L3 (opt-in): persistent ACCEPT_TEMP via _resolve_accept_temp.
+# Behind RUFLO_PERSISTENT_ACCEPT=1 (default off). On cache HIT (epoch
+# matches resolved cli@latest + ruflo@latest + cli's deps blob), skip
+# `npm install` entirely — re-use the prior install's node_modules tree.
+# 4-week kill-switch: revert flag + code path by 2026-06-13 if not
+# promoted to default.
+_L3_CACHE_HIT=0
+if [[ "${RUFLO_PERSISTENT_ACCEPT:-}" == "1" ]]; then
+  # shellcheck disable=SC1091
+  source "${PROJECT_DIR}/lib/accept-cache.sh"
+  ACCEPT_TEMP=$(_resolve_accept_temp "$REGISTRY")
+  if [[ -f "${ACCEPT_TEMP}/.release-epoch" ]]; then
+    log "[L3] cache HIT: reusing ${ACCEPT_TEMP} (skipping npm install)"
+    _L3_CACHE_HIT=1
+  else
+    log "[L3] cache MISS: fresh install at ${ACCEPT_TEMP}"
+  fi
+else
+  ACCEPT_TEMP=$(mktemp -d /tmp/ruflo-accept-XXXXX)
+fi
 # ADR-0182 L4: parent dir for reparented per-check workdirs (trap-covered
 # via the rm -rf "$ACCEPT_TEMP" in cleanup()).
 mkdir -p "${ACCEPT_TEMP}/_check_workdirs"
 _disable_spotlight_indexing
-(cd "$ACCEPT_TEMP" \
-  && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
-  && echo "registry=${REGISTRY}" > .npmrc \
-  && npm install @sparkleideas/cli @sparkleideas/ruflo @sparkleideas/agent-booster @sparkleideas/plugins @sparkleideas/memory \
-     @sparkleideas/plugin-agent-federation @sparkleideas/plugin-iot-cognitum \
-     --registry "$REGISTRY" --no-audit --no-fund --prefer-offline 2>&1) || {
-  log_error "Failed to install packages from ${REGISTRY}"; exit 1
-}
+if [[ "$_L3_CACHE_HIT" == "1" ]]; then
+  # Cache HIT — node_modules already populated from a prior release at
+  # the same epoch. Skip npm install entirely (ADR-0182 §L3 (i)). The
+  # .npmrc + package.json from the prior install are reused unchanged.
+  # The _check_workdirs/ subdir is recreated above; everything else
+  # persists.
+  :
+else
+  (cd "$ACCEPT_TEMP" \
+    && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
+    && echo "registry=${REGISTRY}" > .npmrc \
+    && npm install @sparkleideas/cli @sparkleideas/ruflo @sparkleideas/agent-booster @sparkleideas/plugins @sparkleideas/memory \
+       @sparkleideas/plugin-agent-federation @sparkleideas/plugin-iot-cognitum \
+       --registry "$REGISTRY" --no-audit --no-fund --prefer-offline 2>&1) || {
+    log_error "Failed to install packages from ${REGISTRY}"; exit 1
+  }
+  # ADR-0182 §L3 (iv): write .release-epoch atomically AFTER install
+  # succeeds, so a crashed install leaves no false-positive cache.
+  # Only meaningful when RUFLO_PERSISTENT_ACCEPT=1; harmless otherwise.
+  if [[ "${RUFLO_PERSISTENT_ACCEPT:-}" == "1" ]]; then
+    _l3_write_release_epoch "$ACCEPT_TEMP" "$REGISTRY" \
+      || log "[L3] WARN: failed to write .release-epoch (cache will rebuild next release)"
+  fi
+fi
 _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 
 # Phase: Shared wrapper-solo install (started in BACKGROUND, joined
