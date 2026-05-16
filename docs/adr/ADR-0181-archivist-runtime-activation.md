@@ -287,9 +287,113 @@ ADR-0181's original Phase 1 text — "construct real backends + `projectRoot`" a
 
 The architecture (ADR-0180) is not reopened — this amendment narrows Phase 1's *config shape* to what the host processes can honestly supply today; the deferred backend wiring lands intact in a later phase. Council record: [docs/council/ADR-0181-phase-1-report.md](../council/ADR-0181-phase-1-report.md).
 
+### Amendment: Phase 7 — controller-persistence handle-share (2026-05-15)
+
+Phase 7's exit gate is "controller persistence" — the prerequisite for wiring the 4 handlers left body-ported-but-un-exported by the Phase 6 amendment (`reflexion-store`, `skill-create`, `hierarchical-store`, `sona-trajectory-store`). Recon found the gate was failing for a different reason than the Phase 6 amendment assumed: not "stub controllers that succeed without persisting", but **two-database split-brain**.
+
+**Root cause.** cli's controllers persist to `<projectRoot>/.swarm/memory.db` — created lazily by AgentDB's `loadSchemas()` on first `getController()`. The archivist's `ensureSqliteWired` was opening `<projectRoot>/.claude-flow/archivist.db` — a separate empty file. Writes landed in one file; reads queried the other. The detector heuristic added in `forks/ruflo 505606377` was orthogonal — it correctly identified the cli controllers as real (all marker methods present), but couldn't close a split-brain it didn't know existed.
+
+**Fix shipped across 3 release rounds:**
+
+* **r1 — path-repoint (regressed).** `forks/ruflo b030f39a1` + `2500bc283` repointed `ensureSqliteWired` from `archivist.db` to `.swarm/memory.db`, and gated 3 carve-out write storeIds on the wired handle. Substrate now pointed at the right file, but the `existsSync` guard fired on first dispatch — `memory.db` hadn't been created yet because `loadSchemas()` runs lazily on `getController()`, and Phase 7 dispatches happen *before* first cli `getController()` call. 6 acceptance failures with explicit "memory.db does not exist."
+* **r2 — handle-share.** `forks/ruflo 7d36d6f77` collapsed the split by **looking up cli's existing AgentDB handle** instead of opening a new one. New export `getControllerRegistryAgentDb()` in `memory-router.ts` calls `ensureRegistry()` (forces lazy registry init that runs `loadSchemas()`, creating `memory.db`), then returns the live `ControllerRegistry.getAgentDB().database`. `ensureSqliteWired` passes that shared handle to `archivist.setSqliteDb()`. One file, one handle, no startup-ordering race. Resolved 5 of 6 r1 failures.
+* **r3 — recall-side gate flip.** `forks/ruflo 7a5fa0913` switched cli's `agentdb_hierarchical-recall` wrapper at `agentdb-tools.ts:559` from the pre-Phase-7 `ensureRvfWired()` to `ensureSqliteWired()`, matching the post-Phase-7 SQLite carve-out classification. Off-by-one fix; closed the last failure.
+
+**agentdb side** (`forks/agentdb bf35a29` + `4e50b4b` + `7daa527` + `10ee2e8`):
+
+* Substrate-registry roster move (3 storeIds RVF→SQLite carve-out): `agentdb_reflexion_store`, `agentdb_skill_create`, `agentdb_hierarchical_store`.
+* `agentdb_hierarchical-recall` axis-flip from `vectorSearch` to `ctx.substrate.query` — `SELECT ... ORDER BY importance DESC LIMIT topK`. `hierarchical_memory` has no embedding column, so importance is the canonical rank signal. `hmem_vec` MATCH branch deferred to a future ADR (even with `sqlite-vec` loaded, the controller's own recall path doesn't use MATCH).
+* Stale "Fallback path: substrate.withWrite RVF" doc-comments deleted from 4 `agentdb_*_store` handlers — bodies always threw fail-loud; only headers contradicted code.
+* 3 barrel uncomments — `reflexion-store`, `skill-create`, `hierarchical-store` exported. `sona-trajectory-store` stayed commented in this phase; `forks/agentdb e36e871` re-framed its barrel comment as permanently-cli-only at the time (later revised by post-Phase-7 Item 6).
+
+**Acceptance impact (r3, patch.128):** 656 / 0 / 22 — **6 probes flipped `skip_accepted` → PASS**: `adr0112-27-1`, `adr0112-27-3`, `adr0112-27-4`, `adr0178-hquery-e2e`, `p13-agentdb-reflexion`, `p13-agentdb-skill`. The pass-count drop vs Phase 8 r1's 658 is heavy-skip drift (see [§Acceptance-baseline trajectory amendment](#amendment-acceptance-baseline-trajectory-2026-05-15) — 8 heavy tests passed in phase8-r1 baseline that should have been skipped by `_HEAVY_CHECK_IDS`; r3 skips them correctly). Council record: [docs/council/ADR-0181-phase-7-report.md](../council/ADR-0181-phase-7-report.md) (to be authored at phase close).
+
+### Amendment: Phase 8 — stub-porter, invariants, DA carry-forwards (2026-05-15)
+
+Phase 8 is not part of the original 7-phase plan; it consolidates the work that fell out of Phase 5's DA memo + Phase 6's prerequisite-only wire-up. Five concurrent scopes ran as a single swarm wave under team-lead direction (the §Multi-Agent Execution Plan was followed for this wave, unlike the Phase 6 prerequisite work).
+
+**1. Stub-porter — 5 of 6 remaining stub bodies ported.**
+
+* `daemons/audit.ts`, `daemons/map.ts`, `daemons/testgaps.ts` (daemon-scheduled; no acceptance probe).
+* `github/workflow.ts` (handler is audit-anchor only; cli still owns the gh subprocess).
+* `hive-mind/status.ts` (cli `hive-mind_status` doesn't dispatch through archivist yet — body is governance-shape coverage for when cli flips).
+* `hive-mind/consensus.ts` **deferred** — 1000+ line strategy fan-out too entangled per cli's own deferral comment; needs per-strategy split first.
+
+Batched into `forks/agentdb f93a4ee` alongside CF#3 (hooks namespace harmonization).
+
+**2. Invariants landing — 6 high-traffic handlers wired** (`forks/agentdb f1c0cc6`, 446 ins / 42 del across 14 files).
+
+Layout: `forks/agentdb/src/archivist/invariants/<surface>/<handler>.ts` per handler; per-surface barrels re-export `<name>Invariants` arrays; handlers import and pass to `registerMutationHandler({ invariants })`.
+
+Wired:
+
+* `memory_store` — `namespaceNonEmpty` + `namespaceEquality` + `keyEquality` + `contentEquality` + `ttlNonNegative` + `upsertEquality`.
+* `agentdb_pattern_store` — `patternNonEmpty` + `patternEquality` + `typeIsSlug` + `confidenceInRange`.
+* `agentdb_feedback` — `taskIdWellFormed` + `taskIdEquality` + `qualityInRange` + `agentLengthBounded`.
+* `agentdb_experience_record` — `taskWellFormed` + `taskEquality` + `rewardInRange` + `inputOutputBounded`.
+* `agentdb_route` — `taskNonEmpty` + `taskEquality` + `namespaceEquality`.
+* `task_create` — `typeNonEmpty` + `typeEquality` + `descriptionBounded` + `priorityInEnum` + `taskIdWellFormedWhenPresent`.
+
+Plus 39 source-level wiring tests in `tests/unit/adr0181-invariants.test.mjs` (per-handler invariant array attached, return-shape conformance, barrels re-export).
+
+**Important caveat.** Today's dispatch passes the same `payload` as both `callerIntent` and `recordedPayload`. So `*Equality` invariants are **tautologies TODAY** — they ship as the contract spec for when dispatch evolves to mint a separate `recordedPayload` from the substrate write path. Range/well-formedness invariants (`ttl >= 0`, `confidence in [0,1]`, etc.) DO fire meaningfully now and provide defence-in-depth for non-cli callers. 94 of 100+ handlers remain on `invariants: []`; Phase 8 wired only the high-traffic mutation surfaces.
+
+**3. Detector pattern for stub-vs-real controllers** (`forks/ruflo 505606377`).
+
+The 4 Phase 6-deferred cli writer adapters (`makeCliReflexionStoreWriter`, `makeCliSkillLibraryWriter`, `makeCliHierarchicalMemoryWriter`, `makeCliSonaTrajectoryWriter`) gained method-surface markers — they call `requireXxx()` on the cli controller and throw fail-loud if the marker methods (`getStats` / `promote` / `retrieveRelevant` / `getCacheStats` / etc.) are missing. The detector did NOT unblock the 4 deferred handlers — Phase 7's split-brain root cause was a different bug — but it landed a pre-existing signature bug along the way: `recordTrajectory` was being called with the wrong signature against the real `SonaTrajectoryService` (caught by the detector path).
+
+**4. ADR-0112 retirement — audit-only.** The named Phase 6 scope. Stub-porter agent ran a full catalogue of every site: `forks/ruflo/v3/@claude-flow/memory/src/{rvf-backend.ts,agentdb-backend.ts,controller-registry.ts,rvf-backend-errors.ts}` + `forks/ruflo/v3/@claude-flow/cli/src/{memory/memory-router.ts,mcp-tools/{agentdb,memory,hooks}-tools.ts,commands/hooks.ts}` + `scripts/lint-fail-loud.mjs` + 4 `tests/unit/adr0112-*.test.mjs`. **CAN_REMOVE bucket is empty** — every site is load-bearing for non-archivist code paths (RvfBackend/AgentDBBackend direct callers in storage-factory / rvf-migration / database-provider / auto-memory-hook; ControllerRegistry consumed by every `routeMemoryOp` / `routePatternOp`; hooks/* family intentionally cli-authoritative per §J of the handover doc). Real retirement awaits ADR-0180 §Phase 10. Full audit catalog in [docs/council/ADR-0181-phase-6-da-memo.md](../council/ADR-0181-phase-6-da-memo.md) (Phase 8 amendment).
+
+**5. DA carry-forwards — 6 of 9 landed** from [§Phase 5 DA memo](#amendment-phase-5-2026-05-15) carry-forward list:
+
+| CF | Status | Commit | Scope |
+|---|---|---|---|
+| #1 mcp-server retry/exit wrapper | ✅ landed | `forks/ruflo a819dcaa2` | `warmUpRvfWithRetry()` 4-attempt linear backoff on EBUSY/EAGAIN/EBUSYISH/EMFILE; non-recoverable errors abort first attempt per `feedback-best-effort-must-rethrow-fatals`; 18 unit tests. |
+| #2 DAA cross-substrate migration SCOPE NOTEs | ✅ landed | `forks/agentdb 945c919` | Removal half landed in Phase 5; this loop refreshed stale handler SCOPE NOTEs to reflect post-Phase-5 reality + sketched future-invariant design space. |
+| #3 Hooks namespace harmonization | ✅ landed | `forks/agentdb f93a4ee` | `registerMutationHandlerAlias()` + `registerReadHandlerAlias()`; 4 hook handlers register under both `hook_pre_task` (canonical) + `hooks_pre-task` (cli MCP). Discovery: 3 conventions exist (cli plural-hyphenated, archivist singular-underscored, agentic-flow singular-underscored) — alias mechanism sidesteps the rename problem entirely. 8 unit tests. |
+| #5 NO-FLIP rationale headers | ✅ landed | `forks/ruflo 44afa18d5` | Added to `agentdb-orchestration.ts`, `hooks-tools.ts`, `session-tools.ts` per the Phase 5 finding that no-flip rationale lived only in SendMessage threads. |
+| #6 Path-alignment audit for FS_JSON_PATH_OVERRIDES | ✅ landed | `forks/agentdb 3fafe81` | `assertFsJsonPathOverridesAligned()` startup check; 11 unit tests. Caveat: catches structural typos but cannot catch cli-vs-archivist alignment shape (cross-package introspection) — documented in commit. |
+| #7 Dual session-tools cleanup | ✅ documented | `forks/ruflo 171830418` | Audit found `v3/mcp/tools/` is **entirely dead code** (14 files + .js/.d.ts artifacts, not in any tsconfig include or `copy-source.sh`). Documented rather than deleted; safe single-commit removal in a follow-up. |
+| #4 `memory_search_index` → `memory_store` collapse | ❌ deferred | — | Depends on substrate-seam expansion that hasn't landed. |
+| #8 Memory-read handler readiness | ❌ deferred | — | Strictly blocked by CF#4. |
+| #9 `agent_execute` shared-core refactor | ❌ deferred | — | Requires refactoring `agent-execute-core.ts` (shared with G3 workflow runtime) OR extending the archivist handler to model the pre-LLM busy reservation. Either is its own scope. |
+
+### Amendment: post-Phase-7 b5 close-out (2026-05-16)
+
+After Phase 7 collapsed the substrate split-brain, a long tail of `skip_accepted` probes on the b5 family was still load-bearing — most blocked on capability surfaces that had never been wired. This loop closed **13 b5/misc probes** across 6 implementation items + 2 probe-update batches + 1 misnamed-method fix. End state on patch.143: **669 / 0 / 9** — every non-heavy `skip_accepted` resolved. The remaining 9 skips are exactly the documented `_HEAVY_CHECK_IDS` opt-out set (memoryConsolidation + p4-br-* + p7-fo-neural + p8-inv1-memory + t1-2-learning + t3-1-bulk-corpus + t3-4-reasoningbank).
+
+**Implementation items (council workflow: 6 impl agents + 1 queen + 1 DA per item, dialectic via SendMessage):**
+
+* **Item 2 — GNN + SemanticRouter capability surfaces.** `forks/agentdb c443e7e` + `forks/ruflo 2c0e6dbc4`. New `GNNTelemetryReader` + `SemanticRouteReader` capabilities; new `agentdb_gnn_stats` split-read handler (was: `agentdb_neural_patterns 'stats'` threw "not substrate-backed"; now: own dispatch handler with envelope-shape preservation). Wins: `gnnService`, `semanticRouter`.
+* **Item 3 — CausalGraphWriter.** `forks/agentdb 5d1b122` + `forks/ruflo 423455ffb`. `agentdb_causal_edge` mutation handler dispatches through archivist; Phase 7 pattern, one storeId. Downstream wins for causalRecall + explainableRecall unblocked via probe-update r1+r2.
+* **Item 4 — NightlyLearner substrate-seam wraps.** `forks/agentdb d6338d3` + `forks/ruflo 2a65e701e`. F4-2 substrate-seam wraps at 5 sites + new `agentdb_causal_experiment` storeId. Forward-compat scaffolding — cli passes no `MutationContext` today; activates when callsites mint one.
+* **Item 5 (Phase 1+2) — LearningSystem pglite→SQLite full migration.** `forks/agentdb df46eba`/`eaa860e`/`f982007`/`54bf5df` + `b7963da`/`a833d30` (Phase 2) + `forks/ruflo 23b60e42f` + `cfc519f42` (Phase 2). 1482 lines; constructor `PostgresBackend`→`better-sqlite3`; 7 INSERTs + 11 SELECTs translated. Cli adapter signature fix (BUG A: `startSession` with args / BUG B: `outcome:input.task` field-map for SQLite `action` column). Substrate-registry move RVF→SQLite for `agentdb_experience_record`. Win: `learningSystem`.
+* **Item 6 (r1+r2) — SonaTrajectoryService SQLite persistence.** `forks/agentdb f0f28fe`+`29f2aa9`+`d47280a` + `forks/ruflo 0fbf452a6`+`4081e9c2a`+`9433dcb50` + ruflo-patch `34c0332`+`f39fac8`. Dual-write (in-memory Map + INSERT into `sona_trajectories` table) + sibling read handler. **r2 fix:** split read storeId to `agentdb_sona_trajectory_stats` — mutation registry wins `getRegistration` lookup, so co-registering mutation+read under one name causes `dispatchRead` to throw "targets a mutation handler". Same architectural pattern as Item 2's `gnn_stats` split. RL training state stays in-memory by intentional design. Win: `sonaTrajectory`. This also retired the "permanently cli-only" framing for sona — see [Phase 7 amendment](#amendment-phase-7--controller-persistence-handle-share-2026-05-15) on `forks/agentdb e36e871`.
+
+**Probe updates (no source change required):**
+
+* **r1** (ruflo-patch `fb2c4a4`): `_b5_check_causal_pipeline` replaces pglite cluster gate with SQLite `.swarm/memory.db` check per ADR-0177 retirement; `_b5_check_controller_roundtrip` 4g exempts `controller='archivist'` as the canonical Phase-5+ dispatch envelope. Wins: `hierarchicalMemory`, `learningSystem`, `nightlyLearner`, `reasoningBank`, `reflexion`, `skillLibrary`.
+* **r2** (ruflo-patch `740e1ab`): tool-name hyphen fix — probe was calling `agentdb_causal_recall` (underscore) but cli registers `agentdb_causal-recall` (hyphen). Was masked by the pglite gate; surfaced post-r1. Wins: `causalRecall`, `explainableRecall`.
+* **misc** (ruflo-patch `27fa1b4` + `5fb3e2f` + `352c146`): `adr0112-26-2` + `adr0086-debt15` + unit-tier guards — retargeted from pglite to SQLite. Wins: `adr0112-26-2`, `adr0086-debt15`.
+
+**NightlyLearner method-name fix** (`forks/ruflo 9d8a4a1eb`, task #88): cli probed `learner.consolidate` but `NightlyLearner` exposes `consolidateEpisodes`. Two dead-code sites (`memory-router.ts:1959` + `agentdb-tools.ts:1855`) made `agentdb_session_end` never trigger consolidation. Now functional; no probe directly verifies the trigger.
+
+**Process lessons.** DA pre-implementation review caught 4 substantive issues across 4 NACK rounds in this loop. Two of those traced to impl agents proposing plans without verifying the cli adapter's actual call shape — pre-implementation cli-adapter trace is now a standard pre-flight checklist item (see handover §K). A new memory entry — `feedback-singleton-frozen-state-desync.md` — documents the `getProcessXxx()` singleton-init-pins-config trap diagnosed during the adr0104:278 investigation in this loop.
+
+### Amendment: acceptance-baseline trajectory (Phase 7 + Phase 8 + b5 — 2026-05-16)
+
+Appending to the [acceptance-baseline trajectory amendment](#amendment-acceptance-baseline-trajectory-2026-05-15) above. The end-state pass count rises because b5 close-out converted real `skip_accepted` to `PASS`; the heavy-skip drift between phase8-r1 and Phase 7 r3 is harness behaviour correcting itself (the baseline over-counted because the `_HEAVY_CHECK_IDS` opt-out apparently didn't fire — open mystery in handover §K).
+
+| Run | Pass / Fail / Skip | Notes |
+|---|---|---|
+| Phase 8 r1 | 658 / 0 / 20 | Detector pattern, 6 invariants, 5 stub-porter ports, 6 DA carry-forwards landed (CF#1/2/3/5/6/7). |
+| Phase 7 r3 (patch.128) | 656 / 0 / 22 | Split-brain collapsed via handle-share; 6 b5/adr0178/p13 probes flipped `skip_accepted` → PASS. Pass-count drop vs r1 is heavy-skip drift (8 tests — `_HEAVY_CHECK_IDS`). |
+| Post-Phase-7 b5 close-out (patch.143) | **669 / 0 / 9** | 13 b5/misc probes flipped `skip_accepted` → PASS via 6 impl items + 2 probe-update batches + #88 fix. Items 2-6 added capability surfaces: `GNNTelemetryReader`, `SemanticRouteReader`, `CausalGraphWriter`, `SonaTrajectoryReader`. LearningSystem fully migrated pglite→SQLite. **Strict exit criterion met:** every non-heavy `skip_accepted` resolved. The 9 remaining skips are exactly the documented `_HEAVY_CHECK_IDS` opt-out (`ACCEPTANCE_HEAVY=1` to re-include). Log: `logs/probe-debt15-r2.log`. |
+
 ## More Information
 
 * [ADR-0180](ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.md) — the architecture this ADR activates. §Implementation Status records the scaffold-vs-live boundary; this ADR is the "live" half.
 * [docs/council/ADR-0180-f4-2-phase-a-report.md](../council/ADR-0180-f4-2-phase-a-report.md) / [-b](../council/ADR-0180-f4-2-phase-b-report.md) / [-c](../council/ADR-0180-f4-2-phase-c-report.md) — the F4-2 Phase A–C work that made the substrate seam live and surfaced the true ~88-stub scope.
 * [docs/council/agentdb-merge-conflict-resolution.md](../council/agentdb-merge-conflict-resolution.md) — the `git stash pop` conflict resolution that unblocked `npm run release`.
+* [docs/ADR-0181-handover.md](../ADR-0181-handover.md) — comprehensive handover snapshot, including every commit SHA, the file map, what's NOT done, and the §K discoveries-and-clean-follow-ups list.
 * ADR-0112 — superseded by ADR-0180; its enforcement-code retirement is this ADR's Phase 6.
