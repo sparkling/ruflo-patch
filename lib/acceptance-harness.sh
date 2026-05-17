@@ -298,7 +298,7 @@ BG_PIDS=()
 #   ACCEPTANCE_HEAVY=1 bash scripts/test-acceptance.sh
 # Or invoke targeted via test-acceptance-fast.sh <group>.
 #
-# Profile (logs/adr0181-phase8-r1.log slowest passes):
+# Profile (logs/adr0181-phase8-r1-pre-heavy-skip.log slowest passes):
 #   p4-br-navigation              ~75s   (Playwright browser navigation)
 #   p4-br-interaction             ~26s   (Playwright)
 #   p4-br-snapshot                ~17s   (Playwright)
