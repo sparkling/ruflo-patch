@@ -291,20 +291,32 @@ describe('bm25Rank — ranks keys by lexical overlap on hash-fallback', async ()
 // ============================================================================
 
 describe('memory-router.ts: hash-fallback branch wiring', () => {
-  it('search case checks pipeline.getProvider() before calling generateEmbedding', () => {
-    // The provider probe must come BEFORE the embedding generation call so
-    // we can skip the cost entirely on the lexical path. If someone moves
-    // the probe after generateEmbedding, this assertion fails.
+  it('search case checks pipeline.getProvider() before the cost-bearing path (ADR-0181 task #100)', () => {
+    // Updated 2026-05-17 for ADR-0181 task #100: the cost-bearing operation
+    // is no longer the inline generateEmbedding(op.query) call (which moved
+    // into the dispatched handler via ctx.capabilities.requireEmbeddingScorer).
+    // It is now `archivist.dispatchRead('memory_search', ...)` — that's where
+    // we want the BM25 short-circuit to land BEFORE.
+    //
+    // Original intent preserved: hash-fallback path must short-circuit BEFORE
+    // paying the embedding cost. The probe → dispatch order ensures the
+    // hash-fallback branch (lines pipelineProvider === 'hash-fallback') runs
+    // and returns before we ever reach the dispatchRead call site.
     const searchCaseStart = routerSrc.indexOf("case 'search'");
     assert.ok(searchCaseStart > 0, "search case must exist in memory-router.ts");
-    const searchBlock = routerSrc.slice(searchCaseStart, searchCaseStart + 6000);
+    // Bound by next case ('get') or generous fallback. The agent's task-#100
+    // comments add ~80 lines of inline rationale; pre-flip 6000 was tight but
+    // worked, post-flip we need ~12-16k to reach the dispatch call.
+    const nextCaseIdx = routerSrc.indexOf("case 'get':", searchCaseStart);
+    const searchBlockEnd = nextCaseIdx > 0 ? nextCaseIdx : searchCaseStart + 16000;
+    const searchBlock = routerSrc.slice(searchCaseStart, searchBlockEnd);
 
     const providerIdx = searchBlock.indexOf('getProvider');
-    const genEmbedIdx = searchBlock.indexOf('generateEmbedding(op.query');
+    const dispatchIdx = searchBlock.indexOf("dispatchRead('memory_search'");
     assert.ok(providerIdx > 0, 'search case must probe pipeline.getProvider()');
-    assert.ok(genEmbedIdx > 0, 'search case must still support real embedder via generateEmbedding()');
-    assert.ok(providerIdx < genEmbedIdx,
-      'provider probe must come BEFORE generateEmbedding(op.query) so the lexical path can short-circuit');
+    assert.ok(dispatchIdx > 0, "search case must dispatch through archivist.dispatchRead('memory_search') (ADR-0181 task #100)");
+    assert.ok(providerIdx < dispatchIdx,
+      'provider probe must come BEFORE dispatchRead so the hash-fallback path can short-circuit');
   });
 
   it('hash-fallback branch imports bm25 via @claude-flow/memory/bm25 subpath', () => {
