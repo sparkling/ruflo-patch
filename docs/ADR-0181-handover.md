@@ -65,12 +65,25 @@
 
 *Intent fix retained.* The 2 intent-fix commits (`b91b4fd` agentdb + `0eacaf6ec` ruflo) are **kept** because they're forward-compat correctness improvements — any future caller of `EmbeddingScorer.embed` with query intent now works correctly; the architecture was wrong before. They don't activate anything in production today (the handler is only called via dispatch, which requires the cli flip).
 
-**Remaining root-cause hypotheses for #100 re-attempt** (intent ruled out):
-1. **MemoryRvfAdapter.queryAsync vs RvfBackend.search semantic divergence.** Pre-flip cli's `storage.search` calls RvfBackend.search directly with `filters: {namespace}` push-down. Post-flip handler calls `substrate.vectorSearch` → adapter's queryAsync — does this route hit the same in-memory HNSW index with the same scoring, or does adapter normalize/dedupe/filter differently?
-2. **NS_OVERFETCH=4 insufficient at small corpora.** The handler does namespace post-filter with topK×4 widening. With 2 entries in the test namespace and a small global corpus, this should be more than enough — but if the vectorSearch returns 0 results for the un-prefixed query embedding (intent issue applied even WITH the fix?), the post-filter sees nothing.
-3. **Cross-process state visibility.** Each `cli mcp exec` is a fresh process. `memory_store` writes via dispatch (Phase 5) to MemoryRvfAdapter → cli's RvfBackend → flush to `.swarm/memory.rvf`. `memory_search` post-flip dispatches → MemoryRvfAdapter.queryAsync. Does the adapter re-read from disk on each fresh-process init, or rely on in-memory state that the new process doesn't have?
+**Root cause identified (2026-05-17, trace investigation):** **Write/read field-shape asymmetry**, NOT storage instance divergence (refuted — both paths use the SAME `_storage` `RvfBackend` instance on `<projectRoot>/.swarm/memory.rvf`; `ensureRvfWired()` passes cli's existing instance to `MemoryRvfAdapter`).
 
-Pre-flight for next attempt: instrument `MemoryRvfAdapter.queryAsync` to log the count of pre-filter vs post-filter results; bisect on a single failing check (`e2e-0059-mem-search` is the cleanest — 2 stores, 1 search) running serially with debug logging; compare result shapes byte-for-byte between pre-flip `storage.search` and post-flip `adapter.queryAsync` for an identical embedding vector.
+Two write paths exist in production:
+1. **`archivist.dispatch('memory_store')`** (handler `handlers/memory/store.ts:143-153`) writes rich metadata: `{namespace, key, content, tags, ttl, ...}`.
+2. **`routeMemoryOp({type:'store'})`** (memory-router.ts:1065-1077; used by `cli memory store`, `session_restore`, all CLI-command paths) writes EMPTY metadata; namespace/key/content live ONLY on top-level `entry.namespace/key/content`.
+
+The post-flip dispatched READ handlers project results expecting the rich-metadata write shape. Three concrete bugs:
+
+- `memory_search` (search.ts:142-144) filters by `meta.namespace`; routeMemoryOp-written entries have empty `meta` → namespace filter excludes everything → empty search response. Breaks `e2e-0059-mem-search`, `e2e-0059-p3-unified-both`, `e2e-0059-p3-dedup`.
+- `memory_list` (list.ts post-flip narrowing) drops `entry.content`; `session_save → loadRelatedStores` (session-tools.ts:222-232) persists content-less entries; `session_restore` (session-tools.ts:432-444) writes back empty values. Breaks `p8-inv12-mem-full`.
+- `memory_retrieve` returns `MemoryStoreRecord` lacking `tags`/`accessCount`/`hasEmbedding`; cli `retrieveCommand` (commands/memory.ts:231) calls `entry.tags.length` → TypeError → caught → empty envelope. Breaks `adr0069-bug3-persist`.
+
+**Intent fix (`b91b4fd` + `0eacaf6ec`) confirmed no-op:** `applyTaskPrefix` is not exported by `agentdb` (verified via grep in trace report), so `intent: 'query'` vs `'document'` produces identical embeddings in `embedding-adapter.ts:91`. The 2 commits are kept as forward-compat (the API shape is correct; the implementation gap is in agentdb's missing `applyTaskPrefix` export) but they have **no functional effect today**.
+
+**Fix in flight (forks/agentdb only — cli flip stays reverted):**
+1. **`MemoryRvfAdapter` merge:** searchAsync/getByKeyAsync/queryAsync construct result metadata by MERGING top-level entry fields (`namespace, key, content, tags`) with the entry's own metadata. Spread-at-end pattern preserves dispatch-written entries' explicit metadata while filling in the gaps for routeMemoryOp-written entries.
+2. **Handler record widening:** `MemoryRecord`/`MemoryListRecord`/`MemoryStoreRecord` widen to include `content`, `tags`, `accessCount`, `hasEmbedding` populated from the merged metadata. Cli's pre-flip envelope shape is restored for the dispatched results.
+
+After these land, cli flip retry should succeed. (Cli flip itself remains task #100's next attempt, gated on this prerequisite fix.)
 
 ## What landed during this loop (commit-trail summary)
 
