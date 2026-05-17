@@ -79,11 +79,19 @@ The post-flip dispatched READ handlers project results expecting the rich-metada
 
 **Intent fix (`b91b4fd` + `0eacaf6ec`) confirmed no-op:** `applyTaskPrefix` is not exported by `agentdb` (verified via grep in trace report), so `intent: 'query'` vs `'document'` produces identical embeddings in `embedding-adapter.ts:91`. The 2 commits are kept as forward-compat (the API shape is correct; the implementation gap is in agentdb's missing `applyTaskPrefix` export) but they have **no functional effect today**.
 
-**Fix in flight (forks/agentdb only — cli flip stays reverted):**
-1. **`MemoryRvfAdapter` merge:** searchAsync/getByKeyAsync/queryAsync construct result metadata by MERGING top-level entry fields (`namespace, key, content, tags`) with the entry's own metadata. Spread-at-end pattern preserves dispatch-written entries' explicit metadata while filling in the gaps for routeMemoryOp-written entries.
-2. **Handler record widening:** `MemoryRecord`/`MemoryListRecord`/`MemoryStoreRecord` widen to include `content`, `tags`, `accessCount`, `hasEmbedding` populated from the merged metadata. Cli's pre-flip envelope shape is restored for the dispatched results.
+**Fix landed (2026-05-17 patch.172) — TASK #100 COMPLETE:**
+1. **`MemoryRvfAdapter` merge** (`forks/agentdb a72f664`): searchAsync/getByKeyAsync/queryAsync construct result metadata by MERGING top-level entry fields (`namespace, key, content, tags`) with the entry's own metadata via spread-at-end pattern. Preserves dispatch-written entries' explicit metadata, fills gaps for routeMemoryOp-written entries. +74 LoC + 16 new tests.
+2. **Handler record widening** (same commit): `MemoryRecord`/`MemoryListRecord` widened to include `content`, `tags`, `accessCount`, `hasEmbedding` (all optional) populated from merged metadata. Updated handler tests pass 116/116.
+3. **Cli list envelope surface** (`forks/ruflo b2f25cb44`): `routeMemoryOp('list')` post-flip mapping now spreads `content` + `tags` from the widened MemoryListRecord. Fixes session_save → session_restore round-trip.
 
-After these land, cli flip retry should succeed. (Cli flip itself remains task #100's next attempt, gated on this prerequisite fix.)
+**Acceptance: 672/681/0/9 on patch.172** (vs pre-flip baseline 668/677/0/9 — +4 PASS for new dispatch checks, +4 total). Strict exit criterion **MET**. The cli flip is now live in production:
+- All 4 cli memory-read cases (`get`/`list`/`search`/`search_unified`) dispatch through `archivist.dispatchRead`
+- Both write conventions (`archivist.dispatch('memory_store')` and `routeMemoryOp({type:'store'})`) work uniformly through the dispatched read path
+- 4 new acceptance checks (`adr0181-disp-{get,list,search,sunified}`) prove the dispatch path end-to-end
+
+Progression: attempt 1 (patch.168) 5 fail → revert (patch.169) 0 fail → attempt 2 with intent-fix prerequisite (patch.170) same 5 fail [intent fix proven no-op] → revert (patch.171) 0 fail → attempt 3 with merge-fix prerequisite (patch.171→test) 1 fail [content drop in list envelope] → attempt 4 with cli envelope fix (patch.172) **0 fail**.
+
+**Root-cause discipline lesson.** First two attempts wasted on unverified hypotheses (intent fix vs structural read-side bug). Third attempt was guided by an empirical trace agent that produced byte-level evidence; that focused investigation found the actual asymmetry in ~13min and the fix was surgical. **`feedback-no-fallbacks` + `feedback-data-loss-zero-tolerance` held throughout** — every failing iteration reverted cleanly, no flag-flipped escape hatches.
 
 ## What landed during this loop (commit-trail summary)
 
