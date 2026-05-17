@@ -125,15 +125,27 @@ _acceptance_snapshot() {
       _ACCEPT_COW_PROBE_RESULT=1
     fi
   fi
+  # ADR-0182 L2 fix (post-wave3-baseline catastrophic regression): use src/. dst/
+  # form to copy CONTENTS into an existing dst dir, matching the prior
+  # `cp -r "$src/." "$dst/"` semantics. Earlier helper required `rmdir "$dst"`
+  # before the cp — but `_disable_spotlight_indexing` (called between mktemp
+  # and rmdir at scripts/test-acceptance.sh) adds a `.metadata_never_index`
+  # marker file, making rmdir fail. cp -cR src dst with dst-already-exists
+  # then creates dst/$(basename src), leaving the snapshot at the wrong path.
+  # The wave3-baseline release (commit `8bc65d7`) showed 59 acceptance failures
+  # caused by $E2E_DIR being effectively empty (snapshot landed at
+  # $E2E_DIR/ruflo-accept-XXXX/ instead). cp -cR src/. dst/ is robust to either
+  # dst-empty or dst-with-markers — verified on APFS, exit 0, marker preserved.
+  mkdir -p "$dst" 2>/dev/null || true
   if [[ "$_ACCEPT_COW_PROBE_RESULT" == "0" ]]; then
-    echo "[L2] _acceptance_snapshot: cow ($src -> $dst)" >&2
-    cp -cR "$src" "$dst"
+    echo "[L2] _acceptance_snapshot: cow ($src/. -> $dst/)" >&2
+    cp -cR "$src/." "$dst/"
   elif [[ "$(uname -s 2>/dev/null)" == "Linux" ]]; then
-    echo "[L2] _acceptance_snapshot: hardlink ($src -> $dst)" >&2
-    cp -al "$src" "$dst"
+    echo "[L2] _acceptance_snapshot: hardlink ($src/. -> $dst/)" >&2
+    cp -al "$src/." "$dst/"
   else
-    echo "[L2] _acceptance_snapshot: recursive ($src -> $dst)" >&2
-    cp -r "$src" "$dst"
+    echo "[L2] _acceptance_snapshot: recursive ($src/. -> $dst/)" >&2
+    cp -r "$src/." "$dst/"
   fi
 }
 

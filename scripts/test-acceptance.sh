@@ -463,10 +463,12 @@ _disable_spotlight_indexing
 # ADR-0182 L2: APFS clonefile snapshot — ~2 GB/release write_bytes saved on
 # this host (macOS 26 / Darwin 25.4.0). Helper probes COW once and caches,
 # falls back to Linux hardlink farm or recursive copy on foreign FS.
-# mktemp -d above created an empty $E2E_DIR; remove it so cp -cR/-al/-r
-# treats $E2E_DIR as the dest directory to create (matches prior cp -r
-# "$ACCEPT_TEMP/." "$E2E_DIR/" semantics where dest already existed).
-rmdir "$E2E_DIR"
+# Post-wave3-baseline fix: the helper now uses `cp -cR src/. dst/` contents-
+# into-existing-dst semantics, matching the original `cp -r "$src/." "$dst/"`
+# form. Earlier draft used `cp -cR src dst` and required this caller to
+# `rmdir "$E2E_DIR"` first — but _disable_spotlight_indexing above adds a
+# .metadata_never_index marker, breaking rmdir and landing the snapshot at
+# $E2E_DIR/ruflo-accept-XXXX/ instead. No more rmdir hack needed.
 _acceptance_snapshot "$ACCEPT_TEMP" "$E2E_DIR"
 # Snapshot taken before non-e2e wave — state is clean from harness init.
 # Only remove transient data that could interfere with e2e checks.
