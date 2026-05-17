@@ -135,9 +135,17 @@ describe('ADR-0086 swarm: I3 — search catch returns success: false', () => {
       'search catch should return success: false (fail loudly)');
   });
 
-  it('search catch block includes error message', () => {
-    assert.ok(searchBlock.includes('Embedding generation failed'),
-      'search catch should report embedding failure in error message');
+  it('search catch block surfaces error from dispatched call (ADR-0181 task #100)', () => {
+    // Updated 2026-05-17 for ADR-0181 task #100: embedding generation moved
+    // INTO the dispatched handler via ctx.capabilities.requireEmbeddingScorer().
+    // The cli boundary's error surface is now "search failed: <handler error>"
+    // (real-embedder path) or "bm25 search failed: ..." (hash-fallback path) —
+    // both surface the underlying failure rather than silently returning empty
+    // results. Original ADR-0086 invariant (don't swallow errors) preserved.
+    assert.ok(
+      searchBlock.includes('search failed') || searchBlock.includes('bm25 search failed'),
+      'search catch should surface dispatched-call or bm25 failure in error message',
+    );
   });
 });
 
