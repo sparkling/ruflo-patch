@@ -354,7 +354,7 @@ Worth knowing — these will NEVER flip:
   3. **`p4-tr-*` marketplace transfer** (4 checks, network-flavoured). Group-skip via `p4` makes sense; partially aligned with `p4-br-*` already heavy.
   4. **`ctrl-*` controller checks** (3 in band) match existing heavy "touched-rarely" axis cleanly.
 
-  **4 flakies need root-cause fixing before any heavy-skip is appropriate** (per `feedback-no-squelch-tests`): `p8-inv11-delta` (9+ recent FAILs), `adr0122-8type-matrix` (2), `p10-mem-same-key` (2), `adr0177-default-rt` (3). Heavy-skipping a flaky check would hide bugs. Each is its own investigation task. Full audit table + per-check classification archived in this commit's history; raw source: `logs/adr0181-phase8-r1-pre-heavy-skip.log`.
+  **4 audit-flagged "flakies" are NOT currently flaky** (re-verified 2026-05-17 against the 7 most recent perf-r* logs). Each PASSED 7-for-7: `p8-inv11-delta`, `adr0122-8type-matrix`, `p10-mem-same-key`, `adr0177-default-rt`. The FAIL clusters the audit found were Phase 5 / Phase 6-era cli-flip instability (phase5-r5..r19 / phase6-r1..r2) that resolved as those phases stabilised. Per `feedback-no-squelch-tests` the rule stays — never heavy-skip a flaky check — but these four don't trigger it today. If a future audit re-flags any of them as flaky, re-investigate against current state before any heavy-skip call. Raw source: `logs/adr0181-phase8-r1-pre-heavy-skip.log` for the slow-check enumeration; `logs/adr0181-perf-r*.log` for current pass/fail status.
 
 ## Quick-start for new session
 
