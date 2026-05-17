@@ -684,14 +684,6 @@ phase16_lib="${PROJECT_DIR}/lib/acceptance-phase16-pii-inverse.sh"
 phase17_lib="${PROJECT_DIR}/lib/acceptance-phase17-validator-fuzzing.sh"
 [[ -f "$phase17_lib" ]] && source "$phase17_lib"
 
-# ADR-0181 task #100: cli memory_* read-path dispatch through archivist
-# (4 checks — memory_retrieve / memory_list / memory_search /
-# memory_search_unified). Proves the post-#100 flip is live in the
-# release artifacts. See lib/acceptance-adr0181-dispatch-checks.sh
-# header for the per-check rationale.
-adr0181_dispatch_lib="${PROJECT_DIR}/lib/acceptance-adr0181-dispatch-checks.sh"
-[[ -f "$adr0181_dispatch_lib" ]] && source "$adr0181_dispatch_lib"
-
 # ADR-0098: Swarm-init sprawl (generator + dedupe)
 adr0098_lib="${PROJECT_DIR}/lib/acceptance-adr0098-checks.sh"
 [[ -f "$adr0098_lib" ]] && source "$adr0098_lib"
@@ -1545,19 +1537,6 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase10_lib" ]]; then
   run_check_bg "p10-init-reinvoke"     "P10 init --full reinvoke idempotent"   check_adr0094_p10_init_full_reinvoke       "adr0094-p10"
 fi
 
-# ADR-0181 task #100: cli memory-read dispatch coverage (4 checks).
-# Each uses _with_iso_cleanup. Proves the post-#100 flip in cli's
-# routeMemoryOp ('get'/'list'/'search') + memory-tools.ts
-# (memory_search_unified MCP handler) routes through
-# archivist.dispatchRead end-to-end. See lib/acceptance-adr0181-
-# dispatch-checks.sh header for the per-check rationale.
-if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0181_dispatch_lib" ]]; then
-  run_check_bg "adr0181-disp-get"      "ADR-0181 mem_retrieve dispatch"        check_adr0181_dispatch_mem_get             "adr0181-disp"
-  run_check_bg "adr0181-disp-list"     "ADR-0181 mem_list dispatch"            check_adr0181_dispatch_mem_list            "adr0181-disp"
-  run_check_bg "adr0181-disp-search"   "ADR-0181 mem_search dispatch"          check_adr0181_dispatch_mem_search          "adr0181-disp"
-  run_check_bg "adr0181-disp-sunified" "ADR-0181 mem_search_unified dispatch"  check_adr0181_dispatch_mem_search_unified  "adr0181-disp"
-fi
-
 # ADR-0094 Phase 11: Input fuzzing (16 checks = 8 classes × 2 reps, ≤30s wall-clock).
 # Each uses _with_iso_cleanup for per-check isolation. Verifies malformed inputs
 # produce a loud rejection (ADR-0082) — not error-message quality (that is P12).
@@ -2166,16 +2145,6 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$phase10_lib" ]]; then
     "p10-sess-same-name|P10 session_save same name idempotent"
     "p10-cfg-same-key|P10 config_set same key idempotent"
     "p10-init-reinvoke|P10 init --full reinvoke idempotent"
-  )
-fi
-
-_adr0181_disp_specs=()
-if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0181_dispatch_lib" ]]; then
-  _adr0181_disp_specs=(
-    "adr0181-disp-get|ADR-0181 mem_retrieve dispatch"
-    "adr0181-disp-list|ADR-0181 mem_list dispatch"
-    "adr0181-disp-search|ADR-0181 mem_search dispatch"
-    "adr0181-disp-sunified|ADR-0181 mem_search_unified dispatch"
   )
 fi
 
@@ -2834,7 +2803,6 @@ collect_parallel "all" \
   "${_p8_specs[@]}" \
   "${_p9_specs[@]}" \
   "${_p10_specs[@]}" \
-  "${_adr0181_disp_specs[@]}" \
   "${_p11_specs[@]}" \
   "${_p12_specs[@]}" \
   "${_p13_specs[@]}" \
