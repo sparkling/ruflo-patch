@@ -7,7 +7,7 @@
 # Usage:
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
-# Groups: all, p3, p4, p5, adr0059, adr0085, adr0177, adr0178, e2e-core, e2e-storage
+# Groups: all, p3, p4, p5, adr0059, adr0085, adr0177, adr0178, adr0181, e2e-core, e2e-storage
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -303,6 +303,19 @@ if [[ "$_FAST_RUN_GROUPS" == *"p9"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
     _fast_run "p9-claims-winner" check_adr0094_p9_claims_single_winner
     _fast_run "p9-session-noint" check_adr0094_p9_session_no_interleave
     _fast_run "p9-workflow-one"  check_adr0094_p9_workflow_concurrent_start
+  fi
+fi
+
+# ADR-0181 task #100: cli memory-read dispatch coverage. Proves the
+# post-#100 routeMemoryOp ('get'/'list'/'search') + memory_search_unified
+# MCP-handler flip dispatches through archivist.dispatchRead end-to-end.
+if [[ "$_FAST_RUN_GROUPS" == *"adr0181"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0181-dispatch-checks.sh" ]]; then
+    echo "── ADR-0181 task #100: cli memory dispatch ──"
+    _fast_run "adr0181-disp-get"      check_adr0181_dispatch_mem_get
+    _fast_run "adr0181-disp-list"     check_adr0181_dispatch_mem_list
+    _fast_run "adr0181-disp-search"   check_adr0181_dispatch_mem_search
+    _fast_run "adr0181-disp-sunified" check_adr0181_dispatch_mem_search_unified
   fi
 fi
 
