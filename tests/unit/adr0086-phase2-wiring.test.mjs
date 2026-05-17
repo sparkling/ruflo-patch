@@ -77,18 +77,34 @@ describe('ADR-0086 T2.3: routeMemoryOp uses IStorageContract', () => {
     );
   });
 
-  it('search case calls storage.search with embedding', () => {
+  it('search case dispatches memory_search through the archivist (ADR-0181 task #100)', () => {
+    // Updated 2026-05-17 for ADR-0181 task #100 (DA CF#8): the cli's search
+    // case now dispatches through archivist.dispatchRead('memory_search')
+    // instead of calling storage.search directly. The agentdb handler
+    // (forks/agentdb handlers/memory/search.ts) owns substrate.vectorSearch
+    // after task #99 landed STORE_ID = 'memory_store'. Embedding generation
+    // moves INTO the handler via ctx.capabilities.requireEmbeddingScorer().
+    //
+    // The original ADR-0086 T2.3 invariant (routeMemoryOp must actually wire
+    // storage, not return empty stubs) is preserved by this new shape — the
+    // dispatch routes through the substrate which still hits the RVF backend.
     assert.ok(
-      routerSrc.includes('await storage.search(embedding'),
-      'routeMemoryOp search case does not call storage.search',
+      routerSrc.includes("dispatchRead('memory_search'"),
+      'routeMemoryOp search case does not dispatch memory_search through archivist (ADR-0181 task #100)',
     );
   });
 
-  it('get case calls storage.getByKey', () => {
+  it('get case dispatches memory_retrieve through the archivist (ADR-0181 task #100)', () => {
+    // Updated 2026-05-17 for ADR-0181 task #100: get case now dispatches
+    // memory_retrieve through archivist.dispatchRead instead of calling
+    // storage.getByKey directly. Original ADR-0086 T2.3 invariant preserved —
+    // the dispatch routes through substrate.getByKey added in task #99 commit 1.
     assert.ok(
-      routerSrc.includes('storage.getByKey('),
-      'routeMemoryOp get case does not call storage.getByKey',
+      routerSrc.includes("dispatchRead('memory_retrieve'"),
+      'routeMemoryOp get case does not dispatch memory_retrieve through archivist (ADR-0181 task #100)',
     );
+    // The keyPrefix fallback path still uses storage.query, so storage.getByKey
+    // also remains referenced — but the primary 'get' case uses dispatch.
   });
 
   it('delete case calls storage.delete', () => {
