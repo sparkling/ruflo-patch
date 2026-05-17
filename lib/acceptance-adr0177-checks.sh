@@ -5,15 +5,21 @@
 #   ruflo init  →  .claude-flow/config.json  →  AgentDB / RvfBackend
 #
 # Two scenarios:
-#   (1) Default init writes embedding.* + index.hnsw.* with canonical values
-#       (768-dim mpnet) and AgentDB round-trips an embedding at that dimension.
+#   (1) Default (768-dim mpnet): config-reader + AgentDB round-trip both
+#       sourced from Phase 5's golden $P5_DIR init (ADR-0182 L13(b) re-attempt).
+#       Writer-layer assertion (init emits correct config) lives in the fork
+#       at __tests__/embedding-models.test.ts (L13(a)).
 #   (2) `ruflo init --embedding-model Xenova/all-MiniLM-L6-v2` auto-adjusts
 #       dimension to 384 in config AND a fresh RVF segment is created at 384.
+#       Kept as a real per-check init because MiniLM model bytes aren't in
+#       the harness's pre-warmed ONNX cache (mpnet only, per task #107).
 #
-# Caller MUST set: CLI_BIN, REGISTRY, TEMP_DIR
+# Caller MUST set: CLI_BIN, REGISTRY, TEMP_DIR, P5_DIR (exported by harness
+# at scripts/test-acceptance.sh:3047 before Phase 5 checks run).
 #
-# Each scenario uses its own mktemp dir; the `_run_and_kill` helper handles the
-# CLI hanging on open SQLite handles per ADR-0039 T1.
+# Scenarios (1) read $P5_DIR (config) and clone-from-$P5_DIR (roundtrip);
+# scenario (2) uses _adr0177_run_init helper with _run_and_kill (the CLI
+# hangs on open SQLite handles per ADR-0039 T1).
 #
 # Catalog naming: check_adr0177_* is L7-accepted via the adr-NNNN filename tag.
 
@@ -155,11 +161,18 @@ check_adr0177_default_config_keys() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0177-default-XXXXX")
-  # shellcheck disable=SC2064
-  trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
-
-  _adr0177_run_init "$dir"
+  # ADR-0182 L13(b) re-attempt: read directly from Phase 5's golden init
+  # dir ($P5_DIR — see scripts/test-acceptance.sh:3047). The original L13(b)
+  # used $E2E_DIR which is wiped at line 3017 before Phase 5 starts (commit
+  # bb14830 reverted that attempt). Phase 5's own init is backgrounded
+  # earlier and joined before this check runs (P5_INIT_PID at line 3038).
+  # The config.json + embeddings.json this check reads are PURE READ — no
+  # iso needed, no clone needed. Just point at $P5_DIR.
+  if [[ -z "${P5_DIR:-}" || ! -d "$P5_DIR" ]]; then
+    _CHECK_OUTPUT="default-config: \$P5_DIR not exported or missing (\$P5_DIR='${P5_DIR:-}') — Phase 5 init scheduling broken?"
+    return
+  fi
+  local dir="$P5_DIR"
 
   local cfg="${dir}/.claude-flow/config.json"
   if [[ ! -f "$cfg" ]]; then
@@ -234,13 +247,25 @@ check_adr0177_default_roundtrip() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
+  # ADR-0182 L13(b) re-attempt: clone Phase 5's golden $P5_DIR into a fresh
+  # iso for write isolation. Read-only checks (config_keys above) read $P5_DIR
+  # directly; this round-trip writes memory.rvf and needs its own dir.
+  # _acceptance_snapshot is socket-tolerant (returns 0 even when cp -cR can't
+  # copy daemon.sock); downstream config.json check below verifies content.
+  if [[ -z "${P5_DIR:-}" || ! -d "$P5_DIR" ]]; then
+    _CHECK_OUTPUT="roundtrip-default: \$P5_DIR not exported or missing (\$P5_DIR='${P5_DIR:-}')"
+    return
+  fi
   local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0177-rt-XXXXX")
   # shellcheck disable=SC2064
   trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
+  _acceptance_snapshot "$P5_DIR" "$dir"
+  # findProjectRoot walks up looking for .ruflo-project marker — write one
+  # in the iso so walks stop here (don't drift up to $ACCEPT_TEMP).
+  : > "$dir/.ruflo-project"
 
-  _adr0177_run_init "$dir"
   if [[ ! -f "${dir}/.claude-flow/config.json" ]]; then
-    _CHECK_OUTPUT="roundtrip-default: init failed (no config.json)"
+    _CHECK_OUTPUT="roundtrip-default: clone from \$P5_DIR failed (no config.json — Phase 5 init incomplete?)"
     return
   fi
 
