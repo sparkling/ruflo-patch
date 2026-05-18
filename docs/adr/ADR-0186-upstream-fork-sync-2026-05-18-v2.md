@@ -9,6 +9,8 @@ implements: []
 related: [0094, 0143, 0156, 0162, 0167, 0177, 0180]
 audience: ai-executor
 state_schema: 2
+preflight-corrections:
+  - 2026-05-18 — cross_compile_setup was reported "still false" but verified READY post-authoring. cargo-xwin 0.22.0 + zig 0.16.0 + cargo-zigbuild 0.22.3 all installed; 5 rust targets (aarch64/x86_64-apple-darwin, aarch64/x86_64-unknown-linux-gnu, x86_64-pc-windows-msvc) installed; xwin SDK cache pre-warmed (1.1 GB at ~/Library/Caches/cargo-xwin/). Batch I Windows NAPI cross-compile is end-to-end ready. Decision-point §cross_compile_setup superseded by this preflight correction.
 ---
 
 # ADR-0186: Upstream fork sync — May 18, 2026 (v2, takes over ADR-0162's unlanded work)
