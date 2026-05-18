@@ -25,6 +25,9 @@ import { readFileSync, existsSync } from 'node:fs';
 
 const FORK_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts';
 const AGENT_FILE = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/.claude/agents/consensus/gossip-coordinator.md';
+// ADR-0185 Waves 3+4 — strategy-dispatch literals moved from cli to agentdb.
+const AGENTDB_CONSENSUS_DISPATCHER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus.ts';
+const AGENTDB_GOSSIP_HANDLER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus/gossip.ts';
 
 describe('ADR-0120 (T2) — gossip consensus runtime surface', () => {
   it('fork source file exists', () => {
@@ -201,12 +204,29 @@ describe('ADR-0120 (T2) — gossip consensus runtime surface', () => {
   // 9. Vote action wires gossip strategy through the propagation path
   // ────────────────────────────────────────────────────────────────────
   it('vote action handles strategy === "gossip" branch', () => {
-    // The vote handler must distinguish gossip from non-gossip strategies
-    // (separate settle path via settleCheckGossip, not tryResolveProposal).
+    // ADR-0185 Waves 3+4: vote + status actions flipped to archivist.dispatch.
+    // Strategy-dispatch literals (`strategy === 'gossip'`) moved from cli's
+    // vote/status branches into agentdb's parent dispatcher
+    // (consensus.ts:240: `case 'gossip': return handleGossipConsensus(...)`).
+    // The per-strategy gossip handler (gossip.ts) carries the full vote +
+    // settle logic. Test intent ("verify gossip vote code path exists")
+    // is preserved by greping the agentdb dispatcher's switch arm.
+    const dispatcherSrc = existsSync(AGENTDB_CONSENSUS_DISPATCHER)
+      ? readFileSync(AGENTDB_CONSENSUS_DISPATCHER, 'utf8')
+      : '';
+    const gossipHandlerSrc = existsSync(AGENTDB_GOSSIP_HANDLER)
+      ? readFileSync(AGENTDB_GOSSIP_HANDLER, 'utf8')
+      : '';
     assert.match(
-      src,
-      /proposalStrategy\s*===\s*'gossip'/,
-      'expected vote-action gossip branch',
+      dispatcherSrc,
+      /case\s+'gossip':\s*\n\s*return\s+handleGossipConsensus/,
+      'expected agentdb consensus dispatcher to route gossip strategy to handleGossipConsensus',
+    );
+    // The per-strategy handler exists and handles the vote action.
+    assert.match(
+      gossipHandlerSrc,
+      /case\s+'vote'\s*:/,
+      'expected agentdb gossip handler to have a vote-action case',
     );
   });
 

@@ -36,6 +36,9 @@ const FORK_CRDT_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/
 const FORK_CRDT_DIST = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/dist/src/mcp-tools/crdt-types.js';
 const AGENT_FILE_CLI = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/.claude/agents/consensus/crdt-synchronizer.md';
 const AGENT_FILE_MCP = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/mcp/.claude/agents/consensus/crdt-synchronizer.md';
+// ADR-0185 Waves 3+4 — strategy-dispatch literals moved from cli to agentdb.
+const AGENTDB_CONSENSUS_DISPATCHER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus.ts';
+const AGENTDB_CRDT_HANDLER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus/crdt.ts';
 
 describe('ADR-0121 (T3) — CRDT consensus runtime surface', () => {
   it('fork source files exist (hive-mind-tools.ts + crdt-types.ts)', () => {
@@ -165,9 +168,30 @@ describe('ADR-0121 (T3) — CRDT consensus runtime surface', () => {
   // 9. Vote action handles strategy === "crdt" branch
   // ────────────────────────────────────────────────────────────────────
   it('vote action handles strategy === "crdt" branch', () => {
-    // Match either the strategy === 'crdt' literal or the proposalStrategy === 'crdt' form
-    const hasBranch = /proposalStrategy\s*===\s*'crdt'|strategy\s*===\s*'crdt'/.test(src);
-    assert.ok(hasBranch, 'expected a vote-action crdt branch');
+    // ADR-0185 Waves 3+4: vote + status actions flipped to archivist.dispatch.
+    // Strategy-dispatch literals (`strategy === 'crdt'`) moved from cli's
+    // vote/status branches into agentdb's parent dispatcher
+    // (consensus.ts:242: `case 'crdt': return handleCrdtConsensus(...)`).
+    // The per-strategy crdt handler (crdt.ts) carries the full vote +
+    // settle logic. Test intent ("verify crdt vote code path exists")
+    // is preserved by greping the agentdb dispatcher's switch arm.
+    const dispatcherSrc = existsSync(AGENTDB_CONSENSUS_DISPATCHER)
+      ? readFileSync(AGENTDB_CONSENSUS_DISPATCHER, 'utf8')
+      : '';
+    const crdtHandlerSrc = existsSync(AGENTDB_CRDT_HANDLER)
+      ? readFileSync(AGENTDB_CRDT_HANDLER, 'utf8')
+      : '';
+    assert.match(
+      dispatcherSrc,
+      /case\s+'crdt':\s*\n\s*return\s+handleCrdtConsensus/,
+      'expected agentdb consensus dispatcher to route crdt strategy to handleCrdtConsensus',
+    );
+    // The per-strategy handler exists and handles the vote action.
+    assert.match(
+      crdtHandlerSrc,
+      /case\s+'vote'\s*:/,
+      'expected agentdb crdt handler to have a vote-action case',
+    );
   });
 
   it('vote action merges crdtSnapshot via mergeCRDTState', () => {
