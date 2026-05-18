@@ -1,0 +1,11 @@
+# scripts/check-fetch-timeouts.mjs allowlist
+#
+# Format: <relative-path>:<line-number>  (one per line)
+# Lines starting with # are comments; blank lines are ignored.
+#
+# Add an entry here ONLY if a fetch() call truly does not need a timeout
+# AND document the rationale in a comment above the entry. Otherwise, the
+# right fix is to add `signal: AbortSignal.timeout(<ms>)` to the fetch
+# options in the source file.
+#
+# See ADR-0189 for the silent-drop detector pattern this script mirrors.
