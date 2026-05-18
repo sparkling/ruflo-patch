@@ -42,9 +42,15 @@ This spin-out follows the [ADR-0181 → ADR-0184](ADR-0181-archivist-runtime-act
 
 ## Decision Outcome
 
-(Placeholder — next executor sizes the option choice and per-wave plan.)
+Chosen: **Option D (hybrid)** — land `buildConsensusResponse(...)` additively first; verify response parity via a parallel-strategy harness; then flip each action one at a time with the harness still running as a regression guard.
 
-The author's lean: **Option D (hybrid)**. Land the response-builder additively; verify response parity via a harness; then flip per-action with the harness still running as a regression guard. This sequences risk: the response-builder bug (if any) shows up at land-time, not at flip-time. Per-action flip then becomes a 1-line dispatcher swap per action, with the response-builder already proven correct.
+Option A (one-shot retire) is rejected: the 1500-LoC scope is the exact risk that motivated this spin-out from ADR-0184 Wave 6.
+
+Option B (per-action flip without prior response-builder) is rejected: each per-action flip would need response-builder logic INLINE in that action's branch, duplicating work across 4 actions. Option D extracts the logic ONCE in Wave 1 and reuses it through Waves 2-5.
+
+Option C (24-cell matrix) is rejected: 6 strategies × 4 actions × per-cell verification is overhead disproportionate to risk. The response-builder handles strategy-conditional fields internally; per-action flip is the natural granularity for cli changes.
+
+Option D sequences risk so that the response-builder bug (if any) surfaces at LAND time (Wave 1, additive, no behaviour change), not at FLIP time (Waves 2-5, where a bug would correlate with the cli flip and obscure trace). Per-action flip then becomes a 1-line dispatcher swap per action, with the response-builder already proven correct against the cli's pre-flip baseline.
 
 ### Consequences
 
@@ -62,45 +68,89 @@ The author's lean: **Option D (hybrid)**. Land the response-builder additively; 
 
 ## Architecture
 
-(Placeholder — next executor fleshes this out.)
+- **`buildConsensusResponse(action, strategy, proposalId, state, input) → ConsensusResponse`** at NEW FILE `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-consensus-response.ts` (~300-400 LoC). Pure function. Locates the proposal in `state.consensus.pending` first, falls back to `state.consensus.history`.
 
-- **`buildConsensusResponse(action, strategy, proposalId, state, input) → response`** — pure function. Locates the proposal in `state.consensus.pending` first, falls back to `state.consensus.history`. For each action × strategy, constructs the cli's pre-flip response shape from the loaded proposal + computed telemetry (`votesFor`, `votesAgainst`, `required`, `resolved`, `result`, `byzantineVoters`, gossip-fields, crdt-fields, etc.).
-- **Cli `hive-mind_consensus` handler** — thin dispatch wrapper:
-  1. Pre-mint `proposalId` for `action === 'propose'` (mirrors task_create precedent).
-  2. Call `archivist.dispatch('hive-mind_consensus', payload)`.
-  3. Try/catch: reshape 5 typed errors (`RaftTermCollisionError`, `RaftVoteChangeError`, `DuplicateVoteError`, `VoterIdRequiredError`, `ProposalNotFoundError`) into `{action, error, ...}` envelope. Re-throw 3 others (`MissingQueenForWeightedConsensusError`, `WorkerAlreadyFailedError`, `ProposalAlreadyFailedError`) per cli's pre-flip contract.
-  4. Re-read state, call `buildConsensusResponse(...)`.
-- **Helper-set cleanup** — DELETE iff zero external callers AND not needed by `buildConsensusResponse`:
-  - Mutation-only helpers (always dead-after-flip): `detectByzantineVoters`, `tryResolveProposal`, `maybeAdvanceGossipRoundOnTimeout`, `selectGossipTargets`, `reconcileFailedFromStatusKeys`, `workerMetaFor`.
-  - Pure-read helpers (may stay if `buildConsensusResponse` uses them): `calculateRequiredVotes`, `weightedTally`, `settleCheckGossip`, `gossipFanout`. Decision: vendor-vs-import. Cli could import from `@sparkleideas/agentdb/archivist` to avoid keeping cli copies; OR cli keeps its copies for response-building isolation. Author's lean: KEEP cli copies — response-building is a cli concern; cross-package coupling is unnecessary for pure-read helpers.
-  - Cli `crdt-types.ts` — vendored copy from cli (still load-bearing for cli `buildConsensusResponse` CRDT telemetry: `LWWRegister.from(...).value()`, `ORSet.from(...).elements()`, `GCounter.from(...).value()`). KEEP unless `buildConsensusResponse` chooses to import the agentdb-vendored copy.
+  Signature:
+  ```ts
+  export function buildConsensusResponse(
+    action: 'propose' | 'vote' | 'status' | 'list',
+    strategy: 'bft' | 'raft' | 'quorum' | 'weighted' | 'gossip' | 'crdt',
+    proposalId: string,
+    state: HiveMindState,
+    input: HiveMindConsensusPayload,
+  ): ConsensusResponse;
+  ```
+
+  Return type `ConsensusResponse` is a **TypeScript discriminated union** on `action`: `ProposeResponse | VoteResponse | StatusResponse | ListResponse`. Each member carries strategy-conditional optional fields (gossip-only: `gossipRound`, `gossipBound`, `gossipExhausted`; crdt-only: `crdtState`, `crdtVerdict`, `crdtApprovers`, `crdtVoteCount`, `crdtExpectedVoters`, `crdtTimedOut`; weighted-only: weight-sum subfield; byzantine-only: `byzantineVoters`). The union shape is the formal cli response spec; downstream MCP-caller documentation can cite it directly. (This resolves Open Follow-up #1.)
+
+- **Cli `hive-mind_consensus` handler** at `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts` — post-retirement shape is a thin wrapper (~40-50 LoC, down from ~870):
+
+  1. Pre-mint `proposalId` for `action === 'propose'` (mirrors `task_create` precedent at `mcp-tools/task-tools.ts:127-160`). Other actions take `proposalId` from `payload`.
+  2. `await archivist.dispatch('hive-mind_consensus', { ...payload, proposalId })` for write actions (`propose | vote | status`), `archivist.dispatchRead('hive-mind_consensus', payload)` for `list`. Typed-overload form per ADR-0181 Phase 5 `ToolPayloadMap`.
+  3. Try/catch with `instanceof` discrimination (error classes re-exported from `@sparkleideas/agentdb/archivist` per ADR-0184 Wave 6a barrel):
+     - **Reshape to `{action, error: <e.message>, ...}` envelope** (5): `RaftTermCollisionError`, `RaftVoteChangeError`, `DuplicateVoteError`, `VoterIdRequiredError`, `ProposalNotFoundError`.
+     - **Re-throw** (3, per cli's pre-flip contract): `MissingQueenForWeightedConsensusError`, `WorkerAlreadyFailedError`, `ProposalAlreadyFailedError`.
+  4. Re-read state via `archivist.dispatchRead('hive-mind_status', { proposalId })`.
+  5. `return buildConsensusResponse(action, strategy, proposalId, state, input)`.
+
+- **Helper-set cleanup** in `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts`:
+
+  - **DELETE** — mutation-only, dead-after-flip (verify zero external callers via `grep -rE` per helper before delete): `detectByzantineVoters`, `tryResolveProposal`, `maybeAdvanceGossipRoundOnTimeout`, `selectGossipTargets`, `reconcileFailedFromStatusKeys`, `workerMetaFor`. Approximately ~200 LoC across the 6 functions.
+  - **KEEP in cli** — pure-read, called by `buildConsensusResponse`: `calculateRequiredVotes`, `weightedTally`, `settleCheckGossip`, `gossipFanout`. **Vendor-from-agentdb is rejected** — response-building is a cli concern; cross-package import for pure-read helpers adds coupling that doesn't pay back. (This resolves Open Follow-up #5.)
+  - **KEEP cli `crdt-types.ts`** — `buildConsensusResponse` calls `LWWRegister.from(...).value()` / `ORSet.from(...).elements()` / `GCounter.from(...).value()` for CRDT telemetry. Cross-package import (`@sparkleideas/agentdb/archivist/handlers/hive-mind/consensus/_crdt-types`) would add coupling without benefit. (This resolves Open Follow-up #3.)
+
+- **Parallel-strategy verification harness** at NEW FILE `forks/ruflo/v3/@claude-flow/cli/__tests__/hive-mind-consensus-parity.test.ts` (~400 LoC):
+
+  - Drives 24 inputs (4 actions × 6 strategies) — `propose × {bft, raft, quorum, weighted, gossip, crdt}`, same for `vote / status / list` — through BOTH cli's pre-flip handler AND archivist's dispatched handler. (For the `list` action, "across 6 strategies" is degenerate; harness uses 1 input there → 19 distinct cells in practice, expanded with state variants to ≥24 effective scenarios.)
+  - Diffs responses field-by-field via:
+    - `crdtSemanticEqual()` (already in agentdb per ADR-0184 Wave 5 `_shared.ts`) for CRDT subfields — handles ORSet's internal-ordering issue.
+    - Plain deep-equal for other fields.
+  - **Determinism strategy** (resolves Open Follow-up #2):
+    - Clock: `vi.useFakeTimers()` + `vi.setSystemTime(<fixed epoch>)` per test, advance via `vi.advanceTimersByTime()` for ADR-0131 timeout-driven transitions.
+    - `proposalId`: pre-mint via FNV-1a + mulberry32 seed (same pattern ADR-0184 Wave 5 used). Cli's `propose` action accepts the pre-minted id via payload.
+    - ORSet tagging: cli's ORSet uses `Math.random()` for tag generation; harness stubs `Math.random` with a seeded mulberry32 sequence in `beforeEach`.
+    - Per-test cleanup: `vi.restoreAllMocks()` in `afterEach`.
+  - **Singleton isolation** (resolves Open Follow-up #4): each test uses `CLAUDE_FLOW_CWD` env-var injection (per ADR-0183 A0 swarm pattern) + `vi.stubEnv('HOME', ...)` to scope cli singletons (`getProcessHiveMindStore()`, etc.) per-test. Vitest `@claude-flow/memory` externalization (also per ADR-0183 A0) may be required.
+  - **Harness lifecycle**: ACTIVE during Waves 1-5 as the regression guard. Decision in Wave 6: KEEP as permanent regression guard once cli is fully dispatched. Cost is ~400 LoC of test code; benefit is detecting any future drift between cli + archivist response shapes.
 
 ## Execution Plan
 
-(Placeholder — next executor sizes the per-action waves.)
+6 sequential waves under Option D hybrid. Each wave gates on `npm run release` (default acceptance — heavy gate only at Wave 6 close-out). Per-wave commit on `forks/ruflo` main with descriptive message naming the action flipped + harness verdict; no Co-Authored-By trailer.
 
-Suggested shape (Option D hybrid):
+| Wave | Scope | Files | Net LoC | Exit gate |
+|---|---|---|---|---|
+| **1** | Land `buildConsensusResponse(...)` additively + parallel-strategy verification harness. Cli `hive-mind_consensus` handler UNCHANGED — harness verifies the response-builder produces the cli's pre-flip shape exactly. | **NEW:** `cli/src/mcp-tools/hive-mind-consensus-response.ts` (~350 LoC including `ConsensusResponse` union), `cli/__tests__/hive-mind-consensus-parity.test.ts` (~400 LoC). **NO CHANGE:** `cli/src/mcp-tools/hive-mind-tools.ts`. | +750 | `npm run release` passes; harness asserts zero response diffs across all 24 cells (`{propose,vote,status,list} × {bft,raft,quorum,weighted,gossip,crdt}`); cli handler body unchanged (grep-asserted). |
+| **2** | Flip `propose` action. Cli's propose branch: pre-mint `proposalId`, `archivist.dispatch('hive-mind_consensus', { ...payload, proposalId })`, try/catch with `instanceof` discrimination on 8 typed errors, re-read state via `dispatchRead('hive-mind_status')`, `return buildConsensusResponse(...)`. Other 3 action branches stay on cli fan-out. | **MODIFIED:** `cli/src/mcp-tools/hive-mind-tools.ts` (propose branch only, ~80 LoC → ~25 LoC). | −55 | `npm run release` passes; harness asserts zero propose-response diff across all 6 strategies; existing `cli/__tests__/mcp-tools-deep.test.ts` propose-related assertions pass; ADR-0184 audit-equals-mutation invariant preserved. |
+| **3** | Flip `vote` action. Same shape as Wave 2 but for vote branch. The vote branch is heavier in cli (~200 LoC) because it carries strategy-specific tally/equivocation logic — that logic is now in agentdb per ADR-0184; cli just dispatches + builds response. | **MODIFIED:** `cli/src/mcp-tools/hive-mind-tools.ts` (vote branch). | −180 | `npm run release` passes; harness asserts zero vote-response diff; existing vote-related assertions pass (Byzantine equivocation detection still surfaces correctly via response shape). |
+| **4** | Flip `status` action. ADR-0131 inline-timing decision (from ADR-0184 Wave 4) means status is a WRITE action; cli uses `archivist.dispatch` not `dispatchRead`. Harness must drive timeout-driven transitions via `vi.advanceTimersByTime()` and verify the auto-status-transition fields (`statusJustTransitioned`, `timedOut`, `settled`) round-trip. | **MODIFIED:** `cli/src/mcp-tools/hive-mind-tools.ts` (status branch). | −270 | `npm run release` passes; harness asserts zero status-response diff across all 6 strategies INCLUDING ADR-0131 timeout-driven transitions; gossip-strategy `gossipExhausted` flag (ADR-0184 Wave 4) round-trips. |
+| **5** | Flip `list` action. Pure read — cli uses `archivist.dispatchRead('hive-mind_consensus', { action: 'list', ... })`. | **MODIFIED:** `cli/src/mcp-tools/hive-mind-tools.ts` (list branch). | −45 | `npm run release` passes; harness asserts zero list-response diff. Cli `hive-mind_consensus` handler body is now ~40-50 LoC of dispatch logic only. |
+| **6** | Helper-set cleanup + close-out. Delete the 6 mutation-only helpers; verify zero external callers via `grep -rE` per helper. Keep the 4 pure-read helpers + cli `crdt-types.ts` per §Architecture decisions. Author close-out report + ADR-0185 amendment. Decide harness lifecycle (recommended: KEEP permanent). | **MODIFIED:** `cli/src/mcp-tools/hive-mind-tools.ts` (delete 6 helpers). **NEW:** `docs/council/ADR-0185-close-out-report.md`, ADR-0185 `### Amendment: Close-out` section. | −200 | `npm run release` passes (default + `ACCEPTANCE_HEAVY=1` heavy gate to mirror ADR-0181/0184 close-out posture); zero unreachable helpers in `mcp-tools/hive-mind-tools.ts`; cli `hive-mind_consensus` handler body ~40-50 LoC; ADR-0185 close-out report + amendment land in a ruflo-patch commit. |
 
-| Wave | Scope | Exit gate |
-|---|---|---|
-| 1 | Land `buildConsensusResponse(...)` as an additive helper in `cli/src/mcp-tools/hive-mind-consensus-response.ts`. Add parallel-strategy verification harness in `cli/__tests__/`: drive 24+ input shapes (4 actions × 6 strategies) through current cli + agentdb dispatch, diff responses, all diffs must be empty. | `npm run release` passes; harness asserts zero response diffs. |
-| 2 | Flip the `propose` action: cli handler's propose branch dispatches to archivist + calls `buildConsensusResponse`. Other actions stay on cli fan-out. | `npm run release` passes; harness asserts zero propose-response diffs against the pre-flip baseline. |
-| 3 | Flip `vote`. | `npm run release` passes; harness verified. |
-| 4 | Flip `status`. | `npm run release` passes; harness verified. |
-| 5 | Flip `list`. | `npm run release` passes; harness verified. |
-| 6 | Helper-set cleanup; cli `crdt-types.ts` deletion decision; remove the verification harness (or keep as permanent regression guard). ADR-0185 close-out. | `npm run release` passes; zero unreachable helpers in `mcp-tools/hive-mind-tools.ts`; ADR-0185 close-out report + amendment. |
+**Net LoC delta:** +750 (Wave 1 additive) − 750 (Waves 2-6 deletions) = ~0 net, but the cli handler body shrinks ~870 → ~50 LoC. The 6 mutation-only helpers (~200 LoC) are net deleted; the response-builder + harness (~750 LoC) is net added.
+
+**Estimated release-gate cycles:** 6 (one per wave). Plus 1 heavy gate at Wave 6 close-out (matches ADR-0181/0184 close-out parity).
+
+**Per-wave revert posture:** each wave's commit is surgical (single action branch flip in Waves 2-5; pure additive in Wave 1; deletion-only in Wave 6). If a wave's harness asserts non-empty diff, the action under flip is the immediate suspect — revert that wave's commit cleanly, trace the diff, re-attempt. Per `feedback-trace-before-hypothesis`.
+
+**Swarm sizing:** can run as a queen-as-implementer per the ADR-0181/0184 pattern, OR as `/swarm-advanced` per-action workers if the in-process Agent-spawn constraint is lifted by the time ADR-0185 starts. The work is naturally serial (each wave depends on the prior); parallel-worker fan-out doesn't add value within a wave.
 
 ## Open Follow-ups
 
-1. **Response-shape spec capture**. The cli's existing response objects span ~20 telemetry fields per action with strategy-conditional inclusions (gossip-only, crdt-only, weighted-only, byzantine-only, etc.). A formal spec capture — possibly as a TypeScript discriminated union — would be valuable for both `buildConsensusResponse` correctness AND downstream MCP-caller documentation. Decision deferred to Wave 1 implementation.
+1. ~~**Response-shape spec capture**~~ — **RESOLVED in §Architecture**: `ConsensusResponse` is a TypeScript discriminated union on `action`, with `ProposeResponse | VoteResponse | StatusResponse | ListResponse` members carrying strategy-conditional optional fields. The union shape IS the formal spec.
 
-2. **Parallel-strategy verification harness**. Wave 1's harness drives identical inputs through cli + archivist and diffs responses. The harness needs to deal with: timestamps (`Date.now()` differs between runs), `proposalId` minting (cli mints internally; pre-mint mitigates), `Math.random()` calls in OR-Set tag generation. Solutions: inject deterministic clock; pre-mint everywhere; canonicalize ORSet entries via `crdtSemanticEqual()` from ADR-0184 Wave 5. Decision deferred to Wave 1.
+2. ~~**Parallel-strategy verification harness**~~ — **RESOLVED in §Architecture**: harness at `cli/__tests__/hive-mind-consensus-parity.test.ts`; determinism via `vi.useFakeTimers()` + `vi.setSystemTime()`, FNV-1a + mulberry32 `proposalId` seeding, `Math.random` stubbing for ORSet tags, `crdtSemanticEqual()` for CRDT subfield diff.
 
-3. **Cli `crdt-types.ts` deletion**. Cli has its own copy (referenced by Wave 5 trace as STAYING through Wave 6). Once the agentdb copy is the only consumer, the cli copy can be deleted. Decision deferred to ADR-0185 Wave 6.
+3. ~~**Cli `crdt-types.ts` deletion**~~ — **RESOLVED in §Architecture**: KEEP cli copy. `buildConsensusResponse` calls its constructors for CRDT telemetry; cross-package import would add coupling without benefit.
 
-4. **`feedback-singleton-frozen-state-desync`**. Cli test paths that touch `getProcessHiveMindStore()` (or any cli singleton initialized from `process.cwd()`) need the `CLAUDE_FLOW_CWD` env-var pattern from the ADR-0183 A0 swarm. ADR-0185 inherits this guard.
+4. **`feedback-singleton-frozen-state-desync`** — partially resolved in §Architecture (harness uses `CLAUDE_FLOW_CWD` + `vi.stubEnv('HOME', ...)`). **Remaining concern**: Vitest `@claude-flow/memory` externalization may be required (precedent: ADR-0183 A0 swarm vitest config). Verify during Wave 1 harness authoring.
 
-5. **Cli helpers — vendor-vs-import for pure-read functions**. `calculateRequiredVotes`, `weightedTally`, `settleCheckGossip`, `gossipFanout`. Cli could import from `@sparkleideas/agentdb/archivist` (clean coupling) or keep its own copies (response-building isolation). Decision deferred to ADR-0185 Wave 6 helper-cleanup.
+5. ~~**Cli helpers — vendor-vs-import for pure-read functions**~~ — **RESOLVED in §Architecture**: KEEP cli copies of `calculateRequiredVotes`, `weightedTally`, `settleCheckGossip`, `gossipFanout`. Response-building is a cli concern; cross-package import for pure-read helpers adds coupling that doesn't pay back.
+
+6. **Harness lifecycle decision at Wave 6 close-out**. Current §Architecture lean: KEEP as permanent regression guard (cost ~400 LoC of test code; benefit catches future drift between cli + archivist response shapes). Alternative: retire iff cli is so thin post-Wave-6 that drift is impossible. Decision binding at Wave 6 close-out commit; default is KEEP.
+
+7. **ADR-0184 Wave 6a `gossipExhausted?` flag** — added to `ConsensusProposal` in agentdb Wave 4. Cli's `buildConsensusResponse` reads it via the dispatched-response payload; harness must include a gossip-exhausted state variant to verify the flag round-trips.
+
+8. **Cli-test assertion-set refresh** — `cli/__tests__/mcp-tools-deep.test.ts` currently asserts response shapes from the pre-flip cli handler. Post-flip the shapes are produced by `buildConsensusResponse`; assertion targets are nominally unchanged but should be reviewed per wave to confirm no assertion drifts behind the abstraction.
 
 ## More Information
 
