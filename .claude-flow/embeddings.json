@@ -1,7 +1,7 @@
 {
     "model": "Xenova/all-mpnet-base-v2",
     "dimension": 768,
-    "provider": "onnx",
+    "provider": "transformers.js",
     "taskPrefixQuery": "",
     "taskPrefixIndex": "",
     "storageProvider": "rvf",
