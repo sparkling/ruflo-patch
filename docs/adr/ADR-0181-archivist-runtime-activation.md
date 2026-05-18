@@ -155,7 +155,7 @@ Each phase's queen spawns in the same wave as its workers and DA (not after — 
 |---|---|---|
 | **B** memory-read probes | Done by prior work (task #100 `lib/acceptance-adr0181-dispatch-checks.sh`). | (pre-existing) |
 | **C** `agent_execute` shared-core refactor | Landed. 3 `saveAgentStore()` raw fs writes → two-dispatch pattern through `archivist.dispatch('agent_execute', ...)`. Pre-LLM busy reservation + post-LLM idle release = two distinct audit-chain mutations per execution. Handler payload refined (lastResult optional; taskCountDelta defaults to 0). G3 workflow runtime + ruvector/agent-wasm.ts unaffected. | agentdb `e28364d` + ruflo `38e57f528` |
-| **D** `hive-mind/consensus.ts` port | Deferred to own ADR (recommend ADR-0184). The cli implementation spans 926 LoC across 7 strategies × 4 actions; serial queen-as-implementer port without parallel review is high-risk for single-pass success. Cli surface works today. Defer pattern mirrors ADR-0183 (peel out single concern when closure plan bloats). | (none — deferred) |
+| **D** `hive-mind/consensus.ts` port | Deferred to [ADR-0184](ADR-0184-hive-mind-consensus-handler-port.md) (proposed, 2026-05-18). The cli implementation spans 926 LoC across 7 strategies × 4 actions; serial queen-as-implementer port without parallel review is high-risk for single-pass success. Cli surface works today. Defer pattern mirrors ADR-0183 (peel out single concern when closure plan bloats). | ADR-0184 placeholder landed alongside this close-out. |
 | **E** invariants across handlers | Done by prior work. Inventory: 127 mutation handlers, 103 wired with `<surface>Invariants`, 122 invariant files across 21 surfaces. Only stub remaining is `hive-mind/consensus.ts` (gated on Phase D). Handover's "94 of 100+ on `[]`" entry was materially stale. | (pre-existing) |
 | **F** autopilot/learn + cwd-pollution sweep | Landed (autopilot) + audited clean (cwd-sweep). `AutopilotLearner` narrow capability + handler body + cli factory + cli dispatch flip. Cwd-pollution audit: zero production `process.cwd()` calls in handler tree. | agentdb `3b07c4b` + ruflo `afe58fef4` |
 | **G** bench re-baseline | Landed. `bench/baseline.json` updated with measured numbers across W1-W5. W5 cascade band relaxed 1.5 → 2.5 to reflect stub overhead vs flat baseline (cascade stub recursively allocates `AuditNode` JS objects + per-level `appendFileSync`); revisit trigger documented. W3_contended capture deferred (requires multi-process harness wiring). | agentdb `e366a6b` |
@@ -180,7 +180,7 @@ Each phase's queen spawns in the same wave as its workers and DA (not after — 
 
 **Deferred follow-ups (each gets its own ADR):**
 
-1. **ADR-0184 (proposed): Hive-Mind Consensus Archivist Port.** Split per-strategy modules + port from cli.
+1. **[ADR-0184](ADR-0184-hive-mind-consensus-handler-port.md) — Hive-Mind Consensus Handler Port (proposed, 2026-05-18).** Per-strategy module split (7 strategies × 4 actions) + port from cli. Placeholder landed alongside this close-out.
 2. **Replay-verification ADR (proposed).** Implement the tool from MODULE.md §replay-verification spec.
 3. **W3_contended capture (bench follow-up).** Multi-process harness via `WRITER_PROCS=4`.
 4. **W5 cascade re-tightening (bench follow-up).** Trigger: Phase 9 replaces stub with real `ctx.child()` cascade.

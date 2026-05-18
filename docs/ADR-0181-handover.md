@@ -51,7 +51,7 @@
 | **Post-Phase-7 b5 close-out** | ✅ done | 13 b5/misc probes flipped skip→PASS via 6 impl items + probe-update + #88 fix; end: 669/0/9 on patch.143 |
 | **Closure-plan amendment — Phase B** | ✅ done by prior work | 4 `adr0181-disp-*` probes (task #100, `lib/acceptance-adr0181-dispatch-checks.sh`); full cli → archivist.dispatchRead path coverage |
 | **Closure-plan amendment — Phase C** | ✅ done (2026-05-18) | `agent_execute` two-dispatch pattern through archivist; agentdb `e28364d` + ruflo `38e57f528` |
-| **Closure-plan amendment — Phase D** | 📦 deferred to ADR-0184 | 926-LoC consensus port; cli surface works; recommend new ADR for per-strategy module split |
+| **Closure-plan amendment — Phase D** | 📦 deferred to [ADR-0184](adr/ADR-0184-hive-mind-consensus-handler-port.md) | 926-LoC consensus port; cli surface works; ADR-0184 placeholder (proposed, 2026-05-18) carries per-strategy module split plan |
 | **Closure-plan amendment — Phase E** | ✅ done by prior work | 103/127 mutation handlers wired; 122 invariant files; only stub remaining is `hive-mind/consensus.ts` (Phase D) |
 | **Closure-plan amendment — Phase F** | ✅ done (2026-05-18) | AutopilotLearner capability + handler body + cli factory + dispatch flip; agentdb `3b07c4b` + ruflo `afe58fef4`. Cwd-pollution sweep audited clean. |
 | **Closure-plan amendment — Phase G** | ✅ done (2026-05-18) | bench/baseline.json re-baselined against activated system; W5 cascade band relaxed 1.5 → 2.5 (stub overhead, not real archivist cost); agentdb `e366a6b` |
