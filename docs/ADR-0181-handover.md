@@ -1,8 +1,9 @@
 # ADR-0181 Handover — what's done, what's pending, where everything is
 
-**As of:** 2026-05-16 (post-Phase-7 b5 wiring + probe-update follow-ups complete; handover snapshot)
-**Latest published build:** cli `3.7.0-alpha.10-patch.143` / `@sparkleideas/ruflo` matching patch on Verdaccio (localhost:4873)
-**Latest release log:** `logs/probe-debt15-r2.log` (669/678 pass, 0 fail, 9 skip_accepted)
+**As of:** 2026-05-18 (post-close-out — Phases B+C+E+F+G+H landed; D + I deferred to own ADRs)
+**Latest published build:** cli `3.7.0-alpha.11-patch.181` / `@sparkleideas/agentdb` `3.0.0-alpha.14-patch.193` (heavy run) on Verdaccio (localhost:4873)
+**Latest release log:** `logs/adr0181-finish-heavy-release.log` (681/681 pass, 0 fail, ACCEPTANCE_HEAVY=1) — and `logs/adr0181-finish-wave2-release-r2.log` (672/681 default)
+**Status:** **CLOSED** per [ADR-0181 §Amendment: Close-out (2026-05-18)](adr/ADR-0181-archivist-runtime-activation.md#amendment-close-out--adr-0181-implementation-complete-2026-05-18) and [docs/council/ADR-0181-close-out-report.md](council/ADR-0181-close-out-report.md)
 
 **Recent session deltas (newest first):**
 
@@ -48,6 +49,15 @@
 | **7 controller persistence** | ✅ done | substrate split-brain collapsed; cli + archivist share `.swarm/memory.db` via ControllerRegistry handle-share |
 | **7 full-system verification** | ✅ done | r3 acceptance: 656/678 pass, 0 fail, 22 skip_accepted on patch.128 |
 | **Post-Phase-7 b5 close-out** | ✅ done | 13 b5/misc probes flipped skip→PASS via 6 impl items + probe-update + #88 fix; end: 669/0/9 on patch.143 |
+| **Closure-plan amendment — Phase B** | ✅ done by prior work | 4 `adr0181-disp-*` probes (task #100, `lib/acceptance-adr0181-dispatch-checks.sh`); full cli → archivist.dispatchRead path coverage |
+| **Closure-plan amendment — Phase C** | ✅ done (2026-05-18) | `agent_execute` two-dispatch pattern through archivist; agentdb `e28364d` + ruflo `38e57f528` |
+| **Closure-plan amendment — Phase D** | 📦 deferred to ADR-0184 | 926-LoC consensus port; cli surface works; recommend new ADR for per-strategy module split |
+| **Closure-plan amendment — Phase E** | ✅ done by prior work | 103/127 mutation handlers wired; 122 invariant files; only stub remaining is `hive-mind/consensus.ts` (Phase D) |
+| **Closure-plan amendment — Phase F** | ✅ done (2026-05-18) | AutopilotLearner capability + handler body + cli factory + dispatch flip; agentdb `3b07c4b` + ruflo `afe58fef4`. Cwd-pollution sweep audited clean. |
+| **Closure-plan amendment — Phase G** | ✅ done (2026-05-18) | bench/baseline.json re-baselined against activated system; W5 cascade band relaxed 1.5 → 2.5 (stub overhead, not real archivist cost); agentdb `e366a6b` |
+| **Closure-plan amendment — Phase H** | ✅ done (2026-05-18) | ACCEPTANCE_HEAVY=1 returned 681/681 PASS at patch.181; all 9 heavy-check IDs verified passing; justifications doc at `docs/heavy-skip-justifications.md` |
+| **Closure-plan amendment — Phase I** | 📦 deferred to own ADR | replay-verification implementation does not exist in tree; MODULE.md §replay-verification only describes the architecture |
+| **OVERALL** | ✅ **CLOSED 2026-05-18** | strict exit criterion met: 672/681 default + 681/681 heavy + everything committed + libraries published |
 
 **Strict exit criterion is met** (`acceptance passes, libraries published, everything committed`): **669/678 pass, 0 fail, 9 skip_accepted on patch.143**. The 9 remaining skips are exactly the documented `_HEAVY_CHECK_IDS` opt-out set (by design — opt in via `ACCEPTANCE_HEAVY=1`). Every non-heavy skip is resolved. Phase 6/7/b5 close-out complete. Named-Phase-6 (ADR-0112 retirement) still audit-only with empty CAN_REMOVE (blocked on ADR-0180 §Phase 10).
 
