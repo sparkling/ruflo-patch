@@ -3135,6 +3135,15 @@ if [[ -f "$p5_lib" ]]; then
     run_check_bg "adr0178-hquery-e2e"     "ADR-0178 hierarchical-query E2E"  check_adr0178_hierarchical_query_e2e  "adr0178"
   fi
 
+  # Group 8: ADR-0176 Phase 5 — assert the 4 declared dash-form agentdb_*
+  # tool names exist in the MCP tool registry at boot. Prevents the
+  # underscore-vs-dash drift fixed by Phases 2-3 from re-occurring.
+  adr0176_lib="${PROJECT_DIR}/lib/acceptance-adr0176-tool-names.sh"
+  if [[ -f "$adr0176_lib" ]]; then
+    source "$adr0176_lib"
+    run_check_bg "adr0176-tool-names"     "ADR-0176 Phase 5 tool-name registry"  check_adr0176_tool_names  "adr0176"
+  fi
+
   # Collect all Phase 5 parallel checks
   collect_parallel \
     "p5-cfg-valid|config.json valid" \
@@ -3163,7 +3172,8 @@ if [[ -f "$p5_lib" ]]; then
     "adr0177-default-keys|ADR-0177 default config keys" \
     "adr0177-default-rt|ADR-0177 default roundtrip" \
     "adr0177-flag-mini-384|ADR-0177 --embedding-model mini" \
-    "adr0178-hquery-e2e|ADR-0178 hierarchical-query E2E"
+    "adr0178-hquery-e2e|ADR-0178 hierarchical-query E2E" \
+    "adr0176-tool-names|ADR-0176 Phase 5 tool-name registry"
 
   # Cleanup
   rm -rf "$_P5_DIR" 2>/dev/null

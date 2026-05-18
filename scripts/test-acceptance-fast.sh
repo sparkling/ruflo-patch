@@ -7,7 +7,7 @@
 # Usage:
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
-# Groups: all, p3, p4, p5, adr0059, adr0085, adr0177, adr0178, adr0181, e2e-core, e2e-storage
+# Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181, e2e-core, e2e-storage
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -426,6 +426,14 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0178"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     # acceptance-adr0178-checks.sh sourced via the glob loop above
     echo "── ADR-0178 (agentdb_hierarchical-query 5-phase E2E) ──"
     _fast_run "adr0178-hquery-e2e"    check_adr0178_hierarchical_query_e2e
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0176"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-tool-names.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0176-tool-names.sh"
+    echo "── ADR-0176 Phase 5 (declared dash-form tool names in MCP registry) ──"
+    _fast_run "adr0176-tool-names"    check_adr0176_tool_names
   fi
 fi
 
