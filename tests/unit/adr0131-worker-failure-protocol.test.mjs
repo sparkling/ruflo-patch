@@ -46,6 +46,24 @@ const AGENTDB_VOTE_HANDLERS = [
   AGENTDB_GOSSIP_HANDLER,
   AGENTDB_CRDT_HANDLER,
 ];
+// ADR-0185 Wave 4 — status-side ADR-0131 auto-transition logic lives in
+// the 4 threshold-strategy handlers only (bft/raft/quorum/weighted).
+// Gossip and crdt have their own settle paths (gossip: settleCheckGossip
+// per ADR-0120; crdt: timeout-driven force-settle per ADR-0121); neither
+// emits a `failed-quorum-not-reached` auto-transition (they don't have
+// `timeoutAt` set at propose-time).
+const AGENTDB_THRESHOLD_STATUS_HANDLERS = [
+  AGENTDB_BFT_HANDLER,
+  AGENTDB_RAFT_HANDLER,
+  AGENTDB_QUORUM_HANDLER,
+  AGENTDB_WEIGHTED_HANDLER,
+];
+// ADR-0185 Wave 1 — the `statusJustTransitioned` field lives in the
+// response-builder (created during Wave 1 to project post-dispatch state
+// into the cli's pre-flip response shape). The builder emits it on the
+// history-fallback path + pending-still path; agentdb's handler doesn't
+// emit it (handler returns void; builder owns response shape).
+const CLI_RESPONSE_BUILDER = `${FORK_ROOT}/v3/@claude-flow/cli/src/mcp-tools/hive-mind-consensus-response.ts`;
 
 const CHECK_FN_NAMES = [
   'check_adr0131_worker_failure_auto_transition',
@@ -186,12 +204,25 @@ describe('ADR-0131 fork source — hive-mind-tools.ts', () => {
   });
 
   it('_consensus({action:status}) auto-transition predicate uses Date.now() and timeoutAt', () => {
-    // The trigger predicate per ADR-0131 §Specification.
-    assert.match(src, /Date\.now\(\)\s*>=\s*new Date\(proposal\.timeoutAt\)\.getTime\(\)/);
+    // ADR-0185 Wave 4: status-action auto-transition moved into agentdb
+    // per-strategy handlers. Each of bft/raft/quorum/weighted handlers
+    // tests `Date.now() >= new Date(proposal.timeoutAt).getTime()` as the
+    // trigger predicate (verified: bft.ts:242, raft.ts:200, quorum.ts:186,
+    // weighted.ts:217). Gossip + crdt have their own settle paths and
+    // are correctly EXCLUDED (they don't set timeoutAt at propose-time).
+    for (const path of AGENTDB_THRESHOLD_STATUS_HANDLERS) {
+      const handlerSrc = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      assert.match(handlerSrc, /Date\.now\(\)\s*>=\s*new Date\(proposal\.timeoutAt\)\.getTime\(\)/, `auto-transition predicate missing in ${path}`);
+    }
   });
 
   it('_consensus({action:status}) computes absentVoters from state.workers minus voted', () => {
-    assert.match(src, /state\.workers\.filter\(\s*\([^)]*\)\s*=>\s*!\([^)]*\s*in\s+proposal\.votes\)/);
+    // ADR-0185 Wave 4: absentVoters computation moved to agentdb threshold
+    // handlers (raft.ts:204, bft.ts:246, quorum.ts:190, weighted.ts:221).
+    for (const path of AGENTDB_THRESHOLD_STATUS_HANDLERS) {
+      const handlerSrc = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      assert.match(handlerSrc, /state\.workers\.filter\(\s*\([^)]*\)\s*=>\s*!\([^)]*\s*in\s+proposal\.votes\)/, `absentVoters filter missing in ${path}`);
+    }
   });
 
   it('_consensus({action:status}) sets failed-quorum-not-reached on transition', () => {
@@ -199,7 +230,13 @@ describe('ADR-0131 fork source — hive-mind-tools.ts', () => {
   });
 
   it('_consensus({action:status}) returns statusJustTransitioned in response', () => {
-    assert.match(src, /statusJustTransitioned/);
+    // ADR-0185 Wave 4: `statusJustTransitioned` field is emitted by the
+    // response-builder (Wave 1 introduced; agentdb's status handlers
+    // return void and the builder projects post-dispatch state into the
+    // response shape including this field). Builder emits it on both
+    // the history-fallback path and the pending-still path.
+    const builderSrc = existsSync(CLI_RESPONSE_BUILDER) ? readFileSync(CLI_RESPONSE_BUILDER, 'utf8') : '';
+    assert.match(builderSrc, /statusJustTransitioned/, `statusJustTransitioned missing in ${CLI_RESPONSE_BUILDER}`);
   });
 
   it('_consensus({action:vote}) throws WorkerAlreadyFailedError on failed worker', () => {
@@ -265,7 +302,13 @@ describe('ADR-0131 fork source — hive-mind-tools.ts', () => {
 
   it('idempotency guard dedupes on proposalId before pushing to history', () => {
     // Per ADR-0131 §Refinement edge case "Concurrent transitions".
-    assert.match(src, /alreadyInHistory/);
+    // ADR-0185 Wave 4: idempotency guard moved to agentdb threshold handlers
+    // (raft.ts:213, bft.ts:255, quorum.ts:199, weighted.ts:230 — each has
+    // 2 hits: `const alreadyInHistory = ...some(...)` + `if (!alreadyInHistory)`).
+    for (const path of AGENTDB_THRESHOLD_STATUS_HANDLERS) {
+      const handlerSrc = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      assert.match(handlerSrc, /alreadyInHistory/, `alreadyInHistory guard missing in ${path}`);
+    }
   });
 });
 
