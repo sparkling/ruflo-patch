@@ -186,3 +186,34 @@ User investigation 2026-05-12 (different ruflo project, post-ADR-0170): the repo
 ### Estimated work
 
 Per `feedback-no-time-estimates`: not stated. Phase A is mechanical (49 handlers, 1 diagnostic per); Phase B is a 5-line config change + tests; Phase C is 7 router-site rewrites + test updates; Phase D is a sweep. Sequential dependencies: Phase A unlocks Phase B (config flip needs the new diagnostic to make sense to users); Phase B unlocks Phase C (router fallbacks can retire once controllers are reliably available). Phase D last as confirmation.
+
+## Amendments
+
+### Amendment: Current state (2026-05-18)
+
+Status kept `proposed` per the 2026-05-18 ADR status audit. **No
+implementation work to date** — zero fork-code references to `ADR-0172`
+across `forks/{ruflo,agentdb,ruvector,agentic-flow}` and no acceptance
+or unit tests target this ADR. The three named deliverables remain open:
+
+1. **Audit of `memory-router.ts` drop-to-`'router-fallback'` paths** at
+   `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts` lines
+   1979, 2338, 2464 (the cross-axis-leak sites Phase C is supposed to
+   retire).
+2. **Disabled-controller inventory in `controller-registry.ts`** —
+   document each of the 5 disabled-by-default controllers and the
+   loud-fail diagnostic Phase A requires.
+3. **`hierarchicalMemory: false` / `memoryConsolidation: false`
+   default-false audit** at
+   `forks/ruflo/v3/@claude-flow/cli/src/init/config-template.ts:202-203`
+   — Phase B's config-flip target. Currently both defaults remain
+   `false`; Phase B has not landed.
+
+**Caveat from substrate-posture shift.** ADR-0172 was written depending
+on ADR-0170 (postgres/pglite substrate). ADR-0177 superseded ADR-0170
+and retired the postgres/pglite direction — Phase B's "substrate
+boundary fail-loud" framing inherits substrate context from a retired
+ADR. The router-boundary fail-loud principle survives; the substrate
+referent does not. Any future execution of this ADR must re-frame Phase
+B against the ADR-0177 / ADR-0180 archivist substrate seam, not
+postgres.
