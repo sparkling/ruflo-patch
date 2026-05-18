@@ -1,0 +1,8 @@
+# scripts/check-skip-accepted.mjs allowlist
+#
+# Format: <test-id>  (one per line)
+# Lines starting with # are comments; blank lines are ignored.
+#
+# Add a test id here ONLY if the skip_accepted lacks a recognized marker
+# (HEAVY_SKIP, tool not in published build, upstream truncation, etc.) AND
+# the skip is intentional. Always document the rationale above the entry.

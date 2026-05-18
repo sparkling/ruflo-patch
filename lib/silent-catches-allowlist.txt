@@ -1,0 +1,12 @@
+# scripts/check-silent-catches.mjs allowlist
+#
+# Format: <relative-path>:<line-number>  (one per line)
+# Lines starting with # are comments; blank lines are ignored.
+#
+# Add an entry ONLY if a catch block must remain truly empty with no
+# rationale comment. Otherwise the right fix is to add a comment
+# explaining the silence, e.g.
+#
+#     try { x() } catch { /* best-effort cleanup */ }
+#
+# The comment IS the surfacing per `feedback-no-fallbacks` / ADR-0082.

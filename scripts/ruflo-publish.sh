@@ -410,6 +410,22 @@ main() {
   # crates that won't ship).
   run_phase "napi-coverage" node "${SCRIPT_DIR}/check-napi-coverage.mjs"
 
+  # ADR-0186 follow-up #1: fail-loud fetch-timeout gate. Same shape as the
+  # NAPI coverage check above — silent-drop class is "fetch() without
+  # AbortSignal.timeout hangs the pipeline if the remote stalls". As of
+  # commit 995012ec8 on forks/ruflo, all 39 fetch() calls in cli +
+  # agentic-flow src carry a signal option. Allowlist at
+  # lib/fetch-timeout-allowlist.txt.
+  run_phase "fetch-timeout" node "${SCRIPT_DIR}/check-fetch-timeouts.mjs"
+
+  # feedback-no-fallbacks + ADR-0082: fail-loud silent-catch gate. Flags
+  # `catch { }` blocks with truly empty bodies (no comment rationale, no
+  # log, no re-throw). Documented form `catch { /* explanation */ }` is
+  # the canonical surfacing per project convention and is NOT flagged.
+  # As of commit 47437a50f on forks/ruflo, all 1296 catch blocks in scope
+  # surface their error. Allowlist at lib/silent-catches-allowlist.txt.
+  run_phase "silent-catches" node "${SCRIPT_DIR}/check-silent-catches.mjs"
+
   # ADR-0133/0150: Detect Rust source changes across all napi-shipping forks
   # (ruvector + agentic-flow per lib/napi-config.sh) and rebuild .node binaries
   # before bump-versions, so the rebuilt binaries land on fork main and ship
@@ -450,6 +466,13 @@ main() {
   # Publish to local Verdaccio + run acceptance tests
   run_phase "publish-verdaccio" run_publish_verdaccio
   run_phase "acceptance" run_acceptance
+
+  # Post-acceptance: skip-rot invariant. Reads the just-generated
+  # test-results/accept-*/acceptance-results.json and verifies every
+  # skip_accepted entry carries a recognized marker (HEAVY_SKIP, tool
+  # not in published build, ...) or is in lib/skip-accepted-allowlist.txt.
+  # A skip without rationale is silent-drop class — see ADR-0082.
+  run_phase "skip-accepted-audit" node "${SCRIPT_DIR}/check-skip-accepted.mjs"
 
   # Record successful verification so sync stage can skip redundant acceptance
   local _verify_manifest="/tmp/ruflo-build/.last-verified.json"
