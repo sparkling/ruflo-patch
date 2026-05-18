@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-14
 closed-on: 2026-05-18
 tags: [memory, architecture, mcp, substrate, runtime-activation]
@@ -144,6 +144,13 @@ Each phase's queen spawns in the same wave as its workers and DA (not after — 
 5. **`npm run release` cold-start cost.** Seven phases each gated on a full release run is a real wall-clock cost. If it proves prohibitive, the fallback is `npm run test:unit` for intra-phase iteration with `npm run release` only at phase exit — but the phase-exit gate is non-negotiable per `feedback-all-test-levels`.
 
 ## Amendments
+
+### Amendment: Status reconciliation (2026-05-18)
+
+Frontmatter `status` flipped `proposed` → `implemented` per the close-out
+amendment below (2026-05-18) and `docs/council/ADR-0181-close-out-report.md`.
+`closed-on: 2026-05-18` was already set when this ADR closed; the status
+flip was deferred and reconciled as part of the ADR status audit.
 
 ### Amendment: Close-out — ADR-0181 implementation complete (2026-05-18)
 

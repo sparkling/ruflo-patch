@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-18
 closed-on: 2026-05-18
 tags: [hive-mind, consensus, archivist, runtime-activation, multi-strategy]
@@ -114,6 +114,13 @@ Chosen: **Option C**, executed as a per-strategy ADR-0181-style wave (next swarm
 4. **`feedback-singleton-frozen-state-desync`** likely applies if any wave's tests touch cli singletons (e.g. `getProcessHiveMindStore()`). Use the `CLAUDE_FLOW_CWD` env-var pattern from the ADR-0183 A0 swarm.
 
 ## Amendments
+
+### Amendment: Status reconciliation (2026-05-18)
+
+Frontmatter `status` flipped `proposed` → `implemented` per the close-out
+amendment below (2026-05-18) and `docs/council/ADR-0184-close-out-report.md`.
+`closed-on: 2026-05-18` was already set when this ADR closed; the status
+flip was deferred and reconciled as part of the ADR status audit.
 
 ### Amendment: Close-out — ADR-0184 agentdb coverage complete; cli retirement deferred to ADR-0185 (2026-05-18)
 
