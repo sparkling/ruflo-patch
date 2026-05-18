@@ -33,6 +33,19 @@ const AGENTDB_BFT_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/co
 const AGENTDB_RAFT_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/raft.ts`;
 const AGENTDB_QUORUM_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/quorum.ts`;
 const AGENTDB_WEIGHTED_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/weighted.ts`;
+// ADR-0185 Wave 3 — gossip + crdt added: cli's vote-action throws of
+// WorkerAlreadyFailedError + ProposalAlreadyFailedError moved to all 6
+// agentdb per-strategy vote handlers (not just the 4 threshold-based ones).
+const AGENTDB_GOSSIP_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/gossip.ts`;
+const AGENTDB_CRDT_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/crdt.ts`;
+const AGENTDB_VOTE_HANDLERS = [
+  AGENTDB_BFT_HANDLER,
+  AGENTDB_RAFT_HANDLER,
+  AGENTDB_QUORUM_HANDLER,
+  AGENTDB_WEIGHTED_HANDLER,
+  AGENTDB_GOSSIP_HANDLER,
+  AGENTDB_CRDT_HANDLER,
+];
 
 const CHECK_FN_NAMES = [
   'check_adr0131_worker_failure_auto_transition',
@@ -190,11 +203,26 @@ describe('ADR-0131 fork source — hive-mind-tools.ts', () => {
   });
 
   it('_consensus({action:vote}) throws WorkerAlreadyFailedError on failed worker', () => {
-    assert.match(src, /throw new WorkerAlreadyFailedError/);
+    // ADR-0185 Wave 3: cli's vote-action throws of WorkerAlreadyFailedError
+    // moved into agentdb per-strategy vote handlers (bft.ts:134, raft.ts:134,
+    // quorum.ts:115, weighted.ts:140, gossip.ts:135, crdt.ts:145). The
+    // ADR-0131 invariant "vote against a failed worker must throw
+    // synchronously" still holds; the assertion grep each agentdb per-
+    // strategy handler. Cli's `export class WorkerAlreadyFailedError`
+    // remains for `instanceof` discrimination at the Wave 3 try/catch site.
+    for (const path of AGENTDB_VOTE_HANDLERS) {
+      const handlerSrc = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      assert.match(handlerSrc, /throw new WorkerAlreadyFailedError/, `WorkerAlreadyFailedError throw missing in ${path}`);
+    }
   });
 
   it('_consensus({action:vote}) throws ProposalAlreadyFailedError on terminal proposal', () => {
-    assert.match(src, /throw new ProposalAlreadyFailedError/);
+    // ADR-0185 Wave 3: throws moved to agentdb per-strategy handlers (bft.ts:109,
+    // raft.ts:113, quorum.ts:94, weighted.ts:114, gossip.ts:114, crdt.ts:124).
+    for (const path of AGENTDB_VOTE_HANDLERS) {
+      const handlerSrc = existsSync(path) ? readFileSync(path, 'utf8') : '';
+      assert.match(handlerSrc, /throw new ProposalAlreadyFailedError/, `ProposalAlreadyFailedError throw missing in ${path}`);
+    }
   });
 
   it('hive-mind_status response includes failedWorkers summary field', () => {
