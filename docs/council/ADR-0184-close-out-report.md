@@ -97,10 +97,10 @@ The cli's `hive-mind_consensus` handler is now 100% redundant with the agentdb h
 
 | Item | Carrier | Status |
 |---|---|---|
-| Cli `hive-mind_consensus` retirement (~1500 LoC) | [ADR-0185](../adr/ADR-0185-hive-mind-consensus-cli-retirement.md) (proposed, 2026-05-18) | placeholder ADR landed alongside this close-out |
-| Cli `crdt-types.ts` deletion (now-duplicate; agentdb has the vendored copy) | ADR-0185 §Architecture sub-task | deferred to ADR-0185 execution |
-| Response-shape spec capture (formal documentation of each action's response shape across strategies) | ADR-0185 §Open Follow-ups | deferred |
-| Parallel-strategy verification harness (drive identical inputs through cli + archivist, diff responses) | ADR-0185 §Open Follow-ups | deferred |
+| Cli `hive-mind_consensus` retirement (~1500 LoC) | [ADR-0185](../adr/ADR-0185-hive-mind-consensus-cli-retirement.md) | **completed via ADR-0185 close-out (2026-05-18)** — 6 waves, all green-gated, see [ADR-0185-close-out-report.md](ADR-0185-close-out-report.md) |
+| Cli `crdt-types.ts` deletion (now-duplicate; agentdb has the vendored copy) | ADR-0185 §Architecture sub-task | **kept** — `crdt-types.ts` remains load-bearing for `buildConsensusResponse`'s CRDT telemetry (`LWWRegister`, `ORSet`, `GCounter`); the parity harness also imports it directly. ADR-0185 close-out formalises the keep decision. |
+| Response-shape spec capture (formal documentation of each action's response shape across strategies) | ADR-0185 §Open Follow-ups | **completed** — the `buildConsensusResponse` discriminated union (`ConsensusResponse`: `PropsoseResponse`/`VoteResponse`/`StatusResponse`/`ListResponse`) is the formal spec; the 29-cell parity harness is the executable spec. |
+| Parallel-strategy verification harness (drive identical inputs through cli + archivist, diff responses) | ADR-0185 §Open Follow-ups | **completed** — `__tests__/hive-mind-consensus-parity.test.ts` (29 cells) + ruflo-patch wrapper gate. Permanent regression guard per ADR-0185 §Architecture. |
 
 ## More information
 

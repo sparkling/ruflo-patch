@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-18
+closed-on: 2026-05-18
 tags: [hive-mind, consensus, cli-retirement, archivist, runtime-activation]
 depends-on: [ADR-0180, ADR-0181, ADR-0184]
 implements: []
@@ -151,6 +152,34 @@ Option D sequences risk so that the response-builder bug (if any) surfaces at LA
 7. **ADR-0184 Wave 6a `gossipExhausted?` flag** — added to `ConsensusProposal` in agentdb Wave 4. Cli's `buildConsensusResponse` reads it via the dispatched-response payload; harness must include a gossip-exhausted state variant to verify the flag round-trips.
 
 8. **Cli-test assertion-set refresh** — `cli/__tests__/mcp-tools-deep.test.ts` currently asserts response shapes from the pre-flip cli handler. Post-flip the shapes are produced by `buildConsensusResponse`; assertion targets are nominally unchanged but should be reviewed per wave to confirm no assertion drifts behind the abstraction.
+
+## Amendments
+
+### Amendment: Close-out — ADR-0185 implementation complete (2026-05-18)
+
+ADR-0185 is implemented and closed. The cli `hive-mind_consensus` handler is now a thin dispatch envelope; the strategy fan-out is gone.
+
+**Execution structure** — 6 waves (Wave 2 split into 2a + 2b by DA mandate):
+
+| Wave | Scope | Fork SHA |
+|---|---|---|
+| W1 | Additive `buildConsensusResponse` + parity harness (26 cells) + ruflo-patch wrapper gate | c81831164, 425710868, b43e039f3, eeb26cd7f |
+| W2a | Harness shape-contract pivot (DA-mandated split) | a20732b98 |
+| W2b | Flip propose action to `archivist.dispatch` | 7e06c8390 |
+| W3 | Flip vote action | ca596e932 |
+| W4 | Flip status action (includes ADR-0131 timeouts) | f4b9ffe12 |
+| W5 | Flip list action + delete `withHiveStoreLock` wrapper | 84defa083 |
+| W6 | Delete 3 dead helpers + close-out (this amendment) | bf72ed19a |
+
+**Cumulative cli LoC reduction**: handler 870 → ~127 LoC + 3 dead helpers (~128 LoC) deleted. Total cli surface shrink across Waves 1-6 ≈ -870 LoC. Response-builder + parity harness add ~1150 LoC of test/projection code in their place.
+
+**Acceptance trajectory**: 672/681/0/9 sustained across all 6 default-gate releases (patches 190 → 192 → 193 → 194 → 197 → 199 → 202 → 203). Heavy gate cleared at close-out.
+
+**Helper-cleanup correction** (Wave 6, DA Axis 1): the pre-Wave-6 plan listed 6 helpers for deletion. Pre-emptive `grep` on `src/` + `__tests__/` confirmed only 3 were truly unreachable. The other 3 — `selectGossipTargets`, `reconcileFailedFromStatusKeys`, `workerMetaFor` — have live callers in `hive-mind_status` (a separate cli tool, explicitly deferred per the ADR's scope) plus active test-invariant refs in `mcp-tools-deep.test.ts`. Per `feedback-no-squelch-tests` they were preserved.
+
+**Source-grep brittleness lesson**: 4 of 6 acceptance-test failures across the 6 waves were `assert.match(src, ...)` strings searching for identifiers that had relocated from cli to agentdb per-strategy handlers. Each pattern needed surgical migration (cli → agentdb dispatcher case-arm + per-strategy handler case-arm). Wave 7+ work should convert remaining `assert.match(src, ...)` assertions to behavioural tests so the corpus survives future relocations.
+
+**Parity-harness lifecycle** (Wave 6, DA Axis 6): the parity harness (29 cells) + the ruflo-patch wrapper gate (3 cells) are permanent regression guards per ADR-0185 §Architecture. No future wave may delete them — they lock in cli/agentdb response-shape parity for the lifetime of the dispatch pattern.
 
 ## More Information
 
