@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-12
+closed-on: 2026-05-18
 tags: [mcp, skill, naming, agentdb, adr-index, skill-stability]
 supersedes: []
 depends-on: [ADR-0174]
@@ -225,3 +226,39 @@ Status kept `proposed` per the 2026-05-18 ADR status audit.
   post-rename.
 
 Reconciled as part of the 2026-05-18 status audit.
+
+### Amendment: Phase 5 close-out (2026-05-18)
+
+**Status flipped `proposed` → `implemented` with `closed-on: 2026-05-18`.**
+
+Phase 5 delivered via `lib/acceptance-adr0176-tool-names.sh` (commit
+`4fc11a0` on ruflo-patch main). Check id `adr0176-tool-names` boots
+`cli mcp start`, sends JSON-RPC `initialize` + `tools/list` on stdin,
+parses the registered tool names, and asserts all 4 dash-form names
+from the `/adr-index` SKILL.md `allowed-tools:` declaration are
+present in the MCP registry:
+
+- `agentdb_hierarchical-store`
+- `agentdb_hierarchical-query`
+- `agentdb_causal-edge`
+- `agentdb_causal-query`
+
+Per-name fail-loud diagnostic per `feedback-no-fallbacks`. Verified
+green in the release gate at ruflo `patch.207`: `673/682 passed, 0
+failed, 9 skip_accepted` (corpus grew by +1 from the 681 baseline;
+new check passed in 161ms).
+
+Method mirrors `lib/acceptance-adr0117-marketplace-mcp.sh` AC#4 (JSON-RPC
+`tools/list` parse via node), narrowed to the 4 ADR-0176 names.
+
+**Open follow-ups remaining (out of scope for this close-out):**
+
+- **Open follow-up #2** — broader CI guard that parses EVERY `SKILL.md`
+  in `forks/ruflo/plugins/` and asserts every declared `allowed-tools`
+  MCP name is registered (not just the 4 ADR-0176 names). Future ADR
+  worth filing if skill-manifest drift becomes a recurring problem.
+- **Phase 4** — `/adr-index` end-to-end against the published
+  `@sparkleideas/cli` post-rename — not explicitly run + recorded.
+  Behaviour is exercised by the new check transitively (tools must
+  exist for the skill to dispatch), but a dedicated end-to-end probe
+  is not in place.
