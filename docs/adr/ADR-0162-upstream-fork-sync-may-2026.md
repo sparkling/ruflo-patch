@@ -4,8 +4,7 @@ date: 2026-05-09
 methodology: [SPARC, MADR, runbook]
 decision-makers: [Henrik Pettersen]
 tags: [upstream-sync, forks, daemon, security, ruflo, agentic-flow, ruvector, v2-archive, runbook]
-related: [0012, 0027, 0079, 0086, 0088, 0094, 0101, 0143, 0156, 0160, 0161]
-superseded-by: [ADR-0186]
+related: [0012, 0027, 0079, 0086, 0088, 0094, 0101, 0143, 0156, 0160, 0161, 0186]
 audience: ai-executor
 state_schema: 1
 ---
@@ -1069,27 +1068,33 @@ Because batches G/H/I/J are unverified and the tracker was not updated,
 this ADR is not closed. Reconciled as part of the 2026-05-18 status
 audit.
 
-### Amendment: Superseded by ADR-0186 (2026-05-18) — refreshed runbook
+### Amendment: ADR-0186 takes over unlanded work (2026-05-18) — v1 retains authority for landed batches
 
-ADR-0186 (`docs/adr/ADR-0186-upstream-fork-sync-2026-05-18-v2.md`)
-supersedes this v1 plan with a fresh upstream-delta computation against
-the 2026-05-18 snapshot (ruflo 329 ahead, agentic-flow 30, ruvector 47;
+ADR-0186 (`docs/adr/ADR-0186-upstream-fork-sync-2026-05-18-v2.md`) was
+filed 2026-05-18 to refresh the upstream-fork-sync runbook against the
+current upstream delta (ruflo 329 ahead, agentic-flow 30, ruvector 47;
 agentdb and ruv-FANN caught up). ADR-0186 re-resolves the five decision
-points against today's code state (all five answered — `adr_0088_policy`
-= spawn-only locked, `pre_extraction_routing` = skip, `paired_delete_api`
-= partial, `cross_compile_setup` = still false, and a new
-`adr_0117_compatibility` = drop-upstream-mcpservers-hunks), audits
-cross-conflicts with six post-2026-05-09 ADRs (0117, 0143, 0161, 0167,
-0177, 0180/0181, 0184/0185), and re-builds the per-batch decision matrix
-using PICK / SKIP / **HAND-PORTED (already)** / **HAND-PORT (pending)**
-classifications.
+points against today's code state and audits cross-conflicts with six
+post-2026-05-09 ADRs (0117, 0143, 0161, 0167, 0177, 0180/0181,
+0184/0185).
 
-This v1 ADR remains `proposed` (not retired). The hand-port evidence
-captured in the preceding amendment (Batches A/B/E hand-ports on
-`forks/ruflo/main`; plan files under `docs/plans/upstream-sync-2026-05-09-*.md`)
-is still load-bearing. ADR-0186 references and builds on it; it does not
-erase it. The "actually-open work" originally enumerated in the
-2026-05-18 status audit for ADR-0162 (Batches G/H/I/J + the 5 follow-up
-audit tasks) is now owned by ADR-0186 follow-ups #6–13.
+**Scope split between v1 and v2:**
 
-See ADR-0186 §"Considered Options" for the supersede-vs-amend rationale.
+- **This ADR (v1) retains authority for the LANDED batches**: A, B,
+  C+D, E, F, K. The hand-port evidence captured in the preceding
+  amendment — `memory-router.ts:434, 883, 889`, `hive-mind-tools.ts:66,
+  241`, and the 15 ADR-0162-tagged commits in `forks/ruflo` — is the
+  authoritative source for those batches. v1 status stays `proposed`
+  per the partial-implementation-keeps-proposed precedent from the
+  2026-05-18 status audit. **v1 is NOT superseded** — it is partial.
+- **ADR-0186 takes over the UNLANDED work**: Batches G, H, I, J + the
+  5 follow-up audit tasks originally enumerated as "out of scope for
+  this sync" + the 8 new follow-ups specific to the refreshed delta.
+
+Frontmatter relationship: `related: [..., 0186]` (no `superseded-by`).
+v1 and v2 coexist; v1 closes itself by execution of its already-landed
+batches; v2 closes itself by execution of the unlanded ones.
+
+See ADR-0186 §"Considered Options" for the supersede-vs-amend rationale
+(option 3 — author v2 — was chosen specifically because v1's landed
+batches remain load-bearing).

@@ -134,8 +134,58 @@ The Phase-4 message enumerated:
   new-commit completeness, xwin remediation scope, ADR-0117 hunk-drop
   policy, and the "79 plugin commits supersede Batch G" framing.
 
-DA's response is acknowledged here once received; if DA flags any
-correction, this report and ADR-0186 are updated before commit.
+**DA response received (post-initial-commit `f1058c3`)** — DA pre-read
+all six required documents and ran independent probes before the Phase-4
+plan arrived. DA confirmed:
+
+* SHA continuity clean across 11 spot-checked commits in three forks.
+* `pre_extraction_routing: skip` rationale sound (`forks/agentic-flow/packages/agentdb/`
+  confirmed deleted).
+* `paired_delete_api` diff = 111 lines (v1 expected >100; manual merge
+  remains required for any future re-pick — though queen verified the
+  ruvector side already landed via `ee8bca9`).
+* `cross_compile_setup` toolchain partial: zig + cargo-zigbuild present;
+  `xwin` binary missing but `cargo xwin` works (Batch I's P1 routes
+  through `cargo xwin build`, so functionally present — v2 should state
+  this precisely).
+* `adr_0117_compatibility`: DA's empirical reading is stronger than
+  queen's initial framing — `mcp-generator.ts` registers `mcpServers['ruflo']`
+  live; plugin manifests do NOT carry `mcpServers` blocks; upstream Batch G
+  modifies plugin schema `version` field only, not MCP namespace. **No
+  collision.** Queen's "drop hunks" framing was speculative and not
+  grounded.
+* v1 frontmatter integrity: DA flagged that `superseded-by: [ADR-0186]`
+  was the wrong addition — v1's landed batches (A/B/C+D/E/F/K) remain
+  authoritative; ADR-0186 takes over only the unlanded work (G/H/I/J).
+
+**Corrections applied in fixup commit** (on top of `f1058c3`):
+
+1. v1 frontmatter: removed `superseded-by: [ADR-0186]`; added `0186` to
+   `related:` array.
+2. v1 amendment block: re-framed from "Superseded by ADR-0186" to "ADR-0186
+   takes over unlanded work; v1 retains authority for landed batches".
+3. ADR-0186 frontmatter: removed `supersedes: [ADR-0162]`; tags shifted
+   from `supersedes-v1` to `v2-of-0162-unlanded-work`.
+4. ADR-0186 §Title + Executor-note: re-framed from "supersedes" to
+   "takes over unlanded work".
+5. ADR-0186 §Considered Options: option 4 (chosen) re-worded; option 3
+   (supersede entirely) added as Rejected.
+6. ADR-0186 §Decision 5: ADR-0117 framing narrowed from "drop hunks" to
+   "no collision (verified)" with three numbered verification observations.
+7. ADR-0186 §Cross-conflict audit: ADR-0117/0167/0177/0180/0181 rows
+   re-written with specific citations DA asked for (read_path/write_path/store.rs
+   probe results for Batch I; Playwright + ruvector-graph-transformer-wasm
+   import-only WASM test reading; ADR-0177 §Decision Outcome line).
+8. ADR-0186 state schema: `supersedes_state_file` renamed to
+   `takes_over_unlanded_from`; `adr_0117_compatibility` value flipped
+   from `drop-upstream-mcpservers-hunks` to `clean`.
+
+**DA delta-count discrepancy resolved**: DA read agentic-flow as 29
+ahead (unchanged from v1); queen measured 30. The +1 is `b280a4c`
+(WebSocket QUIC fallback) dated `2026-05-09 22:00 UTC-4 = 2026-05-10
+02:00 UTC` — landed just after v1's May-9 snapshot. Queen's count
+verified by re-running `git log origin/main --not main --oneline | wc
+-l` after `git fetch origin --quiet`; 30 is current.
 
 ## Discipline checks
 
@@ -172,7 +222,9 @@ release` orchestrates the publish gate.
 * **Files touched** (will be verified pre-commit):
   * `docs/adr/ADR-0186-upstream-fork-sync-2026-05-18-v2.md` (new)
   * `docs/adr/ADR-0162-upstream-fork-sync-may-2026.md` (frontmatter
-    `superseded-by: [ADR-0186]` + amendment block)
+    `related: [..., 0186]` added; amendment block; **no
+    `superseded-by`** — per DA correction, v1 retains authority for
+    landed batches A/B/C+D/E/F/K)
   * `docs/council/ADR-0186-author-report.md` (new — this file)
 * **Commit message**: `docs(adr): file ADR-0186 — upstream fork sync v2 (refreshes ADR-0162 May-9 snapshot to May-18)`
 * **No Co-Authored-By trailer** — ruflo-patch convention is normal

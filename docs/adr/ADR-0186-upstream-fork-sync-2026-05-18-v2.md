@@ -3,8 +3,7 @@ status: proposed
 date: 2026-05-18
 methodology: [SPARC, MADR, runbook]
 decision-makers: [Henrik Pettersen]
-tags: [upstream-sync, fork-management, ruflo, agentic-flow, ruvector, ruv-FANN, agentdb, runbook, supersedes-v1]
-supersedes: [ADR-0162]
+tags: [upstream-sync, fork-management, ruflo, agentic-flow, ruvector, ruv-FANN, agentdb, runbook, v2-of-0162-unlanded-work]
 depends-on: [ADR-0117, ADR-0143, ADR-0161, ADR-0167, ADR-0177, ADR-0180, ADR-0181, ADR-0184, ADR-0185]
 implements: []
 related: [0094, 0143, 0156, 0162, 0167, 0177, 0180]
@@ -12,13 +11,15 @@ audience: ai-executor
 state_schema: 2
 ---
 
-# ADR-0186: Upstream fork sync — May 18, 2026 (v2, refreshes ADR-0162's May-9 snapshot)
+# ADR-0186: Upstream fork sync — May 18, 2026 (v2, takes over ADR-0162's unlanded work)
 
-> **AI executor**: this is a refreshed runbook. It supersedes ADR-0162's v1
-> execution plan but **does not retire** the hand-port work v1 captured (see
-> v1 Amendment 2026-05-18). v2 enumerates the *current* upstream delta as of
-> 2026-05-18 and re-resolves the five decision points against today's code
-> state. Execute top-to-bottom only after the decision-gate is closed.
+> **AI executor**: this is a refreshed runbook for the *unlanded* portion of
+> ADR-0162 (Batches G/H/I/J + the 5 follow-up audit tasks). v2 does NOT
+> supersede v1 — v1 retains authority for its landed batches (A/B/C+D/E/F/K
+> hand-ports cited at `memory-router.ts:434, 883, 889` and
+> `hive-mind-tools.ts:66, 241`). v2 enumerates the *current* upstream delta
+> as of 2026-05-18 and re-resolves the five decision points against today's
+> code state. Execute top-to-bottom only after the decision-gate is closed.
 
 ## Context and Problem Statement
 
@@ -89,24 +90,36 @@ v1's target v0.2.0/v0.3.0). v2 refreshes the plan to today's reality.
    answered in code; its SHAs are misaligned with current state; its batch
    list omits 109 new ruflo commits and 9 new commits across the other
    forks.
-2. **Amend v1 in place.** Rejected — the amendment block already records
-   the partial close-out. Layering a second amendment doesn't refresh the
-   batch tables. Better to supersede and link back.
-3. **Author v2 (this ADR), supersede v1.** Chosen.
-4. **Author v2 + retire v1 entirely.** Rejected — v1 carries the verified
-   hand-port evidence for Batches A/B/C+D/E/F/K. v2 references it; doesn't
-   erase it.
+2. **Amend v1 in place.** Rejected — the existing amendment block already
+   records the partial close-out for landed batches. Layering a second
+   amendment that re-enumerates Batches G/H/I/J with refreshed SHAs would
+   bloat v1 past readable length.
+3. **Author v2 (this ADR) and supersede v1 entirely.** Rejected — v1's
+   landed-batch hand-port evidence (`memory-router.ts:434, 883, 889`,
+   `hive-mind-tools.ts:66, 241`, 15 ADR-0162-tagged commits) is the
+   authoritative source for Batches A/B/C+D/E/F/K. Supersession would
+   imply v1 is stale on those batches, which is not true.
+4. **Author v2 as a scope-narrowed runbook for the unlanded work; keep v1
+   authoritative for landed batches.** Chosen. v1 and v2 coexist; each
+   closes itself by execution of its own scope.
+5. **Author v2 + retire v1 entirely.** Rejected — same reason as option
+   3, stronger form.
 
 ## Decision Outcome
 
-Author ADR-0186 as a fresh runbook capturing the 2026-05-18 upstream delta
-across the four forks (agentdb caught up; ruv-FANN dormant). v2 inherits
-v1's batch structure (A–J) but each batch table is rebuilt against current
-SHAs. Five decision points re-resolved; one new decision point added
+Author ADR-0186 as a fresh runbook for the *unlanded* portion of ADR-0162
+(Batches G/H/I/J + 5 follow-up audit tasks + 8 new follow-ups specific to
+the refreshed delta). v2 inherits v1's batch structure (A–J) but each
+batch table is rebuilt against current SHAs and dispositions for landed
+batches are recorded as "HAND-PORTED (already)" with citation back to v1's
+amendment. Five decision points re-resolved; one new decision point added
 (`adr_0117_compatibility`). Cross-conflict audit against six post-May-9
-ADRs documented. **Execution deferred** to a future swarm or follow-up ADR;
-this ADR ships only the refreshed spec and bidirectional supersession with
-v1.
+ADRs documented. **Execution deferred** to a future swarm or follow-up ADR.
+
+**Frontmatter relationship**: ADR-0186 carries `related: [..., 0162]`;
+v1 carries `related: [..., 0186]`. Neither carries `superseded-by` —
+v1 status stays `proposed` (partial), and ADR-0186 status stays
+`proposed` until its unlanded scope is closed.
 
 ## Execution state schema (v2)
 
@@ -115,12 +128,12 @@ Maintain at `/Users/henrik/source/ruflo-patch/.claude-flow/data/sync-2026-05-18.
 ```yaml
 sync_id: 2026-05-18-upstream-v2
 schema_version: 2
-supersedes_state_file: 2026-05-09-upstream  # ADR-0162 v1
+takes_over_unlanded_from: 2026-05-09-upstream  # ADR-0162 v1; v1 keeps authority for landed batches
 decisions_resolved:
   adr_0088_policy: spawn-only             # resolved by code state — see Decisions §1
   pre_extraction_routing: skip            # resolved by lift-and-shift verification
   paired_delete_api: partial              # ruvector side landed; agentic-flow side open
-  adr_0117_compatibility: drop-upstream-mcpservers-hunks   # NEW
+  adr_0117_compatibility: clean           # NEW — verified no collision (upstream Batch G doesn't introduce mcpServers blocks)
 preflight:
   cross_compile_setup: false              # xwin still missing
   forks_clean: false
@@ -210,24 +223,40 @@ ready. Until then, the Windows binary stays as upstream-produced
 (`53f041978` ships fresh ones; we can lift those if license allows, or skip
 the Windows target on the rebuild pass).
 
-### Decision 5 (NEW): `adr_0117_compatibility` — **drop-upstream-mcpservers-hunks**
+### Decision 5 (NEW): `adr_0117_compatibility` — **clean (no collision)**
 
 **Context**: ADR-0117 (Revision 2026-05-03) registers the MCP server at
-**init time** via `forks/ruflo/v3/@claude-flow/cli/src/init/mcp-generator.ts:95`
-under the key `ruflo`. Upstream's Batch G plugin contract bundle introduces
-per-plugin `mcpServers` blocks in some `.claude-plugin/plugin.json` files
-plus `npx claude-flow@alpha` invocations in `hooks.json`.
+**init time** via `forks/ruflo/v3/@claude-flow/cli/src/init/mcp-generator.ts`
+under the key `ruflo`. Authoring concern was whether upstream's Batch G
+plugin contract bundle re-introduces per-plugin `mcpServers` blocks that
+would shadow ADR-0117's init-time registration.
 
-**Decision**: KEEP plugin contract version bumps (the substantive content);
-DROP any `mcpServers` blocks introduced by upstream commits within the
-`df49b5176..6324f5ae0` range; KEEP existing codemod Pass 5 which rewrites
-`claude-flow@alpha` → `@sparkleideas/cli@latest` in `.claude-plugin/**` and
-`plugins/**` (ADR-0117 confirms this stays).
+**Verification 2026-05-18** (empirical, not speculative):
 
-Note: our plugin contracts are already at v0.2.17 (verified via
-`plugins/ruflo-sparc/.claude-plugin/plugin.json` and 3 peers), substantially
-ahead of v1's 0.2.0/0.3.0 target. Batch G is effectively **SUPERSEDED BY
-LOCAL WORK**.
+1. **Plugin manifests don't carry `mcpServers` blocks.** Sampled
+   `plugins/ruflo-agentdb/.claude-plugin/plugin.json` (version `0.3.17`) —
+   no `mcpServers` field. The post-ADR-0117 plugin shape carries
+   `name`/`description`/`version`/`author`/`homepage`/`license`/`keywords`
+   only.
+2. **Upstream `df49b5176` (Batch G entry-point) doesn't introduce
+   `mcpServers` blocks either.** Inspection shows the upstream commit
+   touches plugin.json `version` (0.1.1 → 0.2.0) + `keywords` array, plus
+   adds `scripts/smoke.sh` and a Compatibility section to README. No MCP
+   namespace registration in the diff.
+3. **The `version` field is the plugin schema version, not an MCP
+   namespace.** Conflating the two would be a category error. ADR-0117's
+   post-revision decision concerns the `mcpServers` block, not the plugin
+   schema version field.
+
+**Decision**: No "drop hunks" policy needed. KEEP plugin contract version
+bumps; KEEP codemod Pass 5 which rewrites `claude-flow@alpha` →
+`@sparkleideas/cli@latest` in `.claude-plugin/**` and `plugins/**`
+(ADR-0117 confirms this stays as the orthogonal `npx`-shellout sanitizer).
+
+Note: our plugin contracts are already at v0.2.17 / v0.3.17 (sampled
+across `ruflo-sparc`, `ruflo-swarm`, `ruflo-testgen`, `ruflo-workflows`,
+`ruflo-agentdb`), substantially ahead of v1's 0.2.0/0.3.0 target. Batch G
+is **SUPERSEDED BY LOCAL WORK** regardless of any compat concern.
 
 ## Preflight (refreshed)
 
@@ -512,12 +541,12 @@ under §Background, batch table OMITTED.
 
 | Post-May-9 ADR | Status (2026-05-18) | Affected v2 batches | Resolution |
 |---|---|---|---|
-| ADR-0117 | revising | G | **Drop** upstream `mcpServers` block hunks; ADR-0117 owns marketplace MCP server registration via init-time `ruflo` key (`mcp-generator.ts:95`). Codemod Pass 5 stays. |
+| ADR-0117 | revising | G | **No collision (verified).** Plugin manifests don't carry `mcpServers` blocks (sampled `ruflo-agentdb/.claude-plugin/plugin.json` v0.3.17 — none). Upstream `df49b5176` inspected — modifies plugin.json `version`/`keywords` + adds `smoke.sh`, no `mcpServers` block. The plugin.json `version` field is the plugin schema version, not an MCP namespace. ADR-0117 post-revision and Batch G are orthogonal. Codemod Pass 5 stays. |
 | ADR-0143 | accepted | J | **Skip** 5 README prose commits (upstream's Cognitum.One + `npx ruvflo init` typo conflict with sparkling brand). |
 | ADR-0161 | implemented | H pre-extraction | **Skip** 11 pre-extraction commits — lift-and-shift verified 3/3 sentinel files present. |
-| ADR-0167 | accepted | I rebuild order | **Sequence** Batch I NAPI rebuild after ADR-0167's superblock pattern lands in ruvector. |
-| ADR-0177 | proposed (substrate in force) | H test infra, I sparse-attention | **No conflict** — ADR-0177 governs substrate posture above the upstream-sync surface. Test infra is additive. |
-| ADR-0180 / ADR-0181 | accepted / implemented | H browser test | **No conflict** — browser-side WASM test doesn't reach archivist runtime path. |
+| ADR-0167 | accepted | I rebuild order | **Risk-surface verified clean.** ADR-0167's coordination surface is `crates/ruvector-rvf/src/{read_path.rs,write_path.rs,store.rs}`. All 20 Batch I v1 PICK SHAs (Hailo cluster + sparse-attention + docs) probed via `git show --name-only`: **zero touches** to those three files. New SHA `bc3a9b1c9` touches `crates/mcp-brain-server/src/store.rs` — different crate, not RVF. **Sequence Batch I NAPI rebuild** after ADR-0167's superblock pattern lands so the rebuild ships the authoritative coordination layer. |
+| ADR-0177 | proposed (substrate in force) | H test infra, I sparse-attention | **No conflict (verified).** ADR-0177 §Decision Outcome anchors graph data as RVF segments via `@ruvector/graph-node`. Batch H entry `e60a5ba` brings in `tests/browser/graph-transformer-wasm.test.ts` — file header reads "Phase 2 of ADR-071: WASM Fallback Testing"; imports are `@playwright/test` + `ruvector-graph-transformer-wasm`; tests `JsGraphTransformer` and `SublinearAttention` instantiation only. No archivist / substrate / write-path touches. Test infra is additive. |
+| ADR-0180 / ADR-0181 | accepted / implemented | H browser test | **No conflict (verified).** Same Playwright-WASM test file. Imports `@playwright/test` and `ruvector-graph-transformer-wasm` only; does NOT import from archivist modules. Confirmed by reading `e60a5ba:tests/browser/graph-transformer-wasm.test.ts` directly. |
 | ADR-0184 / ADR-0185 | implemented | E (closed) | **Closes** Batch E — consensus handler ported + cli retired; ADR-0162 Batch E hand-port subsumed. |
 
 ## Post-all-batches (deferred to execution ADR)
