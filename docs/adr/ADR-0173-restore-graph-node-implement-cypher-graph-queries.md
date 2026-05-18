@@ -1,11 +1,14 @@
 ---
-status: proposed
+status: superseded
 date: 2026-05-12
+superseded-by: ADR-0174
 tags: [graph-database, cypher, apache-age, pgvector, postgres-server, cycle-clause, council-deliberation, adr-0170, adr-0172]
 supersedes: []
 depends-on: [ADR-0170, ADR-0172]
 implements: []
 ---
+
+> **Superseded by [ADR-0174](ADR-0174-introduce-graph-axis-ruvector-graph-engine.md) (2026-05-12), which itself was superseded by [ADR-0177](ADR-0177-adopt-upstream-agentdb-rvf-vision.md) (2026-05-12). See ADR-0177 for current graph-workload strategy.** ADR-0174 frontmatter declares `supersedes: [ADR-0173]` and §"What changes about ADR-0173" documents that AGE is not installed, no per-connection `LOAD 'age'` hook, no agtype marshalling, no `Dockerfile.age`. ADR-0177 then retires the postgres/pglite substrate entirely (per upstream ADR-006's no-pgvector mandate), making the PG14+ `CYCLE` clause migration moot. R3 council transcripts at `docs/council/ADR-0173-graph-db-council-r{1,2,3}-transcript.md` remain as evidence of the question's evolution.
 
 # Graph workload strategy: Apache AGE on PG-server + E-Hardened CYCLE for existing recursive callsites
 
