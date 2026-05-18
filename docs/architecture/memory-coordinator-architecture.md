@@ -273,9 +273,11 @@ details[open] summary {
 
 # Memory Archivist Architecture
 
-> **Status:** Proposed under [ADR-0180](../../../adr/export/html/ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.html).
+> **Status:** Accepted under [ADR-0180](../../../adr/export/html/ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.html); runtime activation implemented under [ADR-0181](../../../adr/export/html/ADR-0181-memory-archivist-runtime-activation.html); write-path unified under [ADR-0183](../../../adr/export/html/ADR-0183-memory-write-path-unification.html).
 > **Audience:** Anyone touching memory, stores, MCP tools, hooks, daemons, or substrate.
-> **Last updated:** 2026-05-13
+> **Last updated:** 2026-05-18 (post-ADR-0186 + ADR-0183 + ADR-0181)
+
+> **Current state (2026-05-18).** The Archivist exists at runtime as a **per-process** instance — each entry point (`@sparkleideas/cli`, `@sparkleideas/cli mcp start`, `@sparkleideas/cli daemon`, `@sparkleideas/cli hooks-daemon`) initialises its own ([ADR-0181](../../../adr/export/html/ADR-0181-memory-archivist-runtime-activation.html)). The MCP `memory_store` / `memory_search` / `memory_retrieve` write path now flows through `routeMemoryOp({type:'store'}) → archivist.dispatch('memory_store') → forks/agentdb/src/archivist/handlers/memory/store.ts`, which owns both the insert and the RC-2 upsert via the rvf substrate ([ADR-0183](../../../adr/export/html/ADR-0183-memory-write-path-unification.html), completed 2026-05-17). The hive-mind consensus handler ([ADR-0184](../../../adr/export/html/ADR-0184-hive-mind-consensus-handler-port.html)) was ported to `forks/agentdb/src/archivist/handlers/hive-mind/consensus/<strategy>.ts`; the cli-side handler was retired ([ADR-0185](../../../adr/export/html/ADR-0185-hive-mind-consensus-cli-retirement.html)). The agentdb package itself is fork-owned at `forks/agentdb/` ([ADR-0161](../../../adr/export/html/ADR-0161-agentdb-fifth-fork-extraction.html), published from Verdaccio as `@sparkleideas/agentdb@alpha.14-patch.NNN`) — upstream's `packages/agentdb/` was removed from our agentic-flow tree. Release-time file-copy minimisation is governed by [ADR-0182](../../../adr/export/html/ADR-0182-file-copy-minimization-at-release-time.html). The May upstream-sync cycle closed under [ADR-0186](../../../adr/export/html/ADR-0186-may-upstream-sync-closeout.html) (ADR-097 + ADR-104 federation transport landed via `c4175be73`; ADR-111 WireGuard mesh declined per [ADR-0187](../../../adr/export/html/ADR-0187-wireguard-mesh-decline.html)).
 
 <div class="toc">
 
@@ -553,6 +555,8 @@ The TieredCache invalidation hook (§TieredCache and invalidation) is present in
 
 ## How a write flows end-to-end
 
+**Status (2026-05-18):** the `memory_*` mutating tools are wired end-to-end through this sequence. Per [ADR-0183](../../../adr/export/html/ADR-0183-memory-write-path-unification.html) (completed 2026-05-17), the router shim `routeMemoryOp({type:'store', ...})` no longer holds the substrate write; it dispatches through `archivist.dispatch('memory_store', payload, ctx)`, and the handler at `forks/agentdb/src/archivist/handlers/memory/store.ts` owns both the row insert and the RC-2 upsert via the rvf substrate in one atomic mutation. The ADR-0086 behavioural conformance test's `store`/`update` methods were dropped from the "required on the router shim" list as a consequence — those operations now live behind `archivist.dispatch`, not on the router's surface. Hive-mind consensus follows the same shape: the handler ports live under `forks/agentdb/src/archivist/handlers/hive-mind/consensus/<strategy>.ts` ([ADR-0184](../../../adr/export/html/ADR-0184-hive-mind-consensus-handler-port.html), [ADR-0185](../../../adr/export/html/ADR-0185-hive-mind-consensus-cli-retirement.html)).
+
 Every write — regardless of caller surface — flows through the archivist with this sequence:
 
 ![write-flow-with-full-ceremony](diagrams/memory-coordinator-architecture/write-flow-with-full-ceremony.png)
@@ -738,7 +742,9 @@ Migrations, bulk imports, and repair scripts that legitimately need raw substrat
 
 ## The audit chain
 
-A **single append-only JSONL file** at `.claude-flow/data/archivist-audit.jsonl` is the system's source of truth for "what mutations happened". Both the cli process and the `ruflo daemon` process write to it; cross-process ordering is established by `fcntl` advisory write-locks acquired only around `write()`+`fsync()`.
+A **single append-only JSONL file** at `<memoryRoot>/data/archivist-audit.jsonl` is the system's source of truth for "what mutations happened". Both the cli process and the `ruflo daemon` process write to it; cross-process ordering is established by `fcntl` advisory write-locks acquired only around `write()`+`fsync()`.
+
+The `<memoryRoot>` resolution lives in `forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts` and is exposed via the public `getMemoryRoot()` export (added 2026-05-18 as an ADR-0186 follow-up; `_getMemoryRoot` remains the internal implementation). Precedence order (from `memory-router.ts` ~L434-450): `CLAUDE_FLOW_MEMORY_PATH` env var, then `config.json`'s `memory.persistPath`, then the default `.swarm` directory inside the project. The archivist obtains the root through this helper at process start so that all four entry points ([ADR-0181](../../../adr/export/html/ADR-0181-memory-archivist-runtime-activation.html)) resolve the same audit log under the same precedence.
 
 ![audit-chain-write-through-with-fcntl-advisory-locking](diagrams/memory-coordinator-architecture/audit-chain-write-through-with-fcntl-advisory-locking.png)
 
@@ -1212,7 +1218,7 @@ The `MutationContext` shape will change over time. Audit entries carry a top-lev
 
 ## Multi-process and durability
 
-The cli and `ruflo daemon` run in **separate processes**, both writing to the same substrate. The archivist is per-process — but the audit log is shared.
+Four entry points run as **separate processes**, all writing to the same substrate: `@sparkleideas/cli` (one-shot CLI invocations), `@sparkleideas/cli mcp start` (the MCP server), `@sparkleideas/cli daemon` (the long-lived background daemon), and `@sparkleideas/cli hooks-daemon` (the hooks worker). Per [ADR-0181](../../../adr/export/html/ADR-0181-memory-archivist-runtime-activation.html), **each entry point initialises its own Archivist instance** — the Archivist is per-process, not a global singleton, and is not shared across processes. The substrate handles (RVF backend, SQLite db, FS-JSON locks) are owned by that process's Archivist for the process's lifetime; the audit log is the only cross-process artefact.
 
 ### Composition: shared append-only JSONL with `fcntl` advisory locking
 
@@ -1234,6 +1240,12 @@ async function appendEntry(entry: AuditEntry): Promise<void> {
 The lock window is microseconds (only the `write+fsync` pair). Intent ordering across processes is established by lock-acquisition order — the OS serializes. Replay reads the file sequentially: **append-only + lock-ordered writes mean the file IS the merge order**.
 
 Why not per-process audit logs (option b — rejected): it makes the §Confirmation "audit-entry count equals mutation count" invariant unverifiable without an out-of-band merge step that itself must be audited — recursion. (c) per-process replay was also rejected because it gives up the cross-substrate single-chain invariant.
+
+### File modes (per ADR-0188, 2026-05-18)
+
+Project-local ephemeral state files written by the Archivist and its substrates use the **default `0644` mode** — this includes `archivist-audit.jsonl`, hive-mind `state.json`, claims / tasks / agents / workflow / coordination / autopilot / etc. JSON stores, and the daemon socket's sibling state files. These are not credential material and are scoped to the user's working directory (`.claude-flow/`); restricting them would break legitimate co-located readers (acceptance tests, `ruflo doctor`, hooks daemons running under the same UID) without a security benefit.
+
+`writeFileRestricted` (mode `0600`) is reserved for genuine credential vault sites only: the terminal-tools API-key store, the session-tools refresh-token cache, and the memory-router's `chmod 0600` on the SQLite `memory.db` (when SQLite carve-outs are active). [ADR-0188](../../../adr/export/html/ADR-0188-session-state-file-mode.html) records the design intent explicitly so that future security sweeps don't reflexively chmod the ephemeral session JSON to `0600`.
 
 ### Durability scope
 
@@ -1500,12 +1512,22 @@ Per Q10 catalog, ~40 doc references across 5 surfaces will need updates as each 
 
 ### ADRs
 
-- [ADR-0085](../../../adr/export/html/ADR-0085-bridge-deletion-ideal-state-gaps.html) — Delete self-learning bridge wrapper *(the deletion that motivated this)*
+- [ADR-0085](../../../adr/export/html/ADR-0085-bridge-deletion-ideal-state-gaps.html) — Delete self-learning bridge wrapper *(the deletion that motivated this; `memory-bridge.ts` no longer exists as a live file — references in `init/helpers-generator.ts` template literals are intentional per ADR-0188 design intent)*
 - [ADR-0112](../../../adr/export/html/ADR-0112-independent-stores-not-cross-store.html) — Forbid cross-store coordination *(superseded by ADR-0180)*
 - [ADR-0117](../../../adr/export/html/ADR-0117-marketplace-mcp-server-registration.html) — Marketplace MCP server registration *(plugin model precedent)*
-- [ADR-0177](../../../adr/export/html/ADR-0177-adopt-upstream-agentdb-rvf-vision.html) — Adopt upstream agentdb RVF vision *(substrate decision; unchanged)*
+- [ADR-0161](../../../adr/export/html/ADR-0161-agentdb-fifth-fork-extraction.html) — agentdb extracted as 5th fork *(2026-05-08; supersedes ADR-0160; consolidated to `forks/agentdb`, published as `@sparkleideas/agentdb@alpha.14-patch.NNN`)*
+- [ADR-0167](../../../adr/export/html/ADR-0167-cross-process-rvf-write-coordination.html) — Cross-process RVF write coordination *(accepted 2026-05-10)*
+- [ADR-0177](../../../adr/export/html/ADR-0177-adopt-upstream-agentdb-rvf-vision.html) — Adopt upstream agentdb RVF vision *(substrate decision; supersedes ADR-0170/0174/0175 postgres divergence)*
 - [ADR-0179](../../../adr/export/html/ADR-0179-restore-controller-instrumentation-lost-in-adr0085-bridge-deletion.html) — Restore controller instrumentation *(the six features cataloged)*
 - [ADR-0180](../../../adr/export/html/ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.html) — Adopt the Memory Archivist *(this architecture's decision record)*
+- [ADR-0181](../../../adr/export/html/ADR-0181-memory-archivist-runtime-activation.html) — Memory Archivist runtime activation *(implemented; per-process initialisation in cli / mcp-server / daemon / hooks-daemon)*
+- [ADR-0182](../../../adr/export/html/ADR-0182-file-copy-minimization-at-release-time.html) — File-copy minimisation at release time
+- [ADR-0183](../../../adr/export/html/ADR-0183-memory-write-path-unification.html) — Memory write-path unification *(accepted, completed 2026-05-17; `routeMemoryOp` dispatches through `archivist.dispatch`; insert + RC-2 upsert owned by `forks/agentdb/src/archivist/handlers/memory/store.ts`)*
+- [ADR-0184](../../../adr/export/html/ADR-0184-hive-mind-consensus-handler-port.html) — Hive-mind consensus handler port *(implemented 2026-05-18; handlers under `forks/agentdb/src/archivist/handlers/hive-mind/consensus/<strategy>.ts`)*
+- [ADR-0185](../../../adr/export/html/ADR-0185-hive-mind-consensus-cli-retirement.html) — cli-side hive-mind consensus handler retired *(implemented 2026-05-18; delegates to agentdb's port)*
+- [ADR-0186](../../../adr/export/html/ADR-0186-may-upstream-sync-closeout.html) — May upstream-sync close-out *(implemented 2026-05-18; ADR-097 + ADR-104 federation transport landed via `c4175be73`)*
+- [ADR-0187](../../../adr/export/html/ADR-0187-wireguard-mesh-decline.html) — WireGuard mesh declined *(ADR-111 not adopted)*
+- [ADR-0188](../../../adr/export/html/ADR-0188-session-state-file-mode.html) — Session-state file mode kept at 0644 *(implemented 2026-05-18; design intent for project-local ephemeral files)*
 
 ### Council and swarm deliberations
 
