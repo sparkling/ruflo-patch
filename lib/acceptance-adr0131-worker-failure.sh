@@ -131,11 +131,23 @@ check_adr0131_worker_failure_auto_transition() {
   local strategies=("bft" "raft" "quorum" "weighted")
 
   for strategy in "${strategies[@]}"; do
-    # Propose with a very short negative timeout — predicate fires immediately.
+    # Propose with timeoutMs=1 (proposal expires 1ms after creation; the
+    # subsequent status query fires the auto-transition).
+    #
+    # ADR-0185 Wave 2b — switched from timeoutMs=-1000 to timeoutMs=1.
+    # Pre-Wave-2b cli accepted negative timeoutMs via `(input.timeoutMs as
+    # number) || 30000` (truthy → passed through). Wave 2b moved propose to
+    # archivist.dispatch which enforces `bftProposeTimeoutMsWellFormedWhenPresent`
+    # (and same invariant for raft/quorum/weighted) — negative or NaN values
+    # throw. The test's intent is "verify auto-transition fires on expired
+    # proposals" not "verify negative timeoutMs is accepted"; timeoutMs=1
+    # preserves the intent without exploiting the pre-flip permissive bug.
+    # Per `feedback-no-squelch-tests`: test intent unchanged; the test is
+    # retargeted to a non-buggy input that exercises the same behaviour.
     local propose_out
     propose_out=$(cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 30 $cli mcp exec \
       --tool hive-mind_consensus \
-      --params "{\"action\":\"propose\",\"type\":\"adr0131-${strategy}\",\"value\":\"v\",\"strategy\":\"${strategy}\",\"timeoutMs\":-1000}" \
+      --params "{\"action\":\"propose\",\"type\":\"adr0131-${strategy}\",\"value\":\"v\",\"strategy\":\"${strategy}\",\"timeoutMs\":1}" \
       2>&1)
 
     # Extract proposalId from output. Format may be JSON or text — try both.
