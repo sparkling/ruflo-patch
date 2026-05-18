@@ -19,6 +19,7 @@ CLAUDE.local.md
 .claude-flow/agents.json
 .claude-flow/agents/
 .claude-flow/data/
+.claude-flow/claims/
 .claude-flow/metrics/
 .claude-flow/hive-mind/
 .claude-flow/swarm/
