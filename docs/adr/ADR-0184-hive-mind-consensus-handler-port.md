@@ -1,6 +1,7 @@
 ---
 status: proposed
 date: 2026-05-18
+closed-on: 2026-05-18
 tags: [hive-mind, consensus, archivist, runtime-activation, multi-strategy]
 depends-on: [ADR-0180, ADR-0181]
 implements: []
@@ -112,9 +113,40 @@ Chosen: **Option C**, executed as a per-strategy ADR-0181-style wave (next swarm
 
 4. **`feedback-singleton-frozen-state-desync`** likely applies if any wave's tests touch cli singletons (e.g. `getProcessHiveMindStore()`). Use the `CLAUDE_FLOW_CWD` env-var pattern from the ADR-0183 A0 swarm.
 
+## Amendments
+
+### Amendment: Close-out — ADR-0184 agentdb coverage complete; cli retirement deferred to ADR-0185 (2026-05-18)
+
+All 6 waves green-gated at 672/681/0/9 acceptance. Per-strategy handler bodies live in `forks/agentdb/src/archivist/handlers/hive-mind/consensus/<strategy>.ts` (bft, raft, quorum, weighted, gossip, crdt); zero `pending` stubs remain in the agentdb handler tree; audit-entry count equals mutation count (verified by Wave 6a exit-gate test).
+
+Per-wave commit trail (`forks/agentdb` main):
+
+- Wave 1 (`6c88a6b`): per-strategy skeletons + parent dispatcher (`byzantine → bft` normalisation)
+- Wave 2.1 (`f3c0f37`): `_shared.ts` (vendored cli helpers + 4 error classes) + bft port + invariants + 8 tests
+- Wave 2.2 (`0c6da39`): raft port + invariants + 5 tests
+- Wave 2.3 (`5d51b18`): quorum port + invariants + 6 tests
+- Wave 3 (`7772008`): weighted port + invariants + 8 tests (queen 3x voting power)
+- Wave 4 (`655d330`): gossip port + invariants + 9 tests + ADR-0131 inline-timing decision (OF#1)
+- Wave 5 (`c9e0ed0`): crdt port + invariants + 11 tests (7 behavioural + 3×50 sampled property) + `_crdt-types.ts` vendor (OF#2)
+- Wave 6a (`4a8aee7`): exit-gate test + barrel error-class re-exports in `archivist/index.ts`
+
+**Decisions ratified:**
+
+- **ADR-0131 auto-status-transition timing** (Open Follow-up #1): INLINE at `status` action across all strategies, not split into a separate `status_settle` mutation. Rationale: gossip status is already a mutation action; half-split (gossip/crdt → status_settle, threshold strategies → inline) is worse than no split; preserves cli interface verbatim. Trade-off acknowledged: `status` action's name is slightly misleading.
+- **mergeCRDTState location** (Open Follow-up #2): VENDORED into `forks/agentdb/src/archivist/handlers/hive-mind/consensus/_crdt-types.ts` (439 LoC verbatim from cli `crdt-types.ts`). Rationale: pure JSON-merge math, no I/O dependencies, capability-handle plumbing is architectural overhead, single consumer.
+
+**Cli retirement deferred to ADR-0185.** The cli `hive-mind_consensus` handler (lines 1984-2919 of `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts`, ~870 LoC handler body + ~50 LoC schema/header) is now 100% redundant with the agentdb handler — both surfaces work correctly in dual-write. The cli flip itself requires a comprehensive `buildConsensusResponse` helper reconstructing all post-dispatch telemetry, a try/catch error-reshape with 5 typed-error branches, helper-set cleanup (zero external callers confirmed for 10 cli-local helpers), and cli-test re-validation. Scope measurement during Wave 6 execution revealed this is ~1500 LoC of focused refactor work warranting its own ADR. Spin-out pattern mirrors [ADR-0181 → ADR-0184](ADR-0181-archivist-runtime-activation.md#amendment-closure-plan--sequenced-path-to-close-the-program-2026-05-17).
+
+**Open Follow-up #3** (per-strategy invariant authoring): partially addressed. Wave 2 DA Axis (f) ruling resolved that invariants must use the `Invariant<T>` signature's payload-shape-only inputs (`callerIntent` + `recordedPayload`, no before/after state snapshot). Per-strategy correctness gates (BFT f+1 threshold, Raft term monotonicity, CRDT idempotency/commutativity/associativity) split: payload-shape checks landed in `invariants/hive-mind/consensus/<strategy>.ts`; correctness-triad property tests for CRDT landed in `test/archivist/handlers/hive-mind/consensus/crdt.test.ts` via the `crdtSemanticEqual()` helper. Open Follow-up #3 is **resolved** at the agentdb layer.
+
+**Open Follow-up #4** (`feedback-singleton-frozen-state-desync` carry-forward): no Wave 1-6a test path touched cli singletons; the `withTestContext` test harness uses `makeFsJsonSubstrateFixture` which is per-test and never reaches `getProcessHiveMindStore()`. Not an issue here. Carry-forward stays applicable to ADR-0185 cli-flip tests.
+
+Close-out report: [docs/council/ADR-0184-close-out-report.md](../council/ADR-0184-close-out-report.md).
+
 ## More Information
 
 - [ADR-0181: Archivist Runtime Activation](ADR-0181-archivist-runtime-activation.md) — the parent activation program; §Closure plan amendment Phase D is the scope this ADR inherits.
+- [ADR-0185: Hive-Mind Consensus Cli Retirement](ADR-0185-hive-mind-consensus-cli-retirement.md) — the cli-flip program spun out from this ADR's Wave 6.
 - [ADR-0181 §Amendment: Close-out — ADR-0181 implementation complete (2026-05-18)](ADR-0181-archivist-runtime-activation.md#amendment-close-out--adr-0181-implementation-complete-2026-05-18) — the close-out that defers Phase D here.
 - [ADR-0183: Memory Write-Path Unification](ADR-0183-memory-write-path-unification.md) — the precedent for spinning out a heavy single-concern from a closure plan when serial execution constraints would otherwise blow the wall-clock budget.
 - [docs/council/ADR-0181-close-out-report.md](../council/ADR-0181-close-out-report.md) — the close-out report containing the per-phase outcomes table and the deferred-follow-up list this ADR closes #1 of.
