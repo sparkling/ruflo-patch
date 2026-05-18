@@ -650,3 +650,42 @@ The swarm self-aborts and escalates to user if any of the following:
   flagged these as ADR-0085's deferred Phase 3. Tangentially relevant but a
   separate cleanup; if drift is found there during Phase 1, file as a follow-up
   issue, do not absorb into ADR-0179.
+
+## Amendments
+
+### Amendment: Status reconciliation (2026-05-18) — partial implementation; audit-methodology contribution survives
+
+Status kept `proposed` per ADR-0180 §"ADR-0179 supersession scope" lines
+345-353 ("Status stays `proposed`. No `superseded-by` field — the
+audit-methodology contribution survives ADR-0180").
+
+**Subsumed (no longer load-bearing as separate work):**
+
+- The *placement* question for the six bridge-deletion behaviors
+  (MutationGuard, AttestationLog, TieredCache, BM25+semantic fusion,
+  ExplainableRecall, SkillLibrary auto-promotion) is answered by
+  ADR-0180 §Architecture: those features land at the archivist's
+  MCP-dispatch boundary, not scattered across router call sites.
+  ADR-0179 Phase 3's `routeMemoryOp 'store'` recipe is architecturally
+  obsolete.
+- Fork code refs confirm the absorption: `agentdb-tools.ts:276,1461`
+  cite "for ExplainableRecall (ADR-0180 §Provenance rollout scope —
+  MANDATORY for this fusion site per ADR-0179)"; `archivist/MODULE.md`
+  references ADR-0179 follow-ups (TieredCache, six lost features).
+
+**Surviving contributions (still open):**
+
+- The *audit-gap methodology* — the 34-row body-diff table (Phase 1
+  deliverable) preventing recurrence of ADR-0085's structural-only
+  audit — is **not yet populated**. The §"Behavioral-diff table (Phase 1
+  deliverable, to be filled)" section remains a stub.
+- The ADR-0053 inheritance-debt analysis (four controllers regressed
+  against Phase 2/4/5 deliverables) — not separately catalogued as a
+  durable artifact.
+- The controller-coverage acceptance check that would convert ADR-0053's
+  manual vigilance into structural enforcement — not delivered.
+
+Frontmatter could append `ADR-0180` to `depends-on` per ADR-0180's
+guidance, but per the same guidance no status change is required; the
+methodology work is genuinely open. Reconciled as part of the 2026-05-18
+status audit.

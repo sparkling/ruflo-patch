@@ -618,3 +618,66 @@ Original Phase 1.5 wrote package.json deltas for cascade A as if RVF replaces SQ
     The fork's only post-`bd760f2` change to these files was commit `06aaf9e` ("port AttestationLog to postgres") — exactly the postgres dialect work this ADR retires. Restoring from snapshot `bd760f2` (sqlite-shaped originals) is therefore directly substrate-compatible; archive HEAD versions would not compile after the postgres deletion.
 
     Per `feedback-no-value-judgements-on-features.md` (default-to-WIRE), the four files have been restored to preserve the proof-gated-mutation surface as future-wiring optionality. Single-node-multi-agent isolation (per-write `agentId` / `namespace` / `scope` attestation) is exactly the kind of capability the fork already cares about. Activation (have `factory.ts:createGuardedBackend()` return `GuardedVectorBackend` instead of bare `RvfBackend`; expose attestation MCP tools) requires a future ADR.
+
+### Amendment: Status reconciliation (2026-05-18) — partial implementation; substrate decision in force
+
+Status kept `proposed` per the 2026-05-18 ADR status audit.
+
+**Substrate decision in force (the load-bearing part that landed):**
+
+ADR-0177's RVF-primary substrate posture IS the active substrate
+contract:
+
+- `agentdb_*` routes through the archivist substrate seam (ADR-0180 /
+  ADR-0181), NOT postgres/pglite. ADR-0180 §Architecture explicitly
+  cites ADR-0177 as the substrate referent ("RVF-primary per ADR-0177
+  for vector + content stores").
+- The permanent SQLite carve-out roster (5 controllers per ADR-0166:
+  CausalMemoryGraph, CausalRecall, NightlyLearner, LearningSystem
+  aggregations, ReasoningBank GROUP-BY) runs on better-sqlite3 / sql.js
+  per ADR-0177's substrate table.
+- ADR-0170 (postgres primary), ADR-0174 (graph_* axis), ADR-0175
+  (ruvector-postgres for memory_*) all carry `superseded-by: ADR-0177`
+  in frontmatter.
+- Amendment 2 (dependency-hygiene reversal) landed wholesale: fork
+  preserves upstream agentdb's `package.json` posture, no fail-fast
+  scaffolding, no cascade collapse.
+- Phase 1.6 (embedding config chain through `ruflo init`) marked ✅
+  complete inline.
+- Phase 2 (RVF self-learning factory swap, fork commit `511b7d3`)
+  marked ✅ implemented; verification deferred.
+- `PostgresBackend` + `migrate-sqlite-to-pglite` restored as museum
+  pieces (Open Follow-up #2 ✅ resolved 2026-05-13).
+- Four QUIC/Raft + four security scaffolding files restored from
+  `bd760f2` per Open Follow-ups #9, #13.
+
+ADR-0177 is **load-bearing for ADR-0180, ADR-0181, ADR-0184** as the
+substrate referent. Those downstream ADRs would not have closed
+coherently without ADR-0177's decision in force.
+
+**Open follow-ups (13 items, named by their §Open follow-ups section
+numbering):**
+
+1. `ruvector-bridge.ts` plugin disposition (retire / re-point / keep).
+2. ~~`PostgresBackend.ts` retention~~ ✅ resolved 2026-05-13.
+3. Concurrency hardening of `RvfBackend` under acceptance-test loads.
+4. Self-learning loop acceptance baseline (+X% NDCG@10 target).
+5. ADR-006's "future @ruvector PG extension" hook monitoring.
+6. Skill manifest re-audit (CI guard from ADR-0176 follow-up #2).
+7. Existing `.swarm/memory.{rvf,graph,db}` migration on user machines.
+8. Upstream PR coordination for Phase 3 Cypher executor patch.
+9. Federation + RAFT distributed mode (restored 2026-05-13; activation
+   gated on future ADR).
+10. Phase 4 (upstream ADR-007 Phase 2) kernel/eBPF / ReasoningBank /
+    RLM scaffolding — partial; SafeTensors / RlmController /
+    LoraAdapter / CurriculumScheduler missing.
+11. Phase 5 (upstream ADR-007 Phases 3-5) streaming / hyperbolic /
+    RuvLLM — minimal upstream coverage (5-25%); fork investment
+    decision deferred.
+12. Dual `config.json` + `embeddings.json` write-path consolidation
+    (Phase 1.6 follow-up).
+13. ADR-060 proof-gated mutation activation (scaffolding restored
+    2026-05-13; `factory.ts:createGuardedBackend()` swap + attestation
+    MCP tools require a future ADR).
+
+Reconciled as part of the 2026-05-18 status audit.

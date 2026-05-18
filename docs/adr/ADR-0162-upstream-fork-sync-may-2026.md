@@ -1027,3 +1027,43 @@ Pre-existing fork debt (out of scope; track separately): 9 standalone WASM crate
 - Build pipeline audit: 4-agent swarm 2026-05-09; full agent reports in conversation history of this ADR's authoring session
 - Verdaccio publish path: `~/.claude/projects/-Users-henrik-source-ruflo-patch/memory/reference-pipeline-publish-paths.md`
 - Acceptance tests: `tests/test-acceptance-fast.sh` (~90s)
+
+## Amendments
+
+### Amendment: Status reconciliation (2026-05-18) — partial implementation; ADR remains open
+
+Status kept `proposed` per the 2026-05-18 ADR status audit.
+
+**Landed (committed to `forks/ruflo` main and other forks):**
+
+Batches A, B, C+D, E, F, K committed to forks/ruflo across ~15 commits.
+Evidence (citations only — full commit list available via `git log
+--grep "ADR-0162" forks/ruflo`):
+
+- **Batch A (daemon hand-ports):** `memory-router.ts:434` (#1854 single
+  source of truth for memory state).
+- **Batch B (security tightening):** `memory-router.ts:883`,
+  `memory-router.ts:889` (parent-dir ensure + 0600 file-mode for DB
+  file, swallows ENOENT).
+- **Batch E (hive-mind consensus persistence hand-port):**
+  `hive-mind-tools.ts:66` + `:241` (ADR-093 F3 / ADR-0162 Batch E
+  consensus persistence wiring).
+- Plan files committed at `docs/plans/upstream-sync-2026-05-09-batch-{A,B,CD,G,HI}.md`.
+
+**Deferred / open (no commit evidence found):**
+
+- **Batches G, H, I, J** — no `ADR-0162 Batch [GHIJ]` commit citations
+  in any fork. The plan files exist but the per-batch hand-ports have
+  not been verified landed.
+- **ADR tracker state** — the ADR-0094 living tracker has not been
+  updated with `acceptance_tests_pass: true` for ADR-0162; this field
+  reflects "false" as a default, not as an asserted measurement.
+- **Follow-up audit tasks** at end of this ADR (fetch-timeout audit,
+  DB-write file-mode audit, pipeline allowlists, agentdb dead build
+  scripts, cross-compile pinning) — all listed as "follow-up audit
+  tasks (out of scope for this sync)" but no separate ADR or commit
+  has picked them up.
+
+Because batches G/H/I/J are unverified and the tracker was not updated,
+this ADR is not closed. Reconciled as part of the 2026-05-18 status
+audit.

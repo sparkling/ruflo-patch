@@ -287,3 +287,41 @@ Per-release measurement appends one JSON line each to two complementary logs:
 Hard release-end gate (the only auto-fail criterion): **`write_bytes` must not exceed `max(baseline × 1.10, baseline + 100 MB)`** at the lever's landing time. The 10% multiplier handles noise on large baselines; the `+ 100 MB` floor absorbs unrelated host activity for small post-cache-hit releases where 10% drops below the noise floor of a single browser tab. Event-count is tracked but not gated — by-design ~unchanged by L2 since clonefile syscalls still register.
 
 Baseline (2026-05-16, pre-lever): not yet measured. **Baseline capture is a hard prerequisite to L6** — the first roadmap commit ("baseline-capture") records `write_bytes` over ≥2 baseline `npm run release` invocations, takes the median, and writes the value to `logs/release-disk-bytes.jsonl`'s first entry with `levers_active: []`. L6 does not land until that entry exists. The principle scales to L1/L3 where the baseline is the hard-gate comparison point — a missing baseline silently invalidates the gate.
+
+## Amendments
+
+### Amendment: Status reconciliation (2026-05-18) — partial implementation
+
+Status kept `proposed` per the 2026-05-18 ADR status audit.
+
+**Landed (in `scripts/test-acceptance.sh`):**
+
+- **L2** — APFS clonefile snapshot (`scripts/test-acceptance.sh:463`).
+- **L3** — persistent `ACCEPT_TEMP` via `_resolve_accept_temp`
+  (`:169, 253, 279, 293`).
+- **L4** — reparented per-check workdirs under trap-covered parent
+  (`:273`).
+- **L6** — trap-cover wrapper-solo install dir + P5 background init
+  dir (`:193, 195`).
+- **L7** — widened glob to cover all 7 prefix classes that orphan on
+  cleanup (`:223`).
+- **L9** — LRU-prune `_cacache` when total size exceeds soft cap
+  (`:795`).
+- `logs/release-disk-bytes.jsonl` exists.
+
+**Deferred / open:**
+
+- **L1** (sentinel-write pattern), **L5**, **L8**, **L10-L13**: no
+  evidence in `scripts/`.
+- **Baseline capture (the "baseline-capture" first roadmap commit)** —
+  ADR text says "Baseline (2026-05-16, pre-lever): not yet measured."
+  Without ≥2 baseline `npm run release` invocations recorded with
+  `levers_active: []`, the hard release-end gate is silently
+  invalidated for L1/L3/L6.
+- **Hard release-end gate** itself (the `write_bytes ≤ max(baseline ×
+  1.10, baseline + 100 MB)` auto-fail criterion) — not wired into the
+  pipeline.
+
+Roughly half the levers shipped; the gate that makes the program
+self-policing has not. Reconciled as part of the 2026-05-18 status
+audit.

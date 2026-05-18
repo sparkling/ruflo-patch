@@ -193,3 +193,35 @@ Only `mcp__ruflo__agentdb_causal-edge` (step 4 edge creation) and the 2 memory_*
 2. **CI guard for skill-manifest ↔ MCP-registry alignment.** Add a regression test that parses every `SKILL.md` in `forks/ruflo/plugins/`, extracts `allowed-tools` MCP tool names, and asserts each is registered in the MCP server at boot. Prevents future drift.
 3. **`HierarchicalMemory.query(path_pattern)` controller API.** Implementing `agentdb_hierarchical-query` may require a new controller method. Decide if the method becomes part of the canonical `HierarchicalMemory` interface (and gets promoted into ADR-0170 / ADR-0174 substrate scope) or stays as a thin fork-side wrapper.
 4. **Upstream coordination.** Upstream `ruvnet/ruflo` doesn't have `agentdb_hierarchical-query` or `agentdb_causal-query` either. Once we implement these in fork, decide whether to PR them back upstream (the `/adr-index` skill upstream-side likely also fails silently on these). Aligns with ADR-0174 follow-up #8's upstream-PR coordination pattern.
+
+## Amendments
+
+### Amendment: Status reconciliation (2026-05-18) — partial implementation
+
+Status kept `proposed` per the 2026-05-18 ADR status audit.
+
+**Landed (Phases 2 + 3):**
+
+- **Phase 2 renames** — `agentdb_hierarchical-store` registered with
+  dash form at `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts:505`;
+  `agentdb_causal-query` registered with dash form at `:1148`.
+- **Phase 3 implementation** —
+  `forks/agentdb/src/controllers/HierarchicalMemory.ts:487`
+  implements `query(path_pattern)` ("the read-side complement to
+  `store()`'s write path"); routed via
+  `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts:604`
+  (handler) and `agentdb-orchestration.ts:358` (path/glob enumeration
+  comment).
+
+**Deferred / open:**
+
+- **Phase 5** — acceptance test asserting the 4 declared tool names
+  exist in the MCP tool registry at boot has not been delivered.
+  Without this gate, the underscore-vs-dash drift can re-occur. The
+  follow-up "CI guard for skill-manifest ↔ MCP-registry alignment"
+  (Open follow-up #2) likewise is not in place.
+- **Phase 4** — `/adr-index` end-to-end against the published
+  `@sparkleideas/cli` is not explicitly recorded as run + verified
+  post-rename.
+
+Reconciled as part of the 2026-05-18 status audit.

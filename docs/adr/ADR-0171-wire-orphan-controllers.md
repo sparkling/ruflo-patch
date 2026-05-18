@@ -283,3 +283,37 @@ config defaults, different integration points) in a follow-up sync ADR.
 The four fork-only orphans (StreamingEmbeddingService, QUICConnection,
 QUICConnectionPool, QUICStreamManager) have no upstream counterpart;
 wiring them is a fork-only decision with no upstream-tracking concern.
+
+## Amendments
+
+### Amendment: Status reconciliation (2026-05-18) — partial implementation
+
+Status kept `proposed` per the 2026-05-18 ADR status audit.
+
+**Landed (per `project-fork-only-controllers` memory + restoration
+commits on `forks/agentdb`):**
+
+- **MincutService, SparsificationService, StreamingEmbeddingService**
+  wired via commit `f790426` on `forks/ruflo` (controller-registry
+  hookup).
+- **HierarchicalMemory** (commit `599106b`), **MemoryConsolidation**
+  (`4295d7a`), **RVFOptimizer** (`9733a08`),
+  **SonaTrajectoryService**, **SemanticRouter**, **GNNService**,
+  **GraphTransformerService** (all in `9733a08`) restored from
+  snapshot `bd760f2` and consumed via the controller-registry.
+
+**Deferred / open:**
+
+- **Release-verification status post-`f790426`** — whether the
+  MincutService / SparsificationService / StreamingEmbeddingService
+  wiring was end-to-end verified by an `npm run release` acceptance
+  run after the commit landed has not been recorded here. The
+  controllers ARE wired (registry hookup) but the
+  exercise-via-acceptance gate is not confirmed in this ADR.
+- **QUICConnection / QUICConnectionPool / QUICStreamManager** —
+  restored as scaffolding only (commit `1210a90`), zero current
+  consumers, `// TODO: ADR required before activation` markers
+  preserved. Activation gated on a distributed-mode ADR (not yet
+  filed).
+
+Reconciled as part of the 2026-05-18 status audit.

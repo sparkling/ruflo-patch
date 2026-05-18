@@ -315,3 +315,36 @@ Council session tooling and multi-project namespacing are handled within ADR-015
 - ruflo-patch ADR pattern survey (this conversation): 12 of 163 ADRs declare `**Methodology**: SPARC + MADR`; rest use the upstream `adr-create` ad-hoc shape
 - Upstream `ruflo-adr` plugin source: `/Users/henrik/source/ruvnet/ruflo/plugins/ruflo-adr/`
 - Companion-file inference patch (interim solution, superseded by this ADR's Pattern E): `forks/ruflo` commit `b0e28a764` (2026-05-07)
+
+## Amendments
+
+### Amendment: Status reconciliation (2026-05-18) — partial implementation
+
+Status kept as **Proposed 2026-05-08** (per the original prose-style status
+header above; intentionally NOT migrated to YAML frontmatter — this ADR is
+the bootstrap artifact that defines MADR for the corpus, so its own header
+shape is preserved as historical record).
+
+**Landed (skill-side spec deliverables):**
+
+- The upstream `adr-create` skill at
+  `forks/ruflo/plugins/ruflo-adr/skills/adr-create/SKILL.md` emits MADR
+  canonical with 4-digit unprefixed filenames (`docs/adr/NNNN-<slug>.md`),
+  YAML frontmatter, and the `tags:` extension defined here. SKILL.md
+  declares: "ADRs follow canonical MADR 4.x with one extension: a `tags:`
+  frontmatter field".
+- The companion-file inference patch `forks/ruflo` commit `b0e28a764`
+  shipped (interim, now superseded by Pattern E semantics in this ADR).
+
+**Deferred / open (downstream-corpus deliverables):**
+
+- ruflo-patch's own 163+ ADR corpus has NOT been migrated to MADR
+  canonical (still uses `ADR-NNNN-<slug>.md` filename prefix and mixed
+  prose-/YAML-frontmatter shapes). This was scoped as a separate effort
+  per §"Out of scope" but never executed.
+- HM refactor script (one-shot Node script in `.scripts/`) — not built.
+- HM refactor execution + `docs/adr/README.md` tightening — not run.
+- `docs/adr/CONVENTIONS.md` — not created; init's
+  `claudemd-generator.ts` has no reference to a CONVENTIONS doc.
+
+The spec deliverables landed; the corpus migration is open.
