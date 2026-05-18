@@ -28,6 +28,10 @@ const AGENT_FILE = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/.claude
 // ADR-0185 Waves 3+4 — strategy-dispatch literals moved from cli to agentdb.
 const AGENTDB_CONSENSUS_DISPATCHER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus.ts';
 const AGENTDB_GOSSIP_HANDLER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus/gossip.ts';
+// ADR-0185 Wave 6 — `maybeAdvanceGossipRoundOnTimeout` was a dead helper in cli
+// after Waves 2b/3/4/5; deleted in Wave 6. The vendored copy in agentdb's
+// _shared.ts is the new home and is actively called by gossip.ts (vote + status).
+const AGENTDB_CONSENSUS_SHARED = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus/_shared.ts';
 
 describe('ADR-0120 (T2) — gossip consensus runtime surface', () => {
   it('fork source file exists', () => {
@@ -167,13 +171,26 @@ describe('ADR-0120 (T2) — gossip consensus runtime surface', () => {
   });
 
   // ────────────────────────────────────────────────────────────────────
-  // 7. Per-round timeout helper
+  // 7. Per-round timeout helper (ADR-0185 Wave 6: relocated cli → agentdb)
   // ────────────────────────────────────────────────────────────────────
-  it('maybeAdvanceGossipRoundOnTimeout helper exists', () => {
+  it('maybeAdvanceGossipRoundOnTimeout helper exists in agentdb _shared.ts', () => {
+    // ADR-0185 Wave 6 deleted the cli-side helper (it was unreachable after the
+    // status-action flip in Wave 4). The vendored copy in agentdb's _shared.ts
+    // is now the canonical home; gossip.ts vote (line 208) + status (line 268)
+    // both invoke it. Assert the definition lives in agentdb.
+    const sharedSrc = readFileSync(AGENTDB_CONSENSUS_SHARED, 'utf8');
     assert.match(
-      src,
+      sharedSrc,
       /function\s+maybeAdvanceGossipRoundOnTimeout\s*\(/,
-      'expected per-round-timeout helper',
+      'expected per-round-timeout helper in agentdb _shared.ts',
+    );
+    // And that the gossip handler actually calls it (the behavioural contract
+    // — round-advancement is invoked by both vote and status paths).
+    const gossipSrc = readFileSync(AGENTDB_GOSSIP_HANDLER, 'utf8');
+    assert.match(
+      gossipSrc,
+      /maybeAdvanceGossipRoundOnTimeout\s*\(\s*proposal\s*\)/,
+      'expected agentdb gossip handler to invoke maybeAdvanceGossipRoundOnTimeout',
     );
   });
 
