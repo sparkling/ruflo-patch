@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-08
+closed-on: 2026-05-08
 methodology: [SPARC, MADR]
 decision-makers: [Henrik Pettersen]
 tags: [agentdb, lift-and-shift, mcp-tool-prefix, plugin-adoption, agentdb-onnx, vendored-decommission]
@@ -124,3 +125,17 @@ Accept alpha.14 base. Fold MCP prefix + 6 plugins + agentdb-onnx into this ADR. 
 - New fork: `forks/agentdb` (cloned 2026-05-08 from `ruvnet/agentdb` HEAD `a478ab3`); MCP server `name: 'agentdb'` at `src/mcp/agentdb-mcp-server.ts:282`
 - **Migration log**: `forks/agentdb/MIGRATION-LOG.md` — file-level disposition table for the lift (20 fork-only files in Step 1 commit `d7ca0f6`; 59 differing-file reconciliations in Step 2). Restored 2026-05-13 after the ADR-0177 reset removed it; see [[project-fork-only-controllers]] memory for the full restoration catalog.
 - Memory: `feedback-data-loss-zero-tolerance`, `feedback-no-history-squash`, `feedback-trunk-only-fork-development`, `feedback-never-touch-hz-remote`, `feedback-no-value-judgements-on-features`, `feedback-fix-all-tests`, `feedback-no-squelch-tests`, `feedback-test-in-init-projects`, `reference-pipeline-publish-paths`, `reference-verdaccio`, `project-agentdb-parallel-extraction`, `reference-fork-workflow`
+
+## Amendments
+
+### Amendment: Status reconciliation (2026-05-18)
+
+Frontmatter `status` flipped `proposed` → `implemented` and `closed-on:
+2026-05-08` added per `project-agentdb-parallel-extraction` memory entry
+("Migration complete per ADR-0161. The parallel-source state ENDED.")
+and verified against the live tree: `forks/agentdb` exists at
+`@sparkleideas/agentdb@3.0.0-alpha.14-patch.217+` on Verdaccio;
+`forks/agentic-flow/packages/agentdb/` no longer present (deleted in
+agentic-flow commit `b9167b8`, 1,105 files / 362,170 LoC). ADR-0160 was
+superseded as planned. Status flip deferred at the time and reconciled
+as part of the 2026-05-18 ADR status audit.
