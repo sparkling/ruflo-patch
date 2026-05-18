@@ -5,6 +5,7 @@ methodology: [SPARC, MADR, runbook]
 decision-makers: [Henrik Pettersen]
 tags: [upstream-sync, forks, daemon, security, ruflo, agentic-flow, ruvector, v2-archive, runbook]
 related: [0012, 0027, 0079, 0086, 0088, 0094, 0101, 0143, 0156, 0160, 0161]
+superseded-by: [ADR-0186]
 audience: ai-executor
 state_schema: 1
 ---
@@ -1067,3 +1068,28 @@ Evidence (citations only — full commit list available via `git log
 Because batches G/H/I/J are unverified and the tracker was not updated,
 this ADR is not closed. Reconciled as part of the 2026-05-18 status
 audit.
+
+### Amendment: Superseded by ADR-0186 (2026-05-18) — refreshed runbook
+
+ADR-0186 (`docs/adr/ADR-0186-upstream-fork-sync-2026-05-18-v2.md`)
+supersedes this v1 plan with a fresh upstream-delta computation against
+the 2026-05-18 snapshot (ruflo 329 ahead, agentic-flow 30, ruvector 47;
+agentdb and ruv-FANN caught up). ADR-0186 re-resolves the five decision
+points against today's code state (all five answered — `adr_0088_policy`
+= spawn-only locked, `pre_extraction_routing` = skip, `paired_delete_api`
+= partial, `cross_compile_setup` = still false, and a new
+`adr_0117_compatibility` = drop-upstream-mcpservers-hunks), audits
+cross-conflicts with six post-2026-05-09 ADRs (0117, 0143, 0161, 0167,
+0177, 0180/0181, 0184/0185), and re-builds the per-batch decision matrix
+using PICK / SKIP / **HAND-PORTED (already)** / **HAND-PORT (pending)**
+classifications.
+
+This v1 ADR remains `proposed` (not retired). The hand-port evidence
+captured in the preceding amendment (Batches A/B/E hand-ports on
+`forks/ruflo/main`; plan files under `docs/plans/upstream-sync-2026-05-09-*.md`)
+is still load-bearing. ADR-0186 references and builds on it; it does not
+erase it. The "actually-open work" originally enumerated in the
+2026-05-18 status audit for ADR-0162 (Batches G/H/I/J + the 5 follow-up
+audit tasks) is now owned by ADR-0186 follow-ups #6–13.
+
+See ADR-0186 §"Considered Options" for the supersede-vs-amend rationale.
