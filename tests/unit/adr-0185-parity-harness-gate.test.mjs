@@ -55,7 +55,7 @@ describe('ADR-0185 Wave 1 — parity-harness release-gate (DA Option A)', () => 
     );
   });
 
-  it('parity harness passes all 28 cells under vitest', () => {
+  it('parity harness passes all 29 cells under vitest', () => {
     // Drive vitest inside the cli fork. vitest's default exit code (0 on
     // pass, non-zero on any fail) is the gate signal. We capture stdout+
     // stderr for diagnostic output if any cell regresses.
@@ -103,15 +103,19 @@ describe('ADR-0185 Wave 1 — parity-harness release-gate (DA Option A)', () => 
       /hive-mind-consensus-parity\.test\.ts/,
       'vitest output missing parity harness file reference — file was skipped?',
     );
-    // ADR-0185 Wave 2a — cell count bumped 26 → 28 (6 propose cells
-    // converted to shape-contracts + 2 new error-path cells: term-collision
-    // reshape + missing-queen pre-flight). Hardcode the count per DA's
-    // recommendation to catch accidental cell add/remove during downstream
-    // waves; bump when adding cells in future waves (Wave 3 vote-flip, etc).
+    // ADR-0185 cell count history:
+    //   Wave 1: 26 cells (initial harness with cli-vs-builder parity).
+    //   Wave 2a: 28 cells (+2 propose error-path reshape cells).
+    //   Wave 3:  28 cells (vote pivot — 6 happy + 3 reshape new − 2 byz − 1
+    //             crdt-snapshot dropped = net 0).
+    //   Wave 4:  29 cells (+1 status × ProposalNotFound reshape cell).
+    // Hardcode the count per DA's recommendation to catch accidental cell
+    // add/remove during downstream waves; bump when adding cells in future
+    // waves (Wave 5 list-flip, Wave 6 hardening).
     assert.match(
       combined,
-      /(?:28 passed|Tests\s+28 passed)/,
-      `vitest output missing "28 passed" — actual:\n${combined}`,
+      /(?:29 passed|Tests\s+29 passed)/,
+      `vitest output missing "29 passed" — actual:\n${combined}`,
     );
   });
 });
