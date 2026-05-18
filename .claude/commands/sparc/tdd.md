@@ -7,7 +7,7 @@ Test-driven development with TodoWrite planning and comprehensive testing.
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "tdd",
   task_description: "shopping cart feature",
   options: {
@@ -23,7 +23,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run tdd "shopping cart feature"
 
 # For alpha features
-npx claude-flow@alpha sparc run tdd "shopping cart feature"
+npx @sparkleideas/ruflo@latest sparc run tdd "shopping cart feature"
 ```
 
 ### Option 3: Local Installation

@@ -7,7 +7,7 @@ Deep research with parallel WebSearch/WebFetch and Memory coordination.
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "researcher",
   task_description: "research AI trends 2024",
   options: {
@@ -23,7 +23,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run researcher "research AI trends 2024"
 
 # For alpha features
-npx claude-flow@alpha sparc run researcher "research AI trends 2024"
+npx @sparkleideas/ruflo@latest sparc run researcher "research AI trends 2024"
 ```
 
 ### Option 3: Local Installation

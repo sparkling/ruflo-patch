@@ -3,7 +3,7 @@
 # Enables agent-to-agent messaging, pattern sharing, consensus, and task handoffs
 #
 # Integration with:
-# - @claude-flow/hooks SwarmCommunication module
+# - @sparkleideas/hooks SwarmCommunication module
 # - agentic-flow@alpha swarm coordination
 # - Local hooks system for real-time agent coordination
 #

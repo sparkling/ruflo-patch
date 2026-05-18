@@ -25,7 +25,7 @@ should_run() {
 
 check_domain() {
   local domain="$1"
-  local domain_path="$PROJECT_ROOT/v3/@claude-flow/$domain"
+  local domain_path="$PROJECT_ROOT/v3/@sparkleideas/$domain"
   local alt_path="$PROJECT_ROOT/src/domains/$domain"
 
   local score=0

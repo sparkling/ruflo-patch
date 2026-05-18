@@ -7,7 +7,7 @@ Process automation with TodoWrite planning and Task execution.
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "workflow-manager",
   task_description: "automate deployment",
   options: {
@@ -23,7 +23,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run workflow-manager "automate deployment"
 
 # For alpha features
-npx claude-flow@alpha sparc run workflow-manager "automate deployment"
+npx @sparkleideas/ruflo@latest sparc run workflow-manager "automate deployment"
 ```
 
 ### Option 3: Local Installation

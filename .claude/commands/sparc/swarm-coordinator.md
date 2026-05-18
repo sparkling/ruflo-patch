@@ -7,7 +7,7 @@ Specialized swarm management with batch coordination capabilities.
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "swarm-coordinator",
   task_description: "manage development swarm",
   options: {
@@ -23,7 +23,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run swarm-coordinator "manage development swarm"
 
 # For alpha features
-npx claude-flow@alpha sparc run swarm-coordinator "manage development swarm"
+npx @sparkleideas/ruflo@latest sparc run swarm-coordinator "manage development swarm"
 ```
 
 ### Option 3: Local Installation

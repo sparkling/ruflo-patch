@@ -7,7 +7,7 @@ Parallel task execution specialist using batch operations.
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "batch-executor",
   task_description: "process multiple files",
   options: {
@@ -23,7 +23,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run batch-executor "process multiple files"
 
 # For alpha features
-npx claude-flow@alpha sparc run batch-executor "process multiple files"
+npx @sparkleideas/ruflo@latest sparc run batch-executor "process multiple files"
 ```
 
 ### Option 3: Local Installation

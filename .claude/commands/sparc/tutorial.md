@@ -18,7 +18,7 @@ You teach developers how to apply the SPARC methodology through actionable examp
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "tutorial",
   task_description: "guide me through SPARC methodology",
   options: {
@@ -34,7 +34,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run tutorial "guide me through SPARC methodology"
 
 # For alpha features
-npx claude-flow@alpha sparc run tutorial "guide me through SPARC methodology"
+npx @sparkleideas/ruflo@latest sparc run tutorial "guide me through SPARC methodology"
 
 # With namespace
 npx claude-flow sparc run tutorial "your task" --namespace tutorial
@@ -54,7 +54,7 @@ npx claude-flow sparc run tutorial "your task" --non-interactive
 ### Using MCP Tools (Preferred)
 ```javascript
 // Store mode-specific context
-mcp__claude-flow__memory_usage {
+mcp__ruflo__memory_usage {
   action: "store",
   key: "tutorial_context",
   value: "important decisions",
@@ -62,7 +62,7 @@ mcp__claude-flow__memory_usage {
 }
 
 // Query previous work
-mcp__claude-flow__memory_search {
+mcp__ruflo__memory_search {
   pattern: "tutorial",
   namespace: "tutorial",
   limit: 5

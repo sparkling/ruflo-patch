@@ -229,7 +229,7 @@ runs:
   main: 'dist/index.js'
 
 // index.js
-const { SwarmAction } = require('ruv-swarm');
+const { SwarmAction } = require('@sparkleideas/ruv-swarm');
 
 async function run() {
   const swarm = new SwarmAction({

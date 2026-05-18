@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" pre-bash'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" pre-bash'",
             "timeout": 5000
           }
         ]
@@ -16,7 +16,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" pre-edit'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" pre-edit'",
             "timeout": 5000
           }
         ]
@@ -26,7 +26,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" pre-task'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" pre-task'",
             "timeout": 5000
           }
         ]
@@ -38,7 +38,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-edit'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" post-edit'",
             "timeout": 10000
           }
         ]
@@ -48,7 +48,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-command'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" post-command'",
             "timeout": 5000
           }
         ]
@@ -58,7 +58,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-task'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" post-task'",
             "timeout": 5000
           }
         ]
@@ -69,12 +69,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" route'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" route'",
             "timeout": 10000
           },
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" user-prompt'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" user-prompt'",
             "timeout": 5000
           }
         ]
@@ -85,12 +85,12 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-restore'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" session-restore'",
             "timeout": 5000
           },
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/auto-memory-hook.mjs\" import'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/auto-memory-hook.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/auto-memory-hook.mjs\" import'",
             "timeout": 8000
           },
           {
@@ -100,7 +100,7 @@
           },
           {
             "type": "command",
-            "command": "npx @sparkleideas/cli@latest daemon start --quiet 2>/dev/null || true",
+            "command": "npx @sparkleideas/ruflo@latest daemon start --quiet 2>/dev/null || true",
             "timeout": 5000,
             "continueOnError": true
           }
@@ -112,7 +112,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-end'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" session-end'",
             "timeout": 5000
           }
         ]
@@ -123,7 +123,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/auto-memory-hook.mjs\" sync'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/auto-memory-hook.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/auto-memory-hook.mjs\" sync'",
             "timeout": 10000
           }
         ]
@@ -135,11 +135,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" compact-manual'"
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" compact-manual'"
           },
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-end'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" session-end'",
             "timeout": 5000
           }
         ]
@@ -149,11 +149,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" compact-auto'"
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" compact-auto'"
           },
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" session-end'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" session-end'",
             "timeout": 6000
           }
         ]
@@ -164,7 +164,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" status'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" status'",
             "timeout": 3000
           }
         ]
@@ -175,7 +175,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" teammate-idle'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" teammate-idle'",
             "timeout": 5000
           }
         ]
@@ -186,7 +186,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" post-tool-failure'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" post-tool-failure'",
             "timeout": 5000
           }
         ]
@@ -197,7 +197,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/hook-handler.mjs\" notify'",
+            "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/hook-handler.mjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/hook-handler.mjs\" notify'",
             "timeout": 3000
           }
         ]
@@ -206,23 +206,19 @@
   },
   "statusLine": {
     "type": "command",
-    "command": "sh -c 'exec node \"${CLAUDE_PROJECT_DIR:-.}/.claude/helpers/statusline.cjs\"'"
+    "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/statusline.cjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/statusline.cjs\"'"
   },
   "permissions": {
     "allow": [
-      "Bash(npx @sparkleideas/cli:*)",
+      "Bash(npx @sparkleideas/ruflo:*)",
       "Bash(npx claude-flow:*)",
       "Bash(node \"$(git rev-parse --show-toplevel)\"/.claude/*)",
-      "mcp__claude-flow__:*"
+      "mcp__ruflo__:*"
     ],
     "deny": [
       "Read(./.env)",
       "Read(./.env.*)"
     ]
-  },
-  "attribution": {
-    "commit": "Co-Authored-By: claude-flow <ruv@ruv.net>",
-    "pr": "🤖 Generated with [claude-flow](https://github.com/ruvnet/claude-flow)"
   },
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
@@ -286,7 +282,8 @@
       "enableHNSW": true,
       "agentdb": {
         "learningThreshold": 0.6,
-        "vectorBackend": "auto",
+        "vectorIndex": "auto",
+        "primaryStorage": "pglite",
         "tickInterval": 15000
       },
       "learningBridge": {

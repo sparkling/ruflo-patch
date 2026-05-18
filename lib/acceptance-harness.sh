@@ -330,7 +330,13 @@ run_check_bg() {
   # (so collect_parallel finds the result file) but trades coverage for speed.
   if [[ "${ACCEPTANCE_HEAVY:-0}" != "1" ]] && [[ -n "${_HEAVY_CHECK_IDS[$id]:-}" ]]; then
     if [[ -n "${PARALLEL_DIR}" ]]; then
-      echo "skip_accepted|0|HEAVY_SKIP: ${id} skipped — opt in with ACCEPTANCE_HEAVY=1 (saves ~3min wall time)" > "${PARALLEL_DIR}/${id}"
+      # Wrap through _escape_json so the JSON output field carries its
+      # surrounding quotes — without this, the parallel-collect path
+      # writes `"output":HEAVY_SKIP: ...` (no opening quote) which
+      # makes acceptance-results.json unparseable as JSON. Caught by
+      # scripts/check-skip-accepted.mjs.
+      local _heavy_msg; _heavy_msg=$(_escape_json "HEAVY_SKIP: ${id} skipped — opt in with ACCEPTANCE_HEAVY=1 (saves ~3min wall time)")
+      echo "skip_accepted|0|${_heavy_msg}" > "${PARALLEL_DIR}/${id}"
     fi
     return 0
   fi

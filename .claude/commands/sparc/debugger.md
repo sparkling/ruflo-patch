@@ -7,7 +7,7 @@ Systematic debugging with TodoWrite and Memory integration.
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "debugger",
   task_description: "fix authentication issues",
   options: {
@@ -23,7 +23,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run debugger "fix authentication issues"
 
 # For alpha features
-npx claude-flow@alpha sparc run debugger "fix authentication issues"
+npx @sparkleideas/ruflo@latest sparc run debugger "fix authentication issues"
 ```
 
 ### Option 3: Local Installation

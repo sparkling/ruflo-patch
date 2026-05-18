@@ -7,7 +7,7 @@ Knowledge management with Memory tools for persistent insights.
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "memory-manager",
   task_description: "organize project knowledge",
   options: {
@@ -23,7 +23,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run memory-manager "organize project knowledge"
 
 # For alpha features
-npx claude-flow@alpha sparc run memory-manager "organize project knowledge"
+npx @sparkleideas/ruflo@latest sparc run memory-manager "organize project knowledge"
 ```
 
 ### Option 3: Local Installation

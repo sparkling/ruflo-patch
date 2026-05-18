@@ -24,7 +24,7 @@ const CONFIG = {
   maxAgents: 15,
 };
 
-const CWD = process.cwd();
+const CWD = process.cwd(); // adr-0100-allow: tracked in ADR-0118 hive-mind-runtime-gaps-tracker
 
 // ANSI colors
 const c = {
@@ -152,7 +152,7 @@ function getModelName() {
                 const ts = usage[id] && usage[id].lastUsedAt ? new Date(usage[id].lastUsedAt).getTime() : 0;
                 if (ts > latest) { latest = ts; modelId = id; }
               }
-              if (modelId.includes('opus')) return 'Opus 4.6 (1M context)';
+              if (modelId.includes('opus')) return 'Opus 4.7';
               if (modelId.includes('sonnet')) return 'Sonnet 4.6';
               if (modelId.includes('haiku')) return 'Haiku 4.5';
               return modelId.split('-').slice(1, 3).join(' ');
@@ -168,37 +168,86 @@ function getModelName() {
   const settings = getSettings();
   if (settings && settings.model) {
     const m = settings.model;
-    if (m.includes('opus')) return 'Opus 4.6 (1M context)';
+    if (m.includes('opus')) return 'Opus 4.7';
     if (m.includes('sonnet')) return 'Sonnet 4.6';
     if (m.includes('haiku')) return 'Haiku 4.5';
   }
   return 'Claude Code';
 }
 
-// Get learning stats from memory database (pure stat calls)
+// Get learning stats from real data sources (no heuristics)
 function getLearningStats() {
-  const memoryPaths = [
-    path.join(CWD, '.swarm', 'memory.db'),
-    path.join(CWD, '.claude-flow', 'memory.db'),
-    path.join(CWD, '.claude', 'memory.db'),
-    path.join(CWD, 'data', 'memory.db'),
-    path.join(CWD, '.agentdb', 'memory.db'),
-  ];
+  let patterns = 0;
+  let sessions = 0;
 
-  for (const dbPath of memoryPaths) {
-    const stat = safeStat(dbPath);
-    if (stat) {
-      const sizeKB = stat.size / 1024;
-      const patterns = Math.floor(sizeKB / 2);
-      return {
-        patterns,
-        sessions: Math.max(1, Math.floor(patterns / 10)),
-      };
+  // 1. Count real patterns from intelligence pattern store
+  const patternStorePath = path.join(CWD, '.claude-flow', 'data', 'patterns.json');
+  try {
+    if (fs.existsSync(patternStorePath)) {
+      const data = JSON.parse(fs.readFileSync(patternStorePath, 'utf-8'));
+      if (Array.isArray(data)) patterns = data.length;
+      else if (data && data.patterns) patterns = Array.isArray(data.patterns) ? data.patterns.length : Object.keys(data.patterns).length;
+    }
+  } catch { /* ignore */ }
+
+  // 2. Count patterns from auto-memory-store (real entries, not file size)
+  if (patterns === 0) {
+    const autoStorePath = path.join(CWD, '.claude-flow', 'data', 'auto-memory-store.json');
+    try {
+      if (fs.existsSync(autoStorePath)) {
+        const data = JSON.parse(fs.readFileSync(autoStorePath, 'utf-8'));
+        if (Array.isArray(data)) patterns = data.length;
+        else if (data && data.entries) patterns = data.entries.length;
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 3. Count patterns from memory.db using row count (sqlite header bytes 28-31).
+  //
+  // ruflo#1989: when encryption at rest is enabled, memory.db is no
+  // longer a SQLite database -- it is an RFE1-magicked ciphertext blob.
+  // The original code blindly read bytes 28-31 as a page count and
+  // rendered 3.3B patterns (uint32 of random ciphertext). That
+  // cascaded into fake DDD 5/5 / 100% indicators downstream.
+  //
+  // Guard with the SQLite magic ("SQLite format 3\0", 16 bytes at
+  // offset 0). Also clamp implausible page counts (>1M pages ~= 4GB)
+  // to avoid reporting nonsense even on plaintext SQLite.
+  if (patterns === 0) {
+    const SQLITE_MAGIC = Buffer.from('SQLite format 3\0', 'binary');
+    const memoryPaths = [
+      path.join(CWD, '.claude-flow', 'memory.db'),
+      path.join(CWD, 'data', 'memory.db'),
+      path.join(CWD, '.swarm', 'memory.db'),
+    ];
+    for (const dbPath of memoryPaths) {
+      try {
+        if (!fs.existsSync(dbPath)) continue;
+        const fd = fs.openSync(dbPath, 'r');
+        const head = Buffer.alloc(16);
+        fs.readSync(fd, head, 0, 16, 0);
+        if (!head.equals(SQLITE_MAGIC)) {
+          // Not plaintext SQLite (likely RFE1 encrypted, an empty
+          // file, or some other format). Skip — let the daemon or
+          // patterns.json fallback report the real number.
+          fs.closeSync(fd);
+          continue;
+        }
+        const buf = Buffer.alloc(4);
+        fs.readSync(fd, buf, 0, 4, 28);
+        fs.closeSync(fd);
+        const pageCount = buf.readUInt32BE(0);
+        // Sanity: reject implausible counts (> 1M pages ≈ 4 GB DB).
+        if (pageCount > 1_000_000) continue;
+        // Each page typically holds ~10-50 rows; use page count as
+        // conservative estimate. Report 0 if only schema pages (< 3).
+        patterns = pageCount > 2 ? pageCount - 2 : 0;
+        break;
+      } catch { /* ignore */ }
     }
   }
 
-  // Check session files count
-  let sessions = 0;
+  // 4. Count real session files
   try {
     const sessDir = path.join(CWD, '.claude', 'sessions');
     if (fs.existsSync(sessDir)) {
@@ -206,7 +255,17 @@ function getLearningStats() {
     }
   } catch { /* ignore */ }
 
-  return { patterns: 0, sessions };
+  // 5. Count session files from claude-flow
+  if (sessions === 0) {
+    try {
+      const cfSessDir = path.join(CWD, '.claude-flow', 'sessions');
+      if (fs.existsSync(cfSessDir)) {
+        sessions = fs.readdirSync(cfSessDir).filter(f => f.endsWith('.json')).length;
+      }
+    } catch { /* ignore */ }
+  }
+
+  return { patterns, sessions };
 }
 
 // V3 progress from metrics files (pure file reads)
@@ -218,18 +277,25 @@ function getV3Progress() {
   let dddProgress = dddData ? (dddData.progress || 0) : 0;
   let domainsCompleted = Math.min(5, Math.floor(dddProgress / 20));
 
-  if (dddProgress === 0 && learning.patterns > 0) {
-    if (learning.patterns >= 500) domainsCompleted = 5;
-    else if (learning.patterns >= 200) domainsCompleted = 4;
-    else if (learning.patterns >= 100) domainsCompleted = 3;
-    else if (learning.patterns >= 50) domainsCompleted = 2;
-    else if (learning.patterns >= 10) domainsCompleted = 1;
+  // Only derive DDD progress from real ddd-progress.json or real pattern data
+  // Don't inflate domains from pattern count — 0 means no DDD work tracked.
+  // ruflo#1989: defensively clamp learning.patterns even though
+  // getLearningStats already guards against the RFE1-encrypted case --
+  // if any future regression in the upstream reader returns a wild
+  // value, we do not want to silently inflate DDD to 5/5 / 100%.
+  const realPatterns = Number.isFinite(learning.patterns) && learning.patterns >= 0 && learning.patterns < 1_000_000
+    ? learning.patterns
+    : 0;
+  if (dddProgress === 0 && realPatterns > 0) {
+    // Conservative: only count domains if we have substantial real pattern data
+    // Each domain requires ~100 real stored patterns to claim completion
+    domainsCompleted = Math.min(5, Math.floor(realPatterns / 100));
     dddProgress = Math.floor((domainsCompleted / totalDomains) * 100);
   }
 
   return {
     domainsCompleted, totalDomains, dddProgress,
-    patternsLearned: learning.patterns,
+    patternsLearned: realPatterns,
     sessionsCompleted: learning.sessions,
   };
 }
@@ -316,28 +382,24 @@ function getSystemMetrics() {
   if (learningData && learningData.intelligence && learningData.intelligence.score !== undefined) {
     intelligencePct = Math.min(100, Math.floor(learningData.intelligence.score));
   } else {
-    const fromPatterns = learning.patterns > 0 ? Math.min(100, Math.floor(learning.patterns / 20)) : 0;
+    // Use real data only — patterns from actual store, vectors from actual DB.
+    // ruflo#1989: clamp patterns to a sane upper bound. A multi-billion
+    // pattern count from a buggy reader would saturate intelligencePct
+    // to 100% and silently lie about progress.
+    const realPatterns = Number.isFinite(learning.patterns) && learning.patterns >= 0 && learning.patterns < 1_000_000
+      ? learning.patterns
+      : 0;
+    const fromPatterns = realPatterns > 0 ? Math.min(100, Math.floor(realPatterns / 20)) : 0;
     const fromVectors = agentdb.vectorCount > 0 ? Math.min(100, Math.floor(agentdb.vectorCount / 20)) : 0;
     intelligencePct = Math.max(fromPatterns, fromVectors);
   }
-
-  // Maturity fallback (pure fs checks, no git exec)
-  if (intelligencePct === 0) {
-    let score = 0;
-    if (fs.existsSync(path.join(CWD, '.claude'))) score += 15;
-    const srcDirs = ['src', 'lib', 'app', 'packages', 'v3'];
-    for (const d of srcDirs) { if (fs.existsSync(path.join(CWD, d))) { score += 15; break; } }
-    const testDirs = ['tests', 'test', '__tests__', 'spec'];
-    for (const d of testDirs) { if (fs.existsSync(path.join(CWD, d))) { score += 10; break; } }
-    const cfgFiles = ['package.json', 'tsconfig.json', 'pyproject.toml', 'Cargo.toml', 'go.mod'];
-    for (const f of cfgFiles) { if (fs.existsSync(path.join(CWD, f))) { score += 5; break; } }
-    intelligencePct = Math.min(100, score);
-  }
+  // No fake fallback — 0% means no real learning data exists
 
   if (learningData && learningData.sessions && learningData.sessions.total !== undefined) {
     contextPct = Math.min(100, learningData.sessions.total * 5);
   } else {
-    contextPct = Math.min(100, Math.floor(learning.sessions * 5));
+    // Real session count only — no heuristic derivation from patterns
+    contextPct = learning.sessions > 0 ? Math.min(100, learning.sessions * 5) : 0;
   }
 
   // Sub-agents from file metrics (no ps aux)
@@ -405,7 +467,7 @@ function getHooksStatus() {
   return { enabled, total };
 }
 
-// AgentDB stats — count real entries, not file-size heuristics
+// AgentDB stats — count real entries from all data stores
 function getAgentDBStats() {
   let vectorCount = 0;
   let dbSizeKB = 0;
@@ -424,7 +486,22 @@ function getAgentDBStats() {
     } catch { /* fall back */ }
   }
 
-  // 2. Count entries from ranked-context.json
+  // 2. Count entries from hooks memory store (.claude-flow/memory/store.json)
+  const hooksStorePath = path.join(CWD, '.claude-flow', 'memory', 'store.json');
+  const hooksStoreStat = safeStat(hooksStorePath);
+  if (hooksStoreStat) {
+    dbSizeKB += hooksStoreStat.size / 1024;
+    try {
+      const store = JSON.parse(fs.readFileSync(hooksStorePath, 'utf-8'));
+      if (store && store.entries) {
+        const entryCount = Object.keys(store.entries).length;
+        vectorCount = Math.max(vectorCount, entryCount);
+        if (entryCount > 0) namespaces++;
+      }
+    } catch { /* fall back */ }
+  }
+
+  // 3. Count entries from ranked-context.json
   try {
     const ranked = readJSON(path.join(CWD, '.claude-flow', 'data', 'ranked-context.json'));
     if (ranked && ranked.entries && ranked.entries.length > vectorCount) vectorCount = ranked.entries.length;
@@ -571,8 +648,35 @@ function generateStatusline() {
   const integration = getIntegrationStatus();
   const lines = [];
 
-  // Header
-  let header = c.bold + c.brightPurple + '\u258A RuFlo V3.5 ' + c.reset;
+  // Header — read version from the FIRST package.json we find, preferring
+  // the plugin install at ~/.claude/plugins/marketplaces/ruflo/package.json.
+  // The previous list only checked project-local node_modules, so plugin
+  // users saw the hard-coded fallback (V3.5) even on newer alphas (#1951).
+  let pkgVersion = '3.6';
+  try {
+    const home = require('os').homedir();
+    const pkgPaths = [
+      // 1. The plugin's own root (installed via /plugin install).
+      path.join(home, '.claude', 'plugins', 'marketplaces', 'ruflo', 'package.json'),
+      // 2. Project-local @sparkleideas/ruflo — npm-style install.
+      path.join(CWD, 'node_modules', '@claude-flow', 'cli', 'package.json'),
+      // 3. Project-local ruflo umbrella.
+      path.join(CWD, 'node_modules', 'ruflo', 'package.json'),
+      // 4. Source-checkout location (when developing in this repo).
+      path.join(CWD, 'v3', '@claude-flow', 'cli', 'package.json'),
+    ];
+    for (const p of pkgPaths) {
+      if (!fs.existsSync(p)) continue;
+      try {
+        const pkg = JSON.parse(fs.readFileSync(p, 'utf-8'));
+        if (pkg && typeof pkg.version === 'string' && pkg.version.length > 0) {
+          pkgVersion = pkg.version;
+          break;
+        }
+      } catch { /* malformed package.json — try next */ }
+    }
+  } catch { /* fall through to the hardcoded default */ }
+  let header = c.bold + c.brightPurple + '\u258A RuFlo V' + pkgVersion + ' ' + c.reset;
   header += (swarm.coordinationActive ? c.brightCyan : c.dim) + '\u25CF ' + c.brightCyan + git.name + c.reset;
   if (git.gitBranch) {
     header += '  ' + c.dim + '\u2502' + c.reset + '  ' + c.brightBlue + '\u23C7 ' + git.gitBranch + c.reset;

@@ -48,7 +48,7 @@ Return `attempt_completion` with:
 
 ### Option 1: Using MCP Tools (Preferred in Claude Code)
 ```javascript
-mcp__claude-flow__sparc_mode {
+mcp__ruflo__sparc_mode {
   mode: "devops",
   task_description: "deploy to AWS Lambda",
   options: {
@@ -64,7 +64,7 @@ mcp__claude-flow__sparc_mode {
 npx claude-flow sparc run devops "deploy to AWS Lambda"
 
 # For alpha features
-npx claude-flow@alpha sparc run devops "deploy to AWS Lambda"
+npx @sparkleideas/ruflo@latest sparc run devops "deploy to AWS Lambda"
 
 # With namespace
 npx claude-flow sparc run devops "your task" --namespace devops
@@ -84,7 +84,7 @@ npx claude-flow sparc run devops "your task" --non-interactive
 ### Using MCP Tools (Preferred)
 ```javascript
 // Store mode-specific context
-mcp__claude-flow__memory_usage {
+mcp__ruflo__memory_usage {
   action: "store",
   key: "devops_context",
   value: "important decisions",
@@ -92,7 +92,7 @@ mcp__claude-flow__memory_usage {
 }
 
 // Query previous work
-mcp__claude-flow__memory_search {
+mcp__ruflo__memory_search {
   pattern: "devops",
   namespace: "devops",
   limit: 5

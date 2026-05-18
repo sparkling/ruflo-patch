@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Intelligence Layer (ADR-050)
+ * Intelligence Layer (ADR-050, ADR-0085)
  *
  * Closes the intelligence loop by wiring PageRank-ranked memory into
- * the hook system. Pure CJS — no ESM imports of @sparkleideas/memory.
+ * the hook system. CJS module — loaded via dynamic import() from hook-handler.mjs.
+ *
+ * ADR-0085: Reads directly from SQLite (memory.db) via better-sqlite3.
+ * The auto-memory-store.json sidecar is eliminated.
  *
  * Data files (all under .claude-flow/data/):
- *   auto-memory-store.json  — written by auto-memory-hook.mjs
  *   graph-state.json        — serialized graph (nodes + edges + pageRanks)
  *   ranked-context.json     — pre-computed ranked entries for fast lookup
  *   pending-insights.jsonl  — append-only edit/task log
@@ -24,8 +26,88 @@ const RANKED_PATH = path.join(DATA_DIR, 'ranked-context.json');
 const PENDING_PATH = path.join(DATA_DIR, 'pending-insights.jsonl');
 const SESSION_DIR = path.join(process.cwd(), '.claude-flow', 'sessions');
 const SESSION_FILE = path.join(SESSION_DIR, 'current.json');
-const SNAPSHOT_BRIDGE_PATH = path.join(process.cwd(), '.claude-flow', 'intelligence-snapshot.json');
-const SIGNALS_PATH = path.join(process.cwd(), '.claude-flow', 'cjs-intelligence-signals.json');
+
+// ── ADR-0086: Direct RVF read (replaces SQLite reader from ADR-0085) ──
+// Reads the RVF binary format synchronously — matches the existing sync API budget (<200ms).
+// Format: 4B magic (RVF\0) + 4B LE header len + JSON header + [4B LE entry len + JSON entry]*
+function readStoreFromRvf() {
+  const candidates = [
+    path.join(process.cwd(), '.claude-flow', 'memory.rvf'),
+    path.join(process.cwd(), '.swarm', 'memory.rvf'),
+  ];
+  let rvfPath = null;
+  for (const p of candidates) {
+    if (fs.existsSync(p)) { rvfPath = p; break; }
+  }
+  if (!rvfPath) return null;
+
+  const entries = [];
+  const entryMap = new Map(); // id → index for WAL dedup
+  try {
+    const raw = fs.readFileSync(rvfPath);
+    if (raw.length < 8) return null;
+    const magic = String.fromCharCode(raw[0], raw[1], raw[2], raw[3]);
+    if (magic !== 'RVF\0') return null;
+    const headerLen = raw.readUInt32LE(4);
+    if (8 + headerLen > raw.length) return null;
+
+    let offset = 8 + headerLen;
+    while (offset + 4 <= raw.length) {
+      const entryLen = raw.readUInt32LE(offset);
+      offset += 4;
+      if (offset + entryLen > raw.length) break;
+      try {
+        const e = JSON.parse(raw.subarray(offset, offset + entryLen).toString('utf-8'));
+        entryMap.set(e.id, entries.length);
+        entries.push(e);
+      } catch { /* skip corrupt entry */ }
+      offset += entryLen;
+    }
+  } catch (e) {
+    process.stderr.write('[INTELLIGENCE] ERROR: RVF read failed: ' + (e.message || e) + '\n');
+    return null;
+  }
+
+  // Replay WAL if present (same length-prefixed JSON, no header)
+  const walPath = rvfPath + '.wal';
+  if (fs.existsSync(walPath)) {
+    try {
+      const walRaw = fs.readFileSync(walPath);
+      let offset = 0;
+      while (offset + 4 <= walRaw.length) {
+        const entryLen = walRaw.readUInt32LE(offset);
+        offset += 4;
+        if (offset + entryLen > walRaw.length) break;
+        try {
+          const e = JSON.parse(walRaw.subarray(offset, offset + entryLen).toString('utf-8'));
+          const existing = entryMap.get(e.id);
+          if (existing !== undefined) entries[existing] = e;
+          else { entryMap.set(e.id, entries.length); entries.push(e); }
+        } catch { /* skip */ }
+        offset += entryLen;
+      }
+    } catch { /* WAL read error — continue with main entries */ }
+  }
+
+  if (entries.length === 0) return null;
+  return entries.map(e => ({
+    id: e.id,
+    key: e.key,
+    content: e.content,
+    value: e.content,
+    namespace: e.namespace || 'default',
+    type: e.type || 'semantic',
+    summary: e.key,
+    metadata: typeof e.metadata === 'string' ? (() => { try { return JSON.parse(e.metadata); } catch { return {}; } })() : (e.metadata || {}),
+    createdAt: e.createdAt || Date.now(),
+    updatedAt: e.updatedAt || Date.now(),
+    accessCount: e.accessCount || 0,
+  }));
+}
+
+// ── Safety limits (fixes #1530, #1531) ─────────────────────────────────────
+const MAX_DATA_FILE_SIZE = 10 * 1024 * 1024; // 10 MB — skip files larger than this
+const MAX_GRAPH_NODES = 5000;                 // skip PageRank if graph exceeds this
 
 // ── Stop words for trigram matching ──────────────────────────────────────────
 
@@ -48,6 +130,14 @@ function ensureDataDir() {
 }
 
 function readJSON(filePath) {
+  // Safety: skip files exceeding MAX_DATA_FILE_SIZE (#1531)
+  try {
+    const stat = fs.statSync(filePath);
+    if (stat.size > MAX_DATA_FILE_SIZE) {
+      process.stderr.write("[INTELLIGENCE] WARN: Skipping " + path.basename(filePath) + " (" + Math.round(stat.size / 1048576) + "MB exceeds 10MB limit)\n");
+      return null;
+    }
+  } catch { /* file may not exist yet */ }
   try {
     if (fs.existsSync(filePath)) return JSON.parse(fs.readFileSync(filePath, 'utf-8'));
   } catch { /* corrupt file — start fresh */ }
@@ -84,6 +174,63 @@ function jaccardSimilarity(setA, setB) {
   return intersection / (setA.size + setB.size - intersection);
 }
 
+// ── Deduplication helper (fixes #1518) ──────────────────────────────────────
+
+function deduplicateById(entries) {
+  if (!entries || !Array.isArray(entries)) return entries;
+  const seen = new Map();
+  for (const entry of entries) {
+    const id = entry.id || entry.key;
+    if (id) {
+      seen.set(id, entry);
+    } else {
+      seen.set(`__no_id_${seen.size}`, entry);
+    }
+  }
+  return Array.from(seen.values());
+}
+
+// ADR-095 G6 — content-hash dedup. The April audit measured 5,706 entries
+// in the auto-memory store with only ~20 unique by content; 5,686 dupes
+// were the same MEMORY.md sections imported from sibling project dirs
+// with different IDs. deduplicateById can't catch these (the IDs really
+// are different); we need a content fingerprint.
+//
+// Fast non-cryptographic fingerprint — collisions on 64-bit FNV-1a are
+// vanishingly rare for human prose at the scale of an auto-memory store.
+// Whitespace-normalized so trivially-different formatting doesn't bypass dedup.
+function fingerprintContent(text) {
+  if (typeof text !== 'string' || text.length === 0) return '0';
+  const norm = text.replace(/\s+/g, ' ').trim().toLowerCase();
+  // FNV-1a 64-bit (split into 32-bit halves to stay within Number safe int)
+  let h1 = 0x811c9dc5, h2 = 0xcbf29ce4;
+  for (let i = 0; i < norm.length; i++) {
+    const c = norm.charCodeAt(i);
+    h1 ^= c; h1 = Math.imul(h1, 0x01000193) >>> 0;
+    h2 ^= c; h2 = Math.imul(h2, 0x100000001b3 & 0xffffffff) >>> 0;
+  }
+  return `${h1.toString(16)}_${h2.toString(16)}_${norm.length}`;
+}
+
+function deduplicateByContent(entries) {
+  if (!entries || !Array.isArray(entries)) return entries;
+  const seen = new Map();
+  for (const entry of entries) {
+    const content = entry.content || entry.summary || entry.value || '';
+    const fp = fingerprintContent(typeof content === 'string' ? content : JSON.stringify(content));
+    if (!seen.has(fp)) {
+      seen.set(fp, entry);
+    } else {
+      // Keep the entry with the higher accessCount or earlier createdAt
+      const existing = seen.get(fp);
+      const existingAccess = existing.accessCount || 0;
+      const candidateAccess = entry.accessCount || 0;
+      if (candidateAccess > existingAccess) seen.set(fp, entry);
+    }
+  }
+  return Array.from(seen.values());
+}
+
 // ── Session state helpers ────────────────────────────────────────────────────
 
 function sessionGet(key) {
@@ -104,7 +251,7 @@ function sessionSet(key, value) {
     if (!session.context) session.context = {};
     session.context[key] = value;
     session.updatedAt = new Date().toISOString();
-    fs.writeFileSync(SESSION_FILE, JSON.stringify(session, null, 2), 'utf-8');
+    writeJSON(SESSION_FILE, session);
   } catch { /* best effort */ }
 }
 
@@ -193,14 +340,24 @@ function buildEdges(entries) {
     }
   }
 
-  // Similarity edges within categories (Jaccard > 0.3)
+  // Similarity edges within categories (Jaccard > 0.3).
+  // ADR-095 G6 perf: hoist the trigram computation outside the inner
+  // loop. Previously we re-tokenized + re-trigrammed group[j] for every
+  // i — O(n²) extra work for nothing. Now compute once per entry.
   for (const cat of Object.keys(byCategory)) {
     const group = byCategory[cat];
+    if (group.length < 2) continue;
+
+    // Cache trigram sets for every entry in the group.
+    const triCache = new Array(group.length);
     for (let i = 0; i < group.length; i++) {
-      const triA = trigrams(tokenize(group[i].content || group[i].summary || ''));
+      triCache[i] = trigrams(tokenize(group[i].content || group[i].summary || ''));
+    }
+
+    for (let i = 0; i < group.length; i++) {
+      const triA = triCache[i];
       for (let j = i + 1; j < group.length; j++) {
-        const triB = trigrams(tokenize(group[j].content || group[j].summary || ''));
-        const sim = jaccardSimilarity(triA, triB);
+        const sim = jaccardSimilarity(triA, triCache[j]);
         if (sim > 0.3) {
           edges.push({
             sourceId: group[i].id,
@@ -227,18 +384,29 @@ function bootstrapFromMemoryFiles() {
   const entries = [];
   const cwd = process.cwd();
 
-  // ML-006 fix: scope to current project only (not all 51 project dirs)
-  const projectSlug = cwd.replace(/[/\\]/g, '-').replace(/^-/, '');
+  // Search for auto-memory directories
   const candidates = [
-    // Claude Code auto-memory (current project only)
-    path.join(require('os').homedir(), '.claude', 'projects', projectSlug, 'memory'),
+    // Claude Code auto-memory (project-scoped)
+    path.join(require('os').homedir(), '.claude', 'projects'),
     // Local project memory
     path.join(cwd, '.claude-flow', 'memory'),
     path.join(cwd, '.claude', 'memory'),
   ];
 
+  // Find MEMORY.md in project-scoped dirs
   for (const base of candidates) {
-    if (fs.existsSync(base)) {
+    if (!fs.existsSync(base)) continue;
+
+    // For the projects dir, scope to CURRENT project only (not all 51+ dirs)
+    if (base.endsWith('projects')) {
+      try {
+        const projectSlug = cwd.replace(/^\//, '').replace(/\//g, '-');
+        const memDir = path.join(base, projectSlug, 'memory');
+        if (fs.existsSync(memDir)) {
+          parseMemoryDir(memDir, entries);
+        }
+      } catch { /* skip */ }
+    } else if (fs.existsSync(base)) {
       parseMemoryDir(base, entries);
     }
   }
@@ -256,13 +424,14 @@ function parseMemoryDir(dir, entries) {
 
       // Parse markdown sections as separate entries
       const sections = content.split(/^##?\s+/m).filter(Boolean);
-      for (const section of sections) {
+      for (let sIdx = 0; sIdx < sections.length; sIdx++) {
+        const section = sections[sIdx];
         const lines = section.trim().split('\n');
         const title = lines[0].trim();
         const body = lines.slice(1).join('\n').trim();
         if (!body || body.length < 10) continue;
 
-        const id = `mem-${file.replace('.md', '')}-${title.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 30)}-${entries.length}`;
+        const id = `mem-${file.replace('.md', '')}-${title.replace(/[^a-z0-9]/gi, '-').toLowerCase().slice(0, 30)}-${sIdx}`;
         entries.push({
           id,
           key: title.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 50),
@@ -282,15 +451,17 @@ function parseMemoryDir(dir, entries) {
 
 /**
  * init() — Called from session-restore. Budget: <200ms.
- * Reads auto-memory-store.json, builds graph, computes PageRank, writes caches.
- * If store is empty, bootstraps from MEMORY.md files directly.
+ * ADR-0085: Reads directly from SQLite (memory.db) via better-sqlite3.
+ * Falls back to auto-memory-store.json if DB unavailable.
+ * If both are empty, bootstraps from MEMORY.md files directly.
  */
 function init() {
   ensureDataDir();
 
   // Check if graph-state.json is fresh (within 60s of store)
   const graphState = readJSON(GRAPH_PATH);
-  let store = readJSON(STORE_PATH);
+  // ADR-0085: SQLite direct read — no sidecar fallback
+  let store = readStoreFromRvf();
 
   // Bootstrap from MEMORY.md files if store is empty
   if (!store || !Array.isArray(store) || store.length === 0) {
@@ -303,23 +474,10 @@ function init() {
     }
   }
 
-  // Skip rebuild if graph is fresh and store hasn't changed
-  // Compare against unique ID count, not raw store length (store may have duplicates)
-  const uniqueCount = new Set(store.map(e => e.id || e.key)).size;
-  if (graphState && graphState.nodeCount === uniqueCount) {
-    const age = Date.now() - (graphState.updatedAt || 0);
-    if (age < 60000) {
-      return {
-        nodes: graphState.nodeCount || Object.keys(graphState.nodes || {}).length,
-        edges: (graphState.edges || []).length,
-        message: 'Graph cache hit',
-      };
-    }
-  }
-
   // ADR-0080 P2: inline Map-based dedup — last write wins (fixes #1518: 194MB → ~79KB).
   // Inlined so tests/unit/adr0080-json-safety.test.mjs:233 source-inspection assertion
-  // finds the Map/set() tokens within init()'s body. Logic identical to deduplicateById().
+  // finds the Map/set() tokens within init()'s body. Logic identical to deduplicateById()
+  // helper which remains in use by consolidate() at a later call site.
   const seen = new Map();
   for (const entry of store) {
     const id = entry.id || entry.key;
@@ -330,29 +488,64 @@ function init() {
       seen.set(`__no_id_${seen.size}`, entry);
     }
   }
-  const deduped = [...seen.values()];
+  let deduped = [...seen.values()];
+  // ADR-095 G6 (cherry-picked from 6b46946dc): also dedupe by content
+  // fingerprint. The April audit measured 5,706 entries with only ~20
+  // unique by content because the same MEMORY.md sections get imported
+  // from sibling project dirs with different IDs. The by-id pass above
+  // can't catch that; deduplicateByContent can. Cuts the graph from O(n²)
+  // over near-identical duplicates down to O(unique²), which is the
+  // difference between a 100MB graph-state and a kilobytes-scale one for
+  // typical workloads.
+  const beforeContentDedup = deduped.length;
+  deduped = deduplicateByContent(deduped);
   if (deduped.length < store.length) {
-    process.stderr.write(`[INTELLIGENCE] Deduped store: ${store.length} -> ${deduped.length} entries\n`);
+    process.stderr.write(
+      `[INTELLIGENCE] Deduped store: ${store.length} -> ${deduped.length} entries ` +
+      `(by-id: ${store.length - beforeContentDedup} dropped, by-content: ${beforeContentDedup - deduped.length} dropped)\n`
+    );
     writeJSON(STORE_PATH, deduped);
   }
 
-  // Build nodes
+  // Skip rebuild if graph is fresh and store hasn't changed
+  if (graphState && graphState.nodeCount === deduped.length) {
+    const age = Date.now() - (graphState.updatedAt || 0);
+    if (age < 60000) {
+      return {
+        nodes: graphState.nodeCount || Object.keys(graphState.nodes || {}).length,
+        edges: (graphState.edges || []).length,
+        message: 'Graph cache hit',
+      };
+    }
+  }
+
+  // Build nodes from deduped entries
   const nodes = {};
   for (const entry of deduped) {
-    nodes[entry.id] = {
-      id: entry.id,
+    const id = entry.id || entry.key || `entry-${Math.random().toString(36).slice(2, 8)}`;
+    nodes[id] = {
+      id,
       category: entry.namespace || entry.type || 'default',
       confidence: (entry.metadata && entry.metadata.confidence) || 0.5,
       accessCount: (entry.metadata && entry.metadata.accessCount) || 0,
       createdAt: entry.createdAt || Date.now(),
     };
+    // Ensure entry has id for edge building
+    entry.id = id;
   }
 
-  // Build edges (from deduplicated store, not raw)
+  // Build edges
   const edges = buildEdges(deduped);
 
-  // Compute PageRank
-  const pageRanks = computePageRank(nodes, edges, 0.85, 30);
+  // Compute PageRank (skip if graph too large — #1531)
+  const nodeCount = Object.keys(nodes).length;
+  let pageRanks = {};
+  if (nodeCount > MAX_GRAPH_NODES) {
+    process.stderr.write("[INTELLIGENCE] WARN: Graph has " + nodeCount + " nodes (>" + MAX_GRAPH_NODES + "), skipping PageRank\n");
+    for (const id of Object.keys(nodes)) pageRanks[id] = 1 / nodeCount;
+  } else {
+    pageRanks = computePageRank(nodes, edges, 0.85, 30);
+  }
 
   // Write graph state
   const graph = {
@@ -487,9 +680,6 @@ function feedback(success) {
 
   const amount = success ? 0.05 : -0.02;
   boostConfidence(matchedIds, amount);
-
-  // IN-004: Write signal for ESM bridge consumption
-  writeSignals({ type: 'task', task: sessionGet('currentTask') || 'hook', success: !!success });
 }
 
 function boostConfidence(ids, amount) {
@@ -527,10 +717,15 @@ function boostConfidence(ids, amount) {
 function consolidate() {
   ensureDataDir();
 
-  const store = readJSON(STORE_PATH);
+  // ADR-0085: SQLite direct read — no sidecar fallback
+  let store = readStoreFromRvf();
   if (!store || !Array.isArray(store)) {
     return { entries: 0, edges: 0, newEntries: 0, message: 'No store to consolidate' };
   }
+
+  // Deduplicate store entries by ID before processing (fixes #1518)
+  const preDedupCount = store.length;
+  store = deduplicateById(store);
 
   // 1. Process pending insights
   let newEntries = 0;
@@ -546,8 +741,6 @@ function consolidate() {
       } catch { /* skip malformed */ }
     }
 
-    // ADR-0080: dedup by ID before appending new entries
-    const existingIds = new Set(store.map(e => e.id).filter(Boolean));
     // Create entries for frequently-edited files (3+ edits)
     for (const [file, count] of Object.entries(editCounts)) {
       if (count >= 3) {
@@ -555,7 +748,7 @@ function consolidate() {
           (e.metadata && e.metadata.sourceFile === file && e.metadata.autoGenerated)
         );
         if (!exists) {
-          const entry = {
+          store.push({
             id: `insight-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
             key: `frequent-edit-${path.basename(file)}`,
             content: `File ${file} was edited ${count} times this session — likely a hot path worth monitoring.`,
@@ -564,13 +757,8 @@ function consolidate() {
             type: 'procedural',
             metadata: { sourceFile: file, editCount: count, autoGenerated: true },
             createdAt: Date.now(),
-          };
-          // ADR-0080: skip if ID already in store
-          if (!existingIds.has(entry.id)) {
-            store.push(entry);
-            existingIds.add(entry.id);
-            newEntries++;
-          }
+          });
+          newEntries++;
         }
       }
     }
@@ -614,8 +802,15 @@ function consolidate() {
     };
   }
 
-  // 5. Recompute PageRank
-  const pageRanks = computePageRank(nodes, edges, 0.85, 30);
+  // 5. Recompute PageRank (skip if graph too large — #1531)
+  const nodeCount = Object.keys(nodes).length;
+  let pageRanks = {};
+  if (nodeCount > MAX_GRAPH_NODES) {
+    process.stderr.write("[INTELLIGENCE] WARN: Graph has " + nodeCount + " nodes (>" + MAX_GRAPH_NODES + "), skipping PageRank in consolidate\n");
+    for (const id of Object.keys(nodes)) pageRanks[id] = 1 / nodeCount;
+  } else {
+    pageRanks = computePageRank(nodes, edges, 0.85, 30);
+  }
 
   // 6. Write updated graph
   writeJSON(GRAPH_PATH, {
@@ -655,16 +850,33 @@ function consolidate() {
     entries: rankedEntries,
   });
 
-  // 8. Persist updated store (with new insight entries)
-  // ADR-0080: cap at 1000 entries, LRU eviction (drop oldest by timestamp)
+  // 8. ADR-0074 Phase 3: Evict stale entries + cap at 1000
   const MAX_STORE_ENTRIES = 1000;
+  const EVICTION_AGE_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const now = Date.now();
+  const preEvictCount = store.length;
+  store = store.filter(entry => {
+    const confidence = nodes[entry.id] ? nodes[entry.id].confidence : 0.5;
+    const accessCount = nodes[entry.id] ? nodes[entry.id].accessCount : 0;
+    const age = now - (entry.createdAt || now);
+    // Evict: confidence <= 0.05 AND age > 30 days AND never accessed
+    if (confidence <= 0.05 && age > EVICTION_AGE_MS && accessCount === 0) return false;
+    return true;
+  });
+  // If still over cap, drop lowest-ranked entries
   if (store.length > MAX_STORE_ENTRIES) {
-    store.sort((a, b) => (b.createdAt || b.timestamp || 0) - (a.createdAt || a.timestamp || 0));
-    store.length = MAX_STORE_ENTRIES;
+    const ranked = store.map(e => ({
+      entry: e,
+      score: 0.6 * (pageRanks[e.id] || 0) + 0.4 * (nodes[e.id] ? nodes[e.id].confidence : 0.5),
+    })).sort((a, b) => b.score - a.score);
+    store = ranked.slice(0, MAX_STORE_ENTRIES).map(r => r.entry);
   }
-  if (newEntries > 0) writeJSON(STORE_PATH, store);
+  const evicted = preEvictCount - store.length;
 
-  // 9. Save snapshot for delta tracking
+  // 9. Persist updated store (deduped, evicted, or with new insight entries)
+  if (newEntries > 0 || store.length < preDedupCount || evicted > 0) writeJSON(STORE_PATH, store);
+
+  // 10. Save snapshot for delta tracking
   const updatedGraph = readJSON(GRAPH_PATH);
   const updatedRanked = readJSON(RANKED_PATH);
   saveSnapshot(updatedGraph, updatedRanked);
@@ -673,6 +885,7 @@ function consolidate() {
     entries: store.length,
     edges: edges.length,
     newEntries,
+    evicted,
     message: 'Consolidated',
   };
 }
@@ -915,102 +1128,7 @@ function stats(outputJson) {
   return report;
 }
 
-// ── CJS Signal Writer (ADR-078 / IN-004) ──────────────────────────────────
-
-function writeSignals(event) {
-  try {
-    let signals = readJSON(SIGNALS_PATH);
-    if (!signals || !Array.isArray(signals.taskOutcomes)) {
-      signals = { timestamp: null, taskOutcomes: [], routingDecisions: [] };
-    }
-    signals.timestamp = new Date().toISOString();
-    if (event.type === 'task') {
-      signals.taskOutcomes.push({
-        task: event.task || 'unknown',
-        success: !!event.success,
-        model: event.model || 'unknown',
-        duration: event.duration || 0,
-        timestamp: new Date().toISOString(),
-      });
-    } else if (event.type === 'routing') {
-      signals.routingDecisions.push({
-        input: (event.input || '').slice(0, 100),
-        recommended: event.recommended || 'unknown',
-        actual: event.actual || 'unknown',
-        timestamp: new Date().toISOString(),
-      });
-    }
-    // Cap at 100 entries each to prevent unbounded growth
-    if (signals.taskOutcomes.length > 100) signals.taskOutcomes = signals.taskOutcomes.slice(-100);
-    if (signals.routingDecisions.length > 100) signals.routingDecisions = signals.routingDecisions.slice(-100);
-    writeJSON(SIGNALS_PATH, signals);
-  } catch { /* IN-004: best effort — do not block hook execution */ }
-}
-
-// ── ESM Bridge Snapshot Reader (ADR-078 / IN-003) ──────────────────────────
-
-let _snapshotCache = null;
-let _snapshotCacheTs = 0;
-const SNAPSHOT_TTL = 30000; // 30s cache
-
-function loadSnapshot() {
-  const now = Date.now();
-  if (_snapshotCache && (now - _snapshotCacheTs) < SNAPSHOT_TTL) return _snapshotCache;
-  try {
-    if (fs.existsSync(SNAPSHOT_BRIDGE_PATH)) {
-      const raw = JSON.parse(fs.readFileSync(SNAPSHOT_BRIDGE_PATH, 'utf-8'));
-      // Snapshot may be an array (history) or object (single); use latest
-      _snapshotCache = Array.isArray(raw) ? raw[raw.length - 1] : raw;
-      _snapshotCacheTs = now;
-      return _snapshotCache;
-    }
-  } catch { /* IN-003: corrupt snapshot — continue without */ }
-  return null;
-}
-
-function getModelRecommendation(complexity) {
-  const snap = loadSnapshot();
-  if (!snap) return { model: 'sonnet', reason: 'no snapshot available' };
-
-  // Use routing rules from snapshot if available
-  if (snap.routingRules && Array.isArray(snap.routingRules)) {
-    for (const rule of snap.routingRules) {
-      if (rule.complexity && complexity !== undefined) {
-        const threshold = parseFloat(rule.complexity);
-        if (!isNaN(threshold) && complexity < threshold) {
-          return { model: rule.model || 'haiku', reason: 'snapshot routing rule' };
-        }
-      }
-    }
-  }
-
-  // Fallback: use model stats to pick lowest-latency model for simple tasks
-  if (snap.modelStats && complexity !== undefined && complexity < 0.3) {
-    const haiku = snap.modelStats.haiku;
-    if (haiku && haiku.count > 0) {
-      return { model: 'haiku', reason: 'low complexity + haiku stats available' };
-    }
-  }
-
-  return { model: 'sonnet', reason: 'default fallback' };
-}
-
-function getPatternContext(taskType) {
-  const snap = loadSnapshot();
-  if (!snap || !snap.topPatterns) return null;
-
-  if (!taskType) return snap.topPatterns.slice(0, 5);
-
-  const lowerType = taskType.toLowerCase();
-  const matched = snap.topPatterns.filter(p => {
-    const summary = (p.summary || '').toLowerCase();
-    return summary.includes(lowerType);
-  });
-
-  return matched.length > 0 ? matched : snap.topPatterns.slice(0, 3);
-}
-
-module.exports = { init, getContext, recordEdit, feedback, consolidate, stats, getModelRecommendation, getPatternContext, writeSignals };
+module.exports = { init, getContext, recordEdit, feedback, consolidate, stats };
 
 // ── CLI entrypoint ──────────────────────────────────────────────────────────
 if (require.main === module) {

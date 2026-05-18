@@ -1,5 +1,5 @@
 # RuFlo V3 - Complete Capabilities Reference
-> Generated: 2026-04-21T23:27:55.397Z
+> Generated: 2026-05-18T22:59:58.495Z
 > Full documentation: https://github.com/ruvnet/claude-flow
 
 ## 📋 Table of Contents
@@ -60,13 +60,13 @@ RuFlo V3 is a domain-driven design architecture for multi-agent AI coordination 
 ### Quick Commands
 ```bash
 # Initialize swarm
-npx @sparkleideas/cli@latest swarm init --topology hierarchical-mesh --max-agents 8 --strategy specialized
+npx @sparkleideas/ruflo@latest swarm init --topology hierarchical-mesh --max-agents 8 --strategy specialized
 
 # Check status
-npx @sparkleideas/cli@latest swarm status
+npx @sparkleideas/ruflo@latest swarm status
 
 # Monitor activity
-npx @sparkleideas/cli@latest swarm monitor
+npx @sparkleideas/ruflo@latest swarm monitor
 ```
 
 ---
@@ -150,17 +150,17 @@ npx @sparkleideas/cli@latest swarm monitor
 ### Example Commands
 ```bash
 # Initialize
-npx @sparkleideas/cli@latest init --wizard
+npx @sparkleideas/ruflo@latest init --wizard
 
 # Spawn agent
-npx @sparkleideas/cli@latest agent spawn -t coder --name my-coder
+npx @sparkleideas/ruflo@latest agent spawn -t coder --name my-coder
 
 # Memory operations
-npx @sparkleideas/cli@latest memory store --key "pattern" --value "data" --namespace patterns
-npx @sparkleideas/cli@latest memory search --query "authentication"
+npx @sparkleideas/ruflo@latest memory store --key "pattern" --value "data" --namespace patterns
+npx @sparkleideas/ruflo@latest memory search --query "authentication"
 
 # Diagnostics
-npx @sparkleideas/cli@latest doctor --fix
+npx @sparkleideas/ruflo@latest doctor --fix
 ```
 
 ---
@@ -259,16 +259,16 @@ High-confidence insights (>0.8) can transfer between agents.
 ### Memory Commands
 ```bash
 # Store pattern
-npx @sparkleideas/cli@latest memory store --key "name" --value "data" --namespace patterns
+npx @sparkleideas/ruflo@latest memory store --key "name" --value "data" --namespace patterns
 
 # Semantic search
-npx @sparkleideas/cli@latest memory search --query "authentication"
+npx @sparkleideas/ruflo@latest memory search --query "authentication"
 
 # List entries
-npx @sparkleideas/cli@latest memory list --namespace patterns
+npx @sparkleideas/ruflo@latest memory list --namespace patterns
 
 # Initialize database
-npx @sparkleideas/cli@latest memory init --force
+npx @sparkleideas/ruflo@latest memory init --force
 ```
 
 ---
@@ -297,16 +297,16 @@ npx @sparkleideas/cli@latest memory init --force
 ### Hive-Mind Commands
 ```bash
 # Initialize
-npx @sparkleideas/cli@latest hive-mind init --queen-type strategic
+npx @sparkleideas/ruflo@latest hive-mind init --queen-type strategic
 
 # Status
-npx @sparkleideas/cli@latest hive-mind status
+npx @sparkleideas/ruflo@latest hive-mind status
 
 # Spawn workers
-npx @sparkleideas/cli@latest hive-mind spawn --count 5 --type worker
+npx @sparkleideas/ruflo@latest hive-mind spawn --count 5 --type worker
 
 # Consensus
-npx @sparkleideas/cli@latest hive-mind consensus --propose "task"
+npx @sparkleideas/ruflo@latest hive-mind consensus --propose "task"
 ```
 
 ---
@@ -350,7 +350,7 @@ npx @sparkleideas/cli@latest hive-mind consensus --propose "task"
 ### MCP Server Setup
 ```bash
 # Add Ruflo MCP
-claude mcp add ruflo -- npx -y ruflo@latest
+claude mcp add ruflo -- npx -y @sparkleideas/ruflo@latest
 
 # Optional servers
 claude mcp add ruv-swarm -- npx -y ruv-swarm mcp start
@@ -364,24 +364,24 @@ claude mcp add flow-nexus -- npx -y flow-nexus@latest mcp start
 ### Essential Commands
 ```bash
 # Setup
-npx ruflo@latest init --wizard
-npx ruflo@latest daemon start
-npx ruflo@latest doctor --fix
+npx @sparkleideas/ruflo@latest init --wizard
+npx @sparkleideas/ruflo@latest daemon start
+npx @sparkleideas/ruflo@latest doctor --fix
 
 # Swarm
-npx ruflo@latest swarm init --topology hierarchical --max-agents 8
-npx ruflo@latest swarm status
+npx @sparkleideas/ruflo@latest swarm init --topology hierarchical --max-agents 8
+npx @sparkleideas/ruflo@latest swarm status
 
 # Agents
-npx ruflo@latest agent spawn -t coder
-npx ruflo@latest agent list
+npx @sparkleideas/ruflo@latest agent spawn -t coder
+npx @sparkleideas/ruflo@latest agent list
 
 # Memory
-npx ruflo@latest memory search --query "patterns"
+npx @sparkleideas/ruflo@latest memory search --query "patterns"
 
 # Hooks
-npx ruflo@latest hooks pre-task --description "task"
-npx ruflo@latest hooks worker dispatch --trigger optimize
+npx @sparkleideas/ruflo@latest hooks pre-task --description "task"
+npx @sparkleideas/ruflo@latest hooks worker dispatch --trigger optimize
 ```
 
 ### File Structure
