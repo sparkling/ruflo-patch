@@ -601,11 +601,18 @@ describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', 
     }
   }
 
-  // Methods that must be called (core CRUD operations)
+  // Methods that must be called (core CRUD operations).
+  // ADR-0183 A1 (2026-05-17): `store` and `update` removed from required —
+  // routeMemoryOp({type:'store'}) now dispatches through
+  // `archivist.dispatch('memory_store')`; the agentdb handler
+  // (forks/agentdb handlers/memory/store.ts) owns both the insert and the
+  // RC-2 upsert update via the rvf substrate. The router still uses
+  // `storage.getByKey` (post-dispatch envelope re-read for hasEmbedding /
+  // embeddingDimensions parity) so getByKey stays required.
   const requiredMethods = [
-    'store', 'getByKey', 'delete', 'search', 'query',
+    'getByKey', 'delete', 'search', 'query',
     'count', 'listNamespaces', 'clearNamespace', 'bulkDelete',
-    'getStats', 'healthCheck', 'update',
+    'getStats', 'healthCheck',
   ];
 
   for (const method of requiredMethods) {
@@ -621,6 +628,8 @@ describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', 
     { name: 'shutdown', reason: 'called in shutdownRouter, not routeMemoryOp' },
     { name: 'get', reason: 'router uses getByKey instead (by-namespace-and-key access pattern)' },
     { name: 'bulkInsert', reason: 'not yet wired — no MCP tool exposes batch insert' },
+    { name: 'store', reason: 'ADR-0183 A1: routeMemoryOp store case dispatches through archivist.dispatch(memory_store); the handler owns the substrate insert' },
+    { name: 'update', reason: 'ADR-0183 A1: routeMemoryOp store case dispatches through archivist.dispatch(memory_store); the handler owns the RC-2 upsert via rvf.updateAsync' },
   ];
 
   for (const { name, reason } of informationalMethods) {
@@ -711,7 +720,13 @@ describe('ADR-0086 behavioral: IMemoryBackend method coverage (Debt 1 merged)', 
     // backend.initialize() before returning, so the router never needs to
     // call it explicitly. This is expected and desirable: dedupe at the
     // factory collapses 2× init per CLI invocation to 1×.
-    const expectedUncovered = ['get', 'bulkInsert', 'initialize'];
+    //
+    // ADR-0183 A1 (2026-05-17): `store` and `update` are also expected
+    // uncovered at the router level — routeMemoryOp({type:'store'}) now
+    // dispatches through archivist.dispatch('memory_store'); the agentdb
+    // handler owns the substrate insert + RC-2 upsert update. The router
+    // no longer touches storage.store/update directly.
+    const expectedUncovered = ['get', 'bulkInsert', 'initialize', 'store', 'update'];
     const unexpectedUncovered = uncovered.filter(m => !expectedUncovered.includes(m));
 
     assert.deepEqual(unexpectedUncovered, [],

@@ -70,10 +70,22 @@ describe('ADR-0086 T2.2: _doInit creates RvfBackend', () => {
 // ============================================================================
 
 describe('ADR-0086 T2.3: routeMemoryOp uses IStorageContract', () => {
-  it('store case calls storage.store', () => {
+  it('store case dispatches memory_store through the archivist (ADR-0183 A1)', () => {
+    // Updated 2026-05-17 for ADR-0183 A1 (memory write-path unification):
+    // the cli's store case now dispatches through archivist.dispatch('memory_store')
+    // instead of calling storage.store directly. The agentdb handler
+    // (forks/agentdb handlers/memory/store.ts) owns the substrate write,
+    // embedding generation (via EmbeddingScorer capability), and ADR-0094
+    // RC-2 idempotency. This completes Phase 5's exit gate for memory
+    // writes — both MCP and cli paths now produce identical on-disk shape
+    // (rich metadata + shape_version: 2).
+    //
+    // The original ADR-0086 T2.3 invariant (routeMemoryOp must actually wire
+    // storage, not return empty stubs) is preserved by this new shape — the
+    // dispatch routes through the substrate which still hits the RVF backend.
     assert.ok(
-      routerSrc.includes('await storage.store(entry)'),
-      'routeMemoryOp store case does not call storage.store',
+      routerSrc.includes("dispatch('memory_store'"),
+      'routeMemoryOp store case does not dispatch memory_store through archivist (ADR-0183 A1)',
     );
   });
 
