@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-10
+closed-on: 2026-05-10
 methodology: [scoped-rework, evidence-grading]
 decision-makers: [Henrik Pettersen]
 tags: [rvf, storage-unification, session-persistence, refactor, technical-debt]
@@ -169,6 +170,20 @@ Phase A1 audit (`/tmp/adr0164-phase-a1/AUDIT.md`) verified `session-tools.ts` ha
 Replaced by Phase A0 (vectorless-ingest gate fix). The audit/council artifacts are at `/tmp/adr0164-phase-a1/AUDIT.md` and `/tmp/adr0164-review-council/{native-runtime,session-layer,persistence,refactor,queen,devils-advocate}-position.md`.
 
 ## Amendments
+
+### Amendment: Status reconciliation (2026-05-18)
+
+Frontmatter `status` flipped `proposed` → `implemented` with `closed-on:
+2026-05-10` per Amendment `2026-05-10f` below ("Phase A0e + Phase B1
+landed; full closure verified 674/674"). Atomic A0e+B1 release verified
+at `accept-2026-05-10T184434Z` (674/674 acceptance, 4440/4440 unit) as
+`@sparkleideas/cli@3.7.0-alpha.10-patch.18`. **Deferred (not part of
+closure):** Phase B2 (delete `MAGIC = 'RVF\0'` constant), B3 (delete
+`metadataPath` getter), B4 (delete dual-magic peek + legacy
+fall-through) — all dead-code cleanup pending re-routing of
+`_deferredCorruptReason` setters; and Phase C (G7 file-size refactor /
+module split) — deferred per fail-fast posture. Status flip deferred at
+the time and reconciled as part of the 2026-05-18 ADR status audit.
 
 ### Amendment 2026-05-10 — Phase A1 audit invalidates Phase A2 as written; ADR-0163 reframe loosens sequencing
 

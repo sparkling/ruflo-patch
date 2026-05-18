@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-10
+closed-on: 2026-05-10
 methodology: [council-dialectic, evidence-grading]
 decision-makers: [Henrik Pettersen]
 tags: [concurrency, rvf, data-loss, post-mortem, investigation, adr-0095, adr-0154, adr-0162]
@@ -193,6 +194,16 @@ The "leftover that was forgotten" framing is **not accurate**: `.meta` is an int
 * Memory: `project-rvf-unification-target.md`, `project-adr0154-true-scope.md` (the corrections that flipped the META_SEG framing)
 
 ## Amendments
+
+### Amendment: Status reconciliation (2026-05-18)
+
+Frontmatter `status` flipped `proposed` → `implemented` with `closed-on:
+2026-05-10` per Amendment `2026-05-10d` below ("ROOT CAUSE FOUND AND
+FIXED. ADR closed."). Wave-4 two-stage investigation (Rust Race
+Investigator + JS-Side `nextNativeId` Race Investigator) traced the
+mechanism and shipped the correct fix; ADR-0163 instrumentation was
+subsequently removed in a follow-up commit. Status flip was deferred at
+the time and reconciled as part of the 2026-05-18 ADR status audit.
 
 ### Amendment 2026-05-10 — Bisect cannot reproduce; regression is read-side, not write-side
 

@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-10
+closed-on: 2026-05-10
 methodology: [post-incident-investigation, evidence-grading]
 decision-makers: [Henrik Pettersen]
 tags: [agentdb, ruvector, rvf, storage-routing, post-adr-0162-cluster, fail-loud]
@@ -135,6 +136,15 @@ Output: `/tmp/adr0165-investigation/AUDIT.md`. ADR will be amended with findings
   - `feedback-fix-all-tests` (zero failures only)
 
 ## Amendments
+
+### Amendment: Status reconciliation (2026-05-18)
+
+Frontmatter `status` flipped `proposed` → `implemented` with `closed-on:
+2026-05-10` per Amendment `2026-05-10b` below ("Verified 674/674; ADR
+closed"). Verification release `accept-2026-05-10T184434Z` confirmed
+674/674 acceptance + 4440/4440 unit, released as
+`@sparkleideas/cli@3.7.0-alpha.10-patch.18`. Status flip deferred at the
+time and reconciled as part of the 2026-05-18 ADR status audit.
 
 ### Amendment 2026-05-10 — Three-agent swarm investigated and applied fixes
 
