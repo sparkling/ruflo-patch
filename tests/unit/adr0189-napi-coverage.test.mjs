@@ -60,11 +60,22 @@ function buildSandbox({ allowlist, forks }) {
       branch: 'main',
       url: `https://example.com/${fork.name}.git`,
     };
-    // Lay down each crate's Cargo.toml.
+    // Lay down each crate's Cargo.toml (+ optional package.json + npm
+    // platform binaries for Path 2 republish coverage).
     for (const crate of fork.crates) {
       const crateDir = join(forkDir, crate.path);
       mkdirSync(crateDir, { recursive: true });
       writeFileSync(join(crateDir, 'Cargo.toml'), crate.cargoToml);
+      if (crate.packageJson) {
+        writeFileSync(join(crateDir, 'package.json'), crate.packageJson);
+      }
+      if (crate.npmPlatforms) {
+        for (const plat of crate.npmPlatforms) {
+          const platDir = join(crateDir, 'npm', plat);
+          mkdirSync(platDir, { recursive: true });
+          writeFileSync(join(platDir, `${crate.binName ?? 'index'}.${plat}.node`), Buffer.from([0, 0]));
+        }
+      }
     }
   }
   writeFileSync(join(sandbox, 'config', 'upstream-branches.json'), JSON.stringify(upstream, null, 2));
@@ -123,6 +134,7 @@ describe('ADR-0189: check-napi-coverage.mjs — uncovered case', () => {
             {
               path: 'crates/unlisted-node',
               cargoToml: `[package]\nname = "unlisted-node"\n\n[dependencies]\nnapi-derive = "2"\n`,
+              packageJson: `{"name": "@ruvector/unlisted", "version": "0.1.0"}`,
             },
           ],
         },
@@ -177,6 +189,7 @@ describe('ADR-0189: check-napi-coverage.mjs — target.cfg dependencies are cons
             {
               path: 'crates/cfg-target-node',
               cargoToml: `[package]\nname = "cfg-target-node"\n\n[target.'cfg(target_os = "linux")'.dependencies]\nnapi-derive = { workspace = true, optional = true }\n`,
+              packageJson: `{"name": "@ruvector/cfg-target", "version": "0.1.0"}`,
             },
           ],
         },
@@ -186,6 +199,98 @@ describe('ADR-0189: check-napi-coverage.mjs — target.cfg dependencies are cons
       const res = runCheck(sandbox);
       assert.equal(res.exit, 1, `target.cfg.dependencies should be flagged; stdout=${res.stdout}`);
       assert.match(res.stderr, /cfg-target-node/);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('ADR-0189: check-napi-coverage.mjs — no package.json → Rust-only library, skipped', () => {
+  it('skips napi-derive crates with no package.json (workspace member only, not an npm consumer)', () => {
+    const sandbox = buildSandbox({
+      allowlist: [],
+      forks: [
+        {
+          name: 'ruvector',
+          crates: [
+            {
+              // napi-derive dep but no package.json — this is a Rust-only
+              // workspace member that other crates depend on via path. It
+              // never ships as its own npm package, so it can't be
+              // silently dropped at publish time.
+              path: 'crates/internal-rust-lib',
+              cargoToml: `[package]\nname = "internal-rust-lib"\n\n[dependencies]\nnapi-derive = "2"\n`,
+              // no packageJson
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      const res = runCheck(sandbox);
+      assert.equal(res.exit, 0, `crate with no package.json should be skipped; stderr=${res.stderr}`);
+      assert.match(res.stdout, /OK: 1 NAPI crates/);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('ADR-0189: check-napi-coverage.mjs — Path 2 republish covered', () => {
+  it('skips crates with package.json + pre-built .node binaries in npm/<platform>/', () => {
+    const sandbox = buildSandbox({
+      allowlist: [],
+      forks: [
+        {
+          name: 'ruvector',
+          crates: [
+            {
+              // Path 2 coverage: has package.json (=> codemod will rename
+              // @ruvector/* → @sparkleideas/ruvector-*) AND has at least
+              // one pre-built .node binary in npm/<platform>/ (=> publish
+              // ships it). No build-from-source needed.
+              path: 'crates/republish-eligible-node',
+              cargoToml: `[package]\nname = "republish-eligible-node"\n\n[dependencies]\nnapi-derive = "2"\n`,
+              packageJson: `{"name": "@ruvector/republish-eligible", "version": "1.0.0", "napi": {"name": "republish-eligible"}}`,
+              npmPlatforms: ['darwin-arm64', 'linux-x64-gnu'],
+              binName: 'republish-eligible',
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      const res = runCheck(sandbox);
+      assert.equal(res.exit, 0, `Path 2 republish should be covered; stderr=${res.stderr}`);
+      assert.match(res.stdout, /OK: 1 NAPI crates/);
+    } finally {
+      rmSync(sandbox, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('ADR-0189: check-napi-coverage.mjs — Path 2 incomplete (package.json but no .node) is flagged', () => {
+  it('flags crates with package.json but no pre-built .node binaries (Path 2 ineligible)', () => {
+    const sandbox = buildSandbox({
+      allowlist: [],
+      forks: [
+        {
+          name: 'ruvector',
+          crates: [
+            {
+              path: 'crates/no-binary-node',
+              cargoToml: `[package]\nname = "no-binary-node"\n\n[dependencies]\nnapi-derive = "2"\n`,
+              packageJson: `{"name": "@ruvector/no-binary", "version": "0.1.0"}`,
+              // no npmPlatforms — package.json exists but no pre-built binaries
+            },
+          ],
+        },
+      ],
+    });
+    try {
+      const res = runCheck(sandbox);
+      assert.equal(res.exit, 1, `crate with no Path 1 + incomplete Path 2 should be flagged; stdout=${res.stdout}`);
+      assert.match(res.stderr, /Unlisted NAPI crate found.*no-binary-node/);
     } finally {
       rmSync(sandbox, { recursive: true, force: true });
     }

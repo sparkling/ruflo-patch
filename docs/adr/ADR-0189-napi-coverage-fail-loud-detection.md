@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-18
+implemented: 2026-05-18
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
 tags: [pipeline, ci, napi, fail-loud, ADR-0082]
@@ -82,8 +83,65 @@ consumer weeks later.
 
 ## Decision Outcome
 
-**Option 2 chosen — pre-flight gate. Detector landed; wiring deferred
-on first run (it surfaced 11 real coverage gaps).**
+**Option 2 implemented — pre-flight gate, wired into
+`scripts/ruflo-publish.sh`.** Detector + tests + wiring all landed
+2026-05-18; first GREEN run reports `19 NAPI crates, all listed in
+NAPI_PACKAGES`.
+
+### What landed
+
+* **`scripts/check-napi-coverage.mjs`** (~220 LOC, ESM, zero external
+  deps). Recognizes both publish paths:
+  * **Path 1 — `NAPI_PACKAGES` allowlist** (build-from-source via
+    `lib/napi-config.sh`).
+  * **Path 2 — republish via codemod rename** (crate has
+    `package.json` + pre-built `.node` binaries in
+    `npm/<platform>/`; `copy-source.sh` + `codemod.mjs` rename
+    `@ruvector/*` → `@sparkleideas/ruvector-*`; publish ships them).
+  * **No package.json → skip** (Rust-only workspace member; not an
+    npm consumer).
+* **`tests/unit/adr0189-napi-coverage.test.mjs`** — 8 unit tests
+  covering: covered case, uncovered case, `workspace.dependencies`
+  ignored, `target.cfg(...)` flagged, no-package.json skipped, Path
+  2 republish covered, Path 2 incomplete (package.json without
+  pre-built binaries) flagged, and script-exists smoke check. All 8
+  pass (`node --test` 213ms). Full unit suite stays green:
+  3947 pass / 0 fail / 6 skipped.
+* **Wired into `scripts/ruflo-publish.sh`** as the
+  `napi-coverage` phase, slotted between `merge-detect` and
+  `napi-rebuild`. Fails loud (`run_phase` exits the pipeline)
+  before any version bump pollutes fork main.
+
+### Triage outcome — the 11 first-run gaps
+
+Closed under user policy "always @sparkleideas" + the corrected
+detector:
+
+* **3 republish-eligible** (`ruvector-attention-node`,
+  `ruvector-gnn-node`, `ruvector-graph-transformer-node`) →
+  recognized by Path 2; not gaps after the script fix. Already
+  publishing as `@sparkleideas/ruvector-{attention,gnn,graph-transformer}`
+  on Verdaccio.
+* **2 added to `NAPI_PACKAGES`** (`ruvector-solver-node`,
+  `agentic-robotics-node`) → now build from source via Path 1.
+  Entries added to `lib/napi-config.sh` as
+  `FORK_DIR_RUVECTOR:crates/<name>:crates/<name>` (single-binary
+  pattern, same as `agentic-jujutsu`).
+* **6 no-package.json crates** (`ruvector-attention`,
+  `ruvector-gnn`, `ruvector-diskann-node`,
+  `ruvector-mincut-node`, `examples/exo-ai-2025/crates/exo-node`,
+  `agentic-flow/packages/agent-booster/crates/agent-booster-native`)
+  → skipped by the script's "no package.json → Rust-only library"
+  rule. Audited as legitimate workspace members consumed via path
+  dependency by other crates; not standalone npm packages.
+
+After fix: `node scripts/check-napi-coverage.mjs` reports
+`OK: 19 NAPI crates, all listed in NAPI_PACKAGES`, exit 0.
+
+### Background details preserved below
+
+The original "Considered Options" + "Consequences" sections are
+kept for traceability of the alternatives.
 
 * **Detector landed**: `scripts/check-napi-coverage.mjs` (178 lines,
   ESM, zero external deps) — parses `lib/napi-config.sh`

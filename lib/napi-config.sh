@@ -28,6 +28,11 @@ NAPI_PACKAGES=(
   "FORK_DIR_RUVECTOR:examples/ruvLLM:npm/packages/ruvllm"
   "FORK_DIR_RUVECTOR:crates/rvf/rvf-node:npm/packages/rvf-node"
 
+  # ── ruvector (added 2026-05-18 per ADR-0189 + user policy "always @sparkleideas") ──
+  # Single-binary packages: crate IS the npm publish dir, no separate dest.
+  "FORK_DIR_RUVECTOR:crates/ruvector-solver-node:crates/ruvector-solver-node"
+  "FORK_DIR_RUVECTOR:crates/agentic-robotics-node:crates/agentic-robotics-node"
+
   # ── agentic-jujutsu (ADR-0150) ──
   # Single-binary package: crate IS the npm publish dir, dest_npm_dir == crate_path.
   "FORK_DIR_AGENTIC:packages/agentic-jujutsu:packages/agentic-jujutsu"

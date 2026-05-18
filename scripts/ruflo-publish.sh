@@ -400,6 +400,16 @@ main() {
     return 0
   fi
 
+  # ADR-0189: fail-loud NAPI coverage gate. Catches the case where a new
+  # NAPI-consumer crate appears upstream but isn't in NAPI_PACKAGES (Path 1
+  # build-from-source) or republish-eligible (Path 2: package.json +
+  # pre-built .node in npm/<platform>/) — would otherwise silently drop at
+  # publish time (ADR-0082-style hazard). Runs after merge-detect (no point
+  # checking if we're skipping) and before napi-rebuild + bump-versions
+  # (so a coverage gap doesn't pollute fork main with version bumps for
+  # crates that won't ship).
+  run_phase "napi-coverage" node "${SCRIPT_DIR}/check-napi-coverage.mjs"
+
   # ADR-0133/0150: Detect Rust source changes across all napi-shipping forks
   # (ruvector + agentic-flow per lib/napi-config.sh) and rebuild .node binaries
   # before bump-versions, so the rebuilt binaries land on fork main and ship

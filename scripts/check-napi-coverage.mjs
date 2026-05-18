@@ -176,6 +176,37 @@ function isNapiConsumer(cargoTomlPath) {
   return false;
 }
 
+// ─── Path 2 coverage: republish via codemod rename ─────────────────────────
+//
+// A crate is covered by the republish path if it has its own `package.json`
+// AND ships pre-built `.node` binaries in `npm/<platform>/` subdirs. Our
+// pipeline `copy-source.sh` + `scripts/codemod.mjs` rename `@ruvector/*` →
+// `@sparkleideas/ruvector-*` in every package.json and `publish-verdaccio.sh`
+// ships them. So a republish-eligible crate doesn't need to be in
+// `NAPI_PACKAGES` (the build-from-source allowlist) — it's already covered.
+function isCoveredByRepublish(crateDir) {
+  if (!existsSync(join(crateDir, 'package.json'))) return false;
+  const npmDir = join(crateDir, 'npm');
+  if (!existsSync(npmDir)) return false;
+  let platforms;
+  try {
+    platforms = readdirSync(npmDir, { withFileTypes: true });
+  } catch {
+    return false;
+  }
+  for (const p of platforms) {
+    if (!p.isDirectory()) continue;
+    let files;
+    try {
+      files = readdirSync(join(npmDir, p.name));
+    } catch {
+      continue;
+    }
+    if (files.some(f => f.endsWith('.node'))) return true;
+  }
+  return false;
+}
+
 // ─── Main ─────────────────────────────────────────────────────────────────
 function main() {
   const allowed = loadAllowlist();
@@ -201,17 +232,30 @@ function main() {
         forkDir: fork.dir,
         relCratePath,
         cargoToml,
+        crateDir,
       });
     }
   }
 
-  // Cross-check.
+  // Cross-check against both publish paths.
   const unlisted = [];
   for (const c of consumers) {
+    // Path 1: explicit NAPI_PACKAGES allowlist (build-from-source).
     const allowedForFork = allowed.get(c.forkVar) || new Set();
-    if (!allowedForFork.has(c.relCratePath)) {
-      unlisted.push(c);
-    }
+    if (allowedForFork.has(c.relCratePath)) continue;
+
+    // No package.json → Rust-only library (workspace member, internal dep).
+    // Not an npm consumer; cannot be silently-dropped at publish time
+    // because it never had a publish path to begin with.
+    if (!existsSync(join(c.crateDir, 'package.json'))) continue;
+
+    // Path 2: republish via codemod rename. Crate has package.json AND
+    // pre-built `.node` binaries in `npm/<platform>/` — codemod renames
+    // `@ruvector/*` → `@sparkleideas/ruvector-*` and `publish-verdaccio.sh`
+    // ships them. No build-from-source needed.
+    if (isCoveredByRepublish(c.crateDir)) continue;
+
+    unlisted.push(c);
   }
 
   if (unlisted.length > 0) {
