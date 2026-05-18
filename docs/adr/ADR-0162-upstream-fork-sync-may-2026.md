@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-09
+implemented: 2026-05-18
 methodology: [SPARC, MADR, runbook]
 decision-makers: [Henrik Pettersen]
 tags: [upstream-sync, forks, daemon, security, ruflo, agentic-flow, ruvector, v2-archive, runbook]
@@ -1067,6 +1068,48 @@ Evidence (citations only — full commit list available via `git log
 Because batches G/H/I/J are unverified and the tracker was not updated,
 this ADR is not closed. Reconciled as part of the 2026-05-18 status
 audit.
+
+### Close-out (2026-05-18)
+
+**Status flipped to `implemented`.** v1's authoritative scope —
+landed batches A/B/C+D/E/F/K — fully verified via ADR-0186's
+trailer-match audit:
+
+* **A** (daemon): 7/7 PICK pending entries audit-confirmed as
+  hand-ported on `forks/ruflo/main` (cherry-pick equivalents:
+  `a31cf95b9`, `a8ede7ef1`, `7d6a2cc65` + `0d4219518`, `8e19a6c0f`,
+  `cecfe8a88`, `64556ceb9`, `ea86b505c`). See ADR-0186 §"Decisions
+  gate" + INTEGRATION-LEDGER.md for per-SHA evidence.
+* **B** (security): 11/11 PICK pending audit-confirmed via explicit
+  cherry-pick trailers on main (`f9655cc91`, `bbf9a0bcb`,
+  `a71b0558f`, `4b3373663`, `6329aedf6`, `52dc4acca`, `dc2a22958`,
+  `f639ba526`, `849ca9560`, `fe0066437`, `58002b702`).
+* **C+D** (memory + ADR features): 27/27 trailer-matched (plus
+  bundled hand-port `f81630ba4` covering picks #8/#9/#10; 1 audit
+  holdout `779eb309b` confirmed SKIP — fork witness manifest
+  supersedes).
+* **E** (hive-mind / swarm / MCP): closed via ADR-0184 + ADR-0185
+  (consensus handler ported to forks/agentdb, cli handler retired).
+* **F** (CLI / doctor / init): F-2 cli-core split landed via
+  `1f4d13097` + `d9275844b`; F-1 6/11 sampled hand-ported, 5
+  post-v1-snapshot picks executed during ADR-0186 close-out
+  (`d06459717`, `7c5f0d61f`, `0f44bbe19`, `d062dc096`, `745e6a90e`),
+  plus federation `19a569b1a`→`c4175be73`.
+* **K** (plugin contracts): `aea151567` cost-tracker rebrand
+  hand-port; G's plugin contract bundle superseded-by-local (v0.2.17
+  vs upstream v0.2.0).
+
+**Release pipeline GREEN** (2026-05-18T20:36Z run): 681 pass / 0 fail
+on full acceptance; published `@sparkleideas/cli@3.7.0-alpha.10-patch.208`
+to Verdaccio; pushed deferred version bumps to all 4 forks.
+
+**ADR-0094 living-tracker criterion MET** (2026-05-18T18:07Z anchor):
+3 consecutive green runs with required ≥2h spacing, newest run
+`accept-2026-05-18T180744Z` (681 pass / 0 fail). Status: MET per
+release log.
+
+ADR-0186 inherits the unlanded (G/H/I/J + 5 follow-up audits) scope;
+v1 closes here.
 
 ### Amendment: ADR-0186 takes over unlanded work (2026-05-18) — v1 retains authority for landed batches
 

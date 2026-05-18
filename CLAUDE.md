@@ -187,6 +187,39 @@ release
 4. Run `npm run release` for full verification (build + publish + acceptance). NEVER run `npm run build` separately — it's forbidden. See "Build & Test — TWO COMMANDS, NOTHING ELSE" above.
 5. Commit ruflo-patch changes
 
+## Upstream Integration Ledger — ALWAYS UPDATE
+
+Every time you integrate an upstream `ruvnet/*` commit into any of our
+forks, you MUST append a row to `docs/upstream/INTEGRATION-LEDGER.md`
+in the same commit or PR. **No exceptions, no deferrals.**
+
+This applies to:
+
+- **Cherry-picks** — use `git cherry-pick -x <SHA>` so the trailer
+  `(cherry picked from commit <SHA>)` is preserved. The audit tooling
+  reads these trailers.
+- **Hand-ports** — any time the upstream content is applied via a
+  differently-shaped commit (e.g. retargeted to a different fork,
+  manually rewritten because the surrounding code changed).
+- **SKIP decisions** — explicit `skip-by-policy` (e.g. ADR-0088
+  spawn-only locks out spawn↔fork churn), `skip-mechanical` (NAPI
+  binary regens, lockfile-only churn), `superseded-by-local`,
+  `superseded-by-adr`.
+- **Retargets** — when upstream emits in fork A but we apply in fork B
+  (e.g. agentic-flow → forks/agentdb post-ADR-0161).
+
+Schema, disposition vocabulary, and audit guidance live in
+`docs/upstream/INTEGRATION-LEDGER.md`'s header. Reference the
+authorizing ADR in the `ADR` column.
+
+Why: ADR-0186's audit cost demonstrates the price of skipping this —
+~150 upstream commits had to be re-audited from scratch because no
+running record existed; 80+ "PICK (pending)" items in the v1 sync
+plan turned out to be already hand-ported via cherry-pick trailers but
+required per-SHA `git log --grep` walks to surface. A row at
+integration time costs seconds; reconstructing dispositions later
+costs hours.
+
 ## Security Rules
 
 - NEVER hardcode API keys, secrets, or credentials in source files
