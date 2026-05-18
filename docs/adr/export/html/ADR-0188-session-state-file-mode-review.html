@@ -1,0 +1,646 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0188-session-state-file-mode-review</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <hr>
+<h2 id="status-implementeddate-2026-05-18implemented-2026-05-18methodology-madrdecision-makers-henrik-pettersentags-security-file-permissions-session-staterelated-0082-0162-0186audience-ai-executor">status: implemented
+date: 2026-05-18
+implemented: 2026-05-18
+methodology: [MADR]
+decision-makers: [Henrik Pettersen]
+tags: [security, file-permissions, session-state]
+related: [0082, 0162, 0186]
+audience: ai-executor</h2>
+<h1 id="adr-0188-session-state-file-mode--should-15-raw-writefilesync-callsites-adopt-0600">ADR-0188: Session-state file mode — should ~15 raw <code>writeFileSync</code> callsites adopt 0600?</h1>
+<h2 id="context-and-problem-statement">Context and Problem Statement</h2>
+<p>ADR-0186&#39;s &quot;DB-write file-mode audit&quot; (originally ADR-0162 follow-up
+#2) verified that <strong>credential / sensitive</strong> write sites already
+discipline to 0600:</p>
+<ul>
+<li><code>writeFileRestricted</code> (in <code>v3/@claude-flow/cli/src/fs-secure.ts</code>)
+is the canonical 0600 writer.</li>
+<li>Used at <code>mcp-tools/terminal-tools.ts:76</code> (terminal sessions).</li>
+<li>Used at <code>mcp-tools/session-tools.ts:186</code> (session vault).</li>
+<li><code>memory-router.ts:830</code> calls <code>fs.chmodSync(databasePath, 0o600)</code>
+on the memory.db file.</li>
+</ul>
+<p>The audit also found <strong>~15 raw <code>fs.writeFileSync</code> callsites that
+write session-state JSON without explicit mode</strong> (will inherit the
+process umask, typically 0644 on macOS / 0644 on Linux):</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Lines</th>
+<th>Content written</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>v3/@claude-flow/cli/src/init/helpers-generator.ts</code></td>
+<td>99, 113, 131, 167, 180, 1154, 1166, 1181, others</td>
+<td>SESSION_FILE JSON (user-prompt session state)</td>
+</tr>
+<tr>
+<td><code>v3/@claude-flow/cli/src/commands/hive-mind-session.ts</code></td>
+<td>413</td>
+<td>compressed session blob to tmpPath</td>
+</tr>
+<tr>
+<td><code>v3/@claude-flow/cli/src/commands/session.ts</code></td>
+<td>590</td>
+<td>session content <code>utf-8</code></td>
+</tr>
+</tbody></table>
+<p>These files contain <strong>session state</strong>, which can include user
+prompts, AI responses, and intermediate tool inputs/outputs. They are
+not credentials in the same equivalence class as bearer tokens or
+keys, but they are non-public material.</p>
+<p><strong>Question</strong>: should these callsites adopt 0600 (treating session
+content as sensitive) via <code>writeFileRestricted</code>, or stay at 0644 (the
+inherited umask default, treating session JSON as project-local
+ephemeral state)?</p>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<ul>
+<li><strong>Threat model.</strong> A multi-tenant machine where the session JSON is
+in a project directory readable by other local users would expose
+user prompts. On single-user dev machines this is moot. CI hosts
+vary.</li>
+<li><strong>Defense-in-depth philosophy.</strong> ADR-0082 disallows silent failure;
+the spirit of &quot;fail loud&quot; extends to &quot;don&#39;t leak silently either.&quot;
+Defaulting to 0600 for content that <em>might</em> contain sensitive
+material is conservative.</li>
+<li><strong>Refactor surface area.</strong> ~15 callsites across 3 files. Mechanical
+change but not zero — every conversion needs the import of
+<code>writeFileRestricted</code>, possibly options-block conversion if the
+existing call uses the <code>encoding</code> argument.</li>
+<li><strong>API ergonomics.</strong> <code>writeFileRestricted</code> already supports the
+signatures these callsites use: plaintext, with-encoding,
+with-options-object. Conversion is grep-and-replace plus import.</li>
+<li><strong>No outstanding incident report.</strong> No user has complained about
+session JSON exposure; this is preventive hardening.</li>
+</ul>
+<h2 id="considered-options">Considered Options</h2>
+<ol>
+<li><strong>Convert all to <code>writeFileRestricted</code>.</strong> Mechanical refactor of
+~15 callsites; ship in one commit. Treats session JSON as
+sensitive at-rest. Highest defense; small refactor cost.</li>
+<li><strong>Keep 0644 as design intent.</strong> Document that session JSON is
+ephemeral project-local state, not sensitive. No code change.
+Lowest defense; zero cost.</li>
+<li><strong>Convert only <code>helpers-generator.ts</code> session writes (the bulk).</strong>
+12+ SESSION_FILE callsites → <code>writeFileRestricted</code>. Leave
+<code>hive-mind-session.ts</code> and <code>session.ts</code> at 0644 (these write
+transient/compressed state that&#39;s less likely to contain user
+prompts).</li>
+<li><strong>Add a <code>writeFileRestricted</code> lint rule</strong> that flags any new
+<code>fs.writeFileSync</code> callsite without mode. Doesn&#39;t fix the
+existing ~15; prevents new ones.</li>
+</ol>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<p><strong>Option 2 — keep 0644 as design intent.</strong> Session-state JSON and
+compressed session archives are project-local ephemeral material:
+session snapshots, agent prompts, tool inputs/outputs scoped to the
+working project directory. They are not credential equivalent (no
+bearer tokens, no API keys), they&#39;re already inside a directory the
+user controls, and on the single-user dev-machine deployment mode
+(per project&#39;s user_machine memory) there is no second user to
+protect against. The threat model that motivates 0600 — multi-tenant
+host with co-located unprivileged readers — is not the project&#39;s
+supported posture.</p>
+<p><strong>Implementation</strong>: one doc note in <code>fs-secure.ts</code> recording the
+boundary so a future security audit finds the rationale next to the
+code, not only in this ADR. Fork commit <code>5be65f3bf</code> on
+<code>forks/ruflo/main</code> (2026-05-18).</p>
+<p>The credential-equivalence-class writes already use
+<code>writeFileRestricted</code>:</p>
+<ul>
+<li><code>mcp-tools/terminal-tools.ts</code> — terminal session vault</li>
+<li><code>mcp-tools/session-tools.ts</code> — MCP session vault</li>
+<li><code>memory-router.ts:830</code> — <code>chmod 0o600</code> on <code>memory.db</code></li>
+</ul>
+<p>Everything else stays at the inherited umask.</p>
+<h3 id="history--option-1-was-attempted-and-reverted">History — Option 1 was attempted and reverted</h3>
+<p>A first pass implemented Option 1 (fork commit <code>5228ffc445</code> on
+2026-05-18) converting two real TS-level callsites to
+<code>writeFileRestricted</code> and surfacing that the 12+ &quot;callsites&quot; in
+<code>init/helpers-generator.ts</code> were actually inside template literals
+emitted as generated CommonJS — making conversion structurally
+unsound for that file. After the surface area was clarified, Option 2
+was chosen instead: commit <code>5228ffc445</code> was reverted via
+<code>634747deb</code>, and the doc-note landed via <code>5be65f3bf</code>. The
+helpers-generator gap dissolves under Option 2 because there is
+nothing to convert there either.</p>
+<h2 id="consequences">Consequences</h2>
+<p><strong>If Option 1 (convert all)</strong>:</p>
+<ul>
+<li>Single PR, ~15 callsite edits + 3 file imports.</li>
+<li>Lower regression risk than expected: <code>writeFileRestricted</code> already
+preserves the existing call signatures.</li>
+<li>All session-state writes uniformly at 0600 — defense-in-depth
+consistent with credential vault writes.</li>
+</ul>
+<p><strong>If Option 2 (keep 0644)</strong>:</p>
+<ul>
+<li>No code change; one-paragraph doc note in <code>fs-secure.ts</code> explaining
+why session JSON is NOT a <code>writeFileRestricted</code> consumer.</li>
+<li>Risk: future security audit re-encounters the same finding without
+the rationale captured in code.</li>
+</ul>
+<p><strong>If Option 3 (partial conversion)</strong>:</p>
+<ul>
+<li>Compromise position; introduces a soft boundary between &quot;session
+state&quot; callsites that need 0600 and ones that don&#39;t. The boundary
+has to be re-justified every time someone adds a new write site.</li>
+</ul>
+<p><strong>If Option 4 (lint rule)</strong>:</p>
+<ul>
+<li>Future-proofs without fixing the existing surface.</li>
+<li>Adds a tooling dependency (eslint plugin or custom rule); maintenance
+cost.</li>
+</ul>
+<p>This ADR closes when Option 1/2/3/4 is chosen.</p>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

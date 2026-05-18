@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0161-consolidate-agentdb-onto-fifth-fork</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <hr>
+<h2 id="status-implementeddate-2026-05-08closed-on-2026-05-08methodology-sparc-madrdecision-makers-henrik-pettersentags-agentdb-lift-and-shift-mcp-tool-prefix-plugin-adoption-agentdb-onnx-vendored-decommissionsupersedes-0160related-0078-0094-0143-0147-0148-0150-0157">status: implemented
+date: 2026-05-08
+closed-on: 2026-05-08
+methodology: [SPARC, MADR]
+decision-makers: [Henrik Pettersen]
+tags: [agentdb, lift-and-shift, mcp-tool-prefix, plugin-adoption, agentdb-onnx, vendored-decommission]
+supersedes: 0160
+related: [0078, 0094, 0143, 0147, 0148, 0150, 0157]</h2>
+<h1 id="adr-0161-lift-and-shift-agentdb-to-forksagentdb-decommission-vendored-copy">ADR-0161: Lift-and-shift agentdb to <code>forks/agentdb</code>; decommission vendored copy</h1>
+<h2 id="context-and-problem-statement">Context and Problem Statement</h2>
+<!-- SPARC: S — Specification -->
+
+<p>ruvnet extracted agentdb into a standalone repo at <a href="https://github.com/ruvnet/agentdb">https://github.com/ruvnet/agentdb</a> on 2026-05-06 (init <code>8b3388b</code> + 6 cleanup commits, <strong>7 total</strong>). The extraction is a clean lift-and-shift from <code>agentic-flow/packages/agentdb/</code>. ADR-0160 mirrored it as <code>forks/agentdb</code>; this ADR supersedes ADR-0160&#39;s &quot;observation-only&quot; framing with the actual migration.</p>
+<p><code>diff -rq forks/agentic-flow/packages/agentdb/src forks/agentdb/src</code> (verified 2026-05-08):</p>
+<table>
+<thead>
+<tr>
+<th>Category</th>
+<th align="right">Count</th>
+<th>Examples</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>.ts files differing</td>
+<td align="right"><strong>59</strong></td>
+<td><code>backends/detector.ts</code> (1-line type-cast removal), <code>controllers/CausalMemoryGraph.ts</code>, <code>cli/agentdb-cli.ts</code></td>
+</tr>
+<tr>
+<td>Fork-only files</td>
+<td align="right"><strong>~10</strong></td>
+<td><code>GuardedVectorBackend.ts</code>, <code>HierarchicalMemory.ts</code>, <code>MemoryConsolidation.ts</code>, <code>QUIC*.ts</code>, <code>StreamingEmbeddingService.ts</code>, <code>src/config/</code>, <code>src/consensus/</code></td>
+</tr>
+<tr>
+<td>Upstream-only (net-new)</td>
+<td align="right"><strong>~10</strong></td>
+<td><code>MincutService.ts</code>, <code>SparsificationService.ts</code>, <code>controllers/attention/*</code>, <code>cli/lib/history-tracker.ts</code>, <code>cli/lib/report-store.ts</code></td>
+</tr>
+</tbody></table>
+<p>Sample diff (<code>detector.ts</code>): <code>(core as any).isNative?.()</code> → <code>core.isNative?.()</code> — one of the 14 trivial files. <strong>The 12 large-diff files are NOT at this scale</strong>: <code>controllers/AttentionService.ts</code> has a 1,503-line diff because upstream refactored it (split into <code>controllers/attention/*</code> + new <code>services/AttentionService.ts</code>); <code>RuVectorBackend.ts</code> has 664 lines because upstream added <code>RuVectorLearning</code>/<code>getEmbeddingConfig</code>/<code>deriveHNSWParams</code>. <strong>The lift is real but the per-file work is non-uniform.</strong></p>
+<p><strong>Commit-replay validation (2026-05-08)</strong>: 191 raw fork-only commits in <code>packages/agentdb</code> (post <code>git fetch upstream</code>), 117 noise (109 <code>chore: bump versions to</code>, 4 <code>chore(publish): version bumps</code>, 2 <code>fork-version</code>, 1 <code>chore(preflight)</code>, 1 <code>chore(agentdb): Bump version</code>), <strong>74 substantive</strong> + 1 unique in <code>packages/agentdb-onnx</code> (<code>c702aa6</code>) + 0 unique in shim = <strong>75 total substantive commits</strong>. BUT <code>git apply --check</code> (forward, reverse, <code>--3way</code>) fails on 8/8 sample Feb 2026 commits — patches won&#39;t replay even with 3-way auto-merge. Conceptual changes ARE in <code>forks/agentdb</code> (alpha.13 base contains them); patches don&#39;t replay because alpha-version context shifted. Therefore: <strong>the unit of migration work is the file (59 differing + ~10 fork-only ≈ 69 file-level decisions), NOT the commit</strong>. Cognitive workload concentrates on <strong>ADR-0069 (12 commits), ADR-0052 (8), ADR-0090 (5)</strong>, plus ADR-0076 dual-instance, ADR-0078 bridge-elim, ADR-0094 R-series, ADR-0147 R6.</p>
+<p>Out-of-source concerns folded in: MCP tool prefix (<code>mcp__agentic-flow__agentdb_*</code> → <code>mcp__agentdb__*</code>), 6 upstream plugins at <code>forks/agentdb/plugins/agentdb-{core,memory,search,graph,learning,causal}/</code>, <code>agentdb-onnx</code> sibling (2,039 LoC, 1 external consumer), and Rust adapter at <code>forks/ruvector/crates/rvf/rvf-adapters/agentdb/</code> (1,132 LoC).</p>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<ul>
+<li><strong>File-level three-way merge, not patch replay.</strong> Validated empirically 2026-05-08: of 75 substantive fork-only commits, 8/8 Feb 2026 sample fail forward/reverse/3-way <code>git apply --check</code>. The migration unit is the file (59 differing + ~10 fork-only ≈ 69 decisions), not the commit. Cherry-pick replay was the original ADR mechanic; replaced with three-way merge between upstream alpha.10 base, our fork-side version, and <code>forks/agentdb</code> alpha.14.</li>
+<li><strong>Preserve provenance via per-ADR commits.</strong> Per <code>feedback-no-history-squash</code>, multiple agents flagged &quot;one commit covering all 59 files&quot; as squash-pattern. Use one commit per ADR cluster (ADR-0069, ADR-0052, ADR-0090, etc.) so reverts target the right scope.</li>
+<li><strong>Default to WIRE.</strong> Per <code>feedback-no-value-judgements-on-features</code>. Adopt all 6 upstream plugins; preserve all fork-only files; lift onnx to its natural home.</li>
+<li><strong>User direction 2026-05-08</strong>: no phase-blocking gates; no rollback; no HM consideration; no upstream re-base; tests asserting old MCP prefix updated to assert new (intent preserved per <code>feedback-no-squelch-tests</code>).</li>
+</ul>
+<h2 id="considered-options">Considered Options</h2>
+<!-- SPARC: P — Pseudocode -->
+
+<ol>
+<li><strong>Stay observation-only</strong> (ADR-0160&#39;s original framing). Defeats consolidation; sources diverge further every release.</li>
+<li><strong>Lift-and-shift</strong> (RECOMMENDED). Copy fork-only files; reconcile 59 diffs inline; lift onnx; codemod Pass 7; adopt plugins; decommission vendored.</li>
+<li><strong>Drop fork patches; consume public npm <code>agentdb</code> directly.</strong> Silently loses ~10 fork-only files. Violates <code>feedback-data-loss-zero-tolerance</code>.</li>
+</ol>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<!-- SPARC: A — Architecture -->
+
+<p><strong>Chosen: Option 2.</strong> Single execution checklist; no rigid phase ordering between independent steps.</p>
+<h3 id="execution-checklist">Execution checklist</h3>
+<ol>
+<li><strong>Lift fork-only files</strong> from <code>forks/agentic-flow/packages/agentdb/src/</code> into <code>forks/agentdb/src/</code>. One commit covering all of them with the source SHA in the message. <strong>Done as commit <code>d7ca0f6</code> on <code>forks/agentdb</code> main: 20 files / 8,262 insertions, source SHA <code>75b6e041</code>.</strong> Follow-up commit needed: per Agent 02, <code>QUICConnection.ts</code>, <code>QUICConnectionPool.ts</code>, <code>QUICStreamManager.ts</code>, and <code>RaftConsensus.ts</code> have NO ADR linkage in either ADR namespace, are not imported anywhere, and the CHANGELOG explicitly removed QUIC from advertised features. Add <code>// TODO: ADR required before activation — ADR-0161 lift, no production wiring</code> as a top-of-file comment to each, so accidental wiring surfaces in code review.</li>
+<li><strong>Reconcile the 59 differing files via file-level three-way merge</strong> (NOT cherry-pick replay). The unit of work is the <em>file</em>, not the commit. Empirical validation 2026-05-08: 75 substantive <code>packages/agentdb</code> commits exist, but <code>git apply --check</code> (forward, reverse, AND <code>--3way</code>) all fail on a Feb 2026 sample (8/8 HARD_CONFLICT). The conceptual <em>changes</em> from those commits ARE present in <code>forks/agentdb</code>&#39;s alpha.13 base; the <em>patches</em> won&#39;t replay because surrounding-line context shifted across alpha versions. So the mechanic is: for each of the 59 files, three-way merge between (a) the upstream alpha.10 base, (b) our fork-side version in <code>forks/agentic-flow/packages/agentdb/</code>, (c) the alpha.14 version in <code>forks/agentdb/</code>. Outcome: a <code>forks/agentdb/src/&lt;f&gt;</code> that preserves both upstream&#39;s alpha.11–14 evolution AND our ADR-driven fork patches (ADR-0056, ADR-0061, ADR-0069 H6/A2/A1, ADR-0076 dual-instance, ADR-0078, ADR-0090 B5, ADR-0094 R-series, ADR-0147 R6). <strong>Per-ADR-cluster commits</strong> (NOT one bulk commit) — preserves provenance per <code>feedback-no-history-squash</code>. Diff distribution: 14 files ≤5 lines (mechanical), 19 files 6-20 lines, 14 files 21-100 lines, <strong>12 files 100+ lines</strong> (highest risk; biggest is <code>controllers/AttentionService.ts</code> at 1,503 lines — upstream split it into <code>controllers/attention/{Cache,Config,Core,Helpers,Metrics,WASM}.ts</code> + new <code>services/AttentionService.ts</code>, plus <code>MincutService.ts</code>, <code>SparsificationService.ts</code> — mechanical &quot;apply ours&quot; would silently destroy this refactor).</li>
+<li><strong>Lift <code>agentdb-onnx</code></strong> (four concrete fixes per Agent 05&#39;s audit):<ul>
+<li><code>cp -r forks/agentic-flow/packages/agentdb-onnx forks/agentdb/packages/agentdb-onnx</code>.</li>
+<li>Update <code>agentdb</code> entry in <strong><code>dependencies</code></strong> (NOT <code>peerDependencies</code> — the prior ADR wording was wrong) → <code>@sparkleideas/agentdb</code>.</li>
+<li>Rewrite <code>ONNXEmbeddingService.ts:18</code> workspace-relative source import (<code>../../../agentdb/src/config/embedding-config.js</code>) to import from <code>@sparkleideas/agentdb</code> (the embedding-config public surface).</li>
+<li>Add <code>&quot;workspaces&quot;: [&quot;packages/*&quot;]</code> to <code>forks/agentdb/package.json</code> so the relocated sub-package builds as part of the fork&#39;s workspace; otherwise <code>npm install</code> and tsc must be run per-package.</li>
+</ul>
+</li>
+<li><strong>Build + test</strong> <code>forks/agentdb</code> (including agentdb-onnx). Zero failures.</li>
+<li><strong>Bump versions</strong> to <code>3.0.0-alpha.14-patch.1</code>. Publish both packages to <strong>Verdaccio</strong> (<code>localhost:4873</code> per <code>reference-verdaccio</code> — single-developer canonical registry; no public-npm path).</li>
+<li><strong>Codemod Pass 8</strong> (NOT Pass 7 — <code>codemod.mjs:321-353</code> already defines Pass 7 as <code>@sparkleideas/cli → @sparkleideas/ruflo</code> per ADR-0143). Add Pass 8 to <code>ruflo-patch/scripts/codemod.mjs</code>: rewrite <code>mcp__agentic-flow__agentdb_&lt;tool&gt;</code> → <code>mcp__agentdb__&lt;tool&gt;</code> across <code>.md</code>, <code>.json</code>, <code>.sh</code>, <code>.ts</code>, <code>.mjs</code>, <code>.cjs</code>. Runs after Pass 7. Per Agent 06&#39;s audit, actual reference count is 23 (not 83) and ALL are in <code>*.md</code> documentation — zero in production code — so this is essentially a doc rewrite. Unit-tested at <code>tests/unit/adr0161-codemod-pass8.test.mjs</code> (idempotency + extension scoping + non-matching prefix safety).</li>
+<li><strong>Bump <code>forks/ruflo</code>&#39;s <code>agentdb</code> dep</strong> to <code>3.0.0-alpha.14-patch.1</code>.</li>
+<li><strong>Update <code>forks/agentic-flow</code></strong> consumer dep on <code>@sparkleideas/agentdb-onnx</code> (was workspace-relative; now declared as normal npm dep). <strong>Plus</strong>: rewrite the dynamic-import string at <code>agentic-flow/src/services/agentdb-service.ts:572</code> from <code>&#39;../../../packages/agentdb-onnx/src/services/ONNXEmbeddingService.js&#39;</code> to <code>&#39;@sparkleideas/agentdb-onnx&#39;</code>. Same file line 6 imports <code>embedding-config</code> from <code>packages/agentdb/</code> — switch to <code>@sparkleideas/agentdb</code>.</li>
+<li><strong>Sanity-check Rust adapter</strong> at <code>forks/ruvector/crates/rvf/rvf-adapters/agentdb/</code> (NOT a gate). Per Agent 04&#39;s empirical audit: the adapter has <strong>zero TS bindings</strong> — <code>Cargo.toml</code> only declares <code>rvf-runtime</code>, <code>rvf-types</code>, <code>rvf-index</code> as deps; no NAPI/FFI/wasm-bindgen/Node bindings. The 19 <code>agentdb</code> references in source are all doc-comments + test-fixture filenames. The adapter is a scaffold for a <em>future</em> RVF-native agentdb backend (per agentdb&#39;s own ADR-003), not a current consumer. The earlier ADR framing as &quot;compatibility hazard&quot; was a category error. Run <code>cargo test -p rvf-adapter-agentdb</code> as a sanity check; expected green pre/post; <strong>0 LoC fix expected</strong>.</li>
+<li><strong>Adopt 6 upstream plugins</strong> via existing plugin-install workflow. Rename ours with <code>ruflo-</code> prefix ONLY on observed name collision. No pre-emptive renaming.</li>
+<li><strong>Flip <code>ruflo-patch</code> config + extend pipeline for 5th fork</strong>: <code>package-map.json:77</code> upstream pointer → <code>ruvnet/agentdb</code>; <code>published-versions.json</code> updates; <code>package-checksums.json</code> regen. <strong>Plus</strong> (per Agent 08&#39;s pipeline audit — ~10 hidden 4-fork-hardcoded sites): add agentdb entry to <code>config/upstream-branches.json</code>; extend <code>lib/fork-paths.sh:50-51,77-82</code> (<code>SHORT</code> map + <code>_FORK_HEAD_PREFIX</code>); declare <code>NEW_AGENTDB_HEAD</code> / <code>UPSTREAM_AGENTDB_SHA</code> in <code>lib/pipeline-state.sh:13-25</code>; add 5th rsync block + status loop to <code>scripts/copy-source.sh:87,120-128,131,147</code>; add <code>agentdb_head</code> field in <code>scripts/ruflo-publish.sh:341-343</code> + <code>lib/pipeline-helpers.sh:43-55</code>; bump 5→6 IFS fields in <code>scripts/ruflo-sync.sh:340-351</code>. Codemod&#39;s existing <code>UNSCOPED_MAP</code> already covers the rename; no codemod change for the lift itself (Pass 8 adds the MCP-prefix rewrite per step 6).</li>
+<li><strong>Acceptance suite + init-project smoke</strong>. Zero regressions per <code>feedback-fix-all-tests</code>. Project is single-developer Verdaccio-only — no public-npm gate.</li>
+<li><strong>Delete vendored</strong>: <code>rm -rf forks/agentic-flow/packages/agentdb/</code> and <code>packages/agentdb-onnx/</code>. Update workspace manifest. <strong>Shim cleanup</strong>: in <code>forks/agentic-flow/agentic-flow/src/agentdb/</code> (the &quot;Now proxies to agentdb npm package&quot; backwards-compat shim) — if any internal consumer still imports from it, simplify to match alpha.14 export shape; if nothing internal still imports it, delete entirely. Final manifest sweep on <code>mcp-surface-manifest.json</code> (only <code>mcp__agentdb__*</code> remains). Final regression. (Recovery from this step is <code>git revert</code> + republish to Verdaccio — no immutable public artifact to deal with.)</li>
+<li><strong>Supersede ADR-0160</strong>: status <code>proposed</code> → <code>superseded by 0161</code>; append <code>### Implementation log</code> to ADR-0160. Update memory entries <code>project-agentdb-parallel-extraction.md</code> (parallel state ENDED) and <code>reference-fork-workflow.md</code> (5 forks).</li>
+</ol>
+<h3 id="explicit-non-goals">Explicit non-goals</h3>
+<p><code>@ruvector/graph-transformer</code> upgrade; public npm <code>agentdb</code> keyword squatting (codemod Pass 2 is the defense); <code>forks/ruv-FANN</code> agentdb skill markdown; HM consideration (per user direction); upstream re-base; rollback plan.</p>
+<!-- SPARC: R — Refinement -->
+
+<h3 id="consequences">Consequences</h3>
+<ul>
+<li><strong>Good</strong> — single canonical agentdb source, MCP prefix, plugin set, onnx home; ~110K LoC removed from <code>forks/agentic-flow</code>.</li>
+<li><strong>Good</strong> — fork-only files preserved with provenance via commits.</li>
+<li><strong>Bad</strong> — codemod Pass 7 is new code; mitigated by unit test covering idempotency, extension scoping, and non-matching-prefix safety.</li>
+<li><strong>Neutral</strong> — agentdb-onnx external consumer (<code>agentic-flow/services/agentdb-service.ts</code>) imports via npm name; only its dep declaration changes.</li>
+</ul>
+<!-- SPARC: C — Completion -->
+
+<h3 id="confirmation">Confirmation</h3>
+<ol>
+<li><strong><code>forks/agentdb</code></strong> has the migration commits and builds + tests pass; <code>forks/agentdb/packages/agentdb-onnx/</code> exists.</li>
+<li><strong>Verdaccio</strong> (<code>localhost:4873</code>) serves <code>@sparkleideas/agentdb@3.0.0-alpha.14-patch.&lt;N&gt;</code> and <code>@sparkleideas/agentdb-onnx@&lt;N&gt;</code>. Single-developer scope; no public-npm publish.</li>
+<li><strong><code>forks/agentic-flow/packages/agentdb/</code> and <code>packages/agentdb-onnx/</code></strong> do NOT exist.</li>
+<li><strong>MCP prefix migrated</strong>: <code>grep -rn &quot;mcp__agentic-flow__agentdb_&quot; ruflo-patch/ forks/ruflo/</code> returns ZERO matches outside historical artifacts (ADR text). Codemod Pass 7 + its unit test exist.</li>
+<li><strong>Acceptance suite + init-project smoke pass</strong> at no regression. ADR-0160 status updated; memory entries updated.</li>
+<li><strong>Regression test</strong> <code>tests/unit/adr0161-agentdb-consolidation-complete.test.mjs</code> exists and asserts: (a) <code>forks/agentdb</code> exists, (b) <code>forks/agentic-flow/packages/agentdb</code> does NOT exist, (c) <code>forks/agentdb/packages/agentdb-onnx</code> exists, (d) <code>config/package-map.json</code> declares <code>ruvnet/agentdb</code> upstream, (e) zero <code>mcp__agentic-flow__agentdb_</code> references in non-historical files, (f) published <code>@sparkleideas/agentdb</code> version starts with <code>3.0.0-alpha.14-</code>. This test guards against silent revert (e.g. accidental restore from a stale branch merge) per <code>feedback-data-loss-zero-tolerance</code>.</li>
+<li><strong>Behavioral preservation</strong> (per Agent 10&#39;s data-loss audit — counters the structural-only nature of criteria 1-6):<ul>
+<li>(a) <code>npx @sparkleideas/cli init</code> in a fresh temp project successfully creates an agentdb backend that survives a write-read-restart cycle (load-bearing behavior of the fork-only files: <code>HierarchicalMemory</code>, <code>MemoryConsolidation</code>, <code>StreamingEmbeddingService</code>, security guards).</li>
+<li>(b) <code>mcp__agentdb__pattern_store</code> + <code>mcp__agentdb__pattern_search</code> round-trip from the new MCP server returns scored results; cross-checked against pre-migration baseline behavior.</li>
+<li>(c) ADR-0076 dual-instance singleton guard in <code>CausalMemoryGraph.ts</code> is preserved post-merge (test: construct twice; second should warn + return first instance).</li>
+<li>(d) ADR-0094 R-series memory_search returns &gt;0 for verbatim-token queries against a populated namespace (the bug ADR-0147 fixed must stay fixed post-merge).</li>
+</ul>
+</li>
+<li><strong>QUIC / RaftConsensus guards present</strong>: <code>grep -rE &quot;// TODO: ADR required before activation&quot; forks/agentdb/src/controllers/QUIC*.ts forks/agentdb/src/consensus/RaftConsensus.ts</code> returns 4 matches.</li>
+</ol>
+<h2 id="pros-and-cons-of-the-options">Pros and Cons of the Options</h2>
+<ul>
+<li><strong>Option 1</strong> (observation-only): zero disruption, but defeats consolidation.</li>
+<li><strong>Option 2</strong> (lift-and-shift, CHOSEN): mechanical scope matches the actual delta; provenance via commits.</li>
+<li><strong>Option 3</strong> (drop patches): silently loses fork-only files; violates <code>feedback-data-loss-zero-tolerance</code>.</li>
+</ul>
+<h2 id="more-information">More Information</h2>
+<h3 id="user-direction-2026-05-08">User direction (2026-05-08)</h3>
+<p>Accept alpha.14 base. Fold MCP prefix + 6 plugins + agentdb-onnx into this ADR. No phase-blocking gates. No rollback plan. No HM consideration. No upstream re-base if it advances during migration. Migration is lift-and-shift, not re-base.</p>
+<h3 id="references">References</h3>
+<ul>
+<li>ADR-0160 (superseded): observation-only fifth fork</li>
+<li>ADR-0157: MADR + SPARC template</li>
+<li>ADR-0078, ADR-0094, ADR-0147: drove the fork-only files preserved here</li>
+<li>ADR-0148, ADR-0150: sibling pattern for MCP audit + NAPI build</li>
+<li>ADR-0143: codemod context for Pass 7</li>
+<li>New fork: <code>forks/agentdb</code> (cloned 2026-05-08 from <code>ruvnet/agentdb</code> HEAD <code>a478ab3</code>); MCP server <code>name: &#39;agentdb&#39;</code> at <code>src/mcp/agentdb-mcp-server.ts:282</code></li>
+<li><strong>Migration log</strong>: <code>forks/agentdb/MIGRATION-LOG.md</code> — file-level disposition table for the lift (20 fork-only files in Step 1 commit <code>d7ca0f6</code>; 59 differing-file reconciliations in Step 2). Restored 2026-05-13 after the ADR-0177 reset removed it; see [[project-fork-only-controllers]] memory for the full restoration catalog.</li>
+<li>Memory: <code>feedback-data-loss-zero-tolerance</code>, <code>feedback-no-history-squash</code>, <code>feedback-trunk-only-fork-development</code>, <code>feedback-never-touch-hz-remote</code>, <code>feedback-no-value-judgements-on-features</code>, <code>feedback-fix-all-tests</code>, <code>feedback-no-squelch-tests</code>, <code>feedback-test-in-init-projects</code>, <code>reference-pipeline-publish-paths</code>, <code>reference-verdaccio</code>, <code>project-agentdb-parallel-extraction</code>, <code>reference-fork-workflow</code></li>
+</ul>
+<h2 id="amendments">Amendments</h2>
+<h3 id="amendment-status-reconciliation-2026-05-18">Amendment: Status reconciliation (2026-05-18)</h3>
+<p>Frontmatter <code>status</code> flipped <code>proposed</code> → <code>implemented</code> and <code>closed-on: 2026-05-08</code> added per <code>project-agentdb-parallel-extraction</code> memory entry
+(&quot;Migration complete per ADR-0161. The parallel-source state ENDED.&quot;)
+and verified against the live tree: <code>forks/agentdb</code> exists at
+<code>@sparkleideas/agentdb@3.0.0-alpha.14-patch.217+</code> on Verdaccio;
+<code>forks/agentic-flow/packages/agentdb/</code> no longer present (deleted in
+agentic-flow commit <code>b9167b8</code>, 1,105 files / 362,170 LoC). ADR-0160 was
+superseded as planned. Status flip deferred at the time and reconciled
+as part of the 2026-05-18 ADR status audit.</p>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

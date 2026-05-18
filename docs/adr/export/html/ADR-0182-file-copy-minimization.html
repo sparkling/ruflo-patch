@@ -1,0 +1,1000 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0182-file-copy-minimization</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <hr>
+<h2 id="status-proposeddate-2026-05-16tags-pipeline-performance-ssd-wear-fseventsd-acceptance-buildsupersedes-depends-on-adr-0025-adr-0038-adr-0039-adr-0048-adr-0150implements-">status: proposed
+date: 2026-05-16
+tags: [pipeline, performance, ssd-wear, fseventsd, acceptance, build]
+supersedes: []
+depends-on: [ADR-0025, ADR-0038, ADR-0039, ADR-0048, ADR-0150]
+implements: []</h2>
+<h1 id="minimise-file-copy-churn-across-the-release-pipeline">Minimise file-copy churn across the release pipeline</h1>
+<h2 id="context-and-problem-statement">Context and Problem Statement</h2>
+<p><code>npm run release</code> performs ~192k–260k file write events per release on a no-source-change rerun. On an M5 Max MacBook Pro (36 GB, APFS) this is load-bearing on two axes the user cares about more than wall time:</p>
+<ol>
+<li><strong>SSD endurance.</strong> Repeated release cycles during a heavy ADR-0181 wire-up loop (~25 releases/day across a multi-day council session) accumulate hundreds of millions of NAND-cell write events against finite flash lifespan. The user has explicitly flagged this as the primary perf concern; wall-time wins are secondary.</li>
+<li><strong><code>fseventsd</code> kernel buffer accumulation.</strong> <code>fseventsd</code> records every file event in its in-memory ring; observed RSS reached 10.7 GB before manual flush on this machine. Spotlight was excluded for <code>/tmp/ruflo-*</code> via the marker landed in commit <code>36b1b55</code>, but a marker only suppresses Spotlight indexing — it does not suppress <code>fseventsd</code> event-record creation. Every file under <code>/tmp</code> still generates an event entry.</li>
+</ol>
+<p>The 2026-05-16 analyst pass quantified the per-release write surface:</p>
+<table>
+<thead>
+<tr>
+<th>Phase</th>
+<th>Files written / read</th>
+<th>Persistence</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>copy-source rsync (5 forks, <code>-a --delete</code> with PROTECT filters)</td>
+<td>~105k stats, mtime-syncs delta only</td>
+<td><code>/tmp/ruflo-build</code> persistent (16 GB)</td>
+</tr>
+<tr>
+<td>codemod (32,592 files scanned, 4,782 writes; 0 cache hits last release)</td>
+<td>~4.8k writes</td>
+<td>in <code>/tmp/ruflo-build</code></td>
+</tr>
+<tr>
+<td>build (tsc emit, ~7–10k dist files; incremental works)</td>
+<td>~7–10k writes</td>
+<td>in <code>/tmp/ruflo-build</code></td>
+</tr>
+<tr>
+<td>publish-verdaccio (~40 <code>npm publish</code>, ~80 tarballs, ~160 MB)</td>
+<td>~80 tarballs/release</td>
+<td><code>~/.local/share/verdaccio/storage</code> (19 GB, no GC)</td>
+</tr>
+<tr>
+<td>acceptance: main install (<code>/tmp/ruflo-accept-XXXX</code>, fresh <code>mktemp -d</code>)</td>
+<td>~58k files / ~2.0 GB</td>
+<td>per-release, in cleanup trap</td>
+</tr>
+<tr>
+<td>acceptance: wrapper-solo install (<code>/tmp/ruflo-wrapper-solo-XXXX</code>, fresh <code>mktemp -d</code> + isolated <code>--cache</code>)</td>
+<td>~59k files / ~1.7 GB</td>
+<td>per-release, <strong>not in cleanup trap</strong> — orphans on interrupt</td>
+</tr>
+<tr>
+<td>acceptance: P5 background init (<code>/tmp/ruflo-p5-XXXX</code>)</td>
+<td>~338 files</td>
+<td>per-release, <strong>not in cleanup trap</strong> — orphans every run</td>
+</tr>
+<tr>
+<td>acceptance: e2e snapshot (<code>cp -r &quot;$ACCEPT_TEMP/.&quot; &quot;$E2E_DIR/&quot;</code>)</td>
+<td>~58k file copies</td>
+<td>per-release, in cleanup trap</td>
+</tr>
+<tr>
+<td>acceptance: <code>_e2e_isolate</code> (173 call-sites, ~15 file copies each)</td>
+<td>~3k file copies</td>
+<td>inside E2E_DIR</td>
+</tr>
+<tr>
+<td>acceptance: per-check <code>mktemp -d /tmp/...</code> (91 patterns, ~40 do their own <code>init --full</code>)</td>
+<td>~13.5k files</td>
+<td>per-check, individual <code>rm -rf</code> — leaks on bash error</td>
+</tr>
+<tr>
+<td>acceptance: persistent npx cache</td>
+<td>+1–2k files</td>
+<td><code>/tmp/ruflo-accept-npxcache</code> (37 GB, no LRU prune)</td>
+</tr>
+<tr>
+<td><strong>Per-release total (acceptance + pipeline)</strong></td>
+<td><strong>~192k–260k file writes</strong></td>
+<td>mixed</td>
+</tr>
+</tbody></table>
+<p>The dominant <em>re-execution</em> contributors are the two npm installs (<del>117k files combined) and the e2e snapshot duplication (</del>58k file copies). The dominant <em>orphan</em> contributors are wrapper-solo dirs (4 of the 5 largest leftovers on <code>/tmp</code> today are 2.6 GB wrapper-solo orphans), per-check <code>mktemp -d /tmp/...</code> dirs (11 leftover <code>ruflo-adr0100-*</code>, 5 leftover <code>ruflo-adr0177-*</code>), and the unbounded npx cache (37 GB).</p>
+<p>Recent perf work landed (build phase already largely optimised):</p>
+<ul>
+<li><code>36b1b55</code> — Spotlight marker on <code>/tmp/ruflo-*</code></li>
+<li><code>3db6ea463</code> (forks/ruflo) — <code>onnx-warmer</code> kills <code>npx @latest</code> in <code>init.ts</code></li>
+<li><code>d86bea2</code> — <code>_HEAVY_CHECK_IDS</code> skip set</li>
+<li><code>20730d2</code> — node_modules cache reverted (reconciliation cost &gt; fresh install at the main-install layer)</li>
+<li><code>212d67c</code> — reverted <code>--ignore-scripts</code> on cache-restored install (proves at least one <code>@sparkleideas/*</code> package has a non-idempotent postinstall — load-bearing for L3 below)</li>
+<li><code>b3d556f → bd5d878</code> — &quot;share wrapper-solo install across 3 wrapper-install checks&quot; landed 2026-05-07 02:21, reverted 2026-05-07 02:24 with no recorded reason. Load-bearing prior-art for L1 below; bisecting the revert trigger is a hard prerequisite to re-attempting</li>
+<li><code>6e4da40</code> — incremental tsc (rsync excludes stale <code>.tsbuildinfo</code>)</li>
+<li><code>aa1de25</code> — test pinning the new contract</li>
+</ul>
+<p>Latest run (r11): 669/0/9, acceptance total 308s (−18.6s vs baseline). Wall-time progress is real; the SSD/fseventsd surface has barely been addressed.</p>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<ul>
+<li><strong>SSD wear is the primary cost.</strong> Reducing file <em>events</em>, not wall time, is the success metric.</li>
+<li><strong><code>fseventsd</code> accumulation scales with event count regardless of Spotlight markers.</strong> Every file write under <code>/tmp</code> generates an event record; the marker only suppresses Spotlight content-indexing, not the kernel event ring.</li>
+<li><strong><code>feedback-no-fallbacks</code> / <code>feedback-data-loss-zero-tolerance</code>.</strong> Any cross-release reuse must fail loudly when stale state corrupts a check. Better to invalidate-and-reinstall than to silently produce false-pass results.</li>
+<li><strong>CLAUDE.md &quot;THREE COMMANDS&quot; boundary stays inviolate.</strong> Changes here must not change the user-facing entry points (<code>npm run test:unit</code>, <code>bash scripts/test-acceptance-fast.sh --group &lt;group&gt;</code>, <code>npm run release</code>).</li>
+<li><strong>Recent revert (<code>20730d2</code>, node_modules cache) is informative, not blocking.</strong> The revert proved that caching only the main install breaks even on wall time. This ADR proposes broader cache surface (main + wrapper-solo + e2e snapshot) so the freed time pays for the reconciliation cost.</li>
+<li><strong>Build-phase optimisations already landed.</strong> <code>copy-source</code> rsync, codemod hash cache, and <code>--incremental</code> tsc cover the build half adequately. This ADR&#39;s primary scope is the acceptance half (which writes ~3× as many files per release as the build half).</li>
+<li><strong><code>forks/</code> changes minimised, not forbidden.</strong> Fork <em>production</em> code is out of scope for pipeline optimisation; L13&#39;s fork-side <em>test</em> additions (where the function under test lives) are an explicit, documented exception. Default writes land in <code>ruflo-patch</code> (<code>scripts/</code>, <code>lib/</code>).</li>
+</ul>
+<h2 id="considered-options">Considered Options</h2>
+<ul>
+<li><strong>Option A — Status quo + Spotlight marker only.</strong> Continue with <code>mktemp -d</code> per phase, rely on cleanup traps, accept the 192k–260k event surface. Rejected: doesn&#39;t address the primary cost.</li>
+<li><strong>Option B — Reduce file-copy churn end-to-end (chosen).</strong> Persistent install dirs (main + wrapper-solo merged or shared), copy-on-write e2e snapshot, per-check workdirs reparented under <code>$ACCEPT_TEMP</code>, npx cache LRU pruning, Verdaccio storage GC, stale-dir startup sweep widened, cleanup-trap coverage extended. Each lever is independent and ship-able in isolation.</li>
+<li><strong>Option C — Move the whole pipeline onto a RAM disk (<code>hdiutil attach -nomount ram://</code>).</strong> Eliminates SSD wear entirely for <code>/tmp</code> writes. Rejected: 36 GB host RAM is tight for a ~25 GB working set (build + accept + e2e + npx cache); RAM disk eviction breaks the persistent ONNX cache + npx cache contracts (ADR-0048, ADR-0025); the marker-style mitigation is per-process and per-release while a RAM disk is per-host and survives across user sessions.</li>
+<li><strong>Option D — Run the pipeline in a Docker / Lima VM with its own filesystem.</strong> Same goal as C with isolation. Rejected: doubles the trust surface (VM filesystem + macOS host filesystem still both see file events at the host layer); <code>napi build</code> cross-compilation matrix becomes brittle; out of scope as a release-time concern.</li>
+<li><strong>Option E — Switch <code>/tmp</code> → tmpfs-style mount.</strong> macOS doesn&#39;t ship a real tmpfs; <code>/tmp</code> is already on APFS. Rejected as not architecturally available.</li>
+<li><strong>Option F — Replace remaining <code>cp</code> sites with <code>rsync</code> instead of <code>cp -cR</code> (L2).</strong> Rejected. <code>rsync</code>&#39;s strength is incremental delta-update against an existing baseline, but every remaining <code>cp</code> site in the pipeline operates on a FRESH destination (mktemp&#39;d per release). With no baseline to diff against, <code>rsync</code> reads + writes every file in user space — same I/O profile as <code>cp -r</code>, plus per-file compare overhead. Critically, <code>rsync</code> does not support reflink / <code>clonefile(2)</code>, so it bypasses APFS&#39;s CoW semantics entirely. Concrete e2e-snapshot comparison: <code>cp -r</code> reads 58k files × ~35 KB = ~2 GB read + ~2 GB written to flash, ~6-10s wall. <code>cp -cR</code> reads 58k inodes only + writes ~3 MB inode-table updates, ~200 ms wall. <code>rsync</code> would compare 58k file sizes/mtimes against an empty dest (every file flagged &quot;new&quot;) then read + write ~2 GB, ~5-8s wall — strictly worse than <code>cp -cR</code> and matches <code>cp -r</code> on bytes-on-flash. The intuition &quot;rsync to avoid copying&quot; only holds when there is a stable destination baseline to diff against; that condition does not exist at any remaining <code>cp</code> site in this pipeline. (Where rsync DOES help — <code>scripts/copy-source.sh</code>&#39;s 5 parallel fork→<code>/tmp/ruflo-build</code> syncs — it is already in use; see ADR-0038.)</li>
+</ul>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<p>Chosen option: <strong>Option B — reduce file-copy churn end-to-end with four large levers + eight smaller levers (five hygiene + three test-corpus)</strong>, prioritised by expected SSD-write-byte reduction per release. Each lever is implementable and verifiable in isolation; none of them requires touching the canonical user-facing entry points or <code>forks/</code>.</p>
+<blockquote>
+<p><strong>Reviewer note (DA round 1, 2026-05-16):</strong> an earlier draft included an &quot;L5 — codemod content-equality short-circuit&quot; lever projecting ~1.5–3k saved writes/release. DA grepped <code>scripts/codemod.mjs</code> and found the short-circuit is already implemented (<code>if (transformed !== content) { writeFile(...) }</code> at line 609; the package.json branch at L562-585 likewise reads → parses → only writes on <code>changed</code>). The lever was dropped; total projected wins adjusted downward accordingly.</p>
+</blockquote>
+<h3 id="levers-prioritised-by-ssd-write-byte-reduction">Levers (prioritised by SSD-write-byte reduction)</h3>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Lever</th>
+<th>Writes / bytes reduced per release</th>
+<th>Risk</th>
+<th>Mitigation</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><del>L1</del></td>
+<td><del><strong>Drop wrapper-solo dedicated install; verify against main <code>$ACCEPT_TEMP</code></strong></del> <strong>DROPPED 2026-05-16</strong></td>
+<td>(forgone: ~59k writes + ~1.7 GB + ~70s wall — see &quot;why dropped&quot; below)</td>
+<td>The original 2026-05-07 attempt (<code>b3d556f</code>, reverted 9 min later as <code>bd5d878</code>) had an unrecovered failure mode. <strong>Empirical retry</strong> under <code>RUFLO_SHARED_WRAPPER_INSTALL=1</code> (commit <code>8b9de92</code>, reverted as <code>a903c9c</code>) produced 62 acceptance failures vs 0 in baseline-1d-CANONICAL and 1085s duration vs 384s — see <code>logs/release-disk-bytes.jsonl</code> entry <code>L1-experiment-RUFLO_SHARED_WRAPPER_INSTALL</code>. <strong>Documented trigger (the bisect couldn&#39;t find from history alone):</strong> when <code>npm install @sparkleideas/ruflo</code> runs AFTER <code>ruflo init --full</code> against the same <code>$ACCEPT_TEMP/node_modules</code>, the wrapper&#39;s pinned <code>@sparkleideas/cli</code> version mutates the node_modules in ways the init&#39;s already-resolved artifact paths no longer match. Concrete failure modes observed: (i) adr0074 group — &quot;intelligence.cjs not found in init&#39;d project&quot; / &quot;auto-memory-hook.mjs not found in init&#39;d project&quot; (init&#39;s resolved paths stale after npm install); (ii) sec-rl-consumed — RVF error 0x0300 LockHeld after 30s budget (daemon from cli&#39;s first install holds RVF lock; wrapper&#39;s separate cli version tries to open same file and deadlocks).</td>
+<td><strong>DROPPED</strong> per ADR cold-trail policy override path — the hypothesis was verified, it confirmed the design is unworkable. Fix options considered and rejected: (a) install ruflo BEFORE init — changes acceptance semantics (would test wrapper&#39;s view, not cli&#39;s, defeating the point of separate @sparkleideas/cli vs @sparkleideas/ruflo testing); (b) install ruflo into a sub-dir under $ACCEPT_TEMP — just renames WRAPPER_SOLO_TEMP, saves no install cost; (c) live with 62 failures — unacceptable. <strong>The 1.7 GB SSD-write savings are forgone permanently.</strong> The ~70s wall cost is already mitigated by commit <code>081a8f5</code> (wrapper-solo install runs in background, joined before parallel wave — net wall ≈ 0). The ~59k file-event orphan-cleanup hazard is covered independently by L6 (<code>bd467cb</code>, trap-cover WRAPPER_SOLO_TEMP). Net L1 impact after Wave 2: no lever, no regression, ADR L1 row preserved here as the documented gravesite so the next implementer who reads &quot;1.7 GB easy win&quot; knows why it isn&#39;t</td>
+</tr>
+<tr>
+<td>L2</td>
+<td><strong>e2e snapshot via APFS clonefile (<code>cp -cR</code>) instead of <code>cp -r</code></strong></td>
+<td><strong>~2.0 GB byte-copies avoided</strong> (event-count win is smaller than first claimed; see Confirmation §Metrics)</td>
+<td><code>cp -c</code> is APFS-only; macOS <code>cp -c</code> is documented as non-standard; clone breaks on cross-volume operations. Earlier &quot;1 clone op&quot; framing was wrong — <code>cp -cR</code> invokes <code>clonefile(2)</code> per regular file, so <code>fs_usage</code> still reports ~58k clonefile events (the win is in <em>bytes written</em>, not events)</td>
+<td>Feature-probe with a <strong>real regular file</strong>, not <code>/dev/null</code> (which clonefile(2) refuses — see DA round 1 B2): <code>_cow_src=$(mktemp /tmp/.cow-src.XXXX); echo x &gt; &quot;$_cow_src&quot;; _cow_dst=$(mktemp -u /tmp/.cow-dst.XXXX); cp -c &quot;$_cow_src&quot; &quot;$_cow_dst&quot; 2&gt;/dev/null &amp;&amp; HAS_COW=1; rm -f &quot;$_cow_src&quot; &quot;$_cow_dst&quot;</code>. Fall back to <code>cp -al</code> on Linux/foreign-FS; <code>cp -r</code> as last resort. Each branch logs which path fired. Pin macOS version ≥26 (current host) in the probe. <strong>Primary metric for this lever is SSD-write-bytes, not events_write</strong></td>
+</tr>
+<tr>
+<td>L3</td>
+<td><strong>Persistent ACCEPT_TEMP with per-release reconcile</strong> (re-use <code>node_modules</code> across releases when CLI version + lockfile hash unchanged)</td>
+<td><strong>~58k writes / ~2.0 GB when cache-hit</strong> (most no-source-change reruns)</td>
+<td>The <code>20730d2</code> revert + the earlier <code>212d67c</code> revert (&quot;<code>--ignore-scripts</code> on cache-restored install&quot;) proved that the failure mode is <strong>npm reconciliation cost + postinstall idempotency</strong>, not cache-key breadth. Re-attempting this lever has to address the underlying disease, not the cache scope</td>
+<td>Hard requirements: (i) On cache-hit, <strong>skip <code>npm install</code> entirely</strong> — don&#39;t re-run it against the pre-populated dir (that&#39;s the failed 436c76a model). (ii) Cache key = SHA-256 of (resolved <code>@sparkleideas/cli@latest</code> version + resolved <code>@sparkleideas/ruflo</code> version + <code>@sparkleideas/cli</code>&#39;s shipped package-lock content). Any publish invalidates the cache by construction. (iii) Postinstall idempotency: integration test must prove that <code>node_modules/@sparkleideas/*/dist/</code> is byte-identical between a cache-hit path and a cache-miss path; if postinstall produces non-deterministic output, L3 is rejected. (iv) <strong>Epoch guard:</strong> ACCEPT_TEMP writes a <code>.release-epoch</code> file containing the cache-key hash; harness startup verifies the epoch matches the freshly-computed key and nukes-fresh on mismatch or missing file (covers crashed prior releases). (v) Lands behind <code>RUFLO_PERSISTENT_ACCEPT=1</code>. (vi) <strong>Kill-switch:</strong> if not promoted to default within 4 weeks of landing, the flag + cache-resolution code are fully reverted</td>
+</tr>
+<tr>
+<td>L4</td>
+<td><strong>Reparent per-check <code>mktemp -d /tmp/...</code> patterns under <code>$ACCEPT_TEMP/_check_workdirs/${id}-XXXX</code></strong> (LANDED 2026-05-16, commit <code>dddd516</code>; fallout fixes <code>aab7276</code> + <code>c81c9b9</code>)</td>
+<td><strong>~13.5k writes/release move from <code>/tmp</code> to ACCEPT_TEMP</strong> (already covered by cleanup trap) + eliminates 91 distinct orphan sources</td>
+<td>LANDED: 42 files modified (39 <code>lib/</code> + 3 <code>scripts/</code>), 91 mktemp callsites reparented in a single mechanical sed pass. Empirical correction to the original draft: only <strong>1</strong> hard-coded <code>/tmp/</code> site needed a by-hand fix (<code>lib/acceptance-adr0117-marketplace-mcp.sh:208</code>), not 6–8 — the original estimate was conservative. Parent-mkdir landed in <strong>3 entry points</strong>, not 2: <code>scripts/test-acceptance.sh</code>, <code>scripts/test-acceptance-fast.sh</code>, and <code>scripts/run-check.sh</code> (run-check.sh was missed in the original draft). Documented exclusions extended beyond the original 4 persistent-cache list: <code>ruflo-fast-*</code> (ACCEPT_TEMP variant in fast runner), <code>ruflo-e2e-*</code> (E2E_DIR — separately trap-covered), <code>ruflo-rsync-*</code> (build copy-source), <code>ruflo-promote-*</code> (promote pipeline), plus 2 <code>mktemp -d -t adr0069bug3-…</code> callsites using the <code>-t</code> form (OS tmpdir, intentional per inline comment). Reparent template uses <code>${ACCEPT_TEMP:-/tmp}</code> so ad-hoc check invocations (no harness wrapper) fall back to <code>/tmp</code> — and ad-hoc invocations don&#39;t have the trap-coverage promise anyway. <strong>TWO Wave-1 fallout patterns surfaced and were fixed:</strong> (a) <strong>Over-reach (commit <code>aab7276</code>):</strong> the agent&#39;s grep matched <code>mktemp /tmp/</code> broadly, sweeping 37 FILE-create lines (<code>mktemp /tmp/&lt;id&gt;-XXXXX</code> without <code>-d</code>) along with the 91 DIR-create lines. File-creates in helpers (<code>_run_and_kill</code>/<code>_run_and_kill_ro</code> at <code>acceptance-checks.sh:67,151</code>; ~20 others in check-specific helpers) auto-clean inside the helper — they aren&#39;t orphan-on-trap concerns, and reparenting broke unit tests that source helpers outside the harness (no <code>_check_workdirs/</code> mkdir runs). Future implementer prompts MUST explicitly enforce the <code>mktemp -d</code> boundary, not just <code>mktemp &lt;path&gt;</code>. (b) <strong>Root-isolation fallout (commit <code>c81c9b9</code>):</strong> any check whose iso dir must be OUTSIDE any ruflo-project marker tree (<code>adr0100-A..G</code> for findProjectRoot walk-up tests; <code>adr0104-mcp-path</code> for <code>.mcp.json</code> write-to-self verification) breaks when reparented under <code>$ACCEPT_TEMP/_check_workdirs/</code> because <code>$ACCEPT_TEMP</code> IS a harness-init&#39;d project. 8 callsites need a permanent <code>/tmp/</code> carve-out. Future L4-style sweeps must explicitly skip files containing checks that use <code>findProjectRoot</code> walk-up or test init&#39;s project-resolution behaviour. This is documented in the patch commit and now in this lever row</td>
+<td></td>
+</tr>
+</tbody></table>
+<p>Eight smaller levers (worthwhile but separately scoped):</p>
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Lever</th>
+<th>Files reduced</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>L6</td>
+<td>Register <code>WRAPPER_SOLO_TEMP</code> + <code>_P5_DIR</code> in cleanup trap</td>
+<td>Eliminates ~2 orphan classes</td>
+<td>2-line patch in <code>test-acceptance.sh:119-172</code>. Ships <em>first</em> — provides orphan-cleanup safety even if L1 is dropped after the b3d556f bisect</td>
+</tr>
+<tr>
+<td>L7</td>
+<td>Widen stale-sweep glob at startup (extend <code>find /tmp -maxdepth 1 -name &quot;ruflo-accept-*&quot;</code> to also match <code>ruflo-wrapper-solo-*</code>, <code>ruflo-p5-*</code>, <code>iso-*</code>, <code>ruflo-adr0*-*</code>, <code>t3-*-rvf-*</code>, <code>b2-*-work-*</code>, <code>p9-*-*</code>)</td>
+<td>Eliminates leftover-dir accumulation across crashed releases</td>
+<td><code>test-acceptance.sh:198</code></td>
+</tr>
+<tr>
+<td>L8</td>
+<td>Verdaccio storage GC: keep last N tarballs per package</td>
+<td>Caps <code>~/.local/share/verdaccio/storage</code> at ~700 MB (from 14 GB)</td>
+<td>New script <code>scripts/verdaccio-gc.mjs</code>. Pre-GC check: enumerate all currently-pinned <code>-patch.N</code> refs in <code>forks/*/package.json</code> and the test corpus; refuse to drop a tarball that is still resolvable from any active source. Fires opportunistically at end of <code>ruflo-publish.sh</code></td>
+</tr>
+<tr>
+<td>L9</td>
+<td>npx <code>_cacache</code> LRU prune (current sweep only clears <code>_npx</code> aliases)</td>
+<td>Caps <code>/tmp/ruflo-accept-npxcache</code> at ~5 GB (from 37 GB)</td>
+<td>Extend <code>test-acceptance.sh:700</code></td>
+</tr>
+<tr>
+<td>L10</td>
+<td>Migrate remaining ~130 <code>_e2e_isolate</code> call-sites to <code>_with_iso_cleanup</code> RETURN-trap pattern (DEFERRED) + add fail-loud guard on the 4 source-existence checks in <code>_e2e_isolate</code> (LANDED 2026-05-16)</td>
+<td>Eliminates leak surface on bash-error early-exit + closes the L3 cross-release symlink hazard</td>
+<td><strong>Source-existence guards LANDED</strong> in <code>lib/acceptance-e2e-checks.sh</code> via commits <code>2a4b8c8</code> (symlink line 29→34-38, using <code>[[ -d ]]</code> not <code>realpath -e</code> — BSD <code>realpath</code> on macOS lacks <code>-e</code>; <code>[[ -d ]]</code> follows symlinks and returns false for dangling/missing targets, subsuming both <code>realpath -e</code> failure modes portably) and <code>2e6e4a9</code> (3 <code>cp</code> swallows on <code>.claude-flow</code>/<code>.swarm</code>/<code>package.json</code> at lines 26-28 — same hazard class, surfaced by lever-L10 during Wave 1 review). <strong>Still DEFERRED:</strong> migrating the ~130 remaining <code>_e2e_isolate</code> call-sites to the <code>_with_iso_cleanup</code> RETURN-trap pattern; mechanical refactor in a separate follow-up. 41 sites already use that pattern</td>
+</tr>
+<tr>
+<td>L11</td>
+<td>Replace init-incidental per-check inits with clone-from-golden (<code>_e2e_isolate</code> or <code>_acceptance_snapshot</code>) or <code>.claude-flow/config.json</code> mutation</td>
+<td>LANDED 2026-05-16 commit <code>1117b66</code>: drops 2 of 17 per-release inits (~676 file writes + ~20-30s wall saved). Per-release total: 17 → 15.</td>
+<td>The pipeline runs 17 distinct <code>init --full</code> invocations per release. <strong>Original projection: 3 clone-candidates (adr0104, hive-mind × 2).</strong> Empirical correction during implementation: only 2 were actually clone-safe (hive-mind × 2 — adr0120 + adr0121 gossip/crdt agent-annotation greps). adr0104 was reclassified as init-as-SUT: <code>check_adr0104_mcp_direct_path</code> grep-asserts init&#39;s emitted <code>.mcp.json</code> content (<code>mcpServers.ruflo.command == &quot;npx&quot;</code> + args) — clone-from-golden would test the HARNESS&#39;S emit, not the iso&#39;s, defeating the assertion. <strong>L11 + L13(b) together drop 4 of 17 inits (L11 drops 2 hive-mind, L13(b) drops 2 adr0177 default-mpnet).</strong> The remaining 13 inits are either strict init-as-SUT or need init for other reasons (MiniLM model bytes not pre-warmed, etc.). <strong>Honours <code>feedback-no-fallbacks</code>:</strong> if a clone breaks because the check relied on init side-effects (daemon socket creation, fresh RVF seeding from cold), the check fails loud and runs its own init in a follow-up commit — no silent fallback. Lever lands <em>after</em> L2 since <code>_e2e_isolate</code> consumes L2&#39;s snapshot pattern</td>
+</tr>
+<tr>
+<td>L12</td>
+<td>Drop redundant bge model variant from adr0177</td>
+<td>1 init removed per release (~338 file writes + ~10s wall time + bge ONNX download bytes on cache-miss only — steady-state ONNX cache per ADR-0048 already covers the model bytes)</td>
+<td>Removes the <code>_adr0177_run_init &quot;$dir&quot; &quot;Xenova/bge-base-en-v1.5&quot;</code> call at <code>lib/acceptance-adr0177-checks.sh:298</code> and its scenario-2 assertion block. <strong>Coverage delta:</strong> bge-base-en-v1.5 and mpnet are both 768-dim with identical dim-validation, <code>.claude-flow/config.json</code> shape, RvfBackend segment dim, and embeddings.json runtime-read path. bge exercises no code path that mpnet doesn&#39;t also exercise. MiniLM × 1 stays under L12 (its removal is L13&#39;s concern). <strong>Tension with <code>feedback-no-value-judgements-on-features</code>:</strong> that memory forbids &quot;redundant&quot; as a gate for wire-vs-don&#39;t-wire decisions on <em>features</em>. L12 drops a <em>test variant</em> of an identical code path, not bge support itself — users can still pass <code>--embedding-model Xenova/bge-base-en-v1.5</code> and the runtime handles it. This distinction (drop test-of-feature ≠ drop feature) is surfaced here so a future audit can revisit whether the spirit of that memory should extend to test-corpus decisions</td>
+</tr>
+<tr>
+<td>L13</td>
+<td>Apply writer/reader test split to adr0177 specifically (embeddings end-to-end)</td>
+<td>2–3 additional inits removed/release (adr0177&#39;s remaining 3 inits after L12 collapse to 0–1)</td>
+<td>Generalises L11&#39;s &quot;init-writer vs config-reader&quot; principle to ADR-0177&#39;s config chain. <strong>Writer layer</strong> (fork-side; documented carve-out from §Decision Drivers): add <code>forks/ruflo/v3/@claude-flow/cli/__tests__/embedding-models.test.ts</code> exercising each of the 5 rows in <code>KNOWN_EMBEDDING_MODELS</code> (<code>Xenova/all-mpnet-base-v2</code>, <code>bge-base-en-v1.5</code>, <code>gte-base</code>, <code>all-MiniLM-L6-v2</code>, <code>all-MiniLM-L12-v2</code> → 768/768/768/384/384) against <code>validateEmbeddingModel()</code> and the <code>.claude-flow/config.json</code> + <code>.claude-flow/embeddings.json</code> emitter chain. Pure function tests, no <code>init --full</code> spawn. <strong>Reader layer</strong> (ruflo-patch acceptance, post-L11): clone golden once, mutate <code>.claude-flow/config.json</code> for the 384-dim case (one mutation; golden covers 768), assert RvfBackend creates a segment at the mutated dim and AgentDB round-trips a vector at that dim. <strong>Outcome</strong>: adr0177&#39;s remaining inits collapse from 3 (after L12) to 0–1 (0 if golden default coverage + the 384-mutation reader test suffice; 1 if an additional MiniLM-specific integration is kept for redundancy). <strong>Hard requirement before landing</strong>: fork-side writer tests must be present and passing — replacing acceptance inits with config-mutate without the writer-layer unit tests in place would silently move the dim-table validation off the test corpus. <strong><code>feedback-no-fallbacks</code> honoured</strong>: failure of the writer-layer unit test must fail the fork-side build; failure of the reader-layer mutation test must fail the release acceptance run. No &quot;best-effort&quot; downgrade</td>
+</tr>
+</tbody></table>
+<p>L1–L4 are the load-bearing wins (~190k file-events of the ~192k total per-release surface, ~5.7 GB of byte-copies/installs). L6–L10 are hygiene improvements; L11–L13 are test-corpus refinements that drop ~6–8 of 17 per-release <code>init --full</code> invocations. Each is small, mechanical, and ships independently.</p>
+<h3 id="out-of-scope-for-this-adr">Out of scope for this ADR</h3>
+<ul>
+<li><strong><code>cross-repo/ruvector/target/</code> rsync exclusion</strong> (16 GB, 13 GB of which is Cargo <code>target/</code>). Pipeline-analyst flagged this as the largest single contributor on the build half. It&#39;s a build-half concern with its own risk profile (ruvector currently relies on <code>target/</code> cache survival for napi rebuild speed per ADR-0150) and is scoped to a separate follow-up.</li>
+<li><strong><code>.tsconfig.build.json</code> generation cache</strong> (40 node spawns/release). Build-half concern; see L5 of the codemod work for the precedent.</li>
+<li><strong><code>.npmignore</code> / <code>.gitignore</code> unconditional <code>find … -delete</code> sweep</strong> in <code>build-packages.sh:45</code>. Build-half concern; trivial cache gate worth a separate small commit.</li>
+</ul>
+<h3 id="consequences">Consequences</h3>
+<ul>
+<li>Good, because <strong>SSD-write-bytes per no-source-change rerun drop by ~5.7 GB</strong> (L1 1.7 GB install + L2 2.0 GB e2e snapshot bytes + L3 2.0 GB main install when cache-hit). This is the load-bearing win — file-event count and SSD-write-bytes are non-equivalent metrics (see Confirmation §Metrics).</li>
+<li>Good, because <code>fseventsd</code> event-record count drops from ~192k/release to ~70k/release (L1 saves ~59k events directly; L2 <em>retains</em> its ~58k clonefile events but those are metadata-only; L3 saves ~58k when cache-hit; L4 reparents ~13.5k events from <code>/tmp</code> into ACCEPT_TEMP — they still register with fseventsd but cluster under one trap-covered prefix).</li>
+<li>Good, because orphan-dir accumulation on <code>/tmp</code> (74 GB today) drops to near-zero via L6 + L7 + L10&#39;s symlink fail-loud.</li>
+<li>Good, because Verdaccio storage and npx cache stop growing unbounded (L8, L9).</li>
+<li>Good, because the 4 large + 8 small levers (5 hygiene + 3 test-corpus) are independently ship-able — partial landing still delivers proportional wins, and each can be rolled back if it surfaces a regression.</li>
+<li>Good, because <strong>L11/L12/L13 reduce per-release <code>init --full</code> invocations from 17 → ~9–11</strong> (L11 drops ~3 via clone-from-golden / config-mutate; L12 drops 1 via bge variant removal; L13 drops ~2–3 by applying the writer/reader split to adr0177). This pushes the per-release <code>init</code> surface to the architectural floor of 9 (the must-run inits where init&#39;s own code IS the SUT — adr0088 × 2 PATH-probing, adr0098 × 3 prior-state, adr0100 × 1 cwd, adr0143-init-mcp × 1 wrapper-bin, phase10 × 1 idempotency, plus the golden harness × 1).</li>
+<li>Bad, because <strong>L1 has unrecovered prior-art evidence</strong>: <code>b3d556f → bd5d878</code> two-hour revert cycle on 2026-05-07 implemented essentially the same shared-wrapper-install idea and bounced. Re-landing without bisecting the revert trigger risks repeating the regression. The pre-flight bisect requirement in the L1 mitigation column is load-bearing, not optional.</li>
+<li>Bad, because <strong>L3 has the heaviest correctness contract</strong> — postinstall idempotency must be proven by integration test, not assumed. The <code>212d67c</code> revert (&quot;revert <code>--ignore-scripts</code> on cache-restored install&quot;) proves at least one <code>@sparkleideas/*</code> package has a non-idempotent postinstall; that package must be identified and either fixed or excluded from L3&#39;s cache scope.</li>
+<li>Bad, because L2&#39;s APFS clonefile is platform-specific. On a foreign FS (NFS-mounted scratch dir, ZFS, ext4 in a Linux CI runner) the fallback to <code>cp -al</code> or <code>cp -r</code> kicks in. Each branch logs which path fired — silent regression is avoided. The fork&#39;s CI today runs only on the user&#39;s M5 Max so foreign-FS support is theoretical.</li>
+<li>Bad, because L4 reparents under <code>${ACCEPT_TEMP:-/tmp}</code> — when ACCEPT_TEMP is unset (ad-hoc check invocation outside the harness), the workdir lands at <code>/tmp/_check_workdirs/...</code> <em>which the trap doesn&#39;t cover</em>. Ad-hoc invocations were never trap-covered before either, but the patch must document this rather than imply universal coverage.</li>
+<li>Neutral, because the canonical entry points (<code>npm run release</code>, <code>bash scripts/test-acceptance-fast.sh --group &lt;group&gt;</code>, <code>npm run test:unit</code>) are unchanged. Users see no behaviour delta except faster runs.</li>
+<li>Neutral, because the <code>feedback-no-fallbacks</code> / <code>feedback-data-loss-zero-tolerance</code> rules are honoured: L1&#39;s bisect requirement names the failure mode before re-landing; L2&#39;s clonefile probe + branch-logging makes the fallback explicit; L3&#39;s epoch guard + integration test gate the cache; L10&#39;s symlink fail-loud replaces a silent <code>2&gt;/dev/null || true</code>.</li>
+</ul>
+<h3 id="confirmation">Confirmation</h3>
+<ul>
+<li><strong>Gate.</strong> <code>npm run release</code> is the only release-time gate. Each lever lands behind a feature env-var first (<code>RUFLO_SHARED_WRAPPER_INSTALL=1</code>, <code>RUFLO_E2E_CLONEFILE=1</code>, <code>RUFLO_PERSISTENT_ACCEPT=1</code>) so it can be A/B-compared against the baseline before becoming default.</li>
+<li><strong>Metric — SSD-write-bytes (primary).</strong> SSD-write-bytes per release is the SSD-wear proxy the user actually cares about. Capture via <code>ioreg</code> on macOS 26.x (<code>iostat -K</code> and <code>diskutil info WriteBytes</code> documented in earlier drafts do not exist on this host — DA round 2 R1):<pre><code class="hljs language-bash"><span class="hljs-comment"># pre-release</span>
+ioreg -c IOBlockStorageDriver -r \
+  | awk <span class="hljs-string">&#x27;/&quot;Bytes \(Write\)&quot;=/{gsub(/[^0-9]/,&quot;&quot;,$0); print; exit}&#x27;</span> \
+  &gt; /tmp/ioreg-pre
+
+npm run release
+
+<span class="hljs-comment"># post-release; diff is the release&#x27;s contribution to cumulative writes</span>
+ioreg -c IOBlockStorageDriver -r \
+  | awk <span class="hljs-string">&#x27;/&quot;Bytes \(Write\)&quot;=/{gsub(/[^0-9]/,&quot;&quot;,$0); print; exit}&#x27;</span> \
+  &gt; /tmp/ioreg-post
+<span class="hljs-built_in">echo</span> $(( $(cat /tmp/ioreg-post) - $(cat /tmp/ioreg-pre) )) &gt;&gt; logs/release-disk-bytes.jsonl</code></pre>
+Append to <code>logs/release-disk-bytes.jsonl</code>. <strong>Caveat:</strong> <code>ioreg</code> cumulative counters include EVERY write to disk0 across all processes during the release window — concurrent browser/IDE/Spotlight writes land in the same bucket. The guard-band threshold below absorbs this. Optional higher-fidelity capture for forensic re-runs: <code>sudo fs_usage -w -f filesys ./scripts/ruflo-publish.sh</code> gives per-syscall byte accounting but requires sudo and is high-overhead — not the default gate. Hard gate: SSD-write-bytes per release must not exceed <code>max(baseline × 1.10, baseline + 100 MB)</code>. The <code>+ 100 MB</code> floor absorbs unrelated host activity below which the metric is too noisy to be meaningful.</li>
+<li><strong>Metric — fseventsd event count (secondary).</strong> <code>scripts/measure-file-events.sh</code> uses <code>fs_usage -w -f filesys ... | awk</code> to count write/clonefile events during a release. Append to <code>logs/file-events.jsonl</code>. <strong>Soft gate (target, not hard fail)</strong>: event count should drop, but L2&#39;s clonefile count is by-design ~equal to the prior <code>cp -r</code> open/write count — the win is in <em>bytes</em> per event, not event count.</li>
+<li><strong>Metric — wall-time.</strong> Existing <code>timing-report.mjs</code> already records per-phase wall. Each lever ships a net wall-time neutral-or-better delta in addition to the byte-reduction win.</li>
+<li><strong>Acceptance correctness invariant (hard gate).</strong> <code>npm run release</code> must satisfy, vs the baseline measured at the lever&#39;s landing time:<ul>
+<li>Pass count must <strong>not decrease</strong>.</li>
+<li>Fail count must remain <strong>0</strong>.</li>
+<li>Skip count must <strong>not increase</strong>.
+Any lever that regresses any of those three is reverted. (Hard-coded &quot;669/678&quot; numbers drift; these three contracts don&#39;t.)</li>
+</ul>
+</li>
+<li><strong>L1 pre-flight (hard requirement).</strong> Before landing L1, bisect <code>b3d556f</code> vs <code>bd5d878</code> to identify which acceptance check failed and why. Cite the trigger in the L1 commit message. If the trigger cannot be identified, L1 is dropped.</li>
+<li><strong>L3 cross-release correctness (hard requirement).</strong> Add <code>tests/integration/persistent-accept-cache.test.mjs</code> proving: (a) cache invalidates on <code>@sparkleideas/cli</code> version bump; (b) cache invalidates on <code>.release-epoch</code> mismatch; (c) <code>node_modules/@sparkleideas/*/dist/</code> is byte-identical between cache-hit and cache-miss paths (postinstall idempotency). Lever does not promote to default until all three pass.</li>
+<li><strong>Kill-switch (hard requirement for L1 and L3).</strong> If <code>RUFLO_SHARED_WRAPPER_INSTALL=1</code> or <code>RUFLO_PERSISTENT_ACCEPT=1</code> is not promoted to default within 4 weeks of landing (commit date + 28 days), the env var, its code path, and the integration test are fully reverted. No orphan opt-in flags.</li>
+</ul>
+<h2 id="pros-and-cons-of-the-options">Pros and Cons of the Options</h2>
+<h3 id="option-b-chosen--four-large--five-hygiene-levers">Option B (chosen) — four large + five hygiene levers</h3>
+<ul>
+<li>Good, because each lever is ship-able in isolation; staged landing reduces blast radius.</li>
+<li>Good, because SSD-write-bytes is directly measurable via <code>ioreg -c IOBlockStorageDriver</code> deltas, so the load-bearing user-facing metric is not speculative.</li>
+<li>Good, because L1 and L3 carry explicit kill-switches (4-week promote-or-revert) so a stalled A/B experiment doesn&#39;t leave orphan opt-in flags.</li>
+<li>Bad, because L1&#39;s prior-art (<code>b3d556f → bd5d878</code>) is a documented failure of the exact same idea. The bisect requirement is a hard prerequisite, not a nice-to-have.</li>
+<li>Bad, because L3 reintroduces the cross-release state question that both <code>20730d2</code> and <code>212d67c</code> reverts opted out of. The reverted approach failed on npm reconciliation cost + postinstall non-idempotency, not cache-key breadth. L3&#39;s integration-test gate must prove postinstall idempotency before promotion.</li>
+<li>Bad, because L4&#39;s <code>${ACCEPT_TEMP:-/tmp}</code> fallback for ad-hoc invocations weakens the &quot;trap-covered scope&quot; invariant for one specific call path. Documented, not silenced.</li>
+</ul>
+<h3 id="option-c--ram-disk">Option C — RAM disk</h3>
+<ul>
+<li>Good, because eliminates SSD wear entirely for <code>/tmp</code> events.</li>
+<li>Bad, because 36 GB host RAM is tight; the ~25 GB working set leaves &lt;11 GB for the rest of the system + browsers + dev tools.</li>
+<li>Bad, because the persistent ONNX cache (<code>~/.cache/agentdb-models</code>, ADR-0048) and npx cache (<code>/tmp/ruflo-accept-npxcache</code>, ADR-0025) both rely on cross-release survival. Putting them on a RAM disk breaks both contracts.</li>
+<li>Bad, because <code>fseventsd</code> still records events for <code>/tmp</code> regardless of backing store — the kernel doesn&#39;t know the FS is in-memory. So RAM disk solves SSD wear but not <code>fseventsd</code> accumulation.</li>
+</ul>
+<h3 id="option-d--docker--lima-vm">Option D — Docker / Lima VM</h3>
+<ul>
+<li>Good, because full isolation.</li>
+<li>Bad, because doubles trust surface for <code>napi build</code> cross-compilation matrix.</li>
+<li>Bad, because host filesystem still sees mount events (does not fix <code>fseventsd</code>).</li>
+</ul>
+<h3 id="option-f--rsync-everywhere-instead-of-cp--cr-l2">Option F — rsync everywhere instead of <code>cp -cR</code> (L2)</h3>
+<ul>
+<li>Good, because conceptually appealing — &quot;incremental copy&quot; feels like the right answer for &quot;minimise file copying.&quot;</li>
+<li>Bad, because every remaining <code>cp</code> site operates on a fresh <code>mktemp</code> destination. No baseline → no delta → rsync degrades to <code>cp -r</code> with compare overhead.</li>
+<li>Bad, because rsync has no reflink / <code>clonefile(2)</code> support. On APFS it bypasses CoW entirely and writes full file bytes to flash. <code>cp -cR</code> writes only inode-table updates (~50 B/file) and defers data writes until a side mutates.</li>
+<li>Bad, because the architecturally-correct rsync site is <code>scripts/copy-source.sh</code> (5 parallel fork→build delta syncs), and that&#39;s already in production via ADR-0038.</li>
+</ul>
+<h2 id="more-information">More Information</h2>
+<h3 id="test-suite-design-principle-separate-init-writer-from-config-reader-tests">Test-suite design principle: separate init-writer from config-reader tests</h3>
+<p>L11&#39;s reducibility analysis surfaces an architectural principle that is currently <em>conflated</em> in the acceptance corpus: many checks use <code>init --full</code> as the easiest way to put a project into &quot;config has value V&quot; state, then assert downstream behaviour. That bundles two distinct assertions into one expensive setup:</p>
+<ol>
+<li><strong>&quot;<code>init --full --embedding-model M</code> writes the correct values into <code>.claude-flow/config.json</code>&quot;</strong> (the <strong>writer</strong> test — init is the SUT).</li>
+<li><strong>&quot;Given <code>embedding.model = M, embedding.dimension = D</code> in config, the runtime / AgentDB / RvfBackend behaves correctly&quot;</strong> (the <strong>reader</strong> test — config-and-runtime is the SUT; init is just one possible way to produce that config).</li>
+</ol>
+<p>The current corpus mostly tests (1) by way of (2) — re-running init for each downstream variant. The split delivers two independent benefits:</p>
+<ul>
+<li><strong>Writer tests</strong> become small, fast, and dim-of-the-table-driven. <code>validateEmbeddingModel()</code> is already a pure function over a 5-row frozen table (<code>forks/ruflo/v3/@claude-flow/cli/src/init/embedding-models.ts:14-22</code>); the writer test is &quot;for each row, init&#39;s config-emitter produces these bytes&quot; — exactly the cardinality of the table, in a unit test, without spawning init.</li>
+<li><strong>Reader tests</strong> become &quot;mutate config, exercise the runtime, assert behaviour&quot; — one init (the golden), N config mutations covering whichever (model, dim) tuples matter. Adding a new model becomes &quot;add a row to the lookup table + add a writer-test case + add a reader-test case using config-mutation&quot; — no new <code>init --full</code> invocation per model.</li>
+</ul>
+<p>The principle is broader than embeddings: any check whose name reads as &quot;init writes X&quot; belongs in the writer bucket (unit-test the config-emitter); any check whose name reads as &quot;with X in config, behaviour Y&quot; belongs in the reader bucket (clone-from-golden + config-mutate). The current acceptance corpus has 8 inits sitting on the wrong side of this line (adr0104 × 1, adr0177 × 4, adr0178 × 1, hive-mind × 2). L11 implements the separation for those 8 call sites.</p>
+<p>Where the principle does NOT apply: checks where init&#39;s <em>execution under specific conditions</em> is what&#39;s being asserted (PATH stripping in adr0088, prior-state reactions in adr0098, cwd handling in adr0100, idempotency in phase10, wrapper-bin generation in adr0143-init-mcp). Those 9 checks legitimately keep their full init invocations — init&#39;s code IS the writer being tested, under conditions a unit test cannot reproduce.</p>
+<h3 id="wave-1-landed-2026-05-16">Wave 1 landed (2026-05-16)</h3>
+<p>Five commits on <code>main</code> from a 4-agent parallel swarm:</p>
+<table>
+<thead>
+<tr>
+<th>Commit</th>
+<th>Lever</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>bd467cb</code></td>
+<td>L6</td>
+<td>Trap-cover <code>WRAPPER_SOLO_TEMP</code> + <code>_P5_DIR</code>. All 5 top-level temp dirs now trap-covered</td>
+</tr>
+<tr>
+<td><code>2a4b8c8</code></td>
+<td>L10 (symlink guard)</td>
+<td>Used <code>[[ -d ]]</code> instead of <code>realpath -e</code> (BSD <code>realpath</code> on macOS lacks <code>-e</code>; <code>[[ -d ]]</code> follows symlinks and is the portable equivalent)</td>
+</tr>
+<tr>
+<td><code>8d1a1cf</code></td>
+<td>L7</td>
+<td>Widen stale-sweep to 7 prefix classes via single multi-line <code>find … \( -name … -o … \)</code></td>
+</tr>
+<tr>
+<td><code>aed01d4</code></td>
+<td>L12</td>
+<td>Drop bge model variant. −77 LoC in <code>lib/acceptance-adr0177-checks.sh</code>; 4 outside-file registry refs cleaned in <code>scripts/test-acceptance.sh</code> + <code>scripts/test-acceptance-fast.sh</code>. MiniLM scenario renumbered 3→2 (check IDs unchanged, log scrapers unaffected)</td>
+</tr>
+<tr>
+<td><code>dddd516</code></td>
+<td>L4</td>
+<td>Reparent 91 mktemp workdirs across 42 files. 1 hard-coded site by-hand (not 6-8 as estimated). 3 entry-point mkdirs (test-acceptance.sh, test-acceptance-fast.sh, run-check.sh)</td>
+</tr>
+<tr>
+<td><code>2e6e4a9</code></td>
+<td>L10 (cp guards)</td>
+<td>Follow-up: same fail-loud pattern applied to 3 sibling <code>cp</code> swallows at <code>_e2e_isolate:26-28</code> (surfaced by lever-L10 during Wave 1 review)</td>
+</tr>
+<tr>
+<td><code>aab7276</code></td>
+<td>L4 over-reach fix</td>
+<td>Reverts 37 file-create mktemp reparentings (<code>mktemp /tmp/&lt;id&gt;</code> without <code>-d</code>) — agent&#39;s grep matched broader than the lever spec. Foundation helpers (<code>_run_and_kill</code>/<code>_run_and_kill_ro</code> in <code>acceptance-checks.sh</code>) caught the regression first because unit tests source them outside the harness. All 3936 unit tests green post-fix</td>
+</tr>
+<tr>
+<td><code>c81c9b9</code></td>
+<td>L4 root-isolation fix</td>
+<td>Reverts 8 mktemp reparentings for root-isolation checks: adr0100-A..G (<code>findProjectRoot</code> walk-up tests) and adr0104-mcp-path (<code>.mcp.json</code> write-to-iso verification). These checks require their iso to be OUTSIDE any ruflo-project marker tree; reparenting under <code>$ACCEPT_TEMP/_check_workdirs/</code> placed them inside the harness&#39;s init&#39;d project and broke the precondition. Surfaced by baseline-1 release run (<code>logs/release-disk-bytes.jsonl</code>: baseline-1, 18.67 GB writes, 378s, exit=1)</td>
+</tr>
+<tr>
+<td><code>8b9de92</code> → <code>a903c9c</code></td>
+<td>L1 empirical retry → revert</td>
+<td>User-directed retry of the share-install approach under <code>RUFLO_SHARED_WRAPPER_INSTALL=1</code>. Empirically confirmed unworkable: 62 acceptance failures vs 0 baseline; 1085s vs 384s duration. Trigger identified: <code>npm install @sparkleideas/ruflo</code> after <code>ruflo init --full</code> mutates node_modules in ways init&#39;s resolved artifact paths no longer match (adr0074 group: <code>intelligence.cjs not found</code>; sec-rl-consumed: RVF LockHeld). L1 dropped permanently — see L1 row above for documented gravesite</td>
+</tr>
+<tr>
+<td><code>adfd077</code></td>
+<td>L2 LANDED</td>
+<td><code>_acceptance_snapshot()</code> helper at <code>lib/acceptance-harness.sh:96-143</code>; COW probe with a real regular file; <code>cp -cR</code> fires on this host (macOS 26 / Darwin 25.4.0). E2E snapshot at <code>test-acceptance.sh:414</code>. Agent added <code>rmdir &quot;$E2E_DIR&quot;</code> before helper call so all 3 branches (cow/hardlink/recursive) have identical dst-doesn&#39;t-exist semantics</td>
+</tr>
+<tr>
+<td><code>8d50332</code></td>
+<td>L8 LANDED</td>
+<td><code>scripts/verdaccio-gc.mjs</code> (24,759 bytes) with 4-source pin-ref enumeration (forks self/dep-map, codemod UNSCOPED_MAP, .last-build-state; .release-epoch deferred to L3). Hooked at <code>ruflo-publish.sh:468-478</code>; GC failure doesn&#39;t fail release. Dry-run on this host: would-drop 21,503 of 22,134 versions across 64 packages, freeing 13.58 GiB</td>
+</tr>
+<tr>
+<td><code>b64e11f</code></td>
+<td>L9 LANDED</td>
+<td><code>_l9_lru_prune_npx_cache</code> at <code>test-acceptance.sh:733-794</code>. BSD <code>stat -f</code> works on this host; LRU sort by mtime ascending; pruned 238/247 blobs in dry-run at <code>RUFLO_NPX_CACHE_CAP_MB=1</code>. Current <code>_cacache</code> is 37 GB — will prune ~33 GB to 5 GB cap on next release startup</td>
+</tr>
+<tr>
+<td><code>1117b66</code></td>
+<td>L11 LANDED</td>
+<td>2 hive-mind checks (adr0120, adr0121) converted to <code>_e2e_isolate</code> clone-from-golden. ADR&#39;s &quot;3 candidates&quot; was off by one (adr0104 reclassified as init-as-SUT). Fast-acceptance shows 93ms / 85ms (was ~10-15s); init count 17 → 15</td>
+</tr>
+<tr>
+<td><code>2a9829d</code></td>
+<td>L3 LANDED (opt-in)</td>
+<td><code>lib/accept-cache.sh</code> + <code>tests/integration/persistent-accept-cache.test.mjs</code>. Gated by <code>RUFLO_PERSISTENT_ACCEPT=1</code>. <strong>6/6 integration tests pass including 62-second byte-identity proof</strong> of <code>node_modules/@sparkleideas/*/dist/</code> between cache-hit and cache-miss paths. Cache key uses cli&#39;s <code>dependencies</code> block as lock-equivalent (cli doesn&#39;t ship <code>package-lock.json</code>, verified against patch.161). Cache dir at <code>~/.cache/ruflo-accept-persistent-&lt;hash&gt;</code> (Temp-Cleaner-safe). 4-week kill-switch: revert flag + code path by 2026-06-13 if not promoted to default</td>
+</tr>
+<tr>
+<td><code>6055e04cc</code> (fork)</td>
+<td>L13(a) LANDED</td>
+<td><code>forks/ruflo/v3/@claude-flow/cli/__tests__/embedding-models.test.ts</code> — 25 vitest tests in 2ms, all 5 KNOWN_EMBEDDING_MODELS rows × <code>validateEmbeddingModel</code> + config-emitter round-trip + BARE_NAME/UNKNOWN_MODEL negatives. Runs in fork CI. On fork&#39;s <code>main</code>; ships to Verdaccio on next release</td>
+</tr>
+<tr>
+<td><code>34cbf58</code></td>
+<td>L13(b) LANDED</td>
+<td>adr0177&#39;s 2 default-mpnet inits converted to <code>_e2e_isolate</code> clone-from-golden. MiniLM scenario kept as real init (model bytes not pre-warmed). Init count 15 → 13</td>
+</tr>
+<tr>
+<td><code>1117b66</code> → <code>1767ef8</code> (revert) → <code>47ee247</code> (cherry-pick) + <code>d0d5cbe</code> (snapshot fix)</td>
+<td>L11 RE-LANDED 2026-05-17</td>
+<td>First attempt (1117b66) tripped on <code>_acceptance_snapshot</code> returning non-zero when copying <code>$E2E_DIR/.claude-flow/daemon.sock</code> (BSD <code>cp -cR</code> can&#39;t copy sockets); reverted as <code>1767ef8</code>. Re-attempt landed via cherry-pick <code>47ee247</code> + snapshot socket-tolerance fix in <code>d0d5cbe</code>: <code>_acceptance_snapshot</code> now redirects per-file cp stderr (sockets / wal / lock files) and returns 0 unconditionally — mirrors L10-ext&#39;s narrowing for volatile-file races (commit 32121db). Downstream callers verify their specific expected files via existence checks. Final init drop: 2 (adr0120 + adr0121 gossip/crdt agent-annotation checks)</td>
+</tr>
+<tr>
+<td><code>34cbf58</code> → <code>bb14830</code> (revert) → <code>d0d5cbe</code> (P5_DIR re-attempt)</td>
+<td>L13(b) RE-LANDED 2026-05-17</td>
+<td>First attempt (34cbf58) used <code>_e2e_isolate</code> which reads <code>$E2E_DIR</code>. But adr0177 runs in Phase 5 — <code>$E2E_DIR</code> is wiped at <code>scripts/test-acceptance.sh:3017</code> BEFORE Phase 5 starts (commit <code>bb14830</code> reverted that attempt). Phase 5 has its own golden dir, <code>$P5_DIR</code>, exported at line 3047 from <code>_P5_DIR</code> (a backgrounded init joined just before the Phase 5 wave). Re-attempt in <code>d0d5cbe</code>: <code>check_adr0177_default_config_keys</code> reads <code>$P5_DIR/.claude-flow/config.json</code> directly (pure read, no iso needed); <code>check_adr0177_default_roundtrip</code> clones <code>$P5_DIR</code> via <code>_acceptance_snapshot</code> into an iso then runs memory store/search/check-dim. Final init drop: 2 (adr0177&#39;s 2 default-mpnet inits collapsed; MiniLM scenario still uses real init because model bytes aren&#39;t pre-warmed)</td>
+</tr>
+<tr>
+<td><code>f8d3479</code></td>
+<td>L2 catastrophic fix</td>
+<td>The original L2 helper (<code>adfd077</code>) used <code>cp -cR src dst</code> and required the caller to <code>rmdir $dst</code> first. <code>_disable_spotlight_indexing</code> adds a marker file between mktemp and rmdir at <code>scripts/test-acceptance.sh:462</code>, breaking rmdir and causing <code>cp -cR src dst</code> to create <code>dst/$(basename src)</code> instead — landing the 2.1 GB snapshot at the wrong path. Wave 3 baseline showed 59 acceptance failures from this. Fix: switch helper to <code>cp -cR src/. dst/</code> form (contents-into-existing-dst, matching the prior <code>cp -r</code> behaviour). Verified on APFS: marker preserved, exit 0. Removed the rmdir hack from the caller</td>
+</tr>
+</tbody></table>
+<h3 id="implementation-roadmap">Implementation roadmap</h3>
+<p>A future implementer reads this ADR and lands levers in this order, each as a separate commit on <code>main</code>:</p>
+<ol>
+<li><strong>L6</strong> (cleanup trap registration) — 2-line patch, lowest risk, ships immediately. Provides orphan-cleanup safety even if L1 is later dropped.</li>
+<li><strong>L7</strong> (widened stale-sweep glob) — one-line <code>find</code> extension; ships immediately.</li>
+<li><strong>L10</strong> (iso symlink fail-loud guard) — change <code>lib/acceptance-e2e-checks.sh:29</code> from <code>ln -sf … 2&gt;/dev/null || true</code> to <code>realpath -e</code> check + fail-loud. Closes the cross-release symlink hazard before L3 lands.</li>
+<li><strong>L4</strong> (per-check workdir reparenting) — single mechanical regex pass <code>s|mktemp -d /tmp/&lt;id&gt;-XXXXX|mktemp -d &quot;${ACCEPT_TEMP:-/tmp}/_check_workdirs/&lt;id&gt;-XXXXX&quot;|g</code> over <code>lib/acceptance-*.sh</code>. The 6–8 hard-coded <code>/tmp/</code> paths are fixed by hand in a follow-up commit. No &quot;audit&quot; — just the sweep.</li>
+<li><strong>L12</strong> (drop bge model variant) — mechanical: delete <code>_adr0177_run_init &quot;$dir&quot; &quot;Xenova/bge-base-en-v1.5&quot;</code> call at <code>lib/acceptance-adr0177-checks.sh:298</code> and the scenario-2 assertion block. Single commit; ships independently of all other levers.</li>
+<li><strong>L2</strong> (e2e clonefile) — extract <code>_acceptance_snapshot()</code> helper that probes COW with a real regular file (NOT <code>/dev/null</code> — see DA round 1 B2), falls back to <code>cp -al</code>, then <code>cp -r</code>. Each branch logs which path fired. Lands in <code>test-acceptance.sh:385-387</code>.</li>
+<li><strong>L11</strong> (clone-from-golden / config-mutate for init-incidental checks) — uses L2&#39;s <code>_acceptance_snapshot()</code> helper to clone the golden post-init state per check. Per-check audit table goes in the commit body, tagging each of the 8 config-outcome inits as either CLONE (post-init state suffices), MUTATE (config-edit + read-path), or SUT (init&#39;s own code is the assertion). The 3 obvious clone candidates (adr0104, hive-mind × 2) land in the first commit; adr0178 audit follows in a second commit. adr0177&#39;s 3 remaining inits (after L12) are NOT touched by L11 — they move to L13 since they need writer-layer unit-test coverage to land safely. <strong>Hard requirement:</strong> the commit message tags each call site with its decision; no silent &quot;left as-is&quot; entries.</li>
+<li><strong>L13</strong> (writer/reader split for adr0177 embeddings) — depends on L11&#39;s mutate infrastructure. Lands in two commits: <strong>(a) fork-side writer tests</strong> at <code>forks/ruflo/v3/@claude-flow/cli/__tests__/embedding-models.test.ts</code> covering all 5 rows of <code>KNOWN_EMBEDDING_MODELS</code> against <code>validateEmbeddingModel()</code> + the config-emitter chain; CI gate on these passing before (b). <strong>(b) ruflo-patch-side reader tests</strong> rewriting <code>lib/acceptance-adr0177-checks.sh</code> to clone golden + mutate <code>.claude-flow/config.json</code> for the 384-dim case; the 2 default-model inits collapse into golden coverage; MiniLM × 1 collapses into the 384-mutation reader test. <strong>Hard requirement</strong>: (a) lands and ships in a released CLI version before (b) lands — acceptance against an old CLI without the writer tests would silently move the dim-table validation off the test corpus.</li>
+<li><strong>L1</strong> (drop wrapper-solo install) — <strong>prerequisite: bisect <code>b3d556f</code>/<code>bd5d878</code> to identify the 2026-05-07 revert trigger</strong> before any code lands. With the trigger documented, replace <code>mktemp -d &quot;/tmp/ruflo-wrapper-solo-XXXXX&quot;</code> block in <code>test-acceptance.sh:235</code> and re-target the 3 wrapper checks (adr0142 bin-path, adr0142 MCP JSON-RPC, adr0143 init MCP) at <code>$ACCEPT_TEMP</code>. Lands behind <code>RUFLO_SHARED_WRAPPER_INSTALL=1</code>. 4-week kill-switch.</li>
+<li><strong>L3</strong> (persistent ACCEPT_TEMP with cache key) — new module <code>lib/accept-cache.sh</code> exporting <code>_resolve_accept_temp()</code>. Cache key SHA-256 over (resolved <code>@sparkleideas/cli</code> version + resolved <code>@sparkleideas/ruflo</code> version + <code>@sparkleideas/cli</code>&#39;s shipped <code>package-lock.json</code> content). Writes <code>.release-epoch</code> to ACCEPT_TEMP. Startup verifies epoch matches; nukes-fresh on mismatch/missing. Integration test in <code>tests/integration/persistent-accept-cache.test.mjs</code> proves invalidation triggers + postinstall byte-identity. Lands behind <code>RUFLO_PERSISTENT_ACCEPT=1</code>. 4-week kill-switch.</li>
+<li><strong>L8, L9</strong> — hygiene levers; ship in any order after L1–L7.</li>
+</ol>
+<h3 id="open-questions-for-implementer">Open questions for implementer</h3>
+<ul>
+<li><p><strong>Postinstall identity (L3).</strong> Which <code>@sparkleideas/*</code> package was the trigger for <code>212d67c</code> (revert <code>--ignore-scripts</code> on cache-restored install)? Identifying it pre-implementation lets the L3 integration test target that package&#39;s postinstall specifically. If postinstall non-determinism cannot be characterised, L3&#39;s gate is unmeetable and the lever is rejected.</p>
+</li>
+<li><p><strong>L1 revert trigger (<code>bd5d878</code>) — cold-trail policy.</strong> The revert commit message says only &quot;Revert b3d556f&quot;; the original lasted ~2 hours on <code>main</code> before bouncing. <code>git reflog</code> may surface the trigger; failing that, the <code>081a8f5</code> (&quot;background install, join before wave&quot;) commit hints — perhaps the install was not in fact &quot;stateless wrt install dir&quot; as the original commit claimed. <strong>Policy if the trail goes cold (DA round 2 answer):</strong></p>
+<ul>
+<li><strong>Default — drop L1 entirely.</strong> The wrapper-solo install costs ~70s wall (already backgrounded; net wall ≈ 0) and ~59k file events. Orphan damage is covered by L6 cleanup-trap registration anyway. L1&#39;s headline win was the 1.7 GB SSD-write reduction — losing it isn&#39;t catastrophic.</li>
+<li><strong>Override path — rare and explicit.</strong> If the implementer can articulate a specific testable hypothesis for why bd5d878 reverted (e.g. &quot;wrapper-check N depends on a postinstall script that didn&#39;t run because npm cache hit&quot;), and the hypothesis is verified in isolation BEFORE landing, then ship L1 behind the opt-in with the kill-switch. The hypothesis goes in the commit message — no silent &quot;we don&#39;t know, let&#39;s try anyway.&quot;</li>
+<li><strong>Why not &quot;best-effort + opt-in&quot; as default:</strong> that pattern is exactly the <code>feedback-no-fallbacks</code> shape DA explicitly named — un-named failure modes are the ones that catch you. Opt-in flags buy time but do not protect against unknown regressions; the 4-week kill-switch is the bisect&#39;s safety net, not its replacement.</li>
+</ul>
+</li>
+<li><p><strong>L2 clonefile semantics under subsequent writes.</strong> <code>cp -cR</code> on APFS produces a CoW clone — subsequent writes to the destination tree allocate new blocks lazily. Worth verifying that <code>_e2e_isolate</code>&#39;s <code>rm -f &quot;$iso_dir/.swarm/memory.rvf&quot;*</code> (line 31) doesn&#39;t accidentally drag the underlying source blocks into the snapshot.</p>
+</li>
+<li><p><strong>L11 per-check audit table.</strong> For each of the 8 config-outcome inits (adr0104 × 1, adr0177 × 4, adr0178 × 1, hive-mind × 2), the implementer must tag each call site CLONE (clone-from-golden suffices), MUTATE (clone + <code>.claude-flow/config.json</code> edit), or SUT-AFTER-ALL (init&#39;s code is the assertion target despite first impressions). The 3 obvious clone candidates (adr0104, hive-mind × 2) land first; the remaining 5 (adr0177&#39;s 2 defaults + 1 bge [now L12&#39;d] + 1 MiniLM, plus adr0178&#39;s <code>--with-embeddings</code>) need by-hand reading of the assertion blocks. Empirical evidence to ground the audit: <code>forks/ruflo/v3/@claude-flow/cli/src/init/embedding-models.ts:14-22</code> confirms <code>KNOWN_EMBEDDING_MODELS</code> is a static frozen lookup table (3 × 768-dim + 2 × 384-dim entries) with no runtime dim-reduction logic, so &quot;dim auto-adjustment&quot; reduces to &quot;writer looks up model&#39;s dim and emits it into config&quot; — a writer-test concern, not a reader-test concern. MiniLM × 1&#39;s reader-bucket assertions (runtime can create a 384-dim segment, AgentDB round-trips at 384-dim) could be re-expressed as a config-mutate + assert against golden, which would push the audit&#39;s reduction count from 3 → 5+.</p>
+</li>
+<li><p><strong>L8 (Verdaccio GC) pre-check correctness.</strong> Enumerate every source of pinned <code>-patch.N</code> refs before deciding which tarballs to drop. If a tarball is referenced from any of the four sources below, NEVER drop it regardless of age. Keep-last-N (default <code>N=10</code>) is the floor; the enumeration is the ceiling.</p>
+<ul>
+<li>(a) <code>forks/*/package.json</code> — internal cross-fork deps.</li>
+<li>(b) <code>scripts/codemod.mjs</code>&#39;s rewrite tables — every <code>-patch.N</code> ref the codemod generates is load-bearing for the codemod&#39;s expected output.</li>
+<li>(c) <code>.last-build-state</code> — references the resolved versions at last successful release.</li>
+<li>(d) <code>.release-epoch</code> (post-L3) — references the cached ACCEPT_TEMP&#39;s resolved versions. A cache-hit on L3 could attempt to resolve a tarball GC just dropped.</li>
+</ul>
+<p>Sources NOT to enumerate (DA round 2 answer): skill manifests under <code>~/.claude/skills/</code> (resolve via <code>npx</code>, different namespace), plugin lockfiles (IPFS, separate system), CLAUDE.md examples (illustrative, mostly <code>@latest</code> not pinned).</p>
+</li>
+</ul>
+<h3 id="related-adrs">Related ADRs</h3>
+<ul>
+<li><strong>ADR-0025</strong> — persistent npx cache contract; this ADR&#39;s L9 extends the existing sweep to also LRU-prune <code>_cacache</code>.</li>
+<li><strong>ADR-0038</strong> — <code>/tmp/ruflo-build</code> persistent build-source dir; this ADR&#39;s build-half scope-exclusions reference it.</li>
+<li><strong>ADR-0039</strong> — <code>_run_and_kill</code> sentinel pattern; this ADR&#39;s L4 reparent move keeps the existing sentinel-file paths working (they live in <code>/tmp</code> and exit cleanly per the pattern).</li>
+<li><strong>ADR-0048</strong> — persistent ONNX model cache (<code>~/.cache/agentdb-models</code>); this ADR does NOT touch it; the cache survives across releases by design.</li>
+<li><strong>ADR-0150</strong> — napi rebuild gate; this ADR&#39;s <code>cross-repo/ruvector/target/</code> exclusion is deferred as scope-out because of the napi-rebuild dependency.</li>
+</ul>
+<h3 id="measurement">Measurement</h3>
+<p>Per-release measurement appends one JSON line each to two complementary logs:</p>
+<p><code>logs/release-disk-bytes.jsonl</code> (primary — SSD-wear proxy):</p>
+<pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;release&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;patch.143&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;write_bytes&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">6312455168</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;read_bytes&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">14882017280</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;duration_s&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">408</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;levers_active&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">&quot;L1&quot;</span><span class="hljs-punctuation">,</span><span class="hljs-string">&quot;L2&quot;</span><span class="hljs-punctuation">,</span><span class="hljs-string">&quot;L3&quot;</span><span class="hljs-punctuation">,</span><span class="hljs-string">&quot;L4&quot;</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">}</span></code></pre>
+<p><code>logs/file-events.jsonl</code> (secondary — fseventsd-buffer proxy):</p>
+<pre><code class="hljs language-json"><span class="hljs-punctuation">{</span><span class="hljs-attr">&quot;release&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-string">&quot;patch.143&quot;</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;events_write&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">192340</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;events_clonefile&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">0</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;events_read&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">821100</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;init_invocations&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">17</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;duration_s&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-number">408</span><span class="hljs-punctuation">,</span> <span class="hljs-attr">&quot;levers_active&quot;</span><span class="hljs-punctuation">:</span> <span class="hljs-punctuation">[</span><span class="hljs-string">&quot;L1&quot;</span><span class="hljs-punctuation">,</span><span class="hljs-string">&quot;L2&quot;</span><span class="hljs-punctuation">,</span><span class="hljs-string">&quot;L3&quot;</span><span class="hljs-punctuation">,</span><span class="hljs-string">&quot;L4&quot;</span><span class="hljs-punctuation">]</span><span class="hljs-punctuation">}</span></code></pre>
+<p><code>init_invocations</code> is the count of distinct <code>init --full</code> calls per release across the pipeline (harness + per-check). Baseline: 17 (1 golden + 16 per-check across the acceptance corpus). Empirical per-init footprint (measured 2026-05-16 with <code>@sparkleideas/cli@latest</code>): <strong>333 files / 2.6 MB</strong> of project artifacts (<code>.claude/</code> 319 files / 2.5 MB; <code>.claude-flow/</code> 10 files / 52 KB; 4 top-level files; 12 directories). <strong><code>init --full</code> writes zero <code>node_modules</code> entries</strong> — it does not invoke <code>npm install</code>, <code>pnpm install</code>, or any package manager (verified against the fork&#39;s <code>init.ts</code> and <code>init/mcp-generator.ts</code>; the only npm references in the source are user-facing instruction strings). The <del>58k <code>node_modules</code> files in <code>$ACCEPT_TEMP/node_modules</code> come exclusively from the harness&#39;s two <code>npm install</code> invocations against Verdaccio (main install of <code>@sparkleideas/cli</code>, plus the wrapper-solo install of <code>@sparkleideas/ruflo</code>); per-check checks reuse those installs via <code>$CLI_BIN</code> (direct binary call) or <code>_e2e_isolate</code>&#39;s <code>node_modules</code> symlink, so per-check inits do not trigger additional <code>npm install</code> work. The persistent ONNX model cache at `</del>/.cache/transformers<code>(~110 MB for</code>Xenova/all-mpnet-base-v2`, ADR-0048) survives across releases and is not part of the per-release init footprint. Multiplying the 333-file figure by 17 gives a per-release floor of ~5.7k project-artifact writes from inits alone. L11 + L12 + L13 land in this metric directly.</p>
+<p>Hard release-end gate (the only auto-fail criterion): <strong><code>write_bytes</code> must not exceed <code>max(baseline × 1.10, baseline + 100 MB)</code></strong> at the lever&#39;s landing time. The 10% multiplier handles noise on large baselines; the <code>+ 100 MB</code> floor absorbs unrelated host activity for small post-cache-hit releases where 10% drops below the noise floor of a single browser tab. Event-count is tracked but not gated — by-design ~unchanged by L2 since clonefile syscalls still register.</p>
+<p>Baseline (2026-05-16, pre-lever): not yet measured. <strong>Baseline capture is a hard prerequisite to L6</strong> — the first roadmap commit (&quot;baseline-capture&quot;) records <code>write_bytes</code> over ≥2 baseline <code>npm run release</code> invocations, takes the median, and writes the value to <code>logs/release-disk-bytes.jsonl</code>&#39;s first entry with <code>levers_active: []</code>. L6 does not land until that entry exists. The principle scales to L1/L3 where the baseline is the hard-gate comparison point — a missing baseline silently invalidates the gate.</p>
+<h2 id="amendments">Amendments</h2>
+<h3 id="amendment-status-reconciliation-2026-05-18--partial-implementation">Amendment: Status reconciliation (2026-05-18) — partial implementation</h3>
+<p>Status kept <code>proposed</code> per the 2026-05-18 ADR status audit.</p>
+<p><strong>Landed (in <code>scripts/test-acceptance.sh</code>):</strong></p>
+<ul>
+<li><strong>L2</strong> — APFS clonefile snapshot (<code>scripts/test-acceptance.sh:463</code>).</li>
+<li><strong>L3</strong> — persistent <code>ACCEPT_TEMP</code> via <code>_resolve_accept_temp</code>
+(<code>:169, 253, 279, 293</code>).</li>
+<li><strong>L4</strong> — reparented per-check workdirs under trap-covered parent
+(<code>:273</code>).</li>
+<li><strong>L6</strong> — trap-cover wrapper-solo install dir + P5 background init
+dir (<code>:193, 195</code>).</li>
+<li><strong>L7</strong> — widened glob to cover all 7 prefix classes that orphan on
+cleanup (<code>:223</code>).</li>
+<li><strong>L9</strong> — LRU-prune <code>_cacache</code> when total size exceeds soft cap
+(<code>:795</code>).</li>
+<li><code>logs/release-disk-bytes.jsonl</code> exists.</li>
+</ul>
+<p><strong>Deferred / open:</strong></p>
+<ul>
+<li><strong>L1</strong> (sentinel-write pattern), <strong>L5</strong>, <strong>L8</strong>, <strong>L10-L13</strong>: no
+evidence in <code>scripts/</code>.</li>
+<li><strong>Baseline capture (the &quot;baseline-capture&quot; first roadmap commit)</strong> —
+ADR text says &quot;Baseline (2026-05-16, pre-lever): not yet measured.&quot;
+Without ≥2 baseline <code>npm run release</code> invocations recorded with
+<code>levers_active: []</code>, the hard release-end gate is silently
+invalidated for L1/L3/L6.</li>
+<li><strong>Hard release-end gate</strong> itself (the <code>write_bytes ≤ max(baseline × 1.10, baseline + 100 MB)</code> auto-fail criterion) — not wired into the
+pipeline.</li>
+</ul>
+<p>Roughly half the levers shipped; the gate that makes the program
+self-policing has not. Reconciled as part of the 2026-05-18 status
+audit.</p>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

@@ -1,0 +1,760 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0185-hive-mind-consensus-cli-retirement</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <hr>
+<h2 id="status-implementeddate-2026-05-18closed-on-2026-05-18tags-hive-mind-consensus-cli-retirement-archivist-runtime-activationdepends-on-adr-0180-adr-0181-adr-0184implements-">status: implemented
+date: 2026-05-18
+closed-on: 2026-05-18
+tags: [hive-mind, consensus, cli-retirement, archivist, runtime-activation]
+depends-on: [ADR-0180, ADR-0181, ADR-0184]
+implements: []</h2>
+<h1 id="adr-0185-hive-mind-consensus-cli-retirement">ADR-0185: Hive-Mind Consensus Cli Retirement</h1>
+<h2 id="context-and-problem-statement">Context and Problem Statement</h2>
+<p><a href="ADR-0184-hive-mind-consensus-handler-port.html">ADR-0184</a> closed (2026-05-18, Wave 6a) with all 6 per-strategy bodies live in <code>forks/agentdb/src/archivist/handlers/hive-mind/consensus/&lt;strategy&gt;.ts</code>. The Wave 6a exit-gate test verifies zero <code>pending</code> stubs in the agentdb handler tree and audit-entry count = mutation count. Acceptance baseline maintained at 672/681/0/9 across all 6 waves.</p>
+<p>The cli <code>hive-mind_consensus</code> handler at <code>forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts</code> (lines 1984-2919, ~870 LoC handler body + ~50 LoC schema/header) is now <strong>100% redundant</strong> with the agentdb per-strategy handlers. Both surfaces work correctly; they are dual-write. ADR-0184 Wave 6 envisioned flipping the cli to a thin <code>archivist.dispatch(&#39;hive-mind_consensus&#39;, payload)</code> wrapper, but scope measurement during Wave 6 execution revealed the cli flip itself is a substantial focused refactor:</p>
+<table>
+<thead>
+<tr>
+<th>Concern</th>
+<th>Approximate scope</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>buildConsensusResponse(state, action, strategy)</code> — reconstructs ~20 telemetry fields per action from POST-dispatch state</td>
+<td>~300-400 LoC standalone</td>
+</tr>
+<tr>
+<td>Try/catch error-reshape (5 typed-error branches → <code>{action, error, ...}</code> envelope; 3 re-throw branches)</td>
+<td>~30 LoC</td>
+</tr>
+<tr>
+<td>Helper-set cleanup (10 cli-local helpers: zero external callers confirmed; need to split dead-after-flip from still-callable-by-response-builder)</td>
+<td>~200 LoC delete + ~100 LoC keep</td>
+</tr>
+<tr>
+<td>Cli test re-validation (existing assertions in <code>__tests__/mcp-tools-deep.test.ts</code> for response shapes, error classes, byzantine detection, gossip rounds, CRDT merges)</td>
+<td>full re-run + per-assertion review</td>
+</tr>
+<tr>
+<td><strong>Total</strong></td>
+<td>~1500 LoC of focused refactor work</td>
+</tr>
+</tbody></table>
+<p>This spin-out follows the <a href="ADR-0181-archivist-runtime-activation.html#amendment-closure-plan--sequenced-path-to-close-the-program-2026-05-17">ADR-0181 → ADR-0184</a> precedent (peel out a single concern when the closure plan would otherwise bloat). ADR-0184 Wave 6a delivered the agentdb-side correctness gates; ADR-0185 picks up the cli retirement as a focused next step.</p>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<ul>
+<li><code>feedback-no-fallbacks</code> — every cli soft-<code>{action, error}</code> return must map cleanly to either a typed throw (reshaped post-dispatch) or a re-throw (preserving cli&#39;s pre-flip contract). No silent coerce.</li>
+<li><code>feedback-no-value-judgements-on-features</code> — default to WIRE. The cli flip unifies the consensus surface; the dual-write state is structurally redundant and should be collapsed.</li>
+<li><strong>Response-shape parity is its own correctness gate.</strong> The cli&#39;s existing response objects span ~20 telemetry fields per action × 4 actions × 6 strategies. Each field must round-trip exactly through <code>buildConsensusResponse(...)</code> or downstream MCP callers break.</li>
+<li><strong>One-shot 1500-LoC was the risk that motivated this spin-out.</strong> ADR-0184 Wave 6 attempted a one-shot retire; scope measurement triggered a stand-down. ADR-0185 takes the time to do it incrementally with proper verification.</li>
+<li>ADR-0184 Wave 6a exit-gate test (zero <code>pending</code> stubs, audit-equals-mutation count) verifies the agentdb surface is COMPLETE independent of cli retirement. ADR-0185 does not block any future archivist work.</li>
+<li><code>feedback-singleton-frozen-state-desync</code> (ADR-0184 Open Follow-up #4): cli tests that touch <code>getProcessHiveMindStore()</code> may need <code>CLAUDE_FLOW_CWD</code> env-var isolation. ADR-0185 carries the responsibility for this guard.</li>
+</ul>
+<h2 id="considered-options">Considered Options</h2>
+<ul>
+<li><strong>A. 1500-LoC one-shot retire.</strong> Rejected — this is the one-shot risk that motivated the spin-out. ADR-0184 Wave 6 stood down to avoid it.</li>
+<li><strong>B. Per-action incremental flip</strong> (propose first → vote → status → list). Each action lands as its own commit; cli&#39;s strategy fan-out gets thinner with each commit. Cli tests can be re-validated per action.</li>
+<li><strong>C. Per-strategy + per-action matrix</strong> (24 commits across 6 strategies × 4 actions). Maximum granularity; minimum per-commit risk; substantial coordination overhead.</li>
+<li><strong>D. Hybrid: response-builder-first then per-action flip.</strong> Land <code>buildConsensusResponse(...)</code> as its own commit (pure additive; called by an &quot;experimental&quot; code path that mirrors the existing handler&#39;s output). Then flip each action one at a time. Verification via parallel-strategy harness: drive identical inputs through cli + archivist, diff responses.</li>
+</ul>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<p>Chosen: <strong>Option D (hybrid)</strong> — land <code>buildConsensusResponse(...)</code> additively first; verify response parity via a parallel-strategy harness; then flip each action one at a time with the harness still running as a regression guard.</p>
+<p>Option A (one-shot retire) is rejected: the 1500-LoC scope is the exact risk that motivated this spin-out from ADR-0184 Wave 6.</p>
+<p>Option B (per-action flip without prior response-builder) is rejected: each per-action flip would need response-builder logic INLINE in that action&#39;s branch, duplicating work across 4 actions. Option D extracts the logic ONCE in Wave 1 and reuses it through Waves 2-5.</p>
+<p>Option C (24-cell matrix) is rejected: 6 strategies × 4 actions × per-cell verification is overhead disproportionate to risk. The response-builder handles strategy-conditional fields internally; per-action flip is the natural granularity for cli changes.</p>
+<p>Option D sequences risk so that the response-builder bug (if any) surfaces at LAND time (Wave 1, additive, no behaviour change), not at FLIP time (Waves 2-5, where a bug would correlate with the cli flip and obscure trace). Per-action flip then becomes a 1-line dispatcher swap per action, with the response-builder already proven correct against the cli&#39;s pre-flip baseline.</p>
+<h3 id="consequences">Consequences</h3>
+<ul>
+<li>Good — incremental verification at each action&#39;s flip. Per-action commit revert is surgical.</li>
+<li>Good — the response-builder is a pure read function over POST-dispatch state; no mutation, no I/O. Trivially testable in isolation.</li>
+<li>Bad — Option D requires more wall-clock than Option A (multiple commits + multiple release gates) IF Option A would have worked one-shot.</li>
+<li>Neutral — cli <code>crdt-types.ts</code> deletion is a separate cli-housekeeping concern. ADR-0185 may delete the cli copy iff the cli&#39;s <code>buildConsensusResponse</code> is the last consumer, OR leave it as an orphaned export.</li>
+</ul>
+<h3 id="confirmation">Confirmation</h3>
+<ul>
+<li><strong><code>npm run release</code> is the gate for each per-action commit.</strong></li>
+<li><strong>Parallel-strategy verification harness</strong>: drive identical inputs through cli (pre-flip) AND archivist (post-flip via test-only direct call) and diff responses; the diff must be empty for every action × strategy combination.</li>
+<li>Per-action invariants must throw on falsy per <code>feedback-no-fallbacks</code> — no silent pass branches.</li>
+<li>Final gate: cli <code>hive-mind_consensus</code> handler body is a thin dispatch wrapper; helper-set cleanup landed; cli <code>crdt-types.ts</code> deletion decision documented.</li>
+</ul>
+<h2 id="architecture">Architecture</h2>
+<ul>
+<li><p><strong><code>buildConsensusResponse(action, strategy, proposalId, state, input) → ConsensusResponse</code></strong> at NEW FILE <code>forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-consensus-response.ts</code> (~300-400 LoC). Pure function. Locates the proposal in <code>state.consensus.pending</code> first, falls back to <code>state.consensus.history</code>.</p>
+<p>Signature:</p>
+<pre><code class="hljs language-ts"><span class="hljs-keyword">export</span> <span class="hljs-keyword">function</span> <span class="hljs-title function_">buildConsensusResponse</span>(<span class="hljs-params">
+  <span class="hljs-attr">action</span>: <span class="hljs-string">&#x27;propose&#x27;</span> | <span class="hljs-string">&#x27;vote&#x27;</span> | <span class="hljs-string">&#x27;status&#x27;</span> | <span class="hljs-string">&#x27;list&#x27;</span>,
+  <span class="hljs-attr">strategy</span>: <span class="hljs-string">&#x27;bft&#x27;</span> | <span class="hljs-string">&#x27;raft&#x27;</span> | <span class="hljs-string">&#x27;quorum&#x27;</span> | <span class="hljs-string">&#x27;weighted&#x27;</span> | <span class="hljs-string">&#x27;gossip&#x27;</span> | <span class="hljs-string">&#x27;crdt&#x27;</span>,
+  <span class="hljs-attr">proposalId</span>: <span class="hljs-built_in">string</span>,
+  <span class="hljs-attr">state</span>: <span class="hljs-title class_">HiveMindState</span>,
+  <span class="hljs-attr">input</span>: <span class="hljs-title class_">HiveMindConsensusPayload</span>,
+</span>): <span class="hljs-title class_">ConsensusResponse</span>;</code></pre>
+<p>Return type <code>ConsensusResponse</code> is a <strong>TypeScript discriminated union</strong> on <code>action</code>: <code>ProposeResponse | VoteResponse | StatusResponse | ListResponse</code>. Each member carries strategy-conditional optional fields (gossip-only: <code>gossipRound</code>, <code>gossipBound</code>, <code>gossipExhausted</code>; crdt-only: <code>crdtState</code>, <code>crdtVerdict</code>, <code>crdtApprovers</code>, <code>crdtVoteCount</code>, <code>crdtExpectedVoters</code>, <code>crdtTimedOut</code>; weighted-only: weight-sum subfield; byzantine-only: <code>byzantineVoters</code>). The union shape is the formal cli response spec; downstream MCP-caller documentation can cite it directly. (This resolves Open Follow-up #1.)</p>
+</li>
+<li><p><strong>Cli <code>hive-mind_consensus</code> handler</strong> at <code>forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts</code> — post-retirement shape is a thin wrapper (~40-50 LoC, down from ~870):</p>
+<ol>
+<li>Pre-mint <code>proposalId</code> for <code>action === &#39;propose&#39;</code> (mirrors <code>task_create</code> precedent at <code>mcp-tools/task-tools.ts:127-160</code>). Other actions take <code>proposalId</code> from <code>payload</code>.</li>
+<li><code>await archivist.dispatch(&#39;hive-mind_consensus&#39;, { ...payload, proposalId })</code> for write actions (<code>propose | vote | status</code>), <code>archivist.dispatchRead(&#39;hive-mind_consensus&#39;, payload)</code> for <code>list</code>. Typed-overload form per ADR-0181 Phase 5 <code>ToolPayloadMap</code>.</li>
+<li>Try/catch with <code>instanceof</code> discrimination (error classes re-exported from <code>@sparkleideas/agentdb/archivist</code> per ADR-0184 Wave 6a barrel):<ul>
+<li><strong>Reshape to <code>{action, error: &lt;e.message&gt;, ...}</code> envelope</strong> (5): <code>RaftTermCollisionError</code>, <code>RaftVoteChangeError</code>, <code>DuplicateVoteError</code>, <code>VoterIdRequiredError</code>, <code>ProposalNotFoundError</code>.</li>
+<li><strong>Re-throw</strong> (3, per cli&#39;s pre-flip contract): <code>MissingQueenForWeightedConsensusError</code>, <code>WorkerAlreadyFailedError</code>, <code>ProposalAlreadyFailedError</code>.</li>
+</ul>
+</li>
+<li>Re-read state via <code>archivist.dispatchRead(&#39;hive-mind_status&#39;, { proposalId })</code>.</li>
+<li><code>return buildConsensusResponse(action, strategy, proposalId, state, input)</code>.</li>
+</ol>
+</li>
+<li><p><strong>Helper-set cleanup</strong> in <code>forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts</code>:</p>
+<ul>
+<li><strong>DELETE</strong> — mutation-only, dead-after-flip (verify zero external callers via <code>grep -rE</code> per helper before delete): <code>detectByzantineVoters</code>, <code>tryResolveProposal</code>, <code>maybeAdvanceGossipRoundOnTimeout</code>, <code>selectGossipTargets</code>, <code>reconcileFailedFromStatusKeys</code>, <code>workerMetaFor</code>. Approximately ~200 LoC across the 6 functions.</li>
+<li><strong>KEEP in cli</strong> — pure-read, called by <code>buildConsensusResponse</code>: <code>calculateRequiredVotes</code>, <code>weightedTally</code>, <code>settleCheckGossip</code>, <code>gossipFanout</code>. <strong>Vendor-from-agentdb is rejected</strong> — response-building is a cli concern; cross-package import for pure-read helpers adds coupling that doesn&#39;t pay back. (This resolves Open Follow-up #5.)</li>
+<li><strong>KEEP cli <code>crdt-types.ts</code></strong> — <code>buildConsensusResponse</code> calls <code>LWWRegister.from(...).value()</code> / <code>ORSet.from(...).elements()</code> / <code>GCounter.from(...).value()</code> for CRDT telemetry. Cross-package import (<code>@sparkleideas/agentdb/archivist/handlers/hive-mind/consensus/_crdt-types</code>) would add coupling without benefit. (This resolves Open Follow-up #3.)</li>
+</ul>
+</li>
+<li><p><strong>Parallel-strategy verification harness</strong> at NEW FILE <code>forks/ruflo/v3/@claude-flow/cli/__tests__/hive-mind-consensus-parity.test.ts</code> (~400 LoC):</p>
+<ul>
+<li>Drives 24 inputs (4 actions × 6 strategies) — <code>propose × {bft, raft, quorum, weighted, gossip, crdt}</code>, same for <code>vote / status / list</code> — through BOTH cli&#39;s pre-flip handler AND archivist&#39;s dispatched handler. (For the <code>list</code> action, &quot;across 6 strategies&quot; is degenerate; harness uses 1 input there → 19 distinct cells in practice, expanded with state variants to ≥24 effective scenarios.)</li>
+<li>Diffs responses field-by-field via:<ul>
+<li><code>crdtSemanticEqual()</code> (already in agentdb per ADR-0184 Wave 5 <code>_shared.ts</code>) for CRDT subfields — handles ORSet&#39;s internal-ordering issue.</li>
+<li>Plain deep-equal for other fields.</li>
+</ul>
+</li>
+<li><strong>Determinism strategy</strong> (resolves Open Follow-up #2):<ul>
+<li>Clock: <code>vi.useFakeTimers()</code> + <code>vi.setSystemTime(&lt;fixed epoch&gt;)</code> per test, advance via <code>vi.advanceTimersByTime()</code> for ADR-0131 timeout-driven transitions.</li>
+<li><code>proposalId</code>: pre-mint via FNV-1a + mulberry32 seed (same pattern ADR-0184 Wave 5 used). Cli&#39;s <code>propose</code> action accepts the pre-minted id via payload.</li>
+<li>ORSet tagging: cli&#39;s ORSet uses <code>Math.random()</code> for tag generation; harness stubs <code>Math.random</code> with a seeded mulberry32 sequence in <code>beforeEach</code>.</li>
+<li>Per-test cleanup: <code>vi.restoreAllMocks()</code> in <code>afterEach</code>.</li>
+</ul>
+</li>
+<li><strong>Singleton isolation</strong> (resolves Open Follow-up #4): each test uses <code>CLAUDE_FLOW_CWD</code> env-var injection (per ADR-0183 A0 swarm pattern) + <code>vi.stubEnv(&#39;HOME&#39;, ...)</code> to scope cli singletons (<code>getProcessHiveMindStore()</code>, etc.) per-test. Vitest <code>@claude-flow/memory</code> externalization (also per ADR-0183 A0) may be required.</li>
+<li><strong>Harness lifecycle</strong>: ACTIVE during Waves 1-5 as the regression guard. Decision in Wave 6: KEEP as permanent regression guard once cli is fully dispatched. Cost is ~400 LoC of test code; benefit is detecting any future drift between cli + archivist response shapes.</li>
+</ul>
+</li>
+</ul>
+<h2 id="execution-plan">Execution Plan</h2>
+<p>6 sequential waves under Option D hybrid. Each wave gates on <code>npm run release</code> (default acceptance — heavy gate only at Wave 6 close-out). Per-wave commit on <code>forks/ruflo</code> main with descriptive message naming the action flipped + harness verdict; no Co-Authored-By trailer.</p>
+<table>
+<thead>
+<tr>
+<th>Wave</th>
+<th>Scope</th>
+<th>Files</th>
+<th>Net LoC</th>
+<th>Exit gate</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>1</strong></td>
+<td>Land <code>buildConsensusResponse(...)</code> additively + parallel-strategy verification harness. Cli <code>hive-mind_consensus</code> handler UNCHANGED — harness verifies the response-builder produces the cli&#39;s pre-flip shape exactly.</td>
+<td><strong>NEW:</strong> <code>cli/src/mcp-tools/hive-mind-consensus-response.ts</code> (<del>350 LoC including <code>ConsensusResponse</code> union), <code>cli/__tests__/hive-mind-consensus-parity.test.ts</code> (</del>400 LoC). <strong>NO CHANGE:</strong> <code>cli/src/mcp-tools/hive-mind-tools.ts</code>.</td>
+<td>+750</td>
+<td><code>npm run release</code> passes; harness asserts zero response diffs across all 24 cells (<code>{propose,vote,status,list} × {bft,raft,quorum,weighted,gossip,crdt}</code>); cli handler body unchanged (grep-asserted).</td>
+</tr>
+<tr>
+<td><strong>2</strong></td>
+<td>Flip <code>propose</code> action. Cli&#39;s propose branch: pre-mint <code>proposalId</code>, <code>archivist.dispatch(&#39;hive-mind_consensus&#39;, { ...payload, proposalId })</code>, try/catch with <code>instanceof</code> discrimination on 8 typed errors, re-read state via <code>dispatchRead(&#39;hive-mind_status&#39;)</code>, <code>return buildConsensusResponse(...)</code>. Other 3 action branches stay on cli fan-out.</td>
+<td><strong>MODIFIED:</strong> <code>cli/src/mcp-tools/hive-mind-tools.ts</code> (propose branch only, ~80 LoC → ~25 LoC).</td>
+<td>−55</td>
+<td><code>npm run release</code> passes; harness asserts zero propose-response diff across all 6 strategies; existing <code>cli/__tests__/mcp-tools-deep.test.ts</code> propose-related assertions pass; ADR-0184 audit-equals-mutation invariant preserved.</td>
+</tr>
+<tr>
+<td><strong>3</strong></td>
+<td>Flip <code>vote</code> action. Same shape as Wave 2 but for vote branch. The vote branch is heavier in cli (~200 LoC) because it carries strategy-specific tally/equivocation logic — that logic is now in agentdb per ADR-0184; cli just dispatches + builds response.</td>
+<td><strong>MODIFIED:</strong> <code>cli/src/mcp-tools/hive-mind-tools.ts</code> (vote branch).</td>
+<td>−180</td>
+<td><code>npm run release</code> passes; harness asserts zero vote-response diff; existing vote-related assertions pass (Byzantine equivocation detection still surfaces correctly via response shape).</td>
+</tr>
+<tr>
+<td><strong>4</strong></td>
+<td>Flip <code>status</code> action. ADR-0131 inline-timing decision (from ADR-0184 Wave 4) means status is a WRITE action; cli uses <code>archivist.dispatch</code> not <code>dispatchRead</code>. Harness must drive timeout-driven transitions via <code>vi.advanceTimersByTime()</code> and verify the auto-status-transition fields (<code>statusJustTransitioned</code>, <code>timedOut</code>, <code>settled</code>) round-trip.</td>
+<td><strong>MODIFIED:</strong> <code>cli/src/mcp-tools/hive-mind-tools.ts</code> (status branch).</td>
+<td>−270</td>
+<td><code>npm run release</code> passes; harness asserts zero status-response diff across all 6 strategies INCLUDING ADR-0131 timeout-driven transitions; gossip-strategy <code>gossipExhausted</code> flag (ADR-0184 Wave 4) round-trips.</td>
+</tr>
+<tr>
+<td><strong>5</strong></td>
+<td>Flip <code>list</code> action. Pure read — cli uses <code>archivist.dispatchRead(&#39;hive-mind_consensus&#39;, { action: &#39;list&#39;, ... })</code>.</td>
+<td><strong>MODIFIED:</strong> <code>cli/src/mcp-tools/hive-mind-tools.ts</code> (list branch).</td>
+<td>−45</td>
+<td><code>npm run release</code> passes; harness asserts zero list-response diff. Cli <code>hive-mind_consensus</code> handler body is now ~40-50 LoC of dispatch logic only.</td>
+</tr>
+<tr>
+<td><strong>6</strong></td>
+<td>Helper-set cleanup + close-out. Delete the 6 mutation-only helpers; verify zero external callers via <code>grep -rE</code> per helper. Keep the 4 pure-read helpers + cli <code>crdt-types.ts</code> per §Architecture decisions. Author close-out report + ADR-0185 amendment. Decide harness lifecycle (recommended: KEEP permanent).</td>
+<td><strong>MODIFIED:</strong> <code>cli/src/mcp-tools/hive-mind-tools.ts</code> (delete 6 helpers). <strong>NEW:</strong> <code>docs/council/ADR-0185-close-out-report.md</code>, ADR-0185 <code>### Amendment: Close-out</code> section.</td>
+<td>−200</td>
+<td><code>npm run release</code> passes (default + <code>ACCEPTANCE_HEAVY=1</code> heavy gate to mirror ADR-0181/0184 close-out posture); zero unreachable helpers in <code>mcp-tools/hive-mind-tools.ts</code>; cli <code>hive-mind_consensus</code> handler body ~40-50 LoC; ADR-0185 close-out report + amendment land in a ruflo-patch commit.</td>
+</tr>
+</tbody></table>
+<p><strong>Net LoC delta:</strong> +750 (Wave 1 additive) − 750 (Waves 2-6 deletions) = <del>0 net, but the cli handler body shrinks ~870 → ~50 LoC. The 6 mutation-only helpers (</del>200 LoC) are net deleted; the response-builder + harness (~750 LoC) is net added.</p>
+<p><strong>Estimated release-gate cycles:</strong> 6 (one per wave). Plus 1 heavy gate at Wave 6 close-out (matches ADR-0181/0184 close-out parity).</p>
+<p><strong>Per-wave revert posture:</strong> each wave&#39;s commit is surgical (single action branch flip in Waves 2-5; pure additive in Wave 1; deletion-only in Wave 6). If a wave&#39;s harness asserts non-empty diff, the action under flip is the immediate suspect — revert that wave&#39;s commit cleanly, trace the diff, re-attempt. Per <code>feedback-trace-before-hypothesis</code>.</p>
+<p><strong>Swarm sizing:</strong> can run as a queen-as-implementer per the ADR-0181/0184 pattern, OR as <code>/swarm-advanced</code> per-action workers if the in-process Agent-spawn constraint is lifted by the time ADR-0185 starts. The work is naturally serial (each wave depends on the prior); parallel-worker fan-out doesn&#39;t add value within a wave.</p>
+<h2 id="open-follow-ups">Open Follow-ups</h2>
+<ol>
+<li><p><del><strong>Response-shape spec capture</strong></del> — <strong>RESOLVED in §Architecture</strong>: <code>ConsensusResponse</code> is a TypeScript discriminated union on <code>action</code>, with <code>ProposeResponse | VoteResponse | StatusResponse | ListResponse</code> members carrying strategy-conditional optional fields. The union shape IS the formal spec.</p>
+</li>
+<li><p><del><strong>Parallel-strategy verification harness</strong></del> — <strong>RESOLVED in §Architecture</strong>: harness at <code>cli/__tests__/hive-mind-consensus-parity.test.ts</code>; determinism via <code>vi.useFakeTimers()</code> + <code>vi.setSystemTime()</code>, FNV-1a + mulberry32 <code>proposalId</code> seeding, <code>Math.random</code> stubbing for ORSet tags, <code>crdtSemanticEqual()</code> for CRDT subfield diff.</p>
+</li>
+<li><p><del><strong>Cli <code>crdt-types.ts</code> deletion</strong></del> — <strong>RESOLVED in §Architecture</strong>: KEEP cli copy. <code>buildConsensusResponse</code> calls its constructors for CRDT telemetry; cross-package import would add coupling without benefit.</p>
+</li>
+<li><p><strong><code>feedback-singleton-frozen-state-desync</code></strong> — partially resolved in §Architecture (harness uses <code>CLAUDE_FLOW_CWD</code> + <code>vi.stubEnv(&#39;HOME&#39;, ...)</code>). <strong>Remaining concern</strong>: Vitest <code>@claude-flow/memory</code> externalization may be required (precedent: ADR-0183 A0 swarm vitest config). Verify during Wave 1 harness authoring.</p>
+</li>
+<li><p><del><strong>Cli helpers — vendor-vs-import for pure-read functions</strong></del> — <strong>RESOLVED in §Architecture</strong>: KEEP cli copies of <code>calculateRequiredVotes</code>, <code>weightedTally</code>, <code>settleCheckGossip</code>, <code>gossipFanout</code>. Response-building is a cli concern; cross-package import for pure-read helpers adds coupling that doesn&#39;t pay back.</p>
+</li>
+<li><p><strong>Harness lifecycle decision at Wave 6 close-out</strong>. Current §Architecture lean: KEEP as permanent regression guard (cost ~400 LoC of test code; benefit catches future drift between cli + archivist response shapes). Alternative: retire iff cli is so thin post-Wave-6 that drift is impossible. Decision binding at Wave 6 close-out commit; default is KEEP.</p>
+</li>
+<li><p><strong>ADR-0184 Wave 6a <code>gossipExhausted?</code> flag</strong> — added to <code>ConsensusProposal</code> in agentdb Wave 4. Cli&#39;s <code>buildConsensusResponse</code> reads it via the dispatched-response payload; harness must include a gossip-exhausted state variant to verify the flag round-trips.</p>
+</li>
+<li><p><strong>Cli-test assertion-set refresh</strong> — <code>cli/__tests__/mcp-tools-deep.test.ts</code> currently asserts response shapes from the pre-flip cli handler. Post-flip the shapes are produced by <code>buildConsensusResponse</code>; assertion targets are nominally unchanged but should be reviewed per wave to confirm no assertion drifts behind the abstraction.</p>
+</li>
+</ol>
+<h2 id="amendments">Amendments</h2>
+<h3 id="amendment-close-out--adr-0185-implementation-complete-2026-05-18">Amendment: Close-out — ADR-0185 implementation complete (2026-05-18)</h3>
+<p>ADR-0185 is implemented and closed. The cli <code>hive-mind_consensus</code> handler is now a thin dispatch envelope; the strategy fan-out is gone.</p>
+<p><strong>Execution structure</strong> — 6 waves (Wave 2 split into 2a + 2b by DA mandate):</p>
+<table>
+<thead>
+<tr>
+<th>Wave</th>
+<th>Scope</th>
+<th>Fork SHA</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>W1</td>
+<td>Additive <code>buildConsensusResponse</code> + parity harness (26 cells) + ruflo-patch wrapper gate</td>
+<td>c81831164, 425710868, b43e039f3, eeb26cd7f</td>
+</tr>
+<tr>
+<td>W2a</td>
+<td>Harness shape-contract pivot (DA-mandated split)</td>
+<td>a20732b98</td>
+</tr>
+<tr>
+<td>W2b</td>
+<td>Flip propose action to <code>archivist.dispatch</code></td>
+<td>7e06c8390</td>
+</tr>
+<tr>
+<td>W3</td>
+<td>Flip vote action</td>
+<td>ca596e932</td>
+</tr>
+<tr>
+<td>W4</td>
+<td>Flip status action (includes ADR-0131 timeouts)</td>
+<td>f4b9ffe12</td>
+</tr>
+<tr>
+<td>W5</td>
+<td>Flip list action + delete <code>withHiveStoreLock</code> wrapper</td>
+<td>84defa083</td>
+</tr>
+<tr>
+<td>W6</td>
+<td>Delete 3 dead helpers + close-out (this amendment)</td>
+<td>bf72ed19a</td>
+</tr>
+</tbody></table>
+<p><strong>Cumulative cli LoC reduction</strong>: handler 870 → <del>127 LoC + 3 dead helpers (</del>128 LoC) deleted. Total cli surface shrink across Waves 1-6 ≈ -870 LoC. Response-builder + parity harness add ~1150 LoC of test/projection code in their place.</p>
+<p><strong>Acceptance trajectory</strong>: 672/681/0/9 sustained across all 6 default-gate releases (patches 190 → 192 → 193 → 194 → 197 → 199 → 202 → 203). Heavy gate cleared at close-out.</p>
+<p><strong>Helper-cleanup correction</strong> (Wave 6, DA Axis 1): the pre-Wave-6 plan listed 6 helpers for deletion. Pre-emptive <code>grep</code> on <code>src/</code> + <code>__tests__/</code> confirmed only 3 were truly unreachable. The other 3 — <code>selectGossipTargets</code>, <code>reconcileFailedFromStatusKeys</code>, <code>workerMetaFor</code> — have live callers in <code>hive-mind_status</code> (a separate cli tool, explicitly deferred per the ADR&#39;s scope) plus active test-invariant refs in <code>mcp-tools-deep.test.ts</code>. Per <code>feedback-no-squelch-tests</code> they were preserved.</p>
+<p><strong>Source-grep brittleness lesson</strong>: 4 of 6 acceptance-test failures across the 6 waves were <code>assert.match(src, ...)</code> strings searching for identifiers that had relocated from cli to agentdb per-strategy handlers. Each pattern needed surgical migration (cli → agentdb dispatcher case-arm + per-strategy handler case-arm). Wave 7+ work should convert remaining <code>assert.match(src, ...)</code> assertions to behavioural tests so the corpus survives future relocations.</p>
+<p><strong>Parity-harness lifecycle</strong> (Wave 6, DA Axis 6): the parity harness (29 cells) + the ruflo-patch wrapper gate (3 cells) are permanent regression guards per ADR-0185 §Architecture. No future wave may delete them — they lock in cli/agentdb response-shape parity for the lifetime of the dispatch pattern.</p>
+<h2 id="more-information">More Information</h2>
+<ul>
+<li><a href="../council/ADR-0184-close-out-report.html">ADR-0184 close-out report</a> — the parent close-out that records the cli retirement spin-out.</li>
+<li><a href="ADR-0184-hive-mind-consensus-handler-port.html">ADR-0184: Hive-Mind Consensus Handler Port</a> — the parent ADR; all 6 per-strategy bodies live in agentdb per Wave 1-6a.</li>
+<li><a href="ADR-0181-archivist-runtime-activation.html#amendment-closure-plan--sequenced-path-to-close-the-program-2026-05-17">ADR-0181: Archivist Runtime Activation §Closure plan amendment</a> — the closure-plan-amendment precedent for sequencing the work.</li>
+<li><a href="../council/ADR-0183-a1-report.html">ADR-0183: Memory Write-Path Unification close-out</a> — the spin-out precedent for peeling a single concern out of a parent closure plan.</li>
+<li><code>forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts</code> lines 1984-2919 — the 926-LoC cli handler this ADR retires.</li>
+<li><code>forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts</code> lines 127-160 — the <code>task_create</code> precedent for cli-flip pattern (pre-mint id, dispatch, post-dispatch re-read).</li>
+<li><code>forks/agentdb/src/archivist/handlers/hive-mind/consensus/_shared.ts</code> — agentdb&#39;s vendored cli helpers + 8 typed error classes (re-exported via <code>archivist/index.ts</code> per ADR-0184 Wave 6a).</li>
+<li><code>forks/agentdb/test/archivist/handlers/exit-gate.test.ts</code> — the agentdb-side exit-gate test that verifies handler completeness independent of cli retirement.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>

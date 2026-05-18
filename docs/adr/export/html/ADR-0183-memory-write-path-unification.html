@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADR-0183-memory-write-path-unification</title>
+
+  <!-- Highlight.js for code syntax highlighting -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css">
+
+  <style>
+    :root {
+      --max-width: 900px;
+      --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      --font-mono: 'SF Mono', Consolas, 'Liberation Mono', Menlo, monospace;
+      --color-text: #24292f;
+      --color-bg: #ffffff;
+      --color-border: #d0d7de;
+      --color-link: #0969da;
+      --color-code-bg: #f6f8fa;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: var(--font-sans);
+      font-size: 16px;
+      line-height: 1.6;
+      color: var(--color-text);
+      background: var(--color-bg);
+      margin: 0;
+      padding: 2rem;
+    }
+
+    .container {
+      max-width: var(--max-width);
+      margin: 0 auto;
+    }
+
+    h1, h2, h3, h4, h5, h6 {
+      margin-top: 1.5em;
+      margin-bottom: 0.5em;
+      font-weight: 600;
+      line-height: 1.25;
+    }
+
+    h1 { font-size: 2em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h2 { font-size: 1.5em; border-bottom: 1px solid var(--color-border); padding-bottom: 0.3em; }
+    h3 { font-size: 1.25em; }
+
+    a {
+      color: var(--color-link);
+      text-decoration: none;
+    }
+
+    a:hover {
+      text-decoration: underline;
+    }
+
+    p {
+      margin: 1em 0;
+    }
+
+    pre {
+      background: var(--color-code-bg);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+      line-height: 1.45;
+    }
+
+    pre.mermaid {
+      background: transparent;
+      padding: 1rem 0;
+      text-align: center;
+    }
+
+    code {
+      font-family: var(--font-mono);
+      font-size: 0.875em;
+    }
+
+    :not(pre) > code {
+      background: var(--color-code-bg);
+      padding: 0.2em 0.4em;
+      border-radius: 3px;
+    }
+
+    blockquote {
+      margin: 1em 0;
+      padding: 0 1em;
+      border-left: 4px solid var(--color-border);
+      color: #57606a;
+    }
+
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      margin: 1em 0;
+    }
+
+    th, td {
+      border: 1px solid var(--color-border);
+      padding: 0.5em 1em;
+      text-align: left;
+    }
+
+    th {
+      background: var(--color-code-bg);
+      font-weight: 600;
+    }
+
+    img {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      object-fit: contain;
+    }
+
+    .svg-container {
+      text-align: center;
+      margin: 1em 0;
+    }
+
+    .svg-container svg,
+    .embedded-svg {
+      max-width: 100%;
+      max-height: 80vh;
+      height: auto;
+      display: block;
+      margin: 0 auto;
+    }
+
+    a.image-link {
+      display: block;
+      cursor: zoom-in;
+    }
+
+    a.image-link:hover img {
+      opacity: 0.9;
+      outline: 2px solid var(--color-link);
+      outline-offset: 2px;
+    }
+
+    /* Pan/zoom viewer overlay */
+    .image-viewer {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.9);
+      z-index: 9999;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    .image-viewer.active {
+      display: block;
+    }
+
+    .image-viewer .viewer-canvas {
+      width: 100%;
+      height: 100%;
+      cursor: grab;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .image-viewer .viewer-canvas.dragging {
+      cursor: grabbing;
+    }
+
+    .image-viewer img {
+      position: absolute;
+      transform-origin: 0 0;
+      max-width: none;
+      max-height: none;
+    }
+
+    .image-viewer .viewer-controls {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 8px;
+      padding: 8px 12px;
+      z-index: 10000;
+    }
+
+    .image-viewer .viewer-controls button {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 36px;
+      height: 36px;
+      border-radius: 6px;
+      font-size: 18px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-controls button:hover {
+      background: rgba(255,255,255,0.3);
+    }
+
+    .image-viewer .viewer-zoom-label {
+      color: rgba(255,255,255,0.8);
+      font-size: 13px;
+      line-height: 36px;
+      min-width: 50px;
+      text-align: center;
+      font-family: var(--font-mono);
+    }
+
+    .image-viewer .viewer-close {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      background: rgba(0,0,0,0.6);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: #fff;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      font-size: 22px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+      transition: background 0.15s;
+    }
+
+    .image-viewer .viewer-close:hover {
+      background: rgba(255,255,255,0.2);
+    }
+
+    ul, ol {
+      margin: 1em 0;
+      padding-left: 2em;
+    }
+
+    li {
+      margin: 0.25em 0;
+    }
+
+    hr {
+      border: none;
+      border-top: 1px solid var(--color-border);
+      margin: 2em 0;
+    }
+
+    details {
+      margin: 1em 0;
+      padding: 0.5em 1em;
+      background: var(--color-code-bg);
+      border-radius: 6px;
+    }
+
+    summary {
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    @media print {
+      body {
+        padding: 0;
+      }
+      .container {
+        max-width: none;
+      }
+      pre {
+        white-space: pre-wrap;
+        word-wrap: break-word;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <hr>
+<h2 id="status-accepteddate-2026-05-17tags-memory-archivist-runtime-activation-write-path-completesupersedes-depends-on-adr-0180-adr-0181implements-">status: accepted
+date: 2026-05-17
+tags: [memory, archivist, runtime-activation, write-path, complete]
+supersedes: []
+depends-on: [ADR-0180, ADR-0181]
+implements: []</h2>
+<!-- ADR-0183 IMPLEMENTATION COMPLETE — see §Amendment: Completion (2026-05-17) at the top of §Amendments. All A0+A1+A2+A3 work landed at patch.177 (672/681/0/9). -->
+
+<h1 id="memory-write-path-unification">Memory Write-Path Unification</h1>
+<h2 id="context-and-problem-statement">Context and Problem Statement</h2>
+<p>ADR-0181 declared strict exit at patch.143 (669/0/9, all 7 phases ✅) and the <a href="ADR-0181-archivist-runtime-activation.html#amendment-closure-plan--sequenced-path-to-close-the-program-2026-05-17">§Closure plan amendment</a> sequenced the remaining program. The amendment&#39;s critical path (A1→A2→A3) is the cli read flip blocking task #100 — twice attempted, twice reverted with the same 5 deterministic acceptance failures (<code>adr0069-bug3-persist</code>, <code>p8-inv12-mem-full</code>, <code>e2e-0059-mem-search</code>, <code>e2e-0059-p3-unified-both</code>, <code>e2e-0059-p3-dedup</code>). The trace investigation (handover §root-cause, 2026-05-17) identified the cause as <strong>incomplete Phase 5 on the write side</strong>, not a flaw in the read handlers:</p>
+<ul>
+<li>Phase 5&#39;s exit gate language was &quot;every MCP tool + CLI write command + hook + daemon routes through the archivist.&quot; Phase 5 delivered &quot;100+ cli mcp-tool flips&quot; — which covered MCP-mediated writes but missed the cli&#39;s internal write router.</li>
+<li><code>routeMemoryOp({type:&#39;store&#39;})</code> (forks/ruflo <code>cli/src/memory/memory-router.ts:1065-1077</code>) is the cli&#39;s internal write router used by <code>cli memory store</code>, <code>session_restore</code>, and every CLI-command write path. It stayed on the legacy direct-storage path.</li>
+<li>MCP writes therefore produce the archivist&#39;s rich-meta on-disk shape <code>{meta: {namespace, key, content, tags, ttl, ...}, ...}</code>; CLI-command writes produce a flat shape with <code>namespace</code>/<code>key</code>/<code>content</code> at top-level and empty <code>meta</code>.</li>
+<li>The post-#99 dispatched reads (<code>handlers/memory/{get,list,search,search-unified}.ts</code>) project against the rich shape — fine for archivist-written records, broken for <code>routeMemoryOp</code>-written records. Re-flipping the reads without unifying the writes cannot converge.</li>
+</ul>
+<p>The intent-fix commits retained from task #100 attempt 2 (<code>forks/agentdb b91b4fd</code> + <code>forks/ruflo 0eacaf6ec</code>) are forward-compat (correct API shape for <code>EmbeddingScorer.embed(text, {intent})</code>) but do not activate in production today and do not address this root cause.</p>
+<p>This is a distinct decision because (a) it requires its own write-path audit + transition-period design that ADR-0181&#39;s amendments cannot cleanly absorb without further bloat, and (b) the dual-schema discriminator + v1 deprecation is a forward-compat surface that wants its own life-cycle tracking. Holding it in ADR-0181 would keep that ADR&#39;s &quot;what is left&quot; boundary blurred indefinitely.</p>
+<h2 id="decision-drivers">Decision Drivers</h2>
+<ul>
+<li><code>feedback-data-loss-zero-tolerance</code> — 5 deterministic failures on memory round-trip is non-shippable. Either 100% or not fixed.</li>
+<li><code>feedback-no-fallbacks</code> — a dual-schema read MUST NOT become a silent catch-and-continue. It is a documented transition surface, gated on a versioned discriminator, with v1 sunset tracked.</li>
+<li><code>feedback-trace-before-hypothesis</code> — the trace identified the actual write/read asymmetry; the closure plan implements the fix, it does not re-hypothesise.</li>
+<li><code>feedback-all-test-levels</code> — every step gates on unit + integration + acceptance.</li>
+<li>Phase 5&#39;s stated exit gate (&quot;every MCP tool + CLI write command + hook + daemon routes through the archivist&quot;) is the contract this ADR completes for memory writes.</li>
+<li>ADR-0181&#39;s downstream closure path (Phase B memory-read handler readiness, Phase G bench re-baseline, Phase H heavy-skip review) gates on the cli read flip landing.</li>
+</ul>
+<h2 id="considered-options">Considered Options</h2>
+<ul>
+<li><strong>A. Write-path unification + dual-schema reads + cli read flip (chosen).</strong> Flip <code>routeMemoryOp({type:&#39;store&#39;})</code> through <code>archivist.dispatch(&#39;memory_store&#39;)</code> so both production write paths produce identical on-disk shape. Add a <code>shape_version: 1 | 2</code> discriminator on the read handlers so legacy on-disk records (written under v1) round-trip correctly during the transition. Then flip the cli reads. v1 sunset tracked in a separate future ADR.</li>
+<li><strong>B. Read-side coercion only.</strong> Leave the two write paths divergent; teach each dispatched read handler to project from both shapes via field-presence checks (no versioning). Cheaper today.</li>
+<li><strong>C. Defer the cli read flip indefinitely.</strong> Keep the handler bodies ready (already landed via #99) but never dispatch through them. CF#4 + CF#8 stay open in ADR-0181.</li>
+<li><strong>D. One-shot migration script.</strong> Migrate every on-disk memory record to the rich shape in a single stop-the-world pass, then flip writes and reads cleanly with no transition period.</li>
+</ul>
+<h2 id="decision-outcome">Decision Outcome</h2>
+<p>Chosen: <strong>Option A</strong>, because it is the only option that (1) honours Phase 5&#39;s stated exit gate for memory writes, (2) closes ADR-0181&#39;s task #100 / CF#4 / CF#8 / B / G / H gating, (3) keeps the dual-schema period bounded via the versioned discriminator + a tracked deprecation ADR, and (4) does not require a stop-the-world migration of production on-disk records.</p>
+<p>Option B is rejected because it permanently divergent-fies the write paths — every future memory-read handler must carry the dispatched-vs-legacy shape knowledge, with no convergence path. It is exactly the unbounded compatibility surface that <code>feedback-no-fallbacks</code> warns against, dressed up as a feature.</p>
+<p>Option C is rejected because it leaves the archivist&#39;s memory-read coverage scaffold-only despite the handler bodies being ready, and it leaves task #100 + CF#4 + CF#8 permanently open in ADR-0181 — a status that contradicts the ADR-0181 closure-plan amendment&#39;s &quot;definition of done.&quot;</p>
+<p>Option D is rejected because stop-the-world data migration on memory records is a class of risk this project has never run (memory state is the trust boundary for ReasoningBank + skill library + session restore), and the dual-schema approach achieves the same correctness with no migration window. If a migration is ever desired (e.g. to retire shape v1 cleanly), it is a follow-on ADR to this one, not a prerequisite.</p>
+<h3 id="consequences">Consequences</h3>
+<ul>
+<li>Good, because Phase 5&#39;s exit gate is honoured for memory writes — the cli&#39;s internal write router joins the MCP boundary in dispatching through the archivist.</li>
+<li>Good, because ADR-0181&#39;s downstream closure path (Phase B + G + H) unblocks the moment A3 lands.</li>
+<li>Good, because the dual-schema is bounded — <code>shape_version: 1 | 2</code> is a versioned discriminator, not field-presence sniffing; v1 sunset is tracked in its own future ADR.</li>
+<li>Good, because no on-disk migration is required — existing records keep working as v1, new writes produce v2.</li>
+<li>Good, because <code>feedback-no-fallbacks</code> is honoured — records matching neither v1 nor v2 fail loud, not silently coerce.</li>
+<li>Bad, because A1 requires auditing every <code>routeMemoryOp({type:&#39;store&#39;})</code> callsite (<code>cli memory store</code>, <code>session_restore</code>, plus any internal call); some may pass payload variants beyond what <code>ToolPayloadMap[&#39;memory_store&#39;]</code> currently models, requiring typed-payload widening or a normalisation layer at the dispatch boundary.</li>
+<li>Bad, because the dispatched memory-read handlers grow a <code>shape_version</code> branch each — minor handler-code surface that wants discipline to retire when v1 sunsets.</li>
+<li>Bad, because the v1-deprecation ADR is a real obligation — if it never lands, the dual-schema is unbounded and the &quot;Bad&quot; above becomes permanent.</li>
+<li>Neutral, because the intent-fix commits retained from task #100 attempt 2 (<code>b91b4fd</code> + <code>0eacaf6ec</code>) keep their forward-compat status — they correct the <code>EmbeddingScorer.embed</code> API shape regardless of this ADR&#39;s outcome.</li>
+</ul>
+<h3 id="confirmation">Confirmation</h3>
+<ul>
+<li><strong><code>npm run release</code> is the gate for each of A1, A2, A3</strong> — inherited from ADR-0181&#39;s strict-exit discipline.</li>
+<li><strong>A1 confirmation:</strong> unit test in <code>forks/agentdb/test/archivist/handlers/memory/store-shape-parity.test.ts</code> writes a payload via both <code>archivist.dispatch(&#39;memory_store&#39;)</code> AND the post-flip <code>routeMemoryOp({type:&#39;store&#39;})</code> and diffs the persisted on-disk shape — equality required. <code>tsc --noEmit</code> accepts every <code>routeMemoryOp</code> callsite against the (possibly widened) <code>ToolPayloadMap[&#39;memory_store&#39;]</code>.</li>
+<li><strong>A2 confirmation:</strong> unit tests in <code>forks/agentdb/test/archivist/handlers/memory/dual-schema.test.ts</code> cover round-trip for records written under both v1 and v2 across all 4 dispatched read handlers; a record matching neither schema throws (verified per-handler).</li>
+<li><strong>A3 confirmation:</strong> acceptance returns the 5 previously-failing checks as PASS and the 4 <code>adr0181-disp-{get,list,search,sunified}</code> checks as PASS; total ≥ 668/0/9 (the pre-#100 baseline) on the release.</li>
+<li><strong>Bounded-transition confirmation:</strong> within one release loop of A3 landing, a new ADR opens with <code>status: proposed</code> setting the v1 sunset criteria (typically: zero v1 reads observed across N consecutive releases + a migration mechanism for any residual v1 records). Until that ADR exists, ADR-0181 cannot close.</li>
+</ul>
+<h2 id="architecture">Architecture</h2>
+<ul>
+<li><p><strong>Flip mechanism — Strategy 1 (facade-internal flip), chosen.</strong> The flip happens inside the <code>routeMemoryOp</code> facade itself, not at every caller. Concretely: in <code>forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts</code>, the <code>case &#39;store&#39;:</code> branch (line ~1010 onward) replaces its inline <code>storage.*</code> logic with <code>await archivist.dispatch(&#39;memory_store&#39;, payload)</code>; the <code>case &#39;get&#39; | &#39;list&#39; | &#39;search&#39; | &#39;search-unified&#39;:</code> branches replace their inline logic with <code>await archivist.dispatchRead(&lt;tool&gt;, payload)</code>. The 12 <code>routeMemoryOp({type:&#39;store&#39;})</code> callsites and ~25 read callsites across ~10 files keep calling the facade unchanged; the facade now dispatches through the archivist on their behalf. Subsequent deletion of the facade (turning every caller into a direct <code>archivist.dispatch</code> call) is deferred to its own ADR — same disciplined-bounded posture as the <code>shape_version</code> v1 sunset (see <a href="#open-follow-ups">§Open Follow-ups</a>).</p>
+</li>
+<li><p><strong>Strategy 2 (per-callsite flip), rejected.</strong> The alternative — delete <code>routeMemoryOp({type:&#39;store&#39;|&#39;get&#39;|&#39;list&#39;|&#39;search&#39;|&#39;search-unified&#39;})</code> and convert every caller to a direct <code>archivist.dispatch</code>/<code>dispatchRead</code> call — touches ~10 files and ~37 callsites in a single ADR. Rejected because (a) it fights the same activation battle on 37 fronts when 1 will do; (b) the exit gate (identical on-disk shape, 5 failing checks pass) is unaffected by where the dispatch boundary sits; (c) facade deletion is a code-surface deprecation that wants its own life-cycle tracking, symmetric with the v1 on-disk surface deprecation. Strategy 1 preserves the option of Strategy 2 as a follow-on; Strategy 2 forecloses on the smaller-scope path.</p>
+</li>
+<li><p><strong>A1 audit surface (8 files, 12 callsites).</strong> Even under Strategy 1, every <code>routeMemoryOp({type:&#39;store&#39;})</code> callsite is read and type-checked against the (possibly widened) <code>ToolPayloadMap[&#39;memory_store&#39;]</code> before the flip lands — the typed-overload guarantee is what makes Strategy 1 safe.</p>
+<table>
+<thead>
+<tr>
+<th>File</th>
+<th>Callsites</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><code>cli/src/memory/memory-router.ts</code></td>
+<td>3 internal (lines 2014, 2098, 2305)</td>
+</tr>
+<tr>
+<td><code>cli/src/mcp-tools/memory-tools.ts</code></td>
+<td>1 (line 123)</td>
+</tr>
+<tr>
+<td><code>cli/src/mcp-tools/hooks-tools.ts</code></td>
+<td>2 (lines 91, 932)</td>
+</tr>
+<tr>
+<td><code>cli/src/mcp-tools/session-tools.ts</code></td>
+<td>1 (line 437)</td>
+</tr>
+<tr>
+<td><code>cli/src/commands/memory.ts</code></td>
+<td>2 (lines 120, 1965)</td>
+</tr>
+<tr>
+<td><code>cli/src/commands/performance.ts</code></td>
+<td>1 (line 244)</td>
+</tr>
+<tr>
+<td><code>cli/src/commands/benchmark.ts</code></td>
+<td>1 (line 292)</td>
+</tr>
+<tr>
+<td><code>cli/src/commands/hooks.ts</code></td>
+<td>1 (line 5217)</td>
+</tr>
+</tbody></table>
+</li>
+<li><p><strong>A3 audit surface (~10 files, ~25 callsites).</strong> Same eight files plus <code>cli/src/mcp-tools/embeddings-tools.ts</code>, <code>cli/src/mcp-tools/agentdb-orchestration.ts</code>, and <code>cli/src/commands/embeddings.ts</code>. The 3 internal <code>memory-router.ts</code> read fallbacks (lines 1946, 2059, 2166) are through-facade by construction.</p>
+</li>
+<li><p><strong><code>ToolPayloadMap[&#39;memory_store&#39;]</code> shape.</strong> Step 0 of A1 is the callsite audit (the 8-file / 12-callsite surface above). Either widen <code>ToolPayloadMap[&#39;memory_store&#39;]</code> to cover every variant <code>routeMemoryOp({type:&#39;store&#39;})</code> callers pass today, or land a normalisation layer in the facade at the dispatch boundary that drops/coerces unknown fields explicitly (NOT silently). Compile-time enforcement is non-negotiable — <code>tsc --noEmit</code> must reject a payload variant the typed map doesn&#39;t cover, per ADR-0181 Phase 5&#39;s typed-overload guarantee.</p>
+</li>
+<li><p><strong>On-disk <code>shape_version</code> field.</strong> New rich-meta writes produce records carrying <code>{shape_version: 2, meta: {namespace, key, content, tags, ttl, ...}, ...}</code>. Legacy records (no <code>shape_version</code> field) are read as v1. This is the discriminator — NOT field-presence sniffing.</p>
+</li>
+<li><p><strong>Read-handler projection.</strong> Each of <code>handlers/memory/{get,list,search,search-unified}.ts</code> reads <code>record.shape_version</code> (defaulting to 1 if absent), then dispatches projection: v1 → top-level field extraction (<code>record.namespace</code>, <code>record.content</code>, …); v2 → meta-field extraction (<code>record.meta.namespace</code>, <code>record.meta.content</code>, …). A record matching neither (e.g. has <code>shape_version</code> but it isn&#39;t 1 or 2; or has <code>shape_version: 2</code> but no <code>meta</code>) throws a structured error — fails loud per <code>feedback-no-fallbacks</code>.</p>
+</li>
+<li><p><strong>Cli read flip (Strategy 1 mechanics).</strong> The 4 memory-read cases in <code>cli/src/memory/memory-router.ts</code> (<code>routeMemoryOp({type:&#39;get&#39; | &#39;list&#39; | &#39;search&#39; | &#39;search-unified&#39;})</code>) delegate to <code>archivist.dispatchRead(&lt;tool&gt;, payload)</code> inside the facade. The original direct-storage code paths inside the facade branches are deleted once A3&#39;s acceptance passes (per ADR-0181 Phase 5&#39;s &quot;delete original path once delegation is release-verified&quot;). The ~25 caller sites are unchanged.</p>
+</li>
+<li><p><strong>No changes to other write paths.</strong> Memory writes via <code>archivist.dispatch(&#39;memory_store&#39;)</code> (MCP) already produce v2. The non-memory mcp-tool flips landed in Phase 5 are untouched. The cli&#39;s non-memory CLI command writes are out of scope for this ADR.</p>
+</li>
+</ul>
+<h2 id="execution-plan">Execution Plan</h2>
+<p>Sequential. Each step gated on <code>npm run release</code>. Steps are small enough to author solo; if a step&#39;s audit surface explodes (e.g. A1&#39;s callsite audit finds &gt;20 payload variants), it converts to a focused per-callsite swarm wave with the queen running the typed-payload reconciliation.</p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Scope</th>
+<th>Exit gate</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>A1</strong></td>
+<td>Audit every <code>routeMemoryOp({type:&#39;store&#39;})</code> callsite. Widen <code>ToolPayloadMap[&#39;memory_store&#39;]</code> or land a normalisation layer accordingly. Flip the router to dispatch through <code>archivist.dispatch(&#39;memory_store&#39;)</code>. Backfill <code>shape_version: 2</code> on the write.</td>
+<td><code>npm run release</code> passes; the store-shape-parity unit test passes; <code>tsc --noEmit</code> accepts every flipped callsite; acceptance count ≥ baseline.</td>
+</tr>
+<tr>
+<td><strong>A2</strong></td>
+<td>Implement the <code>shape_version: 1 | 2</code> discriminator in all 4 dispatched memory-read handlers; cover both shapes in unit tests; cover the neither-shape failure mode.</td>
+<td><code>npm run release</code> passes; dual-schema unit tests pass; neither-shape throws.</td>
+</tr>
+<tr>
+<td><strong>A3</strong></td>
+<td>Flip the 4 cli memory-read cases to <code>archivist.dispatchRead</code>. Delete the original direct-storage code paths once acceptance passes. Open the v1-sunset ADR.</td>
+<td><code>npm run release</code> passes; 5 previously-failing checks PASS + 4 <code>adr0181-disp-*</code> checks PASS; total ≥ 668/0/9; the v1-sunset ADR exists with <code>status: proposed</code>.</td>
+</tr>
+</tbody></table>
+<h2 id="amendments">Amendments</h2>
+<h3 id="amendment-completion--full-a0a1a2a3-payload-delivered-2026-05-17-post-a0-swarm">Amendment: Completion — full A0+A1+A2+A3 payload delivered (2026-05-17, post-A0-swarm)</h3>
+<p><strong>Status: this ADR&#39;s full implementation payload is on Verdaccio at patch.177 = 672/681 pass, 0 fail, 9 skip_accepted.</strong> The A0+A1+A2+A3 work landed via a combination of this session&#39;s two swarms (<code>adr-0183-a1</code>, <code>adr-0183-a0-pathfix</code>) and pre-existing coercion commits that solved A2 and A3 via a structurally superior path before ADR-0183 was authored.</p>
+<p><strong>Definitive completion table:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Status</th>
+<th>Source</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>A0</strong> (path-detection prerequisite — not in original ADR; added in §A0 amendment below)</td>
+<td>✅ landed</td>
+<td><code>forks/ruflo 0f10328dd</code> (this session)</td>
+<td><code>_resolveDatabasePath</code> + <code>_findProjectRoot</code> route through shared <code>_isProjectRoot()</code> predicate using canonical markers (<code>.ruflo-project</code> | <code>CLAUDE.md</code>+<code>.claude/</code> | <code>.git/</code>); no longer false-positives on archivist audit-writer&#39;s <code>&lt;cwd&gt;/.claude-flow/</code> mkdir side-effect. Patch.177.</td>
+</tr>
+<tr>
+<td><strong>A1</strong> (write flip)</td>
+<td>✅ landed</td>
+<td><code>forks/agentdb 5213fd3</code> + <code>forks/ruflo c480e38fc</code> (this session, reapply after first-pass revert)</td>
+<td><code>case &#39;store&#39;:</code> in <code>memory-router.ts</code> dispatches through <code>archivist.dispatch(&#39;memory_store&#39;, normalisedPayload)</code>; handler stamps <code>shape_version: 2</code>; normalise-at-facade (no <code>ToolPayloadMap</code> widening — audit confirmed every callsite is a strict subset of <code>MemoryStorePayload</code>); ADR-0094 RC-2 idempotency relocated into the handler; 4-case parity test in agentdb.</td>
+</tr>
+<tr>
+<td><strong>A2</strong> (read-side dual-shape)</td>
+<td>✅ done — <strong>via adapter-merge, superior to originally-planned handler-level discriminator</strong></td>
+<td><code>forks/agentdb a72f664</code> (&quot;MemoryRvfAdapter merges top-level entry fields into metadata; handler records widened&quot;) + <code>forks/ruflo b2f25cb44</code> (&quot;list envelope surfaces content + tags from widened MemoryListRecord&quot;) — pre-existing</td>
+<td><code>MemoryRvfAdapter.mergeEntryMetadata(entry)</code> produces <code>{namespace, key, content, tags, ...entry.metadata}</code> (spread-at-end means dispatch-written explicit metadata wins; legacy entries get top-level fields filled in). Single merge point at the adapter layer instead of N handler dispatches; uniform across all readers; no <code>shape_version</code> discriminator needed at read time. The cli&#39;s list-envelope mapping surfaces the widened fields.</td>
+</tr>
+<tr>
+<td><strong>A3</strong> (cli read flip)</td>
+<td>✅ done</td>
+<td>pre-existing in <code>memory-router.ts</code></td>
+<td>Read cases dispatch through archivist: <code>case &#39;search&#39;:</code> (line 1282 → <code>archivist.dispatchRead(&#39;memory_search&#39;)</code>), <code>case &#39;get&#39;:</code> (line 1325 → <code>dispatchRead(&#39;memory_retrieve&#39;)</code>), <code>case &#39;list&#39;:</code> (line 1419 → <code>dispatchRead(&#39;memory_list&#39;)</code>). Header comment cites ADR-0181 task #100 as the landing context. <code>search-unified</code> is not a <code>routeMemoryOp</code> type — it&#39;s dispatched directly via mcp-tools.</td>
+</tr>
+</tbody></table>
+<p><strong>Acceptance trajectory through this session:</strong></p>
+<table>
+<thead>
+<tr>
+<th>Run</th>
+<th>Build</th>
+<th>Pass / Fail / Skip</th>
+<th>Notes</th>
+</tr>
+</thead>
+<tbody><tr>
+<td>Baseline (pre-session)</td>
+<td>patch.166→.172</td>
+<td>668→672 / 0 / 9</td>
+<td>Coercion commits (<code>agentdb a72f664</code>, <code>ruflo b2f25cb44</code>) had already made the 5 task-#100 checks green via the adapter-merge A2 approach.</td>
+</tr>
+<tr>
+<td>First A1 attempt (write flip)</td>
+<td>patch.174</td>
+<td>671 / 1 / 9</td>
+<td><code>adr0069-bug3-persist</code> fails — root cause: A1&#39;s audit-writer mkdir side-effect tripped <code>_resolveDatabasePath</code>&#39;s <code>.claude-flow/</code>-as-project-marker check on next-process cold-start.</td>
+</tr>
+<tr>
+<td>Revert</td>
+<td>patch.175</td>
+<td>672 / 0 / 9</td>
+<td>Baseline restored; queen authored council report identifying the path-detection root cause.</td>
+</tr>
+<tr>
+<td>A1 reapply (per first tie-breaker)</td>
+<td>patch.176</td>
+<td>671 / 1 / 9</td>
+<td>Same 1 fail (intermediate state).</td>
+</tr>
+<tr>
+<td>A0 (path-detection fix on top)</td>
+<td>patch.177</td>
+<td><strong>672 / 0 / 9</strong></td>
+<td><code>adr0069-bug3-persist</code> flips FAIL → PASS. <strong>A0+A1+A2+A3 fully landed; baseline clean.</strong></td>
+</tr>
+</tbody></table>
+<p><strong>Council records:</strong></p>
+<ul>
+<li><a href="../council/ADR-0183-a1-report.html">docs/council/ADR-0183-a1-report.md</a> — first swarm (<code>adr-0183-a1</code>): A1 audit + implementation + revert/reapply trajectory + §A0 (path-detection fix) appendage.</li>
+</ul>
+<p><strong>Open follow-ups (carry forward as their own ADRs, not in this one):</strong></p>
+<ol>
+<li><p><strong>v1-shape sunset ADR</strong> (per <a href="#open-follow-ups">§Open Follow-ups #1</a>) — substantially de-risked by the adapter-merge approach: <code>shape_version: 2</code> is stamped on writes but unused at read time (the adapter normalises regardless). The future ADR can scope to &quot;stop stamping; retire the adapter merge when no v1 records remain&quot; — narrower than originally framed. Not urgent; opens when v1 record migration is desired.</p>
+</li>
+<li><p><strong><code>routeMemoryOp</code> facade-deletion ADR</strong> (per <a href="#open-follow-ups">§Open Follow-ups #1a</a>) — Strategy 2 from §Architecture: per-callsite flip removing the facade entirely. Hygiene-only; the facade-internal dispatch (Strategy 1) is functioning. Opens when the codebase wants the architectural cleanup.</p>
+</li>
+<li><p><strong>Pipeline-owner residuals</strong> flagged by the first-swarm council report — lockstep-pin warnings (pre-existing <code>M package.json</code> malformed pins), <code>&lt;anonymous_script&gt;:5</code> JSON parser bug at release-log tail. Not ADR-0183&#39;s scope; tracked for the pipeline owners.</p>
+</li>
+</ol>
+<p><strong>ADR-0181 unblock.</strong> <a href="ADR-0181-archivist-runtime-activation.html#amendment-closure-plan--sequenced-path-to-close-the-program-2026-05-17">ADR-0181 §Closure plan amendment</a> Phase B (CF#8 memory-read handler readiness), Phase G (bench re-baseline), and Phase H (heavy-skip review) are all unblocked now that A3 has been definitively confirmed landed. ADR-0181&#39;s &quot;definition of done&quot; should be updated to reflect ADR-0183 closing.</p>
+<p><strong>Process note.</strong> The first-swarm queen&#39;s revert was the structurally correct call against her prompt&#39;s strict reading; my first tie-breaker (accept the 1 fail) and second tie-breaker (stand down for replan) both pulled her in different directions. The actual right call was the path-detection root-cause fix she traced and documented — landing A0 cleanly resolved the symptom without needing the plan revision I proposed (bundle A1+A2+A3 atomically, which was based on a wrong shape-divergence diagnosis). The replan amendment was reverted and replaced with the A0 amendment as the canonical record. Lesson: <strong>trust the trace agent&#39;s root cause analysis over the prompt-author&#39;s a-priori diagnosis</strong> (<code>feedback-trace-before-hypothesis</code> applies to the human assistant too).</p>
+<h3 id="amendment-a0-path-detection-prerequisite--strategic-re-scoping-2026-05-17-post-first-swarm">Amendment: A0 path-detection prerequisite + strategic re-scoping (2026-05-17, post-first-swarm)</h3>
+<p><strong>This amendment supersedes an earlier draft amendment</strong> (titled &quot;Plan revision — A1/A2/A3 fold into atomic A1&#39;&quot;) that diagnosed the first-swarm failure as a write/read shape divergence and proposed bundling A1+A2+A3 atomically. That diagnosis was wrong. The actual root cause is path-detection side-effects (below); the original A1/A2/A3 split is structurally sound once the prerequisite lands.</p>
+<p><strong>First-swarm outcome.</strong> <code>adr-0183-a1</code> (queen + DA + explorer; explorer/DA messages didn&#39;t reach the queen&#39;s in-process mailbox, so the queen authored the audit + DA brief herself) landed A1 cleanly: <code>forks/agentdb a4a3891</code> (handler stamps <code>shape_version: 2</code> + 4-case parity test) + <code>forks/ruflo e1f0ecac0</code> (<code>case &#39;store&#39;:</code> dispatches through <code>archivist.dispatch(&#39;memory_store&#39;, ...)</code> with normalisation at the facade; RC-2 idempotency moved into the handler at <code>store.ts:155-212</code>; post-dispatch re-read for envelope parity). Unit tests, tsc, parity test all green. Patch.174 on Verdaccio.</p>
+<p>Release-acceptance returned <strong>671/681 pass, 1 fail, 9 skip_accepted</strong> — one new failure: <code>adr0069-bug3-persist</code> (ADR-0069 Bug #3 markerless-cwd memory-persist test). The queen traced manually (no native Agent tool in the in-process teammate context) and reverted both fork commits (<code>agentdb fec78ad</code>, <code>ruflo 38e3c9fad</code>). Post-revert release: <strong>672/681 pass, 0 fail, 9 skip_accepted</strong> on patch.175 — baseline restored. Council record: <a href="../council/ADR-0183-a1-report.html">docs/council/ADR-0183-a1-report.md</a>.</p>
+<p><strong>Strategic finding: the 5 task-#100 failures are already green at baseline.</strong> Per the council report&#39;s acceptance table, baseline patch.172 was 672/0/9 BEFORE A1 was attempted, with the 5 previously-failing checks (<code>adr0069-bug3-persist</code>, <code>p8-inv12-mem-full</code>, <code>e2e-0059-mem-search</code>, <code>e2e-0059-p3-unified-both</code>, <code>e2e-0059-p3-dedup</code>) already PASSING. Earlier coercion commits (<code>forks/agentdb a72f664</code>, <code>forks/ruflo b2f25cb44</code>) fixed the read-side shape divergence directly in the legacy facade reads, independent of any A1/A2/A3 work. <strong>ADR-0183&#39;s correctness payload is therefore largely already shipped via coercion.</strong> What remains is architectural hygiene: complete Phase 5 for memory writes (cli internal write router dispatches through archivist, symmetric with the MCP write paths) and the <code>shape_version</code> migration scaffolding for future write-path changes.</p>
+<p><strong>Actual root cause of the A1 failure: path-detection side-effect, not shape divergence.</strong> Verified by trace + code at <code>forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:343-369</code>:</p>
+<pre><code class="hljs language-ts"><span class="hljs-keyword">const</span> projectRoot = <span class="hljs-title function_">_findProjectRoot</span>();
+<span class="hljs-keyword">const</span> inProject = fs.<span class="hljs-title function_">existsSync</span>(path.<span class="hljs-title function_">join</span>(projectRoot, <span class="hljs-string">&#x27;.claude-flow&#x27;</span>));</code></pre>
+<p><code>_resolveDatabasePath()</code> uses <code>.claude-flow/</code> as the project-membership signal. The archivist&#39;s audit-writer at <code>forks/agentdb/src/archivist/audit-writer.ts:93</code> creates <code>&lt;cwd&gt;/.claude-flow/data/</code> on its first audit write (<code>fs.mkdir(path.dirname(auditPath), {recursive:true})</code>).</p>
+<ul>
+<li>Pre-A1: writes never dispatch → audit-writer never runs → <code>&lt;cwd&gt;/.claude-flow/</code> never appears in markerless cwds → <code>inProject = false</code> → resolves to per-user <code>$HOME/.claude-flow/data/memory.rvf</code> (correct).</li>
+<li>Post-A1: writes dispatch → audit-writer mkdir&#39;s <code>&lt;cwd&gt;/.claude-flow/data/</code> on first call → next process cold-starts and sees <code>&lt;cwd&gt;/.claude-flow/</code> → <code>inProject = true</code> → resolves to <code>&lt;cwd&gt;/.claude-flow/memory.rvf</code> (empty, distinct from the per-user file the previous process wrote) → <code>Key not found</code>.</li>
+</ul>
+<p><code>.claude-flow/</code> is a runtime-produced directory (audit logs, state files, data subdir), not a human-authored project marker. The cli&#39;s own <code>[ruflo] No project root marker found</code> warning lists the canonical markers as <code>.ruflo-project</code>, <code>CLAUDE.md</code>+<code>.claude/</code>, and <code>.git/</code>. The fix is to align <code>_resolveDatabasePath</code>&#39;s membership check with that canonical set.</p>
+<p><strong>Revised plan — A0 prerequisite, then original A1/A2/A3 as written.</strong></p>
+<table>
+<thead>
+<tr>
+<th>Step</th>
+<th>Scope</th>
+<th>Exit gate</th>
+</tr>
+</thead>
+<tbody><tr>
+<td><strong>A0 (prerequisite)</strong></td>
+<td>One isolated fork commit (~5 LoC) to <code>forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts</code>: change <code>_resolveDatabasePath</code>&#39;s <code>inProject</code> check from <code>fs.existsSync(&#39;&lt;projectRoot&gt;/.claude-flow&#39;)</code> to a function that tests for the canonical project markers (<code>.ruflo-project</code> OR <code>CLAUDE.md</code>+<code>.claude/</code> OR <code>.git/</code>) — the same set already referenced by the cli&#39;s own warning message. Add a unit test that exercises a markerless cwd with a runtime-created <code>.claude-flow/</code> dir and asserts the per-user path is still chosen.</td>
+<td><code>npm run release</code> passes; baseline 672/0/9 unchanged; markerless-cwd unit test passes.</td>
+</tr>
+<tr>
+<td><strong>A1 (retry)</strong></td>
+<td>Original A1 scope as written in §Execution Plan above. The first-swarm implementation (<code>a4a3891</code> + <code>e1f0ecac0</code>) is a sound starting point — re-apply with any DA-residual-concern adjustments from the council report.</td>
+<td>Original A1 exit gate: parity unit test + tsc + <code>npm run release</code> passes; acceptance count ≥ baseline.</td>
+</tr>
+<tr>
+<td><strong>A2 (as planned)</strong></td>
+<td>Original A2 scope. With A0 in place and A1 re-landed, the read-side dual-schema discriminator on the archivist handlers proceeds as written.</td>
+<td>Original A2 exit gate.</td>
+</tr>
+<tr>
+<td><strong>A3 (as planned)</strong></td>
+<td>Original A3 scope: cli read flip + deletion of legacy facade branches + v1-sunset ADR.</td>
+<td>Original A3 exit gate.</td>
+</tr>
+</tbody></table>
+<p>The original A1/A2/A3 split in §Execution Plan is the implementation target. A0 is the un-listed prerequisite that the first swarm surfaced.</p>
+<p><strong>Carry-forwards from the first swarm</strong> (intact, valid input to the A1-retry swarm):</p>
+<ul>
+<li>Audit table — 12 callsites × 8 files, payload-key inventory (council report §Audit findings).</li>
+<li>Strategy decision — <strong>normalise at facade</strong>, not widen <code>ToolPayloadMap[&#39;memory_store&#39;]</code> (every callsite&#39;s payload is already a strict subset of <code>MemoryStorePayload</code>; widening adds no value, normalisation drops only the dead-defensive <code>metadata</code> spread at <code>memory-tools.ts:123</code>).</li>
+<li>DA&#39;s 3 residual concerns + how the first-swarm implementation addressed each (council report §Strategy decision + §What landed).</li>
+<li>Implementation pattern — facade does <code>await ensureRvfWired()</code> → <code>await getProcessArchivist()</code> → <code>await archivist.dispatch(&#39;memory_store&#39;, normalisedPayload)</code> → post-dispatch re-read via <code>storage.getByKey</code> for envelope parity.</li>
+</ul>
+<p><strong>Open question for A2 (write-path coercion vs new shape_version migration).</strong> The earlier coercion commits (<code>a72f664</code> + <code>b2f25cb44</code>) made the legacy facade reads accept both v1 and v2 shapes. A2&#39;s planned dual-schema discriminator on the archivist handlers may overlap with that coercion. Before A2 spawns, audit the coercion pattern — if it already covers the dispatched-read path, A2&#39;s scope shrinks materially or absorbs into A1 (just stamp <code>shape_version: 2</code> on writes).</p>
+<p><strong>Next swarm composition.</strong> A0 is small (1 file, ~5 LoC + 1 unit test) — a 2-agent team is sufficient (queen + implementer; no DA needed for a 5-LoC marker-set replacement). After A0 lands, the A1-retry swarm uses the first-swarm&#39;s audit + DA findings as input and is structurally similar to the first swarm.</p>
+<h2 id="open-follow-ups">Open Follow-ups</h2>
+<ol>
+<li><strong>v1-shape sunset ADR.</strong> A separate future ADR sets the criteria for retiring the v1 read branch (e.g. zero v1 records observed across N consecutive releases + an explicit migration mechanism for any residual v1 records). Tracked here so the dual-schema period is genuinely bounded, not a forever-open compatibility surface.</li>
+</ol>
+<p>1a. <strong><code>routeMemoryOp</code> facade-deletion ADR.</strong> A separate future ADR sets the criteria for retiring the cli&#39;s <code>routeMemoryOp</code> facade entirely (Strategy 2: every caller becomes a direct <code>archivist.dispatch</code>/<code>dispatchRead</code>). Symmetric with the v1-shape sunset — the code-surface deprecation gets its own life-cycle tracking rather than living forever inside the activation ADR. Sequencing: open after A3 lands and acceptance stabilises; the ADR&#39;s exit gate is &quot;zero <code>routeMemoryOp({type:&#39;store&#39;|&#39;get&#39;|&#39;list&#39;|&#39;search&#39;|&#39;search-unified&#39;})</code> callsites remain; facade exports removed.&quot;</p>
+<ol start="2">
+<li><p><strong>ADR-0181 closure-plan amendment cross-reference.</strong> Once this ADR is <code>accepted</code>, the ADR-0181 closure-plan amendment is updated to mark A1/A2/A3 as scoped here; ADR-0181&#39;s downstream Phases B + G + H reference this ADR as their unblock condition.</p>
+</li>
+<li><p><strong>Other non-memory CLI command writes.</strong> This ADR scopes only memory writes. If similar write-path divergence exists for other CLI commands (claims/tasks/agents/swarm direct CLI writes), it surfaces during ADR-0181&#39;s downstream phases and gets its own ADR — not folded here.</p>
+</li>
+<li><p><strong>Multi-process audit under real load.</strong> ADR-0181&#39;s Open Follow-up #4 (audit-log behaviour under cli + daemon + hook concurrent dispatch) gets its first real stress test once A1 lands and memory writes route through the archivist from every host process. Findings feed back into ADR-0180 §15 if the single-fd-per-process invariant or the lock-contention budget breaks.</p>
+</li>
+</ol>
+<h2 id="more-information">More Information</h2>
+<ul>
+<li><a href="ADR-0181-archivist-runtime-activation.html">ADR-0181</a> — the activation program this ADR completes the memory-write piece of. See its <a href="ADR-0181-archivist-runtime-activation.html#amendment-closure-plan--sequenced-path-to-close-the-program-2026-05-17">§Closure plan amendment</a> (2026-05-17) for the original A1/A2/A3 sequencing this ADR inherits.</li>
+<li><a href="ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.html">ADR-0180</a> — the architecture this ADR&#39;s activation realises. The dispatch boundary + typed overloads + substrate seam are the prior decisions this ADR depends on.</li>
+<li><a href="../ADR-0181-handover.html">docs/ADR-0181-handover.md</a> — handover snapshot with the full task #100 attempt history, intent-fix retention rationale, and the trace report that identified the write/read field-shape asymmetry as the root cause.</li>
+<li><code>feedback-no-fallbacks.md</code> — the discipline that shapes A2&#39;s neither-shape-fails-loud behaviour.</li>
+<li><code>feedback-data-loss-zero-tolerance.md</code> — the shippability bar the 5 failures violate.</li>
+<li><code>feedback-trace-before-hypothesis.md</code> — the process that produced the trace report cited in this ADR&#39;s Context.</li>
+</ul>
+
+  </div>
+
+  <!-- Pan/zoom image viewer -->
+  <div class="image-viewer" id="imageViewer">
+    <button class="viewer-close" onclick="closeViewer()" title="Close (Esc)">&#215;</button>
+    <div class="viewer-canvas" id="viewerCanvas">
+      <img id="viewerImg" src="" alt="Full size image" draggable="false">
+    </div>
+    <div class="viewer-controls">
+      <button onclick="viewerZoom(-1)" title="Zoom out (-)">&#8722;</button>
+      <button onclick="viewerReset()" title="Fit to screen (0)">Fit</button>
+      <span class="viewer-zoom-label" id="viewerZoomLabel">100%</span>
+      <button onclick="viewerZoom(1)" title="Zoom in (+)">+</button>
+      <button onclick="viewerSetZoom(1)" title="Actual size (1)">1:1</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      var viewer = document.getElementById('imageViewer');
+      var canvas = document.getElementById('viewerCanvas');
+      var img = document.getElementById('viewerImg');
+      var label = document.getElementById('viewerZoomLabel');
+      var scale = 1, panX = 0, panY = 0;
+      var isDragging = false, startX = 0, startY = 0, startPanX = 0, startPanY = 0;
+      var natW = 0, natH = 0;
+
+      function updateTransform() {
+        img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + scale + ')';
+        label.textContent = Math.round(scale * 100) + '%';
+      }
+
+      window.openLightbox = function(src) {
+        img.src = src;
+        viewer.classList.add('active');
+        document.body.style.overflow = 'hidden';
+        img.onload = function() {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        };
+        if (img.complete && img.naturalWidth) {
+          natW = img.naturalWidth;
+          natH = img.naturalHeight;
+          viewerReset();
+        }
+      };
+
+      window.closeViewer = function() {
+        viewer.classList.remove('active');
+        document.body.style.overflow = '';
+      };
+
+      window.viewerReset = function() {
+        var vw = canvas.clientWidth, vh = canvas.clientHeight;
+        var fitScale = Math.min(vw / natW, vh / natH, 1) * 0.95;
+        scale = fitScale;
+        panX = (vw - natW * scale) / 2;
+        panY = (vh - natH * scale) / 2;
+        updateTransform();
+      };
+
+      window.viewerZoom = function(dir) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        var factor = dir > 0 ? 1.25 : 0.8;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = cx - (cx - panX) * (newScale / scale);
+        panY = cy - (cy - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      };
+
+      window.viewerSetZoom = function(z) {
+        var cx = canvas.clientWidth / 2, cy = canvas.clientHeight / 2;
+        panX = cx - (cx - panX) * (z / scale);
+        panY = cy - (cy - panY) * (z / scale);
+        scale = z;
+        updateTransform();
+      };
+
+      // Mouse drag to pan
+      canvas.addEventListener('mousedown', function(e) {
+        if (e.button !== 0) return;
+        isDragging = true;
+        startX = e.clientX; startY = e.clientY;
+        startPanX = panX; startPanY = panY;
+        canvas.classList.add('dragging');
+        e.preventDefault();
+      });
+
+      window.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        panX = startPanX + (e.clientX - startX);
+        panY = startPanY + (e.clientY - startY);
+        updateTransform();
+      });
+
+      window.addEventListener('mouseup', function() {
+        isDragging = false;
+        canvas.classList.remove('dragging');
+      });
+
+      // Scroll wheel to zoom, centered on cursor
+      canvas.addEventListener('wheel', function(e) {
+        e.preventDefault();
+        var rect = canvas.getBoundingClientRect();
+        var mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        var factor = e.deltaY < 0 ? 1.15 : 0.87;
+        var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+        panX = mx - (mx - panX) * (newScale / scale);
+        panY = my - (my - panY) * (newScale / scale);
+        scale = newScale;
+        updateTransform();
+      }, { passive: false });
+
+      // Touch: pinch-zoom and pan
+      var lastTouches = null;
+      canvas.addEventListener('touchstart', function(e) {
+        if (e.touches.length === 1) {
+          isDragging = true;
+          startX = e.touches[0].clientX; startY = e.touches[0].clientY;
+          startPanX = panX; startPanY = panY;
+        }
+        lastTouches = Array.from(e.touches);
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchmove', function(e) {
+        if (e.touches.length === 1 && isDragging) {
+          panX = startPanX + (e.touches[0].clientX - startX);
+          panY = startPanY + (e.touches[0].clientY - startY);
+          updateTransform();
+        } else if (e.touches.length === 2 && lastTouches && lastTouches.length === 2) {
+          var oldDist = Math.hypot(lastTouches[0].clientX - lastTouches[1].clientX, lastTouches[0].clientY - lastTouches[1].clientY);
+          var newDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
+          var factor = newDist / oldDist;
+          var mx = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+          var my = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+          var rect = canvas.getBoundingClientRect();
+          mx -= rect.left; my -= rect.top;
+          var newScale = Math.min(Math.max(scale * factor, 0.05), 20);
+          panX = mx - (mx - panX) * (newScale / scale);
+          panY = my - (my - panY) * (newScale / scale);
+          scale = newScale;
+          updateTransform();
+          lastTouches = Array.from(e.touches);
+        }
+        e.preventDefault();
+      }, { passive: false });
+
+      canvas.addEventListener('touchend', function() {
+        isDragging = false;
+        lastTouches = null;
+      });
+
+      // Keyboard shortcuts
+      document.addEventListener('keydown', function(e) {
+        if (!viewer.classList.contains('active')) return;
+        if (e.key === 'Escape') closeViewer();
+        else if (e.key === '+' || e.key === '=') viewerZoom(1);
+        else if (e.key === '-') viewerZoom(-1);
+        else if (e.key === '0') viewerReset();
+        else if (e.key === '1') viewerSetZoom(1);
+      });
+
+      // Double-click toggles between fit and 1:1
+      canvas.addEventListener('dblclick', function() {
+        if (Math.abs(scale - 1) < 0.01) viewerReset();
+        else viewerSetZoom(1);
+      });
+    })();
+  </script>
+
+  <!-- Mermaid with ELK layout support -->
+  <script type="module">
+    import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs';
+    import elkLayouts from 'https://cdn.jsdelivr.net/npm/@mermaid-js/layout-elk@0/dist/mermaid-layout-elk.esm.min.mjs';
+
+    // Register ELK layout engine
+    mermaid.registerLayoutLoaders(elkLayouts);
+
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'default',
+      securityLevel: 'loose',
+      flowchart: {
+        useMaxWidth: true,
+        htmlLabels: true
+      }
+    });
+    
+  </script>
+</body>
+</html>
