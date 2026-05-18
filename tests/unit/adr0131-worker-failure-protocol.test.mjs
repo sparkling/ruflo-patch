@@ -22,6 +22,18 @@ const FORK_HIVE_CMD = `${FORK_ROOT}/v3/@claude-flow/cli/src/commands/hive-mind.t
 const FORK_HIVE_TOOLS = `${FORK_ROOT}/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts`;
 const FORK_DEEP_TEST = `${FORK_ROOT}/v3/@claude-flow/cli/__tests__/mcp-tools-deep.test.ts`;
 
+// ADR-0185 Wave 2b — cli's propose-action threshold-check logic moved into
+// agentdb per-strategy handlers (bft/raft/quorum/weighted each set their own
+// `timeoutAt` in their propose case). The ADR-0131 invariant "propose-time
+// timeoutAt is set for ALL threshold-based strategies (not just raft)" still
+// holds; the assertion now grep the per-strategy handlers rather than cli's
+// (now-removed) `isThresholdBased` helper.
+const AGENTDB_ROOT = '/Users/henrik/source/forks/agentdb';
+const AGENTDB_BFT_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/bft.ts`;
+const AGENTDB_RAFT_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/raft.ts`;
+const AGENTDB_QUORUM_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/quorum.ts`;
+const AGENTDB_WEIGHTED_HANDLER = `${AGENTDB_ROOT}/src/archivist/handlers/hive-mind/consensus/weighted.ts`;
+
 const CHECK_FN_NAMES = [
   'check_adr0131_worker_failure_auto_transition',
   'check_adr0131_status_failed_workers_summary',
@@ -205,7 +217,22 @@ describe('ADR-0131 fork source — hive-mind-tools.ts', () => {
 
   it('propose-time timeoutAt is set for ALL threshold-based strategies (not just raft)', () => {
     // Per ADR-0131: auto-transition fires across bft/raft/quorum/weighted.
-    assert.match(src, /isThresholdBased/);
+    // ADR-0185 Wave 2b: cli's `isThresholdBased` helper removed when propose
+    // flipped to archivist.dispatch; the threshold-check logic now lives in
+    // each agentdb per-strategy handler's propose case. Each of bft/raft/
+    // quorum/weighted handlers sets `proposal.timeoutAt` at propose-time
+    // (verified: bft.ts:81, raft.ts:85, quorum.ts:67, weighted.ts:86).
+    // Gossip + crdt handlers do NOT set timeoutAt (their own per-round
+    // settle paths handle timeout-driven resolution — pre-flip exclusion
+    // preserved).
+    const bftSrc = existsSync(AGENTDB_BFT_HANDLER) ? readFileSync(AGENTDB_BFT_HANDLER, 'utf8') : '';
+    const raftSrc = existsSync(AGENTDB_RAFT_HANDLER) ? readFileSync(AGENTDB_RAFT_HANDLER, 'utf8') : '';
+    const quorumSrc = existsSync(AGENTDB_QUORUM_HANDLER) ? readFileSync(AGENTDB_QUORUM_HANDLER, 'utf8') : '';
+    const weightedSrc = existsSync(AGENTDB_WEIGHTED_HANDLER) ? readFileSync(AGENTDB_WEIGHTED_HANDLER, 'utf8') : '';
+    assert.match(bftSrc, /timeoutAt:\s*new Date\(Date\.now\(\)\s*\+\s*timeoutMs\)/);
+    assert.match(raftSrc, /timeoutAt:\s*new Date\(Date\.now\(\)\s*\+\s*timeoutMs\)/);
+    assert.match(quorumSrc, /timeoutAt:\s*new Date\(Date\.now\(\)\s*\+\s*timeoutMs\)/);
+    assert.match(weightedSrc, /timeoutAt:\s*new Date\(Date\.now\(\)\s*\+\s*timeoutMs\)/);
   });
 
   it('idempotency guard dedupes on proposalId before pushing to history', () => {
