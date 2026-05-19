@@ -1043,6 +1043,7 @@ run_check_bg "adr0116-cmd-frontmatter"  "0116 per-command implementation-status 
 
 # controller (ADR-0033)
 run_check_bg "ctrl-health"      "Controller health"      check_controller_health   "controller"
+run_check_bg "ctrl-cluster-b"   "Cluster B controllers"  check_cluster_b_controllers_register "controller"
 run_check_bg "ctrl-routing"     "Learned routing"        check_hooks_route         "controller"
 run_check_bg "ctrl-scoping"     "Memory scoping"         check_memory_scoping      "controller"
 run_check_bg "ctrl-reflexion"   "Reflexion lifecycle"     check_reflexion_lifecycle "controller"
@@ -2520,7 +2521,7 @@ collect_parallel "all" \
   "doctor|Doctor" "wrapper-proxy|Wrapper proxy" \
   "memory-lifecycle|Memory lifecycle" "neural-training|Neural training" \
   "booster-esm|Agent Booster ESM" "booster-cli|Agent Booster CLI" "plugins-sdk|Plugins SDK" "plugin-install|Plugin install" \
-  "ctrl-health|Controller health" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
+  "ctrl-health|Controller health" "ctrl-cluster-b|Cluster B controllers" "ctrl-routing|Learned routing" "ctrl-scoping|Memory scoping" \
   "ctrl-reflexion|Reflexion lifecycle" \
   "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
   "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \

@@ -45,6 +45,55 @@ check_controller_health() {
   fi
 }
 
+check_cluster_b_controllers_register() {
+  # ADR-0191 Task #21 / B7 regression: verify all 10 Cluster B controllers
+  # register in a fresh init project. Previously queryOptimizer was silently
+  # disabled by the init template's `enabled.queryOptimizer: false` default;
+  # B7's fix flipped it to true. This check catches both: any controller
+  # silently filtered out (config-disabled or registration-failed) AND
+  # specifically guards queryOptimizer against future regression.
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_controllers" "" 30
+
+  if [[ $_RK_EXIT -ne 0 ]] || ! echo "$_RK_OUT" | grep -q '"name"'; then
+    _CHECK_OUTPUT="Cluster B: agentdb_controllers MCP call failed — $(echo "$_RK_OUT" | head -c 200)"
+    return
+  fi
+
+  # The 10 Cluster B controllers per ADR-0191's per-callsite finding table.
+  # All must appear in the output AND have enabled:true.
+  local expected=(
+    solverBandit skills learningSystem semanticRouter nightlyLearner
+    sonaTrajectory queryOptimizer mmrDiversityRanker agentMemoryScope contextSynthesizer
+  )
+  local missing=()
+  local disabled=()
+  local name
+  for name in "${expected[@]}"; do
+    # Extract the 2-line block for this controller; grep -A1 picks the enabled line.
+    local block
+    block=$(echo "$_RK_OUT" | grep -A1 "\"name\":[[:space:]]*\"${name}\"" || true)
+    if [[ -z "$block" ]]; then
+      missing+=("$name")
+    elif echo "$block" | grep -q '"enabled":[[:space:]]*false'; then
+      disabled+=("$name")
+    fi
+  done
+
+  if (( ${#missing[@]} == 0 && ${#disabled[@]} == 0 )); then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Cluster B: all 10 controllers registered + enabled (solverBandit, skills, learningSystem, semanticRouter, nightlyLearner, sonaTrajectory, queryOptimizer, mmrDiversityRanker, agentMemoryScope, contextSynthesizer)"
+  else
+    local parts=()
+    (( ${#missing[@]} > 0 )) && parts+=("missing: ${missing[*]}")
+    (( ${#disabled[@]} > 0 )) && parts+=("disabled: ${disabled[*]}")
+    _CHECK_OUTPUT="Cluster B controllers gap — ${parts[*]}"
+  fi
+}
+
 check_hooks_route() {
   local cli; cli=$(_cli_cmd)
   _CHECK_PASSED="false"

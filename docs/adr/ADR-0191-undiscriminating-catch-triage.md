@@ -502,6 +502,77 @@ After the revision, release-3 ran clean: **673/682 passed, 0 failed,
 **341** undiscriminating catches (370 → 341 = 29 fixed); no HIGH-
 class survivors.
 
+### Follow-up work surfaced during review (2026-05-19, post-release-3)
+
+Reviewing the released fix surfaced four real issues that this ADR did
+not initially catch. They follow from the absence-not-accepted rule
+itself — the rule said "absence must be typed, logged, and integration-
+tested," but the initial Phase B fix only delivered the *narrowing*
+part, not the verification that the feature actually *works* under
+absence rules. Captured tasks:
+
+**A — Optional-import sites (Cluster A):**
+* **A2 + A5 verified active** in a fresh `@sparkleideas/cli` install.
+  `@sparkleideas/memory.deriveHNSWParams` returns the correct values
+  at dim=768 (identical to source defaults — degraded mode is
+  observably zero-cost at default dim). `@sparkleideas/ruvector-ruvllm`
+  reports `trainingBackend: "ruvllm"` via `mcp exec --tool
+  ruvllm_status` — the TrainingPipeline detection fires correctly.
+* **A4 dead-spec discovery**: `AutopilotLearning` is referenced by 7
+  source files, 2 ADRs (058/072), and 1 integration test — but no
+  commit in any repo ever added the producer file. Spec'd but never
+  built. Documented in **ADR-0192** with a 7-phase implementation
+  plan. ADR-072 stays Proposed until ADR-0192 Phase 1 lands.
+
+**B — Controller registry (Cluster B):**
+* **B7 root cause found**: `queryOptimizer` was missing from the
+  registry in fresh installs because the init template
+  (`cli/src/init/config-template.ts:198`) defaulted
+  `enabled.queryOptimizer: false` with no documented rationale. The
+  controller has a tuning config populated below it (planCache,
+  maxCachedPlans, ttl), which only makes sense if it's enabled.
+  Init-time was set wrong since the template was first written
+  (commit `aa7c7673f`). **Fix**: flipped the default to `true`. The
+  controller-registry case at `controller-registry.ts:1922` was also
+  re-instrumented to surface which precondition fires on registration
+  failure (replacing the bare `catch { return null }` with explicit
+  per-condition `console.error` discrimination), so future regressions
+  of the same shape are observable rather than silent.
+* **Doctor observability (Task #22)**: added a `checkControllers`
+  health check to `ruflo doctor` that reports per-controller
+  registration state (total / active / inactive / error-bearing).
+  Operators see degraded-mode state at diagnosis time instead of
+  inferring it from missing features at runtime.
+* **Happy-path acceptance test (Task #21)**: added
+  `check_cluster_b_controllers_register` to the acceptance harness
+  (`ctrl-cluster-b` check) — verifies all 10 Cluster B controllers
+  register AND are enabled in a fresh init project. Specifically
+  guards `queryOptimizer` against B7 regression. Closes the "is the
+  feature actually working" verification gap that release-3's pass
+  did not cover.
+
+**S — Singletons (S1, S2, S3):**
+* **S1 + S3 confirmed clean**: release-3 didn't surface any worker-
+  daemon shutdown bug (S1) or git-rev-parse-related regression (S3).
+  The catch removals/discriminations didn't reveal bugs in CI; the
+  catches were genuinely paranoia.
+* **S2 confirmed clean**: `embeddings cache -a clear` returns
+  "Cache cleared!" — the removed catch didn't surface a real bug;
+  the same-package import + typed `routeMemoryOp` work as expected.
+
+**Net additional changes** (vs. the original 29-callsite fix):
+* 1 init-template default flip (`queryOptimizer: false → true`)
+* 1 controller-registry case re-instrumentation
+  (per-condition `console.error` instead of bare `catch { return null }`)
+* 1 doctor health-check addition (`checkControllers`)
+* 1 acceptance check addition (`ctrl-cluster-b`)
+* 1 new ADR (ADR-0192) for the unbuilt AutopilotLearning feature
+
+**Closing condition update**: this ADR closes when the original 29
+Phase B fixes + the follow-up tasks above ALL land green in
+`npm run release` acceptance. ADR-0192 (autopilot-learning build)
+runs independently and is tracked separately.
+
 ## Consequences
 
 **If Option 1 (three-class triage)**:
