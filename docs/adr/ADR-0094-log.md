@@ -6,6 +6,60 @@
 
 ---
 
+## 2026-05-19 — Wave 2 ADRs (0191/0194-D/0195-step/0196-transport/0199) green; critique findings closed
+
+Closing-state snapshot of today's second-wave work on top of the 2026-04-21 ADR-0094 closure. ADR-0094 remains `Status: Closed`; this entry records the latest acceptance pass + the ADR landings that contributed since the wave-1 entry below.
+
+### Acceptance state
+
+* Most recent green release: `accept-2026-05-19T211443Z` — **684/693 pass · 0 fail · 9 skip_accepted** · `Phase 'acceptance' completed in 328615ms`. Publish stage emitted `3.7.0-alpha.10-patch.237`. Captured in `/tmp/release-wave2b-final.log`.
+* Net acceptance growth across the day: 678 pass (release-1 pre-wave-1) → 684 pass (wave-1 + wave-2 final). +6 from the new adr0194/0195/0196 groups landing green; no regressions on the existing corpus.
+* All 6 wave-1 ADR check groups (`adr0194-{populated,empty}`, `adr0195-{subscribe,predictAction}`, `adr0196-{fed-status,episode-origin}`) continue to pass.
+
+### Wave 2 ADR landings (this session)
+
+* **ADR-0191** — undiscriminating-catch triage. Phase B (29 HIGH catches resolved across 5 clusters), Phase D gate wired (`scripts/ruflo-publish.sh:470`), 4 follow-ups landed. Status: `implemented`.
+* **ADR-0194 Landing D** — GNN embedding enhancement. Deferred per corpus evidence (re-walk: still 0 cross-lex pairs at cosine ≥ 0.75; highest 0.638). Documented in ADR-0194 §"Landing D deferral note (2026-05-19)".
+* **ADR-0195 step-level feedback** — `trajectory:step` → per-step `submitFeedback` wired under `STEP_LEVEL_FEEDBACK_ENABLED` opt-in (default OFF). sessionId scheme: `autopilot:${sha1(trajectoryId)}:step`. Resolves ADR-0195 §"Open questions" #3.
+* **ADR-0196 transport binding** — moved into new **ADR-0199** (`@fails-components/webtransport` + HTTP/2 fallback). Lifecycle wiring (`c55e7b4`), sendRequest data-path (`3019725`), getBoundAddress + controller-stack roundtrip test (`a717f64`, 3/3 pass). Status: `implemented`.
+* **CLI surface** — 4 new subcommands (`autopilot patterns`, `episodes`, `subscribe`, `federation status`) — commits `e18c10e` + `79abc01`.
+* **ADR-0196 doc/code reconciliation** — `9d4cb66`.
+
+### Critique findings — all closed
+
+Wave-2 adversarial review (`1ee7fcd`) flagged 1 MED + 4 LOW + 7 INFO. Final disposition:
+
+| Severity | Finding | Resolved by |
+|---|---|---|
+| MED 0191.1 | `loadSettings`/`loadLog` swallows SyntaxError | `ea4738d` (ENOENT-only discrimination) |
+| LOW 0194.3 | `discoverPatternsByEmbedding` silent `[]` on `!_available` | `36eaebf` (now throws per docstring) |
+| LOW 0195.2 | EventEmitter unbounded listeners | `ea4738d` (`setMaxListeners(50)`) |
+| LOW 0195.3 | `_autopilotSessionsBound` unbounded Set | `36eaebf` + `5503891` (FIFO → LRU with re-promote on hit) |
+| LOW 0196.3 | install-id size check after read | `ea4738d` (`statSync` pre-check) |
+| Side-note | `loadState` Cluster D pattern | `8767dd2` (ENOENT-only) |
+| INFO | `UUID_V4_REGEX` accepted v1-v5 despite name | `5503891` (tightened to enforce v4 + RFC-4122 variant) |
+| INFO | adapter `push()`/`pull()` aliased to bidirectional sync | `5503891` (docstring flags as architectural follow-up) |
+
+### Architectural follow-ups identified + dispositioned
+
+| Item | Action |
+|---|---|
+| Bounded-set eviction policy | Refactored FIFO → LRU (`5503891`) |
+| QUIC `Connection` pool vestigial post-ADR-0199 | Documented (`bbc4400`) — removal deferred (call-graph too wide) |
+| Real push-only / pull-only on `SyncCoordinator` | Documented as architectural follow-up in adapter docstrings; would need upstream agentdb surface change |
+
+### Housekeeping
+
+* INTEGRATION-LEDGER cleanup (`c1dad80`): removed the 13 rows added by `b301d55` for locally-synthesized work. LEDGER scope is upstream-only per its header; locally-authored ADR-0194/0195/0196 features don't belong there even when they reference upstream ADRs conceptually.
+* ADR-0199 §"Implementation log" added with 4 rows (transport abstraction → lifecycle → data-path → roundtrip test).
+* Memory: `feedback-no-streak-timegates.md` added per user directive — ADR-0094-style "N consecutive green runs with ≥X hours gap" criteria are not real remaining work.
+
+### ADR-0094 itself: still Closed
+
+The parent ADR-0094 stays at `Status: Closed (2026-04-21)`. This entry is a cumulative-state log update, not a re-opening.
+
+---
+
 ## 2026-05-19 — ADR-0194/0195/0196 acceptance groups registered — 6 new closure-criterion checks
 
 Three new acceptance check groups landed in `scripts/test-acceptance.sh` + `scripts/test-acceptance-fast.sh` (commit `3905a79`), covering the AutopilotLearning Phase 3/4/5 ADRs that shipped this session.
