@@ -289,11 +289,25 @@ run_build() {
     "${TEMP_DIR}/cross-repo/agentic-flow/packages/agent-booster"; do
     [[ -d "$extra_dir" && -f "$extra_dir/tsconfig.json" ]] && extra_pkg_dirs+=("$extra_dir")
   done
-  # agentic-flow root uses config/tsconfig.json — compile it directly
+  # agentic-flow root uses config/tsconfig.json — compile it directly.
+  # ADR-0193 follow-up: previously skipped tsc when a pre-existing dist was
+  # present, but copy-source.sh's `--filter='P dist/'` preserves the dest
+  # dist across runs — so once dist existed, fresh fork source never made
+  # it into the publish. The Wave 1 release of ADR-0193 published Phase 1
+  # dist alongside Phase 2 src. Fix: always run tsc; rely on --incremental
+  # + .tsbuildinfo for cache reuse when source is unchanged. Bust the
+  # buildinfo when any src .ts is newer than it (mirror of v3 path).
   local af_dir="${TEMP_DIR}/cross-repo/agentic-flow/agentic-flow"
-  local _af_has_dist=false
-  [[ -f "${af_dir}/dist/index.js" || -f "${af_dir}/dist/agentic-flow/src/index.js" ]] && _af_has_dist=true
-  if [[ -f "${af_dir}/config/tsconfig.json" && "$_af_has_dist" == "false" ]]; then
+  if [[ -f "${af_dir}/config/tsconfig.json" ]]; then
+    local _af_buildinfo="${af_dir}/.tsbuildinfo"
+    if [[ -f "$_af_buildinfo" ]] && [[ -d "${af_dir}/src" ]]; then
+      local _af_newer
+      _af_newer=$(find "${af_dir}/src" -name '*.ts' -newer "$_af_buildinfo" 2>/dev/null | head -1)
+      if [[ -n "$_af_newer" ]]; then
+        rm -f "$_af_buildinfo"
+        log "    cache invalidated for agentic-flow (source newer than .tsbuildinfo)"
+      fi
+    fi
     log "  Building agentic-flow (config/tsconfig.json)..."
     local _af_start
     _af_start=$(date +%s%N 2>/dev/null || echo 0)
