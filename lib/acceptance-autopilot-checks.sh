@@ -536,15 +536,14 @@ check_query_optimizer_cache() {
   # imports AgentDBService directly. This tests what queryOptimizer can
   # actually do; the CLI/MCP gap is documented as a follow-up in
   # ADR-0193 §D's audit findings.
+  # QueryOptimizer.query(sql, params): sync SQL cache wrapper. Calling it
+  # twice with the same SQL bumps cacheMisses then cacheHits. getStats()
+  # returns per-query stats; assert sum of cacheHits >= 1 to prove the
+  # cache fired.
   local probe_out
   probe_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node -e "
     (async () => {
       try {
-        // Use the same tryLoadLearning path the rest of the autopilot
-        // probes use — it's the published-exports-compliant way to reach
-        // AgentDBService (via AutopilotLearning._agentdb). The
-        // ./services/agentdb-service subpath is NOT in the package's
-        // exports map.
         const m = await import('@sparkleideas/cli/dist/src/autopilot-state.js');
         const learning = await m.tryLoadLearning();
         if (!learning || !learning._agentdb) {
@@ -553,7 +552,7 @@ check_query_optimizer_cache() {
         }
         const adb = learning._agentdb;
         if (typeof adb.getController !== 'function') {
-          console.log('NO_AGENTDB:getController=' + typeof adb.getController);
+          console.log('NO_GETCONTROLLER:getController=' + typeof adb.getController);
           return;
         }
         const qo = adb.getController('queryOptimizer');
@@ -561,69 +560,54 @@ check_query_optimizer_cache() {
           console.log('NO_QOPT:getController(queryOptimizer) returned null/undefined');
           return;
         }
-        const probeFn = qo.search || qo.query || qo.lookup;
-        if (typeof probeFn !== 'function') {
-          console.log('NO_SEARCH_FN:keys=' + Object.keys(qo).join(','));
+        if (typeof qo.query !== 'function' || typeof qo.getStats !== 'function') {
+          console.log('NO_API:query=' + typeof qo.query + ',getStats=' + typeof qo.getStats);
           return;
         }
+        const sql = 'SELECT 1 AS qopt_probe_value';
         const t1_start = Date.now();
-        const r1 = await probeFn.call(qo, 'qopt-cache-probe-text', { limit: 5 });
+        const r1 = qo.query(sql);
         const t1 = Date.now() - t1_start;
         const t2_start = Date.now();
-        const r2 = await probeFn.call(qo, 'qopt-cache-probe-text', { limit: 5 });
+        const r2 = qo.query(sql);
         const t2 = Date.now() - t2_start;
-        const cached2 = r2 && (r2.cached === true || r2.fromCache === true);
-        console.log('RESULT:' + JSON.stringify({ t1, t2, cached2 }));
+        const stats = qo.getStats();
+        const totalHits = Array.isArray(stats) ? stats.reduce((s, x) => s + (x?.cacheHits || 0), 0) : 0;
+        const totalMisses = Array.isArray(stats) ? stats.reduce((s, x) => s + (x?.cacheMisses || 0), 0) : 0;
+        console.log('RESULT:' + JSON.stringify({ t1, t2, totalHits, totalMisses, sameLen: r1?.length === r2?.length }));
       } catch (e) {
         console.log('ERROR:' + (e && e.message ? e.message : String(e)));
       }
     })();
   " 2>&1) || true
 
-  # NO_AGENTDB / NO_QOPT / NO_SEARCH_FN → skip_accepted: the registration
-  # gap was supposed to be fixed by ADR-0191 §B7, but the in-process
-  # accessor may legitimately differ from what we probe. Don't mask this
-  # as a hard fail — it's a wiring discovery, not a bug we just shipped.
-  if echo "$probe_out" | grep -qE "^NO_AGENTDB:|^NO_QOPT:|^NO_SEARCH_FN:"; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="query-optimizer-cache: queryOptimizer not exposed via getController() in installed package — ADR-0193 §D audit finding: registration→read-path wiring incomplete. Probe shape works; closure deferred to architectural follow-up. $(echo "$probe_out" | grep -E '^NO_' | head -1)"
+  if echo "$probe_out" | grep -qE "^NO_AGENTDB:|^NO_GETCONTROLLER:|^NO_QOPT:|^NO_API:"; then
+    _CHECK_OUTPUT="query-optimizer-cache: queryOptimizer reach failed — $(echo "$probe_out" | grep -E '^NO_' | head -1)"
     return
   fi
   if echo "$probe_out" | grep -q "^ERROR:"; then
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="query-optimizer-cache: in-process probe failed before measuring — $(echo "$probe_out" | grep -E '^ERROR:|^NO_' | head -2 | tr '\n' ' ')"
+    _CHECK_OUTPUT="query-optimizer-cache: in-process probe threw — $(echo "$probe_out" | grep '^ERROR:' | head -1)"
     return
   fi
 
   local result_line
   result_line=$(echo "$probe_out" | grep '^RESULT:' | head -1)
   if [[ -z "$result_line" ]]; then
-    _CHECK_PASSED="skip_accepted"
     _CHECK_OUTPUT="query-optimizer-cache: probe emitted no RESULT line — first 10 lines: $(echo "$probe_out" | head -10 | tr '\n' ' ')"
     return
   fi
 
-  # Signal 1: explicit cached:true on second call
-  if echo "$result_line" | grep -q '"cached2"[[:space:]]*:[[:space:]]*true'; then
+  # Closure signal: cacheHits >= 1 after two identical queries. The
+  # second call MUST hit cache (qo.query checks cache before executing
+  # SQL) or queryOptimizer is non-functional.
+  local hits
+  hits=$(echo "$result_line" | grep -oE '"totalHits"[[:space:]]*:[[:space:]]*[0-9]+' | grep -oE '[0-9]+$')
+  hits=${hits:-0}
+  if [[ "$hits" -ge 1 ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="query-optimizer-cache: in-process 2nd call returned cached=true ($result_line)"
+    _CHECK_OUTPUT="query-optimizer-cache: cache works — totalHits=$hits after 2 identical qo.query() calls ($result_line)"
     return
   fi
 
-  # Signal 2: 2nd call measurably faster (< 50% of 1st call duration).
-  local t1 t2
-  t1=$(echo "$result_line" | grep -oE '"t1"[[:space:]]*:[[:space:]]*[0-9]+' | grep -oE '[0-9]+$')
-  t2=$(echo "$result_line" | grep -oE '"t2"[[:space:]]*:[[:space:]]*[0-9]+' | grep -oE '[0-9]+$')
-  t1=${t1:-0}; t2=${t2:-0}
-  if [[ "$t1" -gt 0 ]] && [[ "$t2" -gt 0 ]] && [[ "$t2" -lt $((t1 / 2)) ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="query-optimizer-cache: in-process 2nd call < 50% of 1st (t1=${t1}ms t2=${t2}ms)"
-    return
-  fi
-
-  # Neither signal → cache is exposed but not effective in-process either.
-  # This IS the audit gap ADR-0193 §D wants surfaced; mark skip_accepted
-  # to communicate "tracked, not blocking release."
-  _CHECK_PASSED="skip_accepted"
-  _CHECK_OUTPUT="query-optimizer-cache: ADR-0193 §D audit — queryOptimizer registered but no cache effect on repeated identical queries even in-process ($result_line). Root cause: shell-out architecture for MCP/CLI precludes inter-call caching; in-process caching also absent. Follow-up: sub-ADR for in-process MCP handler OR persistent cache."
+  _CHECK_OUTPUT="query-optimizer-cache: cache miss — totalHits=$hits expected >=1. queryOptimizer.query() is not caching despite the controller being registered + reachable. ($result_line)"
 }
