@@ -139,6 +139,14 @@ Reasoning:
 
 ## Implementation Plan
 
+The execution-ready breakdown (code skeleton, AgentDB schema, test
+scaffolding, per-phase acceptance criteria, risk table, and numbered
+task list) lives in
+[`docs/plans/adr0192-autopilot-learning-implementation.md`](../plans/adr0192-autopilot-learning-implementation.md).
+
+The summary below names the phases and their deliverables; the plan
+doc has the actual code.
+
 ### Phase 1 — Producer (forks/agentic-flow)
 
 **File**: `forks/agentic-flow/agentic-flow/src/coordination/autopilot-learning.ts`
@@ -391,19 +399,17 @@ this ADR (ADR-0192) in its dependency chain.
 
 ## Close Criteria
 
-This ADR closes when:
+This ADR closes when all five rows of the verification matrix in the
+plan doc pass:
 
-* `forks/agentic-flow/agentic-flow/src/coordination/autopilot-learning.ts`
-  exists, compiles, and passes the 8 existing it-blocks in
-  `autopilot-drift-learning.test.ts`.
-* Phase 1 expanded test suite (the second describe block in Phase 4)
-  passes with AgentDB available.
-* `tryLoadLearning()` in the cli returns a non-null instance in a
-  fresh `@sparkleideas/cli` install.
-* The Phase 5 acceptance check (happy-path: populated episodes →
-  non-default `autopilot_predict` response) passes in
-  `npm run release` acceptance.
-* ADR-072 status updates from **Proposed** to **Implemented**.
+| Layer | Pass condition |
+|---|---|
+| Unit (agentic-flow) | 13 it-blocks pass — the 8 existing absent-shape tests + 5 new populated-AgentDB tests |
+| Integration (cli) | `tryLoadLearning()` returns a non-null instance in a fresh `@sparkleideas/cli` install |
+| Acceptance (ruflo-patch) | `ctrl-autopilot-learn` check passes in `npm run release` |
+| Doctor (operator-facing) | `ruflo doctor -c autopilot-learning` reports `available=true` with non-zero episodes after population |
+| ADR closure | ADR-072 advances from **Proposed** → **Implemented**; ADR-0191's `autopilot-state.ts:322` "producer unbuilt" caveat removed; this ADR's frontmatter status flips to **implemented** with a Post-implementation revision section noting any deviations |
 
 If any of these proves unbuildable within the Phase 1 scope, fall
-back to Option 2 (formal retirement) and document the gap.
+back to Option 2 (formal retirement) and document the gap in a
+Post-implementation revision.
