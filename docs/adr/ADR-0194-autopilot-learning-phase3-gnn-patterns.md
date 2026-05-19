@@ -1,15 +1,30 @@
 ---
 status: proposed
+priority: low
 date: 2026-05-19
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, gnn, ruvector, phase3, ADR-0193, ADR-059]
+tags: [autopilot, learning, gnn, ruvector, phase3, ADR-0193, ADR-059, evidence-deferred]
 related: [0192, 0193]
 upstream-related: [agentic-flow/ADR-059]
 audience: ai-executor
 ---
 
 # ADR-0194: AutopilotLearning Phase 3 — embedding-cluster pattern discovery
+
+## Corpus evidence (2026-05-19)
+
+A corpus-gap analysis of real autopilot subjects (124 unique task subjects across `~/.claude/tasks/*/*.json`; episode tables across 17 `.swarm/memory.db` files were empty for `autopilot:%` sessions) found the cross-lexical failure case this ADR addresses does NOT empirically occur in production data:
+
+* Phase 2's keyword path produces 97 patterns (`count >= 2`) from the 124 subjects.
+* Orphan rate (subjects with no shared ≥4-char token): 8.9% (11/124). Those 11 are heterogeneous one-offs, not a hidden cluster.
+* Pairwise cosine similarity over all 7,626 pairs using `Xenova/all-mpnet-base-v2`: **0 cross-lexical pairs at ≥0.75** (the threshold this ADR recommends from `MemoryConsolidation.clusterMemories`). Only 5 cross-lexical pairs at ≥0.6, and those are accidental ADR-shape echoes, not the "react bug fix ↔ ui regression" kinship this ADR's Context posits.
+
+Phase 2's token-sharing correlates well with embedding similarity in this corpus. The illustrative failure cases the ADR uses (`react bug fix` / `frontend defect resolution` / `ui regression`; `implement OAuth login` / `build SAML signup` / `add SSO flow`; `fix slow query` / `optimize index` / `cache db results`) are real LANGUAGE constructions but the actual autopilot subject corpus doesn't contain them.
+
+**This ADR remains `proposed` but is now `priority: low` and evidence-deferred.** Re-run the analysis when autopilot `episodes` accumulate ≥200 rows OR when the subject character shifts (e.g. shorter free-text titles from interactive use vs the long ADR-shape descriptions that dominate today).
+
+Full analysis: [`docs/plans/adr0194-corpus-gap-analysis.md`](../plans/adr0194-corpus-gap-analysis.md).
 
 ## Context and Problem Statement
 
@@ -19,16 +34,12 @@ discovery; Phase 3 swaps the algorithm to embedding-similarity
 clustering so semantically related episodes are grouped even when they
 share no literal tokens.
 
-### What Phase 2 actually returns today
+### What Phase 2 returns today
 
-`_aggregatePatterns` (`forks/agentic-flow/agentic-flow/src/coordination/autopilot-learning.ts:615-637`):
-
-1. Lowercases each `episode.subject`, splits on whitespace, keeps tokens
-   with `length >= 4`.
-2. Deduplicates per-episode via `new Set(tokens)`.
-3. Builds a `Map<string, { count, rewardSum }>` keyed by token.
-4. Filters to tokens with `count >= 2`, computes `avgReward`, sorts by
-   frequency desc, slices to top 10.
+`_aggregatePatterns` (`forks/agentic-flow/agentic-flow/src/coordination/autopilot-learning.ts:615-637`)
+lowercases each `episode.subject`, splits on whitespace, keeps tokens
+≥4 chars, dedups per-episode, counts across the corpus, filters to
+`count >= 2`, computes `avgReward`, returns the top 10 by frequency.
 
 Output shape (`autopilot-learning.ts:41-45`):
 
@@ -42,136 +53,122 @@ interface DiscoveredPattern {
 
 ### Why this is too thin
 
-Concrete failure cases the keyword path misses:
+Concrete cases the keyword path misses (no shared ≥4-char token, so
+every token's `count = 1`, filter drops them all → zero discovered
+patterns):
 
-* `{ "react bug fix", "frontend defect resolution", "ui regression" }`
-  — no token overlap of length ≥ 4, so each appears once and is
-  filtered out by `count >= 2`. Three semantically identical episodes
-  produce zero discovered patterns.
-* `{ "implement OAuth login", "build SAML signup", "add SSO flow" }` —
-  no shared ≥4-char token; three auth-flow episodes produce zero
-  patterns even though they cluster naturally in embedding space.
-* `{ "fix slow query", "optimize index", "cache db results" }` —
-  no overlap; three perf episodes produce zero patterns.
+* `{"react bug fix", "frontend defect resolution", "ui regression"}`
+* `{"implement OAuth login", "build SAML signup", "add SSO flow"}`
+* `{"fix slow query", "optimize index", "cache db results"}`
+
+Each set is three semantically-identical episodes that Phase 2 cannot
+group.
 
 ### Downstream consumers depending on `DiscoveredPattern[]`
 
-* `discoverSuccessPatterns` (`autopilot-learning.ts:331-335`) — public
-  API surfaced via `getMetrics().patterns` count and via CLI/MCP
-  inspection.
+* `discoverSuccessPatterns` (`autopilot-learning.ts:331-335`) —
+  public API.
 * `getReEngagementContext` (`autopilot-learning.ts:403-425`) — feeds
-  `patterns` into `_buildRecommendations` which formats them as
-  `"Pattern \"${p.pattern}\" succeeded ${p.frequency}× (avg reward
-  ${p.avgReward.toFixed(2)})"` strings (`autopilot-learning.ts:654-673`).
-* `getMetrics().patterns` (`autopilot-learning.ts:427-438`) — exposed
-  via Phase 2 metrics; populated test
-  (`forks/agentic-flow/tests/integration/autopilot-learning.test.ts:158-166`)
-  asserts `patterns > 0`.
+  `patterns` into `_buildRecommendations` which renders them as
+  `"Pattern \"${p.pattern}\" succeeded ${p.frequency}× ..."` strings
+  (`autopilot-learning.ts:654-673`).
+* `getMetrics().patterns` (`autopilot-learning.ts:427-438`) —
+  populated test asserts `patterns > 0`
+  (`forks/agentic-flow/tests/integration/autopilot-learning.test.ts:158-166`).
 
-The public `DiscoveredPattern` shape MUST stay stable. The `pattern`
-field is rendered verbatim in user-facing recommendation strings.
+The `DiscoveredPattern` shape MUST stay stable. `pattern` is rendered
+verbatim in user-facing strings.
 
 ## Decision Drivers
 
-* **`DiscoveredPattern` is rendered to users** — `pattern` field must
-  remain a short, human-meaningful string after the swap.
-* **Existing GNNService access path is via the controller registry** —
-  `getController('gnnService')` already exists
-  (`forks/ruflo/v3/@claude-flow/memory/src/controller-registry.ts:1725-1735`);
-  no new wiring needed at the controller-registry layer. Phase 3 needs
-  an AgentDBService accessor or a new AutopilotLearning import path.
-* **`@ruvector/gnn` Node binding does NOT expose clustering** — the
-  napi-rs surface
-  (`forks/ruvector/crates/ruvector-gnn-node/index.d.ts`) exports only
-  `differentiableSearch`, `hierarchicalForward`, `getCompressionLevel`,
-  `RuvectorLayer.forward`, and `TensorCompress`. There is no Louvain,
-  no k-means, no community-detection primitive. Clustering must be
-  implemented in TypeScript over Float32Array embeddings.
+* **`DiscoveredPattern.pattern` is rendered to users** — must remain a
+  short, human-meaningful string after the swap (formatter at
+  `autopilot-learning.ts:660-664`).
+* **`@ruvector/gnn` Node binding does NOT expose clustering** —
+  napi-rs surface (`forks/ruvector/crates/ruvector-gnn-node/index.d.ts`)
+  exports only `differentiableSearch`, `hierarchicalForward`,
+  `getCompressionLevel`, `RuvectorLayer.forward`, and `TensorCompress`.
+  No Louvain, k-means, or community-detection primitive. Clustering
+  must be implemented in TypeScript.
 * **`MemoryConsolidation` already does greedy cosine clustering** —
   `forks/agentdb/src/controllers/MemoryConsolidation.ts:298-341`
-  implements greedy single-pass clustering with `clusterThreshold`
-  (default 0.75), `maxClusterSize`, and centroid-average updates. This
-  is the established in-tree pattern; copy it rather than invent.
+  implements greedy single-pass with `clusterThreshold` (default 0.75),
+  `maxClusterSize`, and centroid-average updates. Established in-tree
+  pattern; copy rather than invent.
+* **GNNService is reachable via controller registry** —
+  `getController('gnnService')` (`forks/ruflo/v3/@claude-flow/memory/src/controller-registry.ts:1725-1735`)
+  returns the `GNNService` from `forks/agentdb/src/services/GNNService.ts`,
+  which itself falls back from native ruvector-gnn to JS cleanly
+  (`GNNService.ts:108-112`). No new controller wiring required.
 * **Embeddings are computed but discarded by the recall surface** —
   `ReflexionMemory.retrieveRelevant` returns `EpisodeWithEmbedding[]`
   (`forks/agentdb/src/controllers/ReflexionMemory.ts:37-40,241-291`)
-  with optional `embedding: Float32Array`, but
-  `AgentDBService.recallEpisodes` strips that field in its mapping
+  with `embedding: Float32Array`, but `AgentDBService.recallEpisodes`
+  strips that field
   (`forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts:918-923`).
   Phase 3 must either extend the recall surface OR re-embed via
-  `AgentDBService.generateEmbedding`
-  (`agentdb-service.ts:1672-1693`).
+  `AgentDBService.generateEmbedding` (`agentdb-service.ts:1672-1693`).
 * **`feedback-no-fallbacks` governs availability handling** — when
-  GNNService / ruvector-gnn is unreachable, Phase 3 must NOT silently
-  catch and degrade to Phase 2 per-call; it must check at init and
-  expose `engine: 'keyword' | 'embedding-cluster'` so tests can assert
-  which path is live.
-* **Cold-start episodes are normal** — populated tests run with cap=15
-  (`autopilot-learning.test.ts:108-156`); production typically <50
-  episodes before patterns are useful. Greedy clustering handles small
-  N gracefully; algorithms requiring large N (e.g., GAT training) do
-  not fit this corpus shape.
+  cluster path is unreachable, log reason at init and expose `engine`
+  in metrics. No silent per-call degradation.
+* **Small corpora are normal** — populated tests use cap=15
+  (`autopilot-learning.test.ts:108-156`); production typically <50.
+  Greedy clustering handles small N; algorithms needing training
+  (e.g., GAT) do not fit this corpus shape.
 
 ## Considered Options
 
 ### Option 1 — Greedy cosine clustering on episode embeddings (recommended)
 
-Mirror `MemoryConsolidation.clusterMemories`: greedy single-pass over
-episodes, seed a cluster per unassigned episode, assign neighbours with
-`cosineSimilarity >= threshold`, update centroid by average. Each
-cluster → one `DiscoveredPattern` with `pattern` derived from the
-cluster's representative subject (top-1 nearest-to-centroid subject, or
-top-3 most-frequent ≥4-char tokens joined by `+`).
+Mirror `MemoryConsolidation.clusterMemories` (`MemoryConsolidation.ts:298-341`):
+greedy single-pass, seed a cluster per unassigned episode, assign
+neighbours with `cosineSimilarity >= threshold`, update centroid by
+average. Each cluster → one `DiscoveredPattern` with `pattern` derived
+from the cluster's representative (top-1 nearest-to-centroid subject,
+or top-3 most-frequent ≥4-char tokens joined by `+`).
 
-* **Pros**: copy-paste-able from `MemoryConsolidation.ts:298-341`;
-  works at N=2; no new clustering primitive; no GNN dependency
-  required for the core algorithm.
-* **Cons**: greedy ordering is not deterministic across episode
-  insertion order; threshold tuning sensitivity; doesn't exploit
-  `@ruvector/gnn` at all — the GNN role becomes optional embedding
-  enhancement via `RuvectorLayer.forward`, not the clustering itself.
+* **Pros**: copy-paste-able from in-tree precedent; works at N=2; no
+  new clustering primitive; the core algorithm needs no GNN dependency.
+* **Cons**: greedy ordering nondeterminism (mitigatable by id-sort);
+  threshold tuning sensitivity; doesn't actually exploit @ruvector/gnn
+  — the GNN role becomes optional embedding enhancement via
+  `RuvectorLayer.forward`, not the clustering itself.
 
 ### Option 2 — GNNService-enhanced embeddings + greedy clustering
 
 Pass episode embeddings through `GNNService.forward` (via
 `getController('gnnService')`) to get graph-enhanced embeddings, then
-cluster as in Option 1. The "graph" is built from current episodes:
-neighbour edges = top-K cosine-similar episodes.
+cluster as in Option 1. The "graph" is built per call: neighbour
+edges = top-K cosine-similar episodes.
 
-* **Pros**: actually exercises ruvector-gnn (Option 1's "GNN-enhanced"
-  framing is honest); GNNService falls back to JS cleanly already
-  (`forks/agentdb/src/services/GNNService.ts:108-112`); benefits from
-  the native GAT layer when available.
+* **Pros**: honestly exercises ruvector-gnn; GNNService already falls
+  back to JS cleanly (`GNNService.ts:108-112`); benefits from native
+  GAT when available.
 * **Cons**: more moving parts; cold-start with N<5 produces degenerate
-  graph; native engine availability is opportunistic — `GNNService`
-  uses `engineType: 'native' | 'js'` and silently picks the JS path
-  when @ruvector/gnn is missing, so the "GNN" claim is conditional on
-  install. Adds a code path that must be tested in both engine modes.
+  graph; native engine availability is opportunistic so "GNN" claim is
+  conditional on install. Adds a code path that must be tested in both
+  engine modes.
 
 ### Option 3 — Hybrid: keep Phase 2, add a Phase 3 cluster pass on top
 
-Keep `_aggregatePatterns` output as `keywordPatterns`, add a parallel
-`_clusterPatterns` that returns embedding-clustered patterns, and union
-them via a new `DiscoveredPattern.source: 'keyword' | 'cluster'`
-field.
+Keep `_aggregatePatterns` as `keywordPatterns`, add parallel
+`_clusterPatterns`, union via a new `DiscoveredPattern.source:
+'keyword' | 'cluster'` field.
 
-* **Pros**: zero regression risk on the keyword path; users see strict
-  superset; A/B comparison possible from a single call.
-* **Cons**: extends the public `DiscoveredPattern` shape (breaking
-  consumers that rely on `Object.keys` matching); duplicates the
-  output array; doesn't replace the failing keyword case, just
-  augments around it.
+* **Pros**: zero regression risk on keyword path; strict superset; A/B
+  comparison possible from a single call.
+* **Cons**: extends public `DiscoveredPattern` shape (breaks consumers
+  doing `Object.keys` matching); duplicates output; doesn't replace
+  the failing keyword case, just augments around it.
 
 ### Option 4 — Defer indefinitely
 
 Leave Phase 2 as the final state. Acceptable if production telemetry
-shows the keyword path is sufficient (e.g., autopilot subjects in real
-use always overlap on ≥4-char tokens).
+shows the keyword path is sufficient.
 
-* **Pros**: zero implementation cost; no new dependency surface.
-* **Cons**: closes off the upstream ADR-059 Phase 3 promise; leaves
-  the failure cases above unaddressed; orphans the populated test
-  scaffolding that would prove the swap works.
+* **Pros**: zero implementation cost; no new surface.
+* **Cons**: closes off ADR-059 Phase 3 promise; leaves failure cases
+  unaddressed; orphans the populated test scaffolding.
 
 ## Decision Outcome
 
@@ -201,55 +198,46 @@ cross-lexical groups and runs `discoverSuccessPatterns` against it.
   — pure module exporting `clusterEpisodes(episodes, opts):
   Promise<DiscoveredPattern[]>`. Mirrors
   `MemoryConsolidation.clusterMemories` shape but takes
-  `AutopilotEpisode[]` and returns `DiscoveredPattern[]`. Pure
-  function; no controller dependency. Lets the algorithm be unit-tested
-  without AgentDB.
+  `AutopilotEpisode[]`. Pure function, no controller dependency, so it
+  unit-tests without AgentDB.
 * `forks/agentic-flow/tests/integration/autopilot-pattern-cluster.test.ts`
-  — pure-function unit tests for the cluster module
-  (cross-lexical clustering, threshold edge cases, centroid updates,
-  pattern-string derivation).
+  — unit tests for the cluster module.
 
 ### Edited files
 
 * `forks/agentic-flow/agentic-flow/src/coordination/autopilot-learning.ts`:
-  * Add `_gnnService: GNNServiceLike | null` field; resolve via
+  * Add `_gnnService: GNNServiceLike | null`; resolve via
     `_agentdb.getController?.('gnnService')` during `initialize()`.
-  * Replace `_aggregatePatterns` body with a call to
-    `clusterEpisodes`, passing the same `episodes` array PLUS either
-    (a) embeddings extracted from a new `recallEpisodesWithEmbeddings`
-    surface, or (b) re-embedded on demand via
+  * Replace `_aggregatePatterns` body with a call to `clusterEpisodes`
+    over embeddings sourced from either (a) a new
+    `recallEpisodesWithEmbeddings` surface, or (b) re-embedding via
     `_agentdb.generateEmbedding(ep.subject)`.
-  * Keep the keyword aggregation as `_aggregatePatternsKeyword` (no
-    longer the default but retained for: fallback when GNNService is
-    unreachable AND the cluster path requires it; A/B parity tests).
-  * Add an `engine: 'keyword' | 'embedding-cluster'` field to
-    `LearningMetrics` so tests can assert which path is live (per
-    `feedback-no-fallbacks` — must be observable, not silent).
+  * Keep keyword aggregation as `_aggregatePatternsKeyword` —
+    retained for: fallback when cluster surface is unreachable; A/B
+    parity tests.
+  * Add `engine: 'keyword' | 'embedding-cluster'` to
+    `LearningMetrics` (per `feedback-no-fallbacks`: observable, not
+    silent).
 * `forks/agentic-flow/agentic-flow/src/services/agentdb-service.ts`:
   * Add `recallEpisodesWithEmbeddings(query, limit, filters):
     Promise<EpisodeWithEmbedding[]>` — same body as `recallEpisodes`
-    but the row-map preserves `embedding: Float32Array`. Mark the
-    existing `recallEpisodes` as the embedding-stripped convenience
-    overload.
-  * Alternative if the AgentDBLike interface should not expand: leave
-    `recallEpisodes` as-is and have AutopilotLearning re-embed each
-    subject. Costs `O(N)` embedder calls per `discoverSuccessPatterns`
-    invocation; with the existing batched + RVFOptimizer-compressed
-    path (`agentdb-service.ts:1672-1716`) this is acceptable for
-    N=10000 cap.
+    but preserves `embedding: Float32Array` in the row map.
+  * Alternative (re-embed in AutopilotLearning) costs O(N) embedder
+    calls per `discoverSuccessPatterns`; with the batched
+    RVFOptimizer-compressed path (`agentdb-service.ts:1672-1716`)
+    this is acceptable for the N=10000 cap. Decision deferred to
+    Landing B PR.
 
 ### Public surface changes
 
 * `DiscoveredPattern.pattern` semantics widen from "single ≥4-char
-  token" to "human-readable cluster label (single token OR top-3
-  tokens joined by `+`)". Stays a `string`; consumers that string-format
-  the field unchanged. Recommendation rendering at
-  `autopilot-learning.ts:660-664` still works.
+  token" to "cluster label (single subject OR top-3 tokens joined by
+  `+`)". Stays a `string`; formatter at `autopilot-learning.ts:660-664`
+  unaffected.
 * `LearningMetrics` gains `engine: 'keyword' | 'embedding-cluster'`
-  (additive; safe).
-* `AgentDBLike` gains an optional
-  `recallEpisodesWithEmbeddings?` member (additive; test doubles
-  unaffected because it's optional).
+  (additive).
+* `AgentDBLike` gains optional `recallEpisodesWithEmbeddings?`
+  (additive; test doubles unaffected).
 
 ### Interface to `clusterEpisodes`
 
