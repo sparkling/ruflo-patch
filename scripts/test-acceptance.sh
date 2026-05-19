@@ -241,6 +241,35 @@ _record_phase "cache-clear" "$(_elapsed_ms "$_p" "$(_ns)")"
 # Staleness is verified by SHA-256 checksum comparison in ModelCacheLoader.extractFromRvf().
 export AGENTDB_MODEL_PATH="${HOME}/.cache/agentdb-models"
 
+# ADR-0193 Item F: bust the npm cache for top-level @sparkleideas/* packages
+# bumped on every release. Prevents `npm install --prefer-offline` from
+# pinning to a stale pre-bump version — the trap that made ADR-0192 release-3
+# look broken even though the code was correct (release-4's `--force`
+# invalidated the cache and the same code passed cleanly).
+#
+# The deterministic small list below covers the 5 packages bumped on every
+# release (`fork-version.mjs` runs against all 5 fork roots). Per-package
+# cache clean keeps install-speed for un-bumped transitives intact — much
+# narrower than `--no-cache` or dropping `--prefer-offline` globally
+# (ADR-0193 §Out of scope).
+#
+# `npm cache clean <pkg>` itself is fast (~50-200ms each). Failures are
+# tolerated (the `|| true`) because a clean against a never-cached package
+# is harmless, and a registry hiccup at this point shouldn't gate install.
+_cache_bust_bumped_packages() {
+  local pkgs=(
+    "@sparkleideas/cli"
+    "@sparkleideas/agentic-flow"
+    "@sparkleideas/ruflo"
+    "@sparkleideas/agentdb"
+    "@sparkleideas/ruvector"
+  )
+  for pkg in "${pkgs[@]}"; do
+    npm cache clean "$pkg" --registry "$REGISTRY" >/dev/null 2>&1 || true
+    log "  Cache bust: $pkg"
+  done
+}
+
 # Phase: Install packages from registry. Verdaccio is local with
 # --prefer-offline, so a fresh install is already ~26-30s; the
 # node_modules cache (commit 436c76a, reverted here) added 7-19s of
@@ -282,6 +311,8 @@ if [[ "$_L3_CACHE_HIT" == "1" ]]; then
   # persists.
   :
 else
+  # ADR-0193 Item F: bust cache for bumped packages BEFORE --prefer-offline install.
+  _cache_bust_bumped_packages
   (cd "$ACCEPT_TEMP" \
     && echo '{"name":"ruflo-accept-test","version":"1.0.0","private":true}' > package.json \
     && echo "registry=${REGISTRY}" > .npmrc \
@@ -311,6 +342,11 @@ _record_phase "install" "$(_elapsed_ms "$_p" "$(_ns)")"
 WRAPPER_SOLO_TEMP=$(mktemp -d /tmp/ruflo-wrapper-solo-XXXXX)
 export WRAPPER_SOLO_TEMP
 WRAPPER_SOLO_PID=""
+# ADR-0193 Item F: wrapper-solo uses --cache <isolated> (freshly-created
+# temp dir), so it ALREADY can't pin to a stale shared-cache entry. The
+# fresh isolated cache fetches from the registry directly. No bust needed
+# here — the main install at line ~285 is the real trap target. See ADR
+# §Implementation Plan item F for the trap mechanics.
 (
   cd "$WRAPPER_SOLO_TEMP" \
     && echo '{"name":"wrapper-solo-test","version":"1.0.0","private":true}' > package.json \
@@ -1053,6 +1089,13 @@ run_check_bg "ctrl-sl-health"   "Self-learning health"   check_self_learning_hea
 run_check_bg "ctrl-sl-search"   "Self-learning search"   check_self_learning_search "controller"
 run_check_bg "ctrl-adr0061"     "ADR-0061 controllers"   check_adr0061_controller_types "controller"
 run_check_bg "ctrl-autopilot-learn" "Autopilot learning active" check_autopilot_learning_active "controller"
+
+# ADR-0193 Wave 2: 3 new probes layered on top of ctrl-autopilot-learn (Wave 1).
+# All three are honest probes — the queryOptimizer one is EXPECTED to fail
+# at first run (ADR-0193 §D "registered but not wired" gap closure).
+run_check_bg "ctrl-autopilot-trajectories" "Autopilot trajectories recorded (ADR-0193 B)" check_autopilot_trajectories "controller"
+run_check_bg "ctrl-autopilot-stop-hook"    "Stop hook re-engagement context (ADR-0193 C)" check_autopilot_stop_hook    "controller"
+run_check_bg "ctrl-query-optimizer-cache"  "queryOptimizer cache hits (ADR-0193 D)"        check_query_optimizer_cache  "controller"
 
 # ADR-0062: Storage & Configuration Unification
 run_check_bg "adr0062-causal"      "Causal graph level 3"         check_adr0062_causal_graph_level3     "adr0062"
@@ -2528,6 +2571,9 @@ collect_parallel "all" \
   "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \
   "ctrl-adr0061|ADR-0061 controllers" \
   "ctrl-autopilot-learn|Autopilot learning active" \
+  "ctrl-autopilot-trajectories|Autopilot trajectories recorded (ADR-0193 B)" \
+  "ctrl-autopilot-stop-hook|Stop hook re-engagement context (ADR-0193 C)" \
+  "ctrl-query-optimizer-cache|queryOptimizer cache hits (ADR-0193 D)" \
   "adr0062-causal|Causal graph level 3" "adr0062-busy|SQLite busy_timeout" \
   "adr0062-rl-cfg|RateLimiter/CB config" "adr0062-hnsw|deriveHNSWParams wired" \
   "adr0063-c1-import|Embedding import agentdb" "adr0063-c2-accessor|getEmbeddingService()" \
