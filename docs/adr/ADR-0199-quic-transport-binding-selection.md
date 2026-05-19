@@ -221,3 +221,12 @@ new `Transport` abstraction inside `QUICConnection.ts`.
   * `node:quic` migration when Node 22 EOLs.
   * Per-table sync opt-out from ADR-0196 open question — still
     accept-all-tables (see ADR-0196 §"Open questions" item 1).
+
+## Implementation log
+
+| Date | Fork commit | Scope |
+|---|---|---|
+| 2026-05-19 | `c24db34` (agentdb) | Transport abstraction + WebTransport/HTTP/2 impls + `createServerTransport()` / `createClientTransport()` factories in `QUICConnection.ts`. Adds `@fails-components/webtransport: ^1.4.4` to `optionalDependencies`. Initial integration test `quic-transport.test.ts` (transport↔transport, 2/2 pass). |
+| 2026-05-19 | `c55e7b4` (agentdb) | Lifecycle wiring. `QUICServer.start()` calls `createServerTransport()` + `transport.listen(host, port, tls)` + registers `onFrame` handler that routes payloads into `processSyncRequest` and replies via `frame.reply()`. `QUICClient.connect()` calls `createClientTransport()` + dials. Both close their transport in stop/disconnect. BBR/0-RTT/migration simulation layer preserved unchanged on top. |
+| 2026-05-19 | `3019725` (agentdb) | Data-path wiring. `QUICClient.sendRequest()` now routes via `this.transport.send(envelope)` instead of the mock `{success:true, data:[], count:0}`. Envelope carries `clientId` + `authToken` so server-side `processSyncRequest` receives them at the existing auth/rate-limit boundaries. Throws when transport is uninitialised (per `feedback-no-fallbacks`). |
+| 2026-05-19 | `a717f64` (agentdb) | Controller-stack roundtrip test (`quic-controller-stack-roundtrip.test.ts`, 3/3 pass, 67ms). Exercises full stack `QUICClient.sync() → sendRequest() → transport.send() → server.onFrame → processSyncRequest() → frame.reply()`. Adds `QUICServer.getBoundAddress()` so tests + dynamic peers can discover the ephemeral port when `config.port` is 0. |
