@@ -130,25 +130,49 @@ By comment pattern (`209` with-comment, top buckets):
 
 ## Decision Outcome
 
-**Deferred — open question, but recommended path is Option 1
-(three-class triage).**
+**Option 1 (three-class triage) — chosen, but Phase A SKIPPED for now.**
 
-Concrete plan if Option 1 is chosen:
+Decision 2026-05-19: the LOW class (~80 catches matching `fall
+through` / `already <X>` / `non-fatal` / `non-critical` / `best
+effort`) **stays visible in the detector output** rather than being
+auto-allowlisted via comment regex. Rationale: the regex would
+permanently bless 80 callsites as "safe" based on a one-line comment,
+but several patterns in that bucket deserve real investigation
+before that. Specifically:
 
-1. **Phase A (1 sitting)**: update
-   `scripts/check-undiscriminating-catches.mjs` to auto-allowlist
-   the LOW class via comment regex. Re-run; expect ~290 findings
-   remaining (370 − ~80 LOW).
-2. **Phase B (~3 sittings)**: hand-fix the 28 HIGH catches. Each gets
-   a discriminating `if (e.code !== ...) throw e` block OR a
-   non-exception capability check. Add unit tests for the discriminated
-   error shapes per critical callsite.
-3. **Phase C (advisory)**: leave the MEDIUM ~80-100 unwired. They get
+* **`fall through to <X>` chains** — the "fall through" comment
+  declares intent but doesn't prove the next attempt actually
+  handles every error type that could fire. Some chains may have
+  gaps where a transient error in attempt-2 also kills attempt-3
+  before the chain converges.
+* **`already <X>` (freed/gone/removed)** — these claim idempotence
+  but a real audit might find calls where "already gone" only
+  handles ENOENT and would mask permission errors or i/o failures.
+* **`best effort`** — defensible in shutdown handlers; not
+  defensible elsewhere. Per-callsite read needed to tell the
+  difference.
+
+Keeping LOW visible costs nothing today (the detector is informational,
+not wired) and preserves the audit signal for the natural-code-edit
+pass when each file is touched for other reasons.
+
+### Concrete plan
+
+1. **Phase A — SKIPPED** for now. The auto-allowlist regex is *not*
+   added. All 370 stay visible. Revisit after Phase B closes.
+2. **Phase B (~3 sittings)**: hand-fix the 28 HIGH catches. Each
+   gets a discriminating `if (e.code !== ...) throw e` block OR a
+   non-exception capability check (`typeof mod.X === 'function'`,
+   following the TrainingPipeline fix pattern). Add unit tests for
+   the discriminated error shapes per critical callsite.
+3. **Phase C (advisory)**: leave the MEDIUM ~150 unwired. They get
    touched during natural code edits.
-4. **Phase D (gate flip)**: after HIGH is closed, wire
+4. **Phase D (LOW revisit)**: after Phase B lands, re-read the LOW
+   class. Either (a) confirm the patterns are truly safe →
+   auto-allowlist via regex, or (b) discover real gaps → convert.
+5. **Phase E (gate flip)**: wire
    `check-undiscriminating-catches.mjs` into `scripts/ruflo-publish.sh`
-   pre-flight. New undiscriminating catches outside the LOW allowlist
-   regex fail the release.
+   pre-flight only after LOW + HIGH are both closed.
 
 The 28 HIGH catches (per current grep) are concentrated in:
 
