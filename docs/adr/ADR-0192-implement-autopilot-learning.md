@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented: 2026-05-19
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
 tags: [autopilot, learning, agentdb, sona, agentic-flow, ADR-058, ADR-072, ADR-0191]
@@ -413,3 +414,94 @@ plan doc pass:
 If any of these proves unbuildable within the Phase 1 scope, fall
 back to Option 2 (formal retirement) and document the gap in a
 Post-implementation revision.
+
+## Post-implementation revision (2026-05-19)
+
+ADR-0192 landed across 4 release cycles. Final commits:
+
+* `forks/agentic-flow`:
+  - `5cb4e8c` Phase 1+2+4 — producer file + inner package.json exports + new describe block
+  - `e7d65b8` exports map fix — added the entry to the OUTER package.json (the published one)
+  - `5f4c0ff` follow-ups — degraded-mode guard in `initialize()` + collapsed 23 multi-line `import('agentdb')` to single-line so the codemod's Pass 3 catches them
+  - `1800e40` swarm-review fixes — producer-side logging + test skip semantics + double-cast cleanup
+* `forks/ruflo`:
+  - `6d7cae2a0` Phase 3+6 — cli's `tryLoadLearning` uses literal `tryOptionalImport('agentic-flow/coordination/autopilot-learning')` (codemod-rewritable) + `checkAutopilotLearning` doctor health check
+* `ruflo-patch`:
+  - `c9a8bb4` Phase 5 — `ctrl-autopilot-learn` acceptance check
+  - `39d972d` follow-up — tolerate escaped JSON in autopilot_learn MCP envelope
+  - `065e6d3` plan doc gotcha note (inner vs outer package.json)
+
+### Deviations from the plan
+
+1. **Both inner and outer agentic-flow package.json need the
+   exports entry.** The plan said "update agentic-flow/package.json
+   exports" without specifying the fork has two — the implementer
+   added the entry only to the inner package.json (which doesn't
+   ship as the publish artifact). Surfaced by `ctrl-autopilot-learn`
+   failing with `ERR_PACKAGE_PATH_NOT_EXPORTED` in release-1+2.
+   Plan doc updated in commit `065e6d3` to call this out for future
+   executors.
+
+2. **Codemod gap on multi-line dynamic imports.** The agentic-flow
+   service file had 23 sites formatted as
+   `await import(\n /* webpackIgnore: true */\n 'agentdb'\n)`. The
+   codemod's `UNSCOPED_IMPORT_RE` requires `(import|require)\s*\(\s*['"]<name>` contiguously and skipped these. Resolution chose
+   source-side rewrite (collapse to single line) rather than widening
+   the regex — narrower scope, lower risk, fixed in `5f4c0ff`.
+
+3. **Assertion loosening in populated suite.** Phase 1 has no
+   episode-purge API (out-of-scope per ADR-059 retention-policies
+   line). Episodes accumulate across test runs in the same
+   `EPISODE_SESSION_ID` namespace. Assertions use `toBeGreaterThanOrEqual(15)` instead of `toBe(15)` to tolerate
+   accumulation. Tightening back is a Phase-7+ follow-up gated on
+   adding a purge API.
+
+4. **Test skip path now visible.** Reviewer flag: the
+   `if (!isAvailable) return` early-skip pattern made silent skips
+   look like passes. Replaced with a `_skippedReason` sentinel +
+   `console.warn` in `beforeEach`. CI logs now show
+   `[autopilot-learning populated suite] SKIP: ...` when AgentDB is
+   unavailable in the test env.
+
+5. **Producer-side logging added at every `_available=false` branch.**
+   ADR-0191's absence-not-accepted rule requires Reason #5 absences
+   to be logged at startup. The original Phase 1 satisfied this by
+   composition through the doctor's `checkAutopilotLearning` row,
+   but Critic + Reviewer agreed direct producer-boundary logging is
+   stronger. Each branch (null service / missing methods / DEGRADED
+   / status threw / init threw) now emits a discriminating
+   `console.error` line.
+
+### Verification matrix outcome (release-4, 2026-05-19T12:44Z)
+
+| Layer | Outcome | Evidence |
+|---|---|---|
+| Unit | PASS (with caveat) | The 8 existing absent-shape it-blocks pass; the 5 new populated-suite blocks pass when AgentDB is available, otherwise emit visible SKIP warnings |
+| Integration | PASS | Manual probe in `/tmp/adr0192-repro`: `learning.isAvailable() === true`; `recordTaskCompletion` succeeds |
+| Acceptance | PASS | `ctrl-autopilot-learn: PASS` in 1419ms |
+| Doctor | PASS | `doctor -c autopilot-learning` reports `available=true` |
+| ADR closure | PASS | This ADR's status flipped to `implemented`; ADR-0191's autopilot row updated (separate commit); ADR-072 already `Implemented` (pre-existing) |
+
+Release-4 totals: **675/684 passed, 0 failed, 9 skip_accepted** (heavy-skip opt-outs).
+
+### Lessons captured for future ADRs
+
+* When patching upstream-aligned forks, always check for **both**
+  inner and outer `package.json` if the package layout is a
+  monorepo with an inner project directory. The published artifact
+  uses the outer one; tests against the inner one give false
+  confidence.
+* The codemod's Pass 3 `UNSCOPED_IMPORT_RE` doesn't handle
+  whitespace-or-comments between `(` and the literal. Either
+  source-side (collapse to single line) or codemod-side (widen
+  regex) fixes work; source-side is narrower and lower-risk.
+* The npm `--prefer-offline` flag in the acceptance harness can
+  cache-pin to a pre-publish version. Releases that depend on a
+  bumped fork artifact may need a `--force` run to invalidate the
+  cache, OR the harness's pre-install step needs explicit cache
+  busting for the specific bumped packages. Worth a follow-up
+  ticket.
+* Building-and-testing-incremental works only if each release is a
+  self-contained probe. Release-3 looked broken (DEGRADED) but the
+  artifacts were correct — the failure was stale-cache resolution,
+  not actual code. `--force` invalidates and reveals the real state.
