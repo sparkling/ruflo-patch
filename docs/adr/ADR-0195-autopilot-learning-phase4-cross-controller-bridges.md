@@ -80,6 +80,16 @@ recorded without a consumer"). Phase 4 is the discharge.
    enters LearningSystem's policy update with shaping based on autopilot
    reward (autopilot-learning.ts:523-543).
 
+4. **Pre-existing `autopilot-cli.ts` type drift** (ADR-0198 Finding 2).
+   `forks/agentic-flow/agentic-flow/src/cli/autopilot-cli.ts` references
+   properties (`successRate`, `taskType`, `approach`, `uses`, `success`,
+   `similarity`, `task`, `alternatives`) that aren't on `DiscoveredPattern`
+   / `AutopilotEpisode` / `predictNextAction` return types. Masked by
+   `tsc --noCheck`. Phase 4 will re-touch this CLI surface when wiring to
+   the real `predict` / `submitFeedback` calls — the type drift should be
+   resolved as part of the same change rather than left for a separate
+   commit touching the same file.
+
 ### Existing event-emitter precedent
 
 Node `EventEmitter` is the dominant in-process pub/sub pattern in
