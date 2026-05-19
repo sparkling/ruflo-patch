@@ -47,6 +47,18 @@
 #                (Phase 5; runs inside the phase5-init-config wave)
 #   adr0178    — adr0178-hquery-e2e (agentdb_hierarchical-query 5-phase)
 #                (Phase 5; runs inside the phase5-init-config wave)
+#   adr0194    — adr0194-populated, adr0194-empty
+#                (AutopilotLearning Phase 3 embedding-cluster patterns —
+#                 closure-criterion probes per ADR-0194 itself; FAILs until
+#                 ADR-0194 lands. Runs inside the phase5-init-config wave.)
+#   adr0195    — adr0195-subscribe, adr0195-predictAction
+#                (AutopilotLearning Phase 4 event bus + ADR-0197 Finding 1
+#                 broken predictAction probe removal verification. Runs
+#                 inside the phase5-init-config wave.)
+#   adr0196    — adr0196-fed-status, adr0196-episode-origin
+#                (AutopilotLearning Phase 5 federated interface + episode
+#                 identity (originInstallId). Runs inside the
+#                 phase5-init-config wave.)
 #
 # Exit code: number of failed checks (0 = all pass)
 set -uo pipefail
@@ -3228,6 +3240,41 @@ if [[ -f "$p5_lib" ]]; then
     run_check_bg "adr0176-tool-names"     "ADR-0176 Phase 5 tool-name registry"  check_adr0176_tool_names  "adr0176"
   fi
 
+  # Group 9: ADR-0194 — AutopilotLearning Phase 3 (embedding-cluster patterns).
+  # Closure-criterion checks: assert `autopilot patterns --json` exposes the
+  # `engine` field AND returns >=1 pattern from a cross-lexical-seeded corpus
+  # (Phase 3 path); separately assert empty corpus returns clean []. Both fail
+  # until ADR-0194 lands — that's the closure signal the ADR depends on.
+  adr0194_lib="${PROJECT_DIR}/lib/acceptance-adr0194-checks.sh"
+  if [[ -f "$adr0194_lib" ]]; then
+    source "$adr0194_lib"
+    run_check_bg "adr0194-populated"      "ADR-0194 patterns populated (engine+>=1)"   check_adr0194_patterns_populated  "adr0194"
+    run_check_bg "adr0194-empty"          "ADR-0194 patterns empty corpus returns []"  check_adr0194_patterns_empty      "adr0194"
+  fi
+
+  # Group 10: ADR-0195 — AutopilotLearning Phase 4 (cross-controller event bus).
+  # Closure-criterion checks: assert `autopilot subscribe` delivers a
+  # structured episode:recorded event after a write; assert ADR-0197 Finding
+  # 1 (broken learningSystem.predictAction probe) is gone from published src.
+  adr0195_lib="${PROJECT_DIR}/lib/acceptance-adr0195-checks.sh"
+  if [[ -f "$adr0195_lib" ]]; then
+    source "$adr0195_lib"
+    run_check_bg "adr0195-subscribe"      "ADR-0195 event-bus episode:recorded"        check_adr0195_subscribe_episode_recorded  "adr0195"
+    run_check_bg "adr0195-predictAction"  "ADR-0195 broken predictAction probe gone"   check_adr0195_predictAction_unreachable   "adr0195"
+  fi
+
+  # Group 11: ADR-0196 — AutopilotLearning Phase 5 (federated interface).
+  # Closure-criterion checks: assert `autopilot federation status --json`
+  # exposes FederatedSyncProvider interface fields; assert episode metadata
+  # carries originInstallId (Phase 5 step 1) — vectorClock recorded as
+  # informational (Phase 5 step 5, deferrable).
+  adr0196_lib="${PROJECT_DIR}/lib/acceptance-adr0196-checks.sh"
+  if [[ -f "$adr0196_lib" ]]; then
+    source "$adr0196_lib"
+    run_check_bg "adr0196-fed-status"     "ADR-0196 federation status interface"       check_adr0196_federation_status_interface  "adr0196"
+    run_check_bg "adr0196-episode-origin" "ADR-0196 episode carries originInstallId"   check_adr0196_episode_originInstallId      "adr0196"
+  fi
+
   # Collect all Phase 5 parallel checks
   collect_parallel \
     "p5-cfg-valid|config.json valid" \
@@ -3257,7 +3304,13 @@ if [[ -f "$p5_lib" ]]; then
     "adr0177-default-rt|ADR-0177 default roundtrip" \
     "adr0177-flag-mini-384|ADR-0177 --embedding-model mini" \
     "adr0178-hquery-e2e|ADR-0178 hierarchical-query E2E" \
-    "adr0176-tool-names|ADR-0176 Phase 5 tool-name registry"
+    "adr0176-tool-names|ADR-0176 Phase 5 tool-name registry" \
+    "adr0194-populated|ADR-0194 patterns populated (engine+>=1)" \
+    "adr0194-empty|ADR-0194 patterns empty corpus returns []" \
+    "adr0195-subscribe|ADR-0195 event-bus episode:recorded" \
+    "adr0195-predictAction|ADR-0195 broken predictAction probe gone" \
+    "adr0196-fed-status|ADR-0196 federation status interface" \
+    "adr0196-episode-origin|ADR-0196 episode carries originInstallId"
 
   # Cleanup
   rm -rf "$_P5_DIR" 2>/dev/null

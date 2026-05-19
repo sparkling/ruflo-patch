@@ -7,7 +7,8 @@
 # Usage:
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
-# Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181, e2e-core, e2e-storage
+# Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
+#         adr0194, adr0195, adr0196, e2e-core, e2e-storage
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -426,6 +427,47 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0178"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     # acceptance-adr0178-checks.sh sourced via the glob loop above
     echo "── ADR-0178 (agentdb_hierarchical-query 5-phase E2E) ──"
     _fast_run "adr0178-hquery-e2e"    check_adr0178_hierarchical_query_e2e
+  fi
+fi
+
+# ADR-0194/0195/0196 closure-criterion checks rely on a P5_DIR-like clone
+# source. The fast runner doesn't pre-init a Phase 5 dir for every invocation
+# — we use the E2E_DIR (created at fast-runner boot) as the snapshot source.
+# That's adequate because these checks only need an init'd project with the
+# autopilot CLI available; they don't depend on Phase 5's embedding stamp.
+_adr019x_export_p5dir() {
+  if [[ -z "${P5_DIR:-}" || ! -d "${P5_DIR:-}" ]]; then
+    export P5_DIR="$E2E_DIR"
+  fi
+}
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0194"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0194-checks.sh" ]]; then
+    # acceptance-adr0194-checks.sh sourced via the glob loop above
+    _adr019x_export_p5dir
+    echo "── ADR-0194 (AutopilotLearning Phase 3 embedding-cluster patterns) ──"
+    _fast_run "adr0194-populated"     check_adr0194_patterns_populated
+    _fast_run "adr0194-empty"         check_adr0194_patterns_empty
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0195"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0195-checks.sh" ]]; then
+    # acceptance-adr0195-checks.sh sourced via the glob loop above
+    _adr019x_export_p5dir
+    echo "── ADR-0195 (AutopilotLearning Phase 4 cross-controller event bus) ──"
+    _fast_run "adr0195-subscribe"     check_adr0195_subscribe_episode_recorded
+    _fast_run "adr0195-predictAction" check_adr0195_predictAction_unreachable
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0196"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0196-checks.sh" ]]; then
+    # acceptance-adr0196-checks.sh sourced via the glob loop above
+    _adr019x_export_p5dir
+    echo "── ADR-0196 (AutopilotLearning Phase 5 federated interface) ──"
+    _fast_run "adr0196-fed-status"     check_adr0196_federation_status_interface
+    _fast_run "adr0196-episode-origin" check_adr0196_episode_originInstallId
   fi
 fi
 
