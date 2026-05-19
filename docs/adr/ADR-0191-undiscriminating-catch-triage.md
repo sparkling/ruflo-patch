@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-19
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
@@ -603,3 +603,19 @@ runs independently and is tracked separately.
 
 This ADR closes when Option 1's Phase D lands (gate wired after HIGH
 is closed) OR an alternative option is chosen and implemented.
+
+## Implementation log
+
+Status flipped from `proposed` → `accepted` on 2026-05-19 after Phase B
+Clusters A-E + the 4 follow-up tasks + Phase D gate-wiring all landed.
+Detector HIGH count: 0.
+
+| Phase / Task | Commit | Repo | Description |
+|---|---|---|---|
+| Phase B initial | `e062dd82c` | forks/ruflo | Resolve all 29 HIGH-class undiscriminating catches (8 deletions + initial Cluster B "delete" attempt + 2 typed-contracts + 4 helper conversions + 5 inline ENOENT-only) |
+| Phase B release-3 revision | `130e2066f` | forks/ruflo | Revise Cluster B from "delete" to "catch+log" after `ctrl-routing` acceptance failure proved the catches implement the documented graceful-degradation contract; widen optional-import discriminator to 4 absence codes (adds `ERR_PACKAGE_PATH_NOT_EXPORTED` + `ERR_PACKAGE_IMPORT_NOT_DEFINED`) |
+| Task B7 (instrument) | `0276777a9` | forks/ruflo | Replace `controller-registry.ts:1922` bare `catch { return null }` with per-precondition `console.error` discrimination; surface which precondition fires on registration failure |
+| Task B7 (default flip) + Task #22 (doctor) | `caebf74e9` | forks/ruflo | Init-template default `queryOptimizer: false → true`; add `checkControllers` doctor health-check that reports per-controller registration state |
+| Task #21 (acceptance) | `c4c5489` | ruflo-patch | Add `ctrl-cluster-b` acceptance check (`check_cluster_b_controllers_register`) that verifies all 10 Cluster B controllers register AND are enabled in a fresh init project |
+| Phase D (this commit) | (this commit) | ruflo-patch | Wire `check-undiscriminating-catches.mjs` into `scripts/ruflo-publish.sh` as `undiscriminating-catches` phase, immediately after the `silent-catches` phase. Baseline-allowlist the remaining 342 LOW/MEDIUM findings in `lib/undiscriminating-catches-allowlist.txt` so the gate fires only on NEW HIGH-class regressions, not on pre-existing inventory. |
+| Status flip | (this commit) | ruflo-patch | `proposed → accepted` |

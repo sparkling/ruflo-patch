@@ -456,6 +456,19 @@ main() {
   # surface their error. Allowlist at lib/silent-catches-allowlist.txt.
   run_phase "silent-catches" node "${SCRIPT_DIR}/check-silent-catches.mjs"
 
+  # ADR-0191 Phase D (gate-flip): stricter sibling to silent-catches.
+  # Flags `catch { /* comment */ }` patterns that document intent but
+  # take no runtime action (no rethrow, no log, no conditional
+  # discrimination). This is the failure mode that hid an ESM-vs-CJS
+  # error in the 2026-05-19 TrainingPipeline regression. Cluster A-E
+  # closed the 29 HIGH-risk catches (8 deletions + 10 catch+log +
+  # 2 typed-contracts + 4 helper conversions + 5 inline ENOENT-only),
+  # bringing the HIGH count to 0. The remaining ~340 LOW/MEDIUM catches
+  # stay visible in the detector output but are allowlisted via
+  # lib/undiscriminating-catches-allowlist.txt so the gate fires only on
+  # NEW HIGH-class regressions of this shape.
+  run_phase "undiscriminating-catches" node "${SCRIPT_DIR}/check-undiscriminating-catches.mjs"
+
   # ADR-0133/0150: Detect Rust source changes across all napi-shipping forks
   # (ruvector + agentic-flow per lib/napi-config.sh) and rebuild .node binaries
   # before bump-versions, so the rebuilt binaries land on fork main and ship
