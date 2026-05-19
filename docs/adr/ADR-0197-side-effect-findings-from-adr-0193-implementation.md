@@ -50,15 +50,21 @@ Worse: the surrounding try/catch at `agentdb-service.ts:1216` sets `this.learnin
 
 ### Decision
 
-**Hold for ADR-0195 Phase 4 implementation.** Phase 4 (cross-controller bridges) explicitly needs to wire AutopilotLearning → LearningSystem via `predict` / `submitFeedback`. The wrong call-site at `agentdb-service.ts:1214` is in the same surface area Phase 4 will rewrite. Fixing it in isolation now means re-touching the file when Phase 4 lands.
-
-Acceptable risk: the buggy path is dead-on-arrival (returns `undefined` every call), so it's not producing wrong behavior — just absent behavior. The cost of leaving it is "feature looks wired but isn't"; the cost of fixing it in isolation is two commits touching the same file in close sequence.
-
-If Phase 4 is deferred indefinitely, revisit this decision. Standalone fix: replace `predictAction?.(...)` with the real `predict(sessionId, state)` call shape, ensure `sessionId` is plumbed from the caller's context, and remove the catch-and-null pattern (per `feedback-no-fallbacks.md`).
+**Fix as part of ADR-0195 Phase 4 implementation (concurrent landing).** Replace `predictAction?.(...)` with the real `predict(sessionId, state)` call shape, plumb `sessionId` from the caller's context, and remove the catch-and-null pattern (per `feedback-no-fallbacks.md`). Phase 4's cross-controller bridge wires AutopilotLearning → LearningSystem via `predict` / `submitFeedback`, so the fix lands in the same change.
 
 ### Tracking
 
 Open question recorded in `ADR-0195-autopilot-learning-phase4-cross-controller-bridges.md` (the "Three additional observations" section names this bug explicitly).
+
+### Resolution (2026-05-19)
+
+Resolved by `forks/agentic-flow@dc41afc` (the direct removal of the broken probe + catch-and-null pattern) + `forks/agentic-flow@31a0c25` (Phase 4 bus + LearningSystem subscriber wiring).
+
+The literal fix described in the Decision section above ("replace `predictAction?.(...)` with the real `predict(sessionId, state)` shape inside `AgentDBService.predictAction`") was NOT applied at that exact callsite because the public `predictAction(state: any)` surface (consumed by `mcp__neural_predict`, `stdio-full.ts:834`, `direct-call-bridge.ts:131`, and integration tests) has no sessionId source — no caller had one to plumb. Adding a synthesized-per-call sessionId at that boundary would have either changed the public signature (breaking 3 callers + 5 integration tests) or hardcoded a default (forbidden per `feedback-no-fallbacks`).
+
+Instead, `dc41afc` removed the broken probe entirely (the dead-on-arrival branch produced no behavior; deleting it has zero observable cost) and `31a0c25` provides the *legitimate* `predict` / `submitFeedback` consumer at a different boundary — the LearningSystem subscriber inside `AgentDBService._attachLearningSubscriber`. There, the sessionId IS synthesizable from caller context (the autopilot subject hash: `autopilot:${sha1(subject)}`) per ADR-0195 §Decision Outcome §Contract, and the call shape matches `LearningSystem.predict` / `LearningSystem.submitFeedback` exactly. The bridge discharges the architecture gap Finding 1 named: autopilot signals now reach the LearningSystem policy update path with a real, properly-bound session.
+
+`AgentDBService.getLearningSystem(): any` was also added (previously private) so any future caller with a legitimate sessionId can reach `predict` directly without re-introducing the broken probe.
 
 ## Finding 2 — `@ruvector/gnn` Node binding has no clustering API
 

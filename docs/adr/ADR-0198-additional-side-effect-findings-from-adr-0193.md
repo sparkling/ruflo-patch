@@ -46,16 +46,16 @@ Wave 1 Agent 3 (Item E, `drift-detector.ts` + `swarm-completion.ts`) hit this wh
 
 ### Decision
 
-**Bump or remove `@ruvector/rvf` requirement.** Two paths:
+**Fix concurrent with ADR-0195 Phase 4 implementation.** Two paths available:
 
 1. **Bump `@ruvector/rvf` to a Verdaccio-available version** (or unblock `0.2.0-patch.147` if it's a publish-cascade gap rather than a missing release). Lets the standard `npm install` + `npx vitest` workflow work.
 2. **Restructure tests** — move `tests/integration/autopilot*.test.ts` into the inner `agentic-flow/` package so they install + run against the inner's `node_modules`. More invasive; preserves the integration-test value.
 
-Path 1 is simpler. Defer the path choice to whoever picks this up; both work.
+Path selected during implementation based on which is reachable without cascading rebuilds.
 
 ### Tracking
 
-This ADR. Acceptable to defer until either ADR-0195 Phase 4 implementation OR the next time someone tries to run the outer integration tests. No urgency — the populated assertion coverage already exists at the inner-package vitest level (`forks/agentic-flow/agentic-flow/src/coordination/*.test.ts` if any) plus ruflo-patch's `ctrl-autopilot-*` acceptance probes.
+This ADR; closure when the outer-vitest workflow runs cleanly via standard `npm install` + `npx vitest` from `forks/agentic-flow/`.
 
 ## Finding 2 — `autopilot-cli.ts` references non-existent producer type properties
 
@@ -92,14 +92,7 @@ Wave 1 Agent 1 confirmed the errors are PRE-EXISTING — not introduced by ADR-0
 
 ### Decision
 
-**Defer to ADR-0195 Phase 4 implementation OR fix standalone — whichever lands first.**
-
-Reasoning:
-
-* Phase 4 (ADR-0195) will rewrite parts of the CLI surface to wire AutopilotLearning → LearningSystem via the real `predict` / `submitFeedback` calls (see ADR-0197 Finding 1). The CLI's interaction with `DiscoveredPattern[]` will be re-touched during that work; fixing the type drift in the same change avoids two commits touching the same file.
-* If Phase 4 is deferred indefinitely, the standalone fix is straightforward: read each missing property's call site, look up the actual producer type, rename the access to match.
-
-Acceptable risk: the drift produces `undefined` output, not wrong behavior. CLI consumers see degraded output (missing fields); they don't see incorrect data. Low-severity defect.
+**Fix concurrent with ADR-0195 Phase 4 implementation.** Phase 4 (ADR-0195) rewrites parts of the CLI surface to wire AutopilotLearning → LearningSystem via the real `predict` / `submitFeedback` calls (see ADR-0197 Finding 1). The CLI's interaction with `DiscoveredPattern[]` is re-touched during that work; the type drift is resolved in the same change. Read each missing property's call site, look up the actual producer type, rename the access to match.
 
 ### Optional improvement (not part of this ADR's decision)
 
@@ -113,8 +106,8 @@ This ADR + tagged in ADR-0195's Phase 4 implementation notes (Phase 4 should fix
 
 Per finding:
 
-1. **Finding 1** (vitest install): document and defer. Path forward documented (bump `@ruvector/rvf` OR restructure tests). Pick when convenient OR when the integration suite next becomes load-bearing.
-2. **Finding 2** (autopilot-cli type drift): defer to ADR-0195 Phase 4. Standalone fix is acceptable if Phase 4 is delayed.
+1. **Finding 1** (vitest install): fix concurrent with ADR-0195 Phase 4 implementation. Path (bump `@ruvector/rvf` vs. restructure tests) selected at implementation time.
+2. **Finding 2** (autopilot-cli type drift): fix concurrent with ADR-0195 Phase 4 implementation; the CLI is re-touched as part of wiring AutopilotLearning → LearningSystem.
 
 ## Consequences
 
