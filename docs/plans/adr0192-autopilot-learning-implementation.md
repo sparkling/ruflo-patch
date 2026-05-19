@@ -335,9 +335,31 @@ root.
 
 ### Changes
 
-1. `forks/agentic-flow/agentic-flow/package.json` — add to `exports`:
-   ```json
-   "./coordination/autopilot-learning": "./dist/coordination/autopilot-learning.js"
+1. **Both** package.json files need the entry — the fork has two:
+   * `forks/agentic-flow/agentic-flow/package.json` (inner monorepo,
+     used during inner-fork builds; relative paths `./dist/...`):
+     ```json
+     "./coordination/autopilot-learning": "./dist/coordination/autopilot-learning.js"
+     ```
+   * `forks/agentic-flow/package.json` (outer root, **this is what
+     gets published as `@sparkleideas/agentic-flow`**; relative paths
+     `./agentic-flow/dist/...` because the inner monorepo lives in
+     the `agentic-flow/` subdirectory):
+     ```json
+     "./coordination": "./agentic-flow/dist/coordination/index.js",
+     "./coordination/autopilot-learning": "./agentic-flow/dist/coordination/autopilot-learning.js"
+     ```
+
+   **Real-world gotcha** — the first release attempt of ADR-0192
+   added the entry to only the inner package.json. The .js + .d.ts
+   files shipped in dist (build phase), but Node refused subpath
+   resolution because the OUTER (published) package.json's exports
+   map didn't include the new path → `ERR_PACKAGE_PATH_NOT_EXPORTED`
+   → tryOptionalImport returned null → tryLoadLearning returned null
+   → ctrl-autopilot-learn failed. Verify by inspecting the published
+   artifact AFTER each release:
+   ```bash
+   jq '.exports | keys' /tmp/<verify-dir>/node_modules/@sparkleideas/agentic-flow/package.json | grep autopilot
    ```
 
 2. `forks/agentic-flow/agentic-flow/src/coordination/index.ts` — append:
