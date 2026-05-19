@@ -51,14 +51,16 @@ _adr0194_seed_episodes() {
   local cli; cli=$(_cli_cmd)
   # Set A: react bug fix family
   for subject in "react bug fix" "frontend defect resolution" "ui regression"; do
+    local key_a="adr0194-seed-${subject// /-}"
     _run_and_kill \
-      "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' ${cli} memory store --key 'adr0194-seed-$(echo "$subject" | tr ' ' '-')' --value '${subject}' --namespace autopilot:episodes" \
+      "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' ${cli} memory store --key '${key_a}' --value '${subject}' --namespace autopilot:episodes" \
       "" 20
   done
   # Set B: OAuth/SAML/SSO family
   for subject in "implement OAuth login" "build SAML signup" "add SSO flow"; do
+    local key_b="adr0194-seed-${subject// /-}"
     _run_and_kill \
-      "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' ${cli} memory store --key 'adr0194-seed-$(echo "$subject" | tr ' ' '-')' --value '${subject}' --namespace autopilot:episodes" \
+      "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' ${cli} memory store --key '${key_b}' --value '${subject}' --namespace autopilot:episodes" \
       "" 20
   done
 }
