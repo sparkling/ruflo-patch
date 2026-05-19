@@ -1,0 +1,26 @@
+# scripts/check-undiscriminating-catches.mjs allowlist
+#
+# Format: <relative-path>:<line-number>  (one per line)
+# Lines starting with # are comments; blank lines are ignored.
+#
+# This detector is stricter than check-silent-catches.mjs:
+# - silent-catches allows `catch { /* rationale */ }` (comment IS the
+#   surfacing per project convention).
+# - undiscriminating-catches flags THE SAME PATTERN because the comment
+#   doesn't actually discriminate at runtime — every error type gets
+#   swallowed uniformly. That's the failure mode that hid the
+#   ESM-vs-CJS error in the 2026-05-19 TrainingPipeline regression.
+#
+# Add an entry here ONLY if the catch genuinely should swallow all
+# error types without discrimination AND a code-level fix is not
+# warranted. Examples of legitimate uses:
+#   - test/fixture cleanup paths where any failure is unrecoverable
+#   - polling loops where the next iteration retries
+#   - shutdown handlers that must not throw
+# Otherwise, the right fix is to add `if (e.code !== '...') throw e`
+# discriminating logic, or a `console.warn` log.
+#
+# Note: the detector ships with an empty allowlist + is NOT wired into
+# pre-flight (the baseline is ~370 catches across the cli + agentic-flow
+# source trees). Triage is follow-up work; pre-flight wiring lands when
+# triage closes.
