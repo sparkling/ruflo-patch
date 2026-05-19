@@ -447,3 +447,57 @@ prioritisation:
 | 2026-05-19 | `c89a782` | `test(autopilot): unit tests for ADR-0194/0195/0196` — bundled unit tests (skip-with-marker tolerant of unlanded Phase 4/5 surfaces). |
 | 2026-05-19 | `9b55d88` | `test(autopilot): integration tests for ADR-0194/0195/0196` — bundled integration tests. |
 | 2026-05-19 | `d06ba2c` | `feat(autopilot): ADR-0196 Phase 5 _record stamping + SyncCoordinator adapter` — ships the three `.claude/helpers/autopilot-learning.mock.*.mjs` test doubles consumed by Phase 3 hook tests. |
+
+## Landing D deferral note (2026-05-19)
+
+**Decision: defer Landing D (GNNService embedding enhancement). No code changes.**
+
+Per memory `feedback-corpus-evidence-before-feature-work`, re-ran the corpus
+probe before any implementation. The corpus has grown slightly since the
+2026-05-19 morning walk (124 → 131 unique task subjects, 7 new tasks; full
+file count 131 vs 124) but the shape is unchanged:
+
+| Metric                                                            | Morning walk (N=124) | Re-run (N=131) |
+| ----------------------------------------------------------------- | -------------------- | -------------- |
+| Phase 2 tokens with `count >= 2`                                  | 97                   | 100            |
+| Orphan rate (no shared ≥4-char token)                             | 8.9% (11/124)        | 9.9% (13/131)  |
+| Pairwise cross-lex pairs at cosine `>= 0.75` (cluster threshold)  | **0 / 7 626**        | **0 / 7 969**  |
+| Pairwise cross-lex pairs at cosine `>= 0.60` (relaxed)            | 5                    | 7              |
+| Pairwise cross-lex pairs at cosine `>= 0.50`                      | (not reported)       | 135            |
+
+The 7 cross-lex pairs above 0.60 in the re-run remain accidental
+ADR-cross-reference shape echoes
+(`ADR-0181 Phase 7 ↔ ADR-0182 L6: baseline capture`,
+`ADR-0171 Phase 2: per-controller integration points ↔ ADR-0195 trajectory
+step-level feedback`, `Unit-level fail-loud invariant test for AgentDBBackend
+↔ AgentDB MCP read-tool round-trip tests`), not the
+"react bug fix ↔ ui regression" semantic kinship Landing D's GNN
+enhancement is meant to surface.
+
+**Why GNN enhancement would be a structural no-op for this corpus:** Landing
+D's value proposition is that `gnn.forward` over a kNN-neighbour graph
+pushes semantically-related embeddings closer together so they cross the
+0.75 cluster threshold. With zero cross-lex pairs within reach of the
+threshold (highest is 0.638, off by ≥0.11), any plausible GNN enhancement
+would need to shift cosine by >0.11 on the boundary pairs to produce a
+single new cluster — and even then, the resulting clusters would group
+ADR-cross-references, not the kinship class the ADR's Context posits.
+Landing D would add a code path that triggers `'native'`-only in CI, costs
+embedder calls, and produces no observable behaviour change on real
+autopilot data.
+
+**Re-evaluation trigger.** Re-run this probe and reconsider Landing D when
+EITHER:
+
+1. The autopilot `episodes` table accumulates ≥ 200 rows with
+   `session_id = 'autopilot:%'` across walked DBs. Today's count is 0;
+   episode-volume arrival would change the subject-text distribution from
+   ADR-identifier-dominated to free-text.
+2. A cross-lex pair appears in `~/.claude/tasks` above cosine 0.70 (within
+   striking distance of the 0.75 threshold). Today's max cross-lex is
+   0.638; a 0.70+ outlier would signal that the kinship gap is starting to
+   exist.
+
+The probe script lives at
+[`docs/plans/adr0194-corpus-gap-analysis.md`](../plans/adr0194-corpus-gap-analysis.md)
+methodology; it can be re-run cheaply (~2 minutes including model load).
