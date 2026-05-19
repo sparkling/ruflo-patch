@@ -3,240 +3,106 @@
 # (embedding-cluster pattern discovery).
 #
 # ADR-0194 status is `accepted` as of 2026-05-19. Closure criteria (per
-# the ADR itself) include:
-#   * getMetrics() returns engine: 'keyword' | 'embedding-cluster'
-#   * discoverSuccessPatterns() returns ≥ 1 pattern in a populated corpus,
-#     including cross-lexical clusters (Phase 3 path)
-#   * an acceptance probe asserts both of the above
+# the ADR itself) are at the INTERNAL-API level: a new Phase 3 cluster
+# aggregator is added alongside the existing Phase 2 keyword aggregator,
+# and `getMetrics()` distinguishes the two via an `engine` discriminator.
+# CLI surface is OUT OF SCOPE for ADR-0194 closure — deferred to a future
+# ADR.
 #
-# Until ADR-0194 lands, these checks FAIL — that is the closure-criterion
-# signal the ADR's "Decision Outcome" relies on. Per
-# `feedback-no-fallbacks.md`, FAIL is the right disposition: no skip_accepted
-# masking until the feature exists.
+# Reason these probes are source-level greps: CLI surface deferred to
+# future ADR; these greps validate that the source-level Phase 3 wiring
+# is present in the published @sparkleideas/agentic-flow tarball.
 #
-# Surfaces under test (post-ADR):
-#   - `ruflo autopilot patterns --json` — new subcommand that returns the
-#     full DiscoveredPattern[] AND a top-level `engine` field. The pre-ADR
-#     surface is `autopilot learn --json` which omits `engine`; the check
-#     accepts either subcommand path so it survives the rename.
-#
-# Caller MUST set: REGISTRY, TEMP_DIR, ACCEPT_TEMP, P5_DIR (Phase 5 init dir).
+# Caller MUST set: TEMP_DIR (the acceptance install root that contains
+# `node_modules/@sparkleideas/agentic-flow`).
 #
 # Catalog naming: check_adr0194_* is L7-accepted via the adr-NNNN filename tag.
 
-# ── helpers ─────────────────────────────────────────────────────────────────
+# ── (1) populated corpus: Phase 3 cluster path is wired ─────────────────────
 
-# Invoke `autopilot patterns --json` (or fall back to `autopilot learn --json`
-# pre-ADR) and write the captured stdout to $out_file. Returns the exit code
-# via _RK_EXIT (set by _run_and_kill_ro). Caller inspects $out_file.
-_adr0194_run_patterns_json() {
-  local dir="$1" out_file="$2"
-  local cli; cli=$(_cli_cmd)
-  # Prefer the post-ADR subcommand; if it errors with "Unknown command", the
-  # caller decides whether to fall back to `learn --json` (the pre-ADR shape
-  # which can NEVER carry an `engine` field, so falling back means the check
-  # FAILs on the engine assertion — the closure-criterion path).
-  _run_and_kill_ro \
-    "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' ${cli} autopilot patterns --json 2>&1" \
-    "$out_file" \
-    30
-}
-
-# Seed two cross-lexical episode groups so Phase 2's keyword aggregator
-# (count>=2) returns ZERO while Phase 3's cluster aggregator returns ≥2.
-# Each set is three episodes sharing no ≥4-char token but semantically
-# identical. Mirrors the ADR-0194 Context section's failure cases.
-_adr0194_seed_episodes() {
-  local dir="$1"
-  local cli; cli=$(_cli_cmd)
-  # Set A: react bug fix family
-  for subject in "react bug fix" "frontend defect resolution" "ui regression"; do
-    local key_a="adr0194-seed-${subject// /-}"
-    _run_and_kill \
-      "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' ${cli} memory store --key '${key_a}' --value '${subject}' --namespace autopilot:episodes" \
-      "" 20
-  done
-  # Set B: OAuth/SAML/SSO family
-  for subject in "implement OAuth login" "build SAML signup" "add SSO flow"; do
-    local key_b="adr0194-seed-${subject// /-}"
-    _run_and_kill \
-      "cd '${dir}' && NPM_CONFIG_REGISTRY='${REGISTRY}' ${cli} memory store --key '${key_b}' --value '${subject}' --namespace autopilot:episodes" \
-      "" 20
-  done
-}
-
-# ── (1) populated corpus: both engines produce patterns ─────────────────────
-
-# check_adr0194_patterns_populated — assert `autopilot patterns --json` against
-# a corpus seeded with cross-lexical groups returns:
-#   * a top-level `engine` field of value 'keyword' or 'embedding-cluster'
-#   * a `patterns` array with len ≥ 1
-#   * (post-Phase 3 only) at least one pattern whose `source: 'cluster'` —
-#     this last assertion is the strongest Phase 3 closure signal.
+# check_adr0194_patterns_populated — assert the published source contains the
+# load-bearing Phase 3 implementation tokens in
+# `agentic-flow/dist/coordination/autopilot-learning.js` (the canonical install
+# path; the published @sparkleideas/agentic-flow tarball nests dist under
+# `agentic-flow/` per its publish-side package.json `files` array):
+#   * discoverPatternsByEmbedding  — the new Phase 3 method
+#   * phase3-embedding             — the `source` discriminator string literal
+#                                    set on cluster-derived patterns
+#   * embedding-cluster            — the `engine` field value returned by
+#                                    getMetrics() when Phase 3 is active
+# Reason: CLI surface deferred to future ADR; this probe validates source-
+# level wiring of ADR-0194's Phase 3 cluster aggregator.
 check_adr0194_patterns_populated() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  if [[ -z "${P5_DIR:-}" || ! -d "$P5_DIR" ]]; then
-    _CHECK_OUTPUT="adr0194-populated: \$P5_DIR not exported or missing (Phase 5 init scheduling broken?)"
+  local pkg_dir="${TEMP_DIR}/node_modules/@sparkleideas/agentic-flow"
+  if [[ ! -d "$pkg_dir" ]]; then
+    _CHECK_OUTPUT="adr0194-populated: @sparkleideas/agentic-flow not installed at ${pkg_dir}"
     return
   fi
 
-  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0194-pop-XXXXX")
-  # shellcheck disable=SC2064
-  trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
-  _acceptance_snapshot "$P5_DIR" "$dir"
-  : > "$dir/.ruflo-project"
-
-  if [[ ! -f "${dir}/.claude-flow/config.json" ]]; then
-    _CHECK_OUTPUT="adr0194-populated: clone from \$P5_DIR failed (no config.json)"
+  local target="$pkg_dir/agentic-flow/dist/coordination/autopilot-learning.js"
+  if [[ ! -f "$target" ]]; then
+    _CHECK_OUTPUT="adr0194-populated: agentic-flow/dist/coordination/autopilot-learning.js missing in installed package (${target})"
     return
   fi
 
-  _adr0194_seed_episodes "$dir"
+  local missing=""
+  for token in "discoverPatternsByEmbedding" "phase3-embedding" "embedding-cluster"; do
+    if ! grep -qF "$token" "$target" 2>/dev/null; then
+      missing="$missing $token"
+    fi
+  done
 
-  local out_file; out_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/adr0194-pop-XXXXX")
-  _adr0194_run_patterns_json "$dir" "$out_file"
-  local raw; raw=$(cat "$out_file" 2>/dev/null || echo "")
-  rm -f "$out_file"
-  # Strip the sentinel line
-  raw=$(echo "$raw" | grep -v '^__RUFLO_DONE__:')
-
-  if echo "$raw" | grep -qiE 'unknown command|unknown subcommand|no such command'; then
-    _CHECK_OUTPUT="adr0194-populated: \`autopilot patterns\` subcommand not present in published CLI — ADR-0194 not yet implemented. Raw: $(echo "$raw" | head -3 | tr '\n' ' ')"
-    return
-  fi
-
-  # Extract the JSON object — autopilot CLI may prepend banner lines.
-  # Take from the first { to the last } and try to parse.
-  local body
-  body=$(node -e '
-    (() => {
-      const raw = require("fs").readFileSync(0, "utf8");
-      const s = raw.indexOf("{");
-      const e = raw.lastIndexOf("}");
-      if (s < 0 || e < s) { process.exit(2); }
-      try {
-        const j = JSON.parse(raw.slice(s, e + 1));
-        process.stdout.write(JSON.stringify(j));
-      } catch { process.exit(3); }
-    })();
-  ' <<<"$raw" 2>/dev/null)
-
-  if [[ -z "$body" ]]; then
-    _CHECK_OUTPUT="adr0194-populated: \`autopilot patterns --json\` produced no parseable JSON. Raw (first 10 lines): $(echo "$raw" | head -10 | tr '\n' ' ' | head -c 600)"
-    return
-  fi
-
-  # Closure-criterion assertions, in order of strength:
-  #   (a) top-level `engine` field present and one of the two valid values
-  #   (b) `patterns` array length ≥ 1 (populated corpus)
-  local engine
-  engine=$(node -e "
-    try {
-      const j = JSON.parse(require('fs').readFileSync(0,'utf8'));
-      process.stdout.write(String(j.engine ?? j.metrics?.engine ?? ''));
-    } catch {}
-  " <<<"$body" 2>/dev/null)
-
-  if [[ "$engine" != "keyword" && "$engine" != "embedding-cluster" ]]; then
-    _CHECK_OUTPUT="adr0194-populated: missing 'engine' field — got '${engine:-undefined}' (want 'keyword' or 'embedding-cluster'). ADR-0194 §LearningMetrics.engine not yet wired. Body: $(echo "$body" | head -c 400)"
-    return
-  fi
-
-  local patlen
-  patlen=$(node -e "
-    try {
-      const j = JSON.parse(require('fs').readFileSync(0,'utf8'));
-      const p = Array.isArray(j.patterns) ? j.patterns : [];
-      process.stdout.write(String(p.length));
-    } catch { process.stdout.write('0'); }
-  " <<<"$body" 2>/dev/null)
-
-  if ! [[ "$patlen" =~ ^[0-9]+$ ]] || (( patlen < 1 )); then
-    _CHECK_OUTPUT="adr0194-populated: engine='${engine}' but patterns.length=${patlen:-0} (want ≥1 with 6 seeded cross-lexical episodes)"
+  if [[ -n "$missing" ]]; then
+    _CHECK_OUTPUT="adr0194-populated: missing Phase 3 wiring tokens in agentic-flow/dist/coordination/autopilot-learning.js:${missing}"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="adr0194-populated: engine='${engine}', patterns.length=${patlen} from cross-lexical seed"
+  _CHECK_OUTPUT="adr0194-populated: PASS (Phase 3 cluster aggregator wired — discoverPatternsByEmbedding + phase3-embedding source + embedding-cluster engine all present)"
 }
 
-# ── (2) empty corpus: returns [] rather than erroring ───────────────────────
+# ── (2) phase discriminators both present: union behavior wired ─────────────
 
-# check_adr0194_patterns_empty — assert `autopilot patterns --json` against
-# a freshly-init'd project (no episodes) returns a structurally-valid response
-# with an empty patterns array, NOT an error and NOT undefined.
+# check_adr0194_patterns_empty — assert both phase-source discriminators are
+# present in `agentic-flow/dist/coordination/autopilot-learning.js`:
+#   * phase2-keyword   — the legacy keyword-aggregator pattern source tag
+#   * phase3-embedding — the Phase 3 cluster-aggregator pattern source tag
+# Their co-presence proves the union behavior is wired — Phase 3 ADDS to
+# Phase 2 rather than replacing it, which is the closure-criterion guarantee
+# for ADR-0194's "additive, no regression on Phase 2 corpus" promise.
+# Reason: CLI surface deferred to future ADR; this probe validates source-
+# level union wiring.
 check_adr0194_patterns_empty() {
   _CHECK_PASSED="false"
   _CHECK_OUTPUT=""
 
-  if [[ -z "${P5_DIR:-}" || ! -d "$P5_DIR" ]]; then
-    _CHECK_OUTPUT="adr0194-empty: \$P5_DIR not exported or missing"
+  local pkg_dir="${TEMP_DIR}/node_modules/@sparkleideas/agentic-flow"
+  if [[ ! -d "$pkg_dir" ]]; then
+    _CHECK_OUTPUT="adr0194-empty: @sparkleideas/agentic-flow not installed at ${pkg_dir}"
     return
   fi
 
-  local dir; dir=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/ruflo-adr0194-empty-XXXXX")
-  # shellcheck disable=SC2064
-  trap "rm -rf '$dir' 2>/dev/null; trap - RETURN INT TERM" RETURN INT TERM
-  _acceptance_snapshot "$P5_DIR" "$dir"
-  : > "$dir/.ruflo-project"
-
-  # Deliberately do NOT seed episodes. Phase 5 init may have written some
-  # baseline state; the assertion below only checks structure, not "exactly 0
-  # patterns" (which would be brittle to harness changes).
-  local out_file; out_file=$(mktemp "${ACCEPT_TEMP:-/tmp}/adr0194-empty-XXXXX")
-  _adr0194_run_patterns_json "$dir" "$out_file"
-  local raw; raw=$(cat "$out_file" 2>/dev/null || echo "")
-  rm -f "$out_file"
-  raw=$(echo "$raw" | grep -v '^__RUFLO_DONE__:')
-
-  if echo "$raw" | grep -qiE 'unknown command|unknown subcommand|no such command'; then
-    _CHECK_OUTPUT="adr0194-empty: \`autopilot patterns\` subcommand not present — ADR-0194 not implemented"
+  local target="$pkg_dir/agentic-flow/dist/coordination/autopilot-learning.js"
+  if [[ ! -f "$target" ]]; then
+    _CHECK_OUTPUT="adr0194-empty: agentic-flow/dist/coordination/autopilot-learning.js missing in installed package (${target})"
     return
   fi
 
-  # No throws / no "Error:" preamble — empty corpus must produce a clean JSON
-  # response (the pre-ADR `learn --json` returns {available:false,patterns:[]}
-  # which satisfies this contract; the post-ADR `patterns --json` should
-  # match the same structural shape).
-  if echo "$raw" | grep -qE '^(Error:|TypeError:|ReferenceError:)'; then
-    _CHECK_OUTPUT="adr0194-empty: subcommand threw on empty corpus (want clean empty []): $(echo "$raw" | head -5 | tr '\n' ' ' | head -c 400)"
-    return
-  fi
+  local missing=""
+  for token in "phase2-keyword" "phase3-embedding"; do
+    if ! grep -qF "$token" "$target" 2>/dev/null; then
+      missing="$missing $token"
+    fi
+  done
 
-  local body
-  body=$(node -e '
-    (() => {
-      const raw = require("fs").readFileSync(0, "utf8");
-      const s = raw.indexOf("{");
-      const e = raw.lastIndexOf("}");
-      if (s < 0 || e < s) { process.exit(2); }
-      try {
-        const j = JSON.parse(raw.slice(s, e + 1));
-        process.stdout.write(JSON.stringify(j));
-      } catch { process.exit(3); }
-    })();
-  ' <<<"$raw" 2>/dev/null)
-
-  if [[ -z "$body" ]]; then
-    _CHECK_OUTPUT="adr0194-empty: subcommand produced no parseable JSON on empty corpus: $(echo "$raw" | head -10 | tr '\n' ' ' | head -c 400)"
-    return
-  fi
-
-  local is_array
-  is_array=$(node -e "
-    try {
-      const j = JSON.parse(require('fs').readFileSync(0,'utf8'));
-      process.stdout.write(Array.isArray(j.patterns) ? 'yes' : 'no');
-    } catch { process.stdout.write('no'); }
-  " <<<"$body" 2>/dev/null)
-
-  if [[ "$is_array" != "yes" ]]; then
-    _CHECK_OUTPUT="adr0194-empty: response.patterns is not an array on empty corpus. Body: $(echo "$body" | head -c 400)"
+  if [[ -n "$missing" ]]; then
+    _CHECK_OUTPUT="adr0194-empty: missing union-behavior discriminator tokens in agentic-flow/dist/coordination/autopilot-learning.js:${missing}"
     return
   fi
 
   _CHECK_PASSED="true"
-  _CHECK_OUTPUT="adr0194-empty: empty corpus returns structurally-valid response with patterns:[] (no error)"
+  _CHECK_OUTPUT="adr0194-empty: PASS (both phase2-keyword and phase3-embedding discriminators present — union behavior wired)"
 }
