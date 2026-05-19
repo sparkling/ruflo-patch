@@ -247,23 +247,58 @@ export AGENTDB_MODEL_PATH="${HOME}/.cache/agentdb-models"
 # look broken even though the code was correct (release-4's `--force`
 # invalidated the cache and the same code passed cleanly).
 #
-# The deterministic small list below covers the 5 packages bumped on every
-# release (`fork-version.mjs` runs against all 5 fork roots). Per-package
-# cache clean keeps install-speed for un-bumped transitives intact — much
-# narrower than `--no-cache` or dropping `--prefer-offline` globally
-# (ADR-0193 §Out of scope).
+# Source of truth (ADR-0193 Item F follow-up): scripts/.last-bumped-packages,
+# written by ruflo-publish.sh after `bump_fork_versions` succeeds, one
+# `@sparkleideas/*` name per line. This is the publish set (BUMPED_PACKAGES
+# from fork-version.mjs — directly-changed plus transitive dependents),
+# which is exactly what `npm install --prefer-offline` could pin stale.
+#
+# Fallback (.last-bumped-packages missing OR empty): the hardcoded
+# 5-package list below. Loud `log_error` so the operator sees the
+# fallback path. Legitimate cases: first-ever release on this checkout,
+# a `--force` rebuild that skipped change-detection ("all" sentinel —
+# publish writes no file), or someone running acceptance standalone via
+# `test-acceptance-fast.sh` before any publish has happened. The
+# fallback covers the 5 packages historically bumped on every release.
+# Per feedback-no-fallbacks.md: this fallback is acceptable here because
+# the publish path may legitimately not have run yet; it MUST log loudly
+# so the situation is visible — silent fallbacks are the antipattern.
+#
+# Per-package cache clean keeps install-speed for un-bumped transitives
+# intact — much narrower than `--no-cache` or dropping `--prefer-offline`
+# globally (ADR-0193 §Out of scope).
 #
 # `npm cache clean <pkg>` itself is fast (~50-200ms each). Failures are
 # tolerated (the `|| true`) because a clean against a never-cached package
 # is harmless, and a registry hiccup at this point shouldn't gate install.
 _cache_bust_bumped_packages() {
-  local pkgs=(
-    "@sparkleideas/cli"
-    "@sparkleideas/agentic-flow"
-    "@sparkleideas/ruflo"
-    "@sparkleideas/agentdb"
-    "@sparkleideas/ruvector"
-  )
+  local state_file="${PROJECT_DIR}/scripts/.last-bumped-packages"
+  local -a pkgs=()
+  local source_desc=""
+
+  if [[ -s "$state_file" ]]; then
+    while IFS= read -r pkg; do
+      [[ -z "$pkg" ]] && continue
+      pkgs+=("$pkg")
+    done < "$state_file"
+    source_desc="${state_file} (${#pkgs[@]} pkg(s))"
+  fi
+
+  if [[ ${#pkgs[@]} -eq 0 ]]; then
+    # Fallback: state file missing, empty, or all-blank. Log LOUDLY so the
+    # operator sees we're not using the precise bumped set.
+    log_error "ADR-0193 Item F: ${state_file} missing or empty — falling back to hardcoded 5-package list. This is expected for first-ever releases, --force rebuilds (CHANGED_PACKAGES_JSON='all'), or standalone test-acceptance runs. If you see this every release, the publish-side write site in ruflo-publish.sh::bump_fork_versions has regressed."
+    pkgs=(
+      "@sparkleideas/cli"
+      "@sparkleideas/agentic-flow"
+      "@sparkleideas/ruflo"
+      "@sparkleideas/agentdb"
+      "@sparkleideas/ruvector"
+    )
+    source_desc="hardcoded fallback (${#pkgs[@]} pkg(s))"
+  fi
+
+  log "  Cache bust source: ${source_desc}"
   for pkg in "${pkgs[@]}"; do
     npm cache clean "$pkg" --registry "$REGISTRY" >/dev/null 2>&1 || true
     log "  Cache bust: $pkg"

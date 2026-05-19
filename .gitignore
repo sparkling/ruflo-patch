@@ -1,5 +1,6 @@
 # Runtime state
 scripts/.last-build-state
+scripts/.last-bumped-packages
 config/.publish-timing.json
 .claude/projects/
 .claude/worktrees/

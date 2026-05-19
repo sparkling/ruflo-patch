@@ -289,6 +289,36 @@ bump_fork_versions() {
   log "Build set (source changed): ${DIRECTLY_CHANGED_JSON}"
   log "Publish set (+ dependents): ${CHANGED_PACKAGES_JSON}"
 
+  # ADR-0193 Item F follow-up: write the bumped-packages list to a sibling
+  # state file so `_cache_bust_bumped_packages` in test-acceptance.sh can
+  # bust the exact set rather than a hardcoded 5-package list. The
+  # bump_output BUMPED_PACKAGES: line is already deduplicated and
+  # toNpmName-translated to @sparkleideas/* names — exactly what
+  # `npm cache clean` wants.
+  #
+  # Lifecycle: written AFTER bump succeeds and BEFORE acceptance runs,
+  # so the same release that bumps the set is the one whose acceptance
+  # reads it. `.last-build-state` is the wrong file (it's
+  # atomically-overwritten end-of-pipeline AFTER acceptance, and its
+  # schema is fork-SHAs not package-names).
+  #
+  # Skip cases: "all" (full bump — no explicit list available; the
+  # downstream fallback handles this and logs loudly) and "[]" (no
+  # packages changed — early-return below). For an explicit JSON array
+  # we emit one package per line for trivial shell parsing.
+  local _bumped_state="${SCRIPT_DIR}/.last-bumped-packages"
+  if [[ "${CHANGED_PACKAGES_JSON}" != "all" && "${CHANGED_PACKAGES_JSON}" != "[]" ]]; then
+    if ! echo "${CHANGED_PACKAGES_JSON}" \
+         | node -e "const a=JSON.parse(require('fs').readFileSync(0,'utf8'));if(!Array.isArray(a))process.exit(2);for(const n of a)console.log(n)" \
+         > "${_bumped_state}.tmp" 2>/dev/null; then
+      log_error "Failed to parse BUMPED_PACKAGES JSON for ${_bumped_state} — leaving prior file in place"
+      rm -f "${_bumped_state}.tmp"
+    else
+      mv "${_bumped_state}.tmp" "${_bumped_state}"
+      log "Wrote bumped-packages list ($(wc -l < "${_bumped_state}" | tr -d ' ') pkgs) -> ${_bumped_state}"
+    fi
+  fi
+
   if [[ "${CHANGED_PACKAGES_JSON}" == "[]" ]]; then
     log "No packages changed — skipping build and publish"
     for i in "${!FORK_NAMES[@]}"; do
