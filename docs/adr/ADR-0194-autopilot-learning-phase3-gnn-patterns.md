@@ -1,10 +1,11 @@
 ---
-status: proposed
-priority: low
+status: implemented
 date: 2026-05-19
+accepted: 2026-05-19
+implemented: 2026-05-19
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
-tags: [autopilot, learning, gnn, ruvector, phase3, ADR-0193, ADR-059, evidence-deferred]
+tags: [autopilot, learning, gnn, ruvector, phase3, ADR-0193, ADR-059]
 related: [0192, 0193]
 upstream-related: [agentic-flow/ADR-059]
 audience: ai-executor
@@ -22,7 +23,7 @@ A corpus-gap analysis of real autopilot subjects (124 unique task subjects acros
 
 Phase 2's token-sharing correlates well with embedding similarity in this corpus. The illustrative failure cases the ADR uses (`react bug fix` / `frontend defect resolution` / `ui regression`; `implement OAuth login` / `build SAML signup` / `add SSO flow`; `fix slow query` / `optimize index` / `cache db results`) are real LANGUAGE constructions but the actual autopilot subject corpus doesn't contain them.
 
-**This ADR remains `proposed` but is now `priority: low` and evidence-deferred.** Re-run the analysis when autopilot `episodes` accumulate ≥200 rows OR when the subject character shifts (e.g. shorter free-text titles from interactive use vs the long ADR-shape descriptions that dominate today).
+**Decision (2026-05-19):** Build despite the corpus finding. The analysis above is retained as historical context for the threshold/algorithm tuning that follows.
 
 Full analysis: [`docs/plans/adr0194-corpus-gap-analysis.md`](../plans/adr0194-corpus-gap-analysis.md).
 
@@ -437,3 +438,12 @@ prioritisation:
   backend-wiring (`ADR-059:217-218`), NOT to AutopilotLearning pattern
   clustering. Confirm via `git log -S "_aggregatePatterns"` upstream
   before Landing C.
+
+## Implementation log
+
+| Date | Commit (sparkling/agentic-flow main) | Scope |
+|---|---|---|
+| 2026-05-19 | `f3e48a1` | `feat(autopilot): ADR-0194 Phase 3 embedding-cluster pattern discovery` — Landing C wire-in (DiscoveredPattern.source, AutopilotLearningConfig + ResolvedClusterConfig, discoverPatternsByEmbedding, _cosine, _updateCentroid, discoverSuccessPatterns rewrite). |
+| 2026-05-19 | `c89a782` | `test(autopilot): unit tests for ADR-0194/0195/0196` — bundled unit tests (skip-with-marker tolerant of unlanded Phase 4/5 surfaces). |
+| 2026-05-19 | `9b55d88` | `test(autopilot): integration tests for ADR-0194/0195/0196` — bundled integration tests. |
+| 2026-05-19 | `d06ba2c` | `feat(autopilot): ADR-0196 Phase 5 _record stamping + SyncCoordinator adapter` — ships the three `.claude/helpers/autopilot-learning.mock.*.mjs` test doubles consumed by Phase 3 hook tests. |

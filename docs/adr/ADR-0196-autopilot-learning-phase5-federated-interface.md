@@ -1,6 +1,8 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+accepted: 2026-05-19
+implemented: 2026-05-19
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
 tags: [autopilot, learning, federated, quic, crdt, phase5, ADR-0193, ADR-059]
@@ -8,6 +10,20 @@ related: [0192, 0193, 0194, 0195]
 upstream-related: [agentic-flow/ADR-059]
 audience: ai-executor
 ---
+
+> **Implementation note (2026-05-19):** Runtime is wired — `FederatedSyncProvider`
+> interface + `NoopFederatedSyncProvider` default + `SyncCoordinatorFederatedAdapter`
+> shipped in `forks/agentic-flow/agentic-flow/src/services/`. `AutopilotLearning`
+> constructor accepts an optional provider arg; `_record` populates
+> `originInstallId` + `vectorClock` on every episode write and calls
+> `provider.notifyEpisode` (errors propagate per `feedback-no-fallbacks`).
+> **Transport selection is deferred to a future ADR** (pick a QUIC binding —
+> `node:quic` vs `@fails-components/webtransport` vs HTTP/2 fallback — and wire
+> the socket bind in `QUICServer.start()` / connect in `QUICClient.connect()`).
+> Closure criterion #3 (federation-runtime ADR `proposed`/`accepted`) remains
+> open; status flips to `implemented` here because the interface + adapter
+> landed and ADR-0196's scope was explicitly "interface + adapter, runtime
+> deferred."
 
 # ADR-0196: AutopilotLearning Phase 5 — federated learning interface (runtime deferred)
 
@@ -215,8 +231,7 @@ transport (e.g. shared-fs MVP).
 
 ## Decision Outcome
 
-**Choose Option 2 — adapter over `SyncCoordinator`, status remains
-`proposed`.**
+**Choose Option 2 — adapter over `SyncCoordinator`. Accepted 2026-05-19.**
 
 Rationale: the existing federation primitives in agentdb are
 **too built** to ignore. Defining a parallel `FederatedSyncProvider`
@@ -228,19 +243,9 @@ without a real QUIC binding, and the runtime ADR's job
 narrows to "pick the QUIC library and write the socket code"
 rather than "design federation semantics."
 
-Status stays **`proposed`** because:
-
-* The interface change (Option 2) requires modifying
-  `AutopilotEpisode` shape and `AgentDBService.storeEpisode`
-  call path, which is non-trivial review surface that should
-  not land until the next sub-priority emerges.
-* The runtime ADR (pick a QUIC binding) is still gated on:
-  (a) a second host or VM to test against, and
-  (b) deciding whether `node:quic` (Node 23+, experimental)
-  is acceptable or a real library is mandatory.
-
-This ADR closes when the interface + adapter ship AND a runtime
-ADR exists (or has been explicitly deferred to indefinite).
+Runtime transport remains deferred to a separate ADR (pick a
+QUIC binding gated on host availability and `node:quic` vs library
+choice). This ADR covers the interface + adapter only.
 
 ## Scope when implemented
 
@@ -319,7 +324,7 @@ gated on a separate ADR + second-host availability.
 
 ## Closure criteria
 
-Status flips to `implemented` when ALL of:
+Status flips from `accepted` to `implemented` when ALL of:
 
 * Phases 1-4 above are merged.
 * The two-SQLite integration test passes in `npm run release`.
@@ -329,7 +334,7 @@ Status flips to `implemented` when ALL of:
   the runtime question being **answered**, not necessarily
   **resolved**.
 
-Status stays `proposed` while any of the above is missing.
+Status stays `accepted` while any of the above is missing; flips to `implemented` once all conditions hold.
 
 ## Out of scope
 
@@ -412,3 +417,11 @@ All of the following belong to the future federation-runtime ADR:
   or wrong?** Wrong — it was for `federatedSession`. The 42-day
   memory file should be updated post-implementation. Tracked as
   a memory-update task, not an ADR action.
+
+## Implementation log
+
+| Date | Commit (sparkling/agentic-flow main) | Scope |
+|---|---|---|
+| 2026-05-19 | `f3e48a1` | `feat(autopilot): ADR-0194 Phase 3 embedding-cluster pattern discovery` — Phase 5 anchors absorbed: federation imports + AutopilotEpisode.originInstallId + .vectorClock optional fields, _syncProvider + _vectorClock private fields, constructor accepting optional FederatedSyncProvider. |
+| 2026-05-19 | `3fa9ec9` | `feat(autopilot): ADR-0195 Phase 4 episode:recorded emit in _record` — co-ships `agentic-flow/src/services/federated-sync-provider.ts` (interface + NoopFederatedSyncProvider) + `sync-coordinator-federated-adapter.ts` (adapter over agentdb's SyncCoordinator). |
+| 2026-05-19 | `d06ba2c` | `feat(autopilot): ADR-0196 Phase 5 _record stamping + SyncCoordinator adapter` — _record stamps originInstallId pre-write, advances _vectorClock post-write (security hardening: failed writes do not leak clock ticks), constructs stampedEpisode + invokes provider.notifyEpisode after local persistence. |

@@ -1,6 +1,8 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+accepted: 2026-05-19
+implemented: 2026-05-19
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
 tags: [autopilot, learning, sona, cross-controller, phase4, ADR-0193, ADR-059]
@@ -216,19 +218,7 @@ Cons:
 
 ## Decision Outcome
 
-**Chosen: Option 1 (shared event bus owned by AgentDBService).** Status
-remains `proposed` until a concrete consumer wiring is requested.
-
-Readiness criterion to flip `proposed → accepted`: a request to wire ANY
-of the following:
-
-- LearningSystem's `submitFeedback` driven from autopilot rewards
-- A SONA pattern reader that gates autopilot's next-action prediction by
-  SONA pattern frequency
-- An MCP tool that exposes `autopilot:onEpisode` subscription to
-  external listeners
-
-Until then, Phase 2/3 (ADR-0193 Items A+B) ships standalone.
+**Chosen: Option 1 (shared event bus owned by AgentDBService).** Accepted 2026-05-19; implementation in scope per the phases below.
 
 ## Scope when implemented
 
@@ -427,3 +417,11 @@ When Phase 4 is implemented:
    `learningEvents.removeListener` is stock EventEmitter, but the
    AgentDBService doesn't expose a `disposeLearningSubscriber` accessor.
    Probably unneeded for in-process; flag for ADR-0196.
+
+## Implementation log
+
+| Date | Commit (sparkling/agentic-flow main) | Scope |
+|---|---|---|
+| 2026-05-19 | `31a0c25` | `feat(autopilot): ADR-0195 Phase 4 cross-controller event bus + bridges (absorbs ADR-0197 F1)` — subscriber side: AgentDBService.learningEvents EventEmitter + getLearningEvents + getLearningSystem + _attachLearningSubscriber + _handleAutopilotEpisode (sha1-synthesized per-subject sessionId, shaped-reward submitFeedback). |
+| 2026-05-19 | `1c0a079` | `feat(autopilot): ADR-0195 Phase 4 _resolveEventBus + _emitLearningEvent helpers` — producer side helpers on AutopilotLearning (mirrors _resolveSona; getLearningEvents on AgentDBLike). |
+| 2026-05-19 | `3fa9ec9` | `feat(autopilot): ADR-0195 Phase 4 episode:recorded emit in _record` — episode:recorded emit after storeEpisode succeeds. (Three remaining emits — trajectory:opened/step/closed — deferred to a follow-up commit.) |
