@@ -311,9 +311,14 @@ run_build() {
     log "  Building agentic-flow (config/tsconfig.json)..."
     local _af_start
     _af_start=$(date +%s%N 2>/dev/null || echo 0)
-    # ADR-0040: --incremental for agentic-flow standalone build
+    # ADR-0040: --incremental for agentic-flow standalone build.
+    # ADR-0193 note: --noCheck is intentional (fork has 256 pre-existing
+    # type errors); log exit code so a true emit failure is observable
+    # even though we tolerate non-zero exits.
+    local _af_tsc_exit=0
     "$tsc_bin" -p "${af_dir}/config/tsconfig.json" --skipLibCheck --noCheck \
-      --incremental --tsBuildInfoFile "${af_dir}/.tsbuildinfo" 2>/dev/null || true
+      --incremental --tsBuildInfoFile "${af_dir}/.tsbuildinfo" 2>/dev/null || _af_tsc_exit=$?
+    [[ "$_af_tsc_exit" != "0" ]] && log "    agentic-flow tsc exited $_af_tsc_exit (non-fatal: --noCheck)"
     local _af_end
     _af_end=$(date +%s%N 2>/dev/null || echo 0)
     local _af_ms=0

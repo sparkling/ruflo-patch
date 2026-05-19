@@ -540,10 +540,20 @@ check_query_optimizer_cache() {
   probe_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node -e "
     (async () => {
       try {
-        const svc = await import('@sparkleideas/agentic-flow/services/agentdb-service');
-        const adb = await svc.getAgentDBService();
-        if (!adb || typeof adb.getController !== 'function') {
-          console.log('NO_AGENTDB:adb=' + !!adb + ',getController=' + typeof adb?.getController);
+        // Use the same tryLoadLearning path the rest of the autopilot
+        // probes use — it's the published-exports-compliant way to reach
+        // AgentDBService (via AutopilotLearning._agentdb). The
+        // ./services/agentdb-service subpath is NOT in the package's
+        // exports map.
+        const m = await import('@sparkleideas/cli/dist/src/autopilot-state.js');
+        const learning = await m.tryLoadLearning();
+        if (!learning || !learning._agentdb) {
+          console.log('NO_AGENTDB:learning=' + !!learning + ',_agentdb=' + !!learning?._agentdb);
+          return;
+        }
+        const adb = learning._agentdb;
+        if (typeof adb.getController !== 'function') {
+          console.log('NO_AGENTDB:getController=' + typeof adb.getController);
           return;
         }
         const qo = adb.getController('queryOptimizer');
