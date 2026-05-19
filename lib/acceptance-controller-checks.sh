@@ -463,3 +463,83 @@ check_adr0061_controller_types() {
 
   return $status
 }
+
+# ADR-0192 Phase 5: AutopilotLearning loads + populates + reports.
+#
+# This closes ADR-0191's Cluster A "happy-path" gap for the autopilot site:
+# the absence-not-accepted rule requires absent shape to be typed, logged,
+# AND integration-tested. The previous acceptance checks
+# (`p2-ap-lifecycle`, `p2-ap-predict`, `p8-inv10-autopilot`) only exercised
+# the absent shape; this check exercises the populated path.
+#
+# Strategy:
+#   1. Use `node -e` against the installed @sparkleideas/cli to call
+#      `tryLoadLearning()` + `recordTaskCompletion()` directly, populating
+#      a handful of episodes into the project's AgentDB.
+#   2. Call the `autopilot_learn` MCP tool (which internally calls
+#      `tryLoadLearning()` + `getMetrics()` + `discoverSuccessPatterns()`)
+#      to verify the populated state.
+#   3. Assert the returned JSON envelope carries `metrics.available: true`
+#      AND `metrics.episodes >= 1`.
+#
+# Note: `autopilot_learn` MCP tool doesn't accept episode params today
+# (its schema is `{}`); we populate via the JS surface and verify via
+# the MCP surface, matching how operators would consume the feature.
+check_autopilot_learning_active() {
+  local cli; cli=$(_cli_cmd)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+
+  # Populate via the cli's installed dist code. The mjs surface mirrors what
+  # autopilot-state.ts:tryLoadLearning() would resolve at runtime, so we
+  # also implicitly verify the Phase 3 codemod-rewrite (literal import is
+  # required for Pass 3 to swap `agentic-flow` → `@sparkleideas/agentic-flow`).
+  local populate_out
+  populate_out=$(cd "$TEMP_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" node -e "
+    (async () => {
+      try {
+        const m = await import('@sparkleideas/cli/dist/src/autopilot-state.js');
+        const learning = await m.tryLoadLearning();
+        if (!learning) { console.log('NO_LEARNING'); return; }
+        for (let i = 0; i < 3; i++) {
+          await learning.recordTaskCompletion({
+            taskId: 't-' + i,
+            subject: 'acceptance test populate authentication ' + i,
+            status: 'completed',
+            iterations: 3,
+            durationMs: 5000,
+          });
+        }
+        console.log('POPULATED');
+      } catch (e) {
+        console.log('ERROR:' + (e && e.message ? e.message : String(e)));
+      }
+    })();
+  " 2>&1) || true
+
+  if echo "$populate_out" | grep -q "NO_LEARNING"; then
+    _CHECK_OUTPUT="AutopilotLearning: tryLoadLearning() returned null (producer absent OR subpath not exported) — $(echo "$populate_out" | head -c 200)"
+    return
+  fi
+  if echo "$populate_out" | grep -q "ERROR:"; then
+    _CHECK_OUTPUT="AutopilotLearning: populate failed — $(echo "$populate_out" | head -c 300)"
+    return
+  fi
+  if ! echo "$populate_out" | grep -q "POPULATED"; then
+    _CHECK_OUTPUT="AutopilotLearning: populate produced unexpected output — $(echo "$populate_out" | head -c 300)"
+    return
+  fi
+
+  # Verify via the MCP envelope (the operator-facing read path).
+  _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool autopilot_learn" "" 30
+
+  # autopilot_learn returns { metrics: { available, episodes, patterns, trajectories }, patterns: [...] }
+  if [[ $_RK_EXIT -eq 0 ]] \
+     && echo "$_RK_OUT" | grep -qE '"available"[[:space:]]*:[[:space:]]*true' \
+     && echo "$_RK_OUT" | grep -qE '"episodes"[[:space:]]*:[[:space:]]*[1-9]'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="AutopilotLearning: available + populated (autopilot_learn reports metrics.episodes>=1)"
+  else
+    _CHECK_OUTPUT="AutopilotLearning: read-back failed — exit=$_RK_EXIT, out=$(echo "$_RK_OUT" | head -c 300)"
+  fi
+}

@@ -1052,6 +1052,7 @@ run_check_bg "ctrl-synthesis"   "Context synthesis"      check_context_synthesis
 run_check_bg "ctrl-sl-health"   "Self-learning health"   check_self_learning_health "controller"
 run_check_bg "ctrl-sl-search"   "Self-learning search"   check_self_learning_search "controller"
 run_check_bg "ctrl-adr0061"     "ADR-0061 controllers"   check_adr0061_controller_types "controller"
+run_check_bg "ctrl-autopilot-learn" "Autopilot learning active" check_autopilot_learning_active "controller"
 
 # ADR-0062: Storage & Configuration Unification
 run_check_bg "adr0062-causal"      "Causal graph level 3"         check_adr0062_causal_graph_level3     "adr0062"
@@ -2526,6 +2527,7 @@ collect_parallel "all" \
   "ctrl-batch|Batch operations" "ctrl-synthesis|Context synthesis" \
   "ctrl-sl-health|Self-learning health" "ctrl-sl-search|Self-learning search" \
   "ctrl-adr0061|ADR-0061 controllers" \
+  "ctrl-autopilot-learn|Autopilot learning active" \
   "adr0062-causal|Causal graph level 3" "adr0062-busy|SQLite busy_timeout" \
   "adr0062-rl-cfg|RateLimiter/CB config" "adr0062-hnsw|deriveHNSWParams wired" \
   "adr0063-c1-import|Embedding import agentdb" "adr0063-c2-accessor|getEmbeddingService()" \
