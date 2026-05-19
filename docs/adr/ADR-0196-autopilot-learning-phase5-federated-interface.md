@@ -272,25 +272,67 @@ choice). This ADR covers the interface + adapter only.
 
 ```ts
 export interface FederatedSyncProvider {
-  /** Flush local changes and pull remote. */
-  requestSync(): Promise<SyncReport>;
+  /** Out-of-band signal hook called after each local episode write. */
+  notifyEpisode(episode: AutopilotEpisode): Promise<void>;
 
-  /** Subscribe to episodes arriving from a non-local origin. */
-  onRemoteEpisode(
-    cb: (ep: AutopilotEpisode, originInstallId: string) => void,
-  ): { unsubscribe: () => void };
+  /** Flush local changes since last sync to the remote peer. */
+  push(): Promise<FederatedSyncReport>;
+
+  /** Fetch remote changes since last sync and apply locally. */
+  pull(): Promise<FederatedSyncReport>;
+
+  /** Synchronous snapshot of provider state. Never throws. */
+  status(): FederatedSyncStatus;
+
+  /** Synchronous accessor for the configured strategy. Never throws. */
+  conflictStrategy(): ConflictResolutionStrategy;
 
   /** Stable install identifier (outgoing episode origin). */
   getLocalInstallId(): string;
 }
 ```
 
-Shape rationale: **event-driven inbound, request/response
-outbound, pull cursor via underlying `SyncCoordinator`** — which
-already tracks `lastEpisodeSync` at `SyncCoordinator.ts:38-47`,
-so no new cursor bookkeeping. `AutopilotLearning` default stays
-`NoOpFederatedSyncProvider`, preserving single-install
-behaviour.
+#### Spec deviation note
+
+The shipped interface diverges from the spec text immediately above
+(`requestSync()` + `onRemoteEpisode(cb)` + `getLocalInstallId()`).
+Source of truth: `forks/agentic-flow/agentic-flow/src/services/federated-sync-provider.ts`
+header comment, paraphrased here:
+
+* **`push()` / `pull()` split** replaces the unified `requestSync()`.
+  Rationale: callers can drive sync direction independently, matching
+  `SyncCoordinator.detectChanges` / `applyChanges` split. The adapter
+  wraps a single `SyncCoordinator.sync(ctx)` call to service both
+  directions, so the surface stays compatible with agentdb's primitives
+  while giving callers per-direction control.
+* **`notifyEpisode(episode)` replaces `onRemoteEpisode(cb)`** as the
+  event-subscription pattern. Episode writes already go through
+  `AgentDBService.storeEpisode` → SQL `episodes` table, which
+  `SyncCoordinator.detectChanges()` picks up on next sync. The pull
+  side of inbound delivery is therefore covered by the existing SQL
+  path — no callback registry needed. `notifyEpisode` is the optional
+  out-of-band signal hook a provider can use to trigger an eager push
+  (e.g., the future QUIC provider can stream the episode immediately
+  rather than waiting for the next batch sync window).
+* **`status()` + `conflictStrategy()` accessors** added during
+  implementation to surface provider state to callers that need to
+  reason about federation health without reaching into the adapter
+  internals. Both are synchronous and never throw.
+* **`FederatedSyncReport` + `FederatedSyncStatus` envelope types**
+  introduced to avoid leaking `SyncCoordinator.SyncReport` /
+  `getStatus()` types through the interface boundary. Subset of
+  agentdb's surface; adapter passes fields through verbatim.
+
+Per `feedback-no-fallbacks`: provider methods MUST propagate errors.
+The `NoopFederatedSyncProvider` default does not throw, but any real
+provider (adapter / future QUIC) MUST surface failures. The
+`notifyEpisode` hook called from `AutopilotLearning._record` re-throws
+— no silent catch.
+
+Cursor bookkeeping unchanged: `SyncCoordinator` already tracks
+`lastEpisodeSync` at `SyncCoordinator.ts:38-47`, so the adapter does
+not need to maintain its own. `AutopilotLearning` default stays
+`NoopFederatedSyncProvider`, preserving single-install behaviour.
 
 ## Implementation phases
 
@@ -426,3 +468,4 @@ All of the following belong to the future federation-runtime ADR:
 | 2026-05-19 | `3fa9ec9` | `feat(autopilot): ADR-0195 Phase 4 episode:recorded emit in _record` — co-ships `agentic-flow/src/services/federated-sync-provider.ts` (interface + NoopFederatedSyncProvider) + `sync-coordinator-federated-adapter.ts` (adapter over agentdb's SyncCoordinator). |
 | 2026-05-19 | `d06ba2c` | `feat(autopilot): ADR-0196 Phase 5 _record stamping + SyncCoordinator adapter` — _record stamps originInstallId pre-write, advances _vectorClock post-write (security hardening: failed writes do not leak clock ticks), constructs stampedEpisode + invokes provider.notifyEpisode after local persistence. |
 | 2026-05-19 | `0f6f37f` | `fix(autopilot): ADR-0196 install-id security hardening (256-byte cap + UUIDv4 validation)` — `getOrCreateInstallId` now caps file reads at 256 bytes and validates `[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}` shape before accepting; malformed / oversized content triggers a `console.warn` and re-mint. Addresses security-review item from recovery brief. |
+| 2026-05-19 | n/a (doc reconciliation) | Interface shape diverged from initial spec during implementation: `requestSync()` + `onRemoteEpisode(cb)` → `push() / pull() / notifyEpisode() / status() / conflictStrategy()`. Rationale captured in §"Interface shape" → "Spec deviation note" subsection. Source-of-truth header comment retained in `forks/agentic-flow/agentic-flow/src/services/federated-sync-provider.ts:10-33` as historical record. ADR text now matches shipped code; no source-code changes. |
