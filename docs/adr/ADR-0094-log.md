@@ -6,6 +6,51 @@
 
 ---
 
+## 2026-05-19 — ADR-0194/0195/0196 acceptance groups registered — 6 new closure-criterion checks
+
+Three new acceptance check groups landed in `scripts/test-acceptance.sh` + `scripts/test-acceptance-fast.sh` (commit `3905a79`), covering the AutopilotLearning Phase 3/4/5 ADRs that shipped this session.
+
+### New groups
+
+| Group | Check file | Surfaces under test | Closure criterion |
+|---|---|---|---|
+| `adr0194` | `lib/acceptance-adr0194-checks.sh` | `autopilot patterns --json` | `engine: 'keyword'\|'embedding-cluster'` present + ≥1 pattern from cross-lexical-seeded corpus; empty corpus returns clean `[]` |
+| `adr0195` | `lib/acceptance-adr0195-checks.sh` | `autopilot subscribe` event bus + `agentdb-service.ts` source | `episode:recorded` event delivered after a write; broken `learningSystem.predictAction` probe gone from published source (ADR-0197 Finding 1) |
+| `adr0196` | `lib/acceptance-adr0196-checks.sh` | `autopilot federation status --json` + episode metadata | FederatedSyncProvider interface fields exposed; episode metadata carries `originInstallId` |
+
+Total: 6 new check functions (2 per group). All fail-loud (no `skip_accepted` masking until features exist), use `_cli_cmd` per `reference-cli-cmd-helper`, three-way bucket pattern from ADR-0090.
+
+### Coverage entries
+
+| Check ID | ADR | Fork landing commit | Validates |
+|---|---|---|---|
+| `adr0194-populated` | 0194 | `agentic-flow@f3e48a1` | Phase 3 cross-lexical clustering path executes + reports `engine` |
+| `adr0194-empty` | 0194 | `agentic-flow@f3e48a1` | Phase 3 empty-corpus contract (clean `[]`, no false-positive cluster) |
+| `adr0195-subscribe` | 0195 | `agentic-flow@31a0c25`, `3fa9ec9` | Phase 4 EventEmitter bus delivers `episode:recorded` after `_record` |
+| `adr0195-predictAction` | 0195 / 0197 F1 | `agentic-flow@dc41afc` | Broken probe removed from published `agentdb-service.ts` |
+| `adr0196-fed-status` | 0196 | `agentic-flow@d06ba2c`, `agentdb@3c322cc` | FederatedSyncProvider interface contract |
+| `adr0196-episode-origin` | 0196 | `agentic-flow@d06ba2c`, `0f6f37f` | Episode metadata stamping + 256-byte cap + UUIDv4 validation |
+
+### Wiring
+
+Both runners (full cascade + fast-iteration) updated:
+
+* `scripts/test-acceptance.sh` — three new `run_check_bg` + `collect_parallel` blocks (Groups 9/10/11) added inside the existing Phase 5 init wave (`phase5-init-config`), reusing the Phase 5 init dir (`P5_DIR`) as the snapshot source.
+* `scripts/test-acceptance-fast.sh` — three new `_FAST_RUN_GROUPS` branches; export `P5_DIR=$E2E_DIR` since the fast runner doesn't pre-init a Phase 5 dir for every invocation.
+
+### Streak status
+
+Coverage registration only — no full-cascade run logged at this entry. Closure-criterion validation runs as part of the `npm run release` that follows; on green, this entry becomes the registration anchor and the next cascade-validating entry records the actual pass/fail outcomes.
+
+### Cross-references
+
+* ADR-0194 / -0195 / -0196 mark `implemented` (commit `0595520`).
+* Integration ledger rows for all 13 fork landing commits in `docs/upstream/INTEGRATION-LEDGER.md` (commit `b301d55`).
+* Coordination map (file-ownership matrix per agent) in `docs/plans/adr0194-0196-coordination-map.md` (commit `ee3418d`).
+* Side-effect findings ADR-0197 Finding 1 + ADR-0198 Findings 1+2 — Resolution sections updated in same wave (commit `ee3418d`).
+
+---
+
 ## 2026-05-11 — ADR-0166 Option F shipped — 5/9 controllers wired, 674/674 green
 
 ADR-0166 Phase 1 + 1.5 + 2 + Phase 3 (Option F) shipped across agentdb patches 44–48. Five of nine augmented controllers now mirror their embedding writes into a sqlite-vec `vec0` virtual table for SQL-side k-NN; the remaining four are either implicit-via-HM, deferred (no clear embedding pipeline at controller level), or N/A. Validating acceptance run: `accept-2026-05-11T173048Z` — 674 pass / 0 fail / 0 skip_accepted (5m 5s wall-clock).
