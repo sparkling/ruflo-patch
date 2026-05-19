@@ -136,6 +136,18 @@ not seeded here; backfill as encountered.
 | `c2af4dc` | 2026-05-06 | agentdb delete API on GraphDatabaseAdapter + ReflexionMemory | retargeted | `8b3388b22` (in forks/agentdb) | 0186 | confirmed 2026-05-18: deleteNode/deleteEdge/deleteHyperedge/deleteEpisode all present in forks/agentdb at canonical paths via the ADR-0161 extraction commit (same day as upstream) |
 | `d231a13` | 2026-05-06 | clean up repo root + bump agentdb submodule | hand-ported | `a24a00e` | 0186 | `.gitignore` only |
 | `b280a4c` | 2026-05-09 | WebSocket QUIC fallback for federation transport (#153) | hand-ported | `f299cf49e` | 0186 | conflicts on agentic-flow/package.json + package-lock.json resolved to ours |
+| `ADR-058` (doc) | 2026-05-19 | upstream agentic-flow ADR-058 — Phase 3 GNN pattern history (partial) | fork-local | `f3e48a1` | 0194 | implements ADR-0194 Phase 3 embedding-cluster pattern discovery — keyword-vs-embedding engine probe + cosine-cluster path in `autopilot-learning.ts`. Upstream-informed by agentic-flow/ADR-058 but scope-corrected: ADR-0194 §Decision Outcome substitutes cosine clustering on existing 768d episode embeddings for the upstream GNN proposal (rejected as gold-plating for the 124-subject corpus). |
+| `(local synthesis)` | 2026-05-19 | unit tests for ADR-0194/0195/0196 | fork-local | `c89a782` | 0194,0195,0196 | unit-test suite covering all three ADRs; no upstream analog |
+| `(local synthesis)` | 2026-05-19 | integration tests for ADR-0194/0195/0196 | fork-local | `9b55d88` | 0194,0195,0196 | integration-test suite covering all three ADRs; no upstream analog |
+| `ADR-059` (doc) | 2026-05-19 | upstream agentic-flow ADR-059 — federation roadmap (partial) | fork-local | `31a0c25` | 0195 | implements ADR-0195 Phase 4 cross-controller event bus + LearningSystem subscriber bridge inside `AgentDBService`. Also absorbs ADR-0197 Finding 1: removes the broken `predictAction` probe and provides the legitimate `predict`/`submitFeedback` consumer at a different boundary (subject-hash sessionId per ADR-0195 §Decision Outcome §Contract). Upstream-informed by agentic-flow/ADR-059 §Phase 4 sketch but local design diverges: episode:recorded bus over EventEmitter, not the upstream pub/sub fabric. |
+| `(local synthesis)` | 2026-05-19 | ADR-0195 Phase 4 `_resolveEventBus` + `_emitLearningEvent` helpers | fork-local | `1c0a079` | 0195 | helper extraction for Phase 4 bus wiring |
+| `(local synthesis)` | 2026-05-19 | ADR-0195 Phase 4 `episode:recorded` emit in `_record` | fork-local | `3fa9ec9` | 0195 | producer-side emit at the autopilot-learning episode boundary |
+| `(local synthesis)` | 2026-05-19 | ADR-0197 Finding 1 — predictAction probe removal | fork-local | `dc41afc` | 0197 | dead-on-arrival `learningSystem.predictAction?.(...)` probe removed; legitimate consumer landed via `31a0c25` (ADR-0195 Phase 4 subscriber) instead. See ADR-0197 §Resolution (2026-05-19). |
+| `ADR-059` (doc) | 2026-05-19 | upstream agentic-flow ADR-059 — federation roadmap (partial) | fork-local | `d06ba2c` | 0196 | implements ADR-0196 Phase 5 federated interface — `_record` stamps `originInstallId` on episode metadata + SyncCoordinator adapter (FederatedSyncProvider). Upstream-informed by agentic-flow/ADR-059 §Phase 5 sketch; local design diverges per ADR-0196 §Decision Outcome (VectorClock CRDT primitives re-exported from agentdb instead of agentic-flow-internal). |
+| `(local synthesis)` | 2026-05-19 | ADR-0196 install-id security hardening | fork-local | `0f6f37f` | 0196 | 256-byte cap + UUIDv4 validation on `originInstallId`; closes a follow-up surfaced during security review |
+| `(local synthesis)` | 2026-05-19 | ADR-0198 Finding 1 — vitest install unblock | fork-local | `6fe4fd4` | 0198 | unblocks outer `npm install` + `npx vitest` workflow; path 1 (rvf bump) was reachable. See ADR-0198 §Decision (Finding 1). |
+| `(local synthesis)` | 2026-05-19 | ADR-0198 Finding 2 — autopilot-cli type drift | fork-local | `099a31b` | 0198 | renames `p.taskType→p.pattern`, `p.successRate→p.avgReward`, `p.uses→p.frequency`, drops `prediction.alternatives` access. Landed concurrent with ADR-0195 Phase 4 CLI rewrite. See ADR-0198 §Decision (Finding 2). |
+| `(local precondition)` | 2026-05-19 | husky commit-msg .js→.cjs precondition fix | fork-local | `8cebddd` | (precondition) | unblocked the 11-commit ADR-0194/0195/0196 landing wave; husky was rejecting commits via `.js` hook with ESM syntax |
 
 ## ruvector
 
@@ -168,6 +180,10 @@ Dormant since 2026-02-09 (0 commits ahead). No rows.
 Caught up to upstream tip `a478ab3` (2026-05-06) per ADR-0161 extraction.
 No upstream-fork delta tracked here yet; the `c2af4dc` pending hand-port
 above (in agentic-flow section) will land here when executed.
+
+| Upstream SHA | Date | Subject | Disposition | Local SHA | ADR | Notes |
+|---|---|---|---|---|---|---|
+| `(local synthesis)` | 2026-05-19 | re-export VectorClock + CRDT primitives at top-level | fork-local | `3c322cc` | 0196 | enables ADR-0196 Phase 5 FederatedSyncProvider in agentic-flow to consume the existing agentdb CRDT primitives without reaching into internal paths. No upstream analog. |
 
 ## Notes / future work
 
