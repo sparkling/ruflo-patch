@@ -472,17 +472,58 @@ ADR-0192 landed across 4 release cycles. Final commits:
    / status threw / init threw) now emits a discriminating
    `console.error` line.
 
+6. **AgentDBService API was domain-specific, not generic.** Plan's
+   skeleton had `_agentdbStore(ns, key, value)` / `_agentdbList(ns)`
+   adapter slots assuming a generic key-value store API. Actual
+   service exposes `storeEpisode(EpisodeData)` /
+   `recallEpisodes(query, limit, filters)` — domain-specific shapes
+   for the reflexion-memory subsystem. Implementer mapped autopilot
+   episodes onto the existing API via a sentinel `sessionId =
+   'autopilot:phase1'` + autopilot fields in `metadata` rather than
+   adding a new namespace. Cleaner result — reuses existing schema.
+
+7. **`autopilot_learn` MCP tool's purpose was misread by the plan.**
+   Plan's Phase 5 acceptance check called `mcp exec --tool
+   autopilot_learn --params '{"taskId":...}'` to populate episodes.
+   But `autopilot_learn`'s schema is `properties: {}` and its
+   handler only reads (`getMetrics() + discoverSuccessPatterns()`)
+   — it's a "discover patterns from existing episodes" tool, not a
+   "record an episode" tool. There is no MCP write path; episodes
+   record internally via the Stop hook flow. Implementer pivoted to
+   a `node -e` one-liner that calls `tryLoadLearning() +
+   recordTaskCompletion()` directly from the cli's installed dist
+   code, then verifies via the MCP read path. Lesson: validate the
+   MCP tool's actual surface (input schema + handler body) before
+   designing an acceptance check around it.
+
+8. **MCP envelope string-escapes inner JSON.** Inner result arrives
+   as `\"available\": true` (backslash-escaped quotes inside the
+   outer JSON string) not `"available": true`. The acceptance
+   check's grep needed `\\?"available\\?"` to tolerate both forms.
+   Surfaced post-release-3 in commit `39d972d`.
+
 ### Verification matrix outcome (release-4, 2026-05-19T12:44Z)
 
 | Layer | Outcome | Evidence |
 |---|---|---|
-| Unit | PASS (with caveat) | The 8 existing absent-shape it-blocks pass; the 5 new populated-suite blocks pass when AgentDB is available, otherwise emit visible SKIP warnings |
-| Integration | PASS | Manual probe in `/tmp/adr0192-repro`: `learning.isAvailable() === true`; `recordTaskCompletion` succeeds |
-| Acceptance | PASS | `ctrl-autopilot-learn: PASS` in 1419ms |
-| Doctor | PASS | `doctor -c autopilot-learning` reports `available=true` |
-| ADR closure | PASS | This ADR's status flipped to `implemented`; ADR-0191's autopilot row updated (separate commit); ADR-072 already `Implemented` (pre-existing) |
+| Unit | **DEFERRED** | The 5 new populated-suite it-blocks are syntactically present in `tests/integration/autopilot-drift-learning.test.ts:242+` but **cannot execute via vitest** — the file's pre-existing imports of `../../agentic-flow/src/coordination/drift-detector.js` and `swarm-completion.js` resolve to non-existent source files (orphaned references; same spec-but-never-built shape AutopilotLearning had until this ADR). Vitest aborts at module-load. Phase 4 acceptance for the 8 existing absent-shape blocks + 5 new populated blocks is therefore unverified via the unit harness. Skip semantics ARE improved (`_skippedReason` sentinel + `console.warn`), so when the file is eventually loadable the populated suite is visible-skip rather than silent-pass. **Follow-up**: stub `drift-detector` + `swarm-completion` OR split the populated suite into a standalone test file. Tracked separately. |
+| Integration | PASS | Manual probe in `/tmp/adr0192-repro`: `learning.isAvailable() === true`; `recordTaskCompletion` succeeds; `getMetrics().available === true` |
+| Acceptance | PASS | `ctrl-autopilot-learn: PASS` in 1419ms; release-4 full result: 675/684 passed, 0 failed, 9 skip_accepted |
+| Doctor | PASS | `npx @sparkleideas/cli@latest doctor -c autopilot-learning` reports `available=true episodes=0 patterns=0` |
+| ADR closure | PASS | This ADR's status flipped to `implemented`; ADR-0191's autopilot row updated; ADR-072 already `Implemented` (pre-existing) |
 
 Release-4 totals: **675/684 passed, 0 failed, 9 skip_accepted** (heavy-skip opt-outs).
+
+The Unit row being **DEFERRED rather than PASS** is the honest outcome:
+the acceptance + integration + doctor + ADR-closure rows give the
+functional + observability proof that the implementation works
+end-to-end, but the unit-test row requires resolving the pre-existing
+orphan imports in the test file — a separate sub-task that the
+ADR-0192 implementer agent flagged but did not in-scope. ADR-0192's
+acceptance criteria are met; the missing unit coverage is a known
+follow-up rather than a closure blocker, because the same shape is
+verified end-to-end via release-4's `ctrl-autopilot-learn` populating
+real episodes + reading them back.
 
 ### Lessons captured for future ADRs
 
