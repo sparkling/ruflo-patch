@@ -531,12 +531,18 @@ check_autopilot_learning_active() {
   fi
 
   # Verify via the MCP envelope (the operator-facing read path).
+  # The cli's MCP exec output wraps the tool's JSON envelope as a string-
+  # escaped value inside `result.content[].text` — every quote in the
+  # inner JSON shows up as `\"` in the raw output. The grep patterns
+  # tolerate the optional preceding backslash so they match both:
+  #   "available": true        (when reading the parsed JSON directly)
+  #   \"available\": true      (when reading the escaped MCP envelope)
   _run_and_kill_ro "cd '$TEMP_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool autopilot_learn" "" 30
 
   # autopilot_learn returns { metrics: { available, episodes, patterns, trajectories }, patterns: [...] }
   if [[ $_RK_EXIT -eq 0 ]] \
-     && echo "$_RK_OUT" | grep -qE '"available"[[:space:]]*:[[:space:]]*true' \
-     && echo "$_RK_OUT" | grep -qE '"episodes"[[:space:]]*:[[:space:]]*[1-9]'; then
+     && echo "$_RK_OUT" | grep -qE '\\?"available\\?"[[:space:]]*:[[:space:]]*true' \
+     && echo "$_RK_OUT" | grep -qE '\\?"episodes\\?"[[:space:]]*:[[:space:]]*[1-9]'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="AutopilotLearning: available + populated (autopilot_learn reports metrics.episodes>=1)"
   else
