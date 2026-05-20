@@ -90,7 +90,7 @@ copy_source() {
   local rsync_status_dir
   rsync_status_dir=$(mktemp -d /tmp/ruflo-rsync-XXXXX)
 
-  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P .wasm-cache.json' --filter='P .last-verified.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P .wasm-cache.json' --filter='P .last-verified.json' --filter='P tsconfig.build.json' --filter='P cross-repo/' --exclude=node_modules --exclude=.git --exclude='v3/@claude-flow/hooks/' "${FORK_DIR_RUFLO}/" "${TEMP_DIR}/" \
     && touch "${rsync_status_dir}/ruflo" &
   local pid_ruflo=$!
   # ADR-0150: narrow .node exclude — keep darwin-arm64 (the only arch we build)
@@ -159,7 +159,6 @@ copy_source() {
   for pkg_dir in \
     "${TEMP_DIR}/v3/@claude-flow/memory" \
     "${TEMP_DIR}/v3/@claude-flow/cli" \
-    "${TEMP_DIR}/v3/@claude-flow/hooks" \
     "${TEMP_DIR}/v3/@claude-flow/integration" \
     "${TEMP_DIR}/v3/@claude-flow/embeddings" \
     "${TEMP_DIR}/v3/@claude-flow/neural" \

@@ -185,7 +185,7 @@ run_build() {
   # fork rsynced — stale if a fork-side source change lands without a
   # local `npm run build`.
   local -A _v3_packages=([cli-core]=1 [shared]=1 [memory]=1 [embeddings]=1 [codex]=1 [aidefence]=1
-    [neural]=1 [hooks]=1 [browser]=1 [plugins]=1 [providers]=1 [claims]=1
+    [neural]=1 [browser]=1 [plugins]=1 [providers]=1 [claims]=1
     [guidance]=1 [mcp]=1 [integration]=1 [deployment]=1 [swarm]=1
     [security]=1 [performance]=1 [testing]=1 [cli]=1
     [plugin-agent-federation]=1 [plugin-iot-cognitum]=1)
@@ -198,7 +198,7 @@ run_build() {
     const fs = require('fs');
     const data = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/publish-levels.json', 'utf-8'));
     const v3set = new Set(['cli-core','shared','memory','embeddings','codex','aidefence',
-      'neural','hooks','browser','plugins','providers','claims',
+      'neural','browser','plugins','providers','claims',
       'guidance','mcp','integration','deployment','swarm',
       'security','performance','testing','cli',
       // ADR-0113 Fix 5: federation + iot plugins live under v3/@claude-flow/
@@ -238,7 +238,7 @@ run_build() {
     # cli (Level 5) re-exports from it.
     group_0=(cli-core)
     group_1=(shared memory embeddings codex aidefence)
-    group_2=(neural hooks browser plugins providers claims)
+    group_2=(neural browser plugins providers claims)
     group_3=(guidance mcp integration deployment swarm security performance testing)
     group_4=(cli)
     all_groups=("group_0" "group_1" "group_2" "group_3" "group_4")

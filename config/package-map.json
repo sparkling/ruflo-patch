@@ -7,7 +7,6 @@
   "scoped": {
     "@claude-flow/cli": "@sparkleideas/cli",
     "@claude-flow/memory": "@sparkleideas/memory",
-    "@claude-flow/hooks": "@sparkleideas/hooks",
     "@claude-flow/neural": "@sparkleideas/neural",
     "@claude-flow/shared": "@sparkleideas/shared",
     "@claude-flow/embeddings": "@sparkleideas/embeddings",
@@ -52,7 +51,6 @@
         "claude-flow",
         "@claude-flow/cli",
         "@claude-flow/memory",
-        "@claude-flow/hooks",
         "@claude-flow/neural",
         "@claude-flow/shared",
         "@claude-flow/embeddings",

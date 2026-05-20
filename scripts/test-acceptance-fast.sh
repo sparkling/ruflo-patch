@@ -8,7 +8,7 @@
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
-#         adr0194, adr0195, adr0196, e2e-core, e2e-storage
+#         adr0194, adr0195, adr0196, adr0204, e2e-core, e2e-storage
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -468,6 +468,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0196"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     echo "── ADR-0196 (AutopilotLearning Phase 5 federated interface) ──"
     _fast_run "adr0196-fed-status"     check_adr0196_federation_status_interface
     _fast_run "adr0196-episode-origin" check_adr0196_episode_originInstallId
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0204"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0204-checks.sh" ]]; then
+    # acceptance-adr0204-checks.sh sourced via the glob loop above
+    echo "── ADR-0204 (MCP server consolidation: archivist bootstrap, schema validation, transport parity) ──"
+    _fast_run "adr0204-archivist-rt"       check_adr0204_archivist_rt
+    _fast_run "adr0204-bad-payload"        check_adr0204_bad_payload
+    _fast_run "adr0204-transport-parity"   check_adr0204_transport_parity
+    _fast_run "adr0204-mount"              check_adr0204_mount
   fi
 fi
 

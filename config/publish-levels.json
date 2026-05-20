@@ -48,7 +48,6 @@
       "description": "Depends on Level 2",
       "packages": [
         "@sparkleideas/neural",
-        "@sparkleideas/hooks",
         "@sparkleideas/browser",
         "@sparkleideas/plugins",
         "@sparkleideas/providers",

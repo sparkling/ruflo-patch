@@ -121,6 +121,8 @@ not seeded here; backfill as encountered.
 | `fdc00cce3` `f514495c8` `3c6d126b7` `9d43d8fdb` `3c0430b8b` `0666796a0` `f8ab5a325` `5b71c7ac1` | 2026-05-{03..16} | chore(verify)/feat(verification): witness manifest regenerations | skip-by-policy | — | 0186 | Batch J — fork-local witness manifest (verification.md.json) supersedes upstream regenerations |
 | `00039a833` `6f11cc794` `7523e4daa` `1c266663c` `cb3809820` | 2026-05-05 | README prose / branding switches (Cognitum.One affiliate, `npx ruvflo init` typo, "Update branding from Claude Flow to Ruflo") | skip-by-policy | — | 0186 | Batch J — sparkling brand kept per ADR-0143 |
 | `a075c59fc` | 2026-05-09 | chore: bump versions for #1874 publish chain | skip-mechanical | — | 0186 | Batch J — upstream's #1874 publish chain not applicable to our fork chain |
+| `d065b2d65` | 2026-05-09 | fix #1874 + add MCP protocol-compliance smoke layer | cherry-picked | `241435e4d` | 0204 | Resolves F-09-003 HTTP struct-on-wire `protocolVersion` (struct→spec date-string). Conflicts in CI/`verification/*` resolved toward fork state (not load-bearing); payload `mcp/src/server.ts` + `shared/src/mcp/server.ts` + `test-mcp-protocol.mjs` applied. (d.2) stdio-literal centralization split to a follow-up ADR. |
+| _standing rule (ADR-0203)_ | — | SHAs touching `v3/@claude-flow/hooks/` | superseded-by-adr | — | 0203 | Future upstream-sync waves classify all `v3/@claude-flow/hooks/` SHAs as superseded-by-adr (ADR-0203 eliminated the dead package's consumers; tree kept byte-identical via rsync-exclude). Fork impl: `2db0fdaeb`. |
 
 ## agentic-flow
 
