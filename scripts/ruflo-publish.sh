@@ -490,21 +490,22 @@ main() {
     set_fork_head "$name" "$sha"
   done
 
-  # Build pipeline: copy -> codemod -> build
+  # Build pipeline: copy -> codemod -> build -> test
   create_temp_dir
   run_phase "copy-source" copy_source
   run_phase "codemod" run_codemod
-  # Run build and preflight + unit tests in parallel
-  run_phase "test-ci" run_tests_ci &
-  local _test_pid=$!
+  # Build BEFORE test-ci (NOT in parallel). Many unit tests load the built
+  # /tmp/ruflo-build dist (e.g. bug4-storage-init-concurrent loads the native
+  # rvf-backend.js; ~15 tests resolve dist artifacts). Running test-ci in
+  # parallel with build raced those tests against a stale/mid-build tree, and
+  # blocked shipping any fix whose own regression test needs the NEW build
+  # (chicken-and-egg: test-ci validated last release's dist, so a fix could
+  # never go green). Sequencing build first makes test-ci validate THIS
+  # release's complete, consistent artifact. Surfaced by the ADR-0167
+  # loadFromDisk RVFR-prefix fix (see ADR-0167 amendment 2026-05-21).
   run_phase "build" run_build
   write_build_manifest
-
-  # Wait for parallel test-ci to complete
-  if ! wait "$_test_pid"; then
-    log_error "test-ci failed (ran in parallel with build)"
-    return 1
-  fi
+  run_phase "test-ci" run_tests_ci
 
   # Publish to local Verdaccio + run acceptance tests
   run_phase "publish-verdaccio" run_publish_verdaccio
