@@ -299,14 +299,22 @@ ENDSCRIPT
   result=$(cd "$TEMP_DIR" && node "$script" 2>&1) || true
   rm -f "$script"
 
-  if [[ "$result" == SKIP:* ]]; then
+  # Match the script's SKIP:/OK: verdict on its own line. We capture 2>&1 for
+  # diagnostics, so library stderr (e.g. an agentdb load banner) may precede the
+  # verdict — a whole-string "== OK:*" prefix match is fragile to that. The
+  # node script's own `count < 10` guard is the real data assertion; here we
+  # just locate its verdict line.
+  local skip_line ok_line
+  skip_line=$(printf '%s\n' "$result" | grep -m1 '^SKIP:')
+  ok_line=$(printf '%s\n' "$result" | grep -m1 '^OK:')
+  if [[ -n "$skip_line" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0073: WAL round-trip skipped (${result#SKIP: })"
+    _CHECK_OUTPUT="ADR-0073: WAL round-trip skipped (${skip_line#SKIP: })"
     return
   fi
-  if [[ "$result" == OK:* ]]; then
+  if [[ -n "$ok_line" ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0073: ${result#OK: }"
+    _CHECK_OUTPUT="ADR-0073: ${ok_line#OK: }"
     return
   fi
   _CHECK_OUTPUT="ADR-0073: WAL round-trip failed — $result"

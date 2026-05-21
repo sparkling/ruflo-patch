@@ -379,13 +379,19 @@ check_adr0088_daemon_still_works() {
   fi
 
   # AI Mode must be either 'local' or 'headless' — anything else is a bug.
+  # Strip ANSI colour codes first: the daemon renders the value coloured, so a
+  # literal "AI Mode:[space]*local" match fails on the escape sequence between
+  # the colon and the value. After stripping, allow any non-letter padding
+  # (spaces, table pipes) before the word.
   local mode=""
-  if echo "$status_out" | grep -q 'AI Mode:[[:space:]]*local'; then
+  local status_clean
+  status_clean=$(printf '%s' "$status_out" | sed -E $'s/\x1b\\[[0-9;]*m//g')
+  if echo "$status_clean" | grep -qE 'AI Mode:[^A-Za-z]*local\b'; then
     mode="local"
-  elif echo "$status_out" | grep -q 'AI Mode:[[:space:]]*headless'; then
+  elif echo "$status_clean" | grep -qE 'AI Mode:[^A-Za-z]*headless\b'; then
     mode="headless"
   else
-    _CHECK_OUTPUT="ADR-0088-5: AI Mode is neither 'local' nor 'headless': $(echo "$status_out" | grep 'AI Mode' | head -1)"
+    _CHECK_OUTPUT="ADR-0088-5: AI Mode is neither 'local' nor 'headless' (ANSI-stripped): $(echo "$status_clean" | grep 'AI Mode' | head -1)"
     return
   fi
 
