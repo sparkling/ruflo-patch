@@ -739,7 +739,13 @@ export async function bumpWrapperPin(rootPath, newCliVersion) {
     // Always bump wrapper version if the pin changed; if the pin DIDN'T change
     // and we're called anyway, still bump to be safe — the only caller is the
     // pipeline post-fork-bump path, which means SOMETHING changed.
-    pkg.version = bumpPatchVersion(pkg.version);
+    // Registry-aware bump: max(localN, registryN)+1, so a stale local
+    // package.json version can never regress @latest below the newest
+    // published wrapper. (Fixes the 2026-05-21 patch.214-over-patch.224
+    // regression: bumpPatchVersion did local+1 and republished a LOWER
+    // version with --tag latest, pointing @latest at a wrapper that pinned a
+    // pre-fix cli — so MCP users never got the shipped fixes.)
+    pkg.version = await safeNextVersion(pkg.version, pkg.name);
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
     return true; // changed (version bumped)
   }
@@ -751,7 +757,10 @@ export async function bumpWrapperPin(rootPath, newCliVersion) {
   // and users keep getting the old wrapper from npx cache. Manual repro
   // confirmed: lockstep G1 passed (pin matched registry @latest), wrapper
   // publish "succeeded" (npm didn't error) but published bin was stale.
-  pkg.version = bumpPatchVersion(pkg.version);
+  // Registry-aware bump (see note in the pin-already-matches branch above) —
+  // max(localN, registryN)+1 so @latest can never regress below the newest
+  // published wrapper version.
+  pkg.version = await safeNextVersion(pkg.version, pkg.name);
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   return true;
 }
