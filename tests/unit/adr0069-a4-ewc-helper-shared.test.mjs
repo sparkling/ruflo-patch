@@ -3,10 +3,12 @@
  *
  * The review called out that ~5 files in the agentic-flow fork each carried
  * a copy of the same ~10-line `readEwcLambdaFromConfig(fallback)` helper.
- * The DRY fix: one exported helper in
- *   packages/agentdb/src/config/embedding-config.ts
+ * The DRY fix: one exported helper in the agentdb fork
+ *   forks/agentdb/src/config/embedding-config.ts
  * and every caller imports from there — no in-file `function readEwcLambdaFromConfig`
- * definitions anywhere in the fork.
+ * definitions anywhere. Post-ADR-0161 (vendored packages/agentdb removed), the
+ * cross-fork agentic-flow callers reach it via the `agentdb` package barrel;
+ * agentdb-internal callers import it via a relative embedding-config path.
  *
  * This test is a grep-level invariant: it fails loudly if a duplicate crept
  * back in, and it fails loudly if a call site reverted to a local function.
@@ -115,11 +117,18 @@ for (const caller of KNOWN_CALLERS) {
     assert.ok(existsSync(abs), `caller file missing: ${abs}`);
     const src = readFileSync(abs, 'utf-8');
 
-    // Must import the helper
+    // Must import the helper from the canonical shared module. Post-ADR-0161 the
+    // shared helper lives in the agentdb fork: agentdb-fork callers import it via
+    // a relative embedding-config path; cross-fork (agentic-flow) callers import
+    // it via the `agentdb` package barrel that re-exports it (ADR-0150/0161).
+    const expectedImport = root === FORK_ROOT_AGENTIC
+      ? /import\s*\{[^}]*\breadEwcLambdaFromConfig\b[^}]*\}\s*from\s*['"]agentdb['"]/
+      : /import\s*\{[^}]*\breadEwcLambdaFromConfig\b[^}]*\}\s*from\s*['"][^'"]*embedding-config(?:\.js)?['"]/;
     assert.match(
       src,
-      /import\s*\{[^}]*\breadEwcLambdaFromConfig\b[^}]*\}\s*from\s*['"][^'"]*embedding-config(?:\.js)?['"]/,
-      `${rel} must import readEwcLambdaFromConfig from embedding-config`,
+      expectedImport,
+      `${rel} must import readEwcLambdaFromConfig from the shared helper ` +
+        `(${root === FORK_ROOT_AGENTIC ? "the 'agentdb' package" : 'the embedding-config module'})`,
     );
 
     // Must NOT contain a local definition

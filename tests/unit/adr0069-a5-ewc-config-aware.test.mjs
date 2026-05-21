@@ -2,11 +2,14 @@
 // ADR-0069 Appendix A5 (post-A4 hoist): config-chain EWC lambda residual
 //
 // As of A4 hoist, readEwcLambdaFromConfig lives in the shared module
-//   packages/agentdb/src/config/embedding-config.ts
+//   forks/agentdb/src/config/embedding-config.ts
 // and the two A5 call sites (intelligence-tools.ts + SonaLearningBackend.ts)
-// import from it rather than defining a local helper. This test asserts the
-// post-A4 world: both files import the shared helper, invoke it at the
-// right feature site, and do NOT re-define it locally.
+// import the shared helper rather than defining a local copy. Post-ADR-0161
+// (vendored packages/agentdb removed) the agentic-flow caller imports it via
+// the `agentdb` package barrel; the agentdb-internal caller via a relative
+// embedding-config path. This test asserts that post-A4 world: both files
+// import the shared helper, invoke it at the right feature site, and do NOT
+// re-define it locally.
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -49,12 +52,14 @@ describe('ADR-0069 A5 (post-A4): intelligence-tools.ts', () => {
     assert.ok(existsSync(INTEL_TOOLS_PATH), `Expected ${INTEL_TOOLS_PATH}`);
   });
 
-  it('imports readEwcLambdaFromConfig from the shared embedding-config module', () => {
+  it("imports readEwcLambdaFromConfig from the 'agentdb' package (shared helper)", () => {
     const src = readFileSync(INTEL_TOOLS_PATH, 'utf-8');
+    // Post-ADR-0161 the shared helper is re-exported by the agentdb package;
+    // this cross-fork caller imports it from 'agentdb', not a relative path.
     assert.match(
       src,
-      /import[^;]*\breadEwcLambdaFromConfig\b[^;]*from\s*['"][^'"]*embedding-config[^'"]*['"]/s,
-      'must import readEwcLambdaFromConfig from an embedding-config module path'
+      /import[^;]*\breadEwcLambdaFromConfig\b[^;]*from\s*['"]agentdb['"]/s,
+      "must import readEwcLambdaFromConfig from the 'agentdb' package"
     );
   });
 
