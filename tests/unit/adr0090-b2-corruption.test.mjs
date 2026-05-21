@@ -208,7 +208,12 @@ describe('ADR-0090 Tier B2: loadFromDisk throws RvfCorruptError on corruption (f
         if (existsSync(p + sfx)) truncateSync(p + sfx, 4);
       }
       if (existsSync(p + '.wal')) rmSync(p + '.wal');
-      await assertCorruptThrow(p, /shorter than the 8-byte RVF header/);
+      // A 4-byte file is now classified by ADR-0167 as a partial native
+      // RootHeader ("RootHeader is only N/8 bytes present — peer mid-creating
+      // Phase-1 native file"); accept that message or the legacy "shorter than
+      // the 8-byte RVF header" (older artifact). Both are RvfCorruptError +
+      // "is corrupt" (asserted above) — only the reason wording evolved.
+      await assertCorruptThrow(p, /RootHeader is only \d+\/\d+ bytes present|peer mid-creating|shorter than the 8-byte RVF header/);
     } finally { tryRm(d); }
   });
 
