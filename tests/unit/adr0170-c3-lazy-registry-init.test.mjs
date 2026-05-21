@@ -113,11 +113,15 @@ describe('ADR-0170 Phase C.3: ensureRouter is storage-only', () => {
 // ============================================================================
 
 describe('ADR-0170 Phase C.3: memory_*-axis routes use ensureRouter (storage-only)', () => {
-  const memoryAxisRoutes = ['routeMemoryOp', 'routeEmbeddingOp'];
+  // ADR-0202: routeMemoryOp/routeEmbeddingOp are now thin withRouter() wrappers
+  // delegating to the *Impl functions, which hold the ensureRouter() call. The
+  // RVF-only invariant is unchanged — it just lives in the impl now.
+  const memoryAxisRoutes = ['_routeMemoryOpImpl', '_routeEmbeddingOpImpl'];
 
   for (const fnName of memoryAxisRoutes) {
     it(`${fnName} calls ensureRouter (not ensureRegistry)`, () => {
-      const fnStart = routerSrc.indexOf(`export async function ${fnName}`);
+      const m = routerSrc.match(new RegExp(`(?:export )?async function ${fnName}\\b`));
+      const fnStart = m ? m.index : -1;
       assert.ok(fnStart > -1, `${fnName} must exist`);
       // The await is on the very first line of each route. 200-char window.
       const fnBody = routerSrc.slice(fnStart, fnStart + 200);
@@ -140,14 +144,15 @@ describe('ADR-0170 Phase C.3: agentdb_*-axis routes use ensureRegistry', () => {
     'routePatternOp',     // reasoningBank
     'routeFeedbackOp',    // learningSystem + reasoningBank
     'routeSessionOp',     // reflexion + nightlyLearner
-    'routeLearningOp',    // selfLearningRvfBackend + memoryConsolidation
+    '_routeLearningOpImpl', // selfLearningRvfBackend + memoryConsolidation (ADR-0202: routeLearningOp is now a withRouter wrapper)
     'routeReflexionOp',   // reflexion
     'routeCausalOp',      // causalGraph + causalRecall
   ];
 
   for (const fnName of registryAxisRoutes) {
     it(`${fnName} calls ensureRegistry (not ensureRouter)`, () => {
-      const fnStart = routerSrc.indexOf(`export async function ${fnName}`);
+      const m = routerSrc.match(new RegExp(`(?:export )?async function ${fnName}\\b`));
+      const fnStart = m ? m.index : -1;
       assert.ok(fnStart > -1, `${fnName} must exist`);
       const fnBody = routerSrc.slice(fnStart, fnStart + 400);
       assert.ok(

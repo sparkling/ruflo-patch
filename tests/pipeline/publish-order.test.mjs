@@ -57,18 +57,14 @@ const KNOWN_DEPS = {
   '@sparkleideas/aidefence': [],
   // Level 3
   '@sparkleideas/neural': ['@sparkleideas/memory'],
-  '@sparkleideas/hooks': [
-    '@sparkleideas/memory',
-    '@sparkleideas/neural',
-    '@sparkleideas/shared',
-  ],
+  // @sparkleideas/hooks removed from the publish set (ADR-0203 — dead package)
   '@sparkleideas/browser': [],
   '@sparkleideas/plugins': [],
   '@sparkleideas/providers': [],
   '@sparkleideas/claims': [],
   // Level 4
   '@sparkleideas/guidance': [
-    '@sparkleideas/hooks',
+    // @sparkleideas/hooks dep removed (ADR-0203)
     '@sparkleideas/memory',
     '@sparkleideas/shared',
   ],
@@ -190,20 +186,21 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (24+5+7+24+2)', () => {
+    it('all expected packages are present across all levels (25+5+6+24+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5: L1=22, L2=5, L3=7,
+      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5: L1=25, L2=5, L3=6,
       // L4=24 (22 base + 2 ADR-0113 federation/iot plugins), L5=2
       // ADR-0177 Phase 1.6: +config-chain to L1 (dep of agentdb/memory)
+      // ADR-0203: -hooks from L3 (dead package removed from publish set)
       assert.equal(LEVELS[0].length, 25, 'Level 1 should have 25 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm/learning WASM + ADR-0150 agentic-jujutsu + ADR-0162 cli-core + ADR-0177 config-chain)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
-      assert.equal(LEVELS[2].length, 7, 'Level 3 should have 7 packages');
+      assert.equal(LEVELS[2].length, 6, 'Level 3 should have 6 packages (ADR-0203 removed hooks)');
       assert.equal(LEVELS[3].length, 24, 'Level 4 should have 24 packages (22 base + ADR-0113 federation + iot)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        63,
-        `Expected 63 packages total (ADR-0113 Fix 5: 58 base + federation + iot + ADR-0150 agentic-jujutsu + ADR-0162 cli-core + ADR-0177 config-chain), got ${allPackages.length}`
+        62,
+        `Expected 62 packages total (ADR-0113 Fix 5: 58 base + federation + iot + ADR-0150 agentic-jujutsu + ADR-0162 cli-core + ADR-0177 config-chain, ADR-0203 -hooks), got ${allPackages.length}`
       );
     });
 

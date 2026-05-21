@@ -1449,8 +1449,10 @@ describe('ADR-0084 T4.2: routeCausalOp recall handles causalRecall.search throw'
  * Uses brace counting for robustness.
  */
 function extractFunctionBody(source, name) {
-  const marker = `export async function ${name}`;
-  const start = source.indexOf(marker);
+  // ADR-0202: some routes are now thin withRouter() wrappers whose real body
+  // lives in a non-exported `async function _route*Impl`. Match both forms.
+  const m = source.match(new RegExp(`(?:export )?async function ${name}\\b`));
+  const start = m ? m.index : -1;
   if (start === -1) return null;
 
   let depth = 0;
@@ -1473,7 +1475,7 @@ const ROUTE_METHODS = [
   'routePatternOp',
   'routeFeedbackOp',
   'routeSessionOp',
-  'routeLearningOp',
+  '_routeLearningOpImpl', // ADR-0202: routeLearningOp is now a withRouter wrapper; body lives here
   'routeCausalOp',
 ];
 
