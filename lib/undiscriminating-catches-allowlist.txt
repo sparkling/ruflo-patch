@@ -1,386 +1,274 @@
 # scripts/check-undiscriminating-catches.mjs allowlist
 #
-# Format: <relative-path>:<line-number>  (one per line)
-# Lines starting with # are comments; blank lines are ignored.
+# Format: `<relative-path> :: <whitespace-collapsed catch clause>` (one per line).
+# CONTENT-KEYED (not line-keyed): an entry is matched by the catch clause text
+# itself, so it survives line shifts from edits elsewhere in the file. An entry
+# only goes stale when THAT catch's own code/comment changes — re-review then.
+# Identical clauses within one file collapse to a single entry.
 #
-# This detector is stricter than check-silent-catches.mjs:
-# - silent-catches allows `catch { /* rationale */ }` (comment IS the
-#   surfacing per project convention).
-# - undiscriminating-catches flags THE SAME PATTERN because the comment
-#   doesn't actually discriminate at runtime — every error type gets
-#   swallowed uniformly. That's the failure mode that hid the
-#   ESM-vs-CJS error in the 2026-05-19 TrainingPipeline regression.
+# Regenerate after deliberate changes:  node scripts/check-undiscriminating-catches.mjs --update
+# Add an entry ONLY if the catch genuinely should swallow all error types without
+# discrimination AND a code-level fix is not appropriate.
 #
-# Add an entry here ONLY if the catch genuinely should swallow all
-# error types without discrimination AND a code-level fix is not
-# warranted. Examples of legitimate uses:
-#   - test/fixture cleanup paths where any failure is unrecoverable
-#   - polling loops where the next iteration retries
-#   - shutdown handlers that must not throw
-# Otherwise, the right fix is to add `if (e.code !== '...') throw e`
-# discriminating logic, or a `console.warn` log.
-#
-# ─── Status (post ADR-0191 Phase D, 2026-05-19) ──────────────────
-# The 29 HIGH-class catches identified by ADR-0191 cluster analysis
-# (Cluster A optional imports, B controller registry, C defender.hasPII,
-# D state files, E HNSW status, + 3 singletons) were resolved via 8
-# deletions + 10 catch+log restorations + 2 typed-contracts +
-# 4 tryOptionalImport helpers + 5 inline ENOENT-only discriminations.
-# Detector HIGH count: 0.
-#
-# The 342 entries below are LOW/MEDIUM-risk catches that stayed visible
-# during Phase B (per ADR-0191 §"Decision Outcome": auto-allowlist was
-# deferred to Phase D). They are baseline-allowlisted as of 2026-05-19
-# so the Phase D gate fires only on NEW HIGH-class regressions of the
-# ADR-0082 silent-fallback shape, not on the pre-existing LOW/MEDIUM
-# inventory. Phase D revisit (ADR-0191 §"Concrete plan" step 4) reads
-# each LOW pattern and either confirms it's safe (keep allowlisted) or
-# converts it to discriminating logic (remove from allowlist).
-../forks/agentic-flow/src/controller/test/e2e/run_local_validation.js:340
-../forks/agentic-flow/src/mcp/agentdb-integration.ts:115
-../forks/agentic-flow/src/mcp/agentdb-integration.ts:157
-../forks/agentic-flow/src/mcp/agentdb-integration.ts:177
-../forks/agentic-flow/src/mcp/agentdb-integration.ts:211
-../forks/agentic-flow/src/mcp/agentdb-integration.ts:228
-../forks/agentic-flow/src/mcp/agentdb-integration.ts:95
-../forks/agentic-flow/src/routing/provider-matcher.ts:57
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/gguf-engine.ts:349
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/gguf-engine.ts:437
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/gguf-engine.ts:438
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/ruvllm-bridge.ts:156
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/ruvllm-bridge.ts:248
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/ruvllm-bridge.ts:304
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts:156
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts:188
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts:204
-../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts:370
-../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts:152
-../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts:204
-../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts:237
-../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts:241
-../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts:262
-../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts:283
-../forks/ruflo/v3/@claude-flow/cli/src/commands/agent-wasm.ts:51
-../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts:45
-../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts:527
-../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts:529
-../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts:539
-../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts:549
-../forks/ruflo/v3/@claude-flow/cli/src/commands/analyze.ts:1058
-../forks/ruflo/v3/@claude-flow/cli/src/commands/analyze.ts:1208
-../forks/ruflo/v3/@claude-flow/cli/src/commands/analyze.ts:1316
-../forks/ruflo/v3/@claude-flow/cli/src/commands/analyze.ts:870
-../forks/ruflo/v3/@claude-flow/cli/src/commands/autopilot.ts:217
-../forks/ruflo/v3/@claude-flow/cli/src/commands/cleanup.ts:222
-../forks/ruflo/v3/@claude-flow/cli/src/commands/cleanup.ts:64
-../forks/ruflo/v3/@claude-flow/cli/src/commands/daemon.ts:114
-../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts:197
-../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts:431
-../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts:508
-../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts:638
-../forks/ruflo/v3/@claude-flow/cli/src/commands/embeddings.ts:1281
-../forks/ruflo/v3/@claude-flow/cli/src/commands/embeddings.ts:1365
-../forks/ruflo/v3/@claude-flow/cli/src/commands/embeddings.ts:759
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:1586
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts:946
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:1882
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:2291
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:2302
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:2317
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4065
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4076
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4110
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4120
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4143
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4158
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4179
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4234
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4318
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4342
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4368
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4390
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4405
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4418
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:4432
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:72
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:85
-../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts:97
-../forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts:215
-../forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts:356
-../forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts:79
-../forks/ruflo/v3/@claude-flow/cli/src/commands/mcp.ts:211
-../forks/ruflo/v3/@claude-flow/cli/src/commands/mcp.ts:218
-../forks/ruflo/v3/@claude-flow/cli/src/commands/mcp.ts:91
-../forks/ruflo/v3/@claude-flow/cli/src/commands/memory.ts:1427
-../forks/ruflo/v3/@claude-flow/cli/src/commands/memory.ts:1440
-../forks/ruflo/v3/@claude-flow/cli/src/commands/migrate.ts:112
-../forks/ruflo/v3/@claude-flow/cli/src/commands/migrate.ts:51
-../forks/ruflo/v3/@claude-flow/cli/src/commands/migrate.ts:55
-../forks/ruflo/v3/@claude-flow/cli/src/commands/migrate.ts:78
-../forks/ruflo/v3/@claude-flow/cli/src/commands/migrate.ts:95
-../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts:245
-../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts:291
-../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts:314
-../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts:852
-../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts:862
-../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts:914
-../forks/ruflo/v3/@claude-flow/cli/src/commands/performance.ts:435
-../forks/ruflo/v3/@claude-flow/cli/src/commands/performance.ts:447
-../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts:274
-../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts:287
-../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts:669
-../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts:671
-../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/backup.ts:626
-../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/backup.ts:644
-../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/init.ts:266
-../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/status.ts:298
-../forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts:422
-../forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts:729
-../forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts:88
-../forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts:90
-../forks/ruflo/v3/@claude-flow/cli/src/commands/start.ts:175
-../forks/ruflo/v3/@claude-flow/cli/src/commands/status.ts:134
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:118
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:122
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:182
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:184
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:227
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:229
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:25
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:415
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:49
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:68
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:72
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:744
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:82
-../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts:94
-../forks/ruflo/v3/@claude-flow/cli/src/commands/verify.ts:105
-../forks/ruflo/v3/@claude-flow/cli/src/commands/verify.ts:120
-../forks/ruflo/v3/@claude-flow/cli/src/fs-secure.ts:100
-../forks/ruflo/v3/@claude-flow/cli/src/index.ts:303
-../forks/ruflo/v3/@claude-flow/cli/src/index.ts:318
-../forks/ruflo/v3/@claude-flow/cli/src/index.ts:40
-../forks/ruflo/v3/@claude-flow/cli/src/index.ts:542
-../forks/ruflo/v3/@claude-flow/cli/src/index.ts:604
-../forks/ruflo/v3/@claude-flow/cli/src/index.ts:615
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:1123
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:1430
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:2086
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:2161
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:257
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:495
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:513
-../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts:877
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agent-execute-core.ts:47
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agent-tools.ts:87
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts:277
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts:293
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts:942
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/browser-tools.ts:97
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/claims-tools.ts:83
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/config-tools.ts:125
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/coordination-tools.ts:132
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts:133
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts:92
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts:100
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts:134
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts:892
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts:893
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:262
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:311
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:381
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:485
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:491
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:510
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:516
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:598
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts:61
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:1176
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:1248
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:1273
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts:1694
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1161
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1202
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1387
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1549
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1659
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1674
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1896
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1977
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1979
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:1989
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2018
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2067
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2089
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2544
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2566
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:260
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2683
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:271
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2746
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:2842
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:3256
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:3301
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:3684
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:431
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:555
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts:624
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:1101
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:319
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:332
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:402
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:535
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:545
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:567
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:613
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:686
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:966
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts:979
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts:132
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts:149
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts:44
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts:63
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts:74
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/performance-tools.ts:75
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/progress-tools.ts:153
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/progress-tools.ts:163
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/progress-tools.ts:177
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/progress-tools.ts:77
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/progress-tools.ts:80
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/security-tools.ts:104
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts:110
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts:173
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts:205
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts:233
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts:242
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts:251
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts:447
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts:169
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts:176
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts:180
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts:195
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts:569
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts:70
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts:83
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/terminal-tools.ts:63
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/types.ts:69
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts:134
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/workflow-tools.ts:90
-../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts:443
-../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts:617
-../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts:716
-../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts:1037
-../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts:356
-../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts:533
-../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts:817
-../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts:830
-../forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts:125
-../forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts:145
-../forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts:227
-../forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts:234
-../forks/ruflo/v3/@claude-flow/cli/src/memory/sona-optimizer.ts:427
-../forks/ruflo/v3/@claude-flow/cli/src/memory/sona-optimizer.ts:460
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts:223
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts:252
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts:105
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts:368
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts:83
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/enhanced-model-router.ts:392
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts:389
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts:432
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts:36
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts:539
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts:562
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts:571
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts:688
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts:707
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/q-learning-router.ts:27
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts:287
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts:206
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts:241
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts:257
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts:272
-../forks/ruflo/v3/@claude-flow/cli/src/services/claim-service.ts:1017
-../forks/ruflo/v3/@claude-flow/cli/src/services/claim-service.ts:246
-../forks/ruflo/v3/@claude-flow/cli/src/services/config-file-manager.ts:191
-../forks/ruflo/v3/@claude-flow/cli/src/services/container-worker-pool.ts:469
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts:119
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts:132
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts:138
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts:197
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts:202
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts:77
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts:92
-../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts:1008
-../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts:1093
-../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts:1198
-../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts:1405
-../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts:788
-../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts:869
-../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts:872
-../forks/ruflo/v3/@claude-flow/cli/src/services/registry-api.ts:179
-../forks/ruflo/v3/@claude-flow/cli/src/services/ruvector-training.ts:320
-../forks/ruflo/v3/@claude-flow/cli/src/services/ruvector-training.ts:409
-../forks/ruflo/v3/@claude-flow/cli/src/transfer/storage/gcs.ts:158
-../forks/ruflo/v3/@claude-flow/cli/src/transfer/store/discovery.ts:288
-../forks/ruflo/v3/@claude-flow/cli/src/transfer/store/discovery.ts:306
-../forks/ruflo/v3/@claude-flow/cli/src/update/executor.ts:65
-../forks/ruflo/v3/@claude-flow/cli/src/update/rate-limiter.ts:52
-
-# --- ADR-0202/0204 line-shift regeneration (2026-05-21) ---
-# Pre-existing allowlisted catches re-pinned at current lines after
-# memory-router.ts (_isPersistent/withRouter), worker-daemon.ts
-# (setRouterPersistent in start()), mcp-server.ts (validateSchema) edits.
-# No new swallow-all catches introduced (withRouter logs/rethrows).
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-server.ts:875
-../forks/ruflo/v3/@claude-flow/cli/src/mcp-server.ts:884
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:365
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:372
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:490
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:500
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:580
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:609
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:616
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:721
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:791
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:1005
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:1022
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:1031
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:1055
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:1271
-../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:1763
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:476
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:551
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:741
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:786
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:880
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:883
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1204
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1249
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1367
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1665
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1671
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1686
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1760
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1787
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1794
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1830
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1834
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1856
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:1864
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2080
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2129
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2148
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2164
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2194
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2208
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2233
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2254
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2266
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2306
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2439
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2499
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2565
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2717
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2723
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts:2732
+../forks/agentic-flow/src/controller/test/e2e/run_local_validation.js :: catch (error) { // Skip directories we can't read }
+../forks/agentic-flow/src/mcp/agentdb-integration.ts :: catch { /* fall through to Map */ }
+../forks/agentic-flow/src/routing/provider-matcher.ts :: catch { // Fall through to keyword matching }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/gguf-engine.ts :: catch { /* fall through to single-chunk fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/gguf-engine.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/ruvllm-bridge.ts :: catch { /* fall through */ }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/ruvllm-bridge.ts :: catch { // GGUF engine is optional }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/ruvllm-bridge.ts :: catch { // modelsDir may not exist -- tier 1 and tier 3 still work }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts :: catch { /* keep default */ }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts :: catch { /* manifest-only fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/appliance/rvfa-builder.ts :: catch { /* non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts :: catch { /* skip individual file */ }
+../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts :: catch { /* skip source */ }
+../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts :: catch { // Corrupted log — return empty }
+../forks/ruflo/v3/@claude-flow/cli/src/autopilot-state.ts :: catch { // Corrupted state file — return defaults }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/agent-wasm.ts :: catch { // Gallery may not be available in all builds }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts :: catch { /* no agents dir */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts :: catch { /* skip malformed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/agent.ts :: catch { // Non-critical — don't fail the command if metrics update fails }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/analyze.ts :: catch { // Skip directories we can't read }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/analyze.ts :: catch { // Skip files that can't be analyzed }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/analyze.ts :: catch { // Skip files that can't be parsed }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/autopilot.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/cleanup.ts :: catch { /* settings.json parse failed, skip */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/cleanup.ts :: catch { // Permission errors, broken symlinks, etc. }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/daemon.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts :: catch { /* memory-router not available — fall through to legacy candidates */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts :: catch { /* registry never came up; listControllerInfo will return [] and we'll report below */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts :: catch { // Unreadable/invalid JSON -- skip and keep walking up }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts :: catch { // continue to next path }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/embeddings.ts :: catch { /* file access error */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/embeddings.ts :: catch { /* malformed prior config — keep defaults */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/embeddings.ts :: catch { /* use defaults */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts :: catch { /* continue */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hive-mind.ts :: catch { // Use defaults if status call fails }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts :: catch { // Enhanced router not available, skip recommendation }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts :: catch { // Ignore }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts :: catch { // MCP not available, use local data only }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts :: catch { // malformed }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts :: catch { // malformed, try next }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/hooks.ts :: catch { // ps/tasklist unavailable or timed out — report zero }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts :: catch { /* T4: non-fatal — codex init already succeeded */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts :: catch { // Memory init is best-effort during full init }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/init.ts :: catch { // Try next strategy }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/mcp.ts :: catch { /* already exited */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/mcp.ts :: catch { // Continue anyway - the stop/cleanup may partially fail }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/mcp.ts :: catch { // Process may already be dead }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/memory.ts :: catch { // .jslock unreadable — could be a race or permissions issue. // Safer to proceed than refuse (treats unreadable as stale). }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/memory.ts :: catch { // peer pid not alive — stale lock, safe to proceed }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/migrate.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/migrate.ts :: catch { /* ignore parse errors */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts :: catch { /* background learning is best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts :: catch { /* checkpoint save is best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts :: catch { // Benchmark failed, continue }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/neural.ts :: catch { // WASM training failed, fall back to basic }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/performance.ts :: catch { /* no cache */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/performance.ts :: catch { /* timing failed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts :: catch { /* no agent store */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts :: catch { /* no task store */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts :: catch { /* skip if dir unreadable */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/process.ts :: catch { /* skip unreadable files */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/backup.ts :: catch { // Index may already exist }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/backup.ts :: catch { // Skip conflicts }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/init.ts :: catch { // ruvector not available, try pgvector }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/ruvector/status.ts :: catch { // Skip if can't count }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts :: catch { /* JSON parse failed, no vulns */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts :: catch { /* file read error */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/security.ts :: catch { /* npm audit failed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/start.ts :: catch { // Ignore errors if streams can't be unref'd }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/status.ts :: catch { // MCP not running }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { /* fall through */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { /* skip if dir unreadable */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { /* skip malformed coordination files */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { /* skip malformed task files */ }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { // Ignore errors writing state file }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { // Ignore parse errors }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { // Ignore }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/swarm.ts :: catch { // MCP may not be available }
+../forks/ruflo/v3/@claude-flow/cli/src/commands/verify.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/fs-secure.ts :: catch { // Windows / FS without POSIX modes — silently skip. }
+../forks/ruflo/v3/@claude-flow/cli/src/index.ts :: catch { /* best effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/index.ts :: catch { // Silently fail - don't interrupt CLI usage }
+../forks/ruflo/v3/@claude-flow/cli/src/index.ts :: catch { // best effort — sync `exit` handler still runs to release the lock }
+../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts :: catch { /* T4: chmod is best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts :: catch { /* chmod is no-op on Windows / non-POSIX FS */ }
+../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts :: catch { /* malformed JSON — ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts :: catch { // Non-critical — global CLAUDE.md is best-effort }
+../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts :: catch { // Not installed as a package — skip }
+../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts :: catch { // agentdb not available -- use hardcoded defaults above }
+../forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts :: catch { // resolve/read failed (e.g. running from source tree without install) — // leave version as 'unknown'. The sentinel doesn't need to be accurate // to satisfy findProjectRoot(); presence is sufficient. }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-server.ts :: catch { // Ignore errors }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-server.ts :: catch { // Ignore — file may not exist }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agent-execute-core.ts :: catch { /* fall through */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agent-tools.ts :: catch { // Return empty store on error }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch { /* fall through */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch { /* corrupt file — overwrite */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/browser-tools.ts :: catch { /* not Linux or can't read */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/claims-tools.ts :: catch { // Return empty store on error }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/config-tools.ts :: catch { // Fall through to defaults below. }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/coordination-tools.ts :: catch { // Return default store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts :: catch { /* already gone */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts :: catch { // Return empty store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { /* not installed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { // Fall through to fallback }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { // Return null on error }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts :: catch { /* fall through */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts :: catch { /* skip */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts :: catch { // Return empty store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts :: catch { /* already removed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch (err) { // Native not available or database locked - fall back to pure JS // Common errors: "Database already open. Cannot acquire lock." or "MODULE_NOT_FOUND" // This is expected in concurrent environments or when binary isn't installed }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { /* T4: best-effort PID file write */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { /* T4: no PID file — proceed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { /* T4: stale PID from dead process — proceed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { /* corrupt file, start fresh */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { /* non-critical */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { /* non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { /* unreadable PID file */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // AgentDB router not available — fall through to local routing }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Daemon may not be running }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // EWC consolidation failed, continue without it }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Enhanced router not available }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Fall back to empty store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Fall back to placeholder }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Ignore }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Native failed, try pure JS fallback }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Neural store fallback is best-effort }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Neural-tools cache miss is non-fatal — neuralSynced=false is the signal }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Return empty store on error }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Router not available }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // Router not available — fall through }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts :: catch { // SONA learning failed, continue without it }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { /* QueryOptimizer cache write failed — non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { /* scan error */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // AttentionService re-ranking is non-fatal -- continue with unranked results }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // Keep as string }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // MemoryGraph enrichment is non-fatal -- continue with successful result }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // MemoryGraph importance boost is non-fatal -- continue without boosting }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // MetadataFilter is non-fatal -- continue with unfiltered results }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/memory-tools.ts :: catch { // Re-read is non-fatal — the dispatch above already succeeded; the // response envelope just won't carry the embedding-metadata fields. }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts :: catch { // Fall back to hash-based }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts :: catch { // No embedding provider available, will use fallback }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts :: catch { // ONNX provider not available, fall through to mock }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts :: catch { // Return empty store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/neural-tools.ts :: catch { // agentic-flow provider not available, try ONNX }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/performance-tools.ts :: catch { // Return empty store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/progress-tools.ts :: catch (_e) { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/security-tools.ts :: catch { /* fall through to file:// attempt */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts :: catch { /* ignore — fall back to no memory in session */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts :: catch { /* lock may already be gone */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts :: catch { // Legacy JSON restore is the fallback -- SQLite import may not be available }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts :: catch { // Return null on error }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/session-tools.ts :: catch { // Skip invalid files }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts :: catch { /* best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts :: catch { /* fall through with default */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts :: catch { /* skip */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts :: catch { /* skip unparseable */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts :: catch { // Return default metrics }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/system-tools.ts :: catch { // empty store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/task-tools.ts :: catch { // Return empty store on error }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/terminal-tools.ts :: catch { // Return empty store }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/types.ts :: catch { // best-effort — resolver MUST NOT throw }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts :: catch { /* already gone */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/workflow-tools.ts :: catch { // Return default store on error }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts :: catch { // Ignore deletion errors }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts :: catch { // Ignore stat errors }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/ewc-consolidation.ts :: catch { // Silently fail - persistence is best-effort }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { // EWC not available, proceed without consolidation protection }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { // Ignore load errors, start fresh }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { // Ignore save errors }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/intelligence.ts :: catch { // ruvllm recording failed silently }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* LearningSystem feedback non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* ReasoningBank feedback non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* best effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* deferred init failed — controllers that depend on it will surface via getController falling back to intercept.getExisting → null */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* deferred init failed; fall through to intercept */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to intercept */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to namespace read */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* fall through to router fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* init failed; falls through below */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* leave fallbackResults empty; both empty → return [] below */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* persistence non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* registry will stay null; fall through */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* search non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* session persistence non-fatal */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* surface via "available: false" below */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* surface via empty list below */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Adaptive threshold is advisory — fall through to the caller's // threshold (or 0.3 default). The dispatched handler still gates // results against this value. }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Config resolution unavailable -- storage will use its own defaults }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Embedding pipeline init failed -- hash fallback will be used }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Fall through to routeMemoryOp fallback }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Re-read non-fatal — the dispatch already succeeded. Envelope // just lacks the embedding-metadata fields in that case. }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // WASMVectorSearch instantiation failed — non-fatal }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // controller-intercept not available — non-critical }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // count() itself should never fail on a live backend; if it does, // fall through to the full search path so the real error surfaces // from storage.search() rather than being masked here. }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts :: catch { /* already freed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts :: catch { /* already freed or used */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/rabitq-index.ts :: catch { /* best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/sona-optimizer.ts :: catch { // Native SONA failed on this query — fall through to keyword matching }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/sona-optimizer.ts :: catch { // Q-learning failed, continue to fallback }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts :: catch { /* already freed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts :: catch { /* best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts :: catch { // Backend failed, skip }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts :: catch { // Fall through }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/enhanced-model-router.ts :: catch { // AST analysis not available, continue with text-based routing }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts :: catch { // Directory not readable, skip }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts :: catch { // File not readable, skip }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts :: catch { /* fall through to JS fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts :: catch { /* return false below */ }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts :: catch { /* use fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts :: catch { // Ignore load errors }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts :: catch { // Ignore save errors in non-critical scenarios }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/q-learning-router.ts :: catch { /* use fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts :: catch { /* v2.0.2 quirk */ }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Fall back to JS implementation }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Fall back to hash-based embedding }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Fall back to simple implementation }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Silently fail - ruvector is optional }
+../forks/ruflo/v3/@claude-flow/cli/src/services/claim-service.ts :: catch { // Label might not exist }
+../forks/ruflo/v3/@claude-flow/cli/src/services/claim-service.ts :: catch { // Start fresh if file is corrupted }
+../forks/ruflo/v3/@claude-flow/cli/src/services/config-file-manager.ts :: catch { /* not JSON, use as string */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/container-worker-pool.ts :: catch { // Ignore removal errors }
+../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts :: catch { /* socket closed */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts :: catch { // Non-fatal on platforms that don't support chmod on sockets }
+../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { /* already dead */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { /* best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { /* entire cleanup is best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { // Ignore log write errors }
+../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { // Skip unreadable directories }
+../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { // Skip unreadable files }
+../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { // stdin already closed (e.g. spawn failed) — `error` handler below // will surface the real cause. }
+../forks/ruflo/v3/@claude-flow/cli/src/services/registry-api.ts :: catch { // Non-critical, don't throw }
+../forks/ruflo/v3/@claude-flow/cli/src/services/ruvector-training.ts :: catch { /* use fallback */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/ruvector-training.ts :: catch { // Mining not available, continue without it }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* best-effort */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* not in cgroup v1 */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* not in cgroup v2 */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* nothing more we can do */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* ok */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* race ok */ }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { // Ignore cleanup errors }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { // Ignore log write errors }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { // Ignore parse errors, start fresh }
+../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { // already dead — fine }
+../forks/ruflo/v3/@claude-flow/cli/src/transfer/storage/gcs.ts :: catch { // Metadata update failed, but upload succeeded }
+../forks/ruflo/v3/@claude-flow/cli/src/transfer/store/discovery.ts :: catch { // Continue to next gateway }
+../forks/ruflo/v3/@claude-flow/cli/src/transfer/store/discovery.ts :: catch { // GCS not available }
+../forks/ruflo/v3/@claude-flow/cli/src/update/executor.ts :: catch { // Corrupted file }
+../forks/ruflo/v3/@claude-flow/cli/src/update/rate-limiter.ts :: catch { // Corrupted file, reset }

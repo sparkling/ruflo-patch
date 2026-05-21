@@ -31,7 +31,7 @@
 //   0  — every catch in scope either takes an action or is allowlisted
 //   1  — at least one comment-only catch found that isn't allowlisted
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, relative, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -206,18 +206,23 @@ function findUndiscriminatingCatches(src) {
     const strippedBody = stripStringsAndComments(origBody).trim();
     if (strippedBody === '') {
       const headline = (lines[lineNum - 1] ?? '').trim().slice(0, 80);
-      findings.push({ line: lineNum, headline });
+      // Content key: the catch clause text (incl. its comment), whitespace-
+      // collapsed. Stable across line shifts — only changes when the catch's
+      // own code/comment changes. Replaces the old `<path>:<line>` key, which
+      // went stale on ANY edit above the catch and forced full regeneration.
+      const signature = src.slice(idx, bodyEnd + 1).replace(/\s+/g, ' ').trim();
+      findings.push({ line: lineNum, headline, signature });
     }
     i = bodyEnd + 1;
   }
   return findings;
 }
 
-function main() {
-  const allowlist = loadAllowlist();
+// Collect every comment-only catch across the scan roots, each with its
+// content key (`<relpath> :: <whitespace-collapsed catch clause>`).
+function collectFindings() {
+  const all = [];
   let totalCatches = 0;
-  const undiscriminating = [];
-
   for (const { fork, root } of SCAN_ROOTS) {
     if (!existsSync(root)) {
       console.error(`[UNDISCRIMINATING-CATCH] WARN: scan root missing: ${root} (${fork}) — skipping`);
@@ -227,17 +232,47 @@ function main() {
       const src = readFileSync(f, 'utf8');
       if (!/\bcatch\b/.test(src)) continue;
       const stripped = stripStringsAndComments(src);
-      const catchCount = (stripped.match(/\bcatch\b/g) || []).length;
-      totalCatches += catchCount;
-      const findings = findUndiscriminatingCatches(src);
-      for (const finding of findings) {
-        const rel = relative(PROJECT_DIR, f);
-        const key = `${rel}:${finding.line}`;
-        if (allowlist.has(key)) continue;
-        undiscriminating.push({ file: rel, line: finding.line, headline: finding.headline });
+      totalCatches += (stripped.match(/\bcatch\b/g) || []).length;
+      const rel = relative(PROJECT_DIR, f);
+      for (const finding of findUndiscriminatingCatches(src)) {
+        all.push({ file: rel, line: finding.line, headline: finding.headline, key: `${rel} :: ${finding.signature}` });
       }
     }
   }
+  return { all, totalCatches };
+}
+
+function writeAllowlist(findings) {
+  const keys = [...new Set(findings.map((f) => f.key))].sort();
+  const header =
+    '# scripts/check-undiscriminating-catches.mjs allowlist\n' +
+    '#\n' +
+    '# Format: `<relative-path> :: <whitespace-collapsed catch clause>` (one per line).\n' +
+    '# CONTENT-KEYED (not line-keyed): an entry is matched by the catch clause text\n' +
+    '# itself, so it survives line shifts from edits elsewhere in the file. An entry\n' +
+    "# only goes stale when THAT catch's own code/comment changes — re-review then.\n" +
+    '# Identical clauses within one file collapse to a single entry.\n' +
+    '#\n' +
+    '# Regenerate after deliberate changes:  node scripts/check-undiscriminating-catches.mjs --update\n' +
+    '# Add an entry ONLY if the catch genuinely should swallow all error types without\n' +
+    '# discrimination AND a code-level fix is not appropriate.\n' +
+    '#\n';
+  writeFileSync(ALLOWLIST_FILE, header + keys.join('\n') + '\n');
+}
+
+function main() {
+  const update = process.argv.includes('--update');
+  const { all, totalCatches } = collectFindings();
+
+  if (update) {
+    writeAllowlist(all);
+    const n = new Set(all.map((f) => f.key)).size;
+    console.log(`[UNDISCRIMINATING-CATCH] --update: wrote ${n} content-keyed allowlist entries from ${all.length} findings`);
+    process.exit(0);
+  }
+
+  const allowlist = loadAllowlist();
+  const undiscriminating = all.filter((f) => !allowlist.has(f.key));
 
   if (undiscriminating.length > 0) {
     console.error('');
@@ -258,8 +293,12 @@ function main() {
     console.error('[UNDISCRIMINATING-CATCH]   1. Add a rethrow on unexpected error types:');
     console.error("[UNDISCRIMINATING-CATCH]      `} catch (e) { if (e.code !== 'EXPECTED') throw e; /* expected */ }`,");
     console.error('[UNDISCRIMINATING-CATCH]   2. Add a log: `} catch (e) { logger.warn(\'reason\', e); }`, or');
-    console.error('[UNDISCRIMINATING-CATCH]   3. Add `<relative-path>:<line>` to');
-    console.error('[UNDISCRIMINATING-CATCH]      lib/undiscriminating-catches-allowlist.txt with rationale.');
+    console.error('[UNDISCRIMINATING-CATCH]   3. Allowlist the exact content key(s) below in');
+    console.error('[UNDISCRIMINATING-CATCH]      lib/undiscriminating-catches-allowlist.txt (with rationale),');
+    console.error('[UNDISCRIMINATING-CATCH]      or run `node scripts/check-undiscriminating-catches.mjs --update`:');
+    for (const u of undiscriminating) {
+      console.error(`[UNDISCRIMINATING-CATCH]      ${u.key}`);
+    }
     process.exit(1);
   }
 
