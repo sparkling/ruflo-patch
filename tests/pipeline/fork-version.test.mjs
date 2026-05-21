@@ -489,7 +489,7 @@ describe('bumpWrapperPin: ADR-0142 G1 wrapper-cli lockstep', () => {
       version: '3.1.0-alpha.14-patch.15',
       dependencies: { '@sparkleideas/cli': '3.5.58-patch.342' },
     });
-    const updated = await bumpWrapperPin(tmp, '3.5.58-patch.343');
+    const updated = await bumpWrapperPin(tmp, '3.5.58-patch.343', { skipNpmCheck: true });
     assert.equal(updated, true);
     const pkg = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(pkg.dependencies['@sparkleideas/cli'], '3.5.58-patch.343');
@@ -511,7 +511,7 @@ describe('bumpWrapperPin: ADR-0142 G1 wrapper-cli lockstep', () => {
       version: '3.1.0-alpha.14-patch.15',
       dependencies: { '@sparkleideas/cli': '3.5.58-patch.342' },
     });
-    const updated = await bumpWrapperPin(tmp, '3.5.58-patch.342');
+    const updated = await bumpWrapperPin(tmp, '3.5.58-patch.342', { skipNpmCheck: true });
     assert.equal(updated, true, 'returns true because version bumped');
     const pkg = JSON.parse(readFileSync(join(tmp, 'package.json'), 'utf8'));
     assert.equal(pkg.version, '3.1.0-alpha.14-patch.16',

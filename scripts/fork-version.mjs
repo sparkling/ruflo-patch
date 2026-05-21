@@ -715,8 +715,14 @@ export async function bumpAll(dirs, opts = {}) {
  *
  * @param {string} rootPath - ruflo-patch repo root containing the wrapper package.json
  * @param {string} newCliVersion - the bumped cli version (e.g. "3.5.58-patch.343")
+ * @param {object} [opts] - options
+ * @param {boolean} [opts.skipNpmCheck=false] - if true, bump the wrapper's own
+ *   version deterministically (local +1 via bumpPatchVersion) instead of the
+ *   registry-aware safeNextVersion. For unit tests, which cannot pin a registry
+ *   query (mirrors bumpAll's UNIT_OPTS). The pipeline path leaves this false so
+ *   the 4c41205 registry-aware @latest-no-regress behavior is preserved.
  */
-export async function bumpWrapperPin(rootPath, newCliVersion) {
+export async function bumpWrapperPin(rootPath, newCliVersion, { skipNpmCheck = false } = {}) {
   const pkgPath = join(rootPath, 'package.json');
   let pkg;
   try {
@@ -745,7 +751,7 @@ export async function bumpWrapperPin(rootPath, newCliVersion) {
     // regression: bumpPatchVersion did local+1 and republished a LOWER
     // version with --tag latest, pointing @latest at a wrapper that pinned a
     // pre-fix cli — so MCP users never got the shipped fixes.)
-    pkg.version = await safeNextVersion(pkg.version, pkg.name);
+    pkg.version = skipNpmCheck ? bumpPatchVersion(pkg.version) : await safeNextVersion(pkg.version, pkg.name);
     writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
     return true; // changed (version bumped)
   }
@@ -760,7 +766,7 @@ export async function bumpWrapperPin(rootPath, newCliVersion) {
   // Registry-aware bump (see note in the pin-already-matches branch above) —
   // max(localN, registryN)+1 so @latest can never regress below the newest
   // published wrapper version.
-  pkg.version = await safeNextVersion(pkg.version, pkg.name);
+  pkg.version = skipNpmCheck ? bumpPatchVersion(pkg.version) : await safeNextVersion(pkg.version, pkg.name);
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   return true;
 }
