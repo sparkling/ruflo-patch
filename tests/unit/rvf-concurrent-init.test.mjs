@@ -1,32 +1,26 @@
 // @tier unit
-// RVF concurrent initialization safety.
+// RVF concurrent-init safety — SOURCE-SHAPE contracts (unit-tier).
 //
-// Multiple processes (or in-process backends) calling RvfBackend.initialize()
-// on the SAME .rvf path must all converge without corruption or spurious
-// lock-acquire failures. This guards two layers of fixes:
+// These assertions read the fork source directly and are fully deterministic.
+// The BEHAVIOURAL validation of concurrent native init lives in the acceptance
+// tier, where the installed CLI provides a CONSISTENT native+JS pair (the unit
+// tier cannot: a bare @sparkleideas/memory install is pure-TS, and the build
+// tree's JS resolves a stray, version-mismatched native). The acceptance guard
+// is `check_t3_2_rvf_concurrent_writes` (lib/acceptance-adr0079-tier3-checks.sh),
+// which races N=6 concurrent `cli memory store` calls and asserts all N persist
+// — a broken RVFR recognition makes a concurrent peer fail and drops the count.
 //
-//   - ADR-0095 / ADR-0163: the JS-side advisory-lock acquire budget is
-//     configurable (init uses 180s under heavy contention) and a lock-timeout
-//     surfaces a real diagnostic (code=ELOCKACQUIRE + lockPath) instead of
-//     "(unknown)", with StorageFactory retrying ONCE on that code (not a
-//     catch-all). Originally tracked as "Bug-4" (2026-05-05); renamed for
-//     semantic clarity.
-//   - ADR-0167: during the create race a peer can fail the native open and
-//     fail over to the pure-TS loadFromDisk path, which MUST recognise the
-//     native RootHeader magic (`RVFROOT\0` and its 4-byte `RVFR` prefix) and
-//     NOT mislabel the valid native file as corrupt. Without that recognition,
-//     N-1 of N concurrent inits fail with `bad magic bytes (got "RVFR")`.
-//     This behavioural test is the regression guard for that fix.
-//
-// Source-shape assertions read the fork source directly; the behavioural
-// convergence test loads the freshly-built backend via the shared
-// loadRvfBackend() resolver (tests/helpers/load-rvf.mjs), which resolves THIS
-// release's codemodded build — never a stale aggregate.
+// Contracts guarded here:
+//   - ADR-0095/0163: the advisory-lock acquire budget is configurable (init
+//     uses 180s) and lock-timeout surfaces a real diagnostic (ELOCKACQUIRE +
+//     lockPath), with StorageFactory retrying ONCE on that code (not a catch-all).
+//   - ADR-0167: the pure-TS loadFromDisk preflight recognises the native
+//     RootHeader magic prefix (`RVFR`) so a concurrent-init failover does not
+//     mislabel a valid native file as corrupt. (Originally "Bug-4", renamed.)
 
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
-import { loadRvfBackend, LOAD_RVF_SKIP_REASON_REGEX } from '../helpers/load-rvf.mjs';
 
 const RVF_BACKEND_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts';
 const STORAGE_FACTORY_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src/storage-factory.ts';
@@ -76,44 +70,18 @@ describe('RVF concurrent init: StorageFactory retries once on lock-acquire timeo
   });
 });
 
-describe('RVF concurrent init: N parallel initialize() calls converge without corruption (ADR-0167)', () => {
-  it('N=8 parallel initialize() on a shared .rvf all succeed (no LockHeld, no RVFR corruption)', async (t) => {
-    const { RvfBackend, source, error } = await loadRvfBackend();
-    if (!RvfBackend) {
-      // ADR-0082: skips are narrow — assert the reason matches the resolver's
-      // sanctioned set, never a catch-all.
-      assert.match(error ?? '', LOAD_RVF_SKIP_REASON_REGEX, `unexpected resolver skip reason: ${error}`);
-      t.skip(`RvfBackend unavailable (${error})`);
-      return;
-    }
-
-    const { mkdtempSync, rmSync } = await import('node:fs');
-    const { tmpdir } = await import('node:os');
-    const { join } = await import('node:path');
-    const sharedDir = mkdtempSync(join(tmpdir(), 'rvf-concurrent-init-'));
-    const dbPath = join(sharedDir, 'shared.rvf');
-
-    try {
-      const N = 8;
-      const backends = Array.from({ length: N }, () =>
-        new RvfBackend({ databasePath: dbPath, dimensions: 8, autoPersistInterval: 0 })
-      );
-      // All N initialize() calls fire in parallel against the same path.
-      const results = await Promise.allSettled(backends.map((b) => b.initialize()));
-      const failed = results.filter((r) => r.status === 'rejected');
-      assert.equal(
-        failed.length,
-        0,
-        `${failed.length}/${N} concurrent inits failed (backend source=${source}). ` +
-          `A 'bad magic bytes (got "RVFR")' failure here is the ADR-0167 RVFR-prefix regression. ` +
-          `Errors: ${failed.map((r) => r.reason?.message || r.reason).join(' | ')}`,
-      );
-
-      for (const b of backends) {
-        if (typeof b.shutdown === 'function') await b.shutdown().catch(() => {});
-      }
-    } finally {
-      try { rmSync(sharedDir, { recursive: true, force: true }); } catch {}
-    }
+describe('RVF concurrent init: pure-TS loadFromDisk recognises the native RootHeader prefix (ADR-0167)', () => {
+  it('loadFromDisk preflight treats the RVFR prefix (and SFVR) as native, not corrupt', () => {
+    const src = readFileSync(RVF_BACKEND_SRC, 'utf8');
+    // The fix: in the loadFromDisk preflight, a 4-byte peek matching the native
+    // RootHeader prefix (RVFR) OR the legacy native magic (SFVR) sets the
+    // "this is a native file, skip the pure-TS corruption verdict" flag. Without
+    // this, a concurrent-init failover peer that peeked a partial RootHeader hit
+    // the corruption check and threw `bad magic bytes (got 'RVFR')`.
+    assert.match(
+      src,
+      /peek4 === NATIVE_MAGIC \|\| peek4 === NATIVE_ROOT_HEADER_MAGIC_PREFIX/,
+      'loadFromDisk preflight must recognise SFVR/RVFR-prefixed files as native (ADR-0167 RVFR fix)',
+    );
   });
 });

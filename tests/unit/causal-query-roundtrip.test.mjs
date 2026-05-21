@@ -14,7 +14,7 @@ import { readFileSync, existsSync } from 'node:fs';
 const ROUTER_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts';
 const HANDLER_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts';
 
-describe("Bug-2: causal_query write/read symmetry (source contract pins)", () => {
+describe("causal_query write/read symmetry (source contract pins)", () => {
   it("CausalOpType union includes 'query'", () => {
     const src = readFileSync(ROUTER_SRC, 'utf8');
     assert.match(src, /CausalOpType\s*=\s*['"]edge['"]\s*\|\s*['"]recall['"]\s*\|\s*['"]query['"]/,
@@ -59,7 +59,7 @@ describe("Bug-2: causal_query write/read symmetry (source contract pins)", () =>
   });
 });
 
-describe("Bug-2: causal_query 'Internal error' source string is no longer the default fail mode", () => {
+describe("causal_query 'Internal error' source string is no longer the default fail mode", () => {
   it("sanitizeError 'Internal error' default still exists (defensive)", () => {
     const src = readFileSync(HANDLER_SRC, 'utf8');
     // We're NOT removing the sanitizeError default — but the new handler

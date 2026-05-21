@@ -68,6 +68,13 @@ export const WONT_PUBLISH = new Map([
   // upstream stabilizes the build.
   ['cuda-wasm', 'wasm-pack build often fails — removed from LEVELS by prior decision'],
 
+  // ADR-0203: @claude-flow/hooks is a dead, never-wired parallel implementation
+  // (live hooks live in cli/src/mcp-tools/hooks-tools.ts). Its consumers were
+  // severed and it was removed from the publish set. The source tree is kept
+  // byte-identical to upstream via the copy-source rsync-exclude (zero
+  // merge-tax), so it remains discoverable — hence this explicit skip.
+  ['@claude-flow/hooks', 'ADR-0203: dead parallel package — consumers severed, removed from publish set (tree kept via rsync-exclude)'],
+
 ]);
 
 // Pattern-based skips: any @sparkleideas/* mapped name matching one of

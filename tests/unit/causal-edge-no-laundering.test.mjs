@@ -18,7 +18,7 @@ import { readFileSync } from 'node:fs';
 const ORCH_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts';
 const TOOLS_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts';
 
-describe('Bug-3: orchestration helpers no longer return null on failure', () => {
+describe('orchestration helpers no longer return null on failure', () => {
   it('recordCausalEdge return type is non-nullable (no `| null`)', () => {
     const src = readFileSync(ORCH_SRC, 'utf8');
     const fnStart = src.indexOf('export async function recordCausalEdge');
@@ -87,7 +87,7 @@ describe('Bug-3: orchestration helpers no longer return null on failure', () => 
   });
 });
 
-describe('Bug-3: tools-layer sentinel coalescer is now defensive only', () => {
+describe('tools-layer sentinel coalescer is now defensive only', () => {
   it("'AgentDB not available' sentinel still exists as a fallback (covers the 5 unfixed-shape helpers)", () => {
     const src = readFileSync(TOOLS_SRC, 'utf8');
     // The sentinel string is allowed to remain at lines that wrap helpers

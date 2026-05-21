@@ -37,7 +37,7 @@ import { readFileSync } from 'node:fs';
 const COPY_SCRIPT = '/Users/henrik/source/ruflo-patch/scripts/copy-source.sh';
 const BUILD_SCRIPT = '/Users/henrik/source/ruflo-patch/scripts/build-packages.sh';
 
-describe('Bug-6: tsc incremental cache leak closed at rsync boundary', () => {
+describe('tsc incremental cache leak closed at rsync boundary', () => {
   it('copy-source.sh excludes *.tsbuildinfo from all fork rsyncs', () => {
     const src = readFileSync(COPY_SCRIPT, 'utf8');
     // Count rsync invocations in the copy_source function.
