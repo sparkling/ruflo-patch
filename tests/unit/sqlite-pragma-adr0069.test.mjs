@@ -108,14 +108,15 @@ describe('ADR-0069 A1: AgentDB config-driven pragmas', () => {
     assert.match(src, /sqlite\?:\s*\{/, 'AgentDBConfig must have sqlite? field');
   });
 
-  // ADR-0170 Phase B retires the SQLite open path in AgentDB.initialize().
-  // The two source-grep tests below targeted the better-sqlite3 pragma block
-  // (`const sq = this.config.sqlite` + `sq?.cacheSize ?? -64000`) which the
-  // Wave 1a wiring commit dead-strips. The pragma surface still exists on
-  // AgentDBConfig itself (asserted by the first test in this describe) for
-  // the unported BatchOperations / QueryOptimizer / WASMVectorSearch
-  // consumers; Phase D removes the field entirely.
-  it.skip('pragmas use config values with fallback defaults', () => {
+  // ADR-0170 dead-stripped this config-driven pragma block; the ADR-0177 revert
+  // (SQLite restored) brought back the SQLite open path but, as collateral
+  // churn, only re-applied a hardcoded `journal_mode = WAL` — dropping the
+  // config-driven cache_size / busy_timeout / synchronous (the typed
+  // `AgentDBConfig.sqlite` field survived, asserted by the first test in this
+  // describe). Restored in AgentDB.initializeDatabase() so the documented
+  // ADR-0069 A1 invariant holds again (notably busy_timeout, which prevents
+  // SQLITE_BUSY under the shared-handle concurrent controller access).
+  it('pragmas use config values with fallback defaults', () => {
     const src = readFileSync(
       join(FORKS, 'agentdb/src/core/AgentDB.ts'),
       'utf-8'
@@ -126,7 +127,7 @@ describe('ADR-0069 A1: AgentDB config-driven pragmas', () => {
     assert.match(src, /sq\?\.synchronous\s*\?\?\s*'NORMAL'/, 'synchronous fallback must be NORMAL');
   });
 
-  it.skip('sq variable is declared outside the try block (accessible in catch)', () => {
+  it('sq variable is declared outside the try block (accessible in catch)', () => {
     const src = readFileSync(
       join(FORKS, 'agentdb/src/core/AgentDB.ts'),
       'utf-8'

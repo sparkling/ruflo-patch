@@ -91,181 +91,6 @@
 #     pretend-real but storing nothing — silent-pass regression).
 
 # ════════════════════════════════════════════════════════════════════
-# Shared helper: _pglite_count_rows (ADR-0170 Phase B substrate probe)
-# ════════════════════════════════════════════════════════════════════
-#
-# Counts rows in a pglite table where a marker column matches a value
-# (LIKE prefix). Replaces the old `sqlite3 .swarm/memory.db "SELECT
-# COUNT(*) ..."` probe; pglite is opened via dynamic `import()` of
-# @electric-sql/pglite from the iso dir so the resolved package is the
-# one the controllers wrote into.
-#
-# Positional args:
-#   $1 iso_dir       — Project dir containing `.swarm/memory.pglite/`.
-#   $2 table         — PostgreSQL table name (e.g. `episodes`, `skills`).
-#   $3 marker_col    — Column to filter on.
-#   $4 marker_value  — Marker prefix (LIKE `${marker_value}%`).
-#
-# Echoes the row count (integer, possibly 0) and returns 0 on success.
-# On any failure (pglite import, query error, missing cluster), echoes
-# `-1` and returns 1 — callers MUST distinguish from a real 0 count.
-#
-# Single retry on transient pglite ESM/CJS loader flakes: the import is
-# attempted twice with 250 ms backoff. Per the remediation report the
-# ESM-as-CJS error is non-deterministic and recovers on a second attempt
-# within the same process tree.
-_pglite_count_rows() {
-  local iso_dir="$1" table="$2" marker_col="$3" marker_value="$4"
-  if [[ -z "$iso_dir" || -z "$table" || -z "$marker_col" || -z "$marker_value" ]]; then
-    echo "-1"
-    return 1
-  fi
-  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
-    echo "-1"
-    return 1
-  fi
-  # ADR-0170 Phase C.1: pglite probe must load the `vector` extension at
-  # PGlite construction time. Without `extensions: { vector }`, the
-  # wasm runtime can't parse tables that have `vector(N)` columns —
-  # even simple COUNT queries fail with "type vector does not exist".
-  # The agentdb controllers install the extension wasm binary at
-  # initialize() time; the probe just needs to register it in the
-  # session via the same subpath import.
-  local out
-  out=$(cd "$iso_dir" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1\`, ['${marker_value}%']);
-  process.stdout.write(String(r.rows[0]?.c ?? 0));
-} catch (e) {
-  process.stderr.write('PGLITE_PROBE_ERROR: ' + e.message);
-  process.exit(2);
-} finally {
-  await db.close();
-}
-" 2>/dev/null)
-  local rc=$?
-  if [[ $rc -ne 0 ]]; then
-    # Retry once after a brief backoff (per remediation: transient ESM-loader flake)
-    sleep 0.25
-    out=$(cd "$iso_dir" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1\`, ['${marker_value}%']);
-  process.stdout.write(String(r.rows[0]?.c ?? 0));
-} catch (e) {
-  process.stderr.write('PGLITE_PROBE_ERROR: ' + e.message);
-  process.exit(2);
-} finally {
-  await db.close();
-}
-" 2>/dev/null)
-    rc=$?
-  fi
-  if [[ $rc -ne 0 || -z "$out" ]]; then
-    echo "-1"
-    return 1
-  fi
-  # Sanitize to integer (defensive — node should only print digits)
-  out=$(echo "$out" | tr -dc '0-9')
-  echo "${out:-0}"
-  return 0
-}
-
-# ════════════════════════════════════════════════════════════════════
-# Shared helper: _pglite_table_exists
-# ════════════════════════════════════════════════════════════════════
-#
-# Echoes "1" if the named table exists in `.swarm/memory.pglite/`, else
-# "0". Always returns 0 (so callers can `if [[ "$(...)" == "1" ]]`).
-_pglite_table_exists() {
-  local iso_dir="$1" table="$2"
-  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
-    echo "0"
-    return 0
-  fi
-  # ADR-0170 Phase C.1: load pgvector extension so tables with vector
-  # columns parse correctly.
-  local out
-  out=$(cd "$iso_dir" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  const r = await db.query(\`SELECT to_regclass('public.${table}') IS NOT NULL AS exists\`);
-  process.stdout.write(r.rows[0]?.exists ? '1' : '0');
-} catch (e) {
-  process.stdout.write('0');
-} finally {
-  await db.close();
-}
-" 2>/dev/null)
-  echo "${out:-0}"
-  return 0
-}
-
-# ════════════════════════════════════════════════════════════════════
-# Shared helper: _pglite_table_list — comma-separated table names.
-# ════════════════════════════════════════════════════════════════════
-_pglite_table_list() {
-  local iso_dir="$1"
-  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
-    echo ""
-    return 0
-  fi
-  # ADR-0170 Phase C.1: pgvector extension required for tables with
-  # vector columns to be readable.
-  cd "$iso_dir" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  const r = await db.query(\"SELECT tablename FROM pg_tables WHERE schemaname='public' ORDER BY tablename\");
-  process.stdout.write(r.rows.map(x => x.tablename).join(','));
-} catch (e) {
-  process.stdout.write('PGLITE_LIST_ERROR:' + e.message);
-} finally {
-  await db.close();
-}
-" 2>/dev/null
-}
-
-# ════════════════════════════════════════════════════════════════════
-# Shared helper: _pglite_first_value — first marker_col value matching marker.
-# ════════════════════════════════════════════════════════════════════
-_pglite_first_value() {
-  local iso_dir="$1" table="$2" marker_col="$3" marker_value="$4"
-  if [[ ! -f "$iso_dir/.swarm/memory.pglite/PG_VERSION" ]]; then
-    echo ""
-    return 1
-  fi
-  # ADR-0170 Phase C.1: pgvector extension required for tables with
-  # vector columns to be readable.
-  cd "$iso_dir" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  const r = await db.query(\`SELECT \"${marker_col}\" AS v FROM \"${table}\" WHERE \"${marker_col}\" LIKE \$1 ORDER BY \"${marker_col}\" DESC LIMIT 1\`, ['${marker_value}%']);
-  process.stdout.write(String(r.rows[0]?.v ?? ''));
-} catch (e) {
-  process.stdout.write('PGLITE_VALUE_ERROR:' + e.message);
-} finally {
-  await db.close();
-}
-" 2>/dev/null
-}
-
-# ════════════════════════════════════════════════════════════════════
 # Shared helper: _b5_check_controller_roundtrip
 # ════════════════════════════════════════════════════════════════════
 #
@@ -336,14 +161,14 @@ _b5_check_controller_roundtrip() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-${controller}-work-XXXXX")
-  local pg_cluster="$iso/.swarm/memory.pglite"
 
   # ─── Step 2: cold-start init to create schema ─────────────────────
   # agentdb_health forces the controller registry to hydrate. Under
-  # ADR-0170 Phase B this triggers PostgresBackend.initialize() which
-  # bootstraps `.swarm/memory.pglite/` (PG_VERSION + base/ + pg_wal/).
-  # The 1s grace period in _run_and_kill (write variant) gives the
-  # schema bootstrap a chance to fsync before the next call.
+  # ADR-0177 (SQLite restored as the agentdb_* substrate) this triggers
+  # AgentDB.initialize(), which bootstraps `.swarm/memory.db` and applies
+  # the canonical schema. The 1s grace period in _run_and_kill (write
+  # variant) gives the schema bootstrap a chance to fsync before the next
+  # call.
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
 
   # ─── Step 3: invoke the controller's store MCP tool ───────────────
@@ -556,6 +381,17 @@ _b5_check_controller_roundtrip() {
   if [[ "$store_exit" -ne 0 ]]; then
     _CHECK_OUTPUT="B5/${controller}: FAIL: store exit $store_exit with unrecognized error shape (not in known skip_accepted regex). Store output (first 10 lines):
 $(echo "$store_body" | head -10)"
+    rm -rf "$work" "$iso" 2>/dev/null
+    return
+  fi
+
+  # ─── Step 4z: sqlite3 CLI availability (Debt 15 A1) ───────────────
+  # Persistence is verified with the sqlite3 CLI below. On a machine
+  # without sqlite3 we cannot prove or disprove persistence, so
+  # skip_accept rather than false-FAIL all 14 controllers.
+  if ! command -v sqlite3 >/dev/null 2>&1; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="B5/${controller}: SKIP_ACCEPTED: sqlite3 CLI not on PATH — cannot verify SQLite persistence (Debt 15 A1; install sqlite3 to run this check)"
     rm -rf "$work" "$iso" 2>/dev/null
     return
   fi
@@ -799,7 +635,6 @@ _b5_probe_causal_edge_persistence() {
 
   local cli; cli=$(_cli_cmd)
   local work; work=$(mktemp -d "${ACCEPT_TEMP:-/tmp}/_check_workdirs/b5-${controller}-work-XXXXX")
-  local pg_cluster="$iso/.swarm/memory.pglite"
 
   # ─── Step 1: cold-start init (hydrate registry, create .swarm dir) ──
   _run_and_kill "cd '$iso' && NPM_CONFIG_REGISTRY='$REGISTRY' $cli mcp exec --tool agentdb_health 2>&1" "$work/health.out" 30
@@ -834,36 +669,15 @@ _b5_probe_causal_edge_persistence() {
     return
   fi
 
-  # ─── Step 5a: probe pglite causal_edges (terminal state B) ──────────
-  # ADR-0086 allows both RVF and SQL (now PostgreSQL via ADR-0170) as
-  # valid terminals. SQL is the "future" path when the controller wires
-  # addEdge() on CausalMemoryGraph against the postgres substrate.
+  # ─── Step 5a: SQL terminal (terminal state B) ──────────────────────
+  # ADR-0086 allows both RVF and SQL as valid terminals. The ADR-0170
+  # pglite "SQL terminal" probe was removed with the substrate it
+  # targeted (ADR-0177 restored SQLite/RVF-first; causal-edge persists to
+  # RVF — the real write path verified below). If causalGraph ever wires
+  # addEdge() to a SQLite `causal_edges` table, add a sqlite3 probe of
+  # `.swarm/memory.db` here. Until then the SQL terminal is not probed.
   local sql_hit="false"
   local sql_hint=""
-  if [[ -f "$pg_cluster/PG_VERSION" ]]; then
-    local has_table
-    has_table=$(_pglite_table_exists "$iso" "causal_edges")
-    if [[ "$has_table" == "1" ]]; then
-      local row_match
-      # ADR-0170 Phase C.1: causal_edges now has a vector(768) embedding column;
-      # probe must load pgvector extension.
-      row_match=$(cd "$iso" && node --input-type=module -e "
-const { PGlite } = await import('@electric-sql/pglite');
-const { vector } = await import('@electric-sql/pglite/vector');
-const db = new PGlite('.swarm/memory.pglite', { extensions: { vector } });
-await db.ready;
-try {
-  const r = await db.query(\`SELECT COUNT(*)::int AS c FROM causal_edges WHERE mechanism LIKE \$1 OR metadata::text LIKE \$1\`, ['%${marker}%']);
-  process.stdout.write(String(r.rows[0]?.c ?? 0));
-} catch (e) { process.stdout.write('0'); } finally { await db.close(); }
-" 2>/dev/null)
-      row_match=$(echo "$row_match" | tr -dc '0-9'); row_match="${row_match:-0}"
-      if [[ "$row_match" -ge 1 ]]; then
-        sql_hit="true"
-        sql_hint="pglite causal_edges matched=$row_match"
-      fi
-    fi
-  fi
 
   # ─── Step 5b: probe RVF causal-edges namespace (terminal state A) ───
   # The current build's real write path. memory list --format json
@@ -910,12 +724,12 @@ try {
     return
   fi
 
-  # Neither RVF nor pglite shows the edge → silent-pass regression.
+  # Edge not visible in RVF → silent-pass regression.
   local edge_snippet; edge_snippet=$(echo "$edge_body" | head -5 | tr '\n' ' ' | cut -c1-200)
   local rvf_snippet; rvf_snippet=$(echo "$rvf_body" | head -3 | tr '\n' ' ' | cut -c1-200)
-  local pg_tables
-  pg_tables=$(_pglite_table_list "$iso" | cut -c1-160)
-  _CHECK_OUTPUT="B5/${controller}: FAIL: agentdb_causal-edge success=true but edge not visible in either terminal state (ADR-0082 silent-pass). Tool: $edge_snippet | RVF list: $rvf_snippet | pglite tables: $pg_tables"
+  local sqlite_tables
+  sqlite_tables=$(sqlite3 "$iso/.swarm/memory.db" '.tables' 2>/dev/null | tr -s ' \n' ' ' | cut -c1-160)
+  _CHECK_OUTPUT="B5/${controller}: FAIL: agentdb_causal-edge success=true but edge not visible in RVF (ADR-0082 silent-pass). Tool: $edge_snippet | RVF list: $rvf_snippet | sqlite tables: $sqlite_tables"
   rm -rf "$work" "$iso" 2>/dev/null
 }
 

@@ -331,11 +331,16 @@ describe('ADR-0090 Tier B5 static source — helper + 14 check wrappers', () => 
     }
   });
 
-  it('helper uses pglite via Node ESM dynamic import (ADR-0170 Phase B)', () => {
-    assert.match(source, /_pglite_count_rows|await import\('@electric-sql\/pglite'\)/,
-      'helper must use _pglite_count_rows or direct @electric-sql/pglite dynamic import');
-    assert.match(source, /memory\.pglite/,
-      'helper must reference .swarm/memory.pglite cluster path');
+  it('helper verifies persistence via the sqlite3 CLI on .swarm/memory.db (ADR-0177 substrate)', () => {
+    // ADR-0177 restored SQLite as the agentdb_* substrate; the ADR-0170
+    // pglite probe was removed with the substrate it targeted. The helper
+    // proves persistence with the sqlite3 CLI against `.swarm/memory.db`.
+    assert.match(source, /db_path="\$iso\/\.swarm\/memory\.db"/,
+      'helper must target the SQLite substrate at .swarm/memory.db');
+    assert.match(source, /sqlite3 "\$db_path"/,
+      'helper must probe persistence with the sqlite3 CLI');
+    assert.doesNotMatch(source, /await import\('@electric-sql\/pglite'\)/,
+      'helper must not use the retired pglite substrate probe');
   });
 
   it('helper uses the three-way result bucket', () => {
@@ -503,30 +508,19 @@ for (const c of CHECKS) {
 // paths.
 // ──────────────────────────────────────────────────────────────────────
 
-// ADR-0170 Phase B note: the next 4 describe blocks (happy path,
-// silent-success without rows, target-table-missing, sqlite3 binary
-// missing) were tightly coupled to the SQLite-CLI mocking infrastructure.
-// The B5 helper now probes pglite via Node ESM dynamic import; the CLI
-// stub's `sqliteTable` / `sqliteInsertCols` path can no longer drive the
-// helper because the helper doesn't shell to sqlite3 anymore.
-//
-// These behaviors are covered end-to-end in acceptance:
-//   - "Happy path"           → adr0090-b5-{reflexion,skillLibrary,...} when the
-//                              full registry initializes and writes land in pglite.
-//   - "Silent-success-no-row" → same checks FAIL if controllers exit 0 but
-//                               pglite has 0 marker rows.
-//   - "Target-table-missing" → same FAIL path when `to_regclass()` returns null.
-//   - "sqlite3 binary missing" → no longer a skip-condition; pglite is the
-//                                only required substrate dep.
-//
-// Skipped with explicit notes pointing to the acceptance coverage rather
-// than rewritten in-test because the pglite cluster cold-init dominates
-// the unit-test runtime (~673 ms per spawn × 4 cases = ~2.7s/file) and
-// would tip the suite past the Google Small (1s) threshold for a
-// behavior already proven in acceptance.
+// ADR-0177 update: SQLite was restored as the agentdb_* substrate (the
+// divergent ADR-0170 pglite migration was reverted). The B5 helper probes
+// `.swarm/memory.db` via the sqlite3 CLI again, so the CLI stub's
+// `sqliteTable` / `sqliteInsertCols` path drives the helper end-to-end —
+// and the pglite cluster cold-init (~673 ms/spawn) that previously
+// dominated the unit runtime is gone. The 4 behavioral cases below are
+// therefore un-skipped; they exercise the real sqlite3 verification path
+// (happy PASS, silent-success-no-row FAIL, target-table-missing FAIL,
+// sqlite3-binary-missing skip_accepted) with the CLI stubbed as a fast
+// bash shim.
 
 describe('ADR-0090 B5 happy path — reachable PASS when controller actually writes', () => {
-  it.skip('PASSes reflexion when the stub creates episodes + inserts the marker (covered by acceptance)', () => {
+  it('PASSes reflexion when the stub creates episodes + inserts the marker', () => {
     // This regression-guards the regex walls above: when the upstream
     // build WIRES a controller properly (creates the table, inserts a
     // row with our marker in the right column), the helper must reach
@@ -749,7 +743,7 @@ describe('ADR-0090 B5 three-way bucket — "Wrong API use" → skip_accepted', (
 });
 
 describe('ADR-0090 B5 three-way bucket — silent success without rows → FAIL', () => {
-  it.skip('FAILs when the tool claims success but pglite has 0 rows (ADR-0082) — covered by acceptance', () => {
+  it('FAILs when the tool claims success but the SQLite table has 0 rows (ADR-0082)', () => {
     // This is the exact ADR-0082 anti-pattern: exit 0, no recognizable
     // skip error, table exists (we pre-created it) but 0 matching rows.
     // The helper must FAIL — silent-pass must never propagate.
@@ -782,7 +776,7 @@ describe('ADR-0090 B5 three-way bucket — silent success without rows → FAIL'
 });
 
 describe('ADR-0090 B5 three-way bucket — target-table missing after success → FAIL', () => {
-  it.skip('FAILs when the store claims success but our target table does not exist — covered by acceptance', () => {
+  it('FAILs when the store claims success but our target table does not exist (ADR-0082)', () => {
     const fx = setupTest('reflexion-no-target-table');
     try {
       const scenarios = {
@@ -811,7 +805,7 @@ describe('ADR-0090 B5 three-way bucket — target-table missing after success �
 });
 
 describe('ADR-0090 B5 three-way bucket — sqlite3 binary missing → skip_accepted', () => {
-  it.skip('skip_accepts when the sqlite3 CLI binary is not on PATH — obsolete, pglite is the substrate now', () => {
+  it('skip_accepts when the sqlite3 CLI binary is not on PATH (Debt 15 A1)', () => {
     // Simulate a dev machine without sqlite3. The helper must detect this
     // and bucket as skip_accepted, not silently pass, per Debt 15 (A1) rule.
     const fx = setupTest('reflexion-no-sqlite3');
