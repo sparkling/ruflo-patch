@@ -97,6 +97,16 @@ describe('ADR-0150: NAPI_PACKAGES content', () => {
       assert.ok(found, `ruvector entry missing: FORK_DIR_RUVECTOR:${p}`);
     }
   });
+
+  it('gnn + attention napi crates are present (2026-05-21 missing-binding fix)', () => {
+    const entries = loadEntries();
+    assert.ok(
+      entries.find(e => e === 'FORK_DIR_RUVECTOR:crates/ruvector-gnn-node:crates/ruvector-gnn-node'),
+      '@ruvector/gnn crate must be in NAPI_PACKAGES (was missing → no darwin-arm64 binary shipped)');
+    assert.ok(
+      entries.find(e => e === 'FORK_DIR_RUVECTOR:crates/ruvector-attention-node:crates/ruvector-attention-node'),
+      '@ruvector/attention crate must be in NAPI_PACKAGES (was missing → no darwin-arm64 binary shipped)');
+  });
 });
 
 describe('ADR-0150: napi-rebuild.sh wiring', () => {

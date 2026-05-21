@@ -91,7 +91,20 @@ push_fork_version_bumps() {
     name=$(basename "$dir")
     (
       git -C "${dir}" push sparkling main --quiet 2>/dev/null || {
-        echo "WARNING: Failed to push version bump for ${name}" >&2
+        # Non-fast-forward: sparkling has commits this local lacks (e.g.
+        # napi-rebuild.sh pushes rebuilt native binaries to sparkling on a
+        # separate cadence). Reconcile (fetch + merge — NO squash/rebase, per
+        # the fork-history rule) and retry the push ONCE. Version-bump vs
+        # binary commits don't overlap, so the merge is clean in practice; a
+        # genuine conflict is NOT auto-resolved — the retry fails and we warn.
+        git -C "${dir}" fetch sparkling main --quiet 2>/dev/null
+        if git -C "${dir}" merge --no-edit FETCH_HEAD >/dev/null 2>&1 && \
+           git -C "${dir}" push sparkling main --quiet 2>/dev/null; then
+          echo "INFO: reconciled diverged sparkling and pushed version bump for ${name}" >&2
+        else
+          git -C "${dir}" merge --abort >/dev/null 2>&1 || true
+          echo "WARNING: Failed to push version bump for ${name} (sparkling diverged; manual reconcile needed)" >&2
+        fi
       }
     ) &
     push_pids+=($!)

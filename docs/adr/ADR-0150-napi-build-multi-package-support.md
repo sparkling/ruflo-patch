@@ -1,6 +1,6 @@
 # ADR-0150: Generalise napi-rebuild + bundle-native-binaries to support agentic-jujutsu (and other napi packages)
 
-- **Status**: Proposed
+- **Status**: Implemented
 - **Date**: 2026-05-06
 - **Deciders**: Henrik Pettersen
 - **Related**: ADR-0133 (napi-rebuild for ruvector), ADR-0071 (RuVector native binary management), ADR-0148 §"Findings — Category C" (ships agentic-jujutsu skill)
@@ -122,7 +122,8 @@ Ask `ruvnet/agentic-flow` to ship darwin-arm64 in the next release. Rejected: pe
 
 ## Implementation log
 
-(empty — pending decision to proceed)
+- **2026-05-18** — Config-driven generalization landed: `lib/napi-config.sh` (`NAPI_PACKAGES` + `napi_parse_entry`/`napi_unique_forks` helpers); `napi-rebuild.sh` + `bundle-native-binaries.sh` source it; `copy-source.sh` narrowed the agentic-jujutsu `*.node` exclude to non-darwin-arm64; regression test `tests/unit/adr0150-napi-config.test.mjs`. agentic-jujutsu darwin-arm64 binary ships.
+- **2026-05-21** — Extended to `@ruvector/gnn` + `@ruvector/attention`. Their darwin-arm64 `.node` already existed prebuilt in `crates/ruvector-gnn-node` / `ruvector-attention-node` and the loaders local-check correctly, but the binaries never shipped: gnn was a stale publish, and attention's `.npmignore` had a blanket `*.node` that excluded the binary entirely (→ empty `@ruvector/attention` → "Cannot find module @ruvector/attention-darwin-arm64", silent JS fallback). Fix: added both crates to `NAPI_PACKAGES` (single-binary — crate == publish dir) and narrowed attention's `.npmignore` to non-darwin-arm64 arches. Republished via release; the gnn/attention native paths now load.
 
 ## References
 

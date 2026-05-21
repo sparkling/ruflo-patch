@@ -33,6 +33,13 @@ NAPI_PACKAGES=(
   "FORK_DIR_RUVECTOR:crates/ruvector-solver-node:crates/ruvector-solver-node"
   "FORK_DIR_RUVECTOR:crates/agentic-robotics-node:crates/agentic-robotics-node"
 
+  # ── ruvector gnn + attention (added 2026-05-21) ──
+  # Prebuilt darwin-arm64 .node existed in-crate but never shipped: gnn was a
+  # stale publish; attention's .npmignore excluded *.node. Single-binary: crate
+  # IS the npm publish dir (dest_npm_dir == crate_path). See ADR-0150.
+  "FORK_DIR_RUVECTOR:crates/ruvector-gnn-node:crates/ruvector-gnn-node"
+  "FORK_DIR_RUVECTOR:crates/ruvector-attention-node:crates/ruvector-attention-node"
+
   # ── agentic-jujutsu (ADR-0150) ──
   # Single-binary package: crate IS the npm publish dir, dest_npm_dir == crate_path.
   "FORK_DIR_AGENTIC:packages/agentic-jujutsu:packages/agentic-jujutsu"

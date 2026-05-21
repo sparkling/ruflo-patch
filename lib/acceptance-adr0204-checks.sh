@@ -141,7 +141,18 @@ _adr0204_archivist_rt_body() {
     _CHECK_OUTPUT="adr0204-archivist-rt FAIL: memory_store tool not found (-32601) — check build"
     E2E_DIR="$_saved_e2e"; return
   fi
-  if [[ "$r2" != OK:* && "$r2" != "MISSING" ]]; then
+  # Lost-reply regression guard (2026-05-21): the FIRST memory_store on a fresh
+  # served process used to lose its JSON-RPC reply when console.log (the old
+  # frame writer) was monkey-patched to a no-op during controller-registry init
+  # (memory-router.ts) — a timing race that left the store persisted but the
+  # client with no reply. The bins now write frames via raw stdout (writeFrame),
+  # so a MISSING first-store reply is a real regression, no longer tolerated.
+  if [[ "$r2" == "MISSING" ]]; then
+    _CHECK_PASSED="false"
+    _CHECK_OUTPUT="adr0204-archivist-rt FAIL: memory_store (first store) returned NO JSON-RPC reply — lost-reply regression (frames must use raw stdout, not console.log; see tests/unit/mcp-stdio-reply-channel.test.mjs)"
+    E2E_DIR="$_saved_e2e"; return
+  fi
+  if [[ "$r2" != OK:* ]]; then
     _CHECK_PASSED="false"
     _CHECK_OUTPUT="adr0204-archivist-rt FAIL: memory_store unexpected result: $r2"
     E2E_DIR="$_saved_e2e"; return

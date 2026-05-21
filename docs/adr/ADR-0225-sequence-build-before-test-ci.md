@@ -1,7 +1,8 @@
 ---
-status: accepted
+status: implemented
 date: 2026-05-21
 accepted-on: 2026-05-21
+implemented-on: 2026-05-21
 tags: [ci-cd, pipeline, build, testing, race-condition, ruflo-publish]
 supersedes: []
 depends-on: []
