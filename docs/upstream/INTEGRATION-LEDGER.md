@@ -123,6 +123,7 @@ not seeded here; backfill as encountered.
 | `a075c59fc` | 2026-05-09 | chore: bump versions for #1874 publish chain | skip-mechanical | — | 0186 | Batch J — upstream's #1874 publish chain not applicable to our fork chain |
 | `d065b2d65` | 2026-05-09 | fix #1874 + add MCP protocol-compliance smoke layer | cherry-picked | `241435e4d` | 0204 | Resolves F-09-003 HTTP struct-on-wire `protocolVersion` (struct→spec date-string). Conflicts in CI/`verification/*` resolved toward fork state (not load-bearing); payload `mcp/src/server.ts` + `shared/src/mcp/server.ts` + `test-mcp-protocol.mjs` applied. (d.2) stdio-literal centralization split to a follow-up ADR. |
 | _standing rule (ADR-0203)_ | — | SHAs touching `v3/@claude-flow/hooks/` | superseded-by-adr | — | 0203 | Future upstream-sync waves classify all `v3/@claude-flow/hooks/` SHAs as superseded-by-adr (ADR-0203 eliminated the dead package's consumers; tree kept byte-identical via rsync-exclude). Fork impl: `2db0fdaeb`. |
+| _upstream current_ | 2026-05-22 | memory_search threshold default: falsy-or → nullish-coalescing (honor threshold:0) | hand-ported | `a02e561ac` | 0167 | Re-converge: fork carried old rUv `eddfda0040` (falsy `or` coerced explicit threshold:0 → 0.3); upstream uses nullish `?` `?`. Fixes `memory_search` total:0 (related hits score 0.2-0.5; 0.3 floor dropped them). Default stays 0.3 (upstream value). Also reverted ADR-0167 Phase-3 staleness misdiagnosis (`bf71e2bd3`). |
 
 ## agentic-flow
 
