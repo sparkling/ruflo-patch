@@ -41,8 +41,10 @@
 //   { RvfBackend: class|null, path: string|null, source: string, error: string|null }
 //
 // `source` is one of:
-//   'acceptance', 'npx-cache-tmp', 'npx-cache-home', 'unit-install',
-//   'fork-dist', 'package-@claude-flow', 'verdaccio-fresh-install', 'none'
+//   'codemod-build' (THIS release's freshly-built per-package dist — canonical
+//   during in-pipeline test-ci), 'acceptance', 'npx-cache-tmp',
+//   'npx-cache-home', 'unit-install', 'fork-dist', 'package-@claude-flow',
+//   'verdaccio-fresh-install', 'none'
 
 import { execSync } from 'node:child_process';
 import { existsSync, readdirSync, statSync } from 'node:fs';
@@ -155,8 +157,36 @@ function _collectFromForkDist(candidates) {
   }
 }
 
+// The freshly-built, codemodded PER-PACKAGE dist produced by build-packages.sh
+// for THIS release. During in-pipeline `test-ci` (which now runs after `build`,
+// per ADR-0225) this is the canonical artifact under test — it is exactly what
+// gets published to Verdaccio moments later. Newest-mtime tie-breaking in
+// _findCached() makes this win over a previously-published/cached copy.
+//
+// NB: we deliberately resolve the per-package `v3/@claude-flow/memory/dist/`,
+// NOT the repo-root aggregate `${BUILD}/dist/v3/@claude-flow/memory/src/`. The
+// root aggregate is a stale, gitignored fork build artifact that copy-source
+// rsyncs in with preserved (old) mtimes; tests preferring it ran outdated
+// compiled code (the ADR-0167 RVFR fix regression, 2026-05-21). The per-package
+// dist is the only freshly-recompiled, canonical output.
+const CODEMOD_BUILD_PATH =
+  '/tmp/ruflo-build/v3/@claude-flow/memory/dist/rvf-backend.js';
+
+function _collectFromCodemodBuild(candidates) {
+  if (existsSync(CODEMOD_BUILD_PATH)) {
+    try {
+      candidates.push({
+        path: CODEMOD_BUILD_PATH,
+        mtime: statSync(CODEMOD_BUILD_PATH).mtimeMs,
+        source: 'codemod-build',
+      });
+    } catch { /* unreadable — skip */ }
+  }
+}
+
 function _findCached() {
   const candidates = [];
+  _collectFromCodemodBuild(candidates);
   _collectFromAcceptanceRoots(candidates);
   _collectFromNpxCaches(candidates);
   _collectFromUnitInstall(candidates);
