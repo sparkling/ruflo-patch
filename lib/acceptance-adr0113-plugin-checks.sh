@@ -22,6 +22,22 @@
 # Fix 5 — Federation + IoT plugin acceptance
 # ════════════════════════════════════════════════════════════════════
 
+# Resolve <pkg>@latest version with a bounded retry. The parallel acceptance
+# wave hammers Verdaccio + the npm cache lock, so a single `npm view` can
+# transiently fail — and a bare probe then flakes the WHOLE release. Observed
+# 2026-05-22 (patch.257 release): both plugins "did not resolve" mid-suite yet
+# resolved fine seconds later (federation patch.75, iot patch.101). Retry up to
+# 5x with 0.5s backoff before declaring a genuine non-resolution.
+_adr0113_npm_view_latest() {
+  local pkg="$1" attempt out
+  for attempt in 1 2 3 4 5; do
+    out=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view "${pkg}@latest" version 2>/dev/null) || true
+    [[ -n "$out" ]] && { printf '%s' "$out"; return 0; }
+    sleep 0.5
+  done
+  return 1
+}
+
 # Resolves federation@latest from Verdaccio. Bare network/registry probe;
 # does not exercise the bin.
 check_adr0113_federation_resolves() {
@@ -29,13 +45,12 @@ check_adr0113_federation_resolves() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
   local resolved
-  resolved=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view \
-    @sparkleideas/plugin-agent-federation@latest version 2>/dev/null) || true
+  resolved=$(_adr0113_npm_view_latest @sparkleideas/plugin-agent-federation) || true
   if [[ -n "$resolved" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="@sparkleideas/plugin-agent-federation@latest = $resolved"
   else
-    _CHECK_OUTPUT="@sparkleideas/plugin-agent-federation@latest did not resolve on $REGISTRY"
+    _CHECK_OUTPUT="@sparkleideas/plugin-agent-federation@latest did not resolve on $REGISTRY (after 5 attempts)"
   fi
   end_ns=$(_ns)
   _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
@@ -47,13 +62,12 @@ check_adr0113_iot_resolves() {
   start_ns=$(_ns)
   _CHECK_PASSED="false"
   local resolved
-  resolved=$(NPM_CONFIG_REGISTRY="$REGISTRY" npm view \
-    @sparkleideas/plugin-iot-cognitum@latest version 2>/dev/null) || true
+  resolved=$(_adr0113_npm_view_latest @sparkleideas/plugin-iot-cognitum) || true
   if [[ -n "$resolved" ]]; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="@sparkleideas/plugin-iot-cognitum@latest = $resolved"
   else
-    _CHECK_OUTPUT="@sparkleideas/plugin-iot-cognitum@latest did not resolve on $REGISTRY"
+    _CHECK_OUTPUT="@sparkleideas/plugin-iot-cognitum@latest did not resolve on $REGISTRY (after 5 attempts)"
   fi
   end_ns=$(_ns)
   _EXIT=0; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
