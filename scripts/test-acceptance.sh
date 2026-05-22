@@ -2719,6 +2719,8 @@ collect_parallel "all" \
   "t3-5-consolidation|Nightly consolidation (ADR-0079)" \
   "t3-6-esm-import|ESM import (ADR-0079)" \
   "t3-7-publish-compl|Publish completeness (ADR-0079)" \
+  "rvf-orphan-numid|RVF orphan-numId cross-process self-heal (ADR-0167, ex-bug1)" \
+  "rvf-cosine-reopen|RVF cosine score after reopen — direct cosine, not 2cos-1 (ADR-0073 amendment)" \
   "adr0080-no-1m|No 1M maxEntries (ADR-0080)" \
   "adr0080-100k|100K maxElements (ADR-0080)" \
   "adr0080-atomic|Atomic writes (ADR-0080)" \
