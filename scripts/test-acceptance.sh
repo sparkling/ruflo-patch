@@ -1308,12 +1308,6 @@ if [[ -f "$adr0079_t3_lib" ]]; then
   run_check_bg "t3-1-bulk-corpus"     "Bulk corpus ranking (ADR-0079)"       check_t3_1_bulk_corpus_ranking         "adr0079"
   run_check_bg "t3-2-concurrent"      "RVF concurrent writes (ADR-0079)"     check_t3_2_rvf_concurrent_writes       "adr0079"
   run_check_bg "rvf-orphan-numid"     "RVF orphan-numId cross-process self-heal (ADR-0167, ex-bug1)" check_rvf_orphan_numid_selfheal "adr0167"
-  # NOTE (2026-05-22): rvf-orphan-numid runs but is intentionally NOT in the
-  # collect_parallel "all" tally below. It was silently uncounted since it was
-  # added; counting it surfaced a PRE-EXISTING failure (cross-process
-  # "authentication" search → total:0) unrelated to the ADR-0073 cosine fix.
-  # Tracked as an ADR-0167 follow-up — add its spec to collect_parallel once the
-  # orphan-self-heal failure is fixed. Do NOT re-add the spec without fixing it.
   run_check_bg "rvf-cosine-reopen"    "RVF cosine score after reopen — direct cosine, not 2cos-1 (ADR-0073 amendment)" check_rvf_cosine_score_after_reopen "adr0073"
   run_check_bg "t3-3-plugin"          "Plugin load/execute (ADR-0079)"       check_t3_3_plugin_load_execute         "adr0079"
   run_check_bg "t3-4-reasoningbank"   "ReasoningBank cycle (ADR-0079)"       check_t3_4_reasoningbank_cycle         "adr0079"
@@ -2725,6 +2719,7 @@ collect_parallel "all" \
   "t3-5-consolidation|Nightly consolidation (ADR-0079)" \
   "t3-6-esm-import|ESM import (ADR-0079)" \
   "t3-7-publish-compl|Publish completeness (ADR-0079)" \
+  "rvf-orphan-numid|RVF orphan-numId cross-process self-heal (ADR-0167, ex-bug1)" \
   "rvf-cosine-reopen|RVF cosine score after reopen — direct cosine, not 2cos-1 (ADR-0073 amendment)" \
   "adr0080-no-1m|No 1M maxEntries (ADR-0080)" \
   "adr0080-100k|100K maxElements (ADR-0080)" \

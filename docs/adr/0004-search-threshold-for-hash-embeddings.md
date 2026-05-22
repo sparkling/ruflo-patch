@@ -2,7 +2,7 @@
 
 ## Status
 
-Implemented
+Superseded by ADR-0227 — and long obsolete: the `0.3 → 0.1` change was reverted (ADR-0167 re-converged to 0.3), and the target files (`memory-bridge.js`, `memory-initializer.js`) were deleted in the v3 restructure. Retained for history: this is the earliest record that the 0.3 floor drops genuinely-related content — the same insight ADR-0227 re-validates empirically for mpnet.
 
 ## Context
 
