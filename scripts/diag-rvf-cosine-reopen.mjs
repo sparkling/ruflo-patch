@@ -48,7 +48,12 @@ function entry(key, embedding) {
   };
 }
 
-const { RvfBackend, source, error } = await loadRvfBackend();
+// allowOnDemandInstall:false — this runs inside the parallel acceptance harness
+// (180s per-check watchdog). A mid-suite `npm install` from Verdaccio can stall
+// past the watchdog under npm-cache-lock contention and get killed with NO
+// recorded verdict. Resolve only already-built/cached artifacts (codemod-build,
+// acceptance/npx installs); otherwise skip narrowly (ADR-0082) — never hang.
+const { RvfBackend, source, error } = await loadRvfBackend({ allowOnDemandInstall: false });
 if (!RvfBackend) {
   if (!LOAD_RVF_SKIP_REASON_REGEX.test(error || '')) {
     console.log(`FAIL: unexpected load error (not a narrow skip): ${error}`);
