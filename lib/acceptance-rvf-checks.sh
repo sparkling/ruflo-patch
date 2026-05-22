@@ -50,3 +50,33 @@ check_rvf_orphan_numid_selfheal() {
 
   rm -rf "$iso" 2>/dev/null
 }
+
+# RVF cosine score after reopen (ADR-0073 amendment, 2026-05-22).
+#
+# RVF's native open() does not persist the distance metric (RuVector rvf-runtime
+# `try_open_once` rebuilds RvfOptions with `..Default::default()` → L2). So a
+# store created `cosine` reopens as `l2`, its query returns L2² (= 2-2cos for the
+# unit-normalized embeddings), and the old `1 - r.distance` conversion produced
+# `2cos - 1` (negative for merely-related content) → the threshold gate dropped
+# everything → memory_search total:0. The fix scores cosine DIRECTLY.
+#
+# The node repro forces the native (not pure-TS-fallback) path: create+close to
+# lay down the file, REOPEN (handle → l2), store the probe doc on that handle so
+# its numId is mapped in-process, then search a related query and assert the
+# returned score equals the doc's TRUE cosine (not `2cos-1`). Skips narrowly
+# (ADR-0082) if no consistent backend resolves.
+check_rvf_cosine_score_after_reopen() {
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  local out
+  out=$(node "${PROJECT_DIR}/scripts/diag-rvf-cosine-reopen.mjs" 2>&1)
+  if echo "$out" | grep -q '^PASS:'; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="rvf-cosine-reopen: $(echo "$out" | grep '^PASS:' | head -1)"
+  elif echo "$out" | grep -q '^SKIP:'; then
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="rvf-cosine-reopen: $(echo "$out" | grep '^SKIP:' | head -1)"
+  else
+    _CHECK_OUTPUT="rvf-cosine-reopen: $(echo "$out" | head -4 | tr '\n' ' ')"
+  fi
+}

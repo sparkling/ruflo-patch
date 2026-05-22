@@ -232,3 +232,7 @@ Keeping ADR-0092 as "Proposed" would misrepresent the state of the codebase, and
 ### Remaining work
 
 None specific to ADR-0092. Forward-looking work (further hardening of the cross-process convergence protocol, any new coexistence edges) is tracked under ADR-0095's Open Items.
+
+### Addendum (2026-05-22): native ↔ pure-TS score-VALUE parity
+
+This ADR (and its successor ADR-0095) cover *format/file* coexistence between the native and pure-TS paths — not score-value parity. ADR-0073's `1 − distance` conversion silently made the two paths diverge in **value** on a reopened (L2) store: the native ANN path returned `2cos − 1` while `pureTsSearch`/`bruteForceSearch` returned true cosine (the RVF `open()` metric is not persisted → defaults to L2; see the ADR-0073 amendment 2026-05-22). The fix makes the native path score via `cosineSimilarity(query, stored)` too, so native and pure-TS now return **identical similarity values**, not merely coexist on disk.

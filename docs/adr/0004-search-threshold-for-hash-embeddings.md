@@ -84,3 +84,7 @@ The value `0.1` was chosen empirically: hash embeddings for related texts produc
 - **Target files**: `memory-bridge.js`, `memory-initializer.js`, `commands/memory.js`, `mcp-tools/memory-tools.js`
 - **Empirical data**: Hash embeddings produce cosine similarity ~0.1–0.28 for related texts vs ONNX ~0.6–0.95
 - **Patch**: `patch/040-FB-004-search-threshold-for-hash-embeddings/`
+
+## Update (2026-05-22): the cosine-score assumption was later silently violated (RVF metric not persisted)
+
+This ADR's threshold tuning rests on `memory_search` scores **being** cosine similarity (Context, line 13: ONNX ~0.6–0.95). ADR-0073's migration to the distance-returning native binding broke that assumption on a subtle path: RVF's `open()` does not persist the distance metric, so a reopened store computes **L2** and the `1 − distance` cosine conversion returns **`2cos − 1`** — no longer a cosine value, and negative for related content, so any threshold gate drops everything (`total:0`). The "relative ordering stays valid even when absolute scores are lower" observation in §Architecture (line 33) is exactly **why it hid for so long** — L2 and cosine are rank-equivalent for unit vectors, so retrieval ranking stayed correct while the absolute score (and the threshold gated on it) was wrong. Fixed by scoring cosine **directly** — see the **ADR-0073 amendment (2026-05-22)**.

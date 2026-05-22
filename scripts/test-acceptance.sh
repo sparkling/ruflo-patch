@@ -1308,6 +1308,7 @@ if [[ -f "$adr0079_t3_lib" ]]; then
   run_check_bg "t3-1-bulk-corpus"     "Bulk corpus ranking (ADR-0079)"       check_t3_1_bulk_corpus_ranking         "adr0079"
   run_check_bg "t3-2-concurrent"      "RVF concurrent writes (ADR-0079)"     check_t3_2_rvf_concurrent_writes       "adr0079"
   run_check_bg "rvf-orphan-numid"     "RVF orphan-numId cross-process self-heal (ADR-0167, ex-bug1)" check_rvf_orphan_numid_selfheal "adr0167"
+  run_check_bg "rvf-cosine-reopen"    "RVF cosine score after reopen — direct cosine, not 2cos-1 (ADR-0073 amendment)" check_rvf_cosine_score_after_reopen "adr0073"
   run_check_bg "t3-3-plugin"          "Plugin load/execute (ADR-0079)"       check_t3_3_plugin_load_execute         "adr0079"
   run_check_bg "t3-4-reasoningbank"   "ReasoningBank cycle (ADR-0079)"       check_t3_4_reasoningbank_cycle         "adr0079"
   run_check_bg "t3-5-consolidation"   "Nightly consolidation (ADR-0079)"     check_t3_5_nightly_consolidation       "adr0079"
