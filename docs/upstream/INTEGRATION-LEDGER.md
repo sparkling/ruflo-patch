@@ -323,6 +323,37 @@ considered met by the per-fork green acceptance state at the close-out
 timestamp (688/697 pass / 0 fail / 9 skip_accepted, sustained across
 all step boundaries).
 
+## Re-introduction guards
+
+Paths the fork has **deleted by decision** that **still exist
+upstream**. On the next upstream sync, apply `--ours` to these
+paths to prevent the merge from re-introducing them. The cited
+arch-tests trip immediately if a re-introduction slips through.
+
+| Path | Deleted in | ADR | Upstream still ships | Arch-test guard |
+|---|---|---|---|---|
+| `forks/agentdb/src/services/federated-learning.ts` | `2026-05-23` fork-local | ADR-0222 | `ruvnet/agentdb/src/services/federated-learning.ts` (verified 2026-05-24) | `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` §"federated-learning file must not exist" + §"FederatedLearningManager must not appear in agentdb src/" |
+| `forks/agentdb/examples/federated-learning-example.ts` | `2026-05-23` fork-local | ADR-0222 | `ruvnet/agentdb/examples/federated-learning-example.ts` (verified 2026-05-24) | (covered by the FederatedLearningManager grep above) |
+| `forks/agentdb/src/controllers/QUICConnectionPool.ts` | `2026-05-23` fork-local | ADR-0217 | check upstream before next sync (file not currently in `ruvnet/agentdb/src/controllers/`) | `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` §"QUICConnectionPool file must not exist" |
+| `forks/agentdb/src/controllers/QUICStreamManager.ts` | `2026-05-23` fork-local | ADR-0217 | check upstream before next sync (file not currently in `ruvnet/agentdb/src/controllers/`) | `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` §"QUICStreamManager file must not exist" |
+
+**Sync runbook:**
+
+1. Before merging upstream, run:
+   ```bash
+   for path in src/services/federated-learning.ts \
+               examples/federated-learning-example.ts \
+               src/controllers/QUICConnectionPool.ts \
+               src/controllers/QUICStreamManager.ts; do
+     git checkout HEAD -- "$path" 2>/dev/null || true
+   done
+   ```
+   (or use `git merge -X ours` for the specific paths)
+2. After merge, run `npx vitest run tests/unit/adr0217-adr0222-arch.test.ts`
+   in `forks/agentdb` — must stay 13/13 green.
+3. If arch-test goes red, the merge silently re-introduced a
+   deleted file — revert that file and re-test before continuing.
+
 ## Notes / future work
 
 * **No backfill yet** of ADR-0162 v1 landed batches (C+D / F / K hand-ports
