@@ -3282,6 +3282,18 @@ if [[ -f "$p5_lib" ]]; then
     run_check_bg "adr0196-episode-origin" "ADR-0196 episode carries originInstallId"   check_adr0196_episode_originInstallId      "adr0196"
   fi
 
+  # ADR-0216 Option E: skills surface — corpus-shape regression guard +
+  # CLI surface check. Closes F-15-102 (zero acceptance coverage for
+  # skills) and F-15-001 (advertised-but-missing `ruflo skill list`).
+  # The `dual-mode/` whitelist + SKILLS_MAP name-set pin are documented
+  # in lib/acceptance-adr0216-checks.sh.
+  adr0216_lib="${PROJECT_DIR}/lib/acceptance-adr0216-checks.sh"
+  if [[ -f "$adr0216_lib" ]]; then
+    source "$adr0216_lib"
+    run_check_bg "adr0216-corpus-shape" "ADR-0216 skills corpus shape"  _run_skills_corpus_shape  "skills-surface"
+    run_check_bg "adr0216-cli-surface"  "ADR-0216 skill list CLI"       _run_skills_cli_surface   "skills-surface"
+  fi
+
   # Collect all Phase 5 parallel checks
   collect_parallel \
     "p5-cfg-valid|config.json valid" \
@@ -3317,7 +3329,9 @@ if [[ -f "$p5_lib" ]]; then
     "adr0195-subscribe|ADR-0195 event-bus episode:recorded" \
     "adr0195-predictAction|ADR-0195 broken predictAction probe gone" \
     "adr0196-fed-status|ADR-0196 federation status interface" \
-    "adr0196-episode-origin|ADR-0196 episode carries originInstallId"
+    "adr0196-episode-origin|ADR-0196 episode carries originInstallId" \
+    "adr0216-corpus-shape|ADR-0216 skills corpus shape" \
+    "adr0216-cli-surface|ADR-0216 skill list CLI"
 
   # Cleanup
   rm -rf "$_P5_DIR" 2>/dev/null

@@ -8,7 +8,8 @@
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
-#         adr0194, adr0195, adr0196, adr0204, e2e-core, e2e-storage
+#         adr0194, adr0195, adr0196, adr0204, e2e-core, e2e-storage,
+#         skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -548,6 +549,28 @@ if [[ "$_FAST_RUN_GROUPS" == *"p5"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
 
     # Cleanup
     rm -rf "$_P5_DIR" 2>/dev/null
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"skills-surface"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0216-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0216-checks.sh"
+
+    # Need a fresh init'd project — reuse the P5 dir if it was created
+    # above (group=p5 or all), otherwise spin one up for this group.
+    if [[ -z "${P5_DIR:-}" || ! -d "${P5_DIR}/.claude/skills" ]]; then
+      _P5_DIR_SKILLS=$(mktemp -d /tmp/ruflo-p5-skills-XXXXX)
+      export P5_DIR="$_P5_DIR_SKILLS"
+      echo "  [fast] Creating fresh project at $_P5_DIR_SKILLS for skills-surface (~60s)..."
+      (cd "$_P5_DIR_SKILLS" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" init --full --force 2>/dev/null) || true
+    fi
+
+    echo "── ADR-0216 (skills surface: corpus shape + CLI) ──"
+    _fast_run "adr0216-corpus-shape" _run_skills_corpus_shape
+    _fast_run "adr0216-cli-surface"  _run_skills_cli_surface
+
+    # Cleanup only if we created the dir for this group.
+    [[ -n "${_P5_DIR_SKILLS:-}" ]] && rm -rf "$_P5_DIR_SKILLS" 2>/dev/null
   fi
 fi
 
