@@ -626,3 +626,121 @@ Status flipped: **proposed → deferred**.
 **ADR-0205 + ADR-0206 reconciliation (synthesis decision):** both retain `status: superseded by ADR-0217`. Deferred IS a valid terminal disposition for a superseder — the practical meaning is "we have decided not to do either of those, AND we have decided not to do the larger thing now either." See 0205 and 0206 supplementary amendments.
 
 Filename slug `ADR-0217-implement-full-quic-synchronization-architecture.md` retained per ADR §"Minor" — renaming breaks `supersedes`/`depends-on` graph refs.
+
+## Amendment — 2026-05-24 (Quarantine actions 1–5 closure)
+
+All 5 quarantine actions from the 2026-05-23 amendment are now
+**closed**. A 2026-05-24 verification pass against
+`forks/agentdb/main` confirms each:
+
+### Action 1 — Export retraction with agentic-flow carve-out
+
+**Status:** Already shipped. Verified at `agentdb/src/index.ts:177–196`:
+
+- ADR-0217 comment block at lines 177–182 documents the quarantine.
+- `VectorClock`, `incrementVectorClock`, `createVectorClock` marked
+  `@public` — explicit agentic-flow runtime consumer carve-out.
+- Other QUIC/CRDT/JWT types (`VectorClockComparison`, `SyncMessage`,
+  `SyncPayload`, `EpisodeSync`, `SyncableEpisode`, `compareVectorClocks`,
+  `mergeVectorClocks`) marked `@internal`.
+- `QUICServer`, `QUICClient`, `SyncCoordinator` not re-exported from
+  the package barrel.
+
+Arch-test `tests/unit/adr0217-adr0222-arch.test.ts` (13 tests
+passing) pins this state — re-adding `resolveConflicts` to public
+exports or removing the `VectorClock` family trips the test.
+
+### Action 2 — CLI guard
+
+**Status:** Closed by fork commit `0a3bed3` (2026-05-24).
+
+All 4 QUIC sync entry points in `forks/agentdb/src/cli/agentdb-cli.ts`
+now throw an ADR-0217 deferred-status error before reaching any
+deleted internals:
+
+- `quicStartServer` — guarded (truncated body, just the throw).
+- `quicConnect` — guarded (truncated body, just the throw).
+- `quicPush` — already guarded prior to this session.
+- `quicPull` — already guarded prior to this session.
+
+Arch-test `quicPush must throw immediately (fail-loud guard present)`
+and `quicPull must throw immediately` pin the existing two; the new
+two are caught by the same import + module-loads check (the file
+itself compiles and the truncated handler bodies don't reference
+deleted classes).
+
+### Action 3 — `resolveConflicts` / `conflictStrategy` deletion
+
+**Status:** Already shipped (as `@deprecated` retention, not full
+deletion). Verified by arch-test §`resolveConflicts must not appear
+in public exports of src/index.ts` + §`conflictStrategy must be
+marked @deprecated in SyncCoordinatorConfig` + §`resolveConflicts
+method must be marked @deprecated in SyncCoordinator.ts`.
+
+The 2026-05-23 amendment described this as "dead-stub deletion." In
+practice the disposition is **retract from public surface + mark
+@deprecated** — internal type/method retained behind the
+@deprecated marker to avoid breaking the few remaining internal
+references during the deferral window. This is functionally
+equivalent to deletion from a consumer's standpoint and matches
+`[[feedback-no-fallbacks]]` (the surface is honest about its
+deferred status, not silently fallback-stubbed).
+
+### Action 4 — `QUICConnectionPool` / `QUICStreamManager` deletion + arch-test
+
+**Status:** Already shipped. Verified:
+
+- Files `src/controllers/QUICConnectionPool.ts` and
+  `src/controllers/QUICStreamManager.ts` do not exist
+  (`existsSync` checks in arch-test §§1–2 pass).
+- Arch-test `tests/unit/adr0217-adr0222-arch.test.ts` exists and
+  pins both deletions.
+
+### Action 5 — Honest docs sweep
+
+**Status:** Closed by fork commits `a17dab1` (agentdb,
+2026-05-24) and `684a98744` (ruflo, 2026-05-24).
+
+agentdb fork:
+- `docs/quic/QUIC-INDEX.md` — full quarantine banner at top
+  documenting the deferred status, what was deleted, what
+  remains `@public` (VectorClock family).
+- `docs/quic/QUIC-ARCHITECTURE.md` — banner pointing back to the
+  index.
+- `docs/quic/QUIC-SYNC-IMPLEMENTATION.md` — banner pointing back
+  to the index.
+
+Other `docs/quic/*.md` files (RESEARCH, ROADMAP, TEST-SUITE,
+DIAGRAMS) inherit context via QUIC-INDEX.md cross-references.
+Archive / release-notes mentions left as-is (historical record,
+not advertising).
+
+ruflo fork:
+- `docs/USERGUIDE.md` — `agentdb-advanced` plugin row notes QUIC
+  sync deferred per ADR-0217; QUIC Transport feature row tagged
+  `[deferred — ADR-0217]`.
+
+### Vector-clock carve-out re-verification
+
+Per the 2026-05-23 amendment's "MUST be preserved" instruction, the
+agentic-flow consumer carve-out at `agentdb/src/index.ts:174–198`
+remains intact:
+
+- `VectorClock` — `@public — agentic-flow runtime consumer`
+- `incrementVectorClock` — `@public — agentic-flow runtime consumer`
+- `createVectorClock` — `@public — agentic-flow runtime consumer`
+
+Arch-test §§104–141 (4 tests) pins all three exports + the @public
+marker in `src/types/quic.ts`. Live consumer:
+`forks/agentic-flow/.../autopilot-learning.ts:42–43,1083`.
+
+### Status
+
+All 5 quarantine actions **closed**. The ADR's `deferred` terminal
+disposition is unchanged — the quarantine work is the deferral's
+implementation, not a status flip. The full multi-writer build
+(Option A blueprint, §"Corrected Option-A blueprint") remains
+deferred behind the original 3-precondition revisit-trigger.
+
+No INTEGRATION-LEDGER row (fork-original quarantine work, no
+upstream hand-port).
