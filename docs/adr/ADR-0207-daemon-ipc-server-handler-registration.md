@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-21
 tags: [daemon, ipc, rpc, dead-code, ADR-0201, ADR-0088, ADR-0202, ADR-0059, follow-up, swarm-reviewed]
 supersedes: []
 depends-on: [0201, 0202]
@@ -221,4 +222,18 @@ Standing recommendations (outside this ADR): the audit's F-13-001 severity is in
 * Upstream evidence: `ruvnet/ruflo` issues #1845 (the batch — titled #1839–#1847 — that chose a file-poll queue over IPC; the #1845-specificity lives in code comments), #1614 (multi-writer data-loss fixed **in-process** via RVF write-queue serialization + atomic temp-rename in `8824fe3c4`, *not* a lock-reread), #984 (status mismatch left **open**), #1766 (Windows `child_process.fork()` IPC fragility — a parent↔child channel, **not** a Unix `.sock`; corroborates the portability *direction* but is not evidence about socket binding); commit `1884ed1010`
 * Source (to delete): `forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts`
 * Source (to edit): `forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts` (construction site `868-883`; file-poll queue `893-1021`), `forks/ruflo/v3/@claude-flow/cli/src/commands/daemon.ts` (status `aiMode` shell-out; new `restart` subcommand)
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. REMOVE landed in fork (`forks/ruflo/v3`).
+
+Verification (2026-05-23 audit, fork HEAD):
+
+- `forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts` — **deleted**.
+- `forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts` — zero references to `DaemonIPCServer | daemon-ipc | registerMethod | ipcServer` (grep clean).
+- Arch enforcement: `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/daemon-ipc-server-removed.arch.test.ts:59` forbids the three tokens in `cli/src`.
+- Acceptance: `e2e-0059-p4-socket-exists` (`lib/acceptance-adr0059-phase4-checks.sh:20`) inverted by `f295135` (2026-05-23) — socket present now signals a regression; daemon liveness signal switched to PID file by `fdcba38` (2026-05-23).
+- Upstream parity: zero history for `DaemonIPCServer` in `ruvnet/ruflo` (pickaxe + path log empty) — REMOVE converges with upstream; no INTEGRATION-LEDGER row needed.
+
+F-13-001 hand-off to ADR-0202 (implemented) confirmed clean — no socket consumer stranded. Dispatch-queue producer gap is owned by ADR-0218.
 * Memory references: [[feedback-no-fallbacks]] (a -32601-for-everything server is the textbook silent dead surface; deletion is the cleanest fix), [[feedback-corpus-evidence-before-feature-work]] (zero callers for the five methods — do not build for hypothetical consumers), [[feedback-trace-before-hypothesis]] (the review traced each handler + the queue producer end-to-end before deciding), [[feedback-upstream-means-upstream]] (upstream = `ruvnet/ruflo`, which never had this layer)
