@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-22
 tags: [policy, lint, arch-test, error-handling, no-fallbacks, enforcement, swarm-reviewed]
 supersedes: []
 depends-on: [0201]
@@ -170,3 +171,21 @@ A fresh 6-expert council re-verified ADR-0209 against fork HEAD + upstream. **Op
 * **Canonical template** — `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts:79-90` (existsSync→default, parse→throw).
 * **Upstream** — no detectors/policy; `#1516` (fix trigger, keep fallback), `#230` (fallback-as-enhancement), `ruflo-hook.sh:13-14` (always exit 0).
 * **Memory** — [[feedback-no-fallbacks]], [[feedback-no-squelch-tests]], [[feedback-skip-accepted-as-squelch]], [[feedback-best-effort-must-rethrow-fatals]], [[feedback-corpus-evidence-before-feature-work]], [[feedback-trace-before-hypothesis]], [[feedback-upstream-means-upstream]].
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented** (per Move A Phase C audit).
+
+**Verified shipped:**
+
+- Step 2 bulk-fix at the cited envelope: `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts:525-527` returns `success: false` with `error:` field, pinned with `// ADR-0209 Option E item #2 — Database not available:` marker.
+- Step 4 fixed regression assertion: `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0209-no-fallbacks-envelope.arch.test.ts` — 2 assertions (success:false pin + honest `error:` field). Passes via `npx vitest run` in 1ms.
+- Step 3 partial: `tryOptionalImport` exists at `forks/ruflo/v3/@claude-flow/cli/src/utils/optional-import.ts:38` (pre-existing). `loadStoreOrCreate` and `Result<T,E>` deferred to first real caller per the ADR's own upstream/devil's-advocate minority note — not gating.
+
+**Explicitly NOT shipped (and not required per the ADR's own decisions):**
+
+- Step 4's permanently-advisory cli/src-wide counter (ADR recommends weighing dropping it; the fixed arch-test discharges the enforcement obligation).
+- Step 5 dropped 3b (state-flag-flip) — by ADR's own decision.
+- Step 6 dropped 3c-as-specified — by ADR's own decision (empty target set).
+
+Confirmation aligns with [[feedback-no-fallbacks]] (genuine data-loss bug fixed at source) and [[feedback-skip-accepted-as-squelch]] (no allowlist-dwarfing-catches gate shipped). This is fork-original work — no INTEGRATION-LEDGER row (upstream actively SHIPS fallbacks as design; the ADR's Option E narrows the fork-only override to data-integrity violations).
