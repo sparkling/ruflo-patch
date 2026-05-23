@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-22
 tags: [config, env-vars, init, canonicalization, swarm-reviewed]
 supersedes: []
 depends-on: [0201, 0118]
@@ -124,3 +125,28 @@ A fresh 6-expert council re-verified ADR-0214. **Option A's remove-half re-affir
 * **Follow-ups:** wire the 5 annotated vars (`LOG_LEVEL`→logger, `HNSW_*`→`resolve-config.ts:267`, `EMBEDDING_DIM`→`embedding.dimension`, `SECURITY_MODE`→aidefence); F-14-014 (Zod bypass, 17 pkgs) + F-14-015 (NaN validation) separate ADRs.
 * **Related:** ADR-0201 (audit), ADR-0069 (config.json keys — separate surface), ADR-0118 (`CLAUDE_FLOW_*` is the runtime convention, NOT `RUFLO_*`), ADR-0192/0193/0195 (autopilot/guidance feature — owns the 9 zero-consumer `GUIDANCE_*` `settings.json` vars surfaced here; NB: those ADRs do **not** themselves discuss env vars or config.json, so the deletion of the autopilot dead-doc vars rests on *zero consumers*, not on a claim from 0192/0193).
 * **Memory:** [[feedback-no-fallbacks]] (theatrical config = silent-fallback shape), [[feedback-corpus-evidence-before-feature-work]] (annotate, don't delete-then-re-add), [[feedback-upstream-means-upstream]] (defects inherited; recurring patch), [[feedback-update-integration-ledger]] (ledger the standing patch), [[reference-embedding-model]] (768-dim; fix the `EMBEDDING_DIM=384` doc), [[feedback-remediation-adr-preflight]] (premise-true-at-runtime check *passed* here — the rare validated ADR — while the scope/upstream checks surfaced the corrections).
+
+## Amendment — 2026-05-23 (Move A audit, implemented — code complete; doc cleanup partial)
+
+Status flipped: **proposed → implemented** (code complete).
+
+**Code-side (all 3 sites):**
+
+- `mcp-generator.ts:86-96` — 4 theatrical vars dropped; `CLAUDE_FLOW_TOPOLOGY`→`CLAUDE_FLOW_SWARM_TOPOLOGY`, `CLAUDE_FLOW_MEMORY_BACKEND`→`CLAUDE_FLOW_MEMORY_TYPE`.
+- `settings-generator.ts:79-82` — `CLAUDE_FLOW_V3_ENABLED`, `CLAUDE_FLOW_HOOKS_ENABLED`, 9 `GUIDANCE_*` vars removed; only `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` survives.
+- `executor.ts:354-367` — `mergeSettingsForUpgrade` env block aligned with `generateSettings()`; no theatrical re-injection on upgrade.
+
+**Arch-test gate enforced (3/3 passing, 113ms):** `cli/__tests__/arch/env-var-theatrical-gate.arch.test.ts` confirms (a) every emitted var has a consumer or allow-list match, and (b) init emits canonical reader names.
+
+**INTEGRATION-LEDGER rows recorded:** `docs/upstream/INTEGRATION-LEDGER.md:129-130` (`6a356ffe6` superseded-by-local, `0cd9c4a39` superseded-by-local).
+
+**Outstanding (ADR Steps 3+5 unfinished, non-blocking):**
+
+- `forks/ruflo/docs/USERGUIDE.md:6932,6960,7060` — `CLAUDE_FLOW_MODE` (3 sites): delete.
+- `docs/USERGUIDE.md:7045` — `CLAUDE_FLOW_TOKEN`: delete.
+- `docs/USERGUIDE.md:6975` — `CLAUDE_FLOW_TOPOLOGY` doc row: rewrite to `SWARM_TOPOLOGY`.
+- `docs/USERGUIDE.md:3229` — `CLAUDE_FLOW_MEMORY_BACKEND=hybrid` snippet: rewrite to `CLAUDE_FLOW_MEMORY_TYPE=hybrid`.
+- `docs/USERGUIDE.md:6993` — `CLAUDE_FLOW_EMBEDDING_DIM` default `384` → `768` per [[reference-embedding-model]].
+- The `MEMORY_TYPE` value list at `USERGUIDE:6964` (bogus `json` value vs loader's `sqlite|agentdb|hybrid|redis|memory`): re-verify and fix.
+
+**Council MUST-FIX #2 (runtime honoured-by-loader check) deferred:** the arch-test verifies emission, not that `SWARM_TOPOLOGY`/`MEMORY_TYPE` are honoured by the loader at runtime in a fresh-init'd project. Value-safety (init defaults ∈ loader's Zod sets) and name-match-by-grep are the current proxy.
