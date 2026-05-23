@@ -30,47 +30,54 @@ function mockFn(impl) {
 // Phase 0: Dead Code Removal
 // ===========================================================================
 
-describe('Phase 0: HybridBackend dead code removed', () => {
+// ADR-0076 Phase 0 ("HybridBackend dead code removed") was SUPERSEDED by
+// ADR-0230 (substrate re-convergence with upstream ADR-125). Per ADR-0230
+// invariant #5 the hybrid-tier backend is re-introduced as an INTERNAL
+// module wired through `createDatabase({ provider: 'hybrid' })`, while the
+// top-level public surface still does NOT re-export `HybridBackend` or
+// `HybridBackendConfig` (the fork's narrower surface from ADR-0076 stands
+// at the export layer). The assertions below verify the new state.
+describe('ADR-0076 Phase 0 (superseded by ADR-0230 invariant #5)', () => {
   const memorySrc = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src';
 
-  it('hybrid-backend.ts is deleted', () => {
+  it('hybrid-backend.ts EXISTS (re-introduced as internal module per ADR-0230 step F)', () => {
     assert.ok(
-      !existsSync(join(memorySrc, 'hybrid-backend.ts')),
-      'hybrid-backend.ts must not exist',
+      existsSync(join(memorySrc, 'hybrid-backend.ts')),
+      'hybrid-backend.ts must exist post-ADR-0230 step F (vendored from upstream Phase 2)',
     );
   });
 
-  it('hybrid-backend.test.ts is deleted', () => {
+  it('hybrid-backend.test.ts is NOT vendored on fork (fork carries only the production module)', () => {
     assert.ok(
       !existsSync(join(memorySrc, 'hybrid-backend.test.ts')),
-      'hybrid-backend.test.ts must not exist',
+      'hybrid-backend.test.ts intentionally NOT vendored — fork carries only the production module',
     );
   });
 
-  it('index.ts does not export HybridBackend', () => {
+  it('index.ts does not import from hybrid-backend at top-level (selected via createDatabase per ADR-0230)', () => {
     const indexPath = join(memorySrc, 'index.ts');
     if (!existsSync(indexPath)) return;
     const src = readFileSync(indexPath, 'utf-8');
     assert.ok(
       !src.includes("from './hybrid-backend"),
-      'index.ts must not import from hybrid-backend',
+      'index.ts must not import from hybrid-backend at the top-level surface (selected via createDatabase({provider:\\'hybrid\\'}))',
     );
   });
 
-  it('index.ts does not export HybridBackendConfig', () => {
+  it('index.ts does not export the hybrid config types at the top-level', () => {
     const indexPath = join(memorySrc, 'index.ts');
     if (!existsSync(indexPath)) return;
     const src = readFileSync(indexPath, 'utf-8');
     assert.ok(
       !src.includes('HybridBackendConfig'),
-      'index.ts must not export HybridBackendConfig',
+      'index.ts must not export HybridBackendConfig at the top-level surface',
     );
   });
 
-  it('no production file references HybridBackend', () => {
+  it('only database-provider.ts may reference hybrid-backend (wire point per ADR-0230 Phase 2)', () => {
     const files = [
       'index.ts', 'sqlite-backend.ts', 'agentdb-backend.ts',
-      'controller-registry.ts', 'database-provider.ts', 'rvf-backend.ts',
+      'controller-registry.ts', 'rvf-backend.ts',
     ];
     for (const file of files) {
       const path = join(memorySrc, file);
@@ -78,7 +85,7 @@ describe('Phase 0: HybridBackend dead code removed', () => {
       const src = readFileSync(path, 'utf-8');
       assert.ok(
         !src.includes('HybridBackend'),
-        `${file} must not reference HybridBackend`,
+        `${file} must not reference HybridBackend (only database-provider.ts wires it, per ADR-0230 step F)`,
       );
     }
   });
