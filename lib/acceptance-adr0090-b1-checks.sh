@@ -80,7 +80,9 @@ check_adr0090_b1_dimension_mismatch_fatal() {
   local seed_script="$iso/.b1-seed.mjs"
   local seed_db="$work/seed-384.rvf"
   cat > "$seed_script" << 'SEED_SCRIPT'
-import { RvfBackend } from '@sparkleideas/memory';
+// ADR-0230 step C / ADR-125 Phase 1: RvfBackend removed from
+// `@sparkleideas/memory` top-level surface — explicit module path required.
+import { RvfBackend } from '@sparkleideas/memory/rvf-backend.js';
 const dbPath = process.argv[2];
 const backend = new RvfBackend({
   databasePath: dbPath,

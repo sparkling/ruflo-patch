@@ -256,7 +256,9 @@ check_adr0090_b2_rvf_partial_wal() {
   # no silent partial state.
   local seed_script="$iso/.b2-wal-seed.mjs"
   cat > "$seed_script" <<'SCRIPT'
-import { RvfBackend } from '@sparkleideas/memory';
+// ADR-0230 step C / ADR-125 Phase 1: RvfBackend removed from
+// `@sparkleideas/memory` top-level surface — explicit module path required.
+import { RvfBackend } from '@sparkleideas/memory/rvf-backend.js';
 import { existsSync, rmSync, readFileSync, writeFileSync, truncateSync } from 'node:fs';
 
 const dbPath = process.argv[2];

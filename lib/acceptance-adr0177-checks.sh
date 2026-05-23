@@ -98,7 +98,11 @@ _adr0177_stored_dim() {
   # the assertion will catch the mismatch downstream.
   local probe="${TEMP_DIR}/.adr0177-probe-$$.mjs"
   cat > "$probe" << 'PROBE_SCRIPT'
-import { RvfBackend } from '@sparkleideas/memory';
+// ADR-0230 step C / ADR-125 Phase 1: RvfBackend removed from
+// `@sparkleideas/memory` top-level surface. Use the explicit module
+// path per the published migration guide
+// (v3/@claude-flow/memory/docs/migration-3.0.0-alpha.18.md).
+import { RvfBackend } from '@sparkleideas/memory/rvf-backend.js';
 const rvfPath = process.argv[2];
 const expectedDim = parseInt(process.argv[3] || '768', 10);
 const backend = new RvfBackend({ databasePath: rvfPath, dimensions: expectedDim, autoPersistInterval: 0 });
