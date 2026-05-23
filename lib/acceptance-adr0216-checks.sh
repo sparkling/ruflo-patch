@@ -24,16 +24,27 @@
 #     future missing-SKILL.md regression.
 #   - Floor: 30 (--yes default) / 38 (--full). P5 init uses --full.
 
-# Canonical 38-entry SKILL.md-bearing name-set + 1 whitelist
+# Canonical 33-entry SKILL.md-bearing name-set + 1 whitelist
 # (dual-mode = SKILL.md-less). Matches the arch-test pin
 # v3/@claude-flow/cli/__tests__/arch/adr0216-skills-map-pin.arch.test.ts.
+#
+# 2026-05-23 (ADR-0228 Batch M): post upstream ADR-128 + #1836 prune,
+# the cli template bundles 33 skills (29 from Phase 1 c63905e6a + 4
+# from Phase 5 9a66b2996: browser, dual-mode, flow-nexus-*). The 5
+# previously-bundled skills (agentic-jujutsu, hive-mind-advanced,
+# performance-analysis, worker-benchmarks, worker-integration) are no
+# longer in cli/.claude/skills/ — three were pruned as duplicates by
+# upstream's #1836 (`02976fcb9`), two (worker-*) were never bundled
+# by upstream. They still exist in the fork's top-level .claude/skills/
+# but init's `findSourceDir` walks the cli package, not the wrapper.
+# Per ADR-128 §"Out of scope" #2, plugin auto-install during init was
+# explicitly deferred; users opt in via `ruflo plugins install`.
 _ADR0216_EXPECTED_SKILLS=(
   'agentdb-advanced'
   'agentdb-learning'
   'agentdb-memory-patterns'
   'agentdb-optimization'
   'agentdb-vector-search'
-  'agentic-jujutsu'
   'browser'
   'flow-nexus-neural'
   'flow-nexus-platform'
@@ -43,10 +54,8 @@ _ADR0216_EXPECTED_SKILLS=(
   'github-project-management'
   'github-release-management'
   'github-workflow-automation'
-  'hive-mind-advanced'
   'hooks-automation'
   'pair-programming'
-  'performance-analysis'
   'reasoningbank-agentdb'
   'reasoningbank-intelligence'
   'skill-builder'
@@ -64,8 +73,6 @@ _ADR0216_EXPECTED_SKILLS=(
   'v3-security-overhaul'
   'v3-swarm-coordination'
   'verification-quality'
-  'worker-benchmarks'
-  'worker-integration'
 )
 
 # Whitelist: SKILL.md-less categories. Currently just dual-mode (has
@@ -74,10 +81,11 @@ _ADR0216_SKILL_MD_LESS_WHITELIST=(
   'dual-mode'
 )
 
-# Floor (SKILL.md-file count) for --full init. ADR-0216 §(2): "Express
-# the floor as a SKILL.md-file count (38), not an emitted-dir count
-# (39)." Default (--yes) is 30.
-_ADR0216_FLOOR_FULL=38
+# Floor (SKILL.md-file count) for --full init. Post-ADR-128 + #1836:
+# 33 (was 38 pre-prune). The 5 dropped skills (agentic-jujutsu,
+# hive-mind-advanced, performance-analysis, worker-{benchmarks,
+# integration}) live outside the cli bundle now.
+_ADR0216_FLOOR_FULL=33
 
 # ══════════════════════════════════════════════════════════════════════════════
 # _run_skills_corpus_shape — corpus-shape regression guard
