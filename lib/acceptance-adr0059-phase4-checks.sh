@@ -18,37 +18,78 @@ set +u 2>/dev/null || true
 # ════════════════════════════════════════════════════════════════════
 
 check_adr0059_daemon_ipc_socket_exists() {
+  # ADR-0207 (accepted 2026-05-20, shipped patch.273): DaemonIPCServer + the
+  # Unix `.claude-flow/daemon.sock` were deleted; the daemon's control plane
+  # is now PID file + `daemon-state.json` + CLI orchestration. This check is
+  # retained under its historical name to keep the e2e-0059-p4 contract
+  # stable, but its semantics are inverted: success means the daemon is
+  # alive AND no socket file is present. A socket file appearing on a
+  # post-0207 build would mean the IPC server got resurrected (regression).
   _CHECK_PASSED="false"
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+  local pid_file="$E2E_DIR/.claude-flow/daemon.pid"
+  local state_file="$E2E_DIR/.claude-flow/daemon-state.json"
 
-  if [[ -S "$socket_path" ]] || [[ -e "$socket_path" ]]; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Socket file created at $socket_path"
-  else
-    _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon status" "" 5
-    if echo "$_RK_OUT" | grep -qi "running"; then
-      # Daemon running but socket missing — this is a genuine anomaly.
-      _CHECK_PASSED="false"
-      _CHECK_OUTPUT="FAIL: daemon reports running but socket not found at $socket_path"
-    else
-      # Daemon not started — expected default per ADR-0088 (daemon is opt-in for
-      # timer scheduler only; IPC hot-path retired). Counts toward invocation, not verification.
-      _CHECK_PASSED="skip_accepted"
-      _CHECK_OUTPUT="SKIP_ACCEPTED: daemon not running (ADR-0088 retired IPC hot path; socket is opt-in)"
+  # Regression guard: socket must not exist on a post-ADR-0207 build.
+  if [[ -S "$socket_path" || -e "$socket_path" ]]; then
+    _CHECK_OUTPUT="FAIL: ADR-0207 regression — daemon.sock present at $socket_path (IPC server should be removed)"
+    return
+  fi
+
+  # PID + state file together are the post-ADR-0207 "daemon is up" signal.
+  if [[ -f "$pid_file" && -f "$state_file" ]]; then
+    local pid; pid=$(cat "$pid_file" 2>/dev/null) || true
+    if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+      _CHECK_PASSED="true"
+      _CHECK_OUTPUT="Daemon control plane up (PID $pid, state file present, no socket per ADR-0207)"
+      return
     fi
+  fi
+
+  # Fall back to asking the daemon (handles bg-daemon detection nuances).
+  _run_and_kill_ro "cd '$E2E_DIR' && NPM_CONFIG_REGISTRY='$REGISTRY' $CLI_BIN daemon status" "" 5
+  if echo "$_RK_OUT" | grep -qi "running"; then
+    _CHECK_PASSED="true"
+    _CHECK_OUTPUT="Daemon reports running; no socket present (ADR-0207 compliant)"
+  else
+    # Daemon not started — expected default per ADR-0088 (daemon is opt-in
+    # for timer scheduler only). Counts toward invocation, not verification.
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: daemon not running (ADR-0088 daemon is opt-in)"
   fi
 }
 
 check_adr0059_daemon_ipc_probe() {
+  # ADR-0207: socket removed. The "probe" now verifies that the absence is
+  # honest: if a socket file exists it MUST be a real Unix domain socket
+  # accepting connections (i.e. we did not regress to a stale file).
+  # When the daemon is alive but no socket exists, that's the post-0207
+  # compliant state and the check passes.
   _CHECK_PASSED="false"
   local socket_path="$E2E_DIR/.claude-flow/daemon.sock"
+  local pid_file="$E2E_DIR/.claude-flow/daemon.pid"
 
+  if [[ ! -e "$socket_path" ]]; then
+    if [[ -f "$pid_file" ]]; then
+      local pid; pid=$(cat "$pid_file" 2>/dev/null) || true
+      if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+        _CHECK_PASSED="true"
+        _CHECK_OUTPUT="No daemon.sock (ADR-0207 removed IPC server); daemon PID $pid alive"
+        return
+      fi
+    fi
+    _CHECK_PASSED="skip_accepted"
+    _CHECK_OUTPUT="SKIP_ACCEPTED: daemon not running (ADR-0088 daemon is opt-in)"
+    return
+  fi
+
+  # Socket file present — this is a regression on post-0207 builds. Verify
+  # the file is a real socket and not a stale leftover.
   local result
   result=$(node -e "
     const net = require('net');
     const fs = require('fs');
     const path = '$socket_path';
-    if (!fs.existsSync(path)) { console.log('NO_SOCKET'); process.exit(0); }
     const socket = net.createConnection(path, () => {
       console.log('CONNECTED');
       socket.destroy();
@@ -58,16 +99,9 @@ check_adr0059_daemon_ipc_probe() {
   " 2>&1) || true
 
   if echo "$result" | grep -q "CONNECTED"; then
-    _CHECK_PASSED="true"
-    _CHECK_OUTPUT="Node connected to daemon socket"
-  elif echo "$result" | grep -q "NO_SOCKET"; then
-    # No socket = daemon not started. Expected default per ADR-0088.
-    _CHECK_PASSED="skip_accepted"
-    _CHECK_OUTPUT="SKIP_ACCEPTED: daemon socket absent (ADR-0088 retired IPC hot path; socket is opt-in)"
+    _CHECK_OUTPUT="FAIL: ADR-0207 regression — daemon.sock is live and accepts connections"
   else
-    # Socket exists but connection failed (timeout / error). Real failure.
-    _CHECK_PASSED="false"
-    _CHECK_OUTPUT="FAIL: daemon socket connection failed (probe: $result)"
+    _CHECK_OUTPUT="FAIL: ADR-0207 regression — daemon.sock file present (probe: $result)"
   fi
 }
 
