@@ -106,3 +106,13 @@ Implemented in fork commit `0bdd3b4b3`, shipped in
 * **Acceptance (behavioural):** `adr0204-archivist-rt` (lib/acceptance-adr0204-checks.sh)
   now fails on a MISSING first-store reply, rather than tolerating it. Wired into
   the canonical `scripts/test-acceptance.sh`, not only the fast runner.
+
+## Direct review (2026-05-22)
+
+Verified shipped: both `bin/cli.js` and `bin/mcp-server.js` define `writeFrame`
+via `process.stdout.write` and contain **zero** `console.log(JSON.stringify(…))`
+frame writes; fork commit `0bdd3b4b3` ("write stdio JSON-RPC frames via raw
+stdout, not console.log") is present. Status `implemented` is accurate. (Minor:
+this ADR titles its verification section `### Regression guards` rather than the
+cohort's `### Confirmation` — equivalent content, an acceptable bugfix-ADR
+variant; left as-is.) No substantive corrections.
