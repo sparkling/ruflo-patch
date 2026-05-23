@@ -55,12 +55,17 @@ describe('ADR-0006 follow-up: CLAUDE.md template — ruflo rebrand', () => {
     assert.equal(leftovers.length, 0, 'no @sparkleideas/cli@latest invocations outside bootstrap');
   });
 
-  it('preserves the one-time bootstrap `claude mcp add claude-flow` line', () => {
+  it('preserves the one-time bootstrap `claude mcp add` line', () => {
     // ADR-0143: Pass 7 promotes @sparkleideas/cli → @sparkleideas/ruflo on
     // user-facing surfaces (init/claudemd-generator output is in scope).
-    // Accept any of the three forms: pre-codemod (@claude-flow/cli),
-    // post-Pass-1-only (@sparkleideas/cli), or post-Pass-7 (@sparkleideas/ruflo).
-    assert.match(content, /claude mcp add claude-flow -- npx -y @(?:claude-flow\/cli|sparkleideas\/(?:cli|ruflo))(?:@latest)?/);
+    // ADR-0223 F-11-001: server-key flipped from `claude-flow` to `ruflo`
+    // (matches the .mcp.json entry's key, per ADR-0143). Accept both
+    // pre-rebrand and post-rebrand forms in the bootstrap line so the test
+    // tolerates the two-stage migration history.
+    assert.match(
+      content,
+      /claude mcp add (?:claude-flow|ruflo) -- npx -y @(?:claude-flow\/cli|sparkleideas\/(?:cli|ruflo))(?:@latest)?/,
+    );
   });
 
   // ADR-0113 Fix 2 (Phase A) intentionally rebranded the MCP tool prefix:
