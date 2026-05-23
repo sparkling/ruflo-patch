@@ -61,10 +61,16 @@ describe('ADR-0181 Item 6 — Sona persistence wiring (source-level)', () => {
       'INSERT statement missing from recordTrajectory',
     );
     // No silent fallback per `feedback-no-fallbacks` — INSERT errors propagate.
+    // Match the actual bad shape (catch body is JUST a 'silent' comment, no
+    // executable code) rather than ANY catch whose body documentation mentions
+    // 'silently' in an explanatory comment alongside real handling — A2's
+    // F-05-005 catch logs to console.error AND contains "must not be silently
+    // swallowed" in its comment block, which is correct behaviour, not theatre.
+    // The bad shape we want to detect is a single-line comment-only catch body.
     assert.doesNotMatch(
       svc,
-      /catch\s*\([^)]*\)\s*\{\s*\/\/[^}]*silent[^}]*\}/i,
-      'silent catch around INSERT detected — feedback-no-fallbacks violation',
+      /catch\s*\([^)]*\)\s*\{\s*\/\/[^\n}]*silent[^\n}]*\s*\}/i,
+      'silent catch (comment-only body) detected — feedback-no-fallbacks violation',
     );
   });
 
