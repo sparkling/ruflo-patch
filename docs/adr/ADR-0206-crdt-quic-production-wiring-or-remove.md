@@ -449,3 +449,9 @@ must be revisited and likely flipped to "remove."
   * The agentic-flow-side silent-catch on
     `graphAdapter.initialize()` (F-06-006) — separate ADR
     territory.
+
+## Amendment — 2026-05-23 (Move A audit, supersession reconciliation)
+
+Superseder ADR-0217 reached terminal status **`deferred`** on 2026-05-23 (Option C — quarantine + honesty; multi-writer build deferred to a future evidenced product-bet ADR). This ADR's `status: superseded by ADR-0217` is unchanged: deferred IS a valid terminal disposition for a superseder. The practical meaning is "the CRDT-merge-fn wire-or-remove choice posed here resolves toward 'remove' for the production pool/stream-manager (carried into 0217's quarantine actions) and 'quarantine' for the CRDT primitives — we are not wiring nor immediately removing the vector-clock family because the agentic-flow consumer at `autopilot-learning.ts:42-43,1083` still imports it."
+
+Quarantine actions (export retraction, CLI guard, dead-stub deletion, `QUICConnectionPool`/`QUICStreamManager` deletion + arch-test, honest docs) are a follow-on slice owned by ADR-0217; this ADR carries no new code work.
