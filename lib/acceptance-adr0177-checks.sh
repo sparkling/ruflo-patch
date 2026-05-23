@@ -102,7 +102,7 @@ _adr0177_stored_dim() {
 // `@sparkleideas/memory` top-level surface. Use the explicit module
 // path per the published migration guide
 // (v3/@claude-flow/memory/docs/migration-3.0.0-alpha.18.md).
-import { RvfBackend } from '@sparkleideas/memory/rvf-backend.js';
+import { RvfBackend } from '@sparkleideas/memory/rvf-backend';
 const rvfPath = process.argv[2];
 const expectedDim = parseInt(process.argv[3] || '768', 10);
 const backend = new RvfBackend({ databasePath: rvfPath, dimensions: expectedDim, autoPersistInterval: 0 });

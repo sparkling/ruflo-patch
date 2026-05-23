@@ -82,7 +82,7 @@ check_adr0090_b1_dimension_mismatch_fatal() {
   cat > "$seed_script" << 'SEED_SCRIPT'
 // ADR-0230 step C / ADR-125 Phase 1: RvfBackend removed from
 // `@sparkleideas/memory` top-level surface — explicit module path required.
-import { RvfBackend } from '@sparkleideas/memory/rvf-backend.js';
+import { RvfBackend } from '@sparkleideas/memory/rvf-backend';
 const dbPath = process.argv[2];
 const backend = new RvfBackend({
   databasePath: dbPath,
