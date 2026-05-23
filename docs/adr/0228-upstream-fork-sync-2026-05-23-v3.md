@@ -286,6 +286,139 @@ to avoid a 200-commit conflict storm at the end.
    ports, skips, retargets).
 3. Update `state_schema` block above to record close-out.
 
+## How to update `docs/upstream/INTEGRATION-LEDGER.md`
+
+**Per `feedback-update-integration-ledger`: every cherry-pick / hand-port /
+SKIP / retarget decision MUST append a row to the ledger in the same
+commit/PR as the disposition lands.** No exceptions. The ADR-0186 audit
+cost 150+ upstream commits re-audited from scratch because no running
+record existed; this discipline is non-negotiable.
+
+### Per-SHA row obligation
+
+For every upstream SHA touched by this sync (including `skip-*`
+dispositions), append exactly one row to the appropriate per-fork section
+in `docs/upstream/INTEGRATION-LEDGER.md`. The row schema (one per upstream
+SHA, append-only — never modify in place):
+
+```markdown
+| `<UPSTREAM_SHA>` | YYYY-MM-DD | <upstream subject> | <disposition> | `<LOCAL_SHA or em-dash>` | 0228 | <notes — cite trailers, conflicts resolved, retarget destinations> |
+```
+
+Disposition vocabulary (lifted verbatim from the ledger's own §Disposition
+vocabulary; do not invent new terms):
+
+| Disposition | When to use |
+|---|---|
+| `hand-ported` | Applied with content equivalence; local SHA is the hand-port commit. Patch-id may differ from upstream when fork-local `package.json` version-bump hunks are dropped. |
+| `cherry-picked` | Applied via `git cherry-pick -x`, preserving the `(cherry picked from commit <UPSTREAM>)` trailer. Local SHA = fork commit. |
+| `skip-by-policy` | Explicit decision not to apply (ADR-0088 spawn-only, ADR-0143 brand, ADR-0187 ADR-111 decline, etc.). Local SHA = `—`. Notes MUST cite the governing ADR. |
+| `skip-mechanical` | Mechanically subsumed (version-bump-only, NAPI binary regen we rebuild, submodule pin, lockfile-only). Local SHA = `—`. |
+| `superseded-by-local` | Fork moved past the upstream change independently. Notes cite the local work that subsumed it. |
+| `superseded-by-adr` | Replaced by a numbered local ADR. Notes cite that ADR. |
+| `retargeted` | Applied on a different fork than upstream emitted (e.g. agentic-flow→forks/agentdb post-ADR-0161). Local SHA = retarget destination commit. |
+| `reverted` | Was applied then later reverted; columns the revert commit + any superseding work. |
+
+### Roll-up rows for standing-rule auto-skips (acceptable)
+
+For the standing-rule auto-skip buckets (Batch J pattern), a single roll-up
+row per bucket is acceptable. Pattern (lifted from ledger rows 122-125):
+
+```markdown
+| `<SHA1>` `<SHA2>` `<SHA3>` ... | YYYY-MM-{X..Y} | chore(release): 3.7.0-alpha.{various} version bumps | skip-mechanical | — | 0228 | Batch J — N upstream release-noop version-chain commits; fork has independent `-patch.N` chain |
+```
+
+Use roll-ups ONLY for: version-bumps, witness regenerations, README/brand
+flips, ADR-111 declines, hooks/ supersession. Real picks and individual
+SKIPs ALWAYS get individual rows for audit trail.
+
+### Trailer-match audit (the strongest evidence)
+
+When a cherry-pick lands via `git cherry-pick -x`, the commit message
+carries the trailer `(cherry picked from commit <UPSTREAM_SHA>)`. Verify
+with:
+
+```bash
+git -C forks/<fork> log --grep="cherry picked from commit <UPSTREAM_SHA>" --format='%h %s'
+```
+
+A trailer hit is the strongest evidence; fall back to subject-line +
+patch-id audit (with `:(exclude)package.json` to strip version-bump hunks)
+when trailers don't exist (hand-ports).
+
+### Per-fork section landing
+
+The ledger has 5 sections — one per fork. Add the row to the correct
+section:
+
+1. `## ruflo` (lines ~38-136 in current ledger)
+2. `## agentic-flow` (lines ~138-151)
+3. `## ruvector` (lines ~153-173)
+4. `## ruv-FANN` (line ~177; currently "Dormant; no rows")
+5. `## agentdb` (lines ~179-188)
+
+For ruv-FANN: this sync adds the first non-dormant rows. Replace the
+"Dormant since 2026-02-09. No rows." line with a proper table header +
+the 2 security rows. Land within the same commit as the picks.
+
+### Per-batch landing cadence
+
+Update the ledger **in the same commit that lands the picks**, not in a
+separate "ledger update" follow-up. This matches the ADR-0186 close-out
+discipline and the source `feedback-update-integration-ledger`. Suggested
+flow per batch:
+
+1. Land the upstream picks on the fork's `main` (cherry-pick or hand-port).
+2. Append the corresponding rows to `INTEGRATION-LEDGER.md` in ruflo-patch.
+3. Commit the ruflo-patch ledger update with a message citing the fork
+   commits and ADR-0228.
+4. Move to the next batch.
+
+If a batch lands a single cluster of picks (say, all 5 ADR-128 phases in
+one cycle), one ruflo-patch commit can append all 5 rows together —
+provided every SHA gets a row.
+
+### Close-out summary block (Batch T step 2)
+
+At sync close-out, append a single rollup block to the *bottom* of the
+ledger (under `## Notes / future work`):
+
+```markdown
+## Synced via ADR-0228 (2026-05-23 v3)
+
+| Fork | Cherry-picked | Hand-ported | Skip-by-policy | Skip-mechanical | Superseded | Retargeted | Total |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ruflo | <N> | <N> | <N> | <N> | <N> | <N> | <N> |
+| agentic-flow | <N> | <N> | <N> | <N> | <N> | <N> | <N> |
+| ruvector | <N> | <N> | <N> | <N> | <N> | <N> | <N> |
+| agentdb | <N> | <N> | <N> | <N> | <N> | <N> | <N> |
+| ruv-FANN | <N> | <N> | <N> | <N> | <N> | <N> | <N> |
+| **Total** | <N> | <N> | <N> | <N> | <N> | <N> | <N> |
+
+ADR-0228 close-out timestamp: YYYY-MM-DDTHH:MM:SSZ. All 496 raw upstream
+commits dispositioned; no un-classified residue.
+```
+
+### Audit verification before close
+
+Before flipping ADR-0228 status `proposed` → `implemented`, run a final
+verification:
+
+1. Count rows added under each per-fork section since this sync started.
+2. Cross-check against the per-batch totals in the summary block above.
+3. Spot-check 5 cherry-pick rows: confirm trailer exists in
+   `git log forks/<fork>/main --grep="cherry picked from commit <UP>"`.
+4. Spot-check 5 hand-port rows: confirm fork commit message cites the
+   upstream SHA in body (not necessarily in `cherry picked from` trailer).
+5. Spot-check 2 skip rows: confirm the cited governing ADR is in scope.
+6. Verify the total in the summary block matches the `git cherry HEAD
+   origin/main` count from the preflight (496 ± any new upstream commits
+   that arrived after sync started; those go into the NEXT sync ADR, not
+   this one).
+
+If any of (1)-(6) fails, the ADR stays `proposed` until the gap is closed.
+No ADR closes with un-dispositioned commits in the audit window.
+
 ## Decision Points
 
 DP-1 — **ADR-128 Phase 1 conflict resolution**: take upstream's 29 cli-
