@@ -423,3 +423,9 @@ Additional confirmation steps:
     has actual cross-host convergence requirements.
   * [[project-rvf-primary]] — sync is a federation concern over
     agentdb's SQLite-backed sync tables; RVF primacy unaffected.
+
+## Amendment — 2026-05-23 (Move A audit, supersession reconciliation)
+
+Superseder ADR-0217 reached terminal status **`deferred`** on 2026-05-23 (Option C — quarantine + honesty; multi-writer build deferred to a future evidenced product-bet ADR). This ADR's `status: superseded by ADR-0217` is unchanged: deferred IS a valid terminal disposition for a superseder. The practical meaning is "the SyncCoordinator merge implementation chosen here is not the right shape; the larger multi-writer system is not being built now either."
+
+The agentic-flow consumer at `agentdb-service.ts:877` (`ENABLE_QUIC_SYNC` env gate, off-by-default) and the `resolveConflicts` counting-stub at upstream `:478` remain as documented in ADR-0217. Quarantine actions (export retraction, CLI guard, dead-stub deletion, pool/stream-manager deletion + arch-test) are a follow-on slice owned by ADR-0217; this ADR carries no new code work.
