@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-22
 tags: [graphadapter, agentdb, data-integrity, fail-loud, no-fallbacks, audit-followup]
 supersedes: []
 depends-on: [0201]
@@ -270,3 +271,26 @@ sequencing.
   sibling federation ADR, different surface), ADR-0178 (fork-only
   controllers restoration — graphAdapter is one of the restored
   controllers, F-06-013 confirms it's intact + delete-API extended).
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. Implementation landed in `forks/agentdb` commit `ebe9cc2` (co-committed with ADR-0219 fail-loud memory hardening).
+
+**Code:** `forks/agentdb/src/backends/graph/GraphDatabaseAdapter.ts`
+
+- `:108-113` — `GraphDatabaseCorruptError` class added.
+- `:149-166` — inner try/catch reshaped per Option A: `existsSync` gate + `GraphDatabase.open` inner try; on open failure throws `GraphDatabaseCorruptError` with cause + recovery command in message.
+- `:180-182` — outer catch passthrough (`instanceof GraphDatabaseCorruptError → throw error`) added before generic re-wrap, per the feasibility correction in the Direct Review section.
+
+**Tests:** `forks/agentdb/tests/unit/backends/GraphDatabaseAdapter.test.ts` — 4/4 pass (vitest, 5ms):
+
+1. fresh DB when no file at storagePath,
+2. throws `GraphDatabaseCorruptError` when file exists but open fails,
+3. message includes storagePath + recovery hint,
+4. outer catch does NOT re-wrap (type preserved).
+
+Confirmation items 1-3 satisfied. Items 4 (two-node federation regression test) and 5 (`npm run release` end-to-end) remain owned by acceptance — not gated on this terminal status flip.
+
+Upstream pre-flight: `ruvnet/ruflo` has zero history touching `GraphDatabaseAdapter`; `ruvnet/agentdb` (2026-05-06 spin-off) has zero graph code. No re-converge risk. No INTEGRATION-LEDGER row (fork-original work).
+
+**Follow-up flagged:** F-06-006 (agentic-flow consumer demotion at `agentdb-service.ts:832-836`) is explicitly out-of-scope and remains unaddressed — same copy-paste anti-pattern repeats for `routerEnabled`/`sonaEnabled`/`gnnEnabled`. Worth filing as a known follow-up.
