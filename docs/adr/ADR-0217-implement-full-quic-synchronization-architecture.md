@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: deferred
 date: 2026-05-20
+deferred-date: 2026-05-23
 tags: [federation, quic, crdt, vector-clock, sync, multi-writer, changelog, reconciliation, auth, phase5, swarm-reviewed]
 supersedes: [0205, 0206]
 depends-on: [0199, 0200, 0201]
@@ -607,3 +608,21 @@ slate, not stale).
     convergence outlet; the JSON-vs-protobuf wire diverges permanently.
   * [[project-rvf-primary]] — sync operates over agentdb's SQLite sync
     tables; RVF primacy unaffected.
+
+## Amendment — 2026-05-23 (Move A audit, deferred — Option C disposition)
+
+Status flipped: **proposed → deferred**.
+
+**Rationale:** The 6-expert + 6-expert second-pass swarm reviews documented in this ADR established that (a) the QUIC multi-writer build has no driver (verified: zero `new SyncCoordinator` callers in `forks/ruflo/ruflo/src`), (b) the urgency premise is false (verified: `ENABLE_QUIC_SYNC` off-by-default at `agentic-flow/src/services/agentdb-service.ts:877`, no automatic trigger), (c) upstream is byte-identical dormant (verified: single init commit `8b3388b`, counting-stub `resolveConflicts` at upstream `:478`), and (d) the phase-5 federation test is `.skip` / "NOT yet implemented" (`autopilot-learning-phase5-federation.test.ts:252,256`). Option C (quarantine + honesty) is the chosen disposition. The full multi-writer build (Option A blueprint, preserved in §"Corrected Option-A blueprint") is **deferred — NOT rejected** — so the design work survives for a future evidenced product-bet ADR.
+
+**Revisit-trigger (required for `deferred`):** Reopen as a new product-bet ADR ONLY when ALL hold:
+
+1. A real ≥2-install federated deployment exists (an actual second host actively running ruflo + agentdb, not an ADR illustration), OR a committed product roadmap item lands naming collaborative cross-install learning as a goal.
+2. `getLocalInstallId()` plumbing decision is made (currently nonexistent).
+3. The phantom-schema corrections are folded in (real columns `uses` not `usage_count`; real table `skill_links` not `skill_edges`; `signature NOT NULL`).
+
+**Quarantine actions 1–5 (NOT yet shipped — follow-on slice, not gated by this status flip):** export retraction with the agentic-flow carve-out, CLI guard, dead-stub deletion, `QUICConnectionPool`/`QUICStreamManager` deletion + arch-test, honest docs. These remain implementable as a separate slice and do not foreclose Option A. Vector-clock family carve-out (`agentdb/src/index.ts:178-194`) MUST be preserved for the agentic-flow consumer at `autopilot-learning.ts:42-43,1083`.
+
+**ADR-0205 + ADR-0206 reconciliation (synthesis decision):** both retain `status: superseded by ADR-0217`. Deferred IS a valid terminal disposition for a superseder — the practical meaning is "we have decided not to do either of those, AND we have decided not to do the larger thing now either." See 0205 and 0206 supplementary amendments.
+
+Filename slug `ADR-0217-implement-full-quic-synchronization-architecture.md` retained per ADR §"Minor" — renaming breaks `supersedes`/`depends-on` graph refs.
