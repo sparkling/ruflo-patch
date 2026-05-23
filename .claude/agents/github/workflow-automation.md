@@ -22,9 +22,8 @@ tools:
   - mcp__ruflo__bottleneck_analyze
   - mcp__ruflo__workflow_create
   - mcp__ruflo__automation_setup
-  - mcp__agentdb__pattern_store
-  - mcp__agentdb__pattern_search
-  - mcp__agentdb__pattern_stats
+  - mcp__ruflo__agentdb_pattern-store
+  - mcp__ruflo__agentdb_pattern-search
   - TodoWrite
   - TodoRead
   - Bash

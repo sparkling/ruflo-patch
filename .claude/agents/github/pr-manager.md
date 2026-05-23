@@ -25,9 +25,8 @@ tools:
   - mcp__ruflo__github_pr_manage
   - mcp__ruflo__github_code_review
   - mcp__ruflo__github_metrics
-  - mcp__agentdb__pattern_store
-  - mcp__agentdb__pattern_search
-  - mcp__agentdb__pattern_stats
+  - mcp__ruflo__agentdb_pattern-store
+  - mcp__ruflo__agentdb_pattern-search
 priority: high
 hooks:
   pre: |

@@ -17,9 +17,8 @@ tools:
   - mcp__ruflo__swarm_init
   - mcp__ruflo__agent_spawn
   - mcp__ruflo__task_orchestrate
-  - mcp__agentdb__pattern_store
-  - mcp__agentdb__pattern_search
-  - mcp__agentdb__pattern_stats
+  - mcp__ruflo__agentdb_pattern-store
+  - mcp__ruflo__agentdb_pattern-search
   - Bash
   - Read
   - Write
