@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-22
 tags: [learning, controllers, fail-loud, no-fallbacks, stub-honesty, ewc, sona, audit-followup]
 supersedes: []
 depends-on: [0201]
@@ -332,3 +333,28 @@ deep audit) are appropriately bounded.
   - F-05-012 NightlyLearner Reflexion + skill consolidation wire-up —
     feature-add, not honesty fix.
   - F-05-021 SelfLearningRvfBackend deep audit — separate slice.
+
+## Amendment — 2026-05-23 (Move A audit, implemented — honesty cluster; F-05-007 EWC++ split-out)
+
+Status flipped: **proposed → implemented** (honesty cluster); F-05-007 EWC++ per-call adapt-path remains **deferred to a future infra ADR** per the original Option-A split decision.
+
+**Shipped in `forks/agentdb` and `forks/agentdb/src/services`:**
+
+- **F-05-001** — `NightlyLearner.ts:212-241` `discover()` re-queries the newly-persisted causal edges by id-range after `discoverCausalEdges()` and returns the array (no longer `[]`).
+- **F-05-002** — `LearningSystem.ts:47-52` `NoExperiencesError`; `:596` `calculateActionScores` throws it instead of returning synthetic `action_1/2/3`.
+- **F-05-003** — `LearningSystem.ts:151-234` each module init in `initializeRuVectorEnhancements` discriminates `MODULE_NOT_FOUND` / `ERR_MODULE_NOT_FOUND` / `Cannot find` (demote to `available:false`) from other init errors (re-throw so the ctor `.catch` surfaces them).
+- **F-05-004 / F-05-005** — `SonaTrajectoryService.ts:258, :314` native predict/recordStep failures `console.error` at error level (no longer silently swallowed); frequency / in-memory fallback continues.
+- **F-05-009** — `LearningSystem.ts:302` `endSession` removes from `activeSessions` before the DB write (TOCTOU window closed).
+- **F-05-014** — `LearningSystem.ts:1223, :1404` `explainAction` / `calculateReward` discriminate `SQLITE_ERROR no-such-table` (swallow) from other SQL errors (re-throw).
+- **F-05-024** — `NightlyLearner.ts:272-290` `consolidateEpisodes` exposes real candidate-pair count via the same query `discoverCausalEdges` uses; `episodesProcessed === candidatesProcessed` (no longer `0`).
+- **F-05-007 honesty half** — `SonaTrajectoryService.ts:105` documents that `ewcLambda` affects only background consolidation, not per-call `ruvllm_microlora_adapt`.
+
+**Behaviour tests (all 19 PASS):** `tests/unit/controllers/adr0220-learning-honesty.test.ts` covering each finding above.
+
+**Still open (explicit deferrals):**
+
+- F-05-007 per-call EWC++ implementation — net-new Rust infra in `forks/ruvector/crates/sona/src/lora.rs` + `MicroLoraWasm` republish (separate ADR).
+- **F-05-016** `LearningBridge.consolidate` bare-catch — not in this batch's tests; status unclear. Recommend a quick grep of `forks/ruflo/v3/@claude-flow/memory/src/learning-bridge.ts` and either add the fix + test or explicitly note it as deferred.
+- F-05-008/012/021 — naming, wire-up, deep-audit deferrals unchanged.
+
+No INTEGRATION-LEDGER row (fork-original work, no upstream hand-port).
