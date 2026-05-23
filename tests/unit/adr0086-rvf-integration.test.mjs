@@ -28,6 +28,10 @@ const MEM = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/memory/src';
 const RVF_PATH        = `${MEM}/rvf-backend.ts`;
 const RVF_TYPES_PATH  = `${MEM}/rvf-backend-types.ts`;
 const RVF_ERRORS_PATH = `${MEM}/rvf-backend-errors.ts`;
+// ADR-125 Phase 3 / ADR-0230 step D: upstream Phase 3 inlined HnswLite
+// into rvf-backend.ts and deleted hnsw-lite.ts. The fork retains hnsw-lite.ts
+// as an internal module per ADR-0177 / ADR-0230 invariant #5; this path
+// continues to be valid.
 const HNSW_PATH       = `${MEM}/hnsw-lite.ts`;
 
 // ADR-0154 G7: rvf-backend module surface is split across three files.
