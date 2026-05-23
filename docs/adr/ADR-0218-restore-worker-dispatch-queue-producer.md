@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-23
 tags: [daemon, ipc, hooks, dispatch-queue, fork-regression, upstream-sync, no-fallbacks, ADR-0207, follow-up, swarm-reviewed]
 supersedes: []
 depends-on: [0207]
@@ -480,3 +481,20 @@ CRITICAL 0202, with/after 0207). State: producer work 0% done (clean slate).
   `findProjectRoot`-vs-daemon-`projectRoot` risk),
   [[feedback-upstream-means-upstream]] (upstream = `ruvnet/ruflo`),
   [[project-adr0201-remediation-impl-order]] (sequencing: after 0202, with/after 0207).
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. ADR-0207 REMOVE confirmed at audit (no rework needed); the producer port shipped to `forks/ruflo` in commit `0799eb19f` ("feat(hooks): ADR-0218 restore worker-dispatch queue producer (upstream #1845)").
+
+**Verified at fork HEAD:**
+
+- Producer write: `hooks-tools.ts:4045-4073` (`background && daemonAlive` branch writes `.claude-flow/daemon-queue/${workerId}.json` with the consumer's contract payload via `findProjectRoot()`-derived cwd — NOT `getProjectCwd()`).
+- Four-state honest ladder live (`no-daemon` / `queued` / `mcp-only` / `synthetic-completed`); `queued` only reported when `writeFileSync` succeeded — the `queued`-without-a-write `no-fallbacks` lie is closed.
+- `validateText(context)` wired (one-line import + guard).
+- Consumer (`worker-daemon.ts:979 processDispatchQueue`) unchanged — already reads the upstream payload shape (cherry-picked via `a8ede7ef1`).
+
+**Tests:** `__tests__/mcp-tools/hooks-worker-dispatch-producer.test.ts` — 7/7 passing. End-to-end queue-lifecycle test deferred to `ruflo-patch/tests/pipeline/daemon-queue-lifecycle.test.mjs` per Confirmation #1 reframing (avoids the agentdb/archivist baseline issue that affects in-fork WorkerDaemon imports).
+
+**Ledger:** corrected (row 94 superseded by rows 110 + 111 of `docs/upstream/INTEGRATION-LEDGER.md` — partial-cherry-pick disclosure + producer re-port row).
+
+Dependency confirmed: ADR-0207's audit (this batch) confirmed REMOVE disposition holds — no rework needed.
