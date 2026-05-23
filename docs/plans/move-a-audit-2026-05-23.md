@@ -21,10 +21,11 @@ evidence cited per [[feedback-remediation-adr-preflight]]. Audit only
 
 ## Swarm lifecycle — all via `ruflo-swarm:swarm` skill
 
-Per [[feedback-always-use-the-skill]] — never raw `npx`/`bash` for skill-wrapped capabilities.
+Per [[feedback-always-use-the-skill]] — never raw `npx`/`bash` for skill-wrapped capabilities. **Load the skill first via `args: "help"` to confirm the surface before any state-changing invocation.**
 
 | Step | Invocation | Failure handling |
 |---|---|---|
+| **Load skill (read help, no side effects)** | `Skill(ruflo-swarm:swarm, args: "help")` | If skill not found or help differs from this plan's assumptions, halt and reconcile before any state-changing call |
 | Check existing state | `Skill(ruflo-swarm:swarm)` (no args → status) | If stale swarm exists, evaluate reuse |
 | Init | `Skill(ruflo-swarm:swarm, args: "init --topology hierarchical-mesh --max-agents 16 --strategy specialized")` | Surface error verbatim — NO silent fallback per [[feedback-no-fallbacks]]; halt for direction |
 | Post-init verify | `Skill(ruflo-swarm:swarm)` (no args → status) | Confirm 16 agent slots available |
