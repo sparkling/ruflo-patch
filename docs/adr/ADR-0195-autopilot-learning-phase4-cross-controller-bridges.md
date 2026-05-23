@@ -413,6 +413,23 @@ When Phase 4 is implemented:
    episode-level feedback. The tradeoff is N inserts per swarm vs 1.
    Phase 4 should pick one (recommend episode-level for P4.2; trajectory
    step-level deferred to a future increment) and document.
+   **RESOLVED (2026-05-19, commit pending — see implementation log):**
+   the step-level subscriber consumes `trajectory:step` (not
+   `trajectory:closed` — emit-time vs close-time gives smaller-batch
+   inserts and per-step Q updates). It is implemented but gated behind
+   the `STEP_LEVEL_FEEDBACK_ENABLED` env var, **OFF by default**. When
+   the flag is unset, `_attachLearningSubscriber` does not attach the
+   `trajectory:step` listener at all (zero overhead, identical to the
+   episode-only original P4.2 disposition). When set to `"true"`, each
+   `trajectory:step` emit becomes one `LearningSystem.submitFeedback`
+   call against sessionId `autopilot:${sha1(trajectoryId)}:step` — ONE
+   sessionId per trajectory (not per step), so Q-learning sees policy
+   continuity across the step sequence. Reward is pass-through (the
+   producer at `autopilot-learning.ts:480-496` already coerces
+   `progress` numerically; no step-level reshaping — the episode-level
+   shaped-reward formula folds critique penalties + iteration efficiency,
+   neither of which is meaningful per-step). Tradeoff cost (N inserts per
+   swarm) is explicit and opt-in.
 4. **What is the cleanup path when a subscriber wants to unbind?**
    `learningEvents.removeListener` is stock EventEmitter, but the
    AgentDBService doesn't expose a `disposeLearningSubscriber` accessor.
@@ -426,3 +443,4 @@ When Phase 4 is implemented:
 | 2026-05-19 | `1c0a079` | `feat(autopilot): ADR-0195 Phase 4 _resolveEventBus + _emitLearningEvent helpers` — producer side helpers on AutopilotLearning (mirrors _resolveSona; getLearningEvents on AgentDBLike). |
 | 2026-05-19 | `3fa9ec9` | `feat(autopilot): ADR-0195 Phase 4 episode:recorded emit in _record` — episode:recorded emit after storeEpisode succeeds. |
 | 2026-05-19 | `d06ba2c` | `feat(autopilot): ADR-0196 Phase 5 _record stamping + SyncCoordinator adapter` — combined commit also includes the three remaining Phase 4 trajectory emits (trajectory:opened in recordIterationStep first open, trajectory:step after each successful addStep, trajectory:closed after each successful endTrajectory). Phase 4 emit surface is now complete: all four emit points (1× episode + 3× trajectory) are wired to the bus. |
+| 2026-05-19 | `a2463ba` | `feat(autopilot): ADR-0195 trajectory step-level feedback (env-gated)` — closes §"Open questions" #3. AgentDBService._attachLearningSubscriber gains a conditional `trajectory:step` listener gated by `STEP_LEVEL_FEEDBACK_ENABLED=true` env var (default OFF → zero overhead, identical to original episode-only P4.2). New `_handleAutopilotStep` method translates each step emit into `LearningSystem.submitFeedback` against sessionId `autopilot:${sha1(trajectoryId)}:step` (one sid per trajectory so Q-learning sees policy continuity across steps; per-step sids would defeat TD updates). Reward is pass-through — no step-level reshaping (the episode-level `_computeShapedReward` formula folds critique + iteration efficiency, neither meaningful per-step). Unit test `autopilot-phase4-step-feedback.test.ts` covers: flag OFF = no submitFeedback; flag ON = one submitFeedback per step; multiple steps share one sid; distinct trajectories bind distinct sids; reward pass-through verified across `[-1, 0, 0.25, 1, 2.5]`. All 5 cases pass (3ms). |
