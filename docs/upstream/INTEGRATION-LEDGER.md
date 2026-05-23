@@ -290,6 +290,38 @@ above (in agentic-flow section) will land here when executed.
 | `d902f9e` | 2026-05-23 | fix(security): patch protobufjs critical CVE + 16 high-severity otel CVEs; harden execSync to spawnSync (#4) | cherry-picked | `716ddcf` | 0228 | Batch L. Clean cherry-pick (package.json auto-merged). |
 | `1776223` | 2026-05-23 | fix(security): SQL injection (REINDEX), insecure PRNG for IDs, JSON.parse crash hardening | cherry-picked | `40f30b8` | 0228 | Batch L. Clean cherry-pick (input-validation.ts auto-merged). |
 
+## Synced via ADR-0228 (2026-05-23 v3 close-out)
+
+Batch T close-out. ADR-0228 ran across all 5 forks; ADR-0230 closed out
+the deferred ADR-125 substrate picks. Both ADRs flip to `implemented`
+2026-05-23T20:30Z. Full per-SHA details live in the rows above; this
+table is the synopsis.
+
+| Fork | Cherry-picked | Hand-ported | Skip-by-policy | Skip-mechanical | Superseded | Retargeted | Total disposed |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| ruflo         | ~30 + 5 (ADR-125 phases) | ~8 | ~3 | ~6 (Batch S empty + roll-ups) | ~19 (Batch S source-conflict deferrals, future re-eval) | 0 | ~71 |
+| agentic-flow  | 3 (CVEs #156/157/158) | 1 (override-conflict fix-up) | 0 | 1 (husky pre-commit removal) | 0 | 0 | 5 |
+| ruvector      | 49 (Batch N data substrate) | 0 | 1 (banner image) | ~63 (52 NAPI binaries + 11 misc roll-ups) | 0 | 0 | ~113 |
+| agentdb       | 3 (CVEs #3/#4 + REINDEX/PRNG) | 0 | 0 | 0 | 0 | 0 | 3 |
+| ruv-FANN      | 2 (v0.2.1 #190 + 25 NaN-panic fixes) | 0 | 0 | 0 | 0 | 0 | 2 |
+| **Total**     | **~92** | **~9** | **~4** | **~70** | **~19** | **0** | **~194** |
+
+The ~19 ruflo `superseded` count refers to Batch S source-conflict
+deferrals that stayed deferred (5 ADR-125 phases were re-disposed by
+ADR-0230 → `cherry-picked`); the other 19 still await per-family
+re-evaluation in a follow-up sync.
+
+ADR-0230 (substrate re-convergence) executed within Move C window per
+ADR-0229 Amendment 2026-05-23. All 5 deferred ADR-125 phases (1, 2, 3,
+4, 5) plus the pre-landed Phases 6 + 7 now form a complete ADR-125
+take. Per-phase landing SHAs are recorded in the ADR-0230 amendment
+block (`docs/adr/0230-substrate-reconverge-upstream-adr125.md`).
+
+All 10 confirmation criteria from ADR-0228 §Confirmation are
+considered met by the per-fork green acceptance state at the close-out
+timestamp (688/697 pass / 0 fail / 9 skip_accepted, sustained across
+all step boundaries).
+
 ## Notes / future work
 
 * **No backfill yet** of ADR-0162 v1 landed batches (C+D / F / K hand-ports

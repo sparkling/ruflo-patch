@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-23
 methodology: [MADR, architectural-decision, substrate-pivot]
 decision-makers: [Henrik Pettersen]
@@ -239,4 +239,98 @@ Each phase runs as a separate background agent batch; sequential by exit gate. P
 
 ## Amendments
 
-(none yet — this ADR opens as `proposed` 2026-05-23; amendments append here as Phases 1-5 land)
+### 2026-05-23 — All 7 phases landed; status → implemented
+
+All 7 phases of upstream ADR-125 are now on `forks/ruflo/main`. Per-phase
+landing SHAs (upstream → fork):
+
+| Phase | Disposition | Upstream SHA | Fork SHA | Step |
+|---|---|---|---|---|
+| Phase 1 (MemoryService canonical) | TAKE | `4e9a33ce2` | `402786f16` | C |
+| Phase 2 (HybridBackend wire) | ADAPT | `11eaef851` | `fe682324b` | F |
+| Phase 3 (HNSW snapshot/restore) | TAKE | `81a2b23eb` | `7fefa0c3e` | D |
+| Phase 4 (MemoryConsolidator) | ADAPT | `850450f38` | `a68817f6b` | E |
+| Phase 5 (FTS5 fallback) | TAKE | `8773fcffd` | `7f3e15334` | D |
+| Phase 6 (benchmarks) | TAKE | `ed95d6782` | `f1ccba609` | (Batch S) |
+| Phase 7 (RuVector cleanup) | TAKE | `7dd4b5252` | `ebcbba949` | (Batch S) |
+
+Phases 6 + 7 were already landed via ADR-0228 Batch S background agent
+work (`f1ccba609` and `ebcbba949`); this ADR's execution covered the
+deferred Phases 1-5.
+
+#### Adapter divergences (vs upstream verbatim)
+
+- **Phase 1** — fork removes `RvfBackend` + `HnswLite` from the top-level
+  `@sparkleideas/memory` export surface but keeps them as internal modules
+  reachable via explicit subpath (`@sparkleideas/memory/rvf-backend`) or
+  `createDatabase({provider:'rvf'})`. Adapted `index.test.ts` to skip the
+  `SqlJsBackend` (not vendored on fork — better-sqlite3 native is primary)
+  and `HybridBackend` top-level-surface assertions per fork's narrower
+  surface invariant (ADR-0065 + ADR-0076).
+- **Phase 2** — vendored upstream's `hybrid-backend.ts` (789 lines) to
+  fork. Expanded `DatabaseProvider` type union with `'hybrid' | 'agentdb'`.
+  Added the two new cases to `createDatabase`'s switch. Fork dim default
+  kept at 768 (mpnet) instead of upstream's 1536. `createHybridService`
+  flows through `createDatabase({provider:'hybrid'})` + `service.withBackend()`.
+- **Phase 3** — restored `hnsw-lite.ts` as fork-internal module (Phase 3
+  inlined it into rvf-backend.ts and deleted the file; fork keeps the
+  separate module per ADR-0177 internal-plumbing carve-out). The inlined
+  Phase 3 helper code in rvf-backend.ts is also present (additive on fork).
+- **Phase 4** — `consolidator.autoRun` default left undefined; the 6h
+  `setInterval` timer is never started by default. The standalone-timer
+  architecture upstream introduced is disabled on fork via config rather
+  than a code edit. Replaces the requirement in `feedback-no-fallbacks`'s
+  spirit: don't activate an autonomous timer that the Archivist (ADR-0180)
+  should be the coherent owner of.
+
+#### Test-harness adaptations (ruflo-patch)
+
+- `lib/acceptance-adr0177-checks.sh` — probe imports `RvfBackend` from the
+  explicit subpath (`@sparkleideas/memory/rvf-backend`) post-Phase-1.
+- `lib/acceptance-adr0090-b1-checks.sh` + `lib/acceptance-adr0090-b2-checks.sh`
+  — same subpath import fix.
+- `tests/unit/adr0086-rvf-integration.test.mjs` — hnsw-lite read path
+  unchanged after fork restored the file.
+- `tests/unit/adr0076-phase0-1.test.mjs` — Phase 0 "dead code removed"
+  test suite re-described as "ADR-0076 Phase 0 (superseded by ADR-0230
+  invariant #5)". The hybrid-tier file MUST exist post-Phase-2; only
+  `database-provider.ts` (the wire point) may reference HybridBackend;
+  the top-level surface still must not.
+
+#### Invariants verified post-landing
+
+1. **Two-layer separation**: substrate work below MCP, Archivist coordination
+   above MCP. No upstream commit introduced coordination above MCP that
+   bypasses the Archivist. ✓
+2. **Type enforcement of substrate seam**: ADR-0180 §Architecture's path
+   restriction preserved. Phase 2's hybrid-tier backend is exposed only
+   through `MutationContext.substrate` (per ADR-0181 in-flight design). ✓
+3. **No pglite/postgres revival**: `grep -RE "^import.*pglite|^import.*@electric-sql" forks/ruflo/v3/@claude-flow/memory/src/` returns zero. (Type annotations referencing pglite as a `primaryStorage` choice on agentdb-backend.ts are not imports — those values are never instantiated on fork.) ✓
+4. **Fork-only public surface preserved**: `@sparkleideas/memory` top-level
+   surface still excludes `HnswLite`, `RvfBackend`, `HybridBackend`,
+   `HybridBackendConfig`, `SqlJsBackend`. Fork's `prepublishOnly`
+   forbidden-list enforces this. ✓
+5. **Audit-chain replay equality**: ADR-0180 §Confirmation's replay test
+   passes against the re-converged substrate (acceptance suite includes
+   the relevant probes; 0 failures). ✓
+
+#### Acceptance baseline
+
+| Snapshot | Pass | Fail | Skip |
+|---|---:|---:|---:|
+| Pre-ADR-0230 (after steps A + B) | 688 | 0 | 9 |
+| Post-step C (Phase 1 landed) | 688 | 0 | 9 |
+| Post-step D (Phases 3 + 5 landed) | 688 | 0 | 9 |
+| Post-step E (Phase 4 landed) | 688 | 0 | 9 |
+| Post-step F (Phase 2 landed) | 688 | 0 | 9 |
+
+Hard gate (`0 failures`) maintained at every phase boundary.
+
+#### Out-of-scope items carried forward
+
+- **The other 19 Batch S source-conflict deferrals** (24 total - 5 ADR-125
+  phases re-disposed by this ADR) stay deferred per ADR-0228, awaiting
+  individual re-evaluation.
+- **ADR-0181 Archivist activation phases** continue on their own timeline.
+  Phase 4 (`cli-process-backend handler un-stub`) will construct
+  HybridBackend per the wiring in `createDatabase({provider:'hybrid'})`.

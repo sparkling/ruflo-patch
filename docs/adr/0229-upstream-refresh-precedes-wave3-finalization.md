@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-23
 methodology: [MADR, retrospective, decision-narrative]
 decision-makers: [Henrik Pettersen]
