@@ -75,6 +75,15 @@ Rationale: it fixes the defect for *all* artifact-dependent tests in one move, p
 * A release in which a compiled-behavior fix ships with its regression test reaches `publish-verdaccio` green in one run (demonstrated by the ADR-0167 `loadFromDisk` fix + `bug4`/`adr0167-loadfromdisk-native-magic` tests).
 * No `skip_accepted` on the affected tests ([[feedback-skip-accepted-as-squelch]]).
 
+## Direct review (2026-05-22)
+
+Verified shipped: `scripts/ruflo-publish.sh` runs `copy-source → codemod →
+build → write_build_manifest → test-ci` with **no** backgrounded
+`run_tests_ci &` (`:509-522`) — exactly the Option A ordering, so the build
+completes before test-ci reads `/tmp/ruflo-build/dist`. Status `implemented`
+is accurate; structure (nested `### Consequences`/`### Confirmation`) and the
+Confirmation match the shipped pipeline. No corrections.
+
 ## More Information
 
 * **Surfaced by** ADR-0167 amendment 2026-05-21 (JS `loadFromDisk` RVFR-prefix fix) — the fix that exposed the chicken-and-egg.
