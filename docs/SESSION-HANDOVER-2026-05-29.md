@@ -10,15 +10,21 @@
 
 - **All 11 Move A follow-up items + 3 standing carry-forwards + 3
   open horizons from the 2026-05-28 handover were addressed this
-  session.** Most landed; some were deferred with cited conditional
-  reasons (see Stages D–F below).
-- **9 commits in `ruflo-patch/main`** (`5439372` → `ae85038`),
-  **3 fork-side commits** (2× forks/ruflo, 1× forks/agentdb).
-- **Acceptance baseline at handover:** 15/15 PASS (`adr0059,p4`).
+  session.** Most landed; remaining items deferred with cited
+  conditional reasons (see Stages D–F below).
+- **Stage B fully landed in the `/loop` continuation phase**:
+  B1 (lint), B2 (3 forks/ruflo cleanup commits resolving all 42
+  drifts), B3 (acceptance trip-wire with planted-drift smoke test).
+- **11 commits in `ruflo-patch/main`** (`5439372` → `4d50f0c`),
+  **6 fork-side commits** (5× forks/ruflo, 1× forks/agentdb).
+- **Acceptance baseline at handover:** 16/16 PASS on
+  `adr0059,p4,adr0208` (was 15/15 — the new trip-wire is the 16th
+  check).
 - **All 5 trees clean** at handover.
 - **Net-new ADRs:** 1 (ADR-0228 EWC++ per-call adapt — proposed).
-- **Next-session priority:** B2 (manifest drift cleanup) and
-  ADR-0181 Phase 4 (cli-process-backend handler un-stub).
+- **Next-session priority:** ADR-0181 Phase 4 (cli-process-backend
+  handler un-stub — promotable, preconditions met) and ADR-0228
+  implementation (4 open questions resolution first).
 
 ## What landed (Stage A–F execution record)
 
@@ -55,13 +61,13 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 | D10 | ADR-0214 Council MUST-FIX #2 honoured-by-loader test | `c8673c0f8` (forks/ruflo) | New test at `forks/ruflo/v3/@claude-flow/shared/__tests__/config-loader-env-honoured.test.ts`. 9 cases (6 positive + 1 invalid + 1 rebrand-correctness + 1 unset-default). All pass. Also closed ADR-0214 with amendment `f62b64a`. |
 | D11 | ADR-0224 sync-vs-async drift amendment | `939db69` | Re-read `getValidatedConfig` JSDoc rationale; locked the sync choice as intentional-for-now (substrate callsites are module-init top-level eager reads, no `await` available). Revisit gated on a separate substrate-refactor ADR. |
 
-### Stage B — ADR-0208 outstanding sub-steps (1 landed, 2 deferred)
+### Stage B — ADR-0208 outstanding sub-steps (3/3 landed in `/loop` continuation)
 
 | # | Item | Commit | Outcome |
 |---|---|---|---|
-| B1 | `scripts/check-manifest-flag-drift.mjs` lint | `ae85038` | Phase 1 lint shipped. Exits 1 with 42 drifts on current state (matches ADR-0208's inventory exactly: 12 manifest flags + 6 undefined subcommands + ~20 doc flags). Phase 1 limitations documented inline: declared-set via regex over `hooks.ts`, NOT resolved command tree (alias/spread options at `hooks.ts:4497/4516/4548/4557` may produce false positives — to be addressed when AST-resolution lands). |
-| B2 | Clean 11 undeclared flags + 6 undefined subcommands | — | **DEFERRED to next session.** B1 lint surfaces the canonical inventory; per-drift judgment (delete vs declare vs retarget vs implement) requires reading each command's intent. Agent fan-out without judgment context would over-delete or under-implement. **Run `node scripts/check-manifest-flag-drift.mjs` at next session start for the live inventory.** Acceptance unchanged (15/15) — B2 is not blocking. |
-| B3 | Acceptance trip-wire | — | **DEFERRED — blocks on B2.** Wiring the lint into acceptance today would lock acceptance to the current 42-drift state ([[feedback-skip-accepted-as-squelch]]) OR make it red on every run. Sequence: **B2 cleanup → lint passes → B3 wiring → planted-drift smoke confirms trip-wire**. |
+| B1 | `scripts/check-manifest-flag-drift.mjs` lint | `ae85038` (ruflo-patch) | Phase 1 lint shipped. Initially exited 1 with 42 drifts on current state (matches ADR-0208's inventory exactly: 12 manifest flags + 6 undefined subcommands + ~20 doc flags). Phase 1 limitations documented inline: declared-set via regex over `hooks.ts`, NOT resolved command tree (alias/spread options at `hooks.ts:4497/4516/4548/4557` may produce false positives — to be addressed when AST-resolution lands). |
+| B2 | Clean 11 undeclared flags + 6 undefined subcommands | `c18cb12dd`, `15c45da11`, `2cf96d189` (forks/ruflo) | **DONE.** Dispatched 3 parallel coder agents (b2-claude-plugin, b2-upstream-manifests, b2-shipped-docs) per the agent-fan-out protocol. `c18cb12dd`: `.claude-plugin/hooks/hooks.json` (6 → 0). `15c45da11`: `plugin/hooks/hooks.json` + `plugins/ruflo-core/hooks/hooks.json` (18 → 0; 4 fabricated subcommand blocks deleted in `plugin/`; 2 fabricated subcommand blocks deleted in `plugins/ruflo-core/`). `2cf96d189`: 5 hooks docs in `.claude/commands/hooks/` (18 → 0). All 6 undefined subcommands (mcp-pre, mcp-post, pre-search, post-search, modify-bash, modify-file) verified absent from upstream too. **Total drift: 42 → 0.** |
+| B3 | Acceptance trip-wire | `ca1e6ec` + `4d50f0c` (ruflo-patch) | **DONE.** `ca1e6ec`: `lib/acceptance-adr0208-checks.sh` + new `adr0208` group in `scripts/test-acceptance-fast.sh`. Planted-drift smoke test confirms both transitions: bogus flag in post-edit.md → FAIL (1 drift); revert → PASS. `4d50f0c`: gitignore the `.claude-flow/routing-outcomes.json` daemon-generated runtime artifact. **Acceptance baseline becomes 16/16 PASS on `adr0059,p4,adr0208`.** |
 
 ### Stage E — Standing carry-forwards (status checks)
 
@@ -81,66 +87,58 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 
 ## Acceptance baseline at handover
 
-- `bash scripts/test-acceptance-fast.sh adr0059,p4` → 15/15 PASS
+- `bash scripts/test-acceptance-fast.sh adr0059,p4,adr0208` → **16/16 PASS** (new adr0208 trip-wire is the 16th check)
+- `bash scripts/test-acceptance-fast.sh adr0059,p4` → 15/15 PASS (legacy baseline)
 - `cd forks/agentdb && npx vitest run tests/unit/adr0217-adr0222-arch.test.ts` → 13/13 PASS
 - `cd forks/ruflo/v3 && npx vitest run @claude-flow/shared/__tests__/config-loader-env-honoured.test.ts --exclude="**/node_modules/**"` → 9/9 PASS
+- `node scripts/check-manifest-flag-drift.mjs` → exit 0 (lint clean — every manifest/doc flag and subcommand resolves to a declaration)
 
 ## File-system state at handover
 
 | Location | State |
 |---|---|
-| `forks/ruflo/main` | clean; 3 commits ahead of session start (A4, C5, D10) |
+| `forks/ruflo/main` | clean; 6 commits ahead of session start (A4, C5, D10, B2 ×3) |
 | `forks/agentdb/main` | clean; 2 commits ahead of session start (C2, C5) |
 | `forks/agentic-flow/main` | unchanged (D8 deferred) |
 | `forks/ruv-FANN/main` | unchanged |
 | `forks/ruvector/main` | unchanged (D7 implementation deferred) |
-| `ruflo-patch/main` | `ae85038`; 9 commits ahead of session start `5439372` |
+| `ruflo-patch/main` | `4d50f0c`; 11 commits ahead of session start `5439372` |
 | `sparkling/*` push state | nothing pushed in 3+ sessions |
 | `hz` remote | untouched per [[feedback-never-touch-hz-remote]] |
 
 ## Recommended next-session priority order
 
-### Tier 1 — Pickup where this session left off
+### Tier 1 — Larger items with clean preconditions
 
-1. **B2 — ADR-0208 manifest drift cleanup.** Lint inventory exists.
-   Run `node scripts/check-manifest-flag-drift.mjs` for the live
-   42-item drift list. For each drift, decide: delete (feature
-   never existed) / declare-and-wire (real flag, manifest correct)
-   / retarget (flag exists on wrong command). The ADR's Step 2 is
-   the broad cleanup. Touches 3 manifest files + 4 hooks docs.
-2. **B3 — Wire B1 lint into acceptance after B2.** Add as a
-   `scripts/test-acceptance-fast.sh` check group (e.g.
-   `--group adr0208`). Planted-drift smoke test to confirm
-   trip-wire works.
-
-### Tier 2 — Larger items with clean preconditions
-
-3. **ADR-0181 Phase 4 — cli-process-backend handler un-stub.**
+1. **ADR-0181 Phase 4 — cli-process-backend handler un-stub.**
    Promoted from standing carry-forward (E1). Substrate ready
-   (ADR-0230 done). Un-stub 6 handlers; verify
+   (ADR-0230 done). Un-stub 6 handlers (route, pattern-search,
+   reflexion-retrieve, skill-search, daemon×2); verify
    `(svc as any).backend instanceof HybridBackend === true` per
    ADR-0181 Phase 4 land checklist + ADR-125 Acceptance Criterion #2.
-4. **ADR-0228 implementation (EWC++ per-call adapt).** The proposal
+   Substantial multi-handler undertaking deserving its own session.
+2. **ADR-0228 implementation (EWC++ per-call adapt).** The proposal
    landed this session; the 4 open questions need resolution before
    implementation (see ADR-0228 § "Open questions"). Most critical:
    Q-1 (Fisher matrix sized for BaseLoRA not MicroLoRA — would
    silently no-op without a second EWC instance).
 
-### Tier 3 — Conditional / opportunistic
+### Tier 2 — Conditional / opportunistic
 
-5. **D8 — ADR-0221 F-06-006 consumer demotion.** Re-check next
+3. **D8 — ADR-0221 F-06-006 consumer demotion.** Re-check next
    session: if acceptance trips on the copy-paste anti-pattern at
    `agentic-flow/src/services/agentdb-service.ts:832-836`,
    implement the demote. Otherwise stays deferred.
-6. **B1 lint Phase 2.** Upgrade to AST-resolution of the command
+4. **B1 lint Phase 2.** Upgrade to AST-resolution of the command
    tree (or `dist/src/commands/hooks.js` dynamic import) so the
    alias/spread options at `hooks.ts:4497/4516/4548/4557` are
-   covered. Will reduce false-positive class.
+   covered. Will reduce false-positive class. Not blocking — the
+   current Phase 1 lint correctly identified all 42 drifts.
 
-### Tier 4 — Open horizons
+### Tier 3 — Open horizons
 
-7. **Push to `sparkling`** — 3+ sessions unpushed. User decision.
-8. **Periodic upstream sync** — A3 ledger row precondition now met;
+5. **Push to `sparkling`** — 3+ sessions unpushed. User decision.
+6. **Periodic upstream sync** — A3 ledger row precondition now met;
    D9 runbook documents the `--ours` paths the next sync needs.
 
 ## Pre-flight (run before any work)
@@ -156,13 +154,13 @@ git -C /Users/henrik/source/forks/ruflo status --short
 git -C /Users/henrik/source/ruflo-patch status --short
 # expect: empty
 
-# 3. Acceptance baseline
-bash scripts/test-acceptance-fast.sh adr0059,p4
-# expect: 15/15 passed
+# 3. Acceptance baseline (includes new adr0208 trip-wire)
+bash scripts/test-acceptance-fast.sh adr0059,p4,adr0208
+# expect: 16/16 passed
 
-# 4. (NEW) Manifest drift inventory (if planning B2)
+# 4. Manifest drift inventory (now clean — guards against regression)
 node scripts/check-manifest-flag-drift.mjs
-# expect: 42 drifts (status quo until B2 cleanup; reduce to 0 = goal)
+# expect: exit 0 — Lint OK
 ```
 
 Abort on any failure; surface the discrepancy. Per
