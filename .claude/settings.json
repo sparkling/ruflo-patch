@@ -1,4 +1,30 @@
 {
+  "env": {
+    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
+    "CLAUDE_FLOW_V3_ENABLED": "true",
+    "CLAUDE_FLOW_HOOKS_ENABLED": "true",
+    "GUIDANCE_EVENT_WIRING_ENABLED": "true",
+    "GUIDANCE_PRE_EDIT_HOOK": "true",
+    "GUIDANCE_POST_COMMAND_SENTINEL": "true",
+    "GUIDANCE_TEAMMATE_IDLE_HOOK": "true",
+    "GUIDANCE_POST_TOOL_FAILURE": "true",
+    "GUIDANCE_SESSION_SENTINEL": "true",
+    "GUIDANCE_AUTO_MEMORY": "true",
+    "GUIDANCE_LEARNING_BRIDGE": "true",
+    "GUIDANCE_STATUS_LINE": "true"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(npx @sparkleideas/ruflo:*)",
+      "Bash(npx claude-flow:*)",
+      "Bash(node \"$(git rev-parse --show-toplevel)\"/.claude/*)",
+      "mcp__ruflo__:*"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  },
   "hooks": {
     "PreToolUse": [
       {
@@ -101,8 +127,7 @@
           {
             "type": "command",
             "command": "npx @sparkleideas/ruflo@latest daemon start --quiet 2>/dev/null || true",
-            "timeout": 5000,
-            "continueOnError": true
+            "timeout": 5000
           }
         ]
       }
@@ -208,31 +233,31 @@
     "type": "command",
     "command": "sh -c 'D=\"${CLAUDE_PROJECT_DIR:-.}\"; [ -f \"$D/.claude/helpers/statusline.cjs\" ] || D=\"${HOME}\"; exec node \"$D/.claude/helpers/statusline.cjs\"'"
   },
-  "permissions": {
-    "allow": [
-      "Bash(npx @sparkleideas/ruflo:*)",
-      "Bash(npx claude-flow:*)",
-      "Bash(node \"$(git rev-parse --show-toplevel)\"/.claude/*)",
-      "mcp__ruflo__:*"
-    ],
-    "deny": [
-      "Read(./.env)",
-      "Read(./.env.*)"
-    ]
-  },
-  "env": {
-    "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1",
-    "CLAUDE_FLOW_V3_ENABLED": "true",
-    "CLAUDE_FLOW_HOOKS_ENABLED": "true",
-    "GUIDANCE_EVENT_WIRING_ENABLED": "true",
-    "GUIDANCE_PRE_EDIT_HOOK": "true",
-    "GUIDANCE_POST_COMMAND_SENTINEL": "true",
-    "GUIDANCE_TEAMMATE_IDLE_HOOK": "true",
-    "GUIDANCE_POST_TOOL_FAILURE": "true",
-    "GUIDANCE_SESSION_SENTINEL": "true",
-    "GUIDANCE_AUTO_MEMORY": "true",
-    "GUIDANCE_LEARNING_BRIDGE": "true",
-    "GUIDANCE_STATUS_LINE": "true"
+  "enabledPlugins": {
+    "ruflo-adr@ruflo": true,
+    "ruflo-agentdb@ruflo": true,
+    "ruflo-autopilot@ruflo": true,
+    "ruflo-browser@ruflo": true,
+    "ruflo-core@ruflo": true,
+    "ruflo-daa@ruflo": true,
+    "ruflo-ddd@ruflo": true,
+    "ruflo-docs@ruflo": true,
+    "ruflo-federation@ruflo": true,
+    "ruflo-goals@ruflo": true,
+    "ruflo-intelligence@ruflo": true,
+    "ruflo-jujutsu@ruflo": true,
+    "ruflo-knowledge-graph@ruflo": true,
+    "ruflo-loop-workers@ruflo": true,
+    "ruflo-observability@ruflo": true,
+    "ruflo-rag-memory@ruflo": true,
+    "ruflo-ruvector@ruflo": true,
+    "ruflo-ruvllm@ruflo": true,
+    "ruflo-rvf@ruflo": true,
+    "ruflo-sparc@ruflo": true,
+    "ruflo-swarm@ruflo": true,
+    "ruflo-testgen@ruflo": true,
+    "ruflo-wasm@ruflo": true,
+    "ruflo-workflows@ruflo": true
   },
   "claudeFlow": {
     "version": "3.0.0",
