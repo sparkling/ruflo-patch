@@ -54,14 +54,25 @@ if [[ -z "$CLI_BIN" ]]; then
 fi
 
 # ── Find or create E2E project ──────────────────────────────────────
+# Reuse predicate must match what _e2e_isolate's fail-loud guards check:
+#   L10-ext (lib/acceptance-e2e-checks.sh:33-38) — package.json present
+#   L10     (lib/acceptance-e2e-checks.sh:48-51) — node_modules non-dangling
+# (.claude-flow + .swarm always present after `init --full --force`.)
+# Without these checks the reuse loop picks up an incomplete fast-only-run
+# dir and every _e2e_isolate caller fails.
 E2E_DIR=""
 for d in /tmp/ruflo-e2e-*; do
-  [[ -f "$d/.claude/settings.json" ]] && { E2E_DIR="$d"; break; }
+  [[ -f "$d/.claude/settings.json" && -f "$d/package.json" && -d "$d/node_modules" ]] && { E2E_DIR="$d"; break; }
 done
 
 if [[ -z "$E2E_DIR" ]]; then
   E2E_DIR=$(mktemp -d /tmp/ruflo-e2e-XXXXX)
   echo "[fast] Creating E2E project at $E2E_DIR (~60s)..."
+  # _e2e_isolate requires package.json + node_modules (init does not write
+  # either — confirmed via executor.ts grep). Mirror ACCEPT_TEMP setup at L36
+  # and the symlink pattern used by per-check iso at lib/acceptance-e2e-checks.sh:52.
+  echo '{"name":"ruflo-e2e-test","version":"1.0.0","private":true}' > "$E2E_DIR/package.json"
+  ln -sfn "$ACCEPT_TEMP/node_modules" "$E2E_DIR/node_modules"
   (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 120 "$CLI_BIN" init --full --force >/dev/null 2>&1) || true
   (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 15 "$CLI_BIN" memory init --force >/dev/null 2>&1) || true
   # Ensure memory_entries table exists (upstream schema gap)
