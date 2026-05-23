@@ -268,9 +268,12 @@ describe('ADR-0084 T3.1 integration: worker-daemon.ts has no direct bridge calls
 
   it('should NOT import from memory-bridge', () => {
     const lines = source.split('\n');
-    const bridgeImports = lines.filter(l =>
-      l.includes('memory-bridge') && (l.includes('import') || l.includes('require'))
-    );
+    const bridgeImports = lines.filter(l => {
+      // Skip comment lines — documentary references in comments are not imports.
+      const trimmed = l.trimStart();
+      if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return false;
+      return l.includes('memory-bridge') && (l.includes('import') || l.includes('require'));
+    });
     assert.equal(bridgeImports.length, 0,
       `Expected ZERO memory-bridge imports, found ${bridgeImports.length}: ${bridgeImports.join('; ')}`);
   });
@@ -531,9 +534,12 @@ describe('ADR-0084 T3.2 integration: hooks-tools.ts has ZERO memory-bridge impor
 
   it('should NOT import from memory-bridge', () => {
     const lines = source.split('\n');
-    const bridgeImports = lines.filter(l =>
-      l.includes('memory-bridge') && (l.includes('import') || l.includes('require'))
-    );
+    const bridgeImports = lines.filter(l => {
+      // Skip comment lines — documentary references in comments are not imports.
+      const trimmed = l.trimStart();
+      if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return false;
+      return l.includes('memory-bridge') && (l.includes('import') || l.includes('require'));
+    });
     assert.equal(bridgeImports.length, 0,
       `Expected ZERO memory-bridge imports, found ${bridgeImports.length}: ${bridgeImports.join('; ')}`);
   });

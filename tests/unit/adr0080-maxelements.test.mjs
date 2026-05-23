@@ -159,19 +159,25 @@ const initCmdSrc = readFileSync(resolve(FORK_CLI_SRC, 'commands/init.ts'), 'utf-
 const configToolsSrc = readFileSync(resolve(FORK_CLI_SRC, 'mcp-tools/config-tools.ts'), 'utf-8');
 
 describe('ADR-0080 P2: config-template embeddings.provider', () => {
-  it('provider is transformers.js (not bare transformers)', () => {
+  it("provider is 'onnx' (ADR-0224 unification)", () => {
+    // ADR-0224 (R3) unified the embedding provider default: the
+    // `embedding.provider` and `memory.embeddings.provider` fields both
+    // canonicalize to `'onnx'`. This supersedes the prior `'transformers.js'`
+    // form (which had itself superseded bare `'transformers'`). The intent of
+    // the original P2 assertion — pin the canonical provider name — is
+    // preserved against the new canonical value.
     const embBlock = configTemplateSrc.slice(
       configTemplateSrc.indexOf('embeddings:'),
     );
     assert.ok(
-      embBlock.includes("provider: 'transformers.js'"),
-      "config-template embeddings.provider must be 'transformers.js'",
+      embBlock.includes("provider: 'onnx'"),
+      "config-template embeddings.provider must be 'onnx' (ADR-0224)",
     );
-    // Ensure the old bare value is NOT present in the embeddings block
+    // Forbid the superseded values from creeping back in.
     const providerLine = embBlock.split('\n').find(l => l.includes('provider:'));
     assert.ok(
-      !providerLine.includes("'transformers'") || providerLine.includes("'transformers.js'"),
-      "config-template must not use bare 'transformers' as provider",
+      !providerLine.includes("'transformers'") && !providerLine.includes("'transformers.js'"),
+      "config-template must not regress to 'transformers' or 'transformers.js' (ADR-0224 unified to 'onnx')",
     );
   });
 });
