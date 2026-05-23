@@ -1,7 +1,8 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
-tags: [codemod, pipeline, test, golden-master, skills, swarm-reviewed]
+implemented-date: 2026-05-22
+tags: [codemod, pipeline, test, golden-master, skills, content-invariant, swarm-reviewed]
 supersedes: []
 depends-on: [0201]
 implements: []
@@ -560,3 +561,14 @@ the runtime-corrected scope, producer, and layer findings.
 * [[feedback-corpus-evidence-before-feature-work]] — reject the speculative
   golden-master corpus; the invariant is derived from the real observed
   class.
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. Both halves of Option E shipped:
+
+- **(a) Source fix:** slash→dollar corruption reverted across the 75-file `forks/ruflo/.agents/skills/**/SKILL.md` class. Verification: `grep -rlE '\$(dev|git|heads|contents|tmp|refs|bin|main|owner|repo)\$' forks/ruflo/.agents/skills/` → 0 files (was 33 pre-fix; general `\$<word>\$<word>` signature was 75). Ledger row at `docs/upstream/INTEGRATION-LEDGER.md:136` against upstream `b65f27e63` / `87ba34854` (fork SHA `cc3c27b41`, disposition `superseded-by-local`).
+- **(b) Invariant gate:** `tests/pipeline/skill-shell-integrity.test.mjs` uses the chosen general signature `/\$[a-zA-Z_]+\$[a-zA-Z_]+/`, walks the fork's `.agents/skills/` tree, fails loud with no `UPDATE_GOLDEN` escape hatch. Runs as `node --test` under the pipeline tier. Current state: 1 pass / 0 fail (8ms).
+
+No code or decision changes. Filename slug retains the legacy "golden-master" wording (cosmetic; the actual chosen outcome is the content-invariant gate per the original swarm reframe).
+
+**Risk flags:** signature breadth caveat — the gate uses `\$<word>\$<word>` (broad), not the 9-token alternation. A novel corruption shape outside `$word$word` (e.g., one involving digits, dashes, or single-side `$`) would still slip past. ADR explicitly accepts this; broaden on evidence only. Test runner is `.test.mjs` using `node:test`, not vitest — caller must use `node --test` (not `npx vitest` which spuriously reports "no test suite").
