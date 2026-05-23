@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-22
 tags: [dead-code, federation, fork-cleanup, agentdb, audit-followup]
 supersedes: []
 depends-on: [0201]
@@ -261,3 +262,18 @@ lazy construct-case at `:2038-2045`).
   in `SelfLearningRvfBackend.ts:402`). Its silent-catch problem (F-06-008)
   belongs to a separate ADR (likely folded into ADR-0220 learning
   controllers honesty pass or its own ADR if scope grows).
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. Scenario A confirmed (controller-registry case arm was a dormant gated path — enabled-check returned false; nothing requested the key).
+
+**Landed:**
+
+- `forks/agentdb/src/services/federated-learning.ts` deleted (436 LOC) + stale `examples/federated-learning-example.ts` deleted (285 LOC) — fork commit `d77d512` ("fix(quarantine): ADR-0217 + ADR-0222 federation cleanup (A3)").
+- Cross-fork grep for `FederatedLearningManager|FederatedLearningCoordinator|EphemeralLearningAgent` returns **zero live src hits** in `forks/{agentdb/src, ruflo/v3, agentic-flow/agentic-flow/src}` (remaining hits are docs + test scripts only).
+- Arch-test trip-wire: `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` — "federated-learning file must not exist" → 13/13 pass.
+- INTEGRATION-LEDGER row already recorded at `docs/upstream/INTEGRATION-LEDGER.md:287` (fork-local).
+
+**Upstream divergence opened** (merge-tax tracking): `ruvnet/agentdb` still ships `services/federated-learning.ts`; future merges need `--ours` for that file. The arch-test catches accidental re-add. Worth noting in upstream-sync runbook.
+
+CHANGELOG / MIGRATION-LOG in `forks/agentdb` still contain historical references — acceptable as audit trail, not load-bearing. Test scripts `tests/scripts/test-federated{,-learning}.mjs` still reference the deleted classes — they are scripts not unit tests, so don't fail the suite, but are stale.
