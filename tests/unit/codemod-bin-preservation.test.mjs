@@ -35,22 +35,26 @@ describe('codemod: bin keys are never rewritten via UNSCOPED_MAP', () => {
   let tmp;
   afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
 
-  it('ruflo bin key stays literal `ruflo` (not `@sparkleideas/ruflo`)', async () => {
+  it('ruflo-mcp bin key stays literal `ruflo-mcp` (not `@sparkleideas/ruflo-mcp`)', async () => {
+    // ADR-0212 (2026-05-22): `ruflo` is no longer in the CLI bin map at
+    // all — the wrapper (@sparkleideas/ruflo) declares it solo. This test
+    // now uses only the surviving `ruflo-mcp` key (settled KEEP per the
+    // ADR — active acceptance consumer) to pin the
+    // "codemod-doesn't-scope-bin-keys" contract.
     tmp = makeTmpDir();
     writePkg(tmp, {
       name: '@claude-flow/cli',
       version: '1.0.0',
       bin: {
-        ruflo: './bin/cli.js',
         'ruflo-mcp': './bin/mcp-server.js',
       },
     });
     await transform(tmp);
     const pkg = readPkg(tmp);
     assert.equal(pkg.name, '@sparkleideas/cli', 'package name rewritten correctly');
-    assert.ok(pkg.bin.ruflo, 'bin.ruflo preserved');
     assert.ok(pkg.bin['ruflo-mcp'], 'bin.ruflo-mcp preserved');
-    assert.ok(!('@sparkleideas/ruflo' in pkg.bin), 'no scoped bin key introduced');
+    assert.ok(!('@sparkleideas/ruflo-mcp' in pkg.bin), 'no scoped bin key introduced');
+    assert.ok(!('ruflo' in pkg.bin), 'ADR-0212: codemod must not inject ruflo');
   });
 
   it('claude-flow bin key stays literal (not scoped)', async () => {
@@ -70,14 +74,16 @@ describe('codemod: bin keys are never rewritten via UNSCOPED_MAP', () => {
     assert.ok(!('@sparkleideas/claude-flow' in pkg.bin), 'no scoped bin key introduced');
   });
 
-  it('mixed rebrand bin map survives codemod with every key literal', async () => {
+  it('post-ADR-0212 bin map survives codemod with every key literal', async () => {
+    // ADR-0212: shape of the real fork CLI bin map post-removal —
+    // `ruflo-mcp` + `cli` + `claude-flow` + `claude-flow-mcp` (no `ruflo`).
     tmp = makeTmpDir();
     writePkg(tmp, {
       name: '@claude-flow/cli',
       version: '1.0.0',
       bin: {
-        ruflo: './bin/cli.js',
         'ruflo-mcp': './bin/mcp-server.js',
+        cli: './bin/cli.js',
         'claude-flow': './bin/cli.js',
         'claude-flow-mcp': './bin/mcp-server.js',
       },
@@ -86,8 +92,8 @@ describe('codemod: bin keys are never rewritten via UNSCOPED_MAP', () => {
     const keys = Object.keys(readPkg(tmp).bin).sort();
     assert.deepEqual(
       keys,
-      ['claude-flow', 'claude-flow-mcp', 'ruflo', 'ruflo-mcp'],
-      'all 4 literal bin names preserved; no scoped keys',
+      ['claude-flow', 'claude-flow-mcp', 'cli', 'ruflo-mcp'],
+      'all 4 literal bin names preserved; no scoped keys; no `ruflo` re-add',
     );
     for (const k of keys) {
       assert.ok(!k.includes('/'), `bin key "${k}" must not contain slash`);

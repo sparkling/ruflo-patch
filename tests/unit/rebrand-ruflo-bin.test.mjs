@@ -1,21 +1,24 @@
 /**
- * ADR-0006 follow-up (2026-04-21): CLI bin map rebrand to `ruflo`.
+ * ADR-0212 (2026-05-22, supersedes ADR-0006's CLI-`ruflo`-bin clause):
+ * CLI bin map MUST NOT contain a `ruflo` key. Option B (remove from CLI)
+ * was chosen so the wrapper (`@sparkleideas/ruflo`) becomes the sole
+ * declarer of `ruflo` — converges with upstream (whose CLI is `ruflo`-free
+ * by design) and ends the recurring `--theirs` merge tax on the `ruflo` key.
  *
- * Asserts the fork-source package.json at
- *   forks/ruflo/v3/@claude-flow/cli/package.json
- * exposes `ruflo`, `ruflo-mcp`, `cli`, `claude-flow`, `claude-flow-mcp`.
+ * This is the merge-re-add catcher: it reads the *real* fork source
+ * (`forks/ruflo/v3/@claude-flow/cli/package.json`), so a future upstream
+ * `--theirs` merge that re-introduces `ruflo` fails this test
+ * immediately. The synthetic-input `codemod-bin-preservation.test.mjs`
+ * cannot catch a real-source re-add — it only proves the codemod doesn't
+ * inject `ruflo`.
  *
- * The `cli` alias was re-added on 2026-04-21 (reversing the earlier removal)
- * because `npx @sparkleideas/cli@latest ...` derives the executable name from
- * the unscoped package name (`cli`) and fails with "could not determine
- * executable to run" when that bin entry is missing. The rebrand goal was to
- * make the CLI *easier* to invoke, so forcing users onto the clunky
- * `npx -p @sparkleideas/cli@latest ruflo ...` form was the wrong trade.
- * `ruflo` stays the primary; `cli` is an npx-bootstrap alias only.
+ * Settled KEEP: `ruflo-mcp` stays — it has an active acceptance consumer
+ * (`lib/acceptance-adr0113-plugin-checks.sh` spawns the bin directly).
+ * Only `ruflo` is removed by ADR-0212.
  *
- * This test reads the pre-codemod fork source. The codemod bin-preservation
- * contract is covered separately in `codemod-bin-preservation.test.mjs`
- * (post-codemod assertion: bin keys stay literal, never get scoped).
+ * The `cli` alias stays because `npx @sparkleideas/cli@latest ...`
+ * derives the executable name from the unscoped package name (`cli`)
+ * and fails with "could not determine executable to run" otherwise.
  */
 import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
@@ -26,7 +29,7 @@ import { dirname, join } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FORK_PKG = join(__dirname, '../../../forks/ruflo/v3/@claude-flow/cli/package.json');
 
-describe('ADR-0006 follow-up: CLI bin map — ruflo rebrand', () => {
+describe('ADR-0212: CLI bin map — `ruflo` removed (wrapper owns it)', () => {
   const pkg = JSON.parse(readFileSync(FORK_PKG, 'utf8'));
 
   it('bin map exists', () => {
@@ -34,11 +37,16 @@ describe('ADR-0006 follow-up: CLI bin map — ruflo rebrand', () => {
     assert.ok(pkg.bin !== null);
   });
 
-  it('exposes `ruflo` pointing at ./bin/cli.js', () => {
-    assert.equal(pkg.bin.ruflo, './bin/cli.js');
+  it('does NOT expose `ruflo` (ADR-0212 Option B — wrapper-only)', () => {
+    assert.ok(
+      !('ruflo' in pkg.bin),
+      'bin.ruflo must NOT be present — ADR-0212 removed it so `.bin/ruflo` ' +
+      'resolves deterministically to the wrapper (@sparkleideas/ruflo). ' +
+      'If you see this fail after a `--theirs` merge: re-remove the key.',
+    );
   });
 
-  it('exposes `ruflo-mcp` pointing at ./bin/mcp-server.js', () => {
+  it('keeps `ruflo-mcp` pointing at ./bin/mcp-server.js (settled KEEP — active acceptance consumer)', () => {
     assert.equal(pkg.bin['ruflo-mcp'], './bin/mcp-server.js');
   });
 
@@ -53,8 +61,7 @@ describe('ADR-0006 follow-up: CLI bin map — ruflo rebrand', () => {
   it('exposes `cli` as a backwards-compat alias for npx auto-invocation', () => {
     // npx derives the bin to run from the unscoped package name
     // (`@sparkleideas/cli` → `cli`). Without this entry, `npx @sparkleideas/cli@latest`
-    // fails with "could not determine executable to run". Re-added 2026-04-21
-    // after the original removal broke the primary npx UX path.
+    // fails with "could not determine executable to run".
     assert.equal(pkg.bin.cli, './bin/cli.js');
   });
 
