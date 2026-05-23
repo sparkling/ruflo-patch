@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-22
 tags: [memory, controllers, fail-loud, no-fallbacks, agentdb, audit-followup]
 supersedes: []
 depends-on: [0201]
@@ -233,3 +234,22 @@ inner `UPDATE` SQL; the enclosing `updatePatternStats` is `:529-547`.
   HIGH README H7). Both share the silent-fallback shape but have different
   fix shapes (mock-policy decision; backend-delegation refactor); they
   belong in their own ADRs or scope-extensions during this ADR's dialectic.
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. All three fixes shipped in `forks/agentdb`:
+
+- **F-04-001 fix** — `ReasoningBank.ts:30` exports `PatternNotFoundError`; `updatePatternStats` (`:553-573`) returns `{changes: number}`; `recordOutcome` (`:585-608`) throws `PatternNotFoundError` when `changes === 0`.
+- **F-04-002 fix** — `MemoryConsolidation.ts:394-403` guards the `weightedImportance / totalAccess` divide with a `totalAccess === 0` short-circuit returning `cluster.avgImportance`.
+- **F-04-003 fix** — `MemoryConsolidation.ts:208-222` per-cluster try catches `createSemanticMemory` failures (recorded in `report.recommendations`); outer try (`:182-271`) catches and **re-throws** orchestration-level fatals (DB lock, embedder crash).
+
+**Behaviour tests (all PASS):**
+
+- `tests/unit/controllers/ReasoningBank.test.ts` — 2 tests under `ADR-0219 F-04-001 recordOutcome fail-loud`.
+- `tests/unit/controllers/MemoryConsolidation.test.ts` — 1 test under `ADR-0219 F-04-002 — divide-by-zero guard`; 2 tests under `resilience — ADR-0219 F-04-003 fail-loud on orchestration fatals`.
+
+Out-of-scope deferrals from the original ADR (F-04-004 EmbeddingService mock-fallback, F-04-006 MemoryController.search ignores VectorBackend) remain open for separate ADRs as documented.
+
+**Risks:** verify production consumer in `agentic-flow/agentic-flow/src/mcp/fastmcp/tools/memory-tools.ts:293` is wrapped (or intentionally lets `consolidate` rejection propagate to MCP error). Quick grep didn't show an enclosing try; worth a consumer-impact check during release acceptance.
+
+No INTEGRATION-LEDGER row (fork-original work; the existing line 289 mention is a collision-resolution note during an unrelated security-bump merge, not this ADR's commit).
