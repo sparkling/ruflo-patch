@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-22
 tags: [init, mcp, agentdb, registration, swarm-reviewed]
 supersedes: []
 depends-on: [0201, 0161, 0204]
@@ -159,3 +160,16 @@ A fresh 6-expert council re-verified ADR-0213 against fork source + upstream. **
 * **Upstream:** init has no agentdb entry either (gap inherited); `ruvnet/agentdb/README.md:57,91` documents `claude mcp add agentdb` (works **upstream**; broken only in the fork, which added the `busy_timeout` pragma in commit `668ce1a`); aggregator mount per ruvnet/ruflo #1226 (closed) / upstream **agentic-flow** ADR-053 (controller activation, distinct from the fork-local ADR-0053).
 * **Related:** ADR-0161 (agentdb 5th fork + Pass 8 — corrected here), ADR-0204 (MCP-server consolidation / archivist-init — gates this; owns the double-mount), ADR-0201 (audit), ADR-0069 (`all-mpnet-base-v2`/768-dim canonical model).
 * **Memory:** [[project-rvf-primary]] (no SQLite-first default), [[feedback-no-fallbacks]] (wire-or-strip; docs name the resolvable surface), [[feedback-corpus-evidence-before-feature-work]] (32 tools live, not the README's 41 or the first-pass 11; standalone has no caller), [[reference-agentdb-unscoped-name]], [[feedback-inspect-installed-not-dev-nodemodules]] (boot tested via fresh `/tmp` install), [[feedback-remediation-adr-preflight]] (all four checks fired: dead consumer / docs-vs-runtime / inventory-false / 0204+0161 overlap).
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. All four steps shipped:
+
+1. Pass-8 doc refs corrected — 5 `.claude/agents/github/*.md` files repointed (`pattern_store` → `mcp__ruflo__agentdb_pattern-store`, `pattern_search` → `mcp__ruflo__agentdb_pattern-search`; `pattern_stats` removed, no aggregator equivalent). Forks commit `5015b016f`; patch-side gate test `tests/unit/adr0213-no-dead-agentdb-refs.test.mjs`.
+2. Init unchanged (no `agentdb` key in `.mcp.json`) — pinned by arch-test `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0213-init-no-agentdb-registration.arch.test.ts` (6/6 passing, 2ms; pins negative across default, all-on, ruv-swarm-only, flow-nexus-only, claudeFlow=false, RVF-primary).
+3. Boot-crash fork bug filed against `forks/agentdb` (`busy_timeout` not in `ALLOWED_PRAGMAS`) — tracked separately; not gating this ADR.
+4. Standalone registration remains deferred to a future opt-in ADR (gated on boot-fix + RVF-substrate reconciliation + ADR-0204 settling + opt-in default).
+
+INTEGRATION-LEDGER row already present at `docs/upstream/INTEGRATION-LEDGER.md:133` (cites `5015b016f` + `a8e74b5`).
+
+**Risk:** boot-crash fork bug mentioned as "file as fork bug" but no ledger/ADR/issue ID confirms it's tracked outside this ADR's text. Recommend a separate tracker entry so the deferred opt-in ADR has a real precondition.
