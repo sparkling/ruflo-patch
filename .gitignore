@@ -18,6 +18,7 @@ CLAUDE.local.md
 .claude-flow/daemon-state.json
 .claude-flow/cjs-intelligence-signals.json
 .claude-flow/agents.json
+.claude-flow/routing-outcomes.json
 .claude-flow/agents/
 .claude-flow/data/
 .claude-flow/claims/
