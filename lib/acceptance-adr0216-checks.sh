@@ -226,20 +226,24 @@ _run_skills_cli_surface() {
   # The CLI may emit log lines like `[AgentDB] Telemetry disabled`
   # before the JSON output. Find the first line that STARTS with `[`
   # (column 0) — that's the JSON array opening, not a log prefix.
+  # Use line slicing (lines.slice(i).join), NOT data.indexOf(lines[i]),
+  # because the latter finds the FIRST '[' anywhere — which is the log
+  # prefix itself.
   local count
   count=$(node -e "
     try {
       const data = process.argv[1];
       const lines = data.split('\n');
-      let startIdx = -1;
+      let startLine = -1;
       for (let i = 0; i < lines.length; i++) {
         if (lines[i].startsWith('[') && !lines[i].match(/^\[\w+\]/)) {
-          startIdx = data.indexOf(lines[i]);
+          startLine = i;
           break;
         }
       }
-      if (startIdx < 0) { process.stdout.write('0'); process.exit(0); }
-      const j = JSON.parse(data.slice(startIdx));
+      if (startLine < 0) { process.stdout.write('0'); process.exit(0); }
+      const jsonText = lines.slice(startLine).join('\n');
+      const j = JSON.parse(jsonText);
       process.stdout.write(String(j.length));
     } catch (e) {
       process.stdout.write('0');
