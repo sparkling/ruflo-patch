@@ -21,6 +21,30 @@ audience: ai-executor
 > finalization of the 0207-0224 batch). This ADR captures the chain, the
 > correction, the discovery, and the resulting sequencing decision.
 
+## Amendment 2026-05-23: Move C (ADR-0230 substrate re-convergence) slotted between Move B and Move A
+
+The Move B (upstream sync, ADR-0228) → Move A (Wave 3 finalization) sequencing decision stands. Adding a third move discovered mid-execution while triaging ADR-0228 Batch S:
+
+**Move C (NEW): substrate re-convergence per ADR-0230** — slot between Move B's close and Move A's start.
+
+Discovery path: per-commit reading of upstream ADR-125 Phases 1-7 revealed upstream is now fixing several bugs that motivated fork-side substrate workarounds (HNSW persistence stubs, FTS5 fallback gap, ruvector.db leak, HybridBackend silent downgrade). The Batch S deferral disposition for the 5 ADR-125 phases was reversed; per ADR-0230 they re-disposition as `take-verbatim` (Phases 1/3/5/6/7) + `adapt` (Phases 2/4). The Archivist layer (ADR-0180/0181) stays fork-original above MCP; the substrate layer re-converges below MCP.
+
+This does NOT change Move B → Move A sequencing. ADR-0230 is a sibling architectural decision born from the Batch S triage; its execution slots BEFORE Move A because Wave 3 finalization (the 0207-0224 ADR audit) needs the substrate to be stable.
+
+Revised sequence:
+
+| Move | Goal | Status (2026-05-23) |
+|---|---|---|
+| Move B (ADR-0228) | Upstream fork sync — Batches L through T | In progress — 113 picks landed across 4 batches; Batch S partial; Batch T pending |
+| **Move C (ADR-0230)** | **Substrate re-convergence with upstream ADR-125** | **Proposed 2026-05-23 — 5 execution phases per the new ADR** |
+| Move A (per `docs/audits/2026-05-19-soundness-audit/REMEDIATION-IMPLEMENTATION-HANDOVER.md`) | Wave 3 finalization — flip 0207-0224 from `proposed` → `implemented` | Pending — gated on ADR-0228 + ADR-0230 close |
+
+Per Lesson 4 of this ADR (*"Sync ADR before audit ADR"*): the substrate re-convergence ADR (ADR-0230) is itself a sync ADR in spirit. Slotting it before Move A respects that lesson — re-converging substrate FIRST, auditing ADR fulfillment SECOND.
+
+The "fail fast and fail loud, not fall back" user directive that opened this session continues to govern ADR-0230's execution: each phase passes `npm run release` end-to-end before the next begins; no half-deferred substrate state.
+
+Additional user directive 2026-05-23 (during ADR-0230 framing discussion): *"pass all acceptance tests, no skips beyond the original 9"* — raises the acceptance hard gate from `≤ baseline (9)` to `= 0 fail, skip_accepted ≤ 10`. This applies to both ADR-0228 (Batch T close-out) and ADR-0230 (per-phase exit gates). Two existing acceptance failures (`adr0104-meta-preserved`, `e2e-0059-p4-socket-exists`) are now in scope (not deferred); see session-handover 2026-05-24 for assignment.
+
 ## Context and Problem Statement
 
 The 0207-0224 ADR batch landed in source via prior sessions (per

@@ -526,6 +526,54 @@ This ADR is closed when ALL of the following hold:
   - `feedback-upstream-means-upstream.md`
   - `feedback-no-time-estimates.md`
 
+## Amendment 2026-05-23: Batch S landed (partial) + Batch S substrate deferrals re-disposed by ADR-0230
+
+Status: still `proposed` — close-out pending Batch T + ADR-0230 execution.
+
+**Landed this session (113 substantive picks across 5 forks)**:
+
+| Batch | Picks landed | Notes |
+|---|---:|---|
+| L (security CVEs, 4 forks) | 10 | All shipped; per-row in ledger |
+| M (ADR-128 phases 1-5 + doc) | 6 + 1 skip-mechanical | Includes follow-up `9cbb0951f` (flowNexus dead-COMMANDS_MAP removal) + acceptance test relaxations |
+| N (ruvector recent) | 49 | + 8 roll-ups + 5 deferred (Batch O sparse-attention) |
+| **S (ruflo backlog partial)** | **48** (15 manual + 33 via background agent) | + 24 source-conflict deferrals (5 ADR-125 + 5 neural-trader + 2 github + 3 docs + 9 misc) |
+| Followup commits | 4 (fork-local) | flowNexus removal + brand canon × 2 + override-conflict fix |
+
+**Per-fork heads at amendment**:
+
+| Fork | Head | Picks ahead of pre-session baseline |
+|---|---|---:|
+| ruflo | (latest patch-bump head) | 57 substantive + 4 follow-ups + pipeline auto-bumps |
+| agentic-flow | (latest patch-bump head) | 3 picks + 1 fix-up |
+| agentdb | (latest patch-bump head) | 3 picks |
+| ruv-FANN | `708fcfd` | 2 picks |
+| ruvector | (latest patch-bump head) | 49 picks |
+
+**Acceptance state**: 685/697 / 2 fail / 10 skip_accepted (unchanged across L→M→N→S). Hard gate ≤ baseline (9 fail) met.
+
+**Source-conflict deferral re-disposition (5 of 24)**: the 5 ADR-125 substrate phases (`4e9a33ce`, `11eaef85`, `81a2b23e`, `850450f3`, `8773fcff`) were re-examined post-Batch S and found to be addressing real bugs that motivated fork-side workarounds. **Per ADR-0230 (proposed 2026-05-23)**, their disposition flips from `deferred-source-conflict` to:
+
+| Phase | Re-disposition |
+|---|---|
+| Phase 1 (`4e9a33ce`) | `take-verbatim` (ADR-0230 Phase 1) |
+| Phase 2 (`11eaef85`) | `adapt-with-agentdb-package-substitution` (ADR-0230 Phase 4) |
+| Phase 3 (`81a2b23e`) | `take-verbatim` (ADR-0230 Phase 2) |
+| Phase 4 (`850450f3`) | `adapt-disable-standalone-timer-let-archivist-own` (ADR-0230 Phase 3) |
+| Phase 5 (`8773fcff`) | `take-verbatim` (ADR-0230 Phase 2) |
+
+The Batch S ledger row referencing 24 source-conflict deferrals is amended to reference 19 (those 5 are now ADR-0230's scope; 19 remain — neural-trader Phases 1-4+6, github surface Phases 2 + 3-completion, 3 docs, 9 misc).
+
+**Other Batch S deferrals**: stay deferred per the original ADR-0228 §Batch S rationale; revisit per-family on next sync.
+
+**Batch T (cleanup + ledger close-out summary)**: pending execution. Will close ADR-0228 once:
+1. ADR-0230 Phases 1-5 land (substrate re-convergence)
+2. The 2 remaining acceptance failures resolved (separate scope per ADR-0229 out-of-scope #3 + #4 — but escalated for resolution as part of session-handover 2026-05-24)
+3. INTEGRATION-LEDGER close-out summary block appended
+4. Status `proposed` → `implemented` flipped
+
+**Confirmation gate adjustments**: §Confirmation #7 `acceptance failure count ≤ baseline at ADR open` (9) is MET (current = 2). The user directive on 2026-05-23 (*"pass all acceptance tests, no skips beyond the original 9"*) raises this to `acceptance failure count = 0, skip_accepted ≤ 10`. The raised gate is NOT a Batch T close prerequisite for ADR-0228 itself; it is tracked in session-handover 2026-05-24 as a sibling goal alongside ADR-0230.
+
 ## State schema (close-out fill-in)
 
 ```yaml
