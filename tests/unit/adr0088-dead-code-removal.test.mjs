@@ -1,12 +1,20 @@
 // @tier unit
-// ADR-0088: Daemon Scope Alignment — dead code removal verification.
+// ADR-0088 (+ ADR-0207 supersession): Daemon Scope Alignment — dead code
+// removal verification.
 //
-// ADR-0088 §Decision items 1-5 delete:
+// ADR-0088 §Decision items 1-5 deleted:
 //   1. DaemonIPCClient class (daemon-ipc.ts:208-302) — zero callers
 //   2. DaemonIPCServer memory.{store,search,count,list,bulkInsert} registrations
 //   3. tryDaemonIPC() and ipcCall() helpers in auto-memory-hook.mjs
 //   4. "[Phase 4] Daemon IPC available" status print in auto-memory-hook.mjs
 //   5. "IPC Socket: LISTENING" file-existence theatre in daemon status output
+//
+// ADR-0207 went further: the DaemonIPCServer class + the entire
+// `services/daemon-ipc.ts` file are now removed too (zero handlers, zero
+// clients, never present upstream). T1/T2 below assert the post-ADR-0207
+// contract: the IPC file is GONE and worker-daemon.ts no longer references
+// it. ADR-0207 also adds F-10-004 ("daemon restart") and the F-10-006
+// aiMode-via-state-file fix.
 //
 // These tests read the FORK SOURCE (source of truth) — the published package
 // may be stale in the pipeline order (unit tests run at step 3, build+publish
@@ -33,42 +41,51 @@ function readIfExists(path) {
 }
 
 // ============================================================================
-// T1: DaemonIPCClient class deleted
+// T1: daemon-ipc.ts file deleted entirely (ADR-0207 supersession)
 // ============================================================================
 
-describe('ADR-0088 T1: DaemonIPCClient class deleted from fork', () => {
-  const source = readIfExists(DAEMON_IPC_PATH);
-
-  it('fork daemon-ipc.ts exists', () => {
-    assert.ok(source, `${DAEMON_IPC_PATH} must exist`);
+describe('ADR-0088 + ADR-0207 T1: daemon-ipc.ts deleted from fork', () => {
+  it('fork daemon-ipc.ts is GONE (ADR-0207)', () => {
+    assert.ok(!existsSync(DAEMON_IPC_PATH),
+      `${DAEMON_IPC_PATH} must be deleted per ADR-0207 (post-ADR-0088 supersession). ADR-0088 kept the empty DaemonIPCServer "for future RPC"; ADR-0207's swarm review found zero handlers ever registered, zero clients in-tree, and zero upstream history — Option C (delete) closes F-10-001 + F-10-002 by construction.`);
   });
 
-  it('class DaemonIPCClient declaration absent', () => {
-    assert.ok(!source.includes('class DaemonIPCClient'),
-      'DaemonIPCClient class declaration must be deleted per ADR-0088');
+  it('worker-daemon.ts does not import DaemonIPCServer or daemon-ipc', () => {
+    const wd = readIfExists(WORKER_DAEMON_PATH);
+    assert.ok(wd, `${WORKER_DAEMON_PATH} must exist`);
+    assert.ok(!/['"][^'"]*daemon-ipc(?:\.js)?['"]/.test(wd),
+      'worker-daemon.ts must not import from daemon-ipc.js (file deleted)');
   });
 
-  it('new DaemonIPCClient instantiations absent', () => {
-    assert.ok(!source.includes('new DaemonIPCClient'),
-      'zero instantiations — the class had no callers before deletion');
+  it('worker-daemon.ts has no class-name reference to DaemonIPCServer', () => {
+    const wd = readIfExists(WORKER_DAEMON_PATH);
+    assert.ok(wd, `${WORKER_DAEMON_PATH} must exist`);
+    assert.ok(!/\bDaemonIPCServer\b/.test(wd),
+      'DaemonIPCServer symbol must be gone from worker-daemon.ts (class deleted)');
   });
 
-  it('DaemonIPCServer class still present (preserved for future RPC)', () => {
-    assert.ok(source.includes('class DaemonIPCServer'),
-      'server class kept for future non-memory RPC methods');
+  it('no surviving registerMethod call sites in cli source', () => {
+    // ADR-0207 arch-test in the fork pins this too; replicating here so a
+    // unit-test failure surfaces the regression at the patch tier.
+    const wd = readIfExists(WORKER_DAEMON_PATH);
+    assert.ok(wd, `${WORKER_DAEMON_PATH} must exist`);
+    assert.ok(!/\bregisterMethod\b/.test(wd),
+      'registerMethod must have zero callers (the verb that justified the layer is gone)');
   });
 
-  it('ADR-0088 deletion comment present', () => {
-    assert.ok(source.includes('ADR-0088'),
-      'removal should be explained in a comment referring to ADR-0088');
+  it('worker-daemon.ts cites ADR-0207 in comments', () => {
+    const wd = readIfExists(WORKER_DAEMON_PATH);
+    assert.ok(wd.includes('ADR-0207'),
+      'IPC-deletion site must cite ADR-0207 so future readers trace the decision');
   });
 });
 
 // ============================================================================
-// T2: worker-daemon.ts memory.* IPC handlers removed
+// T2: worker-daemon.ts memory.* IPC handlers removed (ADR-0088) +
+//      no surviving IPC import (ADR-0207 supersession)
 // ============================================================================
 
-describe('ADR-0088 T2: worker-daemon.ts memory.* IPC handlers removed', () => {
+describe('ADR-0088 + ADR-0207 T2: worker-daemon.ts memory.* IPC handlers removed', () => {
   const source = readIfExists(WORKER_DAEMON_PATH);
 
   it('fork worker-daemon.ts exists', () => {
@@ -83,9 +100,11 @@ describe('ADR-0088 T2: worker-daemon.ts memory.* IPC handlers removed', () => {
     });
   }
 
-  it('DaemonIPCServer import still present (server kept for future methods)', () => {
-    assert.ok(source.includes('DaemonIPCServer'),
-      'server class remains importable for future non-memory RPC');
+  it('DaemonIPCServer import REMOVED (ADR-0207 — entire layer deleted)', () => {
+    // ADR-0088 originally kept the server import "for future methods";
+    // ADR-0207 deletes the class + the import. The contract flipped.
+    assert.ok(!source.includes('DaemonIPCServer'),
+      'DaemonIPCServer must be absent from worker-daemon.ts (ADR-0207 superseded ADR-0088 "kept for future" rationale)');
   });
 
   it('capability detection method present', () => {
@@ -196,12 +215,12 @@ describe('ADR-0088 T4: daemon status output sanitized', () => {
 });
 
 // ============================================================================
-// T5: ADR-0088 reference tags present in all modified files
+// T5: ADR-0088 reference tags present in surviving modified files
+// (daemon-ipc.ts dropped — that file was deleted by ADR-0207)
 // ============================================================================
 
-describe('ADR-0088 T5: ADR reference tags present', () => {
+describe('ADR-0088 + ADR-0207 T5: ADR reference tags present', () => {
   for (const [name, path] of [
-    ['daemon-ipc.ts', DAEMON_IPC_PATH],
     ['worker-daemon.ts', WORKER_DAEMON_PATH],
     ['commands/daemon.ts', CMD_DAEMON_PATH],
   ]) {
