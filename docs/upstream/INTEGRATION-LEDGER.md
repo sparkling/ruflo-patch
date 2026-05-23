@@ -183,6 +183,64 @@ not seeded here; backfill as encountered.
 | `a80a46d07` | 2026-05-12 | fix(ruvector-rairs): shorten keyword to satisfy crates.io 20-char limit | hand-ported | `6409012c3` | 0186 | clean cherry-pick |
 | `bc3a9b1c9` | 2026-05-16 | fix: 9-issue cleanup batch + regression-guard CI workflow (#466) | hand-ported | `a29872189` | 0186 | conflicts on npm/packages/{pi-brain,rvf-wasm}/package.json → ours; tmux.js→tmux_lc.js and type.js→type_lc.js renames left macOS case-insensitive FS artifacts cleaned by `9d571abe8` |
 | `c4212106f` | 2026-05-16 | ci: close 3 regression-guard coverage gaps (#468) | hand-ported | `6235e4f8d` | 0186 | clean cherry-pick |
+| `eafba64fa` | 2026-05-23 | fix(security): RUSTSEC advisories + clippy hardening in RuVector (#504) | cherry-picked | `465d30753` | 0228 | Batch N priority-1 security. partial_cmp.unwrap()→Ordering::Equal on f32/f64 (12 sites); HTTP search input validation (k=0/>10k, empty/oversized vectors); LocalFsBackend env_clear + safe-env allowlist + deadline-based timeout (SEC-005). |
+| `d5e07f6e6` | 2026-05-18 | fix(ruvector-router-core): #430 HNSW insert beam + distance-based pruning + storage rebuild | cherry-picked | `c72bd1ff9` | 0228 | Batch N. Clean cherry-pick. |
+| `796236671` | 2026-05-19 | ci(security): add 5-layer supply-chain CI + clear 3 npm criticals | cherry-picked | `fc547893a` | 0228 | Batch N. Auto-merged. |
+| `bff1642b2` | 2026-05-21 | fix(ruvector): ONNX wasm bundle + brain MCP ESM errors + supply-chain CI (#481) | hand-ported | `d4926d3ad` | 0228 | Batch N. npm/packages/ruvector/package.json conflict: kept fork's `0.1.2-patch.763` Verdaccio pin (upstream wanted 0.2.26). |
+| `835a2f23c` | 2026-05-22 | fix(ci): exclude npm/ binaries from .node file search in publish workflow | cherry-picked | `2afab2b2d` | 0228 | Batch N. Clean. |
+| `b4e26a5a2` | 2026-05-22 | fix(cli): use .meta.json sidecar instead of JSON-parsing binary redb (#417) (#482) | cherry-picked | `95071fb20` | 0228 | Batch N. Clean. |
+| `0ae4de957` | 2026-05-22 | fix(intelligence): import() now inserts memories into HNSW index (#315) (#483) | cherry-picked | `91475ae12` | 0228 | Batch N. Clean. |
+| `81aba6478` | 2026-05-22 | fix: CypherEngine multi-row MATCH, rvlite ESM import, LearningEngine export (#484) | cherry-picked | `aa079099d` | 0228 | Batch N. Clean. |
+| `87399fa74` | 2026-05-22 | fix(postgres): wrap optional-feature SQL functions in DO exception blocks (#485) | cherry-picked | `e576bf195` | 0228 | Batch N. Clean. |
+| `ca62a44c2` | 2026-05-22 | fix(ruvllm): reject unsupported GGUF + Qwen2/Gemma metadata (#486) | cherry-picked | `203235047` | 0228 | Batch N. Clean. |
+| `600580a82` | 2026-05-22 | fix(mcp): exit cleanly on SIGTERM/SIGINT/stdin-end in MCP server (#475) | cherry-picked | `2b5f682f5` | 0228 | Batch N. Auto-merged. |
+| `38105cf89` | 2026-05-22 | fix(mcp): route tracing output to stderr to prevent JSON-RPC stdio corruption (#470) | superseded-by-local | — | 0228 | Batch N DP-3: fork's ADR-0226 already shipped equivalent stdio-hygiene fix; upstream's commit converges. Skipped. |
+| `7c3c1d424` | 2026-05-22 | feat(ops): add LinearBitNet — ternary weight GEMV with zero-skip (#477) | cherry-picked | `1f636ddb8` | 0228 | Batch N. Clean. |
+| `f07540762` | 2026-05-22 | fix(rvlite): SPARQL variable predicates, DESCRIBE EOF, metadata-filtered vector search (#488) | cherry-picked | `304af4dd8` | 0228 | Batch N. Auto-merged. |
+| `3b2bc2756` | 2026-05-22 | fix(mcp-brain-server): add missing /v1/reclassify route (#489) | cherry-picked | `fbeb6d04e` | 0228 | Batch N. Clean. |
+| `b8faecfae` | 2026-05-22 | fix(mcp-brain-server): spawn_blocking for cognitive cycle + postgres version bump (#490) | cherry-picked | `62a0e1cea` | 0228 | Batch N. Clean. |
+| `bd71cd1e2` | 2026-05-22 | fix(gnn): remove broken linux-arm64-musl target from build matrix (#491) | hand-ported | `3c0726a3a` | 0228 | Batch N. crates/ruvector-gnn-node/package.json conflict: kept fork's `0.1.25-patch.101` pins, dropped the `linux-arm64-musl` entry per upstream intent. |
+| `e3d8ff8e6` | 2026-05-22 | fix(npm): update stale ruvector peer deps and fix TS syntax error (#492) | hand-ported | (pick after gnn) | 0228 | Batch N. npm/packages/agentic-synth/package.json conflict: kept fork's `"ruvector": "0.1.2-patch.763"` Verdaccio pin (upstream wanted `^0.2.0`). |
+| `5ba2b59b5` | 2026-05-22 | fix(ts): align burst-scaling and ruvector-extensions with VectorDB API (#493) | cherry-picked | `07cb327be` | 0228 | Batch N. Clean. |
+| `e3b3dc67f` | 2026-05-22 | fix(simd): remove outdated nightly-only comment; add AVX-512 CI compile check (#494) | cherry-picked | `719fdc339` | 0228 | Batch N. Clean. |
+| `bd616ece4` | 2026-05-22 | fix(gnn): replace thread_rng with seeded StdRng for faster layer init (#495) | cherry-picked | `16a6fbdf1` | 0228 | Batch N. Clean. |
+| `9d4e3ea71` | 2026-05-22 | fix(sql): rename access method hnsw → ruhnsw to match Rust source (#496) | cherry-picked | `be65c451c` | 0228 | Batch N. Clean. |
+| `74ba93421` | 2026-05-22 | fix(cli): add missing brain agi and midstream commands + brain search --verbose (#497) | cherry-picked | `719ca58cd` | 0228 | Batch N. Clean. |
+| `2495b8f1b` | 2026-05-22 | fix(ts): resolve TypeScript errors across 5 npm packages (#499) | cherry-picked | `938c655a4` | 0228 | Batch N. Auto-merged. |
+| `a531628bb` | 2026-05-22 | fix(ts): remove rootDir+declaration from agentic-synth-examples tsconfig (#500) | cherry-picked | `23507bf2f` | 0228 | Batch N. Clean. |
+| `4e133ddf1` | 2026-05-22 | fix(tests): repair npm unit/integration test suite — 5/5 suites now pass | cherry-picked | `acbacdc46` | 0228 | Batch N. Clean. |
+| `41fe77d8a` | 2026-05-22 | fix(cognitum-gate-wasm): fix build paths + make wasm build optional | cherry-picked | `ed482a771` | 0228 | Batch N. Clean. |
+| `d0f2b4ddb` | 2026-05-22 | fix(lint): resolve ESLint errors in wasm-unified, graph-data-generator, agentic | cherry-picked | `2eb2ceb23` | 0228 | Batch N. Auto-merged. |
+| `5cd593deb` | 2026-05-22 | fix(lint): resolve ESLint errors in burst-scaling package | cherry-picked | `29949f317` | 0228 | Batch N. Clean. |
+| `74a215446` | 2026-05-22 | fix(lint): fix graph-data-generator lint script target and extension | cherry-picked | `f9d665fa1` | 0228 | Batch N. Auto-merged. |
+| `022bc3fca` | 2026-05-22 | fix(lint): resolve all ESLint errors in cli package | cherry-picked | `5c6585e4d` | 0228 | Batch N. Clean. |
+| `e7330cd6a` | 2026-05-22 | fix(lint): resolve ESLint errors in agentic-synth package | cherry-picked | `5b5c749d7` | 0228 | Batch N. Clean. |
+| `672e413f0` | 2026-05-22 | fix(lint): resolve ESLint errors in cognitum-gate-wasm package | cherry-picked | `e1ecd0044` | 0228 | Batch N. Clean. |
+| `0ea566b57` | 2026-05-22 | fix(lint): resolve all ESLint errors in agentic-integration package | cherry-picked | `c33c02176` | 0228 | Batch N. Clean. |
+| `0521862d2` | 2026-05-22 | fix(lint): resolve all ESLint errors in postgres-cli package | cherry-picked | `2769d05d3` | 0228 | Batch N. Clean. |
+| `ea13b33da` | 2026-05-22 | fix(lint): resolve all ESLint errors in ruvbot package | cherry-picked | `9e78afb39` | 0228 | Batch N. Clean. |
+| `a42606799` | 2026-05-22 | fix(lint): fix remaining ruvbot OpenRouterProvider lint issue | cherry-picked | `a859096b9` | 0228 | Batch N. Clean. |
+| `a40634703` | 2026-05-22 | chore(audit): silence imageproc 0.25.0 soundness warnings | cherry-picked | `7e56f0876` | 0228 | Batch N. Clean. |
+| `9b36abf7f` | 2026-05-22 | fix(lint): resolve remaining ruvbot CLI command and plugin lint errors | cherry-picked | `2710136a1` | 0228 | Batch N. Clean. |
+| `33eeb9d2c` | 2026-05-22 | fix(lint): resolve final ruvbot CLI index lint error | cherry-picked | `c2e443376` | 0228 | Batch N. Clean. |
+| `a06d8be56` | 2026-05-22 | fix(lint): achieve zero lint errors in ruvbot package | cherry-picked | `80321b6d0` | 0228 | Batch N. Clean. |
+| `c2944bf39` | 2026-05-22 | fix(build): resolve sona napi flags and agentic-integration TypeScript errors | cherry-picked | `133869b30` | 0228 | Batch N. Auto-merged. |
+| `8e75ae140` | 2026-05-22 | ci: add workflow_dispatch to key CI workflows + ignore test-results.json | cherry-picked | `d13dc91f7` | 0228 | Batch N. Clean. |
+| `0edc4b985` | 2026-05-22 | ci: switch all CI workflows from ubuntu-latest to ubuntu-22.04 | cherry-picked | `b81a1d689` | 0228 | Batch N. Clean. |
+| `16414a4c7` | 2026-05-22 | fix(node): remove non-existent @ruvector/core re-exports | cherry-picked | `606151963` | 0228 | Batch N. Clean. |
+| `8967aee0e` | 2026-05-22 | fix(core): clear stale tsconfig rootDir pointing at non-existent src/ | cherry-picked | `6a2b98dbe` | 0228 | Batch N. Clean. |
+| `07105268a` | 2026-05-22 | fix(ts): resolve 7 TypeScript build errors across node, postgres-cli, ruvbot | cherry-picked | `c5482a870` | 0228 | Batch N. Clean. |
+| `a2422cf8b` | 2026-05-22 | fix(wasm-unified): suppress TS2532 in poincareToLorentz loop | cherry-picked | `24a0a3751` | 0228 | Batch N. Clean. |
+| `4e6e3d399` | 2026-05-22 | ci(core-and-rest): bump timeout 180→240 min | cherry-picked | `5ab5e909b` | 0228 | Batch N. Clean. |
+| `e2350b759` | 2026-05-23 | fix(core): HNSW correctness fixes, k=0 guard, sorted results, cross-integration (v2.2.3) (#502) | cherry-picked | `5a3944088` | 0228 | Batch N. Auto-merged. |
+| (52 SHAs) | 2026-05-04..05-23 | chore: Update NAPI-RS binaries for all platforms | skip-mechanical | — | 0228 | Batch N roll-up: 52 NAPI binary regenerations across the window; fork rebuilds binaries natively per ADR-0150 + ADR-0186 standing rule. |
+| (4 SHAs) | 2026-05-22 | ci: retrigger/kick stuck CI jobs | skip-mechanical | — | 0228 | Batch N roll-up: empty-fix CI re-trigger commits. |
+| (2 SHAs) | 2026-05-22..05-23 | chore: bump versions / release patch versions | skip-mechanical | — | 0228 | Batch N roll-up: Batch J pattern — fork has independent `-patch.N` chain. |
+| (1 SHA) | 2026-05-22 | docs(readme): add repository banner image linking to cognitum.one/ruvector | skip-by-policy | — | 0228 | Batch N: branding/marketing per ADR-0143. |
+| (1 SHA) | 2026-05-22 | chore: revert router 0.1.31 bump from this PR | skip-mechanical | — | 0228 | Batch N: revert of a version bump within an upstream PR; not applicable to fork chain. |
+| (2 SHAs) | 2026-05-22 | chore(postgres) regenerate Cargo.lock / chore(diskann) README sync | skip-mechanical | — | 0228 | Batch N: lockfile/README mechanics. |
+| (2 SHAs) | 2026-05-22 | style: rustfmt / cargo fmt touched blocks | skip-mechanical | — | 0228 | Batch N: style-only churn; defer per DP-4. |
+| **Batch O (~5 substantive)** | 2026-05-05..05-12 | ADR-180 ruvllm cache-reset + sparse-attention v0.1.1 + docs (ADR-183..193 family) | deferred | — | 0228 | Batch N+O: 5 older substantive upstream commits not yet picked (55eae8887, 4922b034f, 9d8006ae2, 068bb637a, 36912ba3e). Sparse-attention feature work + research docs. Fork doesn't currently consume these — defer to future sync ADR. |
 
 ## ruv-FANN
 
