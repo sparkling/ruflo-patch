@@ -104,9 +104,13 @@ describe('ADR-0218 — producer↔consumer contract (fork source)', () => {
     // Correction #1 — must not regress to upstream's deprecated resolver.
     assert.match(producerSrc, /findProjectRoot\(\)/, 'producer must call findProjectRoot()');
     // No `getProjectCwd()` CALL (a comment naming it as the deprecated
-    // alternative is fine). Match the call syntax specifically.
+    // alternative is fine). Match the call syntax specifically — strip JS
+    // comments first so the regex sees only executable text, not commentary.
+    const callsOnly = producerSrc
+      .replace(/\/\*[\s\S]*?\*\//g, '') // /* ... */ block comments
+      .replace(/\/\/[^\n]*/g, '');      // // line comments
     assert.doesNotMatch(
-      producerSrc,
+      callsOnly,
       /\bgetProjectCwd\s*\(/,
       'producer must NOT call getProjectCwd()',
     );
