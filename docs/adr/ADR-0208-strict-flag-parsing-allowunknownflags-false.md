@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-22
 tags: [cli, parser, flags, strictness, hooks, manifest-drift, lint, swarm-reviewed]
 supersedes: []
 depends-on: [0201]
@@ -199,3 +200,22 @@ A fresh 6-expert council (code-verification, upstream-intent, ADR-corpus, MADR-t
 * Upstream parity: `ruvnet/ruflo/v3/@claude-flow/cli/src/parser.ts:543` (`allowUnknownFlags: true` singleton + class default `false` — both identical; but the fork parser adds a 12-line `non-interactive` global block per ADR-0104, so the *file* is not byte-identical). The undeclared *flags* are present upstream; the *manifests* diverge (fork stripped the fail-soft shim refs + every `|| true`).
 * Related principle: [[feedback-no-fallbacks]]. Related: ADR-0201 (audit source); sibling strictness ADRs 0209 (no-fallbacks arch-test), 0210 (stub-honesty envelope), 0211 (init hook-handler gaps); [[feedback-corpus-evidence-before-feature-work]] (fuzzy-match deferred absent typo evidence); [[feedback-upstream-means-upstream]] (merge-tax).
 * Follow-up ADRs likely needed: F-02-002 (two-manifest reconciliation), F-02-004/005/006/007 (handler-side), and the 6 undefined-subcommand dispositions surfaced by this review.
+
+## Amendment — 2026-05-23 (Move A audit, implemented — runtime-flip portion)
+
+Status flipped: **proposed → implemented** (runtime-flip portion).
+
+**Shipped (Option D′ steps 2 + 4, narrow scope):**
+
+- Fork commit `87cb68ae2` — flipped `parser.ts:565` singleton from `allowUnknownFlags: true` to `false`, returning the singleton to the parser's own class default (`parser.ts:34`). Companion test `commands-deep.test.ts:847` flipped (not deleted, per ADR step 4).
+- Fork commit `32480dda2` — declared `--consensus` and `--topology` on `hive-mind spawn` (`commands/hive-mind.ts:146,180,181`), the surface-clean that the flip required for that command.
+- Arch-test pin: `__tests__/arch/adr0208-strict-flag-parsing.arch.test.ts` asserts (1) class default rejects, (2) singleton rejects with `Unknown option: --<camelCaseKey>`, (3) no file in `cli/src/` constructs `CommandParser({ allowUnknownFlags: true })`. 3/3 passing on fork HEAD (vitest, 220ms).
+
+**Outstanding from this ADR's Option D′ sequence (NOT shipped here — these invert the ADR's own lint-first sequencing and should be tracked as 0208 follow-up rows or split into discrete follow-up ADRs):**
+
+- Step 1 — build-time lint `scripts/check-manifest-flag-drift.mjs` (the documented primary deliverable + upstream-merge-tax mitigation).
+- Step 2 (broad) — clean the remaining 11 undeclared flags + 6 undefined subcommands across the 3 manifest channels and shipped docs.
+- Step 3 — acceptance trip-wire through `bin/cli.js`/`_cli_cmd`.
+- Step 5 — fuzzy-match via `suggest.ts` (explicitly decoupled).
+
+Upstream parity check (2026-05-23): `ruvnet/ruflo` parser singleton still `allowUnknownFlags: true` (`parser.ts:543`). Permanent merge-tax begins now; resolution = build the step-1 lint.
