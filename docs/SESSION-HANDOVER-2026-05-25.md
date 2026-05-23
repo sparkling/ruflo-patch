@@ -259,6 +259,92 @@ reconciliation** — drag each ADR into its terminal state with evidence.
 6. Continue B → H in order.
 7. Optional close-out: write `docs/SESSION-HANDOVER-<next-date>.md` capturing Move B if anything (otherwise Wave 3 is complete and the next horizon is fresh).
 
+## Session 2026-05-23 progress update — pre-flight + commit cascade (Move A NOT yet launched)
+
+The "next session" this handover queued opened 2026-05-23. Pre-flight surfaced two
+structural problems, both fixed before any Move A audit ran. Move A itself is
+not started — the audit swarm is now genuinely launchable per
+`docs/plans/move-a-audit-2026-05-23.md`.
+
+### Problem 1: fast-runner harness silent setup failure
+
+`bash scripts/test-acceptance-fast.sh adr0059` returned 7/12 with 5 failures
+sharing one root cause:
+
+```
+[L10-ext][error] _e2e_isolate: $E2E_DIR/package.json missing — golden init incomplete?
+```
+
+Per [[feedback-trace-before-hypothesis]] (≥2 related checks → trace first), a
+read-only code-analyzer trace identified: the fast-runner's `$E2E_DIR` setup
+creates the dir via `init --full --force` only, which doesn't write
+`package.json`. The L10-ext fail-loud guard (added in `2e6e4a9`, 2026-05-16)
+correctly surfaces the structural incompleteness. Pre-existing latent bug
+since `c02e748`; the guard just newly visible. Canonical runner unaffected
+(`_acceptance_snapshot` copies `package.json` from `ACCEPT_TEMP`).
+
+**Fix** (`d5c73b2`): two surgical edits in `scripts/test-acceptance-fast.sh` —
+write minimal `package.json` after `mktemp -d $E2E_DIR`, and symlink
+`node_modules → $ACCEPT_TEMP/node_modules` (matching the per-check iso symlink
+at `lib/acceptance-e2e-checks.sh:52`). Also tighten the reuse predicate so a
+partial fast-only-run dir gets recreated instead of falsely reused.
+
+Result: `bash scripts/test-acceptance-fast.sh adr0059,p4` → **15/15 PASS**.
+Note that the handover's "e2e-0059-p4-socket-exists should PASS" sanity lives
+in the `p4` group (not `adr0059`); both groups now green.
+
+### Problem 2: prior session left 21 untracked ADRs + 4 amendments uncommitted
+
+`git status --short` revealed 51-file dirty tree. **The handover's Move A
+plan was unrunnable** — it assumed 0207–0224 were `proposed` in the corpus
+but they were untracked files on disk. Per [[feedback-trace-before-hypothesis]]
+this is exactly the trap the rule warns about: the handover narrative did
+not reflect the actual git state.
+
+**Fix** — 34 commits in this session:
+
+| Batch | Commits | Subject |
+|---|---|---|
+| Harness fix | `d5c73b2` | fast-runner E2E_DIR package.json + node_modules symlink (Problem 1) |
+| ADR adds (1-per-commit, per handover discipline) | `d988efe`..`4bca04a` (21 commits) | ADR-0201 + ADR-0205–0224 |
+| ADR amendments | `6f6ee81`, `8cc9c05`, `0fcc7f2`, `575211d` | 0195 / 0225 / 0226 / 0227 |
+| Script daemon-wait | `fdcba38` | socket→PID across both harness scripts (step-B follow-up) |
+| Docs backfill | `53f5e59` | 2 handovers + 23-file soundness audit + 3 plan handovers |
+| CLAUDE.md | `5f8ab33` | restructure to minimal form |
+| `.mcp.json` | `d053da7` | register ruv-swarm + flow-nexus as optional |
+| `.claude/settings.json` | `9bc9982` | enable 24 ruflo-* plugins |
+| `package.json` | `967fc8f` | version bumps from prior pipeline runs |
+| Skills/helpers cleanup | `7cff751` | 39 file deletions, 22745 lines (plugin migration) |
+| `.swarm/*` untrack | `913c35c` | gitignored runtime no longer tracked |
+
+Ruflo-patch main HEAD at handover close: `913c35c` (34 commits ahead of
+`cf94cd7`).
+
+### Two new memory rules added
+
+- **[[feedback-always-use-the-skill]]** — when a skill exists, dispatch via
+  `Skill(skill: name, args: ...)`, NEVER call the raw `npx`/`bash` form shown
+  in the skill's help text. The skill IS the canonical surface. Carve-out:
+  `.mcp.json` boot config still uses `npx` per [[feedback-always-npx-for-ruflo]].
+- **[[feedback-commit-often]]** — after every logical change (ADR / amendment
+  / fix) `git add` + commit in the same turn. Don't end a session with
+  untracked or modified files. Pre-handover: `git status --short` MUST be
+  clean OR every line explained. The cascade of 25 ADRs landing late
+  (couldn't audit phantom files) was this rule's surfacing event.
+
+### What Move A inherits
+
+- Pre-flight is GREEN: clean tree both repos, adr0059+p4 15/15
+- 16 Move A ADRs (0207-0224 minus 0205/0206) now in corpus as `proposed`
+- Audit plan: `docs/plans/move-a-audit-2026-05-23.md` (v5)
+- Swarm lifecycle goes through `ruflo-swarm:swarm` skill (NOT raw npx)
+- One ADR per commit; acceptance gate per commit (`adr0059,p4` fast subset)
+- Standing carry-forwards from prior session unchanged
+
+### No pushes this session
+
+Continues prior policy. `hz` remote untouched per [[feedback-never-touch-hz-remote]].
+
 ## Cross-references
 
 - Prior handover — `docs/SESSION-HANDOVER-2026-05-24.md` (the runbook this session executed)
@@ -269,8 +355,11 @@ reconciliation** — drag each ADR into its terminal state with evidence.
 - ADR-0180 — `docs/adr/ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.md` (amended 2026-05-23)
 - ADR-0181 — `docs/adr/ADR-0181-archivist-runtime-activation.md` (amended 2026-05-23)
 - INTEGRATION-LEDGER — `docs/upstream/INTEGRATION-LEDGER.md` (Batch T close-out appended)
-- Wave 3 ADRs (proposed) — `docs/adr/ADR-0207-*.md` through `docs/adr/ADR-0224-*.md` (minus 0205/0206 which are `superseded by ADR-0217`)
-- Memory entries shaped this session:
-  - `feedback-pipeline-shared-skip-on-dist-clear` (NEW)
-  - `feedback-forbidden-substring-tests-grep-dist` (NEW)
-- Killed-mid-session artifacts log: cron `8312c85f` (deleted at session end)
+- Wave 3 ADRs (proposed, now in corpus) — `docs/adr/ADR-0207-*.md` through `docs/adr/ADR-0224-*.md` (minus 0205/0206 which are `superseded by ADR-0217`)
+- Move A audit runbook (NEW 2026-05-23) — `docs/plans/move-a-audit-2026-05-23.md`
+- Memory entries shaped:
+  - `feedback-pipeline-shared-skip-on-dist-clear` (prior session)
+  - `feedback-forbidden-substring-tests-grep-dist` (prior session)
+  - `feedback-always-use-the-skill` (NEW 2026-05-23)
+  - `feedback-commit-often` (NEW 2026-05-23)
+- Killed-mid-session artifacts log: cron `8312c85f` (deleted at end of prior session)
