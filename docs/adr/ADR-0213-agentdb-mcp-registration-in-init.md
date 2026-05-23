@@ -173,3 +173,56 @@ Status flipped: **proposed → implemented**. All four steps shipped:
 INTEGRATION-LEDGER row already present at `docs/upstream/INTEGRATION-LEDGER.md:133` (cites `5015b016f` + `a8e74b5`).
 
 **Risk:** boot-crash fork bug mentioned as "file as fork bug" but no ledger/ADR/issue ID confirms it's tracked outside this ADR's text. Recommend a separate tracker entry so the deferred opt-in ADR has a real precondition.
+
+## Amendment — 2026-05-24 (boot-crash fork bug closure)
+
+The 2026-05-23 amendment left the boot-crash fix (step 3) "tracked
+separately; not gating this ADR" and recommended a separate tracker
+entry. The fix is **already shipped in the fork** — no separate
+tracker is needed because the precondition is met.
+
+**Fix landed:** `forks/agentdb` commit `d1b6145` (2026-05-23, Henrik
+Pettersen) — `fix(security): ADR-0213 step 3 allow busy_timeout
+PRAGMA (boot-crash fix)`.
+
+**Code state** (`forks/agentdb/src/security/input-validation.ts:64–72`):
+
+```ts
+  // ADR-0213 step 3: agentdb mcp-server's `db.pragma('busy_timeout = 5000')`
+  // call at agentdb-mcp-server.ts:246 was added by fork commit 668ce1a
+  // (ADR-0069 A1, WAL-mode compatibility) against the inherited validator
+  // allowlist that never listed busy_timeout — causing the standalone MCP
+  // server to crash on boot before answering `initialize`. Under the
+  // hard-pinned sql.js fallback the pragma is a no-op anyway (WASM
+  // in-memory, no concurrent file-locking), so allowing it silences the
+  // crash without changing behaviour.
+  'busy_timeout',
+```
+
+`'busy_timeout'` is now a member of `ALLOWED_PRAGMAS` (line 53–73 set).
+The validator no longer throws on the unconditional
+`db.pragma('busy_timeout = 5000')` call at
+`agentdb-mcp-server.ts:246`, so the standalone server boots past
+`server.connect()` and answers `initialize`.
+
+**Note on semantics:** under the hard-pinned sql.js fallback the
+pragma is a no-op (WASM in-memory, no concurrent file-locking), so
+allowing it silences the crash rather than enabling real
+busy-timeout behaviour. This matches the substrate reality — the
+fix doesn't promise functionality, just unbreaks boot.
+
+**Precondition status for the deferred opt-in registration ADR:**
+
+| Precondition | Status |
+|---|---|
+| Boot crash fixed | **CLOSED** (commit `d1b6145`) |
+| RVF-substrate reconciliation | Open (substrate policy unchanged) |
+| ADR-0204 settling | Tracked separately |
+| Opt-in default agreed | Open (future ADR decision) |
+
+The first precondition is now satisfied. The remaining three still
+gate any future opt-in registration ADR.
+
+No code change in this amendment — pure verification + closure of
+the 2026-05-23 amendment's "recommend a separate tracker entry"
+gap. Doc-only commit in `ruflo-patch`.
