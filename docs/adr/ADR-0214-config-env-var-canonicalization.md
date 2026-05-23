@@ -150,3 +150,88 @@ Status flipped: **proposed → implemented** (code complete).
 - The `MEMORY_TYPE` value list at `USERGUIDE:6964` (bogus `json` value vs loader's `sqlite|agentdb|hybrid|redis|memory`): re-verify and fix.
 
 **Council MUST-FIX #2 (runtime honoured-by-loader check) deferred:** the arch-test verifies emission, not that `SWARM_TOPOLOGY`/`MEMORY_TYPE` are honoured by the loader at runtime in a fresh-init'd project. Value-safety (init defaults ∈ loader's Zod sets) and name-match-by-grep are the current proxy.
+
+## Amendment — 2026-05-24 (Steps 3+5 + Council MUST-FIX #2 closed)
+
+The 2026-05-23 amendment listed two open items: **USERGUIDE doc
+cleanup (Steps 3+5)** and **Council MUST-FIX #2 (honoured-by-loader
+behavioural test)**. Both now closed.
+
+### USERGUIDE doc cleanup (Steps 3+5)
+
+Closed by `forks/ruflo` commit `cac5560bb` (2026-05-24).
+
+Conservative path taken per [[feedback-trace-before-hypothesis]]:
+greped `forks/ruflo/v3/@claude-flow` for actual
+`process.env.CLAUDE_FLOW_*` reads, documented only what the loader
+honours.
+
+Edits:
+
+- `USERGUIDE.md:3229` — `CLAUDE_FLOW_MEMORY_BACKEND=hybrid` →
+  `CLAUDE_FLOW_MEMORY_TYPE=hybrid`. The loader reads `_TYPE`,
+  never `_BACKEND`.
+- `USERGUIDE.md:6975` — env-var table: `CLAUDE_FLOW_TOPOLOGY` →
+  `CLAUDE_FLOW_SWARM_TOPOLOGY` (the actual loader name). Enum
+  updated to match loader: `hierarchical|mesh|ring|star|adaptive|
+  hierarchical-mesh`. Default updated to `hierarchical-mesh` per
+  `defaults.ts`.
+- `USERGUIDE.md:6964` — memory type enum re-aligned to loader:
+  `sqlite|agentdb|hybrid|redis|memory` (was incorrectly
+  `json|sqlite|agentdb|hybrid`; the `json` value would be silently
+  rejected by the validator).
+- `USERGUIDE.md:6993` — `CLAUDE_FLOW_EMBEDDING_DIM` default `384`
+  → `768` per [[reference-embedding-model]] (all-mpnet-base-v2).
+- 9 doc-only env vars tagged `[doc-only]` in the env-var table:
+  `MODE`, `ENV`, `SECURITY_MODE`, `LOG_LEVEL`, `HNSW_M`, `HNSW_EF`,
+  `EMBEDDING_DIM`, `SQLJS_WASM_PATH`, `CLAUDE_FLOW_TOKEN`. Each
+  appears in the USERGUIDE but is not read by the loader; the tag
+  documents this honestly without deleting the row.
+- Banner added at the top of the env-var section explaining the
+  `[doc-only]` convention and referencing ADR-0214 MUST-FIX #2.
+- Platform example blocks (lines ~6932–6948) and `.env` example
+  (~7060–7077) rewritten to use only honoured names.
+
+### Council MUST-FIX #2 (honoured-by-loader behavioural test)
+
+Closed by `forks/ruflo` commit `c8673c0f8` (2026-05-24).
+
+New test: `forks/ruflo/v3/@claude-flow/shared/__tests__/config-loader-env-honoured.test.ts`.
+
+9 test cases:
+
+| # | Case | Assertion |
+|---|---|---|
+| 1 | `CLAUDE_FLOW_MAX_AGENTS` set | `orchestrator.lifecycle.maxConcurrentAgents` = env value |
+| 2 | `CLAUDE_FLOW_DATA_DIR` set | `orchestrator.session.dataDir` = env value |
+| 3 | `CLAUDE_FLOW_MEMORY_TYPE` set | `memory.type` = env value |
+| 4 | `CLAUDE_FLOW_MEMORY_TYPE` = invalid | silently rejected (validator gate) |
+| 5 | `CLAUDE_FLOW_MCP_TRANSPORT` set | `mcp.transport.type` = env value |
+| 6 | `CLAUDE_FLOW_MCP_PORT` set | `mcp.transport.port` = env value |
+| 7 | `CLAUDE_FLOW_SWARM_TOPOLOGY` set | `swarm.topology` = env value |
+| 8 | Bare `CLAUDE_FLOW_TOPOLOGY` set | NOT honoured (rebrand correctness) |
+| 9 | All unset | documented defaults returned |
+
+All 9 pass. Run:
+
+```bash
+cd forks/ruflo/v3
+npx vitest run @claude-flow/shared/__tests__/config-loader-env-honoured.test.ts \
+  --no-coverage --exclude="**/node_modules/**"
+```
+
+The `--exclude="**/node_modules/**"` flag avoids vitest's
+test-file-in-symlinked-deps duplication that the v3 `include`
+pattern would otherwise produce (the test file gets matched in
+13 nested node_modules paths via npm-linked deps).
+
+### Patch-side acceptance
+
+Patch-side acceptance unchanged (15/15 PASS `adr0059,p4`); the new
+test lives in fork-side test suite, not the fast acceptance runner.
+Wiring this test into the patch-side acceptance suite is a separate
+follow-up (would mean spawning the fork's vitest from the patch
+acceptance script).
+
+No INTEGRATION-LEDGER row (fork-only patch + doc + test, no upstream
+counterpart).
