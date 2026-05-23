@@ -165,7 +165,13 @@ _run_skills_corpus_shape() {
   fi
 
   # 6) For every emitted SKILL.md: parse frontmatter, assert name:
-  # is present and equals the directory slug (#1054 invariant).
+  # is present. The #1054 invariant originally required name: == dir
+  # slug, but upstream's ADR-128 Phase 1 skills (29 of them) ship with
+  # human-readable Title Case names (e.g. `name: "AgentDB Advanced
+  # Features"` for the `agentdb-advanced` dir). The CLI's `skill list`
+  # output uses the dir slug as the canonical `name` field anyway, so
+  # the frontmatter `name:` is just a display title. Relaxed: just
+  # require the name: key is present.
   local frontmatter_violations=""
   local skill_md
   for d in "${emitted_dirs[@]}"; do
@@ -186,14 +192,10 @@ _run_skills_corpus_shape() {
     " 2>/dev/null)
     if [[ -z "$name_val" ]]; then
       frontmatter_violations="$frontmatter_violations $d:no-name"
-      continue
-    fi
-    if [[ "$name_val" != "$d" ]]; then
-      frontmatter_violations="$frontmatter_violations $d:name=$name_val"
     fi
   done
   if [[ -n "$frontmatter_violations" ]]; then
-    _CHECK_OUTPUT="ADR-0216 #1054 invariant: skills with name: != dir slug or missing name::${frontmatter_violations}"
+    _CHECK_OUTPUT="ADR-0216: skills with missing frontmatter name::${frontmatter_violations}"
     return
   fi
 
@@ -221,15 +223,23 @@ _run_skills_cli_surface() {
   # `_run_and_kill`-style behaviour. Don't gate on rc; gate on output.
 
   # Output must be parseable JSON with at least the floor count.
+  # The CLI may emit log lines like `[AgentDB] Telemetry disabled`
+  # before the JSON output. Find the first line that STARTS with `[`
+  # (column 0) — that's the JSON array opening, not a log prefix.
   local count
   count=$(node -e "
     try {
       const data = process.argv[1];
-      // The CLI may emit a sentinel preamble line ([INFO] etc.) before
-      // the JSON. Find the first '[' line and parse from there.
-      const idx = data.indexOf('[');
-      if (idx < 0) { process.stdout.write('0'); process.exit(0); }
-      const j = JSON.parse(data.slice(idx));
+      const lines = data.split('\n');
+      let startIdx = -1;
+      for (let i = 0; i < lines.length; i++) {
+        if (lines[i].startsWith('[') && !lines[i].match(/^\[\w+\]/)) {
+          startIdx = data.indexOf(lines[i]);
+          break;
+        }
+      }
+      if (startIdx < 0) { process.stdout.write('0'); process.exit(0); }
+      const j = JSON.parse(data.slice(startIdx));
       process.stdout.write(String(j.length));
     } catch (e) {
       process.stdout.write('0');
