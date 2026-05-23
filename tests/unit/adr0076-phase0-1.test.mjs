@@ -60,7 +60,7 @@ describe('ADR-0076 Phase 0 (superseded by ADR-0230 invariant #5)', () => {
     const src = readFileSync(indexPath, 'utf-8');
     assert.ok(
       !src.includes("from './hybrid-backend"),
-      'index.ts must not import from hybrid-backend at the top-level surface (selected via createDatabase({provider:\\'hybrid\\'}))',
+      "index.ts must not import from hybrid-backend at the top-level surface (selected via createDatabase({provider:'hybrid'}))",
     );
   });
 
