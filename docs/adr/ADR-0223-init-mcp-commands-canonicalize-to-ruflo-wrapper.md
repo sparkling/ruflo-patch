@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-22
 tags: [init, mcp, ruflo-wrapper, brand, no-fallbacks, audit-followup]
 supersedes: []
 depends-on: [0201]
@@ -285,3 +286,24 @@ and the out-of-scope findings (F-11-003/006/007/008/009/010) are accurate.
   — SOUND), F-11-008 (skills install — SOUND modulo `dualMode` policy
   flagged separately), F-11-009 (daemon start opt-in — intentional),
   F-11-010 (path references — SOUND).
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. All 4 fixes shipped in `forks/ruflo` commit `dfe8ea93a`:
+
+| Finding | Location | Verified |
+|---|---|---|
+| F-11-001 | `mcp-generator.ts:152,162` — `ruflo` key + `@sparkleideas/ruflo@latest` | arch-test (2 cases) |
+| F-11-002 | `mcp-generator.ts:105,155,165` — `ruv-swarm@latest` | arch-test (2 cases) |
+| F-11-004 | `claudemd-generator.ts:171` — `/plugin marketplace add sparkling/ruflo` | arch-test (2 cases: standard + full template) |
+| F-11-005 | `init.ts:531-533,892-894` — `ruflo daemon/memory/swarm`; init.ts grep-guard | arch-test (2 cases: forbidden + positive) |
+
+Grep-guard: 3 emitter files (`init.ts`, `mcp-generator.ts`, `claudemd-generator.ts`) contain zero `@sparkleideas/cli@latest` in user-facing output (comments stripped).
+
+**Arch-test:** `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0223-init-emitted-brand-canonicalization.arch.test.ts` — 11/11 passing, 3ms.
+
+Documentation/Issues URLs at `claudemd-generator.ts:278,284-285` intentionally remain at `https://github.com/ruvnet/ruflo` per the ADR's scope note (docs live upstream; only the marketplace source is fork-published).
+
+**INTEGRATION-LEDGER row** already recorded at `docs/upstream/INTEGRATION-LEDGER.md:134` (cites `dfe8ea93a` + `1fa33d6`).
+
+**Risk:** upstream is converging on `ruflo@alpha`/`npx ruflo@alpha` while fork uses `@sparkleideas/ruflo@latest`. Per ADR-0155 + [[feedback-always-npx-for-ruflo]] this is intentional but guarantees ongoing upstream-sync friction on these 3 files.
