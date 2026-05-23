@@ -372,3 +372,34 @@ Status flipped: **proposed → implemented**. All three Option A changes shipped
 **Drift from drafted ADR text:** implementation chose **sync** (`getValidatedConfig()` synchronous, walks parents from cwd) rather than the ADR's drafted `async`. Rationale documented in accessor JSDoc — substrate callsites were module-init top-level eager reads; no `await` available.
 
 No INTEGRATION-LEDGER row (fork-only patch, no upstream commit/cherry-pick/SKIP).
+
+## Amendment — 2026-05-24 (sync-vs-async drift locked as intentional)
+
+The 2026-05-23 amendment noted the implementation drift (drafted
+`async`, implemented sync) and cited the JSDoc rationale. The
+2026-05-28 handover flagged this as item #11: "ADR-0224
+sync-vs-async drift — revisit if async migration becomes viable."
+
+A 2026-05-24 re-read of the accessor JSDoc at
+`forks/ruflo/v3/@claude-flow/shared/src/core/config/accessor.ts:1–21`
+confirms the sync choice is **load-bearing** for the current
+substrate, not provisional. Quoting verbatim:
+
+> Sync API by design: the previous substrate callsites were
+> module-init top-level eager reads (no `await` available). Async
+> migration would be a separate cross-cutting refactor.
+
+The constraint that drives the choice — substrate callsites doing
+module-init top-level eager reads — is structural, not preference.
+Until those callsites migrate to module-internal lazy initialisers
+or top-level await (Node ≥14.8 with ESM, but mixed with the fork's
+CJS interop surface), the accessor MUST stay sync.
+
+**Status:** sync choice is **intentional-for-now**, NOT a known
+defect to fix in passing. The "revisit if async migration becomes
+viable" follow-up depends on **a separate substrate-refactor ADR**
+(out of scope here). When/if that ADR ships, this amendment can be
+revisited.
+
+No code change in this amendment — pure lock-in of the prior
+amendment's drift note. Doc-only.
