@@ -358,3 +358,44 @@ Status flipped: **proposed → implemented** (honesty cluster); F-05-007 EWC++ p
 - F-05-008/012/021 — naming, wire-up, deep-audit deferrals unchanged.
 
 No INTEGRATION-LEDGER row (fork-original work, no upstream hand-port).
+
+## Amendment — 2026-05-24 (F-05-016 closure verification)
+
+The 2026-05-23 amendment left F-05-016 status unclear. A 2026-05-24
+re-grep of `forks/ruflo/v3/@claude-flow/memory/src/learning-bridge.ts`
+confirms the fix is already shipped:
+
+- **`learning-bridge.ts:261–262`** declares the new tracker:
+  `// ADR-0220 F-05-016: track failed completions instead of silently dropping`
+  `const failedTrajectories: Array<{ trajectoryId: string; error: string }> = [];`
+- **`learning-bridge.ts:272–276`** replaces the bare-catch with
+  log + counter, and leaves the trajectory in `activeTrajectories`
+  for retry on the next cycle:
+  `console.error('[LearningBridge] completeTask failed for trajectory', trajectoryId, ':', msg);`
+  `failedTrajectories.push({ trajectoryId, error: msg });`
+
+The implementation matches the Option A disposition for F-05-016 in
+this ADR's Decision Outcome (lines 159–161: "at minimum log +
+counter the failed `completeTask`; ideally retry once before
+silently dropping. Surface as `consolidate().errors[]` in the
+return.").
+
+**Open partial:** the ADR also suggested surfacing the failures via
+`consolidate().errors[]` on the return value. The current
+implementation logs + tracks internally but the `ConsolidateResult`
+shape was not extended. Two reasons this is acceptable as closure:
+
+1. The fail-loud goal (no silent drop) is met — `console.error` at
+   error level + retry-on-next-cycle is the load-bearing behaviour.
+2. Extending `ConsolidateResult.errors[]` would change a public
+   return surface mid-session; if a caller wants programmatic
+   access to the failures, that's a separate ADR (surface-shape
+   change, not honesty pass).
+
+**Status:** F-05-016 **closed** per Option A's minimum
+("at minimum log + counter"). The optional `errors[]` surface
+remains a future enhancement, tracked here for a follow-on ADR if
+a consumer requests it.
+
+No code change in this amendment — pure verification of prior work.
+Doc-only commit in `ruflo-patch`.
