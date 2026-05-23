@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-22
 tags: [init, hooks, template, manifests, swarm-reviewed]
 supersedes: []
 depends-on: [0201]
@@ -146,3 +147,29 @@ A fresh 6-expert council re-verified ADR-0211 against fork HEAD + upstream. **Op
 * **Upstream:** local-impl handler `ruvnet/ruflo/v3/@claude-flow/cli/src/init/helpers-generator.ts` + shipped `.claude/helpers/hook-handler.cjs` (zero `mcp__`/`child_process`); upstream settings wires 12 (`settings-generator.ts`); issue #1058 (MCP-tool-side fix, PR #1539/ADR-073).
 * **Key sites:** `forks/ruflo/v3/@claude-flow/cli/src/init/helpers-generator.ts` (handlers 369-601; fallthrough 590-592; feedback 543-549; stub 806), `settings-generator.ts:323-585` (16-event wiring; direct `node` invoke 244-249), `mcp-tools/hooks-tools.ts` (`hooks_post-command` real ~915; `hooks_pre-edit` stub ~783; `hooks_notify` stub 2178/2200), `.claude/helpers/{hook-handler.mjs,intelligence.cjs}` (lock-free file-based path), `memory/memory-router.ts` (the flock path C′ avoids).
 * **Memory:** [[feedback-no-fallbacks]], [[feedback-corpus-evidence-before-feature-work]], [[feedback-upstream-means-upstream]], [[feedback-remediation-adr-preflight]] (all four checks fired here), [[feedback-inspect-installed-not-dev-nodemodules]], [[feedback-no-squelch-tests]].
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. Option C′ shipped in `forks/ruflo` HEAD.
+
+**Verified sites:**
+
+- `src/init/executor.ts:268` — emits `hook-handler.mjs` via `generateHookHandler()`.
+- `src/init/settings-generator.ts:351,387,571` — wires only `pre-edit`, `post-command`, `notify` (handled).
+- `src/init/settings-generator.ts:415-421,546-551,553-562` — trim markers for `user-prompt`, `teammate-idle`, `post-tool-failure` with ADR-0211 step-4 rationale comments.
+- `src/init/helpers-generator.ts:551-578` — `post-task` reads `tool_response` from stdin and calls `intelligence.feedback(outcome)` (no more hardcoded `true`); fails loud if outcome can't be derived.
+- `src/init/helpers-generator.ts:580-595` — `post-command` handler (lock-free, helper-module idiom).
+- `src/init/helpers-generator.ts:597-617` — `pre-edit` handler (real `fs.existsSync`/`statSync`).
+- `src/init/helpers-generator.ts:619-630` — `notify` minimal-local handler.
+- `src/init/helpers-generator.ts:671-680` — `[OK] Hook:` fallthrough removed; reaching the else-if exits non-zero with `[FAIL]`.
+- `src/init/helpers-generator.ts:690-695` — blanket `exit(0)` swallow removed (`main().catch(err => log + exitCode=1).finally(exit(exitCode))`).
+
+**Test:** `__tests__/init/adr0211-hook-handler-event-completion.test.ts` — 8/8 pass (subset, post-command, pre-edit, trim, no-fallthrough, no-exit(0)-swallow, feedback(success), daemon-safe/no-flock).
+
+**Deferred (carried forward, explicitly out of scope):**
+
+- `notify` real cross-agent delivery — requires transport infra neither layer has.
+- `post-tool-failure` empirical sandbox test — current disposition is default-trim.
+- `ruflo hooks teammate-idle` CLI subcommand dangling at `commands/hooks.ts:4948` (pre-existing defect, separate scope).
+
+No INTEGRATION-LEDGER row (fork-only change; upstream still carries the inherited bugs via `4b42218b4`).
