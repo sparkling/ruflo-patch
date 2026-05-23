@@ -681,3 +681,32 @@ numbering):**
     MCP tools require a future ADR).
 
 Reconciled as part of the 2026-05-18 status audit.
+
+## Amendment 2026-05-23 — Re-convergence achievement (closes the fork-freedom posture gap)
+
+ADR-0230 (substrate re-convergence with upstream ADR-125) executed
+2026-05-23 lands all 7 phases of upstream ADR-125 on fork main:
+
+| Phase | Upstream SHA | Fork SHA | Disposition |
+|---|---|---|---|
+| 1 (MemoryService rename) | `4e9a33ce2` | `402786f16` | TAKE |
+| 2 (HybridBackend wire) | `11eaef851` | `fe682324b` | ADAPT |
+| 3 (HNSW snapshot/restore) | `81a2b23eb` | `7fefa0c3e` | TAKE |
+| 4 (MemoryConsolidator) | `850450f38` | `a68817f6b` | ADAPT |
+| 5 (FTS5 fallback) | `8773fcffd` | `7f3e15334` | TAKE |
+| 6 (benchmarks) | `ed95d6782` | `f1ccba609` | TAKE (via Batch S) |
+| 7 (RuVector cleanup) | `7dd4b5252` | `ebcbba949` | TAKE (via Batch S) |
+
+The RVF-first vision this ADR adopted has now extended through three
+upstream-substrate bug fixes the fork previously forked around (HNSW
+persistence stubs, embedder-availability gap, ruvector.db leak). The
+"fork-freedom posture" of ADR-0170/0174/0175 (postgres + ruvector-
+postgres substrate, superseded by this ADR) is now closed-out cleanly:
+fork's substrate axis (below MCP) re-converges with upstream while
+the Archivist axis (above MCP, fork-original) remains. ADR-0230
+§Architectural invariants #1-5 record the orthogonality contract.
+
+The fork retains a narrow set of internal-plumbing carve-outs per
+ADR-0177's spirit (`hnsw-lite.ts` kept as a separate module, top-level
+public surface still excludes `HnswLite`, `RvfBackend`, `HybridBackend`,
+etc.). These are surface preservation, not vision divergence.

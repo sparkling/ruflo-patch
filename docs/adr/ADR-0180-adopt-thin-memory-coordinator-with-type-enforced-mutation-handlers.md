@@ -983,3 +983,26 @@ Inline parenthetical attributions of the form `(per Qn)` / `(per Tn)` / `(per Fn
     *Open today.* Pick whether to ship reference impls for the three candidate surfaces in Phase 6 (agentdb_*) and Phase 9 (inter-controller orchestrators), or defer all three until a trigger fires. Default: defer. The mutation-invariants gate is the primary second gate; reference impls are escalation, not baseline.
 
 26. **`dispatch()` is `unknown`-typed at the call site.** `Archivist.dispatch(toolName: string, payload: unknown): Promise<unknown>` carries no compile-time check on the *caller* — `toolName` is a bare `string` (a typo resolves to a runtime "no handler registered" throw, not a `tsc` error), `payload` is `unknown` (a mismatched payload reaches the handler via an unchecked `as MutationHandlerFn<unknown>` cast), and the result is `unknown`. This is deliberate-by-omission: ADR-0180's type-enforcement claim constrains the *handler* (branded `GuardedWrite<T>`, no context minting, path-restricted `SubstrateAccess`) — it never extended to the dispatch entry point. The branded `GuardedWrite<T>` *is* a callable function type, but it is not a usable typed call surface for consumers because `createMutationContext` is not re-exported, so the only reachable call path is the `unknown`-typed `dispatch()`. The fix is a `ToolPayloadMap` interface keying every registered tool name to its payload type plus generic overloads (`dispatch<K extends keyof ToolPayloadMap>(tool: K, payload: ToolPayloadMap[K])`, and the read equivalent). Low-value while nothing dispatches; load-bearing the moment call sites are wired — so it is scoped as a hard prerequisite of [ADR-0181](ADR-0181-archivist-runtime-activation.md) Phase 5 (F4-3 cli delegation), where ~110 call sites with literal tool names are created in one phase.
+
+## Amendment 2026-05-23 — `MutationContext` factory will construct the re-converged hybrid-tier backend (post-ADR-0230)
+
+ADR-0230 (substrate re-convergence with upstream ADR-125) landed
+2026-05-23. Phase 2 of that re-convergence wires upstream's hybrid-tier
+backend through `createDatabase({provider:'hybrid'})` +
+`MemoryService.withBackend()`. The Archivist's `MutationContext`
+factory currently constructs the legacy `AgentDBAdapter`; post-ADR-0230,
+when the substrate seam is wired through, the factory will construct
+the hybrid-tier backend via `createHybridService(...)`.
+
+This is a sub-deliverable of ADR-0181 Phase 4 (`cli-process-backend
+handler un-stub`) — not a separate workstream. The Archivist's two
+guarantees (audit chain + path-restricted substrate handle) hold
+regardless of which backend implementation `MutationContext.substrate`
+wraps. Per ADR-0230 invariant #2: "Phase 2's hybrid-tier backend is
+exposed only through `MutationContext.substrate` — path restriction
+preserved."
+
+Open question 3 in ADR-0230 ("Phase 1 MemoryService rename cascade
+through Archivist factory") — audit needed when ADR-0181 Phase 4
+lands. The rename is purely additive (`MemoryService = UnifiedMemoryService`
+alias), so the factory should resolve cleanly; verify at land time.

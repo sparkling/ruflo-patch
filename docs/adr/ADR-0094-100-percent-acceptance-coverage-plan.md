@@ -191,3 +191,20 @@ Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Lo
 - `scripts/regen-mcp-manifest.mjs` — Manifest regenerator + preflight drift check
 - `scripts/catalog-rebuild.mjs` — Catalog builder + `--show` dashboard + `--verify` rot check
 - `/tmp/hive/queen-synthesis.md` — The 2026-04-17 hive synthesis this reorganization was based on
+
+## Amendment 2026-05-23 — FTS5 fallback available below MCP (embedder-unavailability path)
+
+Upstream ADR-125 Phase 5 (`8773fcff` → fork `7f3e15334`, landed via
+ADR-0230 step D) ships graceful retrieval degradation: when the
+embedder is unavailable, `semanticSearch` falls back to FTS5 keyword
+search instead of throwing. The fork's pre-Phase-5 workaround for
+embedder-unavailability scenarios in acceptance coverage (any
+fork-side guard checks for "embedder missing → skip_accepted") can
+now defer to the upstream code path. Pre-flight: FTS5 confirmed
+available in fork's better-sqlite3 build (`CREATE VIRTUAL TABLE t USING
+fts5(content)` succeeds at module load).
+
+No coverage gates need re-targeting today — the upstream code path
+already lights up the same surfaces this ADR's 100% coverage program
+tracks. Add an `embedder-fallback` group probe to future coverage
+batches if a regression manifests.

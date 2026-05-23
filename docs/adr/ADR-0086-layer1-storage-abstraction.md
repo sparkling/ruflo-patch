@@ -817,3 +817,22 @@ list-verified fallback for hash-fallback embeddings.
 **All commits pushed**: `sparkling/ruflo-patch@eb26eb9`,
 `sparkling/ruflo@5f6112a7a`, `sparkling/agentic-flow@f6afcdf`.
 All 3 GitHub issues closed with commit refs.
+
+## Amendment 2026-05-23 — ruvector.db leak resolved upstream (closes loose end)
+
+ADR-0086 Debt-7 (better-sqlite3 placement) historically shifted 3× and
+left a `ruvector.db` test-pollution leak that the fork could observe in
+`v3/@claude-flow/memory/ruvector.db` after vitest runs. Upstream's
+ADR-125 Phase 7 (`7dd4b525`) added `ruvector.db` to the package-local
+`.gitignore`, `vitest.setup.ts` wipes known leak files between test
+runs, and a `no-stray-db` CI smoke fails the build if any `*.db` /
+`*.redb` / `*.rvf` file lands in the package after `npm test`.
+
+That phase landed on fork as `ebcbba949` via ADR-0228 Batch S (pre-dating
+ADR-0230's execution today). The fork now inherits upstream's
+ruvector.db hygiene. The Debt-7 "no dist file imports both bsqlite +
+sqljs" invariant is unchanged — Phase 7 only addresses test pollution,
+not the dual-import constraint.
+
+Status of Debt-7: closed. Track via the `no-stray-db` CI smoke from
+Phase 7 going forward.

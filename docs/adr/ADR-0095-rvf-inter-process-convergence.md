@@ -983,6 +983,22 @@ The 40/40 result satisfies `feedback-data-loss-zero-tolerance.md` for the diag l
   2. "Ship at 90%" was floated by devil's advocate and explicitly rejected on data-integrity grounds. The same argument was tempting after the swarm-1 fix; resisting it surfaced the actual create-vs-flock race that swarm-2 closed.
 - `RVF_DIAG=1` instrumentation + diag-harness preservation of failed trials is now load-bearing infra. Future contention regressions should reach for it FIRST before spawning more agents.
 
+### Amendment 2026-05-23 (b) — FTS5 fallback available below MCP for embedder-unavailability
+
+Upstream ADR-125 Phase 5 (`8773fcff` → fork `7f3e15334`, landed via
+ADR-0230 step D) implements graceful retrieval degradation: when the
+embedder is unavailable, `semanticSearch` returns FTS5 keyword-ranked
+results instead of throwing. This closes the embedder-availability
+gap that fork's ADR-0094 transformers migration created the same need
+for. The fork no longer needs a fork-side workaround for the "no
+embedder" path; the upstream code path is the canonical degradation
+behavior.
+
+Convergence position: the inter-process convergence work this ADR
+specifies operates above the substrate; the substrate now has its own
+graceful-degradation contract below MCP. No conflict — the two layers
+are orthogonal per ADR-0230 invariant #1 (two-layer separation).
+
 ### Amendment 2026-05-23 — Strict fail-loud on missing native binding; item (a) MODULE_NOT_FOUND clause superseded
 
 **User directive**: *"we should also fail fast and fail loud, not fall back"* / *"dont do this: RUFLO_ALLOW_PURE_TS_FALLBACK. Just fail loud"* (2026-05-23).

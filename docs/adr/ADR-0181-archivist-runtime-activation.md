@@ -496,3 +496,34 @@ Appending to the [acceptance-baseline trajectory amendment](#amendment-acceptanc
 * [docs/council/agentdb-merge-conflict-resolution.md](../council/agentdb-merge-conflict-resolution.md) — the `git stash pop` conflict resolution that unblocked `npm run release`.
 * [docs/ADR-0181-handover.md](../ADR-0181-handover.md) — comprehensive handover snapshot, including every commit SHA, the file map, what's NOT done, and the §K discoveries-and-clean-follow-ups list.
 * ADR-0112 — superseded by ADR-0180; its enforcement-code retirement is this ADR's Phase 6.
+
+## Amendment 2026-05-23 — Phase 4 (cli-process-backend handler un-stub) gains hybrid-tier wiring (post-ADR-0230)
+
+ADR-0230 (substrate re-convergence with upstream ADR-125) landed
+2026-05-23. Phase 2 of that re-convergence wires upstream's hybrid-tier
+backend through `createDatabase({provider:'hybrid'})` +
+`MemoryService.withBackend()` (fork commit `fe682324b`).
+
+The interaction with this ADR: Phase 4 of the archivist runtime
+activation (`cli-process-backend handler un-stub`) was previously
+specified against the legacy AgentDBAdapter substrate. Post-ADR-0230,
+the Archivist's `MutationContext` factory should construct the
+hybrid-tier backend via `createHybridService(...)` (or
+`createDatabase({provider:'hybrid'})` + `withBackend()`) when activating
+the cli-process backend.
+
+This is a Phase 4 sub-deliverable, not a separate workstream. The
+type-enforced substrate seam (`MutationContext.substrate`,
+`ReadContext.substrate`) is unchanged — only the concrete backend the
+factory instantiates flips from `AgentDBAdapter` to the hybrid-tier
+backend. Both implement `IMemoryBackend`, so the seam contract holds.
+
+Per ADR-0181 Phase 4 land checklist: verify
+`(svc as any).backend instanceof HybridBackend === true` after the
+factory swap (matches ADR-125's Acceptance Criterion #2). The Phase
+4 acceptance run should add a probe that distinguishes the legacy
+AgentDBAdapter path from the new hybrid-tier path.
+
+Per ADR-0230 invariant #2, the hybrid-tier backend is exposed only
+through `MutationContext.substrate` — not at the top-level
+`@sparkleideas/memory` surface (which still excludes `HybridBackend`).

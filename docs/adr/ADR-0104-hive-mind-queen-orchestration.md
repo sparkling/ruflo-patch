@@ -238,3 +238,26 @@ The 15-agent redundancy-audit swarm (per ADR-0111 §"15-agent redundancy-audit s
 **2. Q4 closes via upstream `e50df6722` HIGH-02.** The strict `=== true` check on `--dangerously-skip-permissions` propagation is the **hypothesis-C path** among the three Q4 hypotheses (claude-code policy filters / `--permission-mode=acceptEdits` / argv-ordering bug). A and B become moot — the propagation logic was indeed bugged on the upstream side, not a claude-code policy issue. Adopt `e50df6722` on next upstream merge (per ADR-0111 §"Recommended merge order" group E "Hive-mind cluster"). After adoption, ADR-0104 §Decision-4b ("This ADR does not patch permissions") becomes obsolete and CLAUDE.md's "hive-mind in `-p` mode may have permission prompts" caveat can be removed.
 
 **Net status**: ADR-0104's three deferred items reduce to one (smoke-script authoring). All three open questions answered positive. Implementation is structurally complete; merge-time work is mechanical hand-resolution of the 5 conflict-zone hunks documented in ADR-0111 §Conflict zones.
+
+## Amendment 2026-05-23 — `--consensus` + `--topology` flag declarations on `spawn` (resolves adr0104-meta-preserved)
+
+ADR-0208 flipped the v3 parser's `allowUnknownFlags` from `true` to
+`false`. Pre-ADR-0208, `hive-mind spawn` relied on the permissive
+parser to let `--consensus` and `--topology` pass implicitly into
+`ctx.flags`, where `generateHiveMindPrompt` reads them as
+`flags.consensus` / `flags.topology` to render the §6 parameterization
+headers (🤝 Consensus Algorithm / 🔗 Topology). Post-ADR-0208 the
+parser rejects these as `Unknown option`, causing the acceptance check
+`adr0104-meta-preserved` to fail with "prompt file not generated".
+
+The fix declares both flags on `spawnCommand.options` (fork commit
+`ca2f91f57`, merged to main as `32480dda2` via the no-ff merge
+`loop/fix-adr0104` per SESSION-HANDOVER-2026-05-24 step A):
+
+- `--topology` choices: `TOPOLOGIES.map(t => t.value)`, default `'hierarchical-mesh'`
+- `--consensus` choices: `CONSENSUS_STRATEGIES.map(s => s.value)`, default `'byzantine'`
+
+Defaults match the fallback expressions inside `generateHiveMindPrompt`
+(lines 797-798), so user-visible behaviour is unchanged when flags are
+omitted. Acceptance result: `adr0104-meta-preserved` flips FAIL → PASS
+without other check regressions.
