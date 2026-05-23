@@ -325,7 +325,10 @@ check_adr0104_honest_spawn_wording() {
   # Spawn without --claude so the dry-run prompt path is skipped; we want the
   # spawnCommand output that prints the "Registered N worker slot(s)" line.
   local out
-  out=$(cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 $cli hive-mind spawn -t researcher -c 2 -o "wording test" 2>&1) || true
+  # Note: count's short flag is `-n` (declared on the `count` option in
+  # commands/hive-mind.ts). `-c` is not a registered short flag; the parser
+  # rejects it as Unknown.
+  out=$(cd "$iso" && NPM_CONFIG_REGISTRY="$REGISTRY" timeout 60 $cli hive-mind spawn -t researcher -n 2 -o "wording test" 2>&1) || true
 
   if echo "$out" | grep -qE "Spawned [0-9]+ agent\(s\)"; then
     _CHECK_OUTPUT="ADR-0104-§3: REGRESSED — output still says 'Spawned N agent(s)'. out: ${out:0:300}"

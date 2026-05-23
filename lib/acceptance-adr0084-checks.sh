@@ -289,17 +289,28 @@ check_phase3_hooks_tools_no_bridge() {
     return
   fi
 
+  # ADR-0084 amendment 2026-05-23: strip JS comments before grep so
+  # documentary references in comment text don't trip the gate. The contract
+  # is "no executable code path imports memory-bridge"; comments preserving
+  # historical context (e.g. "the upstream `memory-bridge` import was deleted")
+  # are fine. Same pattern as wave 2 `1d12e0a` for daemon-queue-lifecycle.
+  local stripped
+  stripped=$(sed -e 's|//.*$||' -e 's|/\*[^*]*\*/||g' "$hooks_js")
   local count
-  count=$(grep -c 'memory-bridge' "$hooks_js" 2>/dev/null)
+  count=$(printf '%s' "$stripped" | grep -c 'memory-bridge' 2>/dev/null)
   count=${count:-0}
 
   if [[ "$count" -eq 0 ]]; then
     _CHECK_PASSED="true"
-    _CHECK_OUTPUT="ADR-0084-6: hooks-tools.js has zero memory-bridge references (router-only)"
+    _CHECK_OUTPUT="ADR-0084-6: hooks-tools.js has zero non-comment memory-bridge references (router-only)"
   else
+    # Filter the line-numbered grep to lines whose match survives comment-strip
+    # (i.e., is in executable code), so the sample is debuggable.
     local sample
-    sample=$(grep -n 'memory-bridge' "$hooks_js" 2>/dev/null | head -3 | tr '\n' '; ')
-    _CHECK_OUTPUT="ADR-0084-6: hooks-tools.js has ${count} memory-bridge reference(s): ${sample}"
+    sample=$(grep -n 'memory-bridge' "$hooks_js" 2>/dev/null \
+      | awk -F: '{ rest=$0; sub(/^[0-9]+:/,"",rest); if (rest !~ /^[[:space:]]*\/\//) print $0 }' \
+      | head -3 | tr '\n' '; ')
+    _CHECK_OUTPUT="ADR-0084-6: hooks-tools.js has ${count} non-comment memory-bridge reference(s): ${sample}"
   fi
 }
 
@@ -564,8 +575,13 @@ check_phase4_zero_external_bridge_imports() {
     fi
     ((checked++))
 
+    # ADR-0084 amendment 2026-05-23: strip JS comments before grep (same
+    # treatment as check_phase3_hooks_tools_no_bridge above and wave 2
+    # `1d12e0a` for daemon-queue-lifecycle).
+    local stripped
+    stripped=$(sed -e 's|//.*$||' -e 's|/\*[^*]*\*/||g' "$fpath")
     local count
-    count=$(grep -c 'memory-bridge' "$fpath" 2>/dev/null)
+    count=$(printf '%s' "$stripped" | grep -c 'memory-bridge' 2>/dev/null)
     count=${count:-0}
     if [[ "$count" -gt 0 ]]; then
       dirty="${dirty}${fname}(${count}), "
