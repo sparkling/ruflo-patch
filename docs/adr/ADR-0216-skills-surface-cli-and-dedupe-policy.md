@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-22
 tags: [skills, cli, dedupe, init, acceptance, runtime, swarm-reviewed]
 supersedes: []
 depends-on: [0201]
@@ -489,3 +490,16 @@ unimplemented, LEDGER row absent).
 * [[reference-cli-cmd-helper]] — `$(_cli_cmd)` for the new acceptance group.
 * [[reference-claude-plugin-install]] — `ruflo plugins` (IPFS) is distinct
   from `ruflo skill` (Claude Code skills).
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. Option E shipped end-to-end:
+
+- **CLI:** `skill` command registered at `forks/ruflo/v3/@claude-flow/cli/src/commands/skill.ts:162`, exported with both `skill` and `skills` aliases via `commands/index.ts:189-190`. The 5 advertised `ruflo skill list` references at `init.ts:537,897` and `claudemd-generator.ts:154,167,179` now resolve (F-15-001 closed).
+- **Acceptance:** `lib/acceptance-adr0216-checks.sh` (271 lines) defines `_run_skills_corpus_shape` + `_run_skills_cli_surface`, wired into `scripts/test-acceptance-fast.sh:567-587` under `--group skills-surface`. Both PASS against a fresh `--full` init'd project (2026-05-23).
+- **INTEGRATION-LEDGER:** row for #1834/#1835/#1836 (`6902716f6`/`e6da5c863`/`a1561222a`) present at `docs/upstream/INTEGRATION-LEDGER.md:135`.
+- **Dedupe / `validate` / precedence rule / multi-location lint:** NOT shipped (rejected as planned).
+
+**Numeric drift to track (non-blocking):** ADR text quotes floors of 30 (`--yes`) / 38 (`--full`) and SKILLS_MAP=39. Post-ADR-128 (upstream `c63905e6a` cherry-picked) the emitted count is now 34 dirs / 33 SKILL.md on `--full`. The acceptance helper tracks the actual floor (33); the ADR prose is stale on the count only. Behavioural intent satisfied.
+
+`validate` follow-up still deferred per the ADR (gated on upstream #1587/#1938 landing the #1054 name-slug invariant).
