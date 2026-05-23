@@ -8,7 +8,7 @@
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
-#         adr0194, adr0195, adr0196, adr0204, e2e-core, e2e-storage,
+#         adr0194, adr0195, adr0196, adr0204, adr0208, e2e-core, e2e-storage,
 #         skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
@@ -254,6 +254,14 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0085"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   _fast_run "adr0085-no-bridge"  check_no_bridge_in_dist
   _fast_run "adr0085-init-zero"  check_initializer_zero_bridge_imports
   _fast_run "adr0085-router-reg" check_router_has_init_controller_registry
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0208"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0208-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0208-checks.sh"
+    echo "── ADR-0208 (manifest drift lint) ──"
+    _fast_run "manifest-flag-drift" check_adr0208_manifest_flag_drift
+  fi
 fi
 
 if [[ "$_FAST_RUN_GROUPS" == *"adr0104"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
