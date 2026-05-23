@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-22
 tags: [packaging, npm-bin, user-facing-brand, collision, swarm-reviewed]
 supersedes: []
 depends-on: [0201, 0143]
@@ -146,3 +147,17 @@ A fresh 6-expert council re-verified ADR-0212. **Option B re-affirmed (5 endorse
 * **Conflicting tests to rewrite:** `tests/unit/rebrand-ruflo-bin.test.mjs:37`, `tests/unit/codemod-bin-preservation.test.mjs:51-52,89`. Codemod bin-exclusion: `scripts/codemod.mjs:132-138`. `_cli_cmd`: `lib/acceptance-checks.sh:23-35`. Latent-bug check: `lib/acceptance-diagnostic-checks.sh:38`. Wrapper guards: `scripts/check-wrapper-cli-lockstep.mjs` (G1), `tests/unit/wrapper-no-fallback.test.mjs` (G2), `lib/acceptance-adr0142-bin-path.sh` (G3), `bin/ruflo.mjs:30` (G4 comment).
 * **Related ADRs:** ADR-0143 (user-facing brand → wrapper; retired the global-CLI-direct recommendation that ADR-0006 served), ADR-0142 (wrapper G1-G4 — publish/test/release-time, not runtime), ADR-0006 (CLI bin rebrand — clause partially reversed here), ADR-0201 (audit; F-12-001).
 * **Memory:** [[feedback-no-fallbacks]] (honesty: advertised-but-bypassed), [[feedback-upstream-means-upstream]] (CLI `ruflo`-free upstream), [[feedback-corpus-evidence-before-feature-work]] (`ruflo-cli` has no caller), [[feedback-inspect-installed-not-dev-nodemodules]] (reproduced via fresh `/tmp` install), [[feedback-remediation-adr-preflight]] (premise-true-at-runtime + sibling-overlap checks both fired).
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. Converges with upstream's CLI-`ruflo`-free + wrapper-owns-`ruflo` division.
+
+**Landed:**
+
+- `forks/ruflo/v3/@claude-flow/cli/package.json` bin = `{ruflo-mcp, cli, claude-flow, claude-flow-mcp}` (no `ruflo`) — fork commit `3f726dcec` ("fix(packaging): ADR-0212 remove `ruflo` from CLI bin map (Option B)").
+- Wrapper retains sole `ruflo` declaration at ruflo-patch root `package.json` → `bin/ruflo.mjs`.
+- Merge-re-add catcher: `tests/unit/rebrand-ruflo-bin.test.mjs` (reads real fork source) → 7/7 pass via `node --test`.
+- In-package arch test: `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0212-cli-bin-no-ruflo.arch.test.ts`.
+- INTEGRATION-LEDGER row already recorded at `docs/upstream/INTEGRATION-LEDGER.md:132` (superseded-by-local, cites `3f726dcec`, F-12-001 closed).
+
+Upstream parity: `ruvnet/ruflo/v3/@claude-flow/cli/package.json` CLI bin is `ruflo`-free; `ruvnet/ruflo/ruflo/package.json` wrapper owns `ruflo`. ADR-0006 CLI-`ruflo`-bin clause partially reversed as planned.
