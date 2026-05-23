@@ -982,3 +982,29 @@ The 40/40 result satisfies `feedback-data-loss-zero-tolerance.md` for the diag l
   1. "Experts converged on a fix" is not the same as "fix is empirically validated". Swarm-2's first converged hypothesis (set `nativeFallbackMode=true` in deferred-corrupt branches) was internally consistent but EMPIRICALLY made things WORSE (33/40 vs 36/40 baseline). It was reverted within minutes of the diag result.
   2. "Ship at 90%" was floated by devil's advocate and explicitly rejected on data-integrity grounds. The same argument was tempting after the swarm-1 fix; resisting it surfaced the actual create-vs-flock race that swarm-2 closed.
 - `RVF_DIAG=1` instrumentation + diag-harness preservation of failed trials is now load-bearing infra. Future contention regressions should reach for it FIRST before spawning more agents.
+
+### Amendment 2026-05-23 — Strict fail-loud on missing native binding; item (a) MODULE_NOT_FOUND clause superseded
+
+**User directive**: *"we should also fail fast and fail loud, not fall back"* / *"dont do this: RUFLO_ALLOW_PURE_TS_FALLBACK. Just fail loud"* (2026-05-23).
+
+The original §Decision item (a) ("Remove silent catch in `tryNativeInit`; enforce 'once SFVR, always native-or-refuse'") explicitly **legitimized** the pure-TS fallback when `@ruvector/rvf-node` is `MODULE_NOT_FOUND`:
+
+> 1. Detect whether `@ruvector/rvf-node` is installed **before** the `RvfDatabase.open/create` call (a module-resolution probe). If not installed → pure-TS fallback is legitimate, return `false` with no log suppression.
+
+That clause is **superseded**. In every shipped configuration the native binding is a hard dependency; absence is a deployment/config error that must surface loud, not a recoverable state masked by silent pure-TS writes to the legacy `.meta` sidecar. The "optional dependency" framing was a vestige of the pre-RVF era and conflicts with the project-wide `project-rvf-primary` invariant.
+
+**Source change** (`forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts`, two sites):
+
+1. **MODULE_NOT_FOUND catch** (~line 1111-1129, in `tryNativeInit`): the `return false` branch when `await import('@ruvector/rvf-node')` throws `MODULE_NOT_FOUND` / `ERR_MODULE_NOT_FOUND` is replaced with an unconditional `throw new Error('[RvfBackend] Native binding @ruvector/rvf-node failed to load … Pure-TS fallback is removed … Install @ruvector/rvf-node to proceed.')`.
+
+2. **Cold-start ENOENT on `openOrCreate`** (~line 1464-1471): the `return false` branch when `RvfDatabase.openOrCreate(...)` throws `ENOENT` (parent dir missing) is replaced with an unconditional throw. ADR-0095 d3 (`acquireLock()` mkdirs the parent before `wx`-open) already prevents this case in the happy path; surfacing it as a hard error catches any regression that bypasses the d3 invariant.
+
+**No escape hatch.** An earlier draft of this amendment introduced a `RUFLO_ALLOW_PURE_TS_FALLBACK=1` env opt-in for dev environments; the user explicitly rejected it. The policy is unconditional: every code path that previously fell through to pure-TS on a missing native binding now throws.
+
+**Other return-false branches in `tryNativeInit` are unaffected.** The peek-magic branches at `:1341` / `:1356` / `:1377` / `:1388` (partial-magic, partial-RootHeader, bad-magic, RVF\0 / pure-TS-owned file) continue to return `false` — those are the legitimate "this file IS pure-TS" detection paths, not silent fallbacks. The `nativeFallbackMode = true` path at `:1281` (graceful degrade on InvalidChecksum during open, ADR-0095 d5) is also unaffected; that's a documented degrade-after-corruption, not a fallback-because-tool-missing.
+
+**Test surface consequence.** Unit-tier tests that spawn subprocesses opening `RvfBackend` (e.g. `tests/unit/adr0090-a4-rvf-concurrent.integration.test.mjs`, `tests/unit/adr0154-cross-process-concurrent.test.mjs`) **MUST** have `@ruvector/rvf-node` resolvable from the writer subprocess's module-resolution chain. In the current dev test environment that resolution can fail (the codemod-build dist at `/tmp/ruflo-build/v3/@claude-flow/memory/dist/rvf-backend.js` has no `node_modules/@ruvector/rvf-node` up the path), so the writers throw at `initialize()` with the new error. The test-side answer is to install the native binding alongside the memory dist (e.g. via `loadRvfBackend`'s on-demand Verdaccio install bringing in the binding as a dep, or by symlinking the fork's repo-root build into a discoverable location). Per the user's directive these tests fail loud with a specific actionable message — they do NOT get a `skip_accepted` and do NOT get a silent pure-TS pass.
+
+**Cross-reference.** The two diagnosed-failing tests (ADR-0090 A4 integration, ADR-0154 Phase 6b) are the canonical examples; the prior agent's handover (`docs/audits/2026-05-19-soundness-audit/REMEDIATION-IMPLEMENTATION-HANDOVER.md`) misdiagnosed both as "real fork concurrency bug, ruvector/RVF native code" when in fact both writer subprocesses had completed without ever reaching the native code path. Investigative diagnostics added to `adr0154-cross-process-concurrent.test.mjs` during this session (and reverted at the end) confirmed all 600 entries persisted to `memory.rvf.meta` (legacy sidecar) and zero bytes to `memory.rvf` (native target).
+
+**Status**: this amendment ships as a tightening of item (a)'s pre-condition handling. ADR-0095 remains **Implemented**; the d11–d14 invariants are untouched.
