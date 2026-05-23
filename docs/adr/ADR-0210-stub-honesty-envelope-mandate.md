@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-19
+implemented-date: 2026-05-23
 tags: [mcp, honesty, stubs, policy, swarm-reviewed]
 supersedes: []
 depends-on: [0201]
@@ -168,3 +169,24 @@ A fresh 6-expert council re-verified ADR-0210 against fork HEAD + upstream. **Op
 * **Audit:** ADR-0201 slices `03-hooks-intelligence-routing.md`, `08-mcp-tool-implementations.md` (F-03-002/003/004/005/006/011/014, F-08-006/007/011); Rec 4 = description honesty.
 * **Key sites:** fakes `hooks-tools.ts:1442-1488,1701-1797,1799-1868,2177-2246,2354-2372`; honest `_stub` `performance-tools.ts:226-233,379-386,399-406`; partial-real `coordination-tools.ts:844-855`; second definition site `cli-core/src/mcp-tools/hooks-defs.ts`; result wrap `mcp-server.ts:673`; tools/list `mcp-server.ts:647`; `listMCPTools` helper `mcp-client.ts:217`.
 * **Memory:** [[feedback-skip-accepted-as-squelch]], [[feedback-no-fallbacks]], [[feedback-corpus-evidence-before-feature-work]], [[feedback-upstream-means-upstream]], [[feedback-update-integration-ledger]].
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. Implementation commit: `forks/ruflo` `98d10e489` ("fix(mcp-tools): ADR-0210 per-handler stub honesty dispositions").
+
+**Behaviour evidence:** `forks/ruflo/v3/@claude-flow/cli/__tests__/mcp-tools/hooks-stub-honesty.test.ts` — 12/12 pass (1.93s). Covers all 11 dispositioned handlers:
+
+- item 1 hand-ports: `hooks_explain` / `hooks_pretrain` (FS-scan + routeMemoryOp store, not upstream's deleted memory-bridge) / `hooks_intelligence-reset`
+- item 2 fork-original implements: `hooks_list` (live registry filter) / `hooks_init` (writeFileSync settings.json)
+- item 3 sub-field deletion: `hooks_build-agents.patternsApplied`
+- item 4 `hooks_notify` MCP tool: `_note`-pending (no delivery backend); description corrected at `hooks-tools.ts:2393`
+- scope extension: `hooks_session-restore` (F-01-004), `hooks_session-end` (F-03-013), `hooks_post-task` (F-02-007), `hooks_worker-detect` (F-03-007)
+
+**Surviving markers per Option B′:**
+
+- `_note` (upstream's surviving idiom): 9 sites in `hooks-tools.ts`, 4 in `coordination-tools.ts`
+- `_stub:true`: 3 sites in `performance-tools.ts:229,382,402` preserved as transitional per item 5 (descriptions update deferred)
+
+**OUTSTANDING — INTEGRATION-LEDGER row required** per [[feedback-update-integration-ledger]] + Confirmation bullet 4: ledger does not yet record the 3 item-1 hand-ports from upstream HEAD. Currently 0 matches for ADR-0210 / cited commit SHAs / hand-ported handler names. Add a ledger row before next upstream-sync cycle to avoid the same class of debt that cost the ADR-0186 re-audit.
+
+**Other open items:** item 5 (performance-tools.ts perf trio) + item 6 (description honesty beyond `hooks_notify`) remain partial — track in follow-up if rescoped.
