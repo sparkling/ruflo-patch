@@ -1,6 +1,7 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-20
+implemented-date: 2026-05-22
 tags: [config, schema-validation, fail-loud, no-fallbacks, zod, audit-followup]
 supersedes: []
 depends-on: [0201]
@@ -351,3 +352,23 @@ appropriate.
   cleanup, full-vs-minimal template, env-var bounds, type-mismatch)
   and likely belong in their own ADRs or are accepted as documented
   limitations.
+
+## Amendment — 2026-05-23 (Move A audit, implemented)
+
+Status flipped: **proposed → implemented**. All three Option A changes shipped in `forks/ruflo` commit `198d478e7` ("config(ADR-0214 + ADR-0224): canonicalize env vars + single validated accessor"):
+
+1. **F-14-009 default unification** — `config-template.ts:173` now emits `provider: 'onnx'`, with an inline comment block citing F-14-009 and the `config-chain/src/index.ts:176` normaliser safety net.
+2. **F-14-014 canonical accessor** — `shared/src/core/config/accessor.ts` provides `getValidatedConfig()` (sync, by design — substrate callsites were top-level eager reads; async migration deferred as separate work). Caches per-cwd; throws on malformed JSON or wrong-type leaves; returns empty validated config when `.claude-flow/config.json` absent.
+3. **Arch-test guard** — `cli/__tests__/arch/config-no-raw-parse.arch.test.ts` enforces zero substrate `JSON.parse(...config.json)` matches; per the R3 directive the test does NOT honour `// adr-0100-allow` for this gate.
+
+**Behaviour-test evidence:**
+
+- `cli/__tests__/config-template-provider-skew.test.ts` — 4 assertions cover both provider sites + the coherence invariant.
+- `cli/__tests__/arch/config-no-raw-parse.arch.test.ts` — arch-gate.
+- `config-chain/tests/config-chain.test.ts:62,77,115` — runtime normaliser safety net.
+
+**Substrate JSON.parse(config.json) sweep (2026-05-23):** zero remaining non-test, non-dist sites in `@claude-flow/**/src/**`. The only match is the accessor's own JSDoc comment.
+
+**Drift from drafted ADR text:** implementation chose **sync** (`getValidatedConfig()` synchronous, walks parents from cwd) rather than the ADR's drafted `async`. Rationale documented in accessor JSDoc — substrate callsites were module-init top-level eager reads; no `await` available.
+
+No INTEGRATION-LEDGER row (fork-only patch, no upstream commit/cherry-pick/SKIP).
