@@ -104,12 +104,13 @@ _fast_reap_stale_daemon
 # Start daemon in background; cleanup trap below guarantees shutdown.
 (cd "$E2E_DIR" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" daemon start --quiet >/dev/null 2>&1) &
 _FAST_DAEMON_BG_PID=$!
-# Wait up to 5s for socket.
+# Wait up to 5s for the post-ADR-0207 liveness signal: the PID file.
+# (Pre-0207 builds also created daemon.sock; we no longer wait on it.)
 for _i in 1 2 3 4 5 6 7 8 9 10; do
-  [[ -S "$E2E_DIR/.claude-flow/daemon.sock" ]] && break
+  [[ -f "$E2E_DIR/.claude-flow/daemon.pid" ]] && break
   sleep 0.5
 done
-echo "[fast] daemon: $([[ -S "$E2E_DIR/.claude-flow/daemon.sock" ]] && echo live || echo absent)"
+echo "[fast] daemon: $([[ -f "$E2E_DIR/.claude-flow/daemon.pid" ]] && echo "pid=$(cat "$E2E_DIR/.claude-flow/daemon.pid")" || echo absent)"
 
 # Layer 1: teardown on any exit path (EXIT/INT/TERM/HUP).
 _fast_teardown_daemon() {

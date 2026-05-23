@@ -593,17 +593,17 @@ _start_harness_daemon() {
   _reap_stale_daemon "$_d"
   # Fire in background — daemon start --foreground blocks; --quiet suppresses banner.
   (cd "$_d" && NPM_CONFIG_REGISTRY="$REGISTRY" "$CLI_BIN" daemon start --quiet >/dev/null 2>&1) &
-  # Wait up to 5s for the socket to appear. If it never does, checks will
-  # skip_accepted — harmless; doesn't block the harness.
+  # Wait up to 5s for the post-ADR-0207 liveness signal: the PID file.
+  # (Pre-0207 builds also created daemon.sock; we no longer wait on it.)
   local _deadline=$(( $(date +%s) + 5 ))
   while [[ $(date +%s) -lt $_deadline ]]; do
-    [[ -S "${_d}/.claude-flow/daemon.sock" ]] && break
+    [[ -f "${_d}/.claude-flow/daemon.pid" ]] && break
     sleep 0.1
   done
 }
 
 _start_harness_daemon "$E2E_DIR"
-log "  daemon started for E2E_DIR (socket: $([[ -S "$E2E_DIR/.claude-flow/daemon.sock" ]] && echo live || echo absent))"
+log "  daemon started for E2E_DIR (pid: $([[ -f "$E2E_DIR/.claude-flow/daemon.pid" ]] && cat "$E2E_DIR/.claude-flow/daemon.pid" || echo absent))"
 
 # ════════════════════════════════════════════════════════════════════
 # Source shared check library BEFORE e2e subshell (needs _run_and_kill)
@@ -3111,22 +3111,26 @@ if [[ -f "${adr0059_p4_lib:-}" && -d "${E2E_DIR:-}" && -f "$E2E_DIR/.claude/sett
     _P4_DAEMON_PID=$(cat "$_p4_pidfile" 2>/dev/null) || true
   fi
 
-  # Wait for socket (up to 5s)
+  # ADR-0088 → ADR-0207: the memory.* IPC handlers were retired by ADR-0088
+  # and the IPC server itself (the `daemon.sock` Unix socket + the
+  # DaemonIPCServer class) was deleted by ADR-0207. The post-0207 daemon
+  # exposes no socket; its control plane is PID file + daemon-state.json.
+  # The p4 checks below keep their historical names but their inverted
+  # semantics live in lib/acceptance-adr0059-phase4-checks.sh: socket-exists
+  # passes when the daemon is up AND no socket file is present; ipc-probe
+  # confirms the absence. The legacy `daemon.sock` path is still tracked
+  # solely as a stale-file regression guard.
   _p4_sock="$E2E_DIR/.claude-flow/daemon.sock"
+  # Wait up to 5s for the post-0207 liveness signal: the PID file.
   _p4_waited=0
-  while [[ ! -e "$_p4_sock" ]] && (( _p4_waited < 20 )); do
+  while [[ ! -f "$_p4_pidfile" ]] && (( _p4_waited < 20 )); do
     sleep 0.25
     _p4_waited=$((_p4_waited + 1))
   done
 
-  # ADR-0088 supersedes ADR-0059 Phase 4: memory.* IPC handlers removed.
-  # The daemon socket and probe still work (server stays up for future
-  # non-memory RPC methods), but memory.store/search/count handlers are
-  # gone per ADR-0088 §Decision item 2. Only socket/probe/fallback
-  # checks remain meaningful.
-  run_check "e2e-0059-p4-socket-exists" "Daemon IPC socket exists" \
+  run_check "e2e-0059-p4-socket-exists" "Daemon up (no socket per ADR-0207)" \
     check_adr0059_daemon_ipc_socket_exists "adr0059-p4"
-  run_check "e2e-0059-p4-ipc-probe" "Daemon IPC probe" \
+  run_check "e2e-0059-p4-ipc-probe" "Daemon IPC absence verified" \
     check_adr0059_daemon_ipc_probe "adr0059-p4"
 
   # Stop daemon cleanly
