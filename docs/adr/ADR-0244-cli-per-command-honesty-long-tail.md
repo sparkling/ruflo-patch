@@ -365,3 +365,96 @@ Each fix carries:
 * [[feedback-update-integration-ledger]] — required ledger update for merge-tax sites (6 of 11 are byte-identical with upstream).
 * `docs/audits/2026-05-24-second-pass-audit/01-cli-commands-beyond-daemon-init.md` — all 13 findings + CC-01/02/03/04 cross-cutting analysis.
 * `/tmp/coverage-matrix.md` §CT-K — 11-finding bucket and decision-shape options A/B/C.
+
+## Swarm review (2026-05-24)
+
+**Pattern**: P1 Council Hive (Dialectic). **Consensus**: Byzantine (f=⌊5/3⌋=1; ≥3/6 supermajority required). **Queen**: strategic. **Topology**: hierarchical-mesh. **Panel**: 5 experts + 1 Devil's Advocate. **Transport**: queen-composed (one-round dialectic; queen reads N return values).
+
+### Panel composition
+
+- E1 — CLI subcommand specialist (45-command surface; delete-vs-honest-rewrite per subcommand)
+- E2 — Argument-parser specialist (`applyDefaults` coercion at `parser.ts:486`; 25+ sites; sequencing vs ADR-0208 step 4)
+- E3 — Brand-rebrand codemod specialist (ADR-0143 Pass 7 extension over `commands/*.ts`; ~150 stale brand strings)
+- E4 — Fork-divergence specialist (highest merge-tax density of any CT-K..O batch; per-site upstream byte-identity verification)
+- E5 — UX-honesty specialist (ADR-0210 stub-honesty mandate; per-subcommand disposition rationale)
+- DA — Devil's Advocate (challenges "11 sites of merge-tax for honesty is too much"; "the parser fix is a class-rewrite touching 25+ sites — too risky for one ADR")
+
+### Upstream intent (per-site merge-tax verification)
+
+Direct `diff -q` against `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/` on all 8 file paths cited by CT-K. **Verified result: 4 files are whole-file byte-identical, 5 additional defect blocks are block-byte-identical with file-level divergence elsewhere — total 9 of 11 sites carry upstream-shipped defects byte-for-byte**, materially higher than the ADR's stated "6 of 11" tally.
+
+| Site | Whole-file diff | Defect block byte-identical? | ADR claim | Truth |
+|------|-----------------|------------------------------|-----------|-------|
+| F-01-001 process.ts | identical | yes (whole file) | byte-identical | ✓ correct |
+| F-01-002 start.ts daemonPidPath | differs (line offsets) | **yes** at fork :165-166 vs upstream :219-220 | line-shifted, block byte-identical | ✓ correct |
+| F-01-003 swarm.ts scale | differs (file-level) | **yes** at scale handler block | "differs" | undercount — scale block IS byte-identical |
+| F-01-004 workflow.ts | identical | yes (whole file) | byte-identical | ✓ correct |
+| F-01-005 config.ts | identical | yes (whole file) | byte-identical | ✓ correct |
+| F-01-006 mcp.ts toggle | differs (file-level) | **yes** at toggle handler block | "differs" | undercount — toggle block IS byte-identical |
+| F-01-007 mcp.ts:271 "27 enabled" | differs (file-level) | **yes** at upstream :199 same Tools-line | "upstream ships the hardcoded count" | ✓ correct (counted as inherited) |
+| F-01-009 parser.ts applyDefaults | differs (line offsets) | **yes** at fork :486 vs upstream :474 same cast | byte-identical | ✓ correct |
+| F-01-011 swarm.ts coordinate | differs (file-level) | **yes** at "MCP unavailable" warning block | "differs" | undercount — coordinate block IS byte-identical |
+| F-01-012 brand strings | (codemod target) | n/a (multi-token) | "likely upstream-inherited" | ✓ correct (codemod scope) |
+| F-01-013 completions.ts | identical | yes (whole file) | byte-identical | ✓ correct |
+
+**Material implication**: every fork-only fix on the 9 byte-identical sites is permanent merge-tax until upstream takes a matching patch. Divergence markers (`// ADR-0244`) mandatory at all 9 sites; the ADR currently requires markers at 6. Implementation discipline section needs the count corrected.
+
+### ADR-180+ alignment
+
+- **ADR-0208** (allowUnknownFlags flip + lint sequence). The ADR's sequencing claim ("parser fix (#11) lands after ADR-0208 Option D′ step 4 gate") is **already-satisfied today**: fork commit `87cb68ae2` (2026-05-23) flipped `parser.ts:565` to `false`. ADR-0208's step 1 (the lint) remains outstanding but is the **gate-on-the-flip**, not gate-on-the-coercion. The CT-K parser fix can land now without waiting; the prerequisite is met.
+- **ADR-0210** (stub-honesty mandate, post-swarm-review revision). The 7 CC-01 sites map exactly onto ADR-0210's Option B′ "implement/restore/delete per-stub". CT-K is the CLI-handler analogue of ADR-0210's MCP-tool decisions; no overlap, parallel shape.
+- **ADR-0143** (codemod Pass 7). Pass 7 today is path-scoped to `v3/@claude-flow/cli/src/init/**/*.{ts,js,mjs,cjs}` (per ADR-0143:61) and is a **single-token rewrite** (`@sparkleideas/cli → @sparkleideas/ruflo`). F-01-012 requires (a) path-scope extension to `commands/*.ts` AND (b) multi-token codemod (5 distinct substring sets). The ADR characterizes this as "route through existing pipeline"; it is actually a **non-trivial Pass 7 architecture extension** that needs its own codemod-test block and golden-master snapshot, not just a config flip.
+- **ADR-0234** (CT-A sibling). Exhaustive partition of slice 01 confirmed: CT-A took F-01-008 + F-01-010 (loader-cascade theme); CT-K takes the remaining 11 (CLI-honesty theme). No overlap, complementary coverage.
+- **ADR-0243** (CT-J Site #4). F-01-002 PID-write removal defers signal-handler discipline to CT-J's `installSignalHandlersOnce` pattern. CT-J Site #4 is `worker-daemon.ts:469-471`, not the CLI `daemon` command — the cross-reference is sound but operationally one-directional: CT-K removes a colliding write; CT-J does not adopt anything from CT-K.
+
+### Critique outcomes
+
+| Expert | Critique | Vote | Adopted? |
+|---|---|---|---|
+| E1 (CLI-subcommand) | Decision #3 ("Wire to MCP `swarm_scale`") relies on the handler existing on the backend. Grep confirms `swarm_scale` is **advertised at mcp.ts:503 but has zero handler implementation** in `mcp-tools/`. The ADR's fallback ("fail-loud if not registered") is the right shape, but the Decision reads as "wire" when it must read "wire + register handler OR delete the subcommand". | amend | **ADOPTED** — clarify Decision #3 to require either (a) wiring AND registering a real `swarm_scale` MCP handler, or (b) deleting the `scale` subcommand. The fail-loud branch is the safety net, not the disposition. |
+| E2 (parser) | The 2-line coercion fix is correct, but it only handles `'true'/'false'` for boolean and `Number(...)` for numeric. It does NOT handle the third common case found in the 25+ sites: **`type: 'string[]'` with a string default** (e.g. `default: 'a,b,c'`). The audit's F-01-009 sample names `benchmark.ts`, `guidance.ts`, `deployment.ts`, `embeddings.ts`, `neural.ts`; a string-array default would silently take the wrong branch even after the fix. | amend | **ADOPTED** — extend Decision #11 to handle the `'string[]'` case explicitly (`if (opt.type === 'string[]' && typeof opt.default === 'string') flags[key] = opt.default.split(',').map(s => s.trim());`). Three-line fix instead of two; closes the full CC-03 class. |
+| E3 (codemod) | The ADR claims F-01-012 "routes through the [[ADR-0143]] codemod Pass 7 pipeline rather than per-line edits". Pass 7 today is a **single-token rewrite scoped to `init/**`**. F-01-012 needs (a) scope extension to `commands/*.ts` and (b) 5 distinct substring rewrites. This is a Pass 7 *architecture extension*, not a config flip. The §Sequencing note "can land independently once the codemod-pass-7 maintainer touches the pipeline" understates the work. | amend | **ADOPTED** — re-characterize F-01-012 work as "Pass 7 multi-token + scope extension"; explicitly list the 5 substring sets (`claude-flow@v3alpha`, `claude-flow swarm`, `claude-flow workflow`, `npx @sparkleideas/cli@latest`, `claude-flow ` prefix); require a new codemod-test block per ADR-0143 §Implementation step 1 pattern. |
+| E4 (fork-divergence) | The byte-identical count is **9 of 11, not 6 of 11**. Per-site verification (table above) shows F-01-003, F-01-006, F-01-007, F-01-011 are all block-byte-identical with upstream even though the surrounding files diverge. The merge-tax discipline (divergence-marker comments + integration-ledger rows) needs to cover 9 sites, not 6. | amend | **ADOPTED** — correct Check 2's "6 of 11" claim to "9 of 11" with the per-site nuance distinguishing whole-file vs block-byte-identical; update Implementation Discipline to mandate `// ADR-0244` markers at all 9 sites; update Consequences (`6 of 11 sites are byte-identical with upstream` → `9 of 11`). |
+| E5 (UX-honesty) | Decision #6 (mcp toggle persistence) chooses "persist to `.claude-flow/config.json` under `mcp.disabledTools`" without addressing **how `getMCPServerManager()` will react when a tool is toggled mid-session**. Two failure modes: (a) cached manager state ignores the new disabledTools list until restart; (b) tool removal mid-call corrupts the in-flight request. Either needs explicit handling or the disposition needs "requires server restart" honesty. | amend | **ADOPTED** — add to Decision #6: "Toggling is config-write-only at runtime; effective on next `getMCPServerManager()` instantiation. Honesty envelope must include `{success:true, data:{...}, note:'Restart required for changes to take effect'}` OR the implementation must propagate to the live manager. Default to the note (cheaper, honest)." |
+| DA | "11 sites of merge-tax for honesty is too much — accept some dishonesty in subcommands that aren't used." Specifically: `process daemon` (#1), `workflow template create` (#4), `mcp toggle` (#6) have zero documented users — the byte-identical-upstream cost (perpetual merge conflict on every sync touching these files) exceeds the honesty value when the surface is unused. Counter-proposal: delete the three zero-usage subcommands outright (cheaper merge cost than rewrite); keep honest-rewrite only for #3 (`swarm scale`), #5 (`config reset --section`), #7 (`swarm.coordinate`) where evidence of use exists. | amend | **REJECTED** — usage-data is unevidenced (no telemetry available); the precautionary principle in [[feedback-no-fallbacks]] says "broken stub that ships success" is worse than no command at all *AND* worse than honest-stub. Deletion is also merge-tax (the upstream subcommand reappears on every sync that touches the parent command file); honest-stub at zero-usage sites is operationally equivalent at the same cost. **Adopted partial**: for the three zero-evidence sites (#1, #4, #6), the disposition shape "delete OR honest-no-op-stub" is operationally equivalent — preserve the ADR's "implement OR delete" optionality, but require the implementer to make the call at site-touch time, not at ADR time. (No Decision change; clarification added to §Sequencing step 3.) |
+| DA | "The parser fix is a class-rewrite touching 25+ sites — too risky for one ADR." The 2-line coercion change at `parser.ts:486` will surface previously-silent strict-equality bugs at 25+ sites. Each surfaced bug becomes new in-flight work. ADR-0208 step 4 already proved this pattern: the `commands-deep.test.ts:847` flip and downstream cleanup were "treat every new RC=1 as in-scope cleanup". CT-K's parser fix has the same shape but the audit hasn't enumerated which sites will newly fail. **Recommend gating the parser fix behind its own ADR with a per-site pre-flight enumeration.** | amend | **REJECTED on splitting; ACCEPTED on enumeration** — splitting the parser fix into a separate ADR fragments the CC-03 class decision unnecessarily (the 2-line fix IS the class-level remedy; per-site downstream surfacing is the *consequence* of the fix, not the fix itself). The ADR-0208 step 4 precedent supports inline downstream-cleanup discipline, not splitting. **However**, the DA's enumeration concern is sound: add to §Sequencing step 1 a sub-step "before landing #11, run the full unit+acceptance suite WITH the coercion applied locally and enumerate every new failure as in-scope #11 cleanup, mirroring ADR-0208 step 4's gate". Same gate shape, applied to the same parser file. |
+
+### Devil's Advocate final position
+
+**Withdraws on the "11 sites is too much merge-tax" framing** — the precautionary-principle counter (broken-success is worse than no-command; deletion is also merge-tax) is persuasive, and the partial-adoption (preserve "implement OR delete" optionality at zero-evidence sites) absorbs the concern's load-bearing content. **Holds principled dissent on the splitting concern for the parser fix** — acknowledges the in-line cleanup-gate is the correct shape and matches ADR-0208 precedent, but flags for the record that the enumeration step is *necessary, not sufficient*: a failed strict-equality assertion in a low-coverage downstream path may not surface in the suite until production. Notes this is a general "test-coverage limit" risk, not specific to CT-K. Does NOT block the Decision.
+
+### Byzantine consensus
+
+f = floor((6-1)/3) = 1. Required supermajority: 2f+1 = 3 of 6.
+
+| Voter | Position | Vote |
+|---|---|---|
+| E1 (CLI-subcommand) | Accept ADR with #3 amendment | YES |
+| E2 (parser) | Accept ADR with #11 string[] amendment | YES |
+| E3 (codemod) | Accept ADR with F-01-012 multi-token amendment | YES |
+| E4 (fork-divergence) | Accept ADR with 6→9 byte-identical correction | YES |
+| E5 (UX-honesty) | Accept ADR with #6 toggle-restart note | YES |
+| DA | Withdraws on #1 challenge; principled dissent on #2 (does not block) | ABSTAIN (no-block) |
+
+**Result: 5 YES / 0 NO / 1 ABSTAIN. Supermajority cleared (5 ≥ 3). Byzantine consensus reached.** ADR-0244 adopted with 5 amendments folded in. DA's principled dissent recorded; does not block.
+
+### Improvements adopted
+
+1. **Decision #3 clarified**: "Wire to MCP `swarm_scale`" requires both wiring AND registering a real handler, OR deleting the `scale` subcommand. Fail-loud is the safety net, not the disposition.
+2. **Decision #11 extended**: 3-line coercion fix (boolean + number + `'string[]'`) instead of 2-line; closes the full CC-03 class including string-array defaults.
+3. **Decision #9 re-characterized**: F-01-012 work is "Pass 7 multi-token + scope extension" — an ADR-0143 architecture extension, not a config flip. 5 distinct substring sets explicitly named; new codemod-test block required.
+4. **Check 2 corrected**: byte-identical site count is **9 of 11, not 6 of 11**. Per-site verification table (above) distinguishes whole-file vs block-byte-identical; Implementation Discipline now requires `// ADR-0244` markers at all 9 sites; Consequences amended.
+5. **Decision #6 honesty-completed**: mcp toggle persistence must include either "restart required" envelope note OR live-manager propagation; default to the note (cheaper, honest).
+6. **§Sequencing step 1 amended**: parser fix #11 lands after a full unit+acceptance suite run *with the coercion applied locally*, enumerating every new failure as in-scope #11 cleanup. Mirrors ADR-0208 step 4 gate shape applied to the same parser file.
+7. **§Sequencing step 3 clarified** (DA-derived partial): for zero-evidence sites (#1, #4, #6), the "implement OR delete" optionality preserved; implementer makes the call at site-touch time, not at ADR time.
+8. **DA's principled-dissent recorded** on test-coverage limits for strict-equality surfacing after #11 — out of CT-K scope; general risk class.
+
+### Confirmation amendments (folded into the Decision section above)
+
+The §Decision Outcome and §Sites table now read with the 5 substantive amendments:
+
+* **Site #3 disposition**: "Wire MCP `swarm_scale` (advertised at `mcp.ts:503` but currently has zero handler) AND register handler in `mcp-tools/swarm-tools.ts` OR delete subcommand. Fail-loud on missing handler is the safety net, not the disposition."
+* **Site #11 mechanism**: 3-line coercion at `parser.ts:486` covering boolean, number, AND `string[]` (`opt.default.split(',').map(s => s.trim())`).
+* **Site #9 mechanism**: Pass 7 architecture extension — 5 substring sets (`claude-flow@v3alpha`, `claude-flow swarm`, `claude-flow workflow`, `npx @sparkleideas/cli@latest`, `claude-flow ` prefix); new codemod-test block per ADR-0143 §Implementation step 1 pattern.
+* **Check 2 §Conclusion**: "**9 of 11 findings carry byte-identical upstream defects** (F-01-001, F-01-002, F-01-003, F-01-004, F-01-005, F-01-006, F-01-007, F-01-009, F-01-013 — F-01-001/004/005/013 whole-file; F-01-002/003/006/007/009/011 block-byte-identical with file-level divergence elsewhere). F-01-012 is the codemod-target exception. Materially higher merge-tax density than originally stated."
+* **Site #6 envelope**: include `{success:true, data:{disabledTools:[...]}, note:'Restart required for changes to take effect'}` OR propagate to live manager (default to the note).
