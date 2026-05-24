@@ -120,7 +120,19 @@ copy_source() {
   rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_FANN}/" "${TEMP_DIR}/cross-repo/ruv-FANN/" \
     && touch "${rsync_status_dir}/fann" &
   local pid_fann=$!
-  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" \
+  # ADR-0231 follow-up: exclude wasm-pack's default `pkg/` output dir under
+  # ruvector crates. wasm-pack writes a fresh package.json with the
+  # @sparkleideas/ruvector-<name> publish name into `<crate>/pkg/` if invoked
+  # without --out-dir. The pipeline's publishOne (publish.mjs:316) builds a
+  # name→pkgDir map across the build tree and breaks ties unpredictably when
+  # two package.json files declare the same `name`. A stale `crates/*/pkg/`
+  # competes with the canonical `npm/packages/*` and can shadow a fresh
+  # version-bumped publish (the bug: `2.0.2-patch.2` bumped in
+  # `npm/packages/ruvllm-wasm/`, but publish picked the stale `2.0.2` in
+  # `crates/ruvllm-wasm/pkg/`). Excluding `crates/*/pkg/` at rsync time
+  # prevents the conflict regardless of whether a stale dir lives on the
+  # fork checkout.
+  rsync -a --delete --filter='P dist/' --filter='P .tsbuildinfo' --exclude='*.tsbuildinfo' --exclude='tsconfig.tsbuildinfo' --filter='P .build-manifest.json' --filter='P tsconfig.build.json' --exclude=node_modules --exclude=.git --exclude='crates/*/pkg/' "${FORK_DIR_RUVECTOR}/" "${TEMP_DIR}/cross-repo/ruvector/" \
     && touch "${rsync_status_dir}/ruvector" &
   local pid_ruvector=$!
   # ADR-0161: agentdb 5th fork
