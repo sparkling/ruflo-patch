@@ -8,8 +8,8 @@
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
-#         adr0194, adr0195, adr0196, adr0204, adr0208, e2e-core, e2e-storage,
-#         skills-surface (ADR-0216)
+#         adr0194, adr0195, adr0196, adr0204, adr0208, adr0235, adr0237, adr0240,
+#         adr0246, e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 set -o pipefail
 
@@ -261,6 +261,45 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0208"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     source "$PROJECT_DIR/lib/acceptance-adr0208-checks.sh"
     echo "── ADR-0208 (manifest drift lint) ──"
     _fast_run "manifest-flag-drift" check_adr0208_manifest_flag_drift
+  fi
+fi
+
+# ── Batch 1 (ADR-0233 second-pass) trip-wires ───────────────────────
+# adr0240, adr0246, adr0235, adr0237 register coarse acceptance hooks
+# on top of the per-package unit tests already run by the respective
+# fork test suites. Per-ADR validation gates per docs/plans/2026-05-24-
+# second-pass-execution-plan.md §Inter-batch validation gates §Gate 1.
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0240"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if declare -f check_adr0240_site2_stderr_marker >/dev/null 2>&1; then
+    echo "── ADR-0240 (stdio MCP stderr-only logging — site #2) ──"
+    _fast_run "adr0240-site2-marker"  check_adr0240_site2_stderr_marker
+    _fast_run "adr0240-eslint-scope"  check_adr0240_eslint_no_console_scope
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0246"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if declare -f check_adr0246_test_files_present >/dev/null 2>&1; then
+    echo "── ADR-0246 (F-03-001/002/003 internals correctness) ──"
+    _fast_run "adr0246-test-files"    check_adr0246_test_files_present
+    _fast_run "adr0246-vitest-run"    check_adr0246_vitest_run
+    _fast_run "adr0246-f03007-pre"    check_adr0246_f03007_precondition
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0235"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if declare -f check_adr0235_helpers_dir_absent >/dev/null 2>&1; then
+    echo "── ADR-0235 (umbrella brand + helpers parity) ──"
+    _fast_run "adr0235-helpers-gone"  check_adr0235_helpers_dir_absent
+    _fast_run "adr0235-brand-lint"    check_adr0235_umbrella_brand_strings
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0237"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if declare -f check_adr0237_sona_instant_markers >/dev/null 2>&1; then
+    echo "── ADR-0237 (fail-loud sona_instant setters) ──"
+    _fast_run "adr0237-rs-markers"    check_adr0237_sona_instant_markers
+    _fast_run "adr0237-clippy-guard"  check_adr0237_manual_clamp_not_allowed
   fi
 fi
 
