@@ -12,19 +12,26 @@
   open horizons from the 2026-05-28 handover were addressed this
   session.** Most landed; remaining items deferred with cited
   conditional reasons (see Stages D–F below).
-- **Stage B fully landed in the `/loop` continuation phase**:
+- **Stage B fully landed in the first `/loop` continuation**:
   B1 (lint), B2 (3 forks/ruflo cleanup commits resolving all 42
   drifts), B3 (acceptance trip-wire with planted-drift smoke test).
-- **11 commits in `ruflo-patch/main`** (`5439372` → `4d50f0c`),
-  **6 fork-side commits** (5× forks/ruflo, 1× forks/agentdb).
+- **Second `/loop` continuation** pushed 4 more items:
+  D8 (consumer demotion, was conditional), B1 Phase 2 (AST
+  upgrade), ADR-0228 Q-1/Q-3 research, ADR-0181 Phase 4 scope
+  re-verification (substantial finding: the 6 handlers are NOT
+  stubs — already live).
+- **16 commits in `ruflo-patch/main`** (`5439372` → `5cce30f`),
+  **7 fork-side commits** (5× forks/ruflo, 1× forks/agentdb,
+  1× forks/agentic-flow).
 - **Acceptance baseline at handover:** 16/16 PASS on
-  `adr0059,p4,adr0208` (was 15/15 — the new trip-wire is the 16th
-  check).
+  `adr0059,p4,adr0208`.
 - **All 5 trees clean** at handover.
-- **Net-new ADRs:** 1 (ADR-0228 EWC++ per-call adapt — proposed).
-- **Next-session priority:** ADR-0181 Phase 4 (cli-process-backend
-  handler un-stub — promotable, preconditions met) and ADR-0228
-  implementation (4 open questions resolution first).
+- **Net-new ADRs:** 1 (ADR-0228 EWC++ per-call adapt — proposed,
+  Q-1/Q-3 verified from source).
+- **Next-session priority:** ADR-0181 Phase 4 narrowed to a
+  3-step task (substrate-shape decision Options a/b/c +
+  acceptance-wiring fix + implementation) and ADR-0228
+  implementation (Q-2 + Q-4 remain open).
 
 ## What landed (Stage A–F execution record)
 
@@ -56,7 +63,7 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 | # | Item | Commit | Outcome |
 |---|---|---|---|
 | D7 | New ADR for ADR-0220 F-05-007 EWC++ per-call adapt | `3dcd705` (ADR-0228) | Drafted via adr-architect agent. Recommends **Option C — Hybrid** (per-call accumulates without EWC++; background applies EWC++ to accumulated micro-tier state, gated by opt-in flag). Implementation deferred to a follow-on session. 4 open questions explicitly flagged as gating implementation (Fisher matrix size mismatch, placeholder input on TS path, WASM artefact EWC availability, ADR-0193 alignment). |
-| D8 | ADR-0221 F-06-006 agentic-flow consumer demotion | — | **DEFERRED per handover's own conditional** ("Follow-up ADR if it surfaces in acceptance"). Acceptance is 15/15 — F-06-006 has not surfaced. Pattern (`agentdb-service.ts:832-836` try/catch demotion of `graphEnabled`/`gnnEnabled`/`routerEnabled`/`sonaEnabled`) is real but matches an existing pattern, not a regression. Re-evaluate next session if acceptance trips. |
+| D8 | ADR-0221 F-06-006 agentic-flow consumer demotion | `ce8e245` (forks/agentic-flow, second /loop) | **DONE.** Added `isModuleNotInstalledError()` helper + applied discriminating pattern (MODULE_NOT_FOUND → warn; real error → console.error) to all 4 Phase 2 catches (GNN/Router/Graph/Sona). Does NOT re-throw because Phase 2 features are optional enhancements — re-throw would trip the outer initialize catch and degrade the whole service unnecessarily. |
 | D9 | ADR-0222 upstream merge-tax runbook note | `be1c4ae` | Appended "Re-introduction guards" section + sync runbook to INTEGRATION-LEDGER.md. Covers `federated-learning.ts` (ADR-0222) + `QUICConnectionPool.ts`/`QUICStreamManager.ts` (ADR-0217). Cites the existing arch-test pins. |
 | D10 | ADR-0214 Council MUST-FIX #2 honoured-by-loader test | `c8673c0f8` (forks/ruflo) | New test at `forks/ruflo/v3/@claude-flow/shared/__tests__/config-loader-env-honoured.test.ts`. 9 cases (6 positive + 1 invalid + 1 rebrand-correctness + 1 unset-default). All pass. Also closed ADR-0214 with amendment `f62b64a`. |
 | D11 | ADR-0224 sync-vs-async drift amendment | `939db69` | Re-read `getValidatedConfig` JSDoc rationale; locked the sync choice as intentional-for-now (substrate callsites are module-init top-level eager reads, no `await` available). Revisit gated on a separate substrate-refactor ADR. |
@@ -99,41 +106,47 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 |---|---|
 | `forks/ruflo/main` | clean; 6 commits ahead of session start (A4, C5, D10, B2 ×3) |
 | `forks/agentdb/main` | clean; 2 commits ahead of session start (C2, C5) |
-| `forks/agentic-flow/main` | unchanged (D8 deferred) |
+| `forks/agentic-flow/main` | clean; 1 commit ahead (D8 — `ce8e245` discrimination fix) |
 | `forks/ruv-FANN/main` | unchanged |
 | `forks/ruvector/main` | unchanged (D7 implementation deferred) |
-| `ruflo-patch/main` | `4d50f0c`; 11 commits ahead of session start `5439372` |
+| `ruflo-patch/main` | `5cce30f`; 16 commits ahead of session start `5439372` |
 | `sparkling/*` push state | nothing pushed in 3+ sessions |
 | `hz` remote | untouched per [[feedback-never-touch-hz-remote]] |
 
 ## Recommended next-session priority order
 
-### Tier 1 — Larger items with clean preconditions
+### Tier 1 — Larger items with clean preconditions (scope narrowed this session)
 
-1. **ADR-0181 Phase 4 — cli-process-backend handler un-stub.**
-   Promoted from standing carry-forward (E1). Substrate ready
-   (ADR-0230 done). Un-stub 6 handlers (route, pattern-search,
-   reflexion-retrieve, skill-search, daemon×2); verify
-   `(svc as any).backend instanceof HybridBackend === true` per
-   ADR-0181 Phase 4 land checklist + ADR-125 Acceptance Criterion #2.
-   Substantial multi-handler undertaking deserving its own session.
-2. **ADR-0228 implementation (EWC++ per-call adapt).** The proposal
-   landed this session; the 4 open questions need resolution before
-   implementation (see ADR-0228 § "Open questions"). Most critical:
-   Q-1 (Fisher matrix sized for BaseLoRA not MicroLoRA — would
-   silently no-op without a second EWC instance).
+1. **ADR-0181 Phase 4 — substrate-shape decision + acceptance-wiring + implement.**
+   Promoted from standing carry-forward (E1). The 2026-05-24
+   amendment narrowed the scope significantly: **the 6 handlers are
+   NOT stubs** — already live with capability layer + substrate
+   seam. Outstanding work splits into 3 sub-tasks:
+   - **(a)** Decide between Options a/b/c for how the archivist's
+     substrate seam relates to `HybridBackend` (adapt / parallel /
+     refactor — see ADR-0181 Amendment 2026-05-24).
+   - **(b)** Apply 2 fixes to make the existing land-checklist test
+     runnable: (i) add `"./core"` subpath to
+     `forks/ruflo/v3/@claude-flow/shared/package.json` exports;
+     (ii) either move `src/*.test.ts` to `__tests__/` OR extend v3
+     vitest include pattern.
+   - **(c)** Implement chosen option from (a). 50-500 lines
+     depending on choice.
+2. **ADR-0228 implementation (EWC++ per-call adapt).** Q-1 and Q-3
+   resolved this session (commit `7ee3b91`). The big finding: the
+   TS per-call adapt path is **already a no-op end-to-end**
+   (placeholder zero input → zero gradient). Option C wiring depends
+   on prerequisite Q-3 fix (separate ADR scope). Q-2 (WASM artefact
+   EWC availability) and Q-4 (ADR-0193 alignment) remain open.
 
-### Tier 2 — Conditional / opportunistic
+### Tier 2 — Closed this session (formerly conditional)
 
-3. **D8 — ADR-0221 F-06-006 consumer demotion.** Re-check next
-   session: if acceptance trips on the copy-paste anti-pattern at
-   `agentic-flow/src/services/agentdb-service.ts:832-836`,
-   implement the demote. Otherwise stays deferred.
-4. **B1 lint Phase 2.** Upgrade to AST-resolution of the command
-   tree (or `dist/src/commands/hooks.js` dynamic import) so the
-   alias/spread options at `hooks.ts:4497/4516/4548/4557` are
-   covered. Will reduce false-positive class. Not blocking — the
-   current Phase 1 lint correctly identified all 42 drifts.
+3. **D8 — DONE.** Discriminating pattern applied per the F-05-003
+   precedent. Commit `ce8e245` in forks/agentic-flow.
+4. **B1 lint Phase 2 — DONE.** Commit `3694a4b`. Lint now imports
+   `@sparkleideas/cli/dist/src/commands/hooks.js` and walks
+   resolved command tree to depth 2 (142 declared names vs Phase 1's
+   ~70). Phase 1 regex retained as fallback.
 
 ### Tier 3 — Open horizons
 
