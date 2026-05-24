@@ -169,12 +169,14 @@ telemetry-hardening ADR).
 ### Confirmation
 
 * **Source-shape (deterministic):**
-  * `forks/agentdb/src/mcp/agentdb-mcp-server.ts` contains **zero** `console.log` calls; the
-    `learning_train` case at the prior `:2016` line uses `console.error`.
+  * `forks/agentdb/src/mcp/agentdb-mcp-server.ts` (this file only — sibling cli paths' 60+
+    `console.log` calls are out of CT-G scope per F-05-007) contains **zero** `console.log`
+    calls; the `learning_train` case at the prior `:2016` line uses `console.error`.
   * If v3/mcp/ survives CT-F: `forks/ruflo/v3/mcp/server-entry.ts` `createLogger` returns object
     whose `info` and `debug` keys both invoke `console.error` (not `.info`/`.debug`/`.log`).
-  * ESLint config under `forks/agentdb/.eslintrc*` (and `forks/ruflo/v3/mcp/.eslintrc*` if kept)
-    declares the `no-console` rule with `allow: ['error', 'warn']`.
+  * ESLint config under `forks/agentdb/.eslintrc*` (new file; none exists today) and
+    `forks/ruflo/v3/mcp/.eslintrc*` (new file, conditional on CT-F keep) declares the
+    `no-console` rule with `allow: ['error', 'warn']`.
 * **Behavioural (acceptance):**
   * `agentdb mcp start` followed by an MCP `learning_train` request: parse every line on stdout; all
     lines must be parseable as JSON-RPC frames (no `🎓 Training session ...` bytes).
@@ -220,3 +222,85 @@ Sites NOT covered by this ADR (out of CT-G scope, listed for completeness):
 * `docs/audits/2026-05-24-second-pass-audit/05-telemetry-observability.md` — full audit slice with
   per-finding evidence including the `formatMessage` quote and the `tool:called` debug-event PII
   vector.
+
+## Swarm review (2026-05-24)
+
+**Pattern**: P2 Consensus Decision Hive. **Consensus**: Quorum-majority (≥2/3). **Queen**: tactical. **Panel**: 3 experts + 1 DA.
+
+### Panel composition
+
+- Expert 1 — MCP-StdioServerTransport specialist
+- Expert 2 — Node-IO discipline specialist
+- Devil's Advocate
+
+### Upstream intent
+
+Upstream is **neutral-by-omission**, not aligned, on both sites. Verified at fork mirrors:
+`/Users/henrik/source/ruvnet/agentdb/src/mcp/agentdb-mcp-server.ts:2000` carries the
+**identical** `console.log("🎓 Training session ${sessionId}...")` slip surrounded by 21
+correct `console.error` siblings — upstream has the same single-site stdout bug. At
+`/Users/henrik/source/ruvnet/ruflo/v3/mcp/server-entry.ts:140-162` upstream's `createLogger`
+also routes `info`/`debug` through `console.info`/`console.debug` (stdout) with default
+`transport: stdio`. Both sites are inherited bugs, not fork regressions; the fix is a
+one-line fork-only merge tax until upstream takes a matching patch. Pre-flight check 2
+("upstream hasn't already decided it") clears: upstream has not decided either way.
+
+### ADR-180+ alignment
+
+ADR-0226 (frame-write side of the same stdio JSON-RPC channel, implemented) is the directly
+supporting sibling — it routes JSON-RPC frames through `process.stdout.write` so a future
+`console.log` reassignment cannot swallow a reply; CT-G is the disjoint-by-content-shape
+diagnostic-logging counterpart. ADR-0213 (agentdb MCP standalone registration) is gated
+deferred — site #2 here is in the same `agentdb-mcp-server.ts` that ADR-0213's
+`busy_timeout` precondition already unblocked at fork commit `d1b6145`, so site #2 is now
+runtime-reachable on every `learning_train` call. ADR-0239 (CT-F cluster 2 — delete
+`v3/mcp/`) explicitly cites site #1 as a "cross-bonus": deleting v3/mcp/ evaporates site #1,
+which is why this ADR makes the site #1 fix conditional. ADR-0210 (stub-honesty mandate) is
+not in conflict — CT-G is a real protocol bug, not surface-without-enforcement.
+
+### Critique outcomes
+
+| Expert | Critique | Vote | Adopted? |
+|---|---|---|---|
+| Expert 1 (MCP-Stdio) | Confirmation §Source-shape asserts on the agentdb file containing zero `console.log`, but the file contains 60+ legitimate `console.log` calls in non-MCP cli daemon paths (per F-05-007). The assertion as written would always fail. Must scope to `agentdb-mcp-server.ts` specifically (or the path-globbed lint), not the whole file's containing directory. | amend | **ADOPTED** — narrow Source-shape clause to the single file `agentdb-mcp-server.ts`; the lint rider already scopes to `src/mcp/**` so it doesn't conflict with the cli's `console.log` siblings. |
+| Expert 1 (MCP-Stdio) | The lint rider lives in `forks/agentdb/.eslintrc*` and `forks/ruflo/v3/mcp/.eslintrc*` — but neither file exists today (`find` returns no agentdb root eslintrc; only `v3/@claude-flow/cli/.eslintrc.json` and `v3/goal_ui/`, `ui/`). The ADR needs to either create the configs (Option A↑) or scope the rule into the existing `cli/.eslintrc.json` with a path `overrides` block. | amend | **ADOPTED** — note in implementation steps that the lint rider creates a new eslint config (or extends existing where present); the implementation cost is small but the ADR was silent on it. |
+| Expert 2 (Node-IO) | The Decision says "console.warn is already stderr by Node alias" — verify. Node docs: `console.warn` and `console.error` both route to `process.stderr`; `console.log`, `console.info`, `console.debug` route to `process.stdout`. The ADR is correct, but the lint `allow: ['error', 'warn']` is the right pairing — both are stderr-safe. No change needed; the claim is sound. | agree | n/a (corroboration) |
+| Expert 2 (Node-IO) | Option C (structured logger) was rejected on "no structured logger in use anywhere". True today, but ADR-0226 introduced a `writeFrame` helper for frames — extending that pattern with a `writeLog(level, msg, data)` sibling would be a 5-line addition that also addresses F-05-007 (60+ cli `console.log` calls) when those paths are touched. Worth a "future enhancement" mention, not a Decision change. | amend | **ADOPTED (lightweight)** — note in Consequences that the structured-logger pattern could be extended from ADR-0226's `writeFrame` if F-05-007 ever wants the same wrap-and-stream discipline. Not a Decision change, just a forward-pointer. |
+| DA | "Just stop logging from MCP servers altogether — any logging is risky in the stdio path." The strongest form of this argument: route the two stdout sites to a no-op, not stderr. Stderr is still a side-channel the operator depends on; if the operator's logging consumer is misconfigured, stderr can fill pipes/disks under high tool-call volume. The lint rider that bans `console.log/info/debug` is already implicitly that argument — but Option A keeps the diagnostic value and adds the lint as a regression guard. | amend | **REJECTED** — stderr is the correct, conventional channel for MCP server diagnostics (operator visibility for debugging; matches the 21 sibling `console.error` calls already in the agentdb file; matches the live `cli/src/commands/mcp.ts:76` pattern). "No logging" would discard the F-05-001 `tool:called` PII-tracing capability without addressing the actual harm (which is the JSON-RPC channel, not the logging-as-such). The PII concern is separately owned by F-05-006 (future telemetry-hardening ADR). |
+| DA | If the lint rider is the real fix, why keep the source-code changes at all? Just ship the lint and let it fail until someone touches each site. | amend | **REJECTED** — the source changes are the actionable fix (immediate); the lint is the regression guard (prevents the next slip). Ship both. This is the [[ADR-0215]] golden-master shape: cleanup + gate, not gate-only. |
+
+### Devil's Advocate final position
+
+**Holds principled dissent on the "stderr is also a risk" framing** — acknowledges the
+panel's vote on Option A + lint rider is correct for the immediate fix, but flags for the
+record that a future high-volume operator could still see stderr-pipe pressure. Notes this
+is a separate observability concern (rate-limiting, log-level discipline) outside CT-G
+scope. Does NOT block the Decision. Withdraws on the "no-logging" form of the argument
+(panel rationale persuasive: operator visibility + sibling-call convention + non-frame-side
+of ADR-0226 win).
+
+### Improvements adopted
+
+1. **Source-shape Confirmation clause narrowed** to `agentdb-mcp-server.ts` specifically
+   (the file contains the single stdout-corruption site; the surrounding directory has
+   legitimate non-MCP `console.log` calls).
+2. **Implementation-step note added**: the lint rider creates a new ESLint config under
+   `forks/agentdb/` (and conditional `forks/ruflo/v3/mcp/` per CT-F outcome) since neither
+   exists today; cost is small but the ADR was silent on it.
+3. **Forward-pointer added**: a future `writeLog` helper extending ADR-0226's `writeFrame`
+   pattern is the natural shape if F-05-007's 60+ cli `console.log` calls ever want the
+   same stream-discipline (not a Decision change).
+4. **DA's principled-dissent recorded** on stderr-pipe-pressure risk under high tool-call
+   volume — out of CT-G scope, separately owned by future observability rate-limiting.
+
+### Confirmation amendments (folded into the Decision section above)
+
+The Source-shape gate now reads:
+
+* `forks/agentdb/src/mcp/agentdb-mcp-server.ts` contains **zero** `console.log` calls
+  (scoped to this file only; the `db-unified.ts` + ~16 other agentdb cli paths' 60+
+  `console.log` calls are out of CT-G scope per F-05-007).
+* If v3/mcp/ survives CT-F: `forks/ruflo/v3/mcp/server-entry.ts` `createLogger` returns
+  object whose `info` and `debug` keys both invoke `console.error` (not `.info`/`.debug`/`.log`).
+* ESLint config at `forks/agentdb/.eslintrc*` (new) and `forks/ruflo/v3/mcp/.eslintrc*` (new,
+  conditional on CT-F keep) declares the `no-console` rule with `allow: ['error', 'warn']`.
