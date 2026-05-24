@@ -480,3 +480,134 @@ shipping a no-op.
   - [[feedback-commit-forks-before-release]] — implementation discipline.
 - **No INTEGRATION-LEDGER row** — fork-local Rust infra, not an upstream
   hand-port.
+
+## Amendment — 2026-05-24 (Q-1 and Q-3 verified from source)
+
+Two of the four open questions from the original proposal were
+verified against the live ruvector source. Findings change the
+implementation calculus.
+
+### Q-1 — Fisher matrix dimensional mismatch (CONFIRMED)
+
+`coordinator.rs:47-48`:
+
+```rust
+let ewc = Arc::new(RwLock::new(EwcPlusPlus::new(EwcConfig {
+    param_count: config.hidden_dim * config.base_lora_rank * 2,
+    ...
+})));
+```
+
+`ewc.rs:217-219`:
+
+```rust
+pub fn apply_constraints(&self, gradients: &[f32]) -> Vec<f32> {
+    if gradients.len() != self.config.param_count {
+        return gradients.to_vec();
+    }
+    ...
+}
+```
+
+With `base_lora_rank = 4` (default) and `micro_lora_rank ∈ {1, 2}`,
+the Fisher matrix is sized 2-4× larger than MicroLoRA's gradient
+vector. Wiring the existing `EwcPlusPlus` into `MicroLoRA::accumulate_gradient`
+naively returns `gradients.to_vec()` unchanged — a **silent no-op**.
+
+**Resolution:** Option C implementation MUST construct a **second
+`EwcPlusPlus` instance** sized `hidden_dim * micro_lora_rank * 2`
+for the micro tier. Sharing the base-tier Fisher is not viable.
+
+### Q-3 — TS per-call path passes a zero placeholder (BIGGER FINDING)
+
+`ruvllm-wasm.ts:283-289`:
+
+```ts
+adapt(quality: number, learningRate = 0.01, success = true): void {
+  const feedback = new mod.AdaptFeedbackWasm();
+  feedback.quality = quality;
+  feedback.learningRate = learningRate;
+  try { (feedback as any).success = success; } catch { /* v2.0.2 quirk */ }
+  const input = new Float32Array(Math.max(config.inputDim, MICROLORA_WASM_MIN_DIM));
+  lora.adapt(input, feedback);
+},
+```
+
+`input` is a fresh `Float32Array` with no values written — every
+element is `0.0`.
+
+`crates/ruvllm-wasm/src/micro_lora.rs:341-373`:
+
+```rust
+fn accumulate_gradient(&mut self, input: &[f32], quality: f32) {
+    // intermediate[r] = sum of input[i] * lora_a[i*rank+r] over i
+    // grad_b[idx] += intermediate[r] * reward * scaling * 0.01
+    // grad_a[idx] += input[i] * reward * scaling * 0.01
+    ...
+}
+```
+
+When `input` is all-zero:
+
+- `intermediate[r] = 0` for all r → `grad_b` not updated
+- `grad_a[idx] += 0 * reward * scaling * 0.01 = 0` → `grad_a` not updated
+
+**The TS-side per-call `adapt()` is currently a no-op end-to-end.**
+The quality feedback is consumed but produces zero gradient because
+the input vector is zero. Whether EWC++ is wired in or not is
+**moot for this path** — there is no meaningful gradient to
+constrain.
+
+### What this means for the implementation
+
+The proposed Option C (Hybrid) is **still the right call** —
+arguably more so given Q-3:
+
+- Per-call accumulates without EWC++ ✓ (and currently
+  accumulates *nothing* because input is zero, so EWC would be
+  applied to a zero gradient).
+- Background applies EWC++ to accumulated state ✓ (this is where
+  real adaptation happens via `coordinator.rs:60-65` ->
+  `BackgroundLoop` -> `lora.rs:459 accumulate_micro`).
+- Q-1's second EWC instance is needed if/when the background's
+  micro tier becomes the consumer.
+
+BUT — Option C's primary value (catastrophic-forgetting protection
+on per-call adapts) **cannot be delivered until Q-3 is fixed**.
+The per-call path needs either:
+
+  (a) Receive the actual input context the adapt is targeting,
+      not a zero placeholder. This means restructuring the TS API
+      to take an `input: Float32Array` parameter on `adapt()`.
+      Caller obligation.
+  (b) Be renamed/redocumented as "register quality feedback for
+      later batch processing" — honest about its actual semantics
+      — and the EWC++ wiring deferred until (a) is the chosen
+      remediation path.
+
+### Revised recommendation
+
+**Defer Option C implementation** until **Q-3 is independently
+resolved** — i.e. until a separate ADR addresses the TS per-call
+adapt's zero-input issue. Wiring EWC++ onto a path that produces
+zero gradients adds machinery for no behaviour change; it's
+performance overhead without correctness gain.
+
+Once Q-3 is resolved (path either takes real input OR is renamed
+to honest semantics), Option C can be implemented with Q-1's
+second EwcPlusPlus instance.
+
+**Q-2 (WASM artefact EWC availability) and Q-4 (ADR-0193
+alignment) remain open** — investigation deferred to the
+implementation session.
+
+### Status update
+
+ADR-0228 stays `proposed`. The implementation path is clearer
+(Option C with a second EWC instance for the micro tier), but
+the prerequisite (Q-3 resolution: TS path receives real input)
+is its own work item outside this ADR's scope. The TS placeholder
+finding (Q-3) should be tracked as a separate audit follow-up —
+it predates this ADR and isn't fixed by Option C's wiring.
+
+No code change in this amendment — pure research findings. Doc-only.
