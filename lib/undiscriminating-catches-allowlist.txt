@@ -117,6 +117,7 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts :: catch { /* already gone */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/daa-tools.ts :: catch { // Return empty store }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { /* ignore */ }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { /* loader unavailable — runtime.source stays null */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { /* not installed */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { // Fall through to fallback }
 ../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch { // Return null on error }
@@ -209,8 +210,7 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* surface via "available: false" below */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { /* surface via empty list below */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Adaptive threshold is advisory — fall through to the caller's // threshold (or 0.3 default). The dispatched handler still gates // results against this value. }
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Config resolution unavailable -- storage will use its own defaults }
-../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Embedding pipeline init failed -- hash fallback will be used }
+../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Config resolution unavailable -- storage will use its own defaults. // Embedding pipeline init below also short-circuits in this branch. }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Fall through to routeMemoryOp fallback }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // Re-read non-fatal — the dispatch already succeeded. Envelope // just lacks the embedding-metadata fields in that case. }
 ../forks/ruflo/v3/@claude-flow/cli/src/memory/memory-router.ts :: catch { // WASMVectorSearch instantiation failed — non-fatal }
@@ -224,28 +224,19 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts :: catch { /* already freed */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts :: catch { /* best-effort */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts :: catch { // Backend failed, skip }
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts :: catch { // Fall through }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/enhanced-model-router.ts :: catch { // AST analysis not available, continue with text-based routing }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts :: catch { // Directory not readable, skip }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/graph-analyzer.ts :: catch { // File not readable, skip }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts :: catch { /* fall through to JS fallback */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts :: catch { /* return false below */ }
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/lora-adapter.ts :: catch { /* use fallback */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts :: catch { // Ignore load errors }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/model-router.ts :: catch { // Ignore save errors in non-critical scenarios }
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/q-learning-router.ts :: catch { /* use fallback */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts :: catch { /* v2.0.2 quirk */ }
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Fall back to JS implementation }
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Fall back to hash-based embedding }
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Fall back to simple implementation }
-../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Silently fail - ruvector is optional }
+../forks/ruflo/v3/@claude-flow/cli/src/ruvector/vector-db.ts :: catch { // Pure-JS cosine is mathematically equivalent; keep this path. }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/claim-service.ts :: catch { // Label might not exist }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/claim-service.ts :: catch { // Start fresh if file is corrupted }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/config-file-manager.ts :: catch { /* not JSON, use as string */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/container-worker-pool.ts :: catch { // Ignore removal errors }
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts :: catch { /* ignore */ }
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts :: catch { /* socket closed */ }
-../forks/ruflo/v3/@claude-flow/cli/src/services/daemon-ipc.ts :: catch { // Non-fatal on platforms that don't support chmod on sockets }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { /* already dead */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { /* best-effort */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { /* entire cleanup is best-effort */ }
@@ -254,7 +245,6 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { // Skip unreadable files }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/headless-worker-executor.ts :: catch { // stdin already closed (e.g. spawn failed) — `error` handler below // will surface the real cause. }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/registry-api.ts :: catch { // Non-critical, don't throw }
-../forks/ruflo/v3/@claude-flow/cli/src/services/ruvector-training.ts :: catch { /* use fallback */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/ruvector-training.ts :: catch { // Mining not available, continue without it }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* best-effort */ }
 ../forks/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts :: catch { /* ignore */ }
@@ -272,3 +262,4 @@
 ../forks/ruflo/v3/@claude-flow/cli/src/transfer/store/discovery.ts :: catch { // GCS not available }
 ../forks/ruflo/v3/@claude-flow/cli/src/update/executor.ts :: catch { // Corrupted file }
 ../forks/ruflo/v3/@claude-flow/cli/src/update/rate-limiter.ts :: catch { // Corrupted file, reset }
+../forks/ruflo/v3/@claude-flow/cli/src/utils/bounded-lru.ts :: catch { // dispose is best-effort during eviction — do not propagate. }
