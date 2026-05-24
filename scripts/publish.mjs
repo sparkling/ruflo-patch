@@ -111,8 +111,23 @@ function savePublishedVersions(versions) {
  *   anti-pattern. Throwing on unresolvable duplicates surfaces the
  *   defect at release time, not at the next runtime install failure.
  */
-export function buildPackageMap(buildDir) {
+export function buildPackageMap(buildDir, opts = {}) {
   const map = new Map();
+  // Pre-compute the set of publishable names. The walker only considers
+  // package.json files whose `name` appears in this set; all others are
+  // intentional-internal (helper packages, examples, benchmarks, unscoped
+  // agentic-flow sub-packages) and shouldn't be collision candidates.
+  //
+  // Default: `new Set(LEVELS.flat())` (production behavior).
+  // `null` opt-out: tests using synthetic names that aren't in LEVELS
+  //   (e.g., `@scope/foo`) should pass `{ publishableNames: null }` to
+  //   disable filtering and exercise the duplicate-resolution logic with
+  //   their own fixtures. The existing fixtures rely on this for the
+  //   ADR-0231 wave A9 regression test and the tie-breaker coverage.
+  const _publishableNamesSet =
+    opts.publishableNames === null
+      ? null
+      : opts.publishableNames ?? new Set(LEVELS.flat());
   // Match `/<name>/` anywhere OR `/<name>` at end of path. The old
   // implementation used `/npm/`-style substrings with trailing slashes,
   // which silently MISSED terminal directories (`/pkg` was not detected
@@ -181,6 +196,10 @@ export function buildPackageMap(buildDir) {
           continue;
         }
         if (!pkg.name) continue;
+
+        // LEVELS-aware filter (skipped when opt-out is passed for tests).
+        // See buildPackageMap header for rationale.
+        if (_publishableNamesSet !== null && !_publishableNamesSet.has(pkg.name)) continue;
 
         const existing = map.get(pkg.name);
         if (!existing) {

@@ -43,7 +43,7 @@ describe('buildPackageMap — duplicate-name resolution', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'bpm-single-'));
     try {
       const dir = writePkg(tmp, 'pkgs/foo', '@scope/foo');
-      const map = buildPackageMap(tmp);
+      const map = buildPackageMap(tmp, { publishableNames: null });
       assert.equal(map.get('@scope/foo'), dir);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -55,7 +55,7 @@ describe('buildPackageMap — duplicate-name resolution', () => {
     try {
       const privDir = writePkg(tmp, 'root', '@scope/foo', { private: true });
       const pubDir = writePkg(tmp, 'npm/packages/foo', '@scope/foo');
-      const map = buildPackageMap(tmp);
+      const map = buildPackageMap(tmp, { publishableNames: null });
       assert.equal(map.get('@scope/foo'), pubDir, 'non-private should win');
       assert.notEqual(map.get('@scope/foo'), privDir);
     } finally {
@@ -72,7 +72,7 @@ describe('buildPackageMap — duplicate-name resolution', () => {
       // /pkg directories).
       const canonicalDir = writePkg(tmp, 'root', '@scope/foo');
       writePkg(tmp, 'root/pkg', '@scope/foo');
-      const map = buildPackageMap(tmp);
+      const map = buildPackageMap(tmp, { publishableNames: null });
       assert.equal(map.get('@scope/foo'), canonicalDir, 'non-subdir should win');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -90,7 +90,7 @@ describe('buildPackageMap — duplicate-name resolution', () => {
       // entry exists — it should still be discoverable so the
       // package isn't silently dropped from publication.
       const onlyDir = writePkg(tmp, 'standalone/pkg', '@scope/only-here');
-      const map = buildPackageMap(tmp);
+      const map = buildPackageMap(tmp, { publishableNames: null });
       assert.equal(map.get('@scope/only-here'), onlyDir);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -110,7 +110,7 @@ describe('buildPackageMap — duplicate-name resolution', () => {
       writePkg(tmp, 'npm/packages/ruvllm-wasm', '@scope/ruvllm-wasm');
 
       assert.throws(
-        () => buildPackageMap(tmp),
+        () => buildPackageMap(tmp, { publishableNames: null }),
         (err) => {
           assert.match(err.message, /duplicate publishable package name '@scope\/ruvllm-wasm'/);
           assert.match(err.message, /crates\/ruvllm-wasm\/pkg/);
@@ -132,7 +132,7 @@ describe('buildPackageMap — duplicate-name resolution', () => {
       writePkg(tmp, 'packageA', '@scope/foo');
       writePkg(tmp, 'packageB', '@scope/foo');
       assert.throws(
-        () => buildPackageMap(tmp),
+        () => buildPackageMap(tmp, { publishableNames: null }),
         /duplicate publishable package name '@scope\/foo'/,
       );
     } finally {
