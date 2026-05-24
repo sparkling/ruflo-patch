@@ -22,9 +22,15 @@ run_codemod() {
   # ADR-0162 follow-up: after rename, link workspace-internal @sparkleideas/*
   # deps so test-ci can resolve runtime bare specifiers (e.g.
   # cli/dist/src/output.js → @sparkleideas/cli-core/output) without
-  # needing pnpm install. Externals (rabitq-wasm, agentdb, etc.) resolve
-  # from Verdaccio at acceptance.
+  # needing pnpm install. @sparkleideas/* externals (rabitq-wasm, agentdb,
+  # etc.) resolve from Verdaccio at acceptance.
   node "${SCRIPT_DIR}/codemod-symlink-workspace.mjs" "${TEMP_DIR}"
+  # ADR-0231 outstanding follow-up: install third-party (unscoped + non-
+  # @sparkleideas/, non-@claude-flow/) runtime deps so test-ci can resolve
+  # `import 'zod'`/`import 'sql.js'`/etc. from compiled dist files. Without
+  # this step, test-ci fails with ERR_MODULE_NOT_FOUND on any dist file
+  # that imports a third-party bare specifier.
+  node "${SCRIPT_DIR}/install-runtime-externals.mjs" "${TEMP_DIR}"
 }
 
 run_build() {
