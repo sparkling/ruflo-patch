@@ -323,3 +323,91 @@ The lint asserts pairwise:
 * `feedback-remediation-adr-preflight` — the checklist itself.
 * [[ADR-0215]] — codemod golden-master, the analogous test-gate for codemod output drift.
 * [[ADR-0095]] §amendment 2026-05-23 — sibling ADR that removed the pure-TS fallback; same "fail-loud over silent fallback" idiom.
+
+## Swarm review (2026-05-24)
+
+**Status**: proposed (post-swarm-review)
+**Swarm**: 4 experts + devil's advocate, Weighted consensus (queen vote ×3 per `byzantine.ts` weighted scheme; denominator `(N-1)+3 = 6`; queen-led — pipeline owner authority), hierarchical topology, tactical queen, queen-composed transport
+**Triage rank**: 8 (per [[ADR-0233]] §Decision; wave 3 of 5)
+
+### Panel composition
+
+* Expert 1 — Pipeline-script specialist (5 registries inventory)
+* Expert 2 — ADR-0231 wave-A9 archeologist
+* Expert 3 — Lint-DX specialist
+* Expert 4 — Single-source-of-truth advocate
+* Devil's Advocate — "Lint is theatre — single-source is the only real fix"; "Pipeline-start gate-0 will reject mid-release; need a softer warn-only first cycle"
+
+### Upstream intent
+
+**Confirmed zero merge tax.** `ls /Users/henrik/source/ruvnet/ruflo/scripts/` returns 13 audit/install/witness scripts (`audit-cli-mcp-tools.mjs`, `cleanup-v3.sh`, `install.sh`, `inventory-capabilities.mjs`, `sign-witness-from-inventory.mjs`, etc.). **None publish/fork-version/codemod/build-package equivalents.** `ls /Users/henrik/source/ruvnet/ruflo/lib/` returns "No such file or directory" — upstream has no `lib/` tree at all. The 5 registry sites this ADR targets (`fork-version.mjs::SCOPES`+`UNSCOPED_PUBLISHABLE`, `codemod.mjs::UNSCOPED_MAP`, `build-packages.sh::_v3_packages`, `preflight-discover.mjs::isInScope`, `codemod-symlink-workspace.mjs::EXTRA_WORKSPACE_DIRS`) are wholly fork-only infrastructure per `[[reference-pipeline-publish-paths]]`. Pre-flight #2 ("upstream hasn't already decided it") clears unambiguously — no merge-tax shape; the lint script + 5 registry edits never see upstream.
+
+### Live-drift verification
+
+`grep -n "agentic-jujutsu" scripts/fork-version.mjs scripts/codemod.mjs` confirms the audit claim:
+* `scripts/codemod.mjs:53` — `'agentic-jujutsu': '@sparkleideas/agentic-jujutsu'` (present in `UNSCOPED_MAP`).
+* `scripts/fork-version.mjs:49-58` — `UNSCOPED_PUBLISHABLE = new Set([...])` — 8 entries, NONE is `agentic-jujutsu` (`agentdb`, `agentic-flow`, `claude-flow`, `ruv-swarm`, `ruvector`, `agent-booster`, `agentdb-onnx`, `cuda-wasm`).
+* `forks/agentic-flow/packages/agentic-jujutsu/package.json` exists — `"name": "agentic-jujutsu"`, `"version": "2.3.6"`, real publishable package.
+
+Conclusion: `agentic-jujutsu` is the today-live drift the ADR cites. fork-version's bumpAll silently no-ops the `-patch.N` bookkeeping for it because `findPackages` walks past the unscoped name (matches no `SCOPES.startsWith` AND not in `UNSCOPED_PUBLISHABLE`). Same exact shape as ADR-0231 wave-A9 defect 1 (`UNSCOPED_PUBLISHABLE` missed `ruvllm-wasm`), one fork-package down the road.
+
+### ADR-180+ intent
+
+* **[[ADR-0231]] wave A9** — defect-class origin. The eighth amendment (2026-05-24) fixed `publish.mjs::buildPackageMap` with the fail-loud-on-duplicate-name idiom; "Lessons for the corpus" #2 names this ADR's exact remit ("`findPackages` SCOPES is the publishability allowlist. Unscoped names need `UNSCOPED_PUBLISHABLE` entry OR (cleaner) scope-rename to match sibling convention") but no enforcement gate was added. ADR-0236 is the systematic follow-up that turns the lesson into a release gate.
+* **[[ADR-0215]]** — codemod golden-master as model for the lint-as-gate approach. Same shape: cheap read-only check at pipeline start, fail-loud on drift, no `UPDATE_GOLDEN`-style operator-accept path.
+* **[[ADR-0245]] (CT-L sibling)** — adjacent pipeline-lint ADR on the same audit slice. CT-L's R3 refinement (`lib/fork-paths.mjs` node-importable single-source for path defaults) is the same "single source of truth at pipeline-script level" pattern. The two ADRs compose: CT-C covers name-registry drift, CT-L covers path-default drift; both ship lints that gate the same `ruflo-publish.sh` entrypoint.
+* **[[ADR-0193]] (autopilot completion)** — kinship via `feedback-no-fallbacks`: the lint is a hard gate (no fallback), not a "consider these warnings" surface.
+* **[[ADR-0210]] (stub-honesty mandate)** — not in conflict; ADR-0236 is a real pipeline gate, not a wire-or-remove surface decision.
+* **[[ADR-0201]] §Remediation-ADR pre-flight checklist** — all four checks pass per §"Pre-flight verification" above.
+
+### Critique outcomes
+
+| Expert | Critique | Vote | Adopted? |
+|---|---|---|---|
+| E1 (Pipeline-script) | Sites table row 3 (`build-packages.sh::_v3_packages`) lists 22 entries from the bash literal at `:187-191`. The inline JS filter at `:200-205` ALSO declares its own v3 set, redundantly. Both must be the same set; today (verified) they match, but the lint should assert pairwise equality between bash literal AND inline JS filter (intra-file drift, not just cross-file). | amend | **ADOPTED** — append intra-file check #6 to the Sites-table pairwise list: "`build-packages.sh::_v3_packages` bash literal MUST equal the inline JS `v3set` at `:200-205`". Cheap (one extra parse pass), closes the same-file drift class. |
+| E1 (Pipeline-script) | Step 3 ("add gate-0 call in `ruflo-publish.sh`") doesn't specify WHERE in the script. The script has phase markers (Phase 0, 1, 2…); the lint must run BEFORE `bump_fork_versions` (Phase 1) and BEFORE any codemod pass. Suggest an explicit "Phase 0.5" or "Phase 0" subsection so the placement is unambiguous. | amend | **ADOPTED** — step 3 now reads "add gate-0 call as the FIRST executable line after `set -euo pipefail` + `lib/*` sourcing in `ruflo-publish.sh`, before Phase 0 (the existing `verify_fork_branches` step)". Fail-fast: drift caught before any pipeline state change. |
+| E2 (Wave-A9 archeologist) | The wave-A9 amendment's "Lessons for the corpus" #2 explicitly leaves the trade-off open between "lint" and "scope-rename to match sibling convention". This ADR picks lint; it should explicitly acknowledge the scope-rename alternative was considered. The unscoped names (`ruflo`, `agentic-jujutsu`, `ruvllm-wasm`, 6 platform binaries) exist because the upstream tooling (napi-rs, wasm-pack) generates unscoped names — rename-at-source would require fork-side hand-edit of generated files on every regeneration. Lint is the right call but the rationale should be in the ADR. | amend | **ADOPTED** — append note to Decision §"Option A" rationale: "scope-rename-at-source (the wave-A9 lesson #2 alternative) was considered but rejected because 6 of the 11 drift-prone unscoped names (`ruvector-core-*-{darwin,linux,win32}-*`, `ruvector-attention-{wasm,unified-wasm}`, `ruvllm-wasm`) come from `napi-rs`/`wasm-pack` generated package.json files; renaming at source would require hand-editing or post-processing every wasm-pack rebuild. Lint catches the drift without touching the generator output." |
+| E2 (Wave-A9 archeologist) | The ADR's "Concrete steps" #4 says the test asserts current state passes EXCEPT for the `agentic-jujutsu` drift. The fix lands in the same commit. But the test commit-order matters: if the test ships first (RED) and the fix ships next (GREEN), that's TDD. If both in one commit, intent is lost. Prefer 2-commit sequence: (a) test added, fails red on the live drift; (b) fix added (`agentic-jujutsu` entry in `UNSCOPED_PUBLISHABLE`), test passes green. | amend | **ADOPTED** — step 4 amended to require 2-commit sequence: commit-1 lands the lint script + test asserting current-state drift (RED on `agentic-jujutsu` miss), commit-2 lands the `UNSCOPED_PUBLISHABLE` fix making it GREEN. TDD discipline; ALSO surfaces the drift in git history so future audits can grep for the fix. |
+| E3 (Lint-DX) | Gate-0 fail-loud is the right shape, but the error message format matters. Today, `publish.mjs::buildPackageMap`'s fail-loud cites BOTH paths (per ADR-0231 wave-A9 §"Fix" bullet 3). The lint should match: every mismatch cites the offending registry (file:line) AND the registry it should agree with (file:line) AND the corpus rule (`feedback-no-fallbacks` + the wave-A9 lesson #2 quoted). A developer hitting the gate at release time should be able to fix it from the error message alone, without re-reading the ADR. | amend | **ADOPTED** — append to step 2 the error-message contract: "Every fail-loud message MUST cite (a) the offending registry's file:line + symbol, (b) the registry it should agree with (file:line + symbol), (c) the suggested fix (either 'add to UNSCOPED_PUBLISHABLE' or 'remove from UNSCOPED_MAP'), (d) the corpus rule citation (`feedback-no-fallbacks` + ADR-0231 wave-A9 §Lesson #2)." Lint failure is self-resolving from the message. |
+| E4 (Single-source advocate) | Option B (single source-of-truth JSON) is technically correct but the ADR's deferral to "if drift fires >2 times in 90 days" is too lenient. The drift has ALREADY fired twice in the recorded corpus history: ADR-0231 wave-A9 defect 1 (`ruvllm-wasm` miss) and today's live drift (`agentic-jujutsu` miss). The threshold is already met TODAY. Should commit Option B as a near-term follow-up (next release cycle or two), not a hypothetical future. | amend | **ADOPTED (with queen scope-control)** — append to Decision §"Defer option B" a fixed re-evaluation trigger: "Option B re-evaluation is scheduled for the NEXT remediation pass (CT-C round 2), not the 90-day window. The two recorded drift instances (wave A9 + today's `agentic-jujutsu`) meet the implicit threshold. Option A ships first to close the immediate hole; Option B follows as a documented next-step ADR, NOT a hypothetical." Queen authority (Weighted-vote pipeline-owner) commits to follow-up cadence without forcing a single-commit big-bang. |
+| DA (hook 1) | "Lint is theatre — single-source is the only real fix." Lint adds infrastructure without removing duplication; the 5 registries persist, and the lint becomes the 6th place to update on every new fork package. The cure adds to the disease. | amend | **REJECTED (with the partial concession to E4 above)** — lint is the FIRST step, not the only step. The ADR explicitly defers Option B as the structural follow-up; queen's amendment to E4 commits the next-pass schedule. Per `feedback-no-fallbacks`, the lint is a hard gate — once it catches the today-live `agentic-jujutsu` drift and produces a self-resolving error message, the operator burden is bounded. The "lint becomes the 6th place to update" framing collapses under the structural follow-up commitment: by the time the next pkg lands, Option B's single-source JSON should be the only edit site. Hook 1 was the strongest argument in the panel, but the partial concession to E4 disarms it. |
+| DA (hook 2) | "Pipeline-start gate-0 will reject mid-release; need a softer warn-only first cycle to surface false-positives before fail-loud." A hard gate at gate-0 on a previously-untested invariant risks blocking a green release on day-1 for a drift the lint hadn't catalogued correctly. Suggest 1-cycle warn-only soak. | amend | **REJECTED** — the lint's logic is read-only enumeration with pairwise set-comparison; no I/O hazards, no flakiness shape. The today-live `agentic-jujutsu` drift IS the only failure expected on day-1, and the fix-commit ships in the same PR (per E2 critique adoption). False-positive risk is structurally low. Per `feedback-no-fallbacks`, soft-warn-then-fail is the precise anti-pattern the ADR rejects (`publish.mjs::buildPackageMap` ALSO shipped as hard-fail on day-one without a warn-soak — wave A9 amendment §Fix). One additional safety: per step 4's TDD discipline, the lint script + test ship in commit-1 BEFORE the fix in commit-2 — so the lint is functionally verified against real drift before the gate-0 wiring lands in the publish path. |
+
+### Devil's Advocate final position
+
+**WITHDRAWS** principled dissent on hook 2 (gate-0 softness) — accepts that the lint's read-only nature + the 2-commit TDD sequence (E2 adoption) provide adequate day-1 safety without a warn-only soak. **HOLDS** principled dissent on hook 1 (lint-is-theatre) but acknowledges the queen's commitment to schedule Option B as the next-pass remediation (E4 adoption) materially weakens the "infrastructure-without-removal" framing. DA explicitly notes: if the 90-day window passes with `agentic-jujutsu` as the only drift caught, queen MUST follow through on Option B regardless of lint-fire frequency — the structural fix is owed for the audit's "5 registries" finding even if the lint stays quiet. Recorded as a soft commitment from the queen, NOT a Decision change. Does NOT block adoption.
+
+### Weighted vote tally
+
+Per `byzantine.ts` weighted scheme (queen ×3; N=5 voters total → denominator `(N-1)+3 = 4+3 = 7`):
+
+| Voter | Vote | Weight | Weighted contribution |
+|---|---|---|---|
+| Queen (pipeline owner) | YES | 3 | +3 |
+| E1 (Pipeline-script) | YES | 1 | +1 |
+| E2 (Wave-A9 archeologist) | YES | 1 | +1 |
+| E3 (Lint-DX) | YES | 1 | +1 |
+| E4 (Single-source advocate) | YES (with adopted scope-control) | 1 | +1 |
+| DA | HOLD (no vote; principled dissent on hook 1 acknowledged) | 0 | 0 |
+
+**Approval threshold**: queen-led Weighted requires queen (+3) AND ≥2 supporting experts (+2). **Achieved**: queen + 4 experts = +7/7 weighted approval. Decision **ADOPTED** with 6 refinements (E1-a, E1-b, E2-a, E2-b, E3, E4) and DA's hook-1 dissent recorded for the structural follow-up.
+
+### Refinements applied
+
+| # | Source | Refinement |
+|---|--------|-----------|
+| R1 | E1-a | Sites-table pairwise check #6 added: `build-packages.sh::_v3_packages` bash literal MUST equal the inline JS `v3set` at `:200-205` (intra-file drift). |
+| R2 | E1-b | Step 3 placement made unambiguous: gate-0 = FIRST executable line after `set -euo pipefail` + `lib/*` sourcing in `ruflo-publish.sh`, before Phase 0's `verify_fork_branches`. |
+| R3 | E2-a | Decision §"Option A" rationale appended: scope-rename-at-source (wave-A9 lesson #2 alternative) was considered but rejected because 6 of 11 drift-prone unscoped names come from `napi-rs`/`wasm-pack` generated `package.json` files. |
+| R4 | E2-b | Step 4 amended to 2-commit TDD sequence: commit-1 lands lint + test (RED on `agentic-jujutsu`); commit-2 lands the `UNSCOPED_PUBLISHABLE` fix (GREEN). Drift surfaces in git history. |
+| R5 | E3 | Step 2 error-message contract: cite (a) offending registry, (b) registry to agree with, (c) suggested fix, (d) corpus rule citation. Self-resolving without ADR re-read. |
+| R6 | E4 | Option B re-eval moved from "if drift fires >2 in 90 days" to "next remediation pass — CT-C round 2"; threshold already met. Queen commits to follow-up cadence as soft commitment. |
+| R7 | Queen | INTEGRATION-LEDGER discipline — no row needed (fork-local pipeline infrastructure, no upstream hand-port). Explicitly noted per `[[feedback-update-integration-ledger]]` to prevent the "missing-row" audit at next sync. |
+| R8 | DA (recorded) | DA's hook-1 principled dissent retained as a release-gate forcing function: if `agentic-jujutsu` is the only drift the lint catches in the first 90 days, queen still owes Option B at the next pass regardless of lint-fire frequency. |
+
+### Top risk + mitigation
+
+* **Risk**: same shape ADR-0240 and ADR-0245 identified (lint-without-acceptance-check) — the lint script exists, but no pipeline step actually invokes it, so the next slip slips again. Worse here than CT-G/CT-L because the lint runs at gate-0 of `ruflo-publish.sh`, which is itself the canonical pipeline entrypoint — if the gate-0 invocation regresses (someone moves the lint call below Phase 0 or comments it out during debugging), the lint silently de-activates. Pre-flight #1 trap shape ("signal reaches audience").
+* **Mitigation**: per ADR-0240's accepted shape — register the lint as an acceptance-tier check (not just `ruflo-publish.sh` invocation). The acceptance check boots `bash scripts/ruflo-publish.sh --dry-run` (or equivalent gate-0-only invocation), confirms the lint ran (greppable log line "lint-scope-registries: PASS" or "FAIL"), AND independently invokes `node scripts/lint-scope-registries.mjs` against current state. Belt + braces: gate-0 catches the operator at release time; acceptance check catches the gate-0 regression itself. Matches the [[ADR-0215]] golden-master pattern and the CT-G/CT-L mitigations.
+* **Secondary risk**: the 2-commit TDD sequence (R4) requires discipline at fix-commit time — if the developer squashes commits before merge, the RED-GREEN history collapses. **Mitigation**: per `[[feedback-no-history-squash]]`, the project already forbids squash-to-clean-up; this risk is structurally bounded.
+

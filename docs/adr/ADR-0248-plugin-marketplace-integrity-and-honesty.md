@@ -570,3 +570,192 @@ Acceptance criteria after this ADR lands:
   * New lint: `ruflo-patch/tests/pipeline/plugin-marketplace-integrity.test.mjs`
     (4 assertions: tool-ref resolution, surface non-empty, hook brand,
     forbidden-string reuse).
+
+## Swarm review (2026-05-24)
+
+**Pattern**: P4 Review Hive. **Consensus**: Quorum-majority per-plugin
+(≥4/6). **Queen**: strategic. **Topology**: mesh. **Panel**: 5 experts + 1
+DA. **Transport**: queen-composed (one-round dialectic; workers
+independent; queen synthesised from return values).
+
+### Panel composition
+
+- **E1** — Plugin-marketplace architect (`marketplace.json` git-source
+  pattern; service-method model per [[ADR-0117]] §Revision 2026-05-03)
+- **E2** — MCP tool-registration specialist (ADR-0117 namespace; how
+  plugin `mcp__ruflo__*` refs resolve against the central cli registry)
+- **E3** — Plugin-publish lifecycle specialist (Verdaccio vs unpublished;
+  what "DOA on install" means for `claude plugin install` users)
+- **E4** — Hand-edit vs codemod-scope specialist (Pass 5 reaches build
+  temp, not marketplace source — the CT-O cross-bonus note in
+  [[ADR-0233]])
+- **E5** — Brand-rebrand archeologist ([[ADR-0143]] lineage; F-07-004
+  brand drift in plugin hooks)
+- **DA** — Devil's Advocate (challenges direction with two hooks: "delete
+  both code-shipping plugins entirely"; "marketplace integrity lint is
+  theatre")
+
+### Upstream intent
+
+**Three of the ADR's "ALIGNED-WITH-FORK" claims are wrong**; live `git
+ls` + `grep` against `/Users/henrik/source/ruvnet/ruflo/plugins/`
+re-derived during this review:
+
+1. **F-07-001 / F-07-005 upstream status — FORK-ONLY, not aligned.** The
+   ADR claims `ruvnet/ruflo` ships `plugins/ruflo-graph-intelligence/`.
+   Verified: `ls ruvnet/ruflo/plugins/` returns 33 directories, none
+   named `ruflo-graph-intelligence`. The plugin is a **fork-only
+   creation**. Cluster A pre-flight check #2 ("ALIGNED-WITH-FORK") is
+   structurally false. Disposition direction unchanged (delete-preferred
+   still correct under [[ADR-0210]] stub-honesty), but the divergence
+   rationale must be rewritten: "deleting a fork-only DOA plugin" is
+   strictly less divergent than the ADR currently frames it.
+2. **F-07-004 upstream status — UPSTREAM ALREADY SOLVED, fork
+   regressed.** The ADR claims upstream `ruvnet/ruflo/plugins/
+   ruflo-core/hooks/hooks.json` carries the same `claude-flow@alpha`
+   invocations. Verified: `grep -c "claude-flow@alpha"` against
+   upstream = **0**. Upstream uses a **`scripts/ruflo-hook.sh`
+   resilient shim** with `${CLAUDE_PLUGIN_ROOT}` substitution; the
+   file's `_note` field explicitly forbids reverting to bare
+   `npx <pkg>@alpha hooks`. The fork's `hooks.json` is the
+   **stale/regressed copy**; the upstream shim solution is
+   structurally superior to ADR-0248's proposed hand-edit substitution
+   (`claude-flow@alpha` → `@sparkleideas/cli@latest`). The fork should
+   adopt upstream's shim instead.
+3. **F-07-002 — CORRECTLY aligned.** Both fork and upstream carry the
+   same `embeddings_rabitq_*` phantom refs in
+   `plugins/ruflo-agentdb/skills/vector-search/SKILL.md` (only diff is
+   the `mcp__claude-flow__` → `mcp__ruflo__` rebrand prefix). The ADR's
+   Cluster B claim is verified.
+
+**Brand-drift count — ADR text wrong.** The Decision table and
+Confirmation criterion for F-07-004 state "5 occurrences total" /
+"5 lines". `grep -c "claude-flow@alpha"
+forks/ruflo/plugins/ruflo-core/hooks/hooks.json` = **3** (lines 9, 18,
+48). The "5" figure is wrong by a factor of 1.67×. Implementer guidance
+needs the correct count or the count claim must be dropped.
+
+### ADR-180+ alignment
+
+[[ADR-0210]]'s "implement, restore, or delete — not label" mandate is
+the governing principle for F-07-001 and F-07-002; ADR-0248 applies it
+faithfully. [[ADR-0117]] §Revision 2026-05-03 service-method design is
+the structural premise — every plugin composes against the single
+init-registered `ruflo` MCP server; F-07-001's preferred disposition
+(delete) honours this by removing the only non-conforming plugin.
+[[ADR-0235]]'s content-invariant lint pattern is the proximate template
+for ADR-0248's marketplace integrity lint. [[ADR-0238]] (CT-E) covers
+wire-or-remove for **central** `cli/src/mcp-tools/*.ts` surfaces; this
+ADR's per-plugin scope is disjoint. **No sibling-ADR overlap.**
+
+### Per-plugin critique outcomes
+
+| # | Plugin | Finding | E1 | E2 | E3 | E4 | E5 | DA | Vote | Adopted? |
+|---|---|---|---|---|---|---|---|---|---|---|
+| 1 | `ruflo-graph-intelligence` | F-07-001 | DELETE | DELETE | DELETE | DELETE | DELETE | DELETE | 6/6 | **ADOPTED** (delete, not publish-and-wire) |
+| 2 | `ruflo-agentdb` | F-07-002 | REMOVE-PHANTOMS | REMOVE-PHANTOMS | REMOVE-PHANTOMS | REMOVE-PHANTOMS | REMOVE-PHANTOMS | REMOVE-PHANTOMS | 6/6 | **ADOPTED** (description-fix preferred per ADR) |
+| 3 | `ruflo-core` | F-07-004 | SHIM | SHIM | SHIM | HAND-EDIT | SHIM | SHIM | 5/6 | **AMENDED** — adopt upstream's `scripts/ruflo-hook.sh` shim instead of substituting `claude-flow@alpha` → `@sparkleideas/cli@latest` |
+| 4 | `ruflo-graph-intelligence` | F-07-005 | BUNDLED | BUNDLED | BUNDLED | BUNDLED | BUNDLED | BUNDLED | 6/6 | **ADOPTED** (closed by F-07-001 deletion) |
+| 5 | `ruflo-iot-cognitum` | F-07-006 | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | 6/6 | **ADOPTED** |
+| 5b | `ruflo-federation` | F-07-006 (sib) | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | 6/6 | **ADOPTED** |
+| 5c | `ruflo-knowledge-graph` | F-07-006 (sib) | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | 6/6 | **ADOPTED** |
+| 5d | `ruflo-market-data` | F-07-006 (sib) | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | 6/6 | **ADOPTED** |
+| 6 | `ruflo-neural-trader` | F-07-007 | REWRITE | REWRITE | REWRITE | REWRITE | REWRITE | DELETE-PLUGIN | 5/6 | **ADOPTED** (description rewrite; DA dissent recorded) |
+| 7 | `ruflo-cost-tracker` | F-07-008 | DEFER+VERIFY | DEFER+VERIFY | DEFER+VERIFY | DEFER+VERIFY | DEFER+VERIFY | INVERT-TO-NOW | 5/6 | **ADOPTED** (defer; DA dissent) |
+| 8 | `ruflo-browser` | F-07-009 | ACCEPT | ACCEPT | ACCEPT | ACCEPT | ACCEPT | ACCEPT | 6/6 | **ADOPTED** |
+| 9 | (all) | F-07-010 | DEFER | DEFER | DEFER | DEFER | DEFER | DEFER | 6/6 | **ADOPTED** |
+| — | (class-wide) | Marketplace integrity lint (Option A, 4 assertions) | KEEP | KEEP | KEEP | KEEP | KEEP | KEEP-WITH-NOTE | 6/6 | **ADOPTED** (DA's "lint is theatre" rejected; lint is regression-guard not authorship-discipline) |
+
+### Devil's Advocate final position
+
+**DA #1 — "Delete both code-shipping plugins entirely":** Withdraws on
+`ruflo-agentdb` (the phantom-tools removal preserves a real plugin with
+real registered tools). Holds **principled dissent** on `ruflo-neural-trader`:
+notes the plugin's 6 skills wrap an external CLI (`npx neural-trader`)
+without any MCP surface beyond `memory_store`, making the plugin a
+documentation-shim no thicker than `ruflo-iot-cognitum`. Records dissent
+that delete-from-marketplace is the more honest disposition than
+description-rewrite; panel rationale (skill bodies have real test
+coverage in `benchmarks/`; CLI delegation is a valid design per
+ADR-0117 service-method spirit) wins by majority but the dissent stands
+for a future audit cycle.
+
+**DA #2 — "Marketplace integrity lint is theatre; authors will work
+around it":** Withdraws. Panel rationale persuasive: the lint catches
+the F-07-002 shape directly (anyone adding `mcp__ruflo__newtool_*` to
+a skill `allowed-tools` without a matching `cli/src/mcp-tools/` entry
+trips the gate), and the lint runs at fork-source build time so
+"working around" requires bypassing CI. The lint is a regression guard,
+not an authorship-discipline mechanism. The DA's stronger form ("future
+plugin authors will paste fake refs in skill bodies, not frontmatter") is
+true but covered by assertion #1's scope (skill **body** markdown refs
+also walked, per Decision step 1).
+
+### Improvements adopted
+
+1. **F-07-001 upstream-status claim corrected** — Cluster A check #2
+   rewritten: `ruflo-graph-intelligence` is **fork-only** (no
+   `ruvnet/ruflo/plugins/ruflo-graph-intelligence/` exists). Disposition
+   (delete-preferred) unchanged; the divergence-rationale section gets
+   "deleting a fork-only DOA plugin is strictly less divergent than
+   keeping it" added.
+2. **F-07-004 disposition upgraded** — adopt upstream's
+   `scripts/ruflo-hook.sh` resilient shim pattern (verified at
+   `ruvnet/ruflo/plugins/ruflo-core/scripts/ruflo-hook.sh`) instead of
+   the ADR's `npx claude-flow@alpha` → `npx -y @sparkleideas/cli@latest`
+   substitution. The shim is structurally superior: it prefers a
+   locally-installed binary, falls back to `npx --prefer-offline`,
+   always exits 0 so install failures never block a turn, and the
+   `_note` field documents why bare `npx <pkg>@alpha hooks` must NOT be
+   reintroduced. Implementation step becomes: (a) copy
+   `ruvnet/ruflo/plugins/ruflo-core/scripts/ruflo-hook.sh` to
+   `forks/ruflo/plugins/ruflo-core/scripts/` (one new file), (b)
+   rewrite `hooks.json` to invoke
+   `"${CLAUDE_PLUGIN_ROOT}/scripts/ruflo-hook.sh" <subcmd> || true`,
+   (c) record the upstream re-sync in INTEGRATION-LEDGER as
+   `import-from-upstream` (NOT `superseded-by-local`).
+3. **F-07-004 occurrence-count corrected** — "5 occurrences total" /
+   "5 lines" in Decision row 3 and Confirmation criterion #3 corrected
+   to **3 lines** (lines 9, 18, 48 — verified by `grep -c
+   "claude-flow@alpha" forks/ruflo/plugins/ruflo-core/hooks/hooks.json`).
+4. **Lint assertion #3 narrowed** — the "plugin hook brand" assertion
+   now reads: "Every `forks/ruflo/plugins/*/hooks/hooks.json` must NOT
+   contain `claude-flow@alpha` or `npx claude-flow` unqualified by
+   `-y` + `@sparkleideas/cli@latest`. After F-07-004 adopts the shim
+   pattern, the assertion strengthens to: every hook command must
+   route through `${CLAUDE_PLUGIN_ROOT}/scripts/*.sh` rather than bare
+   `npx` — but the strengthening is deferred until the shim adoption
+   is verified at PR review (not a Decision change today)."
+5. **DA's `ruflo-neural-trader` dissent recorded** — F-07-007
+   disposition unchanged (description rewrite per Decision row 6) but a
+   dissent note added: "future audit cycle should re-examine whether
+   description rewrite is sufficient or whether the plugin should be
+   deleted from `marketplace.json` like F-07-001's preferred path".
+
+### Confirmation amendments (folded into the Decision section above via this review)
+
+The Decision table and Confirmation criteria are amended as follows
+(implementer should apply when landing the implementation commit):
+
+* **Row 3 (F-07-004)** Action column: replace "Hand-edit `hooks/hooks.json`
+  lines 9, 18, 48 (5 occurrences total per `grep -c`)" with "Adopt
+  upstream's `scripts/ruflo-hook.sh` resilient shim (copy from
+  `ruvnet/ruflo/plugins/ruflo-core/scripts/`) and rewrite `hooks.json` to
+  invoke the shim via `${CLAUDE_PLUGIN_ROOT}` substitution. 3 hook
+  commands at lines 9, 18, 48 (verified by `grep -c`)."
+* **Confirmation criterion #3 (F-07-004)**: append "AND `grep -c
+  '${CLAUDE_PLUGIN_ROOT}/scripts/ruflo-hook.sh'
+  forks/ruflo/plugins/ruflo-core/hooks/hooks.json` returns ≥3
+  (matching the 3 brand-flipped hook commands)."
+* **Cluster A check #2 (F-07-001)**: replace "ALIGNED-WITH-FORK" with
+  "FORK-ONLY (upstream `ruvnet/ruflo/plugins/` does not ship
+  `ruflo-graph-intelligence` — the plugin is a fork-only addition; the
+  delete disposition is strictly less divergent than the ADR's framing
+  implied)."
+* **Cluster C check #2 (F-07-004)**: replace "ALIGNED-WITH-FORK
+  (legitimately)" with "**UPSTREAM ALREADY SOLVED**. Upstream
+  `ruflo-core/hooks/hooks.json` carries zero `claude-flow@alpha`
+  references; the fork is the stale/regressed copy. The fix is to
+  re-adopt the upstream shim (`scripts/ruflo-hook.sh`), not to
+  substitute one bare `npx <pkg>@alpha` invocation for another."
+
