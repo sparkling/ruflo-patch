@@ -113,7 +113,9 @@ run_adr0180_gates() {
   fi
 
   # Gate 2: Charter conformance — only if archivist module exists
-  local archivist_dir="/Users/henrik/source/forks/agentdb/src/archivist"
+  # ADR-0245 §F-02-006: use FORK_DIR_AGENTDB (env-overridable) rather than
+  # the previous hard-coded /Users/henrik/source/... literal.
+  local archivist_dir="${FORK_DIR_AGENTDB}/src/archivist"
   if [[ -f "${archivist_dir}/MODULE.md" ]]; then
     if [[ -x "${SCRIPT_DIR}/check-archivist-charter.sh" ]]; then
       if ! "${SCRIPT_DIR}/check-archivist-charter.sh"; then
@@ -128,7 +130,9 @@ run_adr0180_gates() {
 
   # Gate 3: Pre-Phase-4 maintenance-commit gate — only if Phase 4 surface in flight
   if [[ -d "${archivist_dir}/handlers/hive-mind" ]]; then
-    local ruflo_v3_dir="/Users/henrik/source/forks/ruflo/v3"
+    # ADR-0245 §F-02-006: use FORK_DIR_RUFLO (env-overridable) rather than
+    # the previous hard-coded /Users/henrik/source/... literal.
+    local ruflo_v3_dir="${FORK_DIR_RUFLO}/v3"
     local maint_agents_json
     maint_agents_json=$(git -C "${ruflo_v3_dir}" log main --grep='fix(hive-mind): wrap agents.json writes in withHiveStoreLock (pre-Phase 4)' --format='%H' 2>/dev/null | head -1 || echo "")
     local maint_consensus
@@ -141,9 +145,11 @@ run_adr0180_gates() {
 
   # Gate 4: ADR-0112 retirement drift guard (per ADR-0180 Phase 10)
   # Once Phase 10 retires the ADR-0112 patterns, they must not reappear.
+  # ADR-0245 §F-02-006: use FORK_DIR_AGENTDB (env-overridable) rather than
+  # the previous hard-coded /Users/henrik/source/... literal.
   local adr0112_drift
   adr0112_drift=$(grep -rlE 'RvfNotInitializedError|MemoryNotInitializedError|requireAgentDB\(|ADR-0112 Phase 2' \
-    /Users/henrik/source/forks/agentdb/src/ 2>/dev/null \
+    "${FORK_DIR_AGENTDB}/src/" 2>/dev/null \
     | grep -vE 'ADR-0112-AUDIT\.md|MODULE\.md|archivist/index\.ts' || echo "")
   if [[ -n "$adr0112_drift" ]]; then
     log_error "ADR-0180 gate 4 FAILED: retired ADR-0112 pattern reappeared in: $adr0112_drift"
