@@ -63,6 +63,13 @@ export const UNSCOPED_PUBLISHABLE = new Set([
   'agent-booster',
   'agentdb-onnx',
   'cuda-wasm',
+  // ADR-0236 GREEN: surfaced by scripts/lint-scope-registries.mjs as
+  // a cross-registry drift — agentic-jujutsu was in codemod's UNSCOPED_MAP
+  // (since ADR-0150 follow-up) but never added here, so fork-version's
+  // bumpAll silently no-op'd its -patch.N bookkeeping. Pipeline relies on
+  // the bump for the AI-native VCS package shipped via napi-rebuild.sh +
+  // bundle-native-binaries.sh.
+  'agentic-jujutsu',
 ]);
 
 // ── Version parsing ──
