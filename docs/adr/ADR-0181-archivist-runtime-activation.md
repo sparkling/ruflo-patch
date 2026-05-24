@@ -527,3 +527,130 @@ AgentDBAdapter path from the new hybrid-tier path.
 Per ADR-0230 invariant #2, the hybrid-tier backend is exposed only
 through `MutationContext.substrate` — not at the top-level
 `@sparkleideas/memory` surface (which still excludes `HybridBackend`).
+
+## Amendment 2026-05-24 — Phase 4 scope re-verification + acceptance-wiring gap
+
+A 2026-05-24 walk of the actual Phase 4 surface against the
+2026-05-23 amendment found that **the handler-side substrate seam is
+already implemented end-to-end**. The remaining work is a
+**resolution / acceptance-wiring gap**, not a handler stub gap. This
+amendment narrows the next-session scope.
+
+### What's actually live (not stubs)
+
+The 6 handlers named in §"Execution Plan" Phase 4 are not stubs —
+they all use the capability layer and `withWrite` / `ReadContext`
+substrate seam:
+
+| Handler | File | Status |
+|---|---|---|
+| `agentdb_route` | `forks/agentdb/src/archivist/handlers/agentdb/route.ts` | Live — `requireTaskRouter()` + `requireEmbeddingScorer()` + `withWrite` |
+| `agentdb_pattern_search` | `.../handlers/agentdb/pattern-search.ts` | Live — `registerReadHandler`, uses `PatternReader` capability |
+| `agentdb_reflexion_retrieve` | `.../handlers/agentdb/reflexion-retrieve.ts` | Live — `registerReadHandler` |
+| `agentdb_skill_search` | `.../handlers/agentdb/skill-search.ts` | Live — `registerReadHandler` |
+| `daemon_runConsolidate` | `.../handlers/daemons/consolidate.ts` | Live — `registerMutationHandler`, `withWrite` |
+| `daemon_autoMemoryBridge` | `.../handlers/daemons/auto-memory-bridge.ts` | Live — `registerMutationHandler`, `withWrite` |
+
+The cli adapters (`makeCliTaskRouter`, `makeCliEmbeddingScorer`,
+`makeCliPatternReader`, plus 9 writer factories) at
+`forks/ruflo/v3/@claude-flow/cli/src/memory/archivist-init.ts:229–`
+are also live, resolving the underlying controllers via per-call
+dynamic imports.
+
+`createHybridService` at `@claude-flow/memory/src/index.ts:882–902`
+correctly wires `createDatabase({provider:'hybrid'})` → `new
+HybridBackend(...)` → `service.withBackend(hybridBackend)`. The
+wiring is correct.
+
+### What's actually outstanding
+
+**(1) Substrate omission at cli-process startup (intentional hotfix).**
+`initProcessArchivist()` at `archivist-init.ts:1338–1344`
+deliberately OMITS `rvfBackend` and `sqliteDb` from the
+`ArchivistInitConfig`:
+
+```ts
+const config: ArchivistInitConfig = {
+  projectRoot: root,
+  // NOTE: rvfBackend + sqliteDb deliberately omitted — see header.
+  //   Phase 5 dispatch wiring re-introduces them via the post-initialize
+  //   ensureRvfWired() / ensureSqliteWired() helpers below...
+  taskRouterFactory: makeCliTaskRouter,
+  ...
+};
+```
+
+The omission is a Phase 4 hotfix for the `t1-6-empty-search` ~18s
+regression and the `adr0100-e-sentinel-pri` failure. The substrate
+slots are filled lazily by `ensureRvfWired()` / `ensureSqliteWired()`
+on first dispatch. **This is the right design for Phase 4 — but it
+means the archivist's `MutationContext.substrate` is currently a
+late-bound RVF/SQLite pair, NOT a `HybridBackend`.** The
+2026-05-23 amendment's claim that "the factory swap" is
+straightforward conflated two seams: `createHybridService` (the
+@claude-flow/memory surface, which is correctly wired) and the
+archivist's substrate factory (which still wants narrow rvf/sqlite
+handles).
+
+Reconciling these requires either:
+
+- **Option (a)** — adapt `HybridBackend` to satisfy the archivist's
+  `RvfSubstrateHandle` / `SqliteSubstrateHandle` interfaces. Non-trivial
+  — HybridBackend's `query` is BM25-fused, not raw RVF/SQL.
+- **Option (b)** — keep the archivist on narrow handles
+  (RvfBackend + SqliteDb) and let the cli's `createHybridService`
+  callers use it independently from the archivist path. The
+  archivist would never satisfy `(svc as any).backend instanceof
+  HybridBackend`, but the cli's hybrid-tier consumers do.
+- **Option (c)** — refactor `MutationContext.substrate` to accept
+  a unified backend interface that both `HybridBackend` and the
+  narrow rvf/sqlite pair can satisfy. Largest refactor.
+
+The 2026-05-23 amendment did not pick between these. The next
+implementation session should decide before changing code.
+
+**(2) Land-checklist test exists but is not wired to acceptance.**
+The assertion `(svc as any).backend instanceof HybridBackend ===
+true` lives in `forks/ruflo/v3/@claude-flow/memory/src/index.test.ts`
+(the existing "Phase 2 — createHybridService returns a real
+HybridBackend" describe block). It's NOT picked up by:
+
+- The v3-root vitest (`vitest.config.ts` include pattern matches
+  `@claude-flow/**/__tests__/**/*.test.ts`, NOT
+  `@claude-flow/**/src/**/*.test.ts`).
+- The memory package's own `vitest run` — fails on `@claude-flow/shared/core`
+  module resolution: `migration.ts:13` imports
+  `getValidatedConfig` from `@claude-flow/shared/core`, but the
+  shared package's `exports` map at
+  `forks/ruflo/v3/@claude-flow/shared/package.json` exposes only
+  `.` and `./types`, not `./core`. The subpath export is missing.
+
+Two fixes are needed to make the test runnable:
+
+- **Fix (i)** — add `"./core": "./dist/core/index.js"` to the
+  shared package's exports map. This is a 1-line package.json edit.
+- **Fix (ii)** — either (a) move `src/*.test.ts` files to
+  `__tests__/`, or (b) extend the v3 vitest include pattern to
+  match `src/*.test.ts`. (a) is per-file work; (b) is a 1-line
+  config edit but may surface other unrelated `src/*.test.ts`
+  files in the same wave.
+
+Neither fix touches Phase 4 substrate wiring itself.
+
+### Next-session task split
+
+The "Phase 4 un-stub" framing in §"Execution Plan" was misleading
+— the handlers aren't stubs. What the next session actually owns:
+
+1. **Decide between Options (a)/(b)/(c)** above for how the
+   archivist's substrate seam relates to `HybridBackend`. This is a
+   pre-implementation decision, not a coding task.
+2. **Apply Fixes (i) + (ii)** to make the land-checklist test
+   runnable in v3 acceptance. ~2 lines of config + 1 file move.
+3. **Implement the chosen option from (1)** — depending on choice,
+   this is 50-500 lines.
+
+The work is now tractable and split into a decision step + a wiring
+step + an implementation step. Each can be its own session.
+
+No code change in this amendment — pure scope-refining doc. Doc-only.
