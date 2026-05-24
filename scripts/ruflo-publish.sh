@@ -420,6 +420,19 @@ main() {
   log "Publish stage (detect merged PRs, build, publish)"
   log "────────────────────────────────────────────────"
 
+  # ADR-0236 gate-0: cross-registry scope/package-name lint. Runs BEFORE
+  # all other phases (Phase 0 ADR-0180 gates, load_state, merge-detect,
+  # napi-coverage, bump-versions, codemod, build, publish, acceptance).
+  # Catches drift between fork-version.mjs::SCOPES + UNSCOPED_PUBLISHABLE,
+  # codemod.mjs::UNSCOPED_MAP, build-packages.sh::_v3_packages (bash +
+  # inline JS), and config/publish-levels.json. Fails loud with both
+  # registries cited so the operator can fix from the message alone.
+  # See ADR-0236 §Decision (option A) + swarm-review R2.
+  if ! node "${SCRIPT_DIR}/lint-scope-registries.mjs"; then
+    log_error "lint-scope-registries: FAIL — release blocked (ADR-0236 gate-0)"
+    return 1
+  fi
+
   # Load previous state
   load_state
 
