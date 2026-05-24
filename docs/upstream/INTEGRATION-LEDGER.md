@@ -441,3 +441,6 @@ arch-tests trip immediately if a re-introduction slips through.
 * **Cross-reference enforcement** — the per-sync ADRs (ADR-0162, ADR-0186)
   should add an explicit close-out step "append rows to
   `docs/upstream/INTEGRATION-LEDGER.md`" so this file stays current.
+
+| F-08-003 | embeddings-tools.ts:484 threshold bypass | convergence-with-upstream | Restores ADR-0227 0.15 adaptive floor on the live MCP path. Upstream `ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts` carries no comparable bypass. |
+| F-08-004 | RvfEmbeddingCache FNV-1a 32-bit collision | already-closed-by-construction | File `v3/@claude-flow/embeddings/src/rvf-embedding-cache.ts` deleted by ADR-0239 cluster 4(c) (578 LOC); the FNV-1a collision risk evaporates with the file. No code change needed. |
