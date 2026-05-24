@@ -205,25 +205,30 @@ Default to **implement / delete / behaviour-verify at the seam that matters**, a
 
 ## Reviews still owed (added 2026-05-24)
 
-The May-19 audit covered the 6 named surfaces (controllers, hooks, MCP, daemon, init, skills) plus runtime validation. It explicitly deferred ten next-pass surfaces (see [16-gap-analysis](../audits/2026-05-19-soundness-audit/16-gap-analysis.md) §D) and three cross-cutting items (§E). As of 2026-05-24 none of the §D items has been started; §E item 2 (codemod golden-master) is addressed by [[ADR-0215]].
+The May-19 audit covered the 6 named surfaces (controllers, hooks, MCP, daemon, init, skills) plus runtime validation. It explicitly deferred ten §D next-pass surfaces, three §E cross-cutting items, and two LOW §A items (G-16-017, G-16-018). **All 14 surfaces were reviewed on 2026-05-24 by a 14-agent swarm; consolidated findings are in [[ADR-0233]]** (165 findings across 14 slices, 11 immediate-flag CRITICALs, 10 cross-cutting themes). §E.2 (codemod golden-master) was already addressed by [[ADR-0215]] before this round.
 
-| # | Scope | Gap ID | Suggested approach |
-|---|-------|--------|--------------------|
-| 1 | CLI commands beyond `daemon` and `init` | G-16-001 [HIGH] | Single agent; enumerate + sample 5–10 commands |
-| 2 | Build pipeline (`scripts/` + `lib/`) | G-16-003 [HIGH] | One static + one runtime dry-run-release agent |
-| 3 | AgentDB internals (RVF format, HNSW, archivist) | G-16-004 [HIGH] | Dedicated agent |
-| 4 | Security: aidefence (AIMDS), claims, PII | G-16-005 [HIGH] | One agent + adversarial probe runtime |
-| 5 | Telemetry / observability — trace one op end-to-end | G-16-006 [HIGH] | Single trace agent |
-| 6 | WASM modules + native bindings | G-16-007 [HIGH] | Static + runtime `require()` probe |
-| 7 | Plugin contents (4 plugins) | G-16-002 [HIGH] | One agent per plugin OR single sweep |
-| 8 | Embedding pipeline (load/batch/cache/queue) | G-16-008 [MEDIUM] | Dedicated agent |
-| 9 | Consensus protocols (Byzantine, Raft, gossip, CRDT, quorum) | G-16-010 [MEDIUM] | Dedicated agent |
-| 10 | Performance / memory / FD leak | G-16-014 [MEDIUM] | Long-running runtime stress test |
+| # | Scope | Gap ID | Status | Findings |
+|---|-------|--------|--------|----------|
+| 1 | CLI commands beyond `daemon` and `init` | G-16-001 [HIGH] | reviewed → ADR-0233 §01 | 13 (2 CRITICAL) |
+| 2 | Build pipeline (`scripts/` + `lib/`) | G-16-003 [HIGH] | reviewed → ADR-0233 §02 | 14 (3 CRITICAL) |
+| 3 | AgentDB internals (RVF format, HNSW, archivist) | G-16-004 [HIGH] | reviewed → ADR-0233 §03 | 9 (3 CRITICAL) |
+| 4 | Security: aidefence (AIMDS), claims, PII | G-16-005 [HIGH] | reviewed → ADR-0233 §04 | 11 (3 CRITICAL) |
+| 5 | Telemetry / observability | G-16-006 [HIGH] | reviewed → ADR-0233 §05 | 11 (3 HIGH) |
+| 6 | WASM modules + native bindings | G-16-007 [HIGH] | reviewed → ADR-0233 §06 | 9 (2 CRITICAL) |
+| 7 | Plugin contents | G-16-002 [HIGH] | reviewed → ADR-0233 §07 | 10 (3 CRITICAL) |
+| 8 | Embedding pipeline | G-16-008 [MEDIUM] | reviewed → ADR-0233 §08 | 13 (5 HIGH) |
+| 9 | Consensus protocols | G-16-010 [MEDIUM] | reviewed → ADR-0233 §09 | 11 (5 HIGH) |
+| 10 | Performance / memory / FD leak (STATIC) | G-16-014 [MEDIUM] | reviewed → ADR-0233 §10 | 12 (2 CRITICAL) |
+| §E.1 | Whole-tree dead-code scan | — | reviewed → ADR-0233 §11 | 23 (4 CRITICAL, ~57K LOC) |
+| §E.3 | Init template fidelity | — | reviewed → ADR-0233 §12 | 8 (1 HIGH) |
+| 13 | Error taxonomy | G-16-017 [LOW] | reviewed → ADR-0233 §13 | 9 (2 MEDIUM) |
+| 14 | Schema / type definitions | G-16-018 [LOW] | reviewed → ADR-0233 §14 | 12 (1 CRITICAL) |
 
-**Cross-cutting** (gap-analysis §E):
+**§E.2 — Codemod golden-master**: implemented in [[ADR-0215]] before this round.
 
-* Whole-tree dead-code scan (ESLint `no-unused-exports` + cross-package import audit). `v3/mcp/` 1112-LOC dead tree was one finding; more likely.
-* Init template fidelity — golden-master test for every file `ruflo init` writes (F-02-style fidelity issue likely generalises beyond hook-handler).
-* ~~Codemod golden-master test~~ — implemented in [[ADR-0215]].
+**Carry-forward (still owed after ADR-0233):**
+* Performance/leak RUNTIME stress test (slice 10 was static-only; G-16-014's full scope).
+* `archive/` 418K LOC — intentionally excluded from §E.1 dead-code scan.
+* §A Batch S/Batch O upstream-sync deferrals — re-eval on dedicated sweep (memory `feedback-update-integration-ledger`).
 
-Apply the [pre-flight checklist](#remediation-adr-pre-flight-checklist-added-2026-05-20) above to any remediation ADR drafted from these.
+Apply the [pre-flight checklist](#remediation-adr-pre-flight-checklist-added-2026-05-20) above to any remediation ADR drafted from [[ADR-0233]]'s findings.
