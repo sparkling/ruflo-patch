@@ -165,12 +165,47 @@ function tokenizeCommand(cmd) {
   return tokens;
 }
 
-// Targeted regex extraction of declared subcommand + option names from
-// hooks.ts. Each subcommand is an object literal: `{ name: '<n>', options: [...] }`.
-// Each option is `{ name: '<n>', ... }`.
-// We collect all `name: '<n>'` strings; this over-collects (includes things
-// that aren't subcommands or options) but the lint only checks set-membership
-// — false negatives in the manifest direction, not false positives.
+// Phase 2: dynamic-import the published @sparkleideas/cli/dist/src/commands/hooks.js
+// and walk the resolved hooksCommand tree to depth 2. This is the canonical
+// source-of-truth: it captures alias/spread options (hooks.ts:4497/4516/4548/4557)
+// and nested subcommands (transfer[store,from-project], worker[list,dispatch,...])
+// that the Phase 1 regex cannot see.
+async function extractDeclaredFromCompiledTree() {
+  let mod;
+  try {
+    mod = await import('@sparkleideas/cli/dist/src/commands/hooks.js');
+  } catch (err) {
+    return null; // fall through to Phase 1
+  }
+  const root = mod.hooksCommand || mod.default?.hooksCommand;
+  if (!root || !Array.isArray(root.subcommands)) return null;
+
+  const declared = new Set();
+  declared.add(root.name); // 'hooks'
+  // Walk to depth 2: each subcommand + any nested subcommands + options of each.
+  function visit(node, depth) {
+    if (!node || typeof node !== 'object') return;
+    if (typeof node.name === 'string') declared.add(node.name);
+    if (Array.isArray(node.options)) {
+      for (const opt of node.options) {
+        if (opt && typeof opt.name === 'string') declared.add(opt.name);
+        // Short aliases (e.g. -f) — capture too.
+        if (opt && typeof opt.alias === 'string') declared.add(opt.alias);
+      }
+    }
+    if (depth > 0 && Array.isArray(node.subcommands)) {
+      for (const sub of node.subcommands) visit(sub, depth - 1);
+    }
+  }
+  // Depth 2 from the root: visit each top-level hooks subcommand AND walk its
+  // own nested subcommands (transfer/worker etc.) one level deeper.
+  for (const sub of root.subcommands) visit(sub, 2);
+  return declared;
+}
+
+// Phase 1 fallback: targeted regex extraction of declared subcommand + option
+// names from hooks.ts. Each subcommand is an object literal: `{ name: '<n>',
+// options: [...] }`. Used when @sparkleideas/cli is not installed.
 function extractDeclaredFromHooksTs() {
   if (!existsSync(HOOKS_TS)) return null;
   const src = readFileSync(HOOKS_TS, 'utf8');
@@ -220,16 +255,26 @@ function extractDocFlagTokens() {
   return docs;
 }
 
-function main() {
+async function main() {
   if (!existsSync(FORK_RUFLO)) {
     console.error(`[lint] fork path missing: ${FORK_RUFLO} — exiting 2 (informational)`);
     process.exit(2);
   }
 
-  const declared = extractDeclaredFromHooksTs();
+  // Phase 2: try dynamic-import of the published cli's compiled command tree.
+  // Phase 1 fallback: regex over hooks.ts source.
+  let declared = await extractDeclaredFromCompiledTree();
+  let mode = 'phase2-compiled-tree';
   if (declared == null) {
-    console.error(`[lint] hooks.ts not found at ${HOOKS_TS} — exiting 2 (informational)`);
+    declared = extractDeclaredFromHooksTs();
+    mode = 'phase1-regex-fallback';
+  }
+  if (declared == null) {
+    console.error(`[lint] no source available: @sparkleideas/cli not installed AND hooks.ts not found at ${HOOKS_TS} — exiting 2 (informational)`);
     process.exit(2);
+  }
+  if (process.env.LINT_DEBUG) {
+    console.error(`[lint] mode=${mode}, declared set size=${declared.size}`);
   }
   const globals = extractGlobalsFromParserTs();
 
