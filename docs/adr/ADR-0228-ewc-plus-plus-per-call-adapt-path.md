@@ -1,11 +1,19 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-24
 tags: [learning, sona, ewc, micro-lora, lora, wasm, ruvector, ruvllm, catastrophic-forgetting, audit-followup]
 supersedes: []
 depends-on: [0220]
 implements: []
 ---
+
+> **Status note (2026-05-24 second amendment):** The original
+> Decision Outcome recommended **Option C — Hybrid**. The
+> 2026-05-24 second amendment (at the bottom of this ADR)
+> **revises the recommendation to Option A** with two refinements
+> (WASM-bypass via native sona NAPI; flush-time EWC integration).
+> Read the second amendment before acting on the Decision Outcome
+> section.
 
 # EWC++ on the per-call adapt path (`ruvllm_microlora_adapt`)
 
@@ -611,3 +619,253 @@ finding (Q-3) should be tracked as a separate audit follow-up —
 it predates this ADR and isn't fixed by Option C's wiring.
 
 No code change in this amendment — pure research findings. Doc-only.
+
+## Amendment — 2026-05-24 (Q-2/Q-4 resolved; Option A re-recommended under "fix-input-as-part-of-this" assumption)
+
+Continuation of the 2026-05-24 pre-implementation analysis. The
+user instruction was to plan for **fixing Q-3 (real input) as
+part of the same change**, not deferring it. Under that
+assumption, Q-2 and Q-4 were closed and Option A was re-evaluated.
+
+### Q-2 — WASM artefact EWC availability (RESOLVED, bigger finding)
+
+Walked `forks/ruvector/crates/ruvllm-wasm/`:
+
+- `Cargo.toml` dependency list contains zero references to `sona`,
+  `agentdb-storage`, or any crate containing `EwcPlusPlus`.
+  Dependencies are only `wasm-bindgen`, `web-sys`, `serde`,
+  `console_error_panic_hook`.
+- `crates/ruvllm-wasm/src/micro_lora.rs` is a **parallel
+  implementation** of MicroLoRA distinct from
+  `crates/sona/src/lora.rs`. Both crates carry their own
+  `accumulate_gradient`.
+- `grep -rn "EwcPlus\|EwcConfig" crates/ruvllm-wasm/` returns
+  zero matches.
+
+So the MCP per-call adapt path **never touches native sona**.
+`@ruvector/ruvllm-wasm` is a standalone WASM artefact with no
+EWC code in its compilation unit.
+
+This collapses Option A as originally framed: wiring EWC into the
+per-call path through `MicroLoraWasm` would require duplicating
+`EwcPlusPlus` (~500 lines + Fisher state) into the WASM crate,
+forking the implementation across two crates.
+
+**However:** `@ruvector/sona` (`npm/packages/sona`, v0.1.6-patch.111)
+exposes the **full** SONA pipeline (including EWC++ via the
+background loop) to Node.js via NAPI-RS bindings. It already
+exports `SonaEngine` with `begin_trajectory(query_embedding)` +
+`end_trajectory(builder, quality)` (`crates/sona/src/napi.rs:17-75`),
+which is structurally the right shape for per-call adapt with
+real input. Confirmed live consumers in the fork:
+
+- `cli/src/memory/sona-optimizer.ts:247`
+- `cli/src/services/ruvector-training.ts:421`
+- `agentdb/src/backends/rvf/NativeAccelerator.ts:441-443`
+- `agentdb/src/backends/rvf/SonaLearningBackend.ts:4`
+
+The MCP per-call path is the **outlier** that goes through WASM;
+the rest of the fork uses native sona via NAPI.
+
+**Resolution:** **Rewire `ruvllm_microlora_adapt` to use
+`@ruvector/sona` NAPI instead of `@ruvector/ruvllm-wasm`**, and
+add the EWC consult on the native sona side only. This bypasses
+the WASM crate entirely on this MCP path. Consequence:
+**`@ruvector/ruvllm-wasm` is NOT republished by Option A** —
+the only crate bump is `@ruvector/sona`.
+
+### Q-4 — ADR-0193 contract alignment (RESOLVED, citation error)
+
+Read `docs/adr/ADR-0193-autopilot-completion-and-follow-ups.md`
+end-to-end. The ADR covers autopilot system completion + Stop-hook
+wiring + orphan-spec siblings (drift-detector, swarm-completion) +
+acceptance harness hardening. **It contains no EWC contract**.
+`grep -in "ewc\|forgetting\|catastrophic\|fisher" ADR-0193*` returns
+zero matches. The two adapter-related hits (lines 127 and 132)
+refer to SONA trajectory recording, not EWC semantics.
+
+ADR-0220's *More Information* line citing ADR-0193 as "the EWC
+contract reference" is a **misattribution**. There is no prior
+ADR pinning EWC's per-call vs background cadence.
+
+**Resolution:** Option A is unconstrained by any prior contract.
+The contract this ADR defines IS the contract; no conflict to
+resolve. A separate footnote should be added to ADR-0220 noting
+the citation error (out of scope for this ADR).
+
+### Ownership model — DESIGNED
+
+Read `crates/sona/src/loops/coordinator.rs:1-115`,
+`loops/instant.rs:1-130`, `loops/background.rs:130-178`.
+
+`LoopCoordinator` owns `ewc: Arc<RwLock<EwcPlusPlus>>` sized for
+base tier (`param_count = hidden_dim × base_lora_rank × 2`) and
+shares it with `BackgroundLoop` via `ewc.clone()`. `InstantLoop`
+holds `micro_lora: Arc<RwLock<MicroLoRA>>` and uses
+`try_write()` (non-blocking) per trajectory.
+
+**Decision — Option 2: coordinator constructs both EWC instances,
+threads micro-tier into `InstantLoop` via constructor.**
+
+```rust
+// coordinator.rs::with_config
+let ewc_base = Arc::new(RwLock::new(EwcPlusPlus::new(EwcConfig {
+    param_count: config.hidden_dim * config.base_lora_rank * 2,
+    initial_lambda: config.ewc_lambda,
+    ..Default::default()
+})));
+
+let ewc_micro = if config.micro_ewc_enabled {
+    Some(Arc::new(RwLock::new(EwcPlusPlus::new(EwcConfig {
+        param_count: config.hidden_dim * config.micro_lora_rank * 2,
+        initial_lambda: config.ewc_lambda,
+        ..Default::default()
+    }))))
+} else { None };
+
+let instant = InstantLoop::from_sona_config_with_ewc(&config, ewc_micro.clone());
+let background = BackgroundLoop::new(..., ewc_base.clone(), ...);
+```
+
+`InstantLoop` gains `ewc: Option<Arc<RwLock<EwcPlusPlus>>>`.
+
+**Wire point: at flush time, NOT per-trajectory.** EWC
+`apply_constraints` operates on the accumulated gradient vector,
+not on individual signals. The natural integration point is
+`InstantLoop::flush_internal` (called every `flush_threshold = 100`
+signals), where the accumulated `grad_up` is about to be applied.
+
+```rust
+// instant.rs::flush_internal
+fn flush_internal(&self, lora: &mut MicroLoRA) {
+    let lr = self.config.micro_lora_lr;
+    if let Some(ewc) = &self.ewc {
+        lora.apply_accumulated_constrained(lr, &ewc.read());
+    } else {
+        lora.apply_accumulated(lr);
+    }
+    ...
+}
+```
+
+This refinement is structurally cleaner than the original Option A
+framing ("EWC consult on every adapt"): EWC runs once per flush
+(every ~100 signals), not once per accumulate. Combined with the
+~5–20 µs `apply_constraints` cost (per the 2026-05-24 earlier
+analysis), **effective per-call overhead is 50–200 ns** —
+indistinguishable from noise.
+
+### Lock contention — NON-ISSUE
+
+`parking_lot::RwLock` with FIFO fairness. Background loop holds
+EWC write lock in scoped blocks at `background.rs:144-163`
+(`update_fisher` write window is brief; release is automatic at
+block exit). Background cycle runs every
+`background_interval_ms = 3600000` ms (hourly default). Write
+window per cycle ~10 ms.
+
+Per-call EWC consult is read-only (`apply_constraints(&self, ...)`)
+and happens at flush cadence (every ~100 signals, not per-call).
+Probability of a read-lock acquisition coinciding with a brief
+hourly write window: negligible (≈10 ms / 3,600,000 ms ≈ 0.00028%).
+No deadlock risk (read-only consult).
+
+**No design change needed.** Confirmed `parking_lot::RwLock` is
+the right primitive; existing pattern from `BackgroundLoop`
+applies directly.
+
+### Re-evaluation — Option A wins under fix-input assumption
+
+The original ADR's *Considered Options* deferred Option A because:
+
+1. WASM republish coordinated change → **collapsed by Q-2**: route
+   through native sona, no WASM republish.
+2. Net-new Rust infra in `lora.rs` → **still real, but small**: one
+   new method (`apply_accumulated_constrained`) + one constructor
+   parameter on `InstantLoop`. Estimated <100 lines net new.
+3. Ownership-model change → **resolved above**: coordinator owns
+   both instances, threads micro into instant. ~10 lines in
+   `coordinator.rs::with_config`.
+4. Per-call latency cost → **non-issue**: flush-time integration
+   amortizes EWC over 100 signals; effective overhead 50–200 ns.
+5. C-3 synthesized gradient theatre → **dissolved by Q-3 fix**:
+   real input flowing in means real gradients; EWC has meaningful
+   state to constrain.
+
+Option C's primary defense ("preserves per-call <100 µs hot path")
+was bought at the cost of accepting "between-background-tick
+protection still doesn't get delivered." With real input flowing,
+that gap becomes a real hole. Option A delivers strict per-flush
+protection at negligible cost.
+
+**Revised recommendation: Option A — with two refinements:**
+
+1. **WASM bypass**: route MCP per-call through `@ruvector/sona`
+   NAPI (`SonaEngine.begin_trajectory` / `end_trajectory`), not
+   `@ruvector/ruvllm-wasm`.
+2. **Flush-time integration**: EWC consult happens in
+   `InstantLoop::flush_internal`, not in per-trajectory
+   `accumulate_gradient`. Cost amortized 100× via `flush_threshold`.
+
+### Implementation steps (revised — for the follow-on session)
+
+Single coordinated change spanning Rust + TS:
+
+**Rust side (`forks/ruvector`):**
+
+1. **`crates/sona/src/types.rs`** — add `SonaConfig.micro_ewc_enabled: bool` (default `false`) and `SonaConfig.micro_lora_rank` is already present; no change.
+2. **`crates/sona/src/lora.rs`** — add `MicroLoRA::apply_accumulated_constrained(&mut self, lr: f32, ewc: &EwcPlusPlus)` next to `apply_accumulated` (`:213-229`). Body: `ewc.apply_constraints(&self.grad_up)` → apply constrained gradient identically to `apply_accumulated`.
+3. **`crates/sona/src/loops/coordinator.rs`** — in `with_config` (`:40-77`), construct a second `EwcPlusPlus` sized `hidden_dim × micro_lora_rank × 2` when `micro_ewc_enabled = true`; thread `Option<Arc<RwLock<EwcPlusPlus>>>` into `InstantLoop` via new constructor `InstantLoop::from_sona_config_with_ewc`.
+4. **`crates/sona/src/loops/instant.rs`** — add `ewc: Option<Arc<RwLock<EwcPlusPlus>>>` field; new constructor `from_sona_config_with_ewc`; in `flush_internal`, branch on `ewc.is_some()` between `apply_accumulated_constrained` and `apply_accumulated`.
+5. **`crates/sona/src/napi.rs`** — add `micro_ewc_enabled: Option<bool>` to `JsSonaConfig` (`:22-54` style); thread into `SonaConfig` construction.
+6. **`crates/sona/src/lib.rs`** — re-export `SonaEngine.begin_trajectory` + `end_trajectory` if not already exposed (they are per `napi.rs:59-73`).
+7. **Tests in `crates/sona/src/loops/coordinator.rs` `tests` module**:
+   - With `micro_ewc_enabled = true`: drive N accumulates, force flush, assert `up_proj` differs from a parallel run with `micro_ewc_enabled = false` (proves EWC mutated the applied gradient — guards against the Q-1 dim-mismatch silent-no-op).
+   - With `micro_ewc_enabled = false` (default): EWC instance is `None`; `apply_accumulated` path used; behaviour unchanged.
+
+**TS side (`forks/ruflo` + `forks/agentdb`):**
+
+8. **`forks/agentdb/src/archivist/handlers/ruvllm/microlora-adapt.ts`** — add `input: ReadonlyArray<number>` to `RuvllmMicroLoraAdaptPayload`; include in journal entry.
+9. **`forks/agentdb/src/archivist/invariants/ruvllm/microlora-adapt.ts`** — add invariant: `input.length === instance.config.inputDim` (length matches loraId's stored inputDim) AND `input.some(x => x !== 0)` (rejects all-zero inputs per `feedback-no-fallbacks` — the Q-3 root cause).
+10. **`forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/ruvllm-tools.ts`** — `ruvllm_microlora_adapt` schema: add `input: { type: 'array', items: { type: 'number' } }` to `properties` and `'input'` to `required`. Handler: convert to `Float32Array`, validate length, **route through `@ruvector/sona` SonaEngine** (`begin_trajectory(input)` → `end_trajectory(builder, quality)`) instead of `loadRuvllmWasm()`.
+11. **`forks/ruflo/v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts`** — the `createMicroLora` wrapper's `adapt(quality, lr, success)` (`:283-290`) stays for backwards compat in any direct WASM consumers, but the MCP path no longer routes through it. If grep shows zero remaining MCP-side callers, deprecate with an honesty doc-comment per ADR-0220 pattern.
+12. **Acceptance test (TS)** — extend `forks/ruflo/v3/@claude-flow/cli/__tests__/ruvllm-tools.test.ts` `describe('ruvllm_microlora_adapt')`: assert (a) schema includes `input`, (b) missing `input` returns a validation error, (c) all-zero `input` returns an invariant rejection, (d) valid `input` succeeds and the SonaEngine NAPI path was invoked (mock or stub-check).
+
+**Crate / package bumps:**
+
+13. `@ruvector/sona` — minor bump (new config field + new InstantLoop wiring); republish via Verdaccio per `[[reference-pipeline-publish-paths]]`.
+14. `@ruvector/ruvllm-wasm` — **not bumped**. Q-2 bypass keeps the WASM artefact untouched.
+15. `forks/agentdb` — patch bump (payload + invariant + handler change).
+16. `forks/ruflo` — patch bump (MCP tool change + test).
+
+**Commit order per `[[feedback-commit-forks-before-release]]`:**
+
+- Commit 1 (`forks/ruvector`): steps 1–7 in one commit (sona crate change + tests).
+- Commit 2 (`forks/agentdb`): steps 8–9.
+- Commit 3 (`forks/ruflo`): steps 10–12.
+- Then `npm run release` to bump + republish all three.
+
+### Status after this amendment
+
+ADR-0228 status flips: `proposed` → **`accepted` (implementation
+deferred to follow-on session with concrete plan)**. All 4 open
+questions resolved:
+
+- Q-1: second EWC instance for micro tier (confirmed in prior amendment)
+- Q-2: route MCP through native sona NAPI, bypass WASM crate entirely
+- Q-3: TS API change to take `input: number[]`; invariant rejects all-zero
+- Q-4: no upstream ADR contract to align with (citation error in ADR-0220)
+
+The recommendation flips from Option C (Hybrid) to **Option A — with
+WASM bypass + flush-time integration**. Both refinements emerged
+from the source walk and weren't visible in the original
+30-minute survey.
+
+Per `[[feedback-corpus-evidence-before-feature-work]]`: the
+opt-in `micro_ewc_enabled = false` default is preserved. Turning
+the flag on default-true awaits corpus evidence of observed
+catastrophic forgetting. The infra ships; the activation gate
+remains evidence-driven.
+
+No code change in this amendment — pure research findings + revised
+implementation plan. Doc-only.
