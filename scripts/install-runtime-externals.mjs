@@ -176,11 +176,20 @@ export async function installRuntimeExternals(buildDir) {
 
   const externalsDir = join(buildDir, EXTERNALS_DIR_NAME);
   await mkdir(externalsDir, { recursive: true });
+  // `overrides` mirrors `dependencies` so a transitive dep cannot drag in a
+  // major-version mismatch. Concrete case (ADR-0231 follow-up): the codebase
+  // declares `zod@^3.x` across all packages, but agentic-flow also depends on
+  // agentic-payments which hard-pins `zod@^4.1.11`. Without an override npm
+  // hoists zod 4.x to the top level, leaving consumers that import
+  // `from 'zod'` (expecting 3.x's `.parse()` shape) at runtime breakage.
+  // Forcing every aggregated external into overrides keeps the installed
+  // tree consistent with what our packages declared.
   const externalsPkgJson = {
     name: 'ruflo-build-externals',
     version: '0.0.0',
     private: true,
     dependencies: Object.fromEntries(aggregate),
+    overrides: Object.fromEntries(aggregate),
   };
   await writeFile(join(externalsDir, 'package.json'), JSON.stringify(externalsPkgJson, null, 2));
 
@@ -196,10 +205,21 @@ export async function installRuntimeExternals(buildDir) {
     });
   } catch (bulkErr) {
     console.warn(`install-runtime-externals: bulk install failed (${bulkErr.message.split('\n')[0]}); falling back to per-dep install`);
-    // Reset the externalsDir package.json so per-dep installs accumulate
+    // Reset the externalsDir package.json so per-dep installs accumulate.
+    // Keep `overrides` populated up-front so transitive demands can't bump a
+    // major version under us mid-loop (zod 3.x vs 4.x; see comment above).
     await writeFile(
       join(externalsDir, 'package.json'),
-      JSON.stringify({ name: 'ruflo-build-externals', version: '0.0.0', private: true }, null, 2),
+      JSON.stringify(
+        {
+          name: 'ruflo-build-externals',
+          version: '0.0.0',
+          private: true,
+          overrides: Object.fromEntries(aggregate),
+        },
+        null,
+        2,
+      ),
     );
     let installedCount = 0;
     const skipped = [];
