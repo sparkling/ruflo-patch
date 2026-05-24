@@ -138,6 +138,7 @@ npm run test:unit
    ```bash
    cd /Users/henrik/source/ruflo-patch && git push origin main
    ```
+   > **Correction (post-handover follow-up, same day):** the actual delta was **20 unpushed commits**, not 3. This handover only named the 3 most recent (`9f6577f`, `c6d846c`, `7e09d14`); 17 older ADR-0228→0231 amendments + wave-A9 ancillary commits going back to `c071ef4` (`docs: decline HybridBackend adoption…`) were also sitting unpushed. All 20 + the two follow-up commits (`db9aeae` rename-0228, `a8b3c06` ADR-0232) pushed in one operation: `ddf5ea4..a8b3c06` (22 commits).
 
 2. **1 unpushed commit on forks/ruflo:** `ccb79bba5` (A1's test un-skip). Pipeline auto-pushes on successful release; A1 didn't trigger one. Options:
    - Push manually: `cd /Users/henrik/source/forks/ruflo && git push sparkling main`
