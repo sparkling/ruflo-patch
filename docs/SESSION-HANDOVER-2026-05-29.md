@@ -90,7 +90,7 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 |---|---|---|
 | F1 | Move B candidates | None active. No new horizon opened. |
 | F2 | Pushing to `sparkling` | Nothing pushed this session. User decision when ready. Still 3+ sessions of unpushed work. |
-| F3 | Periodic upstream sync trigger | A3 ledger row landed — the hard precondition for any agent-led sync touching `hooks-tools.ts` is now satisfied. No sync executed this session. |
+| F3 | Periodic upstream sync trigger | **NOT OUTSTANDING.** The 2026-05-23 ADR-0228 / ADR-0230 close-out WAS the most recent upstream sync (Batch T, all 5 forks, ~194 commits dispositioned per `INTEGRATION-LEDGER.md` § "Synced via ADR-0228 (2026-05-23 v3 close-out)"). A3's ledger row and D9's `--ours` runbook prepare ground for the NEXT sync — whenever that's triggered — but no sync is owed today. |
 
 ## Acceptance baseline at handover
 
@@ -151,8 +151,10 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 ### Tier 3 — Open horizons
 
 5. **Push to `sparkling`** — 3+ sessions unpushed. User decision.
-6. **Periodic upstream sync** — A3 ledger row precondition now met;
-   D9 runbook documents the `--ours` paths the next sync needs.
+6. ~~**Periodic upstream sync**~~ — NOT OUTSTANDING. The 2026-05-23
+   ADR-0228 / ADR-0230 close-out was the most recent sync. A3's
+   ledger row + D9's runbook prepare ground for the *next* sync,
+   whenever that's triggered.
 
 ## Pre-flight (run before any work)
 
