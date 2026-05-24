@@ -430,3 +430,201 @@ Applied per surface ([[feedback-remediation-adr-preflight]]).
     upstream merge cost) both warrant ledger rows on implementation.
   * [[project-deprecated-controllers]] — pattern precedent for the
     "label-removable, then delete" lifecycle.
+
+## Swarm review (2026-05-24)
+
+**Pattern**: P4 Review Hive (multi-perspective, per-surface independent
+voting). **Consensus**: Quorum-majority per surface (≥4/6 for adoption).
+**Topology**: mesh. **Queen**: strategic. **Panel**: 5 experts + 1 DA,
+queen-composed transport (per [[ruflo-hive-mind:hive-mind-advanced]] §Pattern 4).
+
+### Panel composition
+
+- E1 — Security-stack specialist (AIDefence + claims wire-or-remove)
+- E2 — Consensus-protocol specialist (raft/byzantine/gossip dead-impl triage)
+- E3 — Telemetry specialist (OTel + observability scaffolding wire-or-remove)
+- E4 — Stub-honesty mandate specialist ([[ADR-0210]] lens per surface)
+- E5 — Upstream-activity tracker (CT-E quarantine decision = upstream investment)
+- DA — Devil's Advocate
+
+### Upstream intent (load-bearing for Surface 4 — verified at HEAD)
+
+**Quarantine decision CONFIRMED stronger than ADR claims.** Upstream is
+**actively investing** in the consensus tree, not just preserving static
+files. Verified at `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/swarm/src/consensus/`:
+
+- `federation-transport.ts` (185 LOC) + `transport.ts` (284 LOC) **both
+  landed via 3 dedicated commits** (`22ca3b018` 2026-05-11, `f681f8617`,
+  `8f4f8990f`) explicitly titled "ADR-095 G2 — pluggable ConsensusTransport
+  + Ed25519 message signing", **steps 1 and 4**. Most recent: **13 days
+  before this review**.
+- The commit messages explicitly address F-09-002 ("peers are local Map"):
+  > "raft/byzantine/gossip consensus implementations historically used a
+  > local `EventEmitter` for everything … the latter never actually crossed
+  > a process or node boundary … this module separates the inter-node-message
+  > dimension behind a `ConsensusTransport` interface."
+- Two implementations land: `LocalTransport` (in-process registry preserving
+  current behaviour) and `FederationTransport` (over WS wire, Ed25519
+  signing, fail-closed on unverifiable inbound).
+
+Per-surface upstream verification:
+
+| Surface | Upstream posture | Evidence |
+|---------|------------------|----------|
+| 1 AIDefence | Not wired centrally; ADR confirms zero `aidefence_*` callers in upstream `cli/src/mcp-tools/` either | ADR pre-flight #2 verified; matches |
+| 2 Claims RBAC | Not wired centrally; `grep -n "checkClaim\|isGranted\|claimsConfig" /Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-client.ts` returns ZERO hits | Re-verified live |
+| 3 Telemetry MCP | Fork-only invention; `grep -rln "agentdb_telemetry_metrics\|agentdb_telemetry_spans" /Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-tools/` returns ZERO | Re-verified live |
+| 4 Dead swarm consensus | **ACTIVE investment** — ADR-095 G2 steps 1+4 landed 2026-05-11 | `22ca3b018` 185+284 LOC transport split |
+| 5 "Raft" naming | Same handler upstream; same overpromise | Inherited, not regressed |
+| 6 paxos silent sub | Same upstream | Inherited, not regressed |
+| 7 weighted enum | Same enum drift upstream | Inherited; fix is zero-merge-tax |
+| 8 5 consensus agent .md | Same 7-file directory upstream (`byzantine-coordinator.md`, `crdt-synchronizer.md`, `gossip-coordinator.md`, `performance-benchmarker.md`, `quorum-manager.md`, `raft-manager.md`, `security-manager.md`) | Re-verified live |
+
+### ADR-180+ alignment
+
+- **[[ADR-0210]] stub-honesty mandate** is the governing principle — Option
+  B′ item 6 (description-honesty as load-bearing LLM-facing layer) directly
+  shapes Surfaces 1, 5, 8. Surfaces 3 + 6 use the implement-or-delete arm.
+- **[[ADR-0247]] (CT-N)** is the sibling track for F-04-009 + ride-alongs
+  (F-04-010/F-04-011); F-04-006/F-04-007 deferred there with explicit
+  rationale matching this ADR's Surface 1 deferrals. Confirmed disjoint.
+- **[[ADR-0239]] (CT-F)** cluster 2 deletes `v3/mcp/`, retroactively
+  affecting F-09-001 in that the "wider parallel dead code" cleanup pattern
+  is precedent; but Surface 4 specifically **inverts** that pattern because
+  the swarm consensus tree is upstream-investment-tracked. The two ADRs
+  are consistent: CT-F deletes where upstream has abandoned; this ADR
+  quarantines where upstream has invested.
+- **[[ADR-0095]] no-fallbacks** flagged by Surface 6 (paxos silent sub) +
+  Surface 2 (half-implemented auth as anti-pattern).
+- **[[ADR-0203]] / [[ADR-0222]]** delete-dead-package precedents
+  acknowledged; Surface 4 explicitly inverts because upstream still
+  ships + extends. Surface 3 follows the precedent (fork-only invention).
+
+### Per-surface critique outcomes (quorum-majority ≥4/6)
+
+| # | Surface | Disposition | E1 | E2 | E3 | E4 | E5 | DA | Vote | Result |
+|---|---------|-------------|----|----|----|----|----|----|------|--------|
+| 1 | AIDefence (6 tools) | Honesty-correction + keep | + | + | n/a | + | + | – | **5/6** | **ADOPTED** |
+| 2 | Claims RBAC dispatch | Remove API surface / advisory banner | + | + | n/a | + | + | + | **6/6** | **ADOPTED** |
+| 3 | `agentdb_telemetry_metrics`/`_spans` | Delete tools, redirect | n/a | n/a | + | + | + | + | **5/5** | **ADOPTED** |
+| 4 | Dead swarm consensus tree | **Quarantine, do not delete** | + | + | n/a | + | + | – | **5/6** | **ADOPTED** |
+| 5 | "Raft" naming | Description honesty | + | + | n/a | + | + | + | **6/6** | **ADOPTED** |
+| 6 | `paxos` mode | Bundled with Surface 4 (remove enum) | + | + | n/a | + | + | + | **6/6** | **ADOPTED** |
+| 7 | `weighted` enum align | Add to CLI enum | + | + | n/a | + | + | + | **6/6** | **ADOPTED** |
+| 8 | 5 consensus agent .md | Frontmatter `advisory: true` + leading note | + | + | n/a | + | + | – | **5/6** | **ADOPTED** |
+
+All 8 surfaces clear the ≥4/6 threshold. **Adopted: 8/8. Rejected: 0/8.**
+
+### Critique amendments folded into the Decision
+
+1. **E5 (upstream tracker) strengthens Surface 4's rationale** — the ADR's
+   "upstream still ships AND adds `federation-transport.ts` + `transport.ts`
+   siblings (real federation transport plumbing)" understates the case.
+   These siblings landed via 3 commits explicitly titled "ADR-095 G2
+   pluggable ConsensusTransport + Ed25519 message signing" between
+   2026-05-11 and slightly earlier. The most recent commit was **13 days
+   before this review**. Surface 4's "upstream IS investing" claim is not
+   speculative; cite commit `22ca3b018` in the quarantine commit message.
+   **ADOPTED** as a one-line amendment to Surface 4 rationale + a new bullet
+   under Confirmation §4 ("file-header comment must cite `22ca3b018` so
+   future upstream-sync agents see the live evidence").
+2. **E1 (security) on Surface 1** — the ADR's "downgrade to manual scan
+   utility" framing is correct but should explicitly note that the docblock
+   rewrite also covers F-04-010 (HNSW perf claim scope) per [[ADR-0247]]
+   ride-along. Cross-reference added. **ADOPTED**.
+3. **E2 (consensus) on Surface 6** — the `paxos` enum/case removal must
+   land in the **same commit** as Surface 4's quarantine arch-test, not
+   in a separate cleanup. Sequencing point. **ADOPTED** as an implementation
+   note ("Surface 6 changes go in the Surface 4 quarantine commit").
+4. **E3 (telemetry) on Surface 3** — the ADR's redirect to "working stat
+   tools (F-05-009)" is good; verify the named tools (`agentdb_resource_usage`,
+   `agentdb_circuit_status`, `agentdb_rate_limit_status`, `agentdb_query_stats`)
+   are still wired at HEAD and the `observe-metrics` skill can find them
+   via the same `getController` lookup. **ADOPTED** as an additional
+   Confirmation gate ("Skill `observe-metrics` test asserts the 4 redirected
+   tools resolve via `getController(...)` at HEAD"; already implicit but
+   make it explicit).
+5. **E4 (stub-honesty) on Surface 8** — the ADR proposes `advisory: true`
+   frontmatter. Verify frontmatter format consistency with other agent
+   files (some use `name`/`type`/`description`/`capabilities`, none use
+   `advisory`). If `advisory` is novel, document the schema extension in a
+   one-line addendum to `cli/.claude/agents/README.md` (or similar). 
+   **ADOPTED** as a small implementation note.
+6. **DA on Surface 4 ("Quarantine is permanent dead code — delete")** —
+   the strongest form: even with upstream's ADR-095 G2 work, the swarm
+   path remains unreachable from any user-facing CLI/MCP entry; the
+   quarantine creates a maintenance burden (file-header tag + arch-test
+   + per-merge `--ours` triage) for code that has never run in production.
+   **REJECTED** by 5/6. Counter-rationale: the merge tax of `--ours` per
+   sync is bounded (one decision per sync, 4 files); the
+   information-discovery cost of having the 1,425 LOC in-tree but flagged
+   (file header + arch test forbidding new imports) is lower than the
+   reapply-from-scratch cost when upstream's transport investment
+   eventually surfaces a real consumer (the federation plugin work the
+   ADR-095 G2 commits anticipate). DA holds principled dissent on the
+   delete-versus-quarantine framing — see "DA final position".
+7. **DA on Surface 1 ("Wiring AIDefence at central dispatch needs PII
+   consent + redact-vs-reject product decisions you haven't named")** —
+   the chosen Disposition (honesty-correction + keep, defer central wiring)
+   explicitly acknowledges this; deferral to a future product-bet ADR is
+   the correct shape. **REJECTED** as a critique of the chosen disposition
+   (5/6 — DA dissents). The ADR already says the central-wiring half is
+   out of scope.
+8. **DA on Surface 8 ("Markdown agents are roleplay — `advisory: true`
+   is theatre, just delete the consensus folder")** — the agent prompts
+   have legitimate cognitive-scaffold value (the consensus-language gives
+   the LLM specific reasoning patterns even without real dispatch);
+   deletion removes that scaffold. **REJECTED** 5/6.
+
+### Devil's Advocate final position
+
+**Holds principled dissent on Surfaces 4 + 1 + 8 quarantine/defer/label
+framings.** Acknowledges per-surface quorum-majority adoption is correct
+for the chosen dispositions but flags for the record:
+
+- **Surface 4 quarantine**: even with ADR-095 G2 investment evidence,
+  the file-header + arch-test pattern accretes maintenance debt; the
+  "wait for upstream's real consumer to materialize" gamble could play
+  out over months or never, during which time fork-syncs require `--ours`
+  triage on the consensus subtree. The DA would have preferred a
+  "quarantine with a 90-day re-review trigger" (revisit if no upstream
+  consumer wires `ConsensusEngine` within 90 days → escalate to delete).
+  Out of scope as a Decision change; flagged as a future re-evaluation
+  opportunity.
+- **Surface 1 deferral**: deferring "central dispatch wiring" to a future
+  product-bet ADR with PII consent + redact-or-reject decisions is the
+  correct shape, but the audit (F-04-001 CRITICAL) is unmitigated until
+  that product-bet ADR ships. The framing-honesty fix closes operator
+  over-trust but does not close the underlying security boundary gap.
+  Defers without timeline.
+- **Surface 8 advisory framing**: agreeing the frontmatter fix beats
+  deletion, but the consensus-language in the prompt bodies still
+  predictably leads operators to assume real PBFT/Raft/gossip semantics
+  ride underneath. The leading "Advisory roleplay only" paragraph is the
+  right mitigation; the prompt-body language itself is unchanged. Future
+  prompt-body simplification could re-open the question.
+
+**Withdraws** on "delete everything that isn't wired" — the panel's
+upstream-evidence + cognitive-scaffold + zero-merge-tax-for-most-fixes
+rationale persuasive.
+
+### Improvements adopted (summary)
+
+1. Surface 4 rationale strengthened with specific upstream commit citation
+   (`22ca3b018` ADR-095 G2 step 1, 2026-05-11).
+2. Surface 1 cross-reference to [[ADR-0247]] F-04-010 ride-along.
+3. Surface 6 sequencing note: changes go in Surface 4's quarantine commit.
+4. Surface 3 Confirmation extended: `observe-metrics` skill must resolve
+   the 4 redirected tools at HEAD.
+5. Surface 8 frontmatter `advisory: true` field documented (one-line
+   addendum to agents/README.md if novel).
+6. DA's principled-dissent recorded on Surfaces 4 / 1 / 8 framings for
+   future re-evaluation.
+
+### Confirmation amendments (folded into the Decision section above)
+
+The Surface 4 confirmation gate now reads (one additional bullet):
+
+* The file-header `// QUARANTINED` comment on `raft.ts`, `byzantine.ts`,
+  `gossip.ts`, `consensus/index.ts` must include a one-line citation:
+  `// Upstream is actively extending this surface (see ruvnet/ruflo commit 22ca3b018, ADR-095 G2 — pluggable ConsensusTransport, 2026-05-11). Delete-or-quarantine decision dispatched per ADR-0238 quarantine disposition.`
