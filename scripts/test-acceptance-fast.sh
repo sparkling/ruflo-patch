@@ -8,8 +8,9 @@
 #   bash scripts/test-acceptance-fast.sh [--group GROUP] [--registry URL]
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
-#         adr0194, adr0195, adr0196, adr0204, adr0208, adr0235, adr0237, adr0240,
-#         adr0245, adr0246, e2e-core, e2e-storage, skills-surface (ADR-0216)
+#         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
+#         adr0240, adr0243, adr0245, adr0246, e2e-core, e2e-storage,
+#         skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
 # DELIBERATE-ADR0245: fast-acceptance runner intentionally tolerates per-
@@ -316,6 +317,28 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0245-lint-set-e"    check_adr0245_lint_set_e_discipline
     _fast_run "adr0245-norevert-wraps" check_adr0245_publish_verdaccio_norevert_wraps
     _fast_run "adr0245-no-log-swallow" check_adr0245_publish_verdaccio_no_log_swallow
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0234"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0234-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0234-checks.sh"
+    echo "── ADR-0234 (sibling-loader fail-loud throws + F-03-007 closure) ──"
+    _fast_run "adr0234-loader-errors"  check_adr0234_loader_errors_helper_present
+    _fast_run "adr0234-embedding-throw" check_adr0234_embedding_pipeline_throws
+    _fast_run "adr0234-claims-throw"   check_adr0234_claims_fail_closed
+    _fast_run "adr0234-plugins-throw"  check_adr0234_plugins_install_throws
+    _fast_run "adr0234-f03007-closure" check_adr0234_f03007_cross_bonus_closure
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0243"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0243-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0243-checks.sh"
+    echo "── ADR-0243 (long-lived process resource discipline) ──"
+    _fast_run "adr0243-bounded-lru"    check_adr0243_boundedlru_present
+    _fast_run "adr0243-lru-adopted"    check_adr0243_ruvllm_hooks_migrated_to_lru
+    _fast_run "adr0243-lint-noinit"    check_adr0243_lint_no_unref_setinterval
   fi
 fi
 
