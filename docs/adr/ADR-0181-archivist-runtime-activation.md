@@ -718,23 +718,61 @@ factory honest, but the factory remains uncalled in production
 Upstream's de-facto storage path is RVF-only. HybridBackend exists
 as a surface but is not consumed by upstream itself.
 
-**5. ADR-0166's carve-out has a structural reason HybridBackend does not address.**
+**5. The archivist is an audit layer, not a storage layer.**
 
-The 9 SQLite carve-out storeIds need operations the IMemoryBackend
-interface (and therefore HybridBackend) does not expose:
+A 2026-05-24 trace of `agentdb_pattern_store`
+(`forks/agentdb/src/archivist/handlers/agentdb/pattern-store.ts:58–98`)
+shows the actual data flow:
 
-- BM25 full-text search (`agentdb_pattern_search`).
-- Multi-table joins (`agentdb_causal_*` queries).
-- Transactional UPDATEs (`agentdb_causal_experiment` —
-  `NightlyLearner.{completeExperiments,createExperiments}`).
-- Aggregate queries (`agentdb_learning_predict`).
+```ts
+const writer = ctx.capabilities.requireReasoningBankWriter();
+await ctx.substrate.withWrite({storeId: STORE_ID}, async (handle) => {
+  const result = await writer.storePattern({pattern, type, confidence});
+  // ReasoningBank controller persisted to reasoning_patterns SQLite
+  // table. Done — no RVF write needed for the primary path.
+  if (result?.success) return;
+  ...
+});
+```
 
-`HybridBackend.queryStructured()` is shaped around get/put/match
-semantics; none of the four operation classes above are reachable
-through it. The carve-out exists for *operation expressiveness*,
-not for write-side cabinet routing. This is a stronger argument for
-narrow handles than the dual-write-collision argument I named
-earlier.
+The handler obtains a **writer capability** (`ReasoningBankWriter`,
+wired by `makeCliReasoningBankWriter` in
+`forks/ruflo/v3/@claude-flow/cli/src/memory/archivist-init.ts`) which
+delegates to the CLI's existing `ReasoningBank` controller. The
+controller writes to the `reasoning_patterns` SQLite table using its
+own connection. **The archivist's `withWrite({storeId})` block is the
+audit anchor — the actual data does not flow through the substrate
+handle.**
+
+This pattern repeats across the 9 SQLite carve-out storeIds:
+
+| StoreId | Who actually writes the data |
+|---|---|
+| `agentdb_pattern_store` | `ReasoningBank` controller → `reasoning_patterns` |
+| `agentdb_causal_edge` / `_recall` / `_query` | `CausalMemoryGraph` controller → `causal_edges` |
+| `agentdb_causal_experiment` | `NightlyLearner.{completeExperiments,createExperiments}` → `causal_experiments` |
+| `agentdb_learner_run` / `_learning_predict` | `LearningSystem` controller → 4 `learning_*` tables |
+| `agentdb_sona_trajectory_store` | `SonaTrajectoryService.recordTrajectory` → `sona_trajectories` (ADR-0181 Item 6) |
+| `agentdb_experience_record` | `LearningSystem.recordExperience` → `learning_experiences` (ADR-0181 Item 5 Phase 2) |
+| `agentdb_pattern_search` (read) | `PatternReader` capability → `searchPatterns()` BM25+RRF over `reasoning_patterns` |
+
+The CLI's controllers have owned these SQLite tables since before the
+archivist existed. The archivist sits **above** the storage layer:
+its substrate-registry maps each storeId to a substrate family so
+the audit chain's `before/after` snapshots target the right table,
+its `MutationContext` runs the audit-log inserts + invariant
+verification around each write, and its capability layer threads
+controller-level writers/readers into handlers without those
+handlers reaching for the raw connection themselves.
+
+The carve-out's role is **telling the audit chain which family a
+storeId belongs to**, not "giving handlers raw SQL operations the
+IMemoryBackend interface lacks." A small number of carve-out
+handlers do use `ctx.substrate.query<T>({predicate: {sql: ...}})`
+directly for fusion queries (re-embed + cosine-rerank against
+carve-out tables), but the majority of data flow goes through
+capabilities → controllers → SQLite. The carve-out's substrate
+seam is the audit anchor; the data path is independent.
 
 ### Decision
 
@@ -746,24 +784,28 @@ disposition — no implementation work follows from it.
 
 This is **not a defer.** It is a principled-split decision:
 
-- The archivist's substrate seam serves audited per-storeId writes
-  with raw-operation expressiveness (raw SQL for the carve-out,
-  RVF native ops for vector writes, FS-JSON for file-backed
-  state). These need narrow typed handles.
-- HybridBackend serves non-audited high-level consumers who want
-  fused queries against IMemoryBackend semantics. It is a
-  different abstraction for a different consumer.
+- The archivist is an audit layer that records what librarians
+  (CLI controllers) wrote to which storage. Its substrate seam is
+  the audit anchor — naming the cabinet so the notebook entry is
+  accurate. Swapping the archivist's substrate handle for
+  `HybridBackend` would move the audit anchor, but the actual data
+  path (capability → controller → table) does not change. No
+  consumer benefit; only refactor cost.
+- HybridBackend serves non-audited high-level consumers who want a
+  unified IMemoryBackend surface that fans out writes and routes
+  reads by query shape. It is a different abstraction for a
+  different consumer — orthogonal to the archivist's role.
 - Upstream itself does not consume HybridBackend in production —
   the fork is not behind a migration wave; it is making an
   independent architectural call that happens to match upstream's
-  observed practice (RVF-primary, narrow access for specialized
-  ops).
+  observed practice (RVF-primary, controllers own their SQLite
+  tables).
 
 If a future consumer demonstrates a real need for HybridBackend's
 fused-query semantics at the archivist surface — for example, a new
-storeId class that legitimately wants dual-store writes plus
-operation expressiveness limited to IMemoryBackend ops — that
-becomes a new evidence-driven ADR.
+storeId class that legitimately wants HybridBackend's dual-write
++ query-shape routing semantics — that becomes a new
+evidence-driven ADR.
 [[feedback-corpus-evidence-before-feature-work]] applies: implement
 when evidence accumulates, not when an aspirational ADR is filed.
 
@@ -785,8 +827,8 @@ when evidence accumulates, not when an aspirational ADR is filed.
   It can be picked up independently if/when the existing
   `createHybridService` test becomes important to acceptance.
 - ADR-0166 carve-out stays in force. The 9 SQLite carve-out
-  storeIds keep narrow `SqliteSubstrateHandle` access for raw SQL
-  operations.
+  storeIds keep `SqliteSubstrateHandle` as the audit anchor; the
+  CLI's controllers continue to own the underlying SQLite tables.
 
 ### Out of scope (deliberately)
 
@@ -800,5 +842,17 @@ when evidence accumulates, not when an aspirational ADR is filed.
 These would have been the work-items if Options (a)/(b)/(c)/(d)
 had won. With "Option e — principled split" they are correctly
 unbuilt.
+
+### Framing correction (vs prior draft of this amendment)
+
+The first draft of this amendment (committed earlier on 2026-05-24)
+argued that the carve-out exists for "operation expressiveness" —
+raw SQL operations (BM25, joins, transactional UPDATEs, aggregates)
+that the IMemoryBackend interface does not expose. A subsequent
+trace of pattern-store/pattern-search showed this was overstated.
+The majority of data flow goes through capabilities, not raw
+substrate SQL. The corrected framing — archivist as audit layer
+above the storage layer — is recorded above and is the load-bearing
+argument for the decision.
 
 No code change in this amendment — pure decision doc. Doc-only.

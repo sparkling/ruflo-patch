@@ -854,36 +854,81 @@ If Option F's permanence is ever questioned, a NEW ADR (not a resumption of ADR-
 - Does not modify `project-rvf-primary.md` memory entry. Axis-clarity update is a separate edit.
 - Does not shut down the `adr0166-vision-council` Agent Teams council. Eight personas remain spawned and idle; manual shutdown_request needed when the council's work is fully consumed.
 
-## Amendment 2026-05-24 — Cross-reference: ADR-0181 Phase 4 decided against HybridBackend; carve-out stays load-bearing
+## Amendment 2026-05-24 — Cross-reference: ADR-0181 Phase 4 decided against HybridBackend; carve-out's role is audit-anchor, not raw-SQL provider
 
 ADR-0181's 2026-05-24 decision amendment ("decline HybridBackend
 adoption for the archivist") explicitly cites ADR-0166's carve-out
-roster as one of the load-bearing reasons. Recording the
+roster as part of its load-bearing reasoning. Recording the
 cross-reference here so the chain of reasoning is visible from
 both ADRs.
 
-The 9 SQLite carve-out storeIds named in this ADR
-(`agentdb_pattern_search`, `agentdb_causal_*`, `agentdb_learner_run`,
-`agentdb_learning_predict`, `agentdb_sona_trajectory_store`,
-`agentdb_experience_record`) need operations that the
-`IMemoryBackend` interface — and therefore upstream's
-`HybridBackend` — does not expose:
+**A first draft of this cross-reference (and ADR-0181's amendment)
+argued the carve-out exists for "operation expressiveness" — raw
+SQL operations (BM25, joins, transactional UPDATEs, aggregates)
+that the `IMemoryBackend` interface does not expose.** A 2026-05-24
+trace of `agentdb_pattern_store`
+(`forks/agentdb/src/archivist/handlers/agentdb/pattern-store.ts`)
+shows that framing was overstated.
 
-- BM25 full-text search (`agentdb_pattern_search`)
-- Multi-table joins (`agentdb_causal_*` queries)
-- Transactional UPDATEs (`agentdb_causal_experiment`)
-- Aggregate queries (`agentdb_learning_predict`)
+### Actual data flow for the 9 carve-out storeIds
 
-Replacing the carve-out's raw `better-sqlite3` access with
-`HybridBackend.queryStructured()` would lose access to the precise
-operations the carve-out exists for. This is a stronger argument
-for the carve-out than the dual-write-collision framing originally
-named in ADR-0166's Decision Outcome — it is about **operation
-expressiveness**, not just write-side cabinet routing.
+The pattern-store handler obtains a **writer capability**
+(`ReasoningBankWriter`, wired by `makeCliReasoningBankWriter`)
+which delegates to the CLI's existing `ReasoningBank` controller.
+The controller writes to the `reasoning_patterns` SQLite table
+using its own connection. The archivist's `withWrite({storeId})`
+block is the audit anchor — the actual data does not flow through
+the substrate handle.
 
-The carve-out's role is therefore **confirmed and re-grounded**:
-narrow `SqliteSubstrateHandle` access stays in force because the
-9 storeIds need raw SQL semantics no higher-level abstraction
-(IMemoryBackend / HybridBackend) currently exposes.
+This pattern repeats across all 9 carve-out storeIds:
 
-No code change in this amendment — pure cross-reference. Doc-only.
+| StoreId | Who actually writes the data |
+|---|---|
+| `agentdb_pattern_store` | `ReasoningBank` controller → `reasoning_patterns` |
+| `agentdb_causal_edge` / `_recall` / `_query` | `CausalMemoryGraph` controller → `causal_edges` |
+| `agentdb_causal_experiment` | `NightlyLearner.{completeExperiments,createExperiments}` → `causal_experiments` |
+| `agentdb_learner_run` / `_learning_predict` | `LearningSystem` controller → 4 `learning_*` tables |
+| `agentdb_sona_trajectory_store` | `SonaTrajectoryService.recordTrajectory` → `sona_trajectories` |
+| `agentdb_experience_record` | `LearningSystem.recordExperience` → `learning_experiences` |
+| `agentdb_pattern_search` (read) | `PatternReader` capability → `searchPatterns()` BM25+RRF |
+
+The CLI's controllers have owned these SQLite tables since before
+the archivist existed. They use their own better-sqlite3 connections.
+
+### Re-grounded role of the carve-out
+
+The carve-out's role is **telling the audit chain which family a
+storeId belongs to**, not "giving handlers raw SQL operations the
+IMemoryBackend interface lacks." A minority of carve-out handlers
+do reach for `ctx.substrate.query<T>({predicate: {sql: ...}})`
+directly for fusion reads (re-embed + cosine-rerank against
+carve-out tables), but the majority of data flow goes through
+capabilities → controllers → SQLite.
+
+### Why this still rules out HybridBackend
+
+The decision to decline HybridBackend stands, but for the
+re-grounded reason: **the archivist is an audit layer above the
+storage layer.** Swapping the archivist's `SqliteSubstrateHandle`
+for a `HybridSubstrateHandle` would move the audit anchor; the
+actual data path (capability → controller → table) does not change.
+HybridBackend is a different abstraction for a different consumer
+(non-audited high-level callers wanting fused queries). It doesn't
+fit the archivist's role.
+
+The original ADR-0166 dual-write-collision framing in §"Decision
+Outcome" remains valid as a secondary concern (HybridBackend's
+dual-write semantics would produce 2 records per logical write,
+complicating the audit chain's before/after capture). The
+re-grounded primary framing is now: **the carve-out is about audit
+accuracy, not storage choice.**
+
+### Carve-out stays in force
+
+The 9 SQLite carve-out storeIds keep `SqliteSubstrateHandle` as
+their audit anchor. The CLI's controllers continue to own the
+underlying SQLite tables. No code change in this ADR; no migration
+required.
+
+No code change in this amendment — pure cross-reference + framing
+correction. Doc-only.

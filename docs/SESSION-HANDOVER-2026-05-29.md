@@ -128,10 +128,18 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
    `11eaef851`, 2026-05-19) was a honesty-pass wiring not new
    functionality; upstream production has zero callers of
    `createHybridService` or `provider: 'hybrid'`; auto-select
-   resolves to RVF. ADR-0166 carve-out needs raw SQL ops the
-   `IMemoryBackend` interface does not expose — re-grounded in
-   ADR-0166 Amendment 2026-05-24 cross-reference. The
-   "land checklist" test for `(svc as any).backend instanceof
+   resolves to RVF. **The load-bearing reason is the archivist is an
+   audit layer above the storage layer**: a trace of
+   `agentdb_pattern_store` showed actual data flows through
+   capabilities (ReasoningBankWriter etc.) → CLI controllers → SQLite,
+   while the archivist's `withWrite({storeId})` is just the audit
+   anchor. Swapping the archivist's substrate handle for HybridBackend
+   would move the audit anchor; the actual data path does not change.
+   No consumer benefit; only refactor cost. The "operation
+   expressiveness" framing in the first draft of the amendment was
+   overstated — corrected in ADR-0181 Amendment 2026-05-24 §"Framing
+   correction" and ADR-0166 Amendment 2026-05-24 cross-reference.
+   The "land checklist" test for `(svc as any).backend instanceof
    HybridBackend` is N/A for the archivist (no archivist code path
    constructs MemoryService via createHybridService); it remains
    valid for createHybridService consumers (none in production). The
