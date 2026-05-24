@@ -7,16 +7,15 @@ depends-on: [0220]
 implements: []
 ---
 
-> **Status note (2026-05-24 fourth amendment — DECIDED):** The
-> original Decision Outcome recommended Option C; the second
-> amendment revised to Option A with WASM-bypass; the third
-> amendment surfaced three routes (A/B/C). The **fourth amendment
-> records the decision: Route A** — add EWC inside the WASM
-> crate; honor upstream's documented `--consolidate` contract;
-> preserve the unified WASM runtime pattern for the `ruvllm_*`
-> MCP family. **The fourth amendment (bottom of file) is the
-> active implementation plan.** Read it before acting on any
-> earlier section. Earlier amendments are kept for history.
+> **Status note (2026-05-24 fifth amendment — READY TO EXECUTE):**
+> Decision history: original Outcome recommended Option C → second
+> amendment revised to Option A with WASM-bypass → third amendment
+> surfaced three routes (A/B/C) → fourth amendment locked Route A
+> (EWC inside WASM crate, honor `--consolidate` contract). **The
+> fifth amendment (bottom of file) closes 5 pre-implementation gaps
+> and adds the swarm execution plan (4 waves, max-concurrent 4
+> agents).** The fourth + fifth amendments together are the active
+> spec. Read the fifth before kicking off any agents.
 
 # EWC++ on the per-call adapt path (`ruvllm_microlora_adapt`)
 
@@ -1296,3 +1295,199 @@ with the 18-step plan above.
 
 No code change in this amendment — pure decision record + active
 implementation plan. Doc-only.
+
+## Amendment — 2026-05-24 (fifth — 5 pre-implementation gaps closed; swarm execution plan)
+
+Validation pass over the fourth amendment's 18-step plan surfaced
+5 under-specified gaps and a backwards-compat issue. This amendment
+closes all five with decided specs, then attaches the swarm
+execution plan that will run the work.
+
+### Gap closures (pre-implementation decisions)
+
+**Gap #1 — Journal backwards-compat (DECIDED: skip-and-log)**
+
+Existing `microlora-store.json` files (verified live in
+`forks/ruflo/v3/@claude-flow/cli/.claude-flow/ruvllm/microlora-store.json`)
+contain journal entries shaped `{op:'adapt', quality, lr?, success?}`
+— no `input` field. After Route A, replay would hit the new
+"input must not be all-zero" invariant.
+
+**Decision:** Skip legacy entries on replay; log at `warn` level
+with the loraId and entry index. Migration note:
+*"Pre-2026-05-24 adapt journal entries lack required `input` field;
+replay skips them. The pre-Route-A adapt was mathematically a no-op
+anyway (Q-3: zero placeholder input → zero gradient), so skipping
+loses no real adaptation."* Per `[[feedback-no-fallbacks]]`, this is
+explicit skip with diagnostic, not a silent fallback.
+
+Implementation point: archivist replay logic in step 11 must
+type-guard on entry shape (`'input' in entry`) and continue on
+mismatch with structured log.
+
+**Gap #2 — Task boundary semantics (DECIDED: not invoked in v1)**
+
+`EwcPlusPlus::detect_task_boundary` + `start_new_task` are not
+called on the per-call Route A path. Fisher accumulates indefinitely
+within a `MicroLoraWasm` instance lifetime. Reset (gap #3) provides
+the explicit clean-slate operation.
+
+**Rationale:** boundary detection is gradient-distribution-shift
+sensing; per-call adapts don't have a natural shift signal. Adding
+auto-boundary on per-call risks false positives. Caller-driven
+boundary triggers (e.g., a `newTask: boolean` MCP parameter) are a
+follow-on if corpus evidence demands them.
+
+Implementation point: `adapt_constrained` calls `apply_constraints`
++ `update_fisher` only. No `detect_task_boundary` call. Add a
+single-line comment in `MicroLoraWasm::adapt_constrained` citing
+this amendment for posterity.
+
+**Gap #3 — Reset semantics (DECIDED: reset clears Fisher too)**
+
+`MicroLoraWasm.reset()` resets BOTH the LoRA weights AND the EWC
+instance (`current_fisher`, `current_weights`, `task_memory` all
+cleared). Per-instance lifecycle stays cohesive.
+
+Implementation point: step 4's `MicroLoraWasm` struct mutation must
+include a `reset()` method update that calls
+`self.ewc.as_mut().map(|e| *e = EwcPlusPlus::new(self.ewc_config.clone()))`
+(or equivalent). Test in step 6 covers this.
+
+**Gap #4 — Two journal push sites in `ruvllm-store.ts` (AUDIT REQUIRED in wave 2)**
+
+`cli/src/mcp-tools/ruvllm-store.ts` has two adapt-journal sites:
+
+- Line 196: `rec.journal.push({ op: 'adapt', quality });` — quality-only
+- Line 268: `rec.journal.push({ op: 'adapt', quality, learningRate, success });` — full
+
+**Decision:** B3 agent in wave 2 audits both sites before adding
+`input` to either. Likely outcomes: one is the active code path,
+the other is dead. Per CLAUDE.md "delete unused" rule, the dead
+site is removed in the same commit. Document audit findings in
+commit message.
+
+Implementation point: wave 2 B3 agent's brief includes
+*"first read both lines; trace callers; add `input` only to the
+active path; delete the inactive site if confirmed dead."*
+
+**Gap #5 — EWC sizing in WASM crate (PRE-FLIGHT READ REQUIRED)**
+
+The WASM crate's `MicroLoRA` (in `crates/ruvllm-wasm/src/micro_lora.rs:341-373`)
+has its own parameter shape. Sona's `MicroLoRA` uses
+`hidden_dim × micro_lora_rank × 2`; the WASM crate likely uses
+`input_dim × rank + output_dim × rank` (based on lora_a/lora_b
+shape).
+
+**Decision:** B1 agent in wave 2 reads the WASM crate's
+`accumulate_gradient` first to determine actual parameter shape;
+sizes `EwcPlusPlus::new(EwcConfig { param_count: <actual_shape>, ... })`
+accordingly. B2's integration test (step 13) guards against
+silent no-op by asserting `adapt_constrained` weights diverge from
+`adapt` weights after N adapts — if EWC's `param_count` doesn't
+match the gradient size, the test fails fast.
+
+Implementation point: B1 agent's brief leads with
+*"read crates/ruvllm-wasm/src/micro_lora.rs:341-373; size EWC
+param_count to the actual gradient vector length; document the
+calculation in a code comment."*
+
+### Swarm execution plan
+
+```
+Wave 1 — Foundation (1 agent, blocking)
+  └─ A1 [coder]: extract crates/ewc-core/; refactor sona re-export;
+                 cargo build workspace-wide green; commit
+        BARRIER → wave 2
+
+Wave 2 — Cross-crate implementation (4 parallel agents, run_in_background:true)
+  ├─ B1 [coder]: WASM Rust changes
+  │              • Read micro_lora.rs:341-373 (gap #5)
+  │              • Cargo dep: ewc-core
+  │              • MicroLoraWasm::adapt_constrained (apply_constraints + update_fisher; no boundary detection per gap #2)
+  │              • reset() resets EWC too (gap #3)
+  │              • WASM bindings expose adapt_constrained
+  │              • Commit forks/ruvector
+  ├─ B2 [tester]: WASM Rust integration test
+  │              • Drive N adapts via adapt_constrained
+  │              • Assert weights diverge from parallel adapt() run (no-op guard)
+  │              • Test reset() clears Fisher (gap #3)
+  │              • Commit (combined with B1 or separate)
+  ├─ B3 [coder]: TS API + MCP schema
+  │              • Audit both journal sites in ruvllm-store.ts (gap #4); add `input` to active; delete dead
+  │              • Extend ruvllm-wasm.ts createMicroLora.adapt() — add input, consolidate params
+  │              • Update mcp-tools/ruvllm-tools.ts schema — input + consolidate
+  │              • Remove MICROLORA_WASM_MIN_DIM (confirmed safe — only 2 refs)
+  │              • Commit forks/ruflo
+  └─ B4 [coder]: agentdb archivist
+                 • Payload: input + consolidate
+                 • Invariants: input.length === inputDim AND input.some(x => x !== 0)
+                 • Replay backwards-compat: skip-and-log legacy entries (gap #1)
+                 • Commit forks/agentdb
+        BARRIER → wave 3
+
+Wave 3 — Validation (3 parallel agents)
+  ├─ C1 [tester]: TS acceptance tests in cli/__tests__/
+  │              • Schema includes input + consolidate
+  │              • Missing input → validation error
+  │              • All-zero input → invariant rejection
+  │              • consolidate=true (default) → EWC consulted
+  │              • consolidate=false → raw adapt path
+  │              • Legacy journal replay → entries skipped, warn logged
+  ├─ C2 [reviewer]: smoke compatibility
+  │              • Run scripts/smoke-ruvllm-wasm-auto-init.mjs equivalent in fork
+  │              • All 12 PR-#2088 invariants stay green
+  │              • Specifically: ruvllm_microlora_adapt uses prior instance from create handler
+  └─ C3 [reviewer]: cross-fork diff review
+                 • Each commit traces to a numbered step in fourth amendment
+                 • No surplus changes (per CLAUDE.md "only what was asked")
+                 • No squelched tests
+        BARRIER → wave 4
+
+Wave 4 — Release (1 agent, sequential)
+  └─ D1 [coder]: publish
+                 • Verify all 3 fork trees green (verify B1/B3/B4 commits landed per [[feedback-commit-forks-before-release]])
+                 • npm run release (publishes ewc-core → sona → ruvllm-wasm → agentdb → ruflo)
+                 • Acceptance gate: bash scripts/test-acceptance-fast.sh adr0059,p4 → 15/15
+                 • If red: trace before hypothesis per [[feedback-trace-before-hypothesis]]
+```
+
+### Parallelism summary
+
+- **Total agents:** 9 (1 + 4 + 3 + 1)
+- **Max concurrent:** 4 (wave 2)
+- **Barriers:** 3 (between waves)
+- **Topology:** hierarchical — main thread is queen; agents in each wave are workers
+- **Dispatch primitive:** `Agent` tool with `run_in_background: true`, all spawns per wave in ONE message per CLAUDE.md
+- **Wave 2 speculation risk:** low — ADR specifies API signatures precisely; B3/B4 speculate against B1's planned signature with low rebase probability
+
+### Agent type assignments
+
+- A1, B1, B3, B4, D1 — `ruflo-core:coder` (or `coder`)
+- B2, C1 — `ruflo-testgen:tester` (or `tester`)
+- C2, C3 — `ruflo-core:reviewer` (or `reviewer`)
+
+### Success criteria per wave
+
+| Wave | Success criteria |
+|---|---|
+| 1 | `cd forks/ruvector && cargo build --workspace` exits 0; sona re-export preserves `crate::ewc::EwcPlusPlus` import path |
+| 2 | All 4 commits land on respective fork `main`; `cd forks/ruvector && cargo test -p ruvllm-wasm` green; agentdb invariant tests green |
+| 3 | C1 tests pass; C2 smoke 12/12; C3 produces zero blocker findings |
+| 4 | Verdaccio shows 3 new published versions; acceptance `adr0059,p4` 15/15 |
+
+### What can go wrong (per `[[feedback-trace-before-hypothesis]]`)
+
+If wave 2 produces ≥2 unexpected failures, halt and spawn a
+read-only `code-analyzer` trace agent before any fix hypothesis.
+Don't chain failing-then-fixing hypothesis cycles.
+
+### Status
+
+ADR-0228 stays `accepted`. **Direction**: locked. **Route**: A
+(locked). **Sub-decision**: A.2 (locked; A.1 fallback documented).
+**Pre-implementation gaps**: 5 closed. **Implementation plan**:
+swarm-ready, awaiting kickoff.
+
+No code change in this amendment — pure pre-implementation
+specification. Doc-only.
