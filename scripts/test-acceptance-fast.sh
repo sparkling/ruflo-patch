@@ -9,8 +9,8 @@
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
-#         adr0239, adr0240, adr0241, adr0243, adr0245, adr0246, e2e-core,
-#         e2e-storage, skills-surface (ADR-0216)
+#         adr0238, adr0239, adr0240, adr0241, adr0243, adr0245, adr0246, adr0248,
+#         e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
 # DELIBERATE-ADR0245: fast-acceptance runner intentionally tolerates per-
@@ -367,6 +367,30 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0239"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     # must also appear in any caller's collect_parallel spec list).
     _fast_run "adr0239-cap-file"            check_adr0239_cap_file_committed
     _fast_run "adr0239-no-new-dead-code"    check_adr0239_no_new_dead_code
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0238"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0238-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0238-checks.sh"
+    echo "── ADR-0238 (wire-or-remove unused surfaces — 6/8 trip-wires) ──"
+    _fast_run "adr0238-s1-honest"      check_adr0238_surface1_aidefence_honest
+    _fast_run "adr0238-s3-telemetry"   check_adr0238_surface3_telemetry_tools_deleted
+    _fast_run "adr0238-s4-quarantine"  check_adr0238_surface4_consensus_quarantine
+    _fast_run "adr0238-s6-no-paxos"    check_adr0238_surface6_paxos_removed
+    _fast_run "adr0238-s7-weighted"    check_adr0238_surface7_weighted_consensus
+    _fast_run "adr0238-s8-advisory"    check_adr0238_surface8_advisory_frontmatter
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0248"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0248-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0248-checks.sh"
+    echo "── ADR-0248 (plugin marketplace integrity + honesty) ──"
+    _fast_run "adr0248-graph-int-gone" check_adr0248_graph_intelligence_deleted
+    _fast_run "adr0248-no-phantoms"    check_adr0248_phantom_tools_removed
+    _fast_run "adr0248-hook-shim"      check_adr0248_hook_shim_adopted
+    _fast_run "adr0248-mp-lint"        check_adr0248_marketplace_lint
   fi
 fi
 
