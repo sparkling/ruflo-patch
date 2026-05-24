@@ -42,11 +42,19 @@ const SKIP_DIRS = new Set(['node_modules', '.git', '.tsc-toolchain']);
 // version is the bookkeeping side that needs to know about the same
 // mapping — `toNpmName` below adds the @ruvector → @sparkleideas/ruvector-
 // translation.
-const SCOPES = ['@sparkleideas/', '@claude-flow/', '@ruvector/'];
+// Exported for ADR-0236: scripts/lint-scope-registries.mjs reads SCOPES
+// (the publishable scope prefixes) as one of the 5 cross-registry sources
+// it pairwise-checks against codemod.mjs::UNSCOPED_MAP and friends.
+// Internal usage at :112, :301, :526, :631 is preserved.
+export const SCOPES = ['@sparkleideas/', '@claude-flow/', '@ruvector/'];
 
 // Unscoped packages that are published as @sparkleideas/* (via codemod rename).
 // These need -patch.N versions too.
-const UNSCOPED_PUBLISHABLE = new Set([
+//
+// Exported for ADR-0236 cross-registry lint (single source of truth for
+// "this unscoped fork package is in the publish pipeline"). Drift with
+// codemod.mjs::UNSCOPED_MAP is the defect class CT-C addresses.
+export const UNSCOPED_PUBLISHABLE = new Set([
   'agentdb',
   'agentic-flow',
   'claude-flow',
