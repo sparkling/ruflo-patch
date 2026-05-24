@@ -1646,3 +1646,134 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
       'no @sparkleideas/cli must remain in .claude-plugin/plugin.json (ADR-0235 F-07-003)');
   });
 });
+
+// ADR-0244 site #9 — Pass 9 brand-drift sweep over commands/*.ts
+//
+// Pass 9 rewrites the long-tail of upstream `claude-flow ` / `claude-
+// flow@v3alpha` / `npx @sparkleideas/cli@latest` strings in the CLI's
+// own `commands/*.ts` examples + writeln hints to the wrapper brand.
+describe('codemod: ADR-0244 site #9 — Pass 9 brand-drift in commands/*.ts', () => {
+  let tmp;
+  afterEach(() => { if (tmp) rmSync(tmp, { recursive: true, force: true }); });
+
+  it('rewrites `claude-flow swarm` -> `ruflo swarm` in commands/swarm.ts examples', async () => {
+    tmp = makeTmpDir();
+    const cmdDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src', 'commands');
+    mkdirSync(cmdDir, { recursive: true });
+    const src = `
+      export const swarmCommand = {
+        name: 'swarm',
+        examples: [
+          { command: 'claude-flow swarm init', description: 'Initialize V3 swarm' },
+          { command: 'claude-flow swarm start -o "Build API"', description: 'Start swarm' },
+        ],
+        action: async (ctx) => {
+          output.writeln('Usage: claude-flow swarm <subcommand>');
+          return { success: true };
+        }
+      };
+    `;
+    writeFileSync(join(cmdDir, 'swarm.ts'), src);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cmdDir, 'swarm.ts'), 'utf8');
+    assert.ok(result.includes('ruflo swarm init'),
+      '`claude-flow swarm init` -> `ruflo swarm init`');
+    assert.ok(result.includes('ruflo swarm start'),
+      '`claude-flow swarm start` -> `ruflo swarm start`');
+    assert.ok(result.includes('Usage: ruflo swarm'),
+      'writeln Usage hint rewritten');
+    assert.ok(!result.includes('claude-flow swarm'),
+      'no `claude-flow swarm` substring remains');
+  });
+
+  it('rewrites `claude-flow@v3alpha` -> `@sparkleideas/ruflo@latest` in commands', async () => {
+    tmp = makeTmpDir();
+    const cmdDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src', 'commands');
+    mkdirSync(cmdDir, { recursive: true });
+    const src = `
+      output.writeln('claude mcp add claude-flow npx claude-flow@v3alpha mcp start');
+    `;
+    writeFileSync(join(cmdDir, 'swarm.ts'), src);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cmdDir, 'swarm.ts'), 'utf8');
+    assert.ok(result.includes('@sparkleideas/ruflo@latest'),
+      'claude-flow@v3alpha -> @sparkleideas/ruflo@latest');
+    assert.ok(!result.includes('claude-flow@v3alpha'),
+      'no claude-flow@v3alpha remains');
+  });
+
+  it('rewrites `npx @sparkleideas/cli@latest` -> `npx @sparkleideas/ruflo@latest` in commands', async () => {
+    tmp = makeTmpDir();
+    const cmdDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src', 'commands');
+    mkdirSync(cmdDir, { recursive: true });
+    const src = `
+      execSync('npx @sparkleideas/cli@latest memory init 2>/dev/null');
+    `;
+    writeFileSync(join(cmdDir, 'start.ts'), src);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cmdDir, 'start.ts'), 'utf8');
+    assert.ok(result.includes('npx @sparkleideas/ruflo@latest memory init'),
+      'wrapper npx invocation flipped to ruflo wrapper');
+    assert.ok(!result.includes('npx @sparkleideas/cli@latest'),
+      'no npx @sparkleideas/cli@latest remains');
+  });
+
+  it('does NOT touch commands/*.ts under __tests__/ (test files)', async () => {
+    tmp = makeTmpDir();
+    // Place a .ts file under a __tests__/ directory inside commands.
+    const testDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src', 'commands', '__tests__');
+    mkdirSync(testDir, { recursive: true });
+    const src = `
+      it('preserves upstream brand', () => {
+        expect(src).toContain('claude-flow swarm init');
+      });
+    `;
+    writeFileSync(join(testDir, 'preservation.test.ts'), src);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(testDir, 'preservation.test.ts'), 'utf8');
+    assert.ok(result.includes('claude-flow swarm init'),
+      '__tests__/ scope must NOT be rewritten (Pass 9 exclusion)');
+  });
+
+  it('does NOT touch non-commands TS files (Pass 9 path-scoped)', async () => {
+    tmp = makeTmpDir();
+    const otherDir = join(tmp, 'v3', '@claude-flow', 'cli', 'src', 'services');
+    mkdirSync(otherDir, { recursive: true });
+    const src = `
+      // upstream brand reference in a non-commands file
+      const upstreamHint = 'claude-flow swarm init';
+    `;
+    writeFileSync(join(otherDir, 'config-file-manager.ts'), src);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(otherDir, 'config-file-manager.ts'), 'utf8');
+    assert.ok(result.includes('claude-flow swarm init'),
+      'non-commands files are out of Pass 9 scope');
+  });
+
+  it('does NOT touch ADR markdown (docs/adr/** exclusion)', async () => {
+    tmp = makeTmpDir();
+    const adrDir = join(tmp, 'docs', 'adr');
+    mkdirSync(adrDir, { recursive: true });
+    const src = `# ADR
+
+Example: \`claude-flow swarm init\` was the upstream invocation.
+`;
+    writeFileSync(join(adrDir, 'ADR-0244.md'), src);
+
+    await transform(tmp);
+
+    const result = readFileSync(join(adrDir, 'ADR-0244.md'), 'utf8');
+    assert.ok(result.includes('claude-flow swarm init'),
+      'docs/adr/** must NOT be rewritten (Pass 9 exclusion)');
+  });
+});

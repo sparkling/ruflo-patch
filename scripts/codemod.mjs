@@ -515,6 +515,84 @@ export function applyPass5(content) {
   return content.replace(CLAUDE_FLOW_VERSIONED_RE, PASS5_REPLACEMENT);
 }
 
+// Pass 9 (ADR-0244 site #9, 2026-05-24): brand-drift sweep over
+// `commands/*.ts` source files. Pass 7 already flips
+// `@sparkleideas/cli` → `@sparkleideas/ruflo` in user-facing scopes
+// (docs/init/.claude/.claude-plugin); Pass 9 extends the scope to
+// the CLI's own examples + writeln hints in `commands/*.ts` so that
+// help text + on-screen tips don't ship the upstream
+// `claude-flow ` / `claude-flow@v3alpha` brand. The CLI binary
+// itself is invoked as `claude-flow ...` only on upstream installs;
+// fork users invoke `ruflo ...` via the wrapper. The previous
+// hardcoded literals in commands/*.ts were the long-tail of
+// upstream-inherited brand strings that survived past Pass 7's
+// scope boundary.
+//
+// Four substring rewrites (5 conceptual sets — `claude-flow@v3alpha`
+// is already handled by Pass 5, but Pass 5's scope doesn't include
+// commands/*.ts so we re-apply that rewrite here):
+//   (a) `claude-flow@v3alpha` → `@sparkleideas/ruflo@latest`
+//       (versioned npx hint; ADR-0244 calls out this exact form).
+//   (b) `npx @sparkleideas/cli@latest` → `npx @sparkleideas/ruflo@latest`
+//       (wrapper-brand flip; complements existing Pass 7 in scope).
+//   (c) `claude-flow ` (with trailing space; covers
+//       `claude-flow swarm`, `claude-flow workflow`,
+//       `claude-flow agent`, etc.) → `ruflo `.
+//       This is the catchall for help-text hints. The trailing
+//       space is load-bearing — without it we'd false-hit on
+//       `claude-flow-mcp` tags and other compound identifiers.
+//   (d) `'claude-flow '` (single-quoted shell-token form used
+//       inside template literals like `claude mcp add claude-flow ...`).
+//       Covered by (c) since the trailing space catches both
+//       template-literal and shell-token forms.
+//
+// Path scope: `forks/ruflo/v3/@claude-flow/cli/src/commands/*.ts`.
+// EXCLUDES: `v3/implementation/adrs/**`, `docs/adr/**`,
+// `__tests__/**` (per the same exclusion-first discipline as Pass
+// 7).
+//
+// Why a separate pass (not just widening Pass 7's scope): Pass 7
+// changes ONE token (`@sparkleideas/cli` → `@sparkleideas/ruflo`)
+// — wrapper-brand only. Pass 9 changes FOUR tokens, and several of
+// those would false-hit if applied in Pass 7's user-facing
+// `.claude/**` markdown scope (the `claude-flow ` catchall would
+// rewrite documentation prose that references the upstream package
+// by name). Keeping the rewrites separate lets each pass own its
+// scope.
+const PASS9_VERSIONED_BRAND_RE = /\bclaude-flow@v3alpha\b/g;
+const PASS9_NPX_WRAPPER_RE = /\bnpx\s+@sparkleideas\/cli@latest\b/g;
+const PASS9_BRAND_PREFIX_RE = /\bclaude-flow(\s+)/g;
+
+const PASS9_COMMANDS_PREFIX = 'v3/@claude-flow/cli/src/commands/';
+
+/**
+ * Returns true if the file is in Pass-9 scope (commands/*.ts brand
+ * drift). Restricted to .ts extension under commands/.
+ *
+ * Exported for tests.
+ */
+export function isPlugin9Scope(filePath, tempDir) {
+  const rel = relative(tempDir, filePath).replace(/\\/g, '/');
+  if (rel.startsWith('..') || rel === '') return false;
+  // Hard excludes (apply first).
+  if (rel.startsWith('docs/adr/') || rel.includes('/docs/adr/')) return false;
+  if (rel.startsWith('v3/implementation/adrs/')) return false;
+  if (rel.includes('__tests__/')) return false;
+  const ext = effectiveExt(basename(filePath));
+  if (ext !== '.ts') return false;
+  // Include only commands/*.ts paths.
+  return rel.startsWith(PASS9_COMMANDS_PREFIX);
+}
+
+/** Apply Pass 9 only — assumes the caller has already scope-checked. */
+export function applyPass9(content) {
+  let result = content;
+  result = result.replace(PASS9_VERSIONED_BRAND_RE, '@sparkleideas/ruflo@latest');
+  result = result.replace(PASS9_NPX_WRAPPER_RE, 'npx @sparkleideas/ruflo@latest');
+  result = result.replace(PASS9_BRAND_PREFIX_RE, 'ruflo$1');
+  return result;
+}
+
 // -- File walker --------------------------------------------------------------
 
 /** Recursively walk `dir`, yielding absolute file paths that pass the filter. */
@@ -605,6 +683,13 @@ async function processOneFile(filePath, fileCache, tempDir) {
     // for user-facing surfaces (README/USERGUIDE/install.sh/init/.claude/etc)
     if (tempDir && isPlugin7Scope(filePath, tempDir)) {
       transformed = applyPass7(transformed);
+    }
+    // Pass 9 (ADR-0244 site #9): brand-drift sweep over commands/*.ts
+    // (claude-flow@v3alpha → @sparkleideas/ruflo@latest,
+    //  npx @sparkleideas/cli@latest → npx @sparkleideas/ruflo@latest,
+    //  claude-flow ` prefix → ruflo `).
+    if (tempDir && isPlugin9Scope(filePath, tempDir)) {
+      transformed = applyPass9(transformed);
     }
     if (transformed !== content) {
       await writeFile(filePath, transformed, 'utf8');
