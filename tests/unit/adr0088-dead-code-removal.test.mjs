@@ -26,13 +26,15 @@ import { strict as assert } from 'node:assert';
 import { existsSync, readFileSync } from 'node:fs';
 
 const FORK_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
-const FORK_HELPERS = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/.claude/helpers';
 const PATCH_HELPERS = '/Users/henrik/source/ruflo-patch/.claude/helpers';
 
 const DAEMON_IPC_PATH = `${FORK_SRC}/services/daemon-ipc.ts`;
 const WORKER_DAEMON_PATH = `${FORK_SRC}/services/worker-daemon.ts`;
 const CMD_DAEMON_PATH = `${FORK_SRC}/commands/daemon.ts`;
-const FORK_HOOK_PATH = `${FORK_HELPERS}/auto-memory-hook.mjs`;
+// ADR-0235: bundled-static .claude/helpers/ deleted; the generator is now
+// the source of truth. Read from helpers-generator.ts and the patch's
+// own copy (which serves as the in-tree probe).
+const HELPERS_GENERATOR_PATH = `${FORK_SRC}/init/helpers-generator.ts`;
 const PATCH_HOOK_PATH = `${PATCH_HELPERS}/auto-memory-hook.mjs`;
 
 function readIfExists(path) {
@@ -130,11 +132,14 @@ describe('ADR-0088 + ADR-0207 T2: worker-daemon.ts memory.* IPC handlers removed
 // ============================================================================
 
 describe('ADR-0088 T3: auto-memory-hook.mjs dead probe removed', () => {
-  const forkSource = readIfExists(FORK_HOOK_PATH);
+  // ADR-0235: read from the GENERATOR (source of truth), not the deleted
+  // bundled-static. The generator-emitted auto-memory-hook content is what
+  // ships to users after Option B.
+  const generatorSource = readIfExists(HELPERS_GENERATOR_PATH);
   const patchSource = readIfExists(PATCH_HOOK_PATH);
 
-  it('fork auto-memory-hook.mjs exists', () => {
-    assert.ok(forkSource, `${FORK_HOOK_PATH} must exist`);
+  it('helpers-generator.ts exists (source-of-truth for auto-memory-hook)', () => {
+    assert.ok(generatorSource, `${HELPERS_GENERATOR_PATH} must exist`);
   });
 
   it('patch auto-memory-hook.mjs exists', () => {
@@ -149,9 +154,9 @@ describe('ADR-0088 T3: auto-memory-hook.mjs dead probe removed', () => {
   ];
 
   for (const pat of deadPatterns) {
-    it(`fork hook does not contain: ${pat}`, () => {
-      assert.ok(!forkSource.includes(pat),
-        `${pat} must be removed from fork auto-memory-hook.mjs`);
+    it(`generator does not emit: ${pat}`, () => {
+      assert.ok(!generatorSource.includes(pat),
+        `${pat} must be removed from helpers-generator.ts (source of truth)`);
     });
     it(`patch hook does not contain: ${pat}`, () => {
       assert.ok(!patchSource.includes(pat),
@@ -159,14 +164,14 @@ describe('ADR-0088 T3: auto-memory-hook.mjs dead probe removed', () => {
     });
   }
 
-  it('fork hook still has doImport function', () => {
-    assert.ok(forkSource.includes('async function doImport'),
-      'doImport must remain — only the daemon probe is removed');
+  it('patch hook still has doImport function', () => {
+    assert.ok(patchSource.includes('async function doImport'),
+      'doImport must remain in patch hook — only the daemon probe is removed');
   });
 
-  it('fork hook still has RvfBackend/createBackend reference', () => {
-    assert.ok(forkSource.includes('createBackend'),
-      'in-process backend creation stays (ADR-0086 single data path)');
+  it('patch hook still has RvfBackend/createBackend reference', () => {
+    assert.ok(patchSource.includes('createBackend'),
+      'in-process backend creation stays in patch hook (ADR-0086 single data path)');
   });
 });
 

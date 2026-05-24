@@ -6,7 +6,11 @@ import { describe, it } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 
-const INTEL_PATH = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/.claude/helpers/intelligence.cjs';
+// ADR-0235: bundled-static forks/ruflo/v3/@claude-flow/cli/.claude/helpers/
+// deleted (Option B). The patch-repo's own .claude/helpers/ tree is the
+// canonical test fixture for ADR-0086 invariants — it is the "post-init"
+// snapshot the helpers-generator should converge to.
+const INTEL_PATH = '/Users/henrik/source/ruflo-patch/.claude/helpers/intelligence.cjs';
 const src = readFileSync(INTEL_PATH, 'utf-8');
 
 // --- Group 1: readStoreFromRvf exists (old readStoreFromDb replaced)

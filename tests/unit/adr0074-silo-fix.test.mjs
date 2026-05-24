@@ -11,12 +11,15 @@ import { strict as assert } from 'node:assert';
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-const FORK_ROOT = '/Users/henrik/source/forks/ruflo/v3';
-const HELPERS_DIR = resolve(FORK_ROOT, '@claude-flow/cli/.claude/helpers');
+// ADR-0235: bundled-static forks/ruflo/v3/@claude-flow/cli/.claude/helpers/
+// deleted (Option B). The patch-repo's own .claude/helpers/ tree serves as
+// the canonical test fixture for ADR-0074 / ADR-0083 invariants — it is the
+// "post-init" snapshot the helpers-generator should converge to, and is
+// independently maintained per the project's testing protocol.
+const PATCH_HELPERS = '/Users/henrik/source/ruflo-patch/.claude/helpers';
 
-// Read source files once — all tests assert against the actual fork source
-const autoMemoryHook = readFileSync(resolve(HELPERS_DIR, 'auto-memory-hook.mjs'), 'utf-8');
-const intelligenceCjs = readFileSync(resolve(HELPERS_DIR, 'intelligence.cjs'), 'utf-8');
+const autoMemoryHook = readFileSync(resolve(PATCH_HELPERS, 'auto-memory-hook.mjs'), 'utf-8');
+const intelligenceCjs = readFileSync(resolve(PATCH_HELPERS, 'intelligence.cjs'), 'utf-8');
 
 // ============================================================================
 // Phase 1a: loadMemoryPackage() scope fix
@@ -31,21 +34,14 @@ describe('ADR-0074 Phase 1a: loadMemoryPackage() Strategy 4 scope walk-up', () =
     );
   });
 
-  it('Strategy 4 also checks @claude-flow/memory for backward compat', () => {
-    // Both scopes must be present for the walk-up to work in dev and published contexts
-    assert.ok(
-      autoMemoryHook.includes("'@claude-flow/memory'"),
-      'Strategy 4 must check @claude-flow/memory for backward compatibility',
-    );
-  });
-
-  it('Strategy 4 iterates both scopes in a single array literal', () => {
-    // The loop should have both scopes in one array, not two separate blocks
-    // Pattern: for (const pkg of ['@sparkleideas/memory', '@claude-flow/memory'])
-    const arrayPattern = /for\s*\(\s*const\s+\w+\s+of\s+\[.*'@sparkleideas\/memory'.*'@claude-flow\/memory'.*\]/s;
+  it('Strategy 4 iterates the @sparkleideas/memory scope in an array literal', () => {
+    // Post-ADR-0143 rebrand: the loop only iterates the @sparkleideas scope.
+    // Original ADR-0074 Phase 1a expected both @sparkleideas/memory and
+    // @claude-flow/memory; the brand rebrand removed the upstream scope.
+    const arrayPattern = /for\s*\(\s*const\s+\w+\s+of\s+\[[^\]]*'@sparkleideas\/memory'[^\]]*\]/s;
     assert.ok(
       arrayPattern.test(autoMemoryHook),
-      'Strategy 4 must iterate both scopes via a single array literal in for-of',
+      'Strategy 4 must iterate the @sparkleideas/memory scope via an array literal in for-of',
     );
   });
 

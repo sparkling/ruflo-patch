@@ -1604,4 +1604,45 @@ describe('codemod: ADR-0143 Pass 7 — user-facing @sparkleideas/cli → @sparkl
     assert.ok(!/(?<![\w-])@sparkleideas\/cli(?![\w-])/.test(after1),
       'no @sparkleideas/cli remains after first run');
   });
+
+  // ── ADR-0235 regression: .claude-plugin/plugin.json is Pass 7 scope ──
+  //
+  // Per ADR-0235 §Confirmation #7: a deliberately-inserted @sparkleideas/cli
+  // reference in .claude-plugin/plugin.json MUST be flipped to
+  // @sparkleideas/ruflo by transformSource() + isPlugin7Scope must match.
+  //
+  // This guards the umbrella plugin.json from re-introducing internal-package
+  // refs through future hand-edits. The path is already in
+  // PASS7_USER_FACING_SUBDIRS (line 376-378 of scripts/codemod.mjs).
+  // The lint umbrella-plugin-brand.test.mjs covers brand strings (claude-flow,
+  // 2.5.0, rUv, etc.); this test covers the @sparkleideas/cli → ruflo flip.
+
+  it('ADR-0235: @sparkleideas/cli in .claude-plugin/plugin.json is flipped (regression)', async () => {
+    tmp = makeTmpDir();
+    const cpDir = join(tmp, '.claude-plugin');
+    mkdirSync(cpDir, { recursive: true });
+    // Simulate a future hand-edit that mistakenly references the internal cli package.
+    const pluginJson = {
+      name: 'ruflo',
+      version: '0.0.0',
+      mcpServers: {
+        ruflo: {
+          command: 'npx',
+          args: ['-y', '@sparkleideas/cli@latest', 'mcp', 'start'],
+        },
+      },
+      keywords: ['Built on top of `@sparkleideas/cli`'],
+    };
+    writeFileSync(join(cpDir, 'plugin.json'), JSON.stringify(pluginJson, null, 2) + '\n');
+
+    await transform(tmp);
+
+    const result = readFileSync(join(cpDir, 'plugin.json'), 'utf8');
+    assert.ok(result.includes('"@sparkleideas/ruflo@latest"'),
+      'mcpServers args must be flipped to @sparkleideas/ruflo (Pass 7)');
+    assert.ok(result.includes('@sparkleideas/ruflo`'),
+      'keyword backtick string must be flipped to @sparkleideas/ruflo (Pass 7)');
+    assert.ok(!result.includes('@sparkleideas/cli'),
+      'no @sparkleideas/cli must remain in .claude-plugin/plugin.json (ADR-0235 F-07-003)');
+  });
 });
