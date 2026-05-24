@@ -7,17 +7,16 @@ depends-on: [0220]
 implements: []
 ---
 
-> **Status note (2026-05-24 third amendment):** The original
-> Decision Outcome recommended **Option C — Hybrid**. The
-> second amendment revised to **Option A** with WASM-bypass via
-> native sona NAPI. The **third amendment** surfaces an upstream
-> design conflict (PR #2088's CI smoke guards the WASM-unified
-> `ruvllm_*` MCP family pattern that the reroute would break)
-> and presents **three implementation routes (A/B/C)** rather
-> than a single recommendation. **Direction** (strict micro-tier
-> EWC, no phased delivery) is decided; **route** is pending user
-> choice. Read the third amendment (bottom) before acting on any
-> earlier section.
+> **Status note (2026-05-24 fourth amendment — DECIDED):** The
+> original Decision Outcome recommended Option C; the second
+> amendment revised to Option A with WASM-bypass; the third
+> amendment surfaced three routes (A/B/C). The **fourth amendment
+> records the decision: Route A** — add EWC inside the WASM
+> crate; honor upstream's documented `--consolidate` contract;
+> preserve the unified WASM runtime pattern for the `ruvllm_*`
+> MCP family. **The fourth amendment (bottom of file) is the
+> active implementation plan.** Read it before acting on any
+> earlier section. Earlier amendments are kept for history.
 
 # EWC++ on the per-call adapt path (`ruvllm_microlora_adapt`)
 
@@ -1073,3 +1072,227 @@ smoke conflict on next upstream sync.
 
 No code change in this amendment — pure research findings.
 Doc-only.
+
+## Amendment — 2026-05-24 (fourth — DECISION: Route A; active implementation plan)
+
+**User decision: honor upstream intent → Route A.**
+
+Add EWC++ inside the WASM crate; add `consolidate: boolean`
+parameter to `ruvllm_microlora_adapt` honoring upstream's
+documented `--consolidate` contract
+(`ruvnet/ruflo/plugins/ruflo-intelligence/README.md:102`);
+preserve the WASM-unified runtime pattern for the `ruvllm_*` MCP
+family; keep PR #2088's CI smoke
+(`smoke-ruvllm-wasm-auto-init.mjs`) green; minimize fork drift on
+`ruvllm-tools.ts`.
+
+This supersedes the second amendment's implementation plan
+(Route B / WASM-bypass via sona NAPI). The second amendment is
+kept for history; the active plan is below.
+
+### How to share EWC across crates — sub-decision (recommended A.2)
+
+The WASM crate (`crates/ruvllm-wasm`) has no current EWC code.
+Adding it three ways:
+
+- **A.1 — duplicate**: copy `crates/sona/src/ewc.rs` into
+  `crates/ruvllm-wasm/src/ewc.rs`. ~500 LOC duplication; two
+  copies to keep in sync.
+- **A.2 — shared crate (RECOMMENDED)**: extract `EwcPlusPlus` +
+  `EwcConfig` into a new workspace crate `crates/ewc-core/`.
+  `crates/sona` depends on it; `crates/ruvllm-wasm` depends on
+  it. No duplication. Workspace restructure but small.
+- **A.3 — sona as path dep**: `crates/ruvllm-wasm/Cargo.toml`
+  adds `sona = { path = "../sona" }`. Risk: sona's non-WASM-safe
+  parts (NAPI bindings, etc.) need to be cfg-gated; build may
+  break. Rejected on risk grounds.
+
+A.2 chosen. `EwcPlusPlus` is wasm-compatible (no `std::sync`, no
+tokio, no NAPI; just `Vec<f32>` + `VecDeque`). Extraction is
+mechanical.
+
+### Implementation steps (active plan)
+
+**Rust side (`forks/ruvector`):**
+
+1. **Create `crates/ewc-core/`** workspace crate with
+   `EwcPlusPlus`, `EwcConfig`, and the unit tests from
+   `crates/sona/src/ewc.rs:355-500` (7 round-trip tests per
+   F-05-006 audit). Add `ewc-core` to workspace `Cargo.toml`.
+2. **Refactor `crates/sona/src/ewc.rs`** to `pub use ewc_core::{EwcPlusPlus, EwcConfig};`
+   (preserves the existing `crate::ewc::EwcPlusPlus` public path
+   so `coordinator.rs:3` import + downstream callers don't
+   change). Move sona-specific glue (if any) below the re-export.
+3. **`crates/ruvllm-wasm/Cargo.toml`** — add `ewc-core = { path = "../ewc-core" }`
+   to `[dependencies]`.
+4. **`crates/ruvllm-wasm/src/micro_lora.rs`** — store an optional
+   `EwcPlusPlus` instance on `MicroLoraWasm` sized for the
+   WASM-tier param shape (`input_dim * rank * 2` per the
+   crate's existing `MicroLoRA` parameter layout — verify at
+   implementation time against `accumulate_gradient` at `:341-373`).
+   Add a method:
+   ```rust
+   pub fn adapt_constrained(&mut self, input: &[f32], feedback: AdaptFeedbackWasm) {
+       // Compute gradient inline (mirrors accumulate_gradient logic)
+       // Run gradient through self.ewc.apply_constraints(...)
+       // Apply constrained gradient instead of raw
+   }
+   ```
+   The existing `adapt(input, feedback)` stays unchanged (no EWC)
+   for any consumer that doesn't opt in.
+5. **`crates/ruvllm-wasm/src/lib.rs`** (or wherever WASM bindings
+   live) — expose `adapt_constrained` to JS via `wasm_bindgen`.
+6. **Tests in `crates/ruvllm-wasm/src/micro_lora.rs`** — assert
+   `adapt_constrained` mutates weights differently than `adapt`
+   when EWC has accumulated Fisher (guards against the dim-
+   mismatch silent-no-op trap — `EwcPlusPlus::apply_constraints`
+   returns input unchanged when `gradients.len() != param_count`;
+   this test catches it).
+
+**TS side (`forks/ruflo`):**
+
+7. **`v3/@claude-flow/cli/src/ruvector/ruvllm-wasm.ts`** —
+   extend `createMicroLora` `.adapt()` signature:
+   ```ts
+   adapt(input: Float32Array, quality: number,
+         learningRate = 0.01, success = true,
+         consolidate = true): void {
+     const feedback = new mod.AdaptFeedbackWasm();
+     feedback.quality = quality;
+     feedback.learningRate = learningRate;
+     try { (feedback as any).success = success; } catch {}
+     if (consolidate) {
+       lora.adapt_constrained(input, feedback);
+     } else {
+       lora.adapt(input, feedback);
+     }
+   },
+   ```
+   Remove the `MICROLORA_WASM_MIN_DIM = 768` zero-pad workaround
+   (caller now supplies real input; pad is no longer correct).
+   Add validation: `input.length === config.inputDim`.
+8. **`v3/@claude-flow/cli/src/mcp-tools/ruvllm-tools.ts`** —
+   `ruvllm_microlora_adapt` schema add:
+   - `input: { type: 'array', items: { type: 'number' }, description: 'Input embedding vector (length must match the LoRA instance inputDim)' }`
+   - `consolidate: { type: 'boolean', description: 'Apply EWC++ catastrophic-forgetting protection (default: true)' }`
+   - Add `'input'` to `required`.
+   - Handler: convert input array to Float32Array, validate
+     length matches stored `inputDim`, pass `consolidate` flag
+     through. Keep `loraInstances.get(loraId)` lookup pattern
+     (preserves PR #2088 smoke).
+9. **CI smoke compatibility** — `scripts/smoke-ruvllm-wasm-auto-init.mjs`'s
+   12 invariants must continue to pass. The invariant
+   `ruvllm_microlora_adapt uses prior instance from create handler`
+   stays true (we keep the WASM instance lookup). Re-run smoke
+   after schema change to confirm.
+
+**Archivist (`forks/agentdb`):**
+
+10. **`src/archivist/handlers/ruvllm/microlora-adapt.ts`** — add
+    `input: ReadonlyArray<number>` and `consolidate?: boolean` to
+    `RuvllmMicroLoraAdaptPayload`; include both in journal entry.
+11. **`src/archivist/invariants/ruvllm/microlora-adapt.ts`** —
+    add invariants:
+    - `input.length === instance.config.inputDim`
+    - `input.some(x => x !== 0)` (reject all-zero per
+      `[[feedback-no-fallbacks]]` — the Q-3 root cause)
+
+**Acceptance tests:**
+
+12. **`v3/@claude-flow/cli/__tests__/ruvllm-tools.test.ts`** —
+    extend `describe('ruvllm_microlora_adapt')`:
+    - schema includes `input` and `consolidate`
+    - missing `input` → validation error
+    - all-zero `input` → invariant rejection
+    - `consolidate: true` (default) + valid input → EWC was
+      consulted (mock or stub-check on the constrained path)
+    - `consolidate: false` + valid input → no EWC consult
+13. **Rust integration test** in `crates/ruvllm-wasm` round-trip
+    asserting `adapt_constrained` ≠ `adapt` after Fisher
+    accumulation.
+
+**Crate / package bumps:**
+
+14. New `@ruvector/ewc-core` (Verdaccio only — internal-use
+    crate; no public-NPM presence). Decide minor vs patch.
+15. `@ruvector/sona` patch bump (new internal dep; public API
+    unchanged via re-export).
+16. `@ruvector/ruvllm-wasm` MINOR bump (new `adapt_constrained`
+    public method).
+17. `forks/agentdb` patch bump.
+18. `forks/ruflo` patch bump.
+
+**Commit order per `[[feedback-commit-forks-before-release]]`:**
+
+- Commit 1 (`forks/ruvector`): steps 1–6 in one commit.
+- Commit 2 (`forks/agentdb`): steps 10–11.
+- Commit 3 (`forks/ruflo`): steps 7–9 + step 12.
+- `npm run release` to publish all three crate bumps to Verdaccio.
+
+### What changes vs second amendment
+
+- WASM crate now does the EWC work (not bypassed).
+- Sona NAPI is NOT involved in the MCP path (no new MCP-side
+  dependency, just the shared `ewc-core` crate at compile time).
+- PR #2088's CI smoke stays green (the WASM-unified pattern is
+  preserved).
+- `ruvllm-tools.ts` schema is additive (`input` + `consolidate`
+  parameters); upstream merges of this file will conflict only
+  on those two new properties — minimal merge tax.
+- Honors upstream's documented `--consolidate` contract — fork
+  closes a documented-but-unimplemented upstream gap.
+
+### What stays vs second amendment
+
+- Q-3 still fixed (input parameter added).
+- All-zero input still rejected via archivist invariant.
+- 768-dim zero-pad workaround still removed.
+- Strict micro-tier EWC delivered (now at the adapt-call level
+  inside the WASM crate; even tighter than sona's flush-time
+  amortization — the EWC consult happens per call here).
+
+### Per-call latency under Route A
+
+`apply_constraints` on micro-tier sizing (param_count ≈
+`input_dim × rank × 2` ≈ 1,536–3,072 floats) at ~5–20 µs per
+call. WASM EWC is per-call (not amortized like sona's
+flush-time integration would have been). At a hot-path target
+of <100 µs, this is 5–20% overhead. Still well under target.
+If profiling later flags this as a concern, the
+`consolidate: false` path stays available for callers that
+prefer raw `adapt`.
+
+### Risks specific to Route A
+
+- **A.2 workspace restructure** — extracting `ewc-core` is the
+  main novel work. Risk: workspace `Cargo.toml` edits affect
+  other consumers. Mitigation: re-export from sona preserves
+  the existing import path, so downstream code doesn't change.
+- **WASM bundle size** — adding EWC adds ~500 LOC of compiled
+  Rust to the WASM artefact. Bundle growth should be small
+  (Vec/VecDeque + arithmetic; no heavy deps), but verify
+  post-build.
+- **EWC param_count sizing in WASM crate** — the WASM crate's
+  `MicroLoRA` has its own param shape (verify against
+  `accumulate_gradient` at `crates/ruvllm-wasm/src/micro_lora.rs:341-373`
+  at implementation time). Sizing the EWC instance correctly is
+  the equivalent of Q-1 for the WASM tier; the dim-mismatch
+  silent-no-op test (step 6) guards this.
+
+### Open thread
+
+- **A.2 vs A.1 sub-decision** — A.2 is recommended; if the
+  workspace restructure proves heavier than expected, fall back
+  to A.1 (duplicate). Either way, the public API and acceptance
+  tests are identical.
+
+### Status
+
+ADR-0228 stays `accepted`. **Direction**: strict micro-tier
+EWC, no phased delivery (decided). **Route**: A (decided in
+this amendment). **Sub-decision**: A.2 (recommended; A.1
+fallback). **Implementation**: deferred to follow-on session
+with the 18-step plan above.
+
+No code change in this amendment — pure decision record + active
+implementation plan. Doc-only.
