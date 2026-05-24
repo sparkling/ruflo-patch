@@ -9,7 +9,7 @@
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
-#         adr0240, adr0243, adr0245, adr0246, e2e-core, e2e-storage,
+#         adr0240, adr0241, adr0243, adr0245, adr0246, e2e-core, e2e-storage,
 #         skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
@@ -329,6 +329,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0234"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0234-claims-throw"   check_adr0234_claims_fail_closed
     _fast_run "adr0234-plugins-throw"  check_adr0234_plugins_install_throws
     _fast_run "adr0234-f03007-closure" check_adr0234_f03007_cross_bonus_closure
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0241"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0241-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0241-checks.sh"
+    echo "── ADR-0241 (schema-vs-handler truth + dedupe — CT-H close-out) ──"
+    _fast_run "adr0241-schema-relax"   check_adr0241_memory_store_schema_relaxed
+    _fast_run "adr0241-allowlist"      check_adr0241_validate_input_allowlist
+    _fast_run "adr0241-arch-present"   check_adr0241_arch_test_present
+    _fast_run "adr0241-arch-runs"      check_adr0241_arch_test_runs
   fi
 fi
 
