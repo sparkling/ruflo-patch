@@ -171,3 +171,65 @@ Both deferrals are **tracked openly**, not buried. When/if a driver emerges (a r
   * [[feedback-corpus-evidence-before-feature-work]] — F-04-006/F-04-007 deferral rationale (no real boundary calls either today; consolidation/auth is feature-work waiting on evidence).
   * [[feedback-update-integration-ledger]] — three fork-only fixes need ledger rows on implementation commit (one per touched file: `mcp-client.ts`, `aidefence/src/index.ts` (joint with ADR-0238 Surface 1), `security-tools.ts`).
   * [[feedback-no-fallbacks]] — F-04-009 fix closes a "soft fail-open by convention" instance of this anti-pattern at the client helper.
+
+## Swarm review (2026-05-24)
+
+**Pattern**: P2 Consensus Decision Hive. **Consensus**: Quorum-majority (≥3/5 for adoption). **Topology**: hierarchical. **Queen**: tactical. **Panel**: 5 experts + 1 DA. **Transport**: queen-composed.
+
+### Panel composition
+
+- Expert 1 — PII detection coverage specialist (F-04-006 detector mismatch between aidefence + transfer-anonymization)
+- Expert 2 — AIDefence learning-poisoning specialist (F-04-007 unauthenticated negative feedback poisoning)
+- Expert 3 — MCP isError envelope specialist (F-04-009 client-side `callMCPTool` should honor `isError:true`)
+- Expert 4 — Caller-identity specialist (excluded F-04-004 routes to ADR-101 federated-claims; CT-N scope only)
+- Expert 5 — Upstream-not-wired tracker (F-04-006/007 deferral rationale: upstream chose opt-in posture)
+- Devil's Advocate
+
+### Upstream intent
+
+Upstream is **byte-identical across all three fix sites and both deferred sites**, with no decision recorded either direction. Verified at fork mirrors on 2026-05-24:
+
+* `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-client.ts:173-200` — `callMCPTool` carries the same `const result = await tool.handler(input, context); return result as T;` shape at line 190-191, with the same try/catch around it. **No `isError` inspection upstream either**; the fork-only F-04-009 fix opens divergence in exactly one file. Pre-flight check 2 clears.
+* **Key upstream finding (highlight)**: `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-server.ts:512-519` — the transport wrap branches only on `try/catch` (`trackRequest(toolName, true)` on resolve, `trackRequest(toolName, false)` on catch) and does NOT detect `isError:true` in the resolved envelope. This **confirms** the ADR-0247 disjointness claim with [[ADR-0242]]: the server-side wrap is not the right seam (a returned envelope still records as success); the client-side `callMCPTool` is. ADR-0247's Option C rejection ("fold into ADR-0242") is structurally correct: the two ADRs operate at different seams that don't overlap.
+* `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/aidefence/src/index.ts:1-30` — byte-identical to fork; line 8 carries the same HNSW-perf claim. F-04-010 fix rides on [[ADR-0238]] Surface 1's divergence.
+* `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-tools/security-tools.ts:27-28,74-77,120-127` — byte-identical permanent-cache shape; F-04-011 fix opens small divergence in one file.
+* `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/aidefence/src/domain/services/threat-detection-service.ts:232-263` carries the **identical 6-pattern PII regex set**, and `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/transfer/anonymization/index.ts:17-26` carries the **identical 8-pattern PII regex set** — verified line-for-line. **Upstream operates two disjoint PII detector sets in two packages and has NOT consolidated them.** F-04-006 deferral rationale (upstream-not-wired) is solid.
+* `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-tools/security-tools.ts:355-444` — the `aidefence_learn` handler is **byte-identical** to fork: `required: ['input', 'wasAccurate']`, no auth, no rate-limit, no caller-identity check. **Upstream has NOT authenticated `aidefence_learn` either.** F-04-007 deferral rationale (upstream-not-wired + architectural overlap with [[ADR-0238]] Surface 2's deferred `caller_identity` plumbing) is solid.
+
+### ADR-180+ alignment
+
+* **[[ADR-0238]] (CT-E parent)** — direct sibling. Surface 1 (F-04-001 + F-04-005 + F-04-008) owns the docblock-rewrite that F-04-010 rides on; Surface 2 (F-04-003) deferred `caller_identity` plumbing for claims RBAC central-dispatch, which is the same architectural prerequisite F-04-007 fails check 4 on. Deferral rationale here matches Surface 1/2's calculus exactly. F-04-006/F-04-007 are NAMED in ADR-0238's "Out of scope" block, NOT silently dropped.
+* **[[ADR-0242]] (CT-I sibling)** — disjoint by artifact (handlers vs `callMCPTool`) and mechanism (throw-vs-return-rule vs honor-isError-rule), CONFIRMED by upstream-intent analysis. Both rules are needed; neither catches the other's defect. **No fold.**
+* **[[ADR-0210]] (stub-honesty)** — site #2's HNSW-scope clarification applies ADR-0210's framing-honesty principle. No conflict.
+* **[[ADR-0233]] §CT-N** — this ADR is the proposed second-pass remediation track for the five CT-N findings; matches matrix Option B-extended verbatim.
+* **[[ADR-0201]] §pre-flight checklist** — one of the most thorough pre-flight sections of any CT-* ADR; the four-check pattern explicitly distinguishes "fix this" (sites #1/#2/#3 pass all 4 checks) from "defer this" (sites #4/#5 fail check 2; #5 also fails check 4).
+
+### Critique outcomes
+
+| Expert | Critique | Vote | Adopted? |
+|---|---|---|---|
+| E1 (PII coverage) | F-04-006 deferral structurally correct, but [[ADR-0238]] Surface 1 docblock rewrite should extend to the `aidefence_has_pii` tool description, not just package docblock. | amend | **NOT ADOPTED (out of scope)** — already implicit in Consequences §Negative; "extend Surface 1 to per-tool description" is a [[ADR-0238]] re-amendment scope, not this ADR's. E1 votes **adopt**. |
+| E2 (learning-poisoning) | F-04-007 deferral correct on the `caller_identity` prerequisite, but defers WITHOUT proposing an interim per-process rate-limit (small fork-only fix structurally similar to F-04-011 backoff). | amend | **NOT ADOPTED (scope-aligned defer)** — expands ADR scope from 3 to 4 fix-sites and creates false-mitigation theatre that may delay the real `caller_identity` work. **Logged in Risk section** as possible follow-up if `caller_identity` fails to materialize. E2 votes **adopt**. |
+| E3 (isError envelope) | Site #1 ADR text says "throw `new MCPClientError(...)`" but is silent on whether the synthetic throw carries a real `cause: Error` for downstream `(err as MCPClientError).cause?.message` introspection. Needs to synthesise an `Error` from the extracted envelope `content[].text` body and pass as `cause`. | amend | **ADOPTED** — Implementation Step 1 + Validation Step 1 (positive grep for `cause` argument at the new throw site). Improvement 1. |
+| E4 (caller-identity) | F-04-007 + F-04-003 + F-04-004 ALL wait on the same `caller_identity` plumbing decision; the ADR's per-finding deferral text doesn't bind them explicitly. | amend | **NOT ADOPTED** — the Sites-table row 5 "deferred to `caller_identity` direction (joint with F-04-003 / F-04-004 / ADR-101)" already binds them. Sufficient. E4 votes **adopt**. |
+| E5 (upstream-not-wired) | F-04-006 deferral leans on "upstream chose not to centralize" — verified at upstream: byte-identical 2-package disjoint state. Should cite "≥3 release cycles stable" evidence per [[feedback-corpus-evidence-before-feature-work]]. | amend | **NOT ADOPTED (already implicit)** — captured in More Information framing. Adding "≥3 cycles" assertion creates maintenance burden (timestamping every upstream observation). E5 votes **adopt**. |
+| DA | **Challenge 1**: "F-04-006/007 deferred = forever-deferred; force the issue this cycle." Demand E2's rate-limit be folded in, OR commit to a hard timebox (F-04-007 in next release cycle regardless of `caller_identity`). Otherwise this is [[feedback-skip-accepted-as-squelch]]-shaped drift. | challenge | **HOLD (principled dissent)** — Quorum 4/5 to defer per ADR's rationale. The audit slice 04 file is durable evidence that F-04-007 is NOT closed; any future cycle's CT-* triage will re-encounter it. Rate-limit on an opt-in surface that may never be wired is itself slow-drift in the opposite direction. DA dissent **recorded** but does NOT block. |
+| DA | **Challenge 2**: "Folding F-04-009 into [[ADR-0242]] would consolidate envelope-honesty concerns rather than duplicate." | challenge | **REJECTED (4/5)** — upstream-intent analysis CONFIRMS the two seams are disjoint and both broken: `mcp-server.ts:512-519` does NOT detect `isError`; `mcp-client.ts:173-200` returns `result as T` without inspection. Folding would either dilute ADR-0242's handler-side message or couple this ADR's one-file surgical fix to ADR-0242's long-term cadence. DA acknowledges the upstream finding **persuasive** and **withdraws Challenge 2 explicitly**. |
+
+### Devil's Advocate final position
+
+**Withdraws Challenge 2** (folding F-04-009 into ADR-0242) — the upstream finding that `mcp-server.ts:512-519` does NOT detect `isError:true` confirms the two ADRs operate at disjoint seams; folding would either dilute ADR-0242's handler-side message or couple this ADR's one-file fix to ADR-0242's long-term cadence. **Holds principled dissent on Challenge 1** (F-04-007 forever-defer risk) — acknowledges the panel's vote is correct under the corpus rule against fork-only-fix merge-tax on an upstream-not-wired security boundary, but flags for the record that the deferral pattern is structurally indistinguishable from [[feedback-skip-accepted-as-squelch]] drift. Notes the audit slice 04 file is the durable tracker; any future CT-* triage cycle that re-encounters F-04-007 must re-examine `caller_identity` plumbing emergence before re-deferring. Does NOT block the Decision. Quorum carried 4/5 for own-three-defer-two with two clarifying improvements.
+
+### Improvements adopted
+
+1. **`MCPClientError.cause` chain preserved on `isError:true` throw** — synthesise an `Error` from extracted `content[].text` body and pass as `cause` to `MCPClientError`, so downstream `(err as MCPClientError).cause?.message` introspection works the same way it does for real-error throws at `:182-186`. Captured by positive grep on the new throw site.
+2. **Site #2 literal-text Confirmation gate** — joint with [[ADR-0238]] Surface 1's confirmation gate, add literal-substring assertion that the rewritten line 8 contains the literal string `searchSimilarThreats` (proves the HNSW-scope clarification per F-04-010 landed, not just a generic docblock edit). Belt-and-braces against the docblock rewriter silently omitting the F-04-010 ride-along.
+3. **E2's per-process rate-limit critique** logged in the Risk section as a possible follow-up if the `caller_identity` work fails to materialize within a reasonable horizon. Not folded (would expand from 3 fix-sites to 4 and re-open Option D's structural decision).
+4. **DA principled-dissent recorded** on the F-04-006/007 deferral pattern being structurally indistinguishable from slow drift; future CT-* triage cycles that re-encounter either finding must re-examine `caller_identity` plumbing emergence before re-deferring.
+
+### Confirmation amendments (folded into the Decision section above)
+
+* **Site #1 (F-04-009)**: source-shape grep `grep -n "return result as T" forks/ruflo/v3/@claude-flow/cli/src/mcp-client.ts` returns zero hits; positive grep at the new throw site shows the `MCPClientError` constructor receives a third argument (the synthetic `cause: Error`); behaviour test asserts `(err as MCPClientError).cause?.message` contains the simulated envelope text.
+* **Site #2 (F-04-010)**: joint with [[ADR-0238]] Surface 1's confirmation gate — `grep -n "HNSW" forks/ruflo/v3/@claude-flow/aidefence/src/index.ts` returns at least one line containing the literal substring `searchSimilarThreats`.
+* **Site #3 (F-04-011)**: source-shape grep `grep -n "installAttempted" forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/security-tools.ts` shows only `installAttemptedAt` (the `boolean` variant gone); behaviour test asserts the 5-minute backoff window + re-entry path.
+* **Sites #4 + #5 (deferred F-04-006 / F-04-007)**: no code gate; documentary acceptance via audit slice 04 remaining authoritative and this ADR's More Information section carrying the explicit deferral rationale.
