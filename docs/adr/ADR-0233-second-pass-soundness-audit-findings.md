@@ -123,6 +123,37 @@ Two specific stdout-write sites on `StdioServerTransport` MCP servers (would cor
 * `v3/mcp/` timers (`ConnectionPool.evictionTimer`, `WebSocketTransport.heartbeatTimer`, `SessionManager.cleanupTimer`) are not `.unref()`'d — CLI commands that transiently construct these hang the Node event loop on exit (F-10-002 CRITICAL).
 * `RvfBackend._pendingNativeIngest` retains up to 100K Float32Arrays (~300MB) until first semantic `search()` rehydrates (F-10-007 WARN).
 
+## Remediation ADRs (one per cross-cutting theme)
+
+Drafted 2026-05-24 as theme-batched per the Decision below. Each was pre-flight-checked against [[ADR-0201]] §"Remediation-ADR pre-flight checklist"; several flipped based on runtime/upstream/inventory re-derivation — see "Pre-flight inversions" below.
+
+| Theme | ADR | Decision shape | Impact (severity rollup) | Status |
+|-------|-----|----------------|--------------------------|--------|
+| CT-A | [[ADR-0234]] | Per-site fail-loud throw at 5 sibling loaders extending [[ADR-0095]] | 3 CRITICAL + 2 HIGH (5 sites) | proposed |
+| CT-B | [[ADR-0235]] | Delete bundled `.claude/helpers/` + invert `findSourceHelpersDir` preference + build-time parity test | 1 CRITICAL + 1 HIGH + 1 MED (3 sites) | proposed |
+| CT-C | [[ADR-0236]] | Pipeline-start cross-registry pairwise lint at gate-0 | 1 CRITICAL (5 sites, live drift confirmed) | proposed |
+| CT-D | [[ADR-0237]] | Return `Result<(), JsValue>` from 4 `sona_instant.rs` setters; HNSW `maxPatterns` validation at construction; re-enable `manual_clamp` clippy lint | 5 sites (4 Rust + 1 JS cap) | proposed |
+| CT-E | [[ADR-0238]] | Per-surface triage: AIDefence framing-honesty, remove dead telemetry MCP tools, **quarantine** dead swarm tree (upstream active), enum-align `weighted` | 3 CRITICAL + 4 HIGH (8 surfaces) | proposed |
+| CT-F | [[ADR-0239]] | Per-cluster triage: 5 strict deletes, 1 merge-then-delete (CVE-loader relocation prerequisite), 2 deferrals, 1 release-gate `no-new-dead-code` check | 4 CRITICAL (~57K LOC, 8 clusters) | proposed |
+| CT-G | [[ADR-0240]] | Route `console.log/info/debug` on stdio MCP servers to stderr + narrow `no-console` ESLint rider; site #1 contingent on CT-F | 2 HIGH (2 sites) | proposed |
+| CT-H | [[ADR-0241]] | **Relax** `memory_store` schema to upstream-aligned `['key','value']` + sampled schema-handler parity arch-test + replace `validate-input.ts:317` Zod-bypass with explicit allowlist | 1 CRITICAL + 3 WARN | proposed |
+| CT-I | [[ADR-0242]] | Extract `gastown-bridge/src/errors.ts` to shared `@claude-flow/errors` + advisory-first lint forbidding NEW `throw new Error(string)` + MCP-handler arch-test asserting fatals throw | 2 MED + cultural (~1,331 throws, grandfathered) | proposed |
+| CT-J | [[ADR-0243]] | Per-site fix using in-tree healthy patterns (`HiveLRU`, `installSignalHandlersOnce`, `.unref()`) + `no-unref-setinterval` ESLint rule; F-10-002 deferred to CT-F | 2 CRITICAL + 1 WARN | proposed |
+
+### Cross-bonus dependencies (resolve multiple CTs with a single change)
+
+* **CT-F cluster 2 (delete `v3/mcp/`)** simultaneously closes F-10-002 (CT-J / [[ADR-0243]] site #2) and F-05-001 (CT-G / [[ADR-0240]] site #1). One delete, three CT findings resolved.
+* **CT-E ([[ADR-0238]])** inherits gastown-bridge + agentic-qe deferral from CT-F (published npm artifacts — deletion would orphan).
+* **CT-I ([[ADR-0242]])** is the micro-ADR [[ADR-0210]]'s second-pass council explicitly named as owed for the protocol-boundary signal.
+
+### Pre-flight inversions (audit's static suggestion did NOT survive re-derivation)
+
+* **CT-A** sites 2 + 4 (`diskann-backend.ts`, `claims.ts`) are byte-identical with upstream → fork-only throws conflict on every upstream sync; divergence-marker comments + ledger entries required.
+* **CT-D** upstream `ruvnet/RuVector` still ships ALL 5 clamps including today's wave-A9-fixed `set_pattern_capacity` — fork now 5 ahead; merge-tax surfaced.
+* **CT-E** dead swarm consensus (1,425 LOC) flipped from "delete" to **quarantine** — upstream is actively investing (`federation-transport.ts`, `transport.ts` siblings).
+* **CT-G** upstream `ruvnet/agentdb` has the same `console.log` at same line → fix is fork-only merge tax.
+* **CT-H** upstream has `required:['key','value']` (no namespace) — **the fork created the asymmetry**. Decision flipped from "tighten handler" to **relax schema** to re-converge.
+
 ## Headline CRITICALs (immediate-flag, 11)
 
 1. **F-04-001** — AIDefence has zero non-test callers; defense-in-depth is documentation only.
@@ -143,18 +174,18 @@ Treat the 165 findings as the second-pass batch counterpart to ADRs 0202–0218 
 
 Prefer **theme-batched remediation ADRs (one per CT-A through CT-J)** over per-finding ADRs. Single-finding ADRs in CT-A through CT-J are likely to re-encounter the "no sibling-ADR overlap" trap (pre-flight check 4). The themes carve the work along seams that match the underlying bug class.
 
-Triage priority (from this ADR's evidence, subject to maintainer re-ordering):
+All 10 theme-batched ADRs ([[ADR-0234]] through [[ADR-0243]]) were drafted on 2026-05-24, each pre-flight-checked. See "Remediation ADRs" table above for the per-theme decision shape, impact, and status. Triage priority (subject to maintainer re-ordering):
 
-1. CT-G stdio-corruption fix (F-05-001, F-05-002) — single-commit, observable as MCP envelope corruption.
-2. CT-B wrapper-bundled-helpers drift (F-12-001, F-12-003, F-07-003) — gates [[ADR-0211]]'s real implementation reaching npx users.
-3. CT-A silent fallback completions (F-06-001, F-06-002, F-08-002, F-04-002) — extend the [[ADR-0095]] amendment to its sibling loaders.
-4. CT-C hardcoded-list drift lint (F-02-001) — pipeline-start cross-registry check.
-5. CT-E surface-without-enforcement triage — wire OR remove. Per [[ADR-0210]] stub-honesty mandate.
-6. CT-F dead-code triage — ~57K LOC; needs maintainer per-cluster decisions, not a blanket delete.
-7. CT-H schema-vs-handler reconciliation (F-14-001 first).
-8. CT-D silent clamps (sona_instant.rs siblings of today's fix).
-9. CT-J resource drift on long-lived processes.
-10. CT-I error taxonomy — long-term cultural debt; lowest urgency.
+1. CT-G [[ADR-0240]] stdio-corruption fix — single-commit, observable as MCP envelope corruption.
+2. CT-B [[ADR-0235]] wrapper-bundled-helpers drift — gates [[ADR-0211]]'s real implementation reaching npx users.
+3. CT-A [[ADR-0234]] silent fallback completions — extend the [[ADR-0095]] amendment to its sibling loaders.
+4. CT-C [[ADR-0236]] hardcoded-list drift lint — pipeline-start cross-registry check.
+5. CT-E [[ADR-0238]] surface-without-enforcement triage — wire OR remove per [[ADR-0210]] stub-honesty mandate.
+6. CT-F [[ADR-0239]] dead-code triage — ~57K LOC; per-cluster decisions (5 strict deletes + 1 merge-then-delete + 2 deferrals + lint gate).
+7. CT-H [[ADR-0241]] schema-vs-handler reconciliation (F-14-001 first; relax-not-tighten to re-converge with upstream).
+8. CT-D [[ADR-0237]] silent clamps (`sona_instant.rs` siblings of today's fix).
+9. CT-J [[ADR-0243]] resource drift on long-lived processes.
+10. CT-I [[ADR-0242]] error taxonomy — long-term cultural debt; lowest urgency.
 
 ## Consequences
 
