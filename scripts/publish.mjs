@@ -141,6 +141,12 @@ export function buildPackageMap(buildDir) {
       // them as candidates in the first place. Pre-existing condition surfaced
       // by post-Batch-5 full-release verification 2026-05-25.
       if (entry === 'archive') continue;
+      // Skip `dist/` — build output. The dist/package.json is a copy of the
+      // parent package.json (npm pack-shape); the walker would find both
+      // (parent + dist) and they collide on the duplicate-name tie-breaker.
+      // Specifically observed at /tmp/ruflo-build/cross-repo/agentdb/dist
+      // vs /tmp/ruflo-build/cross-repo/agentdb. Same root cause as archive/.
+      if (entry === 'dist') continue;
       const fullPath = resolve(dir, entry);
 
       let st;
