@@ -88,9 +88,40 @@ function savePublishedVersions(versions) {
 /**
  * Recursively walk buildDir to find all package.json files and build
  * a map of package name -> directory path.
+ *
+ * Duplicate-name resolution (ADR-0150 follow-up + ADR-0231 wave-A9 fix):
+ *
+ *   - A package marked `private: true` is always lower priority than a
+ *     non-private one (private roots aren't publishable; e.g. ruvector
+ *     root is private but `npm/packages/ruvector/` is publishable).
+ *
+ *   - When both candidates are non-private, prefer paths NOT in
+ *     SUBDIR_BLACKLIST (`/npm/`, `/pkg/`, `/examples/`) — those are
+ *     wasm-bindgen outputs or example configs that share the parent's
+ *     name post-codemod.
+ *
+ *   - When BOTH candidates are non-private AND BOTH are in the
+ *     blacklist (e.g. `npm/packages/ruvllm-wasm/` AND a stale
+ *     `crates/ruvllm-wasm/pkg/` left by an old `wasm-pack build`),
+ *     the asymmetric subdir tie-breaker can't disambiguate. Walk-order
+ *     would silently pick the winner — fail loud instead. Operator
+ *     must remove one of the duplicates.
+ *
+ *   Per [[feedback-no-fallbacks]]: silent ambiguous resolution is the
+ *   anti-pattern. Throwing on unresolvable duplicates surfaces the
+ *   defect at release time, not at the next runtime install failure.
  */
-function buildPackageMap(buildDir) {
+export function buildPackageMap(buildDir) {
   const map = new Map();
+  // Match `/<name>/` anywhere OR `/<name>` at end of path. The old
+  // implementation used `/npm/`-style substrings with trailing slashes,
+  // which silently MISSED terminal directories (`/pkg` was not detected
+  // because the path didn't have a trailing slash). That asymmetry
+  // caused the ADR-0231 wave A9 bug: `crates/ruvllm-wasm/pkg/` was
+  // wrongly classified as non-subdir and won the tie-breaker over the
+  // canonical `npm/packages/ruvllm-wasm/`.
+  const SUBDIR_BLACKLIST_RE = /\/(npm|pkg|examples)(\/|$)/;
+  const isSubdir = (d) => SUBDIR_BLACKLIST_RE.test(d);
 
   function walk(dir) {
     let entries;
@@ -114,28 +145,61 @@ function buildPackageMap(buildDir) {
       if (st.isDirectory()) {
         walk(fullPath);
       } else if (entry === 'package.json') {
+        let pkg;
         try {
-          const pkg = JSON.parse(readFileSync(fullPath, 'utf-8'));
-          if (pkg.name) {
-            // Prefer non-private packages over private ones (e.g. ruvector
-            // root is private: true but npm/packages/ruvector/ is publishable).
-            // For non-private duplicates, prefer parent over generated-output
-            // subdirectories (npm/, pkg/, examples/) — those are wasm-bindgen
-            // outputs or example configs that share the parent's name post-
-            // codemod and would otherwise win the map race (ADR-0150 follow-up).
-            const SUBDIR_BLACKLIST = ['/npm/', '/pkg/', '/examples/'];
-            const isSubdir = (d) => SUBDIR_BLACKLIST.some(s => d.includes(s));
-            const existing = map.get(pkg.name);
-            const existingPkg = existing
-              ? JSON.parse(readFileSync(resolve(existing, 'package.json'), 'utf-8'))
-              : null;
-            if (!existing || existingPkg?.private || (!pkg.private && !isSubdir(dir))) {
-              map.set(pkg.name, dir);
-            }
-          }
+          pkg = JSON.parse(readFileSync(fullPath, 'utf-8'));
         } catch {
-          // Skip malformed package.json files
+          // Skip malformed package.json files (rare; not a duplicate-name issue)
+          continue;
         }
+        if (!pkg.name) continue;
+
+        const existing = map.get(pkg.name);
+        if (!existing) {
+          map.set(pkg.name, dir);
+          continue;
+        }
+
+        const existingPkg = JSON.parse(
+          readFileSync(resolve(existing, 'package.json'), 'utf-8'),
+        );
+
+        // Private-vs-non-private: non-private wins (publishable).
+        if (existingPkg.private && !pkg.private) {
+          map.set(pkg.name, dir);
+          continue;
+        }
+        if (!existingPkg.private && pkg.private) {
+          continue;
+        }
+
+        // Both non-private (or both private). Apply subdir-blacklist
+        // tie-breaker: prefer non-subdir over subdir.
+        const existingIsSubdir = isSubdir(existing);
+        const newIsSubdir = isSubdir(dir);
+        if (existingIsSubdir && !newIsSubdir) {
+          map.set(pkg.name, dir);
+          continue;
+        }
+        if (!existingIsSubdir && newIsSubdir) {
+          continue;
+        }
+
+        // Both candidates are in the same class (both non-private +
+        // either both subdir or both non-subdir). The tie-breaker
+        // can't disambiguate. Fail loud — this is the exact silent-pick
+        // bug ADR-0231 wave A9 surfaced (stale `crates/*/pkg/` collided
+        // with `npm/packages/*` for ruvllm-wasm, npm publish picked
+        // the wrong one based on walk order, cli pin pointed at a
+        // non-existent published version).
+        throw new Error(
+          `buildPackageMap: duplicate publishable package name '${pkg.name}' ` +
+          `at two locations that the subdir-blacklist tie-breaker cannot ` +
+          `disambiguate:\n  A: ${existing}\n  B: ${dir}\n` +
+          `Both non-private (or both private), both ${existingIsSubdir ? 'in' : 'outside'} the subdir blacklist ` +
+          `(${SUBDIR_BLACKLIST_RE}). Remove one of them ` +
+          `(typically a stale wasm-pack default-output dir) before re-running the pipeline.`,
+        );
       }
     }
   }
