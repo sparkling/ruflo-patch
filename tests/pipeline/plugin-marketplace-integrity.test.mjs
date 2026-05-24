@@ -71,6 +71,15 @@ const OVERCLAIM_DESCRIPTION_PATTERNS = [
   // MCP-callable surface that does not exist (the 112 tools are via
   // `npx neural-trader` CLI, not via MCP).
   '112+ MCP tools',
+  // ADR-0251 Option D: regression protection for F-07-007 — count-claim
+  // variants that the Batch 3 rewrite excised. The honest rewrite's
+  // disclaimer ("this plugin does NOT expose neural-trader's CLI tools
+  // as MCP-callable") is the contract; any of these phrases reappearing
+  // signals the description has regressed.
+  '112 MCP tools',
+  '112+ tools',
+  '112 tools',
+  'exposes neural-trader',
   // F-07-006 sibling: "witness chain verification for ... hardware"
   // on iot-cognitum implied hardware-bound enforcement when the
   // plugin only composes memory_* primitives.
