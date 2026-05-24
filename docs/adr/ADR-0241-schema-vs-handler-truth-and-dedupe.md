@@ -497,3 +497,83 @@ Out of scope (deferred per pre-flight #2 and audit severity):
   - `MCPToolInputSchema.properties: Record<string, unknown>` (F-14-008) — the structural enabler of F-14-001's class. Addressed only at the wire (ADR-0204 (b)) and at the per-handler arch-test (this ADR); the type itself stays `unknown`-typed. A future refactor could derive `inputSchema` from per-tool Zod schemas (the pattern in `rvf-mcp-server/src/server.ts`) but that touches all 299 cli handwritten schemas.
   - Type consolidation under a shared `@claude-flow/types` package (Option C). Deferred indefinitely per pre-flight #2 (upstream merge-tax asymmetric to bounded internal benefit).
   - `optional-modules.d.ts` real `.d.ts` replacement. Deferred until dual-name resolution lands (out-of-tree).
+
+## Swarm review (2026-05-24)
+
+Pattern-1 Council Hive (Dialectic). Byzantine consensus (f=⌊5/3⌋=1; ≥3/6
+supermajority required). hierarchical-mesh topology, strategic queen, N=6
+experts incl. devil's advocate, queen-composed transport. Per per-ADR
+configuration in `docs/plans/2026-05-24-second-pass-remediation-plan.md`.
+
+### Verdict
+
+**5/6 adopt** (≥3/6 supermajority cleared, Byzantine `2f+1=3` satisfied):
+ratify Option D1 + Option B + F-14-003 typed allowlist as drafted, with two
+amendments:
+
+1. **Pre-flight #2 correction (E5 upstream-coherence tracker)**: the sub-bullet
+   labelling the F-14-003 `invalid_enum_value continue` swallow as "fork-only
+   by comment archeology" is **refuted**. Direct read of
+   `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli-core/src/mcp-tools/validate-input.ts:248`
+   shows the swallow is **byte-identical between fork and upstream** — the
+   fork's `cli/src/mcp-tools/validate-input.ts` is a 10-line re-export shim
+   of cli-core. The F-14-003 fix therefore carries upstream merge-tax that
+   the ADR currently underweights. Implementation requires: (a)
+   INTEGRATION-LEDGER row with `superseded-by-local` disposition per
+   `[[feedback-update-integration-ledger]]`; (b) divergence-marker comment
+   per [[ADR-0234]] precedent at the fix site. ("Fork created the asymmetry"
+   for F-14-001 stands — upstream's `memory-tools.ts:274` is
+   `required: ['key','value']` and the fork added `'namespace'` plus the
+   read-side throws.)
+2. **Option B gate registration (E4 Zod-arch-test specialist)**: arch-test
+   runs full enumeration (~200 tools × ~3 required fields ≈ 600 generated
+   tests) under `npm run release` acceptance, with the gate registered in
+   BOTH `run_check_bg` AND `collect_parallel` lists per
+   `[[reference-acceptance-runcheck-vs-collect]]` (the silent-no-verdict trap).
+   Sampling stays optional for per-PR CI. No `skip_accepted` per
+   `[[feedback-skip-accepted-as-squelch]]`.
+
+### Per-voter ballots
+
+| Voter | Vote | Position |
+|-------|------|----------|
+| E1 (MCP `inputSchema` specialist) | adopt | Schema relax matches upstream; F-14-001 asymmetry closes by construction once [[ADR-0204]] (b) lands the wire-validator. |
+| E2 (handler-validation specialist) | adopt | Handler stays unchanged — no risk of breaking existing strict-client call sites; partitioning bug closes from the schema side. |
+| E3 (type-deduplication specialist) | adopt | Deferring `MCPTool`/`MemoryType`/`AgentType` consolidation is correct — upstream factoring per ADR-006's MCP-first split makes Option C a perpetual merge-tax against bounded internal benefit (no cross-package imports today). |
+| E4 (Zod-arch-test specialist) | adopt-with-amendment | Add gate registration in both `_run_and_kill` lists; full enumeration in acceptance, sampled in per-PR CI. |
+| E5 (upstream-coherence tracker) | adopt-with-amendment | Pre-flight #2 mis-states F-14-003's upstream status (byte-identical, not fork-only) — needs INTEGRATION-LEDGER row + divergence marker. |
+| DA (devil's advocate) | hold-principled-dissent | Two challenges: (a) "Relaxing the schema validates ad-hoc client behaviour — write-strict / read-lax would be cleaner" — rejected because upstream-aligned is cheaper merge-cost and the audit notes silent-default is the documented contract. (b) "23 MCPTool definitions is the wrong target — let upstream factoring win, defer dedupe entirely" — partly accepted (Option C IS deferred); DA also dissents on Option B value vs cost (gate catches a defect class whose only known instance is being structurally fixed by [[ADR-0204]] (b); ~30s wall-clock is bounded but the gate is belt-and-braces theatre once handler migration completes). DA accepts majority verdict; dissent recorded. |
+
+### DA final position
+
+Per skill best-practice #6 (DA must explicitly withdraw or hold), DA holds
+**principled dissent** on Option B's long-term value: the gate catches a
+defect class whose only known instance (F-14-001) is being structurally fixed
+by [[ADR-0204]] (b), so the gate is belt-and-braces theatre once handler-rule
+adoption ([[ADR-0242]]) lands broadly. DA accepts the majority verdict (gate
+is cheap, mitigates regression-window between ADR-0204 (b) landing and broader
+[[ADR-0242]] handler-rule adoption) but records the dissent for the
+[[ADR-0233]] follow-up tracker — Option B may warrant retirement once
+ADR-0204 + ADR-0242 reach steady-state.
+
+### Key upstream finding (per assignment)
+
+- **CONFIRMED**: "fork created the asymmetry" (F-14-001). Upstream
+  `memory-tools.ts:274` has `required: ['key', 'value']` (no namespace) +
+  handler defaults `(input.namespace as string) || 'default'` —
+  coherent permissive. Fork at `:193` added `'namespace'` to required
+  AND tightened read handlers at `:378`/`:724` to throw on missing
+  namespace. Pure fork divergence; "relax not tighten" flip per
+  [[ADR-0233]] §"Pre-flight inversions" is the correct upstream-convergent
+  move.
+- **REFUTED** (scope-correction to ADR pre-flight #2): "F-14-003
+  (Zod-bypass) is fork-only by comment archeology" — wrong. Upstream
+  cli-core ships the swallow byte-identically; the fork is upstream-aligned
+  here. Fix carries merge-tax requiring INTEGRATION-LEDGER + divergence marker
+  per [[ADR-0234]] precedent. Amendment #1 above corrects this in the
+  implementation track.
+
+### Fragment
+
+Full review (per-voter ballots, implementation steps, validation, risks,
+cross-references) at `docs/plans/.frags/ADR-0241-review.md`.
