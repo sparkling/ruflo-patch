@@ -1,0 +1,40 @@
+# scripts/check-mcp-handler-fatal-throw.mjs allowlist (ADR-0242 §Decision scope #4)
+#
+# Format: `<relative-path> :: <whitespace-collapsed catch clause>` (one per line).
+# CONTENT-KEYED (not line-keyed): an entry is matched by the catch clause text
+# itself, so it survives line shifts. An entry goes stale only when THAT catch
+# body's own code changes — re-review then.
+#
+# Grandfather baseline per ADR-0242: the ~56 existing MCP handlers that
+# `catch (e) { return { success: false, error: sanitizeError(e) } }` for
+# unfiltered errors are pre-existing cultural debt. New handlers should let
+# fatals propagate (`throw wrapError(e, RufloErrorCode.X)`) so mcp-server.ts
+# emits a proper JSON-RPC -32603 error frame instead of a flattened envelope.
+#
+# Discriminated catches are NOT flagged (e.g. `catch (e) { if (e instanceof
+# OptionalModuleNotFound) return {…}; throw e; }`) — they correctly
+# distinguish expected vs fatal.
+#
+# Regenerate after deliberate changes:
+#   node scripts/check-mcp-handler-fatal-throw.mjs --update
+#
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch (e: any) { return { success: false, error: e.message }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch (e: any) { return { success: false, error: e?.message || 'Flash consolidation failed' }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch (e: any) { return { success: false, error: e?.message || String(e) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch { return { success: false, controller: 'none', persisted: false }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch { return { success: false, controller: 'none', updated: 0 }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch { return { success: false, error: 'EnhancedEmbeddingService not active and fallback failed' }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-orchestration.ts :: catch { return { success: false, results: [], filtered: false, searchTime: 0, error: 'FilteredSearch unavailable: search failed' }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { available: false, error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { success: false, deleted: false, error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { success: false, deletedNode: false, deletedEdges: 0, error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { success: false, error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { success: false, results: [], error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { success: false, route: null, error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { success: false, routes: [], error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts :: catch (error) { return { success: false, skills: [], error: sanitizeError(error) }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/coordination-tools.ts :: catch (err) { // The archivist handler signals four refusal modes via thrown // errors (the pre-flip cli used `success: false` envelopes): // 1. "Byzantine behaviour — voter ... attempted a conflicting // vote on the sam…
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/coordination-tools.ts :: catch (err) { return { success: false, error: (err as Error).message }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/coordination-tools.ts :: catch (err) { return { success: false, error: (err as Error).message, nodeId }; }
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts :: catch (e) { // ADR-0209 Option E item #2 — Database not available: the prior // `success: true, results: []` envelope was a dishonest-success // violation: a real database/router failure is indistinguishable // from a su…
+../forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/swarm-tools.ts :: catch (err) { return { success: false, error: `Failed to persist swarm state: ${err instanceof Error ? err.message : String(err)}`, }; }

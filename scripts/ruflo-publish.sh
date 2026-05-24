@@ -502,6 +502,25 @@ main() {
   # NEW HIGH-class regressions of this shape.
   run_phase "undiscriminating-catches" node "${SCRIPT_DIR}/check-undiscriminating-catches.mjs"
 
+  # ADR-0242 §Decision scope #3 (advisory-first cultural lint): counts
+  # `throw new Error("...")` (naked throw, no code, no cause) across
+  # forks/ruflo/v3. Existing ~881 sites grandfathered in
+  # lib/throw-new-error-allowlist.txt. New code should prefer
+  # `throw new RufloError(msg, RufloErrorCode.X, ctx, cause)` from
+  # @claude-flow/errors. Exits 0 advisory-first per ADR-0242 — promotion
+  # to exit 1 deferred to cycle N+3 erosion-vs-rot check.
+  run_phase "throw-new-error-advisory" node "${SCRIPT_DIR}/check-throw-new-error.mjs"
+
+  # ADR-0242 §Decision scope #4 (advisory-first MCP envelope honesty):
+  # flags MCP tool handlers that catch fatal errors and return
+  # `{success: false, ...}` instead of throwing. The mcp-server.ts
+  # wrap converts thrown errors to JSON-RPC -32603 frames; a returned
+  # envelope is flattened into content[0].text and demotes a fatal
+  # data-integrity error to a successful call. Existing ~20 unique
+  # sites (out of ~61 total occurrences) grandfathered in
+  # lib/mcp-handler-fatal-throw-allowlist.txt. Exits 0 advisory-first.
+  run_phase "mcp-handler-fatal-throw-advisory" node "${SCRIPT_DIR}/check-mcp-handler-fatal-throw.mjs"
+
   # ADR-0133/0150: Detect Rust source changes across all napi-shipping forks
   # (ruvector + agentic-flow per lib/napi-config.sh) and rebuild .node binaries
   # before bump-versions, so the rebuilt binaries land on fork main and ship

@@ -9,8 +9,8 @@
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
-#         adr0238, adr0239, adr0240, adr0241, adr0243, adr0244, adr0245, adr0246,
-#         adr0247, adr0248,
+#         adr0238, adr0239, adr0240, adr0241, adr0242, adr0243, adr0244, adr0245,
+#         adr0246, adr0247, adr0248,
 #         e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
@@ -373,6 +373,18 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0247"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0247-site3-backoff"  check_adr0247_site3_security_backoff
     _fast_run "adr0247-vitest-pair"    check_adr0247_vitest_pair
     _fast_run "adr0247-ledger-rows"    check_adr0247_ledger_rows
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0242"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0242-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0242-checks.sh"
+    echo "── ADR-0242 (CT-I shared error library + MCP envelope honesty advisory lints) ──"
+    _fast_run "adr0242-errors-built"   check_adr0242_errors_package_built
+    _fast_run "adr0242-errors-exports" check_adr0242_errors_exports
+    _fast_run "adr0242-shim-works"     check_adr0242_gastown_bridge_shim
+    _fast_run "adr0242-lints-baseline" check_adr0242_lints_baseline
+    _fast_run "adr0242-ledger-rows"    check_adr0242_ledger_rows
   fi
 fi
 
