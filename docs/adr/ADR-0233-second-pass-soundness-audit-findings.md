@@ -139,12 +139,21 @@ Drafted 2026-05-24 as theme-batched per the Decision below. Each was pre-flight-
 | CT-H | [[ADR-0241]] | **Relax** `memory_store` schema to upstream-aligned `['key','value']` + sampled schema-handler parity arch-test + replace `validate-input.ts:317` Zod-bypass with explicit allowlist | 1 CRITICAL + 3 WARN | proposed |
 | CT-I | [[ADR-0242]] | Extract `gastown-bridge/src/errors.ts` to shared `@claude-flow/errors` + advisory-first lint forbidding NEW `throw new Error(string)` + MCP-handler arch-test asserting fatals throw | 2 MED + cultural (~1,331 throws, grandfathered) | proposed |
 | CT-J | [[ADR-0243]] | Per-site fix using in-tree healthy patterns (`HiveLRU`, `installSignalHandlersOnce`, `.unref()`) + `no-unref-setinterval` ESLint rule; F-10-002 deferred to CT-F | 2 CRITICAL + 1 WARN | proposed |
+| CT-K | [[ADR-0244]] | Per-site triage + 2-line `parser.ts:486` `applyDefaults` coercion fix (closes 25+ option sites) + [[ADR-0143]] codemod extension over `commands/*.ts` (~150 stale brand strings); 6/11 sites byte-identical with upstream (divergence markers mandatory); F-01-009 sequenced after [[ADR-0208]] step 4 gate | 2 CRITICAL + 5 HIGH + 3 MED + 2 LOW (11 sites) | proposed |
+| CT-L | [[ADR-0245]] | Hybrid per-site + `run_phase_norevert` helper extraction + `scripts/lint-set-e-discipline.mjs` (requires `set -euo pipefail` or `# DELIBERATE:` rationale); pipeline is fork-only infra (zero upstream merge tax); also folds `audit-dynamic-imports.sh` Hetzner-path fix | 1 CRITICAL + 6 WARN + 3 NOTE remediated, 1 NOTE accepted as documented intent (11 sites) | proposed |
+| CT-M | [[ADR-0246]] | Behaviour-test-first for the 3 CRITICAL (RVF metric reprobe on reopen extending [[ADR-0073]], archivist invariants pre-write + rollback, factory `deriveHNSWParams` enforcement) + per-finding fix table for 4 WARN + 2 NOTE; F-03-002 is fork-only code (zero merge tax) | 3 CRITICAL + 4 WARN + 2 NOTE (9 findings) | proposed |
+| CT-N | [[ADR-0247]] | Own F-04-009 (client-side `callMCPTool` `isError` propagation, complement to [[ADR-0242]]'s server-side rule) + F-04-010 (HNSW framing ride-along) + F-04-011 (5-min `installAttempted` backoff); F-04-006/007 deferred with upstream-not-wired + [[ADR-0238]]-Surface-2 overlap rationale | 2 HIGH + 2 WARN + 1 NOTE (5 findings) | proposed |
+| CT-O | [[ADR-0248]] | [[ADR-0210]]-conformant per-plugin triage (DOA delete-or-publish-and-wire, phantom-tool removal, description rewrites) + fork-source marketplace integrity lint + hand-edit for `ruflo-core/hooks/hooks.json` brand drift (codemod doesn't reach marketplace source) | 2 CRITICAL + 6 WARN + 1 NOTE remediated, 2 NOTE accepted (9 findings) | proposed |
 
 ### Cross-bonus dependencies (resolve multiple CTs with a single change)
 
 * **CT-F cluster 2 (delete `v3/mcp/`)** simultaneously closes F-10-002 (CT-J / [[ADR-0243]] site #2) and F-05-001 (CT-G / [[ADR-0240]] site #1). One delete, three CT findings resolved.
 * **CT-E ([[ADR-0238]])** inherits gastown-bridge + agentic-qe deferral from CT-F (published npm artifacts — deletion would orphan).
 * **CT-I ([[ADR-0242]])** is the micro-ADR [[ADR-0210]]'s second-pass council explicitly named as owed for the protocol-boundary signal.
+* **CT-K** F-01-002 (`start --daemon` PID race) defers canonical PID/signal discipline to **CT-J ([[ADR-0243]])** Site #4 — daemon-PID ownership lives there.
+* **CT-N** F-04-010 (HNSW framing) **rides on [[ADR-0238]] Surface 1 docblock rewrite** (same file, same merge tax) rather than a separate edit pass.
+* **CT-K** F-01-009 (parser coercion) **sequenced after [[ADR-0208]] Option D′ step 4 gate** — flipping the parser before the strict-flag gate is green would surface additional broken-by-default sites mid-cleanup.
+* **CT-O** F-07-004 (`ruflo-core/hooks/hooks.json` brand) — Pass 5 codemod technically matches but runs against build temp dir while marketplace ships from fork source via `marketplace.json source:`; fix is hand-edit + fork-source lint mirroring [[ADR-0235]], NOT a Pass 5 scope extension.
 
 ### Pre-flight inversions (audit's static suggestion did NOT survive re-derivation)
 
@@ -153,8 +162,43 @@ Drafted 2026-05-24 as theme-batched per the Decision below. Each was pre-flight-
 * **CT-E** dead swarm consensus (1,425 LOC) flipped from "delete" to **quarantine** — upstream is actively investing (`federation-transport.ts`, `transport.ts` siblings).
 * **CT-G** upstream `ruvnet/agentdb` has the same `console.log` at same line → fix is fork-only merge tax.
 * **CT-H** upstream has `required:['key','value']` (no namespace) — **the fork created the asymmetry**. Decision flipped from "tighten handler" to **relax schema** to re-converge.
+* **CT-K** highest merge-tax density of any second-pass CT — **6 of 11 sites byte-identical with upstream**; mitigation is divergence-marker comments per [[ADR-0234]] precedent.
+* **CT-L** **pipeline is fork-only infra** — upstream `ruvnet/ruflo/scripts/` has no publish/verdaccio/napi/build-package scripts → zero merge tax for the lint + helper extraction.
+* **CT-M** **F-03-002 (archivist post-write invariants) is fork-only code from ADR-0180** — `ruvnet/agentdb` has no `archivist/` directory at all; zero merge tax. By contrast F-03-001 and F-03-003 are byte-identical with upstream and require INTEGRATION-LEDGER rows.
+* **CT-N** rejected matrix Option C (fold F-04-009 into CT-I/[[ADR-0242]]) — they're disjoint by artifact (handlers vs `callMCPTool`) and mechanism (arch-test on swallow vs runtime `isError` inspection); folding would couple a one-file surgical fix to ADR-0242's multi-cycle adoption timeline.
+* **CT-O** Pass 5 codemod scope-extension rejected — the codemod runs against build temp dir while marketplace ships from fork source. Hand-edit + fork-source lint (mirroring [[ADR-0235]]) is the correct shape.
 
-## Headline CRITICALs (immediate-flag, 11)
+## Singleton dispositions (11 findings — fix-in-place / defer / accept)
+
+The 11 uncovered findings that don't cluster with ≥3 siblings into a coherent CT theme. Per `feedback-no-streak-timegates`, each gets an explicit disposition rather than spawning a per-finding ADR.
+
+| Finding | Sev | Slice | Title | Disposition |
+|---------|-----|-------|-------|-------------|
+| F-08-003 | HIGH | 08 | `embeddings_search` MCP bypasses [[ADR-0227]] adaptive 0.15 threshold via `\|\| 0.5` | **fix-in-place** — one-line removal at `embeddings-tools.ts:484` |
+| F-08-004 | HIGH | 08 | `RvfEmbeddingCache` 32-bit FNV-1a hash collision returns wrong embedding (~1% at 10K entries) | **fix-in-place** — store text alongside embedding and verify on `get()`, OR re-key by SHA-256 prefix |
+| F-08-001 | HIGH | 08 | V3 `'auto'` provider prefers hash over neural; RVF default dim 384 | **defer-with-rationale** — stack is dead (CT-F cluster 4 deletes it via merge-then-delete); rides on cluster 4 |
+| F-12-002 | MED | 12 | [[ADR-0214]] partial; `.claude/settings.json` still emits stale `primaryStorage:"pglite"` | **fix-in-place** — remove from `settings-generator.ts` per ADR-0214 + [[project-adr0170-superseded-phase-d-trap]] |
+| F-11-016 | MED | 11 | `@claude-flow/mcp` package facilities never wired on stdio | **defer-with-rationale** — rides on CT-F cluster 2 (delete `v3/mcp/`); evaporates with deletion |
+| F-12-005 | LOW | 12 | `statusline.cjs` and `statusline.js` duplicates with conflicting banners | **fix-in-place** — delete `.js` variant from template |
+| F-12-006 | LOW | 12 | Many emitted helpers use pre-rebrand `npx claude-flow` (623 lines) | **fix-in-place** — codemod brand-flip pass over `.claude/{agents,commands,skills,helpers}/`; extends [[ADR-0143]] Pass 7 |
+| F-12-007 | LOW | 12 | Three `claude-flow-*` slash commands keep pre-rebrand brand | **fix-in-place** — rename to `/ruflo-*` (or remove if redundant with `mcp__ruflo__` tools) |
+| F-06-007 | NOTE | 06 | `ruvllm-wasm.ts` silent JSON-parse catches (KV cache `{}` stats) | **fix-in-place** — narrow catch + log to stderr once per session |
+| F-06-008 | NOTE | 06 | `hnsw_router.rs` `unwrap()`s NaN panic in WASM graph-traversal hot path | **fix-in-place** — pre-validate `f32::is_finite()` at WASM boundary (partially closed by CT-D's setter validation; graph-traversal unwraps remain) |
+| F-11-018 | LOW | 11 | `agentdb/src/index.ts` re-exports `examples/` symbols | **accept** — convention violation only; informational, not behavioural |
+
+**Fast-track recommendation**: F-08-003 (one-line) and F-08-004 (one-evening) are both HIGH with low blast radius; either could ship as a single follow-up commit.
+
+## 100% coverage statement
+
+| Bucket | Count | Disposition |
+|--------|-------|-------------|
+| Covered (CT-A…CT-O) | 51 + 45 = **96** | Actively remediated by ADR-0234…ADR-0248 |
+| Deferred-in-ADR | 42 | Explicitly named in an ADR, dispositioned as defer/follow-up (e.g. CT-I's F-13-001…008 follow-up list, CT-F's gastown deferral) |
+| No remediation needed | 16 | PASS/INFO/positive findings (e.g. F-08-006/007 PASS, F-05-011 INFO) |
+| Singleton dispositions | 11 | Per-finding `fix-in-place` / `defer-with-rationale` / `accept` (above section) |
+| **Total** | **165** | **100% coverage** |
+
+## Headline CRITICALs (immediate-flag, 11 +7 surfaced post-synthesis = 18 total)
 
 1. **F-04-001** — AIDefence has zero non-test callers; defense-in-depth is documentation only.
 2. **F-04-002** — `commands/claims.ts:268-271` RBAC permissive-on-error.
@@ -168,24 +212,43 @@ Drafted 2026-05-24 as theme-batched per the Decision below. Each was pre-flight-
 10. **F-10-002** — `v3/mcp/` timers without `.unref()`.
 11. **F-14-001** — `memory_store` inputSchema lies vs handler permissiveness; READ counterparts throw → data-partitioning bug.
 
+### +7 CRITICALs surfaced by the coverage-matrix pass
+
+The synthesis's "immediate-flag 11" missed seven CRITICAL findings from the slice files. All seven are now homed in a CT-K..O remediation ADR:
+
+12. **F-01-001** — `process daemon` stub fakes PID + hardcoded "Services:" tree → **CT-K / [[ADR-0244]]**.
+13. **F-01-002** — `start --daemon` third writer of `.claude-flow/daemon.pid` with different on-disk format → **CT-K / [[ADR-0244]]** (canonical PID ownership defers to CT-J / [[ADR-0243]] Site #4).
+14. **F-02-003** — `publish-verdaccio.sh` missing `set -e`; wrapper publish failure → exit 0 (the exact `project-ruflo-wrapper-latest-regression` shape) → **CT-L / [[ADR-0245]]**.
+15. **F-03-001** — `RvfBackend.distanceToSimilarity` never re-probes metric on reopen (ADR-0073 `2cos−1` trap sibling) → **CT-M / [[ADR-0246]]**.
+16. **F-03-002** — Archivist invariants evaluated AFTER substrate write, no rollback → **CT-M / [[ADR-0246]]** (fork-only code; zero merge tax).
+17. **F-03-003** — `backends/factory.ts::createHNSWLibBackend` HNSW static defaults divergent from canonical 23/100/50 → **CT-M / [[ADR-0246]]**.
+18. **F-07-001** + **F-07-002** — `ruflo-graph-intelligence` 6 DOA MCP tools + `ruflo-agentdb` 3 phantom `embeddings_rabitq_*` → **CT-O / [[ADR-0248]]**.
+
 ## Decision
 
 Treat the 165 findings as the second-pass batch counterpart to ADRs 0202–0218 after ADR-0201. **Apply the [Remediation-ADR pre-flight checklist](./ADR-0201-codebase-soundness-completeness-audit-with-runtime-validation.md#remediation-adr-pre-flight-checklist-added-2026-05-20) before drafting any remediation ADR from these findings.** The first batch saw 4 of 9 reviewed remediation ADRs flipped by a 6-expert swarm because the static finding-to-remedy step was skipped.
 
 Prefer **theme-batched remediation ADRs (one per CT-A through CT-J)** over per-finding ADRs. Single-finding ADRs in CT-A through CT-J are likely to re-encounter the "no sibling-ADR overlap" trap (pre-flight check 4). The themes carve the work along seams that match the underlying bug class.
 
-All 10 theme-batched ADRs ([[ADR-0234]] through [[ADR-0243]]) were drafted on 2026-05-24, each pre-flight-checked. See "Remediation ADRs" table above for the per-theme decision shape, impact, and status. Triage priority (subject to maintainer re-ordering):
+All **15 theme-batched ADRs** ([[ADR-0234]] through [[ADR-0248]]) were drafted on 2026-05-24, each pre-flight-checked, achieving 100% coverage of the 165 findings (96 in CTs, 42 deferred-in-ADR, 16 no-remediation-needed, 11 singletons). See "Remediation ADRs" table above for the per-theme decision shape, impact, and status, and the "Singleton dispositions" section for the long tail. Triage priority (subject to maintainer re-ordering):
 
 1. CT-G [[ADR-0240]] stdio-corruption fix — single-commit, observable as MCP envelope corruption.
-2. CT-B [[ADR-0235]] wrapper-bundled-helpers drift — gates [[ADR-0211]]'s real implementation reaching npx users.
-3. CT-A [[ADR-0234]] silent fallback completions — extend the [[ADR-0095]] amendment to its sibling loaders.
-4. CT-C [[ADR-0236]] hardcoded-list drift lint — pipeline-start cross-registry check.
-5. CT-E [[ADR-0238]] surface-without-enforcement triage — wire OR remove per [[ADR-0210]] stub-honesty mandate.
-6. CT-F [[ADR-0239]] dead-code triage — ~57K LOC; per-cluster decisions (5 strict deletes + 1 merge-then-delete + 2 deferrals + lint gate).
-7. CT-H [[ADR-0241]] schema-vs-handler reconciliation (F-14-001 first; relax-not-tighten to re-converge with upstream).
-8. CT-D [[ADR-0237]] silent clamps (`sona_instant.rs` siblings of today's fix).
-9. CT-J [[ADR-0243]] resource drift on long-lived processes.
-10. CT-I [[ADR-0242]] error taxonomy — long-term cultural debt; lowest urgency.
+2. CT-M [[ADR-0246]] AgentDB internals correctness — 3 CRITICAL data-integrity (RVF metric reprobe, archivist pre-write+rollback, factory deriveHNSWParams). Behaviour-test-first.
+3. CT-B [[ADR-0235]] wrapper-bundled-helpers drift — gates [[ADR-0211]]'s real implementation reaching npx users.
+4. CT-A [[ADR-0234]] silent fallback completions — extend the [[ADR-0095]] amendment to its sibling loaders.
+5. CT-K [[ADR-0244]] CLI per-command honesty long-tail — 2 CRITICAL daemon-PID-collision + parser fix + brand codemod extension.
+6. CT-L [[ADR-0245]] pipeline robustness + set-e discipline — 1 CRITICAL `publish-verdaccio.sh` missing `-e` + helper extraction + lint script.
+7. CT-O [[ADR-0248]] plugin marketplace integrity + honesty — 2 CRITICAL DOA/phantom + marketplace lint + per-plugin description rewrites.
+8. CT-C [[ADR-0236]] hardcoded-list drift lint — pipeline-start cross-registry check.
+9. CT-E [[ADR-0238]] surface-without-enforcement triage — wire OR remove per [[ADR-0210]] stub-honesty mandate.
+10. CT-F [[ADR-0239]] dead-code triage — ~57K LOC; per-cluster decisions (5 strict deletes + 1 merge-then-delete + 2 deferrals + lint gate).
+11. CT-H [[ADR-0241]] schema-vs-handler reconciliation (F-14-001 first; relax-not-tighten to re-converge with upstream).
+12. CT-D [[ADR-0237]] silent clamps (`sona_instant.rs` siblings of today's fix).
+13. CT-N [[ADR-0247]] security detection + isError envelope — F-04-009 client-side rule + ride-alongs; F-04-006/007 deferred.
+14. CT-J [[ADR-0243]] resource drift on long-lived processes.
+15. CT-I [[ADR-0242]] error taxonomy — long-term cultural debt; lowest urgency.
+
+**Singleton fast-track**: F-08-003 (one-line `|| 0.5` removal) and F-08-004 (RvfEmbeddingCache FNV-1a collision) are both HIGH with low blast radius; either can ship as a single follow-up commit without an ADR.
 
 ## Consequences
 
