@@ -579,3 +579,208 @@ and migrate their tolerant phases to `run_phase_norevert`:
   + healthy-pattern-extraction shape (installSignalHandlersOnce, HiveLRU).
 * [[ADR-0182]] §L8 — verdaccio-gc non-fatal documentation that
   `F-02-014` references.
+
+## Swarm review (2026-05-24)
+
+**Status**: proposed (post-swarm-review)
+**Swarm**: 4 experts + devil's advocate, Quorum-majority consensus, hierarchical topology, tactical queen, queen-composed transport
+**Triage rank**: 6 (per [[ADR-0233]] §Decision; wave 2 of 5)
+
+### Decision (post-swarm-review)
+
+Adopt the ADR as drafted (hybrid A+B+C, scope-merged) — Quorum-majority **4/4 in
+favour**, devil's advocate **withdraws principled dissent** with one specific
+proposal accepted by the queen. Four refinements added below; the ADR's
+per-site disposition table, helper extraction, and lint gate ship as written.
+
+### Expert positions
+
+* **E1 — Bash set-e discipline specialist** (`set -euo pipefail` semantics; named-exception via `# DELIBERATE:`):
+  votes **YES**. The "19/22 use `-euo pipefail`; 2 deliberate `-uo pipefail`; 1
+  uses `-o pipefail`; 1 uses `-eu`" survey at pre-flight #3 closes the
+  CC-02-B cross-cutting cleanly. Crucially, the ADR's lint template
+  (`set -euo pipefail` OR `set -eu` OR `# DELIBERATE:` + `-uo`/`-o pipefail`)
+  matches the actually-shipped set — the lint will pass on day one without
+  refactoring the legitimate exceptions. One refinement (R1): the audit's
+  "15 of 17" undercount became "19 of 22 substantive scripts" in pre-flight
+  #3 only after re-scanning; the ADR's Sites-table row 12 says "28 files
+  surveyed; 19/22/2/1/1 split" but doesn't enumerate the 5 scripts WITHOUT
+  `set -e`. Re-grep confirms 5 scripts lack `set -e`:
+  `check-no-cwd-in-handlers.sh`, `publish-verdaccio.sh`, `run-check.sh`,
+  `test-acceptance-fast.sh`, `test-acceptance.sh`. The ADR names only 3
+  (publish-verdaccio, test-acceptance, run-check). The lint
+  implementation must whitelist `check-no-cwd-in-handlers.sh` and
+  `test-acceptance-fast.sh` OR migrate them — pick one in step 12.
+
+* **E2 — Pipeline-helper-extraction specialist** (`run_phase_norevert` in `lib/pipeline-helpers.sh`):
+  votes **YES**. The helper is structurally sound: `lib/pipeline-helpers.sh`'s
+  own header already declares "Sourceable library — no `set -euo pipefail`
+  (caller provides)", so adding a new function is pattern-conformant — no
+  set-option mutation, no nested-subshell hazard. The allowlist-based
+  `_phase_error_is_recoverable` is the right shape: it forces an explicit
+  decision about what "soft failure" means per phase rather than a blanket
+  `|| true` swallow. Refinement (R2): the ADR's body shows
+  `_phase_error_is_recoverable "$phase" "$_out"` but doesn't sketch how
+  the allowlist is passed. Suggest a 3rd argument or a per-phase shell
+  array (e.g. `RECOVERABLE_publish_wrapper=("cannot publish over...")`)
+  resolved by name-mangling; concrete shape can be deferred to
+  implementation, but the ADR should commit to "allowlist is per-call
+  explicit, not a global lookup table" to prevent allowlist drift
+  becoming the next ADR-0231-class registry.
+
+* **E3 — Machine-pinned-path specialist** (Hetzner-path cleanup per `[[feedback-never-touch-hz-remote]]`):
+  votes **YES**. The dead Hetzner paths in `audit-dynamic-imports.sh:16-18`
+  are a textbook `feedback-never-touch-hz-remote` violation surviving as a
+  latent silent-scan-zero-files bug — the script reports "audit passed"
+  on a tree it never read. Re-pointing to `${FORK_DIR_*}` is unambiguously
+  correct (the user migrated off Hetzner per
+  `[[user_machine]]`/`[[feedback-never-touch-hz-remote]]`, no contention).
+  The audit's "10 sibling sites" enumeration is faithful; the ADR's
+  env-var-override pattern (`process.env.FORK_DIR_AGENTDB ??
+  "/Users/henrik/source/forks/agentdb"`) preserves single-machine ergonomics
+  while becoming portable. Refinement (R3): one open question — once the
+  9 sibling `.mjs` lint scripts use `process.env.FORK_DIR_*`, the source
+  of truth for those defaults silently shifts from `lib/fork-paths.sh`
+  (bash) to per-script literal defaults. Suggest the ADR commit step 3
+  to ALSO emit a node-importable `lib/fork-paths.mjs` re-export of the
+  same values so the 9 sibling scripts can `import {FORK_DIR_AGENTDB}
+  from '../lib/fork-paths.mjs'` rather than carry independent defaults —
+  closes the registry-drift class (CT-C kinship) before it opens.
+
+* **E4 — Lint-DX specialist** (`scripts/lint-set-e-discipline.mjs` developer friction):
+  votes **YES**. The lint is genuinely cheap (<1s, reads 15 lines per
+  script, ~28 scripts, ~420 lines parsed). The `# DELIBERATE:` escape
+  hatch is well-shaped — it forces the deviation author to document the
+  reason inline, which is the only credible long-term defence against
+  "let's just remove `-e` because this `|| true` is too noisy". The
+  rationale-comment IS the audit trail. Refinement (R4): suggest the
+  lint also accept `# DELIBERATE-<id>:` linking back to a corpus memory
+  or ADR (e.g. `# DELIBERATE-ADR-0245:`) so future audits can grep all
+  exceptions and verify each still has a live justification. Cheap
+  addition (one regex tweak); large long-term value. The lint's failure
+  message must cite both the offending file:line AND the helper +
+  corpus rule (`run_phase_norevert` +
+  `feedback-best-effort-must-rethrow-fatals`) so a developer
+  hitting it doesn't have to hunt for the resolution path.
+
+* **DA — Devil's Advocate** ("Lint over discipline is more theatre — just
+  fix the actual scripts" / "Helper extraction adds indirection; the
+  19/22 already-conforming proves discipline works"):
+  **WITHDRAWS** principled dissent with one accepted proposal. Initial
+  hook 1 ("lint is theatre") was strongest argument: 19/22 conformance
+  WITHOUT a lint suggests culture+review already enforce it. But the
+  ADR's evidence breaks the argument — the 3 non-conforming scripts
+  (publish-verdaccio, test-acceptance, run-check) PERSIST across the
+  same period the 19 stayed clean, meaning culture+review is sufficient
+  for greenfield scripts but insufficient for legacy carve-outs.
+  Without the lint, the next time someone needs a "complex per-phase
+  manual handler" they copy publish-verdaccio.sh's shape (no
+  `# DELIBERATE:`, no `run_phase_norevert`), and the count quietly drifts
+  to 4-of-23 then 5-of-24. The lint's <1s cost AND the
+  `# DELIBERATE:` exemption-not-prohibition shape disarms the
+  "theatre" framing.
+
+  Initial hook 2 ("helper adds indirection") also withdrawn —
+  `run_phase_norevert` is strictly less indirection than today's
+  `|| { log "..."; }` scatter at 3-5 sites in publish-verdaccio.sh
+  + 4-6 sites in test-acceptance.sh. Reading `run_phase_norevert
+  "publish-wrapper" npm publish ...` at the call-site IS the
+  documentation of intent; today's `|| log "wrapper publish skipped"`
+  buries the intent in the error message.
+
+  **ONE proposal held and accepted by queen (R5)**: the ADR's
+  `F-02-009` baseline-error-count assertion (`tsc --noEmit` against
+  agentic-flow, assert `<= 256`) is itself an
+  `feedback-best-effort-must-rethrow-fatals`-adjacent code smell —
+  a magic number with no test that asserts the count. Defended in
+  the ADR's "Negative" consequences section, but DA's objection
+  stands: when agentic-flow's next upstream-sync re-baselines via
+  pre-commit re-measure, the developer might "fix" the assertion by
+  just bumping the constant rather than addressing the regression.
+  **Mitigation accepted**: commit step 6 also requires writing the
+  current count to a checked-in `config/agentic-flow-type-error-baseline.json`
+  file (single key: `{"count": 256}`) so any change to the number is a
+  reviewable PR delta, not an invisible source-tree edit. The CI assertion
+  reads from the JSON file. This matches the
+  `config/runtime-externals-allowlist.json` shape the ADR already
+  proposes for step 7 — one consistent pattern for "bounded baselines we
+  re-measure on intent".
+
+### Upstream intent
+
+**Confirmed zero merge tax.** `ls /Users/henrik/source/ruvnet/ruflo/scripts/`
+returns 13 scripts (`audit-cli-mcp-tools.mjs`, `audit-codex-integration.mjs`,
+`audit-hook-commands.mjs`, `audit-plugin-packages.mjs`,
+`audit-tool-descriptions.mjs`, `bulk-fix-tool-descriptions.mjs`,
+`cleanup-v3.sh`, `install.sh`, `inventory-capabilities.mjs`,
+`regen-witness.mjs`, `regenerate-witness.mjs`,
+`sign-witness-from-inventory.mjs`, `verify-appliance.sh`).
+**None publish/verdaccio/napi/build-package equivalents.**
+`ls /Users/henrik/source/ruvnet/ruflo/lib/` returns "No such file or directory"
+— upstream has no `lib/` tree at all. The pipeline IS fork-only infrastructure
+per `[[reference-pipeline-publish-paths]]`; pre-flight #2 ("upstream hasn't
+already decided it") holds unambiguously. The audit's "extracted from
+test-verify.sh phases 1-5, 9" comment in `publish-verdaccio.sh:2-4` confirms
+this is wholly fork-origin code.
+
+### ADR-180+ intent
+
+* **[[ADR-0231]] wave A9**: explicit precedent — the audit cites
+  `F-02-003` as "exact failure shape that
+  `project-ruflo-wrapper-latest-regression` (MEMORY.md) burned a release on"
+  and references ADR-0231 wave A9 as the release-regression shape. ADR-0245
+  closes the structural class wave A9 closed at a single site
+  (`publish.mjs::buildPackageMap`), now extending to the publish-wrapper
+  branch. Aligned.
+* **[[ADR-0236]] (CT-C close-out)**: sibling — same 14-finding audit slice,
+  different defect family. CT-C covered registry-drift (`F-02-001`/`F-02-002`/
+  `F-02-004`); CT-L takes the remaining 11. Pre-flight #4 verified no overlap;
+  ADR-0245's R3 refinement (node-importable `lib/fork-paths.mjs`) extends
+  the CT-C "single source of truth" pattern to the cross-script path-default
+  problem.
+* **[[ADR-0226]] (writeFrame discipline)**: shape kinship — both ADRs
+  formalise an idiom by giving it a named helper to prevent regression
+  (`writeFrame` for stdio frames; `run_phase_norevert` for tolerant-phase
+  shell calls). The "name + lint" pattern is the corpus-recommended approach
+  for in-process discipline that survives author turnover.
+* **[[ADR-0243]] (CT-J)**: shape sibling — both use the per-site disposition
+  table + helper-extraction pattern. The ADR explicitly cites ADR-0243's
+  shape as precedent.
+* **[[ADR-0193]] (autopilot completion)**: kinship via the
+  `feedback-best-effort-must-rethrow-fatals` rule the ADR enforces.
+* **[[ADR-0186]] (INTEGRATION-LEDGER)**: not directly invoked because the
+  changes are fork-local pipeline infrastructure with no upstream hand-port.
+  R6 (below) addresses the bookkeeping question.
+
+### Refinements applied
+
+| # | Source | Refinement |
+|---|--------|-----------|
+| R1 | E1 | Lint scope clarification — implementation must explicitly handle the 5 scripts without `set -e` (not the 3 named in the ADR body): `check-no-cwd-in-handlers.sh`, `publish-verdaccio.sh`, `run-check.sh`, `test-acceptance-fast.sh`, `test-acceptance.sh`. Pick per-script: migrate to `-euo pipefail` OR add `# DELIBERATE:` header. Update step 12. |
+| R2 | E2 | Helper allowlist contract — commit in step 1 that `run_phase_norevert`'s recoverable-error allowlist is per-call explicit (3rd argument or per-phase array), not a global lookup table. Prevents allowlist drift becoming a new registry-drift class. |
+| R3 | E3 | Cross-script path-default unification — step 3 also emits a node-importable `lib/fork-paths.mjs` re-exporting `FORK_DIR_*` so the 9 sibling `.mjs` scripts import from one source instead of carrying independent defaults. Composes with CT-C's single-source-of-truth pattern. |
+| R4 | E4 | Lint citation discipline — accept `# DELIBERATE-<id>:` (linking to ADR or corpus memory) so future audits can verify each exemption has a live justification. Lint failure messages MUST cite both file:line AND the helper + corpus rule. |
+| R5 | DA | Baseline-as-data — step 6's `<= 256` agentic-flow type-error assertion reads from a checked-in `config/agentic-flow-type-error-baseline.json`, matching the `config/runtime-externals-allowlist.json` shape step 7 proposes. Any bump is a reviewable PR delta, not an invisible source-tree edit. |
+| R6 | Queen | INTEGRATION-LEDGER discipline — no row needed (fork-local pipeline infra, no upstream hand-port). Explicitly noted per `[[feedback-update-integration-ledger]]` to prevent the "missing-row" audit at next sync. |
+
+### Top risk + mitigation
+
+* **Risk**: helper extraction + lint + 12 site fixes + 2 new files (~6 files
+  touched, 2 created) is the largest single ADR in the CT-L/M/N batch.
+  Landing this without a behavioural acceptance check means the lint
+  passes day-one (current state IS conforming after the ADR's migrations)
+  and the helper is invoked at exactly 2-3 sites (publish-verdaccio.sh
+  phases 4 + 6) — a future revert that loosens `set -uo` somewhere else
+  passes the lint via a copy-paste `# DELIBERATE:` header with no
+  meaningful justification. Same failure shape ADR-0240 §"Top risk"
+  identifies (lint-without-acceptance-check pattern).
+* **Mitigation**: per ADR-0240's accepted shape — register the lint as
+  an acceptance-tier check (not just `npm run lint` rider), and add a
+  behavioural acceptance check that PROVES `run_phase_norevert` is
+  actually invoked at the 2-3 expected sites (not bypassed via a
+  copy-paste of the old `|| log "..."` pattern). Concrete: a
+  source-shape acceptance check that greps the 2 deliberate scripts for
+  zero remaining `|| log` swallows in their tolerant-phase blocks, and
+  asserts each tolerant phase routes through `run_phase_norevert`. This
+  matches the [[ADR-0215]] golden-master pattern and closes the
+  copy-paste loophole the DA's first dissent hook surfaced.
