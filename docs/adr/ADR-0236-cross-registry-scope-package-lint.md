@@ -411,3 +411,7 @@ Per `byzantine.ts` weighted scheme (queen ×3; N=5 voters total → denominator 
 * **Mitigation**: per ADR-0240's accepted shape — register the lint as an acceptance-tier check (not just `ruflo-publish.sh` invocation). The acceptance check boots `bash scripts/ruflo-publish.sh --dry-run` (or equivalent gate-0-only invocation), confirms the lint ran (greppable log line "lint-scope-registries: PASS" or "FAIL"), AND independently invokes `node scripts/lint-scope-registries.mjs` against current state. Belt + braces: gate-0 catches the operator at release time; acceptance check catches the gate-0 regression itself. Matches the [[ADR-0215]] golden-master pattern and the CT-G/CT-L mitigations.
 * **Secondary risk**: the 2-commit TDD sequence (R4) requires discipline at fix-commit time — if the developer squashes commits before merge, the RED-GREEN history collapses. **Mitigation**: per `[[feedback-no-history-squash]]`, the project already forbids squash-to-clean-up; this risk is structurally bounded.
 
+### Cross-ADR coordination
+
+Reciprocal kinship with [[ADR-0245]] (CT-L) on the single-source-of-truth pattern: CT-C governs **name** registries (this ADR), CT-L's R3 governs **path** defaults (`lib/fork-paths.mjs` node-importable re-export). Both ADRs ship lints gating the same `scripts/ruflo-publish.sh` entrypoint — wire both lint invocations into the same gate-0 phase per R2's placement contract so a single audit sweep catches drift in either family.
+
