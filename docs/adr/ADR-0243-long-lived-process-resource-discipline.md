@@ -350,3 +350,111 @@ Out of scope for this ADR:
 5. Manual smoke: invoke `daemon trigger` twice in the same process via
    the in-tree test harness, assert `process.listenerCount('SIGTERM')`
    stays at 1.
+
+## Swarm review (2026-05-24)
+
+**Pattern**: P2 Consensus Decision Hive. **Consensus**: Quorum-majority
+(≥3/4 for adoption). **Topology**: hierarchical. **Queen**: tactical.
+**Panel**: 4 experts + 1 DA. **Transport**: queen-composed.
+**Triage rank**: 14 of 15 (per [[ADR-0233]] §Decision).
+
+### Panel composition
+
+- Expert 1 — NAPI/WASM handle lifecycle specialist (F-10-001)
+- Expert 2 — Timer-unref discipline specialist (F-10-002)
+- Expert 3 — Signal-handler idempotency specialist (F-10-010)
+- Expert 4 — LRU/eviction pattern specialist (HiveLRU compare)
+- Devil's Advocate
+
+### Upstream intent
+
+Upstream is **neutral-by-omission with inherited bugs** at every CT-J site
+verified from `/Users/henrik/source/ruvnet/ruflo/`:
+
+- **F-10-001** — `ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-tools/ruvllm-tools.ts:312-314`
+  carries the **byte-identical** three module-scope Maps
+  (`hnswRouters`, `sonaInstances`, `loraInstances`). No LRU, no eviction.
+  Inherited; fork-only LRU = one-time merge tax per [[ADR-0234]] precedent.
+- **F-10-002** — `ruvnet/ruflo/v3/mcp/{connection-pool,session-manager,transport/websocket}.ts`
+  carries identical un-`unref()`'d `setInterval`s. The whole subtree
+  (5,587 LOC) exists in upstream too — CT-F cluster 2 deletion = permanent
+  fork-vs-upstream divergence regardless of CT-J's per-site fix shape.
+- **F-10-007** — fork rvf-backend.ts is 3,221 LOC vs upstream's 527 LOC.
+  `_pendingNativeIngest` field is **fork-only code** (zero merge tax).
+  Symmetric with the F-03-002 archivist disposition in [[ADR-0246]].
+- **F-10-010** — `ruvnet/ruflo/v3/@claude-flow/cli/src/services/worker-daemon.ts:366-375`
+  carries the identical 3-listener registration with no idempotency gate.
+  Inherited; the `installSignalHandlersOnce` healthy comparison lives
+  in `forks/agentdb/src/archivist/audit-writer.ts:143-156` which has no
+  upstream counterpart at all (`ruvnet/agentdb` lacks the `archivist/`
+  directory per [[project-fork-only-controllers]]).
+
+Pre-flight check #2 ("upstream hasn't already decided it") clears at every
+site. Per-site merge-tax for live sites: F-10-001 (one fork-only LRU class),
+F-10-010 (one module-scope flag). F-10-007 carries zero merge tax. F-10-002
+is dominated by CT-F's subtree-divergence regardless.
+
+### ADR-180+ alignment
+
+- [[ADR-0239]] (CT-F cluster 2) is the **cross-bonus cited by ADR-0233**:
+  deleting `v3/mcp/` evaporates F-10-002 (3 timers) AND F-05-001 (CT-G site #1).
+  This ADR's site #2 deferral is downstream of that cross-bonus and matches
+  the deferral encoded in [[ADR-0240]] for site #1.
+- [[ADR-0244]] (CT-K) **F-01-002 sequenced after CT-J Site #4** per
+  ADR-0233 §Cross-bonus dependencies: "canonical PID/signal discipline
+  lives at CT-J Site #4". CT-J Site #4 (F-10-010) IS the daemon signal-
+  handler idempotency gate; ADR-0244 routes its `start --daemon` PID-race
+  fix here. Adoption of CT-J Site #4 unblocks the CT-K F-01-002 work.
+- [[ADR-0080]] (HNSW 100K maxElements cap) — F-10-007 is downstream of
+  ADR-0080's cap (100K × 768f × 4B = ~300MB). The fix here (clear
+  `_pendingNativeIngest` after rehydrate) doesn't change the cap; it
+  ensures the array isn't retained ALONGSIDE the native rehydrate.
+  Aligns with [[ADR-0073]]'s "RVF is source of truth" charter.
+- [[ADR-0202]] (RVF lock CRITICAL-but-unimplemented) is separately tracked;
+  not in CT-J scope but lives in the same long-lived-process surface.
+- [[ADR-0201]] §Pre-flight check #4 ("no sibling-ADR overlap") was the
+  flip point — the original ADR proposed a per-site fix for F-10-002 too;
+  the CT-F overlap forced site #2 deferral. Healthy use of the checklist.
+
+### Critique outcomes
+
+| Expert | Critique | Vote | Adopted? |
+|---|---|---|---|
+| Expert 1 (NAPI/WASM) | The Decision's bounded-LRU for F-10-001 specifies `dispose()` on eviction "if the type exposes one", but does not specify the dispose contract. `HnswRouter`, `SonaInstant`, `MicroLora` are returned from `createHnswRouter`/`createSonaInstant`/`createMicroLora` (NAPI/WASM-backed); silent eviction WITHOUT calling the underlying `.free()`/`.destroy()` leaks the WASM heap even with the bounded JS Map. The ADR needs to make the dispose lookup explicit (`typeof handle.destroy === 'function' ? handle.destroy() : noop`) and assert the behavior test covers the WASM-heap side, not just the JS Map size. | amend | **ADOPTED** — strengthen F-10-001 dispose contract: bounded LRU MUST probe `destroy`/`free`/`dispose` on eviction in that priority order; behaviour test asserts process RSS does not grow past the LRU-cap budget (~64 × per-instance WASM heap), not just `Map.size === 64`. |
+| Expert 2 (Timer-unref) | The ADR's site #2 deferral to CT-F is correct, but the ESLint `no-unref-setinterval` lint rider needs scope clarification: today `worker-daemon.ts`, `worker-queue.ts`, `mcp-server.ts`, `rvf-backend.ts` already correctly `.unref()` — adding the lint will green for them. But the lint must NOT fire inside `v3/mcp/` until CT-F decides (else the lint would mandate a fix in a subtree marked for deletion, contradicting the deferral). The lint needs a path-scoped `overrides` block that EXCLUDES `v3/mcp/**` until CT-F lands. | amend | **ADOPTED** — lint scope clarification: `no-unref-setinterval` rule scoped to `cli/src/**` and `memory/src/**` ONLY; `v3/mcp/**` excluded via `overrides.files` until CT-F (ADR-0239) decides keep-vs-delete. If CT-F keeps, remove the exemption and apply per-site `.unref()` fixes per ADR-0243 amendment. |
+| Expert 3 (Signal-handler) | The `audit-writer::installSignalHandlersOnce` pattern uses a MODULE-SCOPE `signalHandlersInstalled = true` flag at `audit-writer.ts:21`. The Decision proposes adopting the same pattern in `worker-daemon.ts`. But `worker-daemon.ts` is a CLASS (`WorkerDaemon`), not a module-scope export. A class-scope `private daemonShutdownHandlersInstalled` would still leak listeners across multiple `WorkerDaemon` instances in the same process (e.g. the `daemon trigger` path constructs a fresh `WorkerDaemon` per call per [[ADR-0233]] §CT-J description). The flag MUST be module-scope (top-level `let daemonShutdownHandlersInstalled = false`) for the idempotency gate to actually be process-wide. | amend | **ADOPTED** — clarify F-10-010 fix: the `daemonShutdownHandlersInstalled` flag MUST be module-scope (top-level `let`), NOT instance-scope (`private` field). Same gate shape for `installCrashHandlers`. Behaviour test (already specified) suffices: `process.listenerCount('SIGTERM')` stays at 1 across multiple `WorkerDaemon` constructions in one process. |
+| Expert 4 (LRU/eviction) | The Decision rejects Option B (`HandleRegistry` extraction) on "premature abstraction; only 4 callsites". Re-count: F-10-001 is 3 callsites (hnswRouters, sonaInstances, loraInstances), F-10-005 is 1 (activeTrajectories with idle-TTL), F-10-003 (deferred to its own ADR) would be 1 more (storage-factory.backendCache). That's 5 callsites already, with F-10-003 explicitly tracked as a known future site. The "only 4" count is wrong AND the F-10-005 site needs idle-TTL (not pure LRU) which HiveLRU doesn't support today. Either (a) extend HiveLRU with optional idle-TTL and adopt across all 5, OR (b) accept the duplication explicitly with a follow-up ticket when F-10-003 lands. | amend | **PARTIALLY ADOPTED** — keep per-site implementation for THIS ADR (matches `[[ADR-0201]] §Default — implement at the seam that matters`), but: (i) update the Consequences §Negative bullet from "If a third callsite emerges" to "F-10-003 is already on deck; HandleRegistry extraction becomes the right shape when it lands"; (ii) factor the F-10-005 idle-TTL into a small local helper IN ruvllm-tools.ts so the shape is one ADR away from extraction. |
+| DA | "ESLint rules become security theatre — perf-monitor instead." The strongest form: a `no-unref-setinterval` lint catches new sites but does nothing about existing ones (deferred to CT-F anyway). A continuously-running perf-monitor (e.g. periodically log `process.getActiveResourcesInfo()` or `process._getActiveHandles()` count for the MCP-stdio process) would catch the actual symptom — event-loop pin — regardless of which timer or which subtree introduced it. | amend | **REJECTED** — lint catches at edit time (cheap regression guard); perf-monitor catches at runtime (real, but high-overhead, and currently zero infrastructure for it). The lint is the [[ADR-0215]] golden-master shape: cleanup + cheap gate. Perf-monitor is the runtime-stress carry-forward (G-16-014 full scope), explicitly owed per [[ADR-0201]] §Carry-forward. Both eventually wanted; lint ships now, perf-monitor when the soak harness lands. |
+| DA | "F-10-007 RvfBackend 300MB pending Float32Array is a real ceiling — eager-flush rather than LRU." Re-frame: the proposed fix already IS eager-flush (clear `_pendingNativeIngest = []` immediately after `ensureNativeSemanticReady` completes; flip `_nativeRehydrated = true` only after the clear). The DA's challenge is whether the 100K cap is the right ceiling at all — even ONE 300MB array on a long-lived daemon process is a 300MB transient. Should we stream-ingest instead of accumulating? | amend | **REJECTED** — out of CT-J scope. Stream-ingest would re-architect the load/replay/rehydrate pipeline (touches WAL replay shape, native handoff timing, possibly the ADR-0080 100K cap itself). The eager-flush fix CLOSES the 300MB-retained-AFTER-rehydrate leak (the audit finding). Re-architecting to never accumulate 300MB at all is a separate ADR (~ADR-0249 or thereabouts; tracked as a Consequences §Negative note). |
+
+### Devil's Advocate final position
+
+**Withdraws on the lint-vs-perf-monitor challenge** — concedes lint is the
+right shape for the regression-guard role and perf-monitor is correctly
+owed to the runtime-stress carry-forward (G-16-014). **Holds principled
+dissent on the F-10-007 ceiling** — flags for the record that even
+post-fix, a single 300MB transient on load is an inherent ceiling that
+stream-ingest would close. Does NOT block the Decision (the eager-flush
+fix DOES close the audit finding, which is retention-after-rehydrate, not
+peak-during-rehydrate). Recommends a follow-up ADR for stream-ingest if a
+real soak test ever shows the transient is operationally painful.
+
+### Improvements adopted
+
+1. **F-10-001 dispose contract strengthened**: bounded LRU MUST probe
+   `destroy`/`free`/`dispose` on eviction; behaviour test asserts process
+   RSS does not grow past the LRU-cap budget, not just `Map.size === 64`.
+2. **Lint scope clarified**: `no-unref-setinterval` scoped to
+   `cli/src/**` + `memory/src/**`; `v3/mcp/**` exempted via `overrides`
+   until CT-F (ADR-0239) decides. Removes the cross-conflict between the
+   lint and the site-#2 deferral.
+3. **F-10-010 idempotency-flag scope clarified**: module-scope `let`, NOT
+   class-scope `private`. Behaviour test (already specified) suffices.
+4. **F-10-003 future-extraction footnote**: Consequences §Negative updated
+   from "if a third site emerges" to "F-10-003 is already on deck;
+   HandleRegistry extraction is the right shape when it lands".
+5. **F-10-007 stream-ingest follow-up footnote**: Consequences §Negative
+   notes that even post-fix, a single 300MB transient on load is an
+   inherent ceiling; stream-ingest is a separate ADR.
+6. **DA principled-dissent recorded** on the F-10-007 ceiling — out of
+   CT-J scope, separately owned by a future stream-ingest ADR.
