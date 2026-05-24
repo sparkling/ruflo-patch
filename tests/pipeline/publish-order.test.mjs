@@ -55,6 +55,8 @@ const KNOWN_DEPS = {
   // @sparkleideas/embeddings removed (ADR-0239 cluster 4(c) — package deleted, loader relocated to memory/)
   '@sparkleideas/codex': [],
   '@sparkleideas/aidefence': [],
+  '@sparkleideas/errors': [], // ADR-0242 (Batch 5) — base error types; no internal deps; consumed by gastown-bridge L4
+
   // Level 3
   '@sparkleideas/neural': ['@sparkleideas/memory'],
   // @sparkleideas/hooks removed from the publish set (ADR-0203 — dead package)
@@ -186,22 +188,22 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (25+4+5+22+2)', () => {
+    it('all expected packages are present across all levels (25+5+5+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup.
-      // L1=25, L2=4 (was 5; -embeddings ADR-0239 cluster 4c),
+      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup + ADR-0242 errors.
+      // L1=25, L2=5 (was 4 post-ADR-0239; +errors ADR-0242 Batch 5),
       // L3=5 (was 6; -ruvector-upstream ADR-0239 cluster 5a; ADR-0203 -hooks earlier),
       // L4=22 (was 24; -testing ADR-0239 cluster 1, -plugin-cognitive-kernel ADR-0239 cluster 5a),
-      // L5=2. Total: 58 (was 62).
+      // L5=2. Total: 59 (was 58 post-ADR-0239; +errors).
       assert.equal(LEVELS[0].length, 25, 'Level 1 should have 25 packages');
-      assert.equal(LEVELS[1].length, 4, 'Level 2 should have 4 packages (ADR-0239 cluster 4c removed embeddings)');
+      assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages (ADR-0242 added @sparkleideas/errors)');
       assert.equal(LEVELS[2].length, 5, 'Level 3 should have 5 packages (ADR-0239 cluster 5a removed ruvector-upstream)');
       assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages (ADR-0239 removed testing + plugin-cognitive-kernel)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        58,
-        `Expected 58 packages total (62 pre-ADR-0239, -4 deleted clusters), got ${allPackages.length}`
+        59,
+        `Expected 59 packages total (62 pre-ADR-0239, -4 deleted, +errors ADR-0242), got ${allPackages.length}`
       );
     });
 

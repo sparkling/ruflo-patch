@@ -185,7 +185,8 @@ run_build() {
   # fork rsynced — stale if a fork-side source change lands without a
   # local `npm run build`.
   # ADR-0239 cluster 4(c) removed [embeddings]; cluster 1 removed [testing].
-  local -A _v3_packages=([cli-core]=1 [shared]=1 [memory]=1 [codex]=1 [aidefence]=1
+  # ADR-0242 (Batch 5) added [errors].
+  local -A _v3_packages=([cli-core]=1 [shared]=1 [memory]=1 [codex]=1 [aidefence]=1 [errors]=1
     [neural]=1 [browser]=1 [plugins]=1 [providers]=1 [claims]=1
     [guidance]=1 [mcp]=1 [integration]=1 [deployment]=1 [swarm]=1
     [security]=1 [performance]=1 [cli]=1
@@ -199,7 +200,8 @@ run_build() {
     const fs = require('fs');
     const data = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/publish-levels.json', 'utf-8'));
     // ADR-0239 cluster 4(c) removed 'embeddings'; cluster 1 removed 'testing'.
-    const v3set = new Set(['cli-core','shared','memory','codex','aidefence',
+    // ADR-0242 (Batch 5) added 'errors'.
+    const v3set = new Set(['cli-core','shared','memory','codex','aidefence','errors',
       'neural','browser','plugins','providers','claims',
       'guidance','mcp','integration','deployment','swarm',
       'security','performance','cli',

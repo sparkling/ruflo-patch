@@ -39,7 +39,8 @@
         "@sparkleideas/shared",
         "@sparkleideas/memory",
         "@sparkleideas/codex",
-        "@sparkleideas/aidefence"
+        "@sparkleideas/aidefence",
+        "@sparkleideas/errors"
       ]
     },
     {
