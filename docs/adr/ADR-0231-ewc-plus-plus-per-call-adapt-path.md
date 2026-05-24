@@ -10,7 +10,7 @@ implements: []
 
 > **Renumbering note (2026-05-24):** This ADR was originally
 > numbered **0228**. Renumbered to **0231** to resolve a collision
-> with `0228-upstream-fork-sync-2026-05-23-v3.md` (the upstream
+> with `ADR-0228-upstream-fork-sync-2026-05-23-v3.md` (the upstream
 > sync ADR, implemented 2026-05-23, referenced by ADR-0229, ADR-0230,
 > ADR-0086, INTEGRATION-LEDGER, and 4 session handovers). Historical
 > commit messages (`595cb3c`, `3cb4aed`, `0f5d46b`, `df29308`)
