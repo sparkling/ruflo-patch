@@ -9,8 +9,14 @@
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0235, adr0237, adr0240,
-#         adr0246, e2e-core, e2e-storage, skills-surface (ADR-0216)
+#         adr0245, adr0246, e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
+
+# DELIBERATE-ADR0245: fast-acceptance runner intentionally tolerates per-
+# check non-zero exits — each group dispatches multiple check_* functions
+# and the runner reports per-check verdicts. `set -e` would abort the
+# group on the first failure, defeating the design (same rationale as
+# test-acceptance.sh).
 set -o pipefail
 
 _FAST_GROUPS="${1:-p3,p4}"  # capture before source clobbers $1
@@ -300,6 +306,16 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0237"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     echo "── ADR-0237 (fail-loud sona_instant setters) ──"
     _fast_run "adr0237-rs-markers"    check_adr0237_sona_instant_markers
     _fast_run "adr0237-clippy-guard"  check_adr0237_manual_clamp_not_allowed
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"
+    echo "── ADR-0245 (pipeline robustness + set-e discipline) ──"
+    _fast_run "adr0245-lint-set-e"    check_adr0245_lint_set_e_discipline
+    _fast_run "adr0245-norevert-wraps" check_adr0245_publish_verdaccio_norevert_wraps
+    _fast_run "adr0245-no-log-swallow" check_adr0245_publish_verdaccio_no_log_swallow
   fi
 fi
 

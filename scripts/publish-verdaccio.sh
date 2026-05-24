@@ -8,6 +8,14 @@
 #   bash scripts/publish-verdaccio.sh --build-dir <path> [--changed-packages <json>]
 #
 # Exit code: 0 on success, non-zero on failure
+
+# DELIBERATE-ADR0245: per-phase tolerant handling. Phases 4 (wrapper-publish)
+# and 6 (promote_packages) are expected to tolerate "version already exists"
+# and similar known-soft-failures on republish; they wrap commands in
+# lib/pipeline-helpers.sh::run_phase_norevert with a per-call recoverable
+# allowlist. `set -uo pipefail` (no -e) is retained so the per-phase
+# tolerance is the explicit boundary; any non-tolerant phase must explicitly
+# `|| { log_error ...; exit 1 }` (Phase 3 publish.mjs already does this).
 set -uo pipefail
 
 # ── Defaults ──────────────────────────────────────────────────────
@@ -16,6 +24,9 @@ PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Source shared promote logic (P3: DRY)
 source "${PROJECT_DIR}/lib/promote-packages.sh"
+
+# Source run_phase_norevert helper (ADR-0245) — Phase 4 + 6 use it
+source "${PROJECT_DIR}/lib/pipeline-helpers.sh"
 
 BUILD_DIR=""
 PORT=4873
@@ -163,10 +174,16 @@ if [[ -f "${PROJECT_DIR}/package.json" ]]; then
     exit 1
   fi
 
+  # ADR-0245 §F-02-003: wrap with run_phase_norevert. Recoverable allowlist
+  # is the npm-publish "version already exists" shape ONLY — any other
+  # failure (auth, network, malformed package.json) exits non-zero so
+  # downstream acceptance does not test a stale wrapper (the exact failure
+  # shape from project-ruflo-wrapper-latest-regression).
   log "Publishing local wrapper (@sparkleideas/ruflo) to Verdaccio..."
-  NPM_CONFIG_REGISTRY="http://localhost:${PORT}" \
-    npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest 2>&1 || \
-    log "  wrapper publish skipped (may already exist)"
+  RECOVERABLE_PATTERNS="cannot publish over the previously published version|EPUBLISHCONFLICT|already exists" \
+    run_phase_norevert "publish-wrapper" \
+    env NPM_CONFIG_REGISTRY="http://localhost:${PORT}" \
+      npm publish "${PROJECT_DIR}" --access public --ignore-scripts --tag latest
 fi
 _record_phase "publish-wrapper" "$(_elapsed_ms "$_p" "$(_ns)")"
 
@@ -198,7 +215,13 @@ done
 
 _promote_count=${#_promote_pkg_vers[@]}
 if [[ $_promote_count -gt 0 ]]; then
-  promote_packages "http://localhost:${PORT}" 10 "${_promote_pkg_vers[@]}" >/dev/null || true
+  # ADR-0245: wrap promote with run_phase_norevert. Recoverable allowlist is
+  # the dist-tag-conflict shape ONLY ("already at @latest" / no-op). Other
+  # failures (auth, registry down, malformed dist-tag) re-raise so the
+  # release fails loud instead of shipping unpromoted packages.
+  RECOVERABLE_PATTERNS="already exists|no-op|already at @latest" \
+    run_phase_norevert "promote-packages" \
+    promote_packages "http://localhost:${PORT}" 10 "${_promote_pkg_vers[@]}" >/dev/null
 fi
 log "Promote complete (${_promote_count} packages, parallel)"
 _record_phase "promote" "$(_elapsed_ms "$_p" "$(_ns)")"

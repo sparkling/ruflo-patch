@@ -9,6 +9,12 @@
 #
 # Requires: a prior `npm run test:acceptance` or `test-acceptance-fast.sh`
 # run so temp dirs exist. Creates one if needed (~60s).
+
+# DELIBERATE-ADR0245: single-check runner intentionally tolerates per-check
+# non-zero exits. The script invokes one or many check_* functions and
+# reports per-check pass/fail; aborting on first failure defeats the
+# diagnostic purpose. `set -u` is also omitted because dev callers
+# frequently invoke with unset optional env vars.
 set -o pipefail
 
 REGISTRY="${REGISTRY:-http://localhost:4873}"

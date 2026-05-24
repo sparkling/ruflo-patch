@@ -75,6 +75,12 @@
 #   - Per memory `feedback-no-tail-tests`: full output captured into a
 #     log file; never piped through tail/head mid-stream.
 
+# DELIBERATE-ADR0245: grep-gate intentionally tolerates per-section non-
+# zero exits while it counts hits across multiple sections (`grep -c ...`
+# exits non-zero when count=0, which is the *success* case for this gate).
+# Per memory `reference-grep-c-bash-trap`, counts use the
+# `var=$(grep -c ...); var=${var:-0}` form. `set -e` would abort on the
+# expected zero-count exit and report a false-positive failure.
 set -uo pipefail
 
 PROJECT_DIR=${PROJECT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}

@@ -61,6 +61,12 @@
 #                 phase5-init-config wave.)
 #
 # Exit code: number of failed checks (0 = all pass)
+
+# DELIBERATE-ADR0245: acceptance harness intentionally tolerates per-check
+# non-zero exits — each check_* function records its verdict (pass/fail/
+# skip_accepted) via lib/acceptance-harness.sh and the script exits with
+# the count of failures, not the rc of the last command. `set -e` would
+# abort the harness on the first failing check, defeating the design.
 set -uo pipefail
 
 # ── Defaults ────────────────────────────────────────────────────────

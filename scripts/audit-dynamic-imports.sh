@@ -11,11 +11,20 @@
 set -euo pipefail
 
 # --- Configuration -----------------------------------------------------------
+#
+# ADR-0245 §F-02-006: re-point dead /home/claude/ Hetzner paths to the
+# canonical fork dirs. Sources lib/fork-paths.sh so FORK_DIR_* honour both
+# config/upstream-branches.json AND the per-machine env-var override
+# (FORK_DIR_RUFLO, FORK_DIR_AGENTIC, FORK_DIR_FANN).
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
+source "${PROJECT_DIR}/lib/fork-paths.sh"
 
 DEFAULT_DIRS=(
-  /home/claude/src/upstream/ruflo
-  /home/claude/src/upstream/agentic-flow
-  /home/claude/src/upstream/ruv-FANN
+  "${FORK_DIR_RUFLO}"
+  "${FORK_DIR_AGENTIC}"
+  "${FORK_DIR_FANN}"
 )
 
 DIRS=("${@:-}")

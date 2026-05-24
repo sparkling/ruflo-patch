@@ -32,6 +32,11 @@
 #
 # Per CLAUDE.md feedback-no-fallbacks: any failure mode is loud + explicit.
 
+# DELIBERATE-ADR0245: Docker-based verification script tolerates per-step
+# non-zero exits in the outer scope so the per-step branches can
+# discriminate (image-not-pulled vs container-failed vs binding-load-
+# failed) into distinct exit codes (0-4 documented above). `set -e` mid-
+# script (line ~97) is enabled inside the Docker-invocation function only.
 set -uo pipefail
 
 # ── Defaults ─────────────────────────────────────────────────────────────

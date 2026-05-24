@@ -117,3 +117,60 @@ run_tests() {
   run_publish_verdaccio
   run_acceptance
 }
+
+# ---------------------------------------------------------------------------
+# run_phase_norevert — tolerant-phase helper (ADR-0245)
+# ---------------------------------------------------------------------------
+#
+# Use when a phase is expected to be tolerant-of-known-soft-failures
+# (e.g. "version already exists" on republish), where the caller has
+# decided in advance which non-zero exit-shapes are recoverable.
+#
+# Re-raises any UNEXPECTED non-zero exit as fatal (logs, then `return $rc`
+# so caller's `set -euo pipefail` fires).
+#
+# Pattern: caller sets `set -euo pipefail` (or sources this helper from
+# a `set -uo pipefail` script that delegates per-phase manual handling).
+# Phases that are NOT tolerant just run inline; phases that ARE tolerant
+# wrap in this helper and pass an explicit per-call allowlist of
+# recoverable error strings.
+#
+# Per ADR-0245 §Optimise-as-you-go: allowlist is **per-call explicit**
+# (3rd argument as space-separated string), NOT a global lookup table —
+# prevents allowlist drift becoming a new registry-drift class.
+#
+# Usage:
+#   run_phase_norevert <phase-name> <command...> [--recoverable "pat1|pat2"]
+#
+# Simpler form (allowlist via RECOVERABLE_PATTERNS env var):
+#   RECOVERABLE_PATTERNS="cannot publish over|already exists" \
+#     run_phase_norevert publish-wrapper npm publish ...
+#
+run_phase_norevert() {
+  local phase="$1"; shift
+  local recoverable="${RECOVERABLE_PATTERNS:-}"
+  local _out _rc=0
+  _out="$("$@" 2>&1)" || _rc=$?
+  printf '%s\n' "$_out"
+  if (( _rc != 0 )); then
+    if [[ -n "$recoverable" ]] && printf '%s' "$_out" | grep -qE "$recoverable"; then
+      # Recoverable per per-call allowlist — log and continue.
+      # Use `declare -F` (not `command -v`) so we resolve a SHELL FUNCTION
+      # named `log` rather than the macOS system `log(1)` command.
+      if declare -F log >/dev/null 2>&1; then
+        log "  phase '${phase}' soft-failed (rc=${_rc}, matched recoverable allowlist) — continuing"
+      else
+        echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] phase '${phase}' soft-failed (rc=${_rc}, recoverable) — continuing" >&2
+      fi
+      return 0
+    fi
+    # Non-recoverable — re-raise.
+    if declare -F log_error >/dev/null 2>&1; then
+      log_error "phase '${phase}' failed with non-recoverable error (rc=${_rc})"
+    else
+      echo "[$(date -u '+%Y-%m-%dT%H:%M:%SZ')] ERROR: phase '${phase}' failed with non-recoverable error (rc=${_rc})" >&2
+    fi
+    return "$_rc"
+  fi
+  return 0
+}
