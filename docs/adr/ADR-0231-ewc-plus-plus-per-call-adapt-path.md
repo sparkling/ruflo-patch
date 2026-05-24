@@ -1,6 +1,7 @@
 ---
-status: accepted
+status: implemented
 date: 2026-05-24
+implemented-date: 2026-05-24
 tags: [learning, sona, ewc, micro-lora, lora, wasm, ruvector, ruvllm, catastrophic-forgetting, audit-followup]
 supersedes: []
 depends-on: [0220]
@@ -25,7 +26,8 @@ implements: []
 > acceptance gate 15/15 PASS. Also closes the outstanding pipeline
 > follow-up (third-party externals installer). This ADR is now
 > **implemented** in effect; status field stays `accepted` pending a
-> formal "implemented" flip.
+> formal "implemented" flip. *Seventh amendment (2026-05-24):
+> frontmatter status flipped accepted → implemented; ADR closed.*
 
 # EWC++ on the per-call adapt path (`ruvllm_microlora_adapt`)
 
@@ -1635,4 +1637,22 @@ follow-on housekeeping commit can flip to `implemented` along with
 the canonical `implemented:` date in the frontmatter.
 
 No code change in this amendment — pure execution-outcome record.
+Doc-only.
+
+## Amendment — 2026-05-24 (seventh — STATUS FLIP, ADR CLOSED)
+
+Housekeeping per the sixth amendment's deferred close-out.
+Frontmatter status: `accepted` → `implemented`. `implemented-date`
+field added.
+
+The substantive work shipped in the sixth amendment is the
+load-bearing close: 4-wave swarm executed, `patch.292` published,
+acceptance 15/15. This amendment is the formal status flip only;
+no code change, no behavior change.
+
+ADR-0231 is closed. Future per-call-EWC iterations (e.g. caller-
+driven `newTask: boolean` parameter, task-boundary detection, EWC
+sizing tuning) start fresh as their own ADRs and cite this one
+as the v1 baseline.
+
 Doc-only.
