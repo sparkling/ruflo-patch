@@ -9,8 +9,8 @@
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
-#         adr0240, adr0241, adr0243, adr0245, adr0246, e2e-core, e2e-storage,
-#         skills-surface (ADR-0216)
+#         adr0239, adr0240, adr0241, adr0243, adr0245, adr0246, e2e-core,
+#         e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
 # DELIBERATE-ADR0245: fast-acceptance runner intentionally tolerates per-
@@ -350,6 +350,23 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0243"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0243-bounded-lru"    check_adr0243_boundedlru_present
     _fast_run "adr0243-lru-adopted"    check_adr0243_ruvllm_hooks_migrated_to_lru
     _fast_run "adr0243-lint-noinit"    check_adr0243_lint_no_unref_setinterval
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0239"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0239-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0239-checks.sh"
+    echo "── ADR-0239 (dead-code triage release gate; cluster 8 dual-layer) ──"
+    # Layer (i): per-cluster arch-test files present sanity check.
+    # The runtime assertions live in the fork test suites — this
+    # check confirms the trip-wires haven't been deleted.
+    _fast_run "adr0239-arch-tests-present"  check_adr0239_arch_tests_present
+    # Layer (ii): scoped unused-export counter gate. Cap is committed
+    # in config/dead-code-cap.json per the E5+DA dual-layer design
+    # (per [[reference-acceptance-runcheck-vs-collect]] this name
+    # must also appear in any caller's collect_parallel spec list).
+    _fast_run "adr0239-cap-file"            check_adr0239_cap_file_committed
+    _fast_run "adr0239-no-new-dead-code"    check_adr0239_no_new_dead_code
   fi
 fi
 
