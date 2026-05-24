@@ -7,6 +7,14 @@ depends-on: [0220]
 implements: []
 ---
 
+> **Renumbering note (2026-05-24):** This ADR was originally
+> numbered **0228**. Renumbered to **0231** to resolve a collision
+> with `0228-upstream-fork-sync-2026-05-23-v3.md` (the upstream
+> sync ADR, implemented 2026-05-23, referenced by ADR-0229, ADR-0230,
+> ADR-0086, INTEGRATION-LEDGER, and 4 session handovers). Historical
+> commit messages (`595cb3c`, `3cb4aed`, `0f5d46b`, `df29308`)
+> reference "ADR-0228" — those refer to this file.
+>
 > **Status note (2026-05-24 fifth amendment — READY TO EXECUTE):**
 > Decision history: original Outcome recommended Option C → second
 > amendment revised to Option A with WASM-bypass → third amendment
@@ -226,7 +234,7 @@ Implementation sketch (subject to C-1/C-2/C-4 verification — see *Open questio
   — callers expecting protection *between* background ticks still don't get
   it. This is a partial mitigation, not a full fix of F-05-007's contract gap.
 - Neutral, because the doc clarification from ADR-0220 stays accurate
-  (`ewcLambda` *primarily* affects the background cycle); ADR-0228 would
+  (`ewcLambda` *primarily* affects the background cycle); ADR-0231 would
   narrow the gap from "background-only" to "at-background-cadence,
   including micro-tier."
 
@@ -613,7 +621,7 @@ implementation session.
 
 ### Status update
 
-ADR-0228 stays `proposed`. The implementation path is clearer
+ADR-0231 stays `proposed`. The implementation path is clearer
 (Option C with a second EWC instance for the micro tier), but
 the prerequisite (Q-3 resolution: TS path receives real input)
 is its own work item outside this ADR's scope. The TS placeholder
@@ -849,7 +857,7 @@ Single coordinated change spanning Rust + TS:
 
 ### Status after this amendment
 
-ADR-0228 status flips: `proposed` → **`accepted` (implementation
+ADR-0231 status flips: `proposed` → **`accepted` (implementation
 deferred to follow-on session with concrete plan)**. All 4 open
 questions resolved:
 
@@ -1287,7 +1295,7 @@ prefer raw `adapt`.
 
 ### Status
 
-ADR-0228 stays `accepted`. **Direction**: strict micro-tier
+ADR-0231 stays `accepted`. **Direction**: strict micro-tier
 EWC, no phased delivery (decided). **Route**: A (decided in
 this amendment). **Sub-decision**: A.2 (recommended; A.1
 fallback). **Implementation**: deferred to follow-on session
@@ -1484,7 +1492,7 @@ Don't chain failing-then-fixing hypothesis cycles.
 
 ### Status
 
-ADR-0228 stays `accepted`. **Direction**: locked. **Route**: A
+ADR-0231 stays `accepted`. **Direction**: locked. **Route**: A
 (locked). **Sub-decision**: A.2 (locked; A.1 fallback documented).
 **Pre-implementation gaps**: 5 closed. **Implementation plan**:
 swarm-ready, awaiting kickoff.

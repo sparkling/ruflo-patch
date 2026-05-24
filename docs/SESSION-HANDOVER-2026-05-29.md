@@ -17,7 +17,7 @@
   drifts), B3 (acceptance trip-wire with planted-drift smoke test).
 - **Second `/loop` continuation** pushed 4 more items:
   D8 (consumer demotion, was conditional), B1 Phase 2 (AST
-  upgrade), ADR-0228 Q-1/Q-3 research, ADR-0181 Phase 4 scope
+  upgrade), ADR-0231 (orig 0228) Q-1/Q-3 research, ADR-0181 Phase 4 scope
   re-verification (substantial finding: the 6 handlers are NOT
   stubs — already live).
 - **16 commits in `ruflo-patch/main`** (`5439372` → `5cce30f`),
@@ -26,11 +26,12 @@
 - **Acceptance baseline at handover:** 16/16 PASS on
   `adr0059,p4,adr0208`.
 - **All 5 trees clean** at handover.
-- **Net-new ADRs:** 1 (ADR-0228 EWC++ per-call adapt — proposed,
-  Q-1/Q-3 verified from source).
+- **Net-new ADRs:** 1 (ADR-0231 EWC++ per-call adapt — proposed,
+  Q-1/Q-3 verified from source; orig numbered 0228, renumbered
+  2026-05-24 to resolve collision with upstream-sync 0228).
 - **Next-session priority:** ADR-0181 Phase 4 narrowed to a
   3-step task (substrate-shape decision Options a/b/c +
-  acceptance-wiring fix + implementation) and ADR-0228
+  acceptance-wiring fix + implementation) and ADR-0231 (orig 0228)
   implementation (Q-2 + Q-4 remain open).
 
 ## What landed (Stage A–F execution record)
@@ -62,7 +63,7 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 
 | # | Item | Commit | Outcome |
 |---|---|---|---|
-| D7 | New ADR for ADR-0220 F-05-007 EWC++ per-call adapt | `3dcd705` (ADR-0228) | Drafted via adr-architect agent. Recommends **Option C — Hybrid** (per-call accumulates without EWC++; background applies EWC++ to accumulated micro-tier state, gated by opt-in flag). Implementation deferred to a follow-on session. 4 open questions explicitly flagged as gating implementation (Fisher matrix size mismatch, placeholder input on TS path, WASM artefact EWC availability, ADR-0193 alignment). |
+| D7 | New ADR for ADR-0220 F-05-007 EWC++ per-call adapt | `3dcd705` (ADR-0231, orig 0228) | Drafted via adr-architect agent. Recommends **Option C — Hybrid** (per-call accumulates without EWC++; background applies EWC++ to accumulated micro-tier state, gated by opt-in flag). Implementation deferred to a follow-on session. 4 open questions explicitly flagged as gating implementation (Fisher matrix size mismatch, placeholder input on TS path, WASM artefact EWC availability, ADR-0193 alignment). |
 | D8 | ADR-0221 F-06-006 agentic-flow consumer demotion | `ce8e245` (forks/agentic-flow, second /loop) | **DONE.** Added `isModuleNotInstalledError()` helper + applied discriminating pattern (MODULE_NOT_FOUND → warn; real error → console.error) to all 4 Phase 2 catches (GNN/Router/Graph/Sona). Does NOT re-throw because Phase 2 features are optional enhancements — re-throw would trip the outer initialize catch and degrade the whole service unnecessarily. |
 | D9 | ADR-0222 upstream merge-tax runbook note | `be1c4ae` | Appended "Re-introduction guards" section + sync runbook to INTEGRATION-LEDGER.md. Covers `federated-learning.ts` (ADR-0222) + `QUICConnectionPool.ts`/`QUICStreamManager.ts` (ADR-0217). Cites the existing arch-test pins. |
 | D10 | ADR-0214 Council MUST-FIX #2 honoured-by-loader test | `c8673c0f8` (forks/ruflo) | New test at `forks/ruflo/v3/@claude-flow/shared/__tests__/config-loader-env-honoured.test.ts`. 9 cases (6 positive + 1 invalid + 1 rebrand-correctness + 1 unset-default). All pass. Also closed ADR-0214 with amendment `f62b64a`. |
@@ -146,7 +147,7 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
    shared package `./core` + vitest include-pattern 2-fix follow-up
    is no longer Phase-4-gating; pick up independently if/when the
    existing `createHybridService` test becomes important.
-2. **ADR-0228 implementation (EWC++ per-call adapt).** Q-1 and Q-3
+2. **ADR-0231 (orig 0228) implementation (EWC++ per-call adapt).** Q-1 and Q-3
    resolved this session (commit `7ee3b91`). The big finding: the
    TS per-call adapt path is **already a no-op end-to-end**
    (placeholder zero input → zero gradient). Option C wiring depends
@@ -238,7 +239,7 @@ Unchanged from prior handovers — re-stated for self-containment:
 4. Pick a follow-up to work on:
    - **Tier 1 (B2/B3):** B2 is the most concrete next step. Live
      inventory via `node scripts/check-manifest-flag-drift.mjs`.
-   - **Tier 2 (Phase 4 / ADR-0228 impl):** larger; consider scope
+   - **Tier 2 (Phase 4 / ADR-0231 (orig 0228) impl):** larger; consider scope
      first.
 5. **Per [[feedback-commit-often]]:** commit each logical change in
    the same turn as the edit. Don't end a session with untracked WIP.
@@ -257,7 +258,7 @@ Unchanged from prior handovers — re-stated for self-containment:
 - **Move A execution record** — `docs/SESSION-HANDOVER-2026-05-27.md`
 - **Move A queue handover** — `docs/SESSION-HANDOVER-2026-05-26.md`
 - **Wave 3 ADRs (all terminal)** — `docs/adr/ADR-0207-*.md` through `docs/adr/ADR-0224-*.md`
-- **New this session** — `docs/adr/ADR-0228-ewc-plus-plus-per-call-adapt-path.md` (proposed)
+- **New this session** — `docs/adr/ADR-0231-ewc-plus-plus-per-call-adapt-path.md` (proposed; orig 0228, renumbered 2026-05-24)
 - **INTEGRATION-LEDGER** — `docs/upstream/INTEGRATION-LEDGER.md` (A3 row + D9 Re-introduction guards section)
 - **New lint** — `scripts/check-manifest-flag-drift.mjs` (Phase 1)
 - **New behavioural test** — `forks/ruflo/v3/@claude-flow/shared/__tests__/config-loader-env-honoured.test.ts`
