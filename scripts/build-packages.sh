@@ -184,10 +184,11 @@ run_build() {
   # re-exports from it. Without this entry cli-core's dist is whatever the
   # fork rsynced — stale if a fork-side source change lands without a
   # local `npm run build`.
-  local -A _v3_packages=([cli-core]=1 [shared]=1 [memory]=1 [embeddings]=1 [codex]=1 [aidefence]=1
+  # ADR-0239 cluster 4(c) removed [embeddings]; cluster 1 removed [testing].
+  local -A _v3_packages=([cli-core]=1 [shared]=1 [memory]=1 [codex]=1 [aidefence]=1
     [neural]=1 [browser]=1 [plugins]=1 [providers]=1 [claims]=1
     [guidance]=1 [mcp]=1 [integration]=1 [deployment]=1 [swarm]=1
-    [security]=1 [performance]=1 [testing]=1 [cli]=1
+    [security]=1 [performance]=1 [cli]=1
     [plugin-agent-federation]=1 [plugin-iot-cognitum]=1)
 
   # Try to read from publish-levels.json; fall back to hardcoded if unavailable
@@ -197,10 +198,11 @@ run_build() {
   _build_groups_json=$(node -e "
     const fs = require('fs');
     const data = JSON.parse(fs.readFileSync('${PROJECT_DIR}/config/publish-levels.json', 'utf-8'));
-    const v3set = new Set(['cli-core','shared','memory','embeddings','codex','aidefence',
+    // ADR-0239 cluster 4(c) removed 'embeddings'; cluster 1 removed 'testing'.
+    const v3set = new Set(['cli-core','shared','memory','codex','aidefence',
       'neural','browser','plugins','providers','claims',
       'guidance','mcp','integration','deployment','swarm',
-      'security','performance','testing','cli',
+      'security','performance','cli',
       // ADR-0113 Fix 5: federation + iot plugins live under v3/@claude-flow/
       'plugin-agent-federation','plugin-iot-cognitum']);
     // ADR-0162 follow-up: start at i=0 so Level 1 v3 packages (cli-core)

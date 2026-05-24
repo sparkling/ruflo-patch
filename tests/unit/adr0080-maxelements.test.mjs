@@ -495,18 +495,33 @@ const embPipelineSrc = readFileSync(
   'utf-8',
 );
 
-describe('ADR-0080: embedding pipeline warns on fallback', () => {
-  it('logs warning when transformers.js fails', () => {
+describe('ADR-0080 / ADR-0234: embedding pipeline throws on no provider (no fallback)', () => {
+  // ADR-0234 (extends ADR-0095, 2026-05-23) removed the silent hash-fallback.
+  // The original ADR-0080 assertions (warn on transformers.js failure + warn
+  // on hash fallback) are now inverted: the pipeline THROWS with an
+  // ADR-0234-tagged message rather than warning + degrading.
+
+  it('throws when transformers.js fails AND ruvector unavailable', () => {
+    // The throw message names both transformers and ruvector failures so
+    // operators can act on the deployment fact at init time.
     assert.ok(
-      embPipelineSrc.includes("console.warn(`[embedding-pipeline] transformers.js failed"),
-      'embedding-pipeline must warn when transformers.js fails',
+      embPipelineSrc.includes('transformers.js failed:') &&
+      embPipelineSrc.includes('ruvector failed:') &&
+      embPipelineSrc.includes('Silent hash-fallback is removed (ADR-0234'),
+      'embedding-pipeline must throw with ADR-0234-tagged message naming both provider failures',
     );
   });
 
-  it('logs warning when falling back to hash', () => {
+  it('does NOT silently fall back to hash embedding (ADR-0234 removal)', () => {
+    // ADR-0234 carve-out: the loud refusal text MUST appear; the silent
+    // warn-and-degrade pattern MUST NOT appear in the production path.
     assert.ok(
-      embPipelineSrc.includes('hash-fallback (search quality degraded)'),
-      'embedding-pipeline must warn about degraded search quality on hash fallback',
+      !embPipelineSrc.includes('hash-fallback (search quality degraded)'),
+      'hash-fallback warn pattern must be absent (ADR-0234 removed silent fallback)',
+    );
+    assert.ok(
+      embPipelineSrc.includes('Silent hash-fallback is removed (ADR-0234'),
+      'embedding-pipeline must carry the ADR-0234 removal marker in its throw message',
     );
   });
 

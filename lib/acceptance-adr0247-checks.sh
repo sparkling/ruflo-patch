@@ -129,8 +129,9 @@ check_adr0247_ledger_rows() {
     return
   fi
 
+  # Per `[[reference-grep-c-bash-trap]]`: do NOT use `|| echo 0` (produces "0\n0").
   local n
-  n=$(grep -c "ADR-0247" "$ledger" 2>/dev/null || echo 0)
+  n=$(grep -c "ADR-0247" "$ledger" 2>/dev/null)
   n=${n:-0}
 
   if [[ "$n" -lt 2 ]]; then

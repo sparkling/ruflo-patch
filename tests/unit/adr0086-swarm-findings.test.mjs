@@ -12,7 +12,10 @@ const CLI = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src';
 const adapterSrc  = readFileSync(`${MEM}/embedding-adapter.ts`, 'utf-8');
 const routerSrc   = readFileSync(`${CLI}/memory/memory-router.ts`, 'utf-8');
 const perfSrc     = readFileSync(`${CLI}/commands/performance.ts`, 'utf-8');
-const headlessSrc = readFileSync(`${CLI}/runtime/headless.ts`, 'utf-8');
+// runtime/headless.ts deleted by ADR-0239 cluster 7 (Batch 3, 2026-05-24).
+// The C4 invariant (no batchCosineSim import from memory-initializer) is
+// preserved by virtue of the file's absence — assertions on it removed below.
+const headlessPath = `${CLI}/runtime/headless.ts`;
 const initPath    = `${CLI}/memory/memory-initializer.ts`;
 const rvfSrc      = readFileSync(`${MEM}/rvf-backend.ts`, 'utf-8');
 
@@ -79,19 +82,17 @@ describe('ADR-0086 swarm: C4 — no import of dead initializer functions', () =>
       'performance.ts must not import batchCosineSim from memory-initializer');
   });
 
-  it('headless.ts does not import batchCosineSim from memory-initializer', () => {
-    const importLines = headlessSrc.split('\n').filter(l => l.includes('import'));
-    const badImport = importLines.some(l =>
-      l.includes('batchCosineSim') && l.includes('memory-initializer'));
-    assert.ok(!badImport,
-      'headless.ts must not import batchCosineSim from memory-initializer');
+  it('headless.ts absence preserves C4 invariant (ADR-0239 cluster 7)', () => {
+    // headless.ts was deleted by ADR-0239 cluster 7 (Batch 3, 2026-05-24).
+    // C4 invariant (no batchCosineSim import from memory-initializer) is
+    // preserved by virtue of the file's absence. Assert deletion sticks.
+    assert.ok(!existsSync(headlessPath),
+      'headless.ts should remain deleted (ADR-0239 cluster 7)');
   });
 
-  it('both files define batchCosineSim as inline local functions', () => {
+  it('performance.ts defines batchCosineSim as inline local function', () => {
     assert.ok(perfSrc.includes('function batchCosineSim('),
       'performance.ts should have inline batchCosineSim');
-    assert.ok(headlessSrc.includes('function batchCosineSim('),
-      'headless.ts should have inline batchCosineSim');
   });
 });
 

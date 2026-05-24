@@ -227,9 +227,20 @@ describe('ADR-0076 embedding-pipeline: model caching + singleton', () => {
 
 describe('ADR-0076 embedding-pipeline: dimension safety', () => {
   it('initialize() throws DimensionMismatchError on probe mismatch', () => {
+    // _doInitialize is now ~150 LOC after ADR-0234 added explicit
+    // multi-provider try/catch chain (transformers.js → ruvector → throw).
+    // Slice the full function body up to its closing brace, not a fixed
+    // window — the DimensionMismatchError probe lives at the tail.
     const fnStart = pipelineSrc.indexOf('async _doInitialize');
     assert.ok(fnStart > -1, '_doInitialize not found');
-    const fnBody = pipelineSrc.slice(fnStart, fnStart + 2000);
+    // Find the next sibling `private` or `async` method (or end of class)
+    const tailMarkers = ['\n  private ', '\n  async ', '\n}'];
+    let fnEnd = pipelineSrc.length;
+    for (const m of tailMarkers) {
+      const idx = pipelineSrc.indexOf(m, fnStart + 1);
+      if (idx > -1 && idx < fnEnd) fnEnd = idx;
+    }
+    const fnBody = pipelineSrc.slice(fnStart, fnEnd);
     assert.ok(
       /throw\s+new\s+DimensionMismatchError/.test(fnBody),
       '_doInitialize must throw DimensionMismatchError on probe mismatch',

@@ -38,7 +38,6 @@
       "packages": [
         "@sparkleideas/shared",
         "@sparkleideas/memory",
-        "@sparkleideas/embeddings",
         "@sparkleideas/codex",
         "@sparkleideas/aidefence"
       ]
@@ -51,8 +50,7 @@
         "@sparkleideas/browser",
         "@sparkleideas/plugins",
         "@sparkleideas/providers",
-        "@sparkleideas/claims",
-        "@sparkleideas/ruvector-upstream"
+        "@sparkleideas/claims"
       ]
     },
     {
@@ -66,11 +64,9 @@
         "@sparkleideas/swarm",
         "@sparkleideas/security",
         "@sparkleideas/performance",
-        "@sparkleideas/testing",
         "@sparkleideas/plugin-gastown-bridge",
         "@sparkleideas/plugin-agentic-qe",
         "@sparkleideas/plugin-code-intelligence",
-        "@sparkleideas/plugin-cognitive-kernel",
         "@sparkleideas/plugin-financial-risk",
         "@sparkleideas/plugin-healthcare-clinical",
         "@sparkleideas/plugin-hyperbolic-reasoning",

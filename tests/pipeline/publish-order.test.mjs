@@ -52,7 +52,7 @@ const KNOWN_DEPS = {
   // Level 2
   '@sparkleideas/shared': [],
   '@sparkleideas/memory': ['@sparkleideas/agentdb', '@sparkleideas/config-chain'],
-  '@sparkleideas/embeddings': [],
+  // @sparkleideas/embeddings removed (ADR-0239 cluster 4(c) — package deleted, loader relocated to memory/)
   '@sparkleideas/codex': [],
   '@sparkleideas/aidefence': [],
   // Level 3
@@ -62,6 +62,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/plugins': [],
   '@sparkleideas/providers': [],
   '@sparkleideas/claims': [],
+  // @sparkleideas/ruvector-upstream removed (ADR-0239 cluster 5(a) — plugin deleted)
   // Level 4
   '@sparkleideas/guidance': [
     // @sparkleideas/hooks dep removed (ADR-0203)
@@ -74,7 +75,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/swarm': ['@sparkleideas/shared'],
   '@sparkleideas/security': ['@sparkleideas/shared'],
   '@sparkleideas/performance': ['@sparkleideas/shared'],
-  '@sparkleideas/testing': ['@sparkleideas/shared'],
+  // @sparkleideas/testing removed (ADR-0239 cluster 1 — package deleted)
   // Level 5 — root packages (transitive deps not enumerated here)
   '@sparkleideas/cli': [],
   '@sparkleideas/claude-flow': [],
@@ -82,17 +83,16 @@ const KNOWN_DEPS = {
   '@sparkleideas/agent-booster': [],
   '@sparkleideas/agentdb-onnx': [],
   // cuda-wasm removed from LEVELS (requires wasm-pack, build often fails)
-  // ADR-0022 Phase 3: Level 3 addition
-  '@sparkleideas/ruvector-upstream': [],
+  // ADR-0022 Phase 3: Level 3 addition — ruvector-upstream removed (ADR-0239 cluster 5(a))
   // ADR-0022 Phase 3: Level 4 plugins
   '@sparkleideas/plugin-gastown-bridge': ['@sparkleideas/plugins'],
   '@sparkleideas/plugin-agentic-qe': ['@sparkleideas/plugins'],
-  '@sparkleideas/plugin-code-intelligence': ['@sparkleideas/plugins', '@sparkleideas/ruvector-upstream'],
-  '@sparkleideas/plugin-cognitive-kernel': ['@sparkleideas/plugins'],
+  '@sparkleideas/plugin-code-intelligence': ['@sparkleideas/plugins'], // ruvector-upstream dep removed (ADR-0239 cluster 5(a))
+  // @sparkleideas/plugin-cognitive-kernel removed (ADR-0239 cluster 5(a) — plugin deleted)
   '@sparkleideas/plugin-financial-risk': ['@sparkleideas/plugins'],
   '@sparkleideas/plugin-healthcare-clinical': ['@sparkleideas/plugins'],
   '@sparkleideas/plugin-hyperbolic-reasoning': ['@sparkleideas/plugins'],
-  '@sparkleideas/plugin-legal-contracts': ['@sparkleideas/plugins', '@sparkleideas/ruvector-upstream'],
+  '@sparkleideas/plugin-legal-contracts': ['@sparkleideas/plugins'], // ruvector-upstream dep removed (ADR-0239 cluster 5(a))
   '@sparkleideas/plugin-neural-coordination': ['@sparkleideas/plugins'],
   '@sparkleideas/plugin-perf-optimizer': ['@sparkleideas/plugins'],
   '@sparkleideas/plugin-prime-radiant': ['@sparkleideas/plugins'],
@@ -186,21 +186,22 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (25+5+6+24+2)', () => {
+    it('all expected packages are present across all levels (25+4+5+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5: L1=25, L2=5, L3=6,
-      // L4=24 (22 base + 2 ADR-0113 federation/iot plugins), L5=2
-      // ADR-0177 Phase 1.6: +config-chain to L1 (dep of agentdb/memory)
-      // ADR-0203: -hooks from L3 (dead package removed from publish set)
-      assert.equal(LEVELS[0].length, 25, 'Level 1 should have 25 packages (ADR-0071 + F3 attention WASM + W3 rvagent/ruvllm/learning WASM + ADR-0150 agentic-jujutsu + ADR-0162 cli-core + ADR-0177 config-chain)');
-      assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages');
-      assert.equal(LEVELS[2].length, 6, 'Level 3 should have 6 packages (ADR-0203 removed hooks)');
-      assert.equal(LEVELS[3].length, 24, 'Level 4 should have 24 packages (22 base + ADR-0113 federation + iot)');
+      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup.
+      // L1=25, L2=4 (was 5; -embeddings ADR-0239 cluster 4c),
+      // L3=5 (was 6; -ruvector-upstream ADR-0239 cluster 5a; ADR-0203 -hooks earlier),
+      // L4=22 (was 24; -testing ADR-0239 cluster 1, -plugin-cognitive-kernel ADR-0239 cluster 5a),
+      // L5=2. Total: 58 (was 62).
+      assert.equal(LEVELS[0].length, 25, 'Level 1 should have 25 packages');
+      assert.equal(LEVELS[1].length, 4, 'Level 2 should have 4 packages (ADR-0239 cluster 4c removed embeddings)');
+      assert.equal(LEVELS[2].length, 5, 'Level 3 should have 5 packages (ADR-0239 cluster 5a removed ruvector-upstream)');
+      assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages (ADR-0239 removed testing + plugin-cognitive-kernel)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        62,
-        `Expected 62 packages total (ADR-0113 Fix 5: 58 base + federation + iot + ADR-0150 agentic-jujutsu + ADR-0162 cli-core + ADR-0177 config-chain, ADR-0203 -hooks), got ${allPackages.length}`
+        58,
+        `Expected 58 packages total (62 pre-ADR-0239, -4 deleted clusters), got ${allPackages.length}`
       );
     });
 
