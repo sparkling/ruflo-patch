@@ -365,22 +365,56 @@ arch-tests trip immediately if a re-introduction slips through.
 | `forks/agentdb/examples/federated-learning-example.ts` | `2026-05-23` fork-local | ADR-0222 | `ruvnet/agentdb/examples/federated-learning-example.ts` (verified 2026-05-24) | (covered by the FederatedLearningManager grep above) |
 | `forks/agentdb/src/controllers/QUICConnectionPool.ts` | `2026-05-23` fork-local | ADR-0217 | check upstream before next sync (file not currently in `ruvnet/agentdb/src/controllers/`) | `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` §"QUICConnectionPool file must not exist" |
 | `forks/agentdb/src/controllers/QUICStreamManager.ts` | `2026-05-23` fork-local | ADR-0217 | check upstream before next sync (file not currently in `ruvnet/agentdb/src/controllers/`) | `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` §"QUICStreamManager file must not exist" |
+| `forks/ruflo/v3/@claude-flow/testing/` | `d316381a2` (cluster 1) | ADR-0239 | `ruvnet/ruflo/v3/@claude-flow/testing/` (verified 2026-05-24) | `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0239-cluster1.arch.test.ts` §"v3/@claude-flow/testing must not exist" + tsconfig + checker assertions (E1 amendment) |
+| `forks/ruflo/v3/mcp/` | `481e85672` (cluster 2) | ADR-0239 | `ruvnet/ruflo/v3/mcp/` (verified 2026-05-24) | `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0239-cluster23.arch.test.ts` §"v3/mcp must not exist". CROSS-BONUS: deletion closes F-10-002 (CT-J / ADR-0243) + F-05-001 (CT-G / ADR-0240 site #1) + F-11-016 (singleton). |
+| `forks/ruflo/v3/src/` | `481e85672` (cluster 3) | ADR-0239 | `ruvnet/ruflo/v3/src/` (verified 2026-05-24) | `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0239-cluster23.arch.test.ts` §"v3/src must not exist". Test `v3/__tests__/integration/mcp-integration.test.ts` deleted with it (lone consumer). |
+| `forks/ruflo/v3/@claude-flow/embeddings/` | `be780856f` (cluster 4(c) — bundled into a sibling commit during parallel work) | ADR-0239 | `ruvnet/ruflo/v3/@claude-flow/embeddings/` (verified 2026-05-24) | `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0239-cluster4c.arch.test.ts` §"v3/@claude-flow/embeddings must not exist". CVE-loader (transformers-loader.ts) relocated to `@claude-flow/memory` in `1f384c1f2` (cluster 4 step a) — ADR-0094 protection now lands on the live `embedding-pipeline.ts` path. Companion: agentdb cluster 4(c) row below. |
+| `forks/agentdb/src/{wrappers,compatibility,observability,search}/` | `01490cd` (cluster 4(c)) | ADR-0239 | `ruvnet/agentdb/src/{wrappers,compatibility,observability,search}/` (verified 2026-05-24) | `forks/agentdb/tests/unit/adr0239-cluster4c.arch.test.ts` (4 it() blocks). Companion to ruflo cluster 4(c) row above. CROSS-BONUS: closes F-08-001 singleton (defer-with-rationale absorbed by this delete). Also deletes 6 dead-tree-dependent test files. |
+| `forks/ruflo/v3/plugins/cognitive-kernel/` + `forks/ruflo/v3/plugins/ruvector-upstream/` | `027acb815` (cluster 5(a)) | ADR-0239 | `ruvnet/ruflo/v3/plugins/{cognitive-kernel,ruvector-upstream}/` (verified 2026-05-24) | `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0239-cluster5a.arch.test.ts` §"v3/plugins/{cognitive-kernel,ruvector-upstream} must not exist". Verdaccio published-state: `@sparkleideas/plugin-cognitive-kernel@3.0.0-alpha.1-patch.533` IS still published (separate brand-cleanliness housekeeping per `[[feedback-delete-stale-npm-artifacts]]`); `@sparkleideas/plugin-ruvector-upstream` returns 404 (clean). |
+| `forks/ruflo/v3/@claude-flow/cli/src/{runtime/headless.ts,benchmarks/pretrain/,production/}` + `forks/ruflo/v3/agents/*.yaml` | `d251165f8` (cluster 7) | ADR-0239 | `ruvnet/ruflo/v3/@claude-flow/cli/src/{runtime,benchmarks,production}/` + `ruvnet/ruflo/v3/agents/` (verified 2026-05-24) | `forks/ruflo/v3/@claude-flow/cli/__tests__/arch/adr0239-cluster7.arch.test.ts` (8 it() blocks). `cli/src/index.ts` production/* barrel re-exports also removed. `appliance/` is KEPT (wired) with a hint-honesty fix at `commands/appliance.ts:51`; `encryption/vault.ts` KEPT-with-watch (annotated). |
 
 **Sync runbook:**
 
-1. Before merging upstream, run:
+1. Before merging upstream (agentdb fork), run:
    ```bash
    for path in src/services/federated-learning.ts \
                examples/federated-learning-example.ts \
                src/controllers/QUICConnectionPool.ts \
-               src/controllers/QUICStreamManager.ts; do
+               src/controllers/QUICStreamManager.ts \
+               src/wrappers \
+               src/compatibility \
+               src/observability \
+               src/search; do
      git checkout HEAD -- "$path" 2>/dev/null || true
    done
    ```
    (or use `git merge -X ours` for the specific paths)
-2. After merge, run `npx vitest run tests/unit/adr0217-adr0222-arch.test.ts`
-   in `forks/agentdb` — must stay 13/13 green.
-3. If arch-test goes red, the merge silently re-introduced a
+2. Before merging upstream (ruflo fork), run:
+   ```bash
+   for path in v3/@claude-flow/testing \
+               v3/@claude-flow/embeddings \
+               v3/mcp \
+               v3/src \
+               v3/plugins/cognitive-kernel \
+               v3/plugins/ruvector-upstream \
+               v3/@claude-flow/cli/src/runtime/headless.ts \
+               v3/@claude-flow/cli/src/benchmarks/pretrain \
+               v3/@claude-flow/cli/src/production \
+               v3/agents; do
+     git checkout HEAD -- "$path" 2>/dev/null || true
+   done
+   ```
+   Also keep `v3/__tests__/integration/mcp-integration.test.ts`
+   absent and ensure `v3/tsconfig.json` does not re-add
+   `@claude-flow/testing` to `paths` or `references`.
+3. After merge, run the relevant arch-tests:
+   - agentdb: `npx vitest run tests/unit/adr0217-adr0222-arch.test.ts tests/unit/adr0239-cluster4c.arch.test.ts`
+     — must stay 17/17 green (13 + 4).
+   - ruflo cli: `npx vitest run __tests__/arch/adr0239-cluster1.arch.test.ts __tests__/arch/adr0239-cluster23.arch.test.ts __tests__/arch/adr0239-cluster4c.arch.test.ts __tests__/arch/adr0239-cluster5a.arch.test.ts __tests__/arch/adr0239-cluster7.arch.test.ts`
+     — must stay 17/17 green.
+   - ruflo memory: `npx vitest run src/adr0239-cluster4a-cve-loader.arch.test.ts`
+     — must stay 4/4 green (CVE-loader trip-wire).
+4. If any arch-test goes red, the merge silently re-introduced a
    deleted file — revert that file and re-test before continuing.
 
 ## Notes / future work
