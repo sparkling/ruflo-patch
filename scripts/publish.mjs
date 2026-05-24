@@ -210,13 +210,33 @@ export function buildPackageMap(buildDir) {
           continue;
         }
 
-        // Both candidates are in the same class (both non-private +
-        // either both subdir or both non-subdir). The tie-breaker
-        // can't disambiguate. Fail loud — this is the exact silent-pick
-        // bug ADR-0231 wave A9 surfaced (stale `crates/*/pkg/` collided
-        // with `npm/packages/*` for ruvllm-wasm, npm publish picked
-        // the wrong one based on walk order, cli pin pointed at a
-        // non-existent published version).
+        // Both candidates are in the same subdir class. Apply a NESTED-
+        // PARENT tie-breaker: if one path is a strict ancestor of the
+        // other (`<parent>/<child>`), prefer the parent. This catches
+        // the wrapper-into-nested pattern (parent package.json's `main`
+        // points into a nested package.json with the same name) and the
+        // wasm-pack-target-output pattern (parent + nested target dirs).
+        // Surfaced post-Batch-5 by
+        // `cross-repo/agentic-flow/agentic-flow/` nested under
+        // `cross-repo/agentic-flow/`.
+        //
+        // Sibling-distinct paths (the original ADR-0231 wave A9 case:
+        // `crates/<x>/pkg/` vs `npm/packages/<x>/`) are NOT in an
+        // ancestor relationship; they fail loud below, preserving the
+        // wave A9 silent-pick guard.
+        const sep = '/'; // path.sep on POSIX; build dir is always POSIX-style here
+        if (dir.startsWith(existing + sep)) {
+          // new candidate is nested inside the existing one — existing (parent) wins
+          continue;
+        }
+        if (existing.startsWith(dir + sep)) {
+          // existing is nested inside the new one — new (parent) wins
+          map.set(pkg.name, dir);
+          continue;
+        }
+
+        // Neither is an ancestor of the other — sibling-distinct paths
+        // matching the ADR-0231 wave A9 silent-pick pattern. Fail loud.
         throw new Error(
           `buildPackageMap: duplicate publishable package name '${pkg.name}' ` +
           `at two locations that the subdir-blacklist tie-breaker cannot ` +
