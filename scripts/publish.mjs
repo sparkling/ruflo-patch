@@ -133,6 +133,14 @@ export function buildPackageMap(buildDir) {
 
     for (const entry of entries) {
       if (entry === 'node_modules') continue;
+      // Skip `archive/` — intentionally retained for historical reference
+      // per ADR-0233 §"Reviews still owed" (418K LOC frozen-in-place);
+      // nothing inside is publishable. Five archive/v2/examples/*/package.json
+      // files all share `"name": "app"` which trips the duplicate-name tie-
+      // breaker at line ~195; pre-filter at the walk level avoids classifying
+      // them as candidates in the first place. Pre-existing condition surfaced
+      // by post-Batch-5 full-release verification 2026-05-25.
+      if (entry === 'archive') continue;
       const fullPath = resolve(dir, entry);
 
       let st;
