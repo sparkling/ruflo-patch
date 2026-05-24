@@ -25,7 +25,10 @@ check_adr0238_surface1_aidefence_honest() {
     return
   fi
 
-  local overclaims=("AI Manipulation Defense" "self-learning capabilities" "HNSW-indexed")
+  # Overclaim phrases (full phrases, not bare terms — "HNSW-indexed" alone
+  # appears in honest contract text like "Default is NOT HNSW-indexed" and
+  # "to use HNSW-indexed retrieval", which are legitimate disclaimers/opt-ins).
+  local overclaims=("AI Manipulation Defense" "self-learning capabilities" "HNSW-indexed threat pattern")
   local found=""
   for s in "${overclaims[@]}"; do
     if grep -qF "$s" "$f"; then
