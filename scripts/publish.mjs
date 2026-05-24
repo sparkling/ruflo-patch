@@ -120,7 +120,18 @@ export function buildPackageMap(buildDir) {
   // caused the ADR-0231 wave A9 bug: `crates/ruvllm-wasm/pkg/` was
   // wrongly classified as non-subdir and won the tie-breaker over the
   // canonical `npm/packages/ruvllm-wasm/`.
-  const SUBDIR_BLACKLIST_RE = /\/(npm|pkg|examples)(\/|$)/;
+  // Subdir-blacklist for the tie-breaker: when two package.json files share
+  // a name, prefer the one OUTSIDE these directories (treat the blacklisted
+  // one as a build-output, not a canonical source).
+  //
+  // - `npm`/`pkg`/`examples` — original ADR-0231 wave A9 patterns.
+  // - `web`/`nodejs`/`bundler` — wasm-pack target outputs (each generates
+  //   a package.json with the same `name` as the parent crate's
+  //   `wasm-pack build --target <target>` invocation). Symmetric with `pkg`
+  //   (the default wasm-pack output dir). Surfaced post-Batch-5 by
+  //   /tmp/ruflo-build/cross-repo/agentic-flow/.../wasm/reasoningbank/web
+  //   colliding with its parent reasoningbank/.
+  const SUBDIR_BLACKLIST_RE = /\/(npm|pkg|examples|web|nodejs|bundler)(\/|$)/;
   const isSubdir = (d) => SUBDIR_BLACKLIST_RE.test(d);
 
   function walk(dir) {
