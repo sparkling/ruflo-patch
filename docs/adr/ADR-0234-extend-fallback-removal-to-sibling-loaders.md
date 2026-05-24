@@ -162,3 +162,83 @@ Each fix carries:
 * `docs/audits/2026-05-24-second-pass-audit/08-embedding-pipeline.md` — F-08-002 source finding.
 * `docs/audits/2026-05-24-second-pass-audit/04-security-aidefence-claims-pii.md` — F-04-002 source finding.
 * `docs/audits/2026-05-24-second-pass-audit/01-cli-commands-beyond-daemon-init.md` — F-01-008 source finding.
+
+## Swarm review (2026-05-24)
+
+**Pattern**: P1 Council Hive (Dialectic) — roleplay execution per `docs/plans/2026-05-24-second-pass-remediation-plan.md` §"Per-ADR swarm configuration".
+**Consensus**: Byzantine (N=6; f=⌊(N-1)/3⌋=1; required votes 2f+1=3, supermajority).
+**Topology**: hierarchical-mesh. **Queen type**: strategic. **Transport**: queen-composed (one-round dialectic; no peer revision needed). **Devil's advocate**: included.
+
+### Expert panel
+
+| # | Role | One-line stance |
+|---|------|-----------------|
+| 1 | RVF/embedding upstream historian (ADR-0095 lineage) | The 2026-05-23 amendment was surgical because ADR-0095's blast radius was specifically the `rvf-backend.ts` data-loss bug class; the corpus rule ([[feedback-no-fallbacks]]) is genuinely scope-wide and ADR-0234 is the legitimate universalisation, not a re-litigation |
+| 2 | Fork-divergence specialist (byte-identical catalog) | Five-site catalog verified at upstream mirrors: sites 2 + 4 byte-identical, site 1 fork-MORE-permissive (deleted upstream's warn), site 3 fork-original (no upstream counterpart), site 5 IPFS-comment upstream-inherited but fork has CRIT-02 permission validation on top |
+| 3 | Behavior-test architect (ADR-0246 wave 1 test-first pattern) | Per-site test must assert throw AND error message contains `ADR-0234` literal (matches ADR-0095 amendment test-pattern + ADR-0246 wave-1 discipline) — not just "throws an error" |
+| 4 | Maintainer merge-tax proxy | Sites 2 + 4 are byte-identical-with-upstream merge-tax sites; mitigation via divergence comments + INTEGRATION-LEDGER rows is necessary but not sufficient — the throw shape MUST be a labelled pattern so sync agents can preserve it mechanically |
+| 5 | Reliability/failure-mode specialist | Site 3 is the most consequential behavioural change — operators upgrading will see init throw where they previously saw silent degraded search; the paired `embeddings_status` F-08-008 surfacing must be gap-named in this ADR, not deferred-to-forever |
+| DA | Devil's Advocate | Challenge 1: ADR-0095 amendment was surgical for a REASON — universalizing without per-site behavior tests risks regressions. Challenge 2: site 2 (diskann) is a perpetual merge tax for a fork-only override of upstream's by-design resilience architecture; can we contain it with a feature flag instead? |
+
+### Upstream intent summary (per-site verified 2026-05-24)
+
+Verified by `diff` against `/Users/henrik/source/ruvnet/ruflo/` mirrors:
+
+| Site | Upstream state | Upstream decision | Fork-only fix implication |
+|------|----------------|-------------------|---------------------------|
+| 1 vector-db | `diff -q` returns DIFFER — fork DELETED upstream's `hashEmbeddingWarned` one-time stderr warning + `_warning` non-enumerable property tag. Fork is MORE PERMISSIVE than upstream today (warn deleted in EMBEDDING_DIM=768 cleanup commit). | Upstream warns once per session, tolerates the fallback, tags result with `_warning` property | Fork-only fix is a re-divergence away from upstream's posture — but since the fork is ALREADY more permissive than upstream, the throw exceeds upstream by one notch (acceptable per [[feedback-no-fallbacks]]). |
+| 2 diskann-backend | `diff -q` returns IDENTICAL — confirmed byte-identical with upstream at `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/ruvector/diskann-backend.ts` | Upstream ships the three-tier cascade by design | Fork-only fail-loud is a perpetual merge tax matching the [[ADR-0209]] correction-4 warning. Mitigated by labelled throw shape + divergence comments + INTEGRATION-LEDGER rows. |
+| 3 embedding-pipeline + memory-router | Both files do NOT exist upstream (`embedding-pipeline.ts` is fork-original; `memory-router.ts` is fork-original at `cli/src/memory/`) | n/a — fork-owned surface | Free to enforce locally without merge tax. |
+| 4 claims | `diff -q` returns IDENTICAL — confirmed byte-identical with upstream at `/Users/henrik/source/ruvnet/ruflo/v3/@claude-flow/cli/src/commands/claims.ts` | Upstream ships permissive-on-error RBAC by design (matches the F-04-003 finding that the whole `commands/claims.ts` is unwired plumbing) | Fork-only fail-closed is a divergence that contradicts upstream framing of the package. Acceptable per [[feedback-no-fallbacks]]. |
+| 5 plugins | `diff -q` returns DIFFER — fork adds CRIT-02 permission-validation block (lines 286-308). The IPFS-vs-npm dishonest description + comment (`// Install from npm (since IPFS is demo mode)`) is upstream-inherited verbatim. | Upstream ships the dishonest envelope by design | Fork-only honesty fix on the IPFS description diverges; description rewrite is single-string change with near-zero merge tax. |
+
+Disposition: sites 2 + 4 confirmed merge-tax (byte-identical); sites 1, 3, 5 either already-diverge or are fork-original. The pre-flight Check 2 in the ADR is empirically accurate.
+
+### ADR-180+ alignment summary
+
+* **[[ADR-0095]]** 2026-05-23 amendment: explicitly named `rvf-backend.ts` only; the amendment's framing was scope-wide ([[feedback-no-fallbacks]] applies universally) but textual edit landed surgically. CT-A is the universalisation. No conflict — strict extension along the same defect class.
+* **[[ADR-0167]]** (cross-process RVF write coordination): orthogonal — different code class (RVF lock coordination vs loader fallback removal). No overlap.
+* **[[ADR-0209]]** no-fallbacks arch-test enforcement: explicitly notes (Correction 3) that the `EmbeddingService` mock-embedding cluster is outside the detector's scan scope; ADR-0209 governs MCP-tool envelope sites (`success:true` in catch with no sibling discriminator), CT-A governs loader-cascade sites. The 5 sites here are NOT in ADR-0209's enumerated subset. Different code class, complementary discipline.
+* **[[ADR-0210]]** stub-honesty mandate: governs MCP-tool handlers returning fabricated constants (`Math.random`, `42*multiplier`, `156`); CT-A governs loader cascades silently degrading the semantic surface. Conceptual sibling, different surface class.
+* **[[ADR-0231]]** wave A9 `set_pattern_capacity` precedent: the agent-A6 fix removed `value.max(10)` from `set_pattern_capacity` so input `5` no longer became `10`. The same pattern (silent ambiguous resolution) is the F-06-003 family that CT-D ([[ADR-0237]]) governs — orthogonal to CT-A's loader-cascade focus.
+* **[[ADR-0246]]** (CT-M, sibling completing wave 1): F-03-007 (`EmbeddingService.mockEmbedding` fallback in `forks/agentdb/src/controllers/EmbeddingService.ts`) is explicitly named in CT-M Sites table row 11 as closing "by construction when CT-A ([[ADR-0234]]) lands". Cross-ADR dependency direction is clear: CT-A lands first, CT-M re-flags satisfied.
+* **[[ADR-0244]]** (CT-K, sibling): took the OTHER findings from slice 01 (F-01-001, F-01-002, F-01-003, F-01-004, F-01-005, F-01-006, F-01-007, F-01-009, F-01-011, F-01-012, F-01-013) — the CLI-honesty long-tail. CT-A took F-01-008 (plugins install) + F-01-010 (claims check) because they match the loader-cascade / silent-fallback theme. CT-A + CT-K + the slice 06/08 loader sites form an exhaustive partition.
+
+### Critique outcomes table
+
+| Expert | Critique | Vote | Adopted |
+|--------|----------|------|---------|
+| 1 | Site 1 error message should reference both ADR-0234 AND the [[ADR-0095]] amendment lineage explicitly — the historical chain ("amendment universalised to siblings") is greppable signal for future maintainers | amend | YES — supermajority 5/6 |
+| 2 | Sites 2 and 4 INTEGRATION-LEDGER rows need to be made explicit in the ADR Decision section, not just gestured at in Consequences — the [[ADR-0246]] precedent expanded its row 13 to name three byte-identical files explicitly | amend | YES — supermajority 6/6 |
+| 3 | Per-site test stipulation "at minimum one acceptance-tier test asserting `expect(() => ...).toThrow(/ADR-0234/)`" must be tightened to "one test asserting throw AND a separate test asserting the error message contains ADR-0234 literal" — matches the [[ADR-0246]] wave-1 dual-test discipline (source-shape + runtime separation) | amend | YES — supermajority 4/6 |
+| 4 | Site 2's throw shape MUST be labelled pattern (mirror `RvfBackend.ts:1129`'s `{code, path, adr}` shape) so sync agents can preserve it mechanically; free-form throws produce merge conflicts that require human triage | amend | YES — supermajority 6/6 |
+| 5 | Site 3 paired follow-on for `embeddings_status` MCP-tool live-provider surfacing (F-08-008) must be GAP-NAMED in this ADR's "Out of scope (deferred)" section, not just listed there — without it the operator-recovery story is "read the throw, hope" and the F-08-008 fix risks deferred-to-forever drift | amend | YES — supermajority 5/6 |
+| 5 | Site 5 two-part fix should be ORDERED: description rewrite (part a, single-string change, zero behavioural risk) commits first; `--source ipfs` guard (part b, adds new flag handling, golden-master allowlist impact) commits second | amend | YES — supermajority 4/6 |
+| DA | Challenge 1: ADR-0095 amendment was surgical for a REASON — universalizing the posture without per-site behavior tests risks regressions where the throw fires in environments the amendment author hadn't audited | amend | PARTIAL — supermajority 4/6 with DA; per-site test stipulation tightened (Expert 3 amendment satisfies this concern); test-first discipline retained but ADR does NOT require red-test commits before fix-commits (faster cycle than [[ADR-0246]] F-03-001 ceremony given the audit already provided file:line evidence) |
+| DA | Challenge 2: site 2 (diskann) is a perpetual merge tax for a fork-only override of upstream's by-design resilience cascade; can we contain it with a feature flag (`RUFLO_DISKANN_STRICT=1`) instead of an unconditional throw? | reject | REJECTED — supermajority 4/6 against. The [[ADR-0095]] amendment explicitly rejected the `RUFLO_ALLOW_PURE_TS_FALLBACK` shape on direct user instruction ("dont do this: `RUFLO_ALLOW_PURE_TS_FALLBACK`. Just fail loud"). Flipping the polarity (`RUFLO_DISKANN_STRICT=1` opt-IN rather than opt-OUT) is the same env-var-as-escape-hatch shape with a different default. The user-rejected pattern is the env-var-as-policy-toggle, not the specific default value. Reject. |
+
+### DA final position
+
+**Withdraws Challenge 1**: the adopted refinement (Expert 3's tightened per-site test stipulation with explicit message-contains-`ADR-0234` assertion + Expert 4's labelled throw shape) satisfies the underlying "untested regression risk" concern. Per-site tests cover the throw path; labelled throw shape ensures sync agents preserve the throw mechanically.
+
+**Holds principled dissent on Challenge 2 (site 2 merge-tax framing)**: still believes the perpetual merge-tax cost on `diskann-backend.ts` is understated — upstream's resilience architecture is intentional (the F-06-002 audit itself notes "diskann is in scope for the May-23 amendment but was not touched", which the DA reads as evidence the amendment author considered and declined to touch this surface). Supermajority rejected the env-var workaround on [[ADR-0095]] precedent; the principled dissent is recorded for the record. Does NOT block consensus. Acknowledges that the labelled throw shape (Expert 4 adoption) materially reduces the per-sync mitigation cost from "rewrite cascade" to "preserve labelled throws"; the merge-tax is bounded but real.
+
+### Improvements adopted (applied to fragment)
+
+1. **Site 1 error message references [[ADR-0095]] amendment lineage explicitly** (Expert 1 critique) — preserves the historical chain so future grep / future audits can trace "amendment universalised to siblings" without re-reading ADR-0233.
+2. **Sites 2 and 4 INTEGRATION-LEDGER rows made explicit in Decision section** (Expert 2 critique) — matches [[ADR-0246]] row 13 precedent that expanded to name three byte-identical files. Site 1 ledger row added too (fork posture changes from "more permissive than upstream" to "more strict than upstream"). Site 5 description-rewrite ledger row added (deliberate fork-only divergence).
+3. **Per-site test stipulation tightened** (Expert 3 critique) — one test asserts throw, separate test asserts message contains `ADR-0234` literal; matches [[ADR-0246]] wave-1 dual-test discipline.
+4. **Site 2 throw shape MUST mirror `RvfBackend.ts:1129` labelled pattern** (Expert 4 critique) — `{code, path, adr}` typed-error template per F-06-002 cross-cutting observation 3; reduces merge-tax cost on the byte-identical site.
+5. **Site 3 paired F-08-008 follow-on GAP-NAMED** (Expert 5 critique) — `embeddings_status` MCP-tool live-provider surfacing recorded as named follow-on in "Out of scope (deferred)" with explicit commitment-language to prevent deferred-to-forever drift; operator recovery story is now "throw + probe + install + retry" not "throw + hope".
+6. **Site 5 two-part fix ORDERED** (Expert 5 critique) — description rewrite (part a, zero-behaviour-risk single-string) commits first; `--source ipfs` guard (part b, golden-master allowlist impact) commits second. Reduces blast radius of part b's allowlist update.
+
+### Confirmation amendments (folded into the Decision section above)
+
+The Per-site decisions table at the "Decision outcome" section above is updated:
+
+* Site 1 disposition: error message now reads `[vector-db] ruvector unavailable; hash-embedding fallback removed (ADR-0234, extends ADR-0095 amendment 2026-05-23 to sibling loaders per feedback-no-fallbacks). Install @sparkleideas/ruvector-* and retry.` (lineage made explicit).
+* Site 2 disposition: throw shape constrained to `{code: 'DISKANN_TIER_UNAVAILABLE' | 'HNSW_TIER_UNAVAILABLE' | 'PURE_JS_DISALLOWED', path: <module-spec>, adr: 'ADR-0234'}` typed-error template; INTEGRATION-LEDGER row required.
+* Site 3 disposition: F-08-008 paired follow-on explicitly named in "Out of scope (deferred)" — "MCP `embeddings_status` runtime-provider field (F-08-008) — paired follow-on commitment, NOT deferred-to-forever; surface the live provider (`transformers.js | ruvector | hash-fallback | unavailable`) so operators have a probe before invoking embedding-dependent code paths."
+* Site 4 disposition: INTEGRATION-LEDGER row required; throw shape constrained to `{code: 'POLICY_LOAD_FAILED', path: <policy-file-path>, adr: 'ADR-0234'}` template.
+* Site 5 disposition: ORDERED two-part fix — part (a) description+examples rewrite commits first (single-string change, zero behavioural risk); part (b) `--source ipfs` guard commits second (golden-master allowlist impact); INTEGRATION-LEDGER row for the description rewrite divergence.
+* Per-site test stipulation: each test asserts throw AND a separate test asserts the error message literal `'ADR-0234'`. Source-shape gates in fragment specify the exact grep-verifiable invariants per file.
