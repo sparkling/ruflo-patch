@@ -853,3 +853,37 @@ If Option F's permanence is ever questioned, a NEW ADR (not a resumption of ADR-
 - Does not author the proposed sqlite-vec extension package `@sparkleideas/ruvector-sqlite-vec-node`. That's separate substrate-side scope.
 - Does not modify `project-rvf-primary.md` memory entry. Axis-clarity update is a separate edit.
 - Does not shut down the `adr0166-vision-council` Agent Teams council. Eight personas remain spawned and idle; manual shutdown_request needed when the council's work is fully consumed.
+
+## Amendment 2026-05-24 — Cross-reference: ADR-0181 Phase 4 decided against HybridBackend; carve-out stays load-bearing
+
+ADR-0181's 2026-05-24 decision amendment ("decline HybridBackend
+adoption for the archivist") explicitly cites ADR-0166's carve-out
+roster as one of the load-bearing reasons. Recording the
+cross-reference here so the chain of reasoning is visible from
+both ADRs.
+
+The 9 SQLite carve-out storeIds named in this ADR
+(`agentdb_pattern_search`, `agentdb_causal_*`, `agentdb_learner_run`,
+`agentdb_learning_predict`, `agentdb_sona_trajectory_store`,
+`agentdb_experience_record`) need operations that the
+`IMemoryBackend` interface — and therefore upstream's
+`HybridBackend` — does not expose:
+
+- BM25 full-text search (`agentdb_pattern_search`)
+- Multi-table joins (`agentdb_causal_*` queries)
+- Transactional UPDATEs (`agentdb_causal_experiment`)
+- Aggregate queries (`agentdb_learning_predict`)
+
+Replacing the carve-out's raw `better-sqlite3` access with
+`HybridBackend.queryStructured()` would lose access to the precise
+operations the carve-out exists for. This is a stronger argument
+for the carve-out than the dual-write-collision framing originally
+named in ADR-0166's Decision Outcome — it is about **operation
+expressiveness**, not just write-side cabinet routing.
+
+The carve-out's role is therefore **confirmed and re-grounded**:
+narrow `SqliteSubstrateHandle` access stays in force because the
+9 storeIds need raw SQL semantics no higher-level abstraction
+(IMemoryBackend / HybridBackend) currently exposes.
+
+No code change in this amendment — pure cross-reference. Doc-only.

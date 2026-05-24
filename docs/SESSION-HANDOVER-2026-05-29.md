@@ -117,21 +117,27 @@ All 13 tests in `forks/agentdb/tests/unit/adr0217-adr0222-arch.test.ts` pass pos
 
 ### Tier 1 — Larger items with clean preconditions (scope narrowed this session)
 
-1. **ADR-0181 Phase 4 — substrate-shape decision + acceptance-wiring + implement.**
-   Promoted from standing carry-forward (E1). The 2026-05-24
-   amendment narrowed the scope significantly: **the 6 handlers are
-   NOT stubs** — already live with capability layer + substrate
-   seam. Outstanding work splits into 3 sub-tasks:
-   - **(a)** Decide between Options a/b/c for how the archivist's
-     substrate seam relates to `HybridBackend` (adapt / parallel /
-     refactor — see ADR-0181 Amendment 2026-05-24).
-   - **(b)** Apply 2 fixes to make the existing land-checklist test
-     runnable: (i) add `"./core"` subpath to
-     `forks/ruflo/v3/@claude-flow/shared/package.json` exports;
-     (ii) either move `src/*.test.ts` to `__tests__/` OR extend v3
-     vitest include pattern.
-   - **(c)** Implement chosen option from (a). 50-500 lines
-     depending on choice.
+1. ~~**ADR-0181 Phase 4 — substrate-shape decision + acceptance-wiring + implement.**~~
+   **RESOLVED 2026-05-24.** ADR-0181 amendment "decline HybridBackend
+   adoption" — chosen disposition is **Option e (principled split)**.
+   The archivist keeps its 3 narrow substrate handles. No code work
+   follows. Evidence chain: upstream HybridBackend was dead code for
+   ~5 months (`hybrid-backend.ts` shipped 2026-01-04;
+   `createHybridService` downgraded to AgentDB-only); upstream
+   issue #2061 documents it as "fiction"; ADR-125 Phase 2 (commit
+   `11eaef851`, 2026-05-19) was a honesty-pass wiring not new
+   functionality; upstream production has zero callers of
+   `createHybridService` or `provider: 'hybrid'`; auto-select
+   resolves to RVF. ADR-0166 carve-out needs raw SQL ops the
+   `IMemoryBackend` interface does not expose — re-grounded in
+   ADR-0166 Amendment 2026-05-24 cross-reference. The
+   "land checklist" test for `(svc as any).backend instanceof
+   HybridBackend` is N/A for the archivist (no archivist code path
+   constructs MemoryService via createHybridService); it remains
+   valid for createHybridService consumers (none in production). The
+   shared package `./core` + vitest include-pattern 2-fix follow-up
+   is no longer Phase-4-gating; pick up independently if/when the
+   existing `createHybridService` test becomes important.
 2. **ADR-0228 implementation (EWC++ per-call adapt).** Q-1 and Q-3
    resolved this session (commit `7ee3b91`). The big finding: the
    TS per-call adapt path is **already a no-op end-to-end**

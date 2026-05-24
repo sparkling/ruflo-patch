@@ -654,3 +654,151 @@ The work is now tractable and split into a decision step + a wiring
 step + an implementation step. Each can be its own session.
 
 No code change in this amendment — pure scope-refining doc. Doc-only.
+
+## Amendment 2026-05-24 — Decision: decline HybridBackend adoption for the archivist (principled split)
+
+The 2026-05-24 amendment above named three options (a/b/c) for how
+the archivist's substrate seam relates to `HybridBackend`. Source-walk
+of upstream's HybridBackend history surfaced new evidence that
+re-frames the choice.
+
+### Evidence chain
+
+**1. HybridBackend was upstream dead code for ~5 months.**
+
+`hybrid-backend.ts` shipped via checkpoint commit `9ab991cc7` on
+2026-01-04 with no descriptive message. `createHybridService` shipped
+alongside, but **silently downgraded to AgentDB-only** with a comment
+admitting the gap. `createDatabase` did not have a `'hybrid'` case.
+Nothing in production called the hybrid surface.
+
+**2. Upstream itself documented Hybrid as "fiction" before wiring it.**
+
+Upstream issue [#2061](https://github.com/ruvnet/ruflo/issues/2061)
+("ADR-125 — @claude-flow/memory consolidation") opened 2026-05-19
+lists five concrete gaps in `@claude-flow/memory`. Gap #2:
+
+> **"ADR-009's 'Hybrid backend by default' is fiction.**
+> `createHybridService` apologetically downgrades to AgentDB-only with
+> a comment admitting it. `createDatabase` doesn't even know
+> `'hybrid'` exists. The 789-LOC `HybridBackend` is dead code."
+
+The same issue names "150x–12,500x perf claims are aspirational
+prose" (gap #5) and `loadFromDisk`/`saveToDisk` no-op stubs (gap #3)
+in the same package. The pattern is upstream owning a debt-clearing
+honesty pass, not delivering new consumer-driven functionality.
+
+**3. ADR-125 Phase 2 was the wiring commit — corrective, not feature.**
+
+Commit `11eaef851` (2026-05-19) "Phase 2 — wire `createHybridService`
+to actually use HybridBackend." Commit message: "ADR-009 promised
+`HybridBackend` as the default. Until now, `createHybridService`
+silently downgraded to AgentDB-only with a comment admitting the gap.
+This commit delivers the wiring."
+
+No new consumer was introduced. The wiring made the long-standing
+factory honest, but the factory remains uncalled in production
+(verified 2026-05-24 across upstream `origin/main`).
+
+**4. Upstream production has zero callers of Hybrid (verified).**
+
+`git grep` across upstream `origin/main`:
+
+- `createHybridService(` — only test, JSDoc, and the function
+  definition itself. No CLI command, no MCP handler, no service.
+- `provider: 'hybrid'` — only test, JSDoc, the function definition,
+  and 2 unrelated appliance config refs.
+- `provider: 'better-sqlite3'` — only docs, examples, tests.
+- `createDatabase(path, …)` with auto-select — 2 utility scripts
+  (`witness/perf.mjs`, `smoke-no-bsqlite.mjs`); both auto-select
+  resolves to RVF (the first branch in `selectProvider()` that
+  succeeds is `testRvf()`, which always passes via the pure-TS
+  fallback).
+
+Upstream's de-facto storage path is RVF-only. HybridBackend exists
+as a surface but is not consumed by upstream itself.
+
+**5. ADR-0166's carve-out has a structural reason HybridBackend does not address.**
+
+The 9 SQLite carve-out storeIds need operations the IMemoryBackend
+interface (and therefore HybridBackend) does not expose:
+
+- BM25 full-text search (`agentdb_pattern_search`).
+- Multi-table joins (`agentdb_causal_*` queries).
+- Transactional UPDATEs (`agentdb_causal_experiment` —
+  `NightlyLearner.{completeExperiments,createExperiments}`).
+- Aggregate queries (`agentdb_learning_predict`).
+
+`HybridBackend.queryStructured()` is shaped around get/put/match
+semantics; none of the four operation classes above are reachable
+through it. The carve-out exists for *operation expressiveness*,
+not for write-side cabinet routing. This is a stronger argument for
+narrow handles than the dual-write-collision argument I named
+earlier.
+
+### Decision
+
+**Decline HybridBackend adoption for the archivist.** The archivist
+keeps its three narrow substrate handle types (`RvfSubstrateHandle`,
+`SqliteSubstrateHandle`, `FsJsonSubstrateHandle`). Phase 4 is
+considered **closed for the substrate-shape question** with this
+disposition — no implementation work follows from it.
+
+This is **not a defer.** It is a principled-split decision:
+
+- The archivist's substrate seam serves audited per-storeId writes
+  with raw-operation expressiveness (raw SQL for the carve-out,
+  RVF native ops for vector writes, FS-JSON for file-backed
+  state). These need narrow typed handles.
+- HybridBackend serves non-audited high-level consumers who want
+  fused queries against IMemoryBackend semantics. It is a
+  different abstraction for a different consumer.
+- Upstream itself does not consume HybridBackend in production —
+  the fork is not behind a migration wave; it is making an
+  independent architectural call that happens to match upstream's
+  observed practice (RVF-primary, narrow access for specialized
+  ops).
+
+If a future consumer demonstrates a real need for HybridBackend's
+fused-query semantics at the archivist surface — for example, a new
+storeId class that legitimately wants dual-store writes plus
+operation expressiveness limited to IMemoryBackend ops — that
+becomes a new evidence-driven ADR.
+[[feedback-corpus-evidence-before-feature-work]] applies: implement
+when evidence accumulates, not when an aspirational ADR is filed.
+
+### Consequences
+
+- ADR-0181 Phase 4's "substrate-shape decision" (Options a/b/c from
+  the prior amendment) is **resolved as "Option e — principled
+  split"**. No code change required; the archivist's existing
+  three-family seam is the chosen end state.
+- ADR-0181 Phase 4's "land-checklist test" assertion
+  (`(svc as any).backend instanceof HybridBackend === true`) is
+  **N/A for the archivist** — there is no archivist code path that
+  constructs a `MemoryService` via `createHybridService`. The
+  assertion's existing test in `forks/ruflo/v3/@claude-flow/memory/src/index.test.ts`
+  remains valid for `createHybridService` consumers (none today)
+  but is not gated on Phase 4 closure.
+- The 2-fix acceptance-wiring follow-up (shared package `./core`
+  exports + vitest include pattern) is **no longer Phase-4-gating**.
+  It can be picked up independently if/when the existing
+  `createHybridService` test becomes important to acceptance.
+- ADR-0166 carve-out stays in force. The 9 SQLite carve-out
+  storeIds keep narrow `SqliteSubstrateHandle` access for raw SQL
+  operations.
+
+### Out of scope (deliberately)
+
+- Implementing 2 new substrate handle types (`HybridSubstrateHandle`,
+  `AgentDbSubstrateHandle`). Not needed.
+- Extending `substrate-registry.ts` family enum beyond the 3
+  current values.
+- Adding lifecycle wiring for HybridBackend instances in
+  `initProcessArchivist`.
+
+These would have been the work-items if Options (a)/(b)/(c)/(d)
+had won. With "Option e — principled split" they are correctly
+unbuilt.
+
+No code change in this amendment — pure decision doc. Doc-only.
