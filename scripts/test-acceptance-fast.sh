@@ -9,7 +9,8 @@
 #
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
-#         adr0238, adr0239, adr0240, adr0241, adr0243, adr0245, adr0246, adr0248,
+#         adr0238, adr0239, adr0240, adr0241, adr0243, adr0244, adr0245, adr0246,
+#         adr0247, adr0248,
 #         e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
@@ -350,6 +351,28 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0243"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0243-bounded-lru"    check_adr0243_boundedlru_present
     _fast_run "adr0243-lru-adopted"    check_adr0243_ruvllm_hooks_migrated_to_lru
     _fast_run "adr0243-lint-noinit"    check_adr0243_lint_no_unref_setinterval
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0244"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0244-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0244-checks.sh"
+    echo "── ADR-0244 (CT-K honesty fixes — 8 commits, CRITICAL daemon-PID race pair) ──"
+    _fast_run "adr0244-critical-pair"  check_adr0244_critical_pair_closed
+    _fast_run "adr0244-pass9-codemod"  check_adr0244_pass9_codemod_extension
+    _fast_run "adr0244-vitest-suite"   check_adr0244_vitest_suite
+    _fast_run "adr0244-ledger-rows"    check_adr0244_ledger_rows
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0247"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0247-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0247-checks.sh"
+    echo "── ADR-0247 (CT-N honesty fixes — mcp-client isError + aidefence backoff) ──"
+    _fast_run "adr0247-site1-iserror"  check_adr0247_site1_iserror_envelope
+    _fast_run "adr0247-site3-backoff"  check_adr0247_site3_security_backoff
+    _fast_run "adr0247-vitest-pair"    check_adr0247_vitest_pair
+    _fast_run "adr0247-ledger-rows"    check_adr0247_ledger_rows
   fi
 fi
 
