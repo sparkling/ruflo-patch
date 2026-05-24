@@ -7,13 +7,17 @@ depends-on: [0220]
 implements: []
 ---
 
-> **Status note (2026-05-24 second amendment):** The original
+> **Status note (2026-05-24 third amendment):** The original
 > Decision Outcome recommended **Option C — Hybrid**. The
-> 2026-05-24 second amendment (at the bottom of this ADR)
-> **revises the recommendation to Option A** with two refinements
-> (WASM-bypass via native sona NAPI; flush-time EWC integration).
-> Read the second amendment before acting on the Decision Outcome
-> section.
+> second amendment revised to **Option A** with WASM-bypass via
+> native sona NAPI. The **third amendment** surfaces an upstream
+> design conflict (PR #2088's CI smoke guards the WASM-unified
+> `ruvllm_*` MCP family pattern that the reroute would break)
+> and presents **three implementation routes (A/B/C)** rather
+> than a single recommendation. **Direction** (strict micro-tier
+> EWC, no phased delivery) is decided; **route** is pending user
+> choice. Read the third amendment (bottom) before acting on any
+> earlier section.
 
 # EWC++ on the per-call adapt path (`ruvllm_microlora_adapt`)
 
@@ -869,3 +873,203 @@ remains evidence-driven.
 
 No code change in this amendment — pure research findings + revised
 implementation plan. Doc-only.
+
+## Amendment — 2026-05-24 (third — upstream search; reroute conflicts with deliberate WASM-unified design)
+
+Continuation pre-implementation: walked upstream
+(`ruvnet/{RuVector,ruflo,agentic-flow,agentdb}`) to verify the
+second amendment's WASM-bypass recommendation doesn't violate a
+deliberate upstream architectural choice. Searched ADRs, commits,
+docs, source, and GitHub issues/PRs (`gh api`).
+
+Findings change the picture. **The reroute IS in conflict with
+upstream's deliberate design**, though not a hard technical
+constraint. Three routes are now visible; the second-amendment's
+recommendation needs to be reconsidered as one of three, not the
+sole right answer.
+
+### Upstream design is "unified WASM runtime for the `ruvllm_*` MCP family"
+
+Evidence:
+
+- **Upstream issue [ruvnet/ruflo#2086](https://github.com/ruvnet/ruflo/issues/2086)**
+  ("ruvllm WASM bootstrap not exposed via MCP — blocks
+  sona/microlora/hnsw paths") explicitly frames the WASM runtime
+  as the **shared bootstrap path** for `ruvllm_sona_*`,
+  `ruvllm_microlora_*`, and `ruvllm_hnsw_*` tool families. The
+  reporter audited "the full ruflo MCP tool surface for an
+  init/bootstrap entry point on the `ruvllm_*` namespace" — the
+  treatment is as a single namespace served by a single runtime.
+- **Upstream [PR #2088](https://github.com/ruvnet/ruflo/pull/2088)
+  (merged 2026-05-21)** fixed it by folding
+  `await mod.initRuvllmWasm()` into `loadRuvllmWasm()`. The PR added
+  a CI smoke (`scripts/smoke-ruvllm-wasm-auto-init.mjs`) with 12
+  invariants, including:
+  - `ruvllm_microlora_create auto-inits via loadRuvllmWasm()`
+  - `ruvllm_microlora_adapt uses prior instance from create handler`
+
+  This is a **guard against architectural drift** — the smoke
+  would fail under the second-amendment's reroute (the adapt
+  handler would no longer use the prior `MicroLoraWasm` instance
+  from the create handler's `loraInstances` map; it would route
+  through `SonaEngine` instead).
+- **Upstream `ruvllm-tools.ts:222-249`** (read at HEAD) — same
+  quality-only schema as our fork. The state-sharing pattern
+  (`loraInstances.get(loraId)` → `.adapt(quality, lr, success)`)
+  is upstream's design: create returns an id, adapt mutates the
+  same WASM instance by id.
+
+This is not incidental. PR #2088's CI smoke is explicit
+architectural enforcement.
+
+### But upstream's design has the same Q-3 gap we found
+
+- **Same quality-only API** — upstream's `ruvllm_microlora_adapt`
+  schema (read 2026-05-24, post-PR-#2088) has the same
+  `loraId`/`quality`/`learningRate`/`success` properties as our
+  fork. No `input` parameter. The zero-input problem (Q-3) is
+  inherited from upstream, not introduced by us.
+- **Upstream's plugin docs sell a feature that doesn't exist** —
+  `ruvnet/ruflo/plugins/ruflo-intelligence/README.md:102`:
+  > "call `ruvllm_microlora_adapt` with the `--consolidate` flag
+  > to apply Elastic Weight Consolidation on the adapter's weight
+  > deltas. This prevents catastrophic forgetting when the
+  > adapter is trained on a new domain."
+
+  No `consolidate` parameter exists in the schema. This is
+  upstream's own contract gap — the documented promise predates
+  any fork work.
+- **Upstream ADR-086** (`ruvnet/ruflo/v3/docs/adr/ADR-086-ruvllm-native-intelligence-backend.md`)
+  tested `@ruvector/ruvllm` (the NPM package, distinct from
+  `@ruvector/sona`) and found EWC "returns NaN"; chose JS fallback.
+  Does NOT cover `@ruvector/sona` NAPI. Sona NAPI's EWC has passing
+  Rust tests (per the original 2026-05-19 audit's F-05-006).
+
+### Crate-positioning evidence
+
+- **Upstream [ruvnet/RuVector#242](https://github.com/ruvnet/RuVector/issues/242)**
+  positions `@ruvector/ruvllm-wasm v2.0.0` as
+  *"Browser-native LLM inference"*. The WASM crate's design
+  purpose is browser deployment. Using it for the Node MCP path
+  is reuse, not its primary intent.
+- **Commit `01c764f6f` (2026-04-27)** — "microlora adapt
+  auto-pads to 768-dim" — documents the WASM artefact's hard
+  768-dim minimum. The TS-side `MICROLORA_WASM_MIN_DIM = 768`
+  zero-pad is a workaround for a WASM-crate quirk, not a feature.
+- **`@ruvector/sona` IS already pinned in upstream cli** (per
+  `package.json`); NAPI bindings already loaded for non-MCP paths.
+  Not a new dependency on either side.
+
+### The three routes — explicit
+
+Given upstream's deliberate WASM-unified design AND upstream's
+own EWC contract gap, three implementation routes are visible:
+
+**Route A — honor upstream WASM-unified; add EWC inside WASM crate.**
+
+- Add EWC++ to `crates/ruvllm-wasm` (either re-implement, or
+  factor into a shared crate consumed by both ruvllm-wasm and
+  sona).
+- Add `consolidate: bool` parameter to MCP tool (honors upstream's
+  documented `--consolidate` contract).
+- Add `input: number[]` to schema (fixes Q-3).
+- Keep WASM routing; preserve `loraInstances.get(loraId).adapt(...)`
+  pattern; PR #2088's CI smoke stays green.
+- **Pro:** aligns with upstream's documented intent; lowest fork
+  drift; preserves the `ruvllm_*` namespace's runtime cohesion.
+- **Con:** EWC duplication or shared-crate refactor; bigger Rust
+  scope than Route B (~500 LOC of EWC machinery into WASM crate,
+  OR a workspace restructure to share `crates/sona/src/ewc.rs`).
+
+**Route B — second amendment's recommendation: reroute to sona NAPI.**
+
+- All steps as documented in the second amendment.
+- Breaks upstream's WASM-unified pattern for one MCP tool.
+- PR #2088's CI smoke (`ruvllm_microlora_adapt uses prior instance
+  from create handler`) would need to be removed or rewritten in
+  the fork; fork-drift permanent.
+- **Pro:** smaller Rust change (~100 LOC); reuses sona's existing
+  tested EWC; no WASM-crate churn.
+- **Con:** architectural inconsistency in `ruvllm_*` namespace;
+  fork-side merge tax on every upstream sync of `ruvllm-tools.ts`;
+  loraId from `microlora_create` (WASM-backed) becomes invalid
+  for adapt (sona-backed) — schema-breaking.
+
+**Route C — new MCP tool; leave `ruvllm_microlora_adapt` alone.**
+
+- Add a NEW MCP tool (e.g. `sona_microlora_adapt`) that routes
+  through `@ruvector/sona` NAPI, takes real input, applies EWC at
+  flush.
+- Add Rust changes from second amendment to `crates/sona`.
+- Leave the existing WASM-backed `ruvllm_microlora_adapt`
+  untouched (deprecate by docstring if desired).
+- PR #2088's smoke stays green (it tests the existing tool's
+  routing, untouched).
+- **Pro:** zero conflict with upstream's `ruvllm_*` design; both
+  surfaces coexist; users picking the EWC-protected path opt in
+  by tool name; clean cross-cutting addition rather than
+  modification.
+- **Con:** two MCP tools with overlapping intent; users have to
+  know which to call; double the surface area to maintain.
+  Mitigation: deprecate `ruvllm_microlora_adapt` in fork-side
+  docstring + suggest the new tool.
+
+### Risks to all three routes (carried over)
+
+- **EWC consolidation contract upstream-wide** — upstream plugin
+  docs promise a `--consolidate` flag that exists in NO route
+  unless we add it. Routes A and C can add it cleanly; Route B
+  buries it inside the `ruvllm_microlora_adapt` schema change.
+- **768-dim WASM workaround** — Route A keeps the zero-pad; B and
+  C don't need it. Audit any current caller that depends on the
+  pad before B or C.
+- **NAPI version coupling** — Routes B and C bind to
+  `@ruvector/sona@0.1.6-patch.111` per current fork pin. Confirm
+  EWC tests pass on this version end-to-end.
+
+### Open threads (carried + new)
+
+- **Open: is upstream's quality-only adapt intentionally no-op?**
+  Local searches found no doc saying "quality-only adapt is
+  intentionally no-op." Likely an inherited mathematical oversight
+  upstream hasn't audited. No upstream issue acknowledges it.
+- **Open: would upstream accept the `input`-parameter schema
+  change?** Out of scope per `[[feedback-no-upstream-donate-backs]]`
+  — we don't file upstream PRs for fork housekeeping. But it
+  affects merge-tax cost for Routes A and B.
+- **Closed: is there a deployment-target reason for WASM?** No.
+  MCP is Node-only. Browser-positioning is the WASM crate's
+  design purpose, not an MCP constraint.
+
+### Decision required
+
+The second amendment's recommendation (Route B) ships but creates
+real fork drift and breaks PR #2088's CI smoke pattern. Routes A
+and C are alternatives that honor upstream's design more carefully.
+
+The decision is the user's, not this amendment's. Per
+`[[feedback-exploratory-questions-not-instructions]]`, no
+unilateral pivot. Status stays `accepted` (the *direction* —
+strict micro-tier EWC, no phased delivery — is decided), but
+the *route* (A/B/C) is open until the user picks.
+
+### Recommended route choice
+
+If the user has no architectural preference: **Route C is
+cleanest** — preserves upstream's deliberate design, delivers
+strict EWC via a new clearly-named tool, lowest merge-tax cost,
+no CI smoke to fix in fork. The "two tools with overlapping
+intent" cost is mitigated by clear docstrings and matches the
+existing fork pattern of additive MCP surfaces.
+
+If the user prioritizes "honoring upstream's documented
+`--consolidate` contract on the existing tool name": **Route A**
+— but expect the Rust scope expansion for adding EWC to the
+WASM crate (or shared-crate refactor).
+
+If the user accepts permanent fork drift and wants the smallest
+change: **Route B (second amendment)** — but acknowledge the CI
+smoke conflict on next upstream sync.
+
+No code change in this amendment — pure research findings.
+Doc-only.
