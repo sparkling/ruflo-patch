@@ -202,3 +202,28 @@ This audit produced a batch of remediation ADRs (0202–0218). A 6-expert swarm 
 4. **No sibling-ADR overlap** — check the rest of this batch for the same surface/mechanism. (0210's arch-test = 0209's rejected detector; 0207's driver already owned by 0202; 0210's `hooks_notify` owned by 0211.)
 
 Default to **implement / delete / behaviour-verify at the seam that matters**, and re-converge with upstream, over label / gate / wire. The runtime-validation agents this ADR already dispatched (slices 12/13/15) are the model — remediation ADRs must apply that same runtime lens, not stop at the static slice.
+
+## Reviews still owed (added 2026-05-24)
+
+The May-19 audit covered the 6 named surfaces (controllers, hooks, MCP, daemon, init, skills) plus runtime validation. It explicitly deferred ten next-pass surfaces (see [16-gap-analysis](../audits/2026-05-19-soundness-audit/16-gap-analysis.md) §D) and three cross-cutting items (§E). As of 2026-05-24 none of the §D items has been started; §E item 2 (codemod golden-master) is addressed by [[ADR-0215]].
+
+| # | Scope | Gap ID | Suggested approach |
+|---|-------|--------|--------------------|
+| 1 | CLI commands beyond `daemon` and `init` | G-16-001 [HIGH] | Single agent; enumerate + sample 5–10 commands |
+| 2 | Build pipeline (`scripts/` + `lib/`) | G-16-003 [HIGH] | One static + one runtime dry-run-release agent |
+| 3 | AgentDB internals (RVF format, HNSW, archivist) | G-16-004 [HIGH] | Dedicated agent |
+| 4 | Security: aidefence (AIMDS), claims, PII | G-16-005 [HIGH] | One agent + adversarial probe runtime |
+| 5 | Telemetry / observability — trace one op end-to-end | G-16-006 [HIGH] | Single trace agent |
+| 6 | WASM modules + native bindings | G-16-007 [HIGH] | Static + runtime `require()` probe |
+| 7 | Plugin contents (4 plugins) | G-16-002 [HIGH] | One agent per plugin OR single sweep |
+| 8 | Embedding pipeline (load/batch/cache/queue) | G-16-008 [MEDIUM] | Dedicated agent |
+| 9 | Consensus protocols (Byzantine, Raft, gossip, CRDT, quorum) | G-16-010 [MEDIUM] | Dedicated agent |
+| 10 | Performance / memory / FD leak | G-16-014 [MEDIUM] | Long-running runtime stress test |
+
+**Cross-cutting** (gap-analysis §E):
+
+* Whole-tree dead-code scan (ESLint `no-unused-exports` + cross-package import audit). `v3/mcp/` 1112-LOC dead tree was one finding; more likely.
+* Init template fidelity — golden-master test for every file `ruflo init` writes (F-02-style fidelity issue likely generalises beyond hook-handler).
+* ~~Codemod golden-master test~~ — implemented in [[ADR-0215]].
+
+Apply the [pre-flight checklist](#remediation-adr-pre-flight-checklist-added-2026-05-20) above to any remediation ADR drafted from these.
