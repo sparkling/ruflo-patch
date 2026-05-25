@@ -233,6 +233,7 @@ not seeded here; backfill as encountered.
 | `16810c3e2` | 2026-05-25 | fix(bench): ADR-130 P6 CI-friendly single-session inserts | defer | — | 0254 | Defer with parent `edde98f9e` per [[ADR-0254]]. Bench fix for the deferred ADR-130 P6; no value to pick standalone (the P6 surface it benches isn't in the fork). |
 | `e1bd1f072` | 2026-05-25 | chore: bump all packages to 3.10.0 (ADR-130 P4+P5+P6) | skip-mechanical | — | 0254 | chore(release) version bump tied to the deferred ADR-130 stack. Fork has independent `-patch.N` chain per Batch J standing rule. |
 | `10086c4bb` | 2026-05-25 | ci: timeout-minutes: 40 to graph-benchmark job (ADR-130 P6) | defer | — | 0254 | Defer with parent `edde98f9e` per [[ADR-0254]]. CI tuning for the deferred ADR-130 graph-benchmark job; the job itself isn't in the fork's CI surface, so the timeout knob has nothing to gate. |
+| `47a7825b0` | 2026-05-24 | feat(rvagent): #ADR-129 full rvagent integration (#2123) — Phase 4 land | pick-partial | `818091545` | 0256 | **Supersedes row 228** (TBD → resolved). Per [[ADR-0256]] Option A: Phase 4 plugin-bridge helpers (`loadPluginManifest`, `extractPluginSkills`) + smoke (`scripts/smoke-wasm-plugin-bridge.mjs`, 5 PASS + 2 SKIP) + CI job stanza landed in fork commit `818091545`. The 2 SKIPs probe `wasm_agent_compose` (Phase 2 surface) — flip to PASS when Phase 2 lands per [[ADR-0254]] Amendment 1's three remaining gating questions. Phases 1-3 remain deferred. |
 
 ## agentic-flow
 
