@@ -319,6 +319,22 @@ Two existing ADRs already document the required reconciliation:
 
 In-session methodology note: my initial ELI15 brief framed Phases 1-3 as "a cherry-pick once design questions are answered." That was wrong: upstream answered the design questions (chose ephemeral for compose; SAFE_MCP_TOOLS exists at line 41), but the fork has a distinct architecture that needs its OWN design decision to reconcile. ADR-0258 + ADR-0259 are exactly that decision; they just hadn't been implemented yet. Caught via abort-and-inspect; documented here.
 
+### ADR-130 group (4 upstream commits) — DEFERRED with fork-native design captured in ADR-0261 (2026-05-25 follow-up)
+
+User-pressure trigger fired. Walked the 7-criteria checklist from ADR-0254 with the user; confirmed the verbatim upstream pick remains structurally inapplicable (module-scope cache, fire-and-forget writes, MiniLM-384 vs mpnet-768, no archivist routing, no substrate routing, schema impedance, upstream-only witness file).
+
+Created [[ADR-0261]] (`status: proposed`) as the fork-native re-implementation design. Recommended: **Option A** (new `agentdb_graph_edge` archivist handler in forks/agentdb) + **A1** (coexist with causal_edges) + **A-W1** (archivist audit-chain ids as witness). Implementation surface: ~400 lines (handler + schema + PQ encoder thread + tests + smoke).
+
+The 4 ADR-130 commits in the ledger now point at ADR-0261:
+
+- `edde98f9e` — parent feat(graph) PR → defer (trigger: ADR-0261 ratified + implemented)
+- `542481053` — docs(adr) → defer (no fork file changes; reference for ADR-0261)
+- `16810c3e2` — fix(bench) → defer (re-evaluate when ADR-0261's smoke is in place)
+- `10086c4bb` — ci: timeout → defer (re-evaluate when ADR-0261's CI job is added)
+- (`e1bd1f072` chore: bump 3.10.0 stays skip-mechanical; no relation to ADR-0261)
+
+ADR-0261 needs council ratification before implementation. This ADR-0257 line item closes; ADR-0261 owns the next step.
+
 ### MEDIUM-priority — RESOLVED 2026-05-25 (user accepted all 4)
 
 All 4 ADR-126 partial-supersedes picked as cherry-picks with brand-flip + smoke updates:
