@@ -165,3 +165,50 @@ between either of those and the canonical source-of-truth set under
 `forks/ruflo/plugins/<plugin>/skills/`, since the plugin cache is what
 ships to users). Do NOT touch `.agents/skills/` for skill-discovery
 reasons — that directory is invisible to Claude Code's loader.
+
+## 2026-05-25 amendment — Item C cannot execute the prune
+
+Agent C investigated and found the premise above is partly wrong about the
+v3 path:
+
+1. **`forks/ruflo/v3/.claude/skills/` does NOT exist** as a path. The
+   actual location is `forks/ruflo/v3/@claude-flow/cli/.claude/skills/`
+   (33 SKILL.md files, not 38). The pre-amendment count of 38 conflated
+   it with the top `forks/ruflo/.claude/skills/` set.
+2. The `v3/@claude-flow/cli/.claude/skills/` set is **not** a session-
+   discovery copy — it is the **npm package payload** that `ruflo init`
+   copies into user projects via the `SKILLS_MAP` table in
+   `forks/ruflo/v3/@claude-flow/cli/src/init/executor.ts`. Gated by
+   `scripts/smoke-init-bundle-invariants.mjs` and the ADR-0216 arch-test
+   `__tests__/arch/adr0216-skills-map-pin.arch.test.ts`.
+3. **Removing the v3/cli copies would ship a broken npm tarball** — the
+   smoke fails, and if forced through, `ruflo init` on user machines
+   would fail to copy those skills.
+
+What the content diff shows for the 33 name-collisions:
+
+- 24 are **byte-identical** (only mtime differs).
+- 9 differ:
+  - 5 (`github-*`, `verification-quality`): the top `.claude/skills/`
+    copy is fresher (has `mcp__ruflo__*` rebrand + CI-Guards section).
+    v3/cli is stale.
+  - 3 (`hooks-automation`, `sparc-methodology`, `swarm-advanced`):
+    **v3/cli has REGRESSED to `mcp__claude-flow__*`** — violates
+    [[ADR-0143]] rebrand. Top copy is correct.
+
+### Disposition of Item C
+
+**Item C is closed as no-op.** The dedup as planned is not viable
+because the two directories are not duplicates — they are a source vs
+payload split that the build pipeline understands. The `skillListing-
+BudgetFraction = 0.06` (above the 0.01 default per `.claude/settings.json`)
+is left as-is per the original rule "if at or above default, leave it."
+
+### Follow-up filed (independent of Item C)
+
+The 8 content-drifted v3/cli copies need to be re-synced from the top
+`.claude/skills/` copies. The 3 `mcp__claude-flow__*` regressions are a
+[[ADR-0143]] violation in shipped payload. Recommended next-session
+work: copy top → v3/cli for the 8 drifted skills + a smoke that asserts
+they stay in lockstep going forward. NOT in scope for this session's
+Item C.
