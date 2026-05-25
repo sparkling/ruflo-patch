@@ -69,15 +69,17 @@ The 5/6 vote stands; the DA dissent is closed affirmatively.
 3. Marketplace integrity lint (`ruflo-patch/tests/pipeline/plugin-marketplace-integrity.test.mjs`, landed in Batch 3) continues to gate against the overclaim phrases.
 4. **Re-open trigger**: if a future audit finds either (a) the description has regressed toward overclaiming, OR (b) skills have devolved into thin CLI proxies with no MCP-composition value, this ADR moves to `superseded by ADR-NNNN` where the new ADR re-opens F-07-007 with the failure evidence.
 
-### Option D follow-up (advisory)
+### Option D follow-up (landed)
 
-Add to `ruflo-patch/tests/pipeline/plugin-marketplace-integrity.test.mjs` a per-plugin overclaim-phrases set for `ruflo-neural-trader` (similar to the per-plugin pattern other plugins already use). Specifically the phrases the rewrite excised:
+**Status: Implemented** in commit `05a700c` (`ruflo-patch`, 2026-05-25). Added 4 forbidden phrases to `OVERCLAIM_DESCRIPTION_PATTERNS` in `tests/pipeline/plugin-marketplace-integrity.test.mjs:79-82` as regression protection for the Batch 3 rewrite:
 
-- `"112+ MCP tools"` (and minor variants: `"112 MCP tools"`, `"112+ tools"`)
-- `"MCP-callable"` paired with a count-claim
-- Any claim that the plugin exposes neural-trader CLI tools via MCP
+- `"112+ MCP tools"` (pre-existing — sibling pattern)
+- `"112 MCP tools"` (no-plus variant)
+- `"112+ tools"` (no-MCP variant)
+- `"112 tools"` (no-plus + no-MCP variant)
+- `"exposes neural-trader"` (claim-based variant)
 
-This is non-blocking defensive scaffolding — the description as it stands today wouldn't fail the lint; the lint catches regression only. Tracked as a follow-up of this ADR; not gating closure.
+The honest rewrite's disclaimer ("this plugin does NOT expose neural-trader's CLI tools as MCP-callable") is now the lint contract. 20/20 marketplace-integrity tests pass (was 16/16). Non-blocking defensive scaffolding — current description does not fail the lint; the lint catches regression only.
 
 ## Pros and Cons of the Options
 
