@@ -238,7 +238,7 @@ not seeded here; backfill as encountered.
 
 | Upstream SHA | Date | Subject | Disposition | Local SHA | ADR | Notes |
 |---|---|---|---|---|---|---|
-| `1493bab01` | 2026-05-06 | graph-node deleteNode/deleteEdge/deleteHyperedge API | hand-ported | `ee8bca912` | 0186 | manual merge; pair-of-two with agentic-flow `c2af4dc` (agentdb side still pending) |
+| `1493bab01` | 2026-05-06 | graph-node deleteNode/deleteEdge/deleteHyperedge API | hand-ported | `ee8bca912` | 0186 | manual merge; pair-of-two with agentic-flow `c2af4dc` (agentdb side absorbed via `forks/agentdb@8b3388b22` ADR-0161 extraction init; see row 230 amendment confirmed 2026-05-18). |
 | `d771d06ee` | 2026-? | hailo: NPU embedding backend + multi-Pi cluster | hand-ported | `8b80e5c91` | 0186 | subject-match (Batch I Hailo cluster #1) |
 | `c7b0ba4c0` | 2026-? | hailo: NPU pipeline pool exploration | hand-ported | `fcf19972d` | 0186 | subject-match (Batch I Hailo #2) |
 | `c12d828b7` | 2026-? | hailo: lint cleanup + bridge test gates | hand-ported | `7a06c26d3` | 0186 | subject-match (Batch I Hailo #3) |
@@ -329,8 +329,9 @@ Dormant since 2026-02-09 (0 commits ahead) through 2026-05-22. Reactivated
 ## agentdb
 
 Caught up to upstream tip `a478ab3` (2026-05-06) per ADR-0161 extraction.
-No upstream-fork delta tracked here yet; the `c2af4dc` pending hand-port
-above (in agentic-flow section) will land here when executed.
+No upstream-fork delta tracked here yet; the `c2af4dc` row above (in
+agentic-flow section) was retargeted into the `8b3388b22` ADR-0161
+extraction init (same-day 2026-05-06) and is recorded as `retargeted`.
 
 | Upstream SHA | Date | Subject | Disposition | Local SHA | ADR | Notes |
 |---|---|---|---|---|---|---|
