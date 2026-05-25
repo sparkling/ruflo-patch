@@ -259,10 +259,12 @@ All **15 theme-batched ADRs** ([[ADR-0234]] through [[ADR-0248]]) were drafted o
 
 ## Reviews still owed (carry-forward after this batch)
 
-* **Performance/leak runtime stress** — slice 10 was static-only. Long-running stress test still owed (G-16-014).
-* **Section §A: 19 Batch S source-conflict deferrals** — re-eval on next upstream sync (memory `feedback-update-integration-ledger`).
-* **Section §A: 5 ruvector Batch O deferrals (sparse-attention)** — re-eval on dedicated sweep.
-* **`archive/` 418K LOC** — intentionally excluded from CT-F dead-code scan. Decision deferred.
+Updated 2026-05-25 — see [[ADR-0252]] for the Batch S re-disposition and per-item resolution below.
+
+* **Performance/leak runtime stress** (G-16-014) — ~~static-only~~ → **harness landed** in `ruflo-patch` commit `a9aa795` (`scripts/test-stress-runtime.sh` + `scripts/stress-runtime-driver.mjs`). Smoke run at `STRESS_N=100` exposes 14× RSS growth with 24 of 100 inflight after 30s drain — needs follow-up investigation to disambiguate ADR-0243 gap vs synthetic-burst artifact vs warmup-cost allocation. Harness was the precondition; the underlying signal is now a separate work item.
+* **Section §A: 19 Batch S source-conflict deferrals** — ~~re-eval on next upstream sync~~ → **re-disposed by [[ADR-0252]]**. Per-family verdict: 5 supersede (ADR-126 neural-trader → [[ADR-0248]] + [[ADR-0251]]), 3 pull-pending (docs, next sync), 2 defer + 9 defer-per-SHA (ADR-127 github surface + misc). `ruvnet/ruflo` has had 0 new commits since 2026-05-23; trigger fires on next sync (no current action).
+* **Section §A: 5 ruvector Batch O deferrals (sparse-attention)** — ~~re-eval on dedicated sweep~~ → **closed; bookkeeping correction landed** ([[ADR-0252]] amendment to `docs/upstream/INTEGRATION-LEDGER.md:296`). Direct content inspection confirmed all 5 SHAs are absorbed: 55eae8887→92c296b04, 4922b034f→2b2da81b4, 9d8006ae2→3117f4a8e, 068bb637a→4a357f32d, 36912ba3e→208eb1762. Original ledger row was stale. **Note**: prior framing "fork doesn't currently consume these" was inaccurate — sparse-attention crates ARE consumed intra-fork (`ruvllm_retrieval_diffusion` depends on `ruvllm_sparse_attention`; `ruvector-sparse-inference-wasm` depends on `ruvector-sparse-inference`).
+* **`archive/` 418K LOC** — ~~intentionally excluded from CT-F dead-code scan~~ → **partial action landed**: `forks/ruflo` commit `1a26254eb` renamed `archive/v2/_v2_claude_snapshot/skills/` → `legacy-skills/` to break Claude Code's `/skills/` directory-segment discovery match. SKILL.md descriptive count (settings.json comment was inaccurate — 26 files, not 367). Discovery-reachable count: 341→315. **Remaining**: 315 still exceeds default 1% budget cap (~63); `skillListingBudgetFraction` left at 6%. Bigger pollution sources unaddressed (`.agents/skills` 134, `plugins/*/skills` 104). The rest of `archive/v2/` remains intentionally kept; no further dead-code scan needed.
 
 ## More Information
 
