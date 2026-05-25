@@ -446,3 +446,5 @@ arch-tests trip immediately if a re-introduction slips through.
 
 | F-08-003 | embeddings-tools.ts:484 threshold bypass | convergence-with-upstream | Restores ADR-0227 0.15 adaptive floor on the live MCP path. Upstream `ruvnet/ruflo/v3/@claude-flow/cli/src/mcp-tools/embeddings-tools.ts` carries no comparable bypass. |
 | F-08-004 | RvfEmbeddingCache FNV-1a 32-bit collision | already-closed-by-construction | File `v3/@claude-flow/embeddings/src/rvf-embedding-cache.ts` deleted by ADR-0239 cluster 4(c) (578 LOC); the FNV-1a collision risk evaporates with the file. No code change needed. |
+
+| ruvector — remove `npm/packages/core/` stale duplicate | superseded-by-local | Both `npm/core/` (canonical, has TS source + recent NAPI updates) and `npm/packages/core/` (legacy, JS-only snapshot) carried `"name": "@ruvector/core"`. Currently-published metadata (main + description + homepage) matches `npm/core/`, confirming it as the source-of-truth. Upstream `ruvnet/ruvector` retains both directories; fork-only deletion converges with the fork's actually-published artifact. Post-Batch-5 round-7 release verification surfaced. |
