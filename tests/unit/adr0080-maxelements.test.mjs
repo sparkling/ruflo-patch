@@ -1061,11 +1061,30 @@ describe('ADR-0080: no --no-download in main init embeddings path', () => {
   });
 
   it('main init allows 120s timeout for model download', () => {
+    // ADR-0235 (Batch 5) follow-up: the fixed-window slice that previously
+    // bounded this scan kept slipping past the `if (withEmbeddings) { ... }`
+    // body as the generator grew (npx → execFileSync rewrite, explanatory
+    // comments, etc.). Replace with a brace-balanced scan: anchor on the
+    // `Handle --with-embeddings` comment, advance to the opening brace of
+    // the `if (withEmbeddings)` block, then walk forward tracking depth
+    // until the matching close brace. The block under test is exactly what
+    // executes when --with-embeddings is set.
     const mainInitStart = initCmdSrc.indexOf("Handle --with-embeddings");
-    // Window widened to 2000 chars after forks/ruflo 3db6ea463 replaced the
-    // npx @latest invocation with execFileSync and added an explanatory
-    // comment block — the timeout line now sits ~1400 chars in.
-    const mainBlock = initCmdSrc.slice(mainInitStart, mainInitStart + 2000);
+    assert.ok(mainInitStart > -1, 'main init must have a --with-embeddings handler');
+    const ifIdx = initCmdSrc.indexOf('if (withEmbeddings)', mainInitStart);
+    assert.ok(ifIdx > -1, 'main init must guard embeddings work with `if (withEmbeddings)`');
+    const openBrace = initCmdSrc.indexOf('{', ifIdx);
+    assert.ok(openBrace > -1, 'if (withEmbeddings) must have an opening brace');
+    let depth = 1;
+    let cursor = openBrace + 1;
+    while (cursor < initCmdSrc.length && depth > 0) {
+      const ch = initCmdSrc[cursor];
+      if (ch === '{') depth++;
+      else if (ch === '}') depth--;
+      cursor++;
+    }
+    assert.equal(depth, 0, 'if (withEmbeddings) block must be brace-balanced');
+    const mainBlock = initCmdSrc.slice(openBrace, cursor);
     assert.ok(
       mainBlock.includes('120000'),
       'main init must allow 120s (120000ms) timeout for model download',
