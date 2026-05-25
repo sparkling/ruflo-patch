@@ -269,3 +269,100 @@ Per `[[feedback-no-fallbacks]]`: only risks grounded in actual surface analysis,
 * `mcp__ruflo__agent_spawn` — the per-agent spawn tool the swarm orchestrator uses.
 * `mcp__ruflo__memory_store` — used by researchers in batch C to persist findings to ReasoningBank (per `[[feedback-update-integration-ledger]]` for cross-session memory).
 * The 19 items came from the 2026-05-25 session close-out; provenance traced in §"Cross-references."
+
+## Handover state — 2026-05-25 end-of-session
+
+### Closed during the session (16 of 19 original items)
+
+| ID | Item | Closing commit / artefact |
+|---|---|---|
+| #1 | ADR-0253 §Evidence MODULE.md footnote | `bff2c97` (forks/agentdb) |
+| #2 | GHIB 2-of-5 docs-badge outliers | `df739f6` (audit) — `4def69f00` → skip-by-policy, `4a57be7b8` → pending |
+| #3 | Lockstep skills smoke | `56f925c67` (forks/ruflo) — smoke + 5-dir sync, then `1e3a44d68` corrective revert |
+| #5 | Batch S 9-SHA partial enumeration | `be4e107` — 5 of 9 enumerated; **4 remain anonymous** |
+| #6 | 5 anchor citation refinements | `be4e107` |
+| #7 | 3 version-bump reasoning corrections | `be4e107` (rows split + reasoning rewritten) |
+| #8 | NAPI count fix (52 → 21) | `be4e107` |
+| #9 | 5 ADR-126 superseded-by-adr rows audit | `eb59caa` + `1e0699c` (re-classified as `superseded-by-adr (partial)`) |
+| #10 | ADR-0255 Phase 1 memory_export MCP tool | `adb91ab3d` (forks/ruflo) |
+| #11 | ADR-0256 Phase 4 Option A helpers + smoke | `818091545` (forks/ruflo) + `f93523f5c` (ledger row) |
+| #12 | ADR-129 Phases 1-3 design questions | ADR-0258 (`a172b71`) + ADR-0259 (`f2b13e2`) |
+| #13 | `loadRvf` typo | `0fc2fbb07` (forks/ruflo) |
+| #14 | ADR-0202 lint scope extension | `2dd1d1c` |
+| #15 | `--force` auto-detection in publish script | `e91a193` |
+| #16 | smoke-init-bundle-invariants 17 violations | `cfc6ebca5` (forks/ruflo) |
+| #17 | prime-radiant TS errors → ADR-0260 | `69a184d` + `f580f7ec0` (forks/ruflo) |
+
+### Still outstanding — work for next session
+
+**HIGH priority (real bug in shipped code)**:
+
+- **ADR-126 Phase 1 namespace fix** (originally from session item #9; documented as follow-up in ledger row 168 + `1e0699c` commit message). Two-site fix:
+  - `forks/ruflo/plugins/ruflo-neural-trader/skills/trader-train/SKILL.md:28` — currently writes to undeclared `trading-models` namespace; upstream `8d9e20f0c` renames to `trading-analysis`
+  - `forks/ruflo/plugins/ruflo-neural-trader/scripts/smoke.sh` step 8 — currently asserts 4 namespaces, should be 5
+  - Cherry-pick `8d9e20f0c` from `ruvnet/ruflo` OR hand-port the namespace rename if conflicts
+  - Ledger row 168 disposition flips from `superseded-by-adr (partial)` → `superseded-by-adr (partial-with-namespace-fix-picked)` once landed
+
+**MEDIUM priority (substantive features still deferred)**:
+
+- **4 ADR-126 partial-supersedes — substantive feature work deferred**:
+  - Phase 2 (`d9bd4e6ad`) — ADR-125 memory lifecycle integration: `expiresAt`, `memory_delete`, `MemoryConsolidator` in trader-signal + trader-backtest SKILL.md
+  - Phase 3 (`9c075a3c3`) — Sublinear CG portfolio adapter + new `trader-portfolio-cg/` skill
+  - Phase 4 (`48cb0a7ee`) — Ed25519-signed backtest artifacts + new `src/signed-artifact.*` plugin code
+  - Phase 6 (`11c1ad974`) — PageRank feature attribution + new `trader-explain/` skill + `src/signed-attribution.*`
+  - Each is its own substantial pick or fork-native re-implementation ADR. Trigger: when neural-trader plugin reaches a stage where these features are user-requested or block another ADR.
+
+**LOW priority (cosmetic / docs)**:
+
+- **6 init-validator cosmetic anomalies** (from `docs/audits/2026-05-25-init-validation-semantic-modelling.md`):
+  1. `--with-embedding` (singular) alias missing — only `--with-embeddings` works
+  2. Init banner reports "89 agents" but `.claude/agents/` ships 30 (substrate set; 89 with `--all-agents`)
+  3. `memory store` logs `[INFO] Storing in undefined/<key>` — namespace propagation log bug (stored value lands in `default` correctly; only log line is wrong)
+  4. `memory stats` reports `Backend: SQLite + HNSW` but RVF is the actual write path
+  5. `memory stats` reports `HNSW Index: not active` — may be legitimate with 1 entry; needs >32-entry re-check
+  6. `memory stats` shows empty `Total Storage` and `Location` fields
+
+- **`statusline-hook.sh` init regression** flagged by B-3: fork's `helpers-generator.ts:1491` writes it when `components.statusline` is enabled, but reference `--full` install didn't produce it. Possible config defaults gap; verify which path is correct.
+
+- **Update plan #3 in `docs/plans/2026-05-25-semantic-modelling-ruflo-migration.md`** so Step-5 references `memory init` (not `memory stats`) as the SQLite-recreate trigger. Currently amended in §"Plan amendment", but the main body still has the original text.
+
+### Deferred with explicit trigger condition (not "next sync")
+
+| Item | Trigger to unblock |
+|---|---|
+| **#4 `87f2a26cd` agent-browser lockfile pick** | Fix v3/ pnpm-workspace specifier resolution for `@claude-flow/shared@<patch>`, then `pnpm install --lockfile-only --filter @claude-flow/browser` against working baseline. Currently blocked by 3 layered failures: rerere-poisoned cache + 29 unrelated conflict regions + broken workspace protocol. |
+| **4 unenumerated Batch S SHAs** (ledger row 165) | Recovery of background agent transcript `task abe01952896821c2a` OR re-derivation from upstream commit log filtered by `cherry picked from commit` trailers. The 5 enumerated (`87f2a26cd` `338f7320a` `62aa08f49` `cc007d952` `0ddf1dfa4`) leave 4 unaccounted. |
+| **Migration plan §Risks #1**: `.claude/projects/-Users-henrik-source-hm-semantic-modelling/project-constraints.md` | Trace its writer (not init's surface). If found a writer in current code, classify (active); if not, preserve as historical. |
+| **Migration plan §Risks #3**: 10 historic `.claude-flow/sessions/session-*.json` + `undefined.json` | Confirm no session-history reader exists in CLI source. If confirmed, classify as historical-unread (eligible for deletion). The `undefined.json` filename suggests a past writer bug. |
+| **Migration plan §Risks #4**: `~/.claude/projects/-Users-henrik-source-hm-main2-semantic-modelling/memory/` symlink | The "main2" path no longer corresponds to active project root. Under `memory_import_claude --allProjects` the 15 files DO get imported (deduped by content hash against the current 88). Trigger: decision on whether to delete the symlink (would prevent the dedup-into-current-store flow) OR retain for cross-history searchability. |
+| **5 "stale-investigate" files preserved in semantic-modelling earlier audit** (`docs/audits/2026-05-25-stale-install-cleanup-execution.md`) | Per-file resolution: `.claude-flow/config.yaml` (ADR-0069 fallback), `.claude/helpers/{hook-handler.cjs, package.json, README.md, statusline-hook.sh}`. Note: opda audit later classified the same 4 helpers as stale-safe (older-ruflo branded). Apply same resolution to SM if user accepts the same evidence. |
+
+### Skipped by policy — not coming in (recorded for the no-resurrection rule)
+
+| Item | Policy anchor |
+|---|---|
+| **Upstream ADR-130 graph intelligence backend** | ADR-0254 §Decision: `defer` with `re-implement-when-revisited` + 7-item re-implementation criteria (must route via `staging-substrate.ts`, must use mpnet-768, must consolidate with `causal_edges`, must satisfy ADR-0202 lint, must not be fire-and-forget, witness chain mapped to archivist audit chain). Trigger: explicit decision to revisit. |
+| **4 of 15 new upstream commits**: `e1bd1f072` `bf0f505c9` `c9ec2b607` `1af3b1875` `6bcee19ad` | skip-mechanical — version bumps + merge commits (Batch J standing rule) |
+| **3 of 15 ADR-130 group**: `10086c4bb` `16810c3e2` `542481053` | Defer with parent ADR-130 |
+| **2 of 15 docs/branding**: `899163cb8` (benchmarks gist link), `619b263aa` (publishing policy alpha→stable) | skip-by-policy (ADR-0143 brand + Verdaccio-not-stable-cadence) |
+| **`cfc341706` memory NULL status fix** | skip-by-policy — fork doesn't have the affected files (`memory-bridge.ts`, `memory-initializer.ts`) per ADR-0177 substrate restoration |
+
+### Memory + project state at handover
+
+- `@sparkleideas/cli@latest` = `3.7.0-alpha.10-patch.316` on Verdaccio
+- `@sparkleideas/ruflo@latest` = `3.1.0-alpha.14-patch.292` on Verdaccio
+- ADR-0094 streak: ignore per memory `[[feedback-no-streak-timegates]]`
+- All ruflo-patch commits today pushed (last push: `fa1ac8e`)
+- All forks/ruflo commits today pushed (last push: `f580f7ec0`)
+- forks/agentdb up-to-date (pushed by pipeline)
+- opda + hm: cleanups committed locally (NOT pushed; user-owned repos)
+
+### Snapshots retained (not on session-cleanup path)
+
+- `/tmp/dual-stale-cleanup-snap-20260525T164505Z/` (8.1 GB; opda + hm pre-stale-cleanup)
+- `/tmp/semantic-modelling-snapshot-20260525-164156/` (12 MB; pre-migration)
+- `/tmp/semantic-modelling-stale-snap-20260525T155129Z/` (8.1 GB)
+- `/tmp/ruflo-clean-20260525T163802Z/` (clean reference init)
+- `/tmp/ruflo-init-reference-20260525T155103Z/` (earlier clean reference)
+
+Delete when forensic value exhausted.
