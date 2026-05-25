@@ -90,15 +90,17 @@
 # the assertion-block scope near the bottom of this file).
 set -o pipefail
 
-# ADR-0243 / ADR-0233 carry-forward: stress test is gated until the 14× RSS
-# signal at N=100 is disambiguated. To run it explicitly:
-#   STRESS_INVESTIGATION_PENDING=0 bash scripts/test-stress-runtime.sh
-if [ "${STRESS_INVESTIGATION_PENDING:-1}" != "0" ]; then
-  echo "SKIPPED: scripts/test-stress-runtime.sh is gated as investigation-pending."
-  echo "  See docs/plans/2026-05-25-post-batch5-followup-execution-plan.md row A."
-  echo "  Set STRESS_INVESTIGATION_PENDING=0 to run."
-  exit 0
-fi
+# ADR-0243 / ADR-0233 carry-forward: investigation 2026-05-25 disambiguated
+# the 14× RSS signal at N=100 as warmup allocation (lazy-loaded ONNX
+# embedding model + AgentDB controllers + RVF native + hooks intelligence
+# pipeline + agent pool), NOT a CT-J runtime leak. The harness was also
+# tripping a parent-side `MaxListenersExceededWarning: 11 drain listeners`
+# from a per-write `child.stdin.once('drain', ...)` that never wired
+# proper backpressure. Both issues fixed; verdict methodology now uses
+# steady-state samples (post-warmup, ex-final-post-drain). See
+# `docs/research/2026-05-25-stress-rss-investigation.md`.
+#
+# Opt-out for explicit skips remains via RUFLO_FAST_TESTS=1 below.
 
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 
