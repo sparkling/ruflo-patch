@@ -49,6 +49,7 @@ Each npm script includes all previous steps:
 | Pipeline Tests (4 files) | `tests/pipeline/` | `node scripts/test-runner.mjs tests/pipeline` |
 | Unit Tests (8 files) | `tests/unit/` | `node scripts/test-runner.mjs tests/unit` |
 | Acceptance | — | `bash scripts/test-acceptance.sh` (requires published packages) |
+| Stress (ADR-0243, standalone, gated) | — | `STRESS_INVESTIGATION_PENDING=0 bash scripts/test-stress-runtime.sh` (default-skip while [[ADR-0233]] 14× RSS signal is under investigation) |
 
 ## Anti-patterns -- DO NOT
 
