@@ -34,7 +34,11 @@ import { readFileSync, existsSync } from 'node:fs';
 const FORK_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts';
 const FORK_CRDT_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/crdt-types.ts';
 const FORK_CRDT_DIST = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/dist/src/mcp-tools/crdt-types.js';
-const AGENT_FILE_CLI = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/.claude/agents/consensus/crdt-synchronizer.md';
+// ADR-0257 follow-on (2026-05-25): `cfc6ebca5` deleted the CLI init-template
+// copy per ADR-128. Wire-in (allowed-tools + ADR-0121 runtime example) ported
+// into the plugin canonical at the same time. AGENT_FILE_MCP below still
+// points at the MCP init copy (not touched by ADR-128's CLI cleanup).
+const AGENT_FILE_CLI = '/Users/henrik/source/forks/ruflo/plugins/ruflo-hive-mind/agents/crdt-synchronizer.md';
 const AGENT_FILE_MCP = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/mcp/.claude/agents/consensus/crdt-synchronizer.md';
 // ADR-0185 Waves 3+4 — strategy-dispatch literals moved from cli to agentdb.
 const AGENTDB_CONSENSUS_DISPATCHER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus.ts';

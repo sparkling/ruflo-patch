@@ -350,9 +350,26 @@ Per `[[feedback-skip-accepted-as-squelch]]`: each is its own substantial pick or
 
 ### State after same-day follow-up (status flip → implemented)
 
-- `forks/ruflo/main` head: `ea26d9029` (5 new commits since `f580f7ec0`: `7558f967b` cherry-pick + `9fd76635d` + `e8f10fa7d` + `999346808` + `ea26d9029`)
+- `forks/ruflo/main` head: `b35b85a69` (8 new fork commits since `f580f7ec0`: HIGH + LOW closures + 3 release-pipeline remediation commits below)
 - All HIGH + LOW items closed; MEDIUM + DEFERRED + SKIPPED retain their explicit triggers per `[[feedback-skip-accepted-as-squelch]]`
 - Verdaccio versions update with the next `npm run release` (pipeline bumps wrapper + cli together)
+
+### Release-pipeline remediation commits (2026-05-25 follow-up)
+
+The first three release attempts surfaced three issues; each was diagnosed and fixed:
+
+| Release attempt | Failure phase | Root cause | Fix |
+|---|---|---|---|
+| 1 | `undiscriminating-catches` lint | My `999346808` patch added `try { statSync } catch { /* file may not exist */ }` — lint correctly flagged comment-only catch | `9e5bc9a78`: refactored to `if (existsSync) { statSync }` |
+| 2 | `test-ci` (TS compile) | `feedback-pipeline-shared-skip-on-dist-clear` — shared dist wiped but tsbuildinfo not invalidated; consumers got missing `getValidatedConfig` from `@sparkleideas/shared/core` | Re-run with `--force` (documented pattern) |
+| 3 | `test-ci` (unit tests) | Prior session's `cfc6ebca5` (item #16 closure 2026-05-25 **16:29:30**) deleted CLI init copies per ADR-128 but the deleted `gossip-coordinator.md` + `crdt-synchronizer.md` carried real ADR-0120/0121 wire-in (allowed-tools + strategy example) that was never ported into the plugin canonical. `tests/unit/adr0120-gossip-consensus.test.mjs` + `adr0121-crdt-consensus.test.mjs` correctly caught the regression. Prior session's last release (`96921762e` patch.316 at **16:00:47**) predated `cfc6ebca5`, so this release attempt is the first to run with that state. | `f615c0508`: port wire-in additively into plugin canonicals; test paths repointed (this commit) |
+| (also surfaced) | n/a — runtime bug | Clean-init Stop hook fires `auto-memory-hook.mjs sync`; ADR-0083 Wave 2 removed `sync` from the helper. Drift never caught because settings-generator caller wasn't updated when bundled-static helper was retired (per `helpers-generator.ts:990-995` comment, ADR-0235 Batch 1 exposed it; nobody surfaced the settings-generator side). | `b35b85a69`: remove Stop hook entirely (ADR-0083 Wave 2 made the drain redundant; better than repointing to `status` which would spam banner output on every exit) |
+
+Methodology lessons for ADR-0257-class work going forward:
+
+* **Run `npm run test:unit` BEFORE `npm run release`.** Per `tests/CLAUDE.md`. Would have caught the cfc6ebca5/wire-in regression in 30 seconds instead of through the full release cascade.
+* **Audit `ADR-128`-style canonical-source moves for wire-in content.** When a file is deleted because a different copy is canonical, verify the canonical copy contains everything the deleted file had — especially frontmatter keys like `allowed-tools` that constitute a wired MCP-tool surface.
+* **`set -o pipefail` in any pipe chain that runs the release.** The first release attempt reported exit 0 despite ERROR-aborting because of `npm run release \| tee \| tail` masking npm's exit code.
 
 ### Snapshots retained (not on session-cleanup path)
 
