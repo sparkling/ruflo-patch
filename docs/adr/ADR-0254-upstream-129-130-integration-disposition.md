@@ -226,3 +226,40 @@ The devil's advocate will use these. All sourced from the research findings.
 * Memory `[[feedback-no-fallbacks]]` — corpus rule informing the "carve-out not silent fallback" framing for both dispositions.
 * Memory `[[feedback-best-effort-must-rethrow-fatals]]` — corpus rule informing ADR-130 re-implementation criteria #6.
 * Memory `[[feedback-corpus-evidence-before-feature-work]]` — the rule grounding this ADR in the two research findings rather than first-principles reasoning.
+
+## Amendment 2026-05-25 — Council Devil's-Advocate revisions
+
+Devil's-Advocate critique committed as `11e9ffc` (`docs/audits/2026-05-25-adr0254-devils-advocate.md`). Verdict: `revise-with-specific-changes` — disposition (partial-pick ADR-129 + defer ADR-130) survives unchanged; two factual misreadings in the reasoning corrected here. Both verified against current fork state before applying.
+
+### Revision 1 — OpenRouter gating condition is RESOLVED, not pending
+
+The original ADR-129 gating list named four design questions. **Question #1 (OpenRouter routing) is already resolved.** While R-A authored its finding (before fork commit `1c31b3ecc` landed), the picks-implementer agent ran in parallel and landed `1c31b3ecc fix(mcp): #2042 — agent_execute routes through v3 provider system (Anthropic / OpenRouter / Ollama)` in `forks/ruflo` during the council session. R-A's "OpenRouter routing missing in fork" claim was true at time-of-grep but false at time-of-disposition.
+
+Net effect on disposition: the ADR-129 Phases 1-3 gating list is **3 questions, not 4**:
+1. ~~OpenRouter routing — RESOLVED via fork commit `1c31b3ecc`.~~
+2. Persistence-layer threading for 16 new MCP tools (`ensureLive`, `snapshotAgent`, `store.json` semantics) — **STILL GATING**.
+3. `SAFE_MCP_TOOLS` allowlist audit against fork's MCP registry — **STILL GATING**.
+4. `optional-modules.d.ts:295` `loadRvf` signature typo — **STILL GATING** (trivial; can land standalone).
+
+### Revision 2 — ADR-0202 lint scope correctly restated
+
+The original "Negative" / "Re-implementation criteria #3" framing cited ADR-0202's `lint-no-daemon-lock-cache.mjs` as forbidding ADR-130's module-scope `_db` cache in `graph-edge-writer.ts`. **The lint script does not cover that file.** Verified: `scripts/lint-no-daemon-lock-cache.mjs` hard-targets `worker-daemon.ts` only via `TARGET_FILE = 'v3/@claude-flow/cli/src/services/worker-daemon.ts'` (line 34-36) and a single `readFileSync(TARGET_FILE, ...)` (line 58). It cannot fire on `graph-edge-writer.ts`.
+
+Net effect on ADR-130 disposition: the ADR-0202 conflict is **policy-level**, not **automation-enforced**. Re-stated re-implementation criteria #3:
+
+> 3. **No module-scope substrate cache** — ADR-0202 policy applies (no `let _db = null` at module scope, no equivalent path cache). The existing `lint-no-daemon-lock-cache.mjs` does NOT enforce this for non-`worker-daemon.ts` paths; re-implementation either extends the lint to cover the new file(s) or accepts policy-only enforcement.
+
+### Revision 3 — Asymmetric-blocker distinction named
+
+The DA observed that "OpenRouter missing" (ADR-129, treated as gated) and "MEMORY_SCHEMA_V3 missing" (ADR-130, treated as blocking) are both "missing scaffolding" but were dispositioned differently without explicit justification.
+
+The asymmetry is real and load-bearing. OpenRouter is a **wire-up** — one provider dispatch shape extending a function. `MEMORY_SCHEMA_V3` is an **8-table host schema** whose RVF-primary substrate ([[ADR-0177]]) the fork explicitly rejected. Wire-ups are routinely backported; substrate schemas are not. This ADR's disposition rests on that distinction, made explicit here.
+
+### Net disposition (unchanged)
+
+* **ADR-129**: `pick-partial` — Phase 4 (plugin bridge) lands as a low-risk pilot; Phases 1-3 gated on **three** (not four) remaining design questions.
+* **ADR-130**: `defer` with `re-implement-when-revisited` — 7-item re-implementation criteria stand, with item #3 reworded per Revision 2.
+
+### Council closed
+
+Research (R-A `3e5cacf`, R-B `6a5ab32`) → Queen (`8006eba`) → Devil's-Advocate (`11e9ffc`) → Amendment (this commit). No further iteration; this ADR is at terminal state pending implementation of Phase 4 or future revisit of ADR-130.
