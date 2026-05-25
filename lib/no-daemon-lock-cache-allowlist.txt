@@ -1,0 +1,14 @@
+# scripts/lint-no-daemon-lock-cache.mjs PART 2 allowlist
+#
+# Format: `<relative-path> :: <whitespace-collapsed decl line>` (one per line).
+# CONTENT-KEYED (not line-keyed): an entry is matched by the decl text itself,
+# so it survives line shifts from edits elsewhere in the file. An entry only
+# goes stale when THAT decl's own code changes — re-review then.
+#
+# Add an entry ONLY if the module-scope cache is genuinely safe AND a
+# per-op acquire/release refactor is not appropriate. Per ADR-0202 + ADR-0257
+# item #14, default disposition for any new entry is REJECT — the catch is
+# meant to surface real substrate-cache regressions (ADR-130 graph-edge-writer
+# pattern was the originating motivating case).
+#
+# Empty at ADR-0257 item #14 acceptance time (0 entries).

@@ -1,21 +1,25 @@
 #!/usr/bin/env node
 // scripts/lint-no-daemon-lock-cache.mjs — ADR-0202 structural lint rule.
 //
-// Asserts that `worker-daemon.ts` does NOT hold a module-scoped
-// memory-router backend across worker ticks. Specifically: every
-// import of `memory-router.js` inside `worker-daemon.ts` must occur
-// inside an `async` function body (not at module scope), and no
-// module-scoped `let`/`const`/`var` captures a value from
-// `memory-router`'s exports.
+// Two-part rule (ADR-0257 item #14 extended the original scope):
 //
-// This prevents accidental re-introduction of the ADR-0202 anti-pattern:
-// a module-level `_storage` assignment from a memory-router import that
-// holds the RVF flock for the daemon's entire lifetime instead of
-// releasing it per-tick.
+//   PART 1 — `worker-daemon.ts` specifically:
+//     a. No module-scope `memory-router` reference (import or variable).
+//     b. The daemon must call `setRouterPersistent(false)` so the per-op
+//        release guard is armed.
 //
-// The rule is intentionally conservative — it flags any module-scoped
-// variable whose initialiser contains a memory-router import. False
-// positives are allowed list-able (see ALLOWLIST below).
+//   PART 2 — Module-scope substrate-handle cache ban across
+//     `v3/@claude-flow/cli/src/services/` and `v3/@claude-flow/cli/src/mcp-tools/`:
+//     No `let|const|var _<handle> = ...` at module scope where `<handle>`
+//     names a substrate handle (`_db`, `_dbPath`, `_database`, `_storage`,
+//     `_backend`, `_native`, `_sql`, `_sqlite`, `_rvf`, `_handle`).
+//     This catches the ADR-130 `graph-edge-writer.ts:28-29` shape Devil's
+//     Advocate flagged in ADR-0254 Revision 2 — a long-lived module-level
+//     SQL.js handle that would hold a substrate lock for the host process's
+//     lifetime instead of releasing per-op.
+//
+// Allowlist (content-keyed) at `lib/no-daemon-lock-cache-allowlist.txt` for
+// rare legitimate cases. Add entries only with a rationale comment.
 //
 // Exit codes:
 //   0  — no violations found
@@ -23,11 +27,14 @@
 //
 // No external deps; Node 20+ only.
 
-import { readFileSync, existsSync } from 'fs';
-import { resolve, dirname } from 'path';
+import { readFileSync, readdirSync, existsSync } from 'fs';
+import { resolve, dirname, relative, join } from 'path';
 import { fileURLToPath } from 'url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+const PROJECT_DIR = resolve(__dirname, '..');
+const ALLOWLIST_FILE = join(PROJECT_DIR, 'lib', 'no-daemon-lock-cache-allowlist.txt');
+
 // Forks live at /Users/henrik/source/forks/ (sibling of ruflo-patch).
 // Fall back to a relative path so CI can override via FORK_ROOT env var.
 const FORK_ROOT = process.env['FORK_ROOT'] || resolve(__dirname, '../../forks/ruflo');
@@ -36,10 +43,40 @@ const TARGET_FILE = resolve(
   'v3/@claude-flow/cli/src/services/worker-daemon.ts',
 );
 
-// Allowlist entries: `<relative-path>:<line>` — add only with a rationale.
-const ALLOWLIST = new Set([
-  // None at ADR-0202 acceptance time.
+// PART 2 scan roots — directories that may NOT hold module-scope substrate
+// handle caches. The `memory/` directory is intentionally excluded because
+// `memory-router.ts:191 let _storage = null` is the ADR-0202-sanctioned CLI
+// hook cache (per-process, kernel-auto-released on exit).
+const PART2_SCAN_DIRS = [
+  resolve(FORK_ROOT, 'v3/@claude-flow/cli/src/services'),
+  resolve(FORK_ROOT, 'v3/@claude-flow/cli/src/mcp-tools'),
+];
+
+// FIXTURE_FILE: optional extra single file to scan (used by the self-test
+// to confirm a synthetic violation in a non-fork file is still caught).
+const FIXTURE_FILE = process.env['LINT_FIXTURE_FILE'] || null;
+
+// Substrate-handle names. A module-scope `let|const|var _NAME = ...`
+// matching this list is presumed to be a substrate cache (sqlite/sql.js
+// handle, RVF backend, native store handle, path-pair, etc.).
+//
+// NOT covered (intentionally): promise caches like `_routerP` /
+// `_reasoningBankP` — these are dynamic-import memoisation, not substrate
+// handles, and don't hold locks.
+const SUBSTRATE_HANDLE_NAMES = new Set([
+  '_db',
+  '_dbPath',
+  '_database',
+  '_storage',
+  '_backend',
+  '_native',
+  '_sql',
+  '_sqlite',
+  '_rvf',
+  '_handle',
 ]);
+
+const SKIP_FILE_RE = /\.test\.(ts|mjs|js)$|\.spec\.(ts|mjs|js)$|\.d\.ts$/;
 
 function fail(msg) {
   process.stderr.write(`[FAIL] lint-no-daemon-lock-cache: ${msg}\n`);
@@ -50,87 +87,194 @@ function info(msg) {
   process.stdout.write(`[INFO] lint-no-daemon-lock-cache: ${msg}\n`);
 }
 
-if (!existsSync(TARGET_FILE)) {
-  fail(`Target file not found: ${TARGET_FILE}`);
-  process.exit(1);
+function loadAllowlist() {
+  if (!existsSync(ALLOWLIST_FILE)) return new Set();
+  const src = readFileSync(ALLOWLIST_FILE, 'utf8');
+  const out = new Set();
+  for (const line of src.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    out.add(trimmed);
+  }
+  return out;
 }
 
-const src = readFileSync(TARGET_FILE, 'utf8');
-const lines = src.split('\n');
+function* walkDir(rootDir) {
+  if (!existsSync(rootDir)) return;
+  const entries = readdirSync(rootDir, { withFileTypes: true });
+  for (const e of entries) {
+    const full = join(rootDir, e.name);
+    if (e.isDirectory()) {
+      // Don't recurse into subdirs by default — scope is the directory's
+      // own .ts files, not a recursive tree walk. (services/ and mcp-tools/
+      // are flat directories in the fork.)
+      continue;
+    }
+    if (e.isFile()) {
+      if (SKIP_FILE_RE.test(e.name)) continue;
+      if (/\.(ts|mjs|js)$/.test(e.name)) yield full;
+    }
+  }
+}
 
-let violations = 0;
+// PART 1: worker-daemon.ts-specific checks.
+function lintWorkerDaemon() {
+  if (!existsSync(TARGET_FILE)) {
+    fail(`Target file not found: ${TARGET_FILE}`);
+    return 1;
+  }
 
-// Rule 1: memory-router must NOT be imported at module scope.
-// A module-scope import is one that appears BEFORE any `class` or
-// `function` keyword at column 0 (i.e. outside any function body).
-// Heuristic: we scan for lines matching the import pattern and check
-// whether they are inside a function/class by counting brace depth.
-let braceDepth = 0;
-let inClass = false;
-let inFunction = false;
+  const src = readFileSync(TARGET_FILE, 'utf8');
+  const lines = src.split('\n');
 
-for (let i = 0; i < lines.length; i++) {
-  const line = lines[i];
-  const lineNum = i + 1;
-  const rel = `v3/@claude-flow/cli/src/services/worker-daemon.ts:${lineNum}`;
+  let violations = 0;
 
-  // Track brace depth to determine scope.
-  const opens = (line.match(/\{/g) || []).length;
-  const closes = (line.match(/\}/g) || []).length;
+  // Rule 1: memory-router must NOT be imported at module scope.
+  // Heuristic: track brace depth, flag any line containing `memory-router`
+  // while at depth 0, except dynamic-import expressions that are already
+  // covered by the function-body scope (they'd be inside a function).
+  let braceDepth = 0;
 
-  const isModuleScope = braceDepth === 0;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const lineNum = i + 1;
+    const rel = `v3/@claude-flow/cli/src/services/worker-daemon.ts:${lineNum}`;
 
-  // Check for module-scope memory-router references.
-  if (isModuleScope && line.includes('memory-router')) {
-    // Dynamic imports inside async functions are fine — but at depth 0
-    // there IS no enclosing function, so this is a real violation.
-    if (!ALLOWLIST.has(rel)) {
+    const opens = (line.match(/\{/g) || []).length;
+    const closes = (line.match(/\}/g) || []).length;
+
+    const isModuleScope = braceDepth === 0;
+
+    if (isModuleScope && line.includes('memory-router')) {
       fail(`Module-scope memory-router reference at ${rel}: ${line.trim()}`);
       violations++;
     }
-  }
 
-  // Check for module-scope variable declarations that might capture
-  // memory-router exports (e.g. `const mi = import('...memory-router...')`).
-  if (isModuleScope) {
-    const varDecl = /^(?:let|const|var)\s+\w+\s*=/.test(line.trim());
-    if (varDecl && line.includes('memory-router')) {
-      if (!ALLOWLIST.has(rel)) {
+    if (isModuleScope) {
+      const varDecl = /^(?:let|const|var)\s+\w+\s*=/.test(line.trim());
+      if (varDecl && line.includes('memory-router')) {
         fail(`Module-scope variable capturing memory-router at ${rel}: ${line.trim()}`);
         violations++;
       }
     }
+
+    braceDepth += opens - closes;
+    if (braceDepth < 0) braceDepth = 0;
   }
 
-  braceDepth += opens - closes;
-  if (braceDepth < 0) braceDepth = 0; // guard against template literals
-}
-
-// Rule 2: Confirm the ADR-0202 guard call is present.
-// The daemon's start() must call setRouterPersistent(false) to arm the
-// per-op release. If this call disappears, the daemon silently reverts
-// to the lifetime-hold anti-pattern.
-if (!src.includes('setRouterPersistent')) {
-  fail(
-    `worker-daemon.ts does not call setRouterPersistent — ADR-0202 ` +
-    `per-op release guard is missing. Add setRouterPersistent(false) ` +
-    `in the daemon start() method.`,
-  );
-  violations++;
-} else {
-  // Verify it's called with false (not true, which would be a no-op).
-  if (!src.includes('setRouterPersistent(false)')) {
+  // Rule 2: ADR-0202 guard call must be present.
+  if (!src.includes('setRouterPersistent')) {
+    fail(
+      `worker-daemon.ts does not call setRouterPersistent — ADR-0202 ` +
+        `per-op release guard is missing. Add setRouterPersistent(false) ` +
+        `in the daemon start() method.`,
+    );
+    violations++;
+  } else if (!src.includes('setRouterPersistent(false)')) {
     fail(
       `worker-daemon.ts calls setRouterPersistent but not with false — ` +
-      `check the argument; the daemon requires setRouterPersistent(false).`,
+        `check the argument; the daemon requires setRouterPersistent(false).`,
     );
     violations++;
   }
+
+  return violations;
 }
 
-if (violations === 0) {
-  info(`OK — worker-daemon.ts holds no module-scoped memory-router backend (ADR-0202).`);
-  process.exit(0);
-} else {
-  process.exit(1);
+// PART 2: module-scope substrate-handle cache scan across services + mcp-tools.
+function lintModuleScopeSubstrateCache(allowlist) {
+  let violations = 0;
+  let filesScanned = 0;
+
+  const files = [];
+  for (const dir of PART2_SCAN_DIRS) {
+    if (!existsSync(dir)) {
+      info(`scan dir missing: ${dir} — skipping`);
+      continue;
+    }
+    for (const f of walkDir(dir)) files.push(f);
+  }
+  if (FIXTURE_FILE && existsSync(FIXTURE_FILE)) {
+    files.push(FIXTURE_FILE);
+  }
+
+  // Module-scope decl pattern: `let|const|var _NAME[: TYPE] = ...` at the
+  // start of a line (allowing leading whitespace for indented re-exports,
+  // though we expect column-0 for true module scope).
+  //
+  // We track brace depth to confirm the decl is at module scope (depth 0).
+  // Multi-line declarations are handled by anchoring on the line containing
+  // the `let|const|var _NAME` keyword.
+  const DECL_RE = /^\s*(?:export\s+)?(?:let|const|var)\s+(_\w+)\s*(?::[^=]+)?=/;
+
+  for (const file of files) {
+    filesScanned++;
+    const src = readFileSync(file, 'utf8');
+    const lines = src.split('\n');
+
+    let braceDepth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNum = i + 1;
+
+      // Strip line + block comments for the bracedepth count.
+      // Brace count happens BEFORE the decl check so depth reflects the
+      // depth AT the start of this line.
+      const isModuleScope = braceDepth === 0;
+
+      if (isModuleScope) {
+        const m = DECL_RE.exec(line);
+        if (m) {
+          const name = m[1];
+          if (SUBSTRATE_HANDLE_NAMES.has(name)) {
+            const rel = relative(PROJECT_DIR, file);
+            const signature = line.replace(/\s+/g, ' ').trim();
+            const key = `${rel} :: ${signature}`;
+            if (!allowlist.has(key)) {
+              fail(
+                `Module-scope substrate-handle cache at ${rel}:${lineNum}: ${signature}\n` +
+                  `        Substrate handle '${name}' must NOT be cached at module scope ` +
+                  `(ADR-0202). Move into per-op acquire/release inside the handler ` +
+                  `function. If this is genuinely safe (e.g. non-substrate state), ` +
+                  `add to lib/no-daemon-lock-cache-allowlist.txt with rationale.`,
+              );
+              violations++;
+            }
+          }
+        }
+      }
+
+      // Update brace depth after the check (decl line may itself open a brace
+      // for a function init — we want this line classified at the entry depth).
+      const opens = (line.match(/\{/g) || []).length;
+      const closes = (line.match(/\}/g) || []).length;
+      braceDepth += opens - closes;
+      if (braceDepth < 0) braceDepth = 0;
+    }
+  }
+
+  return { violations, filesScanned };
 }
+
+function main() {
+  const allowlist = loadAllowlist();
+
+  const part1Violations = lintWorkerDaemon();
+  const { violations: part2Violations, filesScanned } =
+    lintModuleScopeSubstrateCache(allowlist);
+
+  const total = part1Violations + part2Violations;
+
+  if (total === 0) {
+    info(
+      `OK — worker-daemon.ts holds no module-scoped memory-router backend (ADR-0202); ` +
+        `${filesScanned} files scanned in services/ + mcp-tools/ for module-scope ` +
+        `substrate-handle caches (none found).`,
+    );
+    process.exit(0);
+  } else {
+    process.exit(1);
+  }
+}
+
+main();
