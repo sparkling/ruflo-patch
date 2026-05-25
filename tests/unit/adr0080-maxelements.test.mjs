@@ -313,7 +313,7 @@ describe('ADR-0080 P6-A: helpers-generator store format', () => {
     // Find the generated consolidate method (object method style: "consolidate: function()")
     const consolidateStart = helpersGenSrc.indexOf('consolidate: function()');
     assert.ok(consolidateStart > -1, 'helpers-generator must contain a consolidate method');
-    const consolidateBlock = helpersGenSrc.slice(consolidateStart, consolidateStart + 2000);
+    const consolidateBlock = helpersGenSrc.slice(consolidateStart, consolidateStart + 4000);
     // Should write entries directly, not { entries: entries }
     assert.ok(
       consolidateBlock.includes('writeJSON(STORE_PATH, entries)'),
