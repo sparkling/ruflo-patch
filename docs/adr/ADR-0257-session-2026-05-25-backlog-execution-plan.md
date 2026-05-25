@@ -306,6 +306,19 @@ Per `[[feedback-no-fallbacks]]`: only risks grounded in actual surface analysis,
 | LOW | `statusline-hook.sh` init regression | `ea26d9029` (forks/ruflo) — `executor.ts:writeHelpers()` now writes `statusline.cjs` + `statusline-hook.sh` when `options.components.statusline` is enabled (mirrors `helpers-generator.ts:1489-1492`). |
 | LOW | Plan #3 main body `memory init` reference | `(ruflo-patch commit, this batch)` — added explicit Step 0 to invoke `memory init` for substrate-boot before the Step 5 verifies; Step 2 verify retitled to reference Step 5's `memory init`. |
 
+### ADR-129 Phases 1-3 — DEFERRED with concrete trigger pointing at ADR-0258 + ADR-0259 (2026-05-25 follow-up)
+
+User-pressure trigger from item #12 fired ("go through deferred one by one"). Attempted verbatim cherry-pick of `47a7825b0` and aborted at first conflict — confirmed via direct file inspection that the fork's `wasm-agent-tools.ts` carries an architecturally distinct cross-process persistence layer (`<projectRoot>/.claude-flow/wasm-agents/store.json` + `withStoreLock` + `snapshotAgent` + `ensureLive`) that upstream's PR has no awareness of. Verbatim adoption would regress the cross-process state model.
+
+Two existing ADRs already document the required reconciliation:
+
+- **ADR-0258** (proposed): persistence-threading decisions for the 16 new MCP tools — must thread each through fork's `withStoreLock` pattern OR document a carve-out before the tool ships
+- **ADR-0259** (proposed): SAFE_MCP_TOOLS allowlist alignment — upstream's 30-name allowlist uses underscored naming that doesn't match fork's hyphen convention (`hooks_post-task` vs upstream's `hooks_post_task`); also includes tools fork doesn't have AND misses fork-only tools
+
+**Concrete trigger** (corrects ADR-0257 #12's "external pressure" framing): ADR-0258 AND ADR-0259 must both flip from `proposed` → `accepted` (with implementation completed) before ADR-129 Phases 1-3 can land. The pick is gated on those two ADRs reaching `implemented` status, not on user pressure alone — the pressure surfaced the architecture work, which now sits in two named ADRs.
+
+In-session methodology note: my initial ELI15 brief framed Phases 1-3 as "a cherry-pick once design questions are answered." That was wrong: upstream answered the design questions (chose ephemeral for compose; SAFE_MCP_TOOLS exists at line 41), but the fork has a distinct architecture that needs its OWN design decision to reconcile. ADR-0258 + ADR-0259 are exactly that decision; they just hadn't been implemented yet. Caught via abort-and-inspect; documented here.
+
 ### MEDIUM-priority — RESOLVED 2026-05-25 (user accepted all 4)
 
 All 4 ADR-126 partial-supersedes picked as cherry-picks with brand-flip + smoke updates:
