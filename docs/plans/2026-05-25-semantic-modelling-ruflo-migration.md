@@ -243,7 +243,7 @@ mv /Users/henrik/source/hm/semantic-modelling/.swarm/memory.db \
    /Users/henrik/source/hm/semantic-modelling/.swarm/memory.db.corrupt-snapshot-$(date +%Y%m%d)
 ```
 
-**Verify** (after step 5 starts the MCP server):
+**Verify** (after Step 5's `memory init` runs):
 
 ```bash
 sqlite3 -readonly /Users/henrik/source/hm/semantic-modelling/.swarm/memory.db \
@@ -311,6 +311,13 @@ and proceed to Step 5 (the orphan can be removed in cleanup).
 ### Step 5 — verify post-migration health
 
 ```bash
+# 0. Boot the substrate. `memory init` runs MemoryInitializer → AgentDB →
+#    loadSchemas(), which is what recreates the SQLite tables. `memory stats`
+#    does NOT trigger this (it queries the RVF backend directly); the canonical
+#    substrate-boot command is `memory init`.
+npx -y @sparkleideas/ruflo@latest memory init
+# Expected: "[INFO] Memory subsystem initialized" + .swarm/memory.db now has 33 tables.
+
 # 1. Symlinked .claude/memory/ still reachable.
 ls /Users/henrik/.claude/projects/-Users-henrik-source-hm-semantic-modelling/memory/ | wc -l
 # Expected: 88
@@ -319,7 +326,7 @@ ls /Users/henrik/.claude/projects/-Users-henrik-source-hm-semantic-modelling/mem
 ls -la /Users/henrik/source/hm/semantic-modelling/.swarm/memory.rvf
 # Expected: > 0 bytes, today's mtime after server activity.
 
-# 3. SQLite substrate recreated by loadSchemas().
+# 3. SQLite substrate recreated by loadSchemas() (triggered by Step 0).
 sqlite3 -readonly /Users/henrik/source/hm/semantic-modelling/.swarm/memory.db \
   "SELECT name FROM sqlite_master WHERE type='table';" | sort
 # Expected: episodes, skills, skill_embeddings, hierarchical_memory (+ others)

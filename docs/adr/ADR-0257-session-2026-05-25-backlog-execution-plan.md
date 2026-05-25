@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-25
 tags: [session-backlog, execution-plan, swarm-orchestration, integration-ledger, ADR-129, ADR-130]
 supersedes: []
@@ -293,38 +293,29 @@ Per `[[feedback-no-fallbacks]]`: only risks grounded in actual surface analysis,
 | #16 | smoke-init-bundle-invariants 17 violations | `cfc6ebca5` (forks/ruflo) |
 | #17 | prime-radiant TS errors → ADR-0260 | `69a184d` + `f580f7ec0` (forks/ruflo) |
 
-### Still outstanding — work for next session
+### Closed in follow-up session (2026-05-25, same-day)
 
-**HIGH priority (real bug in shipped code)**:
+| ID | Item | Closing commit / artefact |
+|---|---|---|
+| HIGH | ADR-126 Phase 1 namespace fix | `7558f967b` (forks/ruflo) — `git cherry-pick -x 8d9e20f0c`; 2 conflicts resolved (ADR-0001 §"Implementation status" from incoming; `trader-train/SKILL.md` namespace fix from incoming, fork-local `mcp__ruflo__` prefix preserved per ADR-0143). `smoke.sh` step 8 PASSes. Ledger row 168 + appended supersession row capture provenance. |
+| LOW #1 | `--with-embedding` singular alias | `9fd76635d` (forks/ruflo) — `init.ts` declares `with-embedding` option + action handler reads both forms. |
+| LOW #2 | Init banner agent-count "89 vs 30" | SKIP — verified not a bug. Banner uses dynamic `result.summary.agentsCount` (counts `.md` files); `FULL_INIT_OPTIONS.agents.all=true` installs all categories. Audit's "30" likely counted subdirectories, not `.md` files. |
+| LOW #3 | `memory store` `undefined/<key>` log | `e8f10fa7d` (forks/ruflo) — applied `\|\| 'default'` guard in `storeCommand` matching `deleteCommand` pattern. |
+| LOW #4 + #6 | `memory_stats` backend label + populate `totalSize`/`location` | `999346808` (forks/ruflo) — backend `SQLite + HNSW`→`RVF + HNSW` (post-ADR-0177); `statSync` of `.swarm/memory.rvf` populates totalSize + location. |
+| LOW #5 | HNSW Index "not active" | SKIP — diagnostic only, may be legitimate with <32 entries. |
+| LOW | `statusline-hook.sh` init regression | `ea26d9029` (forks/ruflo) — `executor.ts:writeHelpers()` now writes `statusline.cjs` + `statusline-hook.sh` when `options.components.statusline` is enabled (mirrors `helpers-generator.ts:1489-1492`). |
+| LOW | Plan #3 main body `memory init` reference | `(ruflo-patch commit, this batch)` — added explicit Step 0 to invoke `memory init` for substrate-boot before the Step 5 verifies; Step 2 verify retitled to reference Step 5's `memory init`. |
 
-- **ADR-126 Phase 1 namespace fix** (originally from session item #9; documented as follow-up in ledger row 168 + `1e0699c` commit message). Two-site fix:
-  - `forks/ruflo/plugins/ruflo-neural-trader/skills/trader-train/SKILL.md:28` — currently writes to undeclared `trading-models` namespace; upstream `8d9e20f0c` renames to `trading-analysis`
-  - `forks/ruflo/plugins/ruflo-neural-trader/scripts/smoke.sh` step 8 — currently asserts 4 namespaces, should be 5
-  - Cherry-pick `8d9e20f0c` from `ruvnet/ruflo` OR hand-port the namespace rename if conflicts
-  - Ledger row 168 disposition flips from `superseded-by-adr (partial)` → `superseded-by-adr (partial-with-namespace-fix-picked)` once landed
+### Still outstanding — MEDIUM-priority work (explicit-trigger deferrals)
 
-**MEDIUM priority (substantive features still deferred)**:
+Per `[[feedback-skip-accepted-as-squelch]]`: each is its own substantial pick or fork-native re-implementation ADR. Not "next sync" — each has a concrete user-or-blocking trigger.
 
 - **4 ADR-126 partial-supersedes — substantive feature work deferred**:
   - Phase 2 (`d9bd4e6ad`) — ADR-125 memory lifecycle integration: `expiresAt`, `memory_delete`, `MemoryConsolidator` in trader-signal + trader-backtest SKILL.md
   - Phase 3 (`9c075a3c3`) — Sublinear CG portfolio adapter + new `trader-portfolio-cg/` skill
   - Phase 4 (`48cb0a7ee`) — Ed25519-signed backtest artifacts + new `src/signed-artifact.*` plugin code
   - Phase 6 (`11c1ad974`) — PageRank feature attribution + new `trader-explain/` skill + `src/signed-attribution.*`
-  - Each is its own substantial pick or fork-native re-implementation ADR. Trigger: when neural-trader plugin reaches a stage where these features are user-requested or block another ADR.
-
-**LOW priority (cosmetic / docs)**:
-
-- **6 init-validator cosmetic anomalies** (from `docs/audits/2026-05-25-init-validation-semantic-modelling.md`):
-  1. `--with-embedding` (singular) alias missing — only `--with-embeddings` works
-  2. Init banner reports "89 agents" but `.claude/agents/` ships 30 (substrate set; 89 with `--all-agents`)
-  3. `memory store` logs `[INFO] Storing in undefined/<key>` — namespace propagation log bug (stored value lands in `default` correctly; only log line is wrong)
-  4. `memory stats` reports `Backend: SQLite + HNSW` but RVF is the actual write path
-  5. `memory stats` reports `HNSW Index: not active` — may be legitimate with 1 entry; needs >32-entry re-check
-  6. `memory stats` shows empty `Total Storage` and `Location` fields
-
-- **`statusline-hook.sh` init regression** flagged by B-3: fork's `helpers-generator.ts:1491` writes it when `components.statusline` is enabled, but reference `--full` install didn't produce it. Possible config defaults gap; verify which path is correct.
-
-- **Update plan #3 in `docs/plans/2026-05-25-semantic-modelling-ruflo-migration.md`** so Step-5 references `memory init` (not `memory stats`) as the SQLite-recreate trigger. Currently amended in §"Plan amendment", but the main body still has the original text.
+  - Trigger: when neural-trader plugin reaches a stage where these features are user-requested or block another ADR.
 
 ### Deferred with explicit trigger condition (not "next sync")
 
@@ -356,6 +347,12 @@ Per `[[feedback-no-fallbacks]]`: only risks grounded in actual surface analysis,
 - All forks/ruflo commits today pushed (last push: `f580f7ec0`)
 - forks/agentdb up-to-date (pushed by pipeline)
 - opda + hm: cleanups committed locally (NOT pushed; user-owned repos)
+
+### State after same-day follow-up (status flip → implemented)
+
+- `forks/ruflo/main` head: `ea26d9029` (5 new commits since `f580f7ec0`: `7558f967b` cherry-pick + `9fd76635d` + `e8f10fa7d` + `999346808` + `ea26d9029`)
+- All HIGH + LOW items closed; MEDIUM + DEFERRED + SKIPPED retain their explicit triggers per `[[feedback-skip-accepted-as-squelch]]`
+- Verdaccio versions update with the next `npm run release` (pipeline bumps wrapper + cli together)
 
 ### Snapshots retained (not on session-cleanup path)
 
