@@ -82,6 +82,12 @@
 #   1  — assertion failed (RSS drift / handle leak / final-growth)
 #   2  — harness wiring failure (CLI missing, MCP fails to start, lsof absent)
 
+# DELIBERATE-ADR0243: stress harness intentionally uses tolerant `set -o pipefail`
+# (no `set -e`) because per-phase failure detection is explicit via assertion
+# blocks against captured RSS/handle samples — the harness must complete the
+# soak so the regression analysis at end-of-run can produce a finding even when
+# an intermediate sample fails. Per-phase `set -e` is reinstated locally (see
+# the assertion-block scope near the bottom of this file).
 set -o pipefail
 
 # ADR-0243 / ADR-0233 carry-forward: stress test is gated until the 14× RSS
