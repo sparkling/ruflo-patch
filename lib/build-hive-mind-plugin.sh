@@ -476,12 +476,27 @@ _emit_command() {
 _emit_plugin_json() {
   local dst="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   mkdir -p "$(dirname "$dst")"
+  # Preserve existing version: scripts/fork-version.mjs auto-bumps the
+  # destination plugin.json each release. If we hardcoded a version here,
+  # the next drift check would fail because the materialiser would clobber
+  # the bumped version. Read it back if the file exists; default 0.1.0.
+  local existing_version="0.1.0"
+  if [[ -f "$dst" ]]; then
+    local parsed
+    parsed=$(node -e '
+      try {
+        const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        if (typeof m.version === "string" && m.version) process.stdout.write(m.version);
+      } catch {}
+    ' "$dst" 2>/dev/null) || parsed=""
+    [[ -n "$parsed" ]] && existing_version="$parsed"
+  fi
   # Use a node one-liner so we get jq-compatible JSON without a jq dependency.
-  node -e '
+  PLUGIN_VERSION="$existing_version" node -e '
     const obj = {
       name: "ruflo-hive-mind",
       description: "Queen-led hive-mind collective intelligence — skills, agents, and commands for Byzantine/Raft/Gossip consensus, collective memory, and worker specialization",
-      version: "0.1.0",
+      version: process.env.PLUGIN_VERSION || "0.1.0",
       author: { name: "Henrik Pettersen", url: "https://github.com/sparkling" },
       homepage: "https://github.com/sparkling/ruflo",
       license: "MIT",

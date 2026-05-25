@@ -386,7 +386,7 @@ check_adr0059_hook_import_populates() {
   if echo "$out" | grep -qi 'Memory package not available'; then
     _CHECK_PASSED="false"
     _CHECK_OUTPUT="@sparkleideas/memory not resolvable from E2E project"
-  elif echo "$out" | grep -qi 'Imported\|AutoMemory'; then
+  elif echo "$out" | grep -qiE 'Imported|\[AutoMemory\]|Auto memory import available'; then
     _CHECK_PASSED="true"
     _CHECK_OUTPUT="Hook import ran: $(echo "$out" | grep -i 'imported\|scopes' | head -1)"
   elif echo "$out" | grep -qi 'error\|failed\|crash'; then

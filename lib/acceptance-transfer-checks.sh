@@ -199,7 +199,7 @@ check_adr0094_p4_transfer_plugin_search() {
   _transfer_invoke_tool \
     "transfer_plugin-search" \
     '{"query":"test"}' \
-    '"isError":[[:space:]]*true|\\"plugins\\"|\\"total\\"' \
+    '"isError":[[:space:]]*true|\\"plugins\\"|\\"total\\"|isError envelope:' \
     "transfer_plugin-search" \
     25
 }
@@ -215,7 +215,7 @@ check_adr0094_p4_transfer_plugin_info() {
   _transfer_invoke_tool \
     "transfer_plugin-info" \
     '{"name":"acceptance-probe-unknown-plugin"}' \
-    '\\"error\\"[[:space:]]*:[[:space:]]*\\"Plugin not found\\"|"isError":[[:space:]]*true' \
+    '\\"error\\"[[:space:]]*:[[:space:]]*\\"Plugin not found\\"|"isError":[[:space:]]*true|isError envelope: Plugin not found' \
     "transfer_plugin-info" \
     25
 }

@@ -133,7 +133,7 @@ check_adr0094_p4_browser_session() { # adr0097-l2-delegator: flag set inside _br
 check_adr0094_p4_browser_eval() { # adr0097-l2-delegator: flag set inside _browser_invoke_tool
   _browser_invoke_tool \
     "browser_eval" \
-    '{"expression":"1+1"}' \
+    '{"script":"1+1"}' \
     '2|result' \
     "browser_eval" \
     15
