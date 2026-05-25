@@ -212,3 +212,31 @@ The 8 content-drifted v3/cli copies need to be re-synced from the top
 work: copy top → v3/cli for the 8 drifted skills + a smoke that asserts
 they stay in lockstep going forward. NOT in scope for this session's
 Item C.
+
+### 2026-05-25 follow-up resolution
+
+The follow-up landed as `forks/ruflo` commits `02b6d7bcf` (8 files top
+→ v3/cli) + `34119ebcb` (verification-quality reverse, v3/cli → top).
+Source-of-truth direction is **per-file**, not uniform:
+
+- For 8 files (`github-code-review`, `github-multi-repo`,
+  `github-project-management`, `github-release-management`,
+  `github-workflow-automation`, `hooks-automation`,
+  `sparc-methodology`, `swarm-advanced`): **top wins**. v3/cli was
+  stale (3 files had regressed to `mcp__claude-flow__*` per
+  [[ADR-0143]]; 5 lacked the CI-Guards section).
+- For `verification-quality`: **v3/cli wins**. The C amendment had
+  this direction backwards. Top was stale (76 `claude-flow@alpha`
+  refs, no CI-Guards section); v3/cli was fresh (85 `ruflo@alpha`
+  refs, full CI-Guards table + witness manifest).
+
+The C amendment's blanket "top is source-of-truth" rule was wrong; the
+truth is that drift is bidirectional and each name-collision must be
+diffed on its own. A lockstep-smoke is still warranted to catch future
+drift in either direction.
+
+Smoke `scripts/smoke-init-bundle-invariants.mjs` reported 17 pre-
+existing violations both before and after the sync — none caused by
+this work. They are: 5 parser-regex bugs in the smoke itself and 12
+unrelated ADR-128 plugin-agent basename collisions. Filed as future-
+session work.
