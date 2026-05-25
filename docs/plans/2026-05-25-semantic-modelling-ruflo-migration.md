@@ -425,3 +425,56 @@ cp -R "$SNAP_DIR/memory" /Users/henrik/source/hm/semantic-modelling/.claude/memo
 ```
 
 Stop and investigate before retrying.
+
+## Execution outcome (2026-05-25)
+
+This plan was executed 2026-05-25; see `docs/audits/2026-05-25-semantic-modelling-migration-execution.md` (commit `1aed318`) for the full report.
+
+**Verdict: GREEN.** All 5 plan steps completed (Step 4 optional skipped); all 4 verified orphans deleted; live memory healthy.
+
+### Concrete state after execution
+
+- Snapshot: `/tmp/semantic-modelling-snapshot-20260525-164156/` (12 MB; rollback artifact)
+- Corrupt DB quarantine: `.swarm/memory.db.corrupt-snapshot-20260525`
+- Fresh `.swarm/memory.db`: 33 tables incl. all 4 expected carve-out tables
+- 4 orphans deleted: `.swarm/schema.sql`, `.swarm/memory.graph`, `.claude-flow/memory.rvf`, `.claude-flow/memory.rvf.meta`
+- Memory round-trip post-cleanup: `memory_search "validation"` returns 2 entries at scores 0.44 and 0.43 (above 0.15 floor)
+
+## Plan amendment — Step 5 trigger correction
+
+The plan's Step-5 health-check text and Step-2 "Verify (after step 5 starts the MCP server)" assumed `memory stats` boots the MCP server enough to trigger `AgentDB.loadSchemas()`. It does not — `memory stats` queries the RVF backend directly and never instantiates the SQLite carve-out controllers.
+
+**Correct trigger**: `npx -y @sparkleideas/ruflo@latest memory init` (runs `MemoryInitializer` → boots AgentDB → creates SQLite tables). After this command, `.swarm/memory.db` exists with 33 tables.
+
+Future use of this plan should substitute `memory init` everywhere `memory stats` was used as the "boot the substrate" step.
+
+## Open follow-up — stale install artefacts from older ruflo versions
+
+The execution above only addressed memory-subsystem artefacts. The audit/execution did **NOT** investigate stale files from older ruflo init versions in:
+
+- `.claude/agents/` (top-level dir mtime Apr 9 — init's skip-if-exists semantics mean old agent definitions survive across upgrades)
+- `.claude/helpers/` (most files Apr 22; `auto-memory-hook.mjs` refreshed today — mixed)
+- `.claude/skills/` (dir mtime today; individual SKILL.md files may be stale)
+- `.claude/commands/` (dir mtime today; individual commands may be stale)
+- `.claude/projects/` (Mar 23 — pre-ruflo era; very likely orphan)
+- `.claude-flow/` sub-paths beyond data/ and sessions/
+
+### Proposed follow-up: stale-install-audit
+
+A separate audit should:
+
+1. Init a fresh ruflo project at `/tmp/ruflo-init-reference-<timestamp>/` (clean dir, `npx -y @sparkleideas/ruflo@latest init --full --force --with-embeddings`).
+2. Build an inventory of every file the fresh init writes (path-relative).
+3. Diff against the current `semantic-modelling` filesystem.
+4. Per-path classification:
+   - **In fresh-init only (and not in project)** — init didn't write to project for some reason; investigate.
+   - **In project only (and not in fresh-init)** — stale from old version; cleanup candidate.
+   - **In both** — current; keep.
+5. For "stale from old version" candidates, cross-check against:
+   - User-customised files (e.g., `.claude/agents/custom/` should be exempt regardless of init coverage).
+   - Per-file evidence that nothing reads the path today (`grep -rn` against fork code).
+6. Output a `docs/audits/2026-05-25-stale-install-audit.md` with the cleanup list + per-file evidence, **NO deletions in the audit itself**.
+
+Constraint: NEVER delete user-owned files (custom agents, settings.local.json, worktrees/).
+
+Trigger: when convenient; not urgent (none of the stale files are currently blocking anything per the execution above).
