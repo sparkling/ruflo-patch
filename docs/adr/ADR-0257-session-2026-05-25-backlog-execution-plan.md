@@ -306,16 +306,18 @@ Per `[[feedback-no-fallbacks]]`: only risks grounded in actual surface analysis,
 | LOW | `statusline-hook.sh` init regression | `ea26d9029` (forks/ruflo) — `executor.ts:writeHelpers()` now writes `statusline.cjs` + `statusline-hook.sh` when `options.components.statusline` is enabled (mirrors `helpers-generator.ts:1489-1492`). |
 | LOW | Plan #3 main body `memory init` reference | `(ruflo-patch commit, this batch)` — added explicit Step 0 to invoke `memory init` for substrate-boot before the Step 5 verifies; Step 2 verify retitled to reference Step 5's `memory init`. |
 
-### Still outstanding — MEDIUM-priority work (explicit-trigger deferrals)
+### MEDIUM-priority — RESOLVED 2026-05-25 (user accepted all 4)
 
-Per `[[feedback-skip-accepted-as-squelch]]`: each is its own substantial pick or fork-native re-implementation ADR. Not "next sync" — each has a concrete user-or-blocking trigger.
+All 4 ADR-126 partial-supersedes picked as cherry-picks with brand-flip + smoke updates:
 
-- **4 ADR-126 partial-supersedes — substantive feature work deferred**:
-  - Phase 2 (`d9bd4e6ad`) — ADR-125 memory lifecycle integration: `expiresAt`, `memory_delete`, `MemoryConsolidator` in trader-signal + trader-backtest SKILL.md
-  - Phase 3 (`9c075a3c3`) — Sublinear CG portfolio adapter + new `trader-portfolio-cg/` skill
-  - Phase 4 (`48cb0a7ee`) — Ed25519-signed backtest artifacts + new `src/signed-artifact.*` plugin code
-  - Phase 6 (`11c1ad974`) — PageRank feature attribution + new `trader-explain/` skill + `src/signed-attribution.*`
-  - Trigger: when neural-trader plugin reaches a stage where these features are user-requested or block another ADR.
+- Phase 2 (`d9bd4e6ad`) → `f39268978` — ADR-125 memory lifecycle (TTL on signals, dedup on backtests, `memory_delete` in allowed-tools)
+- Phase 3 (`9c075a3c3`) → `8464156a1` — Sublinear CG portfolio adapter + new `trader-portfolio-cg/` skill (1163 lines)
+- Phase 4 (`48cb0a7ee`) → `4f686f68d` — Ed25519-signed backtest artifacts + new `src/signed-artifact.*` (679 lines; also added trader-cloud-backtest as side effect of Phase 4's add/add conflict — ADR-117 cloud-backtest skill now in fork)
+- Phase 6 (`11c1ad974`) → `136d82183` — PageRank feature attribution + new `trader-explain/` skill + `src/signed-attribution.*` (1400 lines)
+
+Smoke post-picks: 9 PASS / 2 FAIL (the 2 failures are pre-existing fork drift — plugin version 0.2.0 vs fork's 0.2.20, `@claude-flow/cli` v3.6 README pin vs fork's `@sparkleideas/cli`; both unrelated to ADR-126 phases).
+
+Plugin now has 9 skills (was 6 + trader-portfolio-cg added in Phase 3 + trader-cloud-backtest added by Phase 4 side effect + trader-explain added in Phase 6). Smoke `step 2` updated to reflect.
 
 ### Deferred with explicit trigger condition (not "next sync")
 
