@@ -24,11 +24,15 @@ import { strict as assert } from 'node:assert';
 import { readFileSync, existsSync } from 'node:fs';
 
 const FORK_SRC = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hive-mind-tools.ts';
-// ADR-0257 follow-on (2026-05-25): `cfc6ebca5` deleted the CLI init-template
-// copy per ADR-128 ("plugin's version is canonical. The init template's copy
-// is deleted. No exceptions"). The wire-in (allowed-tools + ADR-0120 runtime
-// example) was ported into the plugin canonical at the same time.
-const AGENT_FILE = '/Users/henrik/source/forks/ruflo/plugins/ruflo-hive-mind/agents/gossip-coordinator.md';
+// ADR-0257 follow-on (2026-05-25): cfc6ebca5 deleted this CLI init-template
+// copy per ADR-128 ("plugin's version is canonical"), but the wire-in
+// (allowed-tools + ADR-0120 runtime example) is consumed at init time via
+// `copyAgents` → user's `.claude/agents/consensus/`, and plugin install is
+// NOT auto-run by `ruflo init`. So this file was restored (with wire-in) as
+// the source-of-truth for the user-facing init path. The plugin's thin copy
+// at plugins/ruflo-hive-mind/agents/gossip-coordinator.md is allowlisted in
+// scripts/smoke-init-bundle-invariants.mjs (ADR_128_WIRE_IN_CARVE_OUT).
+const AGENT_FILE = '/Users/henrik/source/forks/ruflo/v3/@claude-flow/cli/.claude/agents/consensus/gossip-coordinator.md';
 // ADR-0185 Waves 3+4 — strategy-dispatch literals moved from cli to agentdb.
 const AGENTDB_CONSENSUS_DISPATCHER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus.ts';
 const AGENTDB_GOSSIP_HANDLER = '/Users/henrik/source/forks/agentdb/src/archivist/handlers/hive-mind/consensus/gossip.ts';

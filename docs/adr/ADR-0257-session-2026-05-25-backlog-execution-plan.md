@@ -350,7 +350,7 @@ Per `[[feedback-skip-accepted-as-squelch]]`: each is its own substantial pick or
 
 ### State after same-day follow-up (status flip → implemented)
 
-- `forks/ruflo/main` head: `b35b85a69` (8 new fork commits since `f580f7ec0`: HIGH + LOW closures + 3 release-pipeline remediation commits below)
+- `forks/ruflo/main` head: `a2af4dadd` (10+ new fork commits since `f580f7ec0`: HIGH + LOW closures + release-pipeline remediation commits below + ADR-128 carve-out)
 - All HIGH + LOW items closed; MEDIUM + DEFERRED + SKIPPED retain their explicit triggers per `[[feedback-skip-accepted-as-squelch]]`
 - Verdaccio versions update with the next `npm run release` (pipeline bumps wrapper + cli together)
 
@@ -362,8 +362,10 @@ The first three release attempts surfaced three issues; each was diagnosed and f
 |---|---|---|---|
 | 1 | `undiscriminating-catches` lint | My `999346808` patch added `try { statSync } catch { /* file may not exist */ }` — lint correctly flagged comment-only catch | `9e5bc9a78`: refactored to `if (existsSync) { statSync }` |
 | 2 | `test-ci` (TS compile) | `feedback-pipeline-shared-skip-on-dist-clear` — shared dist wiped but tsbuildinfo not invalidated; consumers got missing `getValidatedConfig` from `@sparkleideas/shared/core` | Re-run with `--force` (documented pattern) |
-| 3 | `test-ci` (unit tests) | Prior session's `cfc6ebca5` (item #16 closure 2026-05-25 **16:29:30**) deleted CLI init copies per ADR-128 but the deleted `gossip-coordinator.md` + `crdt-synchronizer.md` carried real ADR-0120/0121 wire-in (allowed-tools + strategy example) that was never ported into the plugin canonical. `tests/unit/adr0120-gossip-consensus.test.mjs` + `adr0121-crdt-consensus.test.mjs` correctly caught the regression. Prior session's last release (`96921762e` patch.316 at **16:00:47**) predated `cfc6ebca5`, so this release attempt is the first to run with that state. | `f615c0508`: port wire-in additively into plugin canonicals; test paths repointed (this commit) |
+| 3 | `test-ci` (unit tests) | Prior session's `cfc6ebca5` (item #16 closure 2026-05-25 **16:29:30**) deleted CLI init copies per ADR-128 but the deleted `gossip-coordinator.md` + `crdt-synchronizer.md` carried real ADR-0120/0121 wire-in. Initial fix (`f615c0508`) ported wire-in into plugin canonicals — but plugin canonical turned out to be the WRONG source-of-truth for wired files because `ruflo init` copies from the CLI init template, not the plugin. That caused ADR-0116 drift (materialise script produces thin upstream copy, plugin canonical now has wire-in additions). | Final fix in commits `8c5c36ee9` (revert `f615c0508` — plugin canonical back to thin matching materialise output) + `a2af4dadd` (restore CLI init template files with wire-in + ADR-128 carve-out for these 2 basenames in `smoke-init-bundle-invariants.mjs`). Test paths reverted to CLI init template (this commit). |
 | (also surfaced) | n/a — runtime bug | Clean-init Stop hook fires `auto-memory-hook.mjs sync`; ADR-0083 Wave 2 removed `sync` from the helper. Drift never caught because settings-generator caller wasn't updated when bundled-static helper was retired (per `helpers-generator.ts:990-995` comment, ADR-0235 Batch 1 exposed it; nobody surfaced the settings-generator side). | `b35b85a69`: remove Stop hook entirely (ADR-0083 Wave 2 made the drain redundant; better than repointing to `status` which would spam banner output on every exit) |
+
+**Architectural finding (ADR-128 wire-in carve-out)**: ADR-128's "plugin's version is canonical, init template's copy is deleted, no exceptions" policy is correct for purely-documentation duplicates but breaks for files whose wire-in is consumed at `ruflo init` time (plugin install is a SEPARATE `/plugin install` step, not part of `init --full`). The 2 wired consensus agents (`gossip-coordinator.md`, `crdt-synchronizer.md`) are now allowlisted via `ADR_128_WIRE_IN_CARVE_OUT` in `scripts/smoke-init-bundle-invariants.mjs`. The other 10 files deleted by `cfc6ebca5` (5 other consensus, 3 swarm, 2 v3) carried no wire-in and remain plugin-only per ADR-128 unchanged.
 
 Methodology lessons for ADR-0257-class work going forward:
 
