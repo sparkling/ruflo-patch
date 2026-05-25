@@ -609,4 +609,91 @@ VMANIFEST
   fi
 }
 
-main "$@"
+# ---------------------------------------------------------------------------
+# Auto-retry wrapper — feedback-pipeline-shared-skip-on-dist-clear
+#
+# The selective-build skip path can leave @sparkleideas/shared's dist empty
+# while tsbuildinfo says "up to date" — downstream consumers then crash with
+# ERR_MODULE_NOT_FOUND at runtime during the test-ci phase. Recovery is a
+# rerun with --force (full rebuild bypassing selective-skip).
+#
+# One-shot retry semantics:
+#   - Catch main's exit code (run in subshell so `exit 1` in run_phase
+#     doesn't kill us)
+#   - On failure, grep captured stderr for the canonical signature
+#   - If matched AND --force was NOT already set AND we haven't retried:
+#       reset mutable state, set FORCE_BUILD=true, run main again
+#   - Otherwise (different failure, or already on --force, or already
+#     retried once): exit with the original failure code. No infinite loop.
+#
+# Manual test recipe (documented for future reference):
+#   1. Build the pipeline once cleanly so tsbuildinfo exists:
+#        npm run release
+#   2. Wipe forks/ruflo/v3/packages/shared/dist/ (but NOT its tsbuildinfo):
+#        rm -rf forks/ruflo/v3/packages/shared/dist/
+#   3. Trigger a publish that bumps shared's dependents (touch a CLI src file):
+#        echo "// touch" >> forks/ruflo/v3/packages/cli/src/index.ts
+#        git -C forks/ruflo/v3 add -A && git -C forks/ruflo/v3 commit -m "test"
+#   4. Run: npm run release
+#      Expect: test-ci fails with ERR_MODULE_NOT_FOUND .../@sparkleideas/shared/dist/...
+#              Then [AUTO-RETRY] line, then full rebuild + green.
+# ---------------------------------------------------------------------------
+
+RETRY_STDERR_LOG="/tmp/ruflo-publish-stderr.$$.log"
+: > "${RETRY_STDERR_LOG}"
+trap 'rm -f "${RETRY_STDERR_LOG}"' EXIT
+
+# Signature regex — match the failure mode where the v3 build leaves a
+# @sparkleideas/* package's dist empty and a downstream import crashes.
+# Tightened to require both the ERR_MODULE_NOT_FOUND token AND the
+# canonical @sparkleideas/.../dist/ path so unrelated module-resolution
+# errors (e.g. user code) don't trigger spurious retries.
+RETRY_SIGNATURE_RE='ERR_MODULE_NOT_FOUND.*@sparkleideas/[^/]+/dist/'
+
+max_attempts=2
+attempt=1
+final_rc=0
+
+while [[ $attempt -le $max_attempts ]]; do
+  # Run main in a subshell so run_phase's `exit 1` propagates as a non-zero
+  # subshell exit code rather than killing the outer attempt loop.
+  set +e
+  ( main "$@" ) 2> >(tee -a "${RETRY_STDERR_LOG}" >&2)
+  final_rc=$?
+  # Wait for the tee process-substitution to flush before grepping.
+  wait 2>/dev/null || true
+  set -e
+
+  if [[ $final_rc -eq 0 ]]; then
+    break
+  fi
+
+  # Failed. Decide whether to retry.
+  if [[ $attempt -ge $max_attempts ]]; then
+    log_error "Auto-retry already exhausted (attempt ${attempt}/${max_attempts}) — failing through"
+    break
+  fi
+  if [[ "${FORCE_BUILD}" == "true" ]]; then
+    # Already running with --force; a second --force won't help.
+    break
+  fi
+  if ! grep -qE "${RETRY_SIGNATURE_RE}" "${RETRY_STDERR_LOG}"; then
+    # Different failure mode — don't auto-retry.
+    break
+  fi
+
+  log "[AUTO-RETRY] feedback-pipeline-shared-skip-on-dist-clear hit (ERR_MODULE_NOT_FOUND on @sparkleideas/*/dist/); rerunning with --force"
+
+  # Reset mutable state for clean second attempt.
+  FORCE_BUILD=true
+  # shellcheck disable=SC1091
+  source "${PROJECT_DIR}/lib/pipeline-state.sh"
+  PHASE_TIMINGS=""
+  : > "$TIMING_CMDS_FILE"
+  : > "$TIMING_BUILD_PKGS_FILE"
+  : > "${RETRY_STDERR_LOG}"
+
+  attempt=$((attempt + 1))
+done
+
+exit $final_rc
