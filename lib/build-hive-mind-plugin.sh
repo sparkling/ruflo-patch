@@ -252,6 +252,7 @@ _codemod_inplace() {
     s|npx claude-flow |npx \@sparkleideas/cli\@latest |g;
     s|claude-flow\@alpha|\@sparkleideas/cli\@latest|g;
     s|mcp__claude-flow__|mcp__ruflo__|g;
+    s|claude mcp add claude-flow |claude mcp add ruflo |g;
   ' "$f"
 }
 
@@ -479,16 +480,25 @@ _emit_plugin_json() {
   # Preserve existing version: scripts/fork-version.mjs auto-bumps the
   # destination plugin.json each release. If we hardcoded a version here,
   # the next drift check would fail because the materialiser would clobber
-  # the bumped version. Read it back if the file exists; default 0.1.0.
+  # the bumped version. Read it back from the destination; fall back to the
+  # canonical source-of-truth (so the drift detector — which invokes us with
+  # FORK_DIR=$tmp — still sees the bumped version).
   local existing_version="0.1.0"
+  local canonical_src="/Users/henrik/source/forks/ruflo/plugins/ruflo-hive-mind/.claude-plugin/plugin.json"
+  local version_src=""
   if [[ -f "$dst" ]]; then
+    version_src="$dst"
+  elif [[ -f "$canonical_src" ]]; then
+    version_src="$canonical_src"
+  fi
+  if [[ -n "$version_src" ]]; then
     local parsed
     parsed=$(node -e '
       try {
         const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
         if (typeof m.version === "string" && m.version) process.stdout.write(m.version);
       } catch {}
-    ' "$dst" 2>/dev/null) || parsed=""
+    ' "$version_src" 2>/dev/null) || parsed=""
     [[ -n "$parsed" ]] && existing_version="$parsed"
   fi
   # Use a node one-liner so we get jq-compatible JSON without a jq dependency.
