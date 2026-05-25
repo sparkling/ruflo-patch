@@ -447,6 +447,30 @@ This plan was executed 2026-05-25; see `docs/audits/2026-05-25-semantic-modellin
 - 4 orphans deleted: `.swarm/schema.sql`, `.swarm/memory.graph`, `.claude-flow/memory.rvf`, `.claude-flow/memory.rvf.meta`
 - Memory round-trip post-cleanup: `memory_search "validation"` returns 2 entries at scores 0.44 and 0.43 (above 0.15 floor)
 
+## §Risks resolution amendment — 2026-05-25 ADR-0257 follow-up
+
+Per ADR-0257 "deal with deferred" sweep. Three of the §Risks items had explicit triggers requiring investigation; that investigation now done.
+
+| # | Item | Investigation result |
+|---|---|---|
+| **#1** | `.claude/projects/-Users-henrik-source-hm-semantic-modelling/project-constraints.md` writer | **HISTORICAL** — `grep -rn "project-constraints\.md" v3/@claude-flow/{cli,memory,hooks}/src/` returns ZERO writers in fork source. No active code path produces this file. Classify as historical; eligible for deletion. |
+| **#3** | 10 historic `.claude-flow/sessions/session-*.json` + `undefined.json` | **HISTORICAL-UNREAD** — `grep -rn ".claude-flow/sessions" v3/@claude-flow/cli/src/` returns 3 hits: `vault.ts:30` (comment-only prose), `executor.ts:196` (init creates empty dir), `init.ts:418` (banner reports path). NO code path reads or writes `session-*.json` files. The `undefined.json` filename confirms a past writer bug — no current writer exists. Classify as historical-unread; eligible for deletion. |
+| **#4** | `~/.claude/projects/-Users-henrik-source-hm-main2-semantic-modelling/memory/` symlink | **OPERATOR DECISION** — target `/Users/henrik/source/hm/main2/semantic-modelling/.claude/memory/` exists with 15 `.md` files (mtime 2026-04-03). Current project has 88 `.md` files. Under `memory_import_claude --allProjects` the 15 get content-hash-deduped against the 88 (per `memory-tools.ts:1009-1025`); no data corruption risk. Retain = cross-history searchability; delete = ingestion stops referencing main2. No technical default — operator preference. |
+
+### Stale-investigate files (per `docs/audits/2026-05-25-stale-install-cleanup-execution.md`)
+
+Re-checked the 5 files preserved by the earlier audit:
+
+| File | State | Resolution |
+|---|---|---|
+| `.claude-flow/config.yaml` | **STILL PRESENT** (780 bytes) | **KEEP** — ADR-0069 fallback config path; legitimate runtime surface. |
+| `.claude/helpers/hook-handler.cjs` | **already deleted** | RESOLVED (no action) |
+| `.claude/helpers/package.json` | **already deleted** | RESOLVED (no action) |
+| `.claude/helpers/README.md` | **already deleted** | RESOLVED (no action) |
+| `.claude/helpers/statusline-hook.sh` | **already deleted** | RESOLVED (no action) |
+
+4 of 5 cleared between audits (likely manual cleanup); 1 retained per ADR-0069.
+
 ## Plan amendment — Step 5 trigger correction
 
 The plan's Step-5 health-check text and Step-2 "Verify (after step 5 starts the MCP server)" assumed `memory stats` boots the MCP server enough to trigger `AgentDB.loadSchemas()`. It does not — `memory stats` queries the RVF backend directly and never instantiates the SQLite carve-out controllers.
