@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-25
 tags: [upstream-sync, rvagent-wasm, persistence, ADR-129, design-gate]
 supersedes: []

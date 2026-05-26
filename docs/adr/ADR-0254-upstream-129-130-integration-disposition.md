@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-25
 tags: [upstream-sync, rvagent-wasm, graph-intelligence, council-disposition, ADR-129, ADR-130]
 supersedes: []

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: implemented
 date: 2026-05-25
 tags: [upstream-sync, rvagent-wasm, plugin-bridge, ADR-129, implementation, pilot]
 supersedes: []

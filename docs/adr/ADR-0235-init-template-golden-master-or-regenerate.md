@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-24
 tags: [init, helpers, template, drift, golden-master, regenerate, audit-followup, ct-b]
 supersedes: []

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-24
 tags: [audit-followup, leaks, long-lived-process, mcp-stdio, worker-daemon, wasm-handles, timers, signal-handlers]
 supersedes: []

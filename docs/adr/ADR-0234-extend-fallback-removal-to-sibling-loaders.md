@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-24
 tags: [no-fallbacks, fail-loud, embedding, wasm, rbac, plugins, audit-followup, ct-a]
 supersedes: []

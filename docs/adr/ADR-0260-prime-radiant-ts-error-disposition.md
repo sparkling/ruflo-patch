@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: implemented
 date: 2026-05-25
 tags: [tsconfig, build-system, fork-hygiene, prime-radiant, deferred-followup]
 supersedes: []

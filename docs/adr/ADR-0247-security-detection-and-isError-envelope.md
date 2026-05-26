@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-24
 tags: [audit-followup, security, aidefence, pii, mcp-envelope, ct-n]
 supersedes: []

@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-24
 tags: [agentdb, rvf, hnsw, archivist, soundness, audit-followup, CT-M]
 supersedes: []

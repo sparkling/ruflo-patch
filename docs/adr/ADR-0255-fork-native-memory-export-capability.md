@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-25
 tags: [memory, mcp-tools, cli, export, upstream-disposition, archivist]
 supersedes: []

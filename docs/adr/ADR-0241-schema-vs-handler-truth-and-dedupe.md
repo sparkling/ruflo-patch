@@ -1,5 +1,5 @@
 ---
-status: proposed
+status: accepted
 date: 2026-05-24
 tags: [mcp, schema, validation, types, dedupe, audit-followup, ct-h]
 supersedes: []
