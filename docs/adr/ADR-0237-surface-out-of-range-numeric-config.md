@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-24
 tags: [validation, wasm, rust, error-handling]
 supersedes: []

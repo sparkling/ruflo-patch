@@ -1,5 +1,6 @@
 ---
-status: assessment
+status: accepted
+completed: true
 date: 2026-05-11
 tags: [agentdb, rvf, substrate, ruvector, assessment, adr0166-followup]
 relates-to: [ADR-0166, ADR-0170]

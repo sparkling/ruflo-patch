@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-19
 tags: [federation, sync-coordinator, single-direction, ADR-0196, ADR-0199, agentdb-surface]
 supersedes: []

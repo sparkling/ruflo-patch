@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-24
 tags: [audit-followup, stub-honesty, wire-or-remove, aidefence, claims, telemetry, consensus, ct-e]
 supersedes: []

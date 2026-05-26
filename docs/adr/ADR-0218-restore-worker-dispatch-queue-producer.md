@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-20
 implemented-date: 2026-05-23
 tags: [daemon, ipc, hooks, dispatch-queue, fork-regression, upstream-sync, no-fallbacks, ADR-0207, follow-up, swarm-reviewed]

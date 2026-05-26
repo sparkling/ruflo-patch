@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-20
 implemented-date: 2026-05-22
 tags: [init, mcp, ruflo-wrapper, brand, no-fallbacks, audit-followup]

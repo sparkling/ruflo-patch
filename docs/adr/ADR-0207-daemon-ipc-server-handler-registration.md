@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-20
 implemented-date: 2026-05-21
 tags: [daemon, ipc, rpc, dead-code, ADR-0201, ADR-0088, ADR-0202, ADR-0059, follow-up, swarm-reviewed]

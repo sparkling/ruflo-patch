@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-23
 methodology: [MADR, runbook, SPARC]
 decision-makers: [Henrik Pettersen]

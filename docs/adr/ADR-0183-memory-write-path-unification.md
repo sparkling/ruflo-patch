@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-17
 tags: [memory, archivist, runtime-activation, write-path, complete]
 supersedes: []

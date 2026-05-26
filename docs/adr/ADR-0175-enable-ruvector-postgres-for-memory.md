@@ -1,5 +1,6 @@
 ---
 status: superseded
+completed: true
 date: 2026-05-12
 tags: [memory, ruvector-postgres, postgres, pgrx, axis-substrate, fork-freedom, embeddings, no-fallback]
 supersedes: []

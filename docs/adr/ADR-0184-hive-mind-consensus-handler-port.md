@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-18
 closed-on: 2026-05-18
 tags: [hive-mind, consensus, archivist, runtime-activation, multi-strategy]

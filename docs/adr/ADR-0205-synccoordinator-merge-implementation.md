@@ -1,5 +1,6 @@
 ---
-status: superseded by ADR-0217
+status: superseded
+completed: true
 date: 2026-05-19
 tags: [federation, sync-coordinator, merge, crdt, swarm-reviewed]
 supersedes: []

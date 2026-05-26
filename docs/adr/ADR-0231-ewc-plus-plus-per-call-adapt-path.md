@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-24
 implemented-date: 2026-05-24
 tags: [learning, sona, ewc, micro-lora, lora, wasm, ruvector, ruvllm, catastrophic-forgetting, audit-followup]

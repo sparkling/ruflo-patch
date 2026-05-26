@@ -1,5 +1,6 @@
 ---
-status: deferred
+status: accepted
+completed: true
 date: 2026-05-20
 deferred-date: 2026-05-23
 tags: [federation, quic, crdt, vector-clock, sync, multi-writer, changelog, reconciliation, auth, phase5, swarm-reviewed]

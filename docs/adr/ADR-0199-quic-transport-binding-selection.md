@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-19
 tags: [quic, transport, federation, phase5, ADR-0196]
 supersedes: []

@@ -1,5 +1,6 @@
 ---
 status: superseded
+completed: true
 date: 2026-05-12
 superseded-by: ADR-0174
 tags: [graph-database, cypher, apache-age, pgvector, postgres-server, cycle-clause, council-deliberation, adr-0170, adr-0172]

@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-12
 closed-on: 2026-05-18
 tags: [mcp, skill, naming, agentdb, adr-index, skill-stability]

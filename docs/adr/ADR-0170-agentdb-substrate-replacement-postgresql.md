@@ -1,5 +1,6 @@
 ---
 status: superseded
+completed: true
 date: 2026-05-11
 tags: [agentdb, postgres, pglite, ruvector, graph-node, substrate-replacement, fork-divergence]
 supersedes: [ADR-0166]

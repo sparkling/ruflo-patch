@@ -1,5 +1,6 @@
 ---
-status: superseded by 0161
+status: superseded
+completed: true
 date: 2026-05-08
 methodology: [SPARC, MADR]
 decision-makers: [Henrik Pettersen]

@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-19
 implemented-date: 2026-05-22
 tags: [skills, cli, dedupe, init, acceptance, runtime, swarm-reviewed]

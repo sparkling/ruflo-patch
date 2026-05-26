@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-08
 closed-on: 2026-05-08
 methodology: [SPARC, MADR]

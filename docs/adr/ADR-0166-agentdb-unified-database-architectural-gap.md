@@ -1,5 +1,6 @@
 ---
 status: superseded
+completed: true
 date: 2026-05-10
 tags: [agentdb, ruvector, sqlite, sqlite-vec, axis-separation, option-f, persistence, dialectical-council]
 supersedes: []

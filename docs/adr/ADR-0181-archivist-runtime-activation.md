@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-14
 closed-on: 2026-05-18
 tags: [memory, architecture, mcp, substrate, runtime-activation]

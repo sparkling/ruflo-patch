@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-23
 methodology: [MADR, architectural-decision, substrate-pivot]
 decision-makers: [Henrik Pettersen]

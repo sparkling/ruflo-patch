@@ -1,5 +1,6 @@
 ---
 status: superseded
+completed: true
 date: 2026-05-12
 tags: [graph, ruvector, axis-separation, substrate, hypergraph, three-axis, cypher-executor-patch, ruvector-postgres, fork-freedom]
 supersedes: [ADR-0173]

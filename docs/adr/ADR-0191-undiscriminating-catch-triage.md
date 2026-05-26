@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-19
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]

@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-19
 accepted-on: 2026-05-20
 implemented-on: 2026-05-21

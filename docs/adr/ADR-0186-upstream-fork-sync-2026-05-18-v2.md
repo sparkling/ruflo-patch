@@ -1,5 +1,6 @@
 ---
-status: implemented
+status: accepted
+completed: true
 date: 2026-05-18
 implemented: 2026-05-18
 methodology: [SPARC, MADR, runbook]
