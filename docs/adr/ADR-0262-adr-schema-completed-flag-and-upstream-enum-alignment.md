@@ -1,6 +1,6 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-26
 tags: [adr-schema, completion-tracking, upstream-alignment, plugin-conformance, taxonomy]
 supersedes: []
