@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-12
 tags: [hierarchical-memory, mcp-tools, fix, regression-repair, adr-0176, adr-0066, adr-0177]
 supersedes: []

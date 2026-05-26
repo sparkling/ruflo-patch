@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-11
 methodology: [phase2-implementation, spec-from-adr-0167]
 decision-makers: [Henrik Pettersen]

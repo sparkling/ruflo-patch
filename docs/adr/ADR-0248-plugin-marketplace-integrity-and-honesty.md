@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: false
 date: 2026-05-24
 tags: [audit-followup, plugins, marketplace, honesty, doa, phantom-tools, integrity-lint, ct-o]
 supersedes: []

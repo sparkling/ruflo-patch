@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [pipeline, publish, bash, set-e, audit-followup, ct-l, error-propagation, hardcoded-paths]
 supersedes: []

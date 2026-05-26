@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [errors, mcp, advisory-baseline, deferred-work]
 supersedes: []

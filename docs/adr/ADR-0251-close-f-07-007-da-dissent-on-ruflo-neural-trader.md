@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-25
 tags: [marketplace, plugin-disposition, dissent-close]
 supersedes: []

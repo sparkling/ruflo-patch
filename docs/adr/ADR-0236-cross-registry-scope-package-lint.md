@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [pipeline, publish, lint, codemod, fork-version, scope-registry, audit-followup, ct-c]
 supersedes: []

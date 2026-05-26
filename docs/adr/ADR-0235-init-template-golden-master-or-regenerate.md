@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [init, helpers, template, drift, golden-master, regenerate, audit-followup, ct-b]
 supersedes: []

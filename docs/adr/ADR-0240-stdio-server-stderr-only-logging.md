@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [mcp, stdio, jsonrpc, logging, pii, observability, ct-g]
 supersedes: []

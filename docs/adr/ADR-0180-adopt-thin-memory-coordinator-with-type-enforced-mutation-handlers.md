@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: false
 date: 2026-05-13
 accepted: 2026-05-14
 tags: [memory, architecture, mcp, governance, substrate]

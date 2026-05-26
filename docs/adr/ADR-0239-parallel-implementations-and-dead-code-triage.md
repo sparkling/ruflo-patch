@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [dead-code, parallel-implementations, fork-cleanup, lint-gate, cve, embedding, mcp, audit-followup]
 supersedes: []

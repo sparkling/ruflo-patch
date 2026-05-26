@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [audit-followup, cli, dishonest-envelopes, parser, brand-drift, ct-k, mcp-cli]
 supersedes: []

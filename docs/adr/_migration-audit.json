@@ -389,5 +389,179 @@
     "to_status": "accepted",
     "completed": true,
     "signal": "off-enum 'implemented' \u2192 upstream 5-value enum; scope shipped per body, completed:true"
+  },
+  "ADR-0167": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "RVF superblock pattern shipped per ADR body (forks/agentdb); decision scope closed"
+  },
+  "ADR-0168": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "NAPI coordinator Phase 2 shipped per ADR-0167 spec; scope closed"
+  },
+  "ADR-0178": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "hierarchical_query restored + post-ADR-0177 fix shipped; regression-repair scope closed"
+  },
+  "ADR-0180": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": false,
+    "signal": "thin memory coordinator + type-enforced mutation handlers; Phase 7 deferred per ADR-0253"
+  },
+  "ADR-0197": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "findings record; all side-effects from ADR-0193 dispositioned"
+  },
+  "ADR-0198": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "findings record; additional side-effects from ADR-0193 dispositioned"
+  },
+  "ADR-0201": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "soundness audit parent; audit complete, remediation tracked in children 0202-0218+"
+  },
+  "ADR-0234": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-A pipeline batch; fallback removal extended to sibling loaders, shipped"
+  },
+  "ADR-0235": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-B pipeline batch; init template golden-master regenerate, shipped"
+  },
+  "ADR-0236": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-C pipeline batch; cross-registry scope/package lint, shipped"
+  },
+  "ADR-0239": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-F batch; parallel implementations and dead-code triage, shipped"
+  },
+  "ADR-0240": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-G batch; stdio server stderr-only logging, shipped"
+  },
+  "ADR-0241": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-H batch; schema vs handler truth and dedupe, shipped"
+  },
+  "ADR-0242": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": false,
+    "signal": "shared error library + MCP envelope honesty; typed-error sweep deferred to ADR-0249"
+  },
+  "ADR-0243": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-J batch; long-lived process resource discipline, shipped"
+  },
+  "ADR-0244": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-K batch; CLI per-command honesty long-tail, shipped"
+  },
+  "ADR-0245": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-L batch; pipeline robustness set-e discipline, shipped"
+  },
+  "ADR-0246": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "CT-M batch; agentdb internals correctness, shipped"
+  },
+  "ADR-0247": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": false,
+    "signal": "CT-N security follow-ups; F-04-006/F-04-007 deferred to ADR-0250"
+  },
+  "ADR-0248": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": false,
+    "signal": "CT-O plugin marketplace integrity; F-07-008/009/010 deferred"
+  },
+  "ADR-0249": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "defer decision recorded; decision IS the scope, completed:true"
+  },
+  "ADR-0250": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "defer decision recorded; decision IS the scope, completed:true"
+  },
+  "ADR-0251": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "close decision for F-07-007 DA dissent; decision IS the scope, completed:true"
+  },
+  "ADR-0252": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "Batch-S source-conflict deferral re-disposition; decision IS the scope"
+  },
+  "ADR-0253": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "FS-JSON staging carve-out shipped (in code per memory note); amendment to ADR-0180/CT-M closed"
+  },
+  "ADR-0254": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "upstream 129/130 integration disposition; council decision recorded, decision IS the scope"
+  },
+  "ADR-0255": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": false,
+    "signal": "fork-native memory_export capability; Phase 2 deferred-by-design"
+  },
+  "ADR-0258": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "ADR-129 persistence-threading design-gate decision recorded; decision-only spec per b115e8b"
+  },
+  "ADR-0259": {
+    "from_status": "accepted (no completed)",
+    "to_status": "accepted",
+    "completed": true,
+    "signal": "ADR-129 MCP allowlist alignment design-gate decision recorded; decision-only spec per b115e8b"
   }
 }

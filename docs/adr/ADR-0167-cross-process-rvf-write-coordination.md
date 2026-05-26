@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-10
 methodology: [comparative-analysis, council-dialectic, adversarial-review]
 decision-makers: [Henrik Pettersen]

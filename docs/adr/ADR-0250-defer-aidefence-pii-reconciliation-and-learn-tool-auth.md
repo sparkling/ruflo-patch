@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-24
 tags: [security, aidefence, pii, auth, deferred-work]
 supersedes: []

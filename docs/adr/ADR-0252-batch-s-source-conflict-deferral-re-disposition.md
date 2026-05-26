@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-25
 tags: [upstream-sync, source-conflict, deferral, batch-s]
 supersedes: []

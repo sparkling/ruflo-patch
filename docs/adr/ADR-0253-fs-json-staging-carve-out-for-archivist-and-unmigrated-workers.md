@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: true
 date: 2026-05-25
 tags: [archivist, staging-substrate, fs-json, rvf, carve-out, amendment, CT-M]
 supersedes: []

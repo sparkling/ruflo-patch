@@ -1,5 +1,6 @@
 ---
 status: accepted
+completed: false
 date: 2026-05-24
 tags: [errors, error-handling, mcp, envelope, retry, long-term, ct-i]
 supersedes: []
