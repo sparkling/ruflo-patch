@@ -68,7 +68,19 @@ const WORKSPACE_SUBDIR = 'v3/@claude-flow';
 // handler. Adding `cross-repo/agentdb` here makes the symlink pass
 // produce `node_modules/@sparkleideas/agentdb` -> `cross-repo/agentdb`
 // in every dependent's tree.
-const EXTRA_WORKSPACE_DIRS = ['cross-repo/agentdb'];
+const EXTRA_WORKSPACE_DIRS = [
+  'cross-repo/agentdb',
+  // ADR-0262 follow-up: @claude-flow/memory's rvf-backend.ts at line 1116
+  // does `await import('@ruvector/rvf-node' as string)` (renamed by codemod
+  // to `@sparkleideas/ruvector-rvf-node`). At unit-test time, the cli/memory
+  // dist is loaded BEFORE publish-verdaccio runs, so the dynamic import
+  // threw ERR_MODULE_NOT_FOUND in test-ci. Adding the cross-repo path here
+  // makes the symlink pass produce
+  // `node_modules/@sparkleideas/ruvector-rvf-node` -> the in-tree binding.
+  // (Memory's package.json was also updated to declare the dep so the
+  // symlink pass's "is this dep declared?" predicate matches.)
+  'cross-repo/ruvector/npm/packages/rvf-node',
+];
 const SCOPE = '@sparkleideas';
 const DEP_FIELDS = ['dependencies', 'optionalDependencies', 'peerDependencies'];
 
