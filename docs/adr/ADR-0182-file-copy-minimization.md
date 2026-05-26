@@ -1,5 +1,6 @@
 ---
 status: proposed
+completed: false
 date: 2026-05-16
 tags: [pipeline, performance, ssd-wear, fseventsd, acceptance, build]
 supersedes: []
