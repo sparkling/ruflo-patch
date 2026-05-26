@@ -1,5 +1,6 @@
 ---
 status: proposed
+completed: false
 date: 2026-05-25
 tags: [upstream-sync, graph-intelligence, ADR-130, re-implementation, archivist, embeddings, design-gate]
 supersedes: []
