@@ -1,9 +1,10 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-25
 revised: 2026-05-27
 ratified: 2026-05-27
+implemented: 2026-05-27
 tags: [upstream-sync, graph-intelligence, ADR-130, re-implementation, archivist, embeddings]
 supersedes: []
 depends-on: [ADR-0117, ADR-0147, ADR-0166, ADR-0177, ADR-0181, ADR-0202, ADR-0221, ADR-0227, ADR-0246, ADR-0253, ADR-0254]
@@ -443,7 +444,11 @@ These are footnotes, not gates. None should block ratification.
 
 ### 2.10 Status after Revision 2
 
-**Ratified 2026-05-27 → status `accepted`.** The combined §Revision 1 (council corrections) + §Revision 2 (port-to-upstream alignment) + §Revision 2.9 plugin-mapping resolution amendments narrow fork-vs-upstream divergence to invariant-forced items only. Implementation may begin. The fork-vs-upstream divergence catalog:
+**Ratified 2026-05-27 → status `accepted`. Implemented 2026-05-27 → `completed: true`.** The combined §Revision 1 (council corrections) + §Revision 2 (port-to-upstream alignment) + §Revision 2.9 plugin-mapping resolution amendments narrow fork-vs-upstream divergence to invariant-forced items only.
+
+**Implementation landed** in 5 commits across 3 repos (forks/agentdb `8c44f1f`, forks/ruflo `56e4cdd4a`, ruflo-patch `905bd7d`+`5dae89d`+`56a8cfe`+`133ab75`+`e474e39`). Acceptance verdict via canonical `npm run release` harness pass 2026-05-27 11:02Z — all 6 §R2.6 criteria GREEN: schema-migration (22/22), query-dispatch (17/17), trajectory-edges (9/9), pathfinder (35/35 — all 6 algorithms), plugin-adapter (12/12), benchmark (T1=48,336 ops/s, T2=147.8B/edge, T3=1.53ms p99). Forks published to Verdaccio as `3.7.0-alpha.10-patch.327` and pushed to sparkling; ruflo-patch pushed to origin.
+
+The fork-vs-upstream divergence catalog:
 
 | Item | Upstream | Fork | Why divergent |
 |---|---|---|---|
