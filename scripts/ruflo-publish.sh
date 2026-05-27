@@ -439,6 +439,17 @@ main() {
     return 1
   fi
 
+  # ADR-0265 §C7.c — reverse-import guard. Asserts the new N-API binding
+  # crate at forks/agentic-flow/crates/agentic-flow-quic-node/ does not
+  # import agentdb (preserves §I9 SyncCoordinator untouched, §I10 no
+  # @fails-components/webtransport dep). NO-OPs cleanly when the crate
+  # has not yet been authored (Phase 1 not yet shipped); flips to fail-loud
+  # once the crate appears.
+  if ! node "${SCRIPT_DIR}/lint-no-agentdb-in-quic-crate.mjs"; then
+    log_error "lint-no-agentdb-in-quic-crate: FAIL — release blocked (ADR-0265 §C7.c)"
+    return 1
+  fi
+
   # Load previous state
   load_state
 

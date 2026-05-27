@@ -117,6 +117,28 @@ const WONT_MERGE = new Set([
   'v3/@claude-flow/cli/src/memory/graph-edge-writer.ts',
 ]);
 
+// ADR-0265 §C7.b — codemod forbidden-string guard (per-directory content
+// scope). Entries are `{ pathPrefix, forbiddenStrings, reason }` triples;
+// when a file under `pathPrefix` (matched by suffix) contains ANY of the
+// `forbiddenStrings` literally, the file is DROPPED before transformation
+// (same disposition as the path-level WONT_MERGE above).
+//
+// Use this when the upstream-vs-fork divergence isn't a whole file but a
+// SYMBOL re-introduction inside an otherwise-shared directory. For
+// ADR-0265 the concern is that the agentdb-side QUIC stack (deleted per
+// ADR-0217 quarantine) doesn't sneak back via a verbatim upstream-sync
+// that re-introduces `QUICConnectionPool` / `QUICStreamManager` symbols
+// under `forks/agentdb/src/controllers/`. Complements the C7.a arch test
+// (existence assertion) with a release-pipeline forbidden-string assertion.
+const WONT_MERGE_FORBIDDEN_STRINGS = [
+  {
+    // ADR-0265 §C7.b — agentdb-sync QUIC re-introduction guard.
+    pathPrefix: 'forks/agentdb/src/controllers/',
+    forbiddenStrings: ['QUICConnectionPool', 'QUICStreamManager'],
+    reason: 'ADR-0265 §C7.b — agentdb-side QUIC stack was deleted per ADR-0217; federation transport (ADR-0265) explicitly does NOT extend QUIC into the agentdb-sync surface',
+  },
+];
+
 /** Returns true if `relPath` matches a WONT_MERGE entry. */
 function isWontMerge(relPath) {
   // Match by relative path suffix to be robust to leading directory
@@ -126,6 +148,28 @@ function isWontMerge(relPath) {
     if (relPath.endsWith(path) || relPath === path) return true;
   }
   return false;
+}
+
+/**
+ * ADR-0265 §C7.b — Returns the matched forbidden-string entry (or null) for
+ * the given file path + content. `relPath` is matched by suffix against
+ * `pathPrefix` (robust to vendored snapshot prefixes); `content` is then
+ * scanned literally for any of the forbidden strings. Returns:
+ *   { entry, hitString } when a hit is found
+ *   null                  when the file is clean (or out of scope)
+ */
+function findWontMergeForbiddenString(relPath, content) {
+  for (const entry of WONT_MERGE_FORBIDDEN_STRINGS) {
+    // The pathPrefix is matched by .includes() rather than startsWith()
+    // because the codemod walks snapshot trees under nested temp dirs
+    // (/tmp/.../forks/agentdb/src/controllers/X.ts) where the absolute
+    // path embeds the pathPrefix at an arbitrary depth.
+    if (!relPath.includes(entry.pathPrefix)) continue;
+    for (const needle of entry.forbiddenStrings) {
+      if (content.includes(needle)) return { entry, hitString: needle };
+    }
+  }
+  return null;
 }
 
 /** Returns true if `name` starts with any skip prefix. */
@@ -703,6 +747,19 @@ async function processOneFile(filePath, fileCache, tempDir) {
     }
   } else {
     const content = await readFile(filePath, 'utf8');
+
+    // ADR-0265 §C7.b — forbidden-string guard (per-directory content
+    // scope). Drop the file BEFORE the cache check + transformation so a
+    // verbatim upstream-sync cannot re-introduce a quarantined symbol via
+    // a passthrough that the path-level WONT_MERGE list misses (e.g. the
+    // agentdb-side QUIC stack symbols deleted per ADR-0217).
+    const forbidden = findWontMergeForbiddenString(filePath, content);
+    if (forbidden) {
+      await unlink(filePath);
+      result.deleted = filePath;
+      result.forbidden = forbidden;
+      return result;
+    }
 
     // ADR-0040: check per-file hash cache
     if (fileCache) {
