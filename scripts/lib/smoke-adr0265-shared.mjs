@@ -144,7 +144,7 @@ export function installAndInit(tempDir, perf, registry, cliPkg = '@sparkleideas/
 
 /**
  * The host platform triple in the form used by ADR-0265's package-family
- * naming: `@agentic-flow/quic-native-<platform-triple>`. The triple shape
+ * naming: `@sparkleideas/agentic-flow-quic-native-<platform-triple>`. The triple shape
  * is `<platform>-<arch>{-gnu|-msvc}` matching napi-rs conventions.
  *
  * Examples:
@@ -174,10 +174,10 @@ export const PHASE_2A_PLATFORMS = new Set([
 
 /**
  * Return the native binding package name for the host platform.
- * Example: `@agentic-flow/quic-native-darwin-arm64`.
+ * Example: `@sparkleideas/agentic-flow-quic-native-darwin-arm64`.
  */
 export function nativeBindingPackage(triple = hostPlatformTriple()) {
-  return `@agentic-flow/quic-native-${triple}`;
+  return `@sparkleideas/agentic-flow-quic-native-${triple}`;
 }
 
 /**

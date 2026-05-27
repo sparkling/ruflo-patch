@@ -43,6 +43,11 @@ NAPI_PACKAGES=(
   # ── agentic-jujutsu (ADR-0150) ──
   # Single-binary package: crate IS the npm publish dir, dest_npm_dir == crate_path.
   "FORK_DIR_AGENTIC:packages/agentic-jujutsu:packages/agentic-jujutsu"
+
+  # ── agentic-flow-quic-node (ADR-0265 Phase 1 — fork-native QUIC federation transport binding) ──
+  # N-API wrapper around upstream `agentic-flow-quic` crate. Single-binary package
+  # at @sparkleideas/agentic-flow-quic-native; crate IS the npm publish dir.
+  "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node"
 )
 
 # Helper: parse one config entry into 3 globals: NAPI_FORK_DIR, NAPI_CRATE_PATH, NAPI_DEST_NPM_DIR

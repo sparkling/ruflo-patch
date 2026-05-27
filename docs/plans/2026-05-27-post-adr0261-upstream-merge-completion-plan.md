@@ -144,7 +144,7 @@ Mirrors [[ADR-0261]] §D.2 implementation:
 
 **Phase 2 (multi-platform binary distribution) is its own sub-track**:
 - Phase 2 depends on Phase 1 (the crate must exist before we can publish binaries)
-- 5 platform binaries published as `@agentic-flow/quic-native-{darwin-arm64,darwin-x64,linux-x64-gnu,linux-arm64-gnu,win32-x64-msvc}` to Verdaccio (per `[[reference-verdaccio]]`)
+- 5 platform binaries published as `@sparkleideas/agentic-flow-quic-native-{darwin-arm64,darwin-x64,linux-x64-gnu,linux-arm64-gnu,win32-x64-msvc}` to Verdaccio (per `[[reference-verdaccio]]`)
 - `optionalDependencies` in `@sparkleideas/agentic-flow` resolves at install
 - CI cross-compile via GitHub Actions matrix — gated on Track D.1's CI-engineer cost analysis
 

@@ -3,12 +3,12 @@
  * Smoke test: ADR-0265 C1 — N-API binding loads on host platform.
  *
  * Per ADR-0265 §Cross-package symbol contracts: the binding family is
- *   `@agentic-flow/quic-native-<platform-triple>`
+ *   `@sparkleideas/agentic-flow-quic-native-<platform-triple>`
  * where triple = `${process.platform}-${process.arch}{-gnu|-msvc}`.
  *
  * Behaviour:
  *   - On Phase-2a platforms (darwin-arm64, linux-x64-gnu): hard-asserts
- *     `require('@agentic-flow/quic-native-<triple>')` exits 0.
+ *     `require('@sparkleideas/agentic-flow-quic-native-<triple>')` exits 0.
  *   - On non-Phase-2a platforms: `skip-by-policy: platform-not-published-yet`
  *     until Phase 2b lands the remaining 3 binaries.
  *
@@ -85,7 +85,7 @@ function main() {
 
     // Probe via child node process: `require('<pkg>')` must succeed (exit 0).
     // We exec a one-liner via `node -e` so the loader resolution runs from
-    // the smoke's tempDir, picking up the installed @agentic-flow/quic-native-*
+    // the smoke's tempDir, picking up the installed @sparkleideas/agentic-flow-quic-native-*
     // via @sparkleideas/ruflo's optionalDependencies tree.
     const probe = spawnSync(process.execPath, [
       '-e',

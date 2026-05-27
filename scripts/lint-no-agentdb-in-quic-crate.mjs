@@ -6,7 +6,7 @@
  * N-API binding crate authored fork-side per ADR-0265 §Phase 1) does NOT
  * import anything from the agentdb fork. This preserves §I9 (SyncCoordinator
  * untouched) and §I10 (no `@fails-components/webtransport` dep in
- * @agentic-flow/quic-native-*) by closing the back-door route: even if a
+ * @sparkleideas/agentic-flow-quic-native-*) by closing the back-door route: even if a
  * future commit accidentally pulls in an agentdb util, this lint rejects.
  *
  * The crate is a Rust workspace (Cargo) so imports are surfaced via either
@@ -36,8 +36,10 @@ import { readFileSync, readdirSync, statSync, existsSync } from 'node:fs';
 import { resolve, join, relative } from 'node:path';
 
 const ROOT = resolve(new URL('..', import.meta.url).pathname);
+// forks/ is a SIBLING of ruflo-patch (../forks/...), not a subdir.
+// Per lib/fork-paths.sh — the canonical fork-locator script.
 const CRATE_DIR = process.env.QUIC_NODE_CRATE_DIR ||
-  resolve(ROOT, 'forks/agentic-flow/crates/agentic-flow-quic-node');
+  resolve(ROOT, '../forks/agentic-flow/crates/agentic-flow-quic-node');
 
 const args = process.argv.slice(2);
 const jsonOnly = args.includes('--json');

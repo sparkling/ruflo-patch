@@ -25,7 +25,7 @@ What exists upstream today (verified 2026-05-27 in `/Users/henrik/source/ruvnet/
 What's missing in upstream for the federation track per ADR-108:
 
 1. **No N-API binding crate** — needs `crates/agentic-flow-quic-node/` wrapping client/server in `napi-rs`
-2. **No per-platform binary distribution** — pattern from `@ruvector/*`: `@agentic-flow/quic-native-darwin-arm64`, `@agentic-flow/quic-native-linux-x64-gnu`, etc. via `optionalDependencies`
+2. **No per-platform binary distribution** — pattern from `@ruvector/*`: `@sparkleideas/agentic-flow-quic-native-darwin-arm64`, `@sparkleideas/agentic-flow-quic-native-linux-x64-gnu`, etc. via `optionalDependencies`
 3. **No platform detection in `loadQuicTransport`** — today's env-var probe is a placeholder
 4. **No CI matrix for cross-compiled binaries** — GitHub Actions Linux/macOS/Windows + ARM cross-compile
 
@@ -152,13 +152,13 @@ Following the [[ADR-0261]] structure. §Revision 1 (2026-05-27) refined §Export
 ### Phase 2 — Multi-platform binary distribution (staged per §Revision 1)
 
 **Phase 2a (initial — 2 platforms; lowers CI cost; flips the loader for primary targets):**
-* `@agentic-flow/quic-native-darwin-arm64` (dev machine + Apple Silicon prod)
-* `@agentic-flow/quic-native-linux-x64-gnu` (dominant cloud target)
+* `@sparkleideas/agentic-flow-quic-native-darwin-arm64` (dev machine + Apple Silicon prod)
+* `@sparkleideas/agentic-flow-quic-native-linux-x64-gnu` (dominant cloud target)
 
 **Phase 2b (after Phase 2a stabilizes; adds 3 platforms):**
-* `@agentic-flow/quic-native-darwin-x64`
-* `@agentic-flow/quic-native-linux-arm64-gnu`
-* `@agentic-flow/quic-native-win32-x64-msvc`
+* `@sparkleideas/agentic-flow-quic-native-darwin-x64`
+* `@sparkleideas/agentic-flow-quic-native-linux-arm64-gnu`
+* `@sparkleideas/agentic-flow-quic-native-win32-x64-msvc`
 
 `optionalDependencies` in `@sparkleideas/agentic-flow` resolves the right one at install. Loader gracefully falls to WS when no matching binary present (e.g., on a platform not yet in Phase 2b).
 
@@ -171,7 +171,7 @@ Following the [[ADR-0261]] structure. §Revision 1 (2026-05-27) refined §Export
 ### Phase 3 — Loader extension
 
 * Edit `forks/agentic-flow/agentic-flow/src/transport/quic-loader.ts`:
-  * `isRealQuicAvailable()` (line 497-508): replace env-var-only placeholder with platform-detection import of `@agentic-flow/quic-native-${process.platform}-${process.arch}{-gnu|-msvc}`
+  * `isRealQuicAvailable()` (line 497-508): replace env-var-only placeholder with platform-detection import of `@sparkleideas/agentic-flow-quic-native-${process.platform}-${process.arch}{-gnu|-msvc}`
   * **`loadQuicTransport()` (line 524-539): when `isRealQuicAvailable()` returns true, return the native-binding-backed `AgentTransport` instead of `WebSocketFallbackTransport.create(config)`** — this `return`-statement rewire IS the actual upgrade trigger; Phase 1+2 alone do not flip the loader (clarified per §Revision 1 §R1.5).
 * **Widen `TransportCapabilities.selectedBackend` literal union** (line 549): `'quic' | 'websocket'` → `'quic' | 'websocket' | 'websocket-fallback'`. Loader returns `'websocket-fallback'` when env var unset OR binding load fails. Backward-compat: `'websocket'` retained for callsites that don't care about fallback distinction. Per §Revision 1 §R1.3.
 * WS fallback path remains first-class (no throw on no-binding); preserves upstream ADR-108 anti-goal #1.
@@ -216,7 +216,7 @@ Implementation agents working in parallel across `forks/agentic-flow` + `forks/r
 
 | Symbol | Exact value | Consumers |
 |---|---|---|
-| N-API binding package family | `@agentic-flow/quic-native-{darwin-arm64,darwin-x64,linux-x64-gnu,linux-arm64-gnu,win32-x64-msvc}` | agentic-flow publishes; ruflo consumes via `optionalDependencies`; ruflo-patch smokes import |
+| N-API binding package family | `@sparkleideas/agentic-flow-quic-native-{darwin-arm64,darwin-x64,linux-x64-gnu,linux-arm64-gnu,win32-x64-msvc}` | agentic-flow publishes; ruflo consumes via `optionalDependencies`; ruflo-patch smokes import |
 | Loader env-var | `AGENTIC_FLOW_QUIC_NATIVE=1` | agentic-flow reads (`quic-loader.ts:503`); ruflo plugin docstring; ruflo-patch smokes set |
 | `getTransportCapabilities()` return shape | `{quicAvailable: boolean, webSocketFallbackAvailable: true, selectedBackend: 'quic' \| 'websocket' \| 'websocket-fallback', tlsVersion?: 'TLS_1_3'}` | agentic-flow declares; ruflo doctor consumes; ruflo-patch C5 smoke asserts |
 | Loader public exports | `loadQuicTransport`, `isQuicAvailable`, `getTransportCapabilities`, `WebSocketFallbackTransport` from `'agentic-flow/transport/loader'` | all 3 repos |
@@ -238,7 +238,7 @@ Implementation agents MUST respect 13 fork-side invariants surfaced by the D.1 f
 * **I7**: `AgentTransport` interface contract preserved across both backends — `plugin.ts:36-40` cast must continue working
 * **I8**: Doctor output greppable — `HealthCheck.message` contains literal `selectedBackend=...`
 * **I9**: `SyncCoordinator` (agentdb) public surface untouched — Phase 3+4 changes touch only `forks/agentic-flow/agentic-flow/src/transport/*` + `forks/ruflo/v3/@claude-flow/plugin-agent-federation/src/plugin.ts`
-* **I10**: No `@fails-components/webtransport` dep in `@agentic-flow/quic-native-*` (ADR-0199 separation; that pick is agentdb-side)
+* **I10**: No `@fails-components/webtransport` dep in `@sparkleideas/agentic-flow-quic-native-*` (ADR-0199 separation; that pick is agentdb-side)
 * **I11**: Smokes run in `/tmp/ruflo-quic-smoke-$$/` sandboxes per [[ADR-0201]] runtime validation contract; trap-cleanup on success AND failure
 * **I12**: Trunk-only commits to `main` on all 3 repos per `[[feedback-trunk-only-fork-development]]`; commit BEFORE `npm run release` per `[[feedback-commit-forks-before-release]]`
 * **I13**: Aspirational claims verified by measured benchmarks per `[[feedback-corpus-evidence-before-feature-work]]`; `skip-by-policy` permitted with explicit reason per `[[feedback-skip-accepted-as-squelch]]`
@@ -247,7 +247,7 @@ Implementation agents MUST respect 13 fork-side invariants surfaced by the D.1 f
 
 | # | Criterion | Verification |
 |---|---|---|
-| C1 | N-API binding loads on host platform | `scripts/smoke-quic-binding-load.mjs` — `require('@agentic-flow/quic-native-<platform>')` exits 0; for non-Phase-2a platforms, `skip-by-policy: platform-not-published-yet` until Phase 2b lands |
+| C1 | N-API binding loads on host platform | `scripts/smoke-quic-binding-load.mjs` — `require('@sparkleideas/agentic-flow-quic-native-<platform>')` exits 0; for non-Phase-2a platforms, `skip-by-policy: platform-not-published-yet` until Phase 2b lands |
 | C2 | Loader auto-upgrades when env var + binding present | `scripts/smoke-quic-loader-upgrade.mjs` — `AGENTIC_FLOW_QUIC_NATIVE=1` → `getTransportCapabilities().selectedBackend === 'quic'` |
 | C3 | Loader falls back to WS when env var unset OR binding load fails | `scripts/smoke-quic-loader-fallback.mjs` — without env var: `selectedBackend === 'websocket-fallback'` (literal union widened per §Phase 3) |
 | C4 | Federation send round-trips on both backends | `scripts/smoke-quic-federation-roundtrip.mjs` — same payload fired via `selectedBackend='quic'` AND `selectedBackend='websocket-fallback'`; both succeed; envelope + Ed25519 signing untouched |
@@ -348,7 +348,7 @@ Three risks added: code-signing (known-deferred under Verdaccio-local), CI minut
 
 ### R1.10 New acceptance criteria C7.b + C7.c
 
-C7 split into C7.a (existing arch test), C7.b (codemod forbidden-string guard at release-time, complementing the test-time arch check), C7.c (reverse-import guard — no `from.*agentdb` in `@agentic-flow/quic-native-*`).
+C7 split into C7.a (existing arch test), C7.b (codemod forbidden-string guard at release-time, complementing the test-time arch check), C7.c (reverse-import guard — no `from.*agentdb` in `@sparkleideas/agentic-flow-quic-native-*`).
 
 ### R1.11 Aspirational table confidence ratings
 
