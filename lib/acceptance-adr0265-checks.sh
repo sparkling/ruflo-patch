@@ -50,8 +50,16 @@ _adr0265_setup_shared_temp() {
   # @sparkleideas/ruflo is the wrapper install — sources the federation
   # plugin (Phase 4 consumer) + agentic-flow loader (Phase 3 consumer) per
   # ADR-0265 §Phase 4 and §Cross-package symbol contracts.
-  if ! (cd "$td" && npm install @sparkleideas/ruflo \
-      --registry "$registry" --no-audit --no-fund --prefer-offline \
+  # NB: do NOT use `--prefer-offline` here. npm caches the registry metadata
+  # AND the resolved version. With `--prefer-offline`, if a prior release
+  # populated the cache with @sparkleideas/agentic-flow@<old-patch>, npm
+  # silently re-uses it on the next release even after a newer patch has
+  # been published — and the smokes load OLD code with missing exports.
+  # Fresh registry hit per release is cheap (~one extra round-trip) and
+  # avoids the stale-cache class of bug. Explicit `@latest` tag also kicks
+  # npm into re-checking the dist-tag pointer.
+  if ! (cd "$td" && npm install @sparkleideas/ruflo@latest \
+      --registry "$registry" --no-audit --no-fund \
       > "$log" 2>&1); then
     echo "[adr0265-shared-setup] FATAL: npm install failed (see $log)" >&2
     return 1
