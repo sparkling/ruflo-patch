@@ -368,23 +368,30 @@ New row to land same-commit as this ADR's ratification:
 
 ## Confirmation
 
-This ADR is **accepted** (2026-05-27). `completed: false` remains until Phase 2 binaries ship + the binding-dependent smokes flip from `skip-by-policy` to real measured PASS.
+This ADR is **accepted** (2026-05-27); Phase 2a (darwin-arm64 binary published + smokes flipped to REAL PASS) shipped 2026-05-27. Phase 2b (4 remaining platforms via CI matrix) remains. `completed: false` stays — the cross-platform claim isn't met until Phase 2b ships; federation-envelope smokes (C4 / multiplex / benchmark) remain `skip-by-policy` until the federation plugin is bundled or the smokes explicitly install it.
 
 0. ✅ **D.0 — Upstream Phase-1 verification** (committed `3ec26cf`)
 1. ✅ **D.1 — Council review of Option A** (5-expert parallel fan-out; findings folded into §Revision 1)
 2. ✅ **Ratification** — `proposed` → `accepted` (commit `f962cc2`)
 3. ✅ **D.2 — Implementation** (3-agent parallel fan-out per repo; 10 commits across forks/agentic-flow + forks/ruflo + ruflo-patch, plus 6 follow-up fixes for scope alignment, napi-derive JSON escape, npm pack file allowlist, exports map subpath wiring, smoke loader-import scoping, smoke shared-temp cleanup, and harness npm `--prefer-offline` cache-staleness)
-4. ✅ **D.3 — Validate + commit + release + push** (release pipeline green run 11 — `@sparkleideas/agentic-flow-quic-native@0.1.0-patch.<N>` + `@sparkleideas/agentic-flow@2.0.2-alpha-patch.<N>` + `@sparkleideas/ruflo@3.1.0-alpha.14-patch.312` published to Verdaccio; forks pushed via sparkling. Acceptance: 705/714 pass / 0 fail / 9 skip_accepted.)
-5. ⏳ **D.4 — Acceptance criteria audit** — partial:
-    - ✅ **C3** (loader-fallback): PASS — env-off returns `selectedBackend='websocket-fallback'`
-    - ✅ **C5** (doctor): PASS — `cli doctor --component federation` emits the literal `selectedBackend=...`
+4. ✅ **D.3 — Validate + commit + release + push** (release pipeline green; forks pushed via sparkling; ruflo-patch pushed to origin/main)
+5. ✅ **Phase 2a — darwin-arm64 binary publish** (release run 16): published `@sparkleideas/agentic-flow-quic-native-darwin-arm64@0.1.0-patch.<N>` to Verdaccio; wired into `lib/napi-config.sh` + `config/publish-levels.json`; added `agentic-flow-quic-native` as `optionalDependency` of `@sparkleideas/agentic-flow` so the chain pulls in the binding via `npm install @sparkleideas/ruflo`. 5 follow-up fixes: outer-root `./transport/loader` exports map, version lockstep with parent's optDep pin (UNSCOPED_PUBLISHABLE entry for darwin-arm64), loader importing the PARENT wrapper (not the per-platform sub-package — ESM can't `import()` `.node` directly), `requireFederationPluginOrSkip` helper for C4/multiplex/benchmark.
+6. ✅ **D.4 — Acceptance criteria audit** (post-Phase-2a):
+    - ✅ **C1** (N-API binding loads on darwin-arm64): REAL PASS — `@sparkleideas/agentic-flow-quic-native-darwin-arm64` loads via parent wrapper
+    - ✅ **C2** (loader auto-upgrades env-on → quic): REAL PASS — `AGENTIC_FLOW_QUIC_NATIVE=1` → `selectedBackend='quic'`
+    - ✅ **C3** (loader-fallback): REAL PASS — env-off returns `selectedBackend='websocket-fallback'`
+    - ⏳ **C4** (federation round-trips both backends): SKIP_ACCEPTED — `federation-plugin-not-bundled`. WS leg implicitly covered by C3; native leg covered by C2's selectedBackend assertion + multiplex/TLS-1.3 wire verification. Flips to PASS once `@sparkleideas/plugin-agent-federation` is bundled with the wrapper or the smoke installs it.
+    - ✅ **C5** (doctor): REAL PASS — `cli doctor --component federation` emits the literal `selectedBackend=...`
+    - ⏳ **C6** (benchmarks meet documented targets): SKIP_ACCEPTED — `federation-plugin-not-bundled` (same reason as C4). Re-evaluates once plugin bundled OR benchmark rewritten to use the binding directly (no plugin dep)
     - ✅ **C7.a** (no-agentdb-QUIC arch test): PASS via the existing [[ADR-0217]] arch test
     - ✅ **C7.b** (codemod forbidden-string guard): PASS via release-pipeline `scripts/codemod.mjs WONT_MERGE_FORBIDDEN_STRINGS`
     - ✅ **C7.c** (reverse-import guard): PASS — `scripts/lint-no-agentdb-in-quic-crate.mjs` reports 0 hits
-    - ✅ **C8** (all smokes wired into canonical harness): PASS — 11 smokes (7 active + 3 skip-by-policy stubs + 1 benchmark) in `lib/acceptance-adr0265-checks.sh`; both `test-acceptance.sh` and `test-acceptance-fast.sh adr0265` dispatch them
-    - ⏳ **C1** (N-API binding loads): SKIP_ACCEPTED — `phase-2-binary-not-yet-published-to-verdaccio`. Flips to PASS once Phase 2a ships `@sparkleideas/agentic-flow-quic-native-darwin-arm64` + `@sparkleideas/agentic-flow-quic-native-linux-x64-gnu` to Verdaccio
-    - ⏳ **C2** (loader auto-upgrades env-on → quic): SKIP_ACCEPTED — same reason
-    - ⏳ **C4** (federation round-trips both backends): SKIP_ACCEPTED — native leg blocked on Phase 2; WS leg implicitly covered by C3
-    - ⏳ **C6** (benchmarks meet documented targets): SKIP_ACCEPTED — requires loaded native binding; benchmark emits `{"failures": ["T1 latency measurement missing", "T2 fan-out measurement missing"]}` until Phase 2. §Aspirational table MEASURED column stays empty until Phase 2 flips C1/C2/C6
+    - ✅ **C8** (all smokes wired into canonical harness): PASS — 11 smokes in `lib/acceptance-adr0265-checks.sh`; both `test-acceptance.sh` and `test-acceptance-fast.sh adr0265` dispatch them
+    - Aspirational §multiplex: REAL PASS on darwin-arm64
+    - Aspirational §TLS-1.3: REAL PASS on darwin-arm64
+    - 0-RTT / mobility / recovery: SKIP_ACCEPTED per §Revision 1 design (Phase 1.5 / network-namespace / NET_ADMIN gated)
     - Sibling [[ADR-0217]] cross-reference backref: pending (low-priority docs update)
-    - `completed: true` flip is gated on Phase 2 + measured-figures population.
+7. ⏳ **Phase 2b — 4 remaining platforms** (darwin-x64, linux-x64-gnu, linux-arm64-gnu, win32-x64-msvc): requires GitHub Actions cross-compile CI matrix. Smokes already designed to skip-by-policy on non-2a hosts.
+8. ⏳ **Federation plugin smokes (C4 + C6 + multiplex's plugin path)**: requires `@sparkleideas/plugin-agent-federation` to be transitively installed by `@sparkleideas/ruflo`, OR the smokes to install it explicitly in their setup. Out of scope for Phase 2a binary publish.
+
+§Aspirational MEASURED column population is gated on C6 flipping to REAL PASS (which is gated on the federation-plugin question above OR a rewrite of benchmark to call the binding directly).
