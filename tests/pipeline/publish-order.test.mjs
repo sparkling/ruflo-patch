@@ -47,6 +47,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/agentdb': [],
   '@sparkleideas/agentic-flow': [],
   '@sparkleideas/agentic-jujutsu': [],  // ADR-0150 follow-up — has only @qudag/napi-core (external) + bundled darwin-arm64.node
+  '@sparkleideas/agentic-flow-quic-native': [],  // ADR-0265 Phase 1 — N-API wrapper for upstream agentic-flow-quic crate; per-platform binaries are optionalDependencies (not in LEVELS, no transitive deps in the napi sense)
   '@sparkleideas/ruv-swarm': [],
   '@sparkleideas/cli-core': [],  // ADR-0162 follow-up — Level 1, no v3-internal deps; cli (Level 5) re-exports from it
   // Level 2
@@ -188,22 +189,23 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (25+5+5+22+2)', () => {
+    it('all expected packages are present across all levels (26+5+5+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup + ADR-0242 errors.
-      // L1=25, L2=5 (was 4 post-ADR-0239; +errors ADR-0242 Batch 5),
+      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup + ADR-0242 errors + ADR-0265 quic-native.
+      // L1=26 (was 25; +agentic-flow-quic-native ADR-0265 Phase 1),
+      // L2=5 (was 4 post-ADR-0239; +errors ADR-0242 Batch 5),
       // L3=5 (was 6; -ruvector-upstream ADR-0239 cluster 5a; ADR-0203 -hooks earlier),
       // L4=22 (was 24; -testing ADR-0239 cluster 1, -plugin-cognitive-kernel ADR-0239 cluster 5a),
-      // L5=2. Total: 59 (was 58 post-ADR-0239; +errors).
-      assert.equal(LEVELS[0].length, 25, 'Level 1 should have 25 packages');
+      // L5=2. Total: 60 (was 59 post-ADR-0242; +1 ADR-0265).
+      assert.equal(LEVELS[0].length, 26, 'Level 1 should have 26 packages (ADR-0265 added agentic-flow-quic-native)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages (ADR-0242 added @sparkleideas/errors)');
       assert.equal(LEVELS[2].length, 5, 'Level 3 should have 5 packages (ADR-0239 cluster 5a removed ruvector-upstream)');
       assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages (ADR-0239 removed testing + plugin-cognitive-kernel)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        59,
-        `Expected 59 packages total (62 pre-ADR-0239, -4 deleted, +errors ADR-0242), got ${allPackages.length}`
+        60,
+        `Expected 60 packages total (62 pre-ADR-0239, -4 deleted, +errors ADR-0242, +quic-native ADR-0265), got ${allPackages.length}`
       );
     });
 
