@@ -48,6 +48,15 @@ NAPI_PACKAGES=(
   # N-API wrapper around upstream `agentic-flow-quic` crate. Single-binary package
   # at @sparkleideas/agentic-flow-quic-native; crate IS the npm publish dir.
   "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node"
+
+  # ── agentic-flow-quic-node — darwin-arm64 sub-package (ADR-0265 Phase 2a) ──
+  # Per-platform binary package; bundle-native-binaries copies the .node
+  # from the parent crate dir to npm/darwin-arm64/ before publish. The
+  # sub-package's package.json + .node binary together get published as
+  # @sparkleideas/agentic-flow-quic-native-darwin-arm64@0.1.0 (matches the
+  # parent's optionalDependencies pin; per-platform packages don't bump
+  # independently — fork-version.mjs exempts them from -patch.N).
+  "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node/npm/darwin-arm64"
 )
 
 # Helper: parse one config entry into 3 globals: NAPI_FORK_DIR, NAPI_CRATE_PATH, NAPI_DEST_NPM_DIR

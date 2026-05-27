@@ -27,6 +27,7 @@
         "@sparkleideas/agentic-flow",
         "@sparkleideas/agentic-jujutsu",
         "@sparkleideas/agentic-flow-quic-native",
+        "@sparkleideas/agentic-flow-quic-native-darwin-arm64",
         "@sparkleideas/ruv-swarm",
         "@sparkleideas/agent-booster",
         "@sparkleideas/agentdb-onnx",
