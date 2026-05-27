@@ -368,11 +368,23 @@ New row to land same-commit as this ADR's ratification:
 
 ## Confirmation
 
-This ADR is **accepted** (2026-05-27). Remaining steps to `completed: true`:
+This ADR is **accepted** (2026-05-27). `completed: false` remains until Phase 2 binaries ship + the binding-dependent smokes flip from `skip-by-policy` to real measured PASS.
 
 0. ✅ **D.0 — Upstream Phase-1 verification** (committed `3ec26cf`)
 1. ✅ **D.1 — Council review of Option A** (5-expert parallel fan-out; findings folded into §Revision 1)
-2. ✅ **Ratification** — `proposed` → `accepted` (this commit)
-3. ⏳ **D.2 — Implementation** (3-agent parallel fan-out per repo; ADR amendment `implemented: <date>` after completion)
-4. ⏳ **D.3 — Validate + commit + release + push** (12-step gate per `docs/plans/2026-05-27-post-adr0261-upstream-merge-completion-plan.md` §D.3)
-5. ⏳ **D.4 — Acceptance criteria audit** — each of C1-C8 has a passing acceptance test; §Aspirational table populated with MEASURED figures; cross-link sibling [[ADR-0217]] §Cross-references with backref to this ADR
+2. ✅ **Ratification** — `proposed` → `accepted` (commit `f962cc2`)
+3. ✅ **D.2 — Implementation** (3-agent parallel fan-out per repo; 10 commits across forks/agentic-flow + forks/ruflo + ruflo-patch, plus 6 follow-up fixes for scope alignment, napi-derive JSON escape, npm pack file allowlist, exports map subpath wiring, smoke loader-import scoping, smoke shared-temp cleanup, and harness npm `--prefer-offline` cache-staleness)
+4. ✅ **D.3 — Validate + commit + release + push** (release pipeline green run 11 — `@sparkleideas/agentic-flow-quic-native@0.1.0-patch.<N>` + `@sparkleideas/agentic-flow@2.0.2-alpha-patch.<N>` + `@sparkleideas/ruflo@3.1.0-alpha.14-patch.312` published to Verdaccio; forks pushed via sparkling. Acceptance: 705/714 pass / 0 fail / 9 skip_accepted.)
+5. ⏳ **D.4 — Acceptance criteria audit** — partial:
+    - ✅ **C3** (loader-fallback): PASS — env-off returns `selectedBackend='websocket-fallback'`
+    - ✅ **C5** (doctor): PASS — `cli doctor --component federation` emits the literal `selectedBackend=...`
+    - ✅ **C7.a** (no-agentdb-QUIC arch test): PASS via the existing [[ADR-0217]] arch test
+    - ✅ **C7.b** (codemod forbidden-string guard): PASS via release-pipeline `scripts/codemod.mjs WONT_MERGE_FORBIDDEN_STRINGS`
+    - ✅ **C7.c** (reverse-import guard): PASS — `scripts/lint-no-agentdb-in-quic-crate.mjs` reports 0 hits
+    - ✅ **C8** (all smokes wired into canonical harness): PASS — 11 smokes (7 active + 3 skip-by-policy stubs + 1 benchmark) in `lib/acceptance-adr0265-checks.sh`; both `test-acceptance.sh` and `test-acceptance-fast.sh adr0265` dispatch them
+    - ⏳ **C1** (N-API binding loads): SKIP_ACCEPTED — `phase-2-binary-not-yet-published-to-verdaccio`. Flips to PASS once Phase 2a ships `@sparkleideas/agentic-flow-quic-native-darwin-arm64` + `@sparkleideas/agentic-flow-quic-native-linux-x64-gnu` to Verdaccio
+    - ⏳ **C2** (loader auto-upgrades env-on → quic): SKIP_ACCEPTED — same reason
+    - ⏳ **C4** (federation round-trips both backends): SKIP_ACCEPTED — native leg blocked on Phase 2; WS leg implicitly covered by C3
+    - ⏳ **C6** (benchmarks meet documented targets): SKIP_ACCEPTED — requires loaded native binding; benchmark emits `{"failures": ["T1 latency measurement missing", "T2 fan-out measurement missing"]}` until Phase 2. §Aspirational table MEASURED column stays empty until Phase 2 flips C1/C2/C6
+    - Sibling [[ADR-0217]] cross-reference backref: pending (low-priority docs update)
+    - `completed: true` flip is gated on Phase 2 + measured-figures population.
