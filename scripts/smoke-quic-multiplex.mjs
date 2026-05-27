@@ -150,7 +150,7 @@ function main() {
     process.exitCode = 1;
   } finally {
     if (testBodyStart) perf.mark('test-body', testBodyStart);
-    try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
+    try { if (!shared) rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 
   log(`\n${'─'.repeat(60)}`);
