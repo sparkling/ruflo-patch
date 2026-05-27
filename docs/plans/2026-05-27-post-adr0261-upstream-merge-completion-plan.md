@@ -49,7 +49,9 @@ Three tracks below. Tracks A and B advance the upstream-merge frontier; Track C 
 
 **Two-stage delivery**:
 
-### B.1 — New implementation ADR (call provisionally `ADR-0265 — ADR-129 Phases 1-3 implementation amendment`)
+### B.1 — New implementation ADR (`ADR-0266 — ADR-129 Phases 1-3 implementation amendment`)
+
+> ADR-0265 is claimed by Track D (QUIC federation transport). Track B's amendment takes 0266 — next free per the quick-ref inventory.
 
 Drafts the design that reconciles upstream's Phase 1-3 MCP-tool surface (per upstream PR `47a7825b0`) with:
 - Fork's `wasm-agent-tools.ts` persistence layer (`<projectRoot>/.claude-flow/wasm-agents/store.json` + `withStoreLock` + `snapshotAgent` + `ensureLive`)
@@ -65,15 +67,15 @@ Status: `proposed` → council review (smaller than ADR-0261's; the design gates
 Mirrors the ADR-0261 implementation pattern:
 - Parallel agent fan-out for the source writes (3 repos: agentdb if any handlers/types changed, ruflo cli for the MCP tools + persistence layer reconciliation, ruflo-patch for smokes + CI)
 - Acceptance via 5 granular smokes (one per Phase 1, 2, 3 + a persistence-threading smoke + an allowlist-alignment smoke)
-- Smokes wired into the canonical harness via a new `lib/acceptance-adr0265-checks.sh` (per [[feedback-always-wire-tests-into-cicd]])
+- Smokes wired into the canonical harness via a new `lib/acceptance-adr0266-checks.sh` (per [[feedback-always-wire-tests-into-cicd]])
 - Release via `npm run release`; verdict via the canonical harness
 - INTEGRATION-LEDGER row 239 updated from `pick-partial` to disposition reflecting the full integration
 
 **Acceptance**:
-1. New ADR-0265-shaped ratified
+1. New ADR-0266 ratified
 2. 3 phases land in forks; release publishes; sparkling push from pipeline
 3. Smokes green through canonical harness
-4. ADR-0265 `completed: true`
+4. ADR-0266 `completed: true`
 5. Ledger row 239 updated
 
 **Risk shape**: medium. The reconciliation between upstream's MCP surface and the fork's persistence layer is the load-bearing design decision — both gates exist (ADR-0258/0259) but their implementation may surface impedance the gates didn't anticipate. Mitigation: spawn a council on the design ADR (lighter than ADR-0261's — focused on persistence-vs-MCP integration only).
@@ -185,6 +187,59 @@ Plus the aspirational-claims table (§"Aspirational upstream documentation goals
 - **Upstream Phase-1 drift** — if upstream merges their N-API wrapper while we're implementing, we may want to consume theirs instead of shipping ours. Mitigation: weekly track of upstream `agentic-flow#15-21`.
 - **Aspirational claims failing verification** — possible (e.g., mobility may need network-namespace CI we don't have). Mitigation: ADR-0265 §"Aspirational" already permits `skip-by-policy` for verification methods CI can't run, with explicit deferred-verification documentation.
 - **Federation traffic doesn't actually need >100 RPS** — Track D may ship a capability that has no live consumer (shelfware risk). Mitigation: the doctor surface + WS fallback retention mean QUIC is opt-in; no harm if unused. Acceptance criterion C4 verifies both paths work; the user is the one deciding when to flip the env var on.
+
+## Orchestration mechanism per track
+
+Maps each track stage to the canonical pattern from the `ruflo-hive-mind:hive-mind-advanced` skill + the spawn surface (`Agent` tool vs. `mcp__ruflo__hive-mind_*` vs. neither). Per `[[feedback-no-hive-ceremony-for-impl]]` + CLAUDE.md §"Agent Orchestration" table: hives for ratification councils only; parallel `Agent` fan-out for implementation work.
+
+### Current orchestration state (2026-05-27 snapshot)
+
+- **Swarm**: `swarm-1779722353650-7ky611` — `terminated` (mesh, 0 agents). 21 total swarms historically.
+- **Hive**: `hive-1779649833382` — `offline` (mesh, byzantine consensus, 0 workers, 4 prior consensus rounds in shared memory — Batch 3/4/5 ratifications from 2026-05-22..2026-05-24).
+- **Agents**: 13 legacy idle analyst agents from 2026-03-13 (Batch ADR-0186 era; not load-bearing for Tracks A–D).
+
+No active orchestration. Tracks B/C/D spin fresh hives or fan-out agents as needed; no carry-over from the offline hive.
+
+### Per-track orchestration table
+
+| Track | Stage | Pattern | Spawn surface | Queen type | Workers | Transport | Consensus |
+|---|---|---|---|---|---|---|---|
+| **A** | Re-disposition 3 ledger rows | none (single-actor edit) | `Edit` tool | — | — | — | — |
+| **B.1** | ADR-0266 design ratification | Pattern 1 Council Hive (light) | `mcp__ruflo__hive-mind_init` + `_spawn` + 3-4 `Agent` parallel | `strategic` | researcher × 3-4 (upstream-merge archeologist, fork-persistence steward, MCP-allowlist auditor, devil's-advocate) | (a) queen-composed | `weighted` (queen sole voter; per `[[feedback-no-hive-ceremony-for-impl]]` consensus is documentation, not gate) |
+| **B.2** | Implementation across 3 repos | parallel Agent fan-out | `Agent` tool, `run_in_background:true`, ONE message | — (no hive) | coder × 3 (agentdb / ruflo-cli / ruflo-patch) | — | — |
+| **C.1** | ADR-0263 design ratification | Pattern 1 Council Hive (light) | `mcp__ruflo__hive-mind_init` + `_spawn` + 3 `Agent` parallel | `strategic` | researcher × 3 (replay-verification designer, ADR-0181-Phase-I archeologist, harness-integration auditor) | (a) queen-composed | `weighted` (same rationale as B.1) |
+| **C.2** | Implementation (test-surface only) | direct or 1-2 `Agent` | `Agent` tool optional | — | — | — | — |
+| **D.0** | Upstream Phase-1 check | single-agent probe | 1 `Agent` (Explore-type) or inline | — | — | — | — |
+| **D.1** | ADR-0265 design ratification | Pattern 1 Council Hive (5-expert) | `mcp__ruflo__hive-mind_init` + `_spawn` + 5 `Agent` parallel | `strategic` | researcher × 5 (upstream archeologist, fork-invariants steward, CI engineer, aspirational-claims auditor, devil's-advocate) | (a) queen-composed | `weighted` (queen sole voter; consensus rounds are documentation per `[[feedback-no-hive-ceremony-for-impl]]`) |
+| **D.2** | Phase 1+3 implementation across 3 repos | parallel Agent fan-out | `Agent` tool, `run_in_background:true`, ONE message | — (no hive) | coder × 3 (agentic-flow-impl / ruflo-impl / ruflo-patch-impl) | — | — |
+| **D.2 P2** | Multi-platform binary publish (5 platforms) | sequential after D.2 P1 | `Bash` (GH Actions matrix) | — | — | — | — |
+| **D.3** | Validation + commit + release + push | direct (queen-driven) | `Bash` + `Edit` | — | — | — | — |
+| **D.4** | Acceptance criteria audit | direct (queen-driven) | `Bash` (harness) | — | — | — | — |
+
+### Why queen-composed (Transport a) for every council
+
+All three ratification councils (B.1, C.1, D.1) use Pattern 1 §Transports (a) — queen-composed default — NOT runtime cross-talk via `SendMessage` (b), `_memory` (c), or file-based (d). Rationale:
+
+- Single round of dialectic; experts don't need to revise positions after seeing peers (1-round suffices for these reconciliation/ratification questions per `[[feedback-no-hive-ceremony-for-impl]]`).
+- Latency budget: all spawns return → queen composes transcript. No barrier sleeps.
+- Queen is sole voter; per-vote ballots are documentation, not a gate. `_consensus({action:"propose"})` + per-voter ballots populated from worker return values are emitted ONLY to preserve the council-transcript shape — the verdict flips on queen synthesis, not vote tally.
+- Pre-regression ADR-0261 §Revision 1 followed this exact pattern with 5 expert agents.
+
+### Anti-patterns explicitly avoided
+
+- **NO `swarm_init` at task start** — per CLAUDE.md table, swarm is for parallel execution without consensus; `Agent` tool with `run_in_background:true` covers all parallel fan-out needs (Tracks B.2 / D.2). ADR-0098 carve-out.
+- **NO `--claude` subprocess-as-queen flow** — runs into flock contention with active MCP server per ADR-0140 §Amendment row D; the queen-composed pattern keeps the active session as queen.
+- **NO Byzantine consensus voting on ADR ratification** — `[[feedback-no-hive-ceremony-for-impl]]` applies. Workers cite their lens; queen synthesises; ballots are transcript ornament.
+- **NO file-based crosstalk (Transport d) or `SendMessage` (Transport b)** — these are demoted in the skill (sleep barrier wastes wall-clock; `SendMessage` needs experimental teams flag). Queen-composed is the canonical default.
+
+### Cross-package symbol contract pinning (lesson L5, mandatory for B.2 + D.2)
+
+Before spawning parallel coders in B.2 and D.2, the design ADR (ADR-0266 / ADR-0265) §"Implementation plan" MUST enumerate cross-package symbols with exact names. ADR-0261 mid-flight cost: 1 alignment-fix agent + 11-file edit pass because Agent A and Agent B used divergent handler names (`agentdb_graph_edge` vs `agentdb_graph_edge_query`) and column types (TEXT vs INTEGER).
+
+Pre-spawn checklist:
+1. Design ADR §"Implementation plan" enumerates each cross-package symbol with exact name + shape
+2. Final pre-spawn pass through each spawn prompt verifies they reference the SAME symbols
+3. Post-spawn validation via grep: `grep -nE "<feature_name>|<helper_export>" -r forks/` returns matching call/registration pairs
 
 ## Sequencing — updated
 
@@ -303,7 +358,10 @@ Cost: one alignment-fix agent + 11 file edits (`8c44f1f` → alignment commit). 
 | Perf analyzer | `node scripts/analyze-acceptance-perf.mjs` | post-implementation bottleneck check (any Track) |
 | Shared-temp pattern | `lib/acceptance-adr0261-checks.sh` + `scripts/lib/smoke-adr0261-shared.mjs` | reference impl for L4 |
 | Last release | `3.7.0-alpha.10-patch.327` (Verdaccio) | pre-Track-A baseline |
-| ADR numbering | 0264 reserved (graph cleanup per ADR-0261 §1.8); 0265 = QUIC; next free 0266+ | when creating new ADRs |
+| ADR numbering | 0264 reserved (graph cleanup per ADR-0261 §1.8); 0265 = QUIC (Track D); 0266 = ADR-129 P1-3 impl (Track B); 0267 = RVF lock regression (out-of-band, 2026-05-27); next free 0268+ | when creating new ADRs |
+| Current swarm | `swarm-1779722353650-7ky611` — `terminated` | no carry-over; Tracks fan-out via `Agent` tool |
+| Current hive | `hive-1779649833382` — `offline` (4 prior consensus rounds in shared memory) | Tracks B.1/C.1/D.1 spin fresh hives |
+| Skill — orchestration | `ruflo-hive-mind:hive-mind-advanced` (Pattern 1 Council Hive §Transport a) | reference for B.1/C.1/D.1 design ratification |
 
 ## Cross-references
 
@@ -322,5 +380,6 @@ Cost: one alignment-fix agent + 11 file edits (`8c44f1f` → alignment commit). 
 - [[reference-acceptance-perf-analyzer]] — use post-implementation to verify new smokes don't introduce PARALLEL-WASTE
 - [[feedback-commit-forks-before-release]] — fork commits land before `npm run release`
 - [[feedback-no-time-estimates]] — sequencing reasons about risk shape, not duration
-- [[feedback-no-hive-ceremony-for-impl]] — Tracks B + D council use parallel Agent fan-out (not hive-mind consensus)
+- [[feedback-no-hive-ceremony-for-impl]] — Tracks B + D council use queen-composed parallel Agent fan-out; ballots are transcript ornament, not gate
 - [[feedback-no-upstream-donate-backs]] — Track D's N-API binding crate stays fork-side; not PR'd upstream
+- `ruflo-hive-mind:hive-mind-advanced` skill — Pattern 1 Council Hive §Transport (a) is the canonical pattern for B.1/C.1/D.1 design ratification
