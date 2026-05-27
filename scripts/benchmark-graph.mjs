@@ -30,12 +30,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, statSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, statSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { createSmokePerf, setupSmokeTempDir, installAndInit as sharedInstallAndInit, findCli } from './lib/smoke-adr0261-shared.mjs';
 
 const REGISTRY = process.env.REGISTRY || 'http://localhost:4873';
-const CLI_PKG = process.env.CLI_PKG || '@sparkleideas/cli';
 const LOG_DIR = process.env.SMOKE_LOG_DIR || '/tmp';
 const LOG_FILE = join(LOG_DIR, `benchmark-graph-${Date.now()}.log`);
 
@@ -45,50 +44,11 @@ const TARGETS = {
   kHopP99Ms: 5,
 };
 
+const perf = createSmokePerf('benchmark-graph');
+
 function log(msg) {
   process.stderr.write(`${msg}\n`);
   try { appendFileSync(LOG_FILE, `${msg}\n`); } catch {}
-}
-
-function findCli(tempDir) {
-  for (const name of ['ruflo', 'claude-flow', 'cli']) {
-    const p = join(tempDir, 'node_modules', '.bin', name);
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-
-function installAndInit(tempDir) {
-  writeFileSync(join(tempDir, 'package.json'), JSON.stringify({
-    name: 'benchmark-graph', version: '1.0.0', private: true,
-  }));
-  writeFileSync(join(tempDir, '.npmrc'), `registry=${REGISTRY}\n`);
-  log(`[bench] installing ${CLI_PKG}`);
-  const r = spawnSync('npm', [
-    'install', CLI_PKG,
-    '--registry', REGISTRY,
-    '--no-audit', '--no-fund', '--prefer-offline',
-  ], { cwd: tempDir, encoding: 'utf8' });
-  if (r.status !== 0) {
-    log(`[bench] FATAL install: ${r.stderr}`);
-    process.exit(1);
-  }
-  const cli = findCli(tempDir);
-  if (!cli) { log(`[bench] FATAL: cli not found`); process.exit(1); }
-  log(`[bench] init --full --force`);
-  const r2 = spawnSync(cli, ['init', '--full', '--force'], {
-    cwd: tempDir, encoding: 'utf8', timeout: 120000,
-    env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-  });
-  if (r2.status !== 0) {
-    log(`[bench] init failed: ${r2.stderr?.slice(0, 1000)}`);
-    process.exit(1);
-  }
-  spawnSync(cli, ['memory', 'init', '--force'], {
-    cwd: tempDir, encoding: 'utf8', timeout: 30000,
-    env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-  });
-  return cli;
 }
 
 function findMemoryDb(tempDir) {
@@ -278,8 +238,8 @@ async function main() {
 
   if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
 
-  const tempDir = mkdtempSync(join(tmpdir(), 'benchmark-graph-'));
-  log(`[bench] temp dir: ${tempDir}`);
+  const { dir: tempDir, shared } = setupSmokeTempDir('benchmark-graph', perf, REGISTRY);
+  log(`[bench] temp dir: ${tempDir}${shared ? ' (shared)' : ''}`);
 
   const results = {
     targets: TARGETS,
@@ -287,8 +247,16 @@ async function main() {
     passed: { T1: false, T2: false, T3: false },
   };
 
+  let testBodyStart;
   try {
-    const cli = installAndInit(tempDir);
+    let cli;
+    if (shared) {
+      cli = findCli(tempDir);
+      if (!cli) { log(`[bench] FATAL: cli not found in shared subdir`); process.exit(1); }
+    } else {
+      cli = sharedInstallAndInit(tempDir, perf, REGISTRY);
+    }
+    testBodyStart = process.hrtime.bigint();
     const dbPath = findMemoryDb(tempDir);
     if (!dbPath) {
       log(`[bench] FATAL: no memory.db`);
@@ -312,6 +280,7 @@ async function main() {
     if (err.stack) log(err.stack);
     results.error = err.message;
   } finally {
+    if (testBodyStart) perf.mark('test-body', testBodyStart);
     try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 
@@ -326,6 +295,8 @@ async function main() {
   log(`T2 (≤${TARGETS.bytesPerEdge}B/edge):        ${results.passed.T2 ? 'PASS' : 'FAIL'} (got ${results.measured.T2?.bytesPerEdge?.toFixed?.(1)}B)`);
   log(`T3 (k-hop d=1 p99 ≤${TARGETS.kHopP99Ms}ms): ${results.passed.T3 ? 'PASS' : 'FAIL'} (got ${results.measured.T3?.p99?.toFixed?.(2)}ms)`);
   log(`Overall: ${allPassed ? 'PASS' : 'FAIL'}`);
+
+  perf.emitJson();
 
   process.exit(allPassed ? 0 : 1);
 }

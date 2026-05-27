@@ -5,9 +5,72 @@
 # and reports pass/fail based on the script's exit code + captured output.
 #
 # Requires: PROJECT_DIR, _ns, _elapsed_ms from acceptance-harness.sh
-# The smokes themselves bring up their own per-test temp dirs (mkdtempSync +
-# `npm install @sparkleideas/cli` from Verdaccio), so this lib does NOT need to
-# share TEMP_DIR with the surrounding harness.
+#
+# The smokes can run in two modes:
+#   1) Standalone (each smoke does its own mkdtemp + npm install + cli init).
+#      This is the path for `node scripts/smoke-X.mjs` invocations.
+#   2) Shared-temp (env var ADR0261_SMOKE_SHARED_TEMP points at a pre-built
+#      install + init). Saves ~30-45s per smoke (~6 × ~46s = ~280s CPU per
+#      release). Activated by calling `_adr0261_setup_shared_temp` before the
+#      `run_check_bg` calls; teardown via `_adr0261_cleanup_shared_temp`.
+
+# ── Shared-temp setup (perf optimisation, ADR-0261 acceleration) ──────────
+# Creates ONE temp dir, runs ONE `npm install @sparkleideas/cli` + ONE
+# `cli init --full --force` + ONE `cli memory init --force`, exports
+# ADR0261_SMOKE_SHARED_TEMP for the smokes to reuse. Per `feedback-no-fallbacks`,
+# any failure here is fatal and returns non-zero; the caller must NOT proceed
+# to the smokes without the shared install.
+_adr0261_setup_shared_temp() {
+  local td registry log
+  registry="${REGISTRY:-http://localhost:4873}"
+  td=$(mktemp -d /tmp/adr0261-shared-XXXXX) || return 1
+  log="${td}/_setup.log"
+
+  echo '{"name":"adr0261-shared","version":"1.0.0","private":true}' > "${td}/package.json"
+  echo "registry=${registry}" > "${td}/.npmrc"
+
+  if ! (cd "$td" && npm install @sparkleideas/cli \
+      --registry "$registry" --no-audit --no-fund --prefer-offline \
+      > "$log" 2>&1); then
+    echo "[adr0261-shared-setup] FATAL: npm install failed (see $log)" >&2
+    return 1
+  fi
+
+  local cli="${td}/node_modules/.bin/claude-flow"
+  if [[ ! -x "$cli" ]]; then
+    # Fall back to other name variants the cli might publish under.
+    for name in ruflo cli; do
+      [[ -x "${td}/node_modules/.bin/${name}" ]] && cli="${td}/node_modules/.bin/${name}" && break
+    done
+  fi
+  if [[ ! -x "$cli" ]]; then
+    echo "[adr0261-shared-setup] FATAL: cli binary not found after install" >&2
+    return 1
+  fi
+
+  if ! (cd "$td" && NPM_CONFIG_REGISTRY="$registry" \
+      "$cli" init --full --force >> "$log" 2>&1); then
+    echo "[adr0261-shared-setup] FATAL: cli init --full --force failed (see $log)" >&2
+    return 1
+  fi
+
+  if ! (cd "$td" && NPM_CONFIG_REGISTRY="$registry" \
+      "$cli" memory init --force >> "$log" 2>&1); then
+    echo "[adr0261-shared-setup] FATAL: cli memory init --force failed (see $log)" >&2
+    return 1
+  fi
+
+  export ADR0261_SMOKE_SHARED_TEMP="$td"
+  echo "[adr0261-shared-setup] shared temp ready: $td" >&2
+  return 0
+}
+
+_adr0261_cleanup_shared_temp() {
+  if [[ -n "${ADR0261_SMOKE_SHARED_TEMP:-}" && -d "${ADR0261_SMOKE_SHARED_TEMP}" ]]; then
+    rm -rf "${ADR0261_SMOKE_SHARED_TEMP}" 2>/dev/null || true
+  fi
+  unset ADR0261_SMOKE_SHARED_TEMP
+}
 
 _check_adr0261_smoke() {
   local script_name="$1"

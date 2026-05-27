@@ -315,12 +315,21 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0261"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0261-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0261-checks.sh"
     echo "── ADR-0261 (fork-native graph-edges, ADR-130 re-impl) ──"
+    # Shared-temp setup mirrors test-acceptance.sh — one npm install +
+    # one cli init reused across the 6 smokes. Per feedback-no-fallbacks,
+    # a setup failure is FATAL.
+    if ! _adr0261_setup_shared_temp; then
+      echo "[fast] ADR-0261 shared-temp setup FAILED — aborting" >&2
+      exit 1
+    fi
+    echo "[fast] adr0261 shared-temp: ${ADR0261_SMOKE_SHARED_TEMP}"
     _fast_run "adr0261-schema-migration"  check_adr0261_schema_migration
     _fast_run "adr0261-query-dispatch"    check_adr0261_query_dispatch
     _fast_run "adr0261-trajectory-edges"  check_adr0261_trajectory_edges
     _fast_run "adr0261-plugin-adapter"    check_adr0261_plugin_adapter
     _fast_run "adr0261-pathfinder"        check_adr0261_pathfinder
     _fast_run "adr0261-benchmark"         check_adr0261_benchmark
+    _adr0261_cleanup_shared_temp
   fi
 fi
 

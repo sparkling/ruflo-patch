@@ -40,14 +40,15 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs';
+import { join } from 'node:path';
+import { createSmokePerf, setupSmokeTempDir, installAndInit, findCli } from './lib/smoke-adr0261-shared.mjs';
 
 const REGISTRY = process.env.REGISTRY || 'http://localhost:4873';
-const CLI_PKG = process.env.CLI_PKG || '@sparkleideas/cli';
 const LOG_DIR = process.env.SMOKE_LOG_DIR || '/tmp';
 const LOG_FILE = join(LOG_DIR, `smoke-graph-schema-${Date.now()}.log`);
+
+const perf = createSmokePerf('smoke-graph-schema-migration');
 
 let passed = 0;
 let failed = 0;
@@ -60,67 +61,6 @@ function log(msg) {
 function pass(label) { passed++; log(`  PASS  ${label}`); }
 function fail(label, reason) { failed++; log(`  FAIL  ${label}: ${reason}`); }
 function assert(cond, label, reason = '') { cond ? pass(label) : fail(label, reason || 'assertion false'); }
-
-function findCli(tempDir) {
-  for (const name of ['ruflo', 'claude-flow', 'cli']) {
-    const p = join(tempDir, 'node_modules', '.bin', name);
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-
-function installCli(tempDir) {
-  writeFileSync(join(tempDir, 'package.json'), JSON.stringify({
-    name: 'smoke-graph-schema',
-    version: '1.0.0',
-    private: true,
-  }));
-  writeFileSync(join(tempDir, '.npmrc'), `registry=${REGISTRY}\n`);
-  log(`[setup] installing ${CLI_PKG} from ${REGISTRY} → ${tempDir}`);
-  const r = spawnSync('npm', [
-    'install', CLI_PKG,
-    '--registry', REGISTRY,
-    '--no-audit', '--no-fund', '--prefer-offline',
-  ], { cwd: tempDir, encoding: 'utf8' });
-  if (r.status !== 0) {
-    log(`[setup] FATAL: npm install failed (status=${r.status})`);
-    log(`[setup] stderr: ${r.stderr}`);
-    process.exit(1);
-  }
-  const cli = findCli(tempDir);
-  if (!cli) {
-    log(`[setup] FATAL: cli binary not found after install`);
-    process.exit(1);
-  }
-  return cli;
-}
-
-function runInit(cli, tempDir) {
-  log(`[setup] running ${cli} init --full --force`);
-  const r = spawnSync(cli, ['init', '--full', '--force'], {
-    cwd: tempDir,
-    encoding: 'utf8',
-    env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-    timeout: 120000,
-  });
-  if (r.status !== 0) {
-    log(`[setup] init failed (status=${r.status})`);
-    log(`[setup] stderr: ${r.stderr?.slice(0, 2000)}`);
-    log(`[setup] stdout: ${r.stdout?.slice(0, 2000)}`);
-    process.exit(1);
-  }
-  // Init does not create memory.db on its own; force memory init.
-  const r2 = spawnSync(cli, ['memory', 'init', '--force'], {
-    cwd: tempDir,
-    encoding: 'utf8',
-    env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-    timeout: 30000,
-  });
-  if (r2.status !== 0) {
-    log(`[setup] memory init failed (status=${r2.status})`);
-    log(`[setup] stderr: ${r2.stderr?.slice(0, 2000)}`);
-  }
-}
 
 function findMemoryDb(tempDir) {
   // Fork uses .swarm/memory.db per memory-router; agentdb may also place
@@ -148,12 +88,25 @@ function main() {
 
   if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
 
-  const tempDir = mkdtempSync(join(tmpdir(), 'smoke-graph-schema-'));
-  log(`[smoke] temp dir: ${tempDir}`);
+  const { dir: tempDir, shared } = setupSmokeTempDir('smoke-graph-schema', perf, REGISTRY);
+  log(`[smoke] temp dir: ${tempDir}${shared ? ' (shared)' : ''}`);
 
+  let testBodyStart;
   try {
-    const cli = installCli(tempDir);
-    runInit(cli, tempDir);
+    let cli;
+    if (shared) {
+      cli = findCli(tempDir);
+      if (!cli) {
+        log(`[setup] FATAL: cli not found in shared subdir ${tempDir}`);
+        process.exit(1);
+      }
+    } else {
+      cli = installAndInit(tempDir, perf, REGISTRY);
+    }
+    // test-body excludes setup phases above, so the analyzer can sum
+    // {setup-mkdtemp, setup-npm-install, init-cli-full, init-memory, test-body}
+    // ≈ total.
+    testBodyStart = process.hrtime.bigint();
 
     const dbPath = findMemoryDb(tempDir);
     if (!dbPath) {
@@ -247,6 +200,7 @@ function main() {
     if (err.stack) log(err.stack);
     process.exitCode = 1;
   } finally {
+    if (testBodyStart) perf.mark('test-body', testBodyStart);
     try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 
@@ -254,6 +208,8 @@ function main() {
   log(`Results: ${passed} passed, ${failed} failed`);
   log(`Log file: ${LOG_FILE}`);
   log(`${'─'.repeat(60)}`);
+
+  perf.emitJson();
 
   if (failed > 0) {
     log(`\nSmoke FAILED — ADR-0261 P1 schema-migration criteria not met.\n`);

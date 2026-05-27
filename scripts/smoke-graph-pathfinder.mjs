@@ -33,12 +33,11 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { writeFileSync, existsSync, mkdirSync, appendFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { createSmokePerf, setupSmokeTempDir, installAndInit as sharedInstallAndInit, findCli } from './lib/smoke-adr0261-shared.mjs';
 
 const REGISTRY = process.env.REGISTRY || 'http://localhost:4873';
-const CLI_PKG = process.env.CLI_PKG || '@sparkleideas/cli';
 const LOG_DIR = process.env.SMOKE_LOG_DIR || '/tmp';
 const LOG_FILE = join(LOG_DIR, `smoke-graph-pathfinder-${Date.now()}.log`);
 
@@ -51,6 +50,8 @@ const ALGORITHMS = [
   'witness-chain-divergence',
 ];
 
+const perf = createSmokePerf('smoke-graph-pathfinder');
+
 let passed = 0;
 let failed = 0;
 
@@ -62,47 +63,6 @@ function log(msg) {
 function pass(label) { passed++; log(`  PASS  ${label}`); }
 function fail(label, reason) { failed++; log(`  FAIL  ${label}: ${reason}`); }
 function assert(cond, label, reason = '') { cond ? pass(label) : fail(label, reason || 'assertion false'); }
-
-function findCli(tempDir) {
-  for (const name of ['ruflo', 'claude-flow', 'cli']) {
-    const p = join(tempDir, 'node_modules', '.bin', name);
-    if (existsSync(p)) return p;
-  }
-  return null;
-}
-
-function installAndInit(tempDir) {
-  writeFileSync(join(tempDir, 'package.json'), JSON.stringify({
-    name: 'smoke-graph-pathfinder', version: '1.0.0', private: true,
-  }));
-  writeFileSync(join(tempDir, '.npmrc'), `registry=${REGISTRY}\n`);
-  log(`[setup] installing ${CLI_PKG}`);
-  const r = spawnSync('npm', [
-    'install', CLI_PKG,
-    '--registry', REGISTRY,
-    '--no-audit', '--no-fund', '--prefer-offline',
-  ], { cwd: tempDir, encoding: 'utf8' });
-  if (r.status !== 0) {
-    log(`[setup] FATAL install: ${r.stderr}`);
-    process.exit(1);
-  }
-  const cli = findCli(tempDir);
-  if (!cli) { log(`[setup] FATAL: cli not found`); process.exit(1); }
-  log(`[setup] init --full --force`);
-  const r2 = spawnSync(cli, ['init', '--full', '--force'], {
-    cwd: tempDir, encoding: 'utf8', timeout: 120000,
-    env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-  });
-  if (r2.status !== 0) {
-    log(`[setup] init failed: ${r2.stderr?.slice(0, 1000)}`);
-    process.exit(1);
-  }
-  spawnSync(cli, ['memory', 'init', '--force'], {
-    cwd: tempDir, encoding: 'utf8', timeout: 30000,
-    env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-  });
-  return cli;
-}
 
 function findMemoryDb(tempDir) {
   for (const rel of ['.swarm/memory.db', '.claude-flow/agentdb/memory.db', '.claude-flow/memory.db']) {
@@ -177,11 +137,19 @@ function main() {
   log(`[smoke] log file: ${LOG_FILE}\n`);
   if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
 
-  const tempDir = mkdtempSync(join(tmpdir(), 'smoke-graph-pf-'));
-  log(`[smoke] temp dir: ${tempDir}`);
+  const { dir: tempDir, shared } = setupSmokeTempDir('smoke-graph-pf', perf, REGISTRY);
+  log(`[smoke] temp dir: ${tempDir}${shared ? ' (shared)' : ''}`);
 
+  let testBodyStart;
   try {
-    const cli = installAndInit(tempDir);
+    let cli;
+    if (shared) {
+      cli = findCli(tempDir);
+      if (!cli) { log(`[setup] FATAL: cli not found in shared subdir`); process.exit(1); }
+    } else {
+      cli = sharedInstallAndInit(tempDir, perf, REGISTRY);
+    }
+    testBodyStart = process.hrtime.bigint();
     const dbPath = findMemoryDb(tempDir);
     if (!dbPath) {
       fail('0a: locate memory.db', `no memory.db under ${tempDir}`);
@@ -253,6 +221,7 @@ function main() {
     if (err.stack) log(err.stack);
     process.exitCode = 1;
   } finally {
+    if (testBodyStart) perf.mark('test-body', testBodyStart);
     try { rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 
@@ -260,6 +229,8 @@ function main() {
   log(`Results: ${passed} passed, ${failed} failed`);
   log(`Log file: ${LOG_FILE}`);
   log(`${'─'.repeat(60)}`);
+
+  perf.emitJson();
 
   if (failed > 0) {
     log(`\nSmoke FAILED — ADR-0261 P5 pathfinder criteria not met.\n`);

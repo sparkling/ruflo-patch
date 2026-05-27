@@ -3401,6 +3401,19 @@ if [[ -f "$adr0261_lib" ]]; then
   # reports every check as "subprocess crashed".
   PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
 
+  # Shared-temp perf optimisation: ONE npm install + ONE cli init reused
+  # across all 6 smokes via ADR0261_SMOKE_SHARED_TEMP. Saves ~280s CPU
+  # per release. Per feedback-no-fallbacks, a setup failure is FATAL —
+  # we never silently fall back to per-check install (the test harness
+  # depends on the shared install being reachable).
+  if ! _adr0261_setup_shared_temp; then
+    log_error "ADR-0261 shared-temp setup FAILED — aborting smoke block"
+    rm -rf "$PARALLEL_DIR" 2>/dev/null
+    _record_phase "phase-adr0261-graph-edges" "$(_elapsed_ms "$_adr0261_start" "$(_ns)")"
+    exit 1
+  fi
+  log "── ADR-0261 shared-temp ready: ${ADR0261_SMOKE_SHARED_TEMP} ──"
+
   run_check_bg "adr0261-schema-migration"  "ADR-0261 P1 schema migration"   check_adr0261_schema_migration  "adr0261"
   run_check_bg "adr0261-query-dispatch"    "ADR-0261 P2 graph-query dispatch" check_adr0261_query_dispatch    "adr0261"
   run_check_bg "adr0261-trajectory-edges"  "ADR-0261 P3 trajectory hooks"   check_adr0261_trajectory_edges  "adr0261"
@@ -3416,6 +3429,7 @@ if [[ -f "$adr0261_lib" ]]; then
     "adr0261-pathfinder|ADR-0261 P5 pathfinder (6 algs)" \
     "adr0261-benchmark|ADR-0261 P6 benchmark targets"
 
+  _adr0261_cleanup_shared_temp
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0261-graph-edges" "$(_elapsed_ms "$_adr0261_start" "$(_ns)")"
