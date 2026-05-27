@@ -72,6 +72,17 @@ _adr0261_cleanup_shared_temp() {
   unset ADR0261_SMOKE_SHARED_TEMP
 }
 
+# Defensive fallbacks — when invoked via the fast-runner's `_fast_run` shim
+# the surrounding context doesn't always re-source `acceptance-harness.sh`,
+# so `_ns` / `_elapsed_ms` may be absent. Define local fallbacks that match
+# the harness's behavior (nanosecond timestamp; ms delta).
+if ! declare -f _ns >/dev/null 2>&1; then
+  _ns() { date +%s%N 2>/dev/null || echo $(( $(date +%s) * 1000000000 )); }
+fi
+if ! declare -f _elapsed_ms >/dev/null 2>&1; then
+  _elapsed_ms() { echo $(( ( ${2:-0} - ${1:-0} ) / 1000000 )); }
+fi
+
 _check_adr0261_smoke() {
   local script_name="$1"
   local start_ns end_ns log_path
