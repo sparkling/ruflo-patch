@@ -108,32 +108,17 @@ function sqliteExec(dbPath, sql) {
   return { ok: r.status === 0, output: (r.stdout || '').trim(), err: r.stderr || '' };
 }
 
-// Seed 2 memory_entries (the trajectory's "before" and "after" rows). The
-// hook will create edges between these.
-function seedTrajectoryRows(dbPath) {
-  const sql = `
-    INSERT OR REPLACE INTO memory_entries (id, namespace, key, value)
-      VALUES (2001, 'traj', 'step-a-context', 'retrieved auth context');
-    INSERT OR REPLACE INTO memory_entries (id, namespace, key, value)
-      VALUES (2002, 'traj', 'step-b-result', 'wrote auth handler');
-  `;
-  const r = sqliteExec(dbPath, sql);
-  return r.ok;
-}
-
+// The trajectory hook generates its own string ids — it writes
+// `source_id = 'task:${trajectoryId}'` and `target_id = 'pattern:${stepId}'`
+// where stepId is generated as `step-${Date.now()}` inside the handler.
+// Per the schema's IMPLEMENTATION NOTE (ADR-0261 §R2 / graph-edges.sql L23-31)
+// there is NO FK to `memory_entries`, so no pre-seeding is needed. The smoke
+// just fires the hook and reads back the row by relation+source_id.
 function callHook(cli, tempDir, hookName, args) {
-  const r = spawnSync(cli, ['mcp', 'invoke', hookName, JSON.stringify(args)], {
-    cwd: tempDir, encoding: 'utf8', timeout: 15000,
+  const r = spawnSync(cli, ['mcp', 'exec', '-t', hookName, '-p', JSON.stringify(args)], {
+    cwd: tempDir, encoding: 'utf8', timeout: 30000,
     env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
   });
-  if (r.status !== 0) {
-    // Fallback to alternate dispatch shape
-    const r2 = spawnSync(cli, ['mcp', 'call', hookName, '--args', JSON.stringify(args)], {
-      cwd: tempDir, encoding: 'utf8', timeout: 15000,
-      env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-    });
-    return { ok: r2.status === 0, stdout: r2.stdout, stderr: r2.stderr, status: r2.status };
-  }
   return { ok: r.status === 0, stdout: r.stdout, stderr: r.stderr, status: r.status };
 }
 
@@ -154,11 +139,9 @@ function main() {
     }
     pass(`0a: memory.db at ${dbPath}`);
 
-    if (!seedTrajectoryRows(dbPath)) {
-      fail('0b: seed trajectory memory_entries', 'sqlite insert failed');
-      throw new Error('seed failed');
-    }
-    pass(`0b: trajectory memory_entries 2001/2002 seeded`);
+    // No memory_entries seeding needed — graph_edges has no FK to
+    // memory_entries per the schema's IMPLEMENTATION NOTE (ADR-0261 §R2
+    // cross-package impedance). The hook writes string ids directly.
 
     // Baseline count before firing hooks.
     const before = sqliteExec(dbPath,
@@ -167,13 +150,18 @@ function main() {
     log(`[smoke] trajectory-caused row count before: ${beforeCount}`);
 
     // ─── TEST 1: fire trajectory-step hook twice ─────────────────────────
+    // The hook writes `source_id = 'task:${trajectoryId}'` and
+    // `target_id = 'pattern:${stepId}'` where stepId is internally
+    // generated as `step-${Date.now()}`. We can predict the trajectoryId
+    // (we supply it) but not the stepId (handler-internal); the assertions
+    // below match the prefix shapes per the actual write path in
+    // hooks-tools.ts (dispatch payload `agentdb_graph_edge`/`save`).
     log(`\nTEST 1: hooks_intelligence_trajectory-step (2x in sequence)`);
     const trajId = `smoke-traj-${Date.now()}`;
     const r1 = callHook(cli, tempDir, 'hooks_intelligence_trajectory-step', {
       trajectoryId: trajId,
       action: 'retrieve-context',
-      result: 'mem:2001',
-      memoryEntryId: 2001,
+      result: 'mem:context',
       quality: 0.9,
     });
     assert(r1.ok, '1a: first trajectory-step hook exits 0',
@@ -182,16 +170,14 @@ function main() {
     const r2 = callHook(cli, tempDir, 'hooks_intelligence_trajectory-step', {
       trajectoryId: trajId,
       action: 'write-output',
-      result: 'mem:2002',
-      memoryEntryId: 2002,
-      previousMemoryEntryId: 2001,
+      result: 'mem:output',
       quality: 0.95,
     });
     assert(r2.ok, '1b: second trajectory-step hook exits 0',
       `status=${r2.status} stderr=${r2.stderr?.slice(0, 500)}`);
 
-    // ─── TEST 2: trajectory-caused row inserted ──────────────────────────
-    log(`\nTEST 2: graph_edges has new trajectory-caused row`);
+    // ─── TEST 2: trajectory-caused rows inserted ─────────────────────────
+    log(`\nTEST 2: graph_edges has new trajectory-caused rows`);
     const after = sqliteExec(dbPath,
       "SELECT COUNT(*) FROM graph_edges WHERE relation='trajectory-caused';");
     const afterCount = parseInt(after.output, 10) || 0;
@@ -201,16 +187,22 @@ function main() {
       `before=${beforeCount} after=${afterCount}`);
 
     // ─── TEST 3: src/dst/relation shape ──────────────────────────────────
-    log(`\nTEST 3: row src/dst/relation matches expected shape`);
+    // Per the hook's actual dispatch payload at hooks-tools.ts:
+    //   sourceId: `task:${trajectoryId}`
+    //   targetId: `pattern:${stepId}`   (stepId = `step-${Date.now()}`)
+    //   relation: 'trajectory-caused'
+    log(`\nTEST 3: row src/dst/relation matches expected shape (task: / pattern:step-)`);
     const shapeQ = sqliteExec(dbPath,
       "SELECT source_id, target_id, relation, witness_id FROM graph_edges " +
-      "WHERE relation='trajectory-caused' " +
+      `WHERE relation='trajectory-caused' AND source_id='task:${trajId}' ` +
       "ORDER BY rowid DESC LIMIT 1;");
     const parts = shapeQ.output.split('|');
     if (parts.length >= 4) {
       const [src, dst, rel, witness] = parts;
-      assert(src === '2001', '3a: source_id = 2001', `got: ${src}`);
-      assert(dst === '2002', '3b: target_id = 2002', `got: ${dst}`);
+      assert(src === `task:${trajId}`,
+        `3a: source_id = "task:${trajId}"`, `got: ${src}`);
+      assert(dst.startsWith('pattern:step-'),
+        '3b: target_id starts with "pattern:step-"', `got: ${dst}`);
       assert(rel === 'trajectory-caused',
         '3c: relation = "trajectory-caused"', `got: ${rel}`);
 

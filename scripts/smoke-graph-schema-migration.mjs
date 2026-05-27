@@ -5,17 +5,22 @@
  * Mirrors upstream's `smoke-graph-schema-migration.mjs` (P1) re-targeted at the
  * fork's `agentdb` substrate: after `cli init --full --force` the
  * `graph_edges` table created by the agentdb schema loader must be present
- * with the full 12-column shape, 5 indexes, and 2 FKs to `memory_entries`.
+ * with the full 12-column shape and 5 indexes. FK to `memory_entries` is
+ * deferred per ADR-0261's IMPLEMENTATION NOTE — cross-package schema
+ * impedance (cli's `memory_entries` lives in a different package); the
+ * smoke asserts the deferral is documented at the schema layer.
  *
  * Acceptance criteria (per ADR-0261 §R2.8 deliverable #4 + §R2.6 C5):
  *   1. graph_edges table exists after init
  *   2. All 12 columns present (id, source_id, target_id, relation, weight,
  *      confidence, decay_rate, last_reinforced, witness_id, embedding_ref,
  *      metadata, created_at)
- *   3. All 5 indexes present (idx_graph_edges_source_id, _target_id,
- *      _relation, _last_reinforced, _composite_src_rel)
- *   4. 2 foreign keys present (source_id → memory_entries.id;
- *      target_id → memory_entries.id)
+ *   3. All 5 indexes present (idx_graph_edges_triple, _last_reinforced,
+ *      _witness, _src, _dst)
+ *   4. FK to memory_entries DEFERRED at schema layer (cross-package
+ *      impedance per IMPLEMENTATION NOTE); enforced at handler/invariant.
+ *      Asserts 0 FKs at schema — flipping to non-zero requires updating
+ *      both the schema's NOTE and this assertion.
  *
  * Per `feedback-no-tail-tests`: full output tees to LOG_FILE; never pipes
  * through tail/head.
@@ -187,39 +192,45 @@ function main() {
     const idxQ = sqliteQuery(dbPath, 'PRAGMA index_list(graph_edges);');
     // PRAGMA index_list: seq|name|unique|origin|partial
     const indexes = idxQ.lines.map(l => l.split('|')[1]).filter(Boolean);
-    // Required indexes per ADR-0261 §Decision Outcome (mirrors upstream's 4 + composite):
+    // Required indexes per ADR-0261 schema (forks/agentdb/src/schemas/graph-edges.sql):
+    //   idx_graph_edges_triple        — UNIQUE(source_id, target_id, relation) — upsert key
+    //   idx_graph_edges_last_reinforced — DESC sweep + retention scans
+    //   idx_graph_edges_witness       — federation / audit-chain reverse lookup
+    //   idx_graph_edges_src           — direction='src' query filter
+    //   idx_graph_edges_dst           — direction='dst' query filter
     const requiredIdx = [
-      'idx_graph_edges_source_id',
-      'idx_graph_edges_target_id',
-      'idx_graph_edges_relation',
+      'idx_graph_edges_triple',
       'idx_graph_edges_last_reinforced',
-      'idx_graph_edges_composite_src_rel',
+      'idx_graph_edges_witness',
+      'idx_graph_edges_src',
+      'idx_graph_edges_dst',
     ];
     for (const idx of requiredIdx) {
       assert(indexes.includes(idx), `3/${idx}: index present`,
         `indexes=[${indexes.join(',')}]`);
     }
 
-    // ─── TEST 4: 2 foreign keys to memory_entries ─────────────────────────
-    log(`\nTEST 4: PRAGMA foreign_key_list(graph_edges) reports 2 FKs to memory_entries`);
+    // ─── TEST 4: foreign keys to memory_entries are DEFERRED ──────────────
+    // Per ADR-0261 §Decision Outcome + the graph-edges.sql IMPLEMENTATION
+    // NOTE: the cli's `memory_entries` table lives in a different package
+    // (@claude-flow/memory) and is NOT created by agentdb's schema loaders.
+    // Inlining a SQL-level FK would either silently fail (referenced table
+    // absent at table-creation) or cascade-collide. Resolution: defer FK
+    // at the schema layer; enforce referential integrity at the handler /
+    // invariant layer (handler validates srcMemoryId/dstMemoryId; invariant
+    // re-checks). This matches the existing `causal_edges` pattern.
+    //
+    // The smoke asserts the deferral is documented (zero memory_entries
+    // FKs at schema level) — if FKs ever land, this test flips intent and
+    // we update the schema's IMPLEMENTATION NOTE block accordingly.
+    log(`\nTEST 4: FK to memory_entries deferred at schema layer (per ADR-0261 IMPLEMENTATION NOTE)`);
     const fkQ = sqliteQuery(dbPath, 'PRAGMA foreign_key_list(graph_edges);');
-    // PRAGMA foreign_key_list: id|seq|table|from|to|on_update|on_delete|match
     const fkRows = fkQ.lines.map(l => l.split('|'));
     const fkTables = fkRows.map(r => r[2]).filter(Boolean);
     const memoryEntriesFks = fkTables.filter(t => t === 'memory_entries');
-    assert(memoryEntriesFks.length >= 2,
-      `4a: at least 2 FKs to memory_entries`,
-      `got ${memoryEntriesFks.length}: tables=[${fkTables.join(',')}]`);
-    // Verify both source_id and target_id FK
-    const fkFromCols = fkRows
-      .filter(r => r[2] === 'memory_entries')
-      .map(r => r[3]);
-    assert(fkFromCols.includes('source_id'),
-      `4b: source_id FK to memory_entries`,
-      `fk_from_cols=[${fkFromCols.join(',')}]`);
-    assert(fkFromCols.includes('target_id'),
-      `4c: target_id FK to memory_entries`,
-      `fk_from_cols=[${fkFromCols.join(',')}]`);
+    assert(memoryEntriesFks.length === 0,
+      `4a: 0 FKs to memory_entries (deferred per IMPLEMENTATION NOTE)`,
+      `unexpected FKs: got ${memoryEntriesFks.length}, tables=[${fkTables.join(',')}] — if FK was intentionally re-added, update this assertion + the schema's IMPLEMENTATION NOTE`);
 
     // ─── TEST 5: schema loader picked up graph-edges.sql ──────────────────
     // (Indirect check: ADR-0261 §Decision Outcome requires init.ts:110 +

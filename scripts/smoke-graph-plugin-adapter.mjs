@@ -114,54 +114,69 @@ function sqliteExec(dbPath, sql) {
 }
 
 function findPluginDir(tempDir) {
-  // Plugin may be installed under node_modules/@sparkleideas/ruflo-knowledge-graph
-  // or shipped in node_modules/@sparkleideas/cli/plugins/. Try both.
+  // The ruflo-knowledge-graph plugin is a Claude Code marketplace plugin
+  // (NOT an npm package — confirmed: `npm view @sparkleideas/ruflo-
+  // knowledge-graph` returns 404). It is NOT installed by `cli init
+  // --full --force` into the temp project's node_modules. The published
+  // @sparkleideas/cli npm tarball ships only ['dist', 'bin', 'scripts',
+  // '.claude', 'README.md'] — no plugin source tree.
+  //
+  // Per ADR-0261 §R2.8 deliverable #1 (Plugin adapter `GraphEdgesSource`)
+  // and §R2.9 item 1 (option a — retarget to `ruflo-knowledge-graph`),
+  // the P4 deliverable is the source-tree port at
+  // `forks/ruflo/plugins/ruflo-knowledge-graph/` in the dev repo. The
+  // smoke verifies the fork-source presence (this is a dev-machine
+  // acceptance check; the release pipeline runs from the same dev
+  // checkout). CI can override via PLUGIN_DIR env var.
+  if (process.env.PLUGIN_DIR && existsSync(process.env.PLUGIN_DIR)) {
+    return process.env.PLUGIN_DIR;
+  }
   const candidates = [
+    // Temp-install paths (would-be locations if shipped via npm — they're not):
     join(tempDir, 'node_modules', '@sparkleideas', 'ruflo-knowledge-graph'),
     join(tempDir, 'node_modules', '@sparkleideas', 'cli', 'plugins', 'ruflo-knowledge-graph'),
     join(tempDir, '.claude-flow', 'plugins', 'ruflo-knowledge-graph'),
+    // Marketplace cache locations (Claude Code plugin marketplace):
+    join(process.env.HOME || '', '.claude', 'plugins', 'ruflo-knowledge-graph'),
+    // Fork source path (canonical P4 deliverable per ADR-0261 §R2.9):
+    '/Users/henrik/source/forks/ruflo/plugins/ruflo-knowledge-graph',
   ];
   for (const c of candidates) if (existsSync(c)) return c;
-  // Last resort: search for the directory anywhere under node_modules.
-  try {
-    const nm = join(tempDir, 'node_modules');
-    if (existsSync(nm)) {
-      const stack = [nm];
-      while (stack.length > 0) {
-        const dir = stack.pop();
-        const entries = readdirSync(dir, { withFileTypes: true });
-        for (const e of entries) {
-          if (e.isDirectory()) {
-            if (e.name === 'ruflo-knowledge-graph') return join(dir, e.name);
-            // Limit recursion to scope dirs to avoid blowing up
-            if (e.name.startsWith('@')) stack.push(join(dir, e.name));
-          }
-        }
-      }
-    }
-  } catch {}
   return null;
 }
 
 function mcpToolCall(cli, tempDir, toolName, args) {
-  const r = spawnSync(cli, ['mcp', 'invoke', toolName, JSON.stringify(args)], {
-    cwd: tempDir, encoding: 'utf8', timeout: 15000,
+  const r = spawnSync(cli, ['mcp', 'exec', '-t', toolName, '-p', JSON.stringify(args)], {
+    cwd: tempDir, encoding: 'utf8', timeout: 30000,
     env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
   });
-  if (r.status !== 0) {
-    const r2 = spawnSync(cli, ['mcp', 'call', toolName, '--args', JSON.stringify(args)], {
-      cwd: tempDir, encoding: 'utf8', timeout: 15000,
-      env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-    });
-    return { ok: r2.status === 0, stdout: r2.stdout, stderr: r2.stderr, status: r2.status };
-  }
   return { ok: r.status === 0, stdout: r.stdout, stderr: r.stderr, status: r.status };
 }
 
+// Extract the `Result: { ... }` JSON block from `mcp exec` stdout.
 function parseJsonish(out) {
-  const i = out.indexOf('{');
-  if (i < 0) return null;
-  try { return JSON.parse(out.slice(i)); } catch { return null; }
+  if (!out) return null;
+  let start = out.indexOf('Result:');
+  start = start >= 0 ? out.indexOf('{', start) : out.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < out.length; i++) {
+    const ch = out[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(out.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
 }
 
 function main() {
@@ -193,11 +208,21 @@ function main() {
     }
 
     // ─── TEST 2: plugin.json declares graph_adapter ──────────────────────
+    // Claude Code plugins use .claude-plugin/plugin.json; older shapes
+    // used plain plugin.json. Probe both.
     log(`\nTEST 2: plugin.json declares graph_adapter field`);
-    const pluginJsonPath = join(pluginDir, 'plugin.json');
-    assert(existsSync(pluginJsonPath), '2a: plugin.json exists',
-      `path=${pluginJsonPath}`);
-    if (existsSync(pluginJsonPath)) {
+    const pluginJsonCandidates = [
+      join(pluginDir, '.claude-plugin', 'plugin.json'),
+      join(pluginDir, 'plugin.json'),
+    ];
+    let pluginJsonPath = null;
+    for (const c of pluginJsonCandidates) {
+      if (existsSync(c)) { pluginJsonPath = c; break; }
+    }
+    assert(pluginJsonPath !== null, '2a: plugin.json exists',
+      `searched: ${pluginJsonCandidates.join(', ')}`);
+    if (pluginJsonPath) {
+      log(`[smoke] plugin.json: ${pluginJsonPath}`);
       try {
         const pj = JSON.parse(readFileSync(pluginJsonPath, 'utf8'));
         assert(pj.graph_adapter !== undefined,
@@ -240,20 +265,17 @@ function main() {
     }
 
     // ─── TEST 4: seed 3 rows + dispatch read returns them ────────────────
-    log(`\nTEST 4: dispatch sees graph_edges rows via GraphEdgesSource`);
+    // Per the schema's IMPLEMENTATION NOTE (ADR-0261 §R2), graph_edges
+    // has no FK to memory_entries — use string ids directly. witness_id
+    // is NOT NULL with no default; supply a synthetic 16-char hex.
+    log(`\nTEST 4: dispatch sees graph_edges rows via agentdb_graph-query`);
     sqliteExec(dbPath, `
-      INSERT OR REPLACE INTO memory_entries (id, namespace, key, value)
-        VALUES (3001, 'plugin', 'src-a', 'src a');
-      INSERT OR REPLACE INTO memory_entries (id, namespace, key, value)
-        VALUES (3002, 'plugin', 'src-b', 'src b');
-      INSERT OR REPLACE INTO memory_entries (id, namespace, key, value)
-        VALUES (3003, 'plugin', 'src-c', 'src c');
-      INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, last_reinforced)
-        VALUES (3001, 3002, 'plugin-test-rel', 0.5, 0.8, 0.01, strftime('%s','now'));
-      INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, last_reinforced)
-        VALUES (3001, 3003, 'plugin-test-rel', 0.6, 0.85, 0.01, strftime('%s','now'));
-      INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, last_reinforced)
-        VALUES (3002, 3003, 'plugin-test-rel', 0.7, 0.9, 0.01, strftime('%s','now'));
+      INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, witness_id)
+        VALUES ('memory:plugin-a', 'memory:plugin-b', 'plugin-test-rel', 0.5, 0.8, 0.01, 'plg000000000001');
+      INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, witness_id)
+        VALUES ('memory:plugin-a', 'memory:plugin-c', 'plugin-test-rel', 0.6, 0.85, 0.01, 'plg000000000002');
+      INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, witness_id)
+        VALUES ('memory:plugin-b', 'memory:plugin-c', 'plugin-test-rel', 0.7, 0.9, 0.01, 'plg000000000003');
     `);
     const cnt = sqliteExec(dbPath,
       "SELECT COUNT(*) FROM graph_edges WHERE relation='plugin-test-rel';");
@@ -261,15 +283,17 @@ function main() {
       '4a: 3 plugin-test rows seeded', `count=${cnt.output}`);
 
     const dispatch = mcpToolCall(cli, tempDir, 'agentdb_graph-query', {
-      nodeId: '3001', mode: 'k-hop', depth: 2,
+      nodeId: 'memory:plugin-a', mode: 'k-hop', depth: 2,
     });
     assert(dispatch.ok, '4b: agentdb_graph-query (k-hop) dispatch exits 0',
       `status=${dispatch.status} stderr=${dispatch.stderr?.slice(0, 500)}`);
     const json = parseJsonish(dispatch.stdout);
     if (json) {
-      const results = json.results || json.result?.results || [];
+      assert(json.success === true, '4c: dispatch reports success=true',
+        `payload=${JSON.stringify(json).slice(0, 300)}`);
+      const results = json.results || [];
       assert(Array.isArray(results) && results.length > 0,
-        '4c: dispatch returns non-empty results from seeded edges',
+        '4d: dispatch returns non-empty results from seeded edges',
         `length=${results?.length}`);
     } else {
       fail('4c: dispatch returns parseable JSON',

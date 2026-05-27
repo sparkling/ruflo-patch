@@ -117,49 +117,59 @@ function sqliteExec(dbPath, sql) {
   return { ok: r.status === 0, output: (r.stdout || '').trim(), err: r.stderr || '' };
 }
 
+// 7-edge connected graph matching upstream's pathfinder seed (re-shaped
+// from integer FKs to domain-prefixed string ids per the schema's
+// IMPLEMENTATION NOTE — graph_edges has no FK to memory_entries, so we
+// skip the memory_entries seed entirely and use 'task:'/'memory:'/'agent:'
+// string ids directly). `last_reinforced` defaults to ISO 8601 'now' when
+// omitted; `witness_id` is NOT NULL and we supply a synthetic 16-hex seed.
 function seedGoldenGraph(dbPath) {
-  // 7-edge connected graph matching upstream's pathfinder seed.
   const sql = `
-    INSERT OR REPLACE INTO memory_entries (id, namespace, key, value) VALUES
-      (5001, 'pf', 'alice', 'agent alice'),
-      (5002, 'pf', 'task-auth', 'authentication task'),
-      (5003, 'pf', 'auth-mod', 'auth module'),
-      (5004, 'pf', 'jwt', 'jwt library'),
-      (5005, 'pf', 'bob', 'agent bob'),
-      (5006, 'pf', 'task-search', 'search task'),
-      (5007, 'pf', 'user-db', 'user db');
-    INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, last_reinforced) VALUES
-      (5001, 5002, 'assigned-to',  0.9, 0.95, 0.01, strftime('%s','now')),
-      (5002, 5003, 'implements',    0.8, 0.90, 0.01, strftime('%s','now')),
-      (5003, 5004, 'depends-on',    0.7, 0.85, 0.02, strftime('%s','now')),
-      (5005, 5006, 'assigned-to',   0.9, 0.95, 0.01, strftime('%s','now')),
-      (5006, 5003, 'implements',    0.8, 0.90, 0.01, strftime('%s','now')),
-      (5003, 5007, 'reads',         0.6, 0.80, 0.03, strftime('%s','now')),
-      (5001, 5005, 'collaborates',  0.5, 0.75, 0.04, strftime('%s','now'));
+    INSERT INTO graph_edges (source_id, target_id, relation, weight, confidence, decay_rate, witness_id) VALUES
+      ('agent:alice',   'task:auth',    'assigned-to',  0.9, 0.95, 0.01, 'pf00000000000001'),
+      ('task:auth',     'memory:auth-mod', 'implements', 0.8, 0.90, 0.01, 'pf00000000000002'),
+      ('memory:auth-mod','memory:jwt',  'depends-on',   0.7, 0.85, 0.02, 'pf00000000000003'),
+      ('agent:bob',     'task:search',  'assigned-to',  0.9, 0.95, 0.01, 'pf00000000000004'),
+      ('task:search',   'memory:auth-mod', 'implements', 0.8, 0.90, 0.01, 'pf00000000000005'),
+      ('memory:auth-mod','memory:user-db', 'reads',     0.6, 0.80, 0.03, 'pf00000000000006'),
+      ('agent:alice',   'agent:bob',    'collaborates', 0.5, 0.75, 0.04, 'pf00000000000007');
   `;
   const r = sqliteExec(dbPath, sql);
   return r.ok;
 }
 
 function mcpToolCall(cli, tempDir, toolName, args) {
-  const r = spawnSync(cli, ['mcp', 'invoke', toolName, JSON.stringify(args)], {
-    cwd: tempDir, encoding: 'utf8', timeout: 15000,
+  const r = spawnSync(cli, ['mcp', 'exec', '-t', toolName, '-p', JSON.stringify(args)], {
+    cwd: tempDir, encoding: 'utf8', timeout: 30000,
     env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
   });
-  if (r.status !== 0) {
-    const r2 = spawnSync(cli, ['mcp', 'call', toolName, '--args', JSON.stringify(args)], {
-      cwd: tempDir, encoding: 'utf8', timeout: 15000,
-      env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
-    });
-    return { ok: r2.status === 0, stdout: r2.stdout, stderr: r2.stderr, status: r2.status };
-  }
   return { ok: r.status === 0, stdout: r.stdout, stderr: r.stderr, status: r.status };
 }
 
+// Extract the `Result: { ... }` JSON block from `mcp exec` stdout.
 function parseJsonish(out) {
-  const i = out.indexOf('{');
-  if (i < 0) return null;
-  try { return JSON.parse(out.slice(i)); } catch { return null; }
+  if (!out) return null;
+  let start = out.indexOf('Result:');
+  start = start >= 0 ? out.indexOf('{', start) : out.indexOf('{');
+  if (start < 0) return null;
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < out.length; i++) {
+    const ch = out[i];
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) {
+        try { return JSON.parse(out.slice(start, i + 1)); } catch { return null; }
+      }
+    }
+  }
+  return null;
 }
 
 function main() {
@@ -187,12 +197,14 @@ function main() {
     pass(`0b: seeded graph_edges count=${cnt.output}`);
 
     // ─── TEST 1..6: each algorithm returns expected shape ──────────────
+    // Seed uses domain-prefixed string ids; 'agent:alice' is the source
+    // of two outgoing edges (to task:auth and agent:bob).
     let algoIdx = 0;
     for (const algo of ALGORITHMS) {
       algoIdx++;
       log(`\nTEST ${algoIdx}: algorithm=${algo}`);
       const r = mcpToolCall(cli, tempDir, 'agentdb_graph-pathfinder', {
-        seedNodeId: '5001',
+        seedNodeId: 'agent:alice',
         query: 'test',
         algorithm: algo,
         depth: 2,
@@ -203,15 +215,15 @@ function main() {
       assert(json !== null, `${algoIdx}b: ${algo} returns parseable JSON`,
         `stdout=${r.stdout?.slice(0, 300)}`);
       if (json) {
-        const success = json.success ?? json.result?.success ?? true;
+        const success = json.success ?? true;
         assert(success !== false,
           `${algoIdx}c: ${algo} returns success != false`,
           `json=${JSON.stringify(json).slice(0, 200)}`);
-        const paths = json.paths ?? json.result?.paths;
+        const paths = json.paths;
         assert(Array.isArray(paths),
           `${algoIdx}d: ${algo} returns paths array`,
           `got: ${typeof paths}`);
-        const elapsed = json.elapsedMs ?? json.result?.elapsedMs;
+        const elapsed = json.elapsedMs;
         assert(typeof elapsed === 'number' || elapsed === undefined,
           `${algoIdx}e: ${algo} returns elapsedMs (number or absent)`,
           `got type=${typeof elapsed}`);
@@ -221,13 +233,14 @@ function main() {
     // ─── TEST 7: empty graph returns empty paths, NOT error ─────────────
     log(`\nTEST 7: non-existent seed returns success + empty paths`);
     const empty = mcpToolCall(cli, tempDir, 'agentdb_graph-pathfinder', {
-      seedNodeId: '999999', query: 'nothing', algorithm: 'personalized-pagerank',
+      seedNodeId: 'memory:nonexistent-node-xyz', query: 'nothing',
+      algorithm: 'personalized-pagerank',
     });
     assert(empty.ok, '7a: non-existent seed dispatch exits 0',
       `status=${empty.status} stderr=${empty.stderr?.slice(0, 500)}`);
     const emptyJson = parseJsonish(empty.stdout);
     if (emptyJson) {
-      const paths = emptyJson.paths ?? emptyJson.result?.paths ?? [];
+      const paths = emptyJson.paths ?? [];
       assert(Array.isArray(paths),
         '7b: non-existent seed returns paths array');
       assert(paths.length === 0,
