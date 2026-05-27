@@ -879,6 +879,11 @@ adr0116_lib="${PROJECT_DIR}/lib/acceptance-adr0116-checks.sh"
 adr0261_lib="${PROJECT_DIR}/lib/acceptance-adr0261-checks.sh"
 [[ -f "$adr0261_lib" ]] && source "$adr0261_lib"
 
+# ADR-0265: fork-native QUIC federation transport (upstream ADR-108) —
+# 7 active smokes + 3 skip-by-policy stubs + benchmark
+adr0265_lib="${PROJECT_DIR}/lib/acceptance-adr0265-checks.sh"
+[[ -f "$adr0265_lib" ]] && source "$adr0265_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -3433,6 +3438,70 @@ if [[ -f "$adr0261_lib" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0261-graph-edges" "$(_elapsed_ms "$_adr0261_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0265: fork-native QUIC federation transport (upstream ADR-108) —
+# 7 active smokes + 3 skip-by-policy stubs + benchmark.
+# Each smoke is self-contained (mkdtempSync + npm install from Verdaccio
+# via @sparkleideas/ruflo wrapper), so this runs as its own parallel
+# group like ADR-0261. Per ADR-0265 §I12: smokes will FAIL until D.3
+# publishes the new fork bits to Verdaccio (forks/agentic-flow Phase 1+2
+# + forks/ruflo Phase 4) — that is expected; C8 gate is on smokes wired,
+# not on smokes passing.
+# ════════════════════════════════════════════════════════════════════
+_adr0265_start=$(_ns)
+if [[ -f "$adr0265_lib" ]]; then
+  log "── ADR-0265: fork-native QUIC federation transport ──"
+  # Fresh per-block PARALLEL_DIR (mktemp) + rm -rf after collect_parallel
+  # per L2 lesson — block isolation.
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  # Shared-temp perf optimisation: ONE npm install + ONE cli init reused
+  # across all 11 smokes/benchmarks via ADR0265_SMOKE_SHARED_TEMP. Per
+  # feedback-no-fallbacks a setup failure is FATAL — we never silently
+  # fall back to per-check install.
+  if ! _adr0265_setup_shared_temp; then
+    log_error "ADR-0265 shared-temp setup FAILED — aborting smoke block"
+    rm -rf "$PARALLEL_DIR" 2>/dev/null
+    _record_phase "phase-adr0265-quic-federation" "$(_elapsed_ms "$_adr0265_start" "$(_ns)")"
+    exit 1
+  fi
+  log "── ADR-0265 shared-temp ready: ${ADR0265_SMOKE_SHARED_TEMP} ──"
+
+  # 7 active smokes (C1-C5 + multiplex + tls13)
+  run_check_bg "adr0265-binding-load"        "ADR-0265 C1 N-API binding load"          check_adr0265_binding_load          "adr0265"
+  run_check_bg "adr0265-loader-upgrade"      "ADR-0265 C2 loader upgrade (env-on)"      check_adr0265_loader_upgrade        "adr0265"
+  run_check_bg "adr0265-loader-fallback"     "ADR-0265 C3 loader fallback (env-off)"    check_adr0265_loader_fallback       "adr0265"
+  run_check_bg "adr0265-federation-roundtrip" "ADR-0265 C4 federation round-trip"       check_adr0265_federation_roundtrip  "adr0265"
+  run_check_bg "adr0265-doctor"              "ADR-0265 C5 doctor --component federation" check_adr0265_doctor               "adr0265"
+  run_check_bg "adr0265-multiplex"           "ADR-0265 multiplex (HOL blocking)"        check_adr0265_multiplex             "adr0265"
+  run_check_bg "adr0265-tls13"               "ADR-0265 tls13 invariant"                 check_adr0265_tls13                 "adr0265"
+
+  # 3 optional skip-by-policy stubs (legitimate skips per I13)
+  run_check_bg "adr0265-0rtt-reconnect"      "ADR-0265 0-RTT reconnect (skip-by-policy)" check_adr0265_0rtt_reconnect       "adr0265"
+  run_check_bg "adr0265-mobility"            "ADR-0265 mobility (skip-by-policy)"        check_adr0265_mobility             "adr0265"
+  run_check_bg "adr0265-recovery"            "ADR-0265 loss recovery (skip-by-policy)"   check_adr0265_recovery             "adr0265"
+
+  # C6: benchmarks — p99 < 5ms loopback + 100 fan-out
+  run_check_bg "adr0265-benchmark"           "ADR-0265 C6 benchmark targets"            check_adr0265_benchmark             "adr0265"
+
+  collect_parallel "adr0265" \
+    "adr0265-binding-load|ADR-0265 C1 N-API binding load" \
+    "adr0265-loader-upgrade|ADR-0265 C2 loader upgrade (env-on)" \
+    "adr0265-loader-fallback|ADR-0265 C3 loader fallback (env-off)" \
+    "adr0265-federation-roundtrip|ADR-0265 C4 federation round-trip" \
+    "adr0265-doctor|ADR-0265 C5 doctor --component federation" \
+    "adr0265-multiplex|ADR-0265 multiplex (HOL blocking)" \
+    "adr0265-tls13|ADR-0265 tls13 invariant" \
+    "adr0265-0rtt-reconnect|ADR-0265 0-RTT reconnect (skip-by-policy)" \
+    "adr0265-mobility|ADR-0265 mobility (skip-by-policy)" \
+    "adr0265-recovery|ADR-0265 loss recovery (skip-by-policy)" \
+    "adr0265-benchmark|ADR-0265 C6 benchmark targets"
+
+  _adr0265_cleanup_shared_temp
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0265-quic-federation" "$(_elapsed_ms "$_adr0265_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

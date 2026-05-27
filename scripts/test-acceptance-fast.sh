@@ -11,6 +11,7 @@
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
 #         adr0238, adr0239, adr0240, adr0241, adr0242, adr0243, adr0244, adr0245,
 #         adr0246, adr0247, adr0248, adr0261 (fork-native graph-edges, ADR-130),
+#         adr0265 (fork-native QUIC federation transport, upstream ADR-108),
 #         e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
@@ -330,6 +331,33 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0261"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0261-pathfinder"        check_adr0261_pathfinder
     _fast_run "adr0261-benchmark"         check_adr0261_benchmark
     _adr0261_cleanup_shared_temp
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0265"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0265-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0265-checks.sh"
+    echo "── ADR-0265 (fork-native QUIC federation transport, upstream ADR-108) ──"
+    # Shared-temp setup mirrors test-acceptance.sh — one npm install +
+    # one cli init reused across the 11 smokes/benchmarks. Per
+    # feedback-no-fallbacks a setup failure is FATAL.
+    if ! _adr0265_setup_shared_temp; then
+      echo "[fast] ADR-0265 shared-temp setup FAILED — aborting" >&2
+      exit 1
+    fi
+    echo "[fast] adr0265 shared-temp: ${ADR0265_SMOKE_SHARED_TEMP}"
+    _fast_run "adr0265-binding-load"         check_adr0265_binding_load
+    _fast_run "adr0265-loader-upgrade"       check_adr0265_loader_upgrade
+    _fast_run "adr0265-loader-fallback"      check_adr0265_loader_fallback
+    _fast_run "adr0265-federation-roundtrip" check_adr0265_federation_roundtrip
+    _fast_run "adr0265-doctor"               check_adr0265_doctor
+    _fast_run "adr0265-multiplex"            check_adr0265_multiplex
+    _fast_run "adr0265-tls13"                check_adr0265_tls13
+    _fast_run "adr0265-0rtt-reconnect"       check_adr0265_0rtt_reconnect
+    _fast_run "adr0265-mobility"             check_adr0265_mobility
+    _fast_run "adr0265-recovery"             check_adr0265_recovery
+    _fast_run "adr0265-benchmark"            check_adr0265_benchmark
+    _adr0265_cleanup_shared_temp
   fi
 fi
 
