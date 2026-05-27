@@ -197,6 +197,114 @@ Plus the aspirational-claims table (§"Aspirational upstream documentation goals
 
 No time estimates — risk shape, not duration. Track D is the heaviest substantive work in this plan due to the Rust + N-API + cross-compile layer.
 
+## Lessons from ADR-0261 implementation (avoid re-discovery on Tracks B + D)
+
+Six load-bearing learnings from the ADR-0261 release cycle 2026-05-27. Each cost time/cycles to discover; capturing here so Tracks B + D don't repeat the discovery.
+
+### L1 — MCP exec subcommand truth + status semantics
+
+`@sparkleideas/cli` exposes MCP tool invocation via `cli mcp exec -t <tool> -p <json-args>`. Two siblings DO NOT exist despite plausible names: `mcp invoke` and `mcp call`. Smoke iteration #1 (Agent C) wrote against `invoke`/`call`; both fall through to non-zero with silent JSON-parse failure.
+
+**Status semantics gotcha**: `mcp exec` exits 0 EVEN when the tool's response sets `success: false`. Smokes that only check `r.status === 0` accept handler failures as passes. Always also assert `json.success === true` after parsing.
+
+**Result shape gotcha**: tool payloads are top-level `{success, results, ...}` — NOT nested under `result.`.
+
+**Benchmark gotcha**: 50× `cli mcp exec` subprocess loops measure ~480ms cli bootstrap per call, not substrate latency. For sub-ms-latency benchmarks (k-hop, query dispatch), import the handler in-process via `initProcessArchivist` + `ensureSqliteWired` + direct `handler.handler({...})` call. Canonical pattern: `scripts/benchmark-graph.mjs` T3.
+
+### L2 — PARALLEL_DIR per-block isolation in `scripts/test-acceptance.sh`
+
+Each `run_check_bg`+`collect_parallel` block in `scripts/test-acceptance.sh` MUST `mktemp -d` its own `PARALLEL_DIR` and `rm -rf` after `collect_parallel`. The preceding block (e.g., ADR-0096 at L3361) creates and `rm -rf`s its own; if the next block omits the `mktemp -d`, all checks in that block report `FAIL (subprocess crashed)` because `run_check_bg` subshells write `${PARALLEL_DIR}/${id}` into a deleted directory.
+
+Symptom: harness emits `lib/acceptance-harness.sh:408: /tmp/ruflo-accept-par-XXXX/<check-id>: No such file or directory` for every check. Smokes pass standalone but fail under the harness.
+
+Pattern:
+
+```bash
+_adrXXXX_start=$(_ns)
+if [[ -f "$adrXXXX_lib" ]]; then
+  log "── ADR-XXXX: ... ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  run_check_bg "..." "..." check_fn "category"
+  ...
+  collect_parallel "adrXXXX" "id1|label1" ...
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adrXXXX" "$(_elapsed_ms "$_adrXXXX_start" "$(_ns)")"
+```
+
+Caught in ADR-0261 release run 2026-05-27 10:51Z; fixed in commit `e474e39`.
+
+### L3 — ADR-0082 silent-pass lint requires `_check_*` helper naming
+
+`scripts/lint-acceptance-checks.mjs` ADR-0082 lint checks that every `check_*` function either:
+
+1. Directly assigns `_CHECK_PASSED=`, OR
+2. Delegates to a helper matching `_check_<suffix>` / `_<prefix>_check[_<suffix>]` / `_<prefix>_invoke_tool` / `_<prefix>_(validate|verify|expect)_<what>` / `_with_<suffix>` / `_mcp_invoke_tool` / `_expect_mcp_body` / `_assert_<...>`.
+
+Helpers NOT matching these (e.g., `_adr0261_run_smoke`, `_smoke_runner`) trigger:
+
+```
+ERROR L2: check function 'check_X' never assigns _CHECK_PASSED and never delegates to a recognized helper — silent pass risk (ADR-0082)
+```
+
+The lint runs in the release pipeline's `preflight` phase — BLOCKS release. ADR-0261 hit this on first release attempt (commit `56a8cfe` renamed `_adr0261_run_smoke` → `_check_adr0261_smoke`).
+
+**Rule for Tracks B + D**: when writing a new `lib/acceptance-adrXXXX-checks.sh`, name the delegator helper `_check_adrXXXX_<verb>` (or any `_check_*` shape).
+
+### L4 — Shared-temp pattern for parallel acceptance checks
+
+When 4+ smokes in a group each independently do `mkdtempSync` + `npm install @sparkleideas/cli` + `cli init --full --force`, the group becomes a PARALLEL-WASTE bottleneck (ADR-0261's 6 smokes were 825s CPU / 139s wall = `PARALLEL-WASTE x5.9` per the analyzer).
+
+**Pattern** (canonical impl: `lib/acceptance-adr0261-checks.sh` + `scripts/lib/smoke-adr0261-shared.mjs`):
+
+1. Harness lib defines `_adrXXXX_setup_shared_temp` + `_adrXXXX_cleanup_shared_temp`. Setup mktemps ONE dir, runs ONE `npm install` + `cli init`, exports `ADRXXXX_SMOKE_SHARED_TEMP=<path>`.
+2. `scripts/test-acceptance.sh` block calls setup BEFORE `run_check_bg`, cleanup AFTER `collect_parallel`.
+3. Each smoke detects env var. If set + valid: skip own install+init, use the shared dir. Else: standalone fallback.
+4. `test-acceptance-fast.sh` adds setup/cleanup around its dispatch group too.
+
+**Measured impact** (ADR-0261): 139s → 39s wall-clock (3.6× speedup); ~700s CPU saved per release.
+
+**Smoke-side perf instrumentation** (pairs with shared-temp): emit `[perf-json] {smoke, phases:{mkdtemp, npm_install, init_cli, init_memory, test_body, total}}` to stderr for the analyzer to ingest.
+
+**When to apply**: any Track B or Track D `lib/acceptance-adrXXXX-checks.sh` whose smokes each do `cli init --full`. Run `node scripts/analyze-acceptance-perf.mjs` post-implementation — if it flags PARALLEL-WASTE >2 on the new group, apply this pattern.
+
+### L5 — Cross-package symbol contract pinning (multi-agent fan-out)
+
+When 3 agents implement in parallel across forks/agentdb + forks/ruflo + ruflo-patch (Track B + D pattern), they share NO runtime context. Cross-package symbol names MUST be pinned in the design ADR BEFORE spawn. ADR-0261 mid-flight mismatch:
+
+- Agent A (agentdb) registered handler under `agentdb_graph_edge`
+- Agent B (ruflo) dispatched to `agentdb_graph_edge_query`
+- Agent B imported `decodeEmbedding` from `agentdb/encoders/scalar-int8-encoder` but Agent A used different column names + INTEGER ids (vs Agent B's TEXT)
+
+Cost: one alignment-fix agent + 11 file edits (`8c44f1f` → alignment commit). Avoidable by:
+
+1. Design ADR §"Implementation plan" must enumerate cross-package symbols WITH exact names
+2. Run a final pre-spawn pass through the spawn prompts to verify each agent references the SAME symbol names
+3. After parallel-batch completes, verify via grep: `grep -nE "agentdb_<feature>|<helper_export>" -r forks/` should return matching call/registration pairs
+
+### L6 — Tessl skill claims are documentation drift; verify against source
+
+`tessl.io/registry/skills/github/ruvnet/ruflo/*` makes capability claims ("QUIC between AgentDB instances", "sub-ms latency synchronization") that don't reflect actual fork state. The "AgentDB QUIC" claim conflicts with [[ADR-0217]]'s quarantine; the swarm-track QUIC in agentic-flow is for agent-to-agent coordination, not agentdb-instance sync.
+
+**Rule**: never take Tessl as the source of truth. Verify against:
+- Fork ADRs (`docs/adr/`)
+- INTEGRATION-LEDGER
+- Actual source code in `forks/*/src/`
+- Upstream's own design docs (`/Users/henrik/source/ruvnet/<repo>/docs/`)
+
+### Quick-reference inventory for next session
+
+| Artifact | Path | Purpose |
+|---|---|---|
+| Plan doc (canonical entry) | `docs/plans/2026-05-27-post-adr0261-upstream-merge-completion-plan.md` | THIS FILE — read first |
+| Last completed ADR | [[ADR-0261]] | graph_edges; `completed: true` 2026-05-27 |
+| Active ADRs `proposed` | [[ADR-0263]] (replay-verification), [[ADR-0265]] (QUIC fed transport) | Tracks C + D design entries |
+| Upstream QUIC ADR | `/Users/henrik/source/ruvnet/ruflo/v3/docs/adr/ADR-108-native-quic-binding.md` | source design Track D picks up |
+| Perf analyzer | `node scripts/analyze-acceptance-perf.mjs` | post-implementation bottleneck check (any Track) |
+| Shared-temp pattern | `lib/acceptance-adr0261-checks.sh` + `scripts/lib/smoke-adr0261-shared.mjs` | reference impl for L4 |
+| Last release | `3.7.0-alpha.10-patch.327` (Verdaccio) | pre-Track-A baseline |
+| ADR numbering | 0264 reserved (graph cleanup per ADR-0261 §1.8); 0265 = QUIC; next free 0266+ | when creating new ADRs |
+
 ## Cross-references
 
 - [[ADR-0261]] — the precedent pattern (council + revision + amendment + acceptance via harness); Tracks B + D both follow this playbook
