@@ -745,3 +745,42 @@ deferred behind the original 3-precondition revisit-trigger.
 
 No INTEGRATION-LEDGER row (fork-original quarantine work, no
 upstream hand-port).
+
+## Amendment — 2026-05-27 (sibling [[ADR-0265]] scope clarification)
+
+A new sibling ADR landed today: **[[ADR-0265]] — Fork-native QUIC
+federation transport — upstream ADR-108 implementation**.
+
+ADR-0265 picks up upstream's [[ADR-108]] (native QUIC binding for
+federation transport) and commits the fork to implementation. This
+amendment exists to confirm the two ADRs occupy **distinct scopes**
+that coexist without supersession:
+
+| Scope | This ADR (ADR-0217) | Sibling ADR-0265 |
+|---|---|---|
+| Surface | `forks/agentdb/src/controllers/QUIC{ConnectionPool,StreamManager}.ts` | `forks/agentic-flow/crates/agentic-flow-quic-node/` + federation plugin loader |
+| Use case | inter-agentdb-instance multi-writer sync | ruflo federation transport (peer-to-peer) |
+| Disposition | quarantined + deleted; deferred to evidenced product bet | proposed → implementing per upstream ADR-108's vision |
+| Trigger to revisit | 3-precondition revisit-trigger (this ADR's §"Decision review trigger") | upstream Phase-1 progress + ratification |
+
+**This ADR's quarantine remains valid in full**. ADR-0265 does NOT
+introduce any QUIC code into the `forks/agentdb/` substrate. Arch-test
+`tests/unit/adr0217-adr0222-arch.test.ts` (the "QUICConnectionPool /
+QUICStreamManager file must not exist" assertions) is preserved by
+ADR-0265 §"Acceptance criteria" C7.
+
+The two ADRs are bidirectionally cross-linked:
+
+- ADR-0265 §"Cross-references" cites this ADR as `depends-on` with
+  the explicit scope-distinction note
+- This amendment in ADR-0217 cites ADR-0265 as a sibling
+
+Operators reading either ADR see the full QUIC topology: agentdb-sync
+is dormant by design; federation-transport native QUIC is in
+implementation per ADR-0265. The "quarantine still valid?" question
+that motivated ADR-0265 is answered: **yes — for ADR-0217's scope;
+not applicable — for ADR-0265's scope**.
+
+No status change to this ADR. No new INTEGRATION-LEDGER row (the
+cross-link is in-corpus, not upstream-tracked; ADR-0265's row covers
+the upstream-side disposition).
