@@ -51,6 +51,16 @@ export const UNSCOPED_MAP = {
   // bundle-native-binaries.sh multi-fork support. Codemod renames the package
   // so it publishes to Verdaccio as @sparkleideas/agentic-jujutsu.
   'agentic-jujutsu': '@sparkleideas/agentic-jujutsu',
+  // ADR-0265 Phase 1: fork-native QUIC federation transport binding.
+  // Single-binary napi crate at forks/agentic-flow/crates/agentic-flow-quic-node/;
+  // codemod renames so it publishes as @sparkleideas/agentic-flow-quic-native.
+  // Per-platform sub-packages follow the same rescope pattern.
+  'agentic-flow-quic-native': '@sparkleideas/agentic-flow-quic-native',
+  'agentic-flow-quic-native-darwin-arm64': '@sparkleideas/agentic-flow-quic-native-darwin-arm64',
+  'agentic-flow-quic-native-darwin-x64': '@sparkleideas/agentic-flow-quic-native-darwin-x64',
+  'agentic-flow-quic-native-linux-x64-gnu': '@sparkleideas/agentic-flow-quic-native-linux-x64-gnu',
+  'agentic-flow-quic-native-linux-arm64-gnu': '@sparkleideas/agentic-flow-quic-native-linux-arm64-gnu',
+  'agentic-flow-quic-native-win32-x64-msvc': '@sparkleideas/agentic-flow-quic-native-win32-x64-msvc',
   // RuVector unscoped platform packages
   'ruvector-core-darwin-arm64': '@sparkleideas/ruvector-core-darwin-arm64',
   'ruvector-core-darwin-x64': '@sparkleideas/ruvector-core-darwin-x64',

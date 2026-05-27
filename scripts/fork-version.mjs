@@ -70,6 +70,9 @@ export const UNSCOPED_PUBLISHABLE = new Set([
   // the bump for the AI-native VCS package shipped via napi-rebuild.sh +
   // bundle-native-binaries.sh.
   'agentic-jujutsu',
+  // ADR-0265 Phase 1: fork-native QUIC federation transport binding.
+  // Unscoped napi crate name; codemod rescopes to @sparkleideas/agentic-flow-quic-native.
+  'agentic-flow-quic-native',
 ]);
 
 // ── Version parsing ──
