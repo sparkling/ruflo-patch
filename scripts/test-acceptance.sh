@@ -3395,6 +3395,12 @@ _record_phase "phase-adr0096-catalog" "$(_elapsed_ms "$_adr0096_start" "$(_ns)")
 _adr0261_start=$(_ns)
 if [[ -f "$adr0261_lib" ]]; then
   log "── ADR-0261: fork-native graph-edges (ADR-130 re-impl) ──"
+  # Fresh PARALLEL_DIR for this block — the previous adr0096 block `rm -rf`s
+  # its own. Without this, run_check_bg subshells try to write per-check
+  # state files into a deleted directory and the collect_parallel below
+  # reports every check as "subprocess crashed".
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
   run_check_bg "adr0261-schema-migration"  "ADR-0261 P1 schema migration"   check_adr0261_schema_migration  "adr0261"
   run_check_bg "adr0261-query-dispatch"    "ADR-0261 P2 graph-query dispatch" check_adr0261_query_dispatch    "adr0261"
   run_check_bg "adr0261-trajectory-edges"  "ADR-0261 P3 trajectory hooks"   check_adr0261_trajectory_edges  "adr0261"
@@ -3409,6 +3415,8 @@ if [[ -f "$adr0261_lib" ]]; then
     "adr0261-plugin-adapter|ADR-0261 P4 plugin adapter" \
     "adr0261-pathfinder|ADR-0261 P5 pathfinder (6 algs)" \
     "adr0261-benchmark|ADR-0261 P6 benchmark targets"
+
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0261-graph-edges" "$(_elapsed_ms "$_adr0261_start" "$(_ns)")"
 
