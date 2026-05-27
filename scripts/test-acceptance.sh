@@ -875,6 +875,10 @@ adr0132_lib="${PROJECT_DIR}/lib/acceptance-adr0132-checks.sh"
 adr0116_lib="${PROJECT_DIR}/lib/acceptance-adr0116-checks.sh"
 [[ -f "$adr0116_lib" ]] && source "$adr0116_lib"
 
+# ADR-0261: fork-native graph-edges (ADR-130 re-impl) — 5 P1-P5 smokes + benchmark
+adr0261_lib="${PROJECT_DIR}/lib/acceptance-adr0261-checks.sh"
+[[ -f "$adr0261_lib" ]] && source "$adr0261_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -3380,6 +3384,33 @@ collect_parallel "adr0096" \
 
 rm -rf "$PARALLEL_DIR" 2>/dev/null
 _record_phase "phase-adr0096-catalog" "$(_elapsed_ms "$_adr0096_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0261: fork-native graph-edges (ADR-130 re-implementation) — 6 checks
+# 5 smokes (one per upstream Phase P1-P5) + 1 benchmark (P6 parity).
+# Each smoke is self-contained (mkdtempSync + npm install from Verdaccio),
+# so this runs as its own parallel group like ADR-0096 rather than folding
+# into the "all" wave.
+# ════════════════════════════════════════════════════════════════════
+_adr0261_start=$(_ns)
+if [[ -f "$adr0261_lib" ]]; then
+  log "── ADR-0261: fork-native graph-edges (ADR-130 re-impl) ──"
+  run_check_bg "adr0261-schema-migration"  "ADR-0261 P1 schema migration"   check_adr0261_schema_migration  "adr0261"
+  run_check_bg "adr0261-query-dispatch"    "ADR-0261 P2 graph-query dispatch" check_adr0261_query_dispatch    "adr0261"
+  run_check_bg "adr0261-trajectory-edges"  "ADR-0261 P3 trajectory hooks"   check_adr0261_trajectory_edges  "adr0261"
+  run_check_bg "adr0261-plugin-adapter"    "ADR-0261 P4 plugin adapter"     check_adr0261_plugin_adapter    "adr0261"
+  run_check_bg "adr0261-pathfinder"        "ADR-0261 P5 pathfinder (6 algs)" check_adr0261_pathfinder        "adr0261"
+  run_check_bg "adr0261-benchmark"         "ADR-0261 P6 benchmark targets"  check_adr0261_benchmark         "adr0261"
+
+  collect_parallel "adr0261" \
+    "adr0261-schema-migration|ADR-0261 P1 schema migration" \
+    "adr0261-query-dispatch|ADR-0261 P2 graph-query dispatch" \
+    "adr0261-trajectory-edges|ADR-0261 P3 trajectory hooks" \
+    "adr0261-plugin-adapter|ADR-0261 P4 plugin adapter" \
+    "adr0261-pathfinder|ADR-0261 P5 pathfinder (6 algs)" \
+    "adr0261-benchmark|ADR-0261 P6 benchmark targets"
+fi
+_record_phase "phase-adr0261-graph-edges" "$(_elapsed_ms "$_adr0261_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

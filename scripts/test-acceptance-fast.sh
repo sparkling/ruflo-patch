@@ -10,7 +10,7 @@
 # Groups: all, p3, p4, p5, adr0059, adr0085, adr0176, adr0177, adr0178, adr0181,
 #         adr0194, adr0195, adr0196, adr0204, adr0208, adr0234, adr0235, adr0237,
 #         adr0238, adr0239, adr0240, adr0241, adr0242, adr0243, adr0244, adr0245,
-#         adr0246, adr0247, adr0248,
+#         adr0246, adr0247, adr0248, adr0261 (fork-native graph-edges, ADR-130),
 #         e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
@@ -308,6 +308,19 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0237"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     echo "── ADR-0237 (fail-loud sona_instant setters) ──"
     _fast_run "adr0237-rs-markers"    check_adr0237_sona_instant_markers
     _fast_run "adr0237-clippy-guard"  check_adr0237_manual_clamp_not_allowed
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0261"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0261-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0261-checks.sh"
+    echo "── ADR-0261 (fork-native graph-edges, ADR-130 re-impl) ──"
+    _fast_run "adr0261-schema-migration"  check_adr0261_schema_migration
+    _fast_run "adr0261-query-dispatch"    check_adr0261_query_dispatch
+    _fast_run "adr0261-trajectory-edges"  check_adr0261_trajectory_edges
+    _fast_run "adr0261-plugin-adapter"    check_adr0261_plugin_adapter
+    _fast_run "adr0261-pathfinder"        check_adr0261_pathfinder
+    _fast_run "adr0261-benchmark"         check_adr0261_benchmark
   fi
 fi
 
