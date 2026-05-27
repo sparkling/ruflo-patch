@@ -101,6 +101,28 @@ Why A over C:
 
 This ADR is **proposed**. Ratification + implementation are separate steps following the [[ADR-0261]] pattern.
 
+## Pre-flight (D.0) — Upstream Phase-1 verification
+
+**Verified 2026-05-27 via local mirror `/Users/henrik/source/ruvnet/agentic-flow/` + `gh issue list -R ruvnet/agentic-flow --search QUIC`.**
+
+| Upstream artifact | State (2026-05-27) | Delta since ADR-108 draft (2026-05-09) |
+|---|---|---|
+| Issue #15 (Phase-1 Foundation Implementation) | OPEN; last updated 2025-10-12 | unchanged |
+| Issue #16 (Phase-1 Fix WASM Build Dependencies) | OPEN; last updated 2025-10-12 | unchanged |
+| Issue #17 (Phase-1 TypeScript QUIC Wrapper) | OPEN; last updated 2025-10-12 | unchanged |
+| Issue #18 (Phase-1 Integration Tests) | OPEN; last updated 2025-10-12 | unchanged |
+| Issue #19 (Phase-1 Benchmark Suite) | OPEN; last updated 2025-10-12 | unchanged |
+| Issue #20 (Phase-1 wasm-pack Build Pipeline) | OPEN; last updated 2025-10-12 | unchanged |
+| Issue #21 (Phase-1 Validation & Documentation) | OPEN; last updated 2025-10-12 | unchanged |
+| Issue #23 (Release v1.5.14: QUIC Transport Layer Integration) | OPEN; last updated 2025-10-16 | unchanged |
+| Issue #52 (HTTP/2, HTTP/3, WebSocket Fallback for streaming) | OPEN; last updated 2025-11-06 | orthogonal; not Phase-1 |
+| `crates/agentic-flow-quic-node/` directory | **does NOT exist** upstream | confirms: no N-API wrapper anywhere upstream |
+| Commits in `crates/agentic-flow-quic/` since 2026-05-09 | **none** | crate is frozen since ADR-108 draft |
+
+**Conclusion**: zero upstream Phase-1 progress in the 18 days since ADR-108 was drafted. The N-API binding crate and per-platform binary distribution must be authored fork-side. Option A's premise (fork-implementing-ahead-of-upstream) holds — there is no upstream work to consume.
+
+**Council input**: workers in the D.1 ratification council should treat upstream's documented `crates/agentic-flow-quic/` (the `quinn`-based Rust crate) as a fixed dependency to wrap. They should NOT assume any TypeScript wrapper, integration tests, or benchmarks exist upstream — those are part of the fork deliverable.
+
 ## Aspirational upstream documentation goals (to be verified, not committed)
 
 Upstream agentic-flow's QUIC documentation (`docs/architecture/QUIC-IMPLEMENTATION-SUMMARY.md`, `docs/quic/QUIC-STATUS.md`, `docs/reviews/quic-implementation-review.md`, `examples/quic-server-coordinator.js`, `benchmarks/quic-transport.bench.ts`) makes the following capability claims. These are **hypotheses** the fork's implementation + verification routine will measure; not commitments to deliver:
