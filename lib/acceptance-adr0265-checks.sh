@@ -58,7 +58,13 @@ _adr0265_setup_shared_temp() {
   # Fresh registry hit per release is cheap (~one extra round-trip) and
   # avoids the stale-cache class of bug. Explicit `@latest` tag also kicks
   # npm into re-checking the dist-tag pointer.
-  if ! (cd "$td" && npm install @sparkleideas/ruflo@latest \
+  # Install BOTH @sparkleideas/ruflo (wrapper) AND @sparkleideas/plugin-agent-
+  # federation (federation envelope plugin needed by C4 / multiplex / benchmark
+  # smokes). The plugin is an opt-in `cli plugin install` target in normal
+  # user installs; for the ADR-0265 wrapper smokes we install it as a sibling
+  # npm package so the smokes' `await import('@sparkleideas/plugin-agent-
+  # federation')` resolves cleanly.
+  if ! (cd "$td" && npm install @sparkleideas/ruflo@latest @sparkleideas/plugin-agent-federation@latest \
       --registry "$registry" --no-audit --no-fund \
       > "$log" 2>&1); then
     echo "[adr0265-shared-setup] FATAL: npm install failed (see $log)" >&2
