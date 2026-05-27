@@ -43,6 +43,7 @@ import {
   createSmokePerf,
   setupSmokeTempDir,
   installAndInit,
+  requireNativeBindingOrSkip,
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
   skipByPolicy,
@@ -109,6 +110,7 @@ function main() {
 
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
+    requireNativeBindingOrSkip(tempDir, 'bench-quic');
     testBodyStart = process.hrtime.bigint();
 
     // Single child process — drives BOTH T1 (latency) and T2 (fan-out).
@@ -117,7 +119,7 @@ function main() {
     const childCode = `
       (async () => {
         try {
-          const loader = await import('agentic-flow/transport/loader');
+          const loader = await import('@sparkleideas/agentic-flow/transport/loader');
           const caps = await loader.getTransportCapabilities();
           if (caps.selectedBackend !== 'quic') {
             console.log('SKIP:selectedBackend=' + caps.selectedBackend);

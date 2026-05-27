@@ -24,6 +24,7 @@ import {
   createSmokePerf,
   setupSmokeTempDir,
   installAndInit,
+  requireNativeBindingOrSkip,
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
   skipByPolicy,
@@ -69,12 +70,13 @@ function main() {
   let testBodyStart;
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
+    requireNativeBindingOrSkip(tempDir, 'smoke-quic-multiplex');
     testBodyStart = process.hrtime.bigint();
 
     const childCode = `
       (async () => {
         try {
-          const loader = await import('agentic-flow/transport/loader');
+          const loader = await import('@sparkleideas/agentic-flow/transport/loader');
           const caps = await loader.getTransportCapabilities();
           if (caps.selectedBackend !== 'quic') {
             console.log('SKIP:selectedBackend=' + caps.selectedBackend);

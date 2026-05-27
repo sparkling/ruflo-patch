@@ -38,6 +38,7 @@ import {
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
   nativeBindingPackage,
+  requireNativeBindingOrSkip,
   skipByPolicy,
 } from './lib/smoke-adr0265-shared.mjs';
 
@@ -81,6 +82,12 @@ function main() {
   let testBodyStart;
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
+
+    // ADR-0265 §Phase 2: per-platform `.node` binaries publish independently
+    // of the parent wrapper. Until Phase 2 lands them, the optional
+    // sub-package is silently dropped by npm. Skip with explicit reason.
+    requireNativeBindingOrSkip(tempDir, 'smoke-quic-binding-load', triple);
+
     testBodyStart = process.hrtime.bigint();
 
     // Probe via child node process: `require('<pkg>')` must succeed (exit 0).

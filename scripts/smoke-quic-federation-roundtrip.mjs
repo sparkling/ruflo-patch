@@ -25,6 +25,7 @@ import {
   createSmokePerf,
   setupSmokeTempDir,
   installAndInit,
+  requireNativeBindingOrSkip,
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
   nativeBindingPackage,
@@ -61,7 +62,7 @@ function runRoundtrip(tempDir, envOn) {
   const childCode = `
     (async () => {
       try {
-        const loader = await import('agentic-flow/transport/loader');
+        const loader = await import('@sparkleideas/agentic-flow/transport/loader');
         const caps = await loader.getTransportCapabilities();
         console.log('CAPS:' + JSON.stringify(caps));
 
@@ -133,6 +134,7 @@ function main() {
   let testBodyStart;
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
+    requireNativeBindingOrSkip(tempDir, 'smoke-quic-fed-rt');
     testBodyStart = process.hrtime.bigint();
 
     // Leg 1 — env-off (WS fallback). MUST PASS.

@@ -21,7 +21,7 @@
  */
 
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, existsSync, symlinkSync, cpSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, existsSync, symlinkSync, cpSync, readdirSync } from 'node:fs';
 import { tmpdir, platform, arch } from 'node:os';
 import { join } from 'node:path';
 
@@ -178,6 +178,51 @@ export const PHASE_2A_PLATFORMS = new Set([
  */
 export function nativeBindingPackage(triple = hostPlatformTriple()) {
   return `@sparkleideas/agentic-flow-quic-native-${triple}`;
+}
+
+/**
+ * Check whether the per-platform native binding package is installed in the
+ * tempDir's node_modules tree. Returns true only when the binding's
+ * package.json + .node file both exist.
+ *
+ * Per ADR-0265: Phase 1 ships the wrapper crate (`@sparkleideas/agentic-flow-
+ * quic-native`); Phase 2 publishes per-platform sub-packages. Until Phase 2
+ * lands the .node binaries to Verdaccio, smokes that require a loaded
+ * binding `skip-by-policy: phase-2-binary-not-yet-published` instead of
+ * failing.
+ *
+ * @param {string} tempDir - The smoke's tempDir (has `node_modules/`).
+ * @param {string} [triple] - Platform triple; defaults to host.
+ * @returns {boolean} true if the per-platform binding package is installed
+ *   AND has a `.node` artifact under it; false otherwise.
+ */
+export function isNativeBindingInstalled(tempDir, triple = hostPlatformTriple()) {
+  const pkgDir = `${tempDir}/node_modules/@sparkleideas/agentic-flow-quic-native-${triple}`;
+  if (!existsSync(`${pkgDir}/package.json`)) return false;
+  // The .node binary is the actual artifact; presence of package.json
+  // alone could indicate a half-installed optionalDependency.
+  try {
+    const entries = readdirSync(pkgDir);
+    return entries.some((f) => f.endsWith('.node'));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Convenience: if the per-platform native binding isn't installed in the
+ * tempDir's node_modules tree, skip-by-policy + exit 0. Otherwise return
+ * silently so the caller proceeds to the real test. Used by smokes whose
+ * Phase 5 contract requires a loaded native QUIC binding (C1, C2, multiplex,
+ * TLS-1.3 check, benchmark). C3 (WS fallback) and C5 (doctor) do NOT use this
+ * — they validate paths that work without a binding.
+ */
+export function requireNativeBindingOrSkip(tempDir, smokeName, triple = hostPlatformTriple()) {
+  if (isNativeBindingInstalled(tempDir, triple)) return;
+  const pkg = `@sparkleideas/agentic-flow-quic-native-${triple}`;
+  skipByPolicy(smokeName,
+    `phase-2-binary-not-yet-published-to-verdaccio: ${pkg} optionalDependency absent in tempDir node_modules`,
+    { triple, expectedPackage: pkg });
 }
 
 /**

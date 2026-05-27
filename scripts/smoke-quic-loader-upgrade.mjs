@@ -24,6 +24,7 @@ import {
   createSmokePerf,
   setupSmokeTempDir,
   installAndInit,
+  requireNativeBindingOrSkip,
   findCli,
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
@@ -70,6 +71,7 @@ function main() {
   let testBodyStart;
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
+    requireNativeBindingOrSkip(tempDir, 'smoke-quic-loader-upgrade');
     testBodyStart = process.hrtime.bigint();
 
     // Pre-flight: confirm the binding actually loads (or we skip with an
@@ -93,7 +95,7 @@ function main() {
     const childCode = `
       (async () => {
         try {
-          const mod = await import('agentic-flow/transport/loader');
+          const mod = await import('@sparkleideas/agentic-flow/transport/loader');
           if (typeof mod.getTransportCapabilities !== 'function') {
             console.log('FAIL:getTransportCapabilities missing');
             process.exit(0);

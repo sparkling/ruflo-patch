@@ -60,7 +60,7 @@ function main() {
     const childCode = `
       (async () => {
         try {
-          const mod = await import('agentic-flow/transport/loader');
+          const mod = await import('@sparkleideas/agentic-flow/transport/loader');
           if (typeof mod.getTransportCapabilities !== 'function') {
             console.log('FAIL:getTransportCapabilities missing');
             process.exit(0);
