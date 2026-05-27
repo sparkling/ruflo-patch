@@ -9,7 +9,7 @@
 # `npm install @sparkleideas/cli` from Verdaccio), so this lib does NOT need to
 # share TEMP_DIR with the surrounding harness.
 
-_adr0261_run_smoke() {
+_check_adr0261_smoke() {
   local script_name="$1"
   local start_ns end_ns log_path
   start_ns=$(_ns)
@@ -41,30 +41,30 @@ _adr0261_run_smoke() {
 
 # P1: graph_edges schema migration (table + 12 columns + 5 indexes after init)
 check_adr0261_schema_migration() {
-  _adr0261_run_smoke "smoke-graph-schema-migration.mjs"
+  _check_adr0261_smoke "smoke-graph-schema-migration.mjs"
 }
 
 # P2: agentdb_graph-query in 3 modes (k-hop, pagerank, semantic)
 check_adr0261_query_dispatch() {
-  _adr0261_run_smoke "smoke-graph-query-dispatch.mjs"
+  _check_adr0261_smoke "smoke-graph-query-dispatch.mjs"
 }
 
 # P3: trajectory + post-task hooks write trajectory-caused / reinforced-by edges
 check_adr0261_trajectory_edges() {
-  _adr0261_run_smoke "smoke-trajectory-graph-edges.mjs"
+  _check_adr0261_smoke "smoke-trajectory-graph-edges.mjs"
 }
 
 # P4: ruflo-knowledge-graph plugin's GraphEdgesSource adapter sees graph_edges
 check_adr0261_plugin_adapter() {
-  _adr0261_run_smoke "smoke-graph-plugin-adapter.mjs"
+  _check_adr0261_smoke "smoke-graph-plugin-adapter.mjs"
 }
 
 # P5: agentdb_graph-pathfinder — all 6 algorithms return expected shape
 check_adr0261_pathfinder() {
-  _adr0261_run_smoke "smoke-graph-pathfinder.mjs"
+  _check_adr0261_smoke "smoke-graph-pathfinder.mjs"
 }
 
 # P6: benchmark — 3 targets (≥2345 writes/sec, ≤780B/edge, k-hop d=1 p99 ≤5ms)
 check_adr0261_benchmark() {
-  _adr0261_run_smoke "benchmark-graph.mjs"
+  _check_adr0261_smoke "benchmark-graph.mjs"
 }
