@@ -1,0 +1,142 @@
+# ADR-0265 — CI stanza for the fork-native QUIC federation transport.
+#
+# Two jobs: env-on (sets AGENTIC_FLOW_QUIC_NATIVE=1, exercises the QUIC
+# path) and env-off (loader falls back to WS, exercises the WS-fallback
+# path). Both run `bash scripts/test-acceptance-fast.sh adr0265` so the
+# 7-active + 3-stub-skip + benchmark suite runs against a freshly-published
+# fork. Per ADR-0265 §C4: federation send must round-trip on both backends;
+# per §C8 the verification smokes must be wired into the canonical harness.
+#
+# Reference shape: .github/workflows/v3-ci-graph.yml (the ADR-0261 CI
+# stanza); this workflow mirrors that structure with env-on/env-off matrix.
+# Per `feedback-trunk-only-fork-development` ruflo-patch ships the
+# source-of-truth; the fork's v3-ci.yml is rebuilt from this stanza.
+#
+# Discipline:
+# - set-e per ADR-0245: each job uses `set -e` in shell steps so failures
+#   propagate; failures aggregate (no squelching per `feedback-no-squelch-tests`).
+# - Per `feedback-no-tail-tests`: each smoke writes its log via the smoke's
+#   built-in LOG_FILE mechanism (env: SMOKE_LOG_DIR).
+# - Per `reference-fast-test-runner` / `reference-cli-cmd-helper`: smokes
+#   reuse the Verdaccio-served `@sparkleideas/ruflo` install pattern (no
+#   raw `npx @latest` in parallel — each job has its own working dir).
+#
+# Per ADR-0265 §I12 (trunk-only) the workflow runs on main only.
+#
+# IMPORTANT: smokes WILL FAIL until D.3 runs `npm run release` to publish
+# the new fork bits (forks/agentic-flow Phase 1+2 + forks/ruflo Phase 4) to
+# Verdaccio. C8 acceptance gate is on smokes WIRED into the harness, NOT
+# on smokes passing; the smokes are exercised post-publish.
+
+name: ADR-0265 QUIC federation transport
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/agentic-flow/agentic-flow/src/transport/**'
+      - 'forks/agentic-flow/crates/agentic-flow-quic-node/**'
+      - 'forks/agentic-flow/crates/agentic-flow-quic/**'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/**'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts'
+      - 'scripts/smoke-quic-*.mjs'
+      - 'scripts/benchmark-quic-federation.mjs'
+      - 'scripts/lib/smoke-adr0265-shared.mjs'
+      - 'lib/acceptance-adr0265-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/agentic-flow/agentic-flow/src/transport/**'
+      - 'forks/agentic-flow/crates/agentic-flow-quic-node/**'
+      - 'forks/agentic-flow/crates/agentic-flow-quic/**'
+      - 'forks/ruflo/v3/@claude-flow/plugin-agent-federation/**'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/commands/doctor.ts'
+      - 'scripts/smoke-quic-*.mjs'
+      - 'scripts/benchmark-quic-federation.mjs'
+      - 'scripts/lib/smoke-adr0265-shared.mjs'
+      - 'lib/acceptance-adr0265-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  quic-env-on:
+    # ADR-0265 §C2 + §C4 leg 2 — QUIC backend selected (env var set).
+    # On Phase-2a runners the loader auto-upgrades to native QUIC. On
+    # other runners the smokes emit `skip-by-policy: native-binding-
+    # unavailable` (legitimate skip per §I13).
+    name: QUIC env-on (AGENTIC_FLOW_QUIC_NATIVE=1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      AGENTIC_FLOW_QUIC_NATIVE: '1'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0265 smokes (env-on)
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0265 2>&1 | tee "${SMOKE_LOG_DIR}/adr0265-env-on.log"
+
+      - name: Upload smoke logs (env-on)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-quic-env-on
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  quic-env-off:
+    # ADR-0265 §C3 + §C4 leg 1 — WS-fallback backend selected (env unset).
+    # WS fallback is first-class per upstream ADR-108 anti-goal #1 — this
+    # job MUST PASS on every host regardless of binding availability.
+    name: QUIC env-off (WS fallback)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Strip AGENTIC_FLOW_QUIC_NATIVE from env
+        run: |
+          # Belt-and-suspenders: ensure env var isn't inherited via runner
+          # config. The fast-runner exports this on a per-smoke basis from
+          # the env var below — clearing it here makes env-off explicit.
+          echo "AGENTIC_FLOW_QUIC_NATIVE=" >> $GITHUB_ENV
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0265 smokes (env-off)
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0265 2>&1 | tee "${SMOKE_LOG_DIR}/adr0265-env-off.log"
+
+      - name: Upload smoke logs (env-off)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-quic-env-off
+          path: ${{ env.SMOKE_LOG_DIR }}
