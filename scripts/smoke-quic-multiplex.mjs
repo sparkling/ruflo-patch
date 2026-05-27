@@ -25,6 +25,7 @@ import {
   setupSmokeTempDir,
   installAndInit,
   requireNativeBindingOrSkip,
+  requireFederationPluginOrSkip,
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
   skipByPolicy,
@@ -71,6 +72,7 @@ function main() {
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
     requireNativeBindingOrSkip(tempDir, 'smoke-quic-multiplex');
+    requireFederationPluginOrSkip(tempDir, 'smoke-quic-multiplex');
     testBodyStart = process.hrtime.bigint();
 
     const childCode = `

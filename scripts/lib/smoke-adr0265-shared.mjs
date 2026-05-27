@@ -226,6 +226,23 @@ export function requireNativeBindingOrSkip(tempDir, smokeName, triple = hostPlat
 }
 
 /**
+ * Skip-by-policy when `@sparkleideas/plugin-agent-federation` isn't installed
+ * in the tempDir. The plugin is an opt-in `cli plugin install` target, NOT
+ * a direct dep of `@sparkleideas/ruflo`, so the wrapper's npm install tree
+ * never includes it. Smokes that exercise the federation envelope (C4,
+ * multiplex, benchmark) need the plugin available; without it they cannot
+ * run the round-trip. Per `feedback-skip-accepted-as-squelch`: legit skip
+ * = feature genuinely unavailable on this install.
+ */
+export function requireFederationPluginOrSkip(tempDir, smokeName) {
+  const pluginDir = `${tempDir}/node_modules/@sparkleideas/plugin-agent-federation`;
+  if (existsSync(pluginDir)) return;
+  skipByPolicy(smokeName,
+    'federation-plugin-not-bundled: @sparkleideas/plugin-agent-federation is an opt-in plugin (cli plugin install), not a direct dep of @sparkleideas/ruflo. Smokes that exercise federation envelope require explicit plugin install — out of scope for the wrapper smoke.',
+    { expectedPlugin: '@sparkleideas/plugin-agent-federation' });
+}
+
+/**
  * Emit a `skip-by-policy` JSON line on stdout AND a human-readable line on
  * stderr, then exit 0. The harness picks this up as a documented skip
  * (not a silent pass) per `feedback-skip-accepted-as-squelch` (legitimate

@@ -44,6 +44,7 @@ import {
   setupSmokeTempDir,
   installAndInit,
   requireNativeBindingOrSkip,
+  requireFederationPluginOrSkip,
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
   skipByPolicy,
@@ -111,6 +112,7 @@ function main() {
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
     requireNativeBindingOrSkip(tempDir, 'bench-quic');
+    requireFederationPluginOrSkip(tempDir, 'bench-quic');
     testBodyStart = process.hrtime.bigint();
 
     // Single child process — drives BOTH T1 (latency) and T2 (fan-out).
