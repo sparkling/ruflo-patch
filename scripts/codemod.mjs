@@ -97,6 +97,37 @@ const SKIP_DIRS = new Set(['.git', 'node_modules']);
 const SKIP_FILE_PREFIXES = ['LICENSE'];
 const DELETE_FILES = new Set(['pnpm-lock.yaml']);
 
+// ADR-0261 (2026-05-27) — files that upstream ships but fork must NEVER
+// pull in via a verbatim sync. The fork-native equivalent lives elsewhere
+// (e.g. `forks/agentdb/src/archivist/handlers/agentdb/graph-edge.ts`) and
+// the upstream shape violates fork invariants the fork-side ADR-0261
+// design satisfies (criterion #1: no module-scope `_db` cache; criterion
+// #2: archivist-routed writes via routeMemoryOp; criterion #6: no
+// fire-and-forget `} catch { return false }`).
+//
+// Matched by basename suffix or relative path. When the codemod walks a
+// source tree and encounters one of these paths (typically inside a
+// freshly-cloned upstream snapshot before transformation), the entry is
+// dropped before any rename / transformation pass runs. This blocks a
+// future upstream-sync from silently reintroducing the offending shape.
+const WONT_MERGE = new Set([
+  // ADR-0261 criterion #1: module-scope `_db` cache in graph-edge-writer
+  // — fork's archivist handler at forks/agentdb/src/archivist/handlers/
+  // agentdb/graph-edge.ts replaces this.
+  'v3/@claude-flow/cli/src/memory/graph-edge-writer.ts',
+]);
+
+/** Returns true if `relPath` matches a WONT_MERGE entry. */
+function isWontMerge(relPath) {
+  // Match by relative path suffix to be robust to leading directory
+  // prefixes (e.g. when the codemod runs against a vendored snapshot
+  // under `/forks/ruflo/v3/...`).
+  for (const path of WONT_MERGE) {
+    if (relPath.endsWith(path) || relPath === path) return true;
+  }
+  return false;
+}
+
 /** Returns true if `name` starts with any skip prefix. */
 function isSkippedFile(name) {
   return SKIP_FILE_PREFIXES.some((p) => name.startsWith(p));
@@ -622,6 +653,15 @@ async function processOneFile(filePath, fileCache, tempDir) {
   const result = { scanned: 0, transformed: 0, packageJson: 0, deleted: null };
 
   if (DELETE_FILES.has(name)) {
+    await unlink(filePath);
+    result.deleted = filePath;
+    return result;
+  }
+
+  // ADR-0261 WONT_MERGE guard: drop the file before transformation so a
+  // verbatim upstream-sync cannot re-introduce the upstream shape that
+  // the fork-native ADR-0261 design replaces.
+  if (isWontMerge(filePath)) {
     await unlink(filePath);
     result.deleted = filePath;
     return result;

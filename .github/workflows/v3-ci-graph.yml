@@ -1,0 +1,267 @@
+# ADR-0261 — CI stanza for the 5 graph-intelligence smokes + benchmark.
+#
+# This file holds the 5 jobs (one per smoke) the ADR-0261 design requires.
+# The stanza is intended to be merged into the fork's
+# `forks/ruflo/.github/workflows/v3-ci.yml` during the next release-pipeline
+# pass (per `feedback-trunk-only-fork-development` — ruflo-patch ships the
+# source-of-truth, fork's v3-ci.yml is rebuilt from this stanza).
+#
+# Discipline:
+# - set-e per ADR-0245: each job uses `set -e` in shell steps so failures
+#   propagate; failures aggregate (no squelching per `feedback-no-squelch-tests`).
+# - gated parallel: schema-smoke must pass first (it validates the substrate);
+#   the other 4 smokes + benchmark run in parallel after.
+# - Per `feedback-no-tail-tests`: each smoke writes its log to a file via the
+#   smoke's built-in LOG_FILE mechanism (env: SMOKE_LOG_DIR).
+# - Per `reference-fast-test-runner` / `reference-cli-cmd-helper`: smokes
+#   reuse the same Verdaccio-served `@sparkleideas/cli` install pattern
+#   (no raw `npx @latest` in parallel — each job has its own working dir).
+#
+# Reference shape: upstream `ruvnet/ruflo/.github/workflows/v3-ci.yml`
+# lines 1923-2079 (5 jobs: graph-schema-smoke → 4 parallel smokes →
+# graph-benchmark). Fork's shape mirrors this with smoke names + log
+# discipline adapted to the fork-native handler surface.
+
+name: ADR-0261 graph intelligence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/agentdb/src/archivist/handlers/agentdb/graph-edge.ts'
+      - 'forks/agentdb/src/schemas/graph-edges.sql'
+      - 'forks/agentdb/src/encoders/scalar-int8-encoder.ts'
+      - 'forks/agentdb/src/workers/graph-edge-sweep.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'forks/ruflo/plugins/ruflo-knowledge-graph/**'
+      - 'scripts/smoke-graph-*.mjs'
+      - 'scripts/benchmark-graph.mjs'
+  pull_request:
+    paths:
+      - 'forks/agentdb/src/archivist/handlers/agentdb/graph-edge.ts'
+      - 'forks/agentdb/src/schemas/graph-edges.sql'
+      - 'forks/agentdb/src/encoders/scalar-int8-encoder.ts'
+      - 'forks/agentdb/src/workers/graph-edge-sweep.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/agentdb-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/hooks-tools.ts'
+      - 'forks/ruflo/plugins/ruflo-knowledge-graph/**'
+      - 'scripts/smoke-graph-*.mjs'
+      - 'scripts/benchmark-graph.mjs'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/cli'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  graph-schema-smoke:
+    # ADR-0261 P1 — graph_edges schema migration. Must pass before any
+    # other job runs (the other 4 smokes assume the table + indexes exist).
+    name: graph schema smoke (ADR-0261 P1)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run schema-migration smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/smoke-graph-schema-migration.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/schema.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-schema
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  graph-query-smoke:
+    # ADR-0261 P2 — agentdb_graph-query dispatch (3 modes).
+    name: graph query dispatch smoke (ADR-0261 P2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: graph-schema-smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run query-dispatch smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/smoke-graph-query-dispatch.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/query.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-query
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  graph-trajectory-smoke:
+    # ADR-0261 P3 — hooks_intelligence_trajectory-step / hooks_post-task
+    # writers. Asserts the witness_id is a 16-char hex string (federation
+    # criterion C8 per ADR-0261 §R1.4).
+    name: graph trajectory hooks smoke (ADR-0261 P3)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: graph-schema-smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run trajectory-graph-edges smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/smoke-trajectory-graph-edges.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/trajectory.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-trajectory
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  graph-plugin-adapter-smoke:
+    # ADR-0261 P4 — ruflo-knowledge-graph plugin adapter (GraphEdgesSource).
+    name: graph plugin adapter smoke (ADR-0261 P4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: graph-schema-smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run plugin-adapter smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/smoke-graph-plugin-adapter.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/plugin.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-plugin
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  graph-pathfinder-smoke:
+    # ADR-0261 P5 — agentdb_graph-pathfinder (6 algorithms verbatim).
+    name: graph pathfinder smoke (ADR-0261 P5)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: graph-schema-smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run pathfinder smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/smoke-graph-pathfinder.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/pathfinder.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-pathfinder
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  graph-benchmark:
+    # ADR-0261 P6 — write throughput, payload size, k-hop p99 targets.
+    # Runs after all 4 P2-P5 smokes pass.
+    name: graph benchmark (ADR-0261 P6)
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs:
+      - graph-query-smoke
+      - graph-trajectory-smoke
+      - graph-plugin-adapter-smoke
+      - graph-pathfinder-smoke
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run graph benchmark
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/benchmark-graph.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/benchmark.log"
+
+      - name: Upload benchmark logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-benchmark
+          path: ${{ env.SMOKE_LOG_DIR }}

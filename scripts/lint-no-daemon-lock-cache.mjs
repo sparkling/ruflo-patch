@@ -38,10 +38,39 @@ const ALLOWLIST_FILE = join(PROJECT_DIR, 'lib', 'no-daemon-lock-cache-allowlist.
 // Forks live at /Users/henrik/source/forks/ (sibling of ruflo-patch).
 // Fall back to a relative path so CI can override via FORK_ROOT env var.
 const FORK_ROOT = process.env['FORK_ROOT'] || resolve(__dirname, '../../forks/ruflo');
-const TARGET_FILE = resolve(
-  FORK_ROOT,
-  'v3/@claude-flow/cli/src/services/worker-daemon.ts',
-);
+const AGENTDB_FORK_ROOT = process.env['AGENTDB_FORK_ROOT'] || resolve(__dirname, '../../forks/agentdb');
+
+// ADR-0261 extension (2026-05-27): Part-1 scope was worker-daemon.ts only;
+// now also covers the new graph-edge handler + sweep worker landed by
+// ADR-0261, both of which the ratified design forbids from caching a
+// module-scope substrate handle (criterion #1 / ADR-0202).
+//
+// Each entry is checked for module-scope `_db`/`_storage`/`_handle`/etc.
+// declarations matching the SUBSTRATE_HANDLE_NAMES set. worker-daemon.ts
+// alone retains the two-rule check (memory-router import + setRouterPersistent
+// call); the other targets only get the substrate-cache scan.
+const TARGET_FILES = [
+  {
+    path: resolve(FORK_ROOT, 'v3/@claude-flow/cli/src/services/worker-daemon.ts'),
+    fullChecks: true,  // memory-router + setRouterPersistent rules
+    relLabel: 'v3/@claude-flow/cli/src/services/worker-daemon.ts',
+  },
+  {
+    path: resolve(AGENTDB_FORK_ROOT, 'src/archivist/handlers/agentdb/graph-edge.ts'),
+    fullChecks: false, // substrate-cache scan only
+    relLabel: 'agentdb/src/archivist/handlers/agentdb/graph-edge.ts',
+  },
+  {
+    path: resolve(AGENTDB_FORK_ROOT, 'src/workers/graph-edge-sweep.ts'),
+    fullChecks: false, // substrate-cache scan only
+    relLabel: 'agentdb/src/workers/graph-edge-sweep.ts',
+  },
+];
+
+// Back-compat alias: the worker-daemon.ts path is still expected by some
+// callers that read TARGET_FILE directly. Keep it pointing at the first
+// entry so existing imports keep working.
+const TARGET_FILE = TARGET_FILES[0].path;
 
 // PART 2 scan roots — directories that may NOT hold module-scope substrate
 // handle caches. The `memory/` directory is intentionally excluded because
@@ -256,20 +285,85 @@ function lintModuleScopeSubstrateCache(allowlist) {
   return { violations, filesScanned };
 }
 
+// PART 3 (ADR-0261, 2026-05-27): substrate-cache scan on the new graph-edge
+// handler + sweep worker. Same rule as PART 2 (no module-scope substrate
+// handles named in SUBSTRATE_HANDLE_NAMES), but scoped to the explicit
+// agentdb fork files added by ADR-0261's design.
+//
+// Files that don't exist yet (Agent A may not have published) are SKIPPED
+// with an info log, not failed — the lint surface is forward-looking. Once
+// Agent A publishes, the files become real and any violation will fail.
+function lintAdr0261Targets(allowlist) {
+  let violations = 0;
+  let filesChecked = 0;
+  let filesSkipped = 0;
+
+  const DECL_RE = /^\s*(?:export\s+)?(?:let|const|var)\s+(_\w+)\s*(?::[^=]+)?=/;
+
+  for (const target of TARGET_FILES) {
+    if (target.fullChecks) continue; // handled by lintWorkerDaemon
+    if (!existsSync(target.path)) {
+      info(`ADR-0261 target not yet built: ${target.relLabel} — skipping (Agent A pending)`);
+      filesSkipped++;
+      continue;
+    }
+    filesChecked++;
+    const src = readFileSync(target.path, 'utf8');
+    const lines = src.split('\n');
+
+    let braceDepth = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineNum = i + 1;
+      const isModuleScope = braceDepth === 0;
+      if (isModuleScope) {
+        const m = DECL_RE.exec(line);
+        if (m) {
+          const name = m[1];
+          if (SUBSTRATE_HANDLE_NAMES.has(name)) {
+            const signature = line.replace(/\s+/g, ' ').trim();
+            const key = `${target.relLabel} :: ${signature}`;
+            if (!allowlist.has(key)) {
+              fail(
+                `ADR-0261 violation at ${target.relLabel}:${lineNum}: ${signature}\n` +
+                  `        Substrate handle '${name}' must NOT be cached at module scope ` +
+                  `(ADR-0261 criterion #1 + ADR-0202). Use ctx.substrate.withWrite ` +
+                  `(handler) or per-tick acquisition (sweep worker) instead.`,
+              );
+              violations++;
+            }
+          }
+        }
+      }
+      const opens = (line.match(/\{/g) || []).length;
+      const closes = (line.match(/\}/g) || []).length;
+      braceDepth += opens - closes;
+      if (braceDepth < 0) braceDepth = 0;
+    }
+  }
+  return { violations, filesChecked, filesSkipped };
+}
+
 function main() {
   const allowlist = loadAllowlist();
 
   const part1Violations = lintWorkerDaemon();
   const { violations: part2Violations, filesScanned } =
     lintModuleScopeSubstrateCache(allowlist);
+  const {
+    violations: part3Violations,
+    filesChecked: part3Checked,
+    filesSkipped: part3Skipped,
+  } = lintAdr0261Targets(allowlist);
 
-  const total = part1Violations + part2Violations;
+  const total = part1Violations + part2Violations + part3Violations;
 
   if (total === 0) {
     info(
       `OK — worker-daemon.ts holds no module-scoped memory-router backend (ADR-0202); ` +
         `${filesScanned} files scanned in services/ + mcp-tools/ for module-scope ` +
-        `substrate-handle caches (none found).`,
+        `substrate-handle caches (none found); ` +
+        `ADR-0261 targets: ${part3Checked} checked, ${part3Skipped} skipped (not built yet).`,
     );
     process.exit(0);
   } else {
