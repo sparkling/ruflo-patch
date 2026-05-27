@@ -62,10 +62,11 @@ const PLATFORM_BINARY_NAMES = new Set([
   'ruvector-attention-unified-wasm',
   'ruvllm-wasm', // wasm-pack output; published as @sparkleideas/ruvector-ruvllm-wasm
   // ADR-0265 Phase 2 — agentic-flow-quic-node per-platform binaries shipped via
-  // napi-rs prepublish. Parent `agentic-flow-quic-native` IS in UNSCOPED_PUBLISHABLE
-  // (it's the wrapper that consumers depend on); the 5 platform binaries are
-  // optionalDependencies of the parent and don't need their own -patch.N.
-  'agentic-flow-quic-native-darwin-arm64',
+  // napi-rs prepublish. Parent `agentic-flow-quic-native` IS in UNSCOPED_PUBLISHABLE.
+  // darwin-arm64 (Phase 2a, shipped) is ALSO in UNSCOPED_PUBLISHABLE for lockstep
+  // version bumping with the parent's optionalDependencies pin. The remaining 4
+  // platforms stay here (lint allow-list) until Phase 2b cross-compile CI matrix
+  // lands them.
   'agentic-flow-quic-native-darwin-x64',
   'agentic-flow-quic-native-linux-x64-gnu',
   'agentic-flow-quic-native-linux-arm64-gnu',

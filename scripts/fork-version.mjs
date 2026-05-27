@@ -73,6 +73,13 @@ export const UNSCOPED_PUBLISHABLE = new Set([
   // ADR-0265 Phase 1: fork-native QUIC federation transport binding.
   // Unscoped napi crate name; codemod rescopes to @sparkleideas/agentic-flow-quic-native.
   'agentic-flow-quic-native',
+  // ADR-0265 Phase 2a: darwin-arm64 platform sub-package. Needs bumping in
+  // lockstep with parent so the parent's optionalDependencies pin (auto-
+  // updated by fork-version) resolves to a version that actually exists on
+  // Verdaccio. The other 4 platforms (darwin-x64 / linux-{x64,arm64}-gnu /
+  // win32-x64-msvc) stay in PLATFORM_BINARY_NAMES (lint allow-list) until
+  // Phase 2b cross-compile CI matrix lands them.
+  'agentic-flow-quic-native-darwin-arm64',
 ]);
 
 // ── Version parsing ──
