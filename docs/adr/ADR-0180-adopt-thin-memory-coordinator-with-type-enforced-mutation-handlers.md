@@ -1,13 +1,34 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-13
 accepted: 2026-05-14
+implemented: 2026-05-18
 tags: [memory, architecture, mcp, governance, substrate]
 supersedes: [ADR-0112]
 depends-on: [ADR-0177]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: Structural scope (Phases 0-10 + F4-2 A-C)
+> is complete per §Implementation Status (2026-05-14): archivist tree
+> live at `forks/agentdb/src/archivist/**` (163 .ts files; 22 handler
+> surfaces; charter check passes), 4 release-pipeline gates wired in
+> `scripts/ruflo-publish.sh`, ADR-0112 flipped to `Superseded by ADR-0180`.
+>
+> Live-wiring continuation (un-stub remaining handlers, cli/daemon/hook
+> delegation across MCP tools, ADR-0112 enforcement-code retirement) was
+> deliberately scoped to a distinct ADR — [[ADR-0181]] — per the §Honest
+> state paragraph: *"The remaining work is its own program, not a wrap-up."*
+> [[ADR-0181]] is `accepted + completed:true, closed-on: 2026-05-18`,
+> which closes the runtime-activation continuation that this ADR
+> intentionally did not bundle in.
+>
+> This flag-flip closes the ADR-0180 canon-establishment + substrate-seam
+> scope. Open follow-ups #1-#11 in §Open follow-ups (naming + supersession
+> + context schemas + ADR-0112 retirement schedule + various small
+> dispositions) remain tracked individually; each is its own
+> trigger-bound work item, not a blocker on this ADR's closure.
 
 # Adopt the Memory Archivist: a Type-Enforced Authority for Reads and Writes
 
