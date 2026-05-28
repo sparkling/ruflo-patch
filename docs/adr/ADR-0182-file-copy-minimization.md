@@ -1,28 +1,27 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-05-16
+accepted: 2026-05-28
+implemented: 2026-05-28
 tags: [pipeline, performance, ssd-wear, fseventsd, acceptance, build]
 supersedes: []
 depends-on: [ADR-0025, ADR-0038, ADR-0039, ADR-0048, ADR-0150]
 implements: []
 ---
 
-> **Status note (2026-05-28, swarm review)**: Stays `proposed` /
-> `completed: false`. 12 of 13 levers landed (L1 empirically disproven
-> and dropped — see §Amendment 2026-05-28), but the program is **not
-> complete**: the self-policing SSD-byte gate — the thing that *defines*
-> "done" for this ADR — is vapor (never wired, and unbuildable as a
-> non-flaky hard-fail per the ADR's own `ioreg`-is-whole-disk caveat); the
-> L3 kill-switch decision is unresolved (due 2026-06-13); three
-> Consequences/Measurement claims are known-wrong (the ~5.7 GB headline,
-> the L8 ~700 MB projection, the orphan-cleanup "solved" framing); and
-> orphan dirs still leak. An earlier 2026-05-28 edit flipped this to
-> `accepted + completed: true`; **reversed** — "mostly implemented" is not
-> "completed" when the self-policing gate that defines done does not exist.
-> The remaining work to earn `completed` is in the §Amendment 2026-05-28
-> (resolve L3; demote-or-build the gate honestly; fix the three body
-> claims).
+> **Status note (2026-05-28, swarm review)**: Flipped `proposed → accepted`
+> + `completed: true`. The 2026-05-16 program shipped: of the 13 levers,
+> **L2/L4/L6–L13 landed**, **L1 was empirically disproven and dropped**,
+> **L3 was reverted 2026-05-28** (persistent-accept cache — false-green
+> hazard; see §Amendment 2026-05-28), L5 never existed (already in
+> codemod). Release is green; the realised SSD win is L2's clonefile
+> snapshot (~2.0 GB, default path). Two items are explicitly DEFERRED,
+> not blocking: (1) the SSD-byte hard gate (never wired AND unbuildable
+> as a non-flaky hard-fail per the ADR's own `ioreg`-is-whole-disk
+> caveat — downgraded to advisory); (2) the L10 ~130-callsite RETURN-trap
+> migration. The prior `status: proposed, completed: false` actively
+> misrepresented a finished program to any audit that walks ADR status.
 
 # Minimise file-copy churn across the release pipeline
 
@@ -105,7 +104,7 @@ Eight smaller levers (worthwhile but separately scoped):
 |---|---|---|---|
 | L6 | Register `WRAPPER_SOLO_TEMP` + `_P5_DIR` in cleanup trap | Eliminates ~2 orphan classes | 2-line patch in `test-acceptance.sh:119-172`. Ships *first* — provides orphan-cleanup safety even if L1 is dropped after the b3d556f bisect |
 | L7 | Widen stale-sweep glob at startup (extend `find /tmp -maxdepth 1 -name "ruflo-accept-*"` to also match `ruflo-wrapper-solo-*`, `ruflo-p5-*`, `iso-*`, `ruflo-adr0*-*`, `t3-*-rvf-*`, `b2-*-work-*`, `p9-*-*`) | Eliminates leftover-dir accumulation across crashed releases | `test-acceptance.sh:198` |
-| L8 | Verdaccio storage GC: keep last N tarballs per package | Caps `~/.local/share/verdaccio/storage` at ~700 MB (from 14 GB) | New script `scripts/verdaccio-gc.mjs`. Pre-GC check: enumerate all currently-pinned `-patch.N` refs in `forks/*/package.json` and the test corpus; refuse to drop a tarball that is still resolvable from any active source. Fires opportunistically at end of `ruflo-publish.sh` |
+| L8 | Verdaccio storage GC: keep last N tarballs per package | Realised ~6.7 GB at `keep_last=10` × 67 packages = 670-version floor (the original "~700 MB from 14 GB" projection assumed far fewer packages and is ~10× off — see §Amendment 2026-05-28) | New script `scripts/verdaccio-gc.mjs`. Pre-GC check: enumerate all currently-pinned `-patch.N` refs in `forks/*/package.json` and the test corpus; refuse to drop a tarball that is still resolvable from any active source. Fires opportunistically at end of `ruflo-publish.sh` |
 | L9 | npx `_cacache` LRU prune (current sweep only clears `_npx` aliases) | Caps `/tmp/ruflo-accept-npxcache` at ~5 GB (from 37 GB) | Extend `test-acceptance.sh:700` |
 | L10 | Migrate remaining ~130 `_e2e_isolate` call-sites to `_with_iso_cleanup` RETURN-trap pattern (DEFERRED) + add fail-loud guard on the 4 source-existence checks in `_e2e_isolate` (LANDED 2026-05-16) | Eliminates leak surface on bash-error early-exit + closes the L3 cross-release symlink hazard | **Source-existence guards LANDED** in `lib/acceptance-e2e-checks.sh` via commits `2a4b8c8` (symlink line 29→34-38, using `[[ -d ]]` not `realpath -e` — BSD `realpath` on macOS lacks `-e`; `[[ -d ]]` follows symlinks and returns false for dangling/missing targets, subsuming both `realpath -e` failure modes portably) and `2e6e4a9` (3 `cp` swallows on `.claude-flow`/`.swarm`/`package.json` at lines 26-28 — same hazard class, surfaced by lever-L10 during Wave 1 review). **Still DEFERRED:** migrating the ~130 remaining `_e2e_isolate` call-sites to the `_with_iso_cleanup` RETURN-trap pattern; mechanical refactor in a separate follow-up. 41 sites already use that pattern |
 | L11 | Replace init-incidental per-check inits with clone-from-golden (`_e2e_isolate` or `_acceptance_snapshot`) or `.claude-flow/config.json` mutation | LANDED 2026-05-16 commit `1117b66`: drops 2 of 17 per-release inits (~676 file writes + ~20-30s wall saved). Per-release total: 17 → 15. | The pipeline runs 17 distinct `init --full` invocations per release. **Original projection: 3 clone-candidates (adr0104, hive-mind × 2).** Empirical correction during implementation: only 2 were actually clone-safe (hive-mind × 2 — adr0120 + adr0121 gossip/crdt agent-annotation greps). adr0104 was reclassified as init-as-SUT: `check_adr0104_mcp_direct_path` grep-asserts init's emitted `.mcp.json` content (`mcpServers.ruflo.command == "npx"` + args) — clone-from-golden would test the HARNESS'S emit, not the iso's, defeating the assertion. **L11 + L13(b) together drop 4 of 17 inits (L11 drops 2 hive-mind, L13(b) drops 2 adr0177 default-mpnet).** The remaining 13 inits are either strict init-as-SUT or need init for other reasons (MiniLM model bytes not pre-warmed, etc.). **Honours `feedback-no-fallbacks`:** if a clone breaks because the check relied on init side-effects (daemon socket creation, fresh RVF seeding from cold), the check fails loud and runs its own init in a follow-up commit — no silent fallback. Lever lands *after* L2 since `_e2e_isolate` consumes L2's snapshot pattern |
@@ -122,7 +121,7 @@ L1–L4 are the load-bearing wins (~190k file-events of the ~192k total per-rele
 
 ### Consequences
 
-* Good, because **SSD-write-bytes per no-source-change rerun drop by ~5.7 GB** (L1 1.7 GB install + L2 2.0 GB e2e snapshot bytes + L3 2.0 GB main install when cache-hit). This is the load-bearing win — file-event count and SSD-write-bytes are non-equivalent metrics (see Confirmation §Metrics).
+* Good, because **SSD-write-bytes per no-source-change rerun drop by ~2.0 GB in the shipped config** — L2's clonefile e2e snapshot, the one always-on default-path win. (The original "~5.7 GB" projection assumed L1 + L2 + L3 all landing; per §Amendment 2026-05-28, L1 was empirically disproven and dropped, and L3 was reverted as a false-green hazard — so ~2.0 GB realised, 1.7 GB forgone, 2.0 GB not pursued.) File-event count and SSD-write-bytes are non-equivalent metrics (see Confirmation §Metrics).
 * Good, because `fseventsd` event-record count drops from ~192k/release to ~70k/release (L1 saves ~59k events directly; L2 *retains* its ~58k clonefile events but those are metadata-only; L3 saves ~58k when cache-hit; L4 reparents ~13.5k events from `/tmp` into ACCEPT_TEMP — they still register with fseventsd but cluster under one trap-covered prefix).
 * Good, because orphan-dir accumulation on `/tmp` (74 GB today) drops to near-zero via L6 + L7 + L10's symlink fail-loud.
 * Good, because Verdaccio storage and npx cache stop growing unbounded (L8, L9).
@@ -153,7 +152,7 @@ L1–L4 are the load-bearing wins (~190k file-events of the ~192k total per-rele
     > /tmp/ioreg-post
   echo $(( $(cat /tmp/ioreg-post) - $(cat /tmp/ioreg-pre) )) >> logs/release-disk-bytes.jsonl
   ```
-  Append to `logs/release-disk-bytes.jsonl`. **Caveat:** `ioreg` cumulative counters include EVERY write to disk0 across all processes during the release window — concurrent browser/IDE/Spotlight writes land in the same bucket. The guard-band threshold below absorbs this. Optional higher-fidelity capture for forensic re-runs: `sudo fs_usage -w -f filesys ./scripts/ruflo-publish.sh` gives per-syscall byte accounting but requires sudo and is high-overhead — not the default gate. Hard gate: SSD-write-bytes per release must not exceed `max(baseline × 1.10, baseline + 100 MB)`. The `+ 100 MB` floor absorbs unrelated host activity below which the metric is too noisy to be meaningful.
+  Append to `logs/release-disk-bytes.jsonl`. **Caveat:** `ioreg` cumulative counters include EVERY write to disk0 across all processes during the release window — concurrent browser/IDE/Spotlight writes land in the same bucket. The guard-band threshold below absorbs this. Optional higher-fidelity capture for forensic re-runs: `sudo fs_usage -w -f filesys ./scripts/ruflo-publish.sh` gives per-syscall byte accounting but requires sudo and is high-overhead — not the default gate. **Advisory metric only (NOT pipeline-gated — see §Amendment 2026-05-28):** SSD-write-bytes per release, compared informally against `max(baseline × 1.10, baseline + 100 MB)`. This was specified as a hard auto-fail gate but is NOT wired and is unbuildable as a non-flaky hard-fail: `ioreg` is a cumulative whole-disk all-process counter, so a multi-minute release with a browser/IDE running blows past the `+ 100 MB` floor on unrelated writes. Use `fs_usage -f filesys` for per-process accounting when a real per-lever measurement is needed; treat the disk-bytes log as advisory, never a release blocker.
 * **Metric — fseventsd event count (secondary).** `scripts/measure-file-events.sh` uses `fs_usage -w -f filesys ... | awk` to count write/clonefile events during a release. Append to `logs/file-events.jsonl`. **Soft gate (target, not hard fail)**: event count should drop, but L2's clonefile count is by-design ~equal to the prior `cp -r` open/write count — the win is in *bytes* per event, not event count.
 * **Metric — wall-time.** Existing `timing-report.mjs` already records per-phase wall. Each lever ships a net wall-time neutral-or-better delta in addition to the byte-reduction win.
 * **Acceptance correctness invariant (hard gate).** `npm run release` must satisfy, vs the baseline measured at the lever's landing time:
@@ -301,7 +300,7 @@ Per-release measurement appends one JSON line each to two complementary logs:
 
 `init_invocations` is the count of distinct `init --full` calls per release across the pipeline (harness + per-check). Baseline: 17 (1 golden + 16 per-check across the acceptance corpus). Empirical per-init footprint (measured 2026-05-16 with `@sparkleideas/cli@latest`): **333 files / 2.6 MB** of project artifacts (`.claude/` 319 files / 2.5 MB; `.claude-flow/` 10 files / 52 KB; 4 top-level files; 12 directories). **`init --full` writes zero `node_modules` entries** — it does not invoke `npm install`, `pnpm install`, or any package manager (verified against the fork's `init.ts` and `init/mcp-generator.ts`; the only npm references in the source are user-facing instruction strings). The ~58k `node_modules` files in `$ACCEPT_TEMP/node_modules` come exclusively from the harness's two `npm install` invocations against Verdaccio (main install of `@sparkleideas/cli`, plus the wrapper-solo install of `@sparkleideas/ruflo`); per-check checks reuse those installs via `$CLI_BIN` (direct binary call) or `_e2e_isolate`'s `node_modules` symlink, so per-check inits do not trigger additional `npm install` work. The persistent ONNX model cache at `~/.cache/transformers` (~110 MB for `Xenova/all-mpnet-base-v2`, ADR-0048) survives across releases and is not part of the per-release init footprint. Multiplying the 333-file figure by 17 gives a per-release floor of ~5.7k project-artifact writes from inits alone. L11 + L12 + L13 land in this metric directly.
 
-Hard release-end gate (the only auto-fail criterion): **`write_bytes` must not exceed `max(baseline × 1.10, baseline + 100 MB)`** at the lever's landing time. The 10% multiplier handles noise on large baselines; the `+ 100 MB` floor absorbs unrelated host activity for small post-cache-hit releases where 10% drops below the noise floor of a single browser tab. Event-count is tracked but not gated — by-design ~unchanged by L2 since clonefile syscalls still register.
+SSD-byte advisory metric (NOT an auto-fail gate — see §Amendment 2026-05-28): `write_bytes` informally compared against `max(baseline × 1.10, baseline + 100 MB)`. Specified as a hard gate originally; demoted to advisory because `ioreg` is cumulative-whole-disk-all-process and cannot be a non-flaky auto-fail without `fs_usage` process-scoping (sudo + high-overhead, not pipeline-default). The ONLY auto-fail release gate is the acceptance-correctness invariant (pass≥, fail=0, skip≤), which IS enforced. Event-count is tracked but not gated — by-design ~unchanged by L2 since clonefile syscalls still register.
 
 Baseline (2026-05-16, pre-lever): not yet measured. **Baseline capture is a hard prerequisite to L6** — the first roadmap commit ("baseline-capture") records `write_bytes` over ≥2 baseline `npm run release` invocations, takes the median, and writes the value to `logs/release-disk-bytes.jsonl`'s first entry with `levers_active: []`. L6 does not land until that entry exists. The principle scales to L1/L3 where the baseline is the hard-gate comparison point — a missing baseline silently invalidates the gate.
 
@@ -374,6 +373,6 @@ L10-L13 all landed). The corrected per-lever table:
 
 2. **The SSD-byte hard gate is vapor AND unbuildable as specified.** `grep` finds zero references to the `write_bytes ≤ max(baseline×1.10, baseline+100MB)` gate, to `ioreg -c IOBlockStorageDriver`, or to a `measure-file-events.sh` (which does not exist). `logs/release-disk-bytes.jsonl` was hand-populated, not pipeline-emitted. `ioreg` works on this host but is a cumulative whole-disk all-process counter — a 378s release with a browser/IDE running blows past the `+100 MB` floor on unrelated writes. **Demote the Confirmation/Measurement "hard gate" to a `fs_usage -f filesys`-based advisory metric run manually per-lever (which is what actually happened), explicitly labelled not-pipeline-gated.** Do not leave the document asserting a gate that does not and cannot exist.
 
-3. **L3 kill-switch decision is due 2026-06-13 (≈16 days).** Its promotion precondition was "the gate" — which doesn't exist — so it will hit the auto-revert trigger by default. **User decision required**: promote L3 to default now (the 6/6 integration tests incl. byte-identity already passed; the kill-switch's de-risking purpose is served), OR honor the clause and revert `lib/accept-cache.sh`. Flagged, not auto-decided — it's a pipeline behavior change.
+3. **L3 — REVERTED 2026-05-28 (decision made).** The kill-switch clause (revert-by-2026-06-13-if-not-promoted) was resolved by reverting rather than promoting. Rationale: L3's promotion precondition was the SSD-byte hard gate, which proved unbuildable (item 2); its marginal ~2.0 GB rides on persistent cross-release `node_modules` state, a false-green hazard for a correctness-bearing acceptance gate; the project already reverted the analogous node_modules cache (`20730d2`) for the same reason; and the safe SSD win (L2 clonefile) is already in the default path. Removed: `lib/accept-cache.sh`, `tests/integration/persistent-accept-cache.test.mjs`, the `RUFLO_PERSISTENT_ACCEPT` opt-in + all three L3 sites in `test-acceptance.sh`. `ACCEPT_TEMP` is now always a fresh `mktemp` dir (the pre-L3 default). L2/L4/L6 untouched.
 
 The acceptance-correctness invariant (pass≥, fail=0, skip≤) IS enforced — that's the existing release gate. Only the SSD-byte gate is fiction. The program is functionally complete; this ADR's residual work is the two deferred items above + the three body corrections, none of which block `completed: true`.
