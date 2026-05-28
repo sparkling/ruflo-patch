@@ -1,12 +1,36 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-24
+implemented: 2026-05-28
 tags: [errors, error-handling, mcp, envelope, retry, long-term, ct-i]
 supersedes: []
 depends-on: [0201, 0209, 0210, 0233]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: All 4 Decision-scope items verified at HEAD:
+> 1. `@claude-flow/errors` package exists at
+>    `forks/ruflo/v3/@claude-flow/errors/` — exports `RufloError`,
+>    `RufloErrorCode` (`RUFLO_E_*` naming), `wrapError`, `isRufloError`,
+>    `getErrorMessage`; 15-case vitest at `__tests__/index.test.ts`.
+> 2. README documents the canon at
+>    `forks/ruflo/v3/@claude-flow/errors/README.md`.
+> 3. `scripts/check-throw-new-error.mjs` exists + grandfather allowlist at
+>    `lib/throw-new-error-allowlist.txt`; advisory mode surfaces new
+>    violations.
+> 4. `scripts/check-mcp-handler-fatal-throw.mjs` exists + grandfather
+>    allowlist at `lib/mcp-handler-fatal-throw-allowlist.txt`; advisory
+>    output `63 fatal-swallow handler(s) found / 20 grandfathered / 0
+>    delta-from-baseline`. Both lint scripts wired into
+>    `scripts/ruflo-publish.sh`. INTEGRATION-LEDGER rows 221 + 222 record
+>    the package extraction + gastown-bridge re-export shim as
+>    `convergence-with-upstream`.
+>
+> The ADR's long-term framing remains accurate: this flag-flip closes the
+> canon-establishment + new-code-gate scope; old code stays grandfathered
+> by design. Out-of-scope follow-ups (F-13-001/002/003/004/006/007/008,
+> F-13-005 sub-cluster) remain open as named-not-vague future ADRs.
 
 # Shared error library + MCP envelope honesty (long-term, scope-limited)
 
