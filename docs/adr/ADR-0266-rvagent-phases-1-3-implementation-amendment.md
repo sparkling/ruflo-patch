@@ -1,7 +1,8 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-28
+implemented: 2026-05-28
 tags: [upstream-sync, rvagent-wasm, ADR-129, implementation-amendment]
 supersedes: []
 depends-on: [ADR-0254, ADR-0256, ADR-0258, ADR-0259]
@@ -149,10 +150,10 @@ No new guards needed. The handlers live in `forks/ruflo/v3/@claude-flow/cli/src/
 
 ## Confirmation
 
-This ADR is **accepted**. Remaining steps to `completed: true`:
+This ADR is **accepted, completed: true** as of 2026-05-28:
 
-1. ✅ **Design ratified** — ADR-0258 + ADR-0259 are the council outputs; ADR-0266 sequences the implementation.
-2. ⏳ **Implementation** — 3-agent parallel fan-out across forks/ruflo cli (handlers + allowlist) + forks/agentdb (optional-modules.d.ts typo) + ruflo-patch (smokes + harness wiring + CI). Estimate ~300 LOC across 3-5 commits per repo.
-3. ⏳ **Validate + commit + release + push** — release pipeline green; INTEGRATION-LEDGER row 239 updated.
-4. ⏳ **Acceptance criteria audit** — each of C1-C8 has a passing smoke.
-5. ⏳ Cross-link [[ADR-0254]] gates table — mark all 3 sub-gates resolved (0258 + 0259 already done; this ADR closes the implementation gate).
+1. ✅ **Design ratified** — ADR-0258 + ADR-0259 are the council outputs; ADR-0266 sequenced the implementation.
+2. ✅ **Implementation** — 3 fork commits landed (`765153bb4`, `be1e5c066`, `20374da67`): 17 new MCP tool handlers + 29-entry `SAFE_MCP_TOOLS` allowlist + agent-wasm.ts wrappers; Phase 3.5 typo fix already in place (fork commit `0fc2fbb07`).
+3. ✅ **Validate + commit + release + push** — fast-acceptance: 5/5 ADR-0266 smokes PASS. Force-rebuild release pipeline confirmed cross-package symbols resolve (per `feedback-pipeline-shared-skip-on-dist-clear`). INTEGRATION-LEDGER row 240 amended `pick-partial` → `reimplemented-via-adr-0266`.
+4. ✅ **Acceptance criteria audit** — C1-C7 verified by 5 smokes; C8 wired (`lib/acceptance-adr0266-checks.sh` + `scripts/test-acceptance.sh` adr0266 block + `scripts/test-acceptance-fast.sh` adr0266 dispatch + `.github/workflows/v3-ci-rvagent.yml`).
+5. ✅ **ADR-0254 gates resolved** — Persistence-threading (0258), allowlist alignment (0259), `loadRvf` typo (0fc2fbb07) all closed; implementation gate closed by this ADR.
