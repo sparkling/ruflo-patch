@@ -884,6 +884,11 @@ adr0261_lib="${PROJECT_DIR}/lib/acceptance-adr0261-checks.sh"
 adr0265_lib="${PROJECT_DIR}/lib/acceptance-adr0265-checks.sh"
 [[ -f "$adr0265_lib" ]] && source "$adr0265_lib"
 
+# ADR-0266: ADR-129 Phases 1-3 implementation amendment —
+# 5 smokes (4 dispatch checks + 1 allowlist resolution gate)
+adr0266_lib="${PROJECT_DIR}/lib/acceptance-adr0266-checks.sh"
+[[ -f "$adr0266_lib" ]] && source "$adr0266_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -3502,6 +3507,45 @@ if [[ -f "$adr0265_lib" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0265-quic-federation" "$(_elapsed_ms "$_adr0265_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0266: ADR-129 Phases 1-3 implementation amendment — 5 smokes.
+# Per ADR-0266 §Phase 5: 4 dispatch checks (Group 1 introspection, Group 2
+# reset, Group 3 gallery, Group 4 compose) + 1 source-grep allowlist
+# resolution gate (Group 5 — ADR-0259 §Step 2 verification). Each smoke is
+# self-contained (mkdtempSync + npm install from Verdaccio) and runs as its
+# own parallel group with PARALLEL_DIR isolation per ADR-0265 §L2.
+# ════════════════════════════════════════════════════════════════════
+_adr0266_start=$(_ns)
+if [[ -f "$adr0266_lib" ]]; then
+  log "── ADR-0266: ADR-129 Phases 1-3 implementation ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  if ! _adr0266_setup_shared_temp; then
+    log_error "ADR-0266 shared-temp setup FAILED — aborting smoke block"
+    rm -rf "$PARALLEL_DIR" 2>/dev/null
+    _record_phase "phase-adr0266-rvagent-p123" "$(_elapsed_ms "$_adr0266_start" "$(_ns)")"
+    exit 1
+  fi
+  log "── ADR-0266 shared-temp ready: ${ADR0266_SMOKE_SHARED_TEMP} ──"
+
+  run_check_bg "adr0266-group1-introspection" "ADR-0266 C1 Group 1 introspection (5 tools)" check_adr0266_group1_introspection "adr0266"
+  run_check_bg "adr0266-group2-reset"         "ADR-0266 C2 Group 2 reset mutator"           check_adr0266_group2_reset         "adr0266"
+  run_check_bg "adr0266-group3-gallery"       "ADR-0266 C3 Group 3 gallery (10 tools)"      check_adr0266_group3_gallery       "adr0266"
+  run_check_bg "adr0266-group4-compose"       "ADR-0266 C4 compose + AIDefence"             check_adr0266_group4_compose       "adr0266"
+  run_check_bg "adr0266-allowlist"            "ADR-0266 C7 SAFE_MCP_TOOLS allowlist"        check_adr0266_allowlist            "adr0266"
+
+  collect_parallel "adr0266" \
+    "adr0266-group1-introspection|ADR-0266 C1 Group 1 introspection (5 tools)" \
+    "adr0266-group2-reset|ADR-0266 C2 Group 2 reset mutator" \
+    "adr0266-group3-gallery|ADR-0266 C3 Group 3 gallery (10 tools)" \
+    "adr0266-group4-compose|ADR-0266 C4 compose + AIDefence" \
+    "adr0266-allowlist|ADR-0266 C7 SAFE_MCP_TOOLS allowlist"
+
+  _adr0266_cleanup_shared_temp
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0266-rvagent-p123" "$(_elapsed_ms "$_adr0266_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

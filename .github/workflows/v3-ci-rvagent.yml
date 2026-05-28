@@ -1,0 +1,100 @@
+# ADR-0266 — CI stanza for ADR-129 Phases 1-3 smokes (5 smokes).
+#
+# Per `feedback-always-wire-tests-into-cicd`: smokes must be wired into the
+# standard runner AND .github/workflows/. The 5 ADR-0266 smokes verify that
+# the 17 new MCP tool handlers (Group 1 introspection + Group 2 reset +
+# Group 3 gallery + Group 4 compose) are registered and dispatched, plus
+# the SAFE_MCP_TOOLS allowlist resolution gate per ADR-0259 §Step 2.
+#
+# All 5 smokes share the same setup (no benchmark, no platform matrix), so
+# they consolidate into a single job rather than ADR-0261's per-smoke fan-out.
+# Per `feedback-no-tail-tests`: each smoke writes its log to SMOKE_LOG_DIR.
+
+name: ADR-0266 rvagent Phases 1-3
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts'
+      - 'forks/agentdb/src/types/optional-modules.d.ts'
+      - 'scripts/smoke-adr0266-*.mjs'
+      - 'scripts/lib/smoke-adr0266-shared.mjs'
+      - 'lib/acceptance-adr0266-checks.sh'
+  pull_request:
+    paths:
+      - 'forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/wasm-agent-tools.ts'
+      - 'forks/ruflo/v3/@claude-flow/cli/src/ruvector/agent-wasm.ts'
+      - 'forks/agentdb/src/types/optional-modules.d.ts'
+      - 'scripts/smoke-adr0266-*.mjs'
+      - 'scripts/lib/smoke-adr0266-shared.mjs'
+      - 'lib/acceptance-adr0266-checks.sh'
+
+env:
+  REGISTRY: http://localhost:4873
+  CLI_PKG: '@sparkleideas/ruflo'
+  SMOKE_LOG_DIR: ${{ github.workspace }}/smoke-logs
+
+jobs:
+  rvagent-allowlist:
+    # ADR-0266 C7 — SAFE_MCP_TOOLS allowlist resolution (pure source-grep,
+    # no install needed). Fast gate; runs before anything else.
+    name: rvagent allowlist (ADR-0266 C7)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run allowlist smoke
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          node scripts/smoke-adr0266-allowlist.mjs 2>&1 | tee "${SMOKE_LOG_DIR}/allowlist.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-allowlist
+          path: ${{ env.SMOKE_LOG_DIR }}
+
+  rvagent-dispatch:
+    # ADR-0266 C1-C4 — Group 1/2/3/4 MCP dispatch via cli mcp exec.
+    name: rvagent dispatch smokes (ADR-0266 C1-C4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: rvagent-allowlist
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Start local Verdaccio + publish fork packages
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/ruflo-publish.sh 2>&1 | tee "${SMOKE_LOG_DIR}/publish.log"
+
+      - name: Run ADR-0266 smokes via fast runner
+        run: |
+          set -e
+          mkdir -p "${SMOKE_LOG_DIR}"
+          bash scripts/test-acceptance-fast.sh adr0266 2>&1 | tee "${SMOKE_LOG_DIR}/adr0266.log"
+
+      - name: Upload smoke logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: smoke-logs-dispatch
+          path: ${{ env.SMOKE_LOG_DIR }}

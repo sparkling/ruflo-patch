@@ -12,6 +12,7 @@
 #         adr0238, adr0239, adr0240, adr0241, adr0242, adr0243, adr0244, adr0245,
 #         adr0246, adr0247, adr0248, adr0261 (fork-native graph-edges, ADR-130),
 #         adr0265 (fork-native QUIC federation transport, upstream ADR-108),
+#         adr0266 (ADR-129 Phases 1-3 implementation amendment),
 #         e2e-core, e2e-storage, skills-surface (ADR-0216)
 # Default: p3,p4 (the Phase 3+4 checks)
 
@@ -358,6 +359,24 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0265"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     _fast_run "adr0265-recovery"             check_adr0265_recovery
     _fast_run "adr0265-benchmark"            check_adr0265_benchmark
     _adr0265_cleanup_shared_temp
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0266"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0266-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0266-checks.sh"
+    echo "── ADR-0266 (ADR-129 Phases 1-3 implementation amendment) ──"
+    if ! _adr0266_setup_shared_temp; then
+      echo "[fast] ADR-0266 shared-temp setup FAILED — aborting" >&2
+      exit 1
+    fi
+    echo "[fast] adr0266 shared-temp: ${ADR0266_SMOKE_SHARED_TEMP}"
+    _fast_run "adr0266-group1-introspection" check_adr0266_group1_introspection
+    _fast_run "adr0266-group2-reset"         check_adr0266_group2_reset
+    _fast_run "adr0266-group3-gallery"       check_adr0266_group3_gallery
+    _fast_run "adr0266-group4-compose"       check_adr0266_group4_compose
+    _fast_run "adr0266-allowlist"            check_adr0266_allowlist
+    _adr0266_cleanup_shared_temp
   fi
 fi
 
