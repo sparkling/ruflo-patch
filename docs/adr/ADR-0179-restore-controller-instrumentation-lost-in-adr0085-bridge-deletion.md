@@ -13,11 +13,18 @@ implements: []
 > now-live archivist (ADR-0180 `guard-policy` + `audit-chain`, ADR-0181
 > runtime activation, ADR-0183 write-path unification — the last two this
 > ADR never referenced). Only **SkillLibrary auto-promotion on feedback**
-> is genuinely still missing (~30 LoC). The 34-row behavioral-diff table —
-> this ADR's stated central deliverable — is a literal stub (rows 3-33 say
-> "(Phase 1 hive output)") and its planned router-call-site target no
-> longer exists. Re-scope per §Amendment 2026-05-28; do NOT execute the
-> 15-agent restoration plan.
+> is genuinely still missing — and a 2026-05-28 implementation attempt
+> verified it is **F4-2-gated, not the ~30-LoC per-feedback hook the
+> review first assumed**: `SkillLibrary.promote()` no longer exists (the
+> ADR-0177 re-convergence replaced it with a batch `consolidateEpisodes
+> IntoSkills` model), so the real wire-up is NightlyLearner → batch
+> consolidation, gated on the unwired ReflexionMemory episode flow + the
+> F4-2 substrate-seam (see §Amendment 2026-05-28 row 6). The 34-row
+> behavioral-diff table — this ADR's stated central deliverable — is a
+> literal stub (rows 3-33 say "(Phase 1 hive output)") and its planned
+> router-call-site target no longer exists. Re-scope per §Amendment
+> 2026-05-28; do NOT execute the 15-agent restoration plan; do NOT close
+> via a per-feedback hook.
 
 # Restore Controller Instrumentation Lost in ADR-0085 Bridge Deletion
 
@@ -715,9 +722,9 @@ behaviors this ADR set out to "restore" resolve as:
 | 3 | AttestationLog audit write | **SUBSUMED — archivist `audit-chain`.** Live write-through journal (`audit-writer.ts`); intent→applied/rejected entries around every dispatch. ADR-0180 §Architecture states "AttestationLog is this audit log." The structurally-always-zero attestation count this ADR §3 flagged is closed. |
 | 4 | BM25 + semantic fusion (default) | **SUBSUMED / re-homed — but mechanism changed.** Fusion is now RRF (k=60) at the archivist boundary (`handlers/agentdb/filtered-search.ts`, `pattern-search.ts`), NOT this ADR's `0.7·sem + 0.3·BM25`. The ADR-0179 *spec* is stale, not merely relocated. (Legacy `memory-router.ts:1297` still gates BM25 behind hash-fallback mode — the architectural answer moved to the archivist.) |
 | 5 | ExplainableRecall provenance | **SUBSUMED — read-path return shape.** `RankedResult<T>.provenance` is first-class; populated at `handlers/memory/search.ts:181` + `handlers/agentdb/filtered-search.ts:178`, 15-tool `includeProvenance` rollout. **Stale-citation fix**: the 2026-05-18 amendment's `agentdb-tools.ts:276,1461` ExplainableRecall citation returns ZERO grep hits — provenance lives in the archivist handlers, not agentdb-tools.ts. Drop or correct that line. |
-| 6 | SkillLibrary auto-promotion on feedback | **GENUINELY MISSING.** `routeFeedbackOp 'record'` (`memory-router.ts:2119`) and the archivist `handlers/agentdb/feedback.ts` both fan out to LearningSystem + ReasoningBank but neither calls `skills.promote()`. The ONE behavior the entire 0180/0181/0183 program did not close. |
+| 6 | SkillLibrary auto-promotion on feedback | **GENUINELY MISSING — but NOT a 30-LoC per-feedback hook (verified 2026-05-28, impl-attempt).** The original bridge called `skills.promote(pattern, quality)` per-feedback (`memory-bridge.ts:1500-1509`), but **`SkillLibrary.promote()` no longer exists** — the ADR-0177 upstream re-convergence replaced it with `createSkill(...)` + the batch `consolidateEpisodesIntoSkills(config)` model (SELECT over episodes grouped by task, `COUNT(*) ≥ minAttempts`, `minReward`). The archivist's `SkillLibraryWriter` capability exposes only `createSkill`, and the feedback payload (`{taskId, success, quality, agent}`) carries no pattern/code to synthesize a skill. So per-feedback promotion is impossible (no API, no inputs, wrong cadence — a single feedback isn't an episode; episode recording via `ReflexionMemory.recordEpisode` is itself unwired). The real auto-promotion mechanism (`consolidateEpisodesIntoSkills`) is unwired into any automatic path — its only caller is the manual `agentdb-cli.ts:781` command; **NightlyLearner.run() explicitly defers it** ("skill consolidation reserved for future wire-up… tracked under F4-2 substrate-seam wire-up", `NightlyLearner.ts:168-172`). Correct scope: NightlyLearner → `consolidateEpisodesIntoSkills` wire-up, gated on the ReflexionMemory episode flow + F4-2 substrate-seam `ctx.child('skill')`. Real, non-trivial, dependency-chained — already tracked under F4-2, NOT closeable here. |
 
-**Summary: 4 subsumed, 1 deferred-but-re-homed, 1 genuinely missing.**
+**Summary: 4 subsumed, 1 deferred-but-re-homed, 1 genuinely missing — and the missing one is F4-2-gated, not a quick close (see row 6 verification 2026-05-28).**
 
 **Re-scope (Improvement, replaces the 15-agent restoration plan):**
 
@@ -725,7 +732,7 @@ behaviors this ADR set out to "restore" resolve as:
 
 2. **Replace the 34-row "to-be-filled" table with the 6-row resolution ledger above.** The full body-diff was to inform a router-call-site restoration that no longer has a target — it is not pending work. Keep the *methodology lesson* (ADR-0085's structural-only audit missed in-body behaviors) as the durable contribution.
 
-3. **Narrow the one live code change**: wire `skills.promote(pattern, quality)` into `forks/agentdb/src/archivist/handlers/agentdb/feedback.ts` (gated `success && quality >= 0.9 && patterns.length > 0`) — the handler already fans out to LearningSystem + ReasoningBank, so it's the natural home. Retarget the `adr0179-skill-auto-promotion` acceptance test at the archivist feedback handler, not `routeFeedbackOp`. Drop the other 5 acceptance tests (guards/audit/provenance/fusion are ADR-0180's confirmation responsibility now).
+3. **The one live behavior — corrected 2026-05-28 (impl-attempt).** An earlier draft of this re-scope said "wire `skills.promote(pattern, quality)` into `feedback.ts` (~30 LoC)." That is wrong on verification: `SkillLibrary.promote()` no longer exists (replaced by `createSkill` + batch `consolidateEpisodesIntoSkills` in the ADR-0177 re-convergence); the feedback payload has no pattern/code; and per-feedback is the wrong cadence (consolidation needs ≥3 episodes; episode recording is itself unwired). The honest scope is **NightlyLearner.run() → `consolidateEpisodesIntoSkills`**, gated on the ReflexionMemory episode flow + F4-2 substrate-seam — both already tracked under F4-2 (`NightlyLearner.ts:168-172`). **Recommended disposition: fold this remnant into the F4-2 substrate-seam wire-up tracker** rather than carrying it as an ADR-0179 line item; the per-feedback hook is explicitly rejected (it would create junk skills from bare taskIds at the wrong cadence — a `feedback-no-fallbacks`/squelch-to-close anti-pattern). Drop the `adr0179-skill-auto-promotion` per-feedback test from scope; the guards/audit/provenance/fusion tests are ADR-0180's confirmation responsibility.
 
 4. **Controller-coverage check**: it targets the cli `ControllerRegistry` 47-slot enum — a *different* surface than ADR-0180's archivist-charter check. If the "17 of 47 unreachable" dead-export risk still holds at HEAD (re-count — it predates the archivist migration), deliver the gate; otherwise mark resolved-by-evidence per `feedback-corpus-evidence-before-feature-work`.
 
