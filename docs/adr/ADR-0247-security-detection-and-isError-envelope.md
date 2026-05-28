@@ -23,6 +23,30 @@ implements: []
 > test-ci phase. Sites #4 + #5 (F-04-006 / F-04-007) remain deferred per
 > Decision rationale (upstream-not-wired + `caller_identity` architectural
 > prerequisite); deferral is in the audit trail per §More Information.
+>
+> **Deferral re-verified 2026-05-28 (swarm) — both holds, with explicit
+> re-triggers (so this is not silent forever-defer):**
+> - `caller_identity` / `MCPCallContext` has NOT emerged — the only
+>   references in either fork are the deferral comments at
+>   `claims.ts:685-686`; no `MCPCallContext` type exists; MCP handlers
+>   still take only `(args)`. Both deferrals' prerequisite is unmet.
+> - **F-04-007 reopens when** an identity field lands on `MCPCallContext`
+>   OR handler signatures gain a context/identity param (shared
+>   prerequisite with F-04-003/F-04-004/ADR-101 — whichever lands first
+>   unblocks all). The interim per-process rate-limit is NOT adopted:
+>   it's false-mitigation (single crafted call poisons a ranking; a
+>   throttle without identity can't tell adversary from operator), and
+>   the impact is already bounded — the poisoning WRITE path is
+>   reachable only via the opt-in `aidefence_learn` MCP tool (the manual
+>   `security defend` CLI only READs mitigations), per ADR-0238 Surface 1.
+> - **F-04-006 reopens when** either PII detector is wired at an
+>   automatic (non-opt-in, non-export, non-manual-CLI) input boundary, OR
+>   a PII consent/redaction model is decided. Both detectors still exist
+>   with disjoint regex sets; no runtime driver emerged; upstream byte-parity
+>   holds. **Line drift (non-blocking):** the ADR cites `aidefence_learn`
+>   at `security-tools.ts:357-447` + threat-learning at `:191-239`; at HEAD
+>   these are `:387-474` + `:200-287` (F-04-011 backoff insertion shifted
+>   them; content equivalent).
 
 # Security follow-ups beyond CT-E: isError envelope + framing + detector deferrals (CT-N)
 

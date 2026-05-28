@@ -32,6 +32,23 @@ implements: []
 > conditions in §Decision Outcome are kept as historical record (they
 > describe when ops *should run* the harness; they no longer gate
 > implementation).
+>
+> **Scope-honesty correction (2026-05-28 swarm):** the shipped harness
+> implements **audit-log-internal structural checks only** — `depth-ceiling`
+> (≤3), `no-fanout-amplification`, `state-progression`, `terminal-state`. It
+> does **NOT** implement the MODULE.md §replay-verification headline property
+> "replay against a freshly-initialized substrate and assert addressable-key
+> **set-equality**." `VerifyOptions` has no substrate-handle param;
+> `verifyAuditLog` never opens a fresh substrate or compares keys. The source
+> doc-comment's "optional fourth check … when a live substrate handle is
+> provided … weakened to cardinality" is **dead prose** — no such path is
+> wired. So the honest claim is "verifies audit-log internal consistency,"
+> NOT "addressable-key set-equality." The substrate-replay half remains
+> unimplemented and is the natural companion to Trigger #1's still-pending
+> RVF-invariant enforcement (ADR-0246 F-03-002 RVF arm — `RvfBackend.freeze()`
+> exists but is not wired into archivist dispatch). MODULE.md §replay-
+> verification annotated to match. No trigger has silently fired; the only
+> correction here is scope-truth, not behaviour.
 
 # ADR-0263 — Archivist replay-verification test harness (ADR-0181 Phase I successor)
 
