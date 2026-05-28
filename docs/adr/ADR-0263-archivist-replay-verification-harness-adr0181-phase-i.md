@@ -1,12 +1,19 @@
 ---
-status: proposed
+status: accepted
 completed: false
 date: 2026-05-26
+amended: 2026-05-28
 tags: [archivist, replay-verification, test-harness, adr-0181-phase-i, adr-0180-19, deferred-with-trigger]
 supersedes: []
 depends-on: [ADR-0180, ADR-0181, ADR-0246]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: Ratified `proposed` → `accepted` per Track C of the
+> post-ADR-0261 upstream-merge completion plan. Option B (defer with explicit
+> trigger conditions) is the decided outcome. `completed: false` stays by design
+> per §Confirmation — the ADR-index uses this filter to surface the deferral as
+> outstanding work when any of the 4 trigger conditions fire.
 
 # ADR-0263 — Archivist replay-verification test harness (ADR-0181 Phase I successor)
 
