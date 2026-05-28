@@ -1,5 +1,6 @@
 ---
-status: proposed
+status: superseded
+superseded-by: [ADR-0180]
 date: 2026-05-13
 tags: [memory, controllers, instrumentation, audit-gap, post-mortem]
 supersedes: []
@@ -7,6 +8,17 @@ depends-on: [ADR-0053, ADR-0085, ADR-0084, ADR-0086, ADR-0112, ADR-0102, ADR-017
 implements: []
 ---
 
+> **RESOLVED 2026-05-28 (option B)** — `superseded-by: ADR-0180`. Maintainer
+> chose to close this ADR and fold the one genuine remnant into ADR-0180
+> Phase 9 (one tracker, not two). The skill-promotion **mechanism is now
+> wired** — `NightlyLearner.run()` → `SkillLibrary.consolidateEpisodesIntoSkills`
+> (agentdb fork `ebf73a5`, 28/28 unit tests), which also fixes the
+> `agentdb_learner_run` tool that advertised consolidation it didn't perform.
+> The **autonomy residual** (autonomous episode recording, scheduled invocation,
+> F4-3 ctx-routing) stays open as ADR-0180 Phase 9. NOT `completed:true` — the
+> full autonomous feature is mechanism-complete but not autonomy-complete. Full
+> reasoning in the final amendment (§"Option B — close + fold", below).
+>
 > **Status note (2026-05-28, swarm review)**: The "restore six lost
 > behaviors" framing is **~80% obsolete**. 5 of 6 are no longer "lost and
 > needing restoration" — they were reimplemented in a better place by the
@@ -737,3 +749,58 @@ behaviors this ADR set out to "restore" resolve as:
 4. **Controller-coverage check**: it targets the cli `ControllerRegistry` 47-slot enum — a *different* surface than ADR-0180's archivist-charter check. If the "17 of 47 unreachable" dead-export risk still holds at HEAD (re-count — it predates the archivist migration), deliver the gate; otherwise mark resolved-by-evidence per `feedback-corpus-evidence-before-feature-work`.
 
 5. **Status disposition (user choice)**: with 5/6 subsumed and the 6th ~30 LoC, this no longer warrants `proposed`-with-a-15-agent-plan. Either (a) keep `proposed` but shrink the execution plan to one coder change + one test, or (b) `superseded-by: [ADR-0180]` for the placement question while folding the SkillLibrary remnant into ADR-0181's continuation. Both defensible; left for the maintainer. NOT flipped unilaterally because a genuine (small) remnant remains.
+
+## Amendment: Option B — close + fold into ADR-0180; mechanism wired (2026-05-28)
+
+Maintainer chose **Option B** from §Re-scope item 5: close ADR-0179 and fold the
+skill-auto-promotion remnant into **ADR-0180 Phase 9** (the F4-2 inter-controller-
+orchestrator tracker) so there is **one tracker, not two**. Status flips
+`proposed` → `superseded-by: [ADR-0180]`. A recon swarm verified every claim
+below against HEAD before the change.
+
+**What this discharges**
+
+- **5 of 6 behaviors** — subsumed by the live archivist (guard-policy / audit-chain
+  / RRF fusion / read-path provenance), per the 2026-05-28 resolution ledger above.
+  No ADR-0179 work remains for them.
+- **6th behavior — MECHANISM wired this session.** `NightlyLearner.run()` now calls
+  `SkillLibrary.consolidateEpisodesIntoSkills` after the prune step (agentdb fork
+  commit `ebf73a5`): a `ctx.child('skill')`-wrapped consolidation promotes
+  qualifying tasks (≥`minAttempts` episodes, reward ≥`minReward`) to skill rows.
+  This restores the episode→skill promotion the ADR-0085 bridge deletion lost (the
+  old per-feedback `skills.promote()` is gone; batch consolidation is the ADR-0177
+  replacement) **and** fixes the `agentdb_learner_run` MCP tool, whose description
+  advertised "skill consolidation" it did not perform. The recon corrected an
+  earlier worry that consolidate's write body was a stub: it is fully functional
+  (real `INSERT` via `createSkill`/`updateSkillStats`); only its optional
+  `ctx.bulk` audit-announce is `TODO(F4-2)`. Verified: NightlyLearner unit suite
+  **28/28** (new test asserts `run()` creates a skill from seeded high-reward
+  episodes; the test now loads the real `schema.sql`+`frontier-schema.sql`).
+
+**What remains — the AUTONOMY residual, now solely ADR-0180 Phase 9**
+
+The mechanism is reachable but not yet fully *autonomous*. Three pieces stay open
+as ADR-0180 §Phase 9 / §Re-entrancy work (the recon found Phase 9 was never
+executed — ADR-0181 closed without it — so ADR-0180 is annotated to host them):
+
+1. **Autonomous episode recording.** `storeEpisode` is a live MCP tool
+   (`agentdb_reflexion-store` → archivist → `episodes`) but no hook/daemon
+   auto-populates the table from task outcomes — without episodes, consolidation
+   is a safe no-op. ("`recordEpisode`" in the old run() comment was a misnomer; the
+   method is `storeEpisode`, and it is wired-but-dormant, not unwired.)
+2. **Scheduled invocation.** `run()` is invoked on-demand (`agentdb_learner_run`),
+   not by a nightly scheduler; the original bridge promoted per-feedback.
+3. **F4-3 substrate-seam routing.** The `ctx.child('skill')` wrap is a no-op until
+   an F4-3 caller mints a root `MutationContext`; writes currently flow through
+   SkillLibrary's legacy (functional, un-audited) SQLite path.
+
+So "automatic feedback→skill promotion" is now **mechanism-complete, autonomy-
+pending** — honestly partial, not closed.
+
+**Why `superseded`, not `completed: true`:** the full autonomous feature is not
+implemented (the three residuals), so a completion claim would overstate it.
+Superseding folds tracking to ADR-0180 (one tracker) while recording the mechanism
+that did land. The audit-methodology lesson (the 6-row resolution ledger; ADR-0085's
+structural-only audit missed in-body behaviors) is this ADR's durable contribution
+and is preserved above. The per-feedback hook remains explicitly rejected (wrong
+cadence + junk-skill risk per `feedback-no-fallbacks`).
