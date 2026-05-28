@@ -1,6 +1,9 @@
 ---
-status: proposed
+status: accepted
+completed: true
 date: 2026-05-11
+accepted: 2026-05-28
+implemented: 2026-05-28
 tags: [agentdb, controllers, orphan-wiring, quic, graph-algorithms, streaming-embeddings]
 supersedes: []
 depends-on: [ADR-0177]
@@ -364,4 +367,10 @@ The load-bearing distinction: **"no consumer" and "stub" are orthogonal.** ADR-0
 
 **Improvement 4 — soften the "delete is irreversible / would re-litigate" rationale (~93-95).** ADR-0217 demonstrates the opposite is the project's actual posture: it deleted the two QUIC controllers on evidence, the deletion was vindicated, and ADR-0265 shipped the real capability via a cleaner path. Delete-then-reimplement-properly is a legitimate, observed outcome — not a bogeyman.
 
-**Net live scope after this amendment**: Mincut + Sparsification = WIRE-confirmed (cite the AttentionService callsites; add the 2 missing contract tests if absent). QUIC three = superseded/handed-off (ADR-0217/0265). StreamingEmbeddingService = KEEP-AS-CAPABILITY (verified honest + unadvertised + trajectory). **No remaining implementation action** — every controller has a terminal disposition, so this ADR can move to a terminal status (the precise label — `accepted+completed` recording the dispositions, vs partial-supersede for the QUIC rows — is the maintainer's call; not flipped unilaterally). The only optional follow-up is adding the 2 Mincut/Sparsification contract tests if they don't already exist.
+**Net live scope after this amendment**: Mincut + Sparsification = WIRE-confirmed (real callers `AttentionService.ts:962` partition / `:841` sparsify). QUIC three = superseded/handed-off (ADR-0217/0265). StreamingEmbeddingService = KEEP-AS-CAPABILITY (verified honest + unadvertised + trajectory). **No remaining implementation action.**
+
+**Contract-test coverage verified present (2026-05-28) — no new tests needed.** Confirmation criterion #3 (`tests/adr0171-orphan-wiring-*.test.ts`) is satisfied by existing coverage rather than new files (adding `adr0171-*` files would duplicate it):
+- **MincutService** — controller-level: `forks/agentdb/tests/unit/controllers/MincutService.test.ts` (Stoer-Wagner / Karger / flow-based, simple + disconnected graphs, WASM/NAPI fallback). Wiring-level: `tests/unit/attention-sparse.test.ts:220` `describe('partitionedAttention')` exercises `AttentionService → MincutService.partition()` end-to-end (asserts `partitioningMetadata.numPartitions > 0`).
+- **SparsificationService** — `tests/unit/sparsification.test.ts` + `tests/unit/attention-sparse.test.ts` (the "Sparse Attention Integration" suite exercising `AttentionService → sparsify`).
+
+**Status flipped `proposed` → `accepted` + `completed: true` (2026-05-28)** per the maintainer instruction: all 6 controllers have terminal dispositions (2 wired+tested, 3 QUIC superseded by ADR-0217/0265, 1 keep-as-capability) and there is no remaining implementation action. The QUIC rows are handed off to ADR-0217 (deletion) + ADR-0265 (the transport that shipped); the StreamingEmbeddingService keep-decision is recorded above.
