@@ -3,9 +3,23 @@ status: proposed
 date: 2026-05-11
 tags: [agentdb, controllers, orphan-wiring, quic, graph-algorithms, streaming-embeddings]
 supersedes: []
-depends-on: [ADR-0166]
+depends-on: [ADR-0177]
 implements: []
 ---
+
+> **Status note (2026-05-28, swarm review)**: The "6 orphans, wire all"
+> framing is **false on 5 of 6 counts at HEAD** (see §Amendment
+> 2026-05-28). Mincut + Sparsification are already WIRED (real callers in
+> `AttentionService.ts`); QUICConnection was never orphaned (consumed by
+> `QUICClient`/`QUICServer`); QUICConnectionPool + QUICStreamManager were
+> DELETED by ADR-0217 (vindicating ADR-0206) and ADR-0265 C7.a/b now
+> ENFORCE they must not exist — wiring them would violate two accepted
+> ADRs. The federation/QUIC capability this ADR wanted shipped via
+> ADR-0265 (native QUIC transport). **Only StreamingEmbeddingService
+> remains a genuine orphan** — and its disposition is WIRE-against-a-
+> named-consumer-or-DELETE, gated by the new Phase 0. `depends-on`
+> corrected `ADR-0166` (superseded two hops down: 0166→0170→0177) →
+> `ADR-0177`.
 
 # Wire orphan controllers — MincutService, SparsificationService, StreamingEmbeddingService, QUIC connection layer
 
@@ -317,3 +331,28 @@ commits on `forks/agentdb`):**
   filed).
 
 Reconciled as part of the 2026-05-18 status audit.
+
+## Amendment: Swarm-review reconciliation (2026-05-28)
+
+A 2026-05-28 swarm review verified each controller against current HEAD
+(grep + file-existence + cross-ADR enforcement). The "6 zero-import
+orphans, wire all" inventory is wrong on 5 of 6 counts:
+
+| # | Controller | Verified disposition |
+|---|---|---|
+| 1 | MincutService | **WIRE — already wired.** Real consumer: `AttentionService.ts:962` `partition(...)` + `:965` `getPartitionStats(...)`. AttentionService is constructed by live controllers (NightlyLearner, ExplainableRecall, CausalMemoryGraph). Not an orphan. |
+| 2 | SparsificationService | **WIRE — already wired.** `AttentionService.ts:841` `sparsify(...)` + `:822/:825`. Same live chain. |
+| 3 | StreamingEmbeddingService | **GENUINE ORPHAN — fabrication risk.** `index.ts:69-70` exports it with the comment "Zero in-tree consumers today … restored to preserve future-wiring optionality." The Phase 2 `memory store --file` proposal is unimplemented and is exactly the fabricate-a-caller trap. **The only live question this ADR retains.** |
+| 4 | QUICConnection | **NOT orphaned.** Consumed by `QUICClient.ts:22` + `QUICServer.ts:21`; ADR-0217:258 keeps it; the `// TODO: ADR required` marker is already GONE from the file. |
+| 5 | QUICConnectionPool | **DELETED → SUPERSEDED.** File does not exist. ADR-0217:253-254 carries forward ADR-0206's deletion; ADR-0265 C7.a/b (arch-test + forbidden-string guard) ENFORCE it must not exist. Wiring it violates two accepted ADRs. |
+| 6 | QUICStreamManager | **DELETED → SUPERSEDED.** Same as #5. |
+
+**Improvement 1 — new Phase 0 WIRE-vs-DELETE triage gate (blocking, before Phase 1).** The Confirmation criterion "Phase 2 completes when each controller has at least one consumer that calls a non-trivial method (not just `new ControllerService(...)`)" forbids the trivial fabrication but still implicitly mandates "find/build a caller" and never licenses DELETE. That relocates the orphan behind a contract test. Replace with: *for each controller, answer with corpus evidence (per `feedback-corpus-evidence-before-feature-work` + ADR-0210 implement/restore/delete): (a) does a real organic consumer already call a non-trivial method? → WIRE-confirmed, add only the missing test; (b) is there a concrete named in-flight demand? → WIRE against it; (c) neither? → **DELETE is the default.** Restoring "to preserve future-wiring optionality" is deferred dead code, not a wiring plan; manufacturing a consumer solely to pass a reachability test is forbidden.* A controller may enter Phase 1/2/3 only once Phase 0 returns WIRE with a named real consumer.
+
+**Improvement 2 — supersede the QUIC portion.** Rows 4/5/6 are handed off: QUICConnection is live (never this ADR's to wire); QUICConnectionPool/QUICStreamManager are deleted-by-decision (ADR-0217/0206) and the capability shipped via ADR-0265. Remove Confirmation criterion #4 ("remove the `// TODO: ADR required` comments from QUICConnection.ts and QUICConnectionPool.ts") — QUICConnectionPool.ts no longer exists and QUICConnection.ts's marker is already gone, so the criterion is unsatisfiable as written.
+
+**Improvement 3 — strip stale postgres/ADR-0170 framing.** Decision Drivers (~56-60), Consequences (~205-207), Reopen triggers (~229-231), and the Local-ADRs ADR-0170 row reference a superseded postgres substrate and a now-moot "orthogonal to postgres phases" argument. Repoint to ADR-0177 (RVF-first) / ADR-0230; the "SQL-less so orthogonal" reasoning is no longer load-bearing under single-file RVF.
+
+**Improvement 4 — soften the "delete is irreversible / would re-litigate" rationale (~93-95).** ADR-0217 demonstrates the opposite is the project's actual posture: it deleted the two QUIC controllers on evidence, the deletion was vindicated, and ADR-0265 shipped the real capability via a cleaner path. Delete-then-reimplement-properly is a legitimate, observed outcome — not a bogeyman.
+
+**Net live scope after this amendment**: Mincut + Sparsification = WIRE-confirmed (cite the AttentionService callsites; add the 2 missing contract tests if absent). QUIC three = superseded/handed-off. **StreamingEmbeddingService is the single remaining decision**, gated by Phase 0: WIRE against a named consumer, or DELETE.

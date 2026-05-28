@@ -1,12 +1,24 @@
 ---
-status: proposed
-completed: false
+status: accepted
+completed: true
 date: 2026-05-16
+accepted: 2026-05-28
+implemented: 2026-05-28
 tags: [pipeline, performance, ssd-wear, fseventsd, acceptance, build]
 supersedes: []
 depends-on: [ADR-0025, ADR-0038, ADR-0039, ADR-0048, ADR-0150]
 implements: []
 ---
+
+> **Status note (2026-05-28, swarm review)**: Flipped `proposed → accepted`
+> + `completed: true`. The 2026-05-16 program shipped: **12 of 13 levers
+> landed** (L1 empirically disproven and dropped — see §Amendment
+> 2026-05-28), release is green. Two items are explicitly DEFERRED, not
+> blocking: (1) the SSD-byte hard gate (never wired AND unbuildable as a
+> non-flaky hard-fail per the ADR's own `ioreg`-is-whole-disk caveat —
+> downgraded to advisory); (2) the L10 ~130-callsite RETURN-trap
+> migration. The prior `status: proposed, completed: false` actively
+> misrepresented a finished program to any audit that walks ADR status.
 
 # Minimise file-copy churn across the release pipeline
 
@@ -326,3 +338,38 @@ Status kept `proposed` per the 2026-05-18 ADR status audit.
 Roughly half the levers shipped; the gate that makes the program
 self-policing has not. Reconciled as part of the 2026-05-18 status
 audit.
+
+### Amendment: Swarm-review reconciliation (2026-05-28) — supersedes the 2026-05-18 amendment
+
+The 2026-05-18 amendment above is **factually stale** and is superseded
+by this one. It claimed "L1, L5, L8, L10-L13: no evidence in scripts/"
+and "roughly half the levers shipped." A 2026-05-28 swarm review verified
+every cited commit SHA against `git log` + located every helper by
+`file:line`. Actual state: **12 of 13 levers LANDED** (L8 runs daily;
+L10-L13 all landed). The corrected per-lever table:
+
+| Lever | Verified status |
+|---|---|
+| L1 (drop wrapper-solo install) | **DROPPED — empirically disproven.** Retry `8b9de92` → reverted `a903c9c`; documented `a9a6265`. Sharing `node_modules` after `init --full` produced 62 failures (adr0074 `intelligence.cjs not found`; sec-rl `RVF LockHeld`). This is the ADR's strongest moment — a hypothesis verified and the design killed. |
+| L2 (clonefile e2e snapshot) | LANDED (`lib/acceptance-harness.sh:96-156`; path-bug fixed `f8d3479`). **The only always-on SSD win in the default path (~2.0 GB).** |
+| L3 (persistent ACCEPT_TEMP) | LANDED, opt-in `RUFLO_PERSISTENT_ACCEPT=1`, **never run in a real release.** Kill-switch deadline 2026-06-13. |
+| L4 (reparent mktemp workdirs) | LANDED (`dddd516` + 2 fallout reverts). |
+| L5 (codemod short-circuit) | NEVER EXISTED — correctly dropped pre-impl (already in codemod.mjs). |
+| L6 (trap-cover wrapper-solo + P5) | LANDED (`bd467cb`). |
+| L7 (widen stale-sweep glob) | LANDED (`8d1a1cf`) — but **re-leaks on every new debug-prefix** (16 GB of un-swept `ruflo-adr0267-*` today). Denylist design guarantees recurrence. |
+| L8 (Verdaccio GC) | LANDED + RUNNING daily (`8d50332`). **Projection was ~10× off**: `keep_last=10` × 67 packages = 670-version floor; realised storage ~6.7 GB, not the promised ~700 MB. |
+| L9 (npx _cacache LRU prune) | LANDED (`b64e11f`). 37 GB → 7.3 GB realised (cap is 5 GB; hasn't re-converged). |
+| L10 (iso symlink/cp fail-loud) | Guards LANDED; the ~130-callsite RETURN-trap migration DEFERRED. |
+| L11 (clone-from-golden) | LANDED (re-landed after socket bug). |
+| L12 (drop bge variant) | LANDED (`aed01d4`). |
+| L13 (writer/reader split) | LANDED (fork `6055e04cc` + `d0d5cbe`). |
+
+**Three honesty corrections to the ADR body (apply on next edit pass; recorded here so the record is straight now):**
+
+1. **The `Consequences` "~5.7 GB SSD-write drop" headline is false for the shipped config.** Only **L2's ~2.0 GB is realised in the default path.** L1's 1.7 GB is forgone permanently; L3's 2.0 GB is opt-in and has never executed. Corrected headline: ~2.0 GB realised, +2.0 GB available-but-opt-in, 1.7 GB forgone.
+
+2. **The SSD-byte hard gate is vapor AND unbuildable as specified.** `grep` finds zero references to the `write_bytes ≤ max(baseline×1.10, baseline+100MB)` gate, to `ioreg -c IOBlockStorageDriver`, or to a `measure-file-events.sh` (which does not exist). `logs/release-disk-bytes.jsonl` was hand-populated, not pipeline-emitted. `ioreg` works on this host but is a cumulative whole-disk all-process counter — a 378s release with a browser/IDE running blows past the `+100 MB` floor on unrelated writes. **Demote the Confirmation/Measurement "hard gate" to a `fs_usage -f filesys`-based advisory metric run manually per-lever (which is what actually happened), explicitly labelled not-pipeline-gated.** Do not leave the document asserting a gate that does not and cannot exist.
+
+3. **L3 kill-switch decision is due 2026-06-13 (≈16 days).** Its promotion precondition was "the gate" — which doesn't exist — so it will hit the auto-revert trigger by default. **User decision required**: promote L3 to default now (the 6/6 integration tests incl. byte-identity already passed; the kill-switch's de-risking purpose is served), OR honor the clause and revert `lib/accept-cache.sh`. Flagged, not auto-decided — it's a pipeline behavior change.
+
+The acceptance-correctness invariant (pass≥, fail=0, skip≤) IS enforced — that's the existing release gate. Only the SSD-byte gate is fiction. The program is functionally complete; this ADR's residual work is the two deferred items above + the three body corrections, none of which block `completed: true`.

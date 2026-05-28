@@ -1,11 +1,26 @@
 ---
 status: proposed
 date: 2026-05-12
-tags: [router, mcp, init-template, silent-fallback, axis-separation, adr-0082, adr-0166, adr-0170]
+tags: [router, mcp, init-template, silent-fallback, axis-separation, adr-0082, adr-0166, adr-0177]
 supersedes: []
-depends-on: [ADR-0082, ADR-0147, ADR-0166, ADR-0170]
+depends-on: [ADR-0082, ADR-0147, ADR-0166, ADR-0177, ADR-0253]
 implements: []
 ---
+
+> **⚠ BLOCKING PRECONDITION (2026-05-28, swarm review)**: Phase C as
+> written is a **data-loss trap** for the causal-edge sites. Per ADR-0147
+> R7, the SQLite `causal_edges` controller table is EMPTY — no row has
+> ever been INSERTed via CausalMemoryGraph; every causal edge lives
+> *exclusively* in the RVF `causal-edges` namespace the "fallback" writes.
+> So the RVF path IS canonical; the controller is the broken path.
+> Executing Phase C site 2083/2148/2160 ("drop the RVF fallback, the
+> controller is canonical, throw on failure") would throw on every causal
+> write or silently lose all causal data — a `feedback-data-loss-zero-
+> tolerance` violation introduced BY this cleanup ADR. Phases C/D MUST NOT
+> execute until the substrate contract is rewritten per the §Amendment
+> 2026-05-28 below. `depends-on` corrected `ADR-0170` → `ADR-0177` +
+> `ADR-0253` (the postgres substrate this ADR was written against is
+> doubly-superseded).
 
 # Router silent-fallback and disabled-controller audit
 
@@ -217,3 +232,75 @@ ADR. The router-boundary fail-loud principle survives; the substrate
 referent does not. Any future execution of this ADR must re-frame Phase
 B against the ADR-0177 / ADR-0180 archivist substrate seam, not
 postgres.
+
+### Amendment: Swarm-review reconciliation (2026-05-28)
+
+A 2026-05-28 swarm review verified every claim against current HEAD
+(line numbers had drifted ~300 lines; all re-located). Findings:
+
+**1. Phase C causal sites are a data-loss trap (highest-severity).** See
+the BLOCKING precondition in the frontmatter note. ADR-0147 R7 Bug-7 is
+explicit: the agentic-flow `causal_edges` SQLite table is empty — the
+controller path has never persisted a row. The router's RVF `causal-
+edges` "fallback" is the *only* working causal store. Phase C site 2083
+("CausalMemoryGraph is canonical; if it fails, throw") and 2148/2160
+("merge-and-mask retired") are backwards. **Reclassify these three from
+RETIRE to "the RVF namespace IS canonical for causal edges"** — rename
+the marker from the pejorative `router-fallback` to a neutral
+`controller:'causal-rvf'`, OR gate any retirement behind a *verified*
+CausalMemoryGraph write+read round-trip (R7-write and R7-read both
+fixed). Do not throw-on-controller-failure while the controller has
+never written a row.
+
+**2. Stale substrate framing (load-bearing).** The ADR asserts
+`agentdb_*=PostgreSQL` at lines 26, 76, 87, 178. This is wrong twice:
+(a) ADR-0170 (the source of the postgres identity) is superseded by
+ADR-0177; (b) ADR-0166 — which the ADR misattributes the postgres claim
+to — never said PostgreSQL (it said SQLite). Current model per ADR-0177:
+**RVF-primary for both axes, with a named SQLite carve-out (ADR-0166 /
+ADR-0253 PERMANENT_SQLITE_CARVE_OUT) for the 5 relational controllers
+(CausalMemoryGraph, CausalRecall, NightlyLearner, LearningSystem
+aggregations, ReasoningBank GROUP-BY).** Phase C's substrate contract
+(Option C, line 87) must read *"must succeed against its canonical store
+(RVF-backed controller, or the SQLite carve-out for the 5 relational
+controllers) or throw"* — not "the PostgreSQL axis." The "cross-axis"
+frame itself is suspect: for pattern (1726) and session (1839/1885),
+RVF *is* the controller's substrate under ADR-0177, so the fix is
+single-canonical-write/dedup, not "throw because it landed on RVF."
+
+**3. Premise verification — all 7 fallback sites STILL PRESENT** (relocated):
+1726→2099-2108, 1795→2164-2177, 1839→~2215, 1885→~2261, 2083→2462-2475,
+2148→2528-2598, 2160→~2600+. The `router-fallback` marker survives at
+2107/2471/2597. Zero `ADR-0172` references in the file — no
+implementation has landed.
+
+**4. Phase B target shrinks 5→4.** `queryOptimizer` was already flipped
+to `true` by ADR-0191/0192 (not this ADR). Remaining to-flip:
+`batchOperations`, `hierarchicalMemory`, `memoryConsolidation`,
+`hybridSearch`. The 2026-05-18 amendment's `config-template.ts:202-203`
+line refs have drifted to ~213-218.
+
+**5. Dual disagreeing enablement registries.** `memory-router.ts:654-695`
+carries its OWN hardcoded controller defaults that DISAGREE with
+`config-template.ts`: it sets `hierarchicalMemory: true` (line 658)
+while config-template has `false`. Effective enablement is the hardcoded
+block merged with `...(cfgJson.controllers?.enabled ?? {})` (line 695).
+**Phase B flipping config-template alone may not produce the predicted
+behavior** — the ADR's premise ("5 controllers ship disabled") must be
+re-verified against the *merged* enablement, not config-template in
+isolation. `memoryConsolidation`'s disabled-rationale at :668-669 is
+itself stale-postgres ("issues SQLite DDL against the PostgresBackend
+handle") — PostgresBackend was retired by ADR-0177; the disable reason
+must be re-derived before flipping.
+
+**6. Phase A not done.** `agentdb-tools.ts` still returns the generic
+`'AgentDB not available'` at 5 sites (465/495/631/730/758); the "49
+tools" count is now 50.
+
+**Disposition**: keep `proposed`. The anti-silent-fallback *intent*
+survives and aligns with ADR-0082. But execution is gated on rewriting
+Phase C per-controller (item 1+2) and re-verifying Phase B against the
+merged registry (item 5). Per `project-adr0170-superseded-phase-d-trap`
++ `feedback-data-loss-zero-tolerance`: before retiring ANY RVF
+"fallback," prove the controller path actually persists (write+read
+round-trip) — at least one (causal) does not.

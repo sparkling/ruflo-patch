@@ -3,9 +3,21 @@ status: proposed
 date: 2026-05-13
 tags: [memory, controllers, instrumentation, audit-gap, post-mortem]
 supersedes: []
-depends-on: [ADR-0053, ADR-0085, ADR-0084, ADR-0086, ADR-0112, ADR-0102, ADR-0177, ADR-0178, ADR-0180]
+depends-on: [ADR-0053, ADR-0085, ADR-0084, ADR-0086, ADR-0112, ADR-0102, ADR-0177, ADR-0178, ADR-0180, ADR-0181, ADR-0183]
 implements: []
 ---
+
+> **Status note (2026-05-28, swarm review)**: The "restore six lost
+> behaviors" framing is **~80% obsolete**. 5 of 6 are no longer "lost and
+> needing restoration" — they were reimplemented in a better place by the
+> now-live archivist (ADR-0180 `guard-policy` + `audit-chain`, ADR-0181
+> runtime activation, ADR-0183 write-path unification — the last two this
+> ADR never referenced). Only **SkillLibrary auto-promotion on feedback**
+> is genuinely still missing (~30 LoC). The 34-row behavioral-diff table —
+> this ADR's stated central deliverable — is a literal stub (rows 3-33 say
+> "(Phase 1 hive output)") and its planned router-call-site target no
+> longer exists. Re-scope per §Amendment 2026-05-28; do NOT execute the
+> 15-agent restoration plan.
 
 # Restore Controller Instrumentation Lost in ADR-0085 Bridge Deletion
 
@@ -689,3 +701,32 @@ Frontmatter could append `ADR-0180` to `depends-on` per ADR-0180's
 guidance, but per the same guidance no status change is required; the
 methodology work is genuinely open. Reconciled as part of the 2026-05-18
 status audit.
+
+## Amendment: Swarm-review reconciliation (2026-05-28)
+
+A 2026-05-28 swarm review mapped each of the 6 behaviors against the
+now-live archivist (ADR-0180/0181/0183), verified against HEAD. The 6
+behaviors this ADR set out to "restore" resolve as:
+
+| # | Behavior | Verified status |
+|---|---|---|
+| 1 | MutationGuard pre-write gate | **SUBSUMED — archivist `guard-policy`.** 5 guards (`size`/`quality`/`pii`/`schema`/`rate-limit`) at `guards.ts:39-43`; `composeGuards()` runs in `dispatchMutationInternal` (`index.ts:939`) BEFORE every handler; any veto writes `state:'rejected'` and throws (fail-closed). Strictly better than the old bridge (guarded 5 of 13 paths; archivist guards all dispatched mutations). `memory_store` flows through it (`memory-router.ts:1166`). |
+| 2 | TieredCache write-through | **OPEN but re-homed.** Not implemented; explicitly ADR-0180 Follow-up #6/#24 + MODULE.md out-of-scope. The read-path boundary exists to host it; the cache module does not. Owned by ADR-0180's follow-up, not this ADR's router recipe. |
+| 3 | AttestationLog audit write | **SUBSUMED — archivist `audit-chain`.** Live write-through journal (`audit-writer.ts`); intent→applied/rejected entries around every dispatch. ADR-0180 §Architecture states "AttestationLog is this audit log." The structurally-always-zero attestation count this ADR §3 flagged is closed. |
+| 4 | BM25 + semantic fusion (default) | **SUBSUMED / re-homed — but mechanism changed.** Fusion is now RRF (k=60) at the archivist boundary (`handlers/agentdb/filtered-search.ts`, `pattern-search.ts`), NOT this ADR's `0.7·sem + 0.3·BM25`. The ADR-0179 *spec* is stale, not merely relocated. (Legacy `memory-router.ts:1297` still gates BM25 behind hash-fallback mode — the architectural answer moved to the archivist.) |
+| 5 | ExplainableRecall provenance | **SUBSUMED — read-path return shape.** `RankedResult<T>.provenance` is first-class; populated at `handlers/memory/search.ts:181` + `handlers/agentdb/filtered-search.ts:178`, 15-tool `includeProvenance` rollout. **Stale-citation fix**: the 2026-05-18 amendment's `agentdb-tools.ts:276,1461` ExplainableRecall citation returns ZERO grep hits — provenance lives in the archivist handlers, not agentdb-tools.ts. Drop or correct that line. |
+| 6 | SkillLibrary auto-promotion on feedback | **GENUINELY MISSING.** `routeFeedbackOp 'record'` (`memory-router.ts:2119`) and the archivist `handlers/agentdb/feedback.ts` both fan out to LearningSystem + ReasoningBank but neither calls `skills.promote()`. The ONE behavior the entire 0180/0181/0183 program did not close. |
+
+**Summary: 4 subsumed, 1 deferred-but-re-homed, 1 genuinely missing.**
+
+**Re-scope (Improvement, replaces the 15-agent restoration plan):**
+
+1. **Re-title intent.** "Restore the lost bridge behaviors" is misleading — most weren't restored, they were reimplemented at a better seam. The live scope is two things: **(a)** wire the one genuinely-missing behavior; **(b)** the audit-completeness artifact.
+
+2. **Replace the 34-row "to-be-filled" table with the 6-row resolution ledger above.** The full body-diff was to inform a router-call-site restoration that no longer has a target — it is not pending work. Keep the *methodology lesson* (ADR-0085's structural-only audit missed in-body behaviors) as the durable contribution.
+
+3. **Narrow the one live code change**: wire `skills.promote(pattern, quality)` into `forks/agentdb/src/archivist/handlers/agentdb/feedback.ts` (gated `success && quality >= 0.9 && patterns.length > 0`) — the handler already fans out to LearningSystem + ReasoningBank, so it's the natural home. Retarget the `adr0179-skill-auto-promotion` acceptance test at the archivist feedback handler, not `routeFeedbackOp`. Drop the other 5 acceptance tests (guards/audit/provenance/fusion are ADR-0180's confirmation responsibility now).
+
+4. **Controller-coverage check**: it targets the cli `ControllerRegistry` 47-slot enum — a *different* surface than ADR-0180's archivist-charter check. If the "17 of 47 unreachable" dead-export risk still holds at HEAD (re-count — it predates the archivist migration), deliver the gate; otherwise mark resolved-by-evidence per `feedback-corpus-evidence-before-feature-work`.
+
+5. **Status disposition (user choice)**: with 5/6 subsumed and the 6th ~30 LoC, this no longer warrants `proposed`-with-a-15-agent-plan. Either (a) keep `proposed` but shrink the execution plan to one coder change + one test, or (b) `superseded-by: [ADR-0180]` for the placement question while folding the SkillLibrary remnant into ADR-0181's continuation. Both defensible; left for the maintainer. NOT flipped unilaterally because a genuine (small) remnant remains.
