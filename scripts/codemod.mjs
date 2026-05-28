@@ -200,7 +200,7 @@ function effectiveExt(filename) {
  * Apply the name mapping to a single package name string.
  * Returns the mapped name, or the original if no mapping applies.
  */
-function applyNameMapping(name) {
+export function applyNameMapping(name) {
   if (name.startsWith('@sparkleideas/')) return name; // already transformed
   if (name.startsWith(SCOPED_PREFIX_FROM)) {
     return SCOPED_PREFIX_TO + name.slice(SCOPED_PREFIX_FROM.length);

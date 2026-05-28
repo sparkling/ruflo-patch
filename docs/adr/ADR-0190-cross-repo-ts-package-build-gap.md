@@ -22,14 +22,34 @@ audience: ai-executor
 > ADVISORY=1` makes the script exit 0 while logging the count + first
 > 10 violators).
 >
-> Baseline scan: 41 packages in scope; 15 NAPI-platform allowlisted;
-> 162 entry-point violations across the remaining 26 packages (mostly
-> ruvector/npm/packages/* that imported broken `main: dist/...`
-> declarations from upstream). Each violation is a structural ship-time
-> hazard documented in §Context. Promotion to fail-loud (drop
-> `CROSS_REPO_BUILDS_ADVISORY=1`) deferred until the inventory is
-> remediated per-package — that work is operator-visible in every
-> release log now.
+> **Detector scoped to the publish set (2026-05-28 swarm verification).**
+> The first-pass "162 violations, each a ship-time hazard, remediate
+> per-package" framing was WRONG on the load-bearing word *hazard*. A
+> violation only ships a broken package if the package is actually
+> PUBLISHED. The pipeline publishes exactly the names in
+> `config/publish-levels.json` (enforced by `publish.mjs`'s
+> `_publishableNamesSet`). Of the original 162: **161 were in
+> never-published packages** (29 dev/example packages with no publish
+> path — building dist/ for them remediates nothing — plus NAPI
+> false-positives). The detector now (a) maps each source name through
+> the codemod (`applyNameMapping`, exported from `codemod.mjs` — single
+> source of truth) and skips names absent from the publish set, and (b)
+> exempts NAPI parent wrappers (`napi` field / `napi build` script —
+> their `index.js`/`.d.ts` are generated, e.g. `sona`). Scoped result:
+> **7 published packages checked, 1 real hazard** —
+> `@sparkleideas/ruvector` (root meta-pkg: `main: dist/index.js`, empty
+> dist in tarball). The origin case (`ruvllm`) is already fixed.
+>
+> **The 1 remaining hazard needs a decision (NOT auto-made — it's a
+> publish-set change):** either (a) git-track
+> `forks/ruvector/npm/packages/ruvector/dist/` (the `ruvllm` stopgap
+> pattern), or (b) drop `@sparkleideas/ruvector` from `publish-levels.json`
+> — the swarm verified **nothing in the publish set depends on it** (it's
+> a standalone meta/CLI pkg), so (b) removes a broken tarball at low cost,
+> but stops `npm i @sparkleideas/ruvector` from resolving for any direct
+> consumer. Stays advisory (`CROSS_REPO_BUILDS_ADVISORY=1`, exit 0) until
+> the 1 hazard is resolved; **promotable to fail-loud the moment it is**
+> (non-advisory exit is 1 today on exactly that 1 package, 0 after).
 
 # ADR-0190: Cross-repo TypeScript package build — codify the contract
 

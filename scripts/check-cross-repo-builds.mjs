@@ -40,11 +40,52 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { applyNameMapping } from './codemod.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const PROJECT_DIR = resolve(__dirname, '..');
 const FORKS_DIR = resolve(PROJECT_DIR, '..', 'forks');
+
+// ADR-0190 (2026-05-28 swarm verification): a "violation" is only a real
+// ship hazard if the package is actually PUBLISHED. The pipeline publishes
+// exactly the names in config/publish-levels.json (enforced by publish.mjs's
+// `_publishableNamesSet` filter). A package whose codemod-mapped name is NOT
+// in that set has no publish path — building dist/ for it remediates nothing.
+// So we scope the detector to the publish set, mirroring publish.mjs's own
+// filter (this is alignment with the publish contract, NOT an allowlist dodge
+// per feedback-skip-accepted-as-squelch). 161 of the original 162 violations
+// were in never-published packages; this scoping drops the real count to the
+// genuinely-publishable hazards.
+function loadPublishableNames() {
+  const p = resolve(PROJECT_DIR, 'config', 'publish-levels.json');
+  try {
+    const json = JSON.parse(readFileSync(p, 'utf8'));
+    const names = new Set();
+    for (const lvl of json.levels ?? []) {
+      for (const n of lvl.packages ?? []) names.add(n);
+    }
+    return names;
+  } catch {
+    // Fail-loud-ish: if we can't read the publish set, return null →
+    // caller falls back to scanning everything (the pre-scoping behaviour),
+    // so a missing/renamed config never silently disables the gate.
+    return null;
+  }
+}
+
+// ADR-0190 (2026-05-28): NAPI parent-wrapper exemption. A package with a
+// `napi` field (or a `napi build` build-script) generates its `index.js` /
+// `index.d.ts` / `*.node` at build time — they are not committed to the
+// source tree, so the missing-entry check is a false positive (same class
+// as the per-platform NAPI sub-packages already substring-allowlisted, but
+// for the PARENT wrapper, e.g. `@sparkleideas/ruvector-sona`).
+function isNapiParent(pkg) {
+  if (pkg.napi && typeof pkg.napi === 'object') return true;
+  const build = pkg.scripts?.build;
+  if (typeof build === 'string' && /\bnapi\s+build\b/.test(build)) return true;
+  return false;
+}
 
 // Forks that ship cross-repo packages under npm/packages/.
 const FORK_DIRS = ['ruvector', 'agentic-flow', 'ruv-FANN', 'agentdb', 'ruflo'];
@@ -125,16 +166,18 @@ function main() {
     process.exit(0);
   }
 
+  const publishable = loadPublishableNames();
   const violations = [];
   let scanned = 0;
   let allowed = 0;
+  let notPublished = 0;
+  let napiParents = 0;
 
   for (const { pkgJsonPath, pkgDir, fork, name } of packages) {
     if (isAllowlisted(pkgDir)) {
       allowed++;
       continue;
     }
-    scanned++;
     let pkg;
     try {
       pkg = JSON.parse(readFileSync(pkgJsonPath, 'utf8'));
@@ -147,6 +190,25 @@ function main() {
       continue;
     }
 
+    // ADR-0190 scoping #1: skip packages with no publish path. Map the
+    // source name through the codemod, then check the publish set. If
+    // `publishable` is null (config unreadable) we scan everything.
+    if (publishable && typeof pkg.name === 'string') {
+      const mapped = applyNameMapping(pkg.name);
+      if (!publishable.has(mapped)) {
+        notPublished++;
+        continue;
+      }
+    }
+
+    // ADR-0190 scoping #2: NAPI parent wrappers generate their entry points
+    // at build time — missing-on-disk is a false positive.
+    if (isNapiParent(pkg)) {
+      napiParents++;
+      continue;
+    }
+
+    scanned++;
     const entries = collectEntryPoints(pkg);
     for (const ep of entries) {
       const epPath = join(pkgDir, ep);
@@ -164,7 +226,11 @@ function main() {
   }
 
   // Report.
-  console.log(`[CROSS-REPO-BUILD] scanned ${scanned} package(s); ${allowed} allowlisted; ${violations.length} violation(s)`);
+  console.log(
+    `[CROSS-REPO-BUILD] checked ${scanned} published package(s); ` +
+      `${allowed} NAPI-platform-allowlisted; ${notPublished} not-published-skipped; ` +
+      `${napiParents} NAPI-parent-skipped; ${violations.length} violation(s)`,
+  );
 
   if (violations.length === 0) {
     console.log('[CROSS-REPO-BUILD] PASS — every declared entry point resolves to a file on disk');
