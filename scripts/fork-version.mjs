@@ -80,6 +80,10 @@ export const UNSCOPED_PUBLISHABLE = new Set([
   // win32-x64-msvc) stay in PLATFORM_BINARY_NAMES (lint allow-list) until
   // Phase 2b cross-compile CI matrix lands them.
   'agentic-flow-quic-native-darwin-arm64',
+  // ADR-0265 Phase 2b — darwin-x64 cross-compiled from darwin-arm64 host
+  // via Xcode's x86_64-apple-darwin target. Same lockstep-bump pattern as
+  // darwin-arm64.
+  'agentic-flow-quic-native-darwin-x64',
 ]);
 
 // ── Version parsing ──
