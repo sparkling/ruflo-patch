@@ -899,6 +899,10 @@ adr0255_lib="${PROJECT_DIR}/lib/acceptance-adr0255-checks.sh"
 adr0267_lib="${PROJECT_DIR}/lib/acceptance-adr0267-checks.sh"
 [[ -f "$adr0267_lib" ]] && source "$adr0267_lib"
 
+# ADR-0263: archivist replay-verification harness — 1 smoke
+adr0263_lib="${PROJECT_DIR}/lib/acceptance-adr0263-checks.sh"
+[[ -f "$adr0263_lib" ]] && source "$adr0263_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -3616,6 +3620,34 @@ if [[ -f "$adr0267_lib" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0267-rvf-lock" "$(_elapsed_ms "$_adr0267_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0263: archivist replay-verification harness — 1 smoke.
+# Drives `verifyAuditLog` from agentdb/archivist against a real audit
+# log produced by cli memory store ops + a synthetic negative test.
+# ════════════════════════════════════════════════════════════════════
+_adr0263_start=$(_ns)
+if [[ -f "$adr0263_lib" ]]; then
+  log "── ADR-0263: archivist replay-verification ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  if ! _adr0263_setup_shared_temp; then
+    log_error "ADR-0263 shared-temp setup FAILED — aborting smoke block"
+    rm -rf "$PARALLEL_DIR" 2>/dev/null
+    _record_phase "phase-adr0263-replay-verification" "$(_elapsed_ms "$_adr0263_start" "$(_ns)")"
+    exit 1
+  fi
+  log "── ADR-0263 shared-temp ready: ${ADR0263_SMOKE_SHARED_TEMP} ──"
+
+  run_check_bg "adr0263-replay-verification" "ADR-0263 replay-verification harness" check_adr0263_replay_verification "adr0263"
+
+  collect_parallel "adr0263" \
+    "adr0263-replay-verification|ADR-0263 replay-verification harness"
+
+  _adr0263_cleanup_shared_temp
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0263-replay-verification" "$(_elapsed_ms "$_adr0263_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

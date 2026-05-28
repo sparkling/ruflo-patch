@@ -410,6 +410,20 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0267"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0263"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0263-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0263-checks.sh"
+    echo "── ADR-0263 (archivist replay-verification) ──"
+    if ! _adr0263_setup_shared_temp; then
+      echo "[fast] ADR-0263 shared-temp setup FAILED — aborting" >&2
+      exit 1
+    fi
+    echo "[fast] adr0263 shared-temp: ${ADR0263_SMOKE_SHARED_TEMP}"
+    _fast_run "adr0263-replay-verification" check_adr0263_replay_verification
+    _adr0263_cleanup_shared_temp
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"
