@@ -60,41 +60,53 @@ function main() {
   log(`[smoke] log: ${LOG_FILE}\n`);
   if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
 
-  // PART 1 — source-level AIDefence preservation check. Pure read; no cli.
+  // PART 1 — source-level checks. Pure read; no cli.
+  //
+  // NOTE: per upstream `47a7825b0` the AIDefence scan gate lives on
+  // `wasm_gallery_import` (the HIGH-RISK template-deserialization tool),
+  // NOT on `wasm_agent_compose` (which only packs caller-provided skills).
+  // ADR-0266 C4 criterion description was misaligned with upstream reality;
+  // the implementation correctly preserves AIDefence on gallery_import per
+  // upstream pattern. This smoke verifies both:
+  //   1a. wasm_agent_compose handler exists + invokes buildRvfContainer
+  //   1b. wasm_gallery_import handler exists + invokes AIDefence detect()
   const found = findWasmAgentToolsSource();
   if (!found) {
     fail('source check', 'forks/ruflo wasm-agent-tools.ts not located');
   } else {
     const { src } = found;
-    // Slice the wasm_agent_compose handler body — from `name: 'wasm_agent_compose'`
-    // through the closing `},\n` at the same nesting level. Heuristic: grab
-    // from `name: 'wasm_agent_compose'` to the next `name: '` declaration or
-    // EOF, whichever first.
-    const startIdx = src.indexOf(`name: 'wasm_agent_compose'`);
-    if (startIdx < 0) {
+
+    // 1a. wasm_agent_compose: dispatch + compose builder call.
+    const composeStart = src.indexOf(`name: 'wasm_agent_compose'`);
+    if (composeStart < 0) {
       fail('compose handler present', 'name: \'wasm_agent_compose\' not found in source');
     } else {
-      // Find the next "name: '" after startIdx (next tool registration).
-      const nextNameIdx = src.indexOf(`name: '`, startIdx + 30);
-      const handlerSrc = nextNameIdx > 0
-        ? src.slice(startIdx, nextNameIdx)
-        : src.slice(startIdx);
-
-      // AIDefence preservation: handler body must reference aidefence import
-      // + a detect() (or scan() — both names per ADR-0266 risk note) gate
-      // call before whatever produces RVF bytes.
-      const hasAidefenceImport = /@(claude-flow|sparkleideas)\/aidefence/.test(handlerSrc);
-      const hasDetectCall = /\.detect\s*\(|\.scan\s*\(/.test(handlerSrc);
-      const hasComposeBuilderCall = /buildRvfContainer|composeAgent|wasm\.compose/.test(handlerSrc);
-
-      if (hasAidefenceImport) pass('AIDefence module imported in compose handler');
-      else fail('AIDefence import preserved', 'no @claude-flow/aidefence or @sparkleideas/aidefence import in compose handler');
-
-      if (hasDetectCall) pass('AIDefence detect()/scan() call present');
-      else fail('AIDefence detect()/scan() call', 'no .detect() or .scan() invocation in compose handler');
-
-      if (hasComposeBuilderCall) pass('compose builder call (buildRvfContainer/composeAgent/wasm.compose) present');
+      const composeNextIdx = src.indexOf(`name: '`, composeStart + 30);
+      const composeSrc = composeNextIdx > 0
+        ? src.slice(composeStart, composeNextIdx)
+        : src.slice(composeStart);
+      const hasComposeBuilderCall = /buildRvfContainer|composeAgent|wasm\.compose/.test(composeSrc);
+      if (hasComposeBuilderCall) pass('compose builder call (buildRvfContainer) present');
       else fail('compose builder call', 'no buildRvfContainer or compose call in handler');
+    }
+
+    // 1b. wasm_gallery_import: AIDefence detect()/scan() gate preserved.
+    const importStart = src.indexOf(`name: 'wasm_gallery_import'`);
+    if (importStart < 0) {
+      fail('gallery_import handler present', 'name: \'wasm_gallery_import\' not found in source');
+    } else {
+      const importNextIdx = src.indexOf(`name: '`, importStart + 30);
+      const importSrc = importNextIdx > 0
+        ? src.slice(importStart, importNextIdx)
+        : src.slice(importStart);
+      const hasAidefenceImport = /@(claude-flow|sparkleideas)\/aidefence/.test(importSrc);
+      const hasDetectCall = /\.detect\s*\(|\.scan\s*\(/.test(importSrc);
+
+      if (hasAidefenceImport) pass('AIDefence module imported in gallery_import handler');
+      else fail('AIDefence import preserved', 'no @claude-flow/aidefence or @sparkleideas/aidefence import in gallery_import handler');
+
+      if (hasDetectCall) pass('AIDefence detect()/scan() call present in gallery_import handler');
+      else fail('AIDefence detect()/scan() call', 'no .detect() or .scan() invocation in gallery_import handler');
     }
   }
 

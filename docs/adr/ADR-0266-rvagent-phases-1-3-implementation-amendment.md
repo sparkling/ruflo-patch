@@ -115,7 +115,7 @@ No new guards needed. The handlers live in `forks/ruflo/v3/@claude-flow/cli/src/
 | C1 | All 5 Group 1 tools exist + wrap with `ensureLive` | grep `wasm_agent_state\|wasm_agent_todos\|wasm_agent_tools\|wasm_agent_turn_count\|wasm_agent_is_stopped` in `wasm-agent-tools.ts`; each handler's first non-arg-parse statement is `await ensureLive(args.agentId as string)`. |
 | C2 | Group 2 reset wraps with `withStoreLock` + `snapshotAgent` | grep `wasm_agent_reset` in `wasm-agent-tools.ts`; the handler body calls `resetWasmAgent` then `withStoreLock(() => ... saveStore(...))`. |
 | C3 | All 10 Group 3 gallery tools exist + plain `loadAgentWasm()` | grep each gallery tool name; each handler's body uses `loadAgentWasm()` (NOT `ensureLive`, NOT `withStoreLock`). |
-| C4 | Group 4 compose tool exists + AIDefence scan preserved | grep `wasm_agent_compose` in `wasm-agent-tools.ts`; the handler invokes `loadAgentWasm()` + the AIDefence scan call before `buildRvfContainer`. |
+| C4 | Group 4 compose tool exists + AIDefence scan preserved on gallery_import (see §Revision 1) | grep `wasm_agent_compose` in `wasm-agent-tools.ts`; the handler invokes `loadAgentWasm()` + `buildRvfContainer`. Separately grep `wasm_gallery_import`; that handler invokes the AIDefence `defence.detect()` (fork analog of upstream's `defence.scan()`) before WASM deserialization. |
 | C5 | `SAFE_MCP_TOOLS` constant exists with 29 entries | grep `SAFE_MCP_TOOLS = new Set` in `wasm-agent-tools.ts`; the Set has 29 string literals matching ADR-0259's final spec verbatim. |
 | C6 | `loadRvf` signature typo fixed | grep the signature at `optional-modules.d.ts:295` for the corrected form per ADR-0254's typo description. |
 | C7 | Each allowlist name resolves to a real fork tool | Phase 5 smoke #5 — grep each of 29 names against `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/*-tools.ts`. Every name produces ≥1 hit; smoke FAILs loudly on any miss. |
@@ -142,6 +142,10 @@ No new guards needed. The handlers live in `forks/ruflo/v3/@claude-flow/cli/src/
 - `[[feedback-no-upstream-donate-backs]]` — persistence + allowlist divergence stays fork-side
 - `[[feedback-always-wire-tests-into-cicd]]` — Phase 5 smokes go through the canonical harness
 - `docs/plans/2026-05-27-post-adr0261-upstream-merge-completion-plan.md` §Track B — names this ADR
+
+## Revision 1 — C4 AIDefence handler location corrected
+
+**2026-05-28**: C4's original prose said the AIDefence scan lives on `wasm_agent_compose`. Verified against upstream `47a7825b0`: AIDefence scan actually lives on `wasm_gallery_import` (the HIGH-RISK template-deserialization tool) — the upstream `wasm_agent_compose` handler does NOT scan, since it only packs caller-provided skills (no JSON template deserialization). The fork's implementation correctly preserves AIDefence on `wasm_gallery_import` per upstream pattern. C4 criterion above amended accordingly. Smoke `scripts/smoke-adr0266-group4-compose.mjs` updated to grep both handlers.
 
 ## Confirmation
 
