@@ -93,19 +93,26 @@ async function main() {
     // wrapper. The archivist surface re-exports verifyAuditLog.
     const agentdbPath = join(tempDir, 'node_modules', '@sparkleideas', 'agentdb');
     let verifyAuditLog;
-    try {
-      // Try the archivist subpath export first (newer agentdb).
-      const m = await import(`file://${agentdbPath}/dist/archivist/index.js`);
-      verifyAuditLog = m.verifyAuditLog;
-    } catch (e) {
-      log(`  WARN: archivist subpath import failed: ${e.message.slice(0, 200)}`);
-    }
-    if (typeof verifyAuditLog !== 'function') {
-      // Fallback path through main barrel.
+    // The published agentdb dist preserves the `src/` prefix per tsc's
+    // `outDir: dist` + `rootDir: src` config. So the archivist index lives
+    // at `dist/src/archivist/index.js`, not `dist/archivist/index.js`.
+    const candidates = [
+      `${agentdbPath}/dist/src/archivist/index.js`,
+      `${agentdbPath}/dist/archivist/index.js`,
+      `${agentdbPath}/dist/src/archivist/replay-verification.js`,
+      `${agentdbPath}/dist/archivist/replay-verification.js`,
+    ];
+    for (const c of candidates) {
       try {
-        const m = await import(`file://${agentdbPath}/dist/archivist.js`);
-        verifyAuditLog = m.verifyAuditLog;
-      } catch {}
+        const m = await import(`file://${c}`);
+        if (typeof m.verifyAuditLog === 'function') {
+          verifyAuditLog = m.verifyAuditLog;
+          log(`  resolved verifyAuditLog from ${c}`);
+          break;
+        }
+      } catch (e) {
+        log(`  candidate ${c} failed: ${(e.message || '').slice(0, 120)}`);
+      }
     }
     if (typeof verifyAuditLog !== 'function') {
       fail(`2: verifyAuditLog importable from @sparkleideas/agentdb`,

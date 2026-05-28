@@ -1,19 +1,37 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-26
 amended: 2026-05-28
-tags: [archivist, replay-verification, test-harness, adr-0181-phase-i, adr-0180-19, deferred-with-trigger]
+implemented: 2026-05-28
+tags: [archivist, replay-verification, test-harness, adr-0181-phase-i, adr-0180-19]
 supersedes: []
 depends-on: [ADR-0180, ADR-0181, ADR-0246]
 implements: []
 ---
 
-> **Status note (2026-05-28)**: Ratified `proposed` → `accepted` per Track C of the
-> post-ADR-0261 upstream-merge completion plan. Option B (defer with explicit
-> trigger conditions) is the decided outcome. `completed: false` stays by design
-> per §Confirmation — the ADR-index uses this filter to surface the deferral as
-> outstanding work when any of the 4 trigger conditions fire.
+> **Status note (2026-05-28)**: Ratified `proposed` → `accepted` (Track C of
+> the post-ADR-0261 plan), then BUILT (per user directive "don't defer
+> anything"). Implementation:
+> - **agentdb fork commit `ec3a2ab`**: `src/archivist/replay-verification.ts`
+>   (`verifyAuditLog({auditPath?, maxDepth?, maxFanout?}) → Promise<ReplayReport>`)
+>   + `test/archivist/replay-verification.test.ts` (10/10 unit tests pass via
+>   `node --import tsx --test`). Exposed from `src/archivist/index.ts`.
+> - **ruflo-patch commit `e78ec95` + smoke fix**: `scripts/smoke-adr0263-
+>   replay-verification.mjs` + `lib/acceptance-adr0263-checks.sh` wired into
+>   `test-acceptance.sh` + `test-acceptance-fast.sh`. Smoke drives the
+>   harness against a real audit log produced by `cli memory store` ops +
+>   a synthetic depth-4 negative test.
+> - **Local smoke run (2026-05-28)**: 4/4 PASS. Real audit log: 6 entries,
+>   3 roots, depth=0, all 4 rules pass. Synthetic depth-4 → depth-ceiling
+>   FAIL as designed.
+>
+> Tag `deferred-with-trigger` removed from frontmatter — the harness is now
+> in-tree; future trigger conditions just exercise it via the wired smoke
+> or directly via `verifyAuditLog`. The original Option B trigger
+> conditions in §Decision Outcome are kept as historical record (they
+> describe when ops *should run* the harness; they no longer gate
+> implementation).
 
 # ADR-0263 — Archivist replay-verification test harness (ADR-0181 Phase I successor)
 
