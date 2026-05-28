@@ -90,8 +90,11 @@ function runRoundtrip(tempDir, envOn) {
               maxIdleTimeoutMs: 30000,
               maxConcurrentStreams: 16,
               enable0Rtt: false,
-            }, (inbound) => {
-              if (!received) {
+            }, (_err, inbound) => {
+              // napi-rs ThreadsafeFunction<_, ErrorStrategy::CalleeHandled>
+              // passes (err, value) to the JS callback. Single-arg callbacks
+              // get the null err instead of the actual inbound message.
+              if (!received && inbound) {
                 received = inbound;
                 resolve(inbound);
               }
