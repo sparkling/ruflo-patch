@@ -105,7 +105,8 @@ function main() {
             maxConcurrentStreams: 64,
             enable0Rtt: false,
           }, (_inbound) => { received++; });
-          const addr = binding.getLocalAddr(serverHandle);
+          const rawAddr = binding.getLocalAddr(serverHandle);
+          const addr = rawAddr.replace(/^0\.0\.0\.0:/, '127.0.0.1:');
 
           // Client connect.
           const connId = await binding.connect(addr, {

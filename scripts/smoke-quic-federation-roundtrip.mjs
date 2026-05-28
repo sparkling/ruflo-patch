@@ -98,7 +98,8 @@ function runRoundtrip(tempDir, envOn) {
             });
             global.__serverHandle = handle;
           });
-          const addr = binding.getLocalAddr(global.__serverHandle);
+          const rawAddr = binding.getLocalAddr(global.__serverHandle);
+          const addr = rawAddr.replace(/^0\.0\.0\.0:/, '127.0.0.1:');
           const connId = await binding.connect(addr, {
             serverName: 'localhost',
             maxIdleTimeoutMs: 30000,

@@ -117,7 +117,8 @@ function main() {
             const resolve = inbox.shift();
             if (resolve) resolve();
           });
-          const addr = binding.getLocalAddr(serverHandle);
+          const rawAddr = binding.getLocalAddr(serverHandle);
+          const addr = rawAddr.replace(/^0\.0\.0\.0:/, '127.0.0.1:');
           const connId = await binding.connect(addr, config);
 
           // Warm-up.
