@@ -90,6 +90,9 @@ export const UNSCOPED_PUBLISHABLE = new Set([
   // ADR-0265 Phase 2b — linux-arm64-gnu cross-compiled from darwin-arm64
   // host via `napi build --target aarch64-unknown-linux-gnu --zig`.
   'agentic-flow-quic-native-linux-arm64-gnu',
+  // ADR-0265 Phase 2b — win32-x64-msvc cross-compiled via cargo-xwin
+  // (`cargo xwin build --release --target x86_64-pc-windows-msvc`).
+  'agentic-flow-quic-native-win32-x64-msvc',
 ]);
 
 // ── Version parsing ──

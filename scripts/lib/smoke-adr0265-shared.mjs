@@ -169,9 +169,10 @@ export function hostPlatformTriple() {
  */
 export const PHASE_2A_PLATFORMS = new Set([
   'darwin-arm64',
-  'darwin-x64',         // ADR-0265 Phase 2b — cross-compiled from darwin-arm64
-  'linux-x64-gnu',      // ADR-0265 Phase 2b — cross-compiled via zig
-  'linux-arm64-gnu',    // ADR-0265 Phase 2b — cross-compiled via zig
+  'darwin-x64',          // ADR-0265 Phase 2b — cross-compiled from darwin-arm64
+  'linux-x64-gnu',       // ADR-0265 Phase 2b — cross-compiled via zig
+  'linux-arm64-gnu',     // ADR-0265 Phase 2b — cross-compiled via zig
+  'win32-x64-msvc',      // ADR-0265 Phase 2b — cross-compiled via cargo-xwin
 ]);
 
 /**

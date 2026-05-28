@@ -52,6 +52,7 @@ const KNOWN_DEPS = {
   '@sparkleideas/agentic-flow-quic-native-darwin-x64': [],       // ADR-0265 Phase 2b — darwin-x64 native binary (cross-compiled), no transitive deps
   '@sparkleideas/agentic-flow-quic-native-linux-x64-gnu': [],    // ADR-0265 Phase 2b — linux-x64-gnu native binary (zig cross-compiled), no transitive deps
   '@sparkleideas/agentic-flow-quic-native-linux-arm64-gnu': [],  // ADR-0265 Phase 2b — linux-arm64-gnu native binary (zig cross-compiled), no transitive deps
+  '@sparkleideas/agentic-flow-quic-native-win32-x64-msvc': [],   // ADR-0265 Phase 2b — win32-x64-msvc native binary (cargo-xwin cross-compiled), no transitive deps
   '@sparkleideas/ruv-swarm': [],
   '@sparkleideas/cli-core': [],  // ADR-0162 follow-up — Level 1, no v3-internal deps; cli (Level 5) re-exports from it
   // Level 2
@@ -193,23 +194,23 @@ describe('Topological publish order (ADR-0014)', () => {
   // ---------- 2. Package completeness ----------
 
   describe('Package completeness', () => {
-    it('all expected packages are present across all levels (30+5+5+22+2)', () => {
+    it('all expected packages are present across all levels (31+5+5+22+2)', () => {
       const allPackages = LEVELS.flat();
-      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup + ADR-0242 errors + ADR-0265 quic-native + Phase 2a (darwin-arm64) + Phase 2b (darwin-x64 + linux-x64-gnu + linux-arm64-gnu).
-      // L1=30 (was 28; +agentic-flow-quic-native-{linux-x64-gnu,linux-arm64-gnu} ADR-0265 Phase 2b),
+      // ADR-0014 + ADR-0071 + F3 + W3 + ADR-0113 Fix 5 + ADR-0239 cleanup + ADR-0242 errors + ADR-0265 quic-native + Phase 2 all 5 platforms.
+      // L1=31 (was 30; +agentic-flow-quic-native-win32-x64-msvc ADR-0265 Phase 2b complete),
       // L2=5 (was 4 post-ADR-0239; +errors ADR-0242 Batch 5),
       // L3=5 (was 6; -ruvector-upstream ADR-0239 cluster 5a; ADR-0203 -hooks earlier),
       // L4=22 (was 24; -testing ADR-0239 cluster 1, -plugin-cognitive-kernel ADR-0239 cluster 5a),
-      // L5=2. Total: 64 (was 62; +2 linux sub-packages).
-      assert.equal(LEVELS[0].length, 30, 'Level 1 should have 30 packages (ADR-0265 Phase 2b added 3 darwin/linux native sub-packages on top of darwin-arm64)');
+      // L5=2. Total: 65 (was 64; +1 win32 sub-package).
+      assert.equal(LEVELS[0].length, 31, 'Level 1 should have 31 packages (ADR-0265 Phase 2 complete — all 5 platforms + parent)');
       assert.equal(LEVELS[1].length, 5, 'Level 2 should have 5 packages (ADR-0242 added @sparkleideas/errors)');
       assert.equal(LEVELS[2].length, 5, 'Level 3 should have 5 packages (ADR-0239 cluster 5a removed ruvector-upstream)');
       assert.equal(LEVELS[3].length, 22, 'Level 4 should have 22 packages (ADR-0239 removed testing + plugin-cognitive-kernel)');
       assert.equal(LEVELS[4].length, 2, 'Level 5 should have 2 packages');
       assert.equal(
         allPackages.length,
-        64,
-        `Expected 64 packages total (62 pre-ADR-0239, -4 deleted, +errors ADR-0242, +quic-native ADR-0265, +4 platform sub-packages), got ${allPackages.length}`
+        65,
+        `Expected 65 packages total (62 pre-ADR-0239, -4 deleted, +errors ADR-0242, +quic-native ADR-0265, +5 platform sub-packages), got ${allPackages.length}`
       );
     });
 

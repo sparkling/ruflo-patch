@@ -70,6 +70,13 @@ NAPI_PACKAGES=(
   # ── agentic-flow-quic-node — linux-arm64-gnu sub-package (ADR-0265 Phase 2b) ──
   # Cross-compiled via zig (`napi build --target aarch64-unknown-linux-gnu --zig`).
   "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node/npm/linux-arm64-gnu"
+
+  # ── agentic-flow-quic-node — win32-x64-msvc sub-package (ADR-0265 Phase 2b) ──
+  # Cross-compiled via cargo-xwin (`cargo xwin build --release --target
+  # x86_64-pc-windows-msvc`). napi-rs CLI's --zig path doesn't support Windows
+  # MSVC, but cargo-xwin downloads MS redistributables and produces a PE32+
+  # x86-64 DLL which we rename to the .node convention.
+  "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node/npm/win32-x64-msvc"
 )
 
 # Helper: parse one config entry into 3 globals: NAPI_FORK_DIR, NAPI_CRATE_PATH, NAPI_DEST_NPM_DIR
