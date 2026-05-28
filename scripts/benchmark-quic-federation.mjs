@@ -1,67 +1,61 @@
 #!/usr/bin/env node
 /**
- * Benchmark: ADR-0265 §Phase 5 — QUIC federation transport.
+ * Benchmark: ADR-0265 C6 — QUIC federation transport targets.
  *
- * Measures the two CI-pass-criterion metrics from §Aspirational rows 1 + 5:
- *   T1 — latency:   loopback round-trip p50 / p95 / p99. Target p99 < 5ms.
- *   T2 — fan-out:   100 concurrent agent connections succeed (CI threshold).
+ * **Binding-direct measurement** (post-Phase-2a):
  *
- * Mirrors upstream `agentic-flow/benchmarks/quic-transport.bench.ts` in
- * shape but exercises the FORK-side N-API path via the federation plugin's
- * send-to-self loopback (the binding is loaded transparently by the loader
- * when AGENTIC_FLOW_QUIC_NATIVE=1).
+ *   - T1 latency: 200 sequential `send()` calls on a single connection;
+ *     measure wall-clock per send (send-start → onMessage-fire on the
+ *     loopback server). Compute p50 / p99.
+ *     Target: **p99 < 5ms on localhost loopback** (§Aspirational row 1,
+ *     tightened per §Revision 1).
  *
- * Output:
- *   - stdout: human-readable + final benchmark JSON line
- *   - file:   test-results/<timestamp>/benchmark-quic.json
+ *   - T2 fan-out: open 100 concurrent connections to the same loopback
+ *     server; measure total setup wall-clock. Pass if all succeed.
+ *     Target: **100 concurrent agent connections** (§Aspirational row 5).
  *
- * If env-on path unavailable (non-Phase-2a host or binding load failure),
- * the bench emits a `skip_accepted` JSON line with the reason and exits 0
- * (the harness records it as a skip; CI gate is on smokes wired, not on
- * bench passing).
+ *   Aspirational row 1's "sub-ms" claim is loopback-only; cross-host is
+ *   RTT-bound. p99 < 5ms localhost is the actual measurable target.
  *
- * Per `feedback-no-tail-tests`: full output tees to LOG_FILE; never pipes
- * through tail/head.
- * Per the canonical pattern in scripts/benchmark-graph.mjs T3: hot loops
- * import the federation plugin in-process to avoid per-iteration cli
- * bootstrap (~480ms/probe via spawn). We DO spawn-once per benchmark run
- * (env on/off must be set at process boundary), but the iterations run
- * inside that single child.
+ *   Cross-host figures are observational, NOT pass/fail.
+ *
+ * Output: writes measured + targets + pass/fail to
+ *   `test-results/bench-quic-<timestamp>/benchmark-quic.json`
+ *
+ * If env-on path unavailable, `skip-by-policy`.
  *
  * Usage: node scripts/benchmark-quic-federation.mjs
- *
- * Exit codes:
- *   0 — benchmarks ran (PASS or SKIP)
- *   1 — benchmarks failed to meet targets (p99 ≥ 5ms loopback, or fan-out
- *       <100 succeeded) on a Phase-2a host
  */
 
 import { spawnSync } from 'node:child_process';
-import { writeFileSync, mkdirSync, existsSync, rmSync, appendFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, mkdirSync, appendFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   createSmokePerf,
   setupSmokeTempDir,
   installAndInit,
   requireNativeBindingOrSkip,
-  requireFederationPluginOrSkip,
   hostPlatformTriple,
   PHASE_2A_PLATFORMS,
   skipByPolicy,
 } from './lib/smoke-adr0265-shared.mjs';
 
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const ROOT = join(__dirname, '..');
+
 const REGISTRY = process.env.REGISTRY || 'http://localhost:4873';
 const LOG_DIR = process.env.SMOKE_LOG_DIR || '/tmp';
 const LOG_FILE = join(LOG_DIR, `benchmark-quic-${Date.now()}.log`);
+const RESULTS_DIR = join(ROOT, 'test-results', `bench-quic-${new Date().toISOString().replace(/[:.]/g, '')}`);
 
-const TS = new Date().toISOString().replace(/[:.]/g, '');
-const RESULTS_DIR = process.env.BENCH_RESULTS_DIR ||
-  join(process.cwd(), 'test-results', `bench-quic-${TS}`);
+const TARGETS = {
+  p99_loopback_ms: 5,
+  fanout_connections: 100,
+};
 
-// CI pass criteria per ADR-0265 §C6 / §Aspirational rows 1 + 5
-const TARGET_P99_MS = 5;
-const TARGET_FANOUT_CONNECTIONS = 100;
-const LATENCY_ITERATIONS = 200;
+const T1_SAMPLES = 200;
+const T2_CONNECTIONS = 100;
 
 const perf = createSmokePerf('benchmark-quic-federation');
 
@@ -70,24 +64,17 @@ function log(msg) {
   try { appendFileSync(LOG_FILE, `${msg}\n`); } catch {}
 }
 
-function pct(arr, p) {
-  if (arr.length === 0) return 0;
-  const sorted = [...arr].sort((a, b) => a - b);
-  const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));
-  return sorted[idx];
-}
-
 function main() {
   log(`\n[ADR-0265 benchmark] QUIC federation transport`);
   log(`[bench] log file: ${LOG_FILE}`);
   log(`[bench] results dir: ${RESULTS_DIR}\n`);
 
   if (!existsSync(LOG_DIR)) mkdirSync(LOG_DIR, { recursive: true });
-  mkdirSync(RESULTS_DIR, { recursive: true });
+  if (!existsSync(RESULTS_DIR)) mkdirSync(RESULTS_DIR, { recursive: true });
 
   const triple = hostPlatformTriple();
   if (!PHASE_2A_PLATFORMS.has(triple)) {
-    skipByPolicy('benchmark-quic-federation',
+    skipByPolicy('bench-quic',
       `native-binding-unavailable-on-this-host: ${triple} not in Phase-2a`,
       { triple });
   }
@@ -95,72 +82,80 @@ function main() {
   const { dir: tempDir, shared } = setupSmokeTempDir('bench-quic', perf, REGISTRY);
   log(`[bench] temp dir: ${tempDir}${shared ? ' (shared)' : ''}`);
 
-  let testBodyStart;
-  const results = {
+  const result = {
     smoke: 'benchmark-quic-federation',
     timestamp: new Date().toISOString(),
     triple,
-    targets: {
-      p99_loopback_ms: TARGET_P99_MS,
-      fanout_connections: TARGET_FANOUT_CONNECTIONS,
-    },
+    targets: TARGETS,
     measured: {},
     pass: false,
     failures: [],
   };
 
+  let testBodyStart;
   try {
     if (!shared) installAndInit(tempDir, perf, REGISTRY);
     requireNativeBindingOrSkip(tempDir, 'bench-quic');
-    requireFederationPluginOrSkip(tempDir, 'bench-quic');
     testBodyStart = process.hrtime.bigint();
 
-    // Single child process — drives BOTH T1 (latency) and T2 (fan-out).
-    // Per scripts/benchmark-graph.mjs T3 pattern: in-process iteration loop;
-    // avoid per-iteration cli bootstrap.
     const childCode = `
       (async () => {
         try {
-          const loader = await import('@sparkleideas/agentic-flow/transport/loader');
-          const caps = await loader.getTransportCapabilities();
-          if (caps.selectedBackend !== 'quic') {
-            console.log('SKIP:selectedBackend=' + caps.selectedBackend);
+          const binding = await import('@sparkleideas/agentic-flow-quic-native');
+          if (typeof binding.listen !== 'function' || typeof binding.getLocalAddr !== 'function') {
+            console.log('FAIL:binding-missing-listen-or-getLocalAddr');
             process.exit(0);
           }
+          const config = {
+            serverName: 'localhost',
+            maxIdleTimeoutMs: 60000,
+            maxConcurrentStreams: 256,
+            enable0Rtt: false,
+          };
+          const inbox = [];
+          const serverHandle = binding.listen(0, config, (_inbound) => {
+            const resolve = inbox.shift();
+            if (resolve) resolve();
+          });
+          const addr = binding.getLocalAddr(serverHandle);
+          const connId = await binding.connect(addr, config);
 
-          const fedMod = await import('@sparkleideas/plugin-agent-federation');
-          const FederationPlugin = fedMod.default ?? fedMod.FederationPlugin;
-
-          // T1: latency — ${LATENCY_ITERATIONS} sequential send-to-self
-          // round-trips on loopback. Measure each in ns precision.
-          const plugin = new FederationPlugin({ loopback: true });
-          await plugin.init();
-          // warmup
-          for (let i = 0; i < 20; i++) await plugin.sendToSelf({ warmup: i });
-          const latencies = [];
-          for (let i = 0; i < ${LATENCY_ITERATIONS}; i++) {
-            const t = process.hrtime.bigint();
-            await plugin.sendToSelf({ probe: i });
-            latencies.push(Number(process.hrtime.bigint() - t) / 1_000_000);
+          // Warm-up.
+          for (let i = 0; i < 5; i++) {
+            const p = new Promise((r) => inbox.push(r));
+            await binding.send(connId, Buffer.from('warm-' + i), 'task');
+            await p;
           }
-          console.log('T1:' + JSON.stringify(latencies));
-          await plugin.shutdown();
 
-          // T2: fan-out — open ${TARGET_FANOUT_CONNECTIONS} concurrent
-          // connections via the federation plugin's connect API.
-          const TARGET = ${TARGET_FANOUT_CONNECTIONS};
-          const plugin2 = new FederationPlugin({ loopback: true });
-          await plugin2.init();
-          const connects = await Promise.allSettled(
-            Array.from({ length: TARGET }, (_, i) =>
-              plugin2.connectPeer({ peerId: 'bench-peer-' + i })
-            )
+          // T1 latency measurement.
+          const samples = [];
+          for (let i = 0; i < ${T1_SAMPLES}; i++) {
+            const p = new Promise((r) => inbox.push(r));
+            const t0 = process.hrtime.bigint();
+            await binding.send(connId, Buffer.from('m-' + i), 'task');
+            await p;
+            const t1 = process.hrtime.bigint();
+            samples.push(Number(t1 - t0) / 1e6);
+          }
+          samples.sort((a, b) => a - b);
+          const p50 = samples[Math.floor(samples.length * 0.5)];
+          const p99 = samples[Math.floor(samples.length * 0.99)];
+          console.log('T1:' + JSON.stringify({ p50_ms: p50, p99_ms: p99, samples: samples.length }));
+
+          // T2 fan-out.
+          const fanoutStart = process.hrtime.bigint();
+          const fanoutConns = await Promise.all(
+            Array.from({ length: ${T2_CONNECTIONS} }, () =>
+              binding.connect(addr, config).catch((e) => ({ error: e && e.message ? e.message : String(e) })),
+            ),
           );
-          const succeeded = connects.filter(r => r.status === 'fulfilled').length;
-          console.log('T2:succeeded=' + succeeded + ' total=' + TARGET);
-          await plugin2.shutdown();
+          const fanoutMs = Number(process.hrtime.bigint() - fanoutStart) / 1e6;
+          const okCount = fanoutConns.filter((c) => typeof c === 'number').length;
+          console.log('T2:' + JSON.stringify({ wall_ms: fanoutMs, connections: okCount }));
+
+          await binding.closeAll();
         } catch (e) {
-          console.log('FAIL:' + e.message);
+          console.log('FAIL:' + (e && e.message ? e.message : String(e)));
         }
       })();
     `;
@@ -168,78 +163,65 @@ function main() {
     const child = spawnSync(process.execPath, ['-e', childCode], {
       cwd: tempDir,
       encoding: 'utf8',
-      timeout: 180000,
+      timeout: 60000,
       env: { ...process.env, AGENTIC_FLOW_QUIC_NATIVE: '1' },
     });
 
-    log(`    child stdout: ${child.stdout?.slice(0, 800).trim()}`);
-    if (child.stderr) log(`    child stderr: ${child.stderr.slice(0, 600).trim()}`);
+    log(`    child stdout: ${child.stdout?.slice(0, 1200).trim()}`);
+    if (child.stderr) log(`    child stderr: ${child.stderr.slice(0, 400).trim()}`);
 
-    const skipMatch = (child.stdout || '').match(/^SKIP:selectedBackend=(\S+)/m);
-    if (skipMatch) {
-      skipByPolicy('benchmark-quic-federation',
-        `native-binding-unavailable: loader fell back to ${skipMatch[1]} despite env-on`,
-        { observedBackend: skipMatch[1] });
-    }
-
-    const t1Match = (child.stdout || '').match(/^T1:(\[.+\])$/m);
-    if (!t1Match) {
-      results.failures.push(`T1 latency measurement missing`);
+    const failMatch = (child.stdout || '').match(/^FAIL:(.+)/m);
+    if (failMatch) {
+      result.failures.push(`binding-direct measurement: ${failMatch[1]}`);
     } else {
-      const latencies = JSON.parse(t1Match[1]);
-      const p50 = pct(latencies, 50);
-      const p95 = pct(latencies, 95);
-      const p99 = pct(latencies, 99);
-      results.measured.latency = { p50_ms: p50, p95_ms: p95, p99_ms: p99,
-        iterations: latencies.length };
-      log(`    T1 latency: p50=${p50.toFixed(3)}ms p95=${p95.toFixed(3)}ms p99=${p99.toFixed(3)}ms (n=${latencies.length})`);
-      if (p99 < TARGET_P99_MS) {
-        log(`    T1 PASS: p99=${p99.toFixed(3)}ms < ${TARGET_P99_MS}ms target`);
-      } else {
-        results.failures.push(`T1 p99=${p99.toFixed(3)}ms >= ${TARGET_P99_MS}ms target`);
+      const t1Match = (child.stdout || '').match(/^T1:(.+)/m);
+      const t2Match = (child.stdout || '').match(/^T2:(.+)/m);
+      if (t1Match) result.measured.t1 = JSON.parse(t1Match[1]);
+      else result.failures.push('T1 latency measurement missing');
+      if (t2Match) result.measured.t2 = JSON.parse(t2Match[1]);
+      else result.failures.push('T2 fan-out measurement missing');
+
+      if (result.measured.t1) {
+        const p99 = result.measured.t1.p99_ms;
+        if (p99 < TARGETS.p99_loopback_ms) {
+          log(`    T1 p99: ${p99.toFixed(3)}ms < ${TARGETS.p99_loopback_ms}ms target`);
+        } else {
+          result.failures.push(`T1 p99=${p99.toFixed(3)}ms >= ${TARGETS.p99_loopback_ms}ms target`);
+        }
+      }
+      if (result.measured.t2) {
+        const conns = result.measured.t2.connections;
+        if (conns >= TARGETS.fanout_connections) {
+          log(`    T2 fan-out: ${conns}/${TARGETS.fanout_connections} connections (wall ${result.measured.t2.wall_ms.toFixed(1)}ms)`);
+        } else {
+          result.failures.push(`T2 fan-out=${conns}/${TARGETS.fanout_connections} (missing ${TARGETS.fanout_connections - conns})`);
+        }
       }
     }
 
-    const t2Match = (child.stdout || '').match(/^T2:succeeded=(\d+)\s+total=(\d+)/m);
-    if (!t2Match) {
-      results.failures.push(`T2 fan-out measurement missing`);
-    } else {
-      const succeeded = parseInt(t2Match[1], 10);
-      const total = parseInt(t2Match[2], 10);
-      results.measured.fanout = { succeeded, total };
-      log(`    T2 fan-out: ${succeeded}/${total} connections succeeded`);
-      if (succeeded >= TARGET_FANOUT_CONNECTIONS) {
-        log(`    T2 PASS: ${succeeded} >= ${TARGET_FANOUT_CONNECTIONS} target`);
-      } else {
-        results.failures.push(`T2 succeeded=${succeeded} < ${TARGET_FANOUT_CONNECTIONS} target`);
-      }
-    }
-
-    results.pass = results.failures.length === 0;
-
+    result.pass = result.failures.length === 0;
   } catch (err) {
     log(`[bench] FATAL exception: ${err.message}`);
     if (err.stack) log(err.stack);
-    results.failures.push(`exception: ${err.message}`);
-    process.exitCode = 1;
+    result.failures.push(`fatal: ${err.message}`);
   } finally {
     if (testBodyStart) perf.mark('test-body', testBodyStart);
     try { if (!shared) rmSync(tempDir, { recursive: true, force: true }); } catch {}
   }
 
   const outPath = join(RESULTS_DIR, 'benchmark-quic.json');
-  writeFileSync(outPath, JSON.stringify(results, null, 2));
+  writeFileSync(outPath, JSON.stringify(result, null, 2));
   log(`\n[bench] results: ${outPath}`);
-  process.stdout.write(JSON.stringify(results) + '\n');
+  log(JSON.stringify(result));
 
   perf.emitJson();
 
-  if (!results.pass) {
-    log(`\nBenchmark FAILED — failures: ${results.failures.join('; ')}\n`);
-    process.exit(1);
+  if (result.pass) {
+    log(`\nBenchmark PASSED — all targets met.\n`);
+    process.exit(0);
   }
-  log(`\nBenchmark PASSED — p99 < ${TARGET_P99_MS}ms loopback; fan-out >= ${TARGET_FANOUT_CONNECTIONS}\n`);
-  process.exit(0);
+  log(`\nBenchmark FAILED — failures: ${result.failures.join('; ')}\n`);
+  process.exit(1);
 }
 
 main();
