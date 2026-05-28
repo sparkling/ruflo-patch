@@ -91,24 +91,27 @@ async function main() {
     mcpProc.on('error', (err) => log(`[mcp.error] ${err.message}`));
     mcpProc.on('exit', (code) => log(`[mcp.exit] code=${code}`));
 
-    // Bounded wait for ready signal — max 15s (RVF warmup + Archivist init).
+    // Bounded wait for ready signal — max 60s (RVF cold-start warmup +
+    // Archivist init + HNSW build + ONNX load can each take several seconds
+    // on a cold cache; 15s was too tight per ADR-0267 §Revision 2 finding).
     const startWait = Date.now();
-    while (!mcpReady && Date.now() - startWait < 15000) {
+    while (!mcpReady && Date.now() - startWait < 60000) {
       await new Promise((r) => setTimeout(r, 250));
       if (mcpProc.exitCode !== null) {
         log(`[smoke] WARN: MCP server exited before ready signal (exitCode=${mcpProc.exitCode})`);
         break;
       }
     }
+    const waitElapsed = Date.now() - startWait;
     if (mcpReady) {
-      pass(`MCP server reached mcp-stdio init within 15s (lock acquired)`);
+      pass(`MCP server reached mcp-stdio init in ${waitElapsed}ms (lock released)`);
     } else if (mcpProc.exitCode !== null) {
-      // MCP server failed to start — can't validate the lock-release fix.
       fail('MCP server startup', `exited before ready (code=${mcpProc.exitCode})`);
     } else {
-      // 15s timeout but server still running — proceed with the test; the
-      // warmup may have taken longer but presumably succeeded by now.
-      log(`  WARN  MCP server didn't emit ready signal within 15s; proceeding anyway`);
+      // 60s wait elapsed and server still running but never logged ready.
+      // The warmup is likely stuck on the .jslock; this IS the regression.
+      log(`  WARN  MCP server didn't emit ready signal within 60s; proceeding anyway`);
+      log(`        (this is itself a strong regression signal — warmup stalled)`);
     }
 
     // Step 2: from the same project root, run `cli memory store` with a 30s

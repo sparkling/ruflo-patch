@@ -9,15 +9,27 @@ depends-on: [ADR-0202, ADR-0073, ADR-0227]
 implements: []
 ---
 
-> **Status note (2026-05-28)**: Task #7 (trace) completed; root cause
-> identified. Task #8 (fix proposal): Option B chosen + implemented in
-> fork commit `5c6d12c5f` — but Task #9 release-run REVEALED the fix
-> is architecturally unsound (Revision 2 below); reverted in fork
-> commit `103514bcc`. ADR stays `accepted` with `completed:false`: the
-> bug is real + traced; the fix needs deeper architectural design
-> (Option E/F/G — see Revision 2). Task #9 acceptance smoke stays
-> wired as a regression detector and is the durable signal for any
-> future fix attempt.
+> **Status note (2026-05-28)**: Task #7 trace complete; Task #8 fix
+> attempts:
+> - Option B (`setRouterPersistent(false)` only, fork commit `5c6d12c5f`)
+>   → reverted in `103514bcc`: architecturally unsound because the
+>   archivist holds the RVF backend reference, bypassing `withRouter`'s
+>   per-op release (Revision 2).
+> - Option F (skip eager RVF init at MCP server startup; lazy-install
+>   via `ensureRvfWired` on first dispatch, fork commits `27fbb575b` +
+>   `61f453b4d`) → MANUAL REPRODUCTION succeeds in 0.4s (verified
+>   2026-05-28 in `/tmp/ruflo-adr0267-debug`); the user-reported
+>   regression IS fixed in real-world usage.
+>
+> BUT `scripts/smoke-adr0267-rvf-lock.mjs` still FAILS — the smoke's
+> `spawn(... stdio:'pipe')` environment behaves differently from
+> shell `&` background and reproduces a different hang. The smoke is
+> not a perfect oracle; manual reproduction is the ground truth for
+> "is the user-reported bug fixed".
+>
+> `completed:false` stays until the smoke is fixed AND PASSes. Smoke
+> investigation is its own task (Task #10, not yet enumerated): the
+> spawn-vs-shell environment delta needs tracing.
 
 # RVF lock regression — CLI memory operations blocked by MCP/daemon lock holder
 
