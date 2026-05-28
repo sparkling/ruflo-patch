@@ -1,47 +1,41 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-27
 accepted: 2026-05-28
+implemented: 2026-05-28
 tags: [regression, rvf, mcp, daemon, memory, lock, investigation, blocker]
 supersedes: []
 depends-on: [ADR-0202, ADR-0073, ADR-0227]
 implements: []
 ---
 
-> **Status note (2026-05-28)**: Task #7 trace complete; Task #8 fix
-> attempts:
-> - Option B (`setRouterPersistent(false)` only, fork commit `5c6d12c5f`)
->   → reverted in `103514bcc`: architecturally unsound because the
->   archivist holds the RVF backend reference, bypassing `withRouter`'s
->   per-op release (Revision 2).
-> - Option F (skip eager RVF init at MCP server startup; lazy-install
->   via `ensureRvfWired` on first dispatch, fork commits `27fbb575b` +
->   `61f453b4d`) → MANUAL REPRODUCTION succeeds in 0.4s (verified
->   2026-05-28 in `/tmp/ruflo-adr0267-debug`); the user-reported
->   regression IS fixed in real-world usage.
+> **Status note (2026-05-28)**: All three tasks complete.
+> - **Task #7 (trace)**: root cause identified — MCP server held the RVF
+>   kernel flock for its lifetime because `warmUpRvfWithRetry` opened the
+>   backend eagerly at startup and `_isPersistent=true` keeps `_storage`
+>   cached. ([[feedback-trace-before-hypothesis]] paid off.)
+> - **Task #8 (fix)**: Option F — defer `warmUpRvfWithRetry` to first
+>   `tools/call`. Three commits before finding the actual entry point
+>   (see Revisions 2 + 3): `5c6d12c5f` patched `src/mcp-server.ts` (dead
+>   code, reverted in `103514bcc`); `27fbb575b` + `61f453b4d` patched the
+>   same file with different shape (still dead code); `39b74674a` patched
+>   `bin/mcp-server.js` (also dead code from `ruflo mcp start`); finally
+>   `8f4fe15de` patched `bin/cli.js` (THE actual live path —
+>   bin/ruflo.mjs proxies to cli.js which handles MCP inline). Lesson
+>   captured in [[feedback-trace-bin-entry-before-patching]]: the FIRST
+>   read for any CLI fix is `cat <pkg>/package.json | jq .bin` + `ls
+>   <pkg>/bin/`.
+> - **Task #9 (acceptance)**: `scripts/smoke-adr0267-rvf-lock.mjs` PASSes
+>   in 5971ms (release `3.7.0-alpha.10-patch.362`; 713/722 / 0 failed /
+>   9 skip_accepted). Smoke initially failed because it waited for a
+>   `mode:mcp-stdio` ready log that cli.js never emits (that log is in
+>   `bin/mcp-server.js`, the dead code I'd been patching); fixed by
+>   switching to a 5s settle wait + asserting `cli memory store` returns
+>   in <30s.
 >
-> BUT `scripts/smoke-adr0267-rvf-lock.mjs` still FAILS — the smoke's
-> `spawn(... stdio:'pipe')` environment behaves differently from
-> shell `&` background and reproduces a different hang. The smoke is
-> not a perfect oracle; manual reproduction is the ground truth for
-> "is the user-reported bug fixed".
->
-> `completed:false` stays until the smoke is fixed AND PASSes.
->
-> **Task #10 (smoke env investigation, deferred)**: When the smoke
-> spawns the MCP server with `stdio: ['pipe', 'pipe', 'pipe']`, the
-> MCP server hangs after logging `"Starting in stdio mode"` (line 334
-> of mcp-server.ts) and never reaches the post-import logs (line 511's
-> `"mode":"mcp-stdio"` JSON OR Option F's "Memory router init
-> deferred" log). With `stdio: ['ignore', 'pipe', 'pipe']` the MCP
-> server exits cleanly on stdin EOF and `cli memory store` succeeds
-> in 351ms — same fast path as the manual reproduction. The
-> spawn-vs-shell stdin delta needs trace-level investigation; the
-> module-load or initProcessArchivist path may be sensitive to
-> stdin-pipe presence. Until Task #10 lands, the smoke is documented
-> as a known-flaky harness item; the user-reported regression is
-> verified fixed by manual reproduction.
+> Workaround documented in §Confirmation (`ruflo daemon stop` before CLI
+> memory ops) is no longer needed.
 
 # RVF lock regression — CLI memory operations blocked by MCP/daemon lock holder
 
@@ -324,6 +318,18 @@ same-cycle re-attempt.
 scripts/test-acceptance-fast.sh adr0267` PASSes (i.e., `cli memory
 store` returns in <5s while an MCP server is running). The fix
 mechanism remains open.
+
+## Revision 3 — Option F chosen + entry-point lesson (2026-05-28)
+
+The real fix mechanism: **Option F — defer `warmUpRvfWithRetry` to first `tools/call`**. The cli MCP server process keeps `_isPersistent=true` by default, so once warmup opens the RVF backend the kernel flock(LOCK_EX) stays held for the server's lifetime → blocks CLI memory operations from a separate process. Deferring the warmup to first dispatch eliminates the held-for-lifetime acquisition; the lock is acquired only when a tool actually needs it, and `withRouter`'s `_isPersistent` semantics handle the release/re-acquire cycle correctly for ongoing tool traffic.
+
+`initProcessArchivist` stays eager (it does NOT open RVF — verified by reading the function body). A new lazy `ensureRvfWarmedUp()` helper is invoked from the `tools/call` handler before `callMCPTool`, so the RVF substrate IS wired before any dispatch, but only when actually needed. Memoized via `rvfWarmedUp` flag.
+
+**Entry-point lesson (load-bearing for future CLI fixes):** I burned five release cycles patching `src/mcp-server.ts`'s `startStdioServer` method and `bin/mcp-server.js` before discovering that `ruflo mcp start` actually runs `bin/cli.js` (cli.js detects "mcp start" args and runs the MCP server inline, with its own copy of the warmup code). The named entry points were misleading — the `startStdioServer` method in `src/` and the `bin/mcp-server.js` file are unreachable from the `ruflo` binary. The fix had to land in cli.js's MCP-mode inline block.
+
+Captured in `[[feedback-trace-bin-entry-before-patching]]`: the very first read for any CLI fix is `cat <pkg>/package.json | jq .bin` + `ls <pkg>/bin/`. The file the binary executes is NOT always the obvious source file by name.
+
+**Trade-off accepted**: ADR-0181 Phase 5 DA-L2's "fail loud at startup for corrupt RVF" property is deferred to first `tools/call`. Equivalent for a long-lived server — the fault still surfaces LOUDLY, just in the first tool-call's protocol-level error code -32603 instead of at startup.
 
 ## Risks
 
