@@ -1,12 +1,35 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-24
+implemented: 2026-05-28
 tags: [audit-followup, plugins, marketplace, honesty, doa, phantom-tools, integrity-lint, ct-o]
 supersedes: []
 depends-on: [0143, 0201, 0210, 0233, 0235]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: All 9 per-finding dispositions verified at
+> HEAD:
+> - **F-07-001** (graph-intelligence DOA) — disposition (a) chosen: plugin
+>   directory deleted; marketplace.json entry removed (ledger row 215,
+>   fork commit `7c4323500`).
+> - **F-07-002** (phantom rabitq tools) — references removed across 7
+>   files in ruflo-agentdb (ledger row 216, fork commit `027acb815`).
+> - **F-07-004** (claude-flow@alpha brand drift) — hooks.json scrubbed.
+> - **F-07-005** — bundled with F-07-001 closure.
+> - **F-07-006** — description rewrites landed for iot-cognitum
+>   (workflow scaffolds composing memory_*) + the 3 sibling plugins.
+> - **F-07-007** — neural-trader description rewritten to honest CLI-
+>   wrap framing.
+> - **F-07-008/009/010** — defer-with-runtime-verification / accept /
+>   defense-in-depth-defer (deliberate; remain open in audit trail).
+>
+> Marketplace integrity lint shipped at
+> `tests/pipeline/plugin-marketplace-integrity.test.mjs` (4 assertions:
+> tool-reference resolution, non-empty surface, plugin hook brand,
+> centralised forbidden-string set). INTEGRATION-LEDGER rows 215 + 216 +
+> related entries document the per-finding closure.
 
 # Plugin marketplace integrity and honesty (CT-O)
 
