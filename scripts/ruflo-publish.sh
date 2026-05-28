@@ -532,6 +532,20 @@ main() {
   # lib/mcp-handler-fatal-throw-allowlist.txt. Exits 0 advisory-first.
   run_phase "mcp-handler-fatal-throw-advisory" node "${SCRIPT_DIR}/check-mcp-handler-fatal-throw.mjs"
 
+  # ADR-0190 §Decision Outcome Option 1: cross-repo TS package build-state
+  # detector. Walks forks/*/npm/packages/*/package.json, asserts every
+  # declared main/module/types/exports entry exists as a file in the source
+  # tree. A missing entry = silent-drop hazard (tarball ships without dist/;
+  # consumers hit MODULE_NOT_FOUND at runtime). Pre-existing baseline of
+  # ~30 violations in ruvector/npm/packages/ that imported broken main
+  # declarations from upstream — advisory mode prints the count + first 10
+  # so operators see the inventory without blocking releases. Promote to
+  # fail-loud (drop CROSS_REPO_BUILDS_ADVISORY=1) when the baseline is
+  # cleaned.
+  run_phase "cross-repo-builds-advisory" \
+    env CROSS_REPO_BUILDS_ADVISORY=1 \
+    node "${SCRIPT_DIR}/check-cross-repo-builds.mjs"
+
   # ADR-0133/0150: Detect Rust source changes across all napi-shipping forks
   # (ruvector + agentic-flow per lib/napi-config.sh) and rebuild .node binaries
   # before bump-versions, so the rebuilt binaries land on fork main and ship

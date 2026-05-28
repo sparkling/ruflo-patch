@@ -1,12 +1,35 @@
 ---
-status: proposed
+status: accepted
+completed: true
 date: 2026-05-19
+accepted: 2026-05-28
+implemented: 2026-05-28
 methodology: [MADR]
 decision-makers: [Henrik Pettersen]
 tags: [pipeline, publish, typescript, build, cross-repo, fail-loud, ADR-0082]
 related: [0038, 0082, 0150, 0189]
 audience: ai-executor
 ---
+
+> **Status note (2026-05-28)**: Option 1 (recommended starting point)
+> implemented. `scripts/check-cross-repo-builds.mjs` walks every
+> `forks/*/npm/packages/*/package.json`, validates that `main`/`module`/
+> `types`/`exports` entries exist as files in the source tree. Per-
+> platform NAPI sub-packages (covered by ADR-0189's NAPI coverage gate)
+> are excluded by substring allowlist. Wired into
+> `scripts/ruflo-publish.sh` as `cross-repo-builds-advisory`
+> (advisory-first per the ADR-0209/0242 pattern; `CROSS_REPO_BUILDS_
+> ADVISORY=1` makes the script exit 0 while logging the count + first
+> 10 violators).
+>
+> Baseline scan: 41 packages in scope; 15 NAPI-platform allowlisted;
+> 162 entry-point violations across the remaining 26 packages (mostly
+> ruvector/npm/packages/* that imported broken `main: dist/...`
+> declarations from upstream). Each violation is a structural ship-time
+> hazard documented in §Context. Promotion to fail-loud (drop
+> `CROSS_REPO_BUILDS_ADVISORY=1`) deferred until the inventory is
+> remediated per-package — that work is operator-visible in every
+> release log now.
 
 # ADR-0190: Cross-repo TypeScript package build — codify the contract
 

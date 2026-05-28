@@ -1,12 +1,23 @@
 ---
-status: proposed
+status: accepted
+completed: true
 date: 2026-05-12
+accepted: 2026-05-28
+implemented: 2026-05-23
 tags: [substrate, rvf, agentdb, axis-substrate, vision-alignment, supersedes-divergent-direction, cognitive-container]
 supersedes: [ADR-0170, ADR-0174, ADR-0175]
 depends-on: [ADR-0068, ADR-0073, ADR-0086, ADR-0102]
 implements: []
 references-upstream: [ruvnet/agentdb:README, ruvnet/agentdb:ADR-002, ruvnet/agentdb:ADR-003, ruvnet/agentdb:ADR-004, ruvnet/agentdb:ADR-005, ruvnet/agentdb:ADR-006, ruvnet/agentdb:ADR-007, ruvnet/agentdb:ADR-008, ruvnet/agentdb:ADR-009, ruvnet/agentdb:ADR-010, ruvnet/RuVector:ADR-029]
 ---
+
+> **Status note (2026-05-28)**: All Phase 0 confirmation criteria met
+> (ADR-0170/0174/0175 all `status:superseded` + `completed:true`,
+> `superseded-by:[ADR-0177]`). The Amendment 2026-05-23 records the
+> substrate re-convergence completion: ADR-0230 landed all 7 phases of
+> upstream ADR-125 on fork main 2026-05-23. The RVF-first vision is
+> in production. Flipping `proposed` → `accepted` + `completed:true`
+> per the ADR's own Phase 0 trigger.
 
 # Adopt upstream agentdb's RVF-first single-file Cognitive Container vision (supersedes the divergent postgres path)
 
