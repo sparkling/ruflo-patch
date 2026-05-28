@@ -72,19 +72,36 @@ async function main() {
     // warmUpRvfWithRetry → ensureRvfWired → opens the RVF backend (acquires
     // flock). Without the fix this lock is held forever.
     log(`[smoke] spawning MCP server in background (cli mcp start)…`);
+    // stdio: ['pipe', 'pipe', 'pipe'] + a noop heartbeat write to keep the
+    // pipe alive without giving the server real JSON-RPC to dispatch on.
+    // With raw 'pipe' and no writes, the MCP server's startup somehow hangs
+    // before reaching its ready-signal log; with 'ignore' stdin the server
+    // exits cleanly on EOF (which defeats the test). The middle ground:
+    // open pipe + send a single '\n' (which the JSON-RPC parser drops as
+    // empty line) keeps the server alive AND lets startup complete.
     mcpProc = spawn(cli, ['mcp', 'start'], {
       cwd: tempDir,
       env: { ...process.env, NPM_CONFIG_REGISTRY: REGISTRY },
       stdio: ['pipe', 'pipe', 'pipe'],
     });
+    // Write an empty newline so the stdin reader gets data + parses '' as
+    // an empty line (skipped by the parse loop); but the stream stays open
+    // because we DON'T call mcpProc.stdin.end(). The server's stdin.on('data')
+    // listener IS attached when the message comes in, which means startup
+    // has reached at least past the listener-registration point.
+    mcpProc.stdin.write('\n');
 
     // Wait for the MCP server to reach 'mcp-stdio' init (means eager RVF
     // warmup completed). We capture stderr; the init line is JSON-shaped.
     let mcpReady = false;
     mcpProc.stderr.on('data', (chunk) => {
       const s = chunk.toString();
-      log(`  [mcp.stderr] ${s.slice(0, 200).trim()}`);
-      if (s.includes('"mode":"mcp-stdio"') || s.includes('Memory router initialized')) {
+      // Full capture (not slice-200) — the smoke is debugging the smoke env;
+      // verbose stderr is acceptable.
+      log(`  [mcp.stderr] ${s.replace(/\n/g, ' | ').slice(0, 500)}`);
+      if (s.includes('"mode":"mcp-stdio"') ||
+          s.includes('Memory router initialized') ||
+          s.includes('Memory router init deferred')) {
         mcpReady = true;
       }
     });

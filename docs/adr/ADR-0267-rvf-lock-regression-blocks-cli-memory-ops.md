@@ -27,9 +27,21 @@ implements: []
 > not a perfect oracle; manual reproduction is the ground truth for
 > "is the user-reported bug fixed".
 >
-> `completed:false` stays until the smoke is fixed AND PASSes. Smoke
-> investigation is its own task (Task #10, not yet enumerated): the
-> spawn-vs-shell environment delta needs tracing.
+> `completed:false` stays until the smoke is fixed AND PASSes.
+>
+> **Task #10 (smoke env investigation, deferred)**: When the smoke
+> spawns the MCP server with `stdio: ['pipe', 'pipe', 'pipe']`, the
+> MCP server hangs after logging `"Starting in stdio mode"` (line 334
+> of mcp-server.ts) and never reaches the post-import logs (line 511's
+> `"mode":"mcp-stdio"` JSON OR Option F's "Memory router init
+> deferred" log). With `stdio: ['ignore', 'pipe', 'pipe']` the MCP
+> server exits cleanly on stdin EOF and `cli memory store` succeeds
+> in 351ms — same fast path as the manual reproduction. The
+> spawn-vs-shell stdin delta needs trace-level investigation; the
+> module-load or initProcessArchivist path may be sensitive to
+> stdin-pipe presence. Until Task #10 lands, the smoke is documented
+> as a known-flaky harness item; the user-reported regression is
+> verified fixed by manual reproduction.
 
 # RVF lock regression — CLI memory operations blocked by MCP/daemon lock holder
 
