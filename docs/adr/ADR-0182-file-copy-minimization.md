@@ -1,24 +1,28 @@
 ---
-status: accepted
-completed: true
+status: proposed
+completed: false
 date: 2026-05-16
-accepted: 2026-05-28
-implemented: 2026-05-28
 tags: [pipeline, performance, ssd-wear, fseventsd, acceptance, build]
 supersedes: []
 depends-on: [ADR-0025, ADR-0038, ADR-0039, ADR-0048, ADR-0150]
 implements: []
 ---
 
-> **Status note (2026-05-28, swarm review)**: Flipped `proposed → accepted`
-> + `completed: true`. The 2026-05-16 program shipped: **12 of 13 levers
-> landed** (L1 empirically disproven and dropped — see §Amendment
-> 2026-05-28), release is green. Two items are explicitly DEFERRED, not
-> blocking: (1) the SSD-byte hard gate (never wired AND unbuildable as a
-> non-flaky hard-fail per the ADR's own `ioreg`-is-whole-disk caveat —
-> downgraded to advisory); (2) the L10 ~130-callsite RETURN-trap
-> migration. The prior `status: proposed, completed: false` actively
-> misrepresented a finished program to any audit that walks ADR status.
+> **Status note (2026-05-28, swarm review)**: Stays `proposed` /
+> `completed: false`. 12 of 13 levers landed (L1 empirically disproven
+> and dropped — see §Amendment 2026-05-28), but the program is **not
+> complete**: the self-policing SSD-byte gate — the thing that *defines*
+> "done" for this ADR — is vapor (never wired, and unbuildable as a
+> non-flaky hard-fail per the ADR's own `ioreg`-is-whole-disk caveat); the
+> L3 kill-switch decision is unresolved (due 2026-06-13); three
+> Consequences/Measurement claims are known-wrong (the ~5.7 GB headline,
+> the L8 ~700 MB projection, the orphan-cleanup "solved" framing); and
+> orphan dirs still leak. An earlier 2026-05-28 edit flipped this to
+> `accepted + completed: true`; **reversed** — "mostly implemented" is not
+> "completed" when the self-policing gate that defines done does not exist.
+> The remaining work to earn `completed` is in the §Amendment 2026-05-28
+> (resolve L3; demote-or-build the gate honestly; fix the three body
+> claims).
 
 # Minimise file-copy churn across the release pipeline
 
