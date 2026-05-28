@@ -1,9 +1,29 @@
 # ADR-0157: Adopt canonical MADR + SPARC methodology + first-class multi-file ADRs via YAML `amends:` relationships
 
-- **Status**: Proposed 2026-05-08
+- **Status**: Accepted 2026-05-28 (completed)
 - **Date**: 2026-05-08
+- **Accepted**: 2026-05-28
+- **Implemented**: 2026-05-28
 - **Deciders**: Henrik Pettersen
 - **Methodology**: SPARC + MADR
+
+> **Status note (2026-05-28)**: All in-scope acceptance criteria satisfied.
+> - **AC #1 (adr-create template)**: SKILL.md at `forks/ruflo/plugins/
+>   ruflo-adr/skills/adr-create/SKILL.md` documents MADR canonical 4.x +
+>   YAML frontmatter + required status/date fields + supports relationship
+>   fields (amends/supersedes/superseded-by/depends-on).
+> - **AC #2 (adr-index)**: SKILL.md + `scripts/import.mjs` parse YAML
+>   frontmatter, read amends/supersedes/superseded-by/depends-on, emit
+>   matching causal edges, surface dangling refs. The `superseded-by`
+>   handling was caught missing by AC#4 regression test 2026-05-28 and
+>   landed in the fix that closed this ADR.
+> - **AC #3 (HM refactor)**: OUT OF SCOPE per ADR §"Out of scope".
+> - **AC #4 (regression guard)**: `tests/unit/adr0157-template-skill-
+>   alignment.test.mjs` — 6/6 pass; asserts template + importer agree on
+>   YAML field names. Detected the `superseded-by` drift on its first
+>   run.
+> - **AC #5 (pipeline acceptance ≥ 675/675)**: most recent release
+>   ran 713/722 passed — well above the 675 threshold.
 - **Related**: ADR-0143 (user-facing brand), ADR-0148 (skill-mcp-tool-surface-audit), upstream `ruflo-adr` plugin (current ad-hoc template), HM `docs/adr/README.md` (project-level MADR declaration), https://adr.github.io/madr/ (MADR canonical spec), https://github.com/ruvnet/sparc (SPARC methodology)
 
 ## Context and Problem Statement
