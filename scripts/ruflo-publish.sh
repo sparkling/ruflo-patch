@@ -555,6 +555,20 @@ main() {
     "${PREV_RUVECTOR_HEAD:-}" \
     "${PREV_AGENTIC_HEAD:-}"
 
+  # ADR-0232: pure-WASM crate rebuild (parallel to napi-rebuild). Detects
+  # Rust source changes for entries in lib/wasm-config.sh::WASM_PACKAGES
+  # and runs `wasm-pack build --target nodejs --out-dir <canonical>` so the
+  # canonical npm/packages/<name>/ artefact reflects current source.
+  # Closes the ADR-0231 wave A9 class of bug at the source (stale
+  # wasm-pack output anywhere on disk can't compete for the publishable-
+  # name slot when the canonical artefact is pipeline-built every cycle).
+  # Per ADR-0232 §"Bad" trade-off: requires `wasm-pack` in PATH; fails loud
+  # if missing (no silent fallback per feedback-no-fallbacks). Starts with
+  # ruvllm-wasm; other WASM crates added to WASM_PACKAGES as confirmed.
+  run_phase "wasm-rebuild" bash "${SCRIPT_DIR}/wasm-rebuild.sh" \
+    "${PREV_RUVECTOR_HEAD:-}" \
+    "${PREV_AGENTIC_HEAD:-}"
+
   # Bump versions in forks
   run_phase "bump-versions" bump_fork_versions
 

@@ -1,11 +1,33 @@
 ---
-status: proposed
+status: accepted
+completed: true
 date: 2026-05-24
+accepted: 2026-05-28
+implemented: 2026-05-28
 tags: [pipeline, wasm, rebuild, ruvector, build]
 supersedes: []
 depends-on: [0150, 0231]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: All 4 in-tree Confirmation criteria
+> satisfied. (Criterion #5 — end-to-end Verdaccio refresh — is a runtime
+> verification that fires on the first WASM source change after this
+> ADR lands; not a build-time gate.)
+> - **#1 `WASM_PACKAGES` config**: `lib/wasm-config.sh` ships the
+>   ruvllm-wasm entry per the ADR's §Confirmation row #1.
+> - **#2 `scripts/wasm-rebuild.sh`**: parallel to `napi-rebuild.sh`
+>   (source-diff → wasm-pack build → mtime verify-fresh → commit-and-
+>   push). Per ADR-0232 §Bad: requires `wasm-pack` in PATH; fails loud
+>   if missing.
+> - **#3 wiring in `scripts/ruflo-publish.sh`**: `wasm-rebuild` phase
+>   added immediately after `napi-rebuild` (ordering verified by unit
+>   test).
+> - **#4 unit tests**: `tests/unit/adr0232-wasm-config.test.mjs` — 7/7
+>   pass; mirrors `adr0150-napi-config.test.mjs` schema-validation
+>   pattern; asserts WASM_PACKAGES well-formedness, ruvllm-wasm entry,
+>   per-entry Cargo.toml existence, helper presence, script shebang +
+>   bash syntax, and phase ordering in publish.sh.
 
 # Pipeline wasm-rebuild phase for pure-WASM crates
 
