@@ -9,10 +9,15 @@ depends-on: [ADR-0202, ADR-0073, ADR-0227]
 implements: []
 ---
 
-> **Status note (2026-05-28)**: Task #7 (trace) completed. Root cause
-> identified. Task #8 (fix proposal): Option B chosen. Implementation
-> landed in fork commit `5c6d12c5f`. Task #9 acceptance smoke wired.
-> Pending: release-run validates the smoke PASSes; then flip `completed:false → true`.
+> **Status note (2026-05-28)**: Task #7 (trace) completed; root cause
+> identified. Task #8 (fix proposal): Option B chosen + implemented in
+> fork commit `5c6d12c5f` — but Task #9 release-run REVEALED the fix
+> is architecturally unsound (Revision 2 below); reverted in fork
+> commit `103514bcc`. ADR stays `accepted` with `completed:false`: the
+> bug is real + traced; the fix needs deeper architectural design
+> (Option E/F/G — see Revision 2). Task #9 acceptance smoke stays
+> wired as a regression detector and is the durable signal for any
+> future fix attempt.
 
 # RVF lock regression — CLI memory operations blocked by MCP/daemon lock holder
 
@@ -206,6 +211,95 @@ moving parts. It mirrors a known-good pattern (the daemon).
 **Implementation**: fork commit `5c6d12c5f`. Acceptance smoke at
 `ruflo-patch/scripts/smoke-adr0267-rvf-lock.mjs` wired into canonical
 harness via `lib/acceptance-adr0267-checks.sh`.
+
+## Revision 2 — Option B is architecturally unsound (2026-05-28)
+
+The Option B fix (`setRouterPersistent(false)` in `mcp-server.ts`) landed in
+fork commit `5c6d12c5f`, passed `tsc --noEmit` clean, and was published via
+the release pipeline. **Task #9 acceptance smoke still FAILED** (30s
+timeout on `cli memory store`). Investigation revealed a deeper
+architectural constraint Option B doesn't address:
+
+* **The daemon parallel doesn't hold for the MCP server.** The daemon
+  has `setRouterPersistent(false)` AND no eager RVF warmup AND its own
+  Archivist is FS-JSON (no RVF substrate). The daemon's per-op release
+  works because nothing in the daemon holds an RVF backend reference.
+* **The MCP server's Archivist HOLDS an RVF backend reference.** The
+  `ensureRvfWired()` helper at `archivist-init.ts:1480-1537` constructs
+  `MemoryRvfAdapter(cliMemoryRvfBackend, ...)` and calls
+  `archivist.setRvfBackend(rvfBackend)`. The archivist's `setRvfBackend`
+  (`forks/agentdb/src/archivist/index.ts:613`) is **idempotent: a second
+  call THROWS** ("RVF substrate is already installed"). The adapter holds
+  a direct reference to the cli's `_storage` global.
+* **MCP tools dispatch through the archivist.** `memory_store` and other
+  memory MCP tools call `archivist.dispatch('memory_store', payload)`
+  (`memory-tools.ts:9-16`), which uses the archivist's `rvfSubstrate` →
+  `MemoryRvfAdapter` → `this.memory.store(entry)`. This path does NOT
+  go through `routeMemoryOp` → `withRouter`. So the per-op release path
+  isn't triggered for the high-volume archivist-routed traffic.
+* **Worse: per-op release breaks the archivist.** With
+  `_isPersistent=false`, `withRouter()` calls `_storage.shutdown()` +
+  `_storage = null` after each routeMemoryOp. The archivist's adapter
+  still references the (shutdown) storage. The next archivist dispatch
+  would call into a closed backend → fail loudly or silently corrupt.
+
+### Implication for the candidate options
+
+* **Option A (FS-JSON parity)**: still viable, but the regression cost
+  (no HNSW in MCP path) is large; needs a real driver before committing.
+* **Option B (per-op release)**: **rejected** — incompatible with the
+  archivist's hold-the-backend architecture.
+* **Option C (split backends)**: now looks more attractive — gives MCP
+  and CLI separate RVF handles; archivist keeps its long-running ref.
+  But still largest implementation surface.
+* **Option D (lock broker)**: still rejected per `[[feedback-no-fallbacks]]`.
+
+### New options surfaced by Revision 2 investigation
+
+* **Option E — Make `MemoryRvfAdapter` resilient to backend lifecycle.**
+  Adapter checks `_storage` liveness on each call; lazy re-opens via
+  `ensureRouter()` if `_storage` was shutdown. Cost: complex adapter
+  semantics; potential race conditions; the adapter's `.memory` field
+  becomes effectively a service-locator lookup. Mitigates the
+  shutdown-vs-archivist race; lets Option B work.
+* **Option F — Skip eager warmup; keep `_isPersistent=true`.** Removes
+  the warmup-acquires-and-holds path so the lock is only acquired at
+  first archivist dispatch. Doesn't fix the held-for-lifetime problem
+  (it just delays it); but if the user doesn't hit memory dispatches
+  in the MCP session, the lock is never acquired. Loses Phase 5 DA-L2's
+  "fail loud at startup" property.
+* **Option G — Archivist uses `rvfBackendFactory` (lazy on first use).**
+  The archivist already supports `rvfBackendFactory` in its
+  `ArchivistInitConfig` (`index.ts:553`). Wire the MCP server to pass a
+  factory instead of calling `setRvfBackend` after warmup; let the
+  archivist resolve the backend on first dispatch. Doesn't fix
+  held-for-lifetime either — but it moves the acquisition to first
+  archivist dispatch, after which `withRouter` semantics could apply if
+  the archivist itself routes through `withRouter`. That last step is
+  itself architectural work (the archivist currently doesn't).
+* **Option H (chosen for now) — DO NOT FIX in this cycle; document the
+  finding + keep the regression detector smoke.** The trace + the
+  architectural analysis are durable artifacts. The smoke `scripts/
+  smoke-adr0267-rvf-lock.mjs` is the canonical regression detector:
+  any future fix attempt MUST flip it from FAIL → PASS. Until a real
+  architectural design lands, operators use the workaround
+  (`ruflo daemon stop` before CLI memory ops; restart after).
+
+### Why Option H over re-attempting Options A/C/E/G immediately
+
+This regression was traced + the fix attempted + the architectural
+constraint surfaced — all within one cycle. Committing to a deeper fix
+in the same cycle would re-trigger `[[feedback-trace-before-hypothesis]]`:
+the right design rests on (a) whether the held-for-lifetime model is
+intentional (the archivist's documentation in `index.ts:596-612`
+suggests it is), and (b) whether per-op vs. session-long is the right
+axis at all. Both questions deserve their own swarm review, not a
+same-cycle re-attempt.
+
+**Acceptance criterion for ADR-0267 closure**: `bash
+scripts/test-acceptance-fast.sh adr0267` PASSes (i.e., `cli memory
+store` returns in <5s while an MCP server is running). The fix
+mechanism remains open.
 
 ## Risks
 
