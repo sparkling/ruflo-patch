@@ -889,6 +889,11 @@ adr0265_lib="${PROJECT_DIR}/lib/acceptance-adr0265-checks.sh"
 adr0266_lib="${PROJECT_DIR}/lib/acceptance-adr0266-checks.sh"
 [[ -f "$adr0266_lib" ]] && source "$adr0266_lib"
 
+# ADR-0255: fork-native memory_export MCP tool + memory retrieve --value-only
+# 2 smokes (Phase 1 export + Phase 2 value-only)
+adr0255_lib="${PROJECT_DIR}/lib/acceptance-adr0255-checks.sh"
+[[ -f "$adr0255_lib" ]] && source "$adr0255_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -3546,6 +3551,35 @@ if [[ -f "$adr0266_lib" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0266-rvagent-p123" "$(_elapsed_ms "$_adr0266_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0255: fork-native memory_export MCP tool + memory retrieve --value-only
+# 2 smokes (Phase 1 export envelope + Phase 2 pipe-friendly retrieve).
+# ════════════════════════════════════════════════════════════════════
+_adr0255_start=$(_ns)
+if [[ -f "$adr0255_lib" ]]; then
+  log "── ADR-0255: memory_export + retrieve --value-only ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  if ! _adr0255_setup_shared_temp; then
+    log_error "ADR-0255 shared-temp setup FAILED — aborting smoke block"
+    rm -rf "$PARALLEL_DIR" 2>/dev/null
+    _record_phase "phase-adr0255-memory-export" "$(_elapsed_ms "$_adr0255_start" "$(_ns)")"
+    exit 1
+  fi
+  log "── ADR-0255 shared-temp ready: ${ADR0255_SMOKE_SHARED_TEMP} ──"
+
+  run_check_bg "adr0255-export"     "ADR-0255 Phase 1 memory_export MCP tool"   check_adr0255_export     "adr0255"
+  run_check_bg "adr0255-value-only" "ADR-0255 Phase 2 retrieve --value-only"    check_adr0255_value_only "adr0255"
+
+  collect_parallel "adr0255" \
+    "adr0255-export|ADR-0255 Phase 1 memory_export MCP tool" \
+    "adr0255-value-only|ADR-0255 Phase 2 retrieve --value-only"
+
+  _adr0255_cleanup_shared_temp
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0255-memory-export" "$(_elapsed_ms "$_adr0255_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

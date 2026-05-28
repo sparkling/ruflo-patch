@@ -1,12 +1,24 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-25
+implemented: 2026-05-28
 tags: [memory, mcp-tools, cli, export, upstream-disposition, archivist]
 supersedes: []
 depends-on: [ADR-0177, ADR-0181, ADR-0246, ADR-0253]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: Both phases shipped. Phase 1 (`memory_export`
+> MCP tool + envelope shape) landed via fork commit `adb91ab3d` (pre-existing
+> in fork; verified registered at `forks/ruflo/.../memory-tools.ts:1346`).
+> Phase 2 (`memory retrieve --value-only` flag) landed via fork commit
+> `662957caa`. 2 smokes wired via `lib/acceptance-adr0255-checks.sh`; full
+> release pipeline 2/2 PASS. Ledger row `0c31cbad4` finalized
+> `superseded-by-local` with both commit SHAs. Phase 3 golden-test scenarios
+> covered by the 2 wired smokes (envelope shape + value round-trip + format
+> typed-error + includeVectors typed-error). Phase 4 ledger close paired in
+> this commit.
 
 # Fork-native `memory_export` capability (closes ledger row `0c31cbad4`)
 
