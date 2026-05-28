@@ -15,11 +15,12 @@ implements: []
 > DELETED by ADR-0217 (vindicating ADR-0206) and ADR-0265 C7.a/b now
 > ENFORCE they must not exist — wiring them would violate two accepted
 > ADRs. The federation/QUIC capability this ADR wanted shipped via
-> ADR-0265 (native QUIC transport). **Only StreamingEmbeddingService
-> remains a genuine orphan** — and its disposition is WIRE-against-a-
-> named-consumer-or-DELETE, gated by the new Phase 0. `depends-on`
-> corrected `ADR-0166` (superseded two hops down: 0166→0170→0177) →
-> `ADR-0177`.
+> ADR-0265 (native QUIC transport). StreamingEmbeddingService is a real,
+> honest, unadvertised, tested implementation → **KEEP-AS-CAPABILITY**
+> (the fork's implement-ahead posture; verified 2026-05-28 — NOT a DELETE
+> candidate). With that, every controller has a terminal disposition and
+> the ADR has no remaining implementation action. `depends-on` corrected
+> `ADR-0166` (superseded two hops down: 0166→0170→0177) → `ADR-0177`.
 
 # Wire orphan controllers — MincutService, SparsificationService, StreamingEmbeddingService, QUIC connection layer
 
@@ -342,12 +343,20 @@ orphans, wire all" inventory is wrong on 5 of 6 counts:
 |---|---|---|
 | 1 | MincutService | **WIRE — already wired.** Real consumer: `AttentionService.ts:962` `partition(...)` + `:965` `getPartitionStats(...)`. AttentionService is constructed by live controllers (NightlyLearner, ExplainableRecall, CausalMemoryGraph). Not an orphan. |
 | 2 | SparsificationService | **WIRE — already wired.** `AttentionService.ts:841` `sparsify(...)` + `:822/:825`. Same live chain. |
-| 3 | StreamingEmbeddingService | **GENUINE ORPHAN — fabrication risk.** `index.ts:69-70` exports it with the comment "Zero in-tree consumers today … restored to preserve future-wiring optionality." The Phase 2 `memory store --file` proposal is unimplemented and is exactly the fabricate-a-caller trap. **The only live question this ADR retains.** |
+| 3 | StreamingEmbeddingService | **KEEP-AS-CAPABILITY** (verified 2026-05-28). Real, complete implementation (315 LOC extending `EnhancedEmbeddingService`; concurrency-batched streaming embed, progress callbacks, AbortController cancellation; **74 passing test assertions, 0 skipped** at `tests/unit/controllers/StreamingEmbeddingService.test.ts`) — NOT a stub. Exposes **no advertised surface**: no MCP tool, not registered in `AgentDB.getController` (so `getController('streamingEmbedding')` does not resolve it — it is a bare `export` only), no skill/plugin reference. Fork-only, deliberately restored from `bd760f2` per ADR-065 P1-3 / ADR-0178 Follow-up #4. Plausible trajectory: streaming/large-document ingestion. Satisfies all three KEEP-AS-CAPABILITY conditions (real + honest + unadvertised + trajectory); keep-cost is near-zero (bare export, self-contained file+test, fork-only so no upstream merge conflict). **NOT a fabrication risk and NOT a DELETE candidate** — an earlier draft of this amendment mis-defaulted it to WIRE-or-DELETE by over-applying the ADR-0210 stub rule to honest unconsumed code; corrected here. |
 | 4 | QUICConnection | **NOT orphaned.** Consumed by `QUICClient.ts:22` + `QUICServer.ts:21`; ADR-0217:258 keeps it; the `// TODO: ADR required` marker is already GONE from the file. |
 | 5 | QUICConnectionPool | **DELETED → SUPERSEDED.** File does not exist. ADR-0217:253-254 carries forward ADR-0206's deletion; ADR-0265 C7.a/b (arch-test + forbidden-string guard) ENFORCE it must not exist. Wiring it violates two accepted ADRs. |
 | 6 | QUICStreamManager | **DELETED → SUPERSEDED.** Same as #5. |
 
-**Improvement 1 — new Phase 0 WIRE-vs-DELETE triage gate (blocking, before Phase 1).** The Confirmation criterion "Phase 2 completes when each controller has at least one consumer that calls a non-trivial method (not just `new ControllerService(...)`)" forbids the trivial fabrication but still implicitly mandates "find/build a caller" and never licenses DELETE. That relocates the orphan behind a contract test. Replace with: *for each controller, answer with corpus evidence (per `feedback-corpus-evidence-before-feature-work` + ADR-0210 implement/restore/delete): (a) does a real organic consumer already call a non-trivial method? → WIRE-confirmed, add only the missing test; (b) is there a concrete named in-flight demand? → WIRE against it; (c) neither? → **DELETE is the default.** Restoring "to preserve future-wiring optionality" is deferred dead code, not a wiring plan; manufacturing a consumer solely to pass a reachability test is forbidden.* A controller may enter Phase 1/2/3 only once Phase 0 returns WIRE with a named real consumer.
+**Improvement 1 — new Phase 0 THREE-WAY triage gate (blocking, before Phase 1).** The Confirmation criterion "Phase 2 completes when each controller has at least one consumer that calls a non-trivial method (not just `new ControllerService(...)`)" forbids the trivial fabrication but still implicitly mandates "find/build a caller" — which, applied to a genuinely-unconsumed controller, just relocates the orphan behind a fabricated contract test. Replace with a **three-way** gate (a binary WIRE-vs-DELETE gate is itself miscalibrated against this fork's deliberate implement-ahead posture — see the correction note below). For each controller, answer with corpus evidence (per `feedback-corpus-evidence-before-feature-work`):
+
+> **(a) WIRE** — a real organic consumer already calls a non-trivial method. → Confirm; add only the missing contract test.
+>
+> **(b) KEEP-AS-CAPABILITY** — the implementation is **complete and honest** (not a stub) AND exposes **no falsely-advertised user-facing surface** (no MCP tool / skill / CLI verb that claims it works while it no-ops) AND has a **plausible named trajectory**. This is the fork's "implement properly, expecting future need" posture — the thesis of ADR-0177 (adopt upstream's full capability surface ahead of all consumers) and the explicit rationale of the `bd760f2` restorations (ADR-0178 Follow-up #4). Keep-cost is near-zero when the surface is a bare, unregistered export. The controller stays as-is with a one-line "capability ahead of consumer; wire when a real consumer lands" note.
+>
+> **(c) DELETE** — the default **only** for: a **stub** that no-ops; a **registered/advertised surface that lies** (the ADR-0210 implement/restore/delete case is *this* — it governs dishonest surfaces, not honest-but-unconsumed code); or **genuinely no trajectory**. Manufacturing a consumer solely to pass a reachability test remains forbidden; so does deleting a real, honest, tested implementation merely because it lacks a caller today.
+
+The load-bearing distinction: **"no consumer" and "stub" are orthogonal.** ADR-0210's DELETE mandate is about *lies* (surfaces that claim a capability they don't have); the fork's implement-ahead posture is about *truth ahead of its consumer* (real code, no false claim, consumer pending). A controller enters Phase 1/2/3 only on a WIRE verdict; a KEEP-AS-CAPABILITY verdict closes it as resolved-without-code-change; DELETE closes it by removal.
 
 **Improvement 2 — supersede the QUIC portion.** Rows 4/5/6 are handed off: QUICConnection is live (never this ADR's to wire); QUICConnectionPool/QUICStreamManager are deleted-by-decision (ADR-0217/0206) and the capability shipped via ADR-0265. Remove Confirmation criterion #4 ("remove the `// TODO: ADR required` comments from QUICConnection.ts and QUICConnectionPool.ts") — QUICConnectionPool.ts no longer exists and QUICConnection.ts's marker is already gone, so the criterion is unsatisfiable as written.
 
@@ -355,4 +364,4 @@ orphans, wire all" inventory is wrong on 5 of 6 counts:
 
 **Improvement 4 — soften the "delete is irreversible / would re-litigate" rationale (~93-95).** ADR-0217 demonstrates the opposite is the project's actual posture: it deleted the two QUIC controllers on evidence, the deletion was vindicated, and ADR-0265 shipped the real capability via a cleaner path. Delete-then-reimplement-properly is a legitimate, observed outcome — not a bogeyman.
 
-**Net live scope after this amendment**: Mincut + Sparsification = WIRE-confirmed (cite the AttentionService callsites; add the 2 missing contract tests if absent). QUIC three = superseded/handed-off. **StreamingEmbeddingService is the single remaining decision**, gated by Phase 0: WIRE against a named consumer, or DELETE.
+**Net live scope after this amendment**: Mincut + Sparsification = WIRE-confirmed (cite the AttentionService callsites; add the 2 missing contract tests if absent). QUIC three = superseded/handed-off (ADR-0217/0265). StreamingEmbeddingService = KEEP-AS-CAPABILITY (verified honest + unadvertised + trajectory). **No remaining implementation action** — every controller has a terminal disposition, so this ADR can move to a terminal status (the precise label — `accepted+completed` recording the dispositions, vs partial-supersede for the QUIC rows — is the maintainer's call; not flipped unilaterally). The only optional follow-up is adding the 2 Mincut/Sparsification contract tests if they don't already exist.
