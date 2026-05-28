@@ -894,6 +894,11 @@ adr0266_lib="${PROJECT_DIR}/lib/acceptance-adr0266-checks.sh"
 adr0255_lib="${PROJECT_DIR}/lib/acceptance-adr0255-checks.sh"
 [[ -f "$adr0255_lib" ]] && source "$adr0255_lib"
 
+# ADR-0267: RVF lock regression — CLI memory ops blocked by MCP server
+# 1 smoke (Task #9 acceptance)
+adr0267_lib="${PROJECT_DIR}/lib/acceptance-adr0267-checks.sh"
+[[ -f "$adr0267_lib" ]] && source "$adr0267_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -3580,6 +3585,37 @@ if [[ -f "$adr0255_lib" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0255-memory-export" "$(_elapsed_ms "$_adr0255_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0267: RVF lock regression — CLI memory ops blocked by MCP server.
+# 1 smoke (Task #9). Verifies setRouterPersistent(false) in mcp-server.ts
+# allows CLI memory commands to acquire the RVF flock while the MCP server
+# is running. Per `feedback-no-fallbacks` the smoke FAILs loudly when the
+# regression is present (30s timeout) and PASSes only when per-op release
+# is wired.
+# ════════════════════════════════════════════════════════════════════
+_adr0267_start=$(_ns)
+if [[ -f "$adr0267_lib" ]]; then
+  log "── ADR-0267: RVF lock release while MCP server running ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+
+  if ! _adr0267_setup_shared_temp; then
+    log_error "ADR-0267 shared-temp setup FAILED — aborting smoke block"
+    rm -rf "$PARALLEL_DIR" 2>/dev/null
+    _record_phase "phase-adr0267-rvf-lock" "$(_elapsed_ms "$_adr0267_start" "$(_ns)")"
+    exit 1
+  fi
+  log "── ADR-0267 shared-temp ready: ${ADR0267_SMOKE_SHARED_TEMP} ──"
+
+  run_check_bg "adr0267-rvf-lock" "ADR-0267 CLI memory store + MCP server" check_adr0267_rvf_lock "adr0267"
+
+  collect_parallel "adr0267" \
+    "adr0267-rvf-lock|ADR-0267 CLI memory store + MCP server"
+
+  _adr0267_cleanup_shared_temp
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0267-rvf-lock" "$(_elapsed_ms "$_adr0267_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

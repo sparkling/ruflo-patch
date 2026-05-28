@@ -1,12 +1,18 @@
 ---
-status: proposed
+status: accepted
 completed: false
 date: 2026-05-27
+accepted: 2026-05-28
 tags: [regression, rvf, mcp, daemon, memory, lock, investigation, blocker]
 supersedes: []
 depends-on: [ADR-0202, ADR-0073, ADR-0227]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: Task #7 (trace) completed. Root cause
+> identified. Task #8 (fix proposal): Option B chosen. Implementation
+> landed in fork commit `5c6d12c5f`. Task #9 acceptance smoke wired.
+> Pending: release-run validates the smoke PASSes; then flip `completed:false → true`.
 
 # RVF lock regression — CLI memory operations blocked by MCP/daemon lock holder
 
@@ -133,6 +139,73 @@ This ADR is `proposed`. Ratification + implementation are separate steps:
 - Task #8 produces a §Revision 1 to this ADR with the selected option + edits.
 - Task #9 produces the acceptance smoke + harness wiring.
 - ADR-0267 flips `accepted` → `completed: true` only when Task #9's smoke is green AND the regression is reproducibly fixed in `_cli_cmd memory store` paths.
+
+## Pre-flight (trace findings) — Task #7 complete (2026-05-28)
+
+Trace identified the root cause without needing the deferred trace agent:
+
+* **Lock holder**: the MCP server process (`cli mcp start`), specifically
+  the eager `warmUpRvfWithRetry` → `ensureRvfWired` chain at
+  `mcp-server.ts:506`.
+* **Acquisition site**: `ensureRvfWired()` →
+  `ensureRouter()` (`memory-router.ts:902-1003`) → `RvfBackend.open()` →
+  exclusive `flock` on `<rvf-path>.lock`.
+* **Why held across lifetime**: `_isPersistent` in `memory-router.ts:199`
+  defaults to `true`. The daemon explicitly sets it to `false` at
+  `worker-daemon.ts:961-963` so each worker tick releases the flock via
+  `withRouter()`'s finally-block (`memory-router.ts:1076-1099`). The MCP
+  server does NOT call `setRouterPersistent(false)` — its `_isPersistent`
+  stays `true` → `_storage` stays cached → the flock the warmup acquired
+  is held for the MCP server's entire lifetime.
+* **Refutes the "2 unmigrated workers" hypothesis**: the daemon's own
+  Archivist is FS-JSON (no RVF lock); `map`/`audit` workers don't touch
+  RVF. The lock holder is the MCP server's persistence flag, not a
+  daemon worker.
+* **Refutes the "process crashed without releasing" hypothesis**: this
+  is purely an alive-process bug. Kernel will release on process exit.
+
+§Pre-flight cleared via direct trace on fork HEAD; no separate trace
+agent invocation needed.
+
+## Revision 1 — Option B chosen (2026-05-28)
+
+**Chosen: Option B (per-op acquire/release in MCP server).**
+
+The trace confirms the lock-holder hypothesis from
+`[[project-two-hook-paths-cli-vs-handler]]` was correct: the MCP server's
+`routeMemoryOp` / `ensureRvfWired` path is the real victim. The fix
+mirrors the daemon's pattern verbatim:
+
+* **`forks/ruflo` change**: `v3/@claude-flow/cli/src/mcp-server.ts:478` —
+  after `initProcessArchivist()` and BEFORE `warmUpRvfWithRetry`, add:
+  ```ts
+  const router = await import('./memory/memory-router.js');
+  if (typeof router.setRouterPersistent === 'function') {
+    router.setRouterPersistent(false);
+  }
+  ```
+* **Placement BEFORE warmup**: so the warmup's transient open also
+  honors per-op release. The warmup still validates structural faults at
+  startup (its purpose); the flock is just released after each check.
+
+**Why Option B over A/C/D**:
+
+* **Option A (switch MCP to FS-JSON)** — would regress semantic search
+  recall in the MCP path (FS-JSON has no HNSW); over-engineered for a
+  single-line fix.
+* **Option C (split backends)** — largest implementation surface;
+  introduces drain semantics + eventual-consistency window for a bug that
+  has a one-line root cause.
+* **Option D (lock broker)** — adds a new moving part; doesn't fit
+  `[[feedback-no-fallbacks]]` shape (broker timeouts are exactly the
+  silent-fallback class the rule forbids).
+
+Option B has the smallest surface, fastest validation path, and zero new
+moving parts. It mirrors a known-good pattern (the daemon).
+
+**Implementation**: fork commit `5c6d12c5f`. Acceptance smoke at
+`ruflo-patch/scripts/smoke-adr0267-rvf-lock.mjs` wired into canonical
+harness via `lib/acceptance-adr0267-checks.sh`.
 
 ## Risks
 

@@ -396,6 +396,20 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0255"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0267"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0267-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0267-checks.sh"
+    echo "── ADR-0267 (RVF lock release while MCP server running) ──"
+    if ! _adr0267_setup_shared_temp; then
+      echo "[fast] ADR-0267 shared-temp setup FAILED — aborting" >&2
+      exit 1
+    fi
+    echo "[fast] adr0267 shared-temp: ${ADR0267_SMOKE_SHARED_TEMP}"
+    _fast_run "adr0267-rvf-lock" check_adr0267_rvf_lock
+    _adr0267_cleanup_shared_temp
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"
