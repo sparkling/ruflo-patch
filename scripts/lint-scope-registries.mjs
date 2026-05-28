@@ -67,8 +67,6 @@ const PLATFORM_BINARY_NAMES = new Set([
   // version bumping with the parent's optionalDependencies pin. The remaining 4
   // platforms stay here (lint allow-list) until Phase 2b cross-compile CI matrix
   // lands them.
-  'agentic-flow-quic-native-linux-x64-gnu',
-  'agentic-flow-quic-native-linux-arm64-gnu',
   'agentic-flow-quic-native-win32-x64-msvc',
 ]);
 

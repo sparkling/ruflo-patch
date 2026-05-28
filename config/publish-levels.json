@@ -29,6 +29,8 @@
         "@sparkleideas/agentic-flow-quic-native",
         "@sparkleideas/agentic-flow-quic-native-darwin-arm64",
         "@sparkleideas/agentic-flow-quic-native-darwin-x64",
+        "@sparkleideas/agentic-flow-quic-native-linux-x64-gnu",
+        "@sparkleideas/agentic-flow-quic-native-linux-arm64-gnu",
         "@sparkleideas/ruv-swarm",
         "@sparkleideas/agent-booster",
         "@sparkleideas/agentdb-onnx",

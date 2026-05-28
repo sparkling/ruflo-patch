@@ -84,6 +84,12 @@ export const UNSCOPED_PUBLISHABLE = new Set([
   // via Xcode's x86_64-apple-darwin target. Same lockstep-bump pattern as
   // darwin-arm64.
   'agentic-flow-quic-native-darwin-x64',
+  // ADR-0265 Phase 2b — linux-x64-gnu cross-compiled from darwin-arm64
+  // host via `napi build --target x86_64-unknown-linux-gnu --zig`.
+  'agentic-flow-quic-native-linux-x64-gnu',
+  // ADR-0265 Phase 2b — linux-arm64-gnu cross-compiled from darwin-arm64
+  // host via `napi build --target aarch64-unknown-linux-gnu --zig`.
+  'agentic-flow-quic-native-linux-arm64-gnu',
 ]);
 
 // ── Version parsing ──

@@ -62,6 +62,14 @@ NAPI_PACKAGES=(
   # Same pattern. Cross-compiled from darwin-arm64 host via Xcode's
   # x86_64-apple-darwin target (`napi build --target x86_64-apple-darwin`).
   "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node/npm/darwin-x64"
+
+  # ── agentic-flow-quic-node — linux-x64-gnu sub-package (ADR-0265 Phase 2b) ──
+  # Cross-compiled via zig (`napi build --target x86_64-unknown-linux-gnu --zig`).
+  "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node/npm/linux-x64-gnu"
+
+  # ── agentic-flow-quic-node — linux-arm64-gnu sub-package (ADR-0265 Phase 2b) ──
+  # Cross-compiled via zig (`napi build --target aarch64-unknown-linux-gnu --zig`).
+  "FORK_DIR_AGENTIC:crates/agentic-flow-quic-node:crates/agentic-flow-quic-node/npm/linux-arm64-gnu"
 )
 
 # Helper: parse one config entry into 3 globals: NAPI_FORK_DIR, NAPI_CRATE_PATH, NAPI_DEST_NPM_DIR
