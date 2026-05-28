@@ -1,12 +1,28 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-24
+implemented: 2026-05-28
 tags: [audit-followup, security, aidefence, pii, mcp-envelope, ct-n]
 supersedes: []
 depends-on: [0201, 0210, 0233, 0238]
 implements: []
 ---
+
+> **Status note (2026-05-28)**: All 3 owned sites (F-04-009 / F-04-010 /
+> F-04-011) verified implemented in fork at HEAD:
+> - Site #1 (F-04-009): `mcp-client.ts:145-239` — `isMCPErrorEnvelope`
+>   helper + `MCPClientError` thrown with `cause` chain.
+> - Site #2 (F-04-010): `aidefence/src/index.ts:15-19,113-116` — HNSW
+>   scope clarified to `searchSimilarThreats` only; landed bundled with
+>   ADR-0238 Surface 1 docblock rewrite.
+> - Site #3 (F-04-011): `security-tools.ts:31,83-96` —
+>   `installAttemptedAt: number | null` + 5-minute backoff.
+> Behaviour tests at `__tests__/mcp-client-iserror.test.ts` +
+> `__tests__/security-tools-backoff.test.ts` already shipping in CI via
+> test-ci phase. Sites #4 + #5 (F-04-006 / F-04-007) remain deferred per
+> Decision rationale (upstream-not-wired + `caller_identity` architectural
+> prerequisite); deferral is in the audit trail per §More Information.
 
 # Security follow-ups beyond CT-E: isError envelope + framing + detector deferrals (CT-N)
 
