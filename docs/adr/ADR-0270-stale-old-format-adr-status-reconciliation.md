@@ -100,7 +100,7 @@ the queryable backlog this ADR anchors.
 | | **0145** (research collection) | Executed (already marked). |
 | | **0158** (multi-type DR indexer) | ODR skills shipped at `~/.claude/skills/` under the **DCAP / ODR-0095** model, NOT this ADR's ONT-0029 design (`.code.md` companions retired). Doc-reconciliation only. **Amended.** |
 | | **0159** (HM decision-records refactor) | Obsolete — migration script never existed; HM converged on DCAP (no `methodology:` field). **Amended.** |
-| | **0146** (substrate-dictated team binding, swarm) | **DECLINED 2026-05-29.** Team comms is a swarm concern, already delivered at the swarm skill layer (`swarm-init/SKILL.md:16` — `TeamCreate`/`Agent`/`SendMessage`); the substrate-dictated mechanism (mutating shared `swarm_*` MCP returns) declined. Un-parented from [[ADR-0140]] Piece 6 (also declined). **Amended.** |
+| | **0146** (substrate-dictated team binding, swarm) | **DECLINED 2026-05-29.** Team comms is a swarm concern, already delivered at the swarm skill layer (`swarm-init/SKILL.md:16` — `TeamCreate`/`Agent`/`SendMessage`); the substrate-dictated mechanism (mutating shared `swarm_*` MCP returns) declined. Un-parented from [[ADR-0140]] Piece 6 (also declined). The legit skill-layer part (enrich swarm's thin team-coordination prose) **LANDED 2026-05-29** (`swarm-init`, fork `ca6b4c3bf`). **Amended.** |
 | | **0103 / 0107 / 0109 / 0110 / 0125 / 0129 / 0132** | All closed via the [[ADR-0118]] T1–T14 tracker (14/14 complete). |
 
 ### Genuinely open (the queryable backlog this ADR anchors)
