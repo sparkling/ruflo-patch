@@ -78,8 +78,8 @@ the queryable backlog this ADR anchors.
 
 | Verdict | ADRs | Evidence summary |
 |---|---|---|
-| **GENUINELY OPEN** | **0137** (cwd-eradication campaign) | **Re-validated 2026-05-29: 94** `adr-0100-allow:` annotations unfixed across **26 files** in `forks/ruflo` `main` (pass-1 said ~85 — under-counted); runtime guard `assertProjectRootAnchored` absent (0 hits, also 0 `adr-0137` source refs); no ADR-0137 acceptance check (the existing `acceptance-adr0100-checks.sh` runs deep-cwd but only canaries `.swarm/` placement, not the stray-`.claude-flow/` tree-walk). Campaign never executed; grep gate is green only because the annotations *are* the allowlist shape. |
-| | **0149** (guidance MCP coverage) | **Re-validated 2026-05-29:** `guidance-tools.ts` (`v3/@claude-flow/cli/src/mcp-tools/`) catalog is **byte-frozen** at its audited state → **~40 phantom tools** still advertised (whole fabricated `security_*` area; underscore-vs-dash `hooks_*`/`hive_mind_*`; wrong-name peers); `memory_export` shipping ([[ADR-0255]]) removed exactly 1. Drift-test absent (incl. the ADR's own named acceptance file); 3 phases unbuilt. **Cheapest high-value fix = a drift-test asserting every catalog tool resolves in `config/mcp-surface-manifest.json`** (registry-of-truth already exists). |
+| **IMPLEMENTED 2026-05-29** (was GENUINELY OPEN) | **0137** (cwd-eradication campaign) | **Landed at patch.372** (`627b6cf14`/`407eef14f`): 70 sites → `findProjectRoot()` (relocated to `@claude-flow/shared/fs`); 21 documented `intentional-cwd`; grep gate **0 violations**; 4 non-root-cwd acceptance scenarios (H/I/J/K) **green** (zero stray `.claude-flow/`). **Deviation:** write-path guard is opt-in (`RUFLO_ADR0137_ENFORCE=1`), not always-on — a release proved always-on is unsound at the storage layer (can't tell a legit temp/external path from a cwd bug). 2 sites flagged for review. **Amended.** |
+| | **0149** (guidance MCP coverage) | **Landed at patch.372** (`66e28c7fd`): catalog reconciled to **0 phantoms** vs the 317 real registered tools (`mcp-client.ts` TOOL_REGISTRY, not the stale manifest); drift-test (`adr0149-guidance-coverage.test.ts`, 29/29) makes the phantom class non-regressible; 6 zero-coverage areas added. Phase 3 full auto-generation deferred (drift-test makes the catalog self-policing). **Amended.** |
 | **DORMANT** (no successor, no forcing function) | **0099** (perf-testing program) | **Re-validated 2026-05-29: every artifact ABSENT** — no `test:perf` script, no `tests/benchmarks/wallclock/`, no `docs/reports/perf/`, no `--promote`/`--calibrate`/`--skip-perf-check` flags, no `publish:fork` staleness gate. ADR self-admits zero motivating regressions. `scripts/analyze-acceptance-perf.mjs` is unrelated (acceptance-pipeline timing, not the dedicated wallclock-benchmark program) — and is the first-line substitute the ADR itself names. |
 | | **0101** (fork-README program) | **Re-validated 2026-05-29:** zero `@sparkleideas` prelude in **all 5** fork READMEs (agentdb is the 5th — pass-1 said 4); stale `ruvnet/claude-flow` URLs total **6, concentrated** (ruflo 3, ruvector 2, agentic-flow 1) — far below the ADR's ~15-20 estimate because upstream rewrote ruflo's README (7541→408 lines, `9250df2df`), invalidating the ADR's inventory; 5 §Open Decisions never answered. **0102 dependency now CLEARED** (0102 closed 2026-05-29) → mechanical half (prelude + 6 URL fixes + 5 stale `npx claude-flow@latest` cmds in ruflo) is unblocked. |
 | **DONE-WITH-RESIDUAL** | **0100** (project-root resolution) | All 4 "pending" artifacts now exist (sentinel writer `init/executor.ts`, `__tests__/find-project-root.test.ts`, `lib/acceptance-adr0100-checks.sh`, `scripts/check-no-cwd-in-handlers.sh`). Residual = the broad site-eradication, owned by 0137. **Amended.** |
@@ -105,12 +105,10 @@ the queryable backlog this ADR anchors.
 
 ### Genuinely open (the queryable backlog this ADR anchors)
 
-Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revalidated 2026-05-29 (4-agent artifact check); all four confirmed still open/dormant, counts corrected below.
+Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revalidated 2026-05-29 (4-agent artifact check). **0137 + 0149 IMPLEMENTED 2026-05-29** (patch.372) → struck from the backlog; the actionable-open set is now empty. Only the **2 DORMANT** items remain, both gated on an external trigger / user input:
 
 | ADR | Open work | Trigger / blocker |
 |---|---|---|
-| **0137** | **94** `adr-0100-allow:` sites (26 files) → real `findProjectRoot()` fixes; the `assertProjectRootAnchored` runtime write-guard; non-root-cwd acceptance check (stray-`.claude-flow/` tree-walk) | Mechanical campaign; no external blocker — symptom currently *masked* by the `**/.claude-flow/` gitignore rule, not fixed |
-| **0149** | Drift-test asserting every `guidance-tools.ts` catalog tool resolves in `config/mcp-surface-manifest.json` (cheap, catches all ~40 phantoms); then drop phantoms / add the missing real namespaces | None forcing; guidance keeps mis-advertising ~40 phantoms until scheduled |
 | **0099** | Whole perf-testing program | An actual logged perf regression |
 | **0101** | Per-fork (×5) README `@sparkleideas` prelude + 6 stale-`claude-flow`-URL fixes; mechanical half now unblocked (0102 cleared) | Its 5 §Open Decisions need user answers; nothing else forces it |
 
@@ -129,11 +127,12 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revali
 
 ### Confirmation
 
-1. The nine amended ADRs (0100, 0102, 0114, 0115, 0133, 0134, 0156, 0158, 0159) each
-   open with a `[RECONCILED 2026-05-29 → …; see ADR-0270]` marker; their original
-   status text is preserved verbatim after it. (0102 was closed-from-open the same
-   day — product config chain delivered, Rust remainder declined — so it bears a
-   marker too.)
+1. The eleven amended ADRs (0100, 0102, 0114, 0115, 0133, 0134, 0137, 0149, 0156, 0158, 0159)
+   each open with a `[RECONCILED / CLOSED / IMPLEMENTED 2026-05-29 → …; see ADR-0270]`
+   marker; their original status text is preserved verbatim after it. (0102 was
+   closed-from-open the same day — product config chain delivered, Rust remainder
+   declined; **0137 + 0149 were implemented-from-open** the same day — shipped at
+   patch.372, see their rows above — so all three bear markers too.)
 2. `adr-index` surfaces THIS ADR (`completed: false`, tag `outstanding-work`) as the
    anchor for the §"Genuinely open" set.
 3. A concrete defect confirmed during the audit: the init-delivered
@@ -155,4 +154,4 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revali
 * [[ADR-0257]] / [[ADR-0269]] — the defer-with-trigger / queryable-tracker pattern this ADR follows.
 * [[ADR-0233]] / [[ADR-0201]] — the audit "Reviews still owed" carry-forward (runtime perf/leak G-16-014; `archive/` skill pollution) — adjacent outstanding work not re-listed here.
 * `[[feedback-old-adr-status-lines-go-stale]]` — the method this audit used and the durable lesson.
-* Amended ADRs: [[ADR-0100]], [[ADR-0102]], [[ADR-0114]], [[ADR-0115]], [[ADR-0133]], [[ADR-0134]], [[ADR-0156]], [[ADR-0158]], [[ADR-0159]].
+* Amended ADRs: [[ADR-0100]], [[ADR-0102]], [[ADR-0114]], [[ADR-0115]], [[ADR-0133]], [[ADR-0134]], [[ADR-0137]], [[ADR-0149]], [[ADR-0156]], [[ADR-0158]], [[ADR-0159]].

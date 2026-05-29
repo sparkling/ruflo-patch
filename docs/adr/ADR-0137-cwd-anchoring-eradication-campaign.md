@@ -1,5 +1,25 @@
 # ADR-0137: Eradicate cwd-anchoring across 98 sites — supersede `adr-0100-allow:` annotations with real fixes + runtime guard
 
+> **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** Landed at `@sparkleideas/*`
+> patch.372 (forks/ruflo `627b6cf14`, `407eef14f`). **Parts 1, 3, 4 done:** 70
+> cwd-anchored sites fixed to `findProjectRoot()` — relocated to
+> `@claude-flow/shared/fs` so the memory package consumes it without an inverted
+> dependency; 21 genuine user-cwd sites kept with precise `intentional-cwd`
+> justifications; zero generic `tracked in ADR-0118` annotations remain. Grep
+> gate (`check-no-cwd-in-handlers.sh`) = **0 violations**. The 4 non-root-cwd
+> acceptance scenarios (H/I/J/K, `lib/acceptance-adr0137-checks.sh`) **pass** —
+> zero stray `.claude-flow/` created. Full acceptance 719/728, 0 fail.
+> **DEVIATION on Part 2:** the `assertProjectRootAnchored` write-path guard is
+> **opt-in** (`RUFLO_ADR0137_ENFORCE=1`), NOT always-on. A release proved an
+> always-on guard is unsound at the storage layer — it can't distinguish a
+> legitimate out-of-root write (test temp dirs, user-configured external storage)
+> from a cwd bug (both are absolute paths outside root), so it false-positived on
+> ~12 legit tests while missing in-subdir strays. Sound enforcement is Part 1
+> (static gate) + Part 3 (acceptance tree-walk); the guard is the opt-in CI/dev
+> regression net ADR-0137 Open-Q1 contemplated. **AC#5** (3 green-streak with
+> time-gaps) is an artificial time-gate — ignored. **2 sites flagged** for later
+> review (`init/helpers-generator.ts` generated-script `.claude-flow` path;
+> `commands/ruvector/import.ts` cwd temp file). Original proposal status below.
 - **Status**: **Proposed (2026-05-03)** — concrete campaign with phased rollout. Supersedes the Strategy-B band-aid from commit `7fbcfle` on `forks/ruflo` `main`.
 - **Date**: 2026-05-03
 - **Deciders**: Henrik Pettersen

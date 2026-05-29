@@ -1,5 +1,22 @@
 # ADR-0149: Guidance MCP coverage gaps — `guidance_*` is significantly out of sync with actual MCP/plugin surface
 
+> **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** Landed at `@sparkleideas/*`
+> patch.372 (forks/ruflo `66e28c7fd`). **Phase 2 done:** the guidance
+> `CAPABILITY_CATALOG` was reconciled to **0 phantoms** against the 317 real
+> registered tool names (source of truth = `mcp-client.ts` `TOOL_REGISTRY`, not
+> the stale `mcp-surface-manifest.json`): name-format fixes
+> (`hooks_pre_task`→`hooks_pre-task`, `hive_mind_*`→`hive-mind_*`), wrong-name
+> peers (`agent_stop`→`agent_terminate`, `swarm_terminate`→`swarm_shutdown`, …),
+> verified-absent fabrications dropped, fabricated `security_*` remapped to real
+> `aidefence_*`, and 6 zero-coverage areas added (agentdb, task, aidefence,
+> workflows, observability, knowledge-graph). **Phase 3's durable piece shipped:**
+> a drift-test (`v3/@claude-flow/cli/__tests__/adr0149-guidance-coverage.test.ts`,
+> 29/29, negative-control verified) asserts catalog ⊆ registry — making the
+> phantom class non-regressible. **Deferred:** Phase 3's full runtime
+> auto-generation (the drift-test makes the hand-curated catalog self-policing,
+> so auto-gen is low marginal value — cf this ADR's Alternative C). `federation`
+> and `rvf` were added with `tools:[]` (no MCP tool prefix exists for them).
+> Original proposal status below.
 - **Status**: Proposed (severity quantified 2026-05-06 via 15-agent ADR-0152 swarm)
 - **Date**: 2026-05-06
 - **Deciders**: Henrik Pettersen
