@@ -1,5 +1,11 @@
 # ADR-0101: Fork README Update Program — Delta Prelude per Fork
 
+> **[DECISIONS RESOLVED 2026-05-29 → see [[ADR-0270]]]** All 5 §Open Decisions
+> answered by the user (installer-audience; ruv-FANN one-paragraph note; migration
+> pointer in every user-facing fork; fix all 6 stale URLs split-by-purpose; single
+> ADR). Re-scoped much smaller after the upstream README rewrite (ruflo 7541→408
+> lines). No longer blocked on input — ready to implement, no forcing function.
+> See §Open Decisions (resolved) below.
 - **Status**: Proposed 2026-04-26 — planning phase, several decisions deferred to user (see §Open Decisions).
 - **Date**: 2026-04-26
 - **Scope**: Update `README.md` in each of the 4 forks (`forks/ruflo`, `forks/agentic-flow`, `forks/ruv-FANN`, `forks/ruvector`) to reflect that they ship as `@sparkleideas/*` packages built from upstream HEAD with pinned cross-package deps. **Not in scope:** rewriting upstream content, modifying ADRs, the `ruflo-patch` repo's own `README.md`.
@@ -163,13 +169,28 @@ Each fork's work splits into **Discovery → Draft → Review → Commit**. Disc
 4. Review and commit happen **per fork sequentially** (one PR at a time so we can correct prelude template based on first PR's review feedback before propagating to later forks).
 5. Promote this ADR from **Proposed → In Progress** when first fork's drafting begins; **In Progress → Implemented** when all 4 PRs merged and verified.
 
-## Open Decisions (require user input before implementation)
+## Open Decisions — RESOLVED 2026-05-29 (user, see [[ADR-0270]])
 
-1. **Audience priority for prelude** — end-user installer, migrator-from-upstream, or both?
-2. **`ruv-FANN` scope** — full prelude template, or one-paragraph note? (196-line README + small patch surface argues for the latter.)
-3. **Migration guide depth** — only `ruflo`, or every fork that has user-facing install instructions?
-4. **Stale URL policy** — convert all `ruvnet/claude-flow` references to `ruvnet/ruflo`, even in non-prose contexts (badges, links inside upstream technical sections)? Or leave technical references and only update top-of-readme links?
-5. **Single ADR for the program, or per-fork sub-ADRs?** — current proposal: one ADR (this one) for the program; per-fork PRs cite this ADR. Promote to Implemented when all 4 are merged.
+All five answered; this ADR is no longer blocked on user input. Re-scope note:
+the upstream README rewrite (ruflo 7541→408 lines, `9250df2df`) shrank the job
+dramatically — the prelude + ~6 stale-URL fixes are now comfortably one commit.
+
+1. **Audience priority** → **end-user installer.** The prelude leads with "what
+   this is + how to install `@sparkleideas/ruflo`", not a migration narrative.
+2. **`ruv-FANN` scope** → **one-paragraph "this is the sparkling fork of
+   ruvnet/ruv-FANN" note** (it's the lowest-level Rust crate, ~196-line README,
+   never installed directly by end-users). Full prelude on the other 4.
+3. **Migration guide depth** → **a migration pointer in every user-facing fork**
+   (ruflo, agentdb, ruvector, agentic-flow) — not ruflo-only.
+4. **Stale-URL policy** → **fix all 6** (`ruvnet/claude-flow`: ruflo 3, ruvector 2,
+   agentic-flow 1), **split-by-purpose**: attribution / "forked from" links →
+   `ruvnet/ruflo`; badges + issue/support links → the sparkling fork repo.
+5. **ADR structure** → **single ADR-0101** for the whole program (no per-fork
+   sub-ADRs — the re-scoped work is too small to warrant them).
+
+**Status:** unblocked, ready to implement (small mechanical change). Not a
+forcing-function item — schedule when convenient; promote to Implemented when the
+prelude + note + migration pointers + URL fixes land across the 5 forks.
 
 ## Consequences
 
