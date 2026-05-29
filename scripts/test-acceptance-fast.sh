@@ -424,6 +424,18 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0263"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0268"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0268-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0268-checks.sh"
+    echo "── ADR-0268 (autonomous skill-promotion flywheel) ──"
+    # Reuse the fast runner's ACCEPT_TEMP install — no dedicated per-ADR install.
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0268 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0268-flywheel" check_adr0268_flywheel
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"

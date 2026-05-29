@@ -248,3 +248,45 @@ Refined shape (everything else in this ADR unchanged):
 * **Later: swarm `queen-coordinator.learnFromOutcome:2462`** as a second
   reward-bearing record site (it carries a computed reward — upstream's SONA/
   worker-learning subsystem is the model).
+
+## Amendment: validation swarm + completion (2026-05-29)
+
+A 4-validator read-only swarm (correctness / fail-loud-hot-path-data-loss /
+upstream-fidelity / completeness) reviewed the implemented loop after the
+record→promote half went CI-green (`adr0268-flywheel` PASS, ~3s, reusing
+ACCEPT_TEMP — no dedicated install).
+
+**Verdict: correct (no bugs across all 5 links), sound (reward gate / fail-loud /
+data-loss all pass), faithful (fulfils ADR-053 #1209/#1215; AHEAD on
+retrieval/reach).** Three blockers to honest completion were found and CLOSED:
+
+1. **Retrieve-half verification (§Confirmation).** `hooks_pre-task` now injects the
+   promoted skill (`relevantSkills` via `retrieveSkillByType`); the smoke's Step 5
+   asserts a subsequent same-type pre-task retrieves it — closing the full
+   record→promote→retrieve round-trip (cli `d89c10b3d`, smoke `15c9256`).
+2. **`.github/workflows/` wiring.** `adr0268` added to `test-acceptance-fast.sh` +
+   a dedicated workflow (`.github/workflows/v3-ci-flywheel.yml`), satisfying the
+   wire-into-both rule.
+3. **`hooks_route:1073` dead probe.** Repointed `skills.search` (non-existent
+   method → permanently-false guard) to `deriveTaskType` + `retrieveSkillByType`
+   with the real `Skill` fields, so routing reuses promoted skills.
+
+**Deferred as out-of-scope follow-ons (with rationale; not required for the loop
+to function):**
+- **Cohesion guard** — the controlled 17-label vocabulary bounds harmful merges;
+  the intra-group-cosine guard is a refinement, deferred pending a real episode
+  corpus (`feedback-corpus-evidence-before-feature-work`).
+- **Within-session threshold trigger** — promotion fires at session-end; mid-session
+  is a latency optimization, not loop-closure.
+- **`code` at the record site** — `hooks_post-task` carries no solution code (as
+  `executeAgentTask` carries no reward); the column is plumbed end-to-end for a
+  future code-bearing producer. Skills form with description + patterns.
+- **Causal-observe re-keyed on `task.type`** — outside this ADR's skill-flywheel
+  scope (the post-task causal edge stays `taskId`-keyed).
+- **Phase B** (`withBulkWrite`/`bulkDispatch` deep audit) — explicitly deferred.
+
+The R7 write/read `deriveTaskType` input asymmetry (recall-rate, not corruption)
+is owned in-code; the dead `registry.consolidate()` probe at `hooks-tools.ts:2422`
+is bypassed by the live `routeSessionOp 'end'` path (harmless, guarded). With the
+three blockers closed and the full round-trip CI-verified, this ADR flips to
+`completed: true` on the green release that builds these final commits.
