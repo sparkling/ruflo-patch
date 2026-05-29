@@ -85,8 +85,8 @@ the queryable backlog this ADR anchors.
 | **DORMANT** (no successor, no forcing function) | **0099** (perf-testing program) | No `test:perf` script, no `tests/benchmarks/wallclock/`, no `docs/reports/perf/`, no `--promote`/`--calibrate` flags. ADR admits zero motivating regressions. |
 | | **0101** (fork-README program) | Zero `@sparkleideas` prelude in any of the 4 fork READMEs; stale `ruvnet/claude-flow` URLs remain; 5 §Open Decisions never answered; partly depends on the unbuilt 0102. |
 | **DONE-WITH-RESIDUAL** | **0100** (project-root resolution) | All 4 "pending" artifacts now exist (sentinel writer `init/executor.ts`, `__tests__/find-project-root.test.ts`, `lib/acceptance-adr0100-checks.sh`, `scripts/check-no-cwd-in-handlers.sh`). Residual = the broad site-eradication, owned by 0137. **Amended.** |
-| | **0140** (hive-mind-advanced) | Piece 1 (the 718-line fork-authored skill, commit `d3fbfccee`) shipped + init-delivered. Residuals: Piece 2 council templates (**broken refs in the shipped skill** — see §Confirmation), Piece 5 handler tests, Piece 6 team-binding. |
-| | **0138** (working council template) | Its deliverable = 0140 Piece 2 template = unbuilt (same residual). |
+| | **0140** (hive-mind-advanced) | Piece 1 (the 718-line fork-authored skill, commit `d3fbfccee`) shipped + init-delivered. **Piece 2 council templates shipped 2026-05-29** (defect fixed — see §Confirmation #3). Residuals: Piece 5 handler tests, Piece 6 team-binding. |
+| | **0138** (working council template) | Its deliverable = 0140 Piece 2 templates — **delivered 2026-05-29** (`generic-council-protocol.md` + `worker-contract.md`). |
 | | **0156** (memory init --force) | Impl shipped (`cfb0cea02`), corroborated by [[ADR-0164]] (`completed: true`). Residual = `tests/unit/adr0156-memory-init-force.test.mjs` not wired into the standard CICD runner (`[[feedback-always-wire-tests-into-cicd]]`). **Amended.** |
 | | **0098** (swarm-init sprawl) | Fix shipped (`32c13d322`); acceptance check present; state file self-caps (21 clean `terminated`). Residual = paired unit test (ADR-0097 Tier Y/Z). Upstream-issue pending is policy-moot (`[[feedback-no-upstream-donate-backs]]`). |
 | | **0104** (queen orchestration) | Implemented; acceptance + unit coverage exist. Residual = a thin standalone smoke script. |
@@ -138,9 +138,12 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger.
    anchor for the §"Genuinely open" set.
 3. A concrete defect confirmed during the audit: the init-delivered
    `hive-mind-advanced/SKILL.md` (in `.claude/skills/` and `plugins/ruflo-hive-mind/skills/`)
-   references `templates/generic-council-protocol.md` and `templates/worker-contract.md`
-   (lines 186/208/219) that **do not exist** in the fork — a live broken reference
-   ([[ADR-0140]] Piece 2). Tracked here; fix or de-reference independently.
+   referenced `templates/generic-council-protocol.md` and `templates/worker-contract.md`
+   (lines 186/208/219) that did not exist — a live broken reference ([[ADR-0140]] Piece 2).
+   **RESOLVED 2026-05-29**: both templates authored + placed in both skill dirs
+   (byte-identical); references resolve; `smoke-skills-lockstep` + `smoke-init-bundle-invariants`
+   green. Closes [[ADR-0140]] Piece 2 + [[ADR-0138]]. ([[ADR-0140]] Piece 5 tests + Piece 6
+   team-binding remain open; [[ADR-0146]] still blocked on Piece 6.)
 4. When every ADR in §"Genuinely open" is closed or re-homed, flip this ADR to
    `completed: true`.
 

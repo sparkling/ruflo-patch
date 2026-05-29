@@ -1,6 +1,6 @@
 # ADR-0140: hive-mind-advanced — implementation outline grounded in pre-regression working version
 
-- **Status**: Proposed (2026-05-04). Outlines what the `hive-mind-advanced` skill should actually contain and how the surrounding fork-side code should support it, grounded in three independent evidence sources that pre-date the late-March 2026 regression. **Does not** modify ADR-0139's spec — extends it with implementation guidance.
+- **Status**: **[RECONCILED 2026-05-29 → DONE-WITH-RESIDUAL; see [[ADR-0270]]]** Piece 1 (the rewritten SKILL.md) shipped (`d3fbfccee`) and **Piece 2 (the two `templates/` files — `generic-council-protocol.md` + `worker-contract.md`) shipped 2026-05-29** in both `.claude/skills/hive-mind-advanced/templates/` and `plugins/ruflo-hive-mind/skills/hive-mind-advanced/templates/` (closing the broken-reference defect ADR-0270 §Confirmation #3 + ADR-0114 §Done U5). Remaining residuals: **Piece 5** (handler-invocation tests for `hive-mind_{join,leave,broadcast,memory}`) and **Piece 6** (substrate-dictated team binding — the blocker for [[ADR-0146]]). Original status preserved below. — Proposed (2026-05-04). Outlines what the `hive-mind-advanced` skill should actually contain and how the surrounding fork-side code should support it, grounded in three independent evidence sources that pre-date the late-March 2026 regression. **Does not** modify ADR-0139's spec — extends it with implementation guidance.
 - **Date**: 2026-05-04
 - **Deciders**: Henrik Pettersen
 - **Builds on**:
@@ -819,7 +819,7 @@ This consolidates: arm A (skipped, wrong-name); arm B (correct-name, no-preamble
 
 ### Piece 6: Substrate-dictated team binding (Agent Teams integration) — added 2026-05-05
 
-**Status: Proposed (2026-05-05). Not yet implemented.** Implementation is the next step after Piece 1 (SKILL.md rewrite, done 2026-05-05) and Piece 2 (templates, pending).
+**Status: Proposed (2026-05-05). Not yet implemented.** Implementation is the next step after Piece 1 (SKILL.md rewrite, done 2026-05-05) and Piece 2 (templates, shipped 2026-05-29 — see [[ADR-0270]]).
 
 #### Background
 
