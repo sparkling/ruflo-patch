@@ -80,7 +80,6 @@ the queryable backlog this ADR anchors.
 |---|---|---|
 | **GENUINELY OPEN** | **0137** (cwd-eradication campaign) | ~85 `adr-0100-allow:` annotations unfixed in `forks/ruflo` `main`; runtime guard `assertProjectRootAnchored` absent (0 hits); no acceptance check. Campaign never executed. |
 | | **0149** (guidance MCP coverage) | `guidance-tools.ts` still advertises phantom tools (some, e.g. `memory_export`, have since shipped via [[ADR-0255]], so the count is lower than the ADR's); coverage drift-test absent; 3 phases unbuilt. |
-| | **0102** (unified embedding config) | Rust side unbuilt — no `ruvector-config` crate; `embedding_dim: 384` defaults remain in `forks/ruvector`. **Node side already done** via [[ADR-0068]]/[[ADR-0177]] (init writes `embedding.*` keys, 768-dim per `[[reference-embedding-model]]`). |
 | **DORMANT** (no successor, no forcing function) | **0099** (perf-testing program) | No `test:perf` script, no `tests/benchmarks/wallclock/`, no `docs/reports/perf/`, no `--promote`/`--calibrate` flags. ADR admits zero motivating regressions. |
 | | **0101** (fork-README program) | Zero `@sparkleideas` prelude in any of the 4 fork READMEs; stale `ruvnet/claude-flow` URLs remain; 5 §Open Decisions never answered; partly depends on the unbuilt 0102. |
 | **DONE-WITH-RESIDUAL** | **0100** (project-root resolution) | All 4 "pending" artifacts now exist (sentinel writer `init/executor.ts`, `__tests__/find-project-root.test.ts`, `lib/acceptance-adr0100-checks.sh`, `scripts/check-no-cwd-in-handlers.sh`). Residual = the broad site-eradication, owned by 0137. **Amended.** |
@@ -93,6 +92,7 @@ the queryable backlog this ADR anchors.
 | | **0065** (config centralization) | P3 actually mostly shipped despite "P3 deferred" headline; only the explicitly-*rejected* graph-consolidation is undone → effectively none. |
 | | **0114** (swarm/hive-mind model) | Folded; U4/U5 code shipped despite unchecked §Done boxes; only doc back-reference chores remain. **Amended.** |
 | | **0115** (iterative-discussion regression) | Regression-A fix live in `init/claudemd-generator.ts:72-83`; Regression B out-of-scope (upstream). **Amended.** |
+| | **0102** (unified embedding config) | **CLOSED 2026-05-29** (was GENUINELY OPEN). Node memory config chain delivered (`resolve-config.ts` — 768 default + refined 384→768 gate, [[ADR-0068]]/[[ADR-0177]]); Rust `ruvector-config` unification **DECLINED** — the residual `embedding_dim: 384` literals are ruvllm's *internal routing-index* presets, not the memory path, and `ruvllm_hnsw_create` already takes dim from the caller (validated `[1,100k]`). Standalone-`cargo add ruvllm`-only beneficiary; no fork consumer, no forcing function; no-donate-back. **Amended.** |
 | **SUPERSEDED / CLOSED / EXECUTED** (no work; stale prose only) | **0133** (RVF concurrent-write regression) | **Resolved** via stale-binary rebuild (`411cca1`/`bec5606`); `t3-2-concurrent` passes "6/6 persisted" in current acceptance. "Blocks ADR-0094" is void (0094 closed 2026-04-21, before this ADR). **Amended.** |
 | | **0134** (native-artifact rebuild) | **Superseded** by [[ADR-0150]] (napi) + [[ADR-0232]] (wasm); its own `native-rebuild.sh`/`.native-targets.sh` design never built. **Amended.** |
 | | **0139** (hive-mind-advanced spec) | Spec consumed by 0140. |
@@ -111,7 +111,6 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger.
 |---|---|---|
 | **0137** | ~85 `adr-0100-allow:` sites → real `findProjectRoot()` fixes; the `assertProjectRootAnchored` runtime write-guard; non-root-cwd acceptance check | Mechanical campaign; no external blocker — symptom currently *masked* by the `**/.claude-flow/` gitignore rule, not fixed |
 | **0149** | Reconcile `guidance-tools.ts` (drop phantoms / add real tools); coverage drift-test | None forcing; guidance keeps mis-advertising until scheduled |
-| **0102** | Rust `ruvector-config` crate + shared schema; remove `embedding_dim: 384` literals | Standalone-ruvector Rust users get 384-dim; no forcing function (Node path already 768) |
 | **0099** | Whole perf-testing program | An actual logged perf regression |
 | **0101** | Per-fork README prelude + stale-URL fix | Its 5 §Open Decisions need user answers; nothing forces it |
 
@@ -130,9 +129,11 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger.
 
 ### Confirmation
 
-1. The eight amended ADRs (0100, 0114, 0115, 0133, 0134, 0156, 0158, 0159) each
+1. The nine amended ADRs (0100, 0102, 0114, 0115, 0133, 0134, 0156, 0158, 0159) each
    open with a `[RECONCILED 2026-05-29 → …; see ADR-0270]` marker; their original
-   status text is preserved verbatim after it.
+   status text is preserved verbatim after it. (0102 was closed-from-open the same
+   day — product config chain delivered, Rust remainder declined — so it bears a
+   marker too.)
 2. `adr-index` surfaces THIS ADR (`completed: false`, tag `outstanding-work`) as the
    anchor for the §"Genuinely open" set.
 3. A concrete defect confirmed during the audit: the init-delivered
@@ -154,4 +155,4 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger.
 * [[ADR-0257]] / [[ADR-0269]] — the defer-with-trigger / queryable-tracker pattern this ADR follows.
 * [[ADR-0233]] / [[ADR-0201]] — the audit "Reviews still owed" carry-forward (runtime perf/leak G-16-014; `archive/` skill pollution) — adjacent outstanding work not re-listed here.
 * `[[feedback-old-adr-status-lines-go-stale]]` — the method this audit used and the durable lesson.
-* Amended ADRs: [[ADR-0100]], [[ADR-0114]], [[ADR-0115]], [[ADR-0133]], [[ADR-0134]], [[ADR-0156]], [[ADR-0158]], [[ADR-0159]].
+* Amended ADRs: [[ADR-0100]], [[ADR-0102]], [[ADR-0114]], [[ADR-0115]], [[ADR-0133]], [[ADR-0134]], [[ADR-0156]], [[ADR-0158]], [[ADR-0159]].

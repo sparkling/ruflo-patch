@@ -1,5 +1,23 @@
 # ADR-0102: Unified Embedding & Index Config — Cross-Context Schema
 
+> **[RECONCILED 2026-05-29 → CLOSED; see [[ADR-0270]]]** The product concern —
+> config-chain-driven embedding/index parameters — is **delivered on the Node
+> path the fork actually ships**: `v3/@claude-flow/memory/src/resolve-config.ts`
+> resolves model/dimension/HNSW through the 4-layer chain (768-dim mpnet default
+> + refined 384→768 safety gate that lets genuine 384-dim models through), per
+> [[ADR-0068]]/[[ADR-0177]] and `[[reference-embedding-model]]`. The unbuilt
+> remainder (the `ruvector-config` Rust crate + removing the `embedding_dim: 384`
+> presets in `crates/ruvllm/src/claude_flow/*` and `crates/ruvector-crv/src/types.rs`)
+> is **DECLINED, not deferred**: those literals are ruvllm's *internal
+> routing-index* defaults, not the memory path the config chain governs, and the
+> shipped `ruvllm_hnsw_create` MCP tool already takes the dimension from the caller
+> (validated `[1, 100_000]`, no hardcoded 384). The sole beneficiary of the Rust
+> unification is a hypothetical standalone `cargo add ruvllm` user — the
+> "imagine this as a public project" framing this ADR opened with — a
+> hypothetical-failure-case (`[[feedback-corpus-evidence-before-feature-work]]`)
+> with no fork consumer and no forcing function; the fork does not donate this
+> work upstream (`[[feedback-no-upstream-donate-backs]]`). Original proposal
+> status preserved below.
 - **Status**: Proposed 2026-04-26 — pending implementation; supersedes nothing, extends ADR-0068
 - **Date**: 2026-04-26
 - **Scope**: One canonical config file driving embedding model, dimension, distance metric, HNSW (m / efConstruction / efSearch), and quantization across both the ruflo orchestration layer (Node/TS) and the ruvector storage+index layer (Rust). All consumer sites read from a single loader; no hardcoded literals in business code.
