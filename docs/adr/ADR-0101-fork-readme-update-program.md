@@ -1,11 +1,16 @@
 # ADR-0101: Fork README Update Program — Delta Prelude per Fork
 
-> **[DECISIONS RESOLVED 2026-05-29 → see [[ADR-0270]]]** All 5 §Open Decisions
-> answered by the user (installer-audience; ruv-FANN one-paragraph note; migration
-> pointer in every user-facing fork; fix all 6 stale URLs split-by-purpose; single
-> ADR). Re-scoped much smaller after the upstream README rewrite (ruflo 7541→408
-> lines). No longer blocked on input — ready to implement, no forcing function.
-> See §Open Decisions (resolved) below.
+> **[IMPLEMENTED 2026-05-29 → see [[ADR-0270]]]** All 5 §Open Decisions answered
+> by the user (installer-audience; ruv-FANN one-paragraph note; migration pointer
+> in every user-facing fork; fix all 6 stale URLs split-by-purpose; single ADR),
+> then **shipped the same day** across all 5 forks: installer prelude + migration
+> pointer + forked-from attribution on the 4 user-facing READMEs
+> (`@sparkleideas/{ruflo,agentdb,ruvector,agentic-flow}`), a one-paragraph
+> fork-identity note on `ruv-FANN`, and all 6 stale `ruvnet/claude-flow` URLs
+> repointed to the sparkling fork (split-by-purpose). Fork commits: ruflo
+> `106d6cc6b`, agentdb `ed23fc6`, ruvector `28a2669ec`, agentic-flow `814d319d`,
+> ruv-FANN `f9494d2`. Re-scoped small after the upstream README rewrite (ruflo
+> 7541→408 lines). See §Open Decisions (resolved) below.
 - **Status**: Proposed 2026-04-26 — planning phase, several decisions deferred to user (see §Open Decisions).
 - **Date**: 2026-04-26
 - **Scope**: Update `README.md` in each of the 4 forks (`forks/ruflo`, `forks/agentic-flow`, `forks/ruv-FANN`, `forks/ruvector`) to reflect that they ship as `@sparkleideas/*` packages built from upstream HEAD with pinned cross-package deps. **Not in scope:** rewriting upstream content, modifying ADRs, the `ruflo-patch` repo's own `README.md`.
@@ -188,9 +193,8 @@ dramatically — the prelude + ~6 stale-URL fixes are now comfortably one commit
 5. **ADR structure** → **single ADR-0101** for the whole program (no per-fork
    sub-ADRs — the re-scoped work is too small to warrant them).
 
-**Status:** unblocked, ready to implement (small mechanical change). Not a
-forcing-function item — schedule when convenient; promote to Implemented when the
-prelude + note + migration pointers + URL fixes land across the 5 forks.
+**Status:** **IMPLEMENTED 2026-05-29** — prelude + note + migration pointers + 6
+URL fixes landed across all 5 forks (commit SHAs in the top marker).
 
 ## Consequences
 

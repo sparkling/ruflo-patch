@@ -81,7 +81,7 @@ the queryable backlog this ADR anchors.
 | **IMPLEMENTED 2026-05-29** (was GENUINELY OPEN) | **0137** (cwd-eradication campaign) | **Landed at patch.372** (`627b6cf14`/`407eef14f`): 70 sites → `findProjectRoot()` (relocated to `@claude-flow/shared/fs`); 21 documented `intentional-cwd`; grep gate **0 violations**; 4 non-root-cwd acceptance scenarios (H/I/J/K) **green** (zero stray `.claude-flow/`). **Deviation:** write-path guard is opt-in (`RUFLO_ADR0137_ENFORCE=1`), not always-on — a release proved always-on is unsound at the storage layer (can't tell a legit temp/external path from a cwd bug). 2 sites flagged for review. **Amended.** |
 | | **0149** (guidance MCP coverage) | **Landed at patch.372** (`66e28c7fd`): catalog reconciled to **0 phantoms** vs the 317 real registered tools (`mcp-client.ts` TOOL_REGISTRY, not the stale manifest); drift-test (`adr0149-guidance-coverage.test.ts`, 29/29) makes the phantom class non-regressible; 6 zero-coverage areas added. Phase 3 full auto-generation deferred (drift-test makes the catalog self-policing). **Amended.** |
 | **DORMANT** (no successor, no forcing function) | **0099** (perf-testing program) | **Re-validated 2026-05-29: every artifact ABSENT** — no `test:perf` script, no `tests/benchmarks/wallclock/`, no `docs/reports/perf/`, no `--promote`/`--calibrate`/`--skip-perf-check` flags, no `publish:fork` staleness gate. ADR self-admits zero motivating regressions. `scripts/analyze-acceptance-perf.mjs` is unrelated (acceptance-pipeline timing, not the dedicated wallclock-benchmark program) — and is the first-line substitute the ADR itself names. |
-| | **0101** (fork-README program) | **Re-validated 2026-05-29:** zero `@sparkleideas` prelude in **all 5** fork READMEs (agentdb is the 5th — pass-1 said 4); stale `ruvnet/claude-flow` URLs total **6, concentrated** (ruflo 3, ruvector 2, agentic-flow 1) — far below the ADR's ~15-20 estimate because upstream rewrote ruflo's README (7541→408 lines, `9250df2df`), invalidating the ADR's inventory. **5 §Open Decisions RESOLVED 2026-05-29** (installer-audience; ruv-FANN one-paragraph note; migration pointer in every user-facing fork; fix all 6 URLs split-by-purpose; single ADR) + **0102 dependency CLEARED** → no longer blocked on anything; a ready small mechanical task (prelude on 4 forks + note on ruv-FANN + 6 URL fixes + migration pointers), no forcing function. |
+| **IMPLEMENTED 2026-05-29** (was DORMANT) | **0101** (fork-README program) | Decisions resolved + **shipped across all 5 forks the same day**: installer prelude + migration pointer + forked-from-`ruvnet/*` attribution on the 4 user-facing READMEs (`@sparkleideas/{ruflo,agentdb,ruvector,agentic-flow}`); one-paragraph fork-identity note on `ruv-FANN`; all 6 stale `ruvnet/claude-flow` URLs → sparkling fork (split-by-purpose). Commits: ruflo `106d6cc6b`, agentdb `ed23fc6`, ruvector `28a2669ec`, agentic-flow `814d319d`, ruv-FANN `f9494d2`. (Re-scoped small after upstream rewrote ruflo's README 7541→408 lines.) **Amended.** |
 | **DONE-WITH-RESIDUAL** | **0100** (project-root resolution) | All 4 "pending" artifacts now exist (sentinel writer `init/executor.ts`, `__tests__/find-project-root.test.ts`, `lib/acceptance-adr0100-checks.sh`, `scripts/check-no-cwd-in-handlers.sh`). Residual = the broad site-eradication, owned by 0137. **Amended.** |
 | | **0140** (hive-mind-advanced) | Piece 1 (the 718-line fork-authored skill, commit `d3fbfccee`) shipped + init-delivered. **Piece 2 council templates shipped 2026-05-29** (defect fixed — see §Confirmation #3). **Piece 5 handler tests added 2026-05-29** (`e69683975` — join/leave/broadcast; memory was already covered by ADR-0122/0123/0131). **Piece 6 DECLINED 2026-05-29** — team comms is a swarm concern (already at the swarm skill layer); binding hive workers breaks dialectic independence + would mutate the shared MCP surface. No open residuals. |
 | | **0138** (working council template) | Its deliverable = 0140 Piece 2 templates — **delivered 2026-05-29** (`generic-council-protocol.md` + `worker-contract.md`). |
@@ -105,12 +105,11 @@ the queryable backlog this ADR anchors.
 
 ### Genuinely open (the queryable backlog this ADR anchors)
 
-Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revalidated 2026-05-29 (4-agent artifact check). **0137 + 0149 IMPLEMENTED 2026-05-29** (patch.372) → struck from the backlog; the actionable-open set is now empty. Only the **2 DORMANT** items remain, both gated on an external trigger / user input:
+Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revalidated 2026-05-29 (4-agent artifact check). On 2026-05-29 **0137 + 0149 were IMPLEMENTED** (patch.372) and **0101 was IMPLEMENTED** (5-fork README work) → all struck from the backlog. **Just 1 DORMANT item remains:**
 
 | ADR | Open work | Trigger / blocker |
 |---|---|---|
-| **0099** | Whole perf-testing program | An actual logged perf regression |
-| **0101** | Per-fork README work: full `@sparkleideas` prelude on 4 user-facing forks + one-paragraph note on ruv-FANN + migration pointer each + 6 stale-URL fixes (split-by-purpose) | **Decisions RESOLVED 2026-05-29; unblocked.** No forcing function — schedule when convenient (small, one commit) |
+| **0099** | Whole perf-testing program | An actual logged perf regression (none has ever occurred; purely speculative) |
 
 ### Consequences
 
@@ -127,7 +126,7 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revali
 
 ### Confirmation
 
-1. The eleven amended ADRs (0100, 0102, 0114, 0115, 0133, 0134, 0137, 0149, 0156, 0158, 0159)
+1. The twelve amended ADRs (0100, 0101, 0102, 0114, 0115, 0133, 0134, 0137, 0149, 0156, 0158, 0159)
    each open with a `[RECONCILED / CLOSED / IMPLEMENTED 2026-05-29 → …; see ADR-0270]`
    marker; their original status text is preserved verbatim after it. (0102 was
    closed-from-open the same day — product config chain delivered, Rust remainder
@@ -154,4 +153,4 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revali
 * [[ADR-0257]] / [[ADR-0269]] — the defer-with-trigger / queryable-tracker pattern this ADR follows.
 * [[ADR-0233]] / [[ADR-0201]] — the audit "Reviews still owed" carry-forward (runtime perf/leak G-16-014; `archive/` skill pollution) — adjacent outstanding work not re-listed here.
 * `[[feedback-old-adr-status-lines-go-stale]]` — the method this audit used and the durable lesson.
-* Amended ADRs: [[ADR-0100]], [[ADR-0102]], [[ADR-0114]], [[ADR-0115]], [[ADR-0133]], [[ADR-0134]], [[ADR-0137]], [[ADR-0149]], [[ADR-0156]], [[ADR-0158]], [[ADR-0159]].
+* Amended ADRs: [[ADR-0100]], [[ADR-0101]], [[ADR-0102]], [[ADR-0114]], [[ADR-0115]], [[ADR-0133]], [[ADR-0134]], [[ADR-0137]], [[ADR-0149]], [[ADR-0156]], [[ADR-0158]], [[ADR-0159]].
