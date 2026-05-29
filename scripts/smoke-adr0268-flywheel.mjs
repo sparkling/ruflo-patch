@@ -71,9 +71,12 @@ async function main() {
     cli = installAndInit(tempDir, perf, REGISTRY);
   }
 
-  // Unique, slug-safe agent type per run → unique task_type → deterministic
-  // assertions even when the shared db carries episodes from earlier checks.
-  const tag = `adr0268x${Date.now().toString(36)}`;
+  // A controlled-vocabulary term so BOTH sides derive the SAME task_type key:
+  // the record side (post-task `-a authentication` → agentType tier) and the
+  // retrieve side (pre-task `-d "...authentication..."` → classify tier). The
+  // smoke runs in a fresh isolated subdir (its own .swarm/memory.db), so a fixed
+  // term is still deterministic — no prior 'authentication' skill exists there.
+  const tag = 'authentication';
 
   // Step 1 — RECORD: 3 post-task hooks, same agent type, explicit quality 0.9
   // (promotion-eligible). task_type derives from `-a <tag>`.
@@ -110,6 +113,24 @@ async function main() {
       if (sk >= 1) pass(`4: skill '${tag}' promoted from episodes (flywheel closed)`);
       else fail('4: skill promoted', `no skill named '${tag}' after session-end (got ${sk})`);
     }
+  }
+
+  // Step 5 — RETRIEVE (the §Confirmation half: "a subsequent same-type task
+  // retrieves it"). pre-task derives task_type from the description (classify
+  // tier) → resolves to the same 'authentication' key → retrieveSkillByType
+  // returns the promoted skill in the relevantSkills envelope.
+  log(`[smoke] retrieve: hooks pre-task (-d "...${tag}...") --format json`);
+  const pt = runCli(cli, ['hooks', 'pre-task', '-i', `${tag}-pre`, '-d', `investigate the ${tag} failure`, '--format', 'json'], tempDir);
+  let relevant = [];
+  try {
+    const out = pt.stdout || '';
+    const s = out.indexOf('{'); const e = out.lastIndexOf('}');
+    if (s >= 0 && e > s) relevant = JSON.parse(out.slice(s, e + 1)).relevantSkills || [];
+  } catch (err) { log(`  WARN pre-task json parse failed: ${(pt.stdout || pt.stderr || '').slice(0, 200)}`); }
+  if (Array.isArray(relevant) && relevant.some((sk) => sk && sk.name === tag)) {
+    pass(`5: pre-task retrieved the promoted '${tag}' skill (full record->promote->retrieve round-trip)`);
+  } else {
+    fail('5: pre-task retrieves promoted skill', `relevantSkills lacked '${tag}': ${JSON.stringify(relevant).slice(0, 200)}`);
   }
 
   log(`\n[ADR-0268 smoke] ${passed} passed, ${failed} failed`);
