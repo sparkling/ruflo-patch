@@ -81,11 +81,10 @@ the queryable backlog this ADR anchors.
 | **GENUINELY OPEN** | **0137** (cwd-eradication campaign) | ~85 `adr-0100-allow:` annotations unfixed in `forks/ruflo` `main`; runtime guard `assertProjectRootAnchored` absent (0 hits); no acceptance check. Campaign never executed. |
 | | **0149** (guidance MCP coverage) | `guidance-tools.ts` still advertises phantom tools (some, e.g. `memory_export`, have since shipped via [[ADR-0255]], so the count is lower than the ADR's); coverage drift-test absent; 3 phases unbuilt. |
 | | **0102** (unified embedding config) | Rust side unbuilt — no `ruvector-config` crate; `embedding_dim: 384` defaults remain in `forks/ruvector`. **Node side already done** via [[ADR-0068]]/[[ADR-0177]] (init writes `embedding.*` keys, 768-dim per `[[reference-embedding-model]]`). |
-| | **0146** (substrate-dictated team binding) | Blocked on [[ADR-0140]] Piece 6, which is itself unbuilt (`requiredSetup`/`spawnTemplate`/`TeamCreate` → 0 hits in `swarm-tools.ts`/`hive-mind-tools.ts`). |
 | **DORMANT** (no successor, no forcing function) | **0099** (perf-testing program) | No `test:perf` script, no `tests/benchmarks/wallclock/`, no `docs/reports/perf/`, no `--promote`/`--calibrate` flags. ADR admits zero motivating regressions. |
 | | **0101** (fork-README program) | Zero `@sparkleideas` prelude in any of the 4 fork READMEs; stale `ruvnet/claude-flow` URLs remain; 5 §Open Decisions never answered; partly depends on the unbuilt 0102. |
 | **DONE-WITH-RESIDUAL** | **0100** (project-root resolution) | All 4 "pending" artifacts now exist (sentinel writer `init/executor.ts`, `__tests__/find-project-root.test.ts`, `lib/acceptance-adr0100-checks.sh`, `scripts/check-no-cwd-in-handlers.sh`). Residual = the broad site-eradication, owned by 0137. **Amended.** |
-| | **0140** (hive-mind-advanced) | Piece 1 (the 718-line fork-authored skill, commit `d3fbfccee`) shipped + init-delivered. **Piece 2 council templates shipped 2026-05-29** (defect fixed — see §Confirmation #3). **Piece 5 handler tests added 2026-05-29** (`e69683975` — join/leave/broadcast; memory was already covered by ADR-0122/0123/0131). Residual: Piece 6 team-binding. |
+| | **0140** (hive-mind-advanced) | Piece 1 (the 718-line fork-authored skill, commit `d3fbfccee`) shipped + init-delivered. **Piece 2 council templates shipped 2026-05-29** (defect fixed — see §Confirmation #3). **Piece 5 handler tests added 2026-05-29** (`e69683975` — join/leave/broadcast; memory was already covered by ADR-0122/0123/0131). **Piece 6 DECLINED 2026-05-29** — team comms is a swarm concern (already at the swarm skill layer); binding hive workers breaks dialectic independence + would mutate the shared MCP surface. No open residuals. |
 | | **0138** (working council template) | Its deliverable = 0140 Piece 2 templates — **delivered 2026-05-29** (`generic-council-protocol.md` + `worker-contract.md`). |
 | | **0156** (memory init --force) | Impl shipped (`cfb0cea02`), corroborated by [[ADR-0164]] (`completed: true`). Residual = `tests/unit/adr0156-memory-init-force.test.mjs` not wired into the standard CICD runner (`[[feedback-always-wire-tests-into-cicd]]`). **Amended.** |
 | | **0098** (swarm-init sprawl) | Fix shipped (`32c13d322`); acceptance check present; state file self-caps (21 clean `terminated`). Residual = paired unit test (ADR-0097 Tier Y/Z). Upstream-issue pending is policy-moot (`[[feedback-no-upstream-donate-backs]]`). |
@@ -101,6 +100,7 @@ the queryable backlog this ADR anchors.
 | | **0145** (research collection) | Executed (already marked). |
 | | **0158** (multi-type DR indexer) | ODR skills shipped at `~/.claude/skills/` under the **DCAP / ODR-0095** model, NOT this ADR's ONT-0029 design (`.code.md` companions retired). Doc-reconciliation only. **Amended.** |
 | | **0159** (HM decision-records refactor) | Obsolete — migration script never existed; HM converged on DCAP (no `methodology:` field). **Amended.** |
+| | **0146** (substrate-dictated team binding, swarm) | **DECLINED 2026-05-29.** Team comms is a swarm concern, already delivered at the swarm skill layer (`swarm-init/SKILL.md:16` — `TeamCreate`/`Agent`/`SendMessage`); the substrate-dictated mechanism (mutating shared `swarm_*` MCP returns) declined. Un-parented from [[ADR-0140]] Piece 6 (also declined). **Amended.** |
 | | **0103 / 0107 / 0109 / 0110 / 0125 / 0129 / 0132** | All closed via the [[ADR-0118]] T1–T14 tracker (14/14 complete). |
 
 ### Genuinely open (the queryable backlog this ADR anchors)
@@ -112,7 +112,6 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger.
 | **0137** | ~85 `adr-0100-allow:` sites → real `findProjectRoot()` fixes; the `assertProjectRootAnchored` runtime write-guard; non-root-cwd acceptance check | Mechanical campaign; no external blocker — symptom currently *masked* by the `**/.claude-flow/` gitignore rule, not fixed |
 | **0149** | Reconcile `guidance-tools.ts` (drop phantoms / add real tools); coverage drift-test | None forcing; guidance keeps mis-advertising until scheduled |
 | **0102** | Rust `ruvector-config` crate + shared schema; remove `embedding_dim: 384` literals | Standalone-ruvector Rust users get 384-dim; no forcing function (Node path already 768) |
-| **0146** | `swarm_init`/`agent_spawn` return Agent-Teams binding | **[[ADR-0140]] Piece 6** must land + validate first |
 | **0099** | Whole perf-testing program | An actual logged perf regression |
 | **0101** | Per-fork README prelude + stale-URL fix | Its 5 §Open Decisions need user answers; nothing forces it |
 
@@ -142,8 +141,10 @@ Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger.
    (lines 186/208/219) that did not exist — a live broken reference ([[ADR-0140]] Piece 2).
    **RESOLVED 2026-05-29**: both templates authored + placed in both skill dirs
    (byte-identical); references resolve; `smoke-skills-lockstep` + `smoke-init-bundle-invariants`
-   green. Closes [[ADR-0140]] Piece 2 + [[ADR-0138]]. ([[ADR-0140]] Piece 5 tests + Piece 6
-   team-binding remain open; [[ADR-0146]] still blocked on Piece 6.)
+   green. Closes [[ADR-0140]] Piece 2 + [[ADR-0138]]. ([[ADR-0140]] Piece 5 tests added
+   2026-05-29; **Piece 6 DECLINED** — team comms is a swarm concern (already at the swarm
+   skill layer), not a hive one, and the dialectic patterns require worker isolation;
+   [[ADR-0146]] likewise declined + un-parented.)
 4. When every ADR in §"Genuinely open" is closed or re-homed, flip this ADR to
    `completed: true`.
 

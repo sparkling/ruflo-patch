@@ -1,9 +1,9 @@
 # ADR-0146: Substrate-dictated team binding for swarm coordination plugin
 
-- **Status**: **Proposed (2026-05-05). Blocked on ADR-0140 §Piece 6 ratification + first-running validation in fork.** Not yet implemented.
+- **Status**: **[CLOSED 2026-05-29 → DECLINED; see [[ADR-0270]]]** The substrate-dictated mechanism (swarm MCP handlers emitting `requiredSetup`/`spawnTemplate`) is **declined**: it mutates the shared `swarm_*` MCP return surface (shared with the base swarm skill + upstream) — the boundary the swarm/hive split protects — for nothing the skill layer can't already provide. Team coordination is **already** a swarm capability at the skill layer (`plugins/ruflo-swarm/skills/swarm-init/SKILL.md:16` — `TeamCreate` + `Agent` + `SendMessage`, per §Context line 24 of this ADR); enriching that prose is a skill-layer enhancement, not a substrate change. Un-parented from ADR-0140 §Piece 6 (also declined — team comms is a swarm concern, not a hive one). Original status preserved below. — Proposed (2026-05-05). Blocked on ADR-0140 §Piece 6 ratification + first-running validation in fork. Not yet implemented.
 - **Date**: 2026-05-05
 - **Deciders**: Henrik Pettersen
-- **Depends on**: ADR-0140 §Piece 6 (canonical pattern definition for hive-mind)
+- **Depends on**: (none — un-parented 2026-05-29; formerly listed ADR-0140 §Piece 6 as the "canonical pattern," but that piece was declined and team-binding is canonically a **swarm** concern, not a hive-derived one. See [[ADR-0270]].)
 - **Related**: ADR-0140 (hive-mind-advanced implementation outline), ADR-0114 (substrate/protocol/execution layering), ADR-0145 (research collection — §D1 swarm-vs-hive comparison), ADR-0117 (marketplace MCP server registration)
 - **Scope**: Apply the substrate-dictated team binding pattern (defined canonically in ADR-0140 §Piece 6 for hive-mind) to the swarm coordination plugin. Fork-side, per `feedback-no-upstream-donate-backs.md`.
 
