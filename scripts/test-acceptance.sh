@@ -860,6 +860,10 @@ adr0267_lib="${PROJECT_DIR}/lib/acceptance-adr0267-checks.sh"
 adr0263_lib="${PROJECT_DIR}/lib/acceptance-adr0263-checks.sh"
 [[ -f "$adr0263_lib" ]] && source "$adr0263_lib"
 
+# ADR-0268: autonomous skill-promotion flywheel — 1 smoke (reuses ACCEPT_TEMP)
+adr0268_lib="${PROJECT_DIR}/lib/acceptance-adr0268-checks.sh"
+[[ -f "$adr0268_lib" ]] && source "$adr0268_lib"
+
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
 TEMP_DIR="$ACCEPT_TEMP"
@@ -3605,6 +3609,30 @@ if [[ -f "$adr0263_lib" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0263-replay-verification" "$(_elapsed_ms "$_adr0263_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0268: autonomous skill-promotion flywheel round-trip — 1 smoke.
+# record (hooks post-task x3 -> episodes w/ task_type) -> promote (session-end ->
+# routeSessionOp 'end' consolidation -> skill) -> assert episodes + skill. Reuses
+# the main ACCEPT_TEMP install via ADR0255_SMOKE_SHARED_TEMP — no dedicated
+# per-ADR install (the per-ADR-install waste flagged by the perf analysis). The
+# smoke runs in an isolated subdir so its episodes/skills don't perturb other checks.
+# ════════════════════════════════════════════════════════════════════
+_adr0268_start=$(_ns)
+if [[ -f "$adr0268_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0268: autonomous skill-promotion flywheel ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0268-flywheel" "ADR-0268 record-promote-retrieve flywheel" check_adr0268_flywheel "adr0268"
+
+  collect_parallel "adr0268" \
+    "adr0268-flywheel|ADR-0268 record-promote-retrieve flywheel"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0268-flywheel" "$(_elapsed_ms "$_adr0268_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results
