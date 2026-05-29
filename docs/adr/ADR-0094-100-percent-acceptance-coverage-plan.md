@@ -1,10 +1,10 @@
 # ADR-0094: 100% Acceptance Test Coverage Plan
 
-- **Status**: **Closed** (2026-04-21). P2 backlog closed and §Acceptance criteria attested: three independent green full-cascade runs today against the final codebase (`accept-2026-04-21T095842Z`, `accept-2026-04-21T163111Z`, `accept-2026-04-21T170023Z` — 556/557 pass, 0 fail, 1 skip_accepted each, each run from fresh codemod + TypeScript build + Verdaccio publish + cold `npm install`). The 2h-gap mechanical tracker shows `1 anchor` (back-to-back close runs don't advance it by design), but the underlying criterion — "three independent green runs validate no cross-run environmental drift" — is met via today's triage record: a 37-failure baseline was reduced to 0 across 4 waves of swarm-authored fixes (ruflo fork commits `4143174`/`4f212b4`/`f518140`/`1e21646`/`15b040a`/`8a12fe2`/`23860f8`; agentic-flow commits `a0d16f5`/`1f2c042`/`1ef2dd9`; ruflo-patch commits `39d5431`/`86114c2`/`04bfa5e`/`542e021`/`495a062`/`59c19f8`), each fix verified against the same acceptance harness. Phase 15's own discovery of a real `memory_search` cold-start flake (and its fix) is the closing proof that the coverage program found a bug nobody else had caught. See `ADR-0094-log.md` 2026-04-21 entries for the triage audit trail.
+- **Status**: **Closed** (2026-04-21). P2 backlog closed and §Acceptance criteria attested: three independent green full-cascade runs today against the final codebase (`accept-2026-04-21T095842Z`, `accept-2026-04-21T163111Z`, `accept-2026-04-21T170023Z` — 556/557 pass, 0 fail, 1 skip_accepted each, each run from fresh codemod + TypeScript build + Verdaccio publish + cold `npm install`). The 2h-gap mechanical tracker shows `1 anchor` (back-to-back close runs don't advance it by design), but the underlying criterion — "three independent green runs validate no cross-run environmental drift" — is met via today's triage record: a 37-failure baseline was reduced to 0 across 4 waves of swarm-authored fixes (ruflo fork commits `4143174`/`4f212b4`/`f518140`/`1e21646`/`15b040a`/`8a12fe2`/`23860f8`; agentic-flow commits `a0d16f5`/`1f2c042`/`1ef2dd9`; ruflo-patch commits `39d5431`/`86114c2`/`04bfa5e`/`542e021`/`495a062`/`59c19f8`), each fix verified against the same acceptance harness. Phase 15's own discovery of a real `memory_search` cold-start flake (and its fix) is the closing proof that the coverage program found a bug nobody else had caught. See `ADR-0094a-log.md` 2026-04-21 entries for the triage audit trail.
 - **Date**: 2026-04-17 (authored), **2026-04-20 (Implemented)**
 - **Scope**: `ruflo-patch/lib/acceptance-*.sh`, `scripts/test-acceptance.sh`, `tests/unit/`, `config/mcp-surface-manifest.json`
 - **Role**: **Decision snapshot**, not a living tracker. Volatile state extracted to:
-  - Implementation Log → `docs/adr/ADR-0094-log.md`
+  - Implementation Log → `docs/adr/ADR-0094a-log.md`
   - Bug table → `docs/bugs/coverage-ledger.md`
   - Per-check history + dashboard → `test-results/catalog.db` + `test-results/CATALOG.md` (via `scripts/catalog-rebuild.mjs`; see ADR-0096)
 - **Related**: ADR-0082 (no silent fallbacks — foundation), ADR-0087 (adversarial prompting — amended with §out-of-scope probe rule), ADR-0090 (Tier A+B baseline), ADR-0093 (controller wiring gaps), ADR-0095 (RVF inter-process convergence — carries BUG-0008), ADR-0096 (coverage catalog + skip hygiene), ADR-0097 (check-code quality program)
@@ -57,11 +57,11 @@ For a human-readable dashboard run: `node scripts/catalog-rebuild.mjs --show`.
 3. **No silent passes** (ADR-0082). `{success:true}` with zero side-effects is a FAIL, not a PASS. Every check must verify a POST-CONDITION (file exists, row inserted, response shape matches, state changed).
 4. **Backend-appropriate verification** (learned from B5). Not everything persists to SQLite. Use file probes for RVF/redb/JSON, runtime API checks for pure-compute controllers, and state-diff checks for in-memory services.
 5. **Swarm-buildable** (learned from B3/B5). Each phase should be decomposable into 3–8 parallel agents: researcher + adversarial-reviewer + builder minimum. Every swarm-generated fix MUST include an out-of-scope probe that would fail under the opposite architectural assumption (ADR-0087 addendum; see t3-2 post-mortem for precedent).
-6. **Commit per phase**. Each phase produces one commit with check files + unit tests + wiring + ADR-0094-log entry.
+6. **Commit per phase**. Each phase produces one commit with check files + unit tests + wiring + ADR-0094a-log entry.
 
 ## Phased Plan — Phases 1–7 (breadth coverage)
 
-Implemented 2026-04-17 by a 15-agent hierarchical swarm — 27 check files, 190 check functions, 204 surfaces covered. Details in `docs/adr/ADR-0094-log.md` (the 2026-04-17 entries). Summary:
+Implemented 2026-04-17 by a 15-agent hierarchical swarm — 27 check files, 190 check functions, 204 surfaces covered. Details in `docs/adr/ADR-0094a-log.md` (the 2026-04-17 entries). Summary:
 
 | Phase | Theme | Files | Surfaces |
 |---|---|---|---|
@@ -101,7 +101,7 @@ One race-safety check per mutation-capable surface family. Minimum set:
 3. Session save/restore — 2 processes save+restore same session name; assert no interleaved corruption.
 4. Workflow create/execute — 4 processes start same workflow; assert one-started + queued.
 
-New check file: `lib/acceptance-phase9-concurrency.sh`. Budget: ≤30s. **Implemented 2026-04-20** (commit `16c4b22`; 4 checks land with paired unit test `tests/unit/adr0094-p9-concurrency.test.mjs`, 13/13 pass). See ADR-0094-log.md eighth-pass entry for design notes.
+New check file: `lib/acceptance-phase9-concurrency.sh`. Budget: ≤30s. **Implemented 2026-04-20** (commit `16c4b22`; 4 checks land with paired unit test `tests/unit/adr0094-p9-concurrency.test.mjs`, 13/13 pass). See ADR-0094a-log.md eighth-pass entry for design notes.
 
 ### Phase 10 — Idempotency
 
@@ -115,7 +115,7 @@ New check file: `lib/acceptance-phase10-idempotency.sh`. Budget: ≤10s.
 
 ## Phases 11–17 (backlog — P2)
 
-Listed in `docs/adr/ADR-0094-log.md` under §Backlog. Scheduled as capacity allows:
+Listed in `docs/adr/ADR-0094a-log.md` under §Backlog. Scheduled as capacity allows:
 
 - Phase 11 — Input fuzzing (sampled, 8 tool classes × 2 reps; not all 213). ✅ Shipped 2026-04-20 (16 checks, `lib/acceptance-phase11-fuzzing.sh`).
 - Phase 12 — Error message quality (not "errors fire" but "errors name the problem"). ✅ Shipped 2026-04-20 (16 checks, `lib/acceptance-phase12-error-quality.sh`).
@@ -156,20 +156,20 @@ Rejected. Unit tests mock dependencies; acceptance tests exercise the real publi
 Rejected for `invoked_coverage`; adopted for `verified_coverage`. The two-number model reconciles: every surface must be reached (100% invoked), a supermajority must be proven (≥80% verified). The gap is the `skip_accepted` bucket, forced to expire after 30 days.
 
 ### D. Keep ADR-0094 as a living tracker
-Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Log every 36 hours is not a decision document. The Implementation Log extracts to `docs/adr/ADR-0094-log.md`; the scoring table is regenerated from the catalog; the ADR stays as a dated snapshot.
+Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Log every 36 hours is not a decision document. The Implementation Log extracts to `docs/adr/ADR-0094a-log.md`; the scoring table is regenerated from the catalog; the ADR stays as a dated snapshot.
 
 ## Open items
 
 - **ADR-0095** — RVF inter-process write convergence. Carries BUG-0008 (t3-2 CLI-level failure). Blocks this ADR's `Implemented` transition.
 - **ADR-0096** — Coverage catalog + skip hygiene. Required for the `<from catalog>` metric pointers and the `skip_streak_days` rule.
 - **ADR-0097** — Check-code quality program. Required before Phase 9+ to avoid repeating the 33% first-run-failure rate from Phase 7.
-- **ADR-0087 addendum** — Out-of-scope probe rule (in-place edit, tracked in the ADR-0094-log.md 2026-04-17 t3-2 post-mortem).
+- **ADR-0087 addendum** — Out-of-scope probe rule (in-place edit, tracked in the ADR-0094a-log.md 2026-04-17 t3-2 post-mortem).
 
 ## Maintenance Manifesto
 
 7 rules for keeping this ADR and its sibling artifacts honest:
 
-1. **Snapshot, not journal.** ADR-0094 body is a dated decision document. All volatile state lives in `ADR-0094-log.md`, `coverage-ledger.md`, or the catalog. Never rewrite prior ADR-0094 content; strike-through with a dated note.
+1. **Snapshot, not journal.** ADR-0094 body is a dated decision document. All volatile state lives in `ADR-0094a-log.md`, `coverage-ledger.md`, or the catalog. Never rewrite prior ADR-0094 content; strike-through with a dated note.
 2. **Numbers are pointers.** Every coverage number in this ADR is either `<from catalog>` or dated-and-struck. Preflight fails on disagreement.
 3. **Fork on architecture, extend on execution.** A new design decision (own alternatives, affects protocol / architecture / size > 1 phase) gets its own ADR. Mechanical follow-through of an existing plan stays in the Implementation Log. t3-2 → ADR-0095 was the archetype.
 4. **Implementation Log is append-only.** New dated H3 at the top. Corrections go in a new dated entry referencing the prior one. Prior entries never disappear.
@@ -178,7 +178,7 @@ Rejected (2026-04-17 hive synthesis). An ADR rewriting its own Implementation Lo
 
 ## References
 
-- `docs/adr/ADR-0094-log.md` — Implementation Log (append-only)
+- `docs/adr/ADR-0094a-log.md` — Implementation Log (append-only)
 - `docs/bugs/coverage-ledger.md` — Bug ledger (YAML schema)
 - `docs/adr/ADR-0095-rvf-inter-process-convergence.md` — Carries BUG-0008
 - `docs/adr/ADR-0096-coverage-catalog-skip-hygiene.md` — Catalog + skip hygiene program

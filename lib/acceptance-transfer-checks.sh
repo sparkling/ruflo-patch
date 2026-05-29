@@ -2,7 +2,7 @@
 # lib/acceptance-transfer-checks.sh — ADR-0094 Phase 4: Transfer MCP tools
 #
 # ══════════════════════════════════════════════════════════════════════════════
-# NOTE (2026-04-17 — A10 / ADR-0094-log):
+# NOTE (2026-04-17 — A10 / ADR-0094a-log):
 # The previous version of this file had a single lazy "network probe" that ran
 # `transfer_store-featured` once, greps stderr for ECONNREFUSED/ENOTFOUND/etc,
 # and marks ALL 9 transfer tools as skip_accepted when any network error text

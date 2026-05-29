@@ -220,7 +220,7 @@ The three options in §Decision were resolved as follows:
 - `forks/ruflo/v3/@claude-flow/memory/src/rvf-backend.ts:59,114,174,829,872-890,939,975,1003,1008,1014-1063,1089,1656,1682,1714,1749,1769-1801,1918,1965,2024,2121` — `NATIVE_MAGIC` constant, peek-and-skip loader, native-aware `metadataPath`, "once SFVR, always native-or-refuse" branch, fail-loud on unknown magic, and the disjoint-tmp-path fix.
 - BUG-0005 (`docs/bugs/coverage-ledger.md:152-178`) — closed 2026-04-21. Fix commit `196100171`. Three green cascade runs today: 2026-04-21T09:58Z, 16:31Z, 17:00Z. Check IDs `t3-2-concurrent` and `adr0080-store-init` both pass.
 - BUG-0008 (ADR-0095 ledger) — closed; t3-2-concurrent deterministic across three consecutive full cascades (2026-04-19 10:45Z, 12:46Z, 2026-04-20 10:43Z, plus today's three).
-- ADR-0094-log.md:198,217,219,229,231 — records "1 real ADR-0092 bug uncovered and fixed" via the `parseRvfHeader` dual-magic coexistence hardening; test suite went to 3260 pass / 0 fail / 0 skipped after the fix.
+- ADR-0094a-log.md:198,217,219,229,231 — records "1 real ADR-0092 bug uncovered and fixed" via the `parseRvfHeader` dual-magic coexistence hardening; test suite went to 3260 pass / 0 fail / 0 skipped after the fix.
 - ADR-0095 §Related explicitly lists "ADR-0092 (native/pure-TS coexistence)" as the prior-art context and absorbs the coexistence semantics as an enforced invariant rather than a documented limitation.
 
 ### Rationale

@@ -1010,7 +1010,7 @@ timeline
 
 HTML versions at `docs/adr/export/html/`.
 
-- **[ADR-0039](../../../adr/export/html/0039-upstream-controller-integration-roadmap.html)** — Upstream AgentDB Controller Integration Roadmap (2026-03-15, superseded).
+- **[ADR-0039](../../../adr/export/html/ADR-0039a-upstream-controller-integration-roadmap.html)** — Upstream AgentDB Controller Integration Roadmap (2026-03-15, superseded).
 - **[ADR-0067](../../../adr/export/html/ADR-0067-original-vision-controller-wiring.html)** — The Original Vision: How Controller Wiring Was Supposed to Work (2026-04-05, informational).
 - **[ADR-0084](../../../adr/export/html/ADR-0084-dead-code-cleanup.html)** Phase 4 (2026-04-12) — Controller-direct access via `getController()`.
 - **[ADR-0085](../../../adr/export/html/ADR-0085-bridge-deletion-ideal-state-gaps.html)** (2026-04-13) — Bridge deletion.

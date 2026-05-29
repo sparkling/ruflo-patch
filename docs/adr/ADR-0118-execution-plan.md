@@ -3,7 +3,7 @@
 - **Status**: Living plan (per ADR-0094 pattern)
 - **Date**: 2026-05-02
 - **Purpose**: Wave-based execution plan for implementing 11 task ADRs (T1-T11) using parallel agent swarms (up to 15 agents)
-- **Companion to**: ADR-0118 (parent tracker), ADR-0118-review-notes-triage.md (resolved decisions)
+- **Companion to**: ADR-0118 (parent tracker), ADR-0118b-review-notes-triage.md (resolved decisions)
 
 ## Constraints
 
@@ -26,7 +26,7 @@ Before Wave 1 launches:
 | 2 | Forks have `sparkling` remote | `git -C forks/<fork> remote -v \| grep sparkling` |
 | 3 | Trunk synced on each fork | `git -C forks/<fork> pull origin main` (forks: ruflo, agentic-flow, ruv-FANN, ruvector) |
 | 4 | Baseline tests green | `npm run test:unit && npm run test:acceptance` |
-| 5 | Triage decisions still hold | Re-read ADR-0118-review-notes-triage.md §Henrik decisions resolved; confirm H1-H6 not stale |
+| 5 | Triage decisions still hold | Re-read ADR-0118b-review-notes-triage.md §Henrik decisions resolved; confirm H1-H6 not stale |
 | 6 | `partitionDetected` field stub | Pre-flight T9 row 46: add type-level `partitionDetected: boolean` to `HealthReport` interface at `forks/ruflo/v3/@claude-flow/swarm/src/queen-coordinator.ts:183` (T9 in Wave 3 needs this). Type-level only — no runtime detection logic in Wave 1 |
 
 ## Wave 1 — Independent tasks (5 agents in parallel)
@@ -151,7 +151,7 @@ Total: 13 Tns shipped across 3 waves (T1-T13). Peak parallelism is 5 agents in W
 
 Each Wave-N agent receives a self-contained prompt with:
 1. Path to its Tn ADR (e.g. `/Users/henrik/source/ruflo-patch/docs/adr/ADR-0119-...`)
-2. Path to ADR-0118-review-notes-triage.md for resolved decisions
+2. Path to ADR-0118b-review-notes-triage.md for resolved decisions
 3. Constraint: **edit only the fork files in scope per the Tn ADR's §Architecture**; do NOT touch ruflo-patch infrastructure
 4. Constraint: write all 3 test pyramid levels in same commit
 5. Constraint: run `npm run test:acceptance` to verify before reporting done; capture full log per `feedback-no-tail-tests.md`
@@ -171,7 +171,7 @@ Before launching Wave 1:
 ## References
 
 - ADR-0118 (parent tracker)
-- ADR-0118-review-notes-triage.md (resolved Henrik decisions H1-H6)
+- ADR-0118b-review-notes-triage.md (resolved Henrik decisions H1-H6)
 - ADR-0119 through ADR-0128, ADR-0130, ADR-0131 (per-task ADRs)
 - ADR-0108 (T13 task ADR; mixed-type worker spawn mechanism)
 - ADR-0094 — living tracker pattern

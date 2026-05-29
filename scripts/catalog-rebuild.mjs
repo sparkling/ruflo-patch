@@ -32,7 +32,7 @@
 //   --flake-hotlist       — top-N flakiest checks (fails_last_20 / runs_last_20
 //                           >= 0.05). Reads SQLite. Deterministic order.
 //   --verify              — compare the "Current coverage state" table in
-//                           docs/adr/ADR-0094-log.md against catalog's latest
+//                           docs/adr/ADR-0094a-log.md against catalog's latest
 //                           run. Exit non-zero on divergence.
 //
 // Reconciliation: --show prints both JSONL-computed and SQLite-computed
@@ -97,7 +97,7 @@ const RESULTS    = process.env.RUFLO_CATALOG_RESULTS_DIR
   : resolve(REPO_ROOT, 'test-results');
 const CATALOG    = resolve(RESULTS, 'catalog.jsonl');
 const CATALOG_DB = resolve(RESULTS, 'catalog.db');
-const ADR0094LOG = resolve(REPO_ROOT, 'docs/adr/ADR-0094-log.md');
+const ADR0094LOG = resolve(REPO_ROOT, 'docs/adr/ADR-0094a-log.md');
 
 // ---------------------------------------------------------------------------
 // SQLite schema (ADR-0096 §Decision Layer 2)
@@ -954,7 +954,7 @@ function cmdShow() {
 // ---------------------------------------------------------------------------
 
 /**
- * Parse ADR-0094-log.md for the "Current coverage state" table.
+ * Parse ADR-0094a-log.md for the "Current coverage state" table.
  * Returns { total, passed, failed, skipped } or null if the table is missing.
  */
 export function parseAdr0094Table(md) {
@@ -986,7 +986,7 @@ function cmdVerify() {
   }
   const quoted = parseAdr0094Table(readFileSync(ADR0094LOG, 'utf-8'));
   if (!quoted) {
-    console.error('[catalog-rebuild --verify] could not parse "Current coverage state" table in ADR-0094-log.md');
+    console.error('[catalog-rebuild --verify] could not parse "Current coverage state" table in ADR-0094a-log.md');
     process.exit(2);
   }
   const runIds = [...new Set(rows.map(r => r.run_id))].sort();
@@ -1005,7 +1005,7 @@ function cmdVerify() {
     .map(r => ({ check_id: r.check_id, fingerprint: r.fingerprint }));
 
   if (drift.length) {
-    console.error(`[catalog-rebuild --verify] DIVERGENCE between ADR-0094-log.md and catalog.jsonl (run ${latest}):`);
+    console.error(`[catalog-rebuild --verify] DIVERGENCE between ADR-0094a-log.md and catalog.jsonl (run ${latest}):`);
     for (const d of drift) {
       console.error(`  ${d.key.padEnd(8)} quoted=${d.quoted} live=${d.live}`);
     }
@@ -1015,7 +1015,7 @@ function cmdVerify() {
     }
     process.exit(1);
   }
-  console.log(`[catalog-rebuild --verify] OK — ADR-0094-log.md and catalog.jsonl agree on run ${latest}`);
+  console.log(`[catalog-rebuild --verify] OK — ADR-0094a-log.md and catalog.jsonl agree on run ${latest}`);
   console.log(`  total=${live.total} passed=${live.passed} failed=${live.failed} skipped=${live.skipped}`);
   console.log(`[catalog-rebuild --verify] failing checks (${failures.length}):`);
   for (const f of failures) {

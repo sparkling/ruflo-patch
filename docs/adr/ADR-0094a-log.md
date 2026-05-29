@@ -187,7 +187,7 @@ R7's contribution is documentary: the `case 'edge'` arm checks `typeof causalGra
 
 **Tests directory addition.** `tests/acceptance/` is a new top-level directory (siblings: `tests/pipeline/`, `tests/unit/`). `scripts/test-runner.mjs` defaults to scanning `tests/pipeline` + `tests/unit` only — running this test requires `node --test --test-timeout=600000 tests/acceptance/adr0147-r6-causal-query-post-wipe.test.mjs` directly. A follow-up may add `npm run test:acceptance:mjs` to wire the new directory in if more `.test.mjs` acceptance tests land.
 
-**Test inventory.** No standalone inventory file exists in this repo — `test-manifest.json` is generated at runtime by `test-runner.mjs` from whatever `.test.mjs` files it finds. Nothing to increment manually. The `ADR-0094-log.md` (this file, per memory project-adr0094-living-tracker.md) is the canonical living tracker; this entry is the registration.
+**Test inventory.** No standalone inventory file exists in this repo — `test-manifest.json` is generated at runtime by `test-runner.mjs` from whatever `.test.mjs` files it finds. Nothing to increment manually. The `ADR-0094a-log.md` (this file, per memory project-adr0094-living-tracker.md) is the canonical living tracker; this entry is the registration.
 
 ---
 

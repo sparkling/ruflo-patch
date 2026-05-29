@@ -349,8 +349,8 @@ Continues prior policy. `hz` remote untouched per [[feedback-never-touch-hz-remo
 
 - Prior handover — `docs/SESSION-HANDOVER-2026-05-24.md` (the runbook this session executed)
 - ADR-0228 — `docs/adr/0228-upstream-fork-sync-2026-05-23-v3.md` (implemented 2026-05-23)
-- ADR-0229 — `docs/adr/0229-upstream-refresh-precedes-wave3-finalization.md` (implemented 2026-05-23)
-- ADR-0230 — `docs/adr/0230-substrate-reconverge-upstream-adr125.md` (implemented 2026-05-23)
+- ADR-0229 — `docs/adr/ADR-0229-upstream-refresh-precedes-wave3-finalization.md` (implemented 2026-05-23)
+- ADR-0230 — `docs/adr/ADR-0230-substrate-reconverge-upstream-adr125.md` (implemented 2026-05-23)
 - ADR-0177 — `docs/adr/ADR-0177-adopt-upstream-agentdb-rvf-vision.md` (amended 2026-05-23)
 - ADR-0180 — `docs/adr/ADR-0180-adopt-thin-memory-coordinator-with-type-enforced-mutation-handlers.md` (amended 2026-05-23)
 - ADR-0181 — `docs/adr/ADR-0181-archivist-runtime-activation.md` (amended 2026-05-23)

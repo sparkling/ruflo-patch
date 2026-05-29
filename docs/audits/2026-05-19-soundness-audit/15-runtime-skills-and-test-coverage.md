@@ -63,7 +63,7 @@
   — bounded vocabulary, well-tested.
 - **ADR-0094**: living tracker per [[project-adr0094-living-tracker]] —
   located at `docs/adr/ADR-0094-100-percent-acceptance-coverage-plan.md`
-  + companion `ADR-0094-log.md`.
+  + companion `ADR-0094a-log.md`.
 - **Suspect skips**: not enumerated per-callsite in this slice
   (F-15-103). Allowlist exists at `lib/skip-accepted-allowlist.txt` and
   is sanity-checked by `scripts/check-skip-accepted.mjs` — that's the
@@ -215,7 +215,7 @@ CLAUDE.md exactly. Opt back in: `ACCEPTANCE_HEAVY=1 npm run release`.
 
 **Evidence.** Per memory `project-adr0094-living-tracker` and CLAUDE.md,
 ADR-0094 (`docs/adr/ADR-0094-100-percent-acceptance-coverage-plan.md` +
-`docs/adr/ADR-0094-log.md`) is the **living tracker for 100% coverage
+`docs/adr/ADR-0094a-log.md`) is the **living tracker for 100% coverage
 status**. Streak time-gates ("N consecutive green runs ≥X hours apart")
 are explicitly noted in memory as **artificial gating — not actual
 unfinished work** per [[feedback-no-streak-timegates]].

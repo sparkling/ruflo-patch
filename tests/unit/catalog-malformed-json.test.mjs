@@ -183,12 +183,12 @@ describe('ADR-0094 S0 — catalog-rebuild --append subprocess exit code', () => 
 
   before(() => {
     fakeRepo = mkdtempSync(join(tmpdir(), 'probe-catalog-repo-'));
-    // Copy scripts/ and create empty docs/adr/ADR-0094-log.md shell so
+    // Copy scripts/ and create empty docs/adr/ADR-0094a-log.md shell so
     // script's resolve(REPO_ROOT, ...) works against the fake repo.
     mkdirSync(join(fakeRepo, 'scripts'), { recursive: true });
     mkdirSync(join(fakeRepo, 'docs', 'adr'), { recursive: true });
     mkdirSync(join(fakeRepo, 'test-results', 'accept-2026-04-17T000000Z'), { recursive: true });
-    writeFileSync(join(fakeRepo, 'docs', 'adr', 'ADR-0094-log.md'),
+    writeFileSync(join(fakeRepo, 'docs', 'adr', 'ADR-0094a-log.md'),
       '# placeholder\n\nCurrent coverage state\n| Total acceptance checks | 5 |\n| Passing | 5 |\n| `skip_accepted` | 0 |\n| Failing | 0 |\n');
     writeFileSync(
       join(fakeRepo, 'test-results', 'accept-2026-04-17T000000Z', 'acceptance-results.json'),

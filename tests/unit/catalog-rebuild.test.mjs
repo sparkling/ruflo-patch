@@ -6,7 +6,7 @@
 //   - malformed JSON recovery (if strip recovers it, parse succeeds);
 //   - duplicate-run skip (idempotent --append);
 //   - fingerprint determinism (same failure -> same sha1);
-//   - --verify divergence detection (drift between ADR-0094-log.md and catalog).
+//   - --verify divergence detection (drift between ADR-0094a-log.md and catalog).
 //
 // Harness fix (_escape_json in lib/acceptance-harness.sh) is owned by
 // harness-migrator; this script sanitises defensively at ingest per Sprint 0
@@ -86,7 +86,7 @@ function runCli(args, { cwd, script, expectFail = false } = {}) {
 // fileURLToPath). We run it inside an isolated cwd with a mirrored layout so
 // --append/--from-raw/--show/--verify operate on fixture data, not the real
 // test-results tree. To do this we create a sandbox directory, then copy the
-// script into a scripts/ subdir and scaffold docs/adr/ADR-0094-log.md.
+// script into a scripts/ subdir and scaffold docs/adr/ADR-0094a-log.md.
 
 function makeSandbox(fixture) {
   const sandbox = mkdtempSync(resolve(tmpdir(), 'catalog-test-'));
@@ -102,7 +102,7 @@ function makeSandbox(fixture) {
 
   if (fixture?.adrTable) {
     writeFileSync(
-      resolve(sandbox, 'docs/adr/ADR-0094-log.md'),
+      resolve(sandbox, 'docs/adr/ADR-0094a-log.md'),
       [
         '# ADR-0094 log',
         '',
@@ -295,7 +295,7 @@ describe('catalog-rebuild CLI', () => {
     const { stdout, code } = runCli('--verify', { cwd: sandbox });
 
     assert.equal(code, 0);
-    assert.match(stdout, /OK — ADR-0094-log.md and catalog.jsonl agree/);
+    assert.match(stdout, /OK — ADR-0094a-log.md and catalog.jsonl agree/);
     assert.match(stdout, /t3-2-concurrent\s+fp=[0-9a-f]{12}/);
   });
 

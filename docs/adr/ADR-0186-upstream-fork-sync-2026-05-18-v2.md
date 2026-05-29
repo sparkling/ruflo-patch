@@ -787,7 +787,7 @@ New follow-ups from v2 analysis:
     flagged that "the ADR-0094 living tracker has not been updated with
     `acceptance_tests_pass: true` for ADR-0162". ADR-0094 itself is
     **closed** as a decision snapshot (per its frontmatter); volatile
-    state lives in `docs/adr/ADR-0094-log.md` + `test-results/CATALOG.md`.
+    state lives in `docs/adr/ADR-0094a-log.md` + `test-results/CATALOG.md`.
     v2 leaves the audit-tracker-update question to whoever executes the
     pending PICKs.
 

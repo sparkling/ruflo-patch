@@ -350,7 +350,7 @@ Publish `@sparkleideas/plugins` so upstream `@claude-flow/plugin-*` can be insta
 
 ## References
 
-- [ADR-0014: Topological Publish Order](0014-topological-publish-order.md) -- existing 5-level publish order
-- [ADR-0021: Agent Booster Integration](0021-agent-booster-integration.md) -- Tier 1 routing details
+- [ADR-0014: Topological Publish Order](ADR-0014-topological-publish-order.md) -- existing 5-level publish order
+- [ADR-0021: Agent Booster Integration](ADR-0021-agent-booster-integration.md) -- Tier 1 routing details
 - [Unpublished Sources Audit](../unpublished-sources.md) -- package catalog
 - [Plugin Catalog](../plugin-catalog.md) -- plugin descriptions

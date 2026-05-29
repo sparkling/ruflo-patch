@@ -298,7 +298,7 @@ Fill in counts after Batch T audit.
 ## How to resume in the next session
 
 1. Read this file first.
-2. Read ADR-0230 (the new architectural decision) — `docs/adr/0230-substrate-reconverge-upstream-adr125.md`.
+2. Read ADR-0230 (the new architectural decision) — `docs/adr/ADR-0230-substrate-reconverge-upstream-adr125.md`.
 3. Read ADR-0228 Amendment 2026-05-23 + ADR-0229 Amendment 2026-05-23 for the sequencing context.
 4. Verify the 2 worktrees to discard are gone: `cd /Users/henrik/source/forks/ruflo && git worktree list`.
 5. Start step A (merge `loop/fix-adr0104`).
@@ -308,8 +308,8 @@ Fill in counts after Batch T audit.
 ## Cross-references
 
 - ADR-0228 — `docs/adr/0228-upstream-fork-sync-2026-05-23-v3.md` (amended 2026-05-23)
-- ADR-0229 — `docs/adr/0229-upstream-refresh-precedes-wave3-finalization.md` (amended 2026-05-23)
-- ADR-0230 — `docs/adr/0230-substrate-reconverge-upstream-adr125.md` (new 2026-05-23)
+- ADR-0229 — `docs/adr/ADR-0229-upstream-refresh-precedes-wave3-finalization.md` (amended 2026-05-23)
+- ADR-0230 — `docs/adr/ADR-0230-substrate-reconverge-upstream-adr125.md` (new 2026-05-23)
 - ADR-0180 — the Memory Archivist (preserved above MCP)
 - ADR-0181 — the Archivist activation execution plan (in-flight, Phase 4)
 - ADR-0177 — the RVF-first substrate alignment with upstream

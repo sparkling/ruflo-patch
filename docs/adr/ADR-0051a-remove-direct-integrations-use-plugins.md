@@ -56,7 +56,7 @@ Mechanisms require ~260 lines of interface + fallback implementations. Policies 
 | Plugin System Analyzer | `registerMCPTools()` and `registerCLICommands()` fully implemented; only needs CLI startup wiring |
 | Line Counter | Actual: 80 files / 64,339 lines total in scope |
 
-**5-specialist hive-mind debate** (deliberation record: `docs/adr/0051-queen-ruling.md`):
+**5-specialist hive-mind debate** (deliberation record: `docs/adr/ADR-0051-queen-ruling.md`):
 
 | Debater | Position | Verdict |
 |---------|----------|:------:|
@@ -477,7 +477,7 @@ Then:
 - **ADR-056**: agentic-flow — superseded by Rung 4 (agentic-flow plugin)
 - **ADR-0049**: Fail-loud mode — exposed dual-path issues
 - **ADR-0050**: Live validation defects — coupling bugs this ADR prevents
-- **Deliberation record**: `docs/adr/0051-queen-ruling.md` — full hive-mind debate with 5 position papers, verdicts on Q1-Q5, and dissent record
+- **Deliberation record**: `docs/adr/ADR-0051-queen-ruling.md` — full hive-mind debate with 5 position papers, verdicts on Q1-Q5, and dissent record
 
 ## Status Update 2026-04-21
 

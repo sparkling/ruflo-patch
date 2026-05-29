@@ -71,7 +71,7 @@ Read-only evidence from `forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-to
 - The PASS regex for the three documented stubs (`metrics`, `repo_analyze`, `workflow`) pins on `"_stub":\s*true` — a load-bearing marker. If upstream ever upgrades to real API calls, the new response will NOT contain `_stub:true`, the regex will not match, and the check will **FAIL LOUDLY**, forcing re-evaluation. That is textbook ADR-0082 discipline.
 - The prior `if [[ -z "$GITHUB_TOKEN" ]] && skip_accepted` gate was a silent-pass by construction: in local cascades where `GITHUB_TOKEN` is unset (the common case), all 5 checks turned green unconditionally, masking both stub-contract regressions (upstream flips to real API without updating skip logic) and real-handler regressions (e.g. if `loadGitHubStore` started throwing, the skip gate would hide it). Removing it is correct and ADR-0082-compliant. The prior 401/403/bad-credentials auth-error branch was never reachable — these tools never produce those shapes — so removing it also removes a future silent-fail mask.
 
-Cross-reference to contemporary log entry (`docs/adr/ADR-0094-log.md:9–33`) — the fix rationale is documented append-only with the specific regex-per-tool table, aligned with the file comments.
+Cross-reference to contemporary log entry (`docs/adr/ADR-0094a-log.md:9–33`) — the fix rationale is documented append-only with the specific regex-per-tool table, aligned with the file comments.
 
 **Verdict**: PASS. Local-stub IS the contract; the check correctly verifies it; the `_stub:true` marker is load-bearing and will fail loudly under any upgrade.
 
@@ -89,7 +89,7 @@ The fork handler IS real, but `check_adr0094_p3_coordination_node` drives only t
 
 Without this upgrade, a future regression that silently returns the default empty store regardless of actual node contents would still PASS. Mirrors the A4 terminal pattern from W2-V2 which correctly drives `terminal_create` → `terminal_close`. The coordination store is file-backed so no architectural obstacle exists (unlike A5/A6's in-memory Maps).
 
-Also: ADR-0094-log `3405f65` entry needs amendment — the `p3-co-node` narrow skip ledger comment (lib/acceptance-coordination-checks.sh:46–57) is now stale; the handler IS wired and the `skip_accepted` downgrade branch (lines 68–76) is now effectively dead code except as defensive regression guard. Either drop the dead branch or comment it as "reserved regression guard — fails back to skip if fork regresses" and unlink from the open follow-up item.
+Also: ADR-0094a-log `3405f65` entry needs amendment — the `p3-co-node` narrow skip ledger comment (lib/acceptance-coordination-checks.sh:46–57) is now stale; the handler IS wired and the `skip_accepted` downgrade branch (lines 68–76) is now effectively dead code except as defensive regression guard. Either drop the dead branch or comment it as "reserved regression guard — fails back to skip if fork regresses" and unlink from the open follow-up item.
 
 ### F2 — A8 vacuous-empty-store `healthy` ternary is semantically loose (LOW, correctness)
 
@@ -101,7 +101,7 @@ The pattern `'"issues"|"total"|"open"'` matches ANY of the three field names —
 
 ### F4 — A9 scoreboard claim needs to acknowledge the split-contract (LOW, bookkeeping)
 
-Two of the five github checks (`issue_track`, `pr_manage`) verify real local-store behavior; three (`metrics`, `repo_analyze`, `workflow`) verify documented-stub markers. The ADR-0094-log entry correctly lists this but the checks file header 17–21 does not distinguish — both classes are presented as equivalent "local-only stubs." Recommend one-line clarification in the file header: "Two tools (`github_issue_track`, `github_pr_manage` default `action:list`) have real local-store handlers; three (`github_metrics`, `github_repo_analyze`, `github_workflow`) are documented stubs with `_stub:true` markers." Coverage-honest.
+Two of the five github checks (`issue_track`, `pr_manage`) verify real local-store behavior; three (`metrics`, `repo_analyze`, `workflow`) verify documented-stub markers. The ADR-0094a-log entry correctly lists this but the checks file header 17–21 does not distinguish — both classes are presented as equivalent "local-only stubs." Recommend one-line clarification in the file header: "Two tools (`github_issue_track`, `github_pr_manage` default `action:list`) have real local-store handlers; three (`github_metrics`, `github_repo_analyze`, `github_workflow`) are documented stubs with `_stub:true` markers." Coverage-honest.
 
 ---
 
@@ -111,4 +111,4 @@ Two of the five github checks (`issue_track`, `pr_manage`) verify real local-sto
 - **A8**: PARTIAL. Fork `e14105f67` is a real handler against a file-backed registry (not a stub), but the acceptance check exercises only the empty-default-store code path. Upgrade to `add` → `status` round-trip is straightforward and should land before A8 is signed off as full coverage. See F1.
 - **A9**: PASS. Local-stub IS the product's actual contract (zero GITHUB_TOKEN reads in 363 lines of source; four explicit `_stub:true` return shapes with user-facing "local-only stubs" message); the `_stub:true` marker is load-bearing; removing the GITHUB_TOKEN gate eliminates an ADR-0082 silent-pass.
 
-**Recommendation**: allow A7 and A9 to merge as-is. For A8, open a follow-up tracker (ADR-0094-log append-only entry + sub-task) to upgrade `check_adr0094_p3_coordination_node` to a populated-store round-trip. The fork handler is not the blocker — the check is.
+**Recommendation**: allow A7 and A9 to merge as-is. For A8, open a follow-up tracker (ADR-0094a-log append-only entry + sub-task) to upgrade `check_adr0094_p3_coordination_node` to a populated-store round-trip. The fork handler is not the blocker — the check is.

@@ -416,7 +416,7 @@ ADR-0230 (substrate re-convergence) executed within Move C window per
 ADR-0229 Amendment 2026-05-23. All 5 deferred ADR-125 phases (1, 2, 3,
 4, 5) plus the pre-landed Phases 6 + 7 now form a complete ADR-125
 take. Per-phase landing SHAs are recorded in the ADR-0230 amendment
-block (`docs/adr/0230-substrate-reconverge-upstream-adr125.md`).
+block (`docs/adr/ADR-0230-substrate-reconverge-upstream-adr125.md`).
 
 All 10 confirmation criteria from ADR-0228 §Confirmation are
 considered met by the per-fork green acceptance state at the close-out

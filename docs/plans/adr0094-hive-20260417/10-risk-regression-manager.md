@@ -1,6 +1,6 @@
 # Risk + Regression Management — All Sprints
 
-Baseline (ADR-0094-log.md 2026-04-17T15:04Z): **452/396 pass/1 fail/55 skip**, CLI `3.5.58-patch.136`. Every sprint diffs against this, re-freezes on green.
+Baseline (ADR-0094a-log.md 2026-04-17T15:04Z): **452/396 pass/1 fail/55 skip**, CLI `3.5.58-patch.136`. Every sprint diffs against this, re-freezes on green.
 
 ## 1. Regression Matrix (top-3 per sprint)
 

@@ -630,8 +630,8 @@ Revert `scripts/test-integration.sh` to 9 phases (1-8 + cleanup):
 
 #### Step 5: Mark ADR-0020 as Superseded
 
-Update `docs/adr/0020-testing-strategy.md`:
-- Change `Status` from `Accepted` to `Superseded by [ADR-0023](0023-google-testing-framework.md)`
+Update `docs/adr/ADR-0020-testing-strategy.md`:
+- Change `Status` from `Accepted` to `Superseded by [ADR-0023](ADR-0023-google-testing-framework.md)`
 - No other changes -- ADR-0020's content is preserved as historical record
 
 #### Step 6: Update Companion Docs
@@ -740,14 +740,14 @@ Steps 1-2 (shared library + acceptance refactor) are done. Steps 3-4 are the cod
 
 ## Links
 
-- [ADR-0020: Testing Strategy](0020-testing-strategy.md) -- **superseded** by this ADR; all decisions preserved, Release Qualification and formal framework added
-- [ADR-0009: systemd Timer](0009-systemd-timer-for-automated-builds.md) -- CI mechanism validated by Layer -1
-- [ADR-0010: Prerelease Publish Gate](0010-prerelease-publish-gate.md) -- Gate 2 controls promotion to @latest
-- [ADR-0012: Version Numbering](0012-version-numbering-scheme.md) -- `computeVersion()` tested at Layer 1
-- [ADR-0013: Codemod](0013-codemod-implementation.md) -- tested at Layer 0 (codemod acceptance) and Layer 1 (unit)
-- [ADR-0014: Topological Publish Order](0014-topological-publish-order.md) -- tested at Layer 1 (unit) and Layer 2 (Verdaccio publish)
-- [ADR-0015: First-Publish Bootstrap](0015-first-publish-bootstrap.md) -- `getPublishTag()` tested at Layer 1
-- [ADR-0022: Full Ecosystem Repackaging](0022-full-ecosystem-repackaging.md) -- 42 packages covered by Layer 2 publish and Layer 3 functional validation
+- [ADR-0020: Testing Strategy](ADR-0020-testing-strategy.md) -- **superseded** by this ADR; all decisions preserved, Release Qualification and formal framework added
+- [ADR-0009: systemd Timer](ADR-0009-systemd-timer-for-automated-builds.md) -- CI mechanism validated by Layer -1
+- [ADR-0010: Prerelease Publish Gate](ADR-0010-prerelease-publish-gate.md) -- Gate 2 controls promotion to @latest
+- [ADR-0012: Version Numbering](ADR-0012-version-numbering-scheme.md) -- `computeVersion()` tested at Layer 1
+- [ADR-0013: Codemod](ADR-0013-codemod-implementation.md) -- tested at Layer 0 (codemod acceptance) and Layer 1 (unit)
+- [ADR-0014: Topological Publish Order](ADR-0014-topological-publish-order.md) -- tested at Layer 1 (unit) and Layer 2 (Verdaccio publish)
+- [ADR-0015: First-Publish Bootstrap](ADR-0015-first-publish-bootstrap.md) -- `getPublishTag()` tested at Layer 1
+- [ADR-0022: Full Ecosystem Repackaging](ADR-0022-full-ecosystem-repackaging.md) -- 42 packages covered by Layer 2 publish and Layer 3 functional validation
 - [Google Testing Blog: Test Sizes](https://testing.googleblog.com/2010/12/test-sizes.html) -- Small/Medium/Large definitions
 - [Google SRE Book: Release Engineering](https://sre.google/sre-book/release-engineering/) -- staging/production verification model
 - [Companion: Testing Strategy Reference](../testing.strategy.fixed.google.md) -- operational commands, configuration, and templates

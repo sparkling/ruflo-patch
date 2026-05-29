@@ -51,7 +51,7 @@
     trailer-match audit, same-commit landing cadence, close-out
     summary block template, audit verification)
 
-- **ADR-0229** (`docs/adr/0229-upstream-refresh-precedes-wave3-finalization.md`,
+- **ADR-0229** (`docs/adr/ADR-0229-upstream-refresh-precedes-wave3-finalization.md`,
   ruflo-patch commit `9253aa4`, 365 lines) — decision narrative
   capturing:
   - The catch-discrimination cascade
@@ -302,7 +302,7 @@ Batch L lands and tests pass.
 ## Cross-references
 
 - ADR-0228 — `docs/adr/0228-upstream-fork-sync-2026-05-23-v3.md`
-- ADR-0229 — `docs/adr/0229-upstream-refresh-precedes-wave3-finalization.md`
+- ADR-0229 — `docs/adr/ADR-0229-upstream-refresh-precedes-wave3-finalization.md`
 - ADR-0095 amendment — `docs/adr/ADR-0095-rvf-inter-process-convergence.md` §Amendment 2026-05-23
 - INTEGRATION-LEDGER — `docs/upstream/INTEGRATION-LEDGER.md`
 - Prior Wave 3 handover —

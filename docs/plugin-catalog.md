@@ -410,4 +410,4 @@ All compute-intensive operations are accelerated through Rust-compiled WASM pack
 - Plugin source: [github.com/ruvnet/ruflo/v3/plugins/](https://github.com/ruvnet/ruflo/tree/main/v3/plugins)
 - WASM packages: [github.com/ruvnet/ruvector](https://github.com/ruvnet/ruvector)
 - Repackaging status: [Package Matrix](ruvnet.packages.and.source.location.md)
-- Teammate integration ADR: [ADR-0022](adr/0022-full-ecosystem-repackaging.md)
+- Teammate integration ADR: [ADR-0022](adr/ADR-0022-full-ecosystem-repackaging.md)

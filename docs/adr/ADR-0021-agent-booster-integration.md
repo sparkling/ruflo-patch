@@ -267,6 +267,6 @@ When this ADR is implemented, the following documents must be updated:
 - ADR-026: 3-Tier Model Routing (referenced in CLAUDE.md shipped to all user projects)
 - CLAUDE.md: `[AGENT_BOOSTER_AVAILABLE]` and `[TASK_MODEL_RECOMMENDATION]` directives
 - [Unpublished Sources Audit](../unpublished-sources.md): "Integrate Now" recommendation
-- [ADR-0014: Topological Publish Order](0014-topological-publish-order.md): Level 1 placement
-- [ADR-0022: Full Ecosystem Repackaging](0022-full-ecosystem-repackaging.md): Comprehensive integration of all packages
+- [ADR-0014: Topological Publish Order](ADR-0014-topological-publish-order.md): Level 1 placement
+- [ADR-0022: Full Ecosystem Repackaging](ADR-0022-full-ecosystem-repackaging.md): Comprehensive integration of all packages
 - Upstream source: `github.com/ruvnet/agentic-flow/packages/agent-booster/`

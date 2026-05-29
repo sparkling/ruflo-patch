@@ -405,25 +405,25 @@ All major decisions are documented as ADRs in `docs/adr/`:
 
 | ADR | Title | Summary |
 |-----|-------|---------|
-| [0001](docs/adr/0001-remove-mcp-autostart-false.md) | Remove MCP autostart false | MC-001 patch rationale |
-| [0002](docs/adr/0002-fallback-instrumentation.md) | Fallback instrumentation | FB-001/002 patch rationale |
-| [0004](docs/adr/0004-search-threshold-for-hash-embeddings.md) | Search threshold for hash embeddings | FB-004 threshold fix |
-| [0005](docs/adr/0005-fork-build-step-rename.md) | Fork + build-step rename | Core strategy: fork, codemod, publish |
-| [0006](docs/adr/0006-npm-scope-naming.md) | npm scope naming | `@sparkleideas` scope (updated from ADR) |
-| [0007](docs/adr/0007-drop-in-replacement-ux.md) | Drop-in replacement UX | One-word swap migration |
-| [0008](docs/adr/0008-skip-ruvector-rebuild.md) | Skip ruvector rebuild | Node.js-only build (no Rust) |
-| [0009](docs/adr/0009-systemd-timer-for-automated-builds.md) | systemd timer | 6-hour automated builds |
-| [0010](docs/adr/0010-prerelease-publish-gate.md) | Prerelease publish gate | Auto-publish to prerelease, manual promote |
-| [0011](docs/adr/0011-dual-build-trigger.md) | Dual build trigger | Upstream + local change detection |
-| [0012](docs/adr/0012-version-numbering-scheme.md) | Version numbering | `bump_last_segment(max(upstream, lastPublished))` scheme |
-| [0013](docs/adr/0013-codemod-implementation.md) | Codemod implementation | 2-phase transform, ordering rules |
-| [0014](docs/adr/0014-topological-publish-order.md) | Topological publish order | 5-level bottom-up with rate limiting |
-| [0015](docs/adr/0015-first-publish-bootstrap.md) | First-publish bootstrap | Auto-detect never-published packages |
-| [0016](docs/adr/0016-dynamic-import-handling.md) | Dynamic import handling | 3-layer audit + patch strategy |
-| [0017](docs/adr/0017-inherited-semver-conflict-resolution.md) | Semver conflict resolution | Fix inherited `@ruvector/ruvllm` + `agentdb` ranges |
-| [0018](docs/adr/0018-initial-setup-runbook.md) | Initial setup runbook | Server setup, secrets, disaster recovery |
-| [0019](docs/adr/0019-rollback-procedure.md) | Rollback procedure | Dist-tag reassignment, not unpublish |
-| [0020](docs/adr/0020-testing-strategy.md) | Testing strategy | 3-layer testing + reproducibility framework |
+| [0001](docs/adr/ADR-0001-remove-mcp-autostart-false.md) | Remove MCP autostart false | MC-001 patch rationale |
+| [0002](docs/adr/ADR-0002-fallback-instrumentation.md) | Fallback instrumentation | FB-001/002 patch rationale |
+| [0004](docs/adr/ADR-0004-search-threshold-for-hash-embeddings.md) | Search threshold for hash embeddings | FB-004 threshold fix |
+| [0005](docs/adr/ADR-0005-fork-build-step-rename.md) | Fork + build-step rename | Core strategy: fork, codemod, publish |
+| [0006](docs/adr/ADR-0006-npm-scope-naming.md) | npm scope naming | `@sparkleideas` scope (updated from ADR) |
+| [0007](docs/adr/ADR-0007-drop-in-replacement-ux.md) | Drop-in replacement UX | One-word swap migration |
+| [0008](docs/adr/ADR-0008-skip-ruvector-rebuild.md) | Skip ruvector rebuild | Node.js-only build (no Rust) |
+| [0009](docs/adr/ADR-0009-systemd-timer-for-automated-builds.md) | systemd timer | 6-hour automated builds |
+| [0010](docs/adr/ADR-0010-prerelease-publish-gate.md) | Prerelease publish gate | Auto-publish to prerelease, manual promote |
+| [0011](docs/adr/ADR-0011-dual-build-trigger.md) | Dual build trigger | Upstream + local change detection |
+| [0012](docs/adr/ADR-0012-version-numbering-scheme.md) | Version numbering | `bump_last_segment(max(upstream, lastPublished))` scheme |
+| [0013](docs/adr/ADR-0013-codemod-implementation.md) | Codemod implementation | 2-phase transform, ordering rules |
+| [0014](docs/adr/ADR-0014-topological-publish-order.md) | Topological publish order | 5-level bottom-up with rate limiting |
+| [0015](docs/adr/ADR-0015-first-publish-bootstrap.md) | First-publish bootstrap | Auto-detect never-published packages |
+| [0016](docs/adr/ADR-0016-dynamic-import-handling.md) | Dynamic import handling | 3-layer audit + patch strategy |
+| [0017](docs/adr/ADR-0017-inherited-semver-conflict-resolution.md) | Semver conflict resolution | Fix inherited `@ruvector/ruvllm` + `agentdb` ranges |
+| [0018](docs/adr/ADR-0018-initial-setup-runbook.md) | Initial setup runbook | Server setup, secrets, disaster recovery |
+| [0019](docs/adr/ADR-0019-rollback-procedure.md) | Rollback procedure | Dist-tag reassignment, not unpublish |
+| [0020](docs/adr/ADR-0020-testing-strategy.md) | Testing strategy | 3-layer testing + reproducibility framework |
 
 ---
 

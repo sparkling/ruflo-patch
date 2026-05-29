@@ -19,8 +19,8 @@
 #                   If absent, falls back to FALLBACK_DIR below (LOG WARNING).
 #   FORK_DIR      — fork checkout where plugins/ruflo-hive-mind/ is written.
 #                   Default: /Users/henrik/source/forks/ruflo
-#   ADR0118_PATH  — path to ADR-0118-hive-mind-runtime-gaps-tracker.md.
-#                   Default: $(dirname "$0")/../docs/adr/ADR-0118-hive-mind-runtime-gaps-tracker.md
+#   ADR0118_PATH  — path to ADR-0118a-hive-mind-runtime-gaps-tracker.md.
+#                   Default: $(dirname "$0")/../docs/adr/ADR-0118a-hive-mind-runtime-gaps-tracker.md
 #   FALLBACK_DIR  — if UPSTREAM_DIR is missing, copy from this dir instead
 #                   (defaults to FORK_DIR — i.e. self-rematerialise).
 #                   Logs a WARNING line so this is never the silent default.
@@ -44,7 +44,7 @@ set -euo pipefail
 UPSTREAM_DIR="${UPSTREAM_DIR:-/Users/henrik/source/ruvnet/ruflo}"
 FORK_DIR="${FORK_DIR:-/Users/henrik/source/forks/ruflo}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ADR0118_PATH="${ADR0118_PATH:-${SCRIPT_DIR}/../docs/adr/ADR-0118-hive-mind-runtime-gaps-tracker.md}"
+ADR0118_PATH="${ADR0118_PATH:-${SCRIPT_DIR}/../docs/adr/ADR-0118a-hive-mind-runtime-gaps-tracker.md}"
 FALLBACK_DIR="${FALLBACK_DIR:-${FORK_DIR}}"
 
 PLUGIN_DIR="${FORK_DIR}/plugins/ruflo-hive-mind"

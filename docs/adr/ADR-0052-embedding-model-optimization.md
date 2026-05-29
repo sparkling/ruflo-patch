@@ -2,7 +2,7 @@
 
 ## Status
 
-**Superseded** by `ADR-0052-config-driven-embedding-framework.md` (2026-03-19).
+**Superseded** by `ADR-0052a-config-driven-embedding-framework.md` (2026-03-19).
 
 This document overclaimed completion — the checklist was marked done prematurely.
 The replacement doc has an honest implementation status. This file is retained

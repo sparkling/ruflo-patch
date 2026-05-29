@@ -365,7 +365,7 @@ Each is a follow-up ADR per the ADR-0118 T12 escalation rule.
 - ADR-0103 — README claims investigation roadmap (row 92 ratified ADR-0109 Option E as the worker-failure design)
 - ADR-0109 — Worker failure handling (Option E §6 is the prompt-side contract carried forward here; specifically Option A prompt protocol, Option B auto-status transitions; Option C deferred; R8 sub-queen out-of-scope)
 - ADR-0118 — Hive-mind runtime gaps tracker (owns this work as task T12)
-- ADR-0118 review-notes-triage — `docs/adr/ADR-0118-review-notes-triage.md` (open-question consolidation)
+- ADR-0118 review-notes-triage — `docs/adr/ADR-0118b-review-notes-triage.md` (open-question consolidation)
 - ADR-0118 execution plan — `docs/adr/ADR-0118-execution-plan.md` (wave-based execution; T12 lands as a sibling task to T1-T11)
 - ADR-0104 — queen orchestration (owns the §6 worker-coordination prompt template this ADR extends)
 - ADR-0106 — consensus algorithm enforcement (owns the auto-status-transition surface in `_consensus` that this ADR materialises)

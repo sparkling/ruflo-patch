@@ -418,8 +418,8 @@ Phase A executed per the autonomous-batch §Implementation order. Touch summary:
 - `scripts/test-acceptance.sh`: harness installs federation + iot
   alongside other pre-installed packages; `run_check_bg` for 6 ADR-0113
   checks; `collect_parallel` wait-list updated.
-- `docs/adr/ADR-078-agent-llm-federation-plugin.md`,
-  `docs/adr/ADR-079-iot-cognitum-plugin.md` (NEW): mirrored from
+- `docs/adr/ADR-0078a-agent-llm-federation-plugin.md`,
+  `docs/adr/ADR-0079a-iot-cognitum-plugin.md` (NEW): mirrored from
   `forks/ruflo/v3/implementation/adrs/`. 3-digit naming preserves source
   filename and avoids collision with the patch repo's existing 4-digit
   `ADR-0078-bridge-elimination-agentdb-tools.md` and

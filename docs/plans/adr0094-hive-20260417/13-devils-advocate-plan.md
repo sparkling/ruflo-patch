@@ -30,7 +30,7 @@
 
 **Attack**: Swarms amplify *confidence* without *correctness*.
 
-**Evidence**: This session, t3-2 fix-swarm-agent self-reported "10/10" while real test failed (BUG-0008, `ADR-0094-log.md`). Previous B7 guard passed but was wrong-scope (CLAUDE.md ADR-0090 Tier A1).
+**Evidence**: This session, t3-2 fix-swarm-agent self-reported "10/10" while real test failed (BUG-0008, `ADR-0094a-log.md`). Previous B7 guard passed but was wrong-scope (CLAUDE.md ADR-0090 Tier A1).
 
 **Rebuttal**: "Verification swarms catch that."
 

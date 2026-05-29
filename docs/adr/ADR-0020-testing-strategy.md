@@ -2,7 +2,7 @@
 
 ## Status
 
-Superseded by [ADR-0037](0037-test-reorganization.md)
+Superseded by [ADR-0037](ADR-0037-test-reorganization.md)
 
 ## Context
 

@@ -67,7 +67,7 @@ tests: smoke -> structure -> functional -> controller -> e2e
 
 | File | Action |
 |------|--------|
-| `docs/adr/0037-test-reorganization.md` | Create (this ADR) |
+| `docs/adr/ADR-0037-test-reorganization.md` | Create (this ADR) |
 | `scripts/publish-verdaccio.sh` | Create (extract from test-verify.sh phases 1-5, 9) |
 | `scripts/test-acceptance.sh` | Rewrite (add harness, split T32, rename IDs, remove publish/promote) |
 | `lib/acceptance-checks.sh` | Edit (remove 3 functions, strip init calls, strip T-comments) |

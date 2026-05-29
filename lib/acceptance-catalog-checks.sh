@@ -259,13 +259,13 @@ _check_adr0096_catalog_verify_body() {
     return
   fi
 
-  # Write a minimal ADR-0094-log.md under sandbox/docs/adr that matches the
+  # Write a minimal ADR-0094a-log.md under sandbox/docs/adr that matches the
   # fixture (3/1/1/1). The script reads from REPO_ROOT which equals the parent
   # of the script's dir. Copy the script to a sandbox scripts/ dir so REPO_ROOT
   # lands under sandbox. Mirror the pattern used in tests/unit/catalog-rebuild.test.mjs.
   mkdir -p "${sandbox}/docs/adr" "${sandbox}/scripts"
   cp "$catalog_script" "${sandbox}/scripts/catalog-rebuild.mjs"
-  cat > "${sandbox}/docs/adr/ADR-0094-log.md" <<MD
+  cat > "${sandbox}/docs/adr/ADR-0094a-log.md" <<MD
 # ADR-0094 log
 
 ## Current coverage state (snapshot)

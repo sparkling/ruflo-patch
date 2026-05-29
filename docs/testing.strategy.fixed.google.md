@@ -4,7 +4,7 @@
 **Version**: 2.0
 **Date**: 2026-03-07
 **Status**: Approved
-**ADR**: [ADR-0023](adr/0023-google-testing-framework.md)
+**ADR**: [ADR-0023](adr/ADR-0023-google-testing-framework.md)
 
 ---
 

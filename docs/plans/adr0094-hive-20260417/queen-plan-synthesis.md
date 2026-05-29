@@ -81,7 +81,7 @@ Prevent next "swarm declared fix, real test fails" (t3-2 10/10 lie):
 4. **2-cascade stability before "victory".** No ADR flips `Implemented` on first green — 3 consecutive × 3 calendar days.
 5. **Adversarial-reviewer in EVERY swarm.** Must produce ≥1 failing probe pre-signoff.
 6. **Skip-reverify INSIDE cascade, not cron.** DA attack 7 fix.
-7. **ADR-0094-log.md single source of truth.** Sibling ADRs append to own `Implementation notes`, cap 200 lines.
+7. **ADR-0094a-log.md single source of truth.** Sibling ADRs append to own `Implementation notes`, cap 200 lines.
 
 ---
 

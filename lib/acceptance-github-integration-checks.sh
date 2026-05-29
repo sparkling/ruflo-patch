@@ -4,7 +4,7 @@
 # Acceptance checks for 5 github_* MCP tools.
 #
 # ══════════════════════════════════════════════════════════════════════════════
-# NOTE (2026-04-17 — A9 / ADR-0094-log):
+# NOTE (2026-04-17 — A9 / ADR-0094a-log):
 # These tools are LOCAL-ONLY STUBS in the fork (see
 # forks/ruflo/v3/@claude-flow/cli/src/mcp-tools/github-tools.ts). They make
 # NO GitHub API calls and do NOT read GITHUB_TOKEN. The previous

@@ -102,9 +102,9 @@ Per `feedback-no-fallbacks.md` and `feedback-no-squelch-tests.md`, **annotations
 - Plugin packaging: ADR-0116
 - Living tracker pattern: ADR-0094 (100% acceptance coverage program)
 - Per-task ADRs: ADR-0119, ADR-0120, ADR-0121, ADR-0122, ADR-0123, ADR-0124, ADR-0125, ADR-0126, ADR-0127, ADR-0128, ADR-0132
-- Review-notes triage: [ADR-0118-review-notes-triage.md](ADR-0118-review-notes-triage.md) — consolidates open questions surfaced during MADR/SPARC critique of ADR-0119–ADR-0128
+- Review-notes triage: [ADR-0118b-review-notes-triage.md](ADR-0118b-review-notes-triage.md) — consolidates open questions surfaced during MADR/SPARC critique of ADR-0119–ADR-0128
 - Execution plan: [ADR-0118-execution-plan.md](ADR-0118-execution-plan.md) — wave-based implementation plan for T1-T11 using parallel agent swarms (3 waves, peak 5 agents in flight)
-- All Henrik decisions resolved 2026-05-02 — see ADR-0118-review-notes-triage.md §Resolution log
+- All Henrik decisions resolved 2026-05-02 — see ADR-0118b-review-notes-triage.md §Resolution log
 - USERGUIDE Hive Mind contract: substring anchor `<summary>👑 <strong>Hive Mind</strong>` in `/Users/henrik/source/ruvnet/ruflo/docs/USERGUIDE.md`
 - Architectural constraints: ADR-0114 (substrate/protocol/execution layering)
 - Storage backend constraints: `project-rvf-primary` memory, ADR-0086 Debt 7

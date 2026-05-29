@@ -8,7 +8,7 @@ Every sprint close produces ONE commit `docs: sprint-N close — <active ADR>`:
 
 | File | Required |
 |---|---|
-| `ADR-0094-log.md` | Dated H3 at top: fork+patch SHAs, check_id transitions, catalog delta, next sprint's ADR. |
+| `ADR-0094a-log.md` | Dated H3 at top: fork+patch SHAs, check_id transitions, catalog delta, next sprint's ADR. |
 | `coverage-ledger.md` | New `BUG-NNNN` YAML per discovery; existing bugs updated in-place. `fingerprint` recomputed by `catalog-rebuild.mjs`. |
 | Active ADR-009{5,6,7} | Status flipped per §2. Append to "Implementation notes" only, never Decision. |
 | `CLAUDE.md` "What We Tried" | ONE bullet only if the sprint yielded a pattern-level lesson. Tactical fixes don't belong. |
@@ -32,7 +32,7 @@ Frontmatter `status:` is single source of truth. Commit/grep-driven:
 
 ## 3. Sibling Log File Policy
 
-**Only ADR-0094 gets `-log.md`.** It coordinates 8 sprints — its log is cross-sprint state. ADR-0095/0096/0097 are narrow (1-2 sprints each); execution notes live in one "Implementation notes" H2 inside the ADR body (cap 200 lines; overflow prunes oldest). On `Implemented` the ADR body freezes; later observations go to `ADR-0094-log.md` under the sprint where they surfaced. `ADR-0094-log.md` is never merged back, never archived.
+**Only ADR-0094 gets `-log.md`.** It coordinates 8 sprints — its log is cross-sprint state. ADR-0095/0096/0097 are narrow (1-2 sprints each); execution notes live in one "Implementation notes" H2 inside the ADR body (cap 200 lines; overflow prunes oldest). On `Implemented` the ADR body freezes; later observations go to `ADR-0094a-log.md` under the sprint where they surfaced. `ADR-0094a-log.md` is never merged back, never archived.
 
 ## 4. Bug Ledger Churn
 
@@ -42,7 +42,7 @@ Entries stay forever with `state: closed` + `closed_date`. Rationale: regression
 
 `scripts/gen-changelog.mjs` (new) from two inputs:
 
-1. `ADR-0094-log.md` dated H3 → one CHANGELOG section per sprint.
+1. `ADR-0094a-log.md` dated H3 → one CHANGELOG section per sprint.
 2. `coverage-ledger.md` transitions where `fix_commit` is in release range → "Bug fixes" with `BUG-NNNN → upstream file`.
 
 Regenerates on each `fork-version` (pipeline step 4). No hand-edited changelog.
@@ -56,7 +56,7 @@ Regenerates on each `fork-version` (pipeline step 4). No hand-edited changelog.
 Part of `npm run preflight`. Parses all `docs/adr/ADR-*.md` frontmatter. Asserts:
 
 - **(a)** Every `Implemented` ADR has zero unstruck `- [ ]` lines in body (struck = `- [x]` or `~~`).
-- **(b)** Every `In Implementation` ADR has a log entry (in `ADR-0094-log.md` or its own Implementation notes) within last 14 calendar days.
+- **(b)** Every `In Implementation` ADR has a log entry (in `ADR-0094a-log.md` or its own Implementation notes) within last 14 calendar days.
 - **(c)** Every `\bADR-\d{4}\b` reference resolves to a real file in `docs/adr/` or `docs/adr/archive/`.
 - **(d)** Every `scope_globs:` entry matches ≥1 real file.
 - **(e)** Status value is in §2 enum.

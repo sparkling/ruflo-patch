@@ -56,11 +56,11 @@ Prevents next "swarm declared fix, real test fails" (t3-2 10/10 lie pattern):
 4. 3 consecutive cascades × 3 days before any ADR flips `Implemented`.
 5. Adversarial-reviewer in every swarm; must produce ≥1 failing probe pre-signoff.
 6. Skip-reverify INSIDE cascade, not cron.
-7. ADR-0094-log.md is single source of truth; siblings cap `Implementation notes` at 200 lines.
+7. ADR-0094a-log.md is single source of truth; siblings cap `Implementation notes` at 200 lines.
 
 ## Usage
 
 1. Reference [`queen-plan-synthesis.md`](./queen-plan-synthesis.md) §I (the 15-step directive) for execution order.
 2. Each numbered step names: which files, which ADR, which swarm profile, which gate.
 3. Do NOT draft new ADRs (0098+) during execution — the synthesis explicitly forbids it per DA veto 1.
-4. Progress against this plan is recorded in `docs/adr/ADR-0094-log.md` (append-only) per rule 4 of ADR-0094's Maintenance Manifesto.
+4. Progress against this plan is recorded in `docs/adr/ADR-0094a-log.md` (append-only) per rule 4 of ADR-0094's Maintenance Manifesto.

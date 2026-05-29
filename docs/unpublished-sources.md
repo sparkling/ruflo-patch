@@ -270,7 +270,7 @@ Plugins are already cataloged in detail in [plugin-catalog.md](plugin-catalog.md
 | `plugin-prime-radiant` | 0.1.5 | zod, WASM (optional) | **Monitor** | Hallucination prevention; high value |
 | `plugin-quantum-optimizer` | 3.0.0-alpha.1 | zod, WASM (optional) | **Skip** | Exotic optimization; niche |
 | `ruvector-upstream` | 3.0.0-alpha.1 | zod, WASM (optional) | **Integrate** | WASM bridge layer all plugins depend on |
-| `teammate-plugin` | 1.0.0-alpha.1 | eventemitter3, bmssp | **Monitor** | See [ADR-0022](adr/0022-full-ecosystem-repackaging.md) |
+| `teammate-plugin` | 1.0.0-alpha.1 | eventemitter3, bmssp | **Monitor** | See [ADR-0022](adr/ADR-0022-full-ecosystem-repackaging.md) |
 | `plugin-test-intelligence` | 3.0.0-alpha.1 | zod | **Monitor** | Predictive test selection; high value for CI |
 
 ---
@@ -497,7 +497,7 @@ All published under `@sparkleideas/*`. No further action needed.
 |---------|-----------|
 | `plugin-agentic-qe` | QA automation demand |
 | `plugin-prime-radiant` | Hallucination prevention demand |
-| `teammate-plugin` | See [ADR-0022](adr/0022-full-ecosystem-repackaging.md) |
+| `teammate-plugin` | See [ADR-0022](adr/ADR-0022-full-ecosystem-repackaging.md) |
 
 ### Skip (17 packages)
 
@@ -510,5 +510,5 @@ Internal tooling, examples, domain-specific applications, and non-JavaScript eco
 - [Published packages (42)](ruvnet.packages.and.source.location.md)
 - [Plugin catalog (14)](plugin-catalog.md)
 - [ADR-0021: Teammate Plugin Integration](adr/0021-teammate-plugin-integration.md)
-- [ADR-0014: Topological Publish Order](adr/0014-topological-publish-order.md)
+- [ADR-0014: Topological Publish Order](adr/ADR-0014-topological-publish-order.md)
 - Upstream repos: [ruflo](https://github.com/ruvnet/ruflo), [agentic-flow](https://github.com/ruvnet/agentic-flow), [ruv-FANN](https://github.com/ruvnet/ruv-FANN)

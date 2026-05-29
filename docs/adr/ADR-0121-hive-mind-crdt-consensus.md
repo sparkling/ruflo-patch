@@ -303,7 +303,7 @@ If none of those surface, this ADR stands as the implementation contract.
 
 ## Review notes
 
-Triage results from `/docs/adr/ADR-0118-review-notes-triage.md`. DEFER-TO-IMPL items remain open questions; resolved items are stamped inline.
+Triage results from `/docs/adr/ADR-0118b-review-notes-triage.md`. DEFER-TO-IMPL items remain open questions; resolved items are stamped inline.
 
 1. **Round termination rule** — §Pseudocode says the round closes when "all expected voter snapshots are observed (or quorum-equivalent termination — defined by the calling code, not the CRDT layer)". The existing strategies use vote-count thresholds; the CRDT branch will need an explicit termination policy (all-voters? timeout-based? Queen-signalled?) that is NOT a CRDT concern but IS a `hive-mind_consensus` runtime concern. Default proposal: round closes when `state.workers.length` distinct voters have submitted, OR after the same `timeoutMs` window the Raft strategy already uses. (triage row 10 — DEFER-TO-IMPL: union of voter-count + timeoutMs window default; implementer documents in §Specification)
 2. **`crdtState` serialisation** — the proposal record persists to `state.json` (substrate-layer SQLite). `Set`-typed fields in OR-Set don't survive `JSON.stringify` losslessly. Implementation must serialise to arrays and rehydrate to `Set` at load time (existing `loadHiveState` round-trips through JSON — this is a real gap, not just a typing issue). (triage row 11 — DEFER-TO-IMPL: serialise to arrays, rehydrate to Set at load time per implementer)

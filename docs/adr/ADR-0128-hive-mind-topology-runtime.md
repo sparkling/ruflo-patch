@@ -249,7 +249,7 @@ T9 adaptive delegation: the `adaptive` branch of the T10 dispatch calls into ADR
 
 ## Review notes
 
-Open questions for follow-up that this review surfaced but did not resolve. Triage stamps per `/docs/adr/ADR-0118-review-notes-triage.md`:
+Open questions for follow-up that this review surfaced but did not resolve. Triage stamps per `/docs/adr/ADR-0118b-review-notes-triage.md`:
 
 1. **CLI enum vs USERGUIDE diagram** (triage row 50 — DEFER-TO-FOLLOWUP-ADR: CLI side closes here via TOPOLOGIES expansion to 6; USERGUIDE diagram alignment is USERGUIDE-track concern): the CLI accepts 4 values, the USERGUIDE diagram visualises 4 values, and the two sets only overlap on `hierarchical` and `mesh`. ADR-0128 closes the union (6) per `feedback-no-value-judgements-on-features.md`, but the USERGUIDE diagram also needs to gain `hierarchical-mesh` and `adaptive` (or the CLI loses `hierarchical-mesh` — definitely the wrong direction). This ADR adds 2 to the CLI; whether the USERGUIDE diagram gains 2 is a USERGUIDE-track concern.
 2. **ADR-0116 matrix row title vs body** — resolved (triage row 51: ADR-0116 lines 51 and 217 amended in earlier wave; "5 swarm topologies" → "6 swarm topologies"; line 92 → line 90 in summary row): title said "5 swarm topologies", body listed 6. ADR-0116 itself should be amended on the same lift run to either (a) correct the count to "6" or (b) drop the count and list the topologies. T10's annotation-lift work should not silently fix ADR-0116's count discrepancy without a separate edit there.

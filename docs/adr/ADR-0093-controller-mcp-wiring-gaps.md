@@ -197,7 +197,7 @@ These are tracked for a separate ADR or a follow-up pass within ADR-0090.
   - #5 explainableRecall — `b340e90 fix(agentdb): auto-create recall_certificates table in ExplainableRecall`.
   - Companion constructor-DDL fixes for ReflexionMemory (`7a977f1`), SkillLibrary (`b14a664`), sonaTrajectory registration (`794ad50`).
 - Tier 2 items 6-11 remain SKIP_ACCEPTED by design; regression regexes live in `lib/acceptance-adr0090-b5-checks.sh` (1768 LOC) and auto-flip to FAIL if upstream ever adds a write surface (per the original Tier 2 spec).
-- Acceptance criterion #4 ("ADR-0090 Tier A1 Debt 15 check remains PASS") verified via ADR-0094 full-cascade closure on 2026-04-21 (see `docs/adr/ADR-0094-log.md` closure audit); B5 scorecard target of ≥9 PASS / ≤6 SKIP / 0 FAIL satisfied.
+- Acceptance criterion #4 ("ADR-0090 Tier A1 Debt 15 check remains PASS") verified via ADR-0094 full-cascade closure on 2026-04-21 (see `docs/adr/ADR-0094a-log.md` closure audit); B5 scorecard target of ≥9 PASS / ≤6 SKIP / 0 FAIL satisfied.
 - Rationale: every Tier 1 item has both a fork-source code pointer (commit SHA) and a wired acceptance check with a table-backed round-trip assertion. Moves from Proposed to Implemented.
 - Remaining work: the 4 silent-pass violations logged in `/tmp/fixall-silent-pass-audit.md` (agentdb_feedback, hooks_intelligence_pattern-store, acceptance-adr0079-tier3 consolidation regex, agentdb_causal-edge split-brain) were explicitly out of scope for this ADR and remain follow-ups — track in a separate ADR or a focused pass under ADR-0094 follow-ons.
 

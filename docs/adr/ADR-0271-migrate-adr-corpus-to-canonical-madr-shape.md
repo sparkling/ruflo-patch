@@ -21,9 +21,9 @@ ADR-0157 ratified canonical MADR 4.x (plus two project extensions — a `tags:` 
 
 The migration is not a mechanical reformat: most files need their body prose lifted into MADR sections, which is judgement-heavy and risks altering or losing the historical decision being recorded. Two structural hazards make a naive bulk-rewrite dangerous:
 
-1. **Number collisions.** Nine numbers are shared by distinct records: seven are 4-digit (e.g. `0039-build-target-split` vs `0039-upstream-controller-integration-roadmap`), two are 3-digit plugin ADRs (`ADR-078`, `ADR-079`) that pad onto existing `ADR-0078`/`ADR-0079`. The strict `adr-index` uniqueness check (step 2.5) aborts the whole graph build when two files map to one ID.
+1. **Number collisions.** Ten numbers are shared by distinct records: eight are 4-digit (e.g. `ADR-0039-build-target-split` vs `ADR-0039a-upstream-controller-integration-roadmap`), two are 3-digit plugin ADRs (`ADR-078`, `ADR-079`) that pad onto existing `ADR-0078`/`ADR-0079`. The strict `adr-index` uniqueness check (step 2.5) aborts the whole graph build when two files map to one ID.
 2. **Reference blast radius.** There are ~16,033 `ADR-NNNN` *number* references across `docs/`, but only ~8 markdown *path* links to bare-form filenames. Renaming (keep the number, add the `ADR-` prefix) touches ~8 links; **renumbering** would invalidate a slice of the 16k number references and is intractable to disambiguate on records this old.
-3. **Non-decision companion docs.** ~18 files are logs/trackers/audits/plans/triage notes (`ADR-0094-log`, `ADR-0118-execution-plan`, `-tracker`, `-roadmap`, `-triage`), not decision records. They have no "Considered Options" or "Consequences" to express; forcing them into full MADR sections means fabricating decision content that never existed.
+3. **Non-decision companion docs.** ~18 files are logs/trackers/audits/plans/triage notes (`ADR-0094a-log`, `ADR-0118-execution-plan`, `-tracker`, `-roadmap`, `-triage`), not decision records. They have no "Considered Options" or "Consequences" to express; forcing them into full MADR sections means fabricating decision content that never existed.
 
 The question: what migration strategy reaches template conformance — including a unique ID per record so `adr-index` builds clean — without renumbering away thousands of references or rewriting historical decisions into fiction?
 
@@ -80,6 +80,7 @@ Collision resolution (oldest keeps bare number; later files sub-lettered). All r
 | 0079 | `ADR-0079-acceptance-test-completeness` | `ADR-0079a-iot-cognitum-plugin` |
 | 0094 | `ADR-0094-100-percent-acceptance-coverage-plan` | `ADR-0094a-log` |
 | 0118 | `ADR-0118-execution-plan` | `ADR-0118a-hive-mind-runtime-gaps-tracker`, `ADR-0118b-review-notes-triage` |
+| 0166 | `ADR-0166-agentdb-unified-database-architectural-gap` | `ADR-0166a-followup-rvf-substrate-assessment` |
 
 Plus: 58 bare `NNNN-slug.md` files → `ADR-NNNN-slug.md` (number unchanged).
 

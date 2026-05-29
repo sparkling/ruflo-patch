@@ -46,7 +46,7 @@
     "to_status": "accepted",
     "completed": true,
     "signal": "completed audit with TL;DR verdict 'No' and full citation matrix; no further work owed",
-    "file": "adr0166-followup-rvf-substrate-assessment.md"
+    "file": "ADR-0166a-followup-rvf-substrate-assessment.md"
   },
   "ADR-0170": {
     "from_status": "superseded",

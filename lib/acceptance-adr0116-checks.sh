@@ -564,7 +564,7 @@ check_adr0116_drift_detector() {
 # Helper: parse ADR-0118 §Status table → list of "active" Tns (one per line).
 # Active = status NOT `complete` (i.e. open | in-progress | escalated-to-adr).
 _adr0116_active_tns() {
-  local adr0118="${PROJECT_DIR:-.}/docs/adr/ADR-0118-hive-mind-runtime-gaps-tracker.md"
+  local adr0118="${PROJECT_DIR:-.}/docs/adr/ADR-0118a-hive-mind-runtime-gaps-tracker.md"
   [[ -f "$adr0118" ]] || return 0
   awk '
     /^##[[:space:]]+Status[[:space:]]*$/ { in_s=1; next }

@@ -143,7 +143,7 @@ A targeted test with a shared architectural premise merely confirms the premise.
 ### Integration
 
 - ADR-0094's Principle #5 ("Swarm-buildable") now requires this probe for every fix.
-- ADR-0094-log.md will carry a `### <date> — <bug-id> out-of-scope probe` subsection for each swarm-discovered bug.
+- ADR-0094a-log.md will carry a `### <date> — <bug-id> out-of-scope probe` subsection for each swarm-discovered bug.
 - ADR-0097 (Check-Code Quality Program) lint rule L-future: reject a fix commit that touches a scripts/diag-*.mjs file without a matching "opposite-assumption" assertion (manual review, not automated).
 
 ## Consequences

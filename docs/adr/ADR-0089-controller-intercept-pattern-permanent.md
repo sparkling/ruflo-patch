@@ -256,7 +256,7 @@ trigger.
 
 - `docs/adr/ADR-0089-controller-intercept-pattern-permanent.md` (new, this file)
 - `docs/adr/ADR-0075-architecture-state-assessment.md` — add cross-reference to ADR-0089 under Layer 2 in the "Ideal End State" section
-- `docs/adr/ADR-0076-ideal-state-implementation-plan.md` — mark Phase 4 acceptance criteria #1-#3 as SUPERSEDED BY ADR-0089
+- `docs/adr/ADR-0076a-ideal-state-implementation-plan.md` — mark Phase 4 acceptance criteria #1-#3 as SUPERSEDED BY ADR-0089
 
 **Patch repo (follow-up commit if the decision is approved):**
 

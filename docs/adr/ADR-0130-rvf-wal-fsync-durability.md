@@ -251,7 +251,7 @@ appendToWal(entry):                                   # called inside store(), u
 
 **Annotation lift criterion**: ADR-0123 §Risks item 7 and the §Validation `check_adr0123_sigkill_crash_durability` carve-out are updated to drop the "deferred to ADR-0130" annotations and mark this surface as resolved. This update happens in a separate commit by a separate agent (not from this ADR's agent — per the user's explicit constraint). Annotation lift fires only after acceptance + integration tests are green on `main` and Henrik acks the three pending items in §Decision Outcome.
 
-The H3 row in `ADR-0118-review-notes-triage.md` is also updated by that same separate commit to mark H3 as resolved with this ADR's commit hash.
+The H3 row in `ADR-0118b-review-notes-triage.md` is also updated by that same separate commit to mark H3 as resolved with this ADR's commit hash.
 
 ## Acceptance criteria
 
