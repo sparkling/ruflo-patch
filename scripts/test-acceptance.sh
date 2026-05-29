@@ -749,6 +749,10 @@ adr0098_lib="${PROJECT_DIR}/lib/acceptance-adr0098-checks.sh"
 adr0100_lib="${PROJECT_DIR}/lib/acceptance-adr0100-checks.sh"
 [[ -f "$adr0100_lib" ]] && source "$adr0100_lib"
 
+# ADR-0137: cwd-anchoring eradication — 4 non-root-cwd scenarios (Part 3 acceptance)
+adr0137_lib="${PROJECT_DIR}/lib/acceptance-adr0137-checks.sh"
+[[ -f "$adr0137_lib" ]] && source "$adr0137_lib"
+
 # ADR-0104: Hive-mind Queen orchestration (parser, prompt, MCP path, locking)
 adr0104_lib="${PROJECT_DIR}/lib/acceptance-adr0104-checks.sh"
 [[ -f "$adr0104_lib" ]] && source "$adr0104_lib"
@@ -1815,6 +1819,17 @@ if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0100_lib" ]]; then
 fi
 
 # ════════════════════════════════════════════════════════════════════
+# ADR-0137: cwd-anchoring eradication — run real CLI commands from non-root
+# cwds and assert ZERO stray .claude-flow/ anywhere except the project root.
+# ════════════════════════════════════════════════════════════════════
+if [[ -f "$E2E_DIR/.claude/settings.json" && -f "$adr0137_lib" ]]; then
+  run_check_bg "adr0137-h-one-deep"   "ADR-0137/H memory store from 1-deep cwd → no stray .claude-flow/"     check_adr0137_scenario_h_one_deep   "adr0137"
+  run_check_bg "adr0137-i-five-deep"  "ADR-0137/I memory store from 5-deep cwd → no stray .claude-flow/"     check_adr0137_scenario_i_five_deep  "adr0137"
+  run_check_bg "adr0137-j-init-fresh" "ADR-0137/J init in fresh tmpdir + subdir op → no stray .claude-flow/" check_adr0137_scenario_j_init_fresh "adr0137"
+  run_check_bg "adr0137-k-hive-spawn" "ADR-0137/K hive-mind spawn from non-root cwd → state at root only"    check_adr0137_scenario_k_hive_spawn "adr0137"
+fi
+
+# ════════════════════════════════════════════════════════════════════
 # ADR-0104: Hive-mind Queen orchestration — 10 scenarios per ADR-0104 §7.
 # Same gating + isolation pattern as ADR-0098.
 # ════════════════════════════════════════════════════════════════════
@@ -2396,6 +2411,16 @@ if [[ -f "$adr0100_lib" ]]; then
   )
 fi
 
+_adr0137_specs=()
+if [[ -f "$adr0137_lib" ]]; then
+  _adr0137_specs=(
+    "adr0137-h-one-deep|ADR-0137/H memory store from 1-deep cwd → no stray .claude-flow/"
+    "adr0137-i-five-deep|ADR-0137/I memory store from 5-deep cwd → no stray .claude-flow/"
+    "adr0137-j-init-fresh|ADR-0137/J init in fresh tmpdir + subdir op → no stray .claude-flow/"
+    "adr0137-k-hive-spawn|ADR-0137/K hive-mind spawn from non-root cwd → state at root only"
+  )
+fi
+
 _adr0104_specs=()
 if [[ -f "$adr0104_lib" ]]; then
   _adr0104_specs=(
@@ -2941,6 +2966,7 @@ collect_parallel "all" \
   "${_p17_specs[@]}" \
   "${_adr0098_specs[@]}" \
   "${_adr0100_specs[@]}" \
+  "${_adr0137_specs[@]}" \
   "${_adr0104_specs[@]}" \
   "${_adr0125_specs[@]}" \
   "${_adr0119_specs[@]}" \
