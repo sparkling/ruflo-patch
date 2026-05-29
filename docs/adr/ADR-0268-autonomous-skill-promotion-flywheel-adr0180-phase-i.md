@@ -212,3 +212,39 @@ built first, then cli, then `npm run release`.
 * [[ADR-0180]] §Re-entrancy / §Phase 9 — the tracker this closes.
 * `LEARNING-OPTIMIZED-PLAN.md` (upstream) — the deferred vision.
 * `ADR-053:531` (upstream) — "future work" deferral confirming no upstream impl.
+
+## Amendment: record-site refinement — `executeAgentTask` is retrieve-only (2026-05-29)
+
+Implementation surfaced the skeptic's **R3 (reward integrity)** as load-bearing,
+and an upstream re-check (code + plan + ADR intent) settled it. **The Decision
+Outcome's "both record sites" is refined: `executeAgentTask` RETRIEVES only;
+the reward-bearing RECORD happens at `hooks_post-task`.**
+
+Why: `executeAgentTask` (`agent-execute-core.ts:419`) is the LLM-call primitive —
+its `result` is `{success, output, usage, durationMs, stopReason}` with **no
+quality/reward signal** (`success` only means the call returned). Recording
+promotion-eligible episodes there would default every success to a high reward,
+clear `minReward 0.7`, and manufacture junk skills from single calls.
+
+Upstream agrees at all three levels:
+* **Code** — `agentic-flow` has no agent-executor that records episodes with a
+  computed reward (only the manual CLI / benchmarks do).
+* **Plan** — `LEARNING-OPTIMIZED-PLAN postTask(task, result)` records with
+  `reward = result.quality` (a caller-supplied `TaskResult` field), never derived
+  at a primitive.
+* **ADR intent** — `ADR-053 #1209` puts feedback recording at the **`post-task`
+  hook on success/failure**; `#1215` promotes **from high-reward trajectories**.
+  No upstream ADR records at an execution primitive.
+
+Refined shape (everything else in this ADR unchanged):
+* **`executeAgentTask` → RETRIEVE** — derive `task_type`, inject the matching
+  skill pre-call. Preserves the "every agent invocation benefits" value via the
+  read half (skill *reuse* needs no reward).
+* **RECORD at `hooks_post-task`** (the fork's analogue of upstream `postTask`,
+  already wired for `recordFeedback` per #1209) — `reward = quality`, with the
+  integrity gate: explicit quality is promotion-eligible; absent/defaulted
+  quality records a sub-threshold reward (not auto-promotable). The gate is a
+  fork improvement — upstream assumes `TaskResult.quality` is always present.
+* **Later: swarm `queen-coordinator.learnFromOutcome:2462`** as a second
+  reward-bearing record site (it carries a computed reward — upstream's SONA/
+  worker-learning subsystem is the model).
