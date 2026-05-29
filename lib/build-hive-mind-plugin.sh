@@ -620,6 +620,23 @@ _main() {
     esac
   done
 
+  # ADR-0140 Piece 2: the hive-mind-advanced skill ships council templates
+  # (generic-council-protocol.md, worker-contract.md) referenced by its SKILL.md.
+  # _emit_skill copies a single SKILL.md file; the sibling templates/ dir must be
+  # materialised too or the checked-in plugin drifts from a re-materialise
+  # (ADR-0116 AC#14). They are plain protocol docs (no claude-flow refs) → copy
+  # verbatim, no codemod.
+  local _hma_tpl_src
+  if [[ "$SRC_MODE" == "upstream" ]]; then
+    _hma_tpl_src="${SRC_DIR}/.claude/skills/hive-mind-advanced/templates"
+  else
+    _hma_tpl_src="${SRC_DIR}/plugins/ruflo-hive-mind/skills/hive-mind-advanced/templates"
+  fi
+  if [[ -d "$_hma_tpl_src" ]]; then
+    mkdir -p "$PLUGIN_DIR/skills/hive-mind-advanced/templates"
+    cp "$_hma_tpl_src"/*.md "$PLUGIN_DIR/skills/hive-mind-advanced/templates/"
+  fi
+
   # Agents
   for pair in "${_pairs_agents[@]}"; do
     plugin_rel="${pair%%|*}"
