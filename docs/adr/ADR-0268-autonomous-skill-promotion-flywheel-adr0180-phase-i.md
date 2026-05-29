@@ -1,17 +1,24 @@
 ---
 status: accepted
-completed: false
+completed: true
 date: 2026-05-28
+implemented: 2026-05-29
 tags: [learning, skills, reflexion, archivist, adr-0180-phase-9, upstream-vision, flywheel]
 supersedes: []
 depends-on: [ADR-0053, ADR-0082, ADR-0170, ADR-0177, ADR-0179, ADR-0180]
 implements: []
 ---
 
-> **Status (2026-05-28)**: `accepted` (the design below is ratified — the
-> maximal performance+features choice) but `completed: false` until the
-> ordered plan in §Implementation lands and the §Confirmation round-trip
-> passes. This ADR realizes the autonomy residual handed to **ADR-0180
+> **Status (2026-05-29): `accepted` + `completed: true`.** The full
+> record→promote→retrieve flywheel is implemented and CI-verified — the
+> `adr0268-flywheel` acceptance smoke passes **5/5** (`hooks post-task` ×3 →
+> `session-end` promote → `pre-task` retrieve of the promoted skill),
+> satisfying the §Confirmation round-trip, with 0 acceptance regressions
+> (715/724, 9 pre-existing skip_accepted). A 4-validator swarm confirmed
+> correctness / fail-loud+data-loss soundness / upstream-fidelity; the final
+> amendment records the 3 closed blockers + the out-of-scope deferrals
+> (cohesion guard, within-session trigger, code-at-record, causal-on-task.type,
+> Phase B). This ADR realizes the autonomy residual handed to **ADR-0180
 > Phase 9** when [[ADR-0179]] was superseded — i.e. it builds the
 > autonomous feedback→skill-promotion flywheel that upstream designed but
 > deferred. A 5-expert design council (2026-05-28, parallel Agent fan-out)
