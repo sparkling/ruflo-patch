@@ -253,7 +253,7 @@ describe('ADR-0076 resolve-config: layer precedence', () => {
 });
 
 // ============================================================================
-// Group 5: readEmbeddingsJson walks up from cwd
+// Group 5: readEmbeddingsJson resolves the config at the project root
 // ============================================================================
 
 describe('ADR-0076 resolve-config: readEmbeddingsJson cwd walk', () => {
@@ -264,19 +264,22 @@ describe('ADR-0076 resolve-config: readEmbeddingsJson cwd walk', () => {
     );
   });
 
-  it('readEmbeddingsJson walks parent directories from cwd', () => {
-    // Structural check: function body must reference process.cwd, dirname, parent loop.
+  it('readEmbeddingsJson resolves .claude-flow/embeddings.json via findProjectRoot() (ADR-0137)', () => {
+    // ADR-0137 Part 1 superseded the hand-rolled `process.cwd()` + `dirname` +
+    // `while` walk-up here with the canonical `findProjectRoot()` primitive
+    // (single source of truth for marker rules; never anchors a stray
+    // .claude-flow/ under a non-root cwd). Behavior is preserved — the config
+    // is still read from `<project-root>/.claude-flow/embeddings.json` — but the
+    // mechanism is now the shared primitive, so this contract asserts that.
     const fnStart = resolveSrc.indexOf('function readEmbeddingsJson');
     assert.ok(fnStart > -1, 'readEmbeddingsJson not found');
-    // Capture ~600 chars of body
     const fnBody = resolveSrc.slice(fnStart, fnStart + 800);
 
-    assert.ok(fnBody.includes('process.cwd'),     'readEmbeddingsJson must start at process.cwd()');
-    assert.ok(fnBody.includes('dirname'),         'readEmbeddingsJson must call dirname() to walk up');
+    assert.ok(fnBody.includes('findProjectRoot'), 'readEmbeddingsJson must resolve via findProjectRoot() (ADR-0137)');
     assert.ok(fnBody.includes('.claude-flow'),    'readEmbeddingsJson must look in .claude-flow/');
     assert.ok(fnBody.includes('embeddings.json'), 'readEmbeddingsJson must read embeddings.json');
-    // Loop construct (while)
-    assert.ok(/while\s*\(/.test(fnBody),          'readEmbeddingsJson must loop until filesystem root');
+    // The superseded hand-rolled walk must be gone (ADR-0137 anti-pattern).
+    assert.ok(!/while\s*\(/.test(fnBody),         'readEmbeddingsJson must NOT hand-roll a while-loop walk (use findProjectRoot)');
   });
 });
 

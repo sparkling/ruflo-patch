@@ -437,22 +437,23 @@ describe('ADR-0080: intelligence.ts directory traversal for embeddings.json', ()
     assert.ok(ewcDimIdx > -1, 'intelligence.ts must define ewcDim for EWC consolidator');
   });
 
-  it('uses a while-loop to walk up directories (not bare process.cwd())', () => {
-    // The embeddings.json lookup must use a while loop walking up dirs,
-    // not just process.cwd() + hard-coded relative path.
+  it('resolves embeddings.json via findProjectRoot() (ADR-0137 superseded the hand-rolled walk)', () => {
+    // ADR-0137 Part 1 replaced the hand-rolled `while` + `dirname` walk-up here
+    // with the canonical findProjectRoot() primitive. Behavior is preserved
+    // (the EWC dimension is still read from the project-root embeddings.json);
+    // only the mechanism changed, so the contract now asserts findProjectRoot().
     const ewcBlock = intelligenceSrc.slice(ewcDimIdx, ewcDimIdx + 600);
     assert.ok(
-      ewcBlock.includes('while') && ewcBlock.includes('dirname'),
-      'embeddings.json lookup must use while-loop directory traversal',
+      ewcBlock.includes('findProjectRoot'),
+      'embeddings.json lookup must resolve via findProjectRoot() (ADR-0137)',
     );
   });
 
-  it('walks up via path.dirname (not bare process.cwd() alone)', () => {
+  it('reads project-root .claude-flow/embeddings.json (no bare cwd walk)', () => {
     const ewcBlock = intelligenceSrc.slice(ewcDimIdx, ewcDimIdx + 600);
-    // Must contain the walk-up pattern: _dir !== _path.dirname(_dir)
     assert.ok(
-      ewcBlock.includes('dirname(') && ewcBlock.includes('embeddings.json'),
-      'must walk up with dirname() looking for embeddings.json',
+      ewcBlock.includes('findProjectRoot') && ewcBlock.includes('embeddings.json'),
+      'must resolve embeddings.json under the findProjectRoot()-anchored .claude-flow/',
     );
   });
 
