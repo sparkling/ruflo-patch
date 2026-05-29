@@ -78,10 +78,10 @@ the queryable backlog this ADR anchors.
 
 | Verdict | ADRs | Evidence summary |
 |---|---|---|
-| **GENUINELY OPEN** | **0137** (cwd-eradication campaign) | ~85 `adr-0100-allow:` annotations unfixed in `forks/ruflo` `main`; runtime guard `assertProjectRootAnchored` absent (0 hits); no acceptance check. Campaign never executed. |
-| | **0149** (guidance MCP coverage) | `guidance-tools.ts` still advertises phantom tools (some, e.g. `memory_export`, have since shipped via [[ADR-0255]], so the count is lower than the ADR's); coverage drift-test absent; 3 phases unbuilt. |
-| **DORMANT** (no successor, no forcing function) | **0099** (perf-testing program) | No `test:perf` script, no `tests/benchmarks/wallclock/`, no `docs/reports/perf/`, no `--promote`/`--calibrate` flags. ADR admits zero motivating regressions. |
-| | **0101** (fork-README program) | Zero `@sparkleideas` prelude in any of the 4 fork READMEs; stale `ruvnet/claude-flow` URLs remain; 5 §Open Decisions never answered; partly depends on the unbuilt 0102. |
+| **GENUINELY OPEN** | **0137** (cwd-eradication campaign) | **Re-validated 2026-05-29: 94** `adr-0100-allow:` annotations unfixed across **26 files** in `forks/ruflo` `main` (pass-1 said ~85 — under-counted); runtime guard `assertProjectRootAnchored` absent (0 hits, also 0 `adr-0137` source refs); no ADR-0137 acceptance check (the existing `acceptance-adr0100-checks.sh` runs deep-cwd but only canaries `.swarm/` placement, not the stray-`.claude-flow/` tree-walk). Campaign never executed; grep gate is green only because the annotations *are* the allowlist shape. |
+| | **0149** (guidance MCP coverage) | **Re-validated 2026-05-29:** `guidance-tools.ts` (`v3/@claude-flow/cli/src/mcp-tools/`) catalog is **byte-frozen** at its audited state → **~40 phantom tools** still advertised (whole fabricated `security_*` area; underscore-vs-dash `hooks_*`/`hive_mind_*`; wrong-name peers); `memory_export` shipping ([[ADR-0255]]) removed exactly 1. Drift-test absent (incl. the ADR's own named acceptance file); 3 phases unbuilt. **Cheapest high-value fix = a drift-test asserting every catalog tool resolves in `config/mcp-surface-manifest.json`** (registry-of-truth already exists). |
+| **DORMANT** (no successor, no forcing function) | **0099** (perf-testing program) | **Re-validated 2026-05-29: every artifact ABSENT** — no `test:perf` script, no `tests/benchmarks/wallclock/`, no `docs/reports/perf/`, no `--promote`/`--calibrate`/`--skip-perf-check` flags, no `publish:fork` staleness gate. ADR self-admits zero motivating regressions. `scripts/analyze-acceptance-perf.mjs` is unrelated (acceptance-pipeline timing, not the dedicated wallclock-benchmark program) — and is the first-line substitute the ADR itself names. |
+| | **0101** (fork-README program) | **Re-validated 2026-05-29:** zero `@sparkleideas` prelude in **all 5** fork READMEs (agentdb is the 5th — pass-1 said 4); stale `ruvnet/claude-flow` URLs total **6, concentrated** (ruflo 3, ruvector 2, agentic-flow 1) — far below the ADR's ~15-20 estimate because upstream rewrote ruflo's README (7541→408 lines, `9250df2df`), invalidating the ADR's inventory; 5 §Open Decisions never answered. **0102 dependency now CLEARED** (0102 closed 2026-05-29) → mechanical half (prelude + 6 URL fixes + 5 stale `npx claude-flow@latest` cmds in ruflo) is unblocked. |
 | **DONE-WITH-RESIDUAL** | **0100** (project-root resolution) | All 4 "pending" artifacts now exist (sentinel writer `init/executor.ts`, `__tests__/find-project-root.test.ts`, `lib/acceptance-adr0100-checks.sh`, `scripts/check-no-cwd-in-handlers.sh`). Residual = the broad site-eradication, owned by 0137. **Amended.** |
 | | **0140** (hive-mind-advanced) | Piece 1 (the 718-line fork-authored skill, commit `d3fbfccee`) shipped + init-delivered. **Piece 2 council templates shipped 2026-05-29** (defect fixed — see §Confirmation #3). **Piece 5 handler tests added 2026-05-29** (`e69683975` — join/leave/broadcast; memory was already covered by ADR-0122/0123/0131). **Piece 6 DECLINED 2026-05-29** — team comms is a swarm concern (already at the swarm skill layer); binding hive workers breaks dialectic independence + would mutate the shared MCP surface. No open residuals. |
 | | **0138** (working council template) | Its deliverable = 0140 Piece 2 templates — **delivered 2026-05-29** (`generic-council-protocol.md` + `worker-contract.md`). |
@@ -105,14 +105,14 @@ the queryable backlog this ADR anchors.
 
 ### Genuinely open (the queryable backlog this ADR anchors)
 
-Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger.
+Per `[[feedback-skip-accepted-as-squelch]]`, each carries a trigger. Live-revalidated 2026-05-29 (4-agent artifact check); all four confirmed still open/dormant, counts corrected below.
 
 | ADR | Open work | Trigger / blocker |
 |---|---|---|
-| **0137** | ~85 `adr-0100-allow:` sites → real `findProjectRoot()` fixes; the `assertProjectRootAnchored` runtime write-guard; non-root-cwd acceptance check | Mechanical campaign; no external blocker — symptom currently *masked* by the `**/.claude-flow/` gitignore rule, not fixed |
-| **0149** | Reconcile `guidance-tools.ts` (drop phantoms / add real tools); coverage drift-test | None forcing; guidance keeps mis-advertising until scheduled |
+| **0137** | **94** `adr-0100-allow:` sites (26 files) → real `findProjectRoot()` fixes; the `assertProjectRootAnchored` runtime write-guard; non-root-cwd acceptance check (stray-`.claude-flow/` tree-walk) | Mechanical campaign; no external blocker — symptom currently *masked* by the `**/.claude-flow/` gitignore rule, not fixed |
+| **0149** | Drift-test asserting every `guidance-tools.ts` catalog tool resolves in `config/mcp-surface-manifest.json` (cheap, catches all ~40 phantoms); then drop phantoms / add the missing real namespaces | None forcing; guidance keeps mis-advertising ~40 phantoms until scheduled |
 | **0099** | Whole perf-testing program | An actual logged perf regression |
-| **0101** | Per-fork README prelude + stale-URL fix | Its 5 §Open Decisions need user answers; nothing forces it |
+| **0101** | Per-fork (×5) README `@sparkleideas` prelude + 6 stale-`claude-flow`-URL fixes; mechanical half now unblocked (0102 cleared) | Its 5 §Open Decisions need user answers; nothing else forces it |
 
 ### Consequences
 
