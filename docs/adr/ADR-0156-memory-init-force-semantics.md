@@ -1,6 +1,6 @@
 # ADR-0156: `memory init --force` actually resets, and `init` reports the real backend + path
 
-- **Status**: Proposed 2026-05-07 (revised 2026-05-07T19 after critical review — see Revision history)
+- **Status**: **[RECONCILED 2026-05-29 → IMPLEMENTED; see [[ADR-0270]]]** Shipped in fork commit `cfb0cea02` (`memory init --force` reset + honest dbPath display), corroborated by [[ADR-0164]] (`completed: true`). One residual: the contract test `tests/unit/adr0156-memory-init-force.test.mjs` exists but is **not wired into the standard CICD runner** (`[[feedback-always-wire-tests-into-cicd]]`). Original status preserved below. — Proposed 2026-05-07 (revised 2026-05-07T19 after critical review — see Revision history)
 - **Date**: 2026-05-07
 - **Deciders**: Henrik Pettersen
 - **Related**: ADR-0086 (RVF is primary, SQLite is fallback), ADR-0154 (HM-class bug closed by loader-preference; clean-reset is the user-facing escape valve), ADR-0155 (user-facing brand `@sparkleideas/ruflo@latest`), ADR-0082 (no silent fallbacks), `feedback-no-fallbacks`, `feedback-data-loss-zero-tolerance`

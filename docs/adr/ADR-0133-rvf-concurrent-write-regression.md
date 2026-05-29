@@ -1,6 +1,6 @@
 # ADR-0133: RVF concurrent-write convergence regression — investigation + bisect
 
-- **Status**: **Proposed (2026-05-03)** — P0 regression. Investigation pending. Blocks ADR-0094 close-criterion (3 consecutive green acceptance runs).
+- **Status**: **[RECONCILED 2026-05-29 → RESOLVED; see [[ADR-0270]]]** Regression fixed via stale-native-binary rebuild (`411cca1`/`bec5606`, the `napi-rebuild` pipeline phase); `t3-2-concurrent` passes "6/6 RVF concurrent writers persisted (header=NATIVE)" in current full acceptance. The "Blocks ADR-0094" dependency is void — ADR-0094 closed 2026-04-21, *before* this ADR was authored; the RVF-deadlock hypothesis was separately refuted (ADR-0140 §665 / ADR-0144). Original status preserved below. — **Proposed (2026-05-03)** — P0 regression. Investigation pending. Blocks ADR-0094 close-criterion (3 consecutive green acceptance runs).
 - **Date**: 2026-05-03
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0095 (RVF inter-process write convergence — original Implemented 2026-04-20; **task #12 flock refcount in `crates/rvf/rvf-runtime/src/locking.rs` was a known open closure dependency per ADR-0111 §Status**), ADR-0079 (acceptance test completeness — owns `t3-2-concurrent`), ADR-0086 (Layer 1 storage abstraction RVF-first)

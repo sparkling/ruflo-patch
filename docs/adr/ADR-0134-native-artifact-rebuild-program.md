@@ -1,6 +1,6 @@
 # ADR-0134: Native artifact rebuild program — generalise beyond ruvector napi-arm64
 
-- **Status**: **Proposed (2026-05-03)** — follow-up to ADR-0133. Extend the narrow napi-arm64 fix into a general "any-fork, any-native-artifact, source-change-triggered rebuild" pipeline phase.
+- **Status**: **[RECONCILED 2026-05-29 → SUPERSEDED by [[ADR-0150]] (napi) + [[ADR-0232]] (wasm); see [[ADR-0270]]]** The goal — any-fork, source-change-triggered native rebuild — shipped via those two (`lib/napi-config.sh` + `scripts/wasm-rebuild.sh`/`lib/wasm-config.sh`), NOT via this ADR's `native-rebuild.sh`/`.native-targets.sh` design (never built; no corpus file cites ADR-0134). Original status preserved below. — **Proposed (2026-05-03)** — follow-up to ADR-0133. Extend the narrow napi-arm64 fix into a general "any-fork, any-native-artifact, source-change-triggered rebuild" pipeline phase.
 - **Date**: 2026-05-03
 - **Deciders**: Henrik Pettersen
 - **Depends on**: ADR-0133 (narrow fix landed in commit `bec5606` — covers ruvector napi-arm64 only via `scripts/napi-rebuild.sh`)

@@ -1,6 +1,6 @@
 # ADR-0158: Duplicate ODR skill family — `odr-create`, `odr-index`, `odr-review` parallel to the ADR family
 
-- **Status**: Proposed 2026-05-08
+- **Status**: **[RECONCILED 2026-05-29 → SHIPPED under a different format authority; see [[ADR-0270]]]** The `odr-{create,index,review}` skills exist at `~/.claude/skills/`, but built under the **DCAP / ODR-0095** model — NOT this ADR's ONT-0029 design (`.code.md` companions were explicitly retired). `adr-index` was correctly never turned into a single unified multi-type indexer (a symmetric `odr-index` writes the `odr/*` namespace instead). No engineering remains; this ADR's specified design is obsolete (doc-reconciliation only). Original status preserved below. — Proposed 2026-05-08
 - **Date**: 2026-05-08
 - **Methodology**: SPARC + MADR
 - **Deciders**: Henrik Pettersen

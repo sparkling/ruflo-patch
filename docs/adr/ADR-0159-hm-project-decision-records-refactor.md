@@ -1,6 +1,6 @@
 # ADR-0159: HM project decision-records refactor — migrate 217 ADRs to MADR+SPARC + add `methodology` to ~30 ODRs + index council sessions
 
-- **Status**: Proposed 2026-05-08
+- **Status**: **[RECONCILED 2026-05-29 → OBSOLETE/DORMANT; see [[ADR-0270]]]** The specified migration script (`.scripts/migrate-decision-records.mjs`) was never built; HM's decision-record corpus converged on the **DCAP** model (a fixed frontmatter subset with no `methodology:` field), which contradicts this ADR's ONT-0029-preserving plan. Nothing should be built as specced; any residual is governed by HM's own DCAP/Council process, outside this corpus. Original status preserved below. — Proposed 2026-05-08
 - **Date**: 2026-05-08
 - **Methodology**: SPARC + MADR
 - **Deciders**: Henrik Pettersen
