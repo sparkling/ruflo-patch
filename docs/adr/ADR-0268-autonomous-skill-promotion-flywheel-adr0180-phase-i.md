@@ -292,6 +292,13 @@ to function):**
   scope (the post-task causal edge stays `taskId`-keyed).
 - **Phase B** (`withBulkWrite`/`bulkDispatch` deep audit) — explicitly deferred.
 
+These five deferrals are tracked as **queryable defer-with-trigger entries** in
+[[ADR-0269]] (`proposed`, `completed: false`) — each with an explicit trigger
+condition ("until when"), so they surface in the outstanding-work query rather
+than aging silently inside this `completed: true` ADR. Phase B's implementation
+tracker remains [[ADR-0180]] §Phase 9; the causal-observe gate remains
+[[ADR-0147]] R7.
+
 The R7 write/read `deriveTaskType` input asymmetry (recall-rate, not corruption)
 is owned in-code; the dead `registry.consolidate()` probe at `hooks-tools.ts:2422`
 is bypassed by the live `routeSessionOp 'end'` path (harmless, guarded). With the
