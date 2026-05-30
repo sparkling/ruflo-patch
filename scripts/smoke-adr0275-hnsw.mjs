@@ -35,19 +35,34 @@ function fail(l, r) { failed++; log(`  FAIL  ${l}: ${r}`); }
 
 const BINDING_NAMES = ['@sparkleideas/ruvector-rvf-node', '@ruvector/rvf-node'];
 
+function pickRvfDatabase(m) {
+  // napi binding is CJS; ESM import() exposes it as named + default.
+  return m?.RvfDatabase || m?.default?.RvfDatabase || null;
+}
+
 async function loadBinding(dir) {
-  for (const n of BINDING_NAMES) {
-    try { const m = await import(n); if (m?.RvfDatabase) return m.RvfDatabase; } catch { /* try next */ }
-  }
-  // Resolve via the installed @sparkleideas/memory / ruflo package (binding is
-  // a transitive dep; it may not be hoisted to the smoke subdir's top level).
-  for (const pkg of ['@sparkleideas/memory', '@sparkleideas/ruflo', '@sparkleideas/cli']) {
-    const base = join(dir, 'node_modules', ...pkg.split('/'), 'package.json');
+  // CRITICAL: resolve from the TEMP INSTALL, not the smoke file's own
+  // node_modules. A bare `import('@sparkleideas/ruvector-rvf-node')` resolves
+  // relative to THIS file (ruflo-patch), which may carry a stale source-dir
+  // binding without queryWithEnvelope. Resolve the fresh published binding via
+  // the temp dir explicitly.
+  const candidates = [];
+  // 1. Direct hoisted path in the temp install (the freshly published binding).
+  for (const n of BINDING_NAMES) candidates.push(join(dir, 'node_modules', ...n.split('/'), 'index.js'));
+  // 2. createRequire anchored at an installed @sparkleideas package in the temp dir.
+  for (const anchor of ['@sparkleideas/memory', '@sparkleideas/ruflo', '@sparkleideas/cli']) {
+    const base = join(dir, 'node_modules', ...anchor.split('/'), 'package.json');
     if (!existsSync(base)) continue;
     let req; try { req = createRequire(base); } catch { continue; }
-    for (const n of BINDING_NAMES) {
-      try { const p = req.resolve(n); const m = await import(p); if (m?.RvfDatabase) return m.RvfDatabase; } catch { /* try next */ }
-    }
+    for (const n of BINDING_NAMES) { try { candidates.push(req.resolve(n)); } catch { /* try next */ } }
+  }
+  for (const p of candidates) {
+    if (!p || (p.endsWith('.js') && !existsSync(p))) continue;
+    try { const m = await import(p); const db = pickRvfDatabase(m); if (db) return db; } catch { /* try next */ }
+  }
+  // 3. Last resort: bare import (resolves from the smoke file location).
+  for (const n of BINDING_NAMES) {
+    try { const m = await import(n); const db = pickRvfDatabase(m); if (db) return db; } catch { /* try next */ }
   }
   return null;
 }
