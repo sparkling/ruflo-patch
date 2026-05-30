@@ -873,6 +873,8 @@ adr0274_lib="${PROJECT_DIR}/lib/acceptance-adr0274-checks.sh"
 [[ -f "$adr0274_lib" ]] && source "$adr0274_lib"
 adr0273_lib="${PROJECT_DIR}/lib/acceptance-adr0273-checks.sh"
 [[ -f "$adr0273_lib" ]] && source "$adr0273_lib"
+adr0275_lib="${PROJECT_DIR}/lib/acceptance-adr0275-checks.sh"
+[[ -f "$adr0275_lib" ]] && source "$adr0275_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3738,6 +3740,26 @@ if [[ -f "$adr0273_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0273-index" "$(_elapsed_ms "$_adr0273_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0275: RVF-native HNSW Layer B. napi queryWithEnvelope reports layerB=true
+# + recall + quality envelope via the published rvf-node binding.
+# ════════════════════════════════════════════════════════════════════
+_adr0275_start=$(_ns)
+if [[ -f "$adr0275_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0275: RVF-native HNSW Layer B (queryWithEnvelope layerB) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0275-hnsw" "ADR-0275 RVF HNSW Layer B" check_adr0275_hnsw "adr0275"
+
+  collect_parallel "adr0275" \
+    "adr0275-hnsw|ADR-0275 RVF HNSW Layer B"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0275-hnsw" "$(_elapsed_ms "$_adr0275_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

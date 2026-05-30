@@ -469,6 +469,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0273"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0275"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0275-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0275-checks.sh"
+    echo "── ADR-0275 (RVF-native HNSW Layer B — queryWithEnvelope layerB) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0275 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0275-hnsw" check_adr0275_hnsw
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"
