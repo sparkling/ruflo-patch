@@ -93,6 +93,20 @@ The hierarchical SQLite surface (a) is concurrency-safe (WAL) under either form 
 * The smoke runs **with the MCP server running** (no stop-server step) and passes — proving the chosen single-writer form (real ADR-0267 fix, or in-server batch) actually removed the contention.
 * Wired into the canonical acceptance harness (`run_check_bg` + `collect_parallel`), green in a release.
 
+## Rules
+
+### Design decisions resolved (2026-05-30, analysis swarm)
+
+**D7 — Operational form: standalone CLI, one writer transaction, alongside a live MCP server.** Confirmed by ADR-0274's handle split — the index acquires the write flock for its batch and releases it, coexisting with the MCP server's persistent lock-free read handle. No reason to embed in MCP (that re-introduces the round-trips this ADR eliminates). All three surfaces reach in-process via the memory-router facade with no MCP listener. To get the literal "one flock for the whole index," the RVF-bound writes (b + c) must be issued as one batch transaction (ADR-0274 D2/D5), not a per-record `routeMemoryOp` loop.
+
+**D8 — Edge namespace: `causal-edges` (runtime-canonical), and amend the skill.** The runtime hardcodes `namespace: 'causal-edges'` in the `recordCausalEdge` → `routeCausalOp` fallback (`memory-router.ts:2485-2492`); the legacy `adr-edges` came only from the stale `import.mjs` shelling out directly. Use the canonical `recordCausalEdge` path (it enrols the ADR-0181 audit chain via the causal-edge mutation handler), **not** a `routeMemoryOp({namespace:'adr-edges'})` bypass — bypassing recreates the divergent index this ADR exists to end. One-line skill reconciliation: drop the lingering `adr-edges` reference; edges live in `causal-edges`.
+
+**D9 — Write edges to RVF now; do not wait for ADR-0147 R7.** Edges persist to RVF today (the controller arm is dead — `CausalMemoryGraph.addCausalEdge` needs numeric IDs the string-keyed surface lacks; R7 unimplemented). ADR-0274 removes the only obstacle (the lifetime flock), so the index writes edges to RVF contention-free now. R7 will later move them to SQLite transparently; gating the index on R7 would block it on unrelated cross-package infrastructure.
+
+**D10 — Derive exactly the 3 skill inverses, caller-side.** `supersedes→superseded-by`, `depends-on→depended-on-by`, `implements→implemented-by` (skill §2.3c). Port the *mechanism* from `import.mjs:129-164` but not its dropped `related`/`amends` edges (Council 411/414). Corpus audit confirms every record uses exactly those three frontmatter slots and zero authored inverses, so the derivation is clean.
+
+**D11 — Index all records including companions; size to the live glob (now 280, not 278).** The record-metadata contract keys off frontmatter (`status`/`date`/`tags`) + the first paragraph of `## Context and Problem Statement` only — it does not require Options/Outcome/Consequences. So the ~26 companion docs (audits/logs/trackers) each get a full record with empty option/consequence fields. All 280 `ADR-*.md` files carry the required fields (verified via `grep -L`). The index must size to `glob(docs/adr/ADR-*.md)`, not a frozen count.
+
 ## More Information
 
 - Depends on ADR-0176 (the `hierarchical-query` key-glob fix — the `adr/*` query this index feeds must read the stored key), ADR-0267 (the RVF-lock regression — Q1 found its Revision 3 lock-release claim inaccurate; a correcting amendment is filed there), and ADR-0147 (R7 string→numeric memory-ID mapping — its non-implementation is why causal edges write to RVF today instead of SQLite).
