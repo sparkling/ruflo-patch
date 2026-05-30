@@ -458,6 +458,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0274"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0273"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0273-checks.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0273-checks.sh"
+    echo "── ADR-0273 (agentdb index — 3 surfaces alongside live MCP) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0273 reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0273-index" check_adr0273_index
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"

@@ -871,6 +871,8 @@ adr0176qk_lib="${PROJECT_DIR}/lib/acceptance-adr0176-query-key.sh"
 [[ -f "$adr0176qk_lib" ]] && source "$adr0176qk_lib"
 adr0274_lib="${PROJECT_DIR}/lib/acceptance-adr0274-checks.sh"
 [[ -f "$adr0274_lib" ]] && source "$adr0274_lib"
+adr0273_lib="${PROJECT_DIR}/lib/acceptance-adr0273-checks.sh"
+[[ -f "$adr0273_lib" ]] && source "$adr0273_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3715,6 +3717,27 @@ if [[ -f "$adr0274_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0274-rvf-rw-split" "$(_elapsed_ms "$_adr0274_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0273: scriptable `agentdb index` — builds 3 surfaces in-process alongside
+# a live MCP server (no stop). Synthetic corpus; asserts records+edges+inverses
+# + hierarchical-query visibility. Depends on ADR-0274 (handle split) being live.
+# ════════════════════════════════════════════════════════════════════
+_adr0273_start=$(_ns)
+if [[ -f "$adr0273_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0273: agentdb index (3 surfaces, alongside live MCP) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0273-index" "ADR-0273 agentdb index command" check_adr0273_index "adr0273"
+
+  collect_parallel "adr0273" \
+    "adr0273-index|ADR-0273 agentdb index command"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0273-index" "$(_elapsed_ms "$_adr0273_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results
