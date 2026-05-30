@@ -61,9 +61,13 @@ This ADR does not supersede any prior ADR; it migrates the format of the entire 
 
 ### Confirmation
 
-* Re-run the conformance scan — frontmatter, key-whitelist, status/date, required-section (Context for all; Options/Outcome/Consequences for decision ADRs), and H1-prefix counts drop to zero.
-* `git grep` for the old filenames confirms no dangling path links remain.
-* A dry-run of the `adr-index` ID-extraction confirms 276 unique IDs (zero uniqueness-check aborts).
+Per-file, during conversion: each converted ADR is validated against the strict contract (frontmatter present, key-whitelist, `status` enum, ISO `date`, typed-slot shape, required `## Context and Problem Statement`, no `ADR-NNNN:` H1 prefix, no body-prose relations). A file that fails is fixed before the converter moves on.
+
+Corpus-level, authoritative: the **`adr-index` skill (strict mode)** is the confirmation gate. It is run once after conversion completes and **fails loud** on any non-conformant record — a clean run is the proof of correctness. Before re-indexing, **all old ADR entries are purged** so no stale record survives the migration:
+
+1. **Purge stale index state** — delete every `adr/*` hierarchical entry and every `adr-patterns` namespace memory entry. This is required, not optional: sub-lettering minted new IDs (`ADR-0039a`, `ADR-0118a/b`, …) and the pre-migration corpus had duplicate-number and 3-digit (`ADR-078`) entries; without a purge those orphaned IDs would linger in the graph.
+2. **Rebuild from the migrated corpus** — run `adr-index` strict mode, which re-parses all `docs/adr/ADR-*.md`, validates each (aborting on any violation), and rebuilds record metadata, forward + derived-inverse typed edges, and `adr-patterns` memory.
+3. **Verify** — the strict run confirms 277 unique IDs (zero uniqueness aborts), zero orphan typed-relation targets, and zero frontmatter/section violations. `git grep` for the old filenames confirms no dangling path links remain.
 
 ## Mapping
 
