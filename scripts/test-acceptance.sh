@@ -867,6 +867,8 @@ adr0263_lib="${PROJECT_DIR}/lib/acceptance-adr0263-checks.sh"
 # ADR-0268: autonomous skill-promotion flywheel — 1 smoke (reuses ACCEPT_TEMP)
 adr0268_lib="${PROJECT_DIR}/lib/acceptance-adr0268-checks.sh"
 [[ -f "$adr0268_lib" ]] && source "$adr0268_lib"
+adr0176qk_lib="${PROJECT_DIR}/lib/acceptance-adr0176-query-key.sh"
+[[ -f "$adr0176qk_lib" ]] && source "$adr0176qk_lib"
 
 PKG="@sparkleideas/cli"
 RUFLO_WRAPPER_PKG="@sparkleideas/ruflo@latest"
@@ -3272,6 +3274,15 @@ if [[ -f "$p5_lib" ]]; then
     run_check_bg "adr0176-tool-names"     "ADR-0176 Phase 5 tool-name registry"  check_adr0176_tool_names  "adr0176"
   fi
 
+  # Group 8b: ADR-0272 — gate the agentdb fork's shipped src/ on a clean
+  # `tsc --noEmit -p tsconfig.build.json` (exit 0). Keeps the missing-await
+  # class of shipped bug from re-hiding in dev-dir type-error noise.
+  adr0272_lib="${PROJECT_DIR}/lib/acceptance-adr0272-typecheck.sh"
+  if [[ -f "$adr0272_lib" ]]; then
+    source "$adr0272_lib"
+    run_check_bg "adr0272-typecheck"      "ADR-0272 agentdb shipped src/ typecheck gate"  check_adr0272_typecheck  "adr0272"
+  fi
+
   # Group 9: ADR-0194 — AutopilotLearning Phase 3 (embedding-cluster patterns).
   # Closure-criterion checks: assert `autopilot patterns --json` exposes the
   # `engine` field AND returns >=1 pattern from a cross-lexical-seeded corpus
@@ -3349,6 +3360,7 @@ if [[ -f "$p5_lib" ]]; then
     "adr0177-flag-mini-384|ADR-0177 --embedding-model mini" \
     "adr0178-hquery-e2e|ADR-0178 hierarchical-query E2E" \
     "adr0176-tool-names|ADR-0176 Phase 5 tool-name registry" \
+    "adr0272-typecheck|ADR-0272 agentdb shipped src/ typecheck gate" \
     "adr0194-populated|ADR-0194 patterns populated (engine+>=1)" \
     "adr0194-empty|ADR-0194 patterns empty corpus returns []" \
     "adr0195-subscribe|ADR-0195 event-bus episode:recorded" \
@@ -3659,6 +3671,27 @@ if [[ -f "$adr0268_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   rm -rf "$PARALLEL_DIR" 2>/dev/null
 fi
 _record_phase "phase-adr0268-flywheel" "$(_elapsed_ms "$_adr0268_start" "$(_ns)")"
+
+# ════════════════════════════════════════════════════════════════════
+# ADR-0176 amendment (WS0): hierarchical-query globs the stored KEY, not the
+# content blob. Discriminating smoke (key≠content) — FAILs pre-fix, PASSes
+# post-fix. Reuses ACCEPT_TEMP via ADR0255_SMOKE_SHARED_TEMP.
+# ════════════════════════════════════════════════════════════════════
+_adr0176qk_start=$(_ns)
+if [[ -f "$adr0176qk_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
+  log "── ADR-0176: hierarchical-query key-glob (key≠content) ──"
+  PARALLEL_DIR=$(mktemp -d /tmp/ruflo-accept-par-XXXXX)
+  export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+
+  run_check_bg "adr0176-query-key" "ADR-0176 hierarchical-query key-glob" check_adr0176_query_key "adr0176qk"
+
+  collect_parallel "adr0176qk" \
+    "adr0176-query-key|ADR-0176 hierarchical-query key-glob"
+
+  unset ADR0255_SMOKE_SHARED_TEMP
+  rm -rf "$PARALLEL_DIR" 2>/dev/null
+fi
+_record_phase "phase-adr0176-query-key" "$(_elapsed_ms "$_adr0176qk_start" "$(_ns)")"
 
 # ════════════════════════════════════════════════════════════════════
 # Results

@@ -436,6 +436,17 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0268"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
   fi
 fi
 
+if [[ "$_FAST_RUN_GROUPS" == *"adr0176qk"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0176-query-key.sh"
+    echo "── ADR-0176 (hierarchical-query key-glob, key≠content) ──"
+    export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
+    echo "[fast] adr0176qk reusing ACCEPT_TEMP: ${ACCEPT_TEMP}"
+    _fast_run "adr0176-query-key" check_adr0176_query_key
+    unset ADR0255_SMOKE_SHARED_TEMP
+  fi
+fi
+
 if [[ "$_FAST_RUN_GROUPS" == *"adr0245"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
   if [[ -f "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh" ]]; then
     source "$PROJECT_DIR/lib/acceptance-adr0245-checks.sh"
@@ -798,6 +809,14 @@ if [[ "$_FAST_RUN_GROUPS" == *"adr0176"* || "$_FAST_RUN_GROUPS" == "all" ]]; the
     source "$PROJECT_DIR/lib/acceptance-adr0176-tool-names.sh"
     echo "── ADR-0176 Phase 5 (declared dash-form tool names in MCP registry) ──"
     _fast_run "adr0176-tool-names"    check_adr0176_tool_names
+  fi
+fi
+
+if [[ "$_FAST_RUN_GROUPS" == *"adr0272"* || "$_FAST_RUN_GROUPS" == "all" ]]; then
+  if [[ -f "$PROJECT_DIR/lib/acceptance-adr0272-typecheck.sh" ]]; then
+    source "$PROJECT_DIR/lib/acceptance-adr0272-typecheck.sh"
+    echo "── ADR-0272 (agentdb shipped src/ typecheck gate) ──"
+    _fast_run "adr0272-typecheck"     check_adr0272_typecheck
   fi
 fi
 
