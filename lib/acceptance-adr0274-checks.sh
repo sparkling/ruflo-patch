@@ -41,3 +41,36 @@ check_adr0274_rvf_rw_split() {
     _CHECK_PASSED="true"
   fi
 }
+
+# ADR-0274 D3/D4 read-side complement: cross-process CONTENT freshness. A
+# long-lived reader (handle A) must reflect entries a SEPARATE process committed
+# to the same `.rvf` afterward (memory_list count grows + a semantic search
+# surfaces a peer entry), within the reload debounce window. Runs against the
+# fork's freshly-built dist + built `@ruvector/rvf-node` crate (self-contained;
+# no ACCEPT_TEMP install needed). FAILs pre-fix (stale view), PASSes post-fix.
+check_adr0274_xprocess_freshness() {
+  local start_ns end_ns log_path rc
+  start_ns=$(_ns)
+  _CHECK_PASSED="false"
+  _CHECK_OUTPUT=""
+  log_path=$(mktemp -t "adr0274-xprocess-freshness-XXXXXX.log")
+
+  if [[ ! -f "${PROJECT_DIR}/scripts/smoke-adr0274-xprocess-freshness.mjs" ]]; then
+    _CHECK_OUTPUT="missing: scripts/smoke-adr0274-xprocess-freshness.mjs"
+    end_ns=$(_ns); _EXIT=2; _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns"); _OUT="$_CHECK_OUTPUT"
+    return
+  fi
+
+  node "${PROJECT_DIR}/scripts/smoke-adr0274-xprocess-freshness.mjs" > "${log_path}" 2>&1
+  rc=$?
+
+  end_ns=$(_ns)
+  _DURATION_MS=$(_elapsed_ms "$start_ns" "$end_ns")
+  _EXIT=$rc
+  _OUT="exit=${rc} log=${log_path} (tail -40: $(tail -40 "${log_path}" 2>/dev/null | tr '\n' ' ' | head -c 400))"
+  _CHECK_OUTPUT="$_OUT"
+
+  if [[ $rc -eq 0 ]]; then
+    _CHECK_PASSED="true"
+  fi
+}

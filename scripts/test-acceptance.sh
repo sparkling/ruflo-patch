@@ -3711,9 +3711,11 @@ if [[ -f "$adr0274_lib" && -n "$ACCEPT_TEMP" && -d "$ACCEPT_TEMP" ]]; then
   export ADR0255_SMOKE_SHARED_TEMP="$ACCEPT_TEMP"
 
   run_check_bg "adr0274-rvf-rw-split" "ADR-0274 RVF read/write handle split" check_adr0274_rvf_rw_split "adr0274"
+  run_check_bg "adr0274-xprocess-freshness" "ADR-0274 cross-process content freshness" check_adr0274_xprocess_freshness "adr0274"
 
   collect_parallel "adr0274" \
-    "adr0274-rvf-rw-split|ADR-0274 RVF read/write handle split"
+    "adr0274-rvf-rw-split|ADR-0274 RVF read/write handle split" \
+    "adr0274-xprocess-freshness|ADR-0274 cross-process content freshness"
 
   unset ADR0255_SMOKE_SHARED_TEMP
   rm -rf "$PARALLEL_DIR" 2>/dev/null
