@@ -63,6 +63,35 @@ Chosen option: **"Two-tier: gate shipped `src/`, advisory-typecheck dev dirs"**,
 * A CI/release step runs that command and fails the build on non-zero exit (a new acceptance check, mirroring the ADR-0176 tool-name gate).
 * The `agentdb-mcp-server.ts:2266` fix is confirmed by the value being `await`ed before `.toFixed()`.
 
+## Swarm Execution Plan
+
+> Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Independent of the other workstreams — can start immediately.
+
+**Configuration** — `swarm_init { topology: 'hierarchical', maxAgents: 3, strategy: 'specialized' }` (via `/ruflo-swarm:swarm`).
+
+| Param | Value |
+|---|---|
+| topology | `hierarchical` |
+| strategy | `specialized` |
+| maxAgents | `3` |
+| isolation | shared `forks/agentdb` tree — **serialize the writer** (one coder owns all 6 fixes); CI/acceptance files separate |
+
+**Right-sizing (honest).** This is a small, single-fork task (6 fixes + one scoped tsconfig + one CI gate). A swarm is near the floor of useful here — kept at 3 specialized agents because the value is in *separating concerns* (fix vs gate vs semantic review of the real `await` bug), not in parallel throughput. All six fixes land through **one** coder (same fork → no parallel-write conflict).
+
+**Agent roster**
+
+| Agent | Type | Fork/area | Task | Wave |
+|---|---|---|---|---|
+| fixer | `coder` | `forks/agentdb` | The 6 shipped-`src/` fixes (`agentdb-mcp-server.ts:2266` missing `await`, `AgentDB.ts:256/319` dup `database`, `SyncCoordinator.ts:962` arg, `HierarchicalMemory.ts:380` tier typing, `src/examples/quic-sync-example.ts:121` excl/fix) + `tsconfig.build.json` scoped to `src/` (excl `src/examples/**`). | 1 |
+| gate-eng | `cicd-engineer` | `forks/agentdb` + harness | CI/release step `tsc --noEmit -p tsconfig.build.json` gating on exit 0; new acceptance check wired into `run_check_bg` + `collect_parallel`. | 2 |
+| reviewer | `reviewer` | read-only | Confirm the `:2266` `await` fix corrects the *value path* (not just the type), and the dup-`database` resolution doesn't drop a field. | 2 |
+
+**Waves**
+1. fixer: 6 fixes + scoped tsconfig; `tsc --noEmit -p tsconfig.build.json` exits 0 locally.
+2. gate-eng wires the CI gate + acceptance check ‖ reviewer audits the `await`/dup-`database` semantics.
+
+**Gate**: the existing `### Confirmation` — gated `tsc --noEmit` exits 0, CI fails on non-zero, the `:2266` value is `await`ed before `.toFixed()`.
+
 ## More Information
 
 - Surfaced by the ADR-0176 `hierarchical-query` fix work (2026-05-30); see that ADR's amendment for the build-emit verification (`tsc` emits `dist/` despite exit 2 because `noEmitOnError` is false).

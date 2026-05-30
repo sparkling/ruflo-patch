@@ -101,6 +101,34 @@ Operational rules for executing the conversion (the bulk body-restructuring step
 - **Back off concurrency if throttling persists.** If 3 agents still trip the limit, reduce further (2, then serial in the main thread). Convergence beats parallelism.
 - **Never commit partial state.** Conversion edits stay in the working tree until the full corpus passes the `### Confirmation` gate; only then commit.
 
+## Swarm Execution Plan
+
+> **Phase 3 only** (build the corpus AgentDB index). The MADR *conversion* is complete; its conversion swarm is recorded under `## Rules` ("Swarm size: 3 agents", rate-limit-capped). Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Depends on WS0 (ADR-0176 fix released) + WS2 (ADR-0273 `agentdb index` command live).
+
+**Configuration** — `swarm_init { topology: 'star', maxAgents: 2, strategy: 'specialized' }` (via `/ruflo-swarm:swarm`).
+
+| Param | Value |
+|---|---|
+| topology | `star` |
+| strategy | `specialized` |
+| maxAgents | `2` |
+| isolation | shared tree; **single RVF writer** — see hard rule |
+
+**HARD RULE — no writer fan-out.** Phase 3 is a **single-process, single-writer** build via the ADR-0273 `agentdb index` command (purge → rebuild). Spawning concurrent *writer* agents is the exact failure mode that broke the 2026-05-30 hand attempt (~780-round-trip wall + the ADR-0274 MCP/CLI snapshot split). The "swarm" here is **one serial indexer + one read-only validator** — the parallelism is in verification, never in writing. This is the inverse of a fan-out, recorded as a config so the constraint is explicit, not discovered again.
+
+**Agent roster**
+
+| Agent | Type | Task | Wave |
+|---|---|---|---|
+| indexer | `coder` | **Sole RVF writer.** Purge stale state (`adr/*` hierarchical + `adr-patterns` + edges), then run `agentdb index` (one batch transaction, all records). Serial. | 1 |
+| validator | `production-validator` | Strict `adr-index` re-run: all unique IDs per the live `glob(docs/adr/ADR-*.md)` (zero uniqueness aborts), zero orphan typed-relation targets, zero frontmatter/section violations + `git grep` for dangling old-form path links. Read-only. | 2 |
+
+**Waves**
+1. indexer: purge → `agentdb index` (after WS0 + WS2 are live).
+2. validator: strict re-index verify + dangling-link grep (read-only, after the build).
+
+**Gate**: the existing `### Confirmation` strict-`adr-index` run (all unique IDs per the live glob, zero aborts/orphans/violations; no dangling path links).
+
 ## More Information
 
 - Implements ADR-0157 (canonical MADR adoption + migration path outline); ADR-0157 is itself one of the non-conformant files and is migrated under this plan.

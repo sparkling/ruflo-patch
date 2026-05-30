@@ -88,6 +88,39 @@ A 3-agent file:line analysis resolved the open implementation decisions. The pro
 - **Out of scope of *this* ADR but a flagged real gap — RVF has no ANN; `memory_search` is a brute-force O(N) linear scan (`store.rs:683`).** Real reason for separating: it is a different subsystem (the search algorithm, not write coordination) and does not affect this fix's correctness. It is **not** dropped for usage/effort — it is surfaced as a genuine scalability gap, and is now **addressed by ADR-0275** (adopt upstream's ADR-033 progressive-indexing vision, including RVF-native HNSW Layer B, now). A 2026-05-30 upstream review found this is a *shared* upstream+fork current state (`layer_b: false` in both), not a fork regression.
 - **Separate, sequenced — the ADR-0273 `agentdb index` command.** Its own decision/ADR; lands after ADR-0274.
 
+## Swarm Execution Plan
+
+> **Critical path.** Coordination model: `swarm_init` (persistent topology state) + `Agent`-tool fan-out (`run_in_background: true`), synthesis by the orchestrator. **No hive-mind / consensus** (2026-05-30 directive). Two forks, two languages; the witness-chain stress gate (P3) is the highest-risk item in the whole program.
+
+**Configuration** — `swarm_init { topology: 'hierarchical-mesh', maxAgents: 5, strategy: 'specialized' }` (via the `/ruflo-swarm:swarm` skill).
+
+| Param | Value |
+|---|---|
+| topology | `hierarchical-mesh` |
+| strategy | `specialized` |
+| maxAgents | `5` |
+| isolation | cross-fork is naturally isolated (`forks/ruvector` ≠ `forks/ruflo`); within `forks/ruvector` the Rust coder and the stress engineer are **sequenced** (impl → cargo stress test) or worktree-isolated |
+
+**Why `hierarchical-mesh`.** A real critical path exists (the ruvector napi contract must exist before the cli backend can consume it), but the Rust coder, the TS coder, and the stress engineer must **mesh on the shared contract** — the `txnid`/`epoch` semantics (D3/D6), the flock acquire/release lifecycle (D5), and the witness-chain re-validation on re-acquire. Hierarchy sequences the waves; mesh keeps the contract coherent across the three implementers.
+
+**Agent roster**
+
+| Agent | Type | Fork/area | Task | Wave |
+|---|---|---|---|---|
+| rust-napi | `coder` (Rust) | `forks/ruvector` | Two additive napi changes: (1) `peekTxnid(path)` — O(1) RootHeader read (`root_header.rs`); (2) flock acquire/release decoupled from `open`/`close` + O(1) txnid re-validation on re-acquire (`store.rs`, `locking.rs`), preserving witness-chain integrity. **No multi-writer.** | 1 |
+| cli-ts | `backend-dev` (TS) | `forks/ruflo` | `@claude-flow/memory/src/rvf-backend.ts`: persistent `nativeReadDb` via `open_readonly`; `search`/`query` read it; transient writer (`open→ingest_batch→close`); `shutdownWriter()` closes only the writer fd; public batch-write method (D2); lazy reopen-on-read via `peekTxnid` (D3/D4). `memory-router.ts`: keep `_storage` persistent/read-bearing; per-op release closes only the transient writer (D1). | 1→2 |
+| stress-eng | `tester` | `forks/ruvector` | Witness-chain integrity stress test via the ADR-0167 cross-process harness — concurrent writer flock-cycling must not fork or tear the Merkle chain (**the P3 gate**); documents the reopen-per-transaction fallback if integrity proves unmanageable (D5). | 3 |
+| smoke-eng | `tester` | `ruflo-patch/scripts` | `smoke-adr0274-rvf-rw-split.mjs` (TDD; must FAIL pre-fix): start MCP, `tools/call` past warmup, then from a separate process `cli memory store` + the index path — assert no `LockHeld`, no 30 s hang, both succeed, `memory_search` works, read-after-write within the consistency window; harness-wire it. | 1 (author) → 4 (pass) |
+| reviewer | `code-analyzer` | read-only | Witness-chain correctness: flock-cycling on a live writer re-reads the chain tip on re-acquire (D5 caveat); the read handle never observes torn writes (D6); confirm the agentdb adapter/archivist truly need **no change** (D1). | 2→3 |
+
+**Waves (intra-swarm sequencing)**
+1. rust-napi builds the two napi primitives ‖ cli-ts scaffolds the dual-handle parts that don't yet need the new napi ‖ smoke-eng authors the failing smoke.
+2. cli-ts wires `peekTxnid` + the per-transaction flock cycle (consumes Wave-1 napi) ‖ reviewer audits the contract.
+3. **Stress gate** — stress-eng runs the witness-chain integrity harness; reviewer signs off. Fallback (reopen-per-transaction) only if integrity is unmanageable.
+4. smoke-eng: smoke flips FAIL→PASS; harness-wire; release (forks committed before `npm run release`).
+
+**Gate**: the existing `### Confirmation` smoke (FAIL pre-fix → PASS post-fix) **and** the Wave-3 witness-chain stress test.
+
 ## More Information
 
 - Resolves the re-opened ADR-0267 (this ADR is the chosen fix mechanism; ADR-0267 stays the regression tracker and flips to resolved when this lands + the smoke is green).

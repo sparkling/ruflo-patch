@@ -70,3 +70,26 @@ The payoff. **Only via the WS2 command — never ad-hoc** (the 2026-05-30 hand-i
 4. **Finally:** WS3 (build the corpus index) once WS0 + WS2 are live.
 
 Each workstream: commit fork(s) before release, wire the smoke into the harness, keep the green-bar gate. No time estimates — order by dependency and risk: WS1-P3 (lock lifecycle vs witness chain) is the highest-risk item and carries the stress-test gate.
+
+---
+
+## Swarm execution (per workstream)
+
+Coordination model for every workstream: **`swarm_init`** (persistent topology state, via the `/ruflo-swarm:swarm` skill) + **`Agent`-tool fan-out** (`run_in_background: true`), synthesis by the orchestrator. **No hive-mind / consensus** (2026-05-30 directive). Each workstream's full roster + intra-swarm waves live in its driving ADR's `## Swarm Execution Plan` section — this table is the index + the cross-cutting rules.
+
+| WS | ADR | topology | strategy | maxAgents | forks touched | notes |
+|---|---|---|---|---|---|---|
+| **WS0** | 0176 | — (no swarm) | — | — | `forks/agentdb` | Single release + MCP restart + 1 smoke. Optionally 1 `tester` to author `smoke-adr0176-query-key.mjs` while the release runs. |
+| **WS1** | 0274 | `hierarchical-mesh` | specialized | 5 | `ruvector` + `ruflo` | **Critical path.** Witness-chain stress gate (P3) = highest risk in the program. |
+| **WS2** | 0273 | `hierarchical` | specialized | 3 | `ruflo` | Depends WS1 (batch-write primitive). |
+| **WS3** | 0271 P3 | `star` | specialized | 2 | — (index build) | **No writer fan-out** — single serial indexer + 1 read-only validator. Depends WS0 + WS2. |
+| **WS4** | 0275 | `hierarchical-mesh` | specialized | 4 | `ruvector` + `ruflo`/`agentdb` | Depends WS1. Deep Rust + crash-safety gate. |
+| **WS5** | 0272 | `hierarchical` | specialized | 3 | `forks/agentdb` | Small; swarm at the floor of useful (concern-separation, not throughput). Independent — start now. |
+
+**Cross-workstream concurrency rules**
+
+- **`forks/ruvector` is touched by both WS1 and WS4** — their swarms must not run concurrently on the same tree (WS4 depends on WS1 landing anyway). Sequence, or worktree-isolate.
+- **Same-fork parallel writers conflict** — within a swarm, at most **one writer per fork tree** (serialize) unless worktree-isolated. Cross-fork agents are naturally isolated (different repos).
+- **WS3 is single-writer by mandate** — never spawn concurrent RVF writers (the 2026-05-30 hand-index failure mode); parallelism there is verification-only.
+- **Smoke/acceptance scripts land in `ruflo-patch/scripts`** + the canonical harness, never the fork trees — so tester agents never conflict with fork coders.
+- **No hives anywhere** — every config is `swarm_init` + `Agent` fan-out with orchestrator synthesis; no `hive-mind_spawn`, no queen/consensus.

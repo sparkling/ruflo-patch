@@ -66,6 +66,39 @@ Chosen option: **"A — Adopt ADR-033 progressive indexing now, including RVF-na
 * The HNSW segment round-trips crash-safely: kill mid-ingest, reopen, verify the index loads from the committed RootHeader and the witness chain validates.
 * Cross-process correctness (ADR-0274): the persistent read handle serves HNSW search lock-free; the index reflects writes within the ADR-0274 consistency window.
 
+## Swarm Execution Plan
+
+> Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Depends on ADR-0274 (search runs on its persistent read handle; the HNSW graph loads into that handle). Mostly deep Rust in `forks/ruvector/rvf-runtime` + a smaller TS envelope wiring.
+
+**Configuration** — `swarm_init { topology: 'hierarchical-mesh', maxAgents: 4, strategy: 'specialized' }` (via `/ruflo-swarm:swarm`).
+
+| Param | Value |
+|---|---|
+| topology | `hierarchical-mesh` |
+| strategy | `specialized` |
+| maxAgents | `4` |
+| isolation | Phase-1 TS (`forks/ruflo` + `forks/agentdb`) is parallel-safe; within `forks/ruvector/rvf-runtime` the HNSW coder and the benchmarker are **sequenced** (impl → cargo bench) or worktree-isolated; **do not run concurrently with the ADR-0274 swarm on the same `forks/ruvector` tree** (WS4 depends on WS1 landing anyway). |
+
+**Why `hierarchical-mesh`.** Phase 2 (HNSW persisted as a witnessed segment) interacts with the append-only witness chain + RootHeader-commit — the same crash-safety surface that makes ADR-0274's gate high-risk. The HNSW coder, the benchmarker, and the reviewer mesh on the persistence/crash-safety contract; the hierarchy sequences Phase-1 envelope → Phase-2 Layer B → verification.
+
+**Agent roster**
+
+| Agent | Type | Fork/area | Task | Wave |
+|---|---|---|---|---|
+| hnsw-rust | `coder` (Rust) | `forks/ruvector/rvf-runtime` | Phase 2: HNSW via `hnsw_rs` 0.3.3 (M reconciled — project mpnet m=23 vs upstream M=32), persisted as a **witnessed HNSW segment** in the append-only `.rvf` (RootHeader-committed, crash-safe), loaded on `boot()`, `layer_b: true`, incremental insert on `ingest_batch`, rebuild on `compact()`; `query()`/`query_with_envelope` traverse HNSW with the brute-force safety net. | 1→2 |
+| envelope-ts | `backend-dev` (TS) | `forks/ruflo` + `forks/agentdb` | Phase 1: route both RVF memory backends (`@claude-flow/memory` `rvf-backend.ts` + agentdb `RvfBackend`) through `query_with_envelope` (safety net + quality reporting); runs on ADR-0274's read handle. No new algorithm. | 1 |
+| bench-eng | `performance-benchmarker` | `forks/ruvector` + harness | `cargo` recall + latency bench (HNSW vs brute-force exact; O(log N) scaling; sanity vs upstream ~2.5K q/s @ 10K); crash-safe round-trip (kill mid-ingest, reopen, witness chain validates, index loads from committed RootHeader); JS acceptance smoke on the memory path. | 3 |
+| reviewer | `code-analyzer` | read-only | Witness-chain/crash-safety: the HNSW segment participates in RootHeader/manifest + witness chain (not a sidecar); boot loads the *persisted* graph (no rebuild); `query_with_envelope` reports `layer_b: true` + `Full`/`Partial` on indexed queries. | 2→3 |
+
+**Waves**
+1. envelope-ts wires Phase 1 (immediate on the ADR-0274 read handle) ‖ hnsw-rust builds the HNSW index + traversal.
+2. hnsw-rust adds witnessed-segment persistence + `boot()` load + incremental insert + `compact()` rebuild ‖ reviewer audits the persistence/crash-safety contract.
+3. **Verification** — bench-eng runs recall/latency + crash-safe round-trip + JS smoke; reviewer signs off.
+
+**Out of this swarm**: RaBitQ/PQ Layer C (upstream ADR-154) → future ADR.
+
+**Gate**: the existing `### Confirmation` — recall ≥ ADR-033 targets, O(log N) latency, `layer_b: true` envelope, crash-safe segment round-trip, cross-process freshness within the ADR-0274 window.
+
 ## More Information
 
 - Implements ADR-0177 (adopt upstream's RVF-first Cognitive Container vision) for the vector-search dimension; depends on ADR-0274 (the read/write handle split that search runs on).

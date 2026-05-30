@@ -107,6 +107,33 @@ The hierarchical SQLite surface (a) is concurrency-safe (WAL) under either form 
 
 **D11 — Index all records including companions; size to the live glob (now 280, not 278).** The record-metadata contract keys off frontmatter (`status`/`date`/`tags`) + the first paragraph of `## Context and Problem Statement` only — it does not require Options/Outcome/Consequences. So the ~26 companion docs (audits/logs/trackers) each get a full record with empty option/consequence fields. All 280 `ADR-*.md` files carry the required fields (verified via `grep -L`). The index must size to `glob(docs/adr/ADR-*.md)`, not a frozen count.
 
+## Swarm Execution Plan
+
+> Coordination model: `swarm_init` + `Agent`-tool fan-out (`run_in_background: true`), orchestrator synthesis. **No hive-mind / consensus.** Depends on ADR-0274 landing (the batch-write primitive + read/write handle split this command writes through).
+
+**Configuration** — `swarm_init { topology: 'hierarchical', maxAgents: 3, strategy: 'specialized' }` (via `/ruflo-swarm:swarm`).
+
+| Param | Value |
+|---|---|
+| topology | `hierarchical` |
+| strategy | `specialized` |
+| maxAgents | `3` |
+| isolation | builder writes `forks/ruflo`; tester writes `ruflo-patch/scripts` → separate repos, no conflict; reviewer is read-only |
+
+**Agent roster**
+
+| Agent | Type | Fork/area | Task | Wave |
+|---|---|---|---|---|
+| builder | `backend-dev` | `forks/ruflo` | `agentdb index` CLI command: strict `docs/adr/` parser; 3 surfaces via the memory-router facade — `hierarchicalStore({key:'adr/<id>'})` (ADR-0176 `metadata.key`+`tags` mapping), `recordCausalEdge`→`causal-edges` (D8), `adr-patterns` via `routeMemoryOp`; one batch RVF transaction (D7 / ADR-0274 D2); public batch-write method on the cli backend; caller-side derivation of the 3 inverses (D10, ported from `import.mjs:129-164`); index all records incl. companions, sized to `glob(docs/adr/ADR-*.md)` (D11); one-line skill reconciliation (drop `adr-edges`). | 1 |
+| tester | `tester` | `ruflo-patch/scripts` | `smoke-adr0273-index.mjs` (TDD: author first; runs alongside a live MCP server — no stop; asserts N records + edges + 3 inverses + `agentdb_hierarchical-query adr/*` returns all) + harness wiring (`run_check_bg` + `collect_parallel`). | 1 |
+| reviewer | `reviewer` | read-only | Skill-canonical conformance: `causal-edges` (not `adr-edges`) via `recordCausalEdge` (not a `routeMemoryOp` bypass), exactly the 3 inverses (no dropped `related`/`amends`), sub-letter IDs not collapsed (`ADR-0039a` ≠ `ADR-0039`), `metadata.key` mapping intact. | 2 |
+
+**Waves**
+1. tester authors the failing smoke (no command yet) ‖ builder implements the command against it.
+2. reviewer audits skill-canonical conformance once the command compiles and the smoke is reachable.
+
+**Gate**: the existing `### Confirmation` — smoke green with the MCP server **running** (no stop step), wired into the canonical harness.
+
 ## More Information
 
 - Depends on ADR-0176 (the `hierarchical-query` key-glob fix — the `adr/*` query this index feeds must read the stored key), ADR-0267 (the RVF-lock regression — Q1 found its Revision 3 lock-release claim inaccurate; a correcting amendment is filed there), and ADR-0147 (R7 string→numeric memory-ID mapping — its non-implementation is why causal edges write to RVF today instead of SQLite).
