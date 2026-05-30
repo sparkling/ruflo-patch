@@ -8,6 +8,7 @@
 - NEVER proactively create documentation files (*.md) or README files unless explicitly requested
 - NEVER save working files, text/mds, or tests to the root folder
 - Never continuously check status after spawning a swarm — wait for results
+- NEVER begin execution — spawning agents/swarms, running a migration, or making multi-file changes — without an explicit user go-ahead. Loading skills, planning, writing a worked example, or refining the process is NOT a go-ahead. If you asked for a green light and the reply is anything other than a clear yes, you are still planning — re-confirm before acting
 - ALWAYS read a file before editing it
 - NEVER commit secrets, credentials, or .env files
 
